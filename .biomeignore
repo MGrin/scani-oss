@@ -1,0 +1,14 @@
+node_modules
+dist
+build
+.next
+coverage
+*.min.js
+*.min.css
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+apps/frontend/public/vite.svg
+apps/frontend/src/index.css
