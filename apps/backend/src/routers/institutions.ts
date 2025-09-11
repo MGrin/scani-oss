@@ -4,13 +4,13 @@ import { nanoid } from 'nanoid';
 import { z } from 'zod';
 import { db } from '../db/connection';
 import * as schema from '../db/schema';
+import { getUserId } from '../middleware/auth';
 import { protectedProcedure, router } from '../trpc';
 
 // Helper function to check if institution name already exists
-async function checkInstitutionNameExists(name: string, userId: string, excludeId?: string) {
+async function checkInstitutionNameExists(name: string, excludeId?: string) {
   const whereConditions = [
     sql`LOWER(${schema.institutions.name}) = LOWER(${name})`,
-    eq(schema.institutions.userId, userId),
     eq(schema.institutions.isActive, true),
   ];
 
@@ -46,10 +46,10 @@ export const institutionsRouter = router({
     const institutions = await db
       .select({
         id: schema.institutions.id,
-        userId: schema.institutions.userId,
         name: schema.institutions.name,
         typeId: schema.institutions.typeId,
         type: schema.institutionTypes.code, // Include type code for backward compatibility
+        typeName: schema.institutionTypes.name,
         description: schema.institutions.description,
         website: schema.institutions.website,
         logoUrl: schema.institutions.logoUrl,
@@ -64,72 +64,69 @@ export const institutionsRouter = router({
     return institutions;
   }),
 
-  // Get institutions by user ID
-  getByUserId: protectedProcedure
-    .input(z.object({ userId: z.string() }))
-    .query(async ({ input }) => {
-      const institutions = await db
-        .select({
-          id: schema.institutions.id,
-          userId: schema.institutions.userId,
-          name: schema.institutions.name,
-          typeId: schema.institutions.typeId,
-          type: schema.institutionTypes.code,
-          description: schema.institutions.description,
-          website: schema.institutions.website,
-          logoUrl: schema.institutions.logoUrl,
-          isActive: schema.institutions.isActive,
-          createdAt: schema.institutions.createdAt,
-          updatedAt: schema.institutions.updatedAt,
-        })
-        .from(schema.institutions)
-        .leftJoin(
-          schema.institutionTypes,
-          eq(schema.institutions.typeId, schema.institutionTypes.id)
+  // Get institutions where the current user has accounts
+  getByUserId: protectedProcedure.query(async ({ ctx }) => {
+    const userId = getUserId(ctx);
+
+    const institutions = await db
+      .selectDistinct({
+        id: schema.institutions.id,
+        name: schema.institutions.name,
+        typeId: schema.institutions.typeId,
+        type: schema.institutionTypes.code,
+        typeName: schema.institutionTypes.name,
+        description: schema.institutions.description,
+        website: schema.institutions.website,
+        logoUrl: schema.institutions.logoUrl,
+        isActive: schema.institutions.isActive,
+        createdAt: schema.institutions.createdAt,
+        updatedAt: schema.institutions.updatedAt,
+      })
+      .from(schema.institutions)
+      .innerJoin(schema.accounts, eq(schema.accounts.institutionId, schema.institutions.id))
+      .leftJoin(schema.institutionTypes, eq(schema.institutions.typeId, schema.institutionTypes.id))
+      .where(
+        and(
+          eq(schema.institutions.isActive, true),
+          eq(schema.accounts.isActive, true),
+          eq(schema.accounts.userId, userId)
         )
-        .where(eq(schema.institutions.userId, input.userId))
-        .orderBy(schema.institutions.name);
-      return institutions;
-    }),
+      )
+      .orderBy(schema.institutions.name);
+    return institutions;
+  }),
 
   // Get institutions by type
-  getByType: protectedProcedure
-    .input(z.object({ typeId: z.string(), userId: z.string().optional() }))
-    .query(async ({ input }) => {
-      const institutions = await db
-        .select({
-          id: schema.institutions.id,
-          userId: schema.institutions.userId,
-          name: schema.institutions.name,
-          typeId: schema.institutions.typeId,
-          type: schema.institutionTypes.code,
-          description: schema.institutions.description,
-          website: schema.institutions.website,
-          logoUrl: schema.institutions.logoUrl,
-          isActive: schema.institutions.isActive,
-          createdAt: schema.institutions.createdAt,
-          updatedAt: schema.institutions.updatedAt,
-        })
-        .from(schema.institutions)
-        .leftJoin(
-          schema.institutionTypes,
-          eq(schema.institutions.typeId, schema.institutionTypes.id)
-        )
-        .where(eq(schema.institutions.typeId, input.typeId))
-        .orderBy(schema.institutions.name);
+  getByType: protectedProcedure.input(z.object({ typeId: z.string() })).query(async ({ input }) => {
+    const institutions = await db
+      .select({
+        id: schema.institutions.id,
+        name: schema.institutions.name,
+        typeId: schema.institutions.typeId,
+        type: schema.institutionTypes.code,
+        typeName: schema.institutionTypes.name,
+        description: schema.institutions.description,
+        website: schema.institutions.website,
+        logoUrl: schema.institutions.logoUrl,
+        isActive: schema.institutions.isActive,
+        createdAt: schema.institutions.createdAt,
+        updatedAt: schema.institutions.updatedAt,
+      })
+      .from(schema.institutions)
+      .leftJoin(schema.institutionTypes, eq(schema.institutions.typeId, schema.institutionTypes.id))
+      .where(
+        and(eq(schema.institutions.typeId, input.typeId), eq(schema.institutions.isActive, true))
+      )
+      .orderBy(schema.institutions.name);
 
-      if (input.userId) {
-        return institutions.filter((i: { userId: string | null }) => i.userId === input.userId);
-      }
-      return institutions;
-    }),
+    return institutions;
+  }),
 
   // Get institution by ID
   getById: protectedProcedure.input(z.object({ id: z.string() })).query(async ({ input }) => {
     const [institution] = await db
       .select({
         id: schema.institutions.id,
-        userId: schema.institutions.userId,
         name: schema.institutions.name,
         typeId: schema.institutions.typeId,
         type: schema.institutionTypes.code,
@@ -156,31 +153,22 @@ export const institutionsRouter = router({
     .input(
       z.object({
         name: z.string().trim().min(1),
-        userId: z.string().optional(),
         excludeId: z.string().optional(), // For edit mode
       })
     )
     .query(async ({ input }) => {
-      // TODO: Replace with actual user ID from authentication
-      const userId = input.userId || 'test-user-1';
-      const exists = await checkInstitutionNameExists(input.name, userId, input.excludeId);
+      const exists = await checkInstitutionNameExists(input.name, input.excludeId);
       return { isUnique: !exists };
     }),
 
   // Create new institution
   create: protectedProcedure
-    .input(
-      CreateInstitutionSchema.omit({ userId: true }).extend({
-        userId: z.string().optional(),
-      })
-    )
+    .input(CreateInstitutionSchema.omit({ userId: true }))
     .mutation(async ({ input }) => {
       const now = new Date();
-      // TODO: Replace with actual user ID from authentication
-      const userId = input.userId || 'test-user-1';
 
-      // Check if institution name already exists for this user
-      const nameExists = await checkInstitutionNameExists(input.name, userId);
+      // Check if institution name already exists
+      const nameExists = await checkInstitutionNameExists(input.name);
       if (nameExists) {
         throw new Error(
           'An institution with this name already exists. Please choose a different name.'
@@ -199,7 +187,6 @@ export const institutionsRouter = router({
       }
 
       const institutionData = {
-        userId,
         id: nanoid(),
         name: input.name,
         typeId: institutionType.id, // Use typeId instead of type
@@ -224,7 +211,6 @@ export const institutionsRouter = router({
       const [institution] = await db
         .select({
           id: schema.institutions.id,
-          userId: schema.institutions.userId,
           name: schema.institutions.name,
           typeId: schema.institutions.typeId,
           type: schema.institutionTypes.code,
@@ -272,11 +258,7 @@ export const institutionsRouter = router({
 
       // If name is being updated, check for uniqueness
       if (input.data.name && input.data.name !== currentInstitution.name) {
-        const nameExists = await checkInstitutionNameExists(
-          input.data.name,
-          currentInstitution.userId,
-          input.id
-        );
+        const nameExists = await checkInstitutionNameExists(input.data.name, input.id);
         if (nameExists) {
           throw new Error(
             'An institution with this name already exists. Please choose a different name.'
@@ -320,7 +302,6 @@ export const institutionsRouter = router({
       const [institution] = await db
         .select({
           id: schema.institutions.id,
-          userId: schema.institutions.userId,
           name: schema.institutions.name,
           typeId: schema.institutions.typeId,
           type: schema.institutionTypes.code,

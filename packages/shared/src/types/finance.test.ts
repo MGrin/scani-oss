@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'bun:test';
 import {
   AccountSchema,
-  AccountType,
+  AccountTypeSchema,
   CreateAccountSchema,
   CreateHoldingSchema,
   CreateInstitutionSchema,
@@ -10,9 +10,9 @@ import {
   CreateUserSchema,
   HoldingSchema,
   InstitutionSchema,
-  InstitutionType,
+  InstitutionTypeSchema,
   TokenSchema,
-  TokenType,
+  TokenTypeSchema,
   TransactionSchema,
   TransactionType,
   UpdateAccountSchema,
@@ -21,21 +21,30 @@ import {
 
 describe('Finance Types and Schemas', () => {
   describe('Enums', () => {
-    describe('InstitutionType', () => {
-      it('should accept valid institution types', () => {
-        const validTypes = ['bank', 'broker', 'crypto_exchange', 'crypto_wallet', 'other'];
+    describe('InstitutionTypeSchema', () => {
+      it('should accept valid non-empty strings', () => {
+        const validTypes = [
+          'bank',
+          'broker',
+          'crypto_exchange',
+          'crypto_wallet',
+          'other',
+          'custom_type',
+        ];
         for (const type of validTypes) {
-          expect(() => InstitutionType.parse(type)).not.toThrow();
+          expect(() => InstitutionTypeSchema.parse(type)).not.toThrow();
         }
       });
 
-      it('should reject invalid institution types', () => {
-        expect(() => InstitutionType.parse('invalid')).toThrow();
+      it('should reject empty or invalid values', () => {
+        expect(() => InstitutionTypeSchema.parse('')).toThrow();
+        expect(() => InstitutionTypeSchema.parse(null)).toThrow();
+        expect(() => InstitutionTypeSchema.parse(undefined)).toThrow();
       });
     });
 
-    describe('AccountType', () => {
-      it('should accept valid account types', () => {
+    describe('AccountTypeSchema', () => {
+      it('should accept valid non-empty strings', () => {
         const validTypes = [
           'checking',
           'savings',
@@ -43,14 +52,17 @@ describe('Finance Types and Schemas', () => {
           'investment',
           'crypto_wallet',
           'other',
+          'custom_type',
         ];
         for (const type of validTypes) {
-          expect(() => AccountType.parse(type)).not.toThrow();
+          expect(() => AccountTypeSchema.parse(type)).not.toThrow();
         }
       });
 
-      it('should reject invalid account types', () => {
-        expect(() => AccountType.parse('invalid')).toThrow();
+      it('should reject empty or invalid values', () => {
+        expect(() => AccountTypeSchema.parse('')).toThrow();
+        expect(() => AccountTypeSchema.parse(null)).toThrow();
+        expect(() => AccountTypeSchema.parse(undefined)).toThrow();
       });
     });
 
@@ -77,16 +89,28 @@ describe('Finance Types and Schemas', () => {
       });
     });
 
-    describe('TokenType', () => {
-      it('should accept valid token types', () => {
-        const validTypes = ['fiat', 'crypto', 'stock', 'etf', 'bond', 'commodity', 'other'];
+    describe('TokenTypeSchema', () => {
+      it('should accept valid non-empty strings', () => {
+        const validTypes = [
+          'fiat',
+          'crypto',
+          'stock',
+          'etf',
+          'bond',
+          'commodity',
+          'real_estate',
+          'precious_metals',
+          'other',
+        ];
         for (const type of validTypes) {
-          expect(() => TokenType.parse(type)).not.toThrow();
+          expect(() => TokenTypeSchema.parse(type)).not.toThrow();
         }
       });
 
-      it('should reject invalid token types', () => {
-        expect(() => TokenType.parse('invalid')).toThrow();
+      it('should reject empty or invalid values', () => {
+        expect(() => TokenTypeSchema.parse('')).toThrow();
+        expect(() => TokenTypeSchema.parse(null)).toThrow();
+        expect(() => TokenTypeSchema.parse(undefined)).toThrow();
       });
     });
   });
@@ -173,7 +197,7 @@ describe('Finance Types and Schemas', () => {
         id: 'inst-123',
         userId: 'user-123',
         name: 'Test Bank',
-        type: 'bank' as const,
+        type: 'bank',
         isActive: true,
         createdAt: new Date('2023-01-01'),
         updatedAt: new Date('2023-01-02'),
@@ -344,7 +368,7 @@ describe('Finance Types and Schemas', () => {
         const createInstitutionData = {
           userId: 'user-123',
           name: 'New Bank',
-          type: 'bank' as const,
+          type: 'bank',
           description: 'A new bank',
         };
         expect(() => CreateInstitutionSchema.parse(createInstitutionData)).not.toThrow();

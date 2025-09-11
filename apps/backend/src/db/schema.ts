@@ -69,14 +69,11 @@ export const users = pgTable('users', {
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 });
 
-// Institutions table
+// Institutions table - Public, available to all users
 export const institutions = pgTable(
   'institutions',
   {
     id: uuid('id').defaultRandom().primaryKey(),
-    userId: uuid('user_id')
-      .notNull()
-      .references(() => users.id, { onDelete: 'cascade' }),
     name: text('name').notNull(),
     typeId: uuid('type_id')
       .notNull()
@@ -89,8 +86,8 @@ export const institutions = pgTable(
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => ({
-    // Unique constraint for institution name per user
-    uniqueUserInstitutionName: unique().on(table.userId, table.name),
+    // Unique constraint for institution name globally
+    uniqueInstitutionWebsite: unique().on(table.website),
   })
 );
 
@@ -109,11 +106,14 @@ export const tokens = pgTable('tokens', {
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 });
 
-// Accounts table
+// Accounts table - User-specific
 export const accounts = pgTable(
   'accounts',
   {
     id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
     institutionId: uuid('institution_id')
       .notNull()
       .references(() => institutions.id, { onDelete: 'cascade' }),
@@ -128,32 +128,28 @@ export const accounts = pgTable(
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => ({
-    // Unique constraint for account name per institution
-    uniqueInstitutionAccountName: unique().on(table.institutionId, table.name),
+    // Unique constraint for account name per user per institution
+    uniqueUserInstitutionAccountName: unique().on(table.userId, table.institutionId, table.name),
   })
 );
 
-// Holdings table (token balances in accounts)
-export const holdings = pgTable(
-  'holdings',
-  {
-    id: uuid('id').defaultRandom().primaryKey(),
-    accountId: uuid('account_id')
-      .notNull()
-      .references(() => accounts.id, { onDelete: 'cascade' }),
-    tokenId: uuid('token_id')
-      .notNull()
-      .references(() => tokens.id, { onDelete: 'restrict' }), // Prevent token deletion if holdings exist
-    balance: real('balance').notNull(),
-    averageCostBasis: real('average_cost_basis'),
-    lastUpdated: timestamp('last_updated', { withTimezone: true }).notNull().defaultNow(),
-    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-  },
-  (table) => ({
-    // Unique constraint for one holding per token per account
-    uniqueAccountTokenHolding: unique().on(table.accountId, table.tokenId),
-  })
-);
+// Holdings table (token balances in accounts) - User-specific for consistency
+export const holdings = pgTable('holdings', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  userId: uuid('user_id')
+    .notNull()
+    .references(() => users.id, { onDelete: 'cascade' }),
+  accountId: uuid('account_id')
+    .notNull()
+    .references(() => accounts.id, { onDelete: 'cascade' }),
+  tokenId: uuid('token_id')
+    .notNull()
+    .references(() => tokens.id, { onDelete: 'restrict' }), // Prevent token deletion if holdings exist
+  balance: real('balance').notNull(),
+  averageCostBasis: real('average_cost_basis'),
+  lastUpdated: timestamp('last_updated', { withTimezone: true }).notNull().defaultNow(),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+});
 
 // Token prices table (historical prices)
 export const tokenPrices = pgTable(
@@ -177,9 +173,12 @@ export const tokenPrices = pgTable(
   })
 );
 
-// Transactions table
+// Transactions table - User-specific for consistency
 export const transactions = pgTable('transactions', {
   id: uuid('id').defaultRandom().primaryKey(),
+  userId: uuid('user_id')
+    .notNull()
+    .references(() => users.id, { onDelete: 'cascade' }),
   holdingId: uuid('holding_id')
     .notNull()
     .references(() => holdings.id, { onDelete: 'cascade' }),
@@ -218,14 +217,12 @@ export const tokenTypesRelations = relations(tokenTypes, ({ many }) => ({
 }));
 
 export const usersRelations = relations(users, ({ many }) => ({
-  institutions: many(institutions),
+  accounts: many(accounts),
+  holdings: many(holdings),
+  transactions: many(transactions),
 }));
 
 export const institutionsRelations = relations(institutions, ({ one, many }) => ({
-  user: one(users, {
-    fields: [institutions.userId],
-    references: [users.id],
-  }),
   type: one(institutionTypes, {
     fields: [institutions.typeId],
     references: [institutionTypes.id],
@@ -234,6 +231,10 @@ export const institutionsRelations = relations(institutions, ({ one, many }) => 
 }));
 
 export const accountsRelations = relations(accounts, ({ one, many }) => ({
+  user: one(users, {
+    fields: [accounts.userId],
+    references: [users.id],
+  }),
   institution: one(institutions, {
     fields: [accounts.institutionId],
     references: [institutions.id],
@@ -258,6 +259,10 @@ export const tokensRelations = relations(tokens, ({ one, many }) => ({
 }));
 
 export const holdingsRelations = relations(holdings, ({ one, many }) => ({
+  user: one(users, {
+    fields: [holdings.userId],
+    references: [users.id],
+  }),
   account: one(accounts, {
     fields: [holdings.accountId],
     references: [accounts.id],
@@ -282,11 +287,15 @@ export const tokenPricesRelations = relations(tokenPrices, ({ one }) => ({
 }));
 
 export const transactionsRelations = relations(transactions, ({ one }) => ({
+  user: one(users, {
+    fields: [transactions.userId],
+    references: [users.id],
+  }),
   holding: one(holdings, {
     fields: [transactions.holdingId],
     references: [holdings.id],
   }),
-  type: one(transactionTypes, {
+  transactionType: one(transactionTypes, {
     fields: [transactions.typeId],
     references: [transactionTypes.id],
   }),

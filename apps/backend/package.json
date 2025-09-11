@@ -20,6 +20,7 @@
     "test:coverage": "bun test --coverage",
     "test:coverage:html": "bun test --coverage --coverage-reporter=html",
     "db:generate": "bun drizzle-kit generate",
+    "db:drop": "bun drizzle-kit drop",
     "db:migrate": "bun drizzle-kit migrate",
     "db:setup": "bun run db:migrate",
     "db:studio": "bun drizzle-kit studio"

@@ -4,24 +4,15 @@ import { z } from 'zod';
 // ENUMS & CONSTANTS
 // =============================================================================
 
-// Institution types
-export const InstitutionType = z.enum([
-  'bank',
-  'broker',
-  'crypto_exchange',
-  'crypto_wallet', // on-chain wallet
-  'other',
-]);
+// Institution types - Now dynamic, fetched from database
+// Note: For UI-specific features like icons/colors, use the institution type code
+// but keep these as minimal as possible and fetch types from the API
+export const InstitutionTypeSchema = z.string().min(1, 'Institution type is required');
 
-// Account types
-export const AccountType = z.enum([
-  'checking',
-  'savings',
-  'credit',
-  'investment',
-  'crypto_wallet',
-  'other',
-]);
+// Account types - Now dynamic, fetched from database
+// Note: For UI-specific features like icons/colors, use the account type code
+// but keep these as minimal as possible and fetch types from the API
+export const AccountTypeSchema = z.string().min(1, 'Account type is required');
 
 // Transaction types
 export const TransactionType = z.enum([
@@ -36,16 +27,8 @@ export const TransactionType = z.enum([
   'other',
 ]);
 
-// Token types
-export const TokenType = z.enum([
-  'fiat', // USD, EUR, CHF, etc.
-  'crypto', // BTC, ETH, USDC, etc.
-  'stock', // AAPL, NVDA, etc.
-  'etf', // VOO, QQQ, etc.
-  'bond', // Government/corporate bonds
-  'commodity', // Gold, Silver, etc.
-  'other',
-]);
+// Token types - now dynamic, fetched from database
+export const TokenTypeSchema = z.string().min(1, 'Token type is required');
 
 // =============================================================================
 // CORE SCHEMAS
@@ -104,7 +87,7 @@ export const TokenSchema = z.object({
   id: z.string(),
   symbol: z.string().min(1, 'Symbol cannot be empty'), // BTC, USD, AAPL, etc.
   name: z.string().min(1, 'Name cannot be empty'), // Bitcoin, US Dollar, Apple Inc., etc.
-  type: TokenType,
+  type: TokenTypeSchema,
   decimals: z.number().int().min(0).max(18).default(2), // Precision
   iconUrl: z.string().optional(),
   isActive: z.boolean().default(true),
@@ -206,7 +189,7 @@ export const InstitutionSchema = z.object({
   id: z.string(),
   userId: z.string().min(1, 'User ID cannot be empty'),
   name: trimmedNonEmptyString,
-  type: InstitutionType,
+  type: InstitutionTypeSchema,
   description: descriptionValidation,
   website: websiteValidation,
   logoUrl: z.string().optional(),
@@ -241,7 +224,7 @@ export const AccountSchema = z.object({
   id: z.string(),
   institutionId: z.string().min(1, 'Institution ID cannot be empty'),
   name: accountNameValidation,
-  type: AccountType,
+  type: AccountTypeSchema,
   description: accountDescriptionValidation,
   accountNumber: accountNumberValidation,
   isActive: z.boolean().default(true),

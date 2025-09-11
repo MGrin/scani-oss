@@ -85,9 +85,7 @@ export const validateDateTimeDefault = () =>
 // Pre-built schemas for common entities
 export const InstitutionFormSchema = z.object({
   name: validateName('Institution name'),
-  type: z.enum(['bank', 'broker', 'credit_union', 'other'], {
-    errorMap: () => ({ message: 'Please select a valid institution type' }),
-  }),
+  type: z.string().min(1, 'Please select an institution type'),
   description: validateDescription(),
   website: validateUrl(true),
 });
@@ -95,9 +93,7 @@ export const InstitutionFormSchema = z.object({
 export const AccountFormSchema = z.object({
   institutionId: validateRequired('Please select an institution'),
   name: validateName('Account name'),
-  type: z.enum(['checking', 'savings', 'investment', 'credit_card', 'loan', 'other'], {
-    errorMap: () => ({ message: 'Please select a valid account type' }),
-  }),
+  type: z.string().min(1, 'Please select an account type'),
   accountNumber: validateAccountNumber(),
   description: validateDescription(),
 });
@@ -219,7 +215,7 @@ export const formFieldConfigs: Record<string, FormFieldConfig> = {
 export const getDefaultFormValues = {
   institution: () => ({
     name: '',
-    type: 'bank' as const,
+    type: '', // Will be set to the first available type from the backend
     description: '',
     website: '',
   }),
@@ -227,7 +223,7 @@ export const getDefaultFormValues = {
   account: (institutionId?: string) => ({
     institutionId: institutionId || '',
     name: '',
-    type: 'checking' as const,
+    type: '', // Will be set to the first available type from the backend or left empty
     accountNumber: '',
     description: '',
   }),

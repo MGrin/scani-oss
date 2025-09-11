@@ -51,9 +51,7 @@ export function Analytics() {
   const { data: transactions, isLoading: transactionsLoading } =
     trpc.transactions.getAll.useQuery();
   const { data: tokens } = trpc.tokens.getAll.useQuery();
-  const { data: userPrefs } = trpc.users.getById.useQuery({
-    id: 'test-user-1', // Replace with actual user ID from auth context
-  });
+  const { data: userPrefs } = trpc.users.getCurrent.useQuery();
 
   // Create lookup maps
   const tokensMap = tokens
@@ -72,14 +70,16 @@ export function Analytics() {
   const assetAllocation = useMemo((): AssetAllocation[] => {
     if (!holdings || !tokens) return [];
 
-    const typeColors = {
-      fiat: '#10B981', // green-500
-      crypto: '#F59E0B', // amber-500
-      stock: '#3B82F6', // blue-500
-      etf: '#8B5CF6', // violet-500
-      bond: '#F97316', // orange-500
-      commodity: '#EF4444', // red-500
-      other: '#6B7280', // gray-500
+    // Generate colors dynamically based on token type string (similar to institution types)
+    const generateTypeColor = (type: string): string => {
+      let hash = 0;
+      for (let i = 0; i < type.length; i++) {
+        hash = type.charCodeAt(i) + ((hash << 5) - hash);
+      }
+
+      // Generate HSL color with good saturation and lightness for visibility
+      const hue = Math.abs(hash) % 360;
+      return `hsl(${hue}, 70%, 50%)`;
     };
 
     const allocationMap = new Map<string, { value: number; count: number; name: string }>();
@@ -112,7 +112,7 @@ export function Analytics() {
         value: data.value,
         percentage: totalValue > 0 ? (data.value / totalValue) * 100 : 0,
         count: data.count,
-        color: typeColors[type as keyof typeof typeColors] || typeColors.other,
+        color: generateTypeColor(type),
       }))
       .sort((a, b) => b.value - a.value);
   }, [holdings, tokens, tokensMap, totalNetWorth]);
@@ -198,7 +198,7 @@ export function Analytics() {
 
   if (accountsLoading || holdingsLoading || transactionsLoading || !tokens) {
     return (
-      <div className="space-y-6">
+      <div className="space-y-4">
         <PageHeader
           title="Analytics"
           subtitle="Insights into your financial portfolio"
@@ -225,14 +225,14 @@ export function Analytics() {
 
   if (!hasData) {
     return (
-      <div className="space-y-6">
+      <div className="space-y-4">
         <PageHeader title="Analytics" subtitle="Insights into your financial portfolio" />
 
-        <Card className="p-12">
+        <Card className="p-8">
           <div className="text-center">
             <BarChart3 className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
             <h3 className="text-lg font-semibold mb-2">No Data Available</h3>
-            <p className="text-muted-foreground mb-6">
+            <p className="text-muted-foreground mb-4">
               You need to add accounts, holdings, and transactions before you can view analytics.
             </p>
             <div className="flex justify-center space-x-3">
@@ -267,7 +267,7 @@ export function Analytics() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <PageHeader
         title="Analytics"
         subtitle="Insights into your financial portfolio"
@@ -286,7 +286,7 @@ export function Analytics() {
             <Wallet className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">
+            <div className="text-xl font-bold">
               {FinancialMath.formatCurrency(totalNetWorth, {
                 currency: userPrefs?.baseCurrency,
               })}
@@ -308,7 +308,7 @@ export function Analytics() {
               </CardHeader>
               <CardContent>
                 <div
-                  className={`text-2xl font-bold ${
+                  className={`text-xl font-bold ${
                     performanceMetrics.totalGainLoss >= 0 ? 'text-green-600' : 'text-red-600'
                   }`}
                 >

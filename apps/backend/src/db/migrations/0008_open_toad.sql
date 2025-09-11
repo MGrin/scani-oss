@@ -1,0 +1,1 @@
+ALTER TABLE "holdings" DROP CONSTRAINT "holdings_user_id_account_id_token_id_unique";

@@ -1,21 +1,17 @@
-import { type Account, FinancialMath } from '@scani/shared';
+import { type Account, FinancialMath } from "@scani/shared";
 import {
   ChevronDown,
   ChevronUp,
-  CreditCard,
-  Edit2,
   MoreHorizontal,
-  PiggyBank,
   Plus,
   Search,
   Trash2,
-  TrendingUp,
   Wallet,
-} from 'lucide-react';
-import { useState } from 'react';
-import { AccountForm } from '@/components/AccountForm';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+} from "lucide-react";
+import { useState } from "react";
+import { useNavigate } from "react-router-dom";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Dialog,
   DialogContent,
@@ -23,43 +19,35 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from '@/components/ui/dialog';
+} from "@/components/ui/dialog";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
-import { Input } from '@/components/ui/input';
-import { PageHeader } from '@/components/ui/page-header';
-import { useToast } from '@/hooks/use-toast';
-import type { ApiAccount, ApiHolding, ApiInstitution, ApiToken } from '@/lib/api-types';
-import { BUTTON_TEXT } from '@/lib/button-constants';
-import { trpc } from '@/lib/trpc';
-
-// Default icon mapping - can be expanded based on account type codes
-const getAccountTypeIcon = (typeCode: string) => {
-  const iconMap: Record<string, React.ComponentType<{ className?: string }>> = {
-    checking: Wallet,
-    savings: PiggyBank,
-    credit: CreditCard,
-    investment: TrendingUp,
-    crypto_wallet: Wallet,
-    crypto: Wallet,
-    brokerage: TrendingUp,
-    retirement: TrendingUp,
-  };
-  return iconMap[typeCode] || TrendingUp; // Default to TrendingUp for unknown types
-};
+} from "@/components/ui/dropdown-menu";
+import { Input } from "@/components/ui/input";
+import { PageHeader } from "@/components/ui/page-header";
+import { useToast } from "@/hooks/use-toast";
+import type {
+  ApiAccount,
+  ApiHolding,
+  ApiInstitution,
+  ApiToken,
+} from "@/lib/api-types";
+import { BUTTON_TEXT } from "@/lib/button-constants";
+import { getAccountTypeIcon } from "@/lib/icons";
+import { trpc } from "@/lib/trpc";
 
 export function Accounts() {
+  const navigate = useNavigate();
   const { toast } = useToast();
-  const [searchTerm, setSearchTerm] = useState('');
-  const [accountToEdit, setAccountToEdit] = useState<Account | null>(null);
+  const [searchTerm, setSearchTerm] = useState("");
   const [accountToDelete, setAccountToDelete] = useState<Account | null>(null);
-  const [isAccountFormOpen, setIsAccountFormOpen] = useState(false);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
-  const [expandedAccounts, setExpandedAccounts] = useState<Set<string>>(new Set());
+  const [expandedAccounts, setExpandedAccounts] = useState<Set<string>>(
+    new Set()
+  );
 
   const { data: accounts, isLoading } = trpc.accounts.getAll.useQuery();
   const { data: holdings } = trpc.holdings.getAll.useQuery();
@@ -72,27 +60,32 @@ export function Accounts() {
   const deleteAccount = trpc.accounts.delete.useMutation({
     onSuccess: (result) => {
       const { cascadeInfo } = result;
-      let description = 'The account has been successfully deleted.';
+      let description = "The account has been successfully deleted.";
 
-      if (cascadeInfo && (cascadeInfo.holdingsDeleted > 0 || cascadeInfo.transactionsDeleted > 0)) {
+      if (
+        cascadeInfo &&
+        (cascadeInfo.holdingsDeleted > 0 || cascadeInfo.transactionsDeleted > 0)
+      ) {
         const parts = [];
         if (cascadeInfo.holdingsDeleted > 0) {
           parts.push(
-            `${cascadeInfo.holdingsDeleted} holding${cascadeInfo.holdingsDeleted !== 1 ? 's' : ''}`
+            `${cascadeInfo.holdingsDeleted} holding${
+              cascadeInfo.holdingsDeleted !== 1 ? "s" : ""
+            }`
           );
         }
         if (cascadeInfo.transactionsDeleted > 0) {
           parts.push(
             `${cascadeInfo.transactionsDeleted} transaction${
-              cascadeInfo.transactionsDeleted !== 1 ? 's' : ''
+              cascadeInfo.transactionsDeleted !== 1 ? "s" : ""
             }`
           );
         }
-        description += ` Also deleted: ${parts.join(' and ')}.`;
+        description += ` Also deleted: ${parts.join(" and ")}.`;
       }
 
       toast({
-        title: 'Account deleted',
+        title: "Account deleted",
         description,
       });
       utils.accounts.getAll.invalidate();
@@ -102,16 +95,18 @@ export function Accounts() {
     },
     onError: (error) => {
       toast({
-        title: 'Error deleting account',
+        title: "Error deleting account",
         description: error.message,
-        variant: 'destructive',
+        variant: "destructive",
       });
     },
   });
 
   // Create maps for quick lookups
   const institutionsMap = institutions
-    ? Object.fromEntries(institutions.map((inst: ApiInstitution) => [inst.id, inst]))
+    ? Object.fromEntries(
+        institutions.map((inst: ApiInstitution) => [inst.id, inst])
+      )
     : {};
   const tokensMap = tokens
     ? Object.fromEntries(tokens.map((token: ApiToken) => [token.id, token]))
@@ -132,16 +127,6 @@ export function Accounts() {
     }) || [];
 
   // Action handlers
-  const handleAddAccount = () => {
-    setAccountToEdit(null);
-    setIsAccountFormOpen(true);
-  };
-
-  const handleEditAccount = (account: Account) => {
-    setAccountToEdit(account);
-    setIsAccountFormOpen(true);
-  };
-
   const handleDeleteAccount = (account: Account) => {
     setAccountToDelete(account);
     setIsDeleteDialogOpen(true);
@@ -165,7 +150,9 @@ export function Accounts() {
 
   const getAccountHoldings = (accountId: string) => {
     if (!holdings) return [];
-    return holdings.filter((holding: ApiHolding) => holding.accountId === accountId);
+    return holdings.filter(
+      (holding: ApiHolding) => holding.accountId === accountId
+    );
   };
 
   // Calculate account balances from holdings using precise decimal math
@@ -175,14 +162,20 @@ export function Accounts() {
       (holding: ApiHolding) => holding.accountId === accountId
     );
     return FinancialMath.toNumber(
-      FinancialMath.sum(accountHoldings.map((holding: ApiHolding) => holding.balance))
+      FinancialMath.sum(
+        accountHoldings.map((holding: ApiHolding) => holding.balance)
+      )
     );
   };
 
   if (isLoading || !holdings || !institutions || !tokens) {
     return (
       <div className="space-y-6">
-        <PageHeader title="Accounts" subtitle="Manage your financial accounts" loading={true} />
+        <PageHeader
+          title="Accounts"
+          subtitle="Manage your financial accounts"
+          loading={true}
+        />
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
           {[1, 2, 3].map((i) => (
             <Card key={i}>
@@ -203,7 +196,9 @@ export function Accounts() {
   const totalBalance = filteredAccounts
     ? FinancialMath.toNumber(
         FinancialMath.sum(
-          filteredAccounts.map((account: ApiAccount) => getAccountBalance(account.id))
+          filteredAccounts.map((account: ApiAccount) =>
+            getAccountBalance(account.id)
+          )
         )
       )
     : 0;
@@ -211,11 +206,11 @@ export function Accounts() {
   return (
     <div className="space-y-4">
       <PageHeader
-        title="Accounts"
-        subtitle="Manage your financial accounts"
+        title="Your Accounts"
+        subtitle="Overview of your financial accounts with holdings"
         primaryAction={{
-          label: BUTTON_TEXT.CREATE_ACCOUNT,
-          onClick: handleAddAccount,
+          label: "Add Holding",
+          onClick: () => navigate("/quick-add-holding"),
           icon: <Plus className="h-4 w-4 mr-1" />,
         }}
       />
@@ -235,7 +230,8 @@ export function Accounts() {
             </div>
             {searchTerm && (
               <p className="text-xs text-muted-foreground mt-2">
-                {filteredAccounts.length} of {accounts.length} accounts match your search
+                {filteredAccounts.length} of {accounts.length} accounts match
+                your search
               </p>
             )}
           </CardContent>
@@ -246,18 +242,22 @@ export function Accounts() {
       <Card>
         <CardHeader className="pb-3">
           <CardTitle className="text-base">
-            {searchTerm ? `Search Results (${filteredAccounts.length})` : 'Account Summary'}
+            {searchTerm
+              ? `Search Results (${filteredAccounts.length})`
+              : "Account Summary"}
           </CardTitle>
         </CardHeader>
         <CardContent className="pt-0">
           <div className="grid gap-3 md:grid-cols-2">
             <div>
               <p className="text-xs text-muted-foreground">Total Balance</p>
-              <p className="text-lg font-bold">{FinancialMath.formatCurrency(totalBalance)}</p>
+              <p className="text-lg font-bold">
+                {FinancialMath.formatCurrency(totalBalance)}
+              </p>
             </div>
             <div>
               <p className="text-xs text-muted-foreground">
-                {searchTerm ? 'Matching Accounts' : 'Total Accounts'}
+                {searchTerm ? "Matching Accounts" : "Total Accounts"}
               </p>
               <p className="text-lg font-bold">
                 {searchTerm ? filteredAccounts.length : accounts?.length || 0}
@@ -271,39 +271,53 @@ export function Accounts() {
       {!accounts || accounts.length === 0 ? (
         <Card>
           <CardContent className="p-12 text-center">
-            <div className="text-muted-foreground mb-4">No accounts found</div>
-            <Button onClick={handleAddAccount}>
+            <Wallet className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
+            <h3 className="text-lg font-semibold mb-2">No accounts yet</h3>
+            <p className="text-muted-foreground mb-6 max-w-md mx-auto">
+              You haven't added any holdings yet. When you create your first
+              holding, the associated account will appear here automatically.
+            </p>
+            <Button onClick={() => navigate("/quick-add-holding")}>
               <Plus className="h-4 w-4 mr-2" />
-              {BUTTON_TEXT.ADD_FIRST_ACCOUNT}
+              Create Your First Holding
             </Button>
           </CardContent>
         </Card>
       ) : filteredAccounts.length === 0 ? (
         <Card>
           <CardContent className="p-12 text-center">
-            <div className="text-muted-foreground mb-4">No accounts match your search criteria</div>
-            <Button onClick={() => setSearchTerm('')}>Clear Search</Button>
+            <div className="text-muted-foreground mb-4">
+              No accounts match your search criteria
+            </div>
+            <Button onClick={() => setSearchTerm("")}>Clear Search</Button>
           </CardContent>
         </Card>
       ) : (
         <div className="space-y-4">
           {filteredAccounts.map((account: ApiAccount) => {
-            const IconComponent = getAccountTypeIcon(account.type ?? 'other');
+            const IconComponent = getAccountTypeIcon(account.type ?? "other");
             const accountBalance = getAccountBalance(account.id);
             const institution = institutionsMap[account.institutionId];
             const accountHoldings = getAccountHoldings(account.id);
             const isExpanded = expandedAccounts.has(account.id);
 
             return (
-              <Card key={account.id} className="hover:shadow-md transition-shadow">
+              <Card
+                key={account.id}
+                className="hover:shadow-md transition-shadow"
+              >
                 <CardHeader className="pb-2">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center space-x-2">
-                      {IconComponent && <IconComponent className="h-4 w-4 text-muted-foreground" />}
+                      {IconComponent && (
+                        <IconComponent className="h-4 w-4 text-muted-foreground" />
+                      )}
                       <div>
-                        <CardTitle className="text-base">{account.name}</CardTitle>
+                        <CardTitle className="text-base">
+                          {account.name}
+                        </CardTitle>
                         <p className="text-xs text-muted-foreground">
-                          {institution?.name || 'Unknown Institution'}
+                          {institution?.name || "Unknown Institution"}
                         </p>
                       </div>
                     </div>
@@ -313,7 +327,7 @@ export function Accounts() {
                           {FinancialMath.formatCurrency(accountBalance)}
                         </p>
                         <p className="text-xs text-muted-foreground capitalize">
-                          {account.type?.replace('_', ' ') ?? 'Unknown Type'}
+                          {account.type?.replace("_", " ") ?? "Unknown Type"}
                         </p>
                       </div>
                       <DropdownMenu>
@@ -324,13 +338,9 @@ export function Accounts() {
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="end">
                           <DropdownMenuItem
-                            onClick={() => handleEditAccount(account as unknown as Account)}
-                          >
-                            <Edit2 className="h-4 w-4 mr-2" />
-                            {BUTTON_TEXT.EDIT_ACCOUNT}
-                          </DropdownMenuItem>
-                          <DropdownMenuItem
-                            onClick={() => handleDeleteAccount(account as unknown as Account)}
+                            onClick={() =>
+                              handleDeleteAccount(account as unknown as Account)
+                            }
                             className="text-destructive"
                           >
                             <Trash2 className="h-4 w-4 mr-2" />
@@ -347,7 +357,10 @@ export function Accounts() {
                       <div className="flex items-center space-x-2 text-xs text-muted-foreground">
                         <span>{accountHoldings.length} holdings</span>
                         <span>•</span>
-                        <span>Updated {new Date(account.updatedAt).toLocaleDateString()}</span>
+                        <span>
+                          Updated{" "}
+                          {new Date(account.updatedAt).toLocaleDateString()}
+                        </span>
                       </div>
                       {accountHoldings.length > 0 && (
                         <Button
@@ -360,7 +373,7 @@ export function Accounts() {
                           ) : (
                             <ChevronDown className="h-4 w-4" />
                           )}
-                          {isExpanded ? 'Hide' : 'Show'} Holdings
+                          {isExpanded ? "Hide" : "Show"} Holdings
                         </Button>
                       )}
                     </div>
@@ -374,7 +387,9 @@ export function Accounts() {
                         <div className="space-y-1.5">
                           {accountHoldings.map((holding: ApiHolding) => {
                             const token = tokensMap[holding.tokenId];
-                            const holdingValue = FinancialMath.abs(holding.balance ?? 0);
+                            const holdingValue = FinancialMath.abs(
+                              holding.balance ?? 0
+                            );
 
                             return (
                               <div
@@ -384,15 +399,15 @@ export function Accounts() {
                                 <div className="flex items-center space-x-2">
                                   <div className="w-6 h-6 rounded-full bg-primary/10 flex items-center justify-center">
                                     <span className="text-xs font-medium">
-                                      {token?.symbol || '?'}
+                                      {token?.symbol || "?"}
                                     </span>
                                   </div>
                                   <div>
                                     <p className="font-medium text-xs">
-                                      {token?.name || 'Unknown Token'}
+                                      {token?.name || "Unknown Token"}
                                     </p>
                                     <p className="text-xs text-muted-foreground capitalize">
-                                      {token?.type ?? 'N/A'}
+                                      {token?.type ?? "N/A"}
                                     </p>
                                   </div>
                                 </div>
@@ -401,8 +416,10 @@ export function Accounts() {
                                     {FinancialMath.formatCurrency(holdingValue)}
                                   </p>
                                   <p className="text-xs text-muted-foreground">
-                                    {(holding.balance ?? 0).toFixed(token?.decimals || 2)}{' '}
-                                    {token?.symbol || ''}
+                                    {(holding.balance ?? 0).toFixed(
+                                      token?.decimals || 2
+                                    )}{" "}
+                                    {token?.symbol || ""}
                                   </p>
                                 </div>
                               </div>
@@ -433,7 +450,9 @@ export function Accounts() {
                 );
                 const typeBalance = FinancialMath.toNumber(
                   FinancialMath.sum(
-                    typeAccounts.map((acc: ApiAccount) => getAccountBalance(acc.id))
+                    typeAccounts.map((acc: ApiAccount) =>
+                      getAccountBalance(acc.id)
+                    )
                   )
                 );
 
@@ -442,12 +461,16 @@ export function Accounts() {
                 const IconComponent = getAccountTypeIcon(accountType.code);
 
                 return (
-                  <div key={accountType.code} className="flex items-center space-x-2">
+                  <div
+                    key={accountType.code}
+                    className="flex items-center space-x-2"
+                  >
                     <IconComponent className="h-4 w-4 text-muted-foreground" />
                     <div>
                       <p className="font-medium text-sm">{accountType.name}</p>
                       <p className="text-xs text-muted-foreground">
-                        {typeAccounts.length} accounts • {FinancialMath.formatCurrency(typeBalance)}
+                        {typeAccounts.length} accounts •{" "}
+                        {FinancialMath.formatCurrency(typeBalance)}
                       </p>
                     </div>
                   </div>
@@ -458,22 +481,15 @@ export function Accounts() {
         </Card>
       )}
 
-      {/* Account Form Dialog */}
-      <AccountForm
-        isOpen={isAccountFormOpen}
-        onClose={() => setIsAccountFormOpen(false)}
-        account={accountToEdit || undefined}
-        mode={accountToEdit ? 'edit' : 'create'}
-      />
-
       {/* Delete Confirmation Dialog */}
       <Dialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Delete Account</DialogTitle>
             <DialogDescription>
-              Are you sure you want to delete "{accountToDelete?.name}"? This action cannot be
-              undone. All associated holdings and transactions will also be permanently deleted.
+              Are you sure you want to delete "{accountToDelete?.name}"? This
+              action cannot be undone. All associated holdings and transactions
+              will also be permanently deleted.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
@@ -489,7 +505,9 @@ export function Accounts() {
               onClick={confirmDeleteAccount}
               disabled={deleteAccount.isPending}
             >
-              {deleteAccount.isPending ? 'Deleting...' : BUTTON_TEXT.DELETE_ACCOUNT}
+              {deleteAccount.isPending
+                ? "Deleting..."
+                : BUTTON_TEXT.DELETE_ACCOUNT}
             </Button>
           </DialogFooter>
         </DialogContent>

@@ -17,10 +17,10 @@ const buttonVariants = cva(
         link: 'text-primary underline-offset-4 hover:underline',
       },
       size: {
-        default: 'h-11 px-4 py-2 min-h-[44px]', // Mobile-friendly 44px minimum
-        sm: 'h-10 rounded-md px-3 min-h-[40px]',
-        lg: 'h-12 rounded-md px-8 min-h-[48px]', // Comfortable 48px for large buttons
-        icon: 'h-11 w-11 min-h-[44px] min-w-[44px]', // 44x44 minimum for icon buttons
+        default: 'h-9 px-3 py-1.5 min-h-[36px]', // Reduced from h-11 to h-9
+        sm: 'h-8 rounded-md px-2.5 min-h-[32px]', // Reduced from h-10 to h-8
+        lg: 'h-10 rounded-md px-6 min-h-[40px]', // Reduced from h-12 to h-10
+        icon: 'h-9 w-9 min-h-[36px] min-w-[36px]', // Reduced from h-11 w-11 to h-9 w-9
       },
     },
     defaultVariants: {

@@ -4,6 +4,7 @@ import { nanoid } from 'nanoid';
 import { z } from 'zod';
 import { db } from '../db/connection';
 import * as schema from '../db/schema';
+import { getUserId } from '../middleware/auth';
 import { protectedProcedure, router } from '../trpc';
 
 export const holdingsRouter = router({
@@ -113,7 +114,8 @@ export const holdingsRouter = router({
         lastUpdated: z.date().optional(),
       })
     )
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
+      const userId = getUserId(ctx);
       const now = new Date();
 
       // Validate account existence
@@ -142,6 +144,7 @@ export const holdingsRouter = router({
       return await db.transaction(async (trx) => {
         const holdingData = {
           ...input,
+          userId,
           id: nanoid(),
           balance: input.balance || 0, // Ensure balance is always a number
           createdAt: now,
@@ -174,6 +177,7 @@ export const holdingsRouter = router({
 
           await trx.insert(schema.transactions).values({
             id: nanoid(),
+            userId,
             holdingId: holding.id,
             typeId: depositType.id, // Use typeId instead of type
             amount: holding.balance,

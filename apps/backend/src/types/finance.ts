@@ -34,7 +34,7 @@ export const TransactionSchema = z.object({
 export const AccountSchema = z.object({
   id: z.string(),
   name: z.string(),
-  type: z.enum(['checking', 'savings', 'credit', 'investment']),
+  type: z.string(),
   balance: z.number(),
   currency: z.string().default('USD'),
   createdAt: z.date(),

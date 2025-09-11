@@ -13,6 +13,7 @@ import { AuthCallback } from '@/pages/AuthCallback';
 import { Dashboard } from '@/pages/Dashboard';
 import { Holdings } from '@/pages/Holdings';
 import { Institutions } from '@/pages/Institutions';
+import { QuickAddHolding } from '@/pages/QuickAddHolding';
 import { Settings } from '@/pages/Settings';
 import { Transactions } from '@/pages/Transactions';
 
@@ -105,6 +106,16 @@ function App() {
                       <ProtectedRoute>
                         <Layout>
                           <Institutions />
+                        </Layout>
+                      </ProtectedRoute>
+                    }
+                  />
+                  <Route
+                    path="/quick-add-holding"
+                    element={
+                      <ProtectedRoute>
+                        <Layout>
+                          <QuickAddHolding />
                         </Layout>
                       </ProtectedRoute>
                     }

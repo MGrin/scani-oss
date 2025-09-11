@@ -57,24 +57,24 @@ export function PageHeader({
             <Skeleton className="h-8 w-48" />
             {subtitle && <Skeleton className="h-4 w-32" />}
           </div>
-          <Skeleton className="h-10 w-32" />
+          <Skeleton className="h-9 w-32" />
         </div>
       </div>
     );
   }
 
   return (
-    <div className={cn('space-y-2', className)}>
+    <div className={cn('space-y-2 -mt-1', className)}>
       {breadcrumb && <div className="mb-2">{breadcrumb}</div>}
-      <div className="flex items-center justify-between">
+      <div className="flex items-baseline justify-between">
         <div className="space-y-1">
-          <h1 className="text-3xl font-bold tracking-tight">{title}</h1>
+          <h1 className="text-3xl font-bold tracking-tight leading-tight">{title}</h1>
           {subtitle && <p className="text-muted-foreground text-lg">{subtitle}</p>}
         </div>
         <div className="flex items-center gap-2">
           {secondaryActions}
           {primaryAction && (
-            <Button onClick={primaryAction.onClick} disabled={primaryAction.disabled} size="sm">
+            <Button onClick={primaryAction.onClick} disabled={primaryAction.disabled} size="lg">
               {primaryAction.icon}
               {primaryAction.label}
             </Button>

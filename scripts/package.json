@@ -1,0 +1,14 @@
+{
+  "name": "scani-scripts",
+  "type": "module",
+  "version": "1.0.0",
+  "description": "Utility scripts for the Scani project",
+  "scripts": {
+    "update-institutions": "node update-institutions-metadata.js"
+  },
+  "dependencies": {},
+  "devDependencies": {},
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

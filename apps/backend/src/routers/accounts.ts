@@ -50,7 +50,7 @@ export const accountsRouter = router({
       .from(schema.accounts)
       .innerJoin(schema.institutions, eq(schema.accounts.institutionId, schema.institutions.id))
       .leftJoin(schema.accountTypes, eq(schema.accounts.typeId, schema.accountTypes.id))
-      .where(and(eq(schema.accounts.isActive, true), eq(schema.institutions.userId, userId)));
+      .where(and(eq(schema.accounts.isActive, true), eq(schema.accounts.userId, userId)));
   }),
 
   // Get accounts by institution ID
@@ -79,7 +79,7 @@ export const accountsRouter = router({
           and(
             eq(schema.accounts.institutionId, input.institutionId),
             eq(schema.accounts.isActive, true),
-            eq(schema.institutions.userId, userId)
+            eq(schema.accounts.userId, userId)
           )
         )
         .orderBy(schema.accounts.name);
@@ -153,7 +153,9 @@ export const accountsRouter = router({
           .optional(),
       })
     )
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
+      const userId = getUserId(ctx);
+
       // Check if account name already exists within this institution
       const nameExists = await checkAccountNameExists(input.name, input.institutionId);
       if (nameExists) {
@@ -177,6 +179,7 @@ export const accountsRouter = router({
 
       const now = new Date();
       const accountData = {
+        userId,
         institutionId: input.institutionId,
         name: input.name.trim(),
         typeId: accountType.id, // Use the actual typeId

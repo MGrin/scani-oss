@@ -2,6 +2,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import React, { useId, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
+import { AccountSelector, TokenSelector } from '@/components/selectors/SearchableSelectors';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -14,13 +15,6 @@ import {
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { LoadingButton, LoadingSpinner } from '@/components/ui/loading';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
 import type { ApiAccount, ApiHolding, ApiToken } from '@/lib/api-types';
 import { trpc } from '@/lib/trpc';
@@ -273,27 +267,12 @@ export function HoldingForm({ isOpen, onClose, holding, mode }: HoldingFormProps
           )}
           <div className="space-y-2">
             <Label htmlFor="account">Account *</Label>
-            <Select
+            <AccountSelector
               value={watchedAccountId}
               onValueChange={(value) => setValue('accountId', value)}
-            >
-              <SelectTrigger>
-                <SelectValue placeholder="Select an account" />
-              </SelectTrigger>
-              <SelectContent>
-                {accountsLoading ? (
-                  <div className="p-2 text-sm text-muted-foreground">Loading accounts...</div>
-                ) : accounts?.length === 0 ? (
-                  <div className="p-2 text-sm text-muted-foreground">No accounts found</div>
-                ) : (
-                  accounts?.map((account: ApiAccount) => (
-                    <SelectItem key={account.id} value={account.id}>
-                      {account.name} ({account.type})
-                    </SelectItem>
-                  ))
-                )}
-              </SelectContent>
-            </Select>
+              accounts={accounts}
+              placeholder={accountsLoading ? 'Loading accounts...' : 'Select an account'}
+            />
             {errors.accountId && (
               <p className="text-sm text-destructive">{errors.accountId.message}</p>
             )}
@@ -302,24 +281,12 @@ export function HoldingForm({ isOpen, onClose, holding, mode }: HoldingFormProps
           {/* Token Selection */}
           <div className="space-y-2">
             <Label htmlFor="token">Token *</Label>
-            <Select value={watchedTokenId} onValueChange={(value) => setValue('tokenId', value)}>
-              <SelectTrigger>
-                <SelectValue placeholder="Select a token" />
-              </SelectTrigger>
-              <SelectContent>
-                {tokensLoading ? (
-                  <div className="p-2 text-sm text-muted-foreground">Loading tokens...</div>
-                ) : tokens?.length === 0 ? (
-                  <div className="p-2 text-sm text-muted-foreground">No tokens found</div>
-                ) : (
-                  tokens?.map((token: ApiToken) => (
-                    <SelectItem key={token.id} value={token.id}>
-                      {token.name} ({token.symbol}) - {token.type}
-                    </SelectItem>
-                  ))
-                )}
-              </SelectContent>
-            </Select>
+            <TokenSelector
+              value={watchedTokenId}
+              onValueChange={(value) => setValue('tokenId', value)}
+              tokens={tokens}
+              placeholder={tokensLoading ? 'Loading tokens...' : 'Select a token'}
+            />
             {errors.tokenId && <p className="text-sm text-destructive">{errors.tokenId.message}</p>}
           </div>
 

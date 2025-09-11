@@ -10,12 +10,12 @@ export const MOBILE_BREAKPOINTS = {
   xl: 1280,
 } as const;
 
-// Minimum tap target sizes (following WCAG AA guidelines)
+// Minimum tap target sizes (following WCAG AA guidelines, adjusted smaller)
 export const TAP_TARGETS = {
   // Minimum recommended tap target size
-  MIN_SIZE: 44, // 44px x 44px minimum
-  COMFORTABLE_SIZE: 48, // 48px x 48px for better UX
-  LARGE_SIZE: 56, // 56px x 56px for primary actions
+  MIN_SIZE: 36, // Reduced from 44px to 36px
+  COMFORTABLE_SIZE: 40, // Reduced from 48px to 40px
+  LARGE_SIZE: 44, // Reduced from 56px to 44px
 } as const;
 
 // Mobile-friendly spacing values
@@ -27,7 +27,7 @@ export const MOBILE_SPACING = {
   // Vertical spacing improvements
   sectionGap: 'space-y-4 sm:space-y-6', // 16px mobile, 24px desktop
   cardGap: 'space-y-3 sm:space-y-4', // 12px mobile, 16px desktop
-  listGap: 'space-y-2 sm:space-y-3', // 8px mobile, 12px desktop
+  listGap: 'space-y-1 sm:space-y-1.5', // 4px mobile, 6px desktop (reduced from 8px/12px)
 
   // Horizontal spacing
   horizontalGap: 'space-x-2 sm:space-x-3',
@@ -46,17 +46,17 @@ export const MOBILE_SPACING = {
 export const MOBILE_CLASSES = {
   // Buttons with proper tap targets
   button: {
-    primary: 'h-12 px-6 text-base touch-manipulation', // 48px height
-    secondary: 'h-11 px-4 text-sm touch-manipulation', // 44px height
-    icon: 'h-12 w-12 touch-manipulation', // 48x48 for icon buttons
-    iconSmall: 'h-11 w-11 touch-manipulation', // 44x44 for smaller icons
+    primary: 'h-10 px-5 text-base touch-manipulation', // Reduced from 48px to 40px
+    secondary: 'h-9 px-3 text-sm touch-manipulation', // Reduced from 44px to 36px
+    icon: 'h-10 w-10 touch-manipulation', // Reduced from 48x48 to 40x40
+    iconSmall: 'h-9 w-9 touch-manipulation', // Reduced from 44x44 to 36x36
   },
 
   // Form inputs with better touch experience
   input: {
-    text: 'h-12 px-4 text-base', // 48px height for easy tapping
-    select: 'h-12 px-4 text-base',
-    textarea: 'min-h-[120px] p-4 text-base',
+    text: 'h-10 px-4 text-base', // Reduced from 48px to 40px
+    select: 'h-10 px-4 text-base',
+    textarea: 'min-h-[100px] p-4 text-base', // Reduced from 120px to 100px
   },
 
   // Cards and containers
@@ -68,8 +68,8 @@ export const MOBILE_CLASSES = {
 
   // Navigation elements
   nav: {
-    item: 'h-12 px-4 flex items-center touch-manipulation',
-    button: 'h-12 w-12 flex items-center justify-center touch-manipulation',
+    item: 'h-10 px-4 flex items-center touch-manipulation', // Reduced from h-12 to h-10
+    button: 'h-10 w-10 flex items-center justify-center touch-manipulation', // Reduced from h-12 w-12
   },
 
   // Lists with better spacing

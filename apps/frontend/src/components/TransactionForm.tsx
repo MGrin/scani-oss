@@ -150,9 +150,7 @@ export function TransactionForm({
     isLoading: transactionTypesLoading,
     error: transactionTypesError,
   } = trpc.transactionTypes.getAll.useQuery();
-  const { data: userPrefs } = trpc.users.getById.useQuery({
-    id: 'test-user-1', // Replace with actual user ID from auth context
-  });
+  const { data: userPrefs } = trpc.users.getCurrent.useQuery();
 
   const utils = trpc.useUtils();
 
@@ -463,7 +461,7 @@ export function TransactionForm({
           <DialogTitle className="flex items-center space-x-2">
             <span>{mode === 'create' ? 'Add New Transaction' : 'Edit Transaction'}</span>
             {selectedTransactionType && (
-              <span className="text-2xl">{selectedTransactionType.icon}</span>
+              <span className="text-xl">{selectedTransactionType.icon}</span>
             )}
           </DialogTitle>
           <DialogDescription>
@@ -473,7 +471,7 @@ export function TransactionForm({
           </DialogDescription>
         </DialogHeader>
 
-        <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
+        <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
           {/* Transaction Type Selection */}
           <div className="space-y-2">
             <Label htmlFor={typeId}>

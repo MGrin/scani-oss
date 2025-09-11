@@ -4,6 +4,7 @@ import { nanoid } from 'nanoid';
 import { z } from 'zod';
 import { db } from '../db/connection';
 import * as schema from '../db/schema';
+import { getUserId } from '../middleware/auth';
 import { protectedProcedure, router } from '../trpc';
 
 // Type assertion for router operations (development/test environment uses SQLite)
@@ -158,7 +159,9 @@ export const transactionsRouter = router({
         timestamp: z.date(),
       })
     )
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
+      const userId = getUserId(ctx);
+
       // Look up the transaction type by code to get the typeId
       const [transactionType] = await routerDb
         .select()
@@ -178,6 +181,7 @@ export const transactionsRouter = router({
       const now = new Date();
       const transactionData = {
         id: nanoid(),
+        userId,
         holdingId: input.holdingId,
         typeId: transactionType.id, // Use the actual typeId
         amount: input.amount || 0,

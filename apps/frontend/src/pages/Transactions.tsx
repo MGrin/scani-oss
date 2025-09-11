@@ -1,5 +1,5 @@
 import { FinancialMath, type Transaction } from '@scani/shared';
-import { Edit2, Filter, MoreHorizontal, Plus, Search, Trash2 } from 'lucide-react';
+import { CreditCard, Edit2, Filter, MoreHorizontal, Plus, Search, Trash2 } from 'lucide-react';
 import { useState } from 'react';
 import { TransactionForm } from '@/components/TransactionForm';
 import { Button } from '@/components/ui/button';
@@ -34,9 +34,7 @@ export function Transactions() {
   const { data: accounts } = trpc.accounts.getAll.useQuery();
   const { data: holdings } = trpc.holdings.getAll.useQuery();
   const { data: tokens } = trpc.tokens.getAll.useQuery();
-  const { data: userPrefs } = trpc.users.getById.useQuery({
-    id: 'test-user-1', // Replace with actual user ID from auth context
-  });
+  const { data: userPrefs } = trpc.users.getCurrent.useQuery();
 
   const utils = trpc.useUtils();
 
@@ -250,6 +248,7 @@ export function Transactions() {
         <CardContent>
           {!transactions || transactions.length === 0 ? (
             <div className="text-center py-12">
+              <CreditCard className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
               <div className="text-muted-foreground mb-4">No transactions found</div>
               <Button onClick={handleAddTransaction}>
                 <Plus className="h-4 w-4 mr-2" />

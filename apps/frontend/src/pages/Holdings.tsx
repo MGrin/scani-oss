@@ -1,18 +1,7 @@
 import { FinancialMath } from '@scani/shared';
-import {
-  Building,
-  Coins,
-  CreditCard,
-  DollarSign,
-  Edit2,
-  Eye,
-  MoreHorizontal,
-  Plus,
-  Search,
-  Trash2,
-  TrendingUp,
-} from 'lucide-react';
+import { Edit2, Eye, MoreHorizontal, PieChart, Plus, Search, Trash2 } from 'lucide-react';
 import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { HoldingForm } from '@/components/HoldingForm';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -42,6 +31,7 @@ import {
 import { useToast } from '@/hooks/use-toast';
 import type { ApiAccount, ApiHolding, ApiInstitution, ApiToken } from '@/lib/api-types';
 import { BUTTON_TEXT } from '@/lib/button-constants';
+import { getTokenTypeIcon } from '@/lib/icons';
 import { trpc } from '@/lib/trpc';
 
 type SortBy = 'balance' | 'token' | 'account' | 'type';
@@ -54,6 +44,7 @@ interface ProcessedHolding extends ApiHolding {
 }
 
 export function Holdings() {
+  const navigate = useNavigate();
   const { data: holdings, isLoading: holdingsLoading } = trpc.holdings.getAll.useQuery();
   const { data: accounts } = trpc.accounts.getAll.useQuery();
   const { data: tokens } = trpc.tokens.getAll.useQuery();
@@ -183,13 +174,13 @@ export function Holdings() {
   };
 
   const handleAddHolding = () => {
-    setHoldingToEdit(undefined);
-    setIsHoldingFormOpen(true);
+    navigate('/quick-add-holding');
   };
 
   const handleEditHolding = (holding: ProcessedHolding) => {
     setHoldingToEdit({
       id: holding.id,
+      userId: holding.userId,
       accountId: holding.accountId,
       tokenId: holding.tokenId,
       balance: holding.balance,
@@ -213,21 +204,6 @@ export function Holdings() {
   const confirmDeleteHolding = () => {
     if (holdingToDelete) {
       deleteHolding.mutate({ id: holdingToDelete.id });
-    }
-  };
-
-  const getTokenTypeIcon = (type: string) => {
-    switch (type) {
-      case 'fiat':
-        return DollarSign;
-      case 'crypto':
-        return Coins;
-      case 'stock':
-        return TrendingUp;
-      case 'etf':
-        return Building;
-      default:
-        return CreditCard;
     }
   };
 
@@ -396,7 +372,7 @@ export function Holdings() {
       {!processedHoldings || processedHoldings.length === 0 ? (
         <Card>
           <CardContent className="p-12 text-center">
-            <Coins className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
+            <PieChart className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
             <div className="text-muted-foreground mb-4">No holdings found</div>
             <Button onClick={handleAddHolding}>
               <Plus className="h-4 w-4 mr-2" />

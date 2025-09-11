@@ -1,50 +1,47 @@
-import { FinancialMath, type Holding } from '@scani/shared';
+import { FinancialMath, type Holding } from "@scani/shared";
 import {
   BarChart3,
-  Building,
-  Coins,
-  CreditCard,
   DollarSign,
   Plus,
   TrendingDown,
   TrendingUp,
   Wallet,
-} from 'lucide-react';
-import { useCallback, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { AccountForm } from '@/components/AccountForm';
-import { TransactionForm } from '@/components/TransactionForm';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { PageHeader } from '@/components/ui/page-header';
-import type { WebSocketMessage } from '@/hooks/useWebSocket';
-import { useScaniWebSocket } from '@/hooks/useWebSocket';
-import type { ApiHolding, ApiToken } from '@/lib/api-types';
-import { trpc } from '@/lib/trpc';
+  Zap,
+} from "lucide-react";
+import { useCallback, useState } from "react";
+import { useNavigate } from "react-router-dom";
+import { TransactionForm } from "@/components/TransactionForm";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { PageHeader } from "@/components/ui/page-header";
+import type { WebSocketMessage } from "@/hooks/useWebSocket";
+import { useScaniWebSocket } from "@/hooks/useWebSocket";
+import type { ApiHolding, ApiToken } from "@/lib/api-types";
+import { getTokenTypeIcon } from "@/lib/icons";
+import { trpc } from "@/lib/trpc";
 
 export function Dashboard() {
   const navigate = useNavigate();
 
   // State for Quick Actions modals
   const [isTransactionFormOpen, setIsTransactionFormOpen] = useState(false);
-  const [isAccountFormOpen, setIsAccountFormOpen] = useState(false);
 
-  const { data: accounts, isLoading: accountsLoading } = trpc.accounts.getAll.useQuery();
-  const { data: holdings, isLoading: holdingsLoading } = trpc.holdings.getAll.useQuery();
+  const { data: accounts, isLoading: accountsLoading } =
+    trpc.accounts.getAll.useQuery();
+  const { data: holdings, isLoading: holdingsLoading } =
+    trpc.holdings.getAll.useQuery();
   const { data: transactions, isLoading: transactionsLoading } =
     trpc.transactions.getAll.useQuery();
   const { data: tokens } = trpc.tokens.getAll.useQuery();
-  const { data: userPrefs } = trpc.users.getById.useQuery({
-    id: 'test-user-1', // Replace with actual user ID from auth context
-  });
+  const { data: userPrefs } = trpc.users.getCurrent.useQuery();
 
   const handleWebSocketMessage = useCallback((message: WebSocketMessage) => {
-    console.log('Received WebSocket message:', message);
+    console.log("Received WebSocket message:", message);
     // Handle real-time updates here if needed
   }, []);
 
   const { isConnected, connectionStatus } = useScaniWebSocket({
-    url: 'ws://localhost:3002',
+    url: "ws://localhost:3002",
     onMessage: handleWebSocketMessage,
   });
 
@@ -57,7 +54,9 @@ export function Dashboard() {
   const totalHoldingsValue = holdings
     ? FinancialMath.toNumber(
         FinancialMath.sum(
-          holdings.map((holding: ApiHolding) => FinancialMath.abs(holding.balance ?? 0))
+          holdings.map((holding: ApiHolding) =>
+            FinancialMath.abs(holding.balance ?? 0)
+          )
         )
       )
     : 0;
@@ -70,27 +69,33 @@ export function Dashboard() {
   }
 
   const holdingsByTokenType =
-    holdings?.reduce((acc: Record<string, TokenTypeData>, holding: ApiHolding) => {
-      const token = tokensMap[holding.tokenId];
-      if (!token) return acc;
+    holdings?.reduce(
+      (acc: Record<string, TokenTypeData>, holding: ApiHolding) => {
+        const token = tokensMap[holding.tokenId];
+        if (!token) return acc;
 
-      const tokenType = token.type ?? 'unknown';
-      if (!acc[tokenType]) {
-        acc[tokenType] = {
-          count: 0,
-          totalValue: 0,
-          holdings: [],
-        };
-      }
+        const tokenType = token.type ?? "unknown";
+        if (!acc[tokenType]) {
+          acc[tokenType] = {
+            count: 0,
+            totalValue: 0,
+            holdings: [],
+          };
+        }
 
-      acc[tokenType].count += 1;
-      acc[tokenType].totalValue = FinancialMath.toNumber(
-        FinancialMath.add(acc[tokenType].totalValue, FinancialMath.abs(holding.balance ?? 0))
-      );
-      acc[tokenType].holdings.push(holding as unknown as Holding);
+        acc[tokenType].count += 1;
+        acc[tokenType].totalValue = FinancialMath.toNumber(
+          FinancialMath.add(
+            acc[tokenType].totalValue,
+            FinancialMath.abs(holding.balance ?? 0)
+          )
+        );
+        acc[tokenType].holdings.push(holding as unknown as Holding);
 
-      return acc;
-    }, {}) || {};
+        return acc;
+      },
+      {}
+    ) || {};
 
   // Get top 5 holdings by value
   const topHoldings = holdings
@@ -113,7 +118,8 @@ export function Dashboard() {
           transactions
             .filter(
               (t) =>
-                t.type === 'deposit' && new Date(t.timestamp).getMonth() === new Date().getMonth()
+                t.type === "deposit" &&
+                new Date(t.timestamp).getMonth() === new Date().getMonth()
             )
             .map((t) => FinancialMath.abs(t.amount))
         )
@@ -126,7 +132,7 @@ export function Dashboard() {
           transactions
             .filter(
               (t) =>
-                t.type === 'withdrawal' &&
+                t.type === "withdrawal" &&
                 new Date(t.timestamp).getMonth() === new Date().getMonth()
             )
             .map((t) => FinancialMath.abs(t.amount))
@@ -135,13 +141,15 @@ export function Dashboard() {
     : 0;
   if (transactionsLoading || accountsLoading || holdingsLoading || !tokens) {
     return (
-      <div className="space-y-6">
+      <div className="space-y-4">
         <PageHeader
           title="Dashboard"
           subtitle="Your financial overview"
           loading={true}
           secondaryActions={
-            <div className="text-sm text-muted-foreground">WebSocket: {connectionStatus}</div>
+            <div className="text-sm text-muted-foreground">
+              WebSocket: {connectionStatus}
+            </div>
           }
         />
 
@@ -149,7 +157,9 @@ export function Dashboard() {
           {[1, 2, 3, 4].map((i) => (
             <Card key={i}>
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">Loading...</CardTitle>
+                <CardTitle className="text-sm font-medium">
+                  Loading...
+                </CardTitle>
               </CardHeader>
               <CardContent>
                 <div className="h-6 bg-muted animate-pulse rounded"></div>
@@ -162,17 +172,19 @@ export function Dashboard() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <PageHeader
         title="Dashboard"
         subtitle="Your financial overview"
         secondaryActions={
-          <div className="flex items-center space-x-2">
+          <div className="flex items-center space-x-1.5">
             <div
-              className={`h-2 w-2 rounded-full ${isConnected ? 'bg-green-500' : 'bg-red-500'}`}
+              className={`h-1.5 w-1.5 rounded-full ${
+                isConnected ? "bg-green-500" : "bg-red-500"
+              }`}
             />
             <span className="text-sm text-muted-foreground">
-              {isConnected ? 'Live' : 'Offline'}
+              {isConnected ? "Live" : "Offline"}
             </span>
           </div>
         }
@@ -186,31 +198,42 @@ export function Dashboard() {
             <Wallet className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">${totalHoldingsValue.toFixed(2)}</div>
+            <div className="text-xl font-bold">
+              ${totalHoldingsValue.toFixed(2)}
+            </div>
             <p className="text-xs text-muted-foreground">
-              Across {holdings?.length || 0} holdings in {accounts?.length || 0} accounts
+              Across {holdings?.length || 0} holdings in {accounts?.length || 0}{" "}
+              accounts
             </p>
           </CardContent>
         </Card>
 
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Monthly Deposits</CardTitle>
+            <CardTitle className="text-sm font-medium">
+              Monthly Deposits
+            </CardTitle>
             <TrendingUp className="h-4 w-4 text-green-600" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-green-600">+${monthlyDeposits.toFixed(2)}</div>
+            <div className="text-xl font-bold text-green-600">
+              +${monthlyDeposits.toFixed(2)}
+            </div>
             <p className="text-xs text-muted-foreground">This month</p>
           </CardContent>
         </Card>
 
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Monthly Withdrawals</CardTitle>
+            <CardTitle className="text-sm font-medium">
+              Monthly Withdrawals
+            </CardTitle>
             <TrendingDown className="h-4 w-4 text-red-600" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-red-600">-${monthlyWithdrawals.toFixed(2)}</div>
+            <div className="text-xl font-bold text-red-600">
+              -${monthlyWithdrawals.toFixed(2)}
+            </div>
             <p className="text-xs text-muted-foreground">This month</p>
           </CardContent>
         </Card>
@@ -222,11 +245,13 @@ export function Dashboard() {
           </CardHeader>
           <CardContent>
             <div
-              className={`text-2xl font-bold ${
-                FinancialMath.greaterThan(monthlyDeposits, monthlyWithdrawals) ||
-                FinancialMath.equals(monthlyDeposits, monthlyWithdrawals)
-                  ? 'text-green-600'
-                  : 'text-red-600'
+              className={`text-xl font-bold ${
+                FinancialMath.greaterThan(
+                  monthlyDeposits,
+                  monthlyWithdrawals
+                ) || FinancialMath.equals(monthlyDeposits, monthlyWithdrawals)
+                  ? "text-green-600"
+                  : "text-red-600"
               }`}
             >
               {FinancialMath.formatCurrency(
@@ -246,26 +271,34 @@ export function Dashboard() {
             <span>Quick Actions</span>
           </CardTitle>
         </CardHeader>
-        <CardContent className="grid gap-4 md:grid-cols-3">
+        <CardContent className="grid gap-4 md:grid-cols-4">
           <Button
+            onClick={() => navigate("/quick-add-holding")}
+            className="flex items-center justify-center space-x-2 h-10"
+          >
+            <Zap className="h-5 w-5" />
+            <span>Add Holding</span>
+          </Button>
+          <Button
+            variant="outline"
             onClick={() => setIsTransactionFormOpen(true)}
-            className="flex items-center justify-center space-x-2 h-12"
+            className="flex items-center justify-center space-x-2 h-10"
           >
             <DollarSign className="h-5 w-5" />
             <span>Add Transaction</span>
           </Button>
           <Button
             variant="outline"
-            onClick={() => setIsAccountFormOpen(true)}
-            className="flex items-center justify-center space-x-2 h-12"
+            onClick={() => navigate("/quick-add-holding")}
+            className="flex items-center justify-center space-x-2 h-10"
           >
             <Wallet className="h-5 w-5" />
-            <span>Add Account</span>
+            <span>Add Holding</span>
           </Button>
           <Button
             variant="outline"
-            onClick={() => navigate('/analytics')}
-            className="flex items-center justify-center space-x-2 h-12"
+            onClick={() => navigate("/analytics")}
+            className="flex items-center justify-center space-x-2 h-10"
           >
             <BarChart3 className="h-5 w-5" />
             <span>View Analytics</span>
@@ -274,7 +307,7 @@ export function Dashboard() {
       </Card>
 
       {/* Holdings Overview */}
-      <div className="grid gap-6 md:grid-cols-2">
+      <div className="grid gap-4 md:grid-cols-2">
         {/* Holdings by Token Type */}
         <Card>
           <CardHeader>
@@ -282,31 +315,20 @@ export function Dashboard() {
           </CardHeader>
           <CardContent>
             {Object.keys(holdingsByTokenType).length === 0 ? (
-              <div className="text-center py-6 text-muted-foreground">No holdings found</div>
+              <div className="text-center py-6 text-muted-foreground">
+                No holdings found
+              </div>
             ) : (
               <div className="space-y-3">
                 {Object.entries(holdingsByTokenType)
                   .sort(
                     ([, a], [, b]) =>
-                      (b as TokenTypeData).totalValue - (a as TokenTypeData).totalValue
+                      (b as TokenTypeData).totalValue -
+                      (a as TokenTypeData).totalValue
                   )
                   .map(([tokenType, data]) => {
                     const tokenData = data as TokenTypeData;
-                    const getTypeIcon = (type: string) => {
-                      switch (type) {
-                        case 'fiat':
-                          return DollarSign;
-                        case 'crypto':
-                          return Coins;
-                        case 'stock':
-                          return TrendingUp;
-                        case 'etf':
-                          return Building;
-                        default:
-                          return CreditCard;
-                      }
-                    };
-                    const IconComponent = getTypeIcon(tokenType);
+                    const IconComponent = getTokenTypeIcon(tokenType);
 
                     return (
                       <div
@@ -318,7 +340,9 @@ export function Dashboard() {
                             <IconComponent className="h-5 w-5" />
                           </div>
                           <div>
-                            <p className="font-medium capitalize">{tokenType}</p>
+                            <p className="font-medium capitalize">
+                              {tokenType}
+                            </p>
                             <p className="text-sm text-muted-foreground">
                               {tokenData.count} holdings
                             </p>
@@ -326,12 +350,19 @@ export function Dashboard() {
                         </div>
                         <div className="text-right">
                           <p className="font-semibold">
-                            {FinancialMath.formatCurrency(tokenData.totalValue, {
-                              currency: userPrefs?.baseCurrency,
-                            })}
+                            {FinancialMath.formatCurrency(
+                              tokenData.totalValue,
+                              {
+                                currency: userPrefs?.baseCurrency,
+                              }
+                            )}
                           </p>
                           <p className="text-sm text-muted-foreground">
-                            {((tokenData.totalValue / totalHoldingsValue) * 100).toFixed(1)}%
+                            {(
+                              (tokenData.totalValue / totalHoldingsValue) *
+                              100
+                            ).toFixed(1)}
+                            %
                           </p>
                         </div>
                       </div>
@@ -349,7 +380,9 @@ export function Dashboard() {
           </CardHeader>
           <CardContent>
             {topHoldings.length === 0 ? (
-              <div className="text-center py-6 text-muted-foreground">No holdings found</div>
+              <div className="text-center py-6 text-muted-foreground">
+                No holdings found
+              </div>
             ) : (
               <div className="space-y-3">
                 {topHoldings.map((holding, index: number) => (
@@ -359,14 +392,18 @@ export function Dashboard() {
                   >
                     <div className="flex items-center space-x-3">
                       <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center">
-                        <span className="text-xs font-medium">{holding.token?.symbol || '?'}</span>
+                        <span className="text-xs font-medium">
+                          {holding.token?.symbol || "?"}
+                        </span>
                       </div>
                       <div>
                         <p className="font-medium text-sm">
-                          {holding.token?.name || 'Unknown Token'}
+                          {holding.token?.name || "Unknown Token"}
                         </p>
                         <div className="flex items-center space-x-1 text-xs text-muted-foreground">
-                          <span className="capitalize">{holding.token?.type}</span>
+                          <span className="capitalize">
+                            {holding.token?.type}
+                          </span>
                           <span>•</span>
                           <span>#{index + 1}</span>
                         </div>
@@ -379,7 +416,7 @@ export function Dashboard() {
                         })}
                       </p>
                       <p className="text-xs text-muted-foreground">
-                        {holding.balance.toFixed(holding.token?.decimals || 2)}{' '}
+                        {holding.balance.toFixed(holding.token?.decimals || 2)}{" "}
                         {holding.token?.symbol}
                       </p>
                     </div>
@@ -402,31 +439,44 @@ export function Dashboard() {
           ) : (
             <div className="space-y-4">
               {recentTransactions.map((transaction) => (
-                <div key={transaction.id} className="flex items-center justify-between">
+                <div
+                  key={transaction.id}
+                  className="flex items-center justify-between"
+                >
                   <div>
                     <p className="font-medium">
-                      {transaction.description || `${transaction.type} transaction`}
+                      {transaction.description ||
+                        `${transaction.type} transaction`}
                     </p>
                     <p className="text-sm text-muted-foreground">
-                      {transaction.type} • {new Date(transaction.timestamp).toLocaleDateString()}
-                      {transaction.fee > 0 && ` • Fee: $${transaction.fee.toFixed(2)}`}
+                      {transaction.type} •{" "}
+                      {new Date(transaction.timestamp).toLocaleDateString()}
+                      {transaction.fee > 0 &&
+                        ` • Fee: $${transaction.fee.toFixed(2)}`}
                     </p>
                   </div>
                   <div
                     className={`font-semibold ${
-                      ['deposit', 'sell', 'dividend', 'interest'].includes(transaction.type)
-                        ? 'text-green-600'
-                        : 'text-red-600'
+                      ["deposit", "sell", "dividend", "interest"].includes(
+                        transaction.type
+                      )
+                        ? "text-green-600"
+                        : "text-red-600"
                     }`}
                   >
-                    {['deposit', 'sell', 'dividend', 'interest'].includes(transaction.type)
-                      ? '+'
-                      : '-'}
-                    {FinancialMath.formatCurrency(FinancialMath.abs(transaction.amount), {
-                      currency: userPrefs?.baseCurrency,
+                    {["deposit", "sell", "dividend", "interest"].includes(
+                      transaction.type
+                    )
+                      ? "+"
+                      : "-"}
+                    {FinancialMath.formatCurrency(
+                      FinancialMath.abs(transaction.amount),
+                      {
+                        currency: userPrefs?.baseCurrency,
 
-                      style: 'decimal',
-                    })}
+                        style: "decimal",
+                      }
+                    )}
                   </div>
                 </div>
               ))}
@@ -437,12 +487,6 @@ export function Dashboard() {
       <TransactionForm
         isOpen={isTransactionFormOpen}
         onClose={() => setIsTransactionFormOpen(false)}
-        mode="create"
-      />
-
-      <AccountForm
-        isOpen={isAccountFormOpen}
-        onClose={() => setIsAccountFormOpen(false)}
         mode="create"
       />
     </div>

@@ -77,6 +77,7 @@ export async function handleHoldingChange(
     // Generate transaction data
     const transactionData = {
       id: nanoid(),
+      userId: change.userId,
       holdingId: change.holdingId,
       typeId: transactionType.id, // Use the actual typeId
       amount: balanceDiff,
@@ -190,7 +191,7 @@ export async function validateAllHoldings(userId: string): Promise<{
       .innerJoin(schema.tokens, eq(schema.holdings.tokenId, schema.tokens.id))
       .innerJoin(schema.accounts, eq(schema.holdings.accountId, schema.accounts.id))
       .innerJoin(schema.institutions, eq(schema.accounts.institutionId, schema.institutions.id))
-      .where(eq(schema.institutions.userId, userId));
+      .where(eq(schema.accounts.userId, userId));
 
     const discrepancies = [];
 
@@ -351,6 +352,7 @@ async function createReconciliationTransaction(
 
   const transactionData = {
     id: nanoid(),
+    userId: _userId,
     holdingId,
     typeId: transactionType.id, // Use the actual typeId
     amount: discrepancy,
