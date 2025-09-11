@@ -1,5 +1,4 @@
 import { zodResolver } from '@hookform/resolvers/zod';
-import type { Holding } from '@scani/shared';
 import React, { useId, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
@@ -23,6 +22,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
+import type { ApiAccount, ApiHolding, ApiToken } from '@/lib/api-types';
 import { trpc } from '@/lib/trpc';
 
 const HoldingFormSchema = z.object({
@@ -62,7 +62,7 @@ type HoldingFormData = z.infer<typeof HoldingFormSchema>;
 interface HoldingFormProps {
   isOpen: boolean;
   onClose: () => void;
-  holding?: Holding;
+  holding?: ApiHolding;
   mode: 'create' | 'edit';
 }
 
@@ -195,11 +195,12 @@ export function HoldingForm({ isOpen, onClose, holding, mode }: HoldingFormProps
   // Handle duplicate check results
   React.useEffect(() => {
     if (checkDuplicate.data?.exists) {
-      const account = accounts?.find((a) => a.id === watchedAccountId);
-      const token = tokens?.find((t) => t.id === watchedTokenId);
+      const account = accounts?.find((a: ApiAccount) => a.id === watchedAccountId);
+      const token = tokens?.find((t: ApiToken) => t.id === watchedTokenId);
       setDuplicateWarning(
-        `A holding for ${token?.name || 'this token'} already exists in ${account?.name || 'this account'}. ` +
-          'Consider updating the existing holding instead of creating a duplicate.'
+        `A holding for ${token?.name || 'this token'} already exists in ${
+          account?.name || 'this account'
+        }. Consider updating the existing holding instead of creating a duplicate.`
       );
     } else {
       setDuplicateWarning(null);
@@ -249,7 +250,7 @@ export function HoldingForm({ isOpen, onClose, holding, mode }: HoldingFormProps
     setIsSubmitting(false);
   };
 
-  const selectedToken = tokens?.find((token) => token.id === watchedTokenId);
+  const selectedToken = tokens?.find((token: ApiToken) => token.id === watchedTokenId);
 
   return (
     <Dialog open={isOpen} onOpenChange={handleOpenChange}>
@@ -285,7 +286,7 @@ export function HoldingForm({ isOpen, onClose, holding, mode }: HoldingFormProps
                 ) : accounts?.length === 0 ? (
                   <div className="p-2 text-sm text-muted-foreground">No accounts found</div>
                 ) : (
-                  accounts?.map((account) => (
+                  accounts?.map((account: ApiAccount) => (
                     <SelectItem key={account.id} value={account.id}>
                       {account.name} ({account.type})
                     </SelectItem>
@@ -311,7 +312,7 @@ export function HoldingForm({ isOpen, onClose, holding, mode }: HoldingFormProps
                 ) : tokens?.length === 0 ? (
                   <div className="p-2 text-sm text-muted-foreground">No tokens found</div>
                 ) : (
-                  tokens?.map((token) => (
+                  tokens?.map((token: ApiToken) => (
                     <SelectItem key={token.id} value={token.id}>
                       {token.name} ({token.symbol}) - {token.type}
                     </SelectItem>

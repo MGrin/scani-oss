@@ -7,6 +7,7 @@
     "packages/*"
   ],
   "scripts": {
+    "check-env": "bun run scripts/check-env.ts",
     "dev": "concurrently \"cd apps/backend && bun dev\" \"cd apps/frontend && bun dev\"",
     "dev:backend": "cd apps/backend && bun dev",
     "dev:frontend": "cd apps/frontend && bun dev",
@@ -26,12 +27,7 @@
     "lint": "biome check .",
     "lint:fix": "biome check --write .",
     "format": "biome format --write .",
-    "check": "biome check .",
-    "db:generate": "drizzle-kit generate",
-    "db:migrate": "bun apps/backend/src/db/migrate.ts",
-    "db:seed": "bun apps/backend/src/db/seed.ts",
-    "db:studio": "drizzle-kit studio",
-    "db:setup": "bun db:migrate && bun db:seed"
+    "check": "biome check ."
   },
   "devDependencies": {
     "@biomejs/biome": "^2.2.2",
@@ -41,14 +37,7 @@
     "@testing-library/user-event": "^14.5.2",
     "@types/bun": "latest",
     "concurrently": "^8.2.2",
-    "drizzle-kit": "^0.31.4",
-    "happy-dom": "^15.7.4",
     "msw": "^2.4.9",
     "typescript": "^5"
-  },
-  "dependencies": {
-    "drizzle-orm": "^0.44.5",
-    "nanoid": "^5.1.5",
-    "postgres": "^3.4.7"
   }
 }

@@ -4,10 +4,7 @@ import { nanoid } from 'nanoid';
 import { z } from 'zod';
 import { db } from '../db/connection';
 import * as schema from '../db/schema';
-import { publicProcedure, router } from '../trpc';
-
-// Type assertion for router operations (development/test environment uses SQLite)
-const routerDb = db as ReturnType<typeof import('drizzle-orm/bun-sqlite').drizzle>;
+import { protectedProcedure, router } from '../trpc';
 
 // Helper function to check if institution name already exists
 async function checkInstitutionNameExists(name: string, userId: string, excludeId?: string) {
@@ -21,7 +18,7 @@ async function checkInstitutionNameExists(name: string, userId: string, excludeI
     whereConditions.push(sql`${schema.institutions.id} != ${excludeId}`);
   }
 
-  const existing = await routerDb
+  const existing = await db
     .select({ id: schema.institutions.id })
     .from(schema.institutions)
     .where(and(...whereConditions))
@@ -32,7 +29,7 @@ async function checkInstitutionNameExists(name: string, userId: string, excludeI
 
 // Helper function to check if institution has linked accounts
 async function checkInstitutionHasAccounts(institutionId: string) {
-  const linkedAccounts = await routerDb
+  const linkedAccounts = await db
     .select({ id: schema.accounts.id })
     .from(schema.accounts)
     .where(
@@ -45,8 +42,8 @@ async function checkInstitutionHasAccounts(institutionId: string) {
 
 export const institutionsRouter = router({
   // Get all institutions
-  getAll: publicProcedure.query(async () => {
-    const institutions = await routerDb
+  getAll: protectedProcedure.query(async () => {
+    const institutions = await db
       .select({
         id: schema.institutions.id,
         userId: schema.institutions.userId,
@@ -68,33 +65,38 @@ export const institutionsRouter = router({
   }),
 
   // Get institutions by user ID
-  getByUserId: publicProcedure.input(z.object({ userId: z.string() })).query(async ({ input }) => {
-    const institutions = await routerDb
-      .select({
-        id: schema.institutions.id,
-        userId: schema.institutions.userId,
-        name: schema.institutions.name,
-        typeId: schema.institutions.typeId,
-        type: schema.institutionTypes.code,
-        description: schema.institutions.description,
-        website: schema.institutions.website,
-        logoUrl: schema.institutions.logoUrl,
-        isActive: schema.institutions.isActive,
-        createdAt: schema.institutions.createdAt,
-        updatedAt: schema.institutions.updatedAt,
-      })
-      .from(schema.institutions)
-      .leftJoin(schema.institutionTypes, eq(schema.institutions.typeId, schema.institutionTypes.id))
-      .where(eq(schema.institutions.userId, input.userId))
-      .orderBy(schema.institutions.name);
-    return institutions;
-  }),
+  getByUserId: protectedProcedure
+    .input(z.object({ userId: z.string() }))
+    .query(async ({ input }) => {
+      const institutions = await db
+        .select({
+          id: schema.institutions.id,
+          userId: schema.institutions.userId,
+          name: schema.institutions.name,
+          typeId: schema.institutions.typeId,
+          type: schema.institutionTypes.code,
+          description: schema.institutions.description,
+          website: schema.institutions.website,
+          logoUrl: schema.institutions.logoUrl,
+          isActive: schema.institutions.isActive,
+          createdAt: schema.institutions.createdAt,
+          updatedAt: schema.institutions.updatedAt,
+        })
+        .from(schema.institutions)
+        .leftJoin(
+          schema.institutionTypes,
+          eq(schema.institutions.typeId, schema.institutionTypes.id)
+        )
+        .where(eq(schema.institutions.userId, input.userId))
+        .orderBy(schema.institutions.name);
+      return institutions;
+    }),
 
   // Get institutions by type
-  getByType: publicProcedure
+  getByType: protectedProcedure
     .input(z.object({ typeId: z.string(), userId: z.string().optional() }))
     .query(async ({ input }) => {
-      const institutions = await routerDb
+      const institutions = await db
         .select({
           id: schema.institutions.id,
           userId: schema.institutions.userId,
@@ -117,14 +119,14 @@ export const institutionsRouter = router({
         .orderBy(schema.institutions.name);
 
       if (input.userId) {
-        return institutions.filter((i) => i.userId === input.userId);
+        return institutions.filter((i: { userId: string | null }) => i.userId === input.userId);
       }
       return institutions;
     }),
 
   // Get institution by ID
-  getById: publicProcedure.input(z.object({ id: z.string() })).query(async ({ input }) => {
-    const [institution] = await routerDb
+  getById: protectedProcedure.input(z.object({ id: z.string() })).query(async ({ input }) => {
+    const [institution] = await db
       .select({
         id: schema.institutions.id,
         userId: schema.institutions.userId,
@@ -150,7 +152,7 @@ export const institutionsRouter = router({
   }),
 
   // Check if institution name is unique for a user
-  checkNameUniqueness: publicProcedure
+  checkNameUniqueness: protectedProcedure
     .input(
       z.object({
         name: z.string().trim().min(1),
@@ -166,7 +168,7 @@ export const institutionsRouter = router({
     }),
 
   // Create new institution
-  create: publicProcedure
+  create: protectedProcedure
     .input(
       CreateInstitutionSchema.omit({ userId: true }).extend({
         userId: z.string().optional(),
@@ -186,7 +188,7 @@ export const institutionsRouter = router({
       }
 
       // Look up the institution type ID from the type code
-      const [institutionType] = await routerDb
+      const [institutionType] = await db
         .select({ id: schema.institutionTypes.id })
         .from(schema.institutionTypes)
         .where(eq(schema.institutionTypes.code, input.type))
@@ -209,7 +211,7 @@ export const institutionsRouter = router({
         updatedAt: now,
       };
 
-      const [insertedInstitution] = await routerDb
+      const [insertedInstitution] = await db
         .insert(schema.institutions)
         .values(institutionData)
         .returning();
@@ -219,7 +221,7 @@ export const institutionsRouter = router({
       }
 
       // Return enriched data with type information
-      const [institution] = await routerDb
+      const [institution] = await db
         .select({
           id: schema.institutions.id,
           userId: schema.institutions.userId,
@@ -249,7 +251,7 @@ export const institutionsRouter = router({
     }),
 
   // Update institution
-  update: publicProcedure
+  update: protectedProcedure
     .input(
       z.object({
         id: z.string(),
@@ -258,7 +260,7 @@ export const institutionsRouter = router({
     )
     .mutation(async ({ input }) => {
       // Get the current institution to check user ownership and validate name uniqueness
-      const [currentInstitution] = await routerDb
+      const [currentInstitution] = await db
         .select()
         .from(schema.institutions)
         .where(eq(schema.institutions.id, input.id))
@@ -290,7 +292,7 @@ export const institutionsRouter = router({
 
       // If type is being updated, convert it to typeId
       if (input.data.type) {
-        const [institutionType] = await routerDb
+        const [institutionType] = await db
           .select({ id: schema.institutionTypes.id })
           .from(schema.institutionTypes)
           .where(eq(schema.institutionTypes.code, input.data.type))
@@ -304,7 +306,7 @@ export const institutionsRouter = router({
         delete updateData.type; // Remove the type field
       }
 
-      const [updatedInstitution] = await routerDb
+      const [updatedInstitution] = await db
         .update(schema.institutions)
         .set(updateData)
         .where(eq(schema.institutions.id, input.id))
@@ -315,7 +317,7 @@ export const institutionsRouter = router({
       }
 
       // Return enriched data with type information
-      const [institution] = await routerDb
+      const [institution] = await db
         .select({
           id: schema.institutions.id,
           userId: schema.institutions.userId,
@@ -345,9 +347,9 @@ export const institutionsRouter = router({
     }),
 
   // Delete institution (soft delete by setting isActive to false)
-  delete: publicProcedure.input(z.object({ id: z.string() })).mutation(async ({ input }) => {
+  delete: protectedProcedure.input(z.object({ id: z.string() })).mutation(async ({ input }) => {
     // Check if institution exists
-    const [institution] = await routerDb
+    const [institution] = await db
       .select()
       .from(schema.institutions)
       .where(eq(schema.institutions.id, input.id))
@@ -365,7 +367,7 @@ export const institutionsRouter = router({
       );
     }
 
-    const [deletedInstitution] = await routerDb
+    const [deletedInstitution] = await db
       .update(schema.institutions)
       .set({
         isActive: false,

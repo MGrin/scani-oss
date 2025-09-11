@@ -20,6 +20,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { PageHeader } from '@/components/ui/page-header';
 import { useToast } from '@/hooks/use-toast';
+import type { ApiAccount, ApiHolding, ApiToken } from '@/lib/api-types';
 import { trpc } from '@/lib/trpc';
 
 export function Transactions() {
@@ -61,11 +62,15 @@ export function Transactions() {
   });
 
   // Create maps for quick lookups
-  const accountsMap = accounts ? Object.fromEntries(accounts.map((acc) => [acc.id, acc])) : {};
-  const holdingsMap = holdings
-    ? Object.fromEntries(holdings.map((holding) => [holding.id, holding]))
+  const accountsMap = accounts
+    ? Object.fromEntries(accounts.map((acc: ApiAccount) => [acc.id, acc]))
     : {};
-  const tokensMap = tokens ? Object.fromEntries(tokens.map((token) => [token.id, token])) : {};
+  const holdingsMap = holdings
+    ? Object.fromEntries(holdings.map((holding: ApiHolding) => [holding.id, holding]))
+    : {};
+  const tokensMap = tokens
+    ? Object.fromEntries(tokens.map((token: ApiToken) => [token.id, token]))
+    : {};
 
   const getTransactionIcon = (type: string) => {
     switch (type) {

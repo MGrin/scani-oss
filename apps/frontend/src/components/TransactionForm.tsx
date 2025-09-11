@@ -26,140 +26,79 @@ import {
 } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
 import { useToast } from '@/hooks/use-toast';
+import type { ApiAccount, ApiHolding, ApiInstitution, ApiToken } from '@/lib/api-types';
 import { trpc } from '@/lib/trpc';
 
-// Transaction types with user-friendly labels and descriptions
-const TRANSACTION_TYPES = [
+// Transaction type metadata - icons and additional properties
+const TRANSACTION_TYPE_METADATA: Record<
+  string,
   {
-    value: 'buy',
-    label: 'Buy',
-    description: 'Purchase an asset (decreases cash, increases holdings)',
-    icon: '📈',
-    requiresPrice: true,
-  },
-  {
-    value: 'sell',
-    label: 'Sell',
-    description: 'Sell an asset (increases cash, decreases holdings)',
-    icon: '📉',
-    requiresPrice: true,
-  },
-  {
-    value: 'deposit',
-    label: 'Deposit',
-    description: 'Add money to account (salary, transfer in)',
-    icon: '💰',
-    requiresPrice: false,
-  },
-  {
-    value: 'withdrawal',
-    label: 'Withdrawal',
-    description: 'Remove money from account (ATM, transfer out)',
-    icon: '🏧',
-    requiresPrice: false,
-  },
-  {
-    value: 'dividend',
-    label: 'Dividend',
-    description: 'Dividend payment from stocks or funds',
-    icon: '💵',
-    requiresPrice: false,
-  },
-  {
-    value: 'interest',
-    label: 'Interest',
-    description: 'Interest earned on deposits or bonds',
-    icon: '📊',
-    requiresPrice: false,
-  },
-  {
-    value: 'fee',
-    label: 'Fee',
-    description: 'Account fee or transaction cost',
-    icon: '💸',
-    requiresPrice: false,
-  },
-  {
-    value: 'transfer',
-    label: 'Transfer',
-    description: 'Move funds between accounts',
-    icon: '↔️',
-    requiresPrice: false,
-  },
-  {
-    value: 'other',
-    label: 'Other',
-    description: 'Other transaction type',
-    icon: '📝',
-    requiresPrice: false,
-  },
-] as const;
+    icon: string;
+    requiresPrice: boolean;
+  }
+> = {
+  buy: { icon: '📈', requiresPrice: true },
+  sell: { icon: '📉', requiresPrice: true },
+  deposit: { icon: '💰', requiresPrice: false },
+  withdrawal: { icon: '🏧', requiresPrice: false },
+  dividend: { icon: '💵', requiresPrice: false },
+  interest: { icon: '📊', requiresPrice: false },
+  fee: { icon: '💸', requiresPrice: false },
+  transfer: { icon: '↔️', requiresPrice: false },
+  other: { icon: '📝', requiresPrice: false },
+};
 
 // Enhanced transaction form schema with comprehensive validation
-const TransactionFormSchema = z
-  .object({
-    holdingId: z.string().min(1, 'Please select a holding/account'),
-    type: z.enum([
-      'buy',
-      'sell',
-      'deposit',
-      'withdrawal',
-      'dividend',
-      'interest',
-      'fee',
-      'transfer',
-      'other',
-    ]),
-    amount: z
-      .number({
-        required_error: 'Amount is required',
-        invalid_type_error: 'Amount must be a valid number',
-      })
-      .refine((val) => !Number.isNaN(val), 'Amount must be a valid number')
-      .refine((val) => val !== 0, 'Amount cannot be zero')
-      .refine((val) => Math.abs(val) >= 0.01, 'Amount is too small. Minimum value is 0.01')
-      .refine(
-        (val) => Math.abs(val) <= 1_000_000_000,
-        'Amount is too large. Maximum value is 1 billion'
-      ),
-    price: z
-      .number({
-        invalid_type_error: 'Price must be a valid number',
-      })
-      .positive('Price must be positive')
-      .max(1_000_000, 'Price seems unreasonably high (max: $1M per unit)')
-      .optional()
-      .transform((val) => {
-        if (val === null || val === undefined || val === 0) return undefined;
-        return val;
-      }),
-    fee: z.coerce
-      .number({
-        invalid_type_error: 'Fee must be a valid number',
-      })
-      .min(0, 'Fee cannot be negative')
-      .max(10_000, 'Fee seems unreasonably high (max: $10K)')
-      .default(0),
-    description: z.string().max(500, 'Description must be at most 500 characters').optional(),
-    reference: z.string().max(100, 'Reference must be at most 100 characters').optional(),
-    timestamp: z.date({
-      required_error: 'Transaction date is required',
-      invalid_type_error: 'Invalid date',
+const TransactionFormSchema = z.object({
+  holdingId: z.string().min(1, 'Please select a holding/account'),
+  type: z.enum([
+    'buy',
+    'sell',
+    'deposit',
+    'withdrawal',
+    'dividend',
+    'interest',
+    'fee',
+    'transfer',
+    'other',
+  ]),
+  amount: z
+    .number({
+      required_error: 'Amount is required',
+      invalid_type_error: 'Amount must be a valid number',
+    })
+    .refine((val) => !Number.isNaN(val), 'Amount must be a valid number')
+    .refine((val) => val !== 0, 'Amount cannot be zero')
+    .refine((val) => Math.abs(val) >= 0.01, 'Amount is too small. Minimum value is 0.01')
+    .refine(
+      (val) => Math.abs(val) <= 1_000_000_000,
+      'Amount is too large. Maximum value is 1 billion'
+    ),
+  price: z
+    .number({
+      invalid_type_error: 'Price must be a valid number',
+    })
+    .positive('Price must be positive')
+    .max(1_000_000, 'Price seems unreasonably high (max: $1M per unit)')
+    .optional()
+    .transform((val) => {
+      if (val === null || val === undefined || val === 0) return undefined;
+      return val;
     }),
-  })
-  .refine(
-    (data) => {
-      const transactionType = TRANSACTION_TYPES.find((t) => t.value === data.type);
-      if (transactionType?.requiresPrice && !data.price) {
-        return false;
-      }
-      return true;
-    },
-    {
-      message: 'Price is required for buy/sell transactions',
-      path: ['price'],
-    }
-  );
+  fee: z.coerce
+    .number({
+      invalid_type_error: 'Fee must be a valid number',
+    })
+    .min(0, 'Fee cannot be negative')
+    .max(10_000, 'Fee seems unreasonably high (max: $10K)')
+    .default(0),
+  description: z.string().max(500, 'Description must be at most 500 characters').optional(),
+  reference: z.string().max(100, 'Reference must be at most 100 characters').optional(),
+  timestamp: z.date({
+    required_error: 'Transaction date is required',
+    invalid_type_error: 'Invalid date',
+  }),
+});
 
 type TransactionFormData = z.infer<typeof TransactionFormSchema>;
 
@@ -170,6 +109,14 @@ interface TransactionFormProps {
   mode: 'create' | 'edit';
   defaultHoldingId?: string;
 }
+
+type ProcessedHolding = ApiHolding & {
+  account?: ApiAccount;
+  token?: ApiToken;
+  institution?: ApiInstitution | null;
+  displayName: string;
+  balanceDisplay: string;
+};
 
 export function TransactionForm({
   isOpen,
@@ -198,22 +145,47 @@ export function TransactionForm({
   const { data: accounts } = trpc.accounts.getAll.useQuery();
   const { data: tokens } = trpc.tokens.getAll.useQuery();
   const { data: institutions } = trpc.institutions.getAll.useQuery();
+  const {
+    data: transactionTypes,
+    isLoading: transactionTypesLoading,
+    error: transactionTypesError,
+  } = trpc.transactionTypes.getAll.useQuery();
   const { data: userPrefs } = trpc.users.getById.useQuery({
     id: 'test-user-1', // Replace with actual user ID from auth context
   });
 
   const utils = trpc.useUtils();
 
+  // Merge backend transaction types with UI metadata
+  const TRANSACTION_TYPES = React.useMemo(() => {
+    if (!transactionTypes) return [];
+
+    return transactionTypes.map((type) => ({
+      value: type.code,
+      label: type.name,
+      description: type.description || '',
+      icon: TRANSACTION_TYPE_METADATA[type.code]?.icon || '📝',
+      requiresPrice: TRANSACTION_TYPE_METADATA[type.code]?.requiresPrice || false,
+    }));
+  }, [transactionTypes]);
+
+  // Show error if backend fails to return transaction types
+  if (transactionTypesError) {
+    console.error('Failed to load transaction types from backend:', transactionTypesError);
+  }
+
   // Create maps for quick lookups
-  const accountsMap = accounts ? Object.fromEntries(accounts.map((a) => [a.id, a])) : {};
-  const tokensMap = tokens ? Object.fromEntries(tokens.map((t) => [t.id, t])) : {};
+  const accountsMap = accounts
+    ? Object.fromEntries(accounts.map((a: ApiAccount) => [a.id, a]))
+    : {};
+  const tokensMap = tokens ? Object.fromEntries(tokens.map((t: ApiToken) => [t.id, t])) : {};
   const institutionsMap = institutions
-    ? Object.fromEntries(institutions.map((i) => [i.id, i]))
+    ? Object.fromEntries(institutions.map((i: ApiInstitution) => [i.id, i]))
     : {};
 
   // Process holdings with account/token info for display
-  const processedHoldings =
-    holdings?.map((holding) => {
+  const processedHoldings: ProcessedHolding[] =
+    holdings?.map((holding: ApiHolding) => {
       const account = accountsMap[holding.accountId];
       const token = tokensMap[holding.tokenId];
       const institution = account ? institutionsMap[account.institutionId] : null;
@@ -224,7 +196,9 @@ export function TransactionForm({
         token,
         institution,
         displayName: `${token?.name || 'Unknown Token'} in ${account?.name || 'Unknown Account'}`,
-        balanceDisplay: `${holding.balance.toFixed(token?.decimals || 2)} ${token?.symbol || ''}`,
+        balanceDisplay: `${(holding.balance ?? 0).toFixed(
+          token?.decimals || 2
+        )} ${token?.symbol || ''}`,
       };
     }) || [];
 
@@ -285,6 +259,7 @@ export function TransactionForm({
     watch,
     reset,
     trigger,
+    setError,
   } = useForm({
     resolver: zodResolver(TransactionFormSchema),
     defaultValues: {
@@ -309,7 +284,9 @@ export function TransactionForm({
 
   // Get transaction type info
   const selectedTransactionType = TRANSACTION_TYPES.find((t) => t.value === watchedType);
-  const selectedHolding = processedHoldings.find((h) => h.id === watchedHoldingId);
+  const selectedHolding = processedHoldings.find(
+    (h: ProcessedHolding) => h.id === watchedHoldingId
+  );
 
   // Calculate total value for buy/sell transactions
   const totalValue = React.useMemo(() => {
@@ -357,6 +334,32 @@ export function TransactionForm({
   }, [watch]);
 
   const onSubmit = async (data: TransactionFormData) => {
+    // Prevent submission if transaction types failed to load
+    if (transactionTypesError) {
+      toast({
+        title: 'Error',
+        description:
+          'Transaction types could not be loaded. Please refresh the page and try again.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    // Validate price requirement based on transaction type
+    const transactionType = TRANSACTION_TYPES.find((t) => t.value === data.type);
+    if (transactionType?.requiresPrice && !data.price) {
+      setError('price', {
+        type: 'manual',
+        message: 'Price is required for buy/sell transactions',
+      });
+      toast({
+        title: 'Validation Error',
+        description: 'Price is required for buy/sell transactions',
+        variant: 'destructive',
+      });
+      return;
+    }
+
     setIsSubmitting(true);
     setHasUnsavedChanges(false);
 
@@ -484,17 +487,27 @@ export function TransactionForm({
                 <SelectValue placeholder="Select transaction type" />
               </SelectTrigger>
               <SelectContent>
-                {TRANSACTION_TYPES.map((type) => (
-                  <SelectItem key={type.value} value={type.value}>
-                    <div className="flex items-center space-x-2">
-                      <span>{type.icon}</span>
-                      <div>
-                        <div className="font-medium">{type.label}</div>
-                        <div className="text-xs text-muted-foreground">{type.description}</div>
-                      </div>
-                    </div>
+                {transactionTypesLoading ? (
+                  <SelectItem value="loading" disabled>
+                    Loading transaction types...
                   </SelectItem>
-                ))}
+                ) : transactionTypesError ? (
+                  <SelectItem value="error" disabled>
+                    Error loading transaction types
+                  </SelectItem>
+                ) : (
+                  TRANSACTION_TYPES.map((type) => (
+                    <SelectItem key={type.value} value={type.value}>
+                      <div className="flex items-center space-x-2">
+                        <span>{type.icon}</span>
+                        <div>
+                          <div className="font-medium">{type.label}</div>
+                          <div className="text-xs text-muted-foreground">{type.description}</div>
+                        </div>
+                      </div>
+                    </SelectItem>
+                  ))
+                )}
               </SelectContent>
             </Select>
             {errors.type && <p className="text-sm text-destructive">{errors.type.message}</p>}
@@ -526,7 +539,7 @@ export function TransactionForm({
                     No holdings found. Please add an account and holding first.
                   </div>
                 ) : (
-                  processedHoldings.map((holding) => (
+                  processedHoldings.map((holding: ProcessedHolding) => (
                     <SelectItem key={holding.id} value={holding.id}>
                       <div className="flex flex-col">
                         <div className="font-medium">{holding.displayName}</div>

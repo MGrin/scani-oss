@@ -1,24 +1,21 @@
 import { eq } from 'drizzle-orm';
 import { z } from 'zod';
 import { db } from '../db/connection';
-import { institutionTypes } from '../db/schema';
+import * as schema from '../db/schema';
 import { publicProcedure, router } from '../trpc';
-
-// Type assertion for router operations (development/test environment uses SQLite)
-const routerDb = db as ReturnType<typeof import('drizzle-orm/bun-sqlite').drizzle>;
 
 export const institutionTypesRouter = router({
   /**
    * Get all active institution types for UI dropdowns
    */
   getAll: publicProcedure.query(async () => {
-    const types = await routerDb
+    const types = await db
       .select()
-      .from(institutionTypes)
-      .where(eq(institutionTypes.isActive, true))
-      .orderBy(institutionTypes.displayOrder, institutionTypes.name);
+      .from(schema.institutionTypes)
+      .where(eq(schema.institutionTypes.isActive, true))
+      .orderBy(schema.institutionTypes.displayOrder, schema.institutionTypes.name);
 
-    return types.map((type) => ({
+    return types.map((type: typeof schema.institutionTypes.$inferSelect) => ({
       id: type.id,
       code: type.code,
       name: type.name,
@@ -37,10 +34,10 @@ export const institutionTypesRouter = router({
       })
     )
     .query(async ({ input }) => {
-      const [institutionType] = await routerDb
+      const [institutionType] = await db
         .select()
-        .from(institutionTypes)
-        .where(eq(institutionTypes.id, input.id))
+        .from(schema.institutionTypes)
+        .where(eq(schema.institutionTypes.id, input.id))
         .limit(1);
 
       if (!institutionType) {
@@ -69,10 +66,10 @@ export const institutionTypesRouter = router({
       })
     )
     .query(async ({ input }) => {
-      const [institutionType] = await routerDb
+      const [institutionType] = await db
         .select()
-        .from(institutionTypes)
-        .where(eq(institutionTypes.code, input.code))
+        .from(schema.institutionTypes)
+        .where(eq(schema.institutionTypes.code, input.code))
         .limit(1);
 
       if (!institutionType) {

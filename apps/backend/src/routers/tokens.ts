@@ -1,40 +1,106 @@
-import { CreateTokenSchema, TokenType, UpdateTokenSchema } from '@scani/shared/types';
 import { and, eq, sql } from 'drizzle-orm';
 import { nanoid } from 'nanoid';
 import { z } from 'zod';
 import { db } from '../db/connection';
 import * as schema from '../db/schema';
-import { publicProcedure, router } from '../trpc';
+import { protectedProcedure, router } from '../trpc';
 
-// Type assertion for router operations (development/test environment uses SQLite)
-const routerDb = db as ReturnType<typeof import('drizzle-orm/bun-sqlite').drizzle>;
+// Local schemas for token operations (will be moved to shared later)
+const CreateTokenSchema = z.object({
+  symbol: z.string().min(1).max(10),
+  name: z.string().min(1).max(100),
+  typeId: z.string().uuid(), // Reference to token_types table
+  decimals: z.number().int().min(0).max(18).default(2),
+  iconUrl: z.string().url().optional(),
+  isActive: z.boolean().default(true),
+});
+
+const UpdateTokenSchema = CreateTokenSchema.partial();
 
 export const tokensRouter = router({
-  // Get all active tokens
-  getAll: publicProcedure.query(async () => {
-    const tokens = await routerDb
-      .select()
+  // Get all active tokens with their types
+  getAll: protectedProcedure.query(async () => {
+    const tokens = await db
+      .select({
+        id: schema.tokens.id,
+        symbol: schema.tokens.symbol,
+        name: schema.tokens.name,
+        typeId: schema.tokens.typeId,
+        type: schema.tokenTypes.code,
+        typeName: schema.tokenTypes.name,
+        decimals: schema.tokens.decimals,
+        iconUrl: schema.tokens.iconUrl,
+        isActive: schema.tokens.isActive,
+        createdAt: schema.tokens.createdAt,
+        updatedAt: schema.tokens.updatedAt,
+      })
       .from(schema.tokens)
+      .leftJoin(schema.tokenTypes, eq(schema.tokens.typeId, schema.tokenTypes.id))
       .where(eq(schema.tokens.isActive, true))
       .orderBy(schema.tokens.symbol);
     return tokens;
   }),
 
-  // Get tokens by type
-  getByType: publicProcedure.input(z.object({ type: TokenType })).query(async ({ input }) => {
-    const tokens = await routerDb
-      .select()
+  // Get fiat currencies (tokens with type 'fiat')
+  getCurrencies: protectedProcedure.query(async () => {
+    const currencies = await db
+      .select({
+        id: schema.tokens.id,
+        symbol: schema.tokens.symbol,
+        name: schema.tokens.name,
+        decimals: schema.tokens.decimals,
+        iconUrl: schema.tokens.iconUrl,
+      })
       .from(schema.tokens)
-      .where(and(eq(schema.tokens.type, input.type), eq(schema.tokens.isActive, true)))
+      .leftJoin(schema.tokenTypes, eq(schema.tokens.typeId, schema.tokenTypes.id))
+      .where(and(eq(schema.tokens.isActive, true), eq(schema.tokenTypes.code, 'fiat')))
       .orderBy(schema.tokens.symbol);
-    return tokens;
+    return currencies;
   }),
 
+  // Get tokens by type code
+  getByTypeCode: protectedProcedure
+    .input(z.object({ typeCode: z.string() }))
+    .query(async ({ input }) => {
+      const tokens = await db
+        .select({
+          id: schema.tokens.id,
+          symbol: schema.tokens.symbol,
+          name: schema.tokens.name,
+          typeId: schema.tokens.typeId,
+          type: schema.tokenTypes.code,
+          typeName: schema.tokenTypes.name,
+          decimals: schema.tokens.decimals,
+          iconUrl: schema.tokens.iconUrl,
+          isActive: schema.tokens.isActive,
+          createdAt: schema.tokens.createdAt,
+          updatedAt: schema.tokens.updatedAt,
+        })
+        .from(schema.tokens)
+        .leftJoin(schema.tokenTypes, eq(schema.tokens.typeId, schema.tokenTypes.id))
+        .where(and(eq(schema.tokenTypes.code, input.typeCode), eq(schema.tokens.isActive, true)))
+        .orderBy(schema.tokens.symbol);
+      return tokens;
+    }),
+
   // Get token by ID
-  getById: publicProcedure.input(z.object({ id: z.string() })).query(async ({ input }) => {
-    const [token] = await routerDb
-      .select()
+  getById: protectedProcedure.input(z.object({ id: z.string() })).query(async ({ input }) => {
+    const [token] = await db
+      .select({
+        id: schema.tokens.id,
+        symbol: schema.tokens.symbol,
+        name: schema.tokens.name,
+        typeId: schema.tokens.typeId,
+        type: schema.tokenTypes.code,
+        typeName: schema.tokenTypes.name,
+        decimals: schema.tokens.decimals,
+        iconUrl: schema.tokens.iconUrl,
+        isActive: schema.tokens.isActive,
+        createdAt: schema.tokens.createdAt,
+        updatedAt: schema.tokens.updatedAt,
+      })
       .from(schema.tokens)
+      .leftJoin(schema.tokenTypes, eq(schema.tokens.typeId, schema.tokenTypes.id))
       .where(eq(schema.tokens.id, input.id))
       .limit(1);
 
@@ -45,23 +111,38 @@ export const tokensRouter = router({
   }),
 
   // Get token by symbol
-  getBySymbol: publicProcedure.input(z.object({ symbol: z.string() })).query(async ({ input }) => {
-    const [token] = await routerDb
-      .select()
-      .from(schema.tokens)
-      .where(eq(schema.tokens.symbol, input.symbol.toUpperCase()))
-      .limit(1);
+  getBySymbol: protectedProcedure
+    .input(z.object({ symbol: z.string() }))
+    .query(async ({ input }) => {
+      const [token] = await db
+        .select({
+          id: schema.tokens.id,
+          symbol: schema.tokens.symbol,
+          name: schema.tokens.name,
+          typeId: schema.tokens.typeId,
+          type: schema.tokenTypes.code,
+          typeName: schema.tokenTypes.name,
+          decimals: schema.tokens.decimals,
+          iconUrl: schema.tokens.iconUrl,
+          isActive: schema.tokens.isActive,
+          createdAt: schema.tokens.createdAt,
+          updatedAt: schema.tokens.updatedAt,
+        })
+        .from(schema.tokens)
+        .leftJoin(schema.tokenTypes, eq(schema.tokens.typeId, schema.tokenTypes.id))
+        .where(eq(schema.tokens.symbol, input.symbol.toUpperCase()))
+        .limit(1);
 
-    if (!token) {
-      throw new Error('Token not found');
-    }
-    return token;
-  }),
+      if (!token) {
+        throw new Error('Token not found');
+      }
+      return token;
+    }),
 
   // Create new token
-  create: publicProcedure.input(CreateTokenSchema).mutation(async ({ input }) => {
+  create: protectedProcedure.input(CreateTokenSchema).mutation(async ({ input }) => {
     // Check if symbol already exists
-    const [existingToken] = await routerDb
+    const [existingToken] = await db
       .select()
       .from(schema.tokens)
       .where(eq(schema.tokens.symbol, input.symbol.toUpperCase()))
@@ -80,7 +161,7 @@ export const tokensRouter = router({
       updatedAt: now,
     };
 
-    const [createdToken] = await routerDb.insert(schema.tokens).values(tokenData).returning();
+    const [createdToken] = await db.insert(schema.tokens).values(tokenData).returning();
 
     if (!createdToken) {
       throw new Error('Failed to create token');
@@ -90,7 +171,7 @@ export const tokensRouter = router({
   }),
 
   // Update token
-  update: publicProcedure
+  update: protectedProcedure
     .input(
       z.object({
         id: z.string(),
@@ -100,7 +181,7 @@ export const tokensRouter = router({
     .mutation(async ({ input }) => {
       // If updating symbol, check for uniqueness
       if (input.data.symbol) {
-        const [existingToken] = await routerDb
+        const [existingToken] = await db
           .select()
           .from(schema.tokens)
           .where(
@@ -123,7 +204,7 @@ export const tokensRouter = router({
         updatedAt: new Date(),
       };
 
-      const [updatedToken] = await routerDb
+      const [updatedToken] = await db
         .update(schema.tokens)
         .set(updateData)
         .where(eq(schema.tokens.id, input.id))
@@ -137,8 +218,8 @@ export const tokensRouter = router({
     }),
 
   // Delete token (soft delete by setting isActive to false)
-  delete: publicProcedure.input(z.object({ id: z.string() })).mutation(async ({ input }) => {
-    const [deletedToken] = await routerDb
+  remove: protectedProcedure.input(z.object({ id: z.string() })).mutation(async ({ input }) => {
+    const [deletedToken] = await db
       .update(schema.tokens)
       .set({
         isActive: false,

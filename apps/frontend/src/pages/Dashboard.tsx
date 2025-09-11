@@ -19,6 +19,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { PageHeader } from '@/components/ui/page-header';
 import type { WebSocketMessage } from '@/hooks/useWebSocket';
 import { useScaniWebSocket } from '@/hooks/useWebSocket';
+import type { ApiHolding, ApiToken } from '@/lib/api-types';
 import { trpc } from '@/lib/trpc';
 
 export function Dashboard() {
@@ -48,12 +49,16 @@ export function Dashboard() {
   });
 
   // Create maps for quick lookups
-  const tokensMap = tokens ? Object.fromEntries(tokens.map((token) => [token.id, token])) : {};
+  const tokensMap = tokens
+    ? Object.fromEntries(tokens.map((token: ApiToken) => [token.id, token]))
+    : {};
 
   // Calculate some basic stats from holdings using precise decimal math
   const totalHoldingsValue = holdings
     ? FinancialMath.toNumber(
-        FinancialMath.sum(holdings.map((holding) => FinancialMath.abs(holding.balance)))
+        FinancialMath.sum(
+          holdings.map((holding: ApiHolding) => FinancialMath.abs(holding.balance ?? 0))
+        )
       )
     : 0;
 
@@ -65,11 +70,11 @@ export function Dashboard() {
   }
 
   const holdingsByTokenType =
-    holdings?.reduce((acc: Record<string, TokenTypeData>, holding) => {
+    holdings?.reduce((acc: Record<string, TokenTypeData>, holding: ApiHolding) => {
       const token = tokensMap[holding.tokenId];
       if (!token) return acc;
 
-      const tokenType = token.type;
+      const tokenType = token.type ?? 'unknown';
       if (!acc[tokenType]) {
         acc[tokenType] = {
           count: 0,
@@ -80,7 +85,7 @@ export function Dashboard() {
 
       acc[tokenType].count += 1;
       acc[tokenType].totalValue = FinancialMath.toNumber(
-        FinancialMath.add(acc[tokenType].totalValue, FinancialMath.abs(holding.balance))
+        FinancialMath.add(acc[tokenType].totalValue, FinancialMath.abs(holding.balance ?? 0))
       );
       acc[tokenType].holdings.push(holding as unknown as Holding);
 
@@ -286,6 +291,7 @@ export function Dashboard() {
                       (b as TokenTypeData).totalValue - (a as TokenTypeData).totalValue
                   )
                   .map(([tokenType, data]) => {
+                    const tokenData = data as TokenTypeData;
                     const getTypeIcon = (type: string) => {
                       switch (type) {
                         case 'fiat':
@@ -313,17 +319,19 @@ export function Dashboard() {
                           </div>
                           <div>
                             <p className="font-medium capitalize">{tokenType}</p>
-                            <p className="text-sm text-muted-foreground">{data.count} holdings</p>
+                            <p className="text-sm text-muted-foreground">
+                              {tokenData.count} holdings
+                            </p>
                           </div>
                         </div>
                         <div className="text-right">
                           <p className="font-semibold">
-                            {FinancialMath.formatCurrency(data.totalValue, {
+                            {FinancialMath.formatCurrency(tokenData.totalValue, {
                               currency: userPrefs?.baseCurrency,
                             })}
                           </p>
                           <p className="text-sm text-muted-foreground">
-                            {((data.totalValue / totalHoldingsValue) * 100).toFixed(1)}%
+                            {((tokenData.totalValue / totalHoldingsValue) * 100).toFixed(1)}%
                           </p>
                         </div>
                       </div>

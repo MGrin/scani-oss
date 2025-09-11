@@ -1,14 +1,15 @@
 import { initTRPC } from '@trpc/server';
 import type { FetchCreateContextFnOptions } from '@trpc/server/adapters/fetch';
+import { type AuthContext, createAuthContext } from './middleware/auth';
 import { createTimer, generateRequestId, trpcLogger } from './utils/logger';
 
-// Create context type with request tracking
+// Create context type with request tracking and auth
 export type Context = {
   requestId: string;
   startTime: number;
-};
+} & AuthContext;
 
-export const createContext = (opts?: FetchCreateContextFnOptions): Context => {
+export const createContext = async (opts?: FetchCreateContextFnOptions): Promise<Context> => {
   const requestId = generateRequestId();
   const startTime = Date.now();
 
@@ -26,9 +27,18 @@ export const createContext = (opts?: FetchCreateContextFnOptions): Context => {
     );
   }
 
+  // Create auth context
+  const authContext = opts?.req
+    ? await createAuthContext({ req: opts.req })
+    : {
+        user: null,
+        isAuthenticated: false,
+      };
+
   return {
     requestId,
     startTime,
+    ...authContext,
   };
 };
 
@@ -130,6 +140,19 @@ const loggingMiddleware = t.middleware(async ({ ctx, path, type, input, next }) 
 
 // Enhanced procedure with logging
 export const publicProcedure = t.procedure.use(loggingMiddleware);
+
+// Protected procedure that requires authentication
+export const protectedProcedure = t.procedure.use(loggingMiddleware).use(async ({ ctx, next }) => {
+  if (!ctx.isAuthenticated || !ctx.user) {
+    throw new Error('Authentication required');
+  }
+  return next({
+    ctx: {
+      ...ctx,
+      user: ctx.user, // Ensure user is not null in protected procedures
+    },
+  });
+});
 
 // Create router
 export const router = t.router;

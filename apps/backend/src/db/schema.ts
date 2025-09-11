@@ -1,48 +1,92 @@
 import { relations } from 'drizzle-orm';
-import { integer, real, sqliteTable, text, unique } from 'drizzle-orm/sqlite-core';
+import { boolean, pgTable, real, text, timestamp, unique, uuid } from 'drizzle-orm/pg-core';
+
+// =============================================================================
+// ENUM TABLES - Dynamic enum values stored in database
+// =============================================================================
 
 // Institution types table - dynamic enum values
-export const institutionTypes = sqliteTable('institution_types', {
-  id: text('id').primaryKey(),
+export const institutionTypes = pgTable('institution_types', {
+  id: uuid('id').defaultRandom().primaryKey(),
   code: text('code').notNull().unique(), // 'bank', 'broker', etc. - for programmatic use
   name: text('name').notNull(), // 'Bank', 'Broker', etc. - for display
   description: text('description'), // Optional description
-  displayOrder: integer('display_order').notNull().default(0), // For UI ordering
-  isActive: integer('is_active', { mode: 'boolean' }).notNull().default(true),
-  createdAt: integer('created_at', { mode: 'timestamp' }).notNull(),
-  updatedAt: integer('updated_at', { mode: 'timestamp' }).notNull(),
+  displayOrder: real('display_order').notNull().default(0), // For UI ordering
+  isActive: boolean('is_active').notNull().default(true),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 });
 
+// Account types table - dynamic enum values
+export const accountTypes = pgTable('account_types', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  code: text('code').notNull().unique(), // 'checking', 'savings', etc.
+  name: text('name').notNull(), // 'Checking Account', 'Savings Account', etc.
+  description: text('description'),
+  displayOrder: real('display_order').notNull().default(0),
+  isActive: boolean('is_active').notNull().default(true),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
+// Transaction types table - dynamic enum values
+export const transactionTypes = pgTable('transaction_types', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  code: text('code').notNull().unique(), // 'deposit', 'withdrawal', etc.
+  name: text('name').notNull(), // 'Deposit', 'Withdrawal', etc.
+  description: text('description'),
+  displayOrder: real('display_order').notNull().default(0),
+  isActive: boolean('is_active').notNull().default(true),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
+// Token types table - dynamic enum values
+export const tokenTypes = pgTable('token_types', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  code: text('code').notNull().unique(), // 'fiat', 'crypto', etc.
+  name: text('name').notNull(), // 'Fiat Currency', 'Cryptocurrency', etc.
+  description: text('description'),
+  displayOrder: real('display_order').notNull().default(0),
+  isActive: boolean('is_active').notNull().default(true),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
+// =============================================================================
+// MAIN TABLES
+// =============================================================================
+
 // Users table
-export const users = sqliteTable('users', {
-  id: text('id').primaryKey(),
+export const users = pgTable('users', {
+  id: uuid('id').defaultRandom().primaryKey(),
   email: text('email').notNull().unique(),
   name: text('name').notNull(),
   avatar: text('avatar'),
   baseCurrency: text('base_currency').notNull().default('USD'), // User's preferred base currency
 
-  createdAt: integer('created_at', { mode: 'timestamp' }).notNull(),
-  updatedAt: integer('updated_at', { mode: 'timestamp' }).notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 });
 
 // Institutions table
-export const institutions = sqliteTable(
+export const institutions = pgTable(
   'institutions',
   {
-    id: text('id').primaryKey(),
-    userId: text('user_id')
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id')
       .notNull()
       .references(() => users.id, { onDelete: 'cascade' }),
     name: text('name').notNull(),
-    typeId: text('type_id')
+    typeId: uuid('type_id')
       .notNull()
       .references(() => institutionTypes.id, { onDelete: 'restrict' }), // Reference to institution_types
     description: text('description'),
     website: text('website'),
     logoUrl: text('logo_url'),
-    isActive: integer('is_active', { mode: 'boolean' }).notNull().default(true),
-    createdAt: integer('created_at', { mode: 'timestamp' }).notNull(),
-    updatedAt: integer('updated_at', { mode: 'timestamp' }).notNull(),
+    isActive: boolean('is_active').notNull().default(true),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => ({
     // Unique constraint for institution name per user
@@ -51,33 +95,37 @@ export const institutions = sqliteTable(
 );
 
 // Tokens table (represents tradeable assets)
-export const tokens = sqliteTable('tokens', {
-  id: text('id').primaryKey(),
+export const tokens = pgTable('tokens', {
+  id: uuid('id').defaultRandom().primaryKey(),
   symbol: text('symbol').notNull(),
   name: text('name').notNull(),
-  type: text('type').notNull(), // 'fiat' | 'crypto' | 'stock' | 'etf' | 'bond' | 'commodity' | 'other'
-  decimals: integer('decimals').notNull().default(2),
+  typeId: uuid('type_id')
+    .notNull()
+    .references(() => tokenTypes.id, { onDelete: 'restrict' }), // Reference to token_types
+  decimals: real('decimals').notNull().default(2),
   iconUrl: text('icon_url'),
-  isActive: integer('is_active', { mode: 'boolean' }).notNull().default(true),
-  createdAt: integer('created_at', { mode: 'timestamp' }).notNull(),
-  updatedAt: integer('updated_at', { mode: 'timestamp' }).notNull(),
+  isActive: boolean('is_active').notNull().default(true),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 });
 
 // Accounts table
-export const accounts = sqliteTable(
+export const accounts = pgTable(
   'accounts',
   {
-    id: text('id').primaryKey(),
-    institutionId: text('institution_id')
+    id: uuid('id').defaultRandom().primaryKey(),
+    institutionId: uuid('institution_id')
       .notNull()
       .references(() => institutions.id, { onDelete: 'cascade' }),
     name: text('name').notNull(),
-    type: text('type').notNull(), // 'checking' | 'savings' | 'investment' | 'credit' | 'loan' | 'other'
+    typeId: uuid('type_id')
+      .notNull()
+      .references(() => accountTypes.id, { onDelete: 'restrict' }), // Reference to account_types
     description: text('description'),
     accountNumber: text('account_number'),
-    isActive: integer('is_active', { mode: 'boolean' }).notNull().default(true),
-    createdAt: integer('created_at', { mode: 'timestamp' }).notNull(),
-    updatedAt: integer('updated_at', { mode: 'timestamp' }).notNull(),
+    isActive: boolean('is_active').notNull().default(true),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => ({
     // Unique constraint for account name per institution
@@ -86,20 +134,20 @@ export const accounts = sqliteTable(
 );
 
 // Holdings table (token balances in accounts)
-export const holdings = sqliteTable(
+export const holdings = pgTable(
   'holdings',
   {
-    id: text('id').primaryKey(),
-    accountId: text('account_id')
+    id: uuid('id').defaultRandom().primaryKey(),
+    accountId: uuid('account_id')
       .notNull()
       .references(() => accounts.id, { onDelete: 'cascade' }),
-    tokenId: text('token_id')
+    tokenId: uuid('token_id')
       .notNull()
       .references(() => tokens.id, { onDelete: 'restrict' }), // Prevent token deletion if holdings exist
     balance: real('balance').notNull(),
     averageCostBasis: real('average_cost_basis'),
-    lastUpdated: integer('last_updated', { mode: 'timestamp' }).notNull(),
-    createdAt: integer('created_at', { mode: 'timestamp' }).notNull(),
+    lastUpdated: timestamp('last_updated', { withTimezone: true }).notNull().defaultNow(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => ({
     // Unique constraint for one holding per token per account
@@ -108,20 +156,20 @@ export const holdings = sqliteTable(
 );
 
 // Token prices table (historical prices)
-export const tokenPrices = sqliteTable(
+export const tokenPrices = pgTable(
   'token_prices',
   {
-    id: text('id').primaryKey(),
-    tokenId: text('token_id')
+    id: uuid('id').defaultRandom().primaryKey(),
+    tokenId: uuid('token_id')
       .notNull()
       .references(() => tokens.id, { onDelete: 'cascade' }),
-    baseTokenId: text('base_token_id')
+    baseTokenId: uuid('base_token_id')
       .notNull()
       .references(() => tokens.id, { onDelete: 'restrict' }), // Prevent base token deletion
     price: real('price').notNull(),
-    timestamp: integer('timestamp', { mode: 'timestamp' }).notNull(),
+    timestamp: timestamp('timestamp', { withTimezone: true }).notNull(),
     source: text('source'),
-    createdAt: integer('created_at', { mode: 'timestamp' }).notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => ({
     // Unique constraint for one price per token per base token per timestamp
@@ -130,29 +178,43 @@ export const tokenPrices = sqliteTable(
 );
 
 // Transactions table
-export const transactions = sqliteTable('transactions', {
-  id: text('id').primaryKey(),
-  holdingId: text('holding_id')
+export const transactions = pgTable('transactions', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  holdingId: uuid('holding_id')
     .notNull()
     .references(() => holdings.id, { onDelete: 'cascade' }),
-  type: text('type').notNull(), // 'buy' | 'sell' | 'deposit' | 'withdrawal' | 'transfer' | 'dividend' | 'split' | 'other'
+  typeId: uuid('type_id')
+    .notNull()
+    .references(() => transactionTypes.id, { onDelete: 'restrict' }), // Reference to transaction_types
   amount: real('amount').notNull(),
   price: real('price'), // Price per unit in base currency
-  priceTokenId: text('price_token_id') // Currency of the price (defaults to user's base currency)
+  priceTokenId: uuid('price_token_id') // Currency of the price (defaults to user's base currency)
     .references(() => tokens.id, { onDelete: 'restrict' }),
   fee: real('fee').notNull().default(0),
-  feeTokenId: text('fee_token_id') // Currency of the fee
+  feeTokenId: uuid('fee_token_id') // Currency of the fee
     .references(() => tokens.id, { onDelete: 'restrict' }),
   description: text('description'),
   reference: text('reference'),
-  timestamp: integer('timestamp', { mode: 'timestamp' }).notNull(),
-  createdAt: integer('created_at', { mode: 'timestamp' }).notNull(),
-  updatedAt: integer('updated_at', { mode: 'timestamp' }).notNull(),
+  timestamp: timestamp('timestamp', { withTimezone: true }).notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 });
 
 // Relations
 export const institutionTypesRelations = relations(institutionTypes, ({ many }) => ({
   institutions: many(institutions),
+}));
+
+export const accountTypesRelations = relations(accountTypes, ({ many }) => ({
+  accounts: many(accounts),
+}));
+
+export const transactionTypesRelations = relations(transactionTypes, ({ many }) => ({
+  transactions: many(transactions),
+}));
+
+export const tokenTypesRelations = relations(tokenTypes, ({ many }) => ({
+  tokens: many(tokens),
 }));
 
 export const usersRelations = relations(users, ({ many }) => ({
@@ -176,10 +238,18 @@ export const accountsRelations = relations(accounts, ({ one, many }) => ({
     fields: [accounts.institutionId],
     references: [institutions.id],
   }),
+  type: one(accountTypes, {
+    fields: [accounts.typeId],
+    references: [accountTypes.id],
+  }),
   holdings: many(holdings),
 }));
 
-export const tokensRelations = relations(tokens, ({ many }) => ({
+export const tokensRelations = relations(tokens, ({ one, many }) => ({
+  type: one(tokenTypes, {
+    fields: [tokens.typeId],
+    references: [tokenTypes.id],
+  }),
   holdings: many(holdings),
   prices: many(tokenPrices),
   basePrices: many(tokenPrices, {
@@ -216,11 +286,27 @@ export const transactionsRelations = relations(transactions, ({ one }) => ({
     fields: [transactions.holdingId],
     references: [holdings.id],
   }),
+  type: one(transactionTypes, {
+    fields: [transactions.typeId],
+    references: [transactionTypes.id],
+  }),
 }));
 
 // Export types for use in application
 export type User = typeof users.$inferSelect;
 export type NewUser = typeof users.$inferInsert;
+
+export type InstitutionType = typeof institutionTypes.$inferSelect;
+export type NewInstitutionType = typeof institutionTypes.$inferInsert;
+
+export type AccountType = typeof accountTypes.$inferSelect;
+export type NewAccountType = typeof accountTypes.$inferInsert;
+
+export type TransactionType = typeof transactionTypes.$inferSelect;
+export type NewTransactionType = typeof transactionTypes.$inferInsert;
+
+export type TokenType = typeof tokenTypes.$inferSelect;
+export type NewTokenType = typeof tokenTypes.$inferInsert;
 
 export type Institution = typeof institutions.$inferSelect;
 export type NewInstitution = typeof institutions.$inferInsert;

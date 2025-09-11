@@ -20,7 +20,7 @@ bun dev:frontend          # Start only frontend server
 bun build                 # Build all workspaces (backend + frontend)
 bun clean                 # Clean all build artifacts
 
-# Code Quality  
+# Code Quality
 bun lint                  # Lint entire codebase with Biome
 bun format               # Format entire codebase with Biome
 bun type-check           # Run TypeScript checks across all workspaces
@@ -37,8 +37,7 @@ bun test:watch          # Run tests in watch mode
 # Database Schema & Migrations
 bun run db:generate      # Generate Drizzle migrations from schema changes
 bun run db:migrate       # Apply pending migrations to database
-bun run db:seed         # Populate database with sample data
-bun run db:setup        # Complete setup: migrate + seed (for fresh installs)
+bun run db:setup        # Complete setup: migrate (for fresh installs)
 bun run db:studio       # Open Drizzle Studio for database management
 ```
 
@@ -47,6 +46,7 @@ bun run db:studio       # Open Drizzle Studio for database management
 When working in individual workspaces, `cd` into the specific directory first:
 
 **Frontend (apps/frontend)**:
+
 ```bash
 cd apps/frontend
 bun dev                  # Start Vite dev server
@@ -55,6 +55,7 @@ bun preview             # Preview production build locally
 ```
 
 **Backend (apps/backend)**:
+
 ```bash
 cd apps/backend
 bun dev                 # Start Elysia server with hot reload
@@ -63,6 +64,7 @@ bun test                # Run backend-specific tests
 ```
 
 **Shared Package (packages/shared)**:
+
 ```bash
 cd packages/shared
 bun test                # Run shared utilities tests
@@ -94,6 +96,7 @@ bun run test:frontend   # Frontend tests only (currently disabled)
 ### Technology Stack
 
 **Backend**:
+
 - **Elysia**: Modern TypeScript server framework
 - **tRPC**: End-to-end type-safe API layer
 - **Drizzle ORM**: Type-safe database queries with SQLite (dev) / PostgreSQL (prod)
@@ -101,6 +104,7 @@ bun run test:frontend   # Frontend tests only (currently disabled)
 - **Zod**: Runtime schema validation
 
 **Frontend**:
+
 - **React 18**: UI framework with modern hooks
 - **Vite**: Fast build tool and dev server
 - **Tailwind CSS + Shadcn UI**: Modern component library
@@ -108,6 +112,7 @@ bun run test:frontend   # Frontend tests only (currently disabled)
 - **React Router**: Client-side routing
 
 **Development Tools**:
+
 - **Biome**: Fast linting and formatting (replaces ESLint + Prettier)
 - **Bun Test**: Native test framework with coverage reporting
 - **TypeScript**: Strict type checking across entire codebase
@@ -122,12 +127,13 @@ User
     └── Account (checking, savings, investment)
         └── Holding (token balances)
             └── Transaction (buy/sell/transfer records)
-            
+
 Token (tradeable assets: stocks, crypto, fiat)
 └── TokenPrice (historical price data)
 ```
 
 **Key Tables**:
+
 - `users`: User account information and preferences
 - `institutions`: Financial institutions (banks, brokers)
 - `accounts`: User's financial accounts within institutions
@@ -141,7 +147,7 @@ Token (tradeable assets: stocks, crypto, fiat)
 **CRITICAL**: All monetary calculations must use `decimal.js` via the `FinancialMath` utility class from `@scani/shared`.
 
 ```typescript
-import { FinancialMath } from '@scani/shared';
+import { FinancialMath } from "@scani/shared";
 
 // Correct - use FinancialMath for all monetary operations
 const totalValue = FinancialMath.multiply(balance, price);
@@ -172,6 +178,7 @@ The API is organized into domain-specific routers:
 1. **Prerequisites**: Install [Bun](https://bun.sh/) (latest version)
 
 2. **Initial Setup**:
+
    ```bash
    bun install
    bun run db:setup    # Sets up database with migrations and sample data
@@ -190,6 +197,7 @@ The API is organized into domain-specific routers:
 **Coverage Target**: 93%+ test coverage maintained across entire codebase
 
 **Test Types**:
+
 - **Unit Tests**: Individual functions and utilities
 - **Integration Tests**: Database operations and API endpoints
 - **Type Tests**: Schema validation and type safety
@@ -201,11 +209,13 @@ The API is organized into domain-specific routers:
 
 ## Environment Configuration
 
-**Development**: 
+**Development**:
+
 - Database: SQLite at `./data/app.db`
 - Auto-seeded with sample data
 
 **Production**:
+
 - Database: PostgreSQL via `DATABASE_URL` environment variable
 - Drizzle config automatically detects and switches database dialects
 

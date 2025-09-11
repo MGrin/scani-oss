@@ -1,27 +1,37 @@
+import { accountTypesRouter } from './routers/account-types';
 import { accountsRouter } from './routers/accounts';
 import { holdingsRouter } from './routers/holdings';
 import { institutionTypesRouter } from './routers/institution-types';
 import { institutionsRouter } from './routers/institutions';
+import { tokenTypesRouter } from './routers/token-types';
 import { tokenPricesRouter } from './routers/tokenPrices';
 import { tokensRouter } from './routers/tokens';
+import { transactionTypesRouter } from './routers/transaction-types';
 import { transactionsRouter } from './routers/transactions';
 import { usersRouter } from './routers/users';
 import { publicProcedure, router } from './trpc';
 
 export const appRouter = router({
-  // User management
+  // User management (protected)
   users: usersRouter,
 
-  // Core financial entities
+  // Core financial entities (protected)
   tokens: tokensRouter,
   tokenPrices: tokenPricesRouter,
+
+  // Enum tables (protected)
   institutionTypes: institutionTypesRouter,
+  accountTypes: accountTypesRouter,
+  transactionTypes: transactionTypesRouter,
+  tokenTypes: tokenTypesRouter,
+
+  // Business entities (protected)
   institutions: institutionsRouter,
   accounts: accountsRouter,
   holdings: holdingsRouter,
   transactions: transactionsRouter,
 
-  // Health check
+  // Health check (public)
   health: router({
     check: publicProcedure.query(() => ({
       status: 'ok',

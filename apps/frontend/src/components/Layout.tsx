@@ -2,6 +2,7 @@ import {
   Building2,
   CreditCard,
   Home,
+  LogOut,
   Menu,
   PieChart,
   Settings,
@@ -14,6 +15,7 @@ import { Link, useLocation } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { SkipLinks } from '@/components/ui/skip-links';
 import { ThemeToggle } from '@/components/ui/theme-toggle';
+import { useAuth } from '@/contexts/AuthContext';
 import { useSessionTimeoutContext } from '@/hooks/useSessionTimeout';
 import { MOBILE_SPACING } from '@/lib/mobile-utils';
 import { cn } from '@/lib/utils';
@@ -33,11 +35,16 @@ const navigation = [
 ];
 
 export function Layout({ children }: LayoutProps) {
-  const location = useLocation();
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const location = useLocation();
   const { isActive, showWarning } = useSessionTimeoutContext();
+  const { signOut, user } = useAuth();
   const navigationId = useId();
   const mainContentId = useId();
+
+  const handleSignOut = async () => {
+    await signOut();
+  };
 
   // Calculate top margin for session status indicator
   const hasSessionIndicator = !isActive || showWarning;
@@ -155,6 +162,29 @@ export function Layout({ children }: LayoutProps) {
                 <div className="text-sm text-muted-foreground">
                   Welcome to your personal finance dashboard
                 </div>
+                {user && (
+                  <div className="flex items-center space-x-3">
+                    <div className="flex items-center space-x-2">
+                      <div className="h-8 w-8 bg-muted rounded-full flex items-center justify-center">
+                        <span className="text-xs font-medium">
+                          {user.email?.[0]?.toUpperCase() || '?'}
+                        </span>
+                      </div>
+                      <span className="text-sm text-muted-foreground hidden sm:inline">
+                        {user.email}
+                      </span>
+                    </div>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={handleSignOut}
+                      title="Sign out"
+                      className="h-8 w-8"
+                    >
+                      <LogOut className="h-4 w-4" />
+                    </Button>
+                  </div>
+                )}
               </div>
             </div>
             {/* Session status will be rendered here by SessionStatusIndicator */}

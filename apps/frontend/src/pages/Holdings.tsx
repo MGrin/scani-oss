@@ -1,10 +1,4 @@
-import {
-  type Account,
-  FinancialMath,
-  type Holding,
-  type Institution,
-  type Token,
-} from '@scani/shared';
+import { FinancialMath } from '@scani/shared';
 import {
   Building,
   Coins,
@@ -46,16 +40,16 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
+import type { ApiAccount, ApiHolding, ApiInstitution, ApiToken } from '@/lib/api-types';
 import { BUTTON_TEXT } from '@/lib/button-constants';
 import { trpc } from '@/lib/trpc';
 
 type SortBy = 'balance' | 'token' | 'account' | 'type';
-type FilterBy = 'all' | 'fiat' | 'crypto' | 'stock' | 'etf' | 'bond' | 'commodity' | 'other';
 
-interface ProcessedHolding extends Holding {
-  token: Token;
-  account: Account;
-  institution: Institution | null;
+interface ProcessedHolding extends ApiHolding {
+  token: ApiToken | undefined;
+  account: ApiAccount | undefined;
+  institution: ApiInstitution | null | undefined;
   value: number;
 }
 
@@ -64,13 +58,14 @@ export function Holdings() {
   const { data: accounts } = trpc.accounts.getAll.useQuery();
   const { data: tokens } = trpc.tokens.getAll.useQuery();
   const { data: institutions } = trpc.institutions.getAll.useQuery();
+  const { data: tokenTypes } = trpc.tokenTypes.getAll.useQuery();
 
   const [searchTerm, setSearchTerm] = useState('');
   const [sortBy, setSortBy] = useState<SortBy>('balance');
-  const [filterBy, setFilterBy] = useState<FilterBy>('all');
+  const [filterBy, setFilterBy] = useState<string>('all');
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc');
   const [isHoldingFormOpen, setIsHoldingFormOpen] = useState(false);
-  const [holdingToEdit, setHoldingToEdit] = useState<Holding | undefined>();
+  const [holdingToEdit, setHoldingToEdit] = useState<ApiHolding | undefined>();
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [holdingToDelete, setHoldingToDelete] = useState<ProcessedHolding | undefined>();
   const [isViewDialogOpen, setIsViewDialogOpen] = useState(false);
@@ -83,7 +78,9 @@ export function Holdings() {
     onSuccess: () => {
       toast({
         title: 'Success',
-        description: `Holding for "${holdingToDelete?.token?.symbol || 'token'}" has been deleted successfully.`,
+        description: `Holding for "${
+          holdingToDelete?.token?.symbol || 'token'
+        }" has been deleted successfully.`,
         variant: 'success',
       });
       utils.holdings.getAll.invalidate();
@@ -100,30 +97,34 @@ export function Holdings() {
   });
 
   // Create maps for quick lookups
-  const tokensMap = tokens ? Object.fromEntries(tokens.map((token) => [token.id, token])) : {};
+  const tokensMap = tokens
+    ? Object.fromEntries(tokens.map((token: ApiToken) => [token.id, token]))
+    : {};
   const accountsMap = accounts
-    ? Object.fromEntries(accounts.map((account) => [account.id, account]))
+    ? Object.fromEntries(accounts.map((account: ApiAccount) => [account.id, account]))
     : {};
   const institutionsMap = institutions
-    ? Object.fromEntries(institutions.map((inst) => [inst.id, inst]))
+    ? Object.fromEntries(institutions.map((inst: ApiInstitution) => [inst.id, inst]))
     : {};
 
   // Process holdings data
-  const processedHoldings =
-    holdings?.map((holding) => ({
-      ...holding,
-      token: tokensMap[holding.tokenId],
-      account: accountsMap[holding.accountId],
-      institution: (() => {
-        const account = holding.accountId ? accountsMap[holding.accountId] : null;
-        const institutionId = account?.institutionId;
-        return institutionId ? institutionsMap[institutionId] || null : null;
-      })(),
-      value: FinancialMath.toNumber(FinancialMath.abs(holding.balance)),
-    })) || [];
+  const processedHoldings: ProcessedHolding[] =
+    holdings?.map(
+      (holding: ApiHolding): ProcessedHolding => ({
+        ...holding,
+        token: tokensMap[holding.tokenId],
+        account: accountsMap[holding.accountId],
+        institution: (() => {
+          const account = holding.accountId ? accountsMap[holding.accountId] : null;
+          const institutionId = account?.institutionId;
+          return institutionId ? institutionsMap[institutionId] || null : null;
+        })(),
+        value: FinancialMath.toNumber(FinancialMath.abs(holding.balance ?? 0)),
+      })
+    ) || [];
 
   // Apply filters and search
-  const filteredHoldings = processedHoldings.filter((holding) => {
+  const filteredHoldings = processedHoldings.filter((holding: ProcessedHolding) => {
     const matchesSearch =
       !searchTerm ||
       holding.token?.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -230,8 +231,14 @@ export function Holdings() {
     }
   };
 
-  const totalValue = processedHoldings.reduce((sum, holding) => sum + holding.value, 0);
-  const filteredValue = sortedHoldings.reduce((sum, holding) => sum + holding.value, 0);
+  const totalValue = processedHoldings.reduce(
+    (sum: number, holding: ProcessedHolding) => sum + holding.value,
+    0
+  );
+  const filteredValue = sortedHoldings.reduce(
+    (sum: number, holding: ProcessedHolding) => sum + holding.value,
+    0
+  );
 
   if (holdingsLoading || !tokens || !accounts || !institutions) {
     return (
@@ -306,7 +313,11 @@ export function Holdings() {
           </CardHeader>
           <CardContent className="pt-0">
             <div className="text-lg font-bold">
-              {[...new Set(processedHoldings.map((h) => h.token?.type))].filter(Boolean).length}
+              {
+                [...new Set(processedHoldings.map((h: ProcessedHolding) => h.token?.type))].filter(
+                  Boolean
+                ).length
+              }
             </div>
             <p className="text-xs text-muted-foreground">Asset categories</p>
           </CardContent>
@@ -333,19 +344,17 @@ export function Holdings() {
                 </div>
 
                 {/* Filter by token type */}
-                <Select value={filterBy} onValueChange={(value) => setFilterBy(value as FilterBy)}>
+                <Select value={filterBy} onValueChange={(value) => setFilterBy(value)}>
                   <SelectTrigger className="w-[140px] h-9">
                     <SelectValue placeholder="Filter by type" />
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="all">All Types</SelectItem>
-                    <SelectItem value="fiat">Fiat</SelectItem>
-                    <SelectItem value="crypto">Crypto</SelectItem>
-                    <SelectItem value="stock">Stocks</SelectItem>
-                    <SelectItem value="etf">ETFs</SelectItem>
-                    <SelectItem value="bond">Bonds</SelectItem>
-                    <SelectItem value="commodity">Commodities</SelectItem>
-                    <SelectItem value="other">Other</SelectItem>
+                    {tokenTypes?.map((tokenType) => (
+                      <SelectItem key={tokenType.code} value={tokenType.code}>
+                        {tokenType.name}
+                      </SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
               </div>
@@ -412,7 +421,7 @@ export function Holdings() {
       ) : (
         <div className="space-y-3">
           {sortedHoldings.map((holding) => {
-            const TypeIcon = getTokenTypeIcon(holding.token?.type || 'other');
+            const TypeIcon = getTokenTypeIcon(holding.token?.type ?? '');
 
             return (
               <Card key={holding.id} className="hover:shadow-md transition-shadow">
@@ -431,7 +440,7 @@ export function Holdings() {
                             {holding.token?.name || 'Unknown Token'}
                           </p>
                           <span className="text-xs px-1.5 py-0.5 bg-muted rounded capitalize">
-                            {holding.token?.type || 'unknown'}
+                            {holding.token?.type ?? 'N/A'}
                           </span>
                         </div>
                         <div className="flex items-center space-x-1 text-xs text-muted-foreground">

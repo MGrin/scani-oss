@@ -1,24 +1,27 @@
-import { CreateUserSchema, CurrencyCode, UpdateUserSchema } from '@scani/shared/types';
+import { CurrencyCode, UpdateUserSchema } from '@scani/shared/types';
 import { eq } from 'drizzle-orm';
-import { nanoid } from 'nanoid';
 import { z } from 'zod';
 import { db } from '../db/connection';
 import * as schema from '../db/schema';
-import { publicProcedure, router } from '../trpc';
-
-// Type assertion for router operations (development/test environment uses SQLite)
-const routerDb = db as ReturnType<typeof import('drizzle-orm/bun-sqlite').drizzle>;
+import { getDbUser, getUserId } from '../middleware/auth';
+import { protectedProcedure, router } from '../trpc';
 
 export const usersRouter = router({
+  // Get current authenticated user
+  getCurrent: protectedProcedure.query(async ({ ctx }) => {
+    const user = getDbUser(ctx);
+    return user;
+  }),
+
   // Get all users
-  getAll: publicProcedure.query(async () => {
-    const users = await routerDb.select().from(schema.users).orderBy(schema.users.name);
+  getAll: protectedProcedure.query(async () => {
+    const users = await db.select().from(schema.users).orderBy(schema.users.name);
     return users;
   }),
 
   // Get user by ID
-  getById: publicProcedure.input(z.object({ id: z.string() })).query(async ({ input }) => {
-    const [user] = await routerDb
+  getById: protectedProcedure.input(z.object({ id: z.string() })).query(async ({ input }) => {
+    const [user] = await db
       .select()
       .from(schema.users)
       .where(eq(schema.users.id, input.id))
@@ -30,63 +33,29 @@ export const usersRouter = router({
     return user;
   }),
 
-  // Create new user
-  create: publicProcedure.input(CreateUserSchema).mutation(async ({ input }) => {
-    try {
-      const now = new Date();
-      const userData = {
-        id: nanoid(),
+  // Update current user
+  updateCurrent: protectedProcedure.input(UpdateUserSchema).mutation(async ({ input, ctx }) => {
+    const userId = getUserId(ctx);
+
+    const [updatedUser] = await db
+      .update(schema.users)
+      .set({
         ...input,
-        createdAt: now,
-        updatedAt: now,
-      };
+        updatedAt: new Date(),
+      })
+      .where(eq(schema.users.id, userId))
+      .returning();
 
-      const [createdUser] = await routerDb.insert(schema.users).values(userData).returning();
-
-      if (!createdUser) {
-        throw new Error('Failed to create user');
-      }
-
-      return createdUser;
-    } catch (error) {
-      if (
-        error instanceof Error &&
-        error.message.includes('UNIQUE constraint failed: users.email')
-      ) {
-        throw new Error('User with this email already exists');
-      }
-      throw error;
+    if (!updatedUser) {
+      throw new Error('User not found');
     }
+
+    return updatedUser;
   }),
 
-  // Update user
-  update: publicProcedure
-    .input(
-      z.object({
-        id: z.string(),
-        data: UpdateUserSchema,
-      })
-    )
-    .mutation(async ({ input }) => {
-      const [updatedUser] = await routerDb
-        .update(schema.users)
-        .set({
-          ...input.data,
-          updatedAt: new Date(),
-        })
-        .where(eq(schema.users.id, input.id))
-        .returning();
-
-      if (!updatedUser) {
-        throw new Error('User not found');
-      }
-
-      return updatedUser;
-    }),
-
   // Delete user
-  delete: publicProcedure.input(z.object({ id: z.string() })).mutation(async ({ input }) => {
-    const [deletedUser] = await routerDb
+  delete: protectedProcedure.input(z.object({ id: z.string() })).mutation(async ({ input }) => {
+    const [deletedUser] = await db
       .delete(schema.users)
       .where(eq(schema.users.id, input.id))
       .returning();
@@ -99,7 +68,7 @@ export const usersRouter = router({
   }),
 
   // Get supported currencies
-  getSupportedCurrencies: publicProcedure.query(() => {
+  getSupportedCurrencies: protectedProcedure.query(() => {
     const currencies = CurrencyCode.options.map((code) => ({
       code,
       name: getCurrencyName(code),

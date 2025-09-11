@@ -29,15 +29,13 @@ export function Settings() {
   const [activeSection, setActiveSection] = useState('general');
 
   // Data fetching
-  const { data: userPrefs, isLoading } = trpc.users.getById.useQuery({
-    id: 'test-user-1', // Replace with actual user ID from auth context
-  });
+  const { data: userPrefs, isLoading } = trpc.users.getCurrent.useQuery();
   const { data: supportedCurrencies } = trpc.users.getSupportedCurrencies.useQuery();
   const utils = trpc.useUtils();
-  const updateUserPrefs = trpc.users.update.useMutation({
+  const updateUserPrefs = trpc.users.updateCurrent.useMutation({
     onSuccess: async () => {
       // Manually invalidate to ensure fresh data
-      await utils.users.getById.invalidate({ id: 'test-user-1' });
+      await utils.users.getCurrent.invalidate();
     },
   });
 
@@ -116,14 +114,13 @@ export function Settings() {
 
     setIsSaving(true);
     try {
-      await updateUserPrefs.mutateAsync({
-        id: 'test-user-1', // Replace with actual user ID from auth context
-        data: changed as {
+      await updateUserPrefs.mutateAsync(
+        changed as {
           name?: string;
           avatar?: string;
           baseCurrency?: CurrencyCodeType;
-        },
-      });
+        }
+      );
       // Update the original data so isDirty becomes false
       setOriginalData({ ...formData });
       toast({

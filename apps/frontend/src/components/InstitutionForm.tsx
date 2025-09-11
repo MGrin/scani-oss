@@ -78,7 +78,9 @@ export function InstitutionForm({ isOpen, onClose, institution, mode }: Institut
     onSuccess: (data) => {
       toast({
         title: 'Success',
-        description: `Institution "${data?.name || 'New institution'}" has been created successfully.`,
+        description: `Institution "${
+          data?.name || 'New institution'
+        }" has been created successfully.`,
         variant: 'success',
       });
       utils.institutions.getAll.invalidate();
@@ -202,6 +204,17 @@ export function InstitutionForm({ isOpen, onClose, institution, mode }: Institut
       return;
     }
 
+    // Prevent submission if institution types failed to load
+    if (institutionTypesError) {
+      toast({
+        title: 'Error',
+        description:
+          'Institution types could not be loaded. Please refresh the page and try again.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
     setIsSubmitting(true);
 
     // Check name uniqueness only on submission
@@ -263,31 +276,23 @@ export function InstitutionForm({ isOpen, onClose, institution, mode }: Institut
   };
 
   const institutionTypeOptions =
-    institutionTypes?.map((type) => ({
-      value: type.code,
-      label: type.name,
-    })) || [];
+    institutionTypes?.map(
+      (type: {
+        code: string;
+        name: string;
+        id: string;
+        description: string | null;
+        displayOrder: number;
+      }) => ({
+        value: type.code,
+        label: type.name,
+      })
+    ) || [];
 
-  // Fallback options if backend query fails
-  const fallbackOptions = [
-    { value: 'bank', label: 'Bank' },
-    { value: 'broker', label: 'Broker' },
-    { value: 'crypto_exchange', label: 'Crypto Exchange' },
-    { value: 'crypto_wallet', label: 'Crypto Wallet' },
-    { value: 'other', label: 'Other' },
-  ];
-
-  const finalOptions = institutionTypesError ? fallbackOptions : institutionTypeOptions;
-
-  // Log warning if using fallback options
-  React.useEffect(() => {
-    if (institutionTypesError) {
-      console.warn(
-        'Failed to load institution types from backend, using fallback options:',
-        institutionTypesError
-      );
-    }
-  }, [institutionTypesError]);
+  // Show error if backend fails to return institution types
+  if (institutionTypesError) {
+    console.error('Failed to load institution types from backend:', institutionTypesError);
+  }
 
   return (
     <Dialog open={isOpen} onOpenChange={handleOpenChange}>
@@ -345,13 +350,14 @@ export function InstitutionForm({ isOpen, onClose, institution, mode }: Institut
                   <SelectItem value="loading" disabled>
                     Loading institution types...
                   </SelectItem>
+                ) : institutionTypesError ? (
+                  <SelectItem value="error" disabled>
+                    Error loading institution types
+                  </SelectItem>
                 ) : (
-                  finalOptions.map((option) => (
+                  institutionTypeOptions.map((option: { value: string; label: string }) => (
                     <SelectItem key={option.value} value={option.value}>
                       {option.label}
-                      {institutionTypesError && finalOptions === fallbackOptions && (
-                        <span className="text-xs text-muted-foreground ml-1">(fallback)</span>
-                      )}
                     </SelectItem>
                   ))
                 )}

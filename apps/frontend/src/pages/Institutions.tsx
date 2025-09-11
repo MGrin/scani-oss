@@ -21,6 +21,7 @@ import {
 import { LoadingSpinner } from '@/components/ui/loading';
 import { PageHeader } from '@/components/ui/page-header';
 import { useToast } from '@/hooks/use-toast';
+import type { ApiAccount, ApiInstitution } from '@/lib/api-types';
 import { BUTTON_TEXT } from '@/lib/button-constants';
 import { MOBILE_SPACING } from '@/lib/mobile-utils';
 import { trpc } from '@/lib/trpc';
@@ -87,7 +88,9 @@ export function Institutions() {
   };
 
   const getInstitutionTypeLabel = (type: string) => {
-    const institutionType = institutionTypes?.find((t) => t.code === type);
+    const institutionType = institutionTypes?.find(
+      (t: { code: string; name: string }) => t.code === type
+    );
     return institutionType?.name || type;
   };
 
@@ -146,7 +149,7 @@ export function Institutions() {
         </Card>
       ) : (
         <div className={`grid ${MOBILE_SPACING.gridGap} md:grid-cols-2 lg:grid-cols-3`}>
-          {institutions.map((institution) => (
+          {institutions.map((institution: ApiInstitution) => (
             <Card key={institution.id} className="hover:shadow-md transition-shadow">
               <CardHeader className="pb-3">
                 <div className="flex items-center justify-between">
@@ -154,7 +157,7 @@ export function Institutions() {
                     <div
                       className="w-3 h-3 rounded-full"
                       style={{
-                        backgroundColor: getInstitutionTypeColor(institution.type || 'other'),
+                        backgroundColor: getInstitutionTypeColor(institution.type ?? ''),
                       }}
                     />
                     <CardTitle
@@ -195,7 +198,7 @@ export function Institutions() {
                   <div>
                     <p className="text-xs text-muted-foreground">Type</p>
                     <p className="text-sm font-medium">
-                      {getInstitutionTypeLabel(institution.type || 'other')}
+                      {getInstitutionTypeLabel(institution.type ?? '')}
                     </p>
                   </div>
                   {institution.description && (
@@ -264,10 +267,13 @@ export function Institutions() {
                         {linkedAccounts.length !== 1 ? 's' : ''}:
                       </p>
                       <ul className="list-disc list-inside space-y-1 text-orange-700 dark:text-orange-300">
-                        {linkedAccounts.slice(0, 3).map((account) => (
+                        {linkedAccounts.slice(0, 3).map((account: ApiAccount) => (
                           <li key={account.id} className="truncate">
                             {account.name} (
-                            {account.type.charAt(0).toUpperCase() + account.type.slice(1)})
+                            {account.type
+                              ? account.type.charAt(0).toUpperCase() + account.type.slice(1)
+                              : 'Unknown Type'}
+                            )
                           </li>
                         ))}
                         {linkedAccounts.length > 3 && (

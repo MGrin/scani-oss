@@ -26,6 +26,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { PageHeader } from '@/components/ui/page-header';
 import { Progress } from '@/components/ui/progress';
+import type { ApiHolding, ApiToken } from '@/lib/api-types';
 import { trpc } from '@/lib/trpc';
 
 interface AssetAllocation {
@@ -55,12 +56,16 @@ export function Analytics() {
   });
 
   // Create lookup maps
-  const tokensMap = tokens ? Object.fromEntries(tokens.map((token) => [token.id, token])) : {};
+  const tokensMap = tokens
+    ? Object.fromEntries(tokens.map((token: ApiToken) => [token.id, token]))
+    : {};
 
   // Calculate total net worth from holdings
   const totalNetWorth = useMemo(() => {
     if (!holdings) return new Decimal('0');
-    return FinancialMath.sum(holdings.map((holding) => FinancialMath.abs(holding.balance)));
+    return FinancialMath.sum(
+      holdings.map((holding: ApiHolding) => FinancialMath.abs(holding.balance ?? 0))
+    );
   }, [holdings]);
 
   // Asset allocation by token type
@@ -79,21 +84,22 @@ export function Analytics() {
 
     const allocationMap = new Map<string, { value: number; count: number; name: string }>();
 
-    holdings.forEach((holding) => {
+    holdings.forEach((holding: ApiHolding) => {
       const token = tokensMap[holding.tokenId];
       if (!token) return;
 
-      const value = FinancialMath.abs(holding.balance);
-      const existing = allocationMap.get(token.type) || {
+      const tokenType = token.type ?? 'unknown';
+      const value = FinancialMath.abs(holding.balance ?? 0);
+      const existing = allocationMap.get(tokenType) || {
         value: 0,
         count: 0,
-        name: token.type,
+        name: tokenType,
       };
 
-      allocationMap.set(token.type, {
+      allocationMap.set(tokenType, {
         value: FinancialMath.toNumber(FinancialMath.add(existing.value, value)),
         count: existing.count + 1,
-        name: token.type.charAt(0).toUpperCase() + token.type.slice(1),
+        name: tokenType.charAt(0).toUpperCase() + tokenType.slice(1),
       });
     });
 
@@ -161,10 +167,13 @@ export function Analytics() {
   const performanceMetrics = useMemo(() => {
     if (!holdings || !transactions) return null;
 
-    const totalCostBasis = holdings.reduce((sum, holding) => {
-      if (holding.averageCostBasis && holding.balance > 0) {
+    const totalCostBasis = holdings.reduce((sum: number, holding: ApiHolding) => {
+      if (holding.averageCostBasis && (holding.balance ?? 0) > 0) {
         return FinancialMath.toNumber(
-          FinancialMath.add(sum, FinancialMath.multiply(holding.balance, holding.averageCostBasis))
+          FinancialMath.add(
+            sum,
+            FinancialMath.multiply(holding.balance ?? 0, holding.averageCostBasis)
+          )
         );
       }
       return sum;
@@ -369,7 +378,9 @@ export function Analytics() {
                       cx="50%"
                       cy="50%"
                       outerRadius={80}
-                      label={(entry) => `${entry.name} (${entry.percentage.toFixed(1)}%)`}
+                      label={(entry) =>
+                        `${entry.name} (${(entry as AssetAllocation).percentage.toFixed(1)}%)`
+                      }
                     >
                       {assetAllocation.map((entry) => (
                         <Cell key={entry.type} fill={entry.color} />

@@ -1,62 +1,138 @@
-import {
-  CreateTransactionSchema,
-  TransactionType,
-  UpdateTransactionSchema,
-} from '@scani/shared/types';
+import { UpdateTransactionSchema } from '@scani/shared/types';
 import { and, desc, eq } from 'drizzle-orm';
 import { nanoid } from 'nanoid';
 import { z } from 'zod';
 import { db } from '../db/connection';
 import * as schema from '../db/schema';
-import { publicProcedure, router } from '../trpc';
+import { protectedProcedure, router } from '../trpc';
 
 // Type assertion for router operations (development/test environment uses SQLite)
-const routerDb = db as ReturnType<typeof import('drizzle-orm/bun-sqlite').drizzle>;
+const routerDb = db as ReturnType<typeof import('drizzle-orm/postgres-js').drizzle>;
 
 export const transactionsRouter = router({
   // Get all transactions
-  getAll: publicProcedure.query(async () => {
+  getAll: protectedProcedure.query(async () => {
     const transactions = await routerDb
-      .select()
+      .select({
+        id: schema.transactions.id,
+        holdingId: schema.transactions.holdingId,
+        typeId: schema.transactions.typeId,
+        type: schema.transactionTypes.code,
+        typeName: schema.transactionTypes.name,
+        amount: schema.transactions.amount,
+        price: schema.transactions.price,
+        priceTokenId: schema.transactions.priceTokenId,
+        fee: schema.transactions.fee,
+        feeTokenId: schema.transactions.feeTokenId,
+        description: schema.transactions.description,
+        reference: schema.transactions.reference,
+        timestamp: schema.transactions.timestamp,
+        createdAt: schema.transactions.createdAt,
+        updatedAt: schema.transactions.updatedAt,
+      })
       .from(schema.transactions)
+      .innerJoin(
+        schema.transactionTypes,
+        eq(schema.transactions.typeId, schema.transactionTypes.id)
+      )
       .orderBy(desc(schema.transactions.timestamp));
     return transactions;
   }),
 
   // Get transactions by holding ID
-  getByHoldingId: publicProcedure
+  getByHoldingId: protectedProcedure
     .input(z.object({ holdingId: z.string() }))
     .query(async ({ input }) => {
       const transactions = await routerDb
-        .select()
+        .select({
+          id: schema.transactions.id,
+          holdingId: schema.transactions.holdingId,
+          typeId: schema.transactions.typeId,
+          type: schema.transactionTypes.code,
+          typeName: schema.transactionTypes.name,
+          amount: schema.transactions.amount,
+          price: schema.transactions.price,
+          priceTokenId: schema.transactions.priceTokenId,
+          fee: schema.transactions.fee,
+          feeTokenId: schema.transactions.feeTokenId,
+          description: schema.transactions.description,
+          reference: schema.transactions.reference,
+          timestamp: schema.transactions.timestamp,
+          createdAt: schema.transactions.createdAt,
+          updatedAt: schema.transactions.updatedAt,
+        })
         .from(schema.transactions)
+        .innerJoin(
+          schema.transactionTypes,
+          eq(schema.transactions.typeId, schema.transactionTypes.id)
+        )
         .where(eq(schema.transactions.holdingId, input.holdingId))
         .orderBy(desc(schema.transactions.timestamp));
       return transactions;
     }),
 
   // Get transactions by type
-  getByType: publicProcedure
-    .input(z.object({ type: TransactionType, holdingId: z.string().optional() }))
+  getByType: protectedProcedure
+    .input(z.object({ type: z.string(), holdingId: z.string().optional() }))
     .query(async ({ input }) => {
-      const whereConditions = [eq(schema.transactions.type, input.type)];
+      const whereConditions = [eq(schema.transactionTypes.code, input.type)];
       if (input.holdingId) {
         whereConditions.push(eq(schema.transactions.holdingId, input.holdingId));
       }
 
       const query = routerDb
-        .select()
+        .select({
+          id: schema.transactions.id,
+          holdingId: schema.transactions.holdingId,
+          typeId: schema.transactions.typeId,
+          type: schema.transactionTypes.code,
+          typeName: schema.transactionTypes.name,
+          amount: schema.transactions.amount,
+          price: schema.transactions.price,
+          priceTokenId: schema.transactions.priceTokenId,
+          fee: schema.transactions.fee,
+          feeTokenId: schema.transactions.feeTokenId,
+          description: schema.transactions.description,
+          reference: schema.transactions.reference,
+          timestamp: schema.transactions.timestamp,
+          createdAt: schema.transactions.createdAt,
+          updatedAt: schema.transactions.updatedAt,
+        })
         .from(schema.transactions)
+        .innerJoin(
+          schema.transactionTypes,
+          eq(schema.transactions.typeId, schema.transactionTypes.id)
+        )
         .where(whereConditions.length > 1 ? and(...whereConditions) : whereConditions[0]);
 
       return await query.orderBy(desc(schema.transactions.timestamp));
     }),
 
   // Get transaction by ID
-  getById: publicProcedure.input(z.object({ id: z.string() })).query(async ({ input }) => {
+  getById: protectedProcedure.input(z.object({ id: z.string() })).query(async ({ input }) => {
     const [transaction] = await routerDb
-      .select()
+      .select({
+        id: schema.transactions.id,
+        holdingId: schema.transactions.holdingId,
+        typeId: schema.transactions.typeId,
+        type: schema.transactionTypes.code,
+        typeName: schema.transactionTypes.name,
+        amount: schema.transactions.amount,
+        price: schema.transactions.price,
+        priceTokenId: schema.transactions.priceTokenId,
+        fee: schema.transactions.fee,
+        feeTokenId: schema.transactions.feeTokenId,
+        description: schema.transactions.description,
+        reference: schema.transactions.reference,
+        timestamp: schema.transactions.timestamp,
+        createdAt: schema.transactions.createdAt,
+        updatedAt: schema.transactions.updatedAt,
+      })
       .from(schema.transactions)
+      .innerJoin(
+        schema.transactionTypes,
+        eq(schema.transactions.typeId, schema.transactionTypes.id)
+      )
       .where(eq(schema.transactions.id, input.id))
       .limit(1);
 
@@ -67,26 +143,100 @@ export const transactionsRouter = router({
   }),
 
   // Create new transaction
-  create: publicProcedure.input(CreateTransactionSchema).mutation(async ({ input }) => {
-    const now = new Date();
-    const transactionData = {
-      ...input,
-      id: nanoid(),
-      amount: input.amount || 0, // Ensure amount is always a number
-      createdAt: now,
-      updatedAt: now,
-    };
+  create: protectedProcedure
+    .input(
+      z.object({
+        holdingId: z.string().min(1, 'Holding ID cannot be empty'),
+        type: z.string().min(1, 'Transaction type cannot be empty'), // This will be the type code
+        amount: z.number(),
+        price: z.number().optional(),
+        priceTokenId: z.string().optional(),
+        fee: z.number().default(0),
+        feeTokenId: z.string().optional(),
+        description: z.string().max(500).optional(),
+        reference: z.string().max(100).optional(),
+        timestamp: z.date(),
+      })
+    )
+    .mutation(async ({ input }) => {
+      // Look up the transaction type by code to get the typeId
+      const [transactionType] = await routerDb
+        .select()
+        .from(schema.transactionTypes)
+        .where(
+          and(
+            eq(schema.transactionTypes.code, input.type),
+            eq(schema.transactionTypes.isActive, true)
+          )
+        )
+        .limit(1);
 
-    const [transaction] = await routerDb
-      .insert(schema.transactions)
-      .values(transactionData)
-      .returning();
+      if (!transactionType) {
+        throw new Error(`Invalid transaction type: ${input.type}`);
+      }
 
-    return transaction;
-  }),
+      const now = new Date();
+      const transactionData = {
+        id: nanoid(),
+        holdingId: input.holdingId,
+        typeId: transactionType.id, // Use the actual typeId
+        amount: input.amount || 0,
+        price: input.price || null,
+        priceTokenId: input.priceTokenId || null,
+        fee: input.fee || 0,
+        feeTokenId: input.feeTokenId || null,
+        description: input.description || null,
+        reference: input.reference || null,
+        timestamp: input.timestamp,
+        createdAt: now,
+        updatedAt: now,
+      };
+
+      const [transaction] = await routerDb
+        .insert(schema.transactions)
+        .values(transactionData)
+        .returning();
+
+      if (!transaction) {
+        throw new Error('Failed to create transaction');
+      }
+
+      // Fetch the transaction with type information
+      const [transactionWithType] = await routerDb
+        .select({
+          id: schema.transactions.id,
+          holdingId: schema.transactions.holdingId,
+          typeId: schema.transactions.typeId,
+          type: schema.transactionTypes.code,
+          typeName: schema.transactionTypes.name,
+          amount: schema.transactions.amount,
+          price: schema.transactions.price,
+          priceTokenId: schema.transactions.priceTokenId,
+          fee: schema.transactions.fee,
+          feeTokenId: schema.transactions.feeTokenId,
+          description: schema.transactions.description,
+          reference: schema.transactions.reference,
+          timestamp: schema.transactions.timestamp,
+          createdAt: schema.transactions.createdAt,
+          updatedAt: schema.transactions.updatedAt,
+        })
+        .from(schema.transactions)
+        .innerJoin(
+          schema.transactionTypes,
+          eq(schema.transactions.typeId, schema.transactionTypes.id)
+        )
+        .where(eq(schema.transactions.id, transaction.id))
+        .limit(1);
+
+      if (!transactionWithType) {
+        throw new Error('Failed to fetch created transaction');
+      }
+
+      return transactionWithType;
+    }),
 
   // Update transaction
-  update: publicProcedure
+  update: protectedProcedure
     .input(
       z.object({
         id: z.string(),
@@ -109,11 +259,42 @@ export const transactionsRouter = router({
         throw new Error('Transaction not found');
       }
 
-      return updatedTransaction;
+      // Fetch the updated transaction with type information
+      const [transactionWithType] = await routerDb
+        .select({
+          id: schema.transactions.id,
+          holdingId: schema.transactions.holdingId,
+          typeId: schema.transactions.typeId,
+          type: schema.transactionTypes.code,
+          typeName: schema.transactionTypes.name,
+          amount: schema.transactions.amount,
+          price: schema.transactions.price,
+          priceTokenId: schema.transactions.priceTokenId,
+          fee: schema.transactions.fee,
+          feeTokenId: schema.transactions.feeTokenId,
+          description: schema.transactions.description,
+          reference: schema.transactions.reference,
+          timestamp: schema.transactions.timestamp,
+          createdAt: schema.transactions.createdAt,
+          updatedAt: schema.transactions.updatedAt,
+        })
+        .from(schema.transactions)
+        .innerJoin(
+          schema.transactionTypes,
+          eq(schema.transactions.typeId, schema.transactionTypes.id)
+        )
+        .where(eq(schema.transactions.id, updatedTransaction.id))
+        .limit(1);
+
+      if (!transactionWithType) {
+        throw new Error('Failed to fetch updated transaction');
+      }
+
+      return transactionWithType;
     }),
 
   // Delete transaction
-  delete: publicProcedure.input(z.object({ id: z.string() })).mutation(async ({ input }) => {
+  delete: protectedProcedure.input(z.object({ id: z.string() })).mutation(async ({ input }) => {
     const [deletedTransaction] = await routerDb
       .delete(schema.transactions)
       .where(eq(schema.transactions.id, input.id))
@@ -127,7 +308,7 @@ export const transactionsRouter = router({
   }),
 
   // Get transactions by date range
-  getByDateRange: publicProcedure
+  getByDateRange: protectedProcedure
     .input(
       z.object({
         startDate: z.date(),
@@ -153,7 +334,7 @@ export const transactionsRouter = router({
     }),
 
   // Get transactions with fees above threshold
-  getHighFeeTransactions: publicProcedure
+  getHighFeeTransactions: protectedProcedure
     .input(z.object({ minFee: z.number() }))
     .query(async ({ input }) => {
       return await routerDb

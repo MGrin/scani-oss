@@ -1,11 +1,15 @@
 import { Route, BrowserRouter as Router, Routes } from 'react-router-dom';
 import { Layout } from '@/components/Layout';
+import { ProtectedRoute } from '@/components/ProtectedRoute';
 import { Toaster } from '@/components/ui/toaster';
+import { AuthProvider } from '@/contexts/AuthContext';
 import { ThemeLoader, ThemeProvider } from '@/contexts/ThemeContext';
 import { SessionStatusIndicator, SessionTimeoutProvider } from '@/hooks/useSessionTimeout';
 import { TRPCProvider } from '@/lib/trpc-provider';
 import { Accounts } from '@/pages/Accounts';
 import { Analytics } from '@/pages/Analytics';
+import { Auth } from '@/pages/Auth';
+import { AuthCallback } from '@/pages/AuthCallback';
 import { Dashboard } from '@/pages/Dashboard';
 import { Holdings } from '@/pages/Holdings';
 import { Institutions } from '@/pages/Institutions';
@@ -24,36 +28,106 @@ function App() {
   };
 
   return (
-    <TRPCProvider>
-      <ThemeProvider>
-        <ThemeLoader>
-          <SessionTimeoutProvider
-            onTimeout={handleSessionTimeout}
-            config={{
-              timeoutMinutes: 30, // 30 minute timeout
-              warningMinutes: 5, // Show warning 5 minutes before
-              checkIntervalSeconds: 30, // Check every 30 seconds
-            }}
-          >
-            <Router>
-              <Layout>
+    <AuthProvider>
+      <TRPCProvider>
+        <ThemeProvider>
+          <ThemeLoader>
+            <SessionTimeoutProvider
+              onTimeout={handleSessionTimeout}
+              config={{
+                timeoutMinutes: 30, // 30 minute timeout
+                warningMinutes: 5, // Show warning 5 minutes before
+                checkIntervalSeconds: 30, // Check every 30 seconds
+              }}
+            >
+              <Router>
                 <Routes>
-                  <Route path="/" element={<Dashboard />} />
-                  <Route path="/analytics" element={<Analytics />} />
-                  <Route path="/holdings" element={<Holdings />} />
-                  <Route path="/transactions" element={<Transactions />} />
-                  <Route path="/accounts" element={<Accounts />} />
-                  <Route path="/institutions" element={<Institutions />} />
-                  <Route path="/settings" element={<Settings />} />
+                  {/* Public routes */}
+                  <Route path="/auth" element={<Auth />} />
+                  <Route path="/signin" element={<Auth />} />
+                  <Route path="/signup" element={<Auth />} />
+                  <Route path="/auth/callback" element={<AuthCallback />} />
+
+                  {/* Protected routes */}
+                  <Route
+                    path="/"
+                    element={
+                      <ProtectedRoute>
+                        <Layout>
+                          <Dashboard />
+                        </Layout>
+                      </ProtectedRoute>
+                    }
+                  />
+                  <Route
+                    path="/analytics"
+                    element={
+                      <ProtectedRoute>
+                        <Layout>
+                          <Analytics />
+                        </Layout>
+                      </ProtectedRoute>
+                    }
+                  />
+                  <Route
+                    path="/holdings"
+                    element={
+                      <ProtectedRoute>
+                        <Layout>
+                          <Holdings />
+                        </Layout>
+                      </ProtectedRoute>
+                    }
+                  />
+                  <Route
+                    path="/transactions"
+                    element={
+                      <ProtectedRoute>
+                        <Layout>
+                          <Transactions />
+                        </Layout>
+                      </ProtectedRoute>
+                    }
+                  />
+                  <Route
+                    path="/accounts"
+                    element={
+                      <ProtectedRoute>
+                        <Layout>
+                          <Accounts />
+                        </Layout>
+                      </ProtectedRoute>
+                    }
+                  />
+                  <Route
+                    path="/institutions"
+                    element={
+                      <ProtectedRoute>
+                        <Layout>
+                          <Institutions />
+                        </Layout>
+                      </ProtectedRoute>
+                    }
+                  />
+                  <Route
+                    path="/settings"
+                    element={
+                      <ProtectedRoute>
+                        <Layout>
+                          <Settings />
+                        </Layout>
+                      </ProtectedRoute>
+                    }
+                  />
                 </Routes>
-              </Layout>
-              <SessionStatusIndicator />
+                <SessionStatusIndicator />
+              </Router>
               <Toaster />
-            </Router>
-          </SessionTimeoutProvider>
-        </ThemeLoader>
-      </ThemeProvider>
-    </TRPCProvider>
+            </SessionTimeoutProvider>
+          </ThemeLoader>
+        </ThemeProvider>
+      </TRPCProvider>
+    </AuthProvider>
   );
 }
 

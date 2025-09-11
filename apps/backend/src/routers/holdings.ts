@@ -4,15 +4,12 @@ import { nanoid } from 'nanoid';
 import { z } from 'zod';
 import { db } from '../db/connection';
 import * as schema from '../db/schema';
-import { publicProcedure, router } from '../trpc';
-
-// Type assertion for router operations (development/test environment uses SQLite)
-const routerDb = db as ReturnType<typeof import('drizzle-orm/bun-sqlite').drizzle>;
+import { protectedProcedure, router } from '../trpc';
 
 export const holdingsRouter = router({
   // Get all holdings
-  getAll: publicProcedure.query(async () => {
-    const holdings = await routerDb
+  getAll: protectedProcedure.query(async () => {
+    const holdings = await db
       .select()
       .from(schema.holdings)
       .orderBy(desc(schema.holdings.lastUpdated));
@@ -20,10 +17,10 @@ export const holdingsRouter = router({
   }),
 
   // Get holdings by account ID
-  getByAccountId: publicProcedure
+  getByAccountId: protectedProcedure
     .input(z.object({ accountId: z.string() }))
     .query(async ({ input }) => {
-      const holdings = await routerDb
+      const holdings = await db
         .select()
         .from(schema.holdings)
         .where(eq(schema.holdings.accountId, input.accountId))
@@ -32,10 +29,10 @@ export const holdingsRouter = router({
     }),
 
   // Get holdings by token ID
-  getByTokenId: publicProcedure
+  getByTokenId: protectedProcedure
     .input(z.object({ tokenId: z.string() }))
     .query(async ({ input }) => {
-      const holdings = await routerDb
+      const holdings = await db
         .select()
         .from(schema.holdings)
         .where(eq(schema.holdings.tokenId, input.tokenId))
@@ -44,10 +41,10 @@ export const holdingsRouter = router({
     }),
 
   // Get holding by account and token
-  getByAccountAndToken: publicProcedure
+  getByAccountAndToken: protectedProcedure
     .input(z.object({ accountId: z.string(), tokenId: z.string() }))
     .query(async ({ input }) => {
-      const [holding] = await routerDb
+      const [holding] = await db
         .select()
         .from(schema.holdings)
         .where(
@@ -65,7 +62,7 @@ export const holdingsRouter = router({
     }),
 
   // Check if holding already exists (for duplicate prevention)
-  checkDuplicate: publicProcedure
+  checkDuplicate: protectedProcedure
     .input(
       z.object({
         accountId: z.string(),
@@ -84,7 +81,7 @@ export const holdingsRouter = router({
         conditions.push(ne(schema.holdings.id, input.excludeId));
       }
 
-      const [existingHolding] = await routerDb
+      const [existingHolding] = await db
         .select()
         .from(schema.holdings)
         .where(and(...conditions))
@@ -96,8 +93,8 @@ export const holdingsRouter = router({
       };
     }),
   // Get holding by ID
-  getById: publicProcedure.input(z.object({ id: z.string() })).query(async ({ input }) => {
-    const [holding] = await routerDb
+  getById: protectedProcedure.input(z.object({ id: z.string() })).query(async ({ input }) => {
+    const [holding] = await db
       .select()
       .from(schema.holdings)
       .where(eq(schema.holdings.id, input.id))
@@ -110,7 +107,7 @@ export const holdingsRouter = router({
   }),
 
   // Create new holding
-  create: publicProcedure
+  create: protectedProcedure
     .input(
       CreateHoldingSchema.omit({ lastUpdated: true }).extend({
         lastUpdated: z.date().optional(),
@@ -120,7 +117,7 @@ export const holdingsRouter = router({
       const now = new Date();
 
       // Validate account existence
-      const [account] = await routerDb
+      const [account] = await db
         .select()
         .from(schema.accounts)
         .where(eq(schema.accounts.id, input.accountId))
@@ -131,7 +128,7 @@ export const holdingsRouter = router({
       }
 
       // Validate token existence
-      const [token] = await routerDb
+      const [token] = await db
         .select()
         .from(schema.tokens)
         .where(eq(schema.tokens.id, input.tokenId))
@@ -142,7 +139,7 @@ export const holdingsRouter = router({
       }
 
       // Use database transaction to ensure atomicity
-      return await routerDb.transaction(async (trx) => {
+      return await db.transaction(async (trx) => {
         const holdingData = {
           ...input,
           id: nanoid(),
@@ -159,10 +156,26 @@ export const holdingsRouter = router({
 
         // Create opening balance transaction if balance > 0
         if (holding.balance > 0) {
+          // Get the deposit transaction type
+          const [depositType] = await trx
+            .select()
+            .from(schema.transactionTypes)
+            .where(
+              and(
+                eq(schema.transactionTypes.code, 'deposit'),
+                eq(schema.transactionTypes.isActive, true)
+              )
+            )
+            .limit(1);
+
+          if (!depositType) {
+            throw new Error('Deposit transaction type not found');
+          }
+
           await trx.insert(schema.transactions).values({
             id: nanoid(),
             holdingId: holding.id,
-            type: 'deposit', // Opening balance is treated as a deposit
+            typeId: depositType.id, // Use typeId instead of type
             amount: holding.balance,
             price: holding.averageCostBasis || null, // Use cost basis as price if available
             fee: 0,
@@ -178,7 +191,7 @@ export const holdingsRouter = router({
     }),
 
   // Update holding
-  update: publicProcedure
+  update: protectedProcedure
     .input(
       z.object({
         id: z.string(),
@@ -191,7 +204,7 @@ export const holdingsRouter = router({
         lastUpdated: input.data.lastUpdated || new Date(),
       };
 
-      const [updatedHolding] = await routerDb
+      const [updatedHolding] = await db
         .update(schema.holdings)
         .set(updateData)
         .where(eq(schema.holdings.id, input.id))
@@ -205,7 +218,7 @@ export const holdingsRouter = router({
     }),
 
   // Update holding balance
-  updateBalance: publicProcedure
+  updateBalance: protectedProcedure
     .input(
       z.object({
         id: z.string(),
@@ -223,7 +236,7 @@ export const holdingsRouter = router({
         updateData.averageCostBasis = input.averageCostBasis;
       }
 
-      const [updatedHolding] = await routerDb
+      const [updatedHolding] = await db
         .update(schema.holdings)
         .set(updateData)
         .where(eq(schema.holdings.id, input.id))
@@ -237,8 +250,8 @@ export const holdingsRouter = router({
     }),
 
   // Delete holding
-  delete: publicProcedure.input(z.object({ id: z.string() })).mutation(async ({ input }) => {
-    const [deletedHolding] = await routerDb
+  delete: protectedProcedure.input(z.object({ id: z.string() })).mutation(async ({ input }) => {
+    const [deletedHolding] = await db
       .delete(schema.holdings)
       .where(eq(schema.holdings.id, input.id))
       .returning();

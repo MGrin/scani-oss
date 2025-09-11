@@ -4,7 +4,7 @@ import { db } from '../db/connection';
 import * as schema from '../db/schema';
 
 // Type assertion for service operations
-const serviceDb = db as ReturnType<typeof import('drizzle-orm/bun-sqlite').drizzle>;
+const serviceDb = db as ReturnType<typeof import('drizzle-orm/postgres-js').drizzle>;
 
 export interface HoldingChange {
   holdingId: string;
@@ -56,19 +56,36 @@ export async function handleHoldingChange(
     }
 
     // Determine transaction type based on balance change and context
-    const transactionType = determineTransactionType(change, balanceDiff);
+    const transactionTypeCode = determineTransactionType(change, balanceDiff);
+
+    // Look up the transaction type by code to get the typeId
+    const [transactionType] = await serviceDb
+      .select()
+      .from(schema.transactionTypes)
+      .where(
+        and(
+          eq(schema.transactionTypes.code, transactionTypeCode),
+          eq(schema.transactionTypes.isActive, true)
+        )
+      )
+      .limit(1);
+
+    if (!transactionType) {
+      throw new Error(`Invalid transaction type: ${transactionTypeCode}`);
+    }
 
     // Generate transaction data
     const transactionData = {
       id: nanoid(),
       holdingId: change.holdingId,
-      type: transactionType,
+      typeId: transactionType.id, // Use the actual typeId
       amount: balanceDiff,
       price: change.newAverageCostBasis || undefined,
       priceTokenId: undefined, // Will be set to user's base currency by default
       fee: 0,
       feeTokenId: undefined,
-      description: description || generateTransactionDescription(change, transactionType, source),
+      description:
+        description || generateTransactionDescription(change, transactionTypeCode, source),
       reference: reference || `auto-${change.changeType}-${Date.now()}`,
       timestamp: now,
       createdAt: now,
@@ -101,7 +118,11 @@ export async function reconcileHoldingTransactions(
   holdingId: string,
   expectedBalance: number,
   userId: string
-): Promise<{ reconciled: boolean; transactionId?: string; discrepancy?: number }> {
+): Promise<{
+  reconciled: boolean;
+  transactionId?: string;
+  discrepancy?: number;
+}> {
   try {
     // Get all transactions for this holding
     const transactions = await serviceDb
@@ -315,10 +336,23 @@ async function createReconciliationTransaction(
 ) {
   const now = new Date();
 
+  // Look up the "other" transaction type by code to get the typeId
+  const [transactionType] = await serviceDb
+    .select()
+    .from(schema.transactionTypes)
+    .where(
+      and(eq(schema.transactionTypes.code, 'other'), eq(schema.transactionTypes.isActive, true))
+    )
+    .limit(1);
+
+  if (!transactionType) {
+    throw new Error('Other transaction type not found');
+  }
+
   const transactionData = {
     id: nanoid(),
     holdingId,
-    type: 'other' as const,
+    typeId: transactionType.id, // Use the actual typeId
     amount: discrepancy,
     price: undefined,
     priceTokenId: undefined,
@@ -326,7 +360,9 @@ async function createReconciliationTransaction(
     feeTokenId: undefined,
     description:
       customDescription ||
-      `Reconciliation adjustment: ${discrepancy > 0 ? 'Added' : 'Removed'} ${Math.abs(discrepancy)} units`,
+      `Reconciliation adjustment: ${
+        discrepancy > 0 ? 'Added' : 'Removed'
+      } ${Math.abs(discrepancy)} units`,
     reference: `reconciliation-${Date.now()}`,
     timestamp: now,
     createdAt: now,

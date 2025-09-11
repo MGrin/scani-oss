@@ -1,33 +1,19 @@
 {
   "version": "7",
-  "dialect": "sqlite",
+  "dialect": "postgresql",
   "entries": [
     {
       "idx": 0,
-      "version": "6",
-      "when": 1757331668003,
-      "tag": "0000_dusty_havok",
+      "version": "7",
+      "when": 1757549086316,
+      "tag": "0000_premium_ma_gnuci",
       "breakpoints": true
     },
     {
       "idx": 1,
-      "version": "6",
-      "when": 1757331703503,
-      "tag": "0001_sloppy_the_stranger",
-      "breakpoints": true
-    },
-    {
-      "idx": 2,
-      "version": "6",
-      "when": 1757415185918,
-      "tag": "0002_aberrant_blazing_skull",
-      "breakpoints": true
-    },
-    {
-      "idx": 3,
-      "version": "6",
-      "when": 1757419070826,
-      "tag": "0003_hesitant_metal_master",
+      "version": "7",
+      "when": 1757556313924,
+      "tag": "0001_loud_king_cobra",
       "breakpoints": true
     }
   ]

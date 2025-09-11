@@ -1,13 +1,11 @@
-import { AccountType, CreateAccountSchema, UpdateAccountSchema } from '@scani/shared/types';
+import { UpdateAccountSchema } from '@scani/shared/types';
 import { and, eq, sql } from 'drizzle-orm';
 import { nanoid } from 'nanoid';
 import { z } from 'zod';
 import { db } from '../db/connection';
 import * as schema from '../db/schema';
-import { publicProcedure, router } from '../trpc';
-
-// Type assertion for router operations (development/test environment uses SQLite)
-const routerDb = db as ReturnType<typeof import('drizzle-orm/bun-sqlite').drizzle>;
+import { getUserId } from '../middleware/auth';
+import { protectedProcedure, router } from '../trpc';
 
 // Helper function to check if account name already exists within an institution
 async function checkAccountNameExists(name: string, institutionId: string, excludeId?: string) {
@@ -21,7 +19,7 @@ async function checkAccountNameExists(name: string, institutionId: string, exclu
     whereConditions.push(sql`${schema.accounts.id} != ${excludeId}`);
   }
 
-  const existing = await routerDb
+  const existing = await db
     .select({ id: schema.accounts.id })
     .from(schema.accounts)
     .where(and(...whereConditions))
@@ -32,26 +30,56 @@ async function checkAccountNameExists(name: string, institutionId: string, exclu
 
 export const accountsRouter = router({
   // Get all accounts
-  getAll: publicProcedure.query(async () => {
-    const accounts = await routerDb
-      .select()
+  getAll: protectedProcedure.query(async ({ ctx }) => {
+    const userId = getUserId(ctx);
+
+    return await db
+      .select({
+        id: schema.accounts.id,
+        institutionId: schema.accounts.institutionId,
+        name: schema.accounts.name,
+        typeId: schema.accounts.typeId,
+        type: schema.accountTypes.code,
+        typeName: schema.accountTypes.name,
+        description: schema.accounts.description,
+        accountNumber: schema.accounts.accountNumber,
+        isActive: schema.accounts.isActive,
+        createdAt: schema.accounts.createdAt,
+        updatedAt: schema.accounts.updatedAt,
+      })
       .from(schema.accounts)
-      .where(eq(schema.accounts.isActive, true))
-      .orderBy(schema.accounts.name);
-    return accounts;
+      .innerJoin(schema.institutions, eq(schema.accounts.institutionId, schema.institutions.id))
+      .leftJoin(schema.accountTypes, eq(schema.accounts.typeId, schema.accountTypes.id))
+      .where(and(eq(schema.accounts.isActive, true), eq(schema.institutions.userId, userId)));
   }),
 
   // Get accounts by institution ID
-  getByInstitutionId: publicProcedure
+  getByInstitutionId: protectedProcedure
     .input(z.object({ institutionId: z.string() }))
-    .query(async ({ input }) => {
-      const accounts = await routerDb
-        .select()
+    .query(async ({ input, ctx }) => {
+      const userId = getUserId(ctx);
+      const accounts = await db
+        .select({
+          id: schema.accounts.id,
+          institutionId: schema.accounts.institutionId,
+          name: schema.accounts.name,
+          typeId: schema.accounts.typeId,
+          type: schema.accountTypes.code,
+          typeName: schema.accountTypes.name,
+          description: schema.accounts.description,
+          accountNumber: schema.accounts.accountNumber,
+          isActive: schema.accounts.isActive,
+          createdAt: schema.accounts.createdAt,
+          updatedAt: schema.accounts.updatedAt,
+        })
         .from(schema.accounts)
+        .innerJoin(schema.institutions, eq(schema.accounts.institutionId, schema.institutions.id))
+        .leftJoin(schema.accountTypes, eq(schema.accounts.typeId, schema.accountTypes.id))
         .where(
           and(
             eq(schema.accounts.institutionId, input.institutionId),
-            eq(schema.accounts.isActive, true)
+            eq(schema.accounts.isActive, true),
+            eq(schema.institutions.userId, userId)
           )
         )
         .orderBy(schema.accounts.name);
@@ -59,32 +87,30 @@ export const accountsRouter = router({
     }),
 
   // Get accounts by type
-  getByType: publicProcedure
-    .input(z.object({ type: AccountType, institutionId: z.string().optional() }))
+  getByType: protectedProcedure
+    .input(z.object({ type: z.string(), institutionId: z.string().optional() }))
     .query(async ({ input }) => {
-      let whereCondition = and(
-        eq(schema.accounts.type, input.type),
-        eq(schema.accounts.isActive, true)
-      );
+      const whereConditions = [
+        eq(schema.accountTypes.code, input.type),
+        eq(schema.accounts.isActive, true),
+      ];
 
       if (input.institutionId) {
-        whereCondition = and(
-          whereCondition,
-          eq(schema.accounts.institutionId, input.institutionId)
-        );
+        whereConditions.push(eq(schema.accounts.institutionId, input.institutionId));
       }
 
-      const accounts = await routerDb
+      const accounts = await db
         .select()
         .from(schema.accounts)
-        .where(whereCondition)
+        .leftJoin(schema.accountTypes, eq(schema.accounts.typeId, schema.accountTypes.id))
+        .where(and(...whereConditions))
         .orderBy(schema.accounts.name);
       return accounts;
     }),
 
   // Get account by ID
-  getById: publicProcedure.input(z.object({ id: z.string() })).query(async ({ input }) => {
-    const [account] = await routerDb
+  getById: protectedProcedure.input(z.object({ id: z.string() })).query(async ({ input }) => {
+    const [account] = await db
       .select()
       .from(schema.accounts)
       .where(eq(schema.accounts.id, input.id))
@@ -97,7 +123,7 @@ export const accountsRouter = router({
   }),
 
   // Check if account name is unique within an institution
-  checkNameUniqueness: publicProcedure
+  checkNameUniqueness: protectedProcedure
     .input(
       z.object({
         name: z.string().trim().min(1),
@@ -111,34 +137,64 @@ export const accountsRouter = router({
     }),
 
   // Create new account
-  create: publicProcedure.input(CreateAccountSchema).mutation(async ({ input }) => {
-    // Check if account name already exists within this institution
-    const nameExists = await checkAccountNameExists(input.name, input.institutionId);
-    if (nameExists) {
-      throw new Error(
-        'An account with this name already exists in this institution. Please choose a different name.'
-      );
-    }
+  create: protectedProcedure
+    .input(
+      z.object({
+        institutionId: z.string().min(1, 'Institution ID cannot be empty'),
+        name: z
+          .string()
+          .min(1, 'Account name cannot be empty')
+          .max(100, 'Account name must be 100 characters or less'),
+        type: z.string().min(1, 'Account type cannot be empty'), // This will be the type code
+        description: z.string().max(500, 'Description must be 500 characters or less').optional(),
+        accountNumber: z
+          .string()
+          .max(50, 'Account number must be 50 characters or less')
+          .optional(),
+      })
+    )
+    .mutation(async ({ input }) => {
+      // Check if account name already exists within this institution
+      const nameExists = await checkAccountNameExists(input.name, input.institutionId);
+      if (nameExists) {
+        throw new Error(
+          'An account with this name already exists in this institution. Please choose a different name.'
+        );
+      }
 
-    const now = new Date();
-    const accountData = {
-      ...input,
-      name: input.name.trim(), // Ensure trimmed
-      description: input.description?.trim() || undefined,
-      accountNumber: input.accountNumber?.trim() || undefined,
-      id: nanoid(),
-      isActive: true,
-      createdAt: now,
-      updatedAt: now,
-    };
+      // Look up the account type by code to get the typeId
+      const [accountType] = await db
+        .select()
+        .from(schema.accountTypes)
+        .where(
+          and(eq(schema.accountTypes.code, input.type), eq(schema.accountTypes.isActive, true))
+        )
+        .limit(1);
 
-    const [account] = await routerDb.insert(schema.accounts).values(accountData).returning();
+      if (!accountType) {
+        throw new Error(`Invalid account type: ${input.type}`);
+      }
 
-    return account;
-  }),
+      const now = new Date();
+      const accountData = {
+        institutionId: input.institutionId,
+        name: input.name.trim(),
+        typeId: accountType.id, // Use the actual typeId
+        description: input.description?.trim() || undefined,
+        accountNumber: input.accountNumber?.trim() || undefined,
+        id: nanoid(),
+        isActive: true,
+        createdAt: now,
+        updatedAt: now,
+      };
+
+      const [account] = await db.insert(schema.accounts).values(accountData).returning();
+
+      return account;
+    }),
 
   // Update account
-  update: publicProcedure
+  update: protectedProcedure
     .input(
       z.object({
         id: z.string(),
@@ -147,7 +203,7 @@ export const accountsRouter = router({
     )
     .mutation(async ({ input }) => {
       // Get the current account to check institution and validate name uniqueness
-      const [currentAccount] = await routerDb
+      const [currentAccount] = await db
         .select()
         .from(schema.accounts)
         .where(eq(schema.accounts.id, input.id))
@@ -179,7 +235,7 @@ export const accountsRouter = router({
         updatedAt: new Date(),
       };
 
-      const [updatedAccount] = await routerDb
+      const [updatedAccount] = await db
         .update(schema.accounts)
         .set(updateData)
         .where(eq(schema.accounts.id, input.id))
@@ -193,9 +249,9 @@ export const accountsRouter = router({
     }),
 
   // Delete account (hard delete with cascade to holdings and transactions)
-  delete: publicProcedure.input(z.object({ id: z.string() })).mutation(async ({ input }) => {
+  delete: protectedProcedure.input(z.object({ id: z.string() })).mutation(async ({ input }) => {
     // Check if account exists
-    const [account] = await routerDb
+    const [account] = await db
       .select()
       .from(schema.accounts)
       .where(eq(schema.accounts.id, input.id))
@@ -206,13 +262,13 @@ export const accountsRouter = router({
     }
 
     // Get holdings count for logging purposes (before deletion)
-    const holdings = await routerDb
+    const holdings = await db
       .select({ id: schema.holdings.id })
       .from(schema.holdings)
       .where(eq(schema.holdings.accountId, input.id));
 
     // Get transactions count (via holdings) for logging purposes (before deletion)
-    const transactions = await routerDb
+    const transactions = await db
       .select({ id: schema.transactions.id })
       .from(schema.transactions)
       .innerJoin(schema.holdings, eq(schema.transactions.holdingId, schema.holdings.id))
@@ -220,7 +276,7 @@ export const accountsRouter = router({
 
     // Hard delete the account - this will cascade to holdings and transactions
     // due to the foreign key constraints with onDelete: 'cascade'
-    const [deletedAccount] = await routerDb
+    const [deletedAccount] = await db
       .delete(schema.accounts)
       .where(eq(schema.accounts.id, input.id))
       .returning();

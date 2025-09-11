@@ -33,16 +33,23 @@ import {
 import { Input } from '@/components/ui/input';
 import { PageHeader } from '@/components/ui/page-header';
 import { useToast } from '@/hooks/use-toast';
+import type { ApiAccount, ApiHolding, ApiInstitution, ApiToken } from '@/lib/api-types';
 import { BUTTON_TEXT } from '@/lib/button-constants';
 import { trpc } from '@/lib/trpc';
 
-const accountTypeIcons = {
-  checking: Wallet,
-  savings: PiggyBank,
-  credit: CreditCard,
-  investment: TrendingUp,
-  crypto_wallet: Wallet,
-  other: TrendingUp,
+// Default icon mapping - can be expanded based on account type codes
+const getAccountTypeIcon = (typeCode: string) => {
+  const iconMap: Record<string, React.ComponentType<{ className?: string }>> = {
+    checking: Wallet,
+    savings: PiggyBank,
+    credit: CreditCard,
+    investment: TrendingUp,
+    crypto_wallet: Wallet,
+    crypto: Wallet,
+    brokerage: TrendingUp,
+    retirement: TrendingUp,
+  };
+  return iconMap[typeCode] || TrendingUp; // Default to TrendingUp for unknown types
 };
 
 export function Accounts() {
@@ -58,6 +65,7 @@ export function Accounts() {
   const { data: holdings } = trpc.holdings.getAll.useQuery();
   const { data: institutions } = trpc.institutions.getAll.useQuery();
   const { data: tokens } = trpc.tokens.getAll.useQuery();
+  const { data: accountTypes } = trpc.accountTypes.getAll.useQuery();
 
   const utils = trpc.useUtils();
 
@@ -75,7 +83,9 @@ export function Accounts() {
         }
         if (cascadeInfo.transactionsDeleted > 0) {
           parts.push(
-            `${cascadeInfo.transactionsDeleted} transaction${cascadeInfo.transactionsDeleted !== 1 ? 's' : ''}`
+            `${cascadeInfo.transactionsDeleted} transaction${
+              cascadeInfo.transactionsDeleted !== 1 ? 's' : ''
+            }`
           );
         }
         description += ` Also deleted: ${parts.join(' and ')}.`;
@@ -101,19 +111,21 @@ export function Accounts() {
 
   // Create maps for quick lookups
   const institutionsMap = institutions
-    ? Object.fromEntries(institutions.map((inst) => [inst.id, inst]))
+    ? Object.fromEntries(institutions.map((inst: ApiInstitution) => [inst.id, inst]))
     : {};
-  const tokensMap = tokens ? Object.fromEntries(tokens.map((token) => [token.id, token])) : {};
+  const tokensMap = tokens
+    ? Object.fromEntries(tokens.map((token: ApiToken) => [token.id, token]))
+    : {};
 
   // Filter accounts based on search term
   const filteredAccounts =
-    accounts?.filter((account) => {
+    accounts?.filter((account: ApiAccount) => {
       if (!searchTerm) return true;
       const searchLower = searchTerm.toLowerCase();
       const institution = institutionsMap[account.institutionId];
       return (
         account.name.toLowerCase().includes(searchLower) ||
-        account.type.toLowerCase().includes(searchLower) ||
+        (account.type?.toLowerCase().includes(searchLower) ?? false) ||
         institution?.name.toLowerCase().includes(searchLower) ||
         account.accountNumber?.toLowerCase().includes(searchLower)
       );
@@ -153,15 +165,17 @@ export function Accounts() {
 
   const getAccountHoldings = (accountId: string) => {
     if (!holdings) return [];
-    return holdings.filter((holding) => holding.accountId === accountId);
+    return holdings.filter((holding: ApiHolding) => holding.accountId === accountId);
   };
 
   // Calculate account balances from holdings using precise decimal math
   const getAccountBalance = (accountId: string): number => {
     if (!holdings) return 0;
-    const accountHoldings = holdings.filter((holding) => holding.accountId === accountId);
+    const accountHoldings = holdings.filter(
+      (holding: ApiHolding) => holding.accountId === accountId
+    );
     return FinancialMath.toNumber(
-      FinancialMath.sum(accountHoldings.map((holding) => holding.balance))
+      FinancialMath.sum(accountHoldings.map((holding: ApiHolding) => holding.balance))
     );
   };
 
@@ -188,7 +202,9 @@ export function Accounts() {
 
   const totalBalance = filteredAccounts
     ? FinancialMath.toNumber(
-        FinancialMath.sum(filteredAccounts.map((account) => getAccountBalance(account.id)))
+        FinancialMath.sum(
+          filteredAccounts.map((account: ApiAccount) => getAccountBalance(account.id))
+        )
       )
     : 0;
 
@@ -271,8 +287,8 @@ export function Accounts() {
         </Card>
       ) : (
         <div className="space-y-4">
-          {filteredAccounts.map((account) => {
-            const IconComponent = accountTypeIcons[account.type as keyof typeof accountTypeIcons];
+          {filteredAccounts.map((account: ApiAccount) => {
+            const IconComponent = getAccountTypeIcon(account.type ?? 'other');
             const accountBalance = getAccountBalance(account.id);
             const institution = institutionsMap[account.institutionId];
             const accountHoldings = getAccountHoldings(account.id);
@@ -297,7 +313,7 @@ export function Accounts() {
                           {FinancialMath.formatCurrency(accountBalance)}
                         </p>
                         <p className="text-xs text-muted-foreground capitalize">
-                          {account.type.replace('_', ' ')}
+                          {account.type?.replace('_', ' ') ?? 'Unknown Type'}
                         </p>
                       </div>
                       <DropdownMenu>
@@ -356,9 +372,9 @@ export function Accounts() {
                           Holdings Breakdown
                         </h4>
                         <div className="space-y-1.5">
-                          {accountHoldings.map((holding) => {
+                          {accountHoldings.map((holding: ApiHolding) => {
                             const token = tokensMap[holding.tokenId];
-                            const holdingValue = FinancialMath.abs(holding.balance);
+                            const holdingValue = FinancialMath.abs(holding.balance ?? 0);
 
                             return (
                               <div
@@ -376,7 +392,7 @@ export function Accounts() {
                                       {token?.name || 'Unknown Token'}
                                     </p>
                                     <p className="text-xs text-muted-foreground capitalize">
-                                      {token?.type || 'unknown'}
+                                      {token?.type ?? 'N/A'}
                                     </p>
                                   </div>
                                 </div>
@@ -385,7 +401,7 @@ export function Accounts() {
                                     {FinancialMath.formatCurrency(holdingValue)}
                                   </p>
                                   <p className="text-xs text-muted-foreground">
-                                    {holding.balance.toFixed(token?.decimals || 2)}{' '}
+                                    {(holding.balance ?? 0).toFixed(token?.decimals || 2)}{' '}
                                     {token?.symbol || ''}
                                   </p>
                                 </div>
@@ -411,19 +427,25 @@ export function Accounts() {
           </CardHeader>
           <CardContent className="pt-0">
             <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-4">
-              {Object.entries(accountTypeIcons).map(([type, IconComponent]) => {
-                const typeAccounts = accounts.filter((acc) => acc.type === type);
+              {accountTypes?.map((accountType) => {
+                const typeAccounts = accounts.filter(
+                  (acc: ApiAccount) => acc.type === accountType.code
+                );
                 const typeBalance = FinancialMath.toNumber(
-                  FinancialMath.sum(typeAccounts.map((acc) => getAccountBalance(acc.id)))
+                  FinancialMath.sum(
+                    typeAccounts.map((acc: ApiAccount) => getAccountBalance(acc.id))
+                  )
                 );
 
                 if (typeAccounts.length === 0) return null;
 
+                const IconComponent = getAccountTypeIcon(accountType.code);
+
                 return (
-                  <div key={type} className="flex items-center space-x-2">
+                  <div key={accountType.code} className="flex items-center space-x-2">
                     <IconComponent className="h-4 w-4 text-muted-foreground" />
                     <div>
-                      <p className="font-medium text-sm capitalize">{type.replace('_', ' ')}</p>
+                      <p className="font-medium text-sm">{accountType.name}</p>
                       <p className="text-xs text-muted-foreground">
                         {typeAccounts.length} accounts • {FinancialMath.formatCurrency(typeBalance)}
                       </p>

@@ -23,6 +23,7 @@ import {
 } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
 import { useToast } from '@/hooks/use-toast';
+import type { ApiInstitution } from '@/lib/api-types';
 import { trpc } from '@/lib/trpc';
 
 const AccountFormSchema = z.object({
@@ -81,6 +82,11 @@ export function AccountForm({ isOpen, onClose, account, mode }: AccountFormProps
 
   const { data: institutions, isLoading: institutionsLoading } =
     trpc.institutions.getAll.useQuery();
+  const {
+    data: accountTypes,
+    isLoading: accountTypesLoading,
+    error: accountTypesError,
+  } = trpc.accountTypes.getAll.useQuery();
 
   const utils = trpc.useUtils();
 
@@ -252,6 +258,16 @@ export function AccountForm({ isOpen, onClose, account, mode }: AccountFormProps
       return;
     }
 
+    // Prevent submission if account types failed to load
+    if (accountTypesError) {
+      toast({
+        title: 'Error',
+        description: 'Account types could not be loaded. Please refresh the page and try again.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
     setIsSubmitting(true);
 
     // Check name uniqueness only on submission with retry logic
@@ -348,14 +364,16 @@ export function AccountForm({ isOpen, onClose, account, mode }: AccountFormProps
     }
   };
 
-  const accountTypeOptions = [
-    { value: 'checking', label: 'Checking Account' },
-    { value: 'savings', label: 'Savings Account' },
-    { value: 'credit', label: 'Credit Account' },
-    { value: 'investment', label: 'Investment Account' },
-    { value: 'crypto_wallet', label: 'Crypto Wallet' },
-    { value: 'other', label: 'Other' },
-  ];
+  const accountTypeOptions =
+    accountTypes?.map((type) => ({
+      value: type.code,
+      label: type.name,
+    })) || [];
+
+  // Show error if backend fails to return account types
+  if (accountTypesError) {
+    console.error('Failed to load account types from backend:', accountTypesError);
+  }
 
   return (
     <>
@@ -446,7 +464,7 @@ export function AccountForm({ isOpen, onClose, account, mode }: AccountFormProps
                       No institutions found. Please add an institution first.
                     </div>
                   ) : (
-                    institutions?.map((institution) => (
+                    institutions?.map((institution: ApiInstitution) => (
                       <SelectItem key={institution.id} value={institution.id}>
                         {institution.name}
                       </SelectItem>
@@ -484,11 +502,21 @@ export function AccountForm({ isOpen, onClose, account, mode }: AccountFormProps
                   <SelectValue placeholder="Select account type" />
                 </SelectTrigger>
                 <SelectContent>
-                  {accountTypeOptions.map((option) => (
-                    <SelectItem key={option.value} value={option.value}>
-                      {option.label}
+                  {accountTypesLoading ? (
+                    <SelectItem value="loading" disabled>
+                      Loading account types...
                     </SelectItem>
-                  ))}
+                  ) : accountTypesError ? (
+                    <SelectItem value="error" disabled>
+                      Error loading account types
+                    </SelectItem>
+                  ) : (
+                    accountTypeOptions.map((option) => (
+                      <SelectItem key={option.value} value={option.value}>
+                        {option.label}
+                      </SelectItem>
+                    ))
+                  )}
                 </SelectContent>
               </Select>
               {errors.type && (

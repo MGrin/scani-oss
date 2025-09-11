@@ -4,14 +4,14 @@ import { nanoid } from 'nanoid';
 import { z } from 'zod';
 import { db } from '../db/connection';
 import * as schema from '../db/schema';
-import { publicProcedure, router } from '../trpc';
+import { protectedProcedure, router } from '../trpc';
 
 // Type assertion for router operations (development/test environment uses SQLite)
-const routerDb = db as ReturnType<typeof import('drizzle-orm/bun-sqlite').drizzle>;
+const routerDb = db as ReturnType<typeof import('drizzle-orm/postgres-js').drizzle>;
 
 export const tokenPricesRouter = router({
   // Get all token prices
-  getAll: publicProcedure.query(async () => {
+  getAll: protectedProcedure.query(async () => {
     const prices = await routerDb
       .select()
       .from(schema.tokenPrices)
@@ -20,7 +20,7 @@ export const tokenPricesRouter = router({
   }),
 
   // Get prices for a specific token
-  getByTokenId: publicProcedure
+  getByTokenId: protectedProcedure
     .input(z.object({ tokenId: z.string() }))
     .query(async ({ input }) => {
       const prices = await routerDb
@@ -32,7 +32,7 @@ export const tokenPricesRouter = router({
     }),
 
   // Get latest price for a token
-  getLatestByTokenId: publicProcedure
+  getLatestByTokenId: protectedProcedure
     .input(z.object({ tokenId: z.string(), baseTokenId: z.string().optional() }))
     .query(async ({ input }) => {
       const conditions = [eq(schema.tokenPrices.tokenId, input.tokenId)];
@@ -52,7 +52,7 @@ export const tokenPricesRouter = router({
     }),
 
   // Get prices by date range
-  getByDateRange: publicProcedure
+  getByDateRange: protectedProcedure
     .input(
       z.object({
         tokenId: z.string(),
@@ -82,7 +82,7 @@ export const tokenPricesRouter = router({
     }),
 
   // Get price at specific timestamp (or closest before)
-  getPriceAtTime: publicProcedure
+  getPriceAtTime: protectedProcedure
     .input(
       z.object({
         tokenId: z.string(),
@@ -111,7 +111,7 @@ export const tokenPricesRouter = router({
     }),
 
   // Get price by ID
-  getById: publicProcedure.input(z.object({ id: z.string() })).query(async ({ input }) => {
+  getById: protectedProcedure.input(z.object({ id: z.string() })).query(async ({ input }) => {
     const [tokenPrice] = await routerDb
       .select()
       .from(schema.tokenPrices)
@@ -125,7 +125,7 @@ export const tokenPricesRouter = router({
   }),
 
   // Create new token price
-  create: publicProcedure.input(CreateTokenPriceSchema).mutation(async ({ input }) => {
+  create: protectedProcedure.input(CreateTokenPriceSchema).mutation(async ({ input }) => {
     const now = new Date();
     const tokenPriceData = {
       id: nanoid(),
@@ -146,24 +146,26 @@ export const tokenPricesRouter = router({
   }),
 
   // Bulk create token prices
-  createBulk: publicProcedure.input(z.array(CreateTokenPriceSchema)).mutation(async ({ input }) => {
-    const now = new Date();
-    const tokenPricesData = input.map((price) => ({
-      id: nanoid(),
-      ...price,
-      createdAt: now,
-    }));
+  createBulk: protectedProcedure
+    .input(z.array(CreateTokenPriceSchema))
+    .mutation(async ({ input }) => {
+      const now = new Date();
+      const tokenPricesData = input.map((price) => ({
+        id: nanoid(),
+        ...price,
+        createdAt: now,
+      }));
 
-    const createdTokenPrices = await routerDb
-      .insert(schema.tokenPrices)
-      .values(tokenPricesData)
-      .returning();
+      const createdTokenPrices = await routerDb
+        .insert(schema.tokenPrices)
+        .values(tokenPricesData)
+        .returning();
 
-    return createdTokenPrices;
-  }),
+      return createdTokenPrices;
+    }),
 
   // Delete token price
-  delete: publicProcedure.input(z.object({ id: z.string() })).mutation(async ({ input }) => {
+  delete: protectedProcedure.input(z.object({ id: z.string() })).mutation(async ({ input }) => {
     const [deletedTokenPrice] = await routerDb
       .delete(schema.tokenPrices)
       .where(eq(schema.tokenPrices.id, input.id))
@@ -177,7 +179,7 @@ export const tokenPricesRouter = router({
   }),
 
   // Delete old token prices (cleanup)
-  deleteOlderThan: publicProcedure
+  deleteOlderThan: protectedProcedure
     .input(
       z.object({
         cutoffDate: z.date(),
