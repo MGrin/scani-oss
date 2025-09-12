@@ -1,3 +1,4 @@
+import Decimal from 'decimal.js';
 import { and, desc, eq } from 'drizzle-orm';
 import { nanoid } from 'nanoid';
 import { db } from '../db/connection';
@@ -10,10 +11,8 @@ export interface HoldingChange {
   holdingId: string;
   accountId: string;
   tokenId: string;
-  oldBalance?: number;
-  newBalance: number;
-  oldAverageCostBasis?: number;
-  newAverageCostBasis?: number;
+  oldBalance?: string;
+  newBalance: string;
   changeType: 'create' | 'update' | 'delete';
   userId: string;
   reason?: string;
@@ -39,16 +38,20 @@ export async function handleHoldingChange(
     const now = new Date();
 
     // Calculate the balance difference
-    const balanceDiff = change.newBalance - (change.oldBalance || 0);
+    const balanceDiff = new Decimal(change.newBalance).sub(new Decimal(change.oldBalance || '0'));
 
     // Don't create transaction if no actual change in balance
-    if (Math.abs(balanceDiff) < 0.000001) {
+    if (balanceDiff.abs().lt(0.000001)) {
       return null;
     }
 
     // Check if similar transaction already exists (if skipIfExists is true)
     if (skipIfExists) {
-      const existingTransaction = await findSimilarTransaction(change.holdingId, balanceDiff, now);
+      const existingTransaction = await findSimilarTransaction(
+        change.holdingId,
+        balanceDiff.toNumber(),
+        now
+      );
 
       if (existingTransaction) {
         return existingTransaction.id;
@@ -56,7 +59,7 @@ export async function handleHoldingChange(
     }
 
     // Determine transaction type based on balance change and context
-    const transactionTypeCode = determineTransactionType(change, balanceDiff);
+    const transactionTypeCode = determineTransactionType(change, balanceDiff.toNumber());
 
     // Look up the transaction type by code to get the typeId
     const [transactionType] = await serviceDb
@@ -80,10 +83,8 @@ export async function handleHoldingChange(
       userId: change.userId,
       holdingId: change.holdingId,
       typeId: transactionType.id, // Use the actual typeId
-      amount: balanceDiff,
-      price: change.newAverageCostBasis || undefined,
-      priceTokenId: undefined, // Will be set to user's base currency by default
-      fee: 0,
+      amount: balanceDiff.toString(), // Convert to string
+      fee: '0', // Convert to string
       feeTokenId: undefined,
       description:
         description || generateTransactionDescription(change, transactionTypeCode, source),
@@ -134,16 +135,16 @@ export async function reconcileHoldingTransactions(
 
     // Calculate balance from transactions
     const calculatedBalance = transactions.reduce((balance, tx) => {
-      return balance + tx.amount;
-    }, 0);
+      return balance.add(new Decimal(tx.amount));
+    }, new Decimal(0));
 
-    const discrepancy = expectedBalance - calculatedBalance;
+    const discrepancy = new Decimal(expectedBalance).sub(calculatedBalance);
 
     // If discrepancy is significant, create a reconciliation transaction
-    if (Math.abs(discrepancy) >= 0.01) {
+    if (discrepancy.abs().gte(0.01)) {
       const reconciliationTransaction = await createReconciliationTransaction(
         holdingId,
-        discrepancy,
+        discrepancy.toNumber(),
         userId
       );
 
@@ -154,7 +155,7 @@ export async function reconcileHoldingTransactions(
       return {
         reconciled: true,
         transactionId: reconciliationTransaction.id,
-        discrepancy,
+        discrepancy: discrepancy.toNumber(),
       };
     }
 
@@ -203,19 +204,19 @@ export async function validateAllHoldings(userId: string): Promise<{
         .where(eq(schema.transactions.holdingId, holding.id));
 
       const calculatedBalance = transactions.reduce((balance, tx) => {
-        return balance + tx.amount;
-      }, 0);
+        return balance.add(new Decimal(tx.amount));
+      }, new Decimal(0));
 
-      const discrepancy = holding.balance - calculatedBalance;
+      const discrepancy = new Decimal(holding.balance).sub(calculatedBalance);
 
-      if (Math.abs(discrepancy) >= 0.01) {
+      if (discrepancy.abs().gte(0.01)) {
         discrepancies.push({
           holdingId: holding.id,
           tokenSymbol: token.symbol,
           accountName: account.name,
-          expectedBalance: holding.balance,
-          calculatedBalance,
-          discrepancy,
+          expectedBalance: parseFloat(holding.balance),
+          calculatedBalance: calculatedBalance.toNumber(),
+          discrepancy: discrepancy.toNumber(),
         });
       }
     }
@@ -355,10 +356,8 @@ async function createReconciliationTransaction(
     userId: _userId,
     holdingId,
     typeId: transactionType.id, // Use the actual typeId
-    amount: discrepancy,
-    price: undefined,
-    priceTokenId: undefined,
-    fee: 0,
+    amount: discrepancy.toString(), // Convert to string
+    fee: '0', // Convert to string
     feeTokenId: undefined,
     description:
       customDescription ||

@@ -104,7 +104,6 @@ export const HoldingFormSchema = z.object({
   balance: z.coerce
     .number({ invalid_type_error: 'Balance must be a valid number' })
     .refine((val) => !Number.isNaN(val), 'Balance must be a valid number'),
-  averageCostBasis: validateNonNegativeNumber('Average cost basis').optional(),
 });
 
 export const TransactionFormSchema = z
@@ -232,7 +231,6 @@ export const getDefaultFormValues = {
     accountId: accountId || '',
     tokenId: '',
     balance: 0,
-    averageCostBasis: undefined,
   }),
 
   transaction: (holdingId?: string) => ({

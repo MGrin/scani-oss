@@ -1,17 +1,16 @@
-import { Building2, Plus } from "lucide-react";
-import { useNavigate } from "react-router-dom";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { LoadingSpinner } from "@/components/ui/loading";
-import { PageHeader } from "@/components/ui/page-header";
-import type { ApiInstitution } from "@/lib/api-types";
-import { MOBILE_SPACING } from "@/lib/mobile-utils";
-import { trpc } from "@/lib/trpc";
+import { Building2, Plus } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { LoadingSpinner } from '@/components/ui/loading';
+import { PageHeader } from '@/components/ui/page-header';
+import type { ApiInstitution } from '@/lib/api-types';
+import { MOBILE_SPACING } from '@/lib/mobile-utils';
+import { trpc } from '@/lib/trpc';
 
 export function Institutions() {
   const navigate = useNavigate();
-  const { data: institutions, isLoading } =
-    trpc.institutions.getByUserId.useQuery();
+  const { data: institutions, isLoading } = trpc.institutions.getByUserId.useQuery();
   const { data: institutionTypes } = trpc.institutionTypes.getAll.useQuery();
 
   const getInstitutionTypeLabel = (type: string) => {
@@ -44,7 +43,7 @@ export function Institutions() {
         const color = l - a * Math.max(Math.min(k - 3, 9 - k, 1), -1);
         return Math.round(255 * color)
           .toString(16)
-          .padStart(2, "0");
+          .padStart(2, '0');
       };
       return `#${f(0)}${f(8)}${f(4)}`;
     };
@@ -76,8 +75,8 @@ export function Institutions() {
         title="Your Financial Institutions"
         subtitle="Overview of institutions where you have accounts"
         primaryAction={{
-          label: "Add Holding",
-          onClick: () => navigate("/quick-add-holding"),
+          label: 'Add Holding',
+          onClick: () => navigate('/quick-add-holding'),
           icon: <Plus className="h-4 w-4 mr-1" />,
         }}
       />
@@ -88,11 +87,10 @@ export function Institutions() {
             <Building2 className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
             <h3 className="text-lg font-semibold mb-2">No institutions yet</h3>
             <p className="text-muted-foreground mb-6 max-w-md mx-auto">
-              You haven't added any holdings yet. When you create your first
-              holding, the associated institution will appear here
-              automatically.
+              You haven't added any holdings yet. When you create your first holding, the associated
+              institution will appear here automatically.
             </p>
-            <Button onClick={() => navigate("/quick-add-holding")}>
+            <Button onClick={() => navigate('/quick-add-holding')}>
               <Plus className="h-4 w-4 mr-2" />
               Create Your First Holding
             </Button>
@@ -101,33 +99,22 @@ export function Institutions() {
       ) : (
         <div className="space-y-4">
           <div className="text-sm text-muted-foreground">
-            These are the financial institutions where you have accounts with
-            holdings. To add a new institution, create a holding at that
-            institution.
+            These are the financial institutions where you have accounts with holdings. To add a new
+            institution, create a holding at that institution.
           </div>
 
-          <div
-            className={`grid ${MOBILE_SPACING.gridGap} md:grid-cols-2 lg:grid-cols-3`}
-          >
+          <div className={`grid ${MOBILE_SPACING.gridGap} md:grid-cols-2 lg:grid-cols-3`}>
             {institutions.map((institution: ApiInstitution) => (
-              <Card
-                key={institution.id}
-                className="hover:shadow-md transition-shadow"
-              >
+              <Card key={institution.id} className="hover:shadow-md transition-shadow">
                 <CardHeader className="pb-3">
                   <div className="flex items-center space-x-2">
                     <div
                       className="w-3 h-3 rounded-full"
                       style={{
-                        backgroundColor: getInstitutionTypeColor(
-                          institution.type ?? ""
-                        ),
+                        backgroundColor: getInstitutionTypeColor(institution.type ?? ''),
                       }}
                     />
-                    <CardTitle
-                      className="text-base truncate"
-                      title={institution.name}
-                    >
+                    <CardTitle className="text-base truncate" title={institution.name}>
                       {institution.name}
                     </CardTitle>
                   </div>
@@ -137,18 +124,13 @@ export function Institutions() {
                     <div>
                       <p className="text-xs text-muted-foreground">Type</p>
                       <p className="text-sm font-medium">
-                        {getInstitutionTypeLabel(institution.type ?? "")}
+                        {getInstitutionTypeLabel(institution.type ?? '')}
                       </p>
                     </div>
                     {institution.description && (
                       <div>
-                        <p className="text-xs text-muted-foreground">
-                          Description
-                        </p>
-                        <p
-                          className="text-sm truncate"
-                          title={institution.description}
-                        >
+                        <p className="text-xs text-muted-foreground">Description</p>
+                        <p className="text-sm truncate" title={institution.description}>
                           {institution.description}
                         </p>
                       </div>
@@ -169,8 +151,7 @@ export function Institutions() {
                     )}
                     <div className="pt-1 border-t">
                       <p className="text-xs text-muted-foreground">
-                        Added{" "}
-                        {new Date(institution.createdAt).toLocaleDateString()}
+                        Added {new Date(institution.createdAt).toLocaleDateString()}
                       </p>
                     </div>
                   </div>

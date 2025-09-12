@@ -34,50 +34,20 @@ export const TokenTypeSchema = z.string().min(1, 'Token type is required');
 // CORE SCHEMAS
 // =============================================================================
 
-// Currency codes - ISO 4217 major currencies
-export const CurrencyCode = z.enum([
-  'USD',
-  'EUR',
-  'GBP',
-  'JPY',
-  'CHF',
-  'CAD',
-  'AUD',
-  'CNY',
-  'INR',
-  'BRL',
-  'KRW',
-  'SEK',
-  'NOK',
-  'DKK',
-  'PLN',
-  'CZK',
-  'HUF',
-  'RUB',
-  'MXN',
-  'ZAR',
-  'SGD',
-  'HKD',
-  'NZD',
-  'TRY',
-  'THB',
-  'MYR',
-  'IDR',
-  'PHP',
-  'VND',
-  'AED',
-  'SAR',
-  'ILS',
-  'EGP',
-]);
-
 // User schema
 export const UserSchema = z.object({
   id: z.string(),
   email: z.string().email(),
   name: z.string().min(1, 'Name cannot be empty'),
   avatar: z.string().optional(),
-  baseCurrency: CurrencyCode.default('USD'),
+  baseCurrencyId: z.string().uuid().nullable(),
+  baseCurrency: z
+    .object({
+      id: z.string(),
+      symbol: z.string(),
+      name: z.string(),
+    })
+    .nullable(),
   createdAt: z.date(),
   updatedAt: z.date(),
 });
@@ -85,7 +55,7 @@ export const UserSchema = z.object({
 // Token schema - represents any tradeable asset
 export const TokenSchema = z.object({
   id: z.string(),
-  symbol: z.string().min(1, 'Symbol cannot be empty'), // BTC, USD, AAPL, etc.
+  symbol: z.string().min(1, 'Symbol cannot be empty'), // BTC, EUR, AAPL, etc.
   name: z.string().min(1, 'Name cannot be empty'), // Bitcoin, US Dollar, Apple Inc., etc.
   type: TokenTypeSchema,
   decimals: z.number().int().min(0).max(18).default(2), // Precision
@@ -93,17 +63,6 @@ export const TokenSchema = z.object({
   isActive: z.boolean().default(true),
   createdAt: z.date(),
   updatedAt: z.date(),
-});
-
-// TokenPrice schema - historical prices
-export const TokenPriceSchema = z.object({
-  id: z.string(),
-  tokenId: z.string(),
-  baseTokenId: z.string(), // Usually USD
-  price: z.number().positive(),
-  timestamp: z.date(),
-  source: z.string().optional(), // 'coinbase', 'yahoo', etc.
-  createdAt: z.date(),
 });
 
 // Enhanced name validation helper with comprehensive checks
@@ -232,40 +191,61 @@ export const AccountSchema = z.object({
   updatedAt: z.date(),
 });
 
-// Enhanced monetary validation helper
+// Enhanced monetary validation helper - now returns string-based validation for Decimal.js compatibility
 const createMonetaryValidation = (
   fieldName: string,
   {
     allowNegative = false,
-    minValue = -1e15,
-    maxValue = 1e15,
+    minValue = '-1000000000000000', // 1e15 as string
+    maxValue = '1000000000000000', // 1e15 as string
     maxDecimals = 18,
     required = true,
   } = {}
 ) => {
-  const baseSchema = z.coerce
-    .number({
-      invalid_type_error: `${fieldName} must be a valid number`,
+  const baseSchema = z
+    .string({
+      invalid_type_error: `${fieldName} must be a valid decimal string`,
       required_error: required ? `${fieldName} is required` : undefined,
     })
-    .refine(
-      (val) => !Number.isNaN(val) && Number.isFinite(val),
-      `${fieldName} must be a finite number`
-    )
-    .refine((val) => val >= minValue, `${fieldName} must be at least ${minValue}`)
-    .refine((val) => val <= maxValue, `${fieldName} cannot exceed ${maxValue}`)
+    .refine((val) => {
+      // Check if it's a valid number format
+      const num = parseFloat(val);
+      return !Number.isNaN(num) && Number.isFinite(num);
+    }, `${fieldName} must be a valid decimal number`)
+    .refine((val) => {
+      const num = parseFloat(val);
+      return num >= parseFloat(minValue);
+    }, `${fieldName} must be at least ${minValue}`)
+    .refine((val) => {
+      const num = parseFloat(val);
+      return num <= parseFloat(maxValue);
+    }, `${fieldName} cannot exceed ${maxValue}`)
     .refine((val) => {
       // Check decimal places
-      const decimalPlaces = (val.toString().split('.')[1] || '').length;
+      const decimalPlaces = (val.split('.')[1] || '').length;
       return decimalPlaces <= maxDecimals;
     }, `${fieldName} cannot have more than ${maxDecimals} decimal places`);
 
   const schemaWithNegative = allowNegative
     ? baseSchema
-    : baseSchema.refine((val) => val >= 0, `${fieldName} cannot be negative`);
+    : baseSchema.refine((val) => {
+        const num = parseFloat(val);
+        return num >= 0;
+      }, `${fieldName} cannot be negative`);
 
   return required ? schemaWithNegative : schemaWithNegative.optional();
 };
+
+// TokenPrice schema - historical prices
+export const TokenPriceSchema = z.object({
+  id: z.string(),
+  tokenId: z.string(),
+  baseTokenId: z.string(), // Usually a fiat currency
+  price: createMonetaryValidation('Price', { allowNegative: false }),
+  timestamp: z.date(),
+  source: z.string().optional(), // 'coinbase', 'yahoo', etc.
+  createdAt: z.date(),
+});
 
 // Holding schema - represents a specific token balance in an account
 export const HoldingSchema = z.object({
@@ -273,9 +253,6 @@ export const HoldingSchema = z.object({
   accountId: z.string().min(1, 'Account ID cannot be empty'),
   tokenId: z.string().min(1, 'Token ID cannot be empty'),
   balance: createMonetaryValidation('Balance', { allowNegative: true }), // Can be negative for short positions
-  averageCostBasis: createMonetaryValidation('Average cost basis', {
-    required: false,
-  }), // Average price paid
   lastUpdated: z.date(),
   createdAt: z.date(),
 });
@@ -286,9 +263,7 @@ export const TransactionSchema = z.object({
   holdingId: z.string(),
   type: TransactionType,
   amount: createMonetaryValidation('Amount', { allowNegative: true }), // Positive or negative based on type
-  price: createMonetaryValidation('Price per unit', { required: false }), // Price per unit in base currency
-  priceTokenId: z.string().optional(), // Currency of the price (defaults to user's base currency)
-  fee: createMonetaryValidation('Fee', { allowNegative: false }).default(0),
+  fee: createMonetaryValidation('Fee', { allowNegative: false }).default('0'),
   feeTokenId: z.string().optional(), // Currency of the fee
   description: z.string().trim().max(500, 'Description must be at most 500 characters').optional(),
   reference: z.string().trim().max(100, 'Reference must be at most 100 characters').optional(), // External transaction ID
@@ -345,11 +320,11 @@ export const CreateTransactionSchema = TransactionSchema.omit({
 // UPDATE SCHEMAS
 // =============================================================================
 
-// UpdateUserSchema allows updating only specific fields: name, avatar, baseCurrency
+// UpdateUserSchema allows updating only specific fields: name, avatar, baseCurrencyId
 export const UpdateUserSchema = z.object({
   name: z.string().min(1, 'Name cannot be empty').optional(),
   avatar: z.string().optional(),
-  baseCurrency: CurrencyCode.optional(),
+  baseCurrencyId: z.string().uuid().optional(),
 });
 export const UpdateTokenSchema = CreateTokenSchema.partial();
 export const UpdateInstitutionSchema = CreateInstitutionSchema.partial();

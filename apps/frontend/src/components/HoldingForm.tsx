@@ -23,32 +23,27 @@ const HoldingFormSchema = z.object({
   accountId: z.string().min(1, 'Please select an account'),
   tokenId: z.string().min(1, 'Please select a token'),
   balance: z
-    .number({
+    .string({
       required_error: 'Balance is required',
-      invalid_type_error: 'Balance must be a valid number',
     })
-    .refine((val) => !Number.isNaN(val), 'Balance must be a valid number')
-    .refine((val) => val !== 0, 'Balance cannot be zero. Enter the actual holding amount.')
+    .refine((val) => val.trim() !== '', 'Balance is required')
+    .refine((val) => !Number.isNaN(parseFloat(val)), 'Balance must be a valid number')
     .refine(
-      (val) => val > 0,
+      (val) => parseFloat(val) !== 0,
+      'Balance cannot be zero. Enter the actual holding amount.'
+    )
+    .refine(
+      (val) => parseFloat(val) > 0,
       'Balance must be positive. For short positions, use a negative value with a note in the description.'
     )
-    .refine((val) => Math.abs(val) >= 0.000001, 'Balance is too small. Minimum value is 0.000001')
     .refine(
-      (val) => Math.abs(val) <= 1_000_000_000,
+      (val) => Math.abs(parseFloat(val)) >= 0.000001,
+      'Balance is too small. Minimum value is 0.000001'
+    )
+    .refine(
+      (val) => Math.abs(parseFloat(val)) <= 1_000_000_000,
       'Balance is too large. Maximum value is 1 billion'
     ),
-  averageCostBasis: z
-    .number({
-      invalid_type_error: 'Average cost basis must be a valid number',
-    })
-    .positive('Average cost basis must be positive')
-    .max(1_000_000, 'Average cost basis seems unreasonably high (max: $1M per unit)')
-    .optional()
-    .transform((val) => {
-      if (val === null || val === undefined || val === 0) return undefined;
-      return val;
-    }),
 });
 
 type HoldingFormData = z.infer<typeof HoldingFormSchema>;
@@ -66,7 +61,6 @@ export function HoldingForm({ isOpen, onClose, holding, mode }: HoldingFormProps
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [duplicateWarning, setDuplicateWarning] = useState<string | null>(null);
   const balanceId = useId();
-  const costBasisId = useId();
 
   const { data: accounts, isLoading: accountsLoading } = trpc.accounts.getAll.useQuery();
   const { data: tokens, isLoading: tokensLoading } = trpc.tokens.getAll.useQuery();
@@ -75,7 +69,7 @@ export function HoldingForm({ isOpen, onClose, holding, mode }: HoldingFormProps
 
   const createHolding = trpc.holdings.create.useMutation({
     onSuccess: (newHolding) => {
-      const hasBalance = newHolding.balance > 0;
+      const hasBalance = parseFloat(newHolding.balance) > 0;
       toast({
         title: 'Holding created successfully! ✅',
         description: hasBalance
@@ -135,8 +129,7 @@ export function HoldingForm({ isOpen, onClose, holding, mode }: HoldingFormProps
     defaultValues: {
       accountId: holding?.accountId || '',
       tokenId: holding?.tokenId || '',
-      balance: holding?.balance || 0,
-      averageCostBasis: holding?.averageCostBasis || undefined,
+      balance: holding?.balance || '0',
     },
     mode: 'onChange',
   });
@@ -148,22 +141,18 @@ export function HoldingForm({ isOpen, onClose, holding, mode }: HoldingFormProps
         accountId: holding.accountId,
         tokenId: holding.tokenId,
         balance: holding.balance,
-        averageCostBasis: holding.averageCostBasis || undefined,
       });
     } else {
       reset({
         accountId: '',
         tokenId: '',
-        balance: 0,
-        averageCostBasis: undefined,
+        balance: '0',
       });
     }
   }, [holding, reset]);
 
   const watchedAccountId = watch('accountId');
   const watchedTokenId = watch('tokenId');
-  const watchedBalance = watch('balance');
-  const watchedCostBasis = watch('averageCostBasis');
 
   // Check for duplicates when account/token changes
   const checkDuplicate = trpc.holdings.checkDuplicate.useQuery(
@@ -209,7 +198,6 @@ export function HoldingForm({ isOpen, onClose, holding, mode }: HoldingFormProps
       accountId: data.accountId,
       tokenId: data.tokenId,
       balance: data.balance,
-      averageCostBasis: data.averageCostBasis || undefined, // Convert null/empty to undefined
     };
 
     if (mode === 'create') {
@@ -306,13 +294,7 @@ export function HoldingForm({ isOpen, onClose, holding, mode }: HoldingFormProps
                 min="0.000001"
                 max="1000000000"
                 {...register('balance', {
-                  valueAsNumber: true,
                   required: 'Balance is required',
-                  setValueAs: (value) => {
-                    if (value === '' || value === null || value === undefined) return 0;
-                    const num = Number(value);
-                    return Number.isNaN(num) ? 0 : num;
-                  },
                 })}
                 placeholder={
                   selectedToken ? `Enter amount in ${selectedToken.symbol}` : 'e.g., 100.50'
@@ -329,48 +311,6 @@ export function HoldingForm({ isOpen, onClose, holding, mode }: HoldingFormProps
             {errors.balance && <p className="text-sm text-destructive">{errors.balance.message}</p>}
             <p className="text-xs text-muted-foreground">
               Enter the current quantity you own of this asset. Must be greater than 0.000001.
-            </p>
-          </div>
-          {/* Average Cost Basis */}
-          <div className="space-y-2">
-            <Label htmlFor={costBasisId}>Average Cost Basis (Optional)</Label>
-            <div className="relative">
-              <Input
-                id={costBasisId}
-                type="number"
-                step="0.01"
-                min="0.01"
-                max="1000000"
-                {...register('averageCostBasis', {
-                  setValueAs: (value) => {
-                    // Handle empty string or whitespace-only strings
-                    if (value === '' || (typeof value === 'string' && value.trim() === '')) {
-                      return undefined;
-                    }
-                    // Convert to number if it's a valid number
-                    const num = Number(value);
-                    return Number.isNaN(num) ? undefined : num;
-                  },
-                })}
-                placeholder="e.g., 150.00 (price per unit)"
-                className={
-                  errors.averageCostBasis ? 'border-destructive focus:ring-destructive' : ''
-                }
-                disabled={isSubmitting}
-              />
-              {watchedCostBasis && watchedBalance && watchedBalance > 0 && (
-                <div className="absolute right-3 top-1/2 transform -translate-y-1/2">
-                  <span className="text-xs bg-gray-100 px-2 py-1 rounded">
-                    Total: ${(watchedCostBasis * watchedBalance).toFixed(2)}
-                  </span>
-                </div>
-              )}
-            </div>
-            {errors.averageCostBasis && (
-              <p className="text-sm text-destructive">{errors.averageCostBasis.message}</p>
-            )}
-            <p className="text-xs text-muted-foreground">
-              The average price you paid per unit (optional, used for performance calculations).
             </p>
           </div>
 

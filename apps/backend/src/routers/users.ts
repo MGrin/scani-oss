@@ -1,15 +1,41 @@
-import { CurrencyCode, UpdateUserSchema } from '@scani/shared/types';
+import { UpdateUserSchema } from '@scani/shared/types';
 import { eq } from 'drizzle-orm';
 import { z } from 'zod';
 import { db } from '../db/connection';
 import * as schema from '../db/schema';
-import { getDbUser, getUserId } from '../middleware/auth';
+import { getUserId } from '../middleware/auth';
+import { PortfolioValuationService } from '../services/portfolio-valuation';
 import { protectedProcedure, router } from '../trpc';
 
 export const usersRouter = router({
   // Get current authenticated user
   getCurrent: protectedProcedure.query(async ({ ctx }) => {
-    const user = getDbUser(ctx);
+    const userId = getUserId(ctx);
+
+    const [user] = await db
+      .select({
+        id: schema.users.id,
+        email: schema.users.email,
+        name: schema.users.name,
+        avatar: schema.users.avatar,
+        baseCurrencyId: schema.users.baseCurrencyId,
+        baseCurrency: {
+          id: schema.tokens.id,
+          symbol: schema.tokens.symbol,
+          name: schema.tokens.name,
+        },
+        createdAt: schema.users.createdAt,
+        updatedAt: schema.users.updatedAt,
+      })
+      .from(schema.users)
+      .leftJoin(schema.tokens, eq(schema.users.baseCurrencyId, schema.tokens.id))
+      .where(eq(schema.users.id, userId))
+      .limit(1);
+
+    if (!user) {
+      throw new Error('User not found');
+    }
+
     return user;
   }),
 
@@ -67,93 +93,37 @@ export const usersRouter = router({
     return { success: true, deleted: deletedUser };
   }),
 
-  // Get supported currencies
-  getSupportedCurrencies: protectedProcedure.query(() => {
-    const currencies = CurrencyCode.options.map((code) => ({
-      code,
-      name: getCurrencyName(code),
-      symbol: getCurrencySymbol(code),
-    }));
+  // Get supported fiat currencies (tokens) for base currency selection
+  getSupportedCurrencies: protectedProcedure.query(async () => {
+    const fiatTokens = await db
+      .select({
+        id: schema.tokens.id,
+        symbol: schema.tokens.symbol,
+        name: schema.tokens.name,
+      })
+      .from(schema.tokens)
+      .leftJoin(schema.tokenTypes, eq(schema.tokens.typeId, schema.tokenTypes.id))
+      .where(eq(schema.tokenTypes.code, 'fiat'))
+      .orderBy(schema.tokens.name);
 
-    return currencies.sort((a, b) => a.name.localeCompare(b.name));
+    return fiatTokens;
+  }),
+
+  // Get current portfolio value
+  getPortfolioValue: protectedProcedure.query(async ({ ctx }) => {
+    const userId = getUserId(ctx);
+    const portfolioService = new PortfolioValuationService();
+
+    try {
+      return await portfolioService.getUserPortfolioValue(userId);
+    } catch (error) {
+      // If error occurs (e.g., no base currency), return empty portfolio
+      console.warn(`Failed to get portfolio value for user ${userId}:`, error);
+      return {
+        totalValue: 0,
+        baseCurrency: 'USD',
+        holdings: [],
+      };
+    }
   }),
 });
-
-// Helper functions for currency support
-function getCurrencyName(code: string): string {
-  const names: Record<string, string> = {
-    USD: 'US Dollar',
-    EUR: 'Euro',
-    GBP: 'British Pound Sterling',
-    JPY: 'Japanese Yen',
-    CHF: 'Swiss Franc',
-    CAD: 'Canadian Dollar',
-    AUD: 'Australian Dollar',
-    CNY: 'Chinese Yuan',
-    INR: 'Indian Rupee',
-    BRL: 'Brazilian Real',
-    KRW: 'South Korean Won',
-    SEK: 'Swedish Krona',
-    NOK: 'Norwegian Krone',
-    DKK: 'Danish Krone',
-    PLN: 'Polish Złoty',
-    CZK: 'Czech Koruna',
-    HUF: 'Hungarian Forint',
-    RUB: 'Russian Ruble',
-    MXN: 'Mexican Peso',
-    ZAR: 'South African Rand',
-    SGD: 'Singapore Dollar',
-    HKD: 'Hong Kong Dollar',
-    NZD: 'New Zealand Dollar',
-    TRY: 'Turkish Lira',
-    THB: 'Thai Baht',
-    MYR: 'Malaysian Ringgit',
-    IDR: 'Indonesian Rupiah',
-    PHP: 'Philippine Peso',
-    VND: 'Vietnamese Dong',
-    AED: 'UAE Dirham',
-    SAR: 'Saudi Riyal',
-    ILS: 'Israeli Shekel',
-    EGP: 'Egyptian Pound',
-  };
-  return names[code] || code;
-}
-
-function getCurrencySymbol(code: string): string {
-  const symbols: Record<string, string> = {
-    USD: '$',
-    EUR: '€',
-    GBP: '£',
-    JPY: '¥',
-    CHF: 'CHF',
-    CAD: 'C$',
-    AUD: 'A$',
-    CNY: '¥',
-    INR: '₹',
-    BRL: 'R$',
-    KRW: '₩',
-    SEK: 'kr',
-    NOK: 'kr',
-    DKK: 'kr',
-    PLN: 'zł',
-    CZK: 'Kč',
-    HUF: 'Ft',
-    RUB: '₽',
-    MXN: '$',
-    ZAR: 'R',
-    SGD: 'S$',
-    HKD: 'HK$',
-    NZD: 'NZ$',
-    TRY: '₺',
-    THB: '฿',
-    MYR: 'RM',
-    IDR: 'Rp',
-    PHP: '₱',
-    VND: '₫',
-    AED: 'د.إ',
-    SAR: 'ر.س',
-    ILS: '₪',
-    EGP: 'E£',
-  };
-  return symbols[code] || code;
-}

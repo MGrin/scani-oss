@@ -184,7 +184,6 @@ export function Holdings() {
       accountId: holding.accountId,
       tokenId: holding.tokenId,
       balance: holding.balance,
-      averageCostBasis: holding.averageCostBasis,
       lastUpdated: holding.lastUpdated,
       createdAt: holding.createdAt,
     });
@@ -432,11 +431,8 @@ export function Holdings() {
                           {FinancialMath.formatCurrency(holding.value)}
                         </p>
                         <div className="text-xs text-muted-foreground">
-                          {holding.balance.toFixed(holding.token?.decimals || 2)}{' '}
+                          {parseFloat(holding.balance).toFixed(holding.token?.decimals || 2)}{' '}
                           {holding.token?.symbol}
-                          {holding.averageCostBasis && (
-                            <span className="ml-2">@ ${holding.averageCostBasis.toFixed(2)}</span>
-                          )}
                         </div>
                       </div>
                       <DropdownMenu>
@@ -525,16 +521,12 @@ export function Holdings() {
                 <div>
                   <p className="text-sm font-medium text-muted-foreground">Balance</p>
                   <p className="font-semibold">
-                    {(holdingToView.balance || 0).toFixed(holdingToView.token?.decimals || 2)}{' '}
+                    {parseFloat(holdingToView.balance || '0').toFixed(
+                      holdingToView.token?.decimals || 2
+                    )}{' '}
                     {holdingToView.token?.symbol}
                   </p>
                 </div>
-                {holdingToView.averageCostBasis && (
-                  <div>
-                    <p className="text-sm font-medium text-muted-foreground">Avg Cost Basis</p>
-                    <p className="font-semibold">${holdingToView.averageCostBasis.toFixed(2)}</p>
-                  </div>
-                )}
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div>

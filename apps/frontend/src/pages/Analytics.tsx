@@ -167,17 +167,8 @@ export function Analytics() {
   const performanceMetrics = useMemo(() => {
     if (!holdings || !transactions) return null;
 
-    const totalCostBasis = holdings.reduce((sum: number, holding: ApiHolding) => {
-      if (holding.averageCostBasis && (holding.balance ?? 0) > 0) {
-        return FinancialMath.toNumber(
-          FinancialMath.add(
-            sum,
-            FinancialMath.multiply(holding.balance ?? 0, holding.averageCostBasis)
-          )
-        );
-      }
-      return sum;
-    }, 0);
+    // TODO: Calculate cost basis from transactions instead of storing it
+    const totalCostBasis = 0; // Placeholder until we implement cost basis calculation
 
     const currentValue = FinancialMath.toNumber(totalNetWorth);
     const totalGainLoss = currentValue - totalCostBasis;
@@ -288,7 +279,7 @@ export function Analytics() {
           <CardContent>
             <div className="text-xl font-bold">
               {FinancialMath.formatCurrency(totalNetWorth, {
-                currency: userPrefs?.baseCurrency,
+                currency: userPrefs?.baseCurrency?.symbol,
               })}
             </div>
             <p className="text-xs text-muted-foreground">Across {holdings?.length || 0} holdings</p>
@@ -314,7 +305,7 @@ export function Analytics() {
                 >
                   {performanceMetrics.totalGainLoss >= 0 ? '+' : ''}
                   {FinancialMath.formatCurrency(performanceMetrics.totalGainLoss, {
-                    currency: userPrefs?.baseCurrency,
+                    currency: userPrefs?.baseCurrency?.symbol,
                   })}
                 </div>
                 <p className="text-xs text-muted-foreground">
@@ -332,7 +323,7 @@ export function Analytics() {
               <CardContent>
                 <div className="text-2xl font-bold">
                   {FinancialMath.formatCurrency(performanceMetrics.totalCostBasis, {
-                    currency: userPrefs?.baseCurrency,
+                    currency: userPrefs?.baseCurrency?.symbol,
                   })}
                 </div>
                 <p className="text-xs text-muted-foreground">Total invested</p>
@@ -347,7 +338,7 @@ export function Analytics() {
               <CardContent>
                 <div className="text-2xl font-bold text-red-600">
                   {FinancialMath.formatCurrency(performanceMetrics.totalTransactionFees, {
-                    currency: userPrefs?.baseCurrency,
+                    currency: userPrefs?.baseCurrency?.symbol,
                   })}
                 </div>
                 <p className="text-xs text-muted-foreground">Total fees paid</p>
@@ -389,7 +380,7 @@ export function Analytics() {
                     <Tooltip
                       formatter={(value: number) =>
                         FinancialMath.formatCurrency(value, {
-                          currency: userPrefs?.baseCurrency,
+                          currency: userPrefs?.baseCurrency?.symbol,
                         })
                       }
                     />
@@ -413,7 +404,7 @@ export function Analytics() {
                       <div className="text-right">
                         <div className="font-semibold">
                           {FinancialMath.formatCurrency(asset.value, {
-                            currency: userPrefs?.baseCurrency,
+                            currency: userPrefs?.baseCurrency?.symbol,
                           })}
                         </div>
                         <div className="text-sm text-muted-foreground">
@@ -446,14 +437,14 @@ export function Analytics() {
                   <YAxis
                     tickFormatter={(val) =>
                       FinancialMath.formatCurrency(val, {
-                        currency: userPrefs?.baseCurrency,
+                        currency: userPrefs?.baseCurrency?.symbol,
                       })
                     }
                   />
                   <Tooltip
                     formatter={(value: number) =>
                       FinancialMath.formatCurrency(value, {
-                        currency: userPrefs?.baseCurrency,
+                        currency: userPrefs?.baseCurrency?.symbol,
                       })
                     }
                   />
@@ -480,7 +471,7 @@ export function Analytics() {
                 <AlertDescription>
                   Great job! Your portfolio is showing positive returns of{' '}
                   {FinancialMath.formatCurrency(performanceMetrics.totalGainLoss, {
-                    currency: userPrefs?.baseCurrency,
+                    currency: userPrefs?.baseCurrency?.symbol,
                   })}{' '}
                   ({performanceMetrics.totalGainLossPercentage.toFixed(2)}%).
                 </AlertDescription>
@@ -492,7 +483,7 @@ export function Analytics() {
                 <AlertDescription>
                   Your portfolio is currently down{' '}
                   {FinancialMath.formatCurrency(Math.abs(performanceMetrics.totalGainLoss), {
-                    currency: userPrefs?.baseCurrency,
+                    currency: userPrefs?.baseCurrency?.symbol,
                   })}{' '}
                   ({Math.abs(performanceMetrics.totalGainLossPercentage).toFixed(2)}
                   %). Consider reviewing your investment strategy and diversification.

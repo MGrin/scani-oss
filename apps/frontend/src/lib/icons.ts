@@ -8,116 +8,65 @@ import {
   TrendingUp,
   Wallet,
 } from 'lucide-react';
-import { FaDollarSign, FaEuroSign, FaPoundSign, FaYenSign } from 'react-icons/fa';
-// Import specific currency and crypto icons from react-icons
-import {
-  SiBitcoin,
-  SiCardano,
-  SiChainlink,
-  SiDogecoin,
-  SiEthereum,
-  SiLitecoin,
-  SiPolkadot,
-  SiPolygon,
-  SiRipple,
-  SiSolana,
-} from 'react-icons/si';
 
-import {
-  TbCurrencyDollarAustralian,
-  TbCurrencyDollarCanadian,
-  TbCurrencyFrank,
-  TbCurrencyKroneCzech,
-  TbCurrencyKroneDanish,
-  TbCurrencyKroneSwedish,
-  TbCurrencyReal,
-  TbCurrencyRubel,
-  TbCurrencyRupee,
-  TbCurrencyWon,
-  TbCurrencyZloty,
-} from 'react-icons/tb';
+// Type for token display information
+export type TokenDisplay = {
+  type: 'symbol' | 'icon';
+  value: string | LucideIcon;
+};
 
 /**
- * Get specific icon for fiat currencies based on symbol
+ * Get symbol or icon for fiat currencies based on symbol
  */
-export const getFiatCurrencyIcon = (
-  symbol: string
-): React.ComponentType<{ className?: string }> => {
+export const getFiatCurrencyDisplay = (symbol: string): TokenDisplay => {
   switch (symbol?.toUpperCase()) {
     case 'USD':
-      return FaDollarSign;
+      return { type: 'symbol', value: '$' };
     case 'EUR':
-      return FaEuroSign;
+      return { type: 'symbol', value: '€' };
     case 'GBP':
-      return FaPoundSign;
+      return { type: 'symbol', value: '£' };
     case 'JPY':
-      return FaYenSign;
+      return { type: 'symbol', value: '¥' };
     case 'RUB':
-      return TbCurrencyRubel;
+      return { type: 'symbol', value: '₽' };
     case 'KRW':
-      return TbCurrencyWon;
+      return { type: 'symbol', value: '₩' };
     case 'INR':
-      return TbCurrencyRupee;
+      return { type: 'symbol', value: '₹' };
     case 'CHF':
-      return TbCurrencyFrank;
-    case 'CZK':
-      return TbCurrencyKroneCzech;
-    case 'SEK':
-      return TbCurrencyKroneSwedish;
-    case 'DKK':
-      return TbCurrencyKroneDanish;
-    case 'PLN':
-      return TbCurrencyZloty;
-    case 'BRL':
-      return TbCurrencyReal;
+      return { type: 'symbol', value: 'CHF' };
     case 'CAD':
-      return TbCurrencyDollarCanadian;
     case 'AUD':
-      return TbCurrencyDollarAustralian;
+      return { type: 'symbol', value: '$' };
+    case 'CNY':
+      return { type: 'symbol', value: '¥' };
+    case 'PLN':
+      return { type: 'symbol', value: 'zł' };
+    case 'BRL':
+      return { type: 'symbol', value: 'R$' };
+    case 'SEK':
+      return { type: 'symbol', value: 'kr' };
+    case 'DKK':
+      return { type: 'symbol', value: 'kr' };
+    case 'CZK':
+      return { type: 'symbol', value: 'Kč' };
     default:
-      return FaDollarSign; // Default to dollar sign for unknown fiat currencies
+      return { type: 'icon', value: DollarSign }; // Default to dollar icon for unknown fiat currencies
   }
 };
 
 /**
- * Get specific icon for cryptocurrencies based on symbol
+ * Get symbol or icon for cryptocurrencies based on symbol
+ * Most cryptocurrencies don't have standardized Unicode symbols, so we use generic crypto icon
  */
-export const getCryptoCurrencyIcon = (
-  symbol: string
-): React.ComponentType<{ className?: string }> => {
+export const getCryptoCurrencyDisplay = (symbol: string): TokenDisplay => {
   switch (symbol?.toUpperCase()) {
     case 'BTC':
     case 'BITCOIN':
-      return SiBitcoin;
-    case 'ETH':
-    case 'ETHEREUM':
-      return SiEthereum;
-    case 'LTC':
-    case 'LITECOIN':
-      return SiLitecoin;
-    case 'DOGE':
-    case 'DOGECOIN':
-      return SiDogecoin;
-    case 'ADA':
-    case 'CARDANO':
-      return SiCardano;
-    case 'DOT':
-    case 'POLKADOT':
-      return SiPolkadot;
-    case 'LINK':
-    case 'CHAINLINK':
-      return SiChainlink;
-    case 'SOL':
-    case 'SOLANA':
-      return SiSolana;
-    case 'MATIC':
-    case 'POLYGON':
-      return SiPolygon;
-    case 'XRP':
-    case 'RIPPLE':
-      return SiRipple;
+      return { type: 'symbol', value: '₿' }; // Bitcoin has an official Unicode symbol
     default:
-      return Coins; // Default to generic coins icon for unknown cryptocurrencies
+      return { type: 'icon', value: Coins }; // Default to generic coins icon for other cryptocurrencies
   }
 };
 
@@ -178,24 +127,34 @@ export const getAccountTypeIcon = (type: string): LucideIcon => {
 };
 
 /**
- * Get the best icon for a token based on both its type and symbol
- * This will show specific currency/crypto icons when available, falling back to type icons
+ * Get the best display (symbol or icon) for a token based on both its type and symbol
+ * This will show specific currency symbols when available, falling back to type icons
  */
-export const getTokenIcon = (
-  type: string,
-  symbol?: string
-): React.ComponentType<{ className?: string }> => {
-  // For fiat currencies, use specific currency icons
+export const getTokenDisplay = (type: string, symbol?: string): TokenDisplay => {
+  // For fiat currencies, use specific currency symbols
   if (type?.toLowerCase() === 'fiat' && symbol) {
-    return getFiatCurrencyIcon(symbol);
+    return getFiatCurrencyDisplay(symbol);
   }
 
-  // For cryptocurrencies, use specific crypto icons
+  // For cryptocurrencies, use specific crypto symbols/icons
   if ((type?.toLowerCase() === 'crypto' || type?.toLowerCase() === 'cryptocurrency') && symbol) {
-    return getCryptoCurrencyIcon(symbol);
+    return getCryptoCurrencyDisplay(symbol);
   }
 
   // Fall back to type-based icons for other types (stocks, bonds, etc.)
+  return { type: 'icon', value: getTokenTypeIcon(type) };
+};
+
+/**
+ * Legacy function for backward compatibility - returns icon component
+ * @deprecated Use getTokenDisplay instead for symbol support
+ */
+export const getTokenIcon = (type: string, symbol?: string): LucideIcon => {
+  const display = getTokenDisplay(type, symbol);
+  if (display.type === 'icon') {
+    return display.value as LucideIcon;
+  }
+  // For symbols, return a generic icon based on type
   return getTokenTypeIcon(type);
 };
 

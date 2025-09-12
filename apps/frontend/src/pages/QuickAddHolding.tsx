@@ -35,13 +35,6 @@ const QuickAddHoldingSchema = z
         (val) => Math.abs(val) <= 1_000_000_000,
         'Balance is too large. Maximum value is 1 billion'
       ),
-    averageCostBasis: z
-      .number({
-        invalid_type_error: 'Average cost basis must be a valid number',
-      })
-      .min(0, 'Average cost basis cannot be negative')
-      .max(1_000_000_000, 'Average cost basis is too large')
-      .optional(),
 
     // Account selection
     accountId: z.string().min(1, 'Please select an account'),
@@ -111,7 +104,6 @@ export function QuickAddHolding() {
 
   // Form IDs
   const balanceId = useId();
-  const avgCostId = useId();
   const accountSelectId = useId();
   const tokenSelectId = useId();
   const institutionSelectId = useId();
@@ -191,10 +183,11 @@ export function QuickAddHolding() {
           // Try to find a token that matches the user's base currency
           let defaultToken = null;
 
-          if (userPrefs?.baseCurrency) {
+          if (userPrefs?.baseCurrency?.symbol) {
             // Look for a token with symbol matching the base currency
             defaultToken = tokens.find(
-              (token) => token.symbol?.toUpperCase() === userPrefs.baseCurrency.toUpperCase()
+              (token) =>
+                token.symbol?.toUpperCase() === userPrefs.baseCurrency?.symbol?.toUpperCase()
             );
           }
 
@@ -267,8 +260,7 @@ export function QuickAddHolding() {
       await createHolding.mutateAsync({
         accountId,
         tokenId,
-        balance: data.balance,
-        averageCostBasis: data.averageCostBasis,
+        balance: data.balance.toString(),
       });
 
       toast({
@@ -330,45 +322,6 @@ export function QuickAddHolding() {
           <h2 className="text-lg font-semibold">Holding Details</h2>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="space-y-1.5">
-              <Label htmlFor={balanceId}>Balance *</Label>
-              <Input
-                id={balanceId}
-                type="number"
-                step="any"
-                placeholder="e.g., 100.50"
-                {...form.register('balance', { valueAsNumber: true })}
-                className={form.formState.errors.balance ? 'border-red-500' : ''}
-              />
-              {form.formState.errors.balance && (
-                <p className="text-sm text-red-500">{form.formState.errors.balance.message}</p>
-              )}
-            </div>
-
-            <div className="space-y-1.5">
-              <Label htmlFor={avgCostId}>Average Cost Basis</Label>
-              <Input
-                id={avgCostId}
-                type="number"
-                step="any"
-                placeholder="e.g., 50.25"
-                {...form.register('averageCostBasis', {
-                  valueAsNumber: true,
-                })}
-                className={form.formState.errors.averageCostBasis ? 'border-red-500' : ''}
-              />
-              {form.formState.errors.averageCostBasis && (
-                <p className="text-sm text-red-500">
-                  {form.formState.errors.averageCostBasis.message}
-                </p>
-              )}
-            </div>
-          </div>
-
-          {/* Token Selection within Holding Details */}
-          <div className="space-y-4 border-t pt-4">
-            <h3 className="text-md font-medium">Token/Asset</h3>
-
             <div className="space-y-2">
               <Label htmlFor={tokenSelectId}>Select Token *</Label>
               <TokenSelector
@@ -383,57 +336,72 @@ export function QuickAddHolding() {
               )}
             </div>
 
-            {watchTokenId === 'new' && (
-              <div className="space-y-4 border-t pt-4">
-                <h4 className="text-sm font-medium">New Token Details</h4>
+            <div className="space-y-1.5">
+              <Label htmlFor={balanceId}>Balance *</Label>
+              <Input
+                id={balanceId}
+                type="number"
+                step="any"
+                placeholder="e.g., 100.50"
+                {...form.register('balance', { valueAsNumber: true })}
+                className={form.formState.errors.balance ? 'border-red-500' : ''}
+              />
+              {form.formState.errors.balance && (
+                <p className="text-sm text-red-500">{form.formState.errors.balance.message}</p>
+              )}
+            </div>
+          </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <Label>Symbol *</Label>
-                    <Input
-                      placeholder="e.g., AAPL"
-                      maxLength={10}
-                      {...form.register('newTokenSymbol')}
-                      onChange={(e) => {
-                        e.target.value = e.target.value.toUpperCase();
-                        form.setValue('newTokenSymbol', e.target.value);
-                      }}
-                    />
-                  </div>
+          {watchTokenId === 'new' && (
+            <div className="space-y-4 border-t pt-4">
+              <h4 className="text-sm font-medium">New Token Details</h4>
 
-                  <div className="space-y-2">
-                    <Label>Name *</Label>
-                    <Input placeholder="e.g., Apple Inc." {...form.register('newTokenName')} />
-                  </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label>Symbol *</Label>
+                  <Input
+                    placeholder="e.g., AAPL"
+                    maxLength={10}
+                    {...form.register('newTokenSymbol')}
+                    onChange={(e) => {
+                      e.target.value = e.target.value.toUpperCase();
+                      form.setValue('newTokenSymbol', e.target.value);
+                    }}
+                  />
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <Label>Token Type *</Label>
-                    <TokenTypeSelector
-                      value={form.watch('newTokenType') || ''}
-                      onValueChange={(value) => form.setValue('newTokenType', value)}
-                      tokenTypes={tokenTypes}
-                      placeholder="Choose token type..."
-                    />
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label>Decimals</Label>
-                    <Input
-                      type="number"
-                      min="0"
-                      max="18"
-                      placeholder="2"
-                      {...form.register('newTokenDecimals', {
-                        valueAsNumber: true,
-                      })}
-                    />
-                  </div>
+                <div className="space-y-2">
+                  <Label>Name *</Label>
+                  <Input placeholder="e.g., Apple Inc." {...form.register('newTokenName')} />
                 </div>
               </div>
-            )}
-          </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label>Token Type *</Label>
+                  <TokenTypeSelector
+                    value={form.watch('newTokenType') || ''}
+                    onValueChange={(value) => form.setValue('newTokenType', value)}
+                    tokenTypes={tokenTypes}
+                    placeholder="Choose token type..."
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label>Decimals</Label>
+                  <Input
+                    type="number"
+                    min="0"
+                    max="18"
+                    placeholder="2"
+                    {...form.register('newTokenDecimals', {
+                      valueAsNumber: true,
+                    })}
+                  />
+                </div>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Account Selection */}

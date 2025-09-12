@@ -83,6 +83,7 @@ export namespace FinancialMath {
 
   /**
    * Format as currency string using Intl.NumberFormat (e.g., "$1,234.56")
+   * When style is 'currency', currency parameter is required
    */
   export function formatCurrency(
     value: number | string | Decimal,
@@ -93,12 +94,16 @@ export namespace FinancialMath {
       style?: 'currency' | 'decimal';
     } = {}
   ): string {
-    const { currency = 'USD', locale = 'en-US', decimals = 2, style = 'currency' } = options;
+    const { currency, locale = 'en-US', decimals = 2, style = 'decimal' } = options;
 
     const decimal = new Decimal(value);
     const numericValue = decimal.toNumber();
 
     if (style === 'currency') {
+      if (!currency) {
+        throw new Error('Currency is required when style is "currency"');
+      }
+
       try {
         return new Intl.NumberFormat(locale, {
           style: 'currency',
@@ -107,14 +112,12 @@ export namespace FinancialMath {
           maximumFractionDigits: decimals,
         }).format(numericValue);
       } catch (_error) {
-        // Fallback to USD if currency is not supported
-        console.warn(`Currency ${currency} not supported, falling back to USD`);
-        return new Intl.NumberFormat(locale, {
-          style: 'currency',
-          currency: 'USD',
+        // If currency is unsupported, fall back to decimal format with currency symbol
+        console.warn(`Currency ${currency} not supported, falling back to decimal format`);
+        return `${getCurrencySymbol(currency, locale)}${new Intl.NumberFormat(locale, {
           minimumFractionDigits: decimals,
           maximumFractionDigits: decimals,
-        }).format(numericValue);
+        }).format(numericValue)}`;
       }
     } else {
       return new Intl.NumberFormat(locale, {
@@ -293,6 +296,7 @@ export namespace FinancialMath {
 
   /**
    * Get currency symbol for a given currency code
+   * Primarily uses Intl.NumberFormat with minimal fallback
    */
   export function getCurrencySymbol(currencyCode: string, locale = 'en-US'): string {
     try {
@@ -306,43 +310,14 @@ export namespace FinancialMath {
       const formatted = formatter.format(0);
       return formatted.replace(/[\d\s]/g, '');
     } catch (_error) {
-      // Fallback for unsupported currencies
-      const symbolMap: Record<string, string> = {
+      // Minimal fallback for common currencies only
+      const commonSymbols: Record<string, string> = {
         USD: '$',
         EUR: '€',
         GBP: '£',
         JPY: '¥',
-        CHF: 'CHF',
-        CAD: 'C$',
-        AUD: 'A$',
-        CNY: '¥',
-        INR: '₹',
-        BRL: 'R$',
-        KRW: '₩',
-        SEK: 'kr',
-        NOK: 'kr',
-        DKK: 'kr',
-        PLN: 'zł',
-        CZK: 'Kč',
-        HUF: 'Ft',
-        RUB: '₽',
-        MXN: '$',
-        ZAR: 'R',
-        SGD: 'S$',
-        HKD: 'HK$',
-        NZD: 'NZ$',
-        TRY: '₺',
-        THB: '฿',
-        MYR: 'RM',
-        IDR: 'Rp',
-        PHP: '₱',
-        VND: '₫',
-        AED: 'د.إ',
-        SAR: 'ر.س',
-        ILS: '₪',
-        EGP: 'E£',
       };
-      return symbolMap[currencyCode] || currencyCode;
+      return commonSymbols[currencyCode] || currencyCode;
     }
   }
 

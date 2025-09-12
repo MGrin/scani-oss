@@ -32,7 +32,6 @@ import {
 import { SkipLinks } from '@/components/ui/skip-links';
 import { ThemeToggle } from '@/components/ui/theme-toggle';
 import { useAuth } from '@/contexts/AuthContext';
-import { useSessionTimeoutContext } from '@/hooks/useSessionTimeout';
 import { MOBILE_SPACING } from '@/lib/mobile-utils';
 import { cn } from '@/lib/utils';
 
@@ -82,7 +81,6 @@ function generateBreadcrumbs(pathname: string) {
 export function Layout({ children }: LayoutProps) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const location = useLocation();
-  const { isActive, showWarning } = useSessionTimeoutContext();
   const { signOut, user } = useAuth();
   const navigationId = useId();
   const mainContentId = useId();
@@ -91,17 +89,13 @@ export function Layout({ children }: LayoutProps) {
     await signOut();
   };
 
-  // Calculate top margin for session status indicator
-  const hasSessionIndicator = !isActive || showWarning;
-  const topMargin = hasSessionIndicator ? 'mt-12' : '';
-
   // Generate breadcrumbs for current path
   const breadcrumbs = generateBreadcrumbs(location.pathname);
 
   return (
     <>
       <SkipLinks />
-      <div className={cn('h-screen bg-background flex', topMargin)}>
+      <div className="h-screen bg-background flex">
         {/* Mobile sidebar backdrop */}
         {sidebarOpen && (
           <button

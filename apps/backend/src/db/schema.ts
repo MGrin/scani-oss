@@ -63,7 +63,9 @@ export const users = pgTable('users', {
   email: text('email').notNull().unique(),
   name: text('name').notNull(),
   avatar: text('avatar'),
-  baseCurrency: text('base_currency').notNull().default('USD'), // User's preferred base currency
+  baseCurrencyId: uuid('base_currency_id').references(() => tokens.id, {
+    onDelete: 'restrict',
+  }), // Reference to a fiat token
 
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
@@ -145,8 +147,7 @@ export const holdings = pgTable('holdings', {
   tokenId: uuid('token_id')
     .notNull()
     .references(() => tokens.id, { onDelete: 'restrict' }), // Prevent token deletion if holdings exist
-  balance: real('balance').notNull(),
-  averageCostBasis: real('average_cost_basis'),
+  balance: text('balance').notNull(), // Store as string for Decimal.js precision
   lastUpdated: timestamp('last_updated', { withTimezone: true }).notNull().defaultNow(),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 });
@@ -162,7 +163,7 @@ export const tokenPrices = pgTable(
     baseTokenId: uuid('base_token_id')
       .notNull()
       .references(() => tokens.id, { onDelete: 'restrict' }), // Prevent base token deletion
-    price: real('price').notNull(),
+    price: text('price').notNull(), // Store as string for Decimal.js precision
     timestamp: timestamp('timestamp', { withTimezone: true }).notNull(),
     source: text('source'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
@@ -185,11 +186,8 @@ export const transactions = pgTable('transactions', {
   typeId: uuid('type_id')
     .notNull()
     .references(() => transactionTypes.id, { onDelete: 'restrict' }), // Reference to transaction_types
-  amount: real('amount').notNull(),
-  price: real('price'), // Price per unit in base currency
-  priceTokenId: uuid('price_token_id') // Currency of the price (defaults to user's base currency)
-    .references(() => tokens.id, { onDelete: 'restrict' }),
-  fee: real('fee').notNull().default(0),
+  amount: text('amount').notNull(), // Store as string for Decimal.js precision
+  fee: text('fee').notNull().default('0'), // Store as string for Decimal.js precision
   feeTokenId: uuid('fee_token_id') // Currency of the fee
     .references(() => tokens.id, { onDelete: 'restrict' }),
   description: text('description'),
@@ -216,10 +214,14 @@ export const tokenTypesRelations = relations(tokenTypes, ({ many }) => ({
   tokens: many(tokens),
 }));
 
-export const usersRelations = relations(users, ({ many }) => ({
+export const usersRelations = relations(users, ({ one, many }) => ({
   accounts: many(accounts),
   holdings: many(holdings),
   transactions: many(transactions),
+  baseCurrency: one(tokens, {
+    fields: [users.baseCurrencyId],
+    references: [tokens.id],
+  }),
 }));
 
 export const institutionsRelations = relations(institutions, ({ one, many }) => ({

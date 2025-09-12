@@ -130,6 +130,7 @@ export const tokenPricesRouter = router({
     const tokenPriceData = {
       id: nanoid(),
       ...input,
+      price: input.price || '0', // Ensure price is always provided as string
       createdAt: now,
     };
 
@@ -153,6 +154,7 @@ export const tokenPricesRouter = router({
       const tokenPricesData = input.map((price) => ({
         id: nanoid(),
         ...price,
+        price: price.price || '0', // Ensure price is always provided as string
         createdAt: now,
       }));
 

@@ -267,13 +267,7 @@ describe('Finance Types and Schemas', () => {
         expect(() => HoldingSchema.parse(shortHolding)).not.toThrow();
       });
 
-      it('should accept optional averageCostBasis', () => {
-        const holdingWithCostBasis = {
-          ...validHolding,
-          averageCostBasis: 25.5,
-        };
-        expect(() => HoldingSchema.parse(holdingWithCostBasis)).not.toThrow();
-      });
+      // averageCostBasis field removed - will be computed from transactions
     });
 
     describe('TransactionSchema', () => {
@@ -392,7 +386,6 @@ describe('Finance Types and Schemas', () => {
           accountId: 'acc-123',
           tokenId: 'token-123',
           balance: 500,
-          averageCostBasis: 25.0,
           lastUpdated: new Date(),
         };
         expect(() => CreateHoldingSchema.parse(createHoldingData)).not.toThrow();

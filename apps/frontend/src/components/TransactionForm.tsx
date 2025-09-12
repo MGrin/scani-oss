@@ -1,11 +1,18 @@
-import { zodResolver } from '@hookform/resolvers/zod';
-import { FinancialMath, type Transaction } from '@scani/shared';
-import { Calculator, Calendar, DollarSign, Info, Loader2, Plus } from 'lucide-react';
-import React, { useCallback, useEffect, useId, useState } from 'react';
-import { useForm } from 'react-hook-form';
-import { z } from 'zod';
-import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { Button } from '@/components/ui/button';
+import { zodResolver } from "@hookform/resolvers/zod";
+import { FinancialMath, type Transaction } from "@scani/shared";
+import {
+  Calculator,
+  Calendar,
+  DollarSign,
+  Info,
+  Loader2,
+  Plus,
+} from "lucide-react";
+import React, { useCallback, useEffect, useId, useState } from "react";
+import { useForm } from "react-hook-form";
+import { z } from "zod";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Button } from "@/components/ui/button";
 import {
   Dialog,
   DialogContent,
@@ -13,21 +20,26 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from '@/components/ui/dialog';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { LoadingButton } from '@/components/ui/loading';
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { LoadingButton } from "@/components/ui/loading";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from '@/components/ui/select';
-import { Textarea } from '@/components/ui/textarea';
-import { useToast } from '@/hooks/use-toast';
-import type { ApiAccount, ApiHolding, ApiInstitution, ApiToken } from '@/lib/api-types';
-import { trpc } from '@/lib/trpc';
+} from "@/components/ui/select";
+import { Textarea } from "@/components/ui/textarea";
+import { useToast } from "@/hooks/use-toast";
+import type {
+  ApiAccount,
+  ApiHolding,
+  ApiInstitution,
+  ApiToken,
+} from "@/lib/api-types";
+import { trpc } from "@/lib/trpc";
 
 // Transaction type metadata - icons and additional properties
 const TRANSACTION_TYPE_METADATA: Record<
@@ -37,66 +49,77 @@ const TRANSACTION_TYPE_METADATA: Record<
     requiresPrice: boolean;
   }
 > = {
-  buy: { icon: '📈', requiresPrice: true },
-  sell: { icon: '📉', requiresPrice: true },
-  deposit: { icon: '💰', requiresPrice: false },
-  withdrawal: { icon: '🏧', requiresPrice: false },
-  dividend: { icon: '💵', requiresPrice: false },
-  interest: { icon: '📊', requiresPrice: false },
-  fee: { icon: '💸', requiresPrice: false },
-  transfer: { icon: '↔️', requiresPrice: false },
-  other: { icon: '📝', requiresPrice: false },
+  buy: { icon: "📈", requiresPrice: true },
+  sell: { icon: "📉", requiresPrice: true },
+  deposit: { icon: "💰", requiresPrice: false },
+  withdrawal: { icon: "🏧", requiresPrice: false },
+  dividend: { icon: "💵", requiresPrice: false },
+  interest: { icon: "📊", requiresPrice: false },
+  fee: { icon: "💸", requiresPrice: false },
+  transfer: { icon: "↔️", requiresPrice: false },
+  other: { icon: "📝", requiresPrice: false },
 };
 
 // Enhanced transaction form schema with comprehensive validation
 const TransactionFormSchema = z.object({
-  holdingId: z.string().min(1, 'Please select a holding/account'),
+  holdingId: z.string().min(1, "Please select a holding/account"),
   type: z.enum([
-    'buy',
-    'sell',
-    'deposit',
-    'withdrawal',
-    'dividend',
-    'interest',
-    'fee',
-    'transfer',
-    'other',
+    "buy",
+    "sell",
+    "deposit",
+    "withdrawal",
+    "dividend",
+    "interest",
+    "fee",
+    "transfer",
+    "other",
   ]),
   amount: z
-    .number({
-      required_error: 'Amount is required',
-      invalid_type_error: 'Amount must be a valid number',
+    .string({
+      required_error: "Amount is required",
     })
-    .refine((val) => !Number.isNaN(val), 'Amount must be a valid number')
-    .refine((val) => val !== 0, 'Amount cannot be zero')
-    .refine((val) => Math.abs(val) >= 0.01, 'Amount is too small. Minimum value is 0.01')
+    .refine((val) => val.trim() !== "", "Amount is required")
     .refine(
-      (val) => Math.abs(val) <= 1_000_000_000,
-      'Amount is too large. Maximum value is 1 billion'
+      (val) => !Number.isNaN(parseFloat(val)),
+      "Amount must be a valid number"
+    )
+    .refine((val) => parseFloat(val) !== 0, "Amount cannot be zero")
+    .refine(
+      (val) => Math.abs(parseFloat(val)) >= 0.01,
+      "Amount is too small. Minimum value is 0.01"
+    )
+    .refine(
+      (val) => Math.abs(parseFloat(val)) <= 1_000_000_000,
+      "Amount is too large. Maximum value is 1 billion"
     ),
-  price: z
-    .number({
-      invalid_type_error: 'Price must be a valid number',
+  fee: z
+    .string({
+      invalid_type_error: "Fee must be a valid number",
     })
-    .positive('Price must be positive')
-    .max(1_000_000, 'Price seems unreasonably high (max: $1M per unit)')
-    .optional()
-    .transform((val) => {
-      if (val === null || val === undefined || val === 0) return undefined;
-      return val;
-    }),
-  fee: z.coerce
-    .number({
-      invalid_type_error: 'Fee must be a valid number',
-    })
-    .min(0, 'Fee cannot be negative')
-    .max(10_000, 'Fee seems unreasonably high (max: $10K)')
-    .default(0),
-  description: z.string().max(500, 'Description must be at most 500 characters').optional(),
-  reference: z.string().max(100, 'Reference must be at most 100 characters').optional(),
+    .refine(
+      (val) => val === "" || !Number.isNaN(parseFloat(val)),
+      "Fee must be a valid number"
+    )
+    .refine(
+      (val) => val === "" || parseFloat(val) >= 0,
+      "Fee cannot be negative"
+    )
+    .refine(
+      (val) => val === "" || parseFloat(val) <= 10_000,
+      "Fee seems unreasonably high (max: $10K)"
+    )
+    .default("0"),
+  description: z
+    .string()
+    .max(500, "Description must be at most 500 characters")
+    .optional(),
+  reference: z
+    .string()
+    .max(100, "Reference must be at most 100 characters")
+    .optional(),
   timestamp: z.date({
-    required_error: 'Transaction date is required',
-    invalid_type_error: 'Invalid date',
+    required_error: "Transaction date is required",
+    invalid_type_error: "Invalid date",
   }),
 });
 
@@ -106,7 +129,7 @@ interface TransactionFormProps {
   isOpen: boolean;
   onClose: () => void;
   transaction?: Transaction;
-  mode: 'create' | 'edit';
+  mode: "create" | "edit";
   defaultHoldingId?: string;
 }
 
@@ -134,14 +157,14 @@ export function TransactionForm({
   const holdingId = useId();
   const typeId = useId();
   const amountId = useId();
-  const priceId = useId();
   const feeId = useId();
   const descriptionId = useId();
   const referenceId = useId();
   const timestampId = useId();
 
   // Fetch data
-  const { data: holdings, isLoading: holdingsLoading } = trpc.holdings.getAll.useQuery();
+  const { data: holdings, isLoading: holdingsLoading } =
+    trpc.holdings.getAll.useQuery();
   const { data: accounts } = trpc.accounts.getAll.useQuery();
   const { data: tokens } = trpc.tokens.getAll.useQuery();
   const { data: institutions } = trpc.institutions.getAll.useQuery();
@@ -161,22 +184,28 @@ export function TransactionForm({
     return transactionTypes.map((type) => ({
       value: type.code,
       label: type.name,
-      description: type.description || '',
-      icon: TRANSACTION_TYPE_METADATA[type.code]?.icon || '📝',
-      requiresPrice: TRANSACTION_TYPE_METADATA[type.code]?.requiresPrice || false,
+      description: type.description || "",
+      icon: TRANSACTION_TYPE_METADATA[type.code]?.icon || "📝",
+      requiresPrice:
+        TRANSACTION_TYPE_METADATA[type.code]?.requiresPrice || false,
     }));
   }, [transactionTypes]);
 
   // Show error if backend fails to return transaction types
   if (transactionTypesError) {
-    console.error('Failed to load transaction types from backend:', transactionTypesError);
+    console.error(
+      "Failed to load transaction types from backend:",
+      transactionTypesError
+    );
   }
 
   // Create maps for quick lookups
   const accountsMap = accounts
     ? Object.fromEntries(accounts.map((a: ApiAccount) => [a.id, a]))
     : {};
-  const tokensMap = tokens ? Object.fromEntries(tokens.map((t: ApiToken) => [t.id, t])) : {};
+  const tokensMap = tokens
+    ? Object.fromEntries(tokens.map((t: ApiToken) => [t.id, t]))
+    : {};
   const institutionsMap = institutions
     ? Object.fromEntries(institutions.map((i: ApiInstitution) => [i.id, i]))
     : {};
@@ -186,17 +215,21 @@ export function TransactionForm({
     holdings?.map((holding: ApiHolding) => {
       const account = accountsMap[holding.accountId];
       const token = tokensMap[holding.tokenId];
-      const institution = account ? institutionsMap[account.institutionId] : null;
+      const institution = account
+        ? institutionsMap[account.institutionId]
+        : null;
 
       return {
         ...holding,
         account,
         token,
         institution,
-        displayName: `${token?.name || 'Unknown Token'} in ${account?.name || 'Unknown Account'}`,
-        balanceDisplay: `${(holding.balance ?? 0).toFixed(
+        displayName: `${token?.name || "Unknown Token"} in ${
+          account?.name || "Unknown Account"
+        }`,
+        balanceDisplay: `${parseFloat(holding.balance ?? "0").toFixed(
           token?.decimals || 2
-        )} ${token?.symbol || ''}`,
+        )} ${token?.symbol || ""}`,
       };
     }) || [];
 
@@ -204,8 +237,8 @@ export function TransactionForm({
   const createTransaction = trpc.transactions.create.useMutation({
     onSuccess: (data) => {
       toast({
-        title: '✅ Transaction created successfully!',
-        description: `Your ${data?.type || 'transaction'} has been recorded.`,
+        title: "✅ Transaction created successfully!",
+        description: `Your ${data?.type || "transaction"} has been recorded.`,
       });
       utils.transactions.getAll.invalidate();
       utils.holdings.getAll.invalidate();
@@ -215,9 +248,9 @@ export function TransactionForm({
     },
     onError: (error) => {
       toast({
-        title: 'Error creating transaction',
+        title: "Error creating transaction",
         description: error.message,
-        variant: 'destructive',
+        variant: "destructive",
       });
     },
     onSettled: () => {
@@ -228,8 +261,8 @@ export function TransactionForm({
   const updateTransaction = trpc.transactions.update.useMutation({
     onSuccess: (data) => {
       toast({
-        title: '✅ Transaction updated successfully!',
-        description: `Your ${data?.type || 'transaction'} has been updated.`,
+        title: "✅ Transaction updated successfully!",
+        description: `Your ${data?.type || "transaction"} has been updated.`,
       });
       utils.transactions.getAll.invalidate();
       utils.holdings.getAll.invalidate();
@@ -238,9 +271,9 @@ export function TransactionForm({
     },
     onError: (error) => {
       toast({
-        title: 'Error updating transaction',
+        title: "Error updating transaction",
         description: error.message,
-        variant: 'destructive',
+        variant: "destructive",
       });
     },
     onSettled: () => {
@@ -261,63 +294,62 @@ export function TransactionForm({
   } = useForm({
     resolver: zodResolver(TransactionFormSchema),
     defaultValues: {
-      holdingId: transaction?.holdingId || defaultHoldingId || '',
-      type: (transaction?.type as TransactionFormData['type']) || 'deposit',
-      amount: transaction?.amount || 0,
-      price: transaction?.price || undefined,
-      fee: transaction?.fee || 0,
-      description: transaction?.description || '',
-      reference: transaction?.reference || '',
+      holdingId: transaction?.holdingId || defaultHoldingId || "",
+      type: (transaction?.type as TransactionFormData["type"]) || "deposit",
+      amount: transaction?.amount || "0",
+      fee: transaction?.fee || "0",
+      description: transaction?.description || "",
+      reference: transaction?.reference || "",
       timestamp: transaction?.timestamp || new Date(),
     },
-    mode: 'onChange',
+    mode: "onChange",
   });
 
   // Watch form values for real-time validation and calculations
-  const watchedHoldingId = watch('holdingId');
-  const watchedType = watch('type');
-  const watchedAmount = watch('amount');
-  const watchedPrice = watch('price');
-  const watchedFee = watch('fee');
+  const watchedHoldingId = watch("holdingId");
+  const watchedType = watch("type");
+  const watchedAmount = watch("amount");
+  const watchedFee = watch("fee");
 
   // Get transaction type info
-  const selectedTransactionType = TRANSACTION_TYPES.find((t) => t.value === watchedType);
+  const selectedTransactionType = TRANSACTION_TYPES.find(
+    (t) => t.value === watchedType
+  );
   const selectedHolding = processedHoldings.find(
     (h: ProcessedHolding) => h.id === watchedHoldingId
   );
 
-  // Calculate total value for buy/sell transactions
+  // Calculate total value for transactions (simplified since price is no longer used)
   const totalValue = React.useMemo(() => {
-    if (selectedTransactionType?.requiresPrice && watchedPrice && watchedAmount) {
-      const baseAmount = FinancialMath.multiply(Math.abs(watchedAmount), watchedPrice);
-      const feeAmount = watchedFee || 0;
-      return FinancialMath.add(baseAmount, feeAmount);
+    // Since we removed price fields, total value is primarily the amount plus fee
+    if (watchedAmount && watchedFee) {
+      const amount = parseFloat(watchedAmount) || 0;
+      const fee = parseFloat(watchedFee) || 0;
+      return FinancialMath.add(Math.abs(amount), fee);
     }
-    return null;
-  }, [selectedTransactionType, watchedPrice, watchedAmount, watchedFee]);
+    return watchedAmount ? Math.abs(parseFloat(watchedAmount) || 0) : 0;
+  }, [watchedAmount, watchedFee]);
 
   // Reset form when transaction changes
   useEffect(() => {
     if (transaction) {
       reset({
         holdingId: transaction.holdingId,
-        type: transaction.type as TransactionFormData['type'],
+        type: transaction.type as TransactionFormData["type"],
         amount: transaction.amount,
-        price: transaction.price || undefined,
-        fee: transaction.fee || 0,
-        description: transaction.description || '',
-        reference: transaction.reference || '',
+        fee: transaction.fee,
+        description: transaction.description || "",
+        reference: transaction.reference || "",
         timestamp: new Date(transaction.timestamp),
       });
     } else {
       reset({
-        holdingId: defaultHoldingId || '',
-        type: 'deposit',
-        amount: 0,
-        price: undefined,
-        fee: 0,
-        description: '',
-        reference: '',
+        holdingId: defaultHoldingId || "",
+        type: "deposit",
+        amount: "0",
+        fee: "0",
+        description: "",
+        reference: "",
         timestamp: new Date(),
       });
     }
@@ -335,25 +367,27 @@ export function TransactionForm({
     // Prevent submission if transaction types failed to load
     if (transactionTypesError) {
       toast({
-        title: 'Error',
+        title: "Error",
         description:
-          'Transaction types could not be loaded. Please refresh the page and try again.',
-        variant: 'destructive',
+          "Transaction types could not be loaded. Please refresh the page and try again.",
+        variant: "destructive",
       });
       return;
     }
 
     // Validate price requirement based on transaction type
-    const transactionType = TRANSACTION_TYPES.find((t) => t.value === data.type);
-    if (transactionType?.requiresPrice && !data.price) {
-      setError('price', {
-        type: 'manual',
-        message: 'Price is required for buy/sell transactions',
+    // Note: Price validation removed since we no longer use price field
+
+    // Validate that we have the required data
+    if (!data.amount || parseFloat(data.amount) === 0) {
+      setError("amount", {
+        type: "manual",
+        message: "Amount is required and cannot be zero",
       });
       toast({
-        title: 'Validation Error',
-        description: 'Price is required for buy/sell transactions',
-        variant: 'destructive',
+        title: "Validation Error",
+        description: "Amount is required and cannot be zero",
+        variant: "destructive",
       });
       return;
     }
@@ -365,14 +399,13 @@ export function TransactionForm({
       holdingId: data.holdingId,
       type: data.type,
       amount: data.amount,
-      price: data.price,
-      fee: data.fee || 0,
+      fee: data.fee || "0",
       description: data.description?.trim() || undefined,
       reference: data.reference?.trim() || undefined,
       timestamp: data.timestamp,
     };
 
-    if (mode === 'create') {
+    if (mode === "create") {
       createTransaction.mutate(submitData);
     } else if (transaction) {
       updateTransaction.mutate({
@@ -384,9 +417,9 @@ export function TransactionForm({
 
   const handleOpenChange = (open: boolean) => {
     if (!open) {
-      if (hasUnsavedChanges && mode === 'create') {
+      if (hasUnsavedChanges && mode === "create") {
         const confirmClose = window.confirm(
-          'You have unsaved changes. Are you sure you want to close without saving?'
+          "You have unsaved changes. Are you sure you want to close without saving?"
         );
         if (!confirmClose) {
           return;
@@ -409,41 +442,53 @@ export function TransactionForm({
       const token = selectedHolding.token;
       const account = selectedHolding.account;
 
-      let description = '';
+      let description = "";
       switch (watchedType) {
-        case 'buy':
-          description = `Buy ${token?.symbol || 'asset'} in ${account?.name || 'account'}`;
+        case "buy":
+          description = `Buy ${token?.symbol || "asset"} in ${
+            account?.name || "account"
+          }`;
           break;
-        case 'sell':
-          description = `Sell ${token?.symbol || 'asset'} from ${account?.name || 'account'}`;
+        case "sell":
+          description = `Sell ${token?.symbol || "asset"} from ${
+            account?.name || "account"
+          }`;
           break;
-        case 'deposit':
-          description = `Deposit to ${account?.name || 'account'}`;
+        case "deposit":
+          description = `Deposit to ${account?.name || "account"}`;
           break;
-        case 'withdrawal':
-          description = `Withdrawal from ${account?.name || 'account'}`;
+        case "withdrawal":
+          description = `Withdrawal from ${account?.name || "account"}`;
           break;
-        case 'dividend':
-          description = `${token?.symbol || 'Asset'} dividend payment`;
+        case "dividend":
+          description = `${token?.symbol || "Asset"} dividend payment`;
           break;
-        case 'interest':
-          description = `Interest earned in ${account?.name || 'account'}`;
+        case "interest":
+          description = `Interest earned in ${account?.name || "account"}`;
           break;
         default:
           description = `${selectedTransactionType.label} transaction`;
       }
 
-      setValue('description', description);
-      trigger('description');
+      setValue("description", description);
+      trigger("description");
     }
-  }, [selectedTransactionType, selectedHolding, watchedType, setValue, trigger]);
+  }, [
+    selectedTransactionType,
+    selectedHolding,
+    watchedType,
+    setValue,
+    trigger,
+  ]);
 
   if (holdingsLoading || !tokens || !accounts || !institutions) {
     return (
       <Dialog open={isOpen} onOpenChange={handleOpenChange}>
         <DialogContent className="sm:max-w-[600px]">
           <DialogHeader>
-            <DialogTitle>{mode === 'create' ? 'Add Transaction' : 'Edit Transaction'}</DialogTitle>
+            <DialogTitle>
+              {mode === "create" ? "Add Transaction" : "Edit Transaction"}
+            </DialogTitle>
             <DialogDescription>Loading transaction form...</DialogDescription>
           </DialogHeader>
           <div className="flex justify-center py-8">
@@ -459,15 +504,17 @@ export function TransactionForm({
       <DialogContent className="sm:max-w-[700px] max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="flex items-center space-x-2">
-            <span>{mode === 'create' ? 'Add New Transaction' : 'Edit Transaction'}</span>
+            <span>
+              {mode === "create" ? "Add New Transaction" : "Edit Transaction"}
+            </span>
             {selectedTransactionType && (
               <span className="text-xl">{selectedTransactionType.icon}</span>
             )}
           </DialogTitle>
           <DialogDescription>
-            {mode === 'create'
-              ? 'Record a new transaction to track your financial activity'
-              : 'Update the details of your transaction'}
+            {mode === "create"
+              ? "Record a new transaction to track your financial activity"
+              : "Update the details of your transaction"}
           </DialogDescription>
         </DialogHeader>
 
@@ -479,7 +526,9 @@ export function TransactionForm({
             </Label>
             <Select
               value={watchedType}
-              onValueChange={(value) => setValue('type', value as TransactionFormData['type'])}
+              onValueChange={(value) =>
+                setValue("type", value as TransactionFormData["type"])
+              }
             >
               <SelectTrigger id={typeId}>
                 <SelectValue placeholder="Select transaction type" />
@@ -500,7 +549,9 @@ export function TransactionForm({
                         <span>{type.icon}</span>
                         <div>
                           <div className="font-medium">{type.label}</div>
-                          <div className="text-xs text-muted-foreground">{type.description}</div>
+                          <div className="text-xs text-muted-foreground">
+                            {type.description}
+                          </div>
                         </div>
                       </div>
                     </SelectItem>
@@ -508,13 +559,19 @@ export function TransactionForm({
                 )}
               </SelectContent>
             </Select>
-            {errors.type && <p className="text-sm text-destructive">{errors.type.message}</p>}
+            {errors.type && (
+              <p className="text-sm text-destructive">{errors.type.message}</p>
+            )}
 
             {selectedTransactionType && (
               <Alert>
                 <Info className="h-4 w-4" />
-                <AlertTitle>{selectedTransactionType.label} Transaction</AlertTitle>
-                <AlertDescription>{selectedTransactionType.description}</AlertDescription>
+                <AlertTitle>
+                  {selectedTransactionType.label} Transaction
+                </AlertTitle>
+                <AlertDescription>
+                  {selectedTransactionType.description}
+                </AlertDescription>
               </Alert>
             )}
           </div>
@@ -526,7 +583,7 @@ export function TransactionForm({
             </Label>
             <Select
               value={watchedHoldingId}
-              onValueChange={(value) => setValue('holdingId', value)}
+              onValueChange={(value) => setValue("holdingId", value)}
             >
               <SelectTrigger id={holdingId}>
                 <SelectValue placeholder="Select account and asset" />
@@ -542,7 +599,8 @@ export function TransactionForm({
                       <div className="flex flex-col">
                         <div className="font-medium">{holding.displayName}</div>
                         <div className="text-xs text-muted-foreground">
-                          Balance: {holding.balanceDisplay} • {holding.institution?.name}
+                          Balance: {holding.balanceDisplay} •{" "}
+                          {holding.institution?.name}
                         </div>
                       </div>
                     </SelectItem>
@@ -551,7 +609,9 @@ export function TransactionForm({
               </SelectContent>
             </Select>
             {errors.holdingId && (
-              <p className="text-sm text-destructive">{errors.holdingId.message}</p>
+              <p className="text-sm text-destructive">
+                {errors.holdingId.message}
+              </p>
             )}
           </div>
 
@@ -574,17 +634,22 @@ export function TransactionForm({
                   step="any"
                   min="0.01"
                   max="1000000000"
-                  {...register('amount', {
+                  {...register("amount", {
                     valueAsNumber: true,
-                    required: 'Amount is required',
+                    required: "Amount is required",
                     setValueAs: (value) => {
-                      if (value === '' || value === null || value === undefined) return 0;
+                      if (value === "" || value === null || value === undefined)
+                        return 0;
                       const num = Number(value);
                       return Number.isNaN(num) ? 0 : num;
                     },
                   })}
                   placeholder="0.00"
-                  className={errors.amount ? 'border-destructive focus:ring-destructive' : ''}
+                  className={
+                    errors.amount
+                      ? "border-destructive focus:ring-destructive"
+                      : ""
+                  }
                   disabled={isSubmitting}
                 />
                 {totalValue && (
@@ -593,51 +658,18 @@ export function TransactionForm({
                   </div>
                 )}
               </div>
-              {errors.amount && <p className="text-sm text-destructive">{errors.amount.message}</p>}
+              {errors.amount && (
+                <p className="text-sm text-destructive">
+                  {errors.amount.message}
+                </p>
+              )}
               <p className="text-xs text-muted-foreground">
-                Enter the quantity for asset transactions or money amount for deposits/withdrawals
+                Enter the quantity for asset transactions or money amount for
+                deposits/withdrawals
               </p>
             </div>
 
-            {/* Price (conditional) */}
-            {selectedTransactionType?.requiresPrice && (
-              <div className="space-y-2">
-                <Label htmlFor={priceId}>
-                  Price per Unit <span className="text-destructive">*</span>
-                  <span className="text-xs text-muted-foreground ml-2">
-                    ({userPrefs?.baseCurrency || 'USD'})
-                  </span>
-                </Label>
-                <div className="relative">
-                  <DollarSign className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                  <Input
-                    id={priceId}
-                    type="number"
-                    step="0.01"
-                    min="0.01"
-                    max="1000000"
-                    {...register('price', {
-                      setValueAs: (value) => {
-                        if (value === '' || (typeof value === 'string' && value.trim() === '')) {
-                          return undefined;
-                        }
-                        const num = Number(value);
-                        return Number.isNaN(num) ? undefined : num;
-                      },
-                    })}
-                    placeholder="0.00"
-                    className={`pl-10 ${
-                      errors.price ? 'border-destructive focus:ring-destructive' : ''
-                    }`}
-                    disabled={isSubmitting}
-                  />
-                </div>
-                {errors.price && <p className="text-sm text-destructive">{errors.price.message}</p>}
-                <p className="text-xs text-muted-foreground">
-                  Price per unit in your base currency
-                </p>
-              </div>
-            )}
+            {/* Price field removed - no longer needed */}
           </div>
 
           {/* Fee and Date */}
@@ -653,21 +685,26 @@ export function TransactionForm({
                   step="0.01"
                   min="0"
                   max="10000"
-                  {...register('fee', {
+                  {...register("fee", {
                     setValueAs: (value) => {
-                      if (value === '' || value === null || value === undefined) return 0;
+                      if (value === "" || value === null || value === undefined)
+                        return 0;
                       const num = Number(value);
                       return Number.isNaN(num) ? 0 : num;
                     },
                   })}
                   placeholder="0.00"
                   className={`pl-10 ${
-                    errors.fee ? 'border-destructive focus:ring-destructive' : ''
+                    errors.fee
+                      ? "border-destructive focus:ring-destructive"
+                      : ""
                   }`}
                   disabled={isSubmitting}
                 />
               </div>
-              {errors.fee && <p className="text-sm text-destructive">{errors.fee.message}</p>}
+              {errors.fee && (
+                <p className="text-sm text-destructive">{errors.fee.message}</p>
+              )}
             </div>
 
             {/* Date */}
@@ -680,17 +717,22 @@ export function TransactionForm({
                 <Input
                   id={timestampId}
                   type="datetime-local"
-                  {...register('timestamp', {
-                    setValueAs: (value) => (value ? new Date(value) : new Date()),
+                  {...register("timestamp", {
+                    setValueAs: (value) =>
+                      value ? new Date(value) : new Date(),
                   })}
                   className={`pl-10 ${
-                    errors.timestamp ? 'border-destructive focus:ring-destructive' : ''
+                    errors.timestamp
+                      ? "border-destructive focus:ring-destructive"
+                      : ""
                   }`}
                   disabled={isSubmitting}
                 />
               </div>
               {errors.timestamp && (
-                <p className="text-sm text-destructive">{errors.timestamp.message}</p>
+                <p className="text-sm text-destructive">
+                  {errors.timestamp.message}
+                </p>
               )}
             </div>
           </div>
@@ -699,28 +741,30 @@ export function TransactionForm({
           {totalValue && (
             <Alert>
               <Calculator className="h-4 w-4" />
-              <AlertTitle>Total Transaction Value</AlertTitle>
+              <AlertTitle>Transaction Summary</AlertTitle>
               <AlertDescription>
                 <div className="space-y-1">
                   <div>
-                    Base:{' '}
+                    Amount:{" "}
                     {FinancialMath.formatCurrency(
-                      FinancialMath.multiply(Math.abs(watchedAmount), watchedPrice || 0),
-                      { currency: userPrefs?.baseCurrency }
+                      parseFloat(watchedAmount) || 0,
+                      {
+                        currency: userPrefs?.baseCurrency?.symbol,
+                      }
                     )}
                   </div>
-                  {watchedFee && watchedFee > 0 && (
+                  {watchedFee && parseFloat(watchedFee) > 0 && (
                     <div>
-                      Fee:{' '}
-                      {FinancialMath.formatCurrency(watchedFee, {
-                        currency: userPrefs?.baseCurrency,
+                      Fee:{" "}
+                      {FinancialMath.formatCurrency(parseFloat(watchedFee), {
+                        currency: userPrefs?.baseCurrency?.symbol,
                       })}
                     </div>
                   )}
                   <div className="font-semibold">
-                    Total:{' '}
+                    Total:{" "}
                     {FinancialMath.formatCurrency(totalValue, {
-                      currency: userPrefs?.baseCurrency,
+                      currency: userPrefs?.baseCurrency?.symbol,
                     })}
                   </div>
                 </div>
@@ -746,15 +790,21 @@ export function TransactionForm({
             </div>
             <Textarea
               id={descriptionId}
-              {...register('description')}
+              {...register("description")}
               placeholder="Optional description for this transaction..."
               rows={3}
               maxLength={500}
-              className={errors.description ? 'border-destructive focus:ring-destructive' : ''}
+              className={
+                errors.description
+                  ? "border-destructive focus:ring-destructive"
+                  : ""
+              }
               disabled={isSubmitting}
             />
             {errors.description && (
-              <p className="text-sm text-destructive">{errors.description.message}</p>
+              <p className="text-sm text-destructive">
+                {errors.description.message}
+              </p>
             )}
           </div>
 
@@ -763,14 +813,20 @@ export function TransactionForm({
             <Label htmlFor={referenceId}>Reference/ID (Optional)</Label>
             <Input
               id={referenceId}
-              {...register('reference')}
+              {...register("reference")}
               placeholder="e.g., check number, transaction ID"
               maxLength={100}
-              className={errors.reference ? 'border-destructive focus:ring-destructive' : ''}
+              className={
+                errors.reference
+                  ? "border-destructive focus:ring-destructive"
+                  : ""
+              }
               disabled={isSubmitting}
             />
             {errors.reference && (
-              <p className="text-sm text-destructive">{errors.reference.message}</p>
+              <p className="text-sm text-destructive">
+                {errors.reference.message}
+              </p>
             )}
             <p className="text-xs text-muted-foreground">
               External reference number or transaction ID for your records
@@ -789,9 +845,11 @@ export function TransactionForm({
             <Button type="submit" disabled={isSubmitting}>
               <LoadingButton
                 isLoading={isSubmitting}
-                loadingText={mode === 'create' ? 'Creating...' : 'Updating...'}
+                loadingText={mode === "create" ? "Creating..." : "Updating..."}
               >
-                {mode === 'create' ? 'Create Transaction' : 'Update Transaction'}
+                {mode === "create"
+                  ? "Create Transaction"
+                  : "Update Transaction"}
               </LoadingButton>
             </Button>
           </DialogFooter>

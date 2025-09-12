@@ -1,3 +1,23 @@
+# Scani Project Rules
+
+## Package Management
+
+- Prefer `bunx` instead of `npx` for running packages in this Bun-based project
+- Use `bun` for package management (install, add, remove, etc.)
+
+## Financial Calculations
+
+- Always use `decimal.js` and the `FinancialMath` utility class for all monetary computations
+- Never use basic JavaScript math for financial calculations due to floating-point precision issues
+- Import `FinancialMath` from `@scani/shared` for consistent financial operations
+
+## Development Environment
+
+- Backend uses Elysia server with tRPC
+- Frontend uses React with Vite
+- WebSocket integration for real-time updates
+- Complex financial data model with hierarchical structure (User → Institution → Account → Holding → Transaction)
+
 # WARP.md
 
 This file provides guidance to WARP (warp.dev) when working with code in this repository.
@@ -186,21 +206,6 @@ The API is organized into domain-specific routers:
    # Frontend: http://localhost:5173
    # WebSocket: ws://localhost:3002
    ```
-
-## Testing Strategy
-
-**Coverage Target**: 93%+ test coverage maintained across entire codebase
-
-**Test Types**:
-
-- **Unit Tests**: Individual functions and utilities
-- **Integration Tests**: Database operations and API endpoints
-- **Type Tests**: Schema validation and type safety
-- **Financial Math Tests**: Precision calculations and edge cases
-
-**Database Testing**: Each test uses fresh database state with automated setup/teardown to ensure isolation.
-
-**Frontend Testing**: Currently disabled in favor of backend and shared package testing. UI tests planned for future implementation.
 
 ## Environment Configuration
 

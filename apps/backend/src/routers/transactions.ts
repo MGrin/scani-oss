@@ -5,6 +5,7 @@ import { z } from 'zod';
 import { db } from '../db/connection';
 import * as schema from '../db/schema';
 import { getUserId } from '../middleware/auth';
+import { PricingService } from '../services/pricing';
 import { protectedProcedure, router } from '../trpc';
 
 // Type assertion for router operations (development/test environment uses SQLite)
@@ -21,8 +22,6 @@ export const transactionsRouter = router({
         type: schema.transactionTypes.code,
         typeName: schema.transactionTypes.name,
         amount: schema.transactions.amount,
-        price: schema.transactions.price,
-        priceTokenId: schema.transactions.priceTokenId,
         fee: schema.transactions.fee,
         feeTokenId: schema.transactions.feeTokenId,
         description: schema.transactions.description,
@@ -52,8 +51,6 @@ export const transactionsRouter = router({
           type: schema.transactionTypes.code,
           typeName: schema.transactionTypes.name,
           amount: schema.transactions.amount,
-          price: schema.transactions.price,
-          priceTokenId: schema.transactions.priceTokenId,
           fee: schema.transactions.fee,
           feeTokenId: schema.transactions.feeTokenId,
           description: schema.transactions.description,
@@ -89,8 +86,6 @@ export const transactionsRouter = router({
           type: schema.transactionTypes.code,
           typeName: schema.transactionTypes.name,
           amount: schema.transactions.amount,
-          price: schema.transactions.price,
-          priceTokenId: schema.transactions.priceTokenId,
           fee: schema.transactions.fee,
           feeTokenId: schema.transactions.feeTokenId,
           description: schema.transactions.description,
@@ -119,8 +114,6 @@ export const transactionsRouter = router({
         type: schema.transactionTypes.code,
         typeName: schema.transactionTypes.name,
         amount: schema.transactions.amount,
-        price: schema.transactions.price,
-        priceTokenId: schema.transactions.priceTokenId,
         fee: schema.transactions.fee,
         feeTokenId: schema.transactions.feeTokenId,
         description: schema.transactions.description,
@@ -149,10 +142,8 @@ export const transactionsRouter = router({
       z.object({
         holdingId: z.string().min(1, 'Holding ID cannot be empty'),
         type: z.string().min(1, 'Transaction type cannot be empty'), // This will be the type code
-        amount: z.number(),
-        price: z.number().optional(),
-        priceTokenId: z.string().optional(),
-        fee: z.number().default(0),
+        amount: z.string().default('0'), // Convert to string
+        fee: z.string().default('0'), // Convert to string
         feeTokenId: z.string().optional(),
         description: z.string().max(500).optional(),
         reference: z.string().max(100).optional(),
@@ -178,16 +169,59 @@ export const transactionsRouter = router({
         throw new Error(`Invalid transaction type: ${input.type}`);
       }
 
+      // Get holding and token information for pricing
+      const [holdingData] = await routerDb
+        .select({
+          holding: schema.holdings,
+          token: schema.tokens,
+          user: schema.users,
+        })
+        .from(schema.holdings)
+        .innerJoin(schema.tokens, eq(schema.holdings.tokenId, schema.tokens.id))
+        .innerJoin(schema.users, eq(schema.holdings.userId, schema.users.id))
+        .where(eq(schema.holdings.id, input.holdingId))
+        .limit(1);
+
+      // Get base currency separately if user has one set
+      let baseCurrency = null;
+      if (holdingData?.user.baseCurrencyId) {
+        const [baseCurrencyData] = await routerDb
+          .select()
+          .from(schema.tokens)
+          .where(eq(schema.tokens.id, holdingData.user.baseCurrencyId))
+          .limit(1);
+        baseCurrency = baseCurrencyData;
+      }
+
+      if (!holdingData) {
+        throw new Error('Holding not found');
+      }
+
+      // Auto-fetch token price for current price tracking (optional)
+      if (baseCurrency) {
+        try {
+          const pricingService = new PricingService();
+          await pricingService.getTokenPrice({
+            tokenSymbol: holdingData.token.symbol,
+            baseCurrency: baseCurrency.symbol,
+            timestamp: input.timestamp,
+            live: false, // Use historical price for transaction timestamp
+          });
+          // Price is now cached in tokenPrices table
+        } catch (error) {
+          console.warn(`Failed to fetch price for ${holdingData.token.symbol}:`, error);
+          // Continue without price - transaction can still be created
+        }
+      }
+
       const now = new Date();
       const transactionData = {
         id: nanoid(),
         userId,
         holdingId: input.holdingId,
         typeId: transactionType.id, // Use the actual typeId
-        amount: input.amount || 0,
-        price: input.price || null,
-        priceTokenId: input.priceTokenId || null,
-        fee: input.fee || 0,
+        amount: input.amount || '0', // Already a string
+        fee: input.fee || '0', // Already a string
         feeTokenId: input.feeTokenId || null,
         description: input.description || null,
         reference: input.reference || null,
@@ -214,8 +248,6 @@ export const transactionsRouter = router({
           type: schema.transactionTypes.code,
           typeName: schema.transactionTypes.name,
           amount: schema.transactions.amount,
-          price: schema.transactions.price,
-          priceTokenId: schema.transactions.priceTokenId,
           fee: schema.transactions.fee,
           feeTokenId: schema.transactions.feeTokenId,
           description: schema.transactions.description,
@@ -250,6 +282,7 @@ export const transactionsRouter = router({
     .mutation(async ({ input }) => {
       const updateData = {
         ...input.data,
+        // Monetary fields are already strings in the schema
         updatedAt: new Date(),
       };
 
@@ -272,8 +305,6 @@ export const transactionsRouter = router({
           type: schema.transactionTypes.code,
           typeName: schema.transactionTypes.name,
           amount: schema.transactions.amount,
-          price: schema.transactions.price,
-          priceTokenId: schema.transactions.priceTokenId,
           fee: schema.transactions.fee,
           feeTokenId: schema.transactions.feeTokenId,
           description: schema.transactions.description,
@@ -344,7 +375,7 @@ export const transactionsRouter = router({
       return await routerDb
         .select()
         .from(schema.transactions)
-        .where(eq(schema.transactions.fee, input.minFee)) // Placeholder - need proper comparison
+        .where(eq(schema.transactions.fee, input.minFee.toString())) // Convert number to string
         .orderBy(desc(schema.transactions.fee));
     }),
 });

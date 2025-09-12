@@ -146,7 +146,7 @@ export const holdingsRouter = router({
           ...input,
           userId,
           id: nanoid(),
-          balance: input.balance || 0, // Ensure balance is always a number
+          balance: input.balance || '0', // Ensure balance is always a string
           createdAt: now,
           lastUpdated: input.lastUpdated || now, // Always ensure lastUpdated is set
         };
@@ -158,7 +158,7 @@ export const holdingsRouter = router({
         }
 
         // Create opening balance transaction if balance > 0
-        if (holding.balance > 0) {
+        if (parseFloat(holding.balance) > 0) {
           // Get the deposit transaction type
           const [depositType] = await trx
             .select()
@@ -180,9 +180,8 @@ export const holdingsRouter = router({
             userId,
             holdingId: holding.id,
             typeId: depositType.id, // Use typeId instead of type
-            amount: holding.balance,
-            price: holding.averageCostBasis || null, // Use cost basis as price if available
-            fee: 0,
+            amount: holding.balance, // Already a string
+            fee: '0', // Convert fee to string
             description: 'Opening balance - initial holding position',
             timestamp: now,
             createdAt: now,
@@ -226,19 +225,14 @@ export const holdingsRouter = router({
     .input(
       z.object({
         id: z.string(),
-        balance: z.number(),
-        averageCostBasis: z.number().optional(),
+        balance: z.string(), // Changed to string
       })
     )
     .mutation(async ({ input }) => {
       const updateData: Partial<typeof schema.holdings.$inferInsert> = {
-        balance: input.balance,
+        balance: input.balance, // Now already a string
         lastUpdated: new Date(),
       };
-
-      if (input.averageCostBasis !== undefined) {
-        updateData.averageCostBasis = input.averageCostBasis;
-      }
 
       const [updatedHolding] = await db
         .update(schema.holdings)

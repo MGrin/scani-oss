@@ -53,12 +53,19 @@ async function syncUserWithDatabase(supabaseUser: User): Promise<typeof schema.u
     // Extract username from email (everything before @)
     const emailUsername = supabaseUser.email?.split('@')[0] || 'User';
 
+    // Get USD token ID as default base currency
+    const [usdToken] = await db
+      .select({ id: schema.tokens.id })
+      .from(schema.tokens)
+      .where(eq(schema.tokens.symbol, 'USD'))
+      .limit(1);
+
     const userData = {
       id: supabaseUser.id, // Use Supabase user ID
       email: supabaseUser.email || '',
       name: emailUsername, // Use email prefix as username
       avatar: supabaseUser.user_metadata?.avatar_url || null,
-      baseCurrency: 'USD' as const,
+      baseCurrencyId: usdToken?.id || null, // Use USD token ID or null if not found
       createdAt: now,
       updatedAt: now,
     };

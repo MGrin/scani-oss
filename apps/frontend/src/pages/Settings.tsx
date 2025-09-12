@@ -1,8 +1,3 @@
-import type { CurrencyCode } from '@scani/shared/types';
-import type { z } from 'zod';
-
-type CurrencyCodeType = z.infer<typeof CurrencyCode>;
-
 import { Download, FileText, HelpCircle, Trash2, Upload, User } from 'lucide-react';
 import { useCallback, useEffect, useId, useMemo, useState } from 'react';
 
@@ -44,7 +39,7 @@ export function Settings() {
     name: string;
     email: string; // Keep for display purposes but won't be in updates
     avatar: string;
-    baseCurrency: CurrencyCodeType | '';
+    baseCurrencyId: string | '';
   };
 
   const [formData, setFormData] = useState<FormData | null>(null);
@@ -64,7 +59,7 @@ export function Settings() {
       name: userPrefs.name || '',
       email: userPrefs.email || '',
       avatar: userPrefs.avatar || '',
-      baseCurrency: (userPrefs.baseCurrency as CurrencyCodeType) || '',
+      baseCurrencyId: userPrefs.baseCurrencyId || '',
     };
     setFormData(initial);
     setOriginalData(initial);
@@ -73,7 +68,7 @@ export function Settings() {
   const isDirty = useMemo(() => {
     if (!formData || !originalData) return false;
     // Exclude email from dirty checking since it's read-only
-    const editableFields: (keyof FormData)[] = ['name', 'avatar', 'baseCurrency'];
+    const editableFields: (keyof FormData)[] = ['name', 'avatar', 'baseCurrencyId'];
     return editableFields.some((key) => formData[key] !== originalData[key]);
   }, [formData, originalData]);
 
@@ -104,7 +99,7 @@ export function Settings() {
 
     const changed: Partial<FormData> = {};
     // Only check editable fields for changes (exclude email)
-    const editableFields: (keyof FormData)[] = ['name', 'avatar', 'baseCurrency'];
+    const editableFields: (keyof FormData)[] = ['name', 'avatar', 'baseCurrencyId'];
     editableFields.forEach((k) => {
       if (formData[k] !== originalData[k]) {
         (changed as Record<string, unknown>)[k] = formData[k];
@@ -118,7 +113,7 @@ export function Settings() {
         changed as {
           name?: string;
           avatar?: string;
-          baseCurrency?: CurrencyCodeType;
+          baseCurrencyId?: string;
         }
       );
       // Update the original data so isDirty becomes false
@@ -302,7 +297,7 @@ export function Settings() {
                   name: formData.name,
                   email: formData.email,
                   avatar: formData.avatar,
-                  baseCurrency: formData.baseCurrency,
+                  baseCurrencyId: formData.baseCurrencyId,
                 }}
                 errors={formErrors}
                 onChange={(field, value) => setField(field, value)}
@@ -333,18 +328,18 @@ function GeneralSettings({
     name: string;
     email: string;
     avatar: string;
-    baseCurrency: CurrencyCodeType | '';
+    baseCurrencyId: string | '';
   };
   errors: Record<string, string>;
-  onChange: (field: 'name' | 'avatar' | 'baseCurrency', value: string) => void;
-  supportedCurrencies: Array<{ code: string; name: string; symbol: string }>;
+  onChange: (field: 'name' | 'avatar' | 'baseCurrencyId', value: string) => void;
+  supportedCurrencies: Array<{ id: string; name: string; symbol: string }>;
 }) {
   const displayNameId = useId();
   const emailId = useId();
   const avatarId = useId();
   const [localErrors, setLocalErrors] = useState<Record<string, string>>({});
 
-  const handleFieldChange = (field: 'name' | 'avatar' | 'baseCurrency', value: string) => {
+  const handleFieldChange = (field: 'name' | 'avatar' | 'baseCurrencyId', value: string) => {
     onChange(field, value);
     // simple inline validation feedback for name only
     const errors: Record<string, string> = {};
@@ -422,16 +417,16 @@ function GeneralSettings({
             <div className="space-y-2">
               <Label htmlFor="currency">Base Currency</Label>
               <Select
-                value={values.baseCurrency}
-                onValueChange={(value) => handleFieldChange('baseCurrency', value)}
+                value={values.baseCurrencyId}
+                onValueChange={(value) => handleFieldChange('baseCurrencyId', value)}
               >
                 <SelectTrigger>
                   <SelectValue placeholder="Select currency" />
                 </SelectTrigger>
                 <SelectContent>
                   {supportedCurrencies.map((currency) => (
-                    <SelectItem key={currency.code} value={currency.code}>
-                      {currency.symbol} {currency.name} ({currency.code})
+                    <SelectItem key={currency.id} value={currency.id}>
+                      {currency.symbol} {currency.name}
                     </SelectItem>
                   ))}
                 </SelectContent>

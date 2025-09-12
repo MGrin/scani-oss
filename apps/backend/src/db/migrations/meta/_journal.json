@@ -78,6 +78,27 @@
       "when": 1757578633461,
       "tag": "0010_seed_institutions",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1757661126517,
+      "tag": "0011_bright_meggan",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1757666438975,
+      "tag": "0012_old_power_pack",
+      "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1757669191000,
+      "tag": "0013_bouncy_maverick",
+      "breakpoints": true
     }
   ]
 }

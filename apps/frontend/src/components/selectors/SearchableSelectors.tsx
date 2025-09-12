@@ -1,7 +1,8 @@
 import { Plus } from 'lucide-react';
 import { Combobox } from '@/components/ui/combobox';
+import { TokenSymbol } from '@/components/ui/TokenSymbol';
 import type { ApiAccount, ApiInstitution, ApiToken } from '@/lib/api-types';
-import { getAccountTypeIcon, getTokenIcon, getTokenTypeIcon } from '@/lib/icons';
+import { getAccountTypeIcon, getTokenTypeIcon } from '@/lib/icons';
 
 // Base Searchable Select Component using Combobox
 interface SearchableSelectProps {
@@ -178,7 +179,9 @@ export function TokenSelector({
     tokens?.map((token) => ({
       value: token.id,
       label: `${token.symbol} - ${token.name}`,
-      icon: getTokenIcon(token.type || 'unknown', token.symbol),
+      icon: ({ className }: { className?: string }) => (
+        <TokenSymbol type={token.type || 'unknown'} symbol={token.symbol} className={className} />
+      ),
       subtitle: token.typeName || undefined,
     })) || [];
 
