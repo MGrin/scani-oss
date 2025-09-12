@@ -10,7 +10,7 @@ import {
   Wallet,
   X,
 } from 'lucide-react';
-import { useId, useState } from 'react';
+import React, { useId, useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import {
   Breadcrumb,
@@ -188,18 +188,18 @@ export function Layout({ children }: LayoutProps) {
                 <Breadcrumb className="hidden md:flex">
                   <BreadcrumbList>
                     {breadcrumbs.map((crumb, index) => (
-                      <BreadcrumbItem key={crumb.href}>
-                        {index === breadcrumbs.length - 1 ? (
-                          <BreadcrumbPage>{crumb.name}</BreadcrumbPage>
-                        ) : (
-                          <>
+                      <React.Fragment key={crumb.href}>
+                        <BreadcrumbItem>
+                          {index === breadcrumbs.length - 1 ? (
+                            <BreadcrumbPage>{crumb.name}</BreadcrumbPage>
+                          ) : (
                             <BreadcrumbLink to={crumb.href}>
                               {crumb.isHome ? <Home className="h-3.5 w-3.5" /> : crumb.name}
                             </BreadcrumbLink>
-                            <BreadcrumbSeparator />
-                          </>
-                        )}
-                      </BreadcrumbItem>
+                          )}
+                        </BreadcrumbItem>
+                        {index < breadcrumbs.length - 1 && <BreadcrumbSeparator />}
+                      </React.Fragment>
                     ))}
                   </BreadcrumbList>
                 </Breadcrumb>

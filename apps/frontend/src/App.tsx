@@ -22,7 +22,12 @@ function App() {
       <TRPCProvider>
         <ThemeProvider>
           <ThemeLoader>
-            <Router>
+            <Router
+              future={{
+                v7_startTransition: true,
+                v7_relativeSplatPath: true,
+              }}
+            >
               <Routes>
                 {/* Public routes */}
                 <Route path="/auth" element={<Auth />} />

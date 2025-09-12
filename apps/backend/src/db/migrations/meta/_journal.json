@@ -99,6 +99,20 @@
       "when": 1757669191000,
       "tag": "0013_bouncy_maverick",
       "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1757694389595,
+      "tag": "0014_lean_speed_demon",
+      "breakpoints": true
+    },
+    {
+      "idx": 15,
+      "version": "7",
+      "when": 1757696269742,
+      "tag": "0015_seed_transaction_types",
+      "breakpoints": true
     }
   ]
 }

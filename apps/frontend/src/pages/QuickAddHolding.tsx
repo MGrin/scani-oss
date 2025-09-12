@@ -1,8 +1,8 @@
-import { zodResolver } from '@hookform/resolvers/zod';
-import { useEffect, useId, useState } from 'react';
-import { useForm } from 'react-hook-form';
-import { useNavigate } from 'react-router-dom';
-import { z } from 'zod';
+import { zodResolver } from "@hookform/resolvers/zod";
+import { useEffect, useId, useMemo, useState } from "react";
+import { useForm } from "react-hook-form";
+import { useNavigate } from "react-router-dom";
+import { z } from "zod";
 import {
   AccountSelector,
   AccountTypeSelector,
@@ -10,90 +10,140 @@ import {
   InstitutionTypeSelector,
   TokenSelector,
   TokenTypeSelector,
-} from '@/components/selectors/SearchableSelectors';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { LoadingSpinner } from '@/components/ui/loading';
-import { PageHeader } from '@/components/ui/page-header';
-import { useToast } from '@/hooks/use-toast';
-import { trpc } from '@/lib/trpc';
+} from "@/components/selectors/SearchableSelectors";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { LoadingSpinner } from "@/components/ui/loading";
+import { PageHeader } from "@/components/ui/page-header";
+import { useToast } from "@/hooks/use-toast";
+import { trpc } from "@/lib/trpc";
 
-// Schema for the form
+// Schema for the form with improved validation
 const QuickAddHoldingSchema = z
   .object({
-    // Holding fields
+    // Holding fields - Keep as number in frontend, convert to string for backend
     balance: z
       .number({
-        required_error: 'Balance is required',
-        invalid_type_error: 'Balance must be a valid number',
+        required_error: "Balance is required",
+        invalid_type_error: "Balance must be a valid number",
       })
-      .refine((val) => !Number.isNaN(val), 'Balance must be a valid number')
-      .refine((val) => val !== 0, 'Balance cannot be zero. Enter the actual holding amount.')
-      .refine((val) => Math.abs(val) >= 0.000001, 'Balance is too small. Minimum value is 0.000001')
+      .refine((val) => !Number.isNaN(val), "Balance must be a valid number")
+      .refine(
+        (val) => val !== 0,
+        "Balance cannot be zero. Enter the actual holding amount."
+      )
+      .refine(
+        (val) => Math.abs(val) >= 0.000001,
+        "Balance is too small. Minimum value is 0.000001"
+      )
       .refine(
         (val) => Math.abs(val) <= 1_000_000_000,
-        'Balance is too large. Maximum value is 1 billion'
+        "Balance is too large. Maximum value is 1 billion"
       ),
 
     // Account selection
-    accountId: z.string().min(1, 'Please select an account'),
+    accountId: z.string().min(1, "Please select an account"),
 
-    // New account fields (when accountId is 'new')
+    // New account fields (conditionally required when accountId is 'new')
     newAccountName: z.string().optional(),
     newAccountType: z.string().optional(),
     newAccountDescription: z.string().optional(),
-    newAccountNumber: z.string().optional(),
 
-    // Institution selection (when creating new account)
+    // Institution selection (conditionally required when creating new account)
     institutionId: z.string().optional(),
 
-    // New institution fields (when institutionId is 'new')
+    // New institution fields (conditionally required when institutionId is 'new')
     newInstitutionName: z.string().optional(),
     newInstitutionType: z.string().optional(),
     newInstitutionDescription: z.string().optional(),
     newInstitutionWebsite: z.string().optional(),
 
     // Token selection
-    tokenId: z.string().min(1, 'Please select a token'),
+    tokenId: z.string().min(1, "Please select a token"),
 
-    // New token fields (when tokenId is 'new')
+    // New token fields (conditionally required when tokenId is 'new')
     newTokenSymbol: z.string().optional(),
     newTokenName: z.string().optional(),
     newTokenType: z.string().optional(),
     newTokenDecimals: z.number().int().min(0).max(18).optional(),
   })
-  .refine(
-    (data) => {
-      // Validate new account fields
-      if (data.accountId === 'new') {
-        if (!data.newAccountName || !data.newAccountType || !data.institutionId) {
-          return false;
-        }
-        // Validate new institution fields
-        if (
-          data.institutionId === 'new' &&
-          (!data.newInstitutionName || !data.newInstitutionType)
-        ) {
-          return false;
-        }
+  .superRefine((data, ctx) => {
+    // Validate new account fields when creating new account
+    if (data.accountId === "new") {
+      if (!data.newAccountName?.trim()) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "Account name is required when creating a new account",
+          path: ["newAccountName"],
+        });
       }
 
-      // Validate new token fields
-      if (
-        data.tokenId === 'new' &&
-        (!data.newTokenSymbol || !data.newTokenName || !data.newTokenType)
-      ) {
-        return false;
+      if (!data.newAccountType) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "Account type is required when creating a new account",
+          path: ["newAccountType"],
+        });
       }
 
-      return true;
-    },
-    {
-      message: 'Please complete all required fields',
-      path: ['root'],
+      if (!data.institutionId) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "Institution is required when creating a new account",
+          path: ["institutionId"],
+        });
+      }
+
+      // Validate new institution fields when creating new institution
+      if (data.institutionId === "new") {
+        if (!data.newInstitutionName?.trim()) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            message:
+              "Institution name is required when creating a new institution",
+            path: ["newInstitutionName"],
+          });
+        }
+
+        if (!data.newInstitutionType) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            message:
+              "Institution type is required when creating a new institution",
+            path: ["newInstitutionType"],
+          });
+        }
+      }
     }
-  );
+
+    // Validate new token fields when creating new token
+    if (data.tokenId === "new") {
+      if (!data.newTokenSymbol?.trim()) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "Token symbol is required when creating a new token",
+          path: ["newTokenSymbol"],
+        });
+      }
+
+      if (!data.newTokenName?.trim()) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "Token name is required when creating a new token",
+          path: ["newTokenName"],
+        });
+      }
+
+      if (!data.newTokenType) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "Token type is required when creating a new token",
+          path: ["newTokenType"],
+        });
+      }
+    }
+  });
 
 type QuickAddHoldingData = z.infer<typeof QuickAddHoldingSchema>;
 
@@ -110,15 +160,18 @@ export function QuickAddHolding() {
 
   // Data queries
   const { data: userPrefs } = trpc.users.getCurrent.useQuery();
-  const { data: accounts, isLoading: accountsLoading } = trpc.accounts.getAll.useQuery();
+  const { data: accounts, isLoading: accountsLoading } =
+    trpc.accounts.getAll.useQuery();
   const { data: institutions, isLoading: institutionsLoading } =
     trpc.institutions.getAll.useQuery();
-  const { data: tokens, isLoading: tokensLoading } = trpc.tokens.getAll.useQuery();
+  const { data: tokens, isLoading: tokensLoading } =
+    trpc.tokens.getAll.useQuery();
   const { data: accountTypes, isLoading: accountTypesLoading } =
     trpc.accountTypes.getAll.useQuery();
   const { data: institutionTypes, isLoading: institutionTypesLoading } =
     trpc.institutionTypes.getAll.useQuery();
-  const { data: tokenTypes, isLoading: tokenTypesLoading } = trpc.tokenTypes.getAll.useQuery();
+  const { data: tokenTypes, isLoading: tokenTypesLoading } =
+    trpc.tokenTypes.getAll.useQuery();
 
   const utils = trpc.useUtils();
 
@@ -130,23 +183,69 @@ export function QuickAddHolding() {
 
   const form = useForm<QuickAddHoldingData>({
     resolver: zodResolver(QuickAddHoldingSchema),
+    mode: "onChange", // Validate on change for better UX
+    reValidateMode: "onChange",
     defaultValues: {
       newTokenDecimals: 2,
     },
   });
 
-  const watchAccountId = form.watch('accountId');
-  const watchInstitutionId = form.watch('institutionId');
-  const watchTokenId = form.watch('tokenId');
+  const watchAccountId = form.watch("accountId");
+  const watchInstitutionId = form.watch("institutionId");
+  const watchTokenId = form.watch("tokenId");
+
+  // Watch all form values for reactive validation
+  const formValues = form.watch();
+
+  // Custom validation to check if only required fields are filled
+  const isFormValidForSubmission = useMemo(() => {
+    const errors = form.formState.errors;
+
+    // Check core required fields
+    if (!formValues.accountId || errors.accountId) return false;
+    if (!formValues.tokenId || errors.tokenId) return false;
+    if (
+      formValues.balance === undefined ||
+      formValues.balance === null ||
+      errors.balance
+    )
+      return false;
+
+    // If creating new account, check required account fields
+    if (formValues.accountId === "new") {
+      if (!formValues.newAccountName?.trim() || errors.newAccountName)
+        return false;
+      if (!formValues.newAccountType || errors.newAccountType) return false;
+      if (!formValues.institutionId || errors.institutionId) return false;
+
+      // If creating new institution, check required institution fields
+      if (formValues.institutionId === "new") {
+        if (!formValues.newInstitutionName?.trim() || errors.newInstitutionName)
+          return false;
+        if (!formValues.newInstitutionType || errors.newInstitutionType)
+          return false;
+      }
+    }
+
+    // If creating new token, check required token fields
+    if (formValues.tokenId === "new") {
+      if (!formValues.newTokenSymbol?.trim() || errors.newTokenSymbol)
+        return false;
+      if (!formValues.newTokenName?.trim() || errors.newTokenName) return false;
+      if (!formValues.newTokenType || errors.newTokenType) return false;
+    }
+
+    return true;
+  }, [formValues, form.formState.errors]);
 
   // Set default values based on available data
   useEffect(() => {
     if (!accountsLoading && accounts !== undefined && !watchAccountId) {
       if (!accounts || accounts.length === 0) {
-        form.setValue('accountId', 'new');
+        form.setValue("accountId", "new");
       } else {
         // Default to the first available account
-        form.setValue('accountId', accounts[0]?.id || 'new');
+        form.setValue("accountId", accounts[0]?.id || "new");
       }
     }
   }, [accounts, accountsLoading, form, watchAccountId]);
@@ -155,26 +254,35 @@ export function QuickAddHolding() {
     if (
       !institutionsLoading &&
       institutions !== undefined &&
-      watchAccountId === 'new' &&
+      watchAccountId === "new" &&
       !watchInstitutionId
     ) {
       // Get institutions where the user has accounts
-      const userInstitutionIds = new Set(accounts?.map((account) => account.institutionId) || []);
+      const userInstitutionIds = new Set(
+        accounts?.map((account) => account.institutionId) || []
+      );
       const userInstitutions =
         institutions?.filter((inst) => userInstitutionIds.has(inst.id)) || [];
 
       if (userInstitutions.length > 0) {
         // Default to the first institution where the user has accounts
-        form.setValue('institutionId', userInstitutions[0]!.id);
+        form.setValue("institutionId", userInstitutions[0]!.id);
       } else if (institutions && institutions.length > 0) {
         // If no user institutions, default to the first available institution
-        form.setValue('institutionId', institutions[0]!.id);
+        form.setValue("institutionId", institutions[0]!.id);
       } else {
         // No institutions available, default to "new"
-        form.setValue('institutionId', 'new');
+        form.setValue("institutionId", "new");
       }
     }
-  }, [accounts, institutions, institutionsLoading, form, watchInstitutionId, watchAccountId]);
+  }, [
+    accounts,
+    institutions,
+    institutionsLoading,
+    form,
+    watchInstitutionId,
+    watchAccountId,
+  ]);
 
   useEffect(() => {
     if (!tokensLoading && tokens !== undefined) {
@@ -187,7 +295,8 @@ export function QuickAddHolding() {
             // Look for a token with symbol matching the base currency
             defaultToken = tokens.find(
               (token) =>
-                token.symbol?.toUpperCase() === userPrefs.baseCurrency?.symbol?.toUpperCase()
+                token.symbol?.toUpperCase() ===
+                userPrefs.baseCurrency?.symbol?.toUpperCase()
             );
           }
 
@@ -196,10 +305,10 @@ export function QuickAddHolding() {
             defaultToken = tokens[0];
           }
 
-          form.setValue('tokenId', defaultToken?.id || 'new');
+          form.setValue("tokenId", defaultToken?.id || "new");
         } else {
           // No tokens exist, default to "new"
-          form.setValue('tokenId', 'new');
+          form.setValue("tokenId", "new");
         }
       }
     }
@@ -207,80 +316,183 @@ export function QuickAddHolding() {
 
   const onSubmit = async (data: QuickAddHoldingData) => {
     setIsSubmitting(true);
+
     try {
       let accountId = data.accountId;
       let tokenId = data.tokenId;
+      let institutionId = data.institutionId;
 
       // Step 1: Create institution if needed
-      let institutionId = data.institutionId;
-      if (data.accountId === 'new' && data.institutionId === 'new') {
-        const newInstitution = await createInstitution.mutateAsync({
-          name: data.newInstitutionName!,
-          type: data.newInstitutionType!,
-          description: data.newInstitutionDescription || '',
-          website: data.newInstitutionWebsite || '',
-        });
-        institutionId = newInstitution?.id;
+      if (data.accountId === "new" && data.institutionId === "new") {
+        try {
+          console.log("Creating institution:", {
+            name: data.newInstitutionName,
+            type: data.newInstitutionType,
+            description: data.newInstitutionDescription || "",
+            website: data.newInstitutionWebsite || "",
+          });
+
+          const newInstitution = await createInstitution.mutateAsync({
+            name: data.newInstitutionName!.trim(),
+            type: data.newInstitutionType!,
+            description: data.newInstitutionDescription?.trim() || "",
+            website: data.newInstitutionWebsite?.trim() || "",
+          });
+
+          if (!newInstitution?.id) {
+            throw new Error("Failed to create institution - no ID returned");
+          }
+
+          institutionId = newInstitution.id;
+          console.log("Institution created successfully:", institutionId);
+        } catch (error) {
+          console.error("Institution creation failed:", error);
+          throw new Error(
+            `Failed to create institution: ${
+              error instanceof Error ? error.message : "Unknown error"
+            }`
+          );
+        }
       }
 
       // Step 2: Create account if needed
-      if (data.accountId === 'new') {
-        const newAccount = await createAccount.mutateAsync({
-          name: data.newAccountName!,
-          type: data.newAccountType!,
-          institutionId: institutionId!,
-          description: data.newAccountDescription || '',
-          accountNumber: data.newAccountNumber || '',
-        });
-        accountId = newAccount?.id || '';
+      if (data.accountId === "new") {
+        try {
+          if (!institutionId) {
+            throw new Error("Institution ID is required to create an account");
+          }
+
+          console.log("Creating account:", {
+            name: data.newAccountName,
+            type: data.newAccountType,
+            institutionId: institutionId,
+            description: data.newAccountDescription || "",
+          });
+
+          const newAccount = await createAccount.mutateAsync({
+            name: data.newAccountName!.trim(),
+            type: data.newAccountType!,
+            institutionId: institutionId,
+            description: data.newAccountDescription?.trim() || "",
+          });
+
+          if (!newAccount?.id) {
+            throw new Error("Failed to create account - no ID returned");
+          }
+
+          accountId = newAccount.id;
+          console.log("Account created successfully:", accountId);
+        } catch (error) {
+          console.error("Account creation failed:", error);
+          throw new Error(
+            `Failed to create account: ${
+              error instanceof Error ? error.message : "Unknown error"
+            }`
+          );
+        }
       }
 
       // Step 3: Create token if needed
-      if (data.tokenId === 'new') {
-        // Find the token type ID
-        const tokenType = tokenTypes?.find((t) => t.code === data.newTokenType);
-        if (!tokenType) {
-          throw new Error('Selected token type not found');
-        }
+      if (data.tokenId === "new") {
+        try {
+          // Find the token type ID
+          const tokenType = tokenTypes?.find(
+            (t) => t.code === data.newTokenType
+          );
+          if (!tokenType) {
+            throw new Error(`Token type '${data.newTokenType}' not found`);
+          }
 
-        const newToken = await createToken.mutateAsync({
-          symbol: data.newTokenSymbol!.toUpperCase(),
-          name: data.newTokenName!,
-          typeId: tokenType.id,
-          decimals: data.newTokenDecimals || 2,
-        });
-        tokenId = newToken?.id || '';
+          console.log("Creating token:", {
+            symbol: data.newTokenSymbol?.toUpperCase(),
+            name: data.newTokenName,
+            typeId: tokenType.id,
+            decimals: data.newTokenDecimals || 2,
+          });
+
+          const newToken = await createToken.mutateAsync({
+            symbol: data.newTokenSymbol!.trim().toUpperCase(),
+            name: data.newTokenName!.trim(),
+            typeId: tokenType.id,
+            decimals: data.newTokenDecimals || 2,
+          });
+
+          if (!newToken?.id) {
+            throw new Error("Failed to create token - no ID returned");
+          }
+
+          tokenId = newToken.id;
+          console.log("Token created successfully:", tokenId);
+        } catch (error) {
+          console.error("Token creation failed:", error);
+          throw new Error(
+            `Failed to create token: ${
+              error instanceof Error ? error.message : "Unknown error"
+            }`
+          );
+        }
       }
 
       // Step 4: Create holding
-      if (!accountId || !tokenId || accountId === 'new' || tokenId === 'new') {
-        throw new Error('Missing required account or token ID');
+      try {
+        if (
+          !accountId ||
+          !tokenId ||
+          accountId === "new" ||
+          tokenId === "new"
+        ) {
+          throw new Error(
+            `Missing required IDs - Account: ${accountId}, Token: ${tokenId}`
+          );
+        }
+
+        console.log("Creating holding:", {
+          accountId,
+          tokenId,
+          balance: data.balance.toString(),
+        });
+
+        await createHolding.mutateAsync({
+          accountId,
+          tokenId,
+          balance: data.balance.toString(),
+        });
+
+        console.log("Holding created successfully");
+
+        toast({
+          title: "✅ Success!",
+          description:
+            "Holding created successfully! Your new holding has been added to your portfolio.",
+        });
+
+        // Invalidate relevant queries to refresh data
+        await Promise.all([
+          utils.holdings.getAll.invalidate(),
+          utils.accounts.getAll.invalidate(),
+          utils.institutions.getAll.invalidate(),
+          utils.tokens.getAll.invalidate(),
+        ]);
+
+        navigate("/holdings");
+      } catch (error) {
+        console.error("Holding creation failed:", error);
+        throw new Error(
+          `Failed to create holding: ${
+            error instanceof Error ? error.message : "Unknown error"
+          }`
+        );
       }
-
-      await createHolding.mutateAsync({
-        accountId,
-        tokenId,
-        balance: data.balance.toString(),
-      });
-
-      toast({
-        title: 'Success',
-        description: 'Holding created successfully!',
-        variant: 'success',
-      });
-
-      // Invalidate relevant queries
-      utils.holdings.getAll.invalidate();
-      utils.accounts.getAll.invalidate();
-      utils.institutions.getAll.invalidate();
-      utils.tokens.getAll.invalidate();
-
-      navigate('/holdings');
     } catch (error) {
+      console.error("Overall submission failed:", error);
+
+      const errorMessage =
+        error instanceof Error ? error.message : "An unexpected error occurred";
+
       toast({
-        title: 'Error',
-        description: error instanceof Error ? error.message : 'Failed to create holding',
-        variant: 'destructive',
+        title: "❌ Error Creating Holding",
+        description: `${errorMessage}. Please check your information and try again.`,
+        variant: "destructive",
       });
     } finally {
       setIsSubmitting(false);
@@ -326,13 +538,15 @@ export function QuickAddHolding() {
               <Label htmlFor={tokenSelectId}>Select Token *</Label>
               <TokenSelector
                 id={tokenSelectId}
-                value={form.watch('tokenId') || ''}
-                onValueChange={(value) => form.setValue('tokenId', value)}
+                value={form.watch("tokenId") || ""}
+                onValueChange={(value) => form.setValue("tokenId", value)}
                 tokens={tokens}
                 placeholder="Choose a token..."
               />
               {form.formState.errors.tokenId && (
-                <p className="text-sm text-red-500">{form.formState.errors.tokenId.message}</p>
+                <p className="text-sm text-red-500">
+                  {form.formState.errors.tokenId.message}
+                </p>
               )}
             </div>
 
@@ -343,16 +557,20 @@ export function QuickAddHolding() {
                 type="number"
                 step="any"
                 placeholder="e.g., 100.50"
-                {...form.register('balance', { valueAsNumber: true })}
-                className={form.formState.errors.balance ? 'border-red-500' : ''}
+                {...form.register("balance", { valueAsNumber: true })}
+                className={
+                  form.formState.errors.balance ? "border-red-500" : ""
+                }
               />
               {form.formState.errors.balance && (
-                <p className="text-sm text-red-500">{form.formState.errors.balance.message}</p>
+                <p className="text-sm text-red-500">
+                  {form.formState.errors.balance.message}
+                </p>
               )}
             </div>
           </div>
 
-          {watchTokenId === 'new' && (
+          {watchTokenId === "new" && (
             <div className="space-y-4 border-t pt-4">
               <h4 className="text-sm font-medium">New Token Details</h4>
 
@@ -362,17 +580,20 @@ export function QuickAddHolding() {
                   <Input
                     placeholder="e.g., AAPL"
                     maxLength={10}
-                    {...form.register('newTokenSymbol')}
+                    {...form.register("newTokenSymbol")}
                     onChange={(e) => {
                       e.target.value = e.target.value.toUpperCase();
-                      form.setValue('newTokenSymbol', e.target.value);
+                      form.setValue("newTokenSymbol", e.target.value);
                     }}
                   />
                 </div>
 
                 <div className="space-y-2">
                   <Label>Name *</Label>
-                  <Input placeholder="e.g., Apple Inc." {...form.register('newTokenName')} />
+                  <Input
+                    placeholder="e.g., Apple Inc."
+                    {...form.register("newTokenName")}
+                  />
                 </div>
               </div>
 
@@ -380,8 +601,10 @@ export function QuickAddHolding() {
                 <div className="space-y-2">
                   <Label>Token Type *</Label>
                   <TokenTypeSelector
-                    value={form.watch('newTokenType') || ''}
-                    onValueChange={(value) => form.setValue('newTokenType', value)}
+                    value={form.watch("newTokenType") || ""}
+                    onValueChange={(value) =>
+                      form.setValue("newTokenType", value)
+                    }
                     tokenTypes={tokenTypes}
                     placeholder="Choose token type..."
                   />
@@ -394,7 +617,7 @@ export function QuickAddHolding() {
                     min="0"
                     max="18"
                     placeholder="2"
-                    {...form.register('newTokenDecimals', {
+                    {...form.register("newTokenDecimals", {
                       valueAsNumber: true,
                     })}
                   />
@@ -413,35 +636,41 @@ export function QuickAddHolding() {
               <Label htmlFor={accountSelectId}>Select Account *</Label>
               <AccountSelector
                 id={accountSelectId}
-                value={form.watch('accountId') || ''}
-                onValueChange={(value) => form.setValue('accountId', value)}
+                value={form.watch("accountId") || ""}
+                onValueChange={(value) => form.setValue("accountId", value)}
                 accounts={accounts}
                 placeholder="Choose an account..."
               />
               {form.formState.errors.accountId && (
-                <p className="text-sm text-red-500">{form.formState.errors.accountId.message}</p>
+                <p className="text-sm text-red-500">
+                  {form.formState.errors.accountId.message}
+                </p>
               )}
             </div>
           </div>
 
-          {watchAccountId === 'new' && (
+          {watchAccountId === "new" && (
             <div className="space-y-4 border-t pt-4">
               {/* Institution Selection - Now First */}
               <div className="space-y-4">
                 <h3 className="text-base font-medium">Institution</h3>
 
                 <div className="space-y-2">
-                  <Label htmlFor={institutionSelectId}>Select Institution *</Label>
+                  <Label htmlFor={institutionSelectId}>
+                    Select Institution *
+                  </Label>
                   <InstitutionSelector
                     id={institutionSelectId}
-                    value={form.watch('institutionId') || ''}
-                    onValueChange={(value) => form.setValue('institutionId', value)}
+                    value={form.watch("institutionId") || ""}
+                    onValueChange={(value) =>
+                      form.setValue("institutionId", value)
+                    }
                     institutions={institutions}
                     placeholder="Choose an institution..."
                   />
                 </div>
 
-                {watchInstitutionId === 'new' && (
+                {watchInstitutionId === "new" && (
                   <div className="space-y-4 border rounded-lg p-4">
                     <h4 className="font-medium">New Institution Details</h4>
 
@@ -450,15 +679,17 @@ export function QuickAddHolding() {
                         <Label>Institution Name *</Label>
                         <Input
                           placeholder="e.g., Bank of America"
-                          {...form.register('newInstitutionName')}
+                          {...form.register("newInstitutionName")}
                         />
                       </div>
 
                       <div className="space-y-2">
                         <Label>Institution Type *</Label>
                         <InstitutionTypeSelector
-                          value={form.watch('newInstitutionType') || ''}
-                          onValueChange={(value) => form.setValue('newInstitutionType', value)}
+                          value={form.watch("newInstitutionType") || ""}
+                          onValueChange={(value) =>
+                            form.setValue("newInstitutionType", value)
+                          }
                           institutionTypes={institutionTypes}
                           placeholder="Choose institution type..."
                         />
@@ -470,7 +701,7 @@ export function QuickAddHolding() {
                         <Label>Website</Label>
                         <Input
                           placeholder="https://example.com"
-                          {...form.register('newInstitutionWebsite')}
+                          {...form.register("newInstitutionWebsite")}
                         />
                       </div>
 
@@ -478,7 +709,7 @@ export function QuickAddHolding() {
                         <Label>Description</Label>
                         <Input
                           placeholder="Optional description"
-                          {...form.register('newInstitutionDescription')}
+                          {...form.register("newInstitutionDescription")}
                         />
                       </div>
                     </div>
@@ -495,34 +726,29 @@ export function QuickAddHolding() {
                     <Label>Account Name *</Label>
                     <Input
                       placeholder="e.g., Primary Checking"
-                      {...form.register('newAccountName')}
+                      {...form.register("newAccountName")}
                     />
                   </div>
 
                   <div className="space-y-2">
                     <Label>Account Type *</Label>
                     <AccountTypeSelector
-                      value={form.watch('newAccountType') || ''}
-                      onValueChange={(value) => form.setValue('newAccountType', value)}
+                      value={form.watch("newAccountType") || ""}
+                      onValueChange={(value) =>
+                        form.setValue("newAccountType", value)
+                      }
                       accountTypes={accountTypes}
                       placeholder="Choose account type..."
                     />
                   </div>
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <Label>Account Number</Label>
-                    <Input placeholder="e.g., ****1234" {...form.register('newAccountNumber')} />
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label>Description</Label>
-                    <Input
-                      placeholder="Optional description"
-                      {...form.register('newAccountDescription')}
-                    />
-                  </div>
+                <div className="space-y-2">
+                  <Label>Description</Label>
+                  <Input
+                    placeholder="Optional description"
+                    {...form.register("newAccountDescription")}
+                  />
                 </div>
               </div>
             </div>
@@ -536,11 +762,11 @@ export function QuickAddHolding() {
           </Button>
           <Button
             type="submit"
-            disabled={isSubmitting || !form.formState.isValid}
+            disabled={isSubmitting || !isFormValidForSubmission}
             className="min-w-[140px]"
           >
             {isSubmitting && <LoadingSpinner className="mr-2 h-4 w-4" />}
-            {isSubmitting ? 'Creating...' : 'Create Holding'}
+            {isSubmitting ? "Creating..." : "Create Holding"}
           </Button>
         </div>
       </form>

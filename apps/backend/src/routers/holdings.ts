@@ -1,11 +1,10 @@
-import { CreateHoldingSchema, UpdateHoldingSchema } from '@scani/shared/types';
-import { and, desc, eq, ne } from 'drizzle-orm';
-import { nanoid } from 'nanoid';
-import { z } from 'zod';
-import { db } from '../db/connection';
-import * as schema from '../db/schema';
-import { getUserId } from '../middleware/auth';
-import { protectedProcedure, router } from '../trpc';
+import { CreateHoldingSchema, UpdateHoldingSchema } from "@scani/shared/types";
+import { and, desc, eq, ne } from "drizzle-orm";
+import { z } from "zod";
+import { db } from "../db/connection";
+import * as schema from "../db/schema";
+import { getUserId } from "../middleware/auth";
+import { protectedProcedure, router } from "../trpc";
 
 export const holdingsRouter = router({
   // Get all holdings
@@ -57,7 +56,7 @@ export const holdingsRouter = router({
         .limit(1);
 
       if (!holding) {
-        throw new Error('Holding not found');
+        throw new Error("Holding not found");
       }
       return holding;
     }),
@@ -94,18 +93,20 @@ export const holdingsRouter = router({
       };
     }),
   // Get holding by ID
-  getById: protectedProcedure.input(z.object({ id: z.string() })).query(async ({ input }) => {
-    const [holding] = await db
-      .select()
-      .from(schema.holdings)
-      .where(eq(schema.holdings.id, input.id))
-      .limit(1);
+  getById: protectedProcedure
+    .input(z.object({ id: z.string() }))
+    .query(async ({ input }) => {
+      const [holding] = await db
+        .select()
+        .from(schema.holdings)
+        .where(eq(schema.holdings.id, input.id))
+        .limit(1);
 
-    if (!holding) {
-      throw new Error('Holding not found');
-    }
-    return holding;
-  }),
+      if (!holding) {
+        throw new Error("Holding not found");
+      }
+      return holding;
+    }),
 
   // Create new holding
   create: protectedProcedure
@@ -126,7 +127,7 @@ export const holdingsRouter = router({
         .limit(1);
 
       if (!account) {
-        throw new Error('Account does not exist for the specified accountId');
+        throw new Error("Account does not exist for the specified accountId");
       }
 
       // Validate token existence
@@ -137,7 +138,7 @@ export const holdingsRouter = router({
         .limit(1);
 
       if (!token) {
-        throw new Error('Token does not exist for the specified tokenId');
+        throw new Error("Token does not exist for the specified tokenId");
       }
 
       // Use database transaction to ensure atomicity
@@ -145,16 +146,18 @@ export const holdingsRouter = router({
         const holdingData = {
           ...input,
           userId,
-          id: nanoid(),
-          balance: input.balance || '0', // Ensure balance is always a string
+          balance: input.balance || "0", // Ensure balance is always a string
           createdAt: now,
           lastUpdated: input.lastUpdated || now, // Always ensure lastUpdated is set
         };
 
-        const [holding] = await trx.insert(schema.holdings).values(holdingData).returning();
+        const [holding] = await trx
+          .insert(schema.holdings)
+          .values(holdingData)
+          .returning();
 
         if (!holding) {
-          throw new Error('Failed to create holding');
+          throw new Error("Failed to create holding");
         }
 
         // Create opening balance transaction if balance > 0
@@ -165,24 +168,23 @@ export const holdingsRouter = router({
             .from(schema.transactionTypes)
             .where(
               and(
-                eq(schema.transactionTypes.code, 'deposit'),
+                eq(schema.transactionTypes.code, "deposit"),
                 eq(schema.transactionTypes.isActive, true)
               )
             )
             .limit(1);
 
           if (!depositType) {
-            throw new Error('Deposit transaction type not found');
+            throw new Error("Deposit transaction type not found");
           }
 
           await trx.insert(schema.transactions).values({
-            id: nanoid(),
             userId,
             holdingId: holding.id,
             typeId: depositType.id, // Use typeId instead of type
             amount: holding.balance, // Already a string
-            fee: '0', // Convert fee to string
-            description: 'Opening balance - initial holding position',
+            fee: "0", // Convert fee to string
+            description: "Opening balance - initial holding position",
             timestamp: now,
             createdAt: now,
             updatedAt: now,
@@ -214,7 +216,7 @@ export const holdingsRouter = router({
         .returning();
 
       if (!updatedHolding) {
-        throw new Error('Holding not found');
+        throw new Error("Holding not found");
       }
 
       return updatedHolding;
@@ -241,23 +243,25 @@ export const holdingsRouter = router({
         .returning();
 
       if (!updatedHolding) {
-        throw new Error('Holding not found');
+        throw new Error("Holding not found");
       }
 
       return updatedHolding;
     }),
 
   // Delete holding
-  delete: protectedProcedure.input(z.object({ id: z.string() })).mutation(async ({ input }) => {
-    const [deletedHolding] = await db
-      .delete(schema.holdings)
-      .where(eq(schema.holdings.id, input.id))
-      .returning();
+  delete: protectedProcedure
+    .input(z.object({ id: z.string() }))
+    .mutation(async ({ input }) => {
+      const [deletedHolding] = await db
+        .delete(schema.holdings)
+        .where(eq(schema.holdings.id, input.id))
+        .returning();
 
-    if (!deletedHolding) {
-      throw new Error('Holding not found');
-    }
+      if (!deletedHolding) {
+        throw new Error("Holding not found");
+      }
 
-    return { success: true, deleted: deletedHolding };
-  }),
+      return { success: true, deleted: deletedHolding };
+    }),
 });

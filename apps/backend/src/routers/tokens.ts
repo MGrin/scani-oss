@@ -1,9 +1,8 @@
-import { and, eq, sql } from 'drizzle-orm';
-import { nanoid } from 'nanoid';
-import { z } from 'zod';
-import { db } from '../db/connection';
-import * as schema from '../db/schema';
-import { protectedProcedure, router } from '../trpc';
+import { and, eq, sql } from "drizzle-orm";
+import { z } from "zod";
+import { db } from "../db/connection";
+import * as schema from "../db/schema";
+import { protectedProcedure, router } from "../trpc";
 
 // Local schemas for token operations (will be moved to shared later)
 const CreateTokenSchema = z.object({
@@ -35,7 +34,10 @@ export const tokensRouter = router({
         updatedAt: schema.tokens.updatedAt,
       })
       .from(schema.tokens)
-      .leftJoin(schema.tokenTypes, eq(schema.tokens.typeId, schema.tokenTypes.id))
+      .leftJoin(
+        schema.tokenTypes,
+        eq(schema.tokens.typeId, schema.tokenTypes.id)
+      )
       .where(eq(schema.tokens.isActive, true))
       .orderBy(schema.tokens.symbol);
     return tokens;
@@ -52,8 +54,16 @@ export const tokensRouter = router({
         iconUrl: schema.tokens.iconUrl,
       })
       .from(schema.tokens)
-      .leftJoin(schema.tokenTypes, eq(schema.tokens.typeId, schema.tokenTypes.id))
-      .where(and(eq(schema.tokens.isActive, true), eq(schema.tokenTypes.code, 'fiat')))
+      .leftJoin(
+        schema.tokenTypes,
+        eq(schema.tokens.typeId, schema.tokenTypes.id)
+      )
+      .where(
+        and(
+          eq(schema.tokens.isActive, true),
+          eq(schema.tokenTypes.code, "fiat")
+        )
+      )
       .orderBy(schema.tokens.symbol);
     return currencies;
   }),
@@ -77,38 +87,51 @@ export const tokensRouter = router({
           updatedAt: schema.tokens.updatedAt,
         })
         .from(schema.tokens)
-        .leftJoin(schema.tokenTypes, eq(schema.tokens.typeId, schema.tokenTypes.id))
-        .where(and(eq(schema.tokenTypes.code, input.typeCode), eq(schema.tokens.isActive, true)))
+        .leftJoin(
+          schema.tokenTypes,
+          eq(schema.tokens.typeId, schema.tokenTypes.id)
+        )
+        .where(
+          and(
+            eq(schema.tokenTypes.code, input.typeCode),
+            eq(schema.tokens.isActive, true)
+          )
+        )
         .orderBy(schema.tokens.symbol);
       return tokens;
     }),
 
   // Get token by ID
-  getById: protectedProcedure.input(z.object({ id: z.string() })).query(async ({ input }) => {
-    const [token] = await db
-      .select({
-        id: schema.tokens.id,
-        symbol: schema.tokens.symbol,
-        name: schema.tokens.name,
-        typeId: schema.tokens.typeId,
-        type: schema.tokenTypes.code,
-        typeName: schema.tokenTypes.name,
-        decimals: schema.tokens.decimals,
-        iconUrl: schema.tokens.iconUrl,
-        isActive: schema.tokens.isActive,
-        createdAt: schema.tokens.createdAt,
-        updatedAt: schema.tokens.updatedAt,
-      })
-      .from(schema.tokens)
-      .leftJoin(schema.tokenTypes, eq(schema.tokens.typeId, schema.tokenTypes.id))
-      .where(eq(schema.tokens.id, input.id))
-      .limit(1);
+  getById: protectedProcedure
+    .input(z.object({ id: z.string() }))
+    .query(async ({ input }) => {
+      const [token] = await db
+        .select({
+          id: schema.tokens.id,
+          symbol: schema.tokens.symbol,
+          name: schema.tokens.name,
+          typeId: schema.tokens.typeId,
+          type: schema.tokenTypes.code,
+          typeName: schema.tokenTypes.name,
+          decimals: schema.tokens.decimals,
+          iconUrl: schema.tokens.iconUrl,
+          isActive: schema.tokens.isActive,
+          createdAt: schema.tokens.createdAt,
+          updatedAt: schema.tokens.updatedAt,
+        })
+        .from(schema.tokens)
+        .leftJoin(
+          schema.tokenTypes,
+          eq(schema.tokens.typeId, schema.tokenTypes.id)
+        )
+        .where(eq(schema.tokens.id, input.id))
+        .limit(1);
 
-    if (!token) {
-      throw new Error('Token not found');
-    }
-    return token;
-  }),
+      if (!token) {
+        throw new Error("Token not found");
+      }
+      return token;
+    }),
 
   // Get token by symbol
   getBySymbol: protectedProcedure
@@ -129,46 +152,53 @@ export const tokensRouter = router({
           updatedAt: schema.tokens.updatedAt,
         })
         .from(schema.tokens)
-        .leftJoin(schema.tokenTypes, eq(schema.tokens.typeId, schema.tokenTypes.id))
+        .leftJoin(
+          schema.tokenTypes,
+          eq(schema.tokens.typeId, schema.tokenTypes.id)
+        )
         .where(eq(schema.tokens.symbol, input.symbol.toUpperCase()))
         .limit(1);
 
       if (!token) {
-        throw new Error('Token not found');
+        throw new Error("Token not found");
       }
       return token;
     }),
 
   // Create new token
-  create: protectedProcedure.input(CreateTokenSchema).mutation(async ({ input }) => {
-    // Check if symbol already exists
-    const [existingToken] = await db
-      .select()
-      .from(schema.tokens)
-      .where(eq(schema.tokens.symbol, input.symbol.toUpperCase()))
-      .limit(1);
+  create: protectedProcedure
+    .input(CreateTokenSchema)
+    .mutation(async ({ input }) => {
+      // Check if symbol already exists
+      const [existingToken] = await db
+        .select()
+        .from(schema.tokens)
+        .where(eq(schema.tokens.symbol, input.symbol.toUpperCase()))
+        .limit(1);
 
-    if (existingToken) {
-      throw new Error('Token with this symbol already exists');
-    }
+      if (existingToken) {
+        throw new Error("Token with this symbol already exists");
+      }
 
-    const now = new Date();
-    const tokenData = {
-      id: nanoid(),
-      ...input,
-      symbol: input.symbol.toUpperCase(), // Ensure symbols are uppercase
-      createdAt: now,
-      updatedAt: now,
-    };
+      const now = new Date();
+      const tokenData = {
+        ...input,
+        symbol: input.symbol.toUpperCase(), // Ensure symbols are uppercase
+        createdAt: now,
+        updatedAt: now,
+      };
 
-    const [createdToken] = await db.insert(schema.tokens).values(tokenData).returning();
+      const [createdToken] = await db
+        .insert(schema.tokens)
+        .values(tokenData)
+        .returning();
 
-    if (!createdToken) {
-      throw new Error('Failed to create token');
-    }
+      if (!createdToken) {
+        throw new Error("Failed to create token");
+      }
 
-    return createdToken;
-  }),
+      return createdToken;
+    }),
 
   // Update token
   update: protectedProcedure
@@ -194,7 +224,7 @@ export const tokensRouter = router({
           .limit(1);
 
         if (existingToken) {
-          throw new Error('Token with this symbol already exists');
+          throw new Error("Token with this symbol already exists");
         }
       }
 
@@ -211,27 +241,29 @@ export const tokensRouter = router({
         .returning();
 
       if (!updatedToken) {
-        throw new Error('Token not found');
+        throw new Error("Token not found");
       }
 
       return updatedToken;
     }),
 
   // Delete token (soft delete by setting isActive to false)
-  remove: protectedProcedure.input(z.object({ id: z.string() })).mutation(async ({ input }) => {
-    const [deletedToken] = await db
-      .update(schema.tokens)
-      .set({
-        isActive: false,
-        updatedAt: new Date(),
-      })
-      .where(eq(schema.tokens.id, input.id))
-      .returning();
+  remove: protectedProcedure
+    .input(z.object({ id: z.string() }))
+    .mutation(async ({ input }) => {
+      const [deletedToken] = await db
+        .update(schema.tokens)
+        .set({
+          isActive: false,
+          updatedAt: new Date(),
+        })
+        .where(eq(schema.tokens.id, input.id))
+        .returning();
 
-    if (!deletedToken) {
-      throw new Error('Token not found');
-    }
+      if (!deletedToken) {
+        throw new Error("Token not found");
+      }
 
-    return { success: true, deleted: deletedToken };
-  }),
+      return { success: true, deleted: deletedToken };
+    }),
 });
