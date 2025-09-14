@@ -2,19 +2,53 @@ import { and, eq, sql } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "../db/connection";
 import * as schema from "../db/schema";
+import { TokenValidationService } from "../services/token-validation";
 import { protectedProcedure, router } from "../trpc";
 
 // Local schemas for token operations (will be moved to shared later)
 const CreateTokenSchema = z.object({
-  symbol: z.string().min(1).max(10),
-  name: z.string().min(1).max(100),
-  typeId: z.string().uuid(), // Reference to token_types table
+  symbol: z
+    .string()
+    .min(1)
+    .max(20)
+    .transform((val) => val.toUpperCase()),
+  name: z.string().min(1).max(100).optional(), // Optional - will be auto-filled from validation
+  typeId: z.string().uuid().optional(), // Optional - will be auto-determined from validation
   decimals: z.number().int().min(0).max(18).default(2),
   iconUrl: z.string().url().optional(),
   isActive: z.boolean().default(true),
 });
 
+const ValidateTokenSchema = z.object({
+  symbol: z
+    .string()
+    .min(1)
+    .max(20)
+    .transform((val) => val.toUpperCase()),
+  typeCode: z.string().optional(), // Optional token type to guide provider selection
+});
+
 const UpdateTokenSchema = CreateTokenSchema.partial();
+
+// Helper function to map provider token types to database token types
+function mapProviderTypeToDbType(providerType: string): string {
+  switch (providerType) {
+    case "Equity":
+      return "stock";
+    case "ETF":
+      return "etf";
+    case "Mutual Fund":
+      return "mutual-fund";
+    case "Bond":
+      return "bond";
+    case "Commodity":
+      return "commodity";
+    case "Crypto":
+      return "crypto";
+    default:
+      return "stock"; // Default fallback
+  }
+}
 
 export const tokensRouter = router({
   // Get all active tokens with their types
@@ -165,25 +199,189 @@ export const tokensRouter = router({
       return token;
     }),
 
-  // Create new token
+  // Validate token against appropriate provider (Finnhub or CoinGecko)
+  validate: protectedProcedure
+    .input(ValidateTokenSchema)
+    .query(async ({ input }) => {
+      const validationService = new TokenValidationService();
+      const result = await validationService.validateToken(
+        input.symbol,
+        input.typeCode
+      );
+
+      if (!result.isValid) {
+        throw new Error(result.error || "Token validation failed");
+      }
+
+      // Check if token already exists in our database with the same type
+      let existingToken = null;
+      if (result.metadata) {
+        // Get the token type ID for the validated token
+        const tokenTypeCode = mapProviderTypeToDbType(result.metadata.type);
+        const [tokenType] = await db
+          .select()
+          .from(schema.tokenTypes)
+          .where(eq(schema.tokenTypes.code, tokenTypeCode))
+          .limit(1);
+
+        if (tokenType) {
+          [existingToken] = await db
+            .select()
+            .from(schema.tokens)
+            .where(
+              and(
+                eq(schema.tokens.symbol, input.symbol),
+                eq(schema.tokens.typeId, tokenType.id)
+              )
+            )
+            .limit(1);
+        }
+      }
+
+      return {
+        ...result,
+        existsInDatabase: !!existingToken,
+        existingToken: existingToken
+          ? {
+              id: existingToken.id,
+              symbol: existingToken.symbol,
+              name: existingToken.name,
+              isActive: existingToken.isActive,
+            }
+          : null,
+      };
+    }),
+
+  // Get token type ID by code (helper for UI)
+  getTokenTypeByCode: protectedProcedure
+    .input(z.object({ code: z.string() }))
+    .query(async ({ input }) => {
+      const [tokenType] = await db
+        .select()
+        .from(schema.tokenTypes)
+        .where(eq(schema.tokenTypes.code, input.code))
+        .limit(1);
+
+      if (!tokenType) {
+        throw new Error(`Token type '${input.code}' not found`);
+      }
+
+      return tokenType;
+    }),
+
+  // Create new token with validation
   create: protectedProcedure
     .input(CreateTokenSchema)
     .mutation(async ({ input }) => {
-      // Check if symbol already exists
-      const [existingToken] = await db
+      const symbol = input.symbol;
+
+      // Determine token type first (if provided) to guide validation
+      let tokenTypeCode: string | undefined;
+      if (input.typeId) {
+        const [tokenType] = await db
+          .select()
+          .from(schema.tokenTypes)
+          .where(eq(schema.tokenTypes.id, input.typeId))
+          .limit(1);
+
+        if (!tokenType) {
+          throw new Error("Invalid token type ID provided");
+        }
+
+        tokenTypeCode = tokenType.code;
+
+        // Forbid creation of fiat tokens
+        if (tokenTypeCode === "fiat") {
+          throw new Error(
+            "Creation of fiat tokens is not allowed. Fiat currencies are managed by system administrators."
+          );
+        }
+      }
+
+      // Validate token against appropriate provider
+      const validationService = new TokenValidationService();
+      const validation = await validationService.validateToken(
+        symbol,
+        tokenTypeCode
+      );
+
+      if (!validation.isValid || !validation.metadata) {
+        throw new Error(validation.error || "Token validation failed");
+      }
+
+      // Determine final token type ID
+      let typeId = input.typeId;
+      if (!typeId) {
+        // Map provider type to our token type
+        const mappedTypeCode = mapProviderTypeToDbType(
+          validation.metadata.type
+        );
+
+        // Forbid creation of fiat tokens (double check)
+        if (mappedTypeCode === "fiat") {
+          throw new Error(
+            "Creation of fiat tokens is not allowed. Fiat currencies are managed by system administrators."
+          );
+        }
+
+        const [tokenType] = await db
+          .select()
+          .from(schema.tokenTypes)
+          .where(eq(schema.tokenTypes.code, mappedTypeCode))
+          .limit(1);
+
+        if (!tokenType) {
+          throw new Error(
+            `Token type '${mappedTypeCode}' not found in database`
+          );
+        }
+
+        typeId = tokenType.id;
+      }
+
+      if (!typeId) {
+        throw new Error(
+          "Token type must be provided or determinable from validation"
+        );
+      }
+
+      // Check unique constraint: (symbol, typeId) must be unique
+      const [existingTokenWithType] = await db
         .select()
         .from(schema.tokens)
-        .where(eq(schema.tokens.symbol, input.symbol.toUpperCase()))
+        .where(
+          and(
+            eq(schema.tokens.symbol, symbol),
+            eq(schema.tokens.typeId, typeId)
+          )
+        )
         .limit(1);
 
-      if (existingToken) {
-        throw new Error("Token with this symbol already exists");
+      if (existingTokenWithType) {
+        throw new Error(
+          `Token ${symbol} with this type already exists in the database`
+        );
       }
+
+      // Use validated name if not provided
+      const name = input.name || validation.metadata.name || symbol;
+
+      // Create provider metadata based on the provider used
+      const providerMetadata = JSON.stringify({
+        provider: validation.metadata.provider,
+        [validation.metadata.provider]: validation.metadata.providerMetadata,
+        validatedAt: new Date().toISOString(),
+      });
 
       const now = new Date();
       const tokenData = {
-        ...input,
-        symbol: input.symbol.toUpperCase(), // Ensure symbols are uppercase
+        symbol,
+        name,
+        typeId,
+        decimals: input.decimals || 2,
+        iconUrl: input.iconUrl || null,
+        providerMetadata,
+        isActive: input.isActive ?? true,
         createdAt: now,
         updatedAt: now,
       };
@@ -197,7 +395,10 @@ export const tokensRouter = router({
         throw new Error("Failed to create token");
       }
 
-      return createdToken;
+      return {
+        ...createdToken,
+        validation: validation.metadata,
+      };
     }),
 
   // Update token
@@ -209,14 +410,30 @@ export const tokensRouter = router({
       })
     )
     .mutation(async ({ input }) => {
-      // If updating symbol, check for uniqueness
-      if (input.data.symbol) {
+      // If updating symbol or typeId, check for uniqueness of (symbol, typeId) tuple
+      if (input.data.symbol || input.data.typeId) {
+        // Get current token to check what values we need to validate
+        const [currentToken] = await db
+          .select()
+          .from(schema.tokens)
+          .where(eq(schema.tokens.id, input.id))
+          .limit(1);
+
+        if (!currentToken) {
+          throw new Error("Token not found");
+        }
+
+        const newSymbol =
+          input.data.symbol?.toUpperCase() || currentToken.symbol;
+        const newTypeId = input.data.typeId || currentToken.typeId;
+
         const [existingToken] = await db
           .select()
           .from(schema.tokens)
           .where(
             and(
-              eq(schema.tokens.symbol, input.data.symbol.toUpperCase()),
+              eq(schema.tokens.symbol, newSymbol),
+              eq(schema.tokens.typeId, newTypeId),
               // Exclude current token from uniqueness check
               sql`${schema.tokens.id} != ${input.id}`
             )
@@ -224,7 +441,9 @@ export const tokensRouter = router({
           .limit(1);
 
         if (existingToken) {
-          throw new Error("Token with this symbol already exists");
+          throw new Error(
+            "Token with this symbol and type combination already exists"
+          );
         }
       }
 

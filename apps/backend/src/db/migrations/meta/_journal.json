@@ -113,6 +113,20 @@
       "when": 1757696269742,
       "tag": "0015_seed_transaction_types",
       "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "7",
+      "when": 1757845818132,
+      "tag": "0016_fancy_molecule_man",
+      "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1757850028130,
+      "tag": "0017_seed_mutual_fund_token_type",
+      "breakpoints": true
     }
   ]
 }

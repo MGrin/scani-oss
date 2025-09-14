@@ -126,23 +126,31 @@ export const institutions = pgTable(
 );
 
 // Tokens table (represents tradeable assets)
-export const tokens = pgTable("tokens", {
-  id: uuid("id").defaultRandom().primaryKey(),
-  symbol: text("symbol").notNull(),
-  name: text("name").notNull(),
-  typeId: uuid("type_id")
-    .notNull()
-    .references(() => tokenTypes.id, { onDelete: "restrict" }), // Reference to token_types
-  decimals: real("decimals").notNull().default(2),
-  iconUrl: text("icon_url"),
-  isActive: boolean("is_active").notNull().default(true),
-  createdAt: timestamp("created_at", { withTimezone: true })
-    .notNull()
-    .defaultNow(),
-  updatedAt: timestamp("updated_at", { withTimezone: true })
-    .notNull()
-    .defaultNow(),
-});
+export const tokens = pgTable(
+  "tokens",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    symbol: text("symbol").notNull(),
+    name: text("name").notNull(),
+    typeId: uuid("type_id")
+      .notNull()
+      .references(() => tokenTypes.id, { onDelete: "restrict" }), // Reference to token_types
+    decimals: real("decimals").notNull().default(2),
+    iconUrl: text("icon_url"),
+    providerMetadata: text("provider_metadata").notNull().default("{}"), // JSON object for provider-specific data
+    isActive: boolean("is_active").notNull().default(true),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => ({
+    // Unique constraint for symbol and type combination
+    uniqueSymbolType: unique().on(table.symbol, table.typeId),
+  })
+);
 
 // Accounts table - User-specific
 export const accounts = pgTable(

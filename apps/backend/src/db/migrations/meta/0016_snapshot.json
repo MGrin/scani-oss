@@ -1,6 +1,6 @@
 {
-  "id": "01ec9953-ab42-44bc-b049-e174b4ec5f11",
-  "prevId": "9e65b5d7-4aed-4e0c-82c0-2d812b91ae49",
+  "id": "6260d765-a9e8-4e25-a64c-2663ec6ef760",
+  "prevId": "be370e88-1c65-466f-90d1-135f19521cd5",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -621,6 +621,13 @@
           "type": "text",
           "primaryKey": false,
           "notNull": false
+        },
+        "provider_metadata": {
+          "name": "provider_metadata",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'{}'"
         },
         "is_active": {
           "name": "is_active",

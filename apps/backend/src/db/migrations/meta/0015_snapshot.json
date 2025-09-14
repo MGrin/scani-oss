@@ -68,9 +68,7 @@
       "uniqueConstraints": {
         "account_types_code_unique": {
           "name": "account_types_code_unique",
-          "columns": [
-            "code"
-          ],
+          "columns": ["code"],
           "nullsNotDistinct": false
         }
       },
@@ -146,39 +144,27 @@
         "accounts_user_id_users_id_fk": {
           "name": "accounts_user_id_users_id_fk",
           "tableFrom": "accounts",
-          "columnsFrom": [
-            "user_id"
-          ],
+          "columnsFrom": ["user_id"],
           "tableTo": "users",
-          "columnsTo": [
-            "id"
-          ],
+          "columnsTo": ["id"],
           "onUpdate": "no action",
           "onDelete": "cascade"
         },
         "accounts_institution_id_institutions_id_fk": {
           "name": "accounts_institution_id_institutions_id_fk",
           "tableFrom": "accounts",
-          "columnsFrom": [
-            "institution_id"
-          ],
+          "columnsFrom": ["institution_id"],
           "tableTo": "institutions",
-          "columnsTo": [
-            "id"
-          ],
+          "columnsTo": ["id"],
           "onUpdate": "no action",
           "onDelete": "cascade"
         },
         "accounts_type_id_account_types_id_fk": {
           "name": "accounts_type_id_account_types_id_fk",
           "tableFrom": "accounts",
-          "columnsFrom": [
-            "type_id"
-          ],
+          "columnsFrom": ["type_id"],
           "tableTo": "account_types",
-          "columnsTo": [
-            "id"
-          ],
+          "columnsTo": ["id"],
           "onUpdate": "no action",
           "onDelete": "restrict"
         }
@@ -187,11 +173,7 @@
       "uniqueConstraints": {
         "accounts_user_id_institution_id_name_unique": {
           "name": "accounts_user_id_institution_id_name_unique",
-          "columns": [
-            "user_id",
-            "institution_id",
-            "name"
-          ],
+          "columns": ["user_id", "institution_id", "name"],
           "nullsNotDistinct": false
         }
       },
@@ -254,39 +236,27 @@
         "holdings_user_id_users_id_fk": {
           "name": "holdings_user_id_users_id_fk",
           "tableFrom": "holdings",
-          "columnsFrom": [
-            "user_id"
-          ],
+          "columnsFrom": ["user_id"],
           "tableTo": "users",
-          "columnsTo": [
-            "id"
-          ],
+          "columnsTo": ["id"],
           "onUpdate": "no action",
           "onDelete": "cascade"
         },
         "holdings_account_id_accounts_id_fk": {
           "name": "holdings_account_id_accounts_id_fk",
           "tableFrom": "holdings",
-          "columnsFrom": [
-            "account_id"
-          ],
+          "columnsFrom": ["account_id"],
           "tableTo": "accounts",
-          "columnsTo": [
-            "id"
-          ],
+          "columnsTo": ["id"],
           "onUpdate": "no action",
           "onDelete": "cascade"
         },
         "holdings_token_id_tokens_id_fk": {
           "name": "holdings_token_id_tokens_id_fk",
           "tableFrom": "holdings",
-          "columnsFrom": [
-            "token_id"
-          ],
+          "columnsFrom": ["token_id"],
           "tableTo": "tokens",
-          "columnsTo": [
-            "id"
-          ],
+          "columnsTo": ["id"],
           "onUpdate": "no action",
           "onDelete": "restrict"
         }
@@ -361,9 +331,7 @@
       "uniqueConstraints": {
         "institution_types_code_unique": {
           "name": "institution_types_code_unique",
-          "columns": [
-            "code"
-          ],
+          "columns": ["code"],
           "nullsNotDistinct": false
         }
       },
@@ -439,13 +407,9 @@
         "institutions_type_id_institution_types_id_fk": {
           "name": "institutions_type_id_institution_types_id_fk",
           "tableFrom": "institutions",
-          "columnsFrom": [
-            "type_id"
-          ],
+          "columnsFrom": ["type_id"],
           "tableTo": "institution_types",
-          "columnsTo": [
-            "id"
-          ],
+          "columnsTo": ["id"],
           "onUpdate": "no action",
           "onDelete": "restrict"
         }
@@ -454,9 +418,7 @@
       "uniqueConstraints": {
         "institutions_website_unique": {
           "name": "institutions_website_unique",
-          "columns": [
-            "website"
-          ],
+          "columns": ["website"],
           "nullsNotDistinct": false
         }
       },
@@ -518,26 +480,18 @@
         "token_prices_token_id_tokens_id_fk": {
           "name": "token_prices_token_id_tokens_id_fk",
           "tableFrom": "token_prices",
-          "columnsFrom": [
-            "token_id"
-          ],
+          "columnsFrom": ["token_id"],
           "tableTo": "tokens",
-          "columnsTo": [
-            "id"
-          ],
+          "columnsTo": ["id"],
           "onUpdate": "no action",
           "onDelete": "cascade"
         },
         "token_prices_base_token_id_tokens_id_fk": {
           "name": "token_prices_base_token_id_tokens_id_fk",
           "tableFrom": "token_prices",
-          "columnsFrom": [
-            "base_token_id"
-          ],
+          "columnsFrom": ["base_token_id"],
           "tableTo": "tokens",
-          "columnsTo": [
-            "id"
-          ],
+          "columnsTo": ["id"],
           "onUpdate": "no action",
           "onDelete": "restrict"
         }
@@ -546,11 +500,7 @@
       "uniqueConstraints": {
         "token_prices_token_id_base_token_id_timestamp_unique": {
           "name": "token_prices_token_id_base_token_id_timestamp_unique",
-          "columns": [
-            "token_id",
-            "base_token_id",
-            "timestamp"
-          ],
+          "columns": ["token_id", "base_token_id", "timestamp"],
           "nullsNotDistinct": false
         }
       },
@@ -622,9 +572,7 @@
       "uniqueConstraints": {
         "token_types_code_unique": {
           "name": "token_types_code_unique",
-          "columns": [
-            "code"
-          ],
+          "columns": ["code"],
           "nullsNotDistinct": false
         }
       },
@@ -701,13 +649,9 @@
         "tokens_type_id_token_types_id_fk": {
           "name": "tokens_type_id_token_types_id_fk",
           "tableFrom": "tokens",
-          "columnsFrom": [
-            "type_id"
-          ],
+          "columnsFrom": ["type_id"],
           "tableTo": "token_types",
-          "columnsTo": [
-            "id"
-          ],
+          "columnsTo": ["id"],
           "onUpdate": "no action",
           "onDelete": "restrict"
         }
@@ -782,9 +726,7 @@
       "uniqueConstraints": {
         "transaction_types_code_unique": {
           "name": "transaction_types_code_unique",
-          "columns": [
-            "code"
-          ],
+          "columns": ["code"],
           "nullsNotDistinct": false
         }
       },
@@ -878,52 +820,36 @@
         "transactions_user_id_users_id_fk": {
           "name": "transactions_user_id_users_id_fk",
           "tableFrom": "transactions",
-          "columnsFrom": [
-            "user_id"
-          ],
+          "columnsFrom": ["user_id"],
           "tableTo": "users",
-          "columnsTo": [
-            "id"
-          ],
+          "columnsTo": ["id"],
           "onUpdate": "no action",
           "onDelete": "cascade"
         },
         "transactions_holding_id_holdings_id_fk": {
           "name": "transactions_holding_id_holdings_id_fk",
           "tableFrom": "transactions",
-          "columnsFrom": [
-            "holding_id"
-          ],
+          "columnsFrom": ["holding_id"],
           "tableTo": "holdings",
-          "columnsTo": [
-            "id"
-          ],
+          "columnsTo": ["id"],
           "onUpdate": "no action",
           "onDelete": "cascade"
         },
         "transactions_type_id_transaction_types_id_fk": {
           "name": "transactions_type_id_transaction_types_id_fk",
           "tableFrom": "transactions",
-          "columnsFrom": [
-            "type_id"
-          ],
+          "columnsFrom": ["type_id"],
           "tableTo": "transaction_types",
-          "columnsTo": [
-            "id"
-          ],
+          "columnsTo": ["id"],
           "onUpdate": "no action",
           "onDelete": "restrict"
         },
         "transactions_fee_token_id_tokens_id_fk": {
           "name": "transactions_fee_token_id_tokens_id_fk",
           "tableFrom": "transactions",
-          "columnsFrom": [
-            "fee_token_id"
-          ],
+          "columnsFrom": ["fee_token_id"],
           "tableTo": "tokens",
-          "columnsTo": [
-            "id"
-          ],
+          "columnsTo": ["id"],
           "onUpdate": "no action",
           "onDelete": "restrict"
         }
@@ -989,13 +915,9 @@
         "users_base_currency_id_tokens_id_fk": {
           "name": "users_base_currency_id_tokens_id_fk",
           "tableFrom": "users",
-          "columnsFrom": [
-            "base_currency_id"
-          ],
+          "columnsFrom": ["base_currency_id"],
           "tableTo": "tokens",
-          "columnsTo": [
-            "id"
-          ],
+          "columnsTo": ["id"],
           "onUpdate": "no action",
           "onDelete": "restrict"
         }
@@ -1004,9 +926,7 @@
       "uniqueConstraints": {
         "users_email_unique": {
           "name": "users_email_unique",
-          "columns": [
-            "email"
-          ],
+          "columns": ["email"],
           "nullsNotDistinct": false
         }
       },

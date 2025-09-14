@@ -1,16 +1,14 @@
-import { UpdateTransactionSchema } from "@scani/shared/types";
-import { and, desc, eq } from "drizzle-orm";
-import { z } from "zod";
-import { db } from "../db/connection";
-import * as schema from "../db/schema";
-import { getUserId } from "../middleware/auth";
-import { PricingService } from "../services/pricing";
-import { protectedProcedure, router } from "../trpc";
+import { UpdateTransactionSchema } from '@scani/shared/types';
+import { and, desc, eq } from 'drizzle-orm';
+import { z } from 'zod';
+import { db } from '../db/connection';
+import * as schema from '../db/schema';
+import { getUserId } from '../middleware/auth';
+import { PricingService } from '../services/pricing';
+import { protectedProcedure, router } from '../trpc';
 
 // Type assertion for router operations (development/test environment uses SQLite)
-const routerDb = db as ReturnType<
-  typeof import("drizzle-orm/postgres-js").drizzle
->;
+const routerDb = db as ReturnType<typeof import('drizzle-orm/postgres-js').drizzle>;
 
 export const transactionsRouter = router({
   // Get all transactions
@@ -76,9 +74,7 @@ export const transactionsRouter = router({
     .query(async ({ input }) => {
       const whereConditions = [eq(schema.transactionTypes.code, input.type)];
       if (input.holdingId) {
-        whereConditions.push(
-          eq(schema.transactions.holdingId, input.holdingId)
-        );
+        whereConditions.push(eq(schema.transactions.holdingId, input.holdingId));
       }
 
       const query = routerDb
@@ -102,57 +98,51 @@ export const transactionsRouter = router({
           schema.transactionTypes,
           eq(schema.transactions.typeId, schema.transactionTypes.id)
         )
-        .where(
-          whereConditions.length > 1
-            ? and(...whereConditions)
-            : whereConditions[0]
-        );
+        .where(whereConditions.length > 1 ? and(...whereConditions) : whereConditions[0]);
 
       return await query.orderBy(desc(schema.transactions.timestamp));
     }),
 
   // Get transaction by ID
-  getById: protectedProcedure
-    .input(z.object({ id: z.string() }))
-    .query(async ({ input }) => {
-      const [transaction] = await routerDb
-        .select({
-          id: schema.transactions.id,
-          holdingId: schema.transactions.holdingId,
-          typeId: schema.transactions.typeId,
-          type: schema.transactionTypes.code,
-          typeName: schema.transactionTypes.name,
-          amount: schema.transactions.amount,
-          fee: schema.transactions.fee,
-          feeTokenId: schema.transactions.feeTokenId,
-          description: schema.transactions.description,
-          reference: schema.transactions.reference,
-          timestamp: schema.transactions.timestamp,
-          createdAt: schema.transactions.createdAt,
-          updatedAt: schema.transactions.updatedAt,
-        })
-        .from(schema.transactions)
-        .innerJoin(
-          schema.transactionTypes,
-          eq(schema.transactions.typeId, schema.transactionTypes.id)
-        )
-        .where(eq(schema.transactions.id, input.id))
-        .limit(1);
+  getById: protectedProcedure.input(z.object({ id: z.string() })).query(async ({ input }) => {
+    const [transaction] = await routerDb
+      .select({
+        id: schema.transactions.id,
+        holdingId: schema.transactions.holdingId,
+        typeId: schema.transactions.typeId,
+        type: schema.transactionTypes.code,
+        typeName: schema.transactionTypes.name,
+        amount: schema.transactions.amount,
+        fee: schema.transactions.fee,
+        feeTokenId: schema.transactions.feeTokenId,
+        description: schema.transactions.description,
+        reference: schema.transactions.reference,
+        timestamp: schema.transactions.timestamp,
+        createdAt: schema.transactions.createdAt,
+        updatedAt: schema.transactions.updatedAt,
+      })
+      .from(schema.transactions)
+      .innerJoin(
+        schema.transactionTypes,
+        eq(schema.transactions.typeId, schema.transactionTypes.id)
+      )
+      .where(eq(schema.transactions.id, input.id))
+      .limit(1);
 
-      if (!transaction) {
-        throw new Error("Transaction not found");
-      }
-      return transaction;
-    }),
+    if (!transaction) {
+      throw new Error('Transaction not found');
+    }
+    return transaction;
+  }),
 
   // Create new transaction
   create: protectedProcedure
     .input(
       z.object({
-        holdingId: z.string().min(1, "Holding ID cannot be empty"),
-        type: z.string().min(1, "Transaction type cannot be empty"), // This will be the type code
-        amount: z.string().default("0"), // Convert to string
-        fee: z.string().default("0"), // Convert to string
+        holdingId: z.string().min(1, 'Holding ID cannot be empty'),
+        type: z.string().min(1, 'Transaction type cannot be empty'), // This will be the type code
+        amount: z.string().default('0'), // Convert to string
+        fee: z.string().default('0'), // Convert to string
         feeTokenId: z.string().optional(),
         description: z.string().max(500).optional(),
         reference: z.string().max(100).optional(),
@@ -203,7 +193,7 @@ export const transactionsRouter = router({
       }
 
       if (!holdingData) {
-        throw new Error("Holding not found");
+        throw new Error('Holding not found');
       }
 
       // Auto-fetch token price for current price tracking (optional)
@@ -218,10 +208,7 @@ export const transactionsRouter = router({
           });
           // Price is now cached in tokenPrices table
         } catch (error) {
-          console.warn(
-            `Failed to fetch price for ${holdingData.token.symbol}:`,
-            error
-          );
+          console.warn(`Failed to fetch price for ${holdingData.token.symbol}:`, error);
           // Continue without price - transaction can still be created
         }
       }
@@ -231,8 +218,8 @@ export const transactionsRouter = router({
         userId,
         holdingId: input.holdingId,
         typeId: transactionType.id, // Use the actual typeId
-        amount: input.amount || "0", // Already a string
-        fee: input.fee || "0", // Already a string
+        amount: input.amount || '0', // Already a string
+        fee: input.fee || '0', // Already a string
         feeTokenId: input.feeTokenId || null,
         description: input.description || null,
         reference: input.reference || null,
@@ -247,7 +234,7 @@ export const transactionsRouter = router({
         .returning();
 
       if (!transaction) {
-        throw new Error("Failed to create transaction");
+        throw new Error('Failed to create transaction');
       }
 
       // Fetch the transaction with type information
@@ -276,7 +263,7 @@ export const transactionsRouter = router({
         .limit(1);
 
       if (!transactionWithType) {
-        throw new Error("Failed to fetch created transaction");
+        throw new Error('Failed to fetch created transaction');
       }
 
       return transactionWithType;
@@ -304,7 +291,7 @@ export const transactionsRouter = router({
         .returning();
 
       if (!updatedTransaction) {
-        throw new Error("Transaction not found");
+        throw new Error('Transaction not found');
       }
 
       // Fetch the updated transaction with type information
@@ -333,27 +320,25 @@ export const transactionsRouter = router({
         .limit(1);
 
       if (!transactionWithType) {
-        throw new Error("Failed to fetch updated transaction");
+        throw new Error('Failed to fetch updated transaction');
       }
 
       return transactionWithType;
     }),
 
   // Delete transaction
-  delete: protectedProcedure
-    .input(z.object({ id: z.string() }))
-    .mutation(async ({ input }) => {
-      const [deletedTransaction] = await routerDb
-        .delete(schema.transactions)
-        .where(eq(schema.transactions.id, input.id))
-        .returning();
+  delete: protectedProcedure.input(z.object({ id: z.string() })).mutation(async ({ input }) => {
+    const [deletedTransaction] = await routerDb
+      .delete(schema.transactions)
+      .where(eq(schema.transactions.id, input.id))
+      .returning();
 
-      if (!deletedTransaction) {
-        throw new Error("Transaction not found");
-      }
+    if (!deletedTransaction) {
+      throw new Error('Transaction not found');
+    }
 
-      return { success: true, deleted: deletedTransaction };
-    }),
+    return { success: true, deleted: deletedTransaction };
+  }),
 
   // Get transactions by date range
   getByDateRange: protectedProcedure
@@ -370,19 +355,13 @@ export const transactionsRouter = router({
         eq(schema.transactions.id, schema.transactions.id), // Placeholder
       ];
       if (input.holdingId) {
-        whereConditions.push(
-          eq(schema.transactions.holdingId, input.holdingId)
-        );
+        whereConditions.push(eq(schema.transactions.holdingId, input.holdingId));
       }
 
       const query = routerDb
         .select()
         .from(schema.transactions)
-        .where(
-          whereConditions.length > 1
-            ? and(...whereConditions)
-            : whereConditions[0]
-        );
+        .where(whereConditions.length > 1 ? and(...whereConditions) : whereConditions[0]);
 
       return await query.orderBy(desc(schema.transactions.timestamp));
     }),

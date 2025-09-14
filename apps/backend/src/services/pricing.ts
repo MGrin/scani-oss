@@ -1,8 +1,8 @@
-import { and, desc, eq, gte, lte } from 'drizzle-orm';
-import { config } from '../config/pricing';
-import { db } from '../db/connection';
-import type { NewTokenPrice, Token } from '../db/schema';
-import { tokenPrices, tokens, tokenTypes } from '../db/schema';
+import { and, desc, eq, gte, lte } from "drizzle-orm";
+import { config } from "../config/pricing";
+import { db } from "../db/connection";
+import type { NewTokenPrice, Token } from "../db/schema";
+import { tokenPrices, tokens, tokenTypes } from "../db/schema";
 
 export interface PriceRequest {
   tokenSymbol: string;
@@ -30,7 +30,11 @@ export class PricingService {
     const { tokenSymbol, baseCurrency, timestamp, live = false } = request;
 
     // First, try to get from cache
-    const cachedPrice = await this.getCachedPrice(tokenSymbol, baseCurrency, timestamp);
+    const cachedPrice = await this.getCachedPrice(
+      tokenSymbol,
+      baseCurrency,
+      timestamp
+    );
     if (cachedPrice) {
       return cachedPrice.price;
     }
@@ -43,14 +47,25 @@ export class PricingService {
 
     // If token and base currency are the same, return 1
     if (tokenSymbol.toUpperCase() === baseCurrency.toUpperCase()) {
-      return '1';
+      return "1";
     }
 
     // Fetch from appropriate provider based on token type
-    const result = await this.fetchPriceFromProvider(token, baseCurrency, timestamp, live);
+    const result = await this.fetchPriceFromProvider(
+      token,
+      baseCurrency,
+      timestamp,
+      live
+    );
 
     // Cache the result
-    await this.cachePrice(token.id, baseCurrency, result.price, result.timestamp, result.source);
+    await this.cachePrice(
+      token.id,
+      baseCurrency,
+      result.price,
+      result.timestamp,
+      result.source
+    );
 
     return result.price;
   }
@@ -58,7 +73,9 @@ export class PricingService {
   /**
    * Get multiple token prices at once (more efficient)
    */
-  async getTokenPrices(requests: PriceRequest[]): Promise<Record<string, string>> {
+  async getTokenPrices(
+    requests: PriceRequest[]
+  ): Promise<Record<string, string>> {
     const results: Record<string, string> = {};
 
     // For now, process sequentially. In production, you'd batch by provider
@@ -136,17 +153,65 @@ export class PricingService {
     // Get token type to determine provider
     const tokenType = await this.getTokenType(token.typeId);
 
+    let result: PriceResult;
+
     switch (tokenType?.code) {
-      case 'crypto':
-        return this.fetchCryptoPrice(token.symbol, baseCurrency, timestamp, live);
-      case 'stock':
-      case 'etf':
-        return this.fetchStockPrice(token.symbol, baseCurrency, timestamp, live);
-      case 'fiat':
-        return this.fetchForexPrice(token.symbol, baseCurrency, timestamp, live);
+      case "crypto":
+        result = await this.fetchCryptoPrice(
+          token.symbol,
+          baseCurrency,
+          timestamp,
+          live
+        );
+        break;
+      case "stock":
+      case "etf":
+      case "bond":
+      case "commodity":
+      case "mutual-fund":
+        result = await this.fetchStockPrice(
+          token.symbol,
+          baseCurrency,
+          timestamp,
+          live
+        );
+        break;
+      case "fiat":
+        result = await this.fetchForexPrice(
+          token.symbol,
+          baseCurrency,
+          timestamp,
+          live
+        );
+        break;
       default:
         throw new Error(`Unsupported token type: ${tokenType?.code}`);
     }
+
+    // Check if we need multi-step conversion
+    // For example: XEQT priced in CAD but base currency is EUR -> CAD to EUR
+    // Or: BTC priced in USD but base currency is GEL -> USD to GEL
+    if (result.baseCurrency !== baseCurrency) {
+      const conversionRate = await this.getConversionRate(
+        result.baseCurrency,
+        baseCurrency,
+        timestamp,
+        live
+      );
+
+      const convertedPrice = (
+        parseFloat(result.price) * conversionRate
+      ).toString();
+
+      return {
+        ...result,
+        baseCurrency: baseCurrency,
+        price: convertedPrice,
+        source: `${result.source}_converted_via_${result.baseCurrency}`,
+      };
+    }
+
+    return result;
   }
 
   private async getTokenType(typeId: string) {
@@ -158,6 +223,118 @@ export class PricingService {
     return result[0] || null;
   }
 
+  /**
+   * Get CoinGecko ID from token's provider metadata
+   * If not found, attempts to discover and store it
+   */
+  private async getCoinGeckoId(symbol: string): Promise<string> {
+    // First try to get from database
+    const token = await this.getTokenBySymbol(symbol);
+    if (token?.providerMetadata) {
+      try {
+        const metadata = JSON.parse(token.providerMetadata);
+        if (metadata.coingecko?.id) {
+          return metadata.coingecko.id;
+        }
+      } catch {
+        // Invalid JSON, continue to discovery
+      }
+    }
+
+    // If not found, try to discover the CoinGecko ID
+    const discoveredId = await this.discoverCoinGeckoId(symbol);
+
+    // Store it in the database for future use
+    if (token && discoveredId) {
+      await this.updateTokenProviderMetadata(token.id, "coingecko", {
+        id: discoveredId,
+      });
+    }
+
+    return discoveredId || symbol.toLowerCase(); // Fallback to lowercase symbol
+  }
+
+  /**
+   * Discover CoinGecko ID by searching their API
+   */
+  private async discoverCoinGeckoId(symbol: string): Promise<string | null> {
+    try {
+      const headers: Record<string, string> = {
+        "Content-Type": "application/json",
+      };
+
+      if (config.coinGecko.apiKey) {
+        headers["x-cg-pro-api-key"] = config.coinGecko.apiKey;
+      }
+
+      // Search CoinGecko for the symbol
+      const searchUrl = `${config.coinGecko.baseUrl}/search?query=${symbol}`;
+      const response = await fetch(searchUrl, { headers });
+
+      if (!response.ok) {
+        return null;
+      }
+
+      const data = (await response.json()) as {
+        coins: Array<{ id: string; symbol: string; name: string }>;
+      };
+
+      // Find exact symbol match
+      const match = data.coins.find(
+        (coin) => coin.symbol.toLowerCase() === symbol.toLowerCase()
+      );
+
+      return match?.id || null;
+    } catch (error) {
+      console.warn(`Failed to discover CoinGecko ID for ${symbol}:`, error);
+      return null;
+    }
+  }
+
+  /**
+   * Update token's provider metadata in database
+   */
+  private async updateTokenProviderMetadata(
+    tokenId: string,
+    provider: string,
+    metadata: Record<string, unknown>
+  ): Promise<void> {
+    try {
+      const token = await this.database
+        .select()
+        .from(tokens)
+        .where(eq(tokens.id, tokenId))
+        .limit(1);
+
+      if (!token[0]) return;
+
+      let currentMetadata = {};
+      try {
+        currentMetadata = JSON.parse(token[0].providerMetadata || "{}");
+      } catch {
+        // Invalid JSON, start fresh
+      }
+
+      const updatedMetadata = {
+        ...currentMetadata,
+        [provider]: metadata,
+      };
+
+      await this.database
+        .update(tokens)
+        .set({
+          providerMetadata: JSON.stringify(updatedMetadata),
+          updatedAt: new Date(),
+        })
+        .where(eq(tokens.id, tokenId));
+    } catch (error) {
+      console.warn(
+        `Failed to update provider metadata for token ${tokenId}:`,
+        error
+      );
+    }
+  }
+
   // Crypto pricing using CoinGecko (free tier friendly)
   private async fetchCryptoPrice(
     symbol: string,
@@ -167,143 +344,230 @@ export class PricingService {
   ): Promise<PriceResult> {
     const baseUrl = config.coinGecko.baseUrl;
 
+    // Get CoinGecko ID from token's provider metadata
+    const coinId = await this.getCoinGeckoId(symbol);
+
+    // Prepare headers with API key if available
+    const headers: Record<string, string> = {
+      "Content-Type": "application/json",
+    };
+
+    if (config.coinGecko.apiKey) {
+      headers["x-cg-pro-api-key"] = config.coinGecko.apiKey;
+    }
+
     if (live) {
-      // Current price
-      const url = `${baseUrl}/simple/price?ids=${symbol}&vs_currencies=${baseCurrency}`;
-      const response = await fetch(url);
+      // Try requested currency first, fallback to USD if not supported
+      let actualCurrency = baseCurrency;
+      let url = `${baseUrl}/simple/price?ids=${coinId}&vs_currencies=${baseCurrency.toLowerCase()}`;
+      let response = await fetch(url, { headers });
 
       if (!response.ok) {
-        throw new Error(`CoinGecko API error: ${response.statusText}`);
+        throw new Error(
+          `CoinGecko API error: ${response.status} ${response.statusText}`
+        );
       }
 
-      const data = (await response.json()) as Record<string, Record<string, number>>;
-      const price = data[symbol.toLowerCase()]?.[baseCurrency.toLowerCase()];
+      let data = (await response.json()) as Record<
+        string,
+        Record<string, number>
+      >;
+      let price = data[coinId]?.[baseCurrency.toLowerCase()];
 
-      if (!price) {
-        throw new Error(`Price not found for ${symbol}/${baseCurrency}`);
+      // If price not found for requested currency, try USD
+      if (!price && baseCurrency.toUpperCase() !== "USD") {
+        actualCurrency = "USD";
+        url = `${baseUrl}/simple/price?ids=${coinId}&vs_currencies=usd`;
+        response = await fetch(url, { headers });
+
+        if (!response.ok) {
+          throw new Error(
+            `CoinGecko API error: ${response.status} ${response.statusText}`
+          );
+        }
+
+        data = (await response.json()) as Record<
+          string,
+          Record<string, number>
+        >;
+        price = data[coinId]?.usd;
       }
-
-      return {
-        tokenSymbol: symbol,
-        baseCurrency,
-        price: price.toString(),
-        timestamp: new Date(),
-        source: 'coingecko_current',
-      };
-    } else {
-      // Historical price
-      const dateString = timestamp.toISOString().split('T')[0]; // YYYY-MM-DD
-      const url = `${baseUrl}/coins/${symbol}/history?date=${dateString}`;
-
-      const response = await fetch(url);
-
-      if (!response.ok) {
-        throw new Error(`CoinGecko API error: ${response.statusText}`);
-      }
-
-      const data = (await response.json()) as {
-        market_data?: { current_price?: Record<string, number> };
-      };
-      const price = data.market_data?.current_price?.[baseCurrency.toLowerCase()];
 
       if (!price) {
         throw new Error(
-          `Historical price not found for ${symbol}/${baseCurrency} on ${dateString}`
+          `Price not found for ${symbol} in any supported currency`
         );
       }
 
       return {
         tokenSymbol: symbol,
-        baseCurrency,
+        baseCurrency: actualCurrency,
+        price: price.toString(),
+        timestamp: new Date(),
+        source: "coingecko_current",
+      };
+    } else {
+      // Historical price using coin ID
+      const dateString = timestamp.toISOString().split("T")[0]; // YYYY-MM-DD
+      const url = `${baseUrl}/coins/${coinId}/history?date=${dateString}`;
+
+      const response = await fetch(url, { headers });
+
+      if (!response.ok) {
+        throw new Error(
+          `CoinGecko API error: ${response.status} ${response.statusText}`
+        );
+      }
+
+      const data = (await response.json()) as {
+        market_data?: { current_price?: Record<string, number> };
+      };
+
+      // Try requested currency first, fallback to USD
+      let actualCurrency = baseCurrency;
+      let price = data.market_data?.current_price?.[baseCurrency.toLowerCase()];
+
+      if (!price && baseCurrency.toUpperCase() !== "USD") {
+        actualCurrency = "USD";
+        price = data.market_data?.current_price?.usd;
+      }
+
+      if (!price) {
+        throw new Error(
+          `Historical price not found for ${symbol} on ${dateString} in any supported currency`
+        );
+      }
+
+      return {
+        tokenSymbol: symbol,
+        baseCurrency: actualCurrency,
         price: price.toString(),
         timestamp,
-        source: 'coingecko_historical',
+        source: "coingecko_historical",
       };
     }
   }
 
-  // Stock/ETF pricing using Alpha Vantage
+  // Stock/ETF/Bond/Commodity pricing using Finnhub
   private async fetchStockPrice(
     symbol: string,
-    baseCurrency: string,
+    _baseCurrency: string,
     timestamp: Date,
     live: boolean
   ): Promise<PriceResult> {
-    const apiKey = config.alphaVantage.apiKey;
+    const apiKey = config.finnhub.apiKey;
 
     if (!apiKey) {
-      throw new Error('Alpha Vantage API key not configured');
+      throw new Error("Finnhub API key not configured");
     }
 
     if (live) {
-      // Current price
-      const url = `${config.alphaVantage.baseUrl}?function=GLOBAL_QUOTE&symbol=${symbol}&apikey=${apiKey}`;
+      // Get company profile to determine the native currency
+      const profileUrl = `${config.finnhub.baseUrl}/stock/profile2?symbol=${symbol}&token=${apiKey}`;
+      const profileResponse = await fetch(profileUrl);
+
+      let nativeCurrency = "USD"; // Default fallback
+      if (profileResponse.ok) {
+        const profileData = (await profileResponse.json()) as {
+          currency?: string;
+        };
+        nativeCurrency = profileData.currency || "USD";
+      }
+
+      // Current price using quote endpoint
+      const url = `${config.finnhub.baseUrl}/quote?symbol=${symbol}&token=${apiKey}`;
       const response = await fetch(url);
 
       if (!response.ok) {
-        throw new Error(`Alpha Vantage API error: ${response.statusText}`);
+        throw new Error(`Finnhub API error: ${response.statusText}`);
       }
 
       const data = (await response.json()) as {
-        'Global Quote'?: { '05. price'?: string };
+        c?: number; // current price
+        d?: number; // change
+        dp?: number; // percent change
+        h?: number; // high
+        l?: number; // low
+        o?: number; // open
+        pc?: number; // previous close
       };
-      const quote = data['Global Quote'];
-      const price = parseFloat(quote?.['05. price'] || '0');
 
-      if (!price) {
+      const price = data.c;
+
+      if (!price || price <= 0) {
         throw new Error(`Current price not found for ${symbol}`);
       }
 
-      // Convert to base currency if needed
-      const convertedPrice =
-        baseCurrency === 'USD'
-          ? price.toString()
-          : (await this.convertCurrency(price, 'USD', baseCurrency, new Date())).toString();
-
+      // Return price in its native currency - conversion will be handled at higher level
       return {
         tokenSymbol: symbol,
-        baseCurrency,
-        price: convertedPrice,
+        baseCurrency: nativeCurrency,
+        price: price.toString(),
         timestamp: new Date(),
-        source: 'alphavantage_quote',
+        source: "finnhub_quote",
       };
     } else {
-      // Historical price
-      const dateString = timestamp.toISOString().split('T')[0] || '';
-      const url = `${config.alphaVantage.baseUrl}?function=TIME_SERIES_DAILY&symbol=${symbol}&apikey=${apiKey}`;
+      // Get company profile to determine the native currency for historical data too
+      const profileUrl = `${config.finnhub.baseUrl}/stock/profile2?symbol=${symbol}&token=${apiKey}`;
+      const profileResponse = await fetch(profileUrl);
 
+      let nativeCurrency = "USD"; // Default fallback
+      if (profileResponse.ok) {
+        const profileData = (await profileResponse.json()) as {
+          currency?: string;
+        };
+        nativeCurrency = profileData.currency || "USD";
+      }
+
+      // Historical price using candles endpoint
+      const fromTimestamp = Math.floor(timestamp.getTime() / 1000);
+      const toTimestamp = Math.floor(
+        (timestamp.getTime() + 24 * 60 * 60 * 1000) / 1000
+      ); // Add 1 day
+
+      const url = `${config.finnhub.baseUrl}/stock/candle?symbol=${symbol}&resolution=D&from=${fromTimestamp}&to=${toTimestamp}&token=${apiKey}`;
       const response = await fetch(url);
 
       if (!response.ok) {
-        throw new Error(`Alpha Vantage API error: ${response.statusText}`);
+        throw new Error(`Finnhub API error: ${response.statusText}`);
       }
 
       const data = (await response.json()) as {
-        'Time Series (Daily)'?: Record<string, { '4. close'?: string }>;
+        c?: number[]; // close prices
+        h?: number[]; // high prices
+        l?: number[]; // low prices
+        o?: number[]; // open prices
+        s?: string; // status
+        t?: number[]; // timestamps
+        v?: number[]; // volumes
       };
-      const timeSeries = data['Time Series (Daily)'];
-      let dayData: { '4. close'?: string } | undefined;
-      if (timeSeries && dateString && dateString in timeSeries) {
-        dayData = timeSeries[dateString];
-      }
-      const price = parseFloat(dayData?.['4. close'] || '0');
 
-      if (!price) {
-        throw new Error(`Historical price not found for ${symbol} on ${dateString}`);
+      if (data.s !== "ok" || !data.c || data.c.length === 0) {
+        throw new Error(
+          `Historical price not found for ${symbol} on ${
+            timestamp.toISOString().split("T")[0]
+          }`
+        );
       }
 
-      // Convert to base currency if needed
-      const convertedPrice =
-        baseCurrency === 'USD'
-          ? price.toString()
-          : (await this.convertCurrency(price, 'USD', baseCurrency, timestamp)).toString();
+      // Get the last available close price
+      const price = data.c[data.c.length - 1];
 
+      if (!price || price <= 0) {
+        throw new Error(
+          `Historical price not found for ${symbol} on ${
+            timestamp.toISOString().split("T")[0]
+          }`
+        );
+      }
+
+      // Return price in its native currency - conversion will be handled at higher level
       return {
         tokenSymbol: symbol,
-        baseCurrency,
-        price: convertedPrice,
+        baseCurrency: nativeCurrency,
+        price: price.toString(),
         timestamp,
-        source: 'alphavantage_daily',
+        source: "finnhub_candles",
       };
     }
   }
@@ -329,7 +593,9 @@ export class PricingService {
       const rate = data.rates?.[toCurrency];
 
       if (!rate) {
-        throw new Error(`Exchange rate not found for ${fromCurrency}/${toCurrency}`);
+        throw new Error(
+          `Exchange rate not found for ${fromCurrency}/${toCurrency}`
+        );
       }
 
       return {
@@ -337,10 +603,10 @@ export class PricingService {
         baseCurrency: toCurrency,
         price: rate.toString(),
         timestamp: new Date(),
-        source: 'exchangerate_current',
+        source: "exchangerate_current",
       };
     } else {
-      const dateString = timestamp.toISOString().split('T')[0];
+      const dateString = timestamp.toISOString().split("T")[0];
       const url = `${config.exchangeRate.baseUrl}/${dateString}/${fromCurrency}`;
 
       const response = await fetch(url);
@@ -365,27 +631,71 @@ export class PricingService {
         baseCurrency: toCurrency,
         price: rate.toString(),
         timestamp,
-        source: 'exchangerate_historical',
+        source: "exchangerate_historical",
       };
     }
   }
 
-  private async convertCurrency(
-    amount: number,
+  /**
+   * Get conversion rate from one currency to another
+   * Handles special cases where providers don't support certain base currencies
+   */
+  private async getConversionRate(
     fromCurrency: string,
     toCurrency: string,
-    timestamp: Date
+    timestamp: Date,
+    live: boolean
   ): Promise<number> {
-    if (fromCurrency === toCurrency) return amount;
+    if (fromCurrency === toCurrency) return 1;
 
-    const rate = await this.getTokenPrice({
-      tokenSymbol: fromCurrency,
-      baseCurrency: toCurrency,
-      timestamp,
-      live: this.isLivePrice(timestamp),
-    });
+    try {
+      // Try direct conversion first
+      const result = await this.fetchForexPrice(
+        fromCurrency,
+        toCurrency,
+        timestamp,
+        live
+      );
+      return parseFloat(result.price);
+    } catch (error) {
+      // If direct conversion fails, try via USD
+      if (fromCurrency !== "USD" && toCurrency !== "USD") {
+        console.warn(
+          `Direct conversion ${fromCurrency}->${toCurrency} failed, trying via USD:`,
+          error
+        );
 
-    return rate ? amount * parseFloat(rate) : amount;
+        try {
+          // Convert from -> USD, then USD -> to
+          const fromToUsdResult = await this.fetchForexPrice(
+            fromCurrency,
+            "USD",
+            timestamp,
+            live
+          );
+          const usdToToResult = await this.fetchForexPrice(
+            "USD",
+            toCurrency,
+            timestamp,
+            live
+          );
+
+          return (
+            parseFloat(fromToUsdResult.price) * parseFloat(usdToToResult.price)
+          );
+        } catch (usdError) {
+          console.error(
+            `USD conversion also failed for ${fromCurrency}->${toCurrency}:`,
+            usdError
+          );
+          throw new Error(
+            `Cannot convert ${fromCurrency} to ${toCurrency}: both direct and USD-routed conversions failed`
+          );
+        }
+      }
+
+      throw error;
+    }
   }
 
   private async cachePrice(
@@ -398,7 +708,9 @@ export class PricingService {
     const baseCurrencyToken = await this.getTokenBySymbol(baseCurrency);
 
     if (!baseCurrencyToken) {
-      console.warn(`Base currency token ${baseCurrency} not found, skipping cache`);
+      console.warn(
+        `Base currency token ${baseCurrency} not found, skipping cache`
+      );
       return;
     }
 
@@ -414,9 +726,10 @@ export class PricingService {
       await this.database.insert(tokenPrices).values(newPrice);
     } catch (error) {
       // Ignore duplicate key errors (price already cached)
-      const errorMessage = error instanceof Error ? error.message : String(error);
-      if (!errorMessage.includes('unique constraint')) {
-        console.error('Failed to cache price:', error);
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
+      if (!errorMessage.includes("unique constraint")) {
+        console.error("Failed to cache price:", error);
       }
     }
   }

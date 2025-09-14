@@ -24,6 +24,8 @@ export function Dashboard() {
     trpc.transactions.getAll.useQuery();
   const { data: tokens } = trpc.tokens.getAll.useQuery();
   const { data: userPrefs } = trpc.users.getCurrent.useQuery();
+  const { data: portfolioValue, isLoading: portfolioLoading } =
+    trpc.users.getPortfolioValue.useQuery();
 
   const handleWebSocketMessage = useCallback((message: WebSocketMessage) => {
     console.log('Received WebSocket message:', message);
@@ -40,14 +42,8 @@ export function Dashboard() {
     ? Object.fromEntries(tokens.map((token: ApiToken) => [token.id, token]))
     : {};
 
-  // Calculate some basic stats from holdings using precise decimal math
-  const totalHoldingsValue = holdings
-    ? FinancialMath.toNumber(
-        FinancialMath.sum(
-          holdings.map((holding: ApiHolding) => FinancialMath.abs(holding.balance ?? 0))
-        )
-      )
-    : 0;
+  // Use portfolio value calculation instead of raw balance
+  const totalHoldingsValue = portfolioValue ? parseFloat(portfolioValue.totalValue.toString()) : 0;
 
   // Calculate holdings by token type
   interface TokenTypeData {
@@ -57,39 +53,61 @@ export function Dashboard() {
   }
 
   const holdingsByTokenType =
-    holdings?.reduce((acc: Record<string, TokenTypeData>, holding: ApiHolding) => {
-      const token = tokensMap[holding.tokenId];
-      if (!token) return acc;
+    holdings && portfolioValue
+      ? holdings.reduce((acc: Record<string, TokenTypeData>, holding: ApiHolding) => {
+          const token = tokensMap[holding.tokenId];
+          if (!token) return acc;
 
-      const tokenType = token.type ?? 'unknown';
-      if (!acc[tokenType]) {
-        acc[tokenType] = {
-          count: 0,
-          totalValue: 0,
-          holdings: [],
-        };
-      }
+          const tokenType = token.type ?? 'unknown';
+          if (!acc[tokenType]) {
+            acc[tokenType] = {
+              count: 0,
+              totalValue: 0,
+              holdings: [],
+            };
+          }
 
-      acc[tokenType].count += 1;
-      acc[tokenType].totalValue = FinancialMath.toNumber(
-        FinancialMath.add(acc[tokenType].totalValue, FinancialMath.abs(holding.balance ?? 0))
-      );
-      acc[tokenType].holdings.push(holding as unknown as Holding);
+          // Try to find the portfolio value for this holding's token
+          const portfolioHolding = portfolioValue.holdings.find(
+            (ph) => ph.tokenSymbol === token.symbol
+          );
 
-      return acc;
-    }, {}) || {};
+          const holdingValue = portfolioHolding?.value
+            ? parseFloat(portfolioHolding.value)
+            : FinancialMath.toNumber(FinancialMath.abs(holding.balance ?? 0)); // fallback to raw balance
 
-  // Get top 5 holdings by value
-  const topHoldings = holdings
-    ? [...holdings]
-        .map((holding) => ({
-          ...holding,
-          token: tokensMap[holding.tokenId],
-          value: FinancialMath.toNumber(FinancialMath.abs(holding.balance)),
-        }))
-        .sort((a, b) => b.value - a.value)
-        .slice(0, 5)
-    : [];
+          acc[tokenType].count += 1;
+          acc[tokenType].totalValue = FinancialMath.toNumber(
+            FinancialMath.add(acc[tokenType].totalValue, holdingValue)
+          );
+          acc[tokenType].holdings.push(holding as unknown as Holding);
+
+          return acc;
+        }, {})
+      : {};
+
+  // Get top 5 holdings by value using portfolio calculation
+  const topHoldings =
+    holdings && portfolioValue
+      ? [...holdings]
+          .map((holding) => {
+            const token = tokensMap[holding.tokenId];
+            // Try to find the portfolio value for this holding's token
+            const portfolioHolding = portfolioValue.holdings.find(
+              (ph) => ph.tokenSymbol === token?.symbol
+            );
+
+            return {
+              ...holding,
+              token,
+              value: portfolioHolding?.value
+                ? parseFloat(portfolioHolding.value)
+                : FinancialMath.toNumber(FinancialMath.abs(holding.balance)), // fallback to raw balance
+            };
+          })
+          .sort((a, b) => b.value - a.value)
+          .slice(0, 5)
+      : [];
 
   const recentTransactions = transactions?.slice(0, 5) || [];
 
@@ -120,7 +138,7 @@ export function Dashboard() {
         )
       )
     : 0;
-  if (transactionsLoading || accountsLoading || holdingsLoading || !tokens) {
+  if (transactionsLoading || accountsLoading || holdingsLoading || portfolioLoading || !tokens) {
     return (
       <div className="space-y-4">
         <PageHeader

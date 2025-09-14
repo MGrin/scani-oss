@@ -12,12 +12,12 @@ The pricing system consists of three main components:
 
 ## Providers Used
 
-### Primary Provider: Alpha Vantage
+### Primary Provider: Finnhub
 
-- **Covers**: Stocks, ETFs, Forex, Crypto
-- **Cost**: $25/month for 1200 requests/minute
-- **Strengths**: Comprehensive coverage, excellent historical data (20+ years)
-- **API Key Required**: `ALPHA_VANTAGE_API_KEY`
+- **Covers**: Stocks, ETFs, Bonds, Commodities, Mutual Funds
+- **Cost**: Free tier with 60 calls/minute, paid plans available
+- **Strengths**: Comprehensive coverage, real-time data, excellent API documentation
+- **API Key Required**: `FINNHUB_API_KEY`
 
 ### Crypto Backup: CoinGecko
 
@@ -38,8 +38,8 @@ The pricing system consists of three main components:
 ### Environment Variables
 
 ```bash
-# Required for stocks/ETFs
-ALPHA_VANTAGE_API_KEY=your_alpha_vantage_key
+# Required for stocks/ETFs/bonds/commodities
+FINNHUB_API_KEY=your_finnhub_key
 
 # Optional for enhanced crypto features
 COINGECKO_API_KEY=your_coingecko_key
@@ -169,7 +169,7 @@ The system gracefully handles errors:
 
 Current rate limits per provider:
 
-- **Alpha Vantage**: 1200 requests/minute (paid)
+- **Finnhub**: 60 requests/minute (free), higher limits on paid plans
 - **CoinGecko**: 30 requests/minute (free)
 - **ExchangeRate-API**: ~100 requests/minute (free)
 
@@ -177,9 +177,9 @@ Current rate limits per provider:
 
 The system automatically determines the appropriate provider based on token type:
 
-- `crypto` → CoinGecko (primary) or Alpha Vantage (backup)
-- `stock`, `etf` → Alpha Vantage
-- `fiat` → ExchangeRate-API or Alpha Vantage
+- `crypto` → CoinGecko (primary)
+- `stock`, `etf`, `bond`, `commodity`, `mutual-fund` → Finnhub
+- `fiat` → ExchangeRate-API
 
 ## Future Enhancements
 

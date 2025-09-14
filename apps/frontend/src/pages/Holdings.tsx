@@ -50,6 +50,8 @@ export function Holdings() {
   const { data: tokens } = trpc.tokens.getAll.useQuery();
   const { data: institutions } = trpc.institutions.getAll.useQuery();
   const { data: tokenTypes } = trpc.tokenTypes.getAll.useQuery();
+  const { data: portfolioValue, isLoading: portfolioLoading } =
+    trpc.users.getPortfolioValue.useQuery();
 
   const [searchTerm, setSearchTerm] = useState('');
   const [sortBy, setSortBy] = useState<SortBy>('balance');
@@ -100,19 +102,27 @@ export function Holdings() {
 
   // Process holdings data
   const processedHoldings: ProcessedHolding[] =
-    holdings?.map(
-      (holding: ApiHolding): ProcessedHolding => ({
+    holdings?.map((holding: ApiHolding): ProcessedHolding => {
+      const token = tokensMap[holding.tokenId];
+      // Try to find the portfolio value for this holding's token
+      const portfolioHolding = portfolioValue?.holdings.find(
+        (ph) => ph.tokenSymbol === token?.symbol
+      );
+
+      return {
         ...holding,
-        token: tokensMap[holding.tokenId],
+        token,
         account: accountsMap[holding.accountId],
         institution: (() => {
           const account = holding.accountId ? accountsMap[holding.accountId] : null;
           const institutionId = account?.institutionId;
           return institutionId ? institutionsMap[institutionId] || null : null;
         })(),
-        value: FinancialMath.toNumber(FinancialMath.abs(holding.balance ?? 0)),
-      })
-    ) || [];
+        value: portfolioHolding?.value
+          ? parseFloat(portfolioHolding.value)
+          : FinancialMath.toNumber(FinancialMath.abs(holding.balance ?? 0)), // fallback to raw balance
+      };
+    }) || [];
 
   // Apply filters and search
   const filteredHoldings = processedHoldings.filter((holding: ProcessedHolding) => {
@@ -215,7 +225,7 @@ export function Holdings() {
     0
   );
 
-  if (holdingsLoading || !tokens || !accounts || !institutions) {
+  if (holdingsLoading || portfolioLoading || !tokens || !accounts || !institutions) {
     return (
       <div className="space-y-4">
         <PageHeader title="Holdings" subtitle="Manage your investment positions" loading={true} />
