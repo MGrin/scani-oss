@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { db } from '../db/connection';
 import * as schema from '../db/schema';
 import { getUserId } from '../middleware/auth';
+import { PortfolioValuationService } from '../services/portfolio-valuation';
 import { protectedProcedure, router } from '../trpc';
 
 // Helper function to check if account name already exists within an institution
@@ -325,5 +326,199 @@ export const accountsRouter = router({
         transactionsDeleted: transactions.length,
       },
     };
+  }),
+
+  // Get account summaries with total balances (in base currency)
+  getSummaries: protectedProcedure.query(async ({ ctx }) => {
+    const userId = getUserId(ctx);
+
+    try {
+      // Use portfolio valuation service to get properly converted values
+      const portfolioService = new PortfolioValuationService();
+      const portfolioValue = await portfolioService.getUserPortfolioValue(userId);
+
+      // Get all user accounts with their institutions and account types
+      const accounts = await db
+        .select({
+          id: schema.accounts.id,
+          name: schema.accounts.name,
+          type: schema.accountTypes.code,
+          typeName: schema.accountTypes.name,
+          institutionId: schema.accounts.institutionId,
+          institutionName: schema.institutions.name,
+        })
+        .from(schema.accounts)
+        .innerJoin(schema.institutions, eq(schema.accounts.institutionId, schema.institutions.id))
+        .innerJoin(schema.accountTypes, eq(schema.accounts.typeId, schema.accountTypes.id))
+        .where(and(eq(schema.accounts.userId, userId), eq(schema.accounts.isActive, true)));
+
+      // Get user holdings with account information to calculate account balances
+      const userHoldings = await db
+        .select({
+          id: schema.holdings.id,
+          accountId: schema.holdings.accountId,
+          balance: schema.holdings.balance,
+          tokenSymbol: schema.tokens.symbol,
+          tokenId: schema.holdings.tokenId,
+        })
+        .from(schema.holdings)
+        .innerJoin(schema.tokens, eq(schema.holdings.tokenId, schema.tokens.id))
+        .where(eq(schema.holdings.userId, userId));
+
+      // Calculate account balances using portfolio service pricing
+      const accountSummaries = accounts.map((account) => {
+        const accountHoldings = userHoldings.filter((h) => h.accountId === account.id);
+
+        // Sum up the base currency values for this account
+        const totalBalance = accountHoldings.reduce((sum, holding) => {
+          // Find matching portfolio holding to get base currency value
+          const portfolioHolding = portfolioValue.holdings.find(
+            (ph) => ph.tokenSymbol === holding.tokenSymbol
+          );
+
+          if (portfolioHolding?.value) {
+            // Scale the portfolio holding value based on this account's proportion of the total token balance
+            const accountBalance = parseFloat(holding.balance);
+            const totalTokenBalance = userHoldings
+              .filter((h) => h.tokenSymbol === holding.tokenSymbol)
+              .reduce((total, h) => total + parseFloat(h.balance), 0);
+
+            if (totalTokenBalance > 0) {
+              const proportion = accountBalance / totalTokenBalance;
+              const totalValue = parseFloat(portfolioHolding.value);
+              return sum + totalValue * proportion;
+            }
+          }
+          return sum;
+        }, 0);
+
+        return {
+          id: account.id,
+          name: account.name,
+          type: account.type,
+          typeName: account.typeName,
+          institutionId: account.institutionId,
+          institutionName: account.institutionName,
+          totalBalance,
+          holdingsCount: accountHoldings.length,
+        };
+      });
+
+      // Calculate overall summaries by account type
+      const typeSummaries = accountSummaries.reduce(
+        (acc, account) => {
+          const type = account.type;
+          if (!acc[type]) {
+            acc[type] = {
+              type,
+              typeName: account.typeName,
+              accountCount: 0,
+              totalBalance: 0,
+            };
+          }
+
+          acc[type].accountCount += 1;
+          acc[type].totalBalance += account.totalBalance;
+
+          return acc;
+        },
+        {} as Record<
+          string,
+          {
+            type: string;
+            typeName: string;
+            accountCount: number;
+            totalBalance: number;
+          }
+        >
+      );
+
+      return {
+        accounts: accountSummaries,
+        typesSummary: Object.values(typeSummaries),
+        totalBalance: portfolioValue.totalValue, // Use portfolio service total
+        totalAccounts: accountSummaries.length,
+      };
+    } catch (error) {
+      console.warn('Failed to get portfolio value for account summaries:', error);
+
+      // Fallback to raw balance calculation if portfolio service fails
+      const accounts = await db
+        .select({
+          id: schema.accounts.id,
+          name: schema.accounts.name,
+          type: schema.accountTypes.code,
+          typeName: schema.accountTypes.name,
+          institutionId: schema.accounts.institutionId,
+          institutionName: schema.institutions.name,
+        })
+        .from(schema.accounts)
+        .innerJoin(schema.institutions, eq(schema.accounts.institutionId, schema.institutions.id))
+        .innerJoin(schema.accountTypes, eq(schema.accounts.typeId, schema.accountTypes.id))
+        .where(and(eq(schema.accounts.userId, userId), eq(schema.accounts.isActive, true)));
+
+      const holdings = await db
+        .select({
+          id: schema.holdings.id,
+          accountId: schema.holdings.accountId,
+          balance: schema.holdings.balance,
+          tokenId: schema.holdings.tokenId,
+        })
+        .from(schema.holdings)
+        .where(eq(schema.holdings.userId, userId));
+
+      const accountSummaries = accounts.map((account) => {
+        const accountHoldings = holdings.filter((h) => h.accountId === account.id);
+        const totalBalance = accountHoldings.reduce((sum, holding) => {
+          return sum + parseFloat(holding.balance || '0');
+        }, 0);
+
+        return {
+          id: account.id,
+          name: account.name,
+          type: account.type,
+          typeName: account.typeName,
+          institutionId: account.institutionId,
+          institutionName: account.institutionName,
+          totalBalance,
+          holdingsCount: accountHoldings.length,
+        };
+      });
+
+      const typeSummaries = accountSummaries.reduce(
+        (acc, account) => {
+          const type = account.type;
+          if (!acc[type]) {
+            acc[type] = {
+              type,
+              typeName: account.typeName,
+              accountCount: 0,
+              totalBalance: 0,
+            };
+          }
+
+          acc[type].accountCount += 1;
+          acc[type].totalBalance += account.totalBalance;
+
+          return acc;
+        },
+        {} as Record<
+          string,
+          {
+            type: string;
+            typeName: string;
+            accountCount: number;
+            totalBalance: number;
+          }
+        >
+      );
+
+      return {
+        accounts: accountSummaries,
+        typesSummary: Object.values(typeSummaries),
+        totalBalance: accountSummaries.reduce((sum, acc) => sum + acc.totalBalance, 0),
+        totalAccounts: accountSummaries.length,
+      };
+    }
   }),
 });

@@ -1,5 +1,6 @@
 import { UpdateTransactionSchema } from '@scani/shared/types';
-import { and, desc, eq } from 'drizzle-orm';
+import Decimal from 'decimal.js';
+import { and, desc, eq, gte, lte } from 'drizzle-orm';
 import { z } from 'zod';
 import { db } from '../db/connection';
 import * as schema from '../db/schema';
@@ -12,7 +13,36 @@ const routerDb = db as ReturnType<typeof import('drizzle-orm/postgres-js').drizz
 
 export const transactionsRouter = router({
   // Get all transactions
-  getAll: protectedProcedure.query(async () => {
+  getAll: protectedProcedure.query(async ({ ctx }) => {
+    const userId = getUserId(ctx);
+
+    // Get user's base currency
+    const user = await routerDb
+      .select({
+        baseCurrencyId: schema.users.baseCurrencyId,
+      })
+      .from(schema.users)
+      .where(eq(schema.users.id, userId))
+      .limit(1);
+
+    if (!user.length || !user[0]?.baseCurrencyId) {
+      throw new Error('User or base currency not found');
+    }
+
+    const baseCurrency = await routerDb
+      .select({
+        symbol: schema.tokens.symbol,
+      })
+      .from(schema.tokens)
+      .where(eq(schema.tokens.id, user[0].baseCurrencyId))
+      .limit(1);
+
+    if (!baseCurrency.length || !baseCurrency[0]?.symbol) {
+      throw new Error('Base currency not found');
+    }
+
+    const baseCurrencySymbol = baseCurrency[0].symbol;
+
     const transactions = await routerDb
       .select({
         id: schema.transactions.id,
@@ -28,14 +58,68 @@ export const transactionsRouter = router({
         timestamp: schema.transactions.timestamp,
         createdAt: schema.transactions.createdAt,
         updatedAt: schema.transactions.updatedAt,
+        tokenId: schema.tokens.id,
+        tokenSymbol: schema.tokens.symbol,
       })
       .from(schema.transactions)
       .innerJoin(
         schema.transactionTypes,
         eq(schema.transactions.typeId, schema.transactionTypes.id)
       )
+      .innerJoin(schema.holdings, eq(schema.transactions.holdingId, schema.holdings.id))
+      .innerJoin(schema.tokens, eq(schema.holdings.tokenId, schema.tokens.id))
+      .where(eq(schema.holdings.userId, userId))
       .orderBy(desc(schema.transactions.timestamp));
-    return transactions;
+
+    // Convert amounts to base currency
+    const pricingService = new PricingService();
+    const transactionsWithConversion = await Promise.all(
+      transactions.map(async (transaction) => {
+        try {
+          let baseCurrencyAmount: string;
+          let baseCurrencyFee: string = '0';
+
+          // Convert transaction amount to base currency
+          if (transaction.tokenSymbol === baseCurrencySymbol) {
+            // Same currency, no conversion needed
+            baseCurrencyAmount = transaction.amount;
+          } else {
+            // Get price in base currency at transaction time
+            const price = await pricingService.getTokenPrice({
+              tokenSymbol: transaction.tokenSymbol,
+              baseCurrency: baseCurrencySymbol,
+              timestamp: transaction.timestamp,
+              live: false, // Historical price at transaction time
+            });
+            const amount = new Decimal(transaction.amount || '0');
+            baseCurrencyAmount = amount.mul(new Decimal(price)).toString();
+          }
+
+          // Convert fee if it exists (assuming fee is always in base currency for now)
+          if (parseFloat(transaction.fee) > 0) {
+            baseCurrencyFee = transaction.fee;
+          }
+
+          return {
+            ...transaction,
+            baseCurrencyAmount,
+            baseCurrencyFee,
+            baseCurrencySymbol,
+          };
+        } catch (error) {
+          console.warn(`Failed to convert transaction ${transaction.id} to base currency:`, error);
+          // Return original transaction with same amounts if conversion fails
+          return {
+            ...transaction,
+            baseCurrencyAmount: transaction.amount,
+            baseCurrencyFee: transaction.fee,
+            baseCurrencySymbol,
+          };
+        }
+      })
+    );
+
+    return transactionsWithConversion;
   }),
 
   // Get transactions by holding ID
@@ -375,5 +459,137 @@ export const transactionsRouter = router({
         .from(schema.transactions)
         .where(eq(schema.transactions.fee, input.minFee.toString())) // Convert number to string
         .orderBy(desc(schema.transactions.fee));
+    }),
+
+  // Get monthly transaction summaries (deposits, withdrawals, net flow)
+  getMonthlySummary: protectedProcedure
+    .input(
+      z.object({
+        year: z.number().optional(),
+        month: z.number().optional(), // 0-11 (JavaScript month index)
+      })
+    )
+    .query(async ({ input, ctx }) => {
+      const userId = getUserId(ctx);
+
+      // Default to current month if not specified
+      const now = new Date();
+      const targetYear = input.year ?? now.getFullYear();
+      const targetMonth = input.month ?? now.getMonth();
+
+      // Create date range for the target month
+      const startOfMonth = new Date(targetYear, targetMonth, 1);
+      const endOfMonth = new Date(targetYear, targetMonth + 1, 0, 23, 59, 59);
+
+      // Get user's base currency
+      const [user] = await routerDb
+        .select({ baseCurrencyId: schema.users.baseCurrencyId })
+        .from(schema.users)
+        .where(eq(schema.users.id, userId))
+        .limit(1);
+
+      if (!user || !user.baseCurrencyId) {
+        return {
+          year: targetYear,
+          month: targetMonth,
+          totalDeposits: 0,
+          totalWithdrawals: 0,
+          netFlow: 0,
+          transactionCount: 0,
+        };
+      }
+
+      // Get base currency token
+      const [baseCurrency] = await routerDb
+        .select({ symbol: schema.tokens.symbol })
+        .from(schema.tokens)
+        .where(eq(schema.tokens.id, user.baseCurrencyId))
+        .limit(1);
+
+      if (!baseCurrency) {
+        return {
+          year: targetYear,
+          month: targetMonth,
+          totalDeposits: 0,
+          totalWithdrawals: 0,
+          netFlow: 0,
+          transactionCount: 0,
+        };
+      }
+
+      // Get transactions in date range for user's holdings with token information
+      // Exclude opening balance transactions from monthly aggregations
+      const transactions = await routerDb
+        .select({
+          id: schema.transactions.id,
+          holdingId: schema.transactions.holdingId,
+          amount: schema.transactions.amount,
+          type: schema.transactionTypes.code,
+          timestamp: schema.transactions.timestamp,
+          tokenSymbol: schema.tokens.symbol,
+          tokenId: schema.tokens.id,
+        })
+        .from(schema.transactions)
+        .innerJoin(
+          schema.transactionTypes,
+          eq(schema.transactions.typeId, schema.transactionTypes.id)
+        )
+        .innerJoin(schema.holdings, eq(schema.transactions.holdingId, schema.holdings.id))
+        .innerJoin(schema.tokens, eq(schema.holdings.tokenId, schema.tokens.id))
+        .where(
+          and(
+            eq(schema.holdings.userId, userId),
+            gte(schema.transactions.timestamp, startOfMonth),
+            lte(schema.transactions.timestamp, endOfMonth),
+            // Exclude opening balance transactions from monthly aggregations
+            not(eq(schema.transactions.description, 'Opening balance - initial holding position'))
+          )
+        );
+
+      // Calculate summaries in base currency
+      let totalDeposits = new Decimal(0);
+      let totalWithdrawals = new Decimal(0);
+
+      const pricingService = new PricingService();
+
+      for (const transaction of transactions) {
+        try {
+          const amount = new Decimal(transaction.amount || '0');
+
+          // Convert amount to base currency
+          let convertedAmount: Decimal;
+          if (transaction.tokenId === user.baseCurrencyId) {
+            // Same currency, no conversion needed
+            convertedAmount = amount;
+          } else {
+            // Get price in base currency at transaction time
+            const price = await pricingService.getTokenPrice({
+              tokenSymbol: transaction.tokenSymbol,
+              baseCurrency: baseCurrency.symbol,
+              timestamp: transaction.timestamp,
+              live: false, // Historical price at transaction time
+            });
+            convertedAmount = amount.mul(new Decimal(price));
+          }
+
+          if (transaction.type === 'deposit') {
+            totalDeposits = totalDeposits.add(convertedAmount.abs());
+          } else if (transaction.type === 'withdrawal') {
+            totalWithdrawals = totalWithdrawals.add(convertedAmount.abs());
+          }
+        } catch (error) {
+          console.warn(`Failed to convert transaction ${transaction.id} to base currency:`, error);
+          // Skip this transaction if price conversion fails
+        }
+      }
+
+      return {
+        year: targetYear,
+        month: targetMonth,
+        totalDeposits: parseFloat(totalDeposits.toString()),
+        totalWithdrawals: parseFloat(totalWithdrawals.toString()),
+        netFlow: parseFloat(totalDeposits.sub(totalWithdrawals).toString()),
+        transactionCount: transactions.length,
+      };
     }),
 });

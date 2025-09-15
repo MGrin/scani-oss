@@ -24,8 +24,10 @@ import {
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { ColoredMonetaryValue, MonetaryValue } from '@/components/ui/monetary-value';
 import { PageHeader } from '@/components/ui/page-header';
 import { Progress } from '@/components/ui/progress';
+import { SummaryCard } from '@/components/ui/summary-cards';
 import type { ApiHolding, ApiToken } from '@/lib/api-types';
 import { trpc } from '@/lib/trpc';
 
@@ -271,20 +273,14 @@ export function Analytics() {
 
       {/* Key Metrics */}
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Net Worth</CardTitle>
-            <Wallet className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-xl font-bold">
-              {FinancialMath.formatCurrency(totalNetWorth, {
-                currency: userPrefs?.baseCurrency?.symbol,
-              })}
-            </div>
-            <p className="text-xs text-muted-foreground">Across {holdings?.length || 0} holdings</p>
-          </CardContent>
-        </Card>
+        <SummaryCard
+          type="currency"
+          title="Net Worth"
+          value={FinancialMath.toNumber(totalNetWorth)}
+          currency={userPrefs?.baseCurrency?.symbol}
+          subtitle={`Across ${holdings?.length || 0} holdings`}
+          icon={Wallet}
+        />
 
         {performanceMetrics && (
           <>
@@ -298,16 +294,14 @@ export function Analytics() {
                 )}
               </CardHeader>
               <CardContent>
-                <div
-                  className={`text-xl font-bold ${
-                    performanceMetrics.totalGainLoss >= 0 ? 'text-green-600' : 'text-red-600'
-                  }`}
-                >
-                  {performanceMetrics.totalGainLoss >= 0 ? '+' : ''}
-                  {FinancialMath.formatCurrency(performanceMetrics.totalGainLoss, {
-                    currency: userPrefs?.baseCurrency?.symbol,
-                  })}
-                </div>
+                <ColoredMonetaryValue
+                  type="currency"
+                  value={performanceMetrics.totalGainLoss}
+                  currency={userPrefs?.baseCurrency?.symbol}
+                  size="xl"
+                  className="font-bold"
+                  showSign={true}
+                />
                 <p className="text-xs text-muted-foreground">
                   {performanceMetrics.totalGainLossPercentage >= 0 ? '+' : ''}
                   {performanceMetrics.totalGainLossPercentage.toFixed(2)}%
@@ -315,35 +309,24 @@ export function Analytics() {
               </CardContent>
             </Card>
 
-            <Card>
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">Cost Basis</CardTitle>
-                <Calculator className="h-4 w-4 text-muted-foreground" />
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold">
-                  {FinancialMath.formatCurrency(performanceMetrics.totalCostBasis, {
-                    currency: userPrefs?.baseCurrency?.symbol,
-                  })}
-                </div>
-                <p className="text-xs text-muted-foreground">Total invested</p>
-              </CardContent>
-            </Card>
+            <SummaryCard
+              type="currency"
+              title="Cost Basis"
+              value={performanceMetrics.totalCostBasis}
+              currency={userPrefs?.baseCurrency?.symbol}
+              subtitle="Total invested"
+              icon={Calculator}
+            />
 
-            <Card>
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">Transaction Fees</CardTitle>
-                <DollarSign className="h-4 w-4 text-muted-foreground" />
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold text-red-600">
-                  {FinancialMath.formatCurrency(performanceMetrics.totalTransactionFees, {
-                    currency: userPrefs?.baseCurrency?.symbol,
-                  })}
-                </div>
-                <p className="text-xs text-muted-foreground">Total fees paid</p>
-              </CardContent>
-            </Card>
+            <SummaryCard
+              type="currency"
+              title="Transaction Fees"
+              value={performanceMetrics.totalTransactionFees}
+              currency={userPrefs?.baseCurrency?.symbol}
+              subtitle="Total fees paid"
+              icon={DollarSign}
+              className="[&_.value]:text-red-600"
+            />
           </>
         )}
       </div>
@@ -402,11 +385,12 @@ export function Analytics() {
                         </span>
                       </div>
                       <div className="text-right">
-                        <div className="font-semibold">
-                          {FinancialMath.formatCurrency(asset.value, {
-                            currency: userPrefs?.baseCurrency?.symbol,
-                          })}
-                        </div>
+                        <MonetaryValue
+                          type="currency"
+                          value={asset.value}
+                          currency={userPrefs?.baseCurrency?.symbol}
+                          className="font-semibold"
+                        />
                         <div className="text-sm text-muted-foreground">
                           {asset.percentage.toFixed(1)}%
                         </div>
@@ -470,9 +454,12 @@ export function Analytics() {
                 <AlertTitle>Portfolio Performance</AlertTitle>
                 <AlertDescription>
                   Great job! Your portfolio is showing positive returns of{' '}
-                  {FinancialMath.formatCurrency(performanceMetrics.totalGainLoss, {
-                    currency: userPrefs?.baseCurrency?.symbol,
-                  })}{' '}
+                  <MonetaryValue
+                    type="currency"
+                    value={performanceMetrics.totalGainLoss}
+                    currency={userPrefs?.baseCurrency?.symbol}
+                    className="inline"
+                  />{' '}
                   ({performanceMetrics.totalGainLossPercentage.toFixed(2)}%).
                 </AlertDescription>
               </Alert>
@@ -482,9 +469,12 @@ export function Analytics() {
                 <AlertTitle>Portfolio Review</AlertTitle>
                 <AlertDescription>
                   Your portfolio is currently down{' '}
-                  {FinancialMath.formatCurrency(Math.abs(performanceMetrics.totalGainLoss), {
-                    currency: userPrefs?.baseCurrency?.symbol,
-                  })}{' '}
+                  <MonetaryValue
+                    type="currency"
+                    value={Math.abs(performanceMetrics.totalGainLoss)}
+                    currency={userPrefs?.baseCurrency?.symbol}
+                    className="inline"
+                  />{' '}
                   ({Math.abs(performanceMetrics.totalGainLossPercentage).toFixed(2)}
                   %). Consider reviewing your investment strategy and diversification.
                 </AlertDescription>

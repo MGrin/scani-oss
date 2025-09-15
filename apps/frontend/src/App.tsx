@@ -14,6 +14,7 @@ import { Holdings } from '@/pages/Holdings';
 import { Institutions } from '@/pages/Institutions';
 import { QuickAddHolding } from '@/pages/QuickAddHolding';
 import { Settings } from '@/pages/Settings';
+import { Tokens } from '@/pages/Tokens';
 import { Transactions } from '@/pages/Transactions';
 
 function App() {
@@ -92,6 +93,46 @@ function App() {
                     <ProtectedRoute>
                       <Layout>
                         <Institutions />
+                      </Layout>
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/institutions/:institutionId"
+                  element={
+                    <ProtectedRoute>
+                      <Layout>
+                        <Accounts />
+                      </Layout>
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/institutions/:institutionId/accounts/:accountId"
+                  element={
+                    <ProtectedRoute>
+                      <Layout>
+                        <Holdings />
+                      </Layout>
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/institutions/:institutionId/accounts/:accountId/holdings/:holdingId"
+                  element={
+                    <ProtectedRoute>
+                      <Layout>
+                        <Transactions />
+                      </Layout>
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/tokens"
+                  element={
+                    <ProtectedRoute>
+                      <Layout>
+                        <Tokens />
                       </Layout>
                     </ProtectedRoute>
                   }

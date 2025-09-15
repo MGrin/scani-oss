@@ -311,3 +311,171 @@ export function InstitutionTypeSelector({
     />
   );
 }
+
+// Transaction Type Selector Component
+interface TransactionTypeSelectorProps {
+  value: string;
+  onValueChange: (value: string) => void;
+  transactionTypes?: Array<{
+    id: string;
+    code: string;
+    name: string;
+    description?: string | null;
+  }>;
+  placeholder?: string;
+}
+
+export function TransactionTypeSelector({
+  value,
+  onValueChange,
+  transactionTypes,
+  placeholder = 'Choose transaction type...',
+}: TransactionTypeSelectorProps) {
+  const transactionTypeOptions =
+    transactionTypes?.map((type) => ({
+      value: type.code,
+      label: type.name,
+      subtitle: type.description || undefined,
+    })) || [];
+
+  return (
+    <SearchableSelect
+      value={value}
+      onValueChange={onValueChange}
+      placeholder={placeholder}
+      items={transactionTypeOptions}
+      emptyMessage="No transaction types found."
+    />
+  );
+}
+
+// Institution Filter Selector (for filtering entities by institution)
+interface InstitutionFilterSelectorProps {
+  value: string;
+  onValueChange: (value: string) => void;
+  institutions?: ApiInstitution[];
+  placeholder?: string;
+  includeAllOption?: boolean;
+}
+
+export function InstitutionFilterSelector({
+  value,
+  onValueChange,
+  institutions,
+  placeholder = 'Filter by institution...',
+  includeAllOption = true,
+}: InstitutionFilterSelectorProps) {
+  const institutionOptions =
+    institutions?.map((institution) => ({
+      value: institution.id,
+      label: institution.name,
+      subtitle: institution.typeName || undefined,
+    })) || [];
+
+  const allOptions = includeAllOption
+    ? [{ value: 'all', label: 'All Institutions' }, ...institutionOptions]
+    : institutionOptions;
+
+  return (
+    <SearchableSelect
+      value={value}
+      onValueChange={onValueChange}
+      placeholder={placeholder}
+      items={allOptions}
+      emptyMessage="No institutions found."
+    />
+  );
+}
+
+// Account Filter Selector (for filtering entities by account)
+interface AccountFilterSelectorProps {
+  value: string;
+  onValueChange: (value: string) => void;
+  accounts?: ApiAccount[];
+  placeholder?: string;
+  includeAllOption?: boolean;
+}
+
+export function AccountFilterSelector({
+  value,
+  onValueChange,
+  accounts,
+  placeholder = 'Filter by account...',
+  includeAllOption = true,
+}: AccountFilterSelectorProps) {
+  const accountOptions =
+    accounts?.map((account) => ({
+      value: account.id,
+      label: account.name,
+      icon: getAccountTypeIcon(account.type || 'unknown'),
+      subtitle: account.typeName || undefined,
+    })) || [];
+
+  const allOptions = includeAllOption
+    ? [{ value: 'all', label: 'All Accounts' }, ...accountOptions]
+    : accountOptions;
+
+  return (
+    <SearchableSelect
+      value={value}
+      onValueChange={onValueChange}
+      placeholder={placeholder}
+      items={allOptions}
+      emptyMessage="No accounts found."
+    />
+  );
+}
+
+// Holding Filter Selector (for filtering transactions by holding)
+interface HoldingFilterSelectorProps {
+  value: string;
+  onValueChange: (value: string) => void;
+  holdings?: Array<{
+    id: string;
+    tokenId: string;
+    accountId: string;
+  }>;
+  tokens?: ApiToken[];
+  accounts?: ApiAccount[];
+  placeholder?: string;
+  includeAllOption?: boolean;
+}
+
+export function HoldingFilterSelector({
+  value,
+  onValueChange,
+  holdings,
+  tokens,
+  accounts,
+  placeholder = 'Filter by holding...',
+  includeAllOption = true,
+}: HoldingFilterSelectorProps) {
+  const tokensMap = tokens ? Object.fromEntries(tokens.map((t) => [t.id, t])) : {};
+  const accountsMap = accounts ? Object.fromEntries(accounts.map((a) => [a.id, a])) : {};
+
+  const holdingOptions =
+    holdings?.map((holding) => {
+      const token = tokensMap[holding.tokenId];
+      const account = accountsMap[holding.accountId];
+      return {
+        value: holding.id,
+        label: token ? `${token.symbol} - ${token.name}` : 'Unknown Token',
+        subtitle: account ? `in ${account.name}` : 'Unknown Account',
+        icon: token ? getTokenTypeIcon(token.type || 'unknown') : undefined,
+      };
+    }) || [];
+
+  const allOptions = includeAllOption
+    ? [{ value: 'all', label: 'All Holdings' }, ...holdingOptions]
+    : holdingOptions;
+
+  return (
+    <SearchableSelect
+      value={value}
+      onValueChange={onValueChange}
+      placeholder={placeholder}
+      items={allOptions}
+      emptyMessage="No holdings found."
+    />
+  );
+}

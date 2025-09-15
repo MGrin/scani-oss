@@ -3,14 +3,14 @@ import { useEffect, useId, useMemo, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { useNavigate } from 'react-router-dom';
 import { z } from 'zod';
+import { AsyncTokenSelector } from '@/components/AsyncTokenSelector';
 import {
   AccountSelector,
   AccountTypeSelector,
   InstitutionSelector,
   InstitutionTypeSelector,
-  TokenSelector,
-  TokenTypeSelector,
 } from '@/components/selectors/SearchableSelectors';
+import { TokenForm } from '@/components/TokenForm';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -55,12 +55,6 @@ const QuickAddHoldingSchema = z
 
     // Token selection
     tokenId: z.string().min(1, 'Please select a token'),
-
-    // New token fields (conditionally required when tokenId is 'new')
-    newTokenSymbol: z.string().optional(),
-    newTokenName: z.string().optional(),
-    newTokenType: z.string().optional(),
-    newTokenDecimals: z.number().int().min(0).max(18).optional(),
   })
   .superRefine((data, ctx) => {
     // Validate new account fields when creating new account
@@ -108,33 +102,6 @@ const QuickAddHoldingSchema = z
         }
       }
     }
-
-    // Validate new token fields when creating new token
-    if (data.tokenId === 'new') {
-      if (!data.newTokenSymbol?.trim()) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          message: 'Token symbol is required when creating a new token',
-          path: ['newTokenSymbol'],
-        });
-      }
-
-      if (!data.newTokenName?.trim()) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          message: 'Token name is required when creating a new token',
-          path: ['newTokenName'],
-        });
-      }
-
-      if (!data.newTokenType) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          message: 'Token type is required when creating a new token',
-          path: ['newTokenType'],
-        });
-      }
-    }
   });
 
 type QuickAddHoldingData = z.infer<typeof QuickAddHoldingSchema>;
@@ -143,6 +110,7 @@ export function QuickAddHolding() {
   const navigate = useNavigate();
   const { toast } = useToast();
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isTokenFormOpen, setIsTokenFormOpen] = useState(false);
 
   // Form IDs
   const balanceId = useId();
@@ -151,37 +119,33 @@ export function QuickAddHolding() {
   const institutionSelectId = useId();
 
   // Data queries
-  const { data: userPrefs } = trpc.users.getCurrent.useQuery();
   const { data: accounts, isLoading: accountsLoading } = trpc.accounts.getAll.useQuery();
   const { data: institutions, isLoading: institutionsLoading } =
     trpc.institutions.getAll.useQuery();
-  const { data: tokens, isLoading: tokensLoading } = trpc.tokens.getAll.useQuery();
+
   const { data: accountTypes, isLoading: accountTypesLoading } =
     trpc.accountTypes.getAll.useQuery();
   const { data: institutionTypes, isLoading: institutionTypesLoading } =
     trpc.institutionTypes.getAll.useQuery();
-  const { data: tokenTypes, isLoading: tokenTypesLoading } = trpc.tokenTypes.getAll.useQuery();
 
   const utils = trpc.useUtils();
 
   // Mutations
   const createInstitution = trpc.institutions.create.useMutation();
   const createAccount = trpc.accounts.create.useMutation();
-  const createToken = trpc.tokens.create.useMutation();
+  const createTokenFromExternal = trpc.tokens.createFromExternal.useMutation();
+
   const createHolding = trpc.holdings.create.useMutation();
 
   const form = useForm<QuickAddHoldingData>({
     resolver: zodResolver(QuickAddHoldingSchema),
     mode: 'onChange', // Validate on change for better UX
     reValidateMode: 'onChange',
-    defaultValues: {
-      newTokenDecimals: 2,
-    },
+    defaultValues: {},
   });
 
   const watchAccountId = form.watch('accountId');
   const watchInstitutionId = form.watch('institutionId');
-  const watchTokenId = form.watch('tokenId');
 
   // Watch all form values for reactive validation
   const formValues = form.watch();
@@ -207,13 +171,6 @@ export function QuickAddHolding() {
         if (!formValues.newInstitutionName?.trim() || errors.newInstitutionName) return false;
         if (!formValues.newInstitutionType || errors.newInstitutionType) return false;
       }
-    }
-
-    // If creating new token, check required token fields
-    if (formValues.tokenId === 'new') {
-      if (!formValues.newTokenSymbol?.trim() || errors.newTokenSymbol) return false;
-      if (!formValues.newTokenName?.trim() || errors.newTokenName) return false;
-      if (!formValues.newTokenType || errors.newTokenType) return false;
     }
 
     return true;
@@ -256,34 +213,7 @@ export function QuickAddHolding() {
     }
   }, [accounts, institutions, institutionsLoading, form, watchInstitutionId, watchAccountId]);
 
-  useEffect(() => {
-    if (!tokensLoading && tokens !== undefined) {
-      if (!watchTokenId) {
-        if (tokens && tokens.length > 0) {
-          // Try to find a token that matches the user's base currency
-          let defaultToken = null;
-
-          if (userPrefs?.baseCurrency?.symbol) {
-            // Look for a token with symbol matching the base currency
-            defaultToken = tokens.find(
-              (token) =>
-                token.symbol?.toUpperCase() === userPrefs.baseCurrency?.symbol?.toUpperCase()
-            );
-          }
-
-          // If no matching token found, fall back to the first token
-          if (!defaultToken) {
-            defaultToken = tokens[0];
-          }
-
-          form.setValue('tokenId', defaultToken?.id || 'new');
-        } else {
-          // No tokens exist, default to "new"
-          form.setValue('tokenId', 'new');
-        }
-      }
-    }
-  }, [tokens, tokensLoading, form, watchTokenId, userPrefs?.baseCurrency]);
+  // Note: Token auto-selection removed - AsyncTokenSelector handles its own defaults
 
   const onSubmit = async (data: QuickAddHoldingData) => {
     setIsSubmitting(true);
@@ -292,6 +222,33 @@ export function QuickAddHolding() {
       let accountId = data.accountId;
       let tokenId = data.tokenId;
       let institutionId = data.institutionId;
+
+      // Handle external token creation if needed
+      if (tokenId.startsWith('external:')) {
+        try {
+          const parts = tokenId.split(':');
+          const externalTokenData = JSON.parse(parts.slice(2).join(':'));
+
+          console.log('Creating external token:', externalTokenData);
+
+          const newToken = await createTokenFromExternal.mutateAsync({
+            symbol: externalTokenData.symbol,
+            provider: externalTokenData.provider,
+            metadata: {
+              ...externalTokenData.metadata,
+              name: externalTokenData.name,
+            },
+          });
+
+          tokenId = newToken.id;
+          console.log('External token created successfully:', tokenId);
+        } catch (error) {
+          console.error('External token creation failed:', error);
+          throw new Error(
+            `Failed to create token: ${error instanceof Error ? error.message : 'Unknown error'}`
+          );
+        }
+      }
 
       // Step 1: Create institution if needed
       if (data.accountId === 'new' && data.institutionId === 'new') {
@@ -361,44 +318,7 @@ export function QuickAddHolding() {
         }
       }
 
-      // Step 3: Create token if needed
-      if (data.tokenId === 'new') {
-        try {
-          // Find the token type ID
-          const tokenType = tokenTypes?.find((t) => t.code === data.newTokenType);
-          if (!tokenType) {
-            throw new Error(`Token type '${data.newTokenType}' not found`);
-          }
-
-          console.log('Creating token:', {
-            symbol: data.newTokenSymbol?.toUpperCase(),
-            name: data.newTokenName,
-            typeId: tokenType.id,
-            decimals: data.newTokenDecimals || 2,
-          });
-
-          const newToken = await createToken.mutateAsync({
-            symbol: data.newTokenSymbol!.trim().toUpperCase(),
-            name: data.newTokenName!.trim(),
-            typeId: tokenType.id,
-            decimals: data.newTokenDecimals || 2,
-          });
-
-          if (!newToken?.id) {
-            throw new Error('Failed to create token - no ID returned');
-          }
-
-          tokenId = newToken.id;
-          console.log('Token created successfully:', tokenId);
-        } catch (error) {
-          console.error('Token creation failed:', error);
-          throw new Error(
-            `Failed to create token: ${error instanceof Error ? error.message : 'Unknown error'}`
-          );
-        }
-      }
-
-      // Step 4: Create holding
+      // Step 3: Create holding
       try {
         if (!accountId || !tokenId || accountId === 'new' || tokenId === 'new') {
           throw new Error(`Missing required IDs - Account: ${accountId}, Token: ${tokenId}`);
@@ -455,12 +375,7 @@ export function QuickAddHolding() {
   };
 
   const isLoading =
-    accountsLoading ||
-    institutionsLoading ||
-    tokensLoading ||
-    accountTypesLoading ||
-    institutionTypesLoading ||
-    tokenTypesLoading;
+    accountsLoading || institutionsLoading || accountTypesLoading || institutionTypesLoading;
 
   if (isLoading) {
     return (
@@ -491,11 +406,19 @@ export function QuickAddHolding() {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="space-y-2">
               <Label htmlFor={tokenSelectId}>Select Token *</Label>
-              <TokenSelector
+              <AsyncTokenSelector
                 id={tokenSelectId}
                 value={form.watch('tokenId') || ''}
-                onValueChange={(value) => form.setValue('tokenId', value)}
-                tokens={tokens}
+                onValueChange={(value: string) => {
+                  if (value === 'new') {
+                    setIsTokenFormOpen(true);
+                  } else if (value.startsWith('external:')) {
+                    // Store external token data for later creation
+                    form.setValue('tokenId', value);
+                  } else {
+                    form.setValue('tokenId', value);
+                  }
+                }}
                 placeholder="Choose a token..."
               />
               {form.formState.errors.tokenId && (
@@ -518,57 +441,6 @@ export function QuickAddHolding() {
               )}
             </div>
           </div>
-
-          {watchTokenId === 'new' && (
-            <div className="space-y-4 border-t pt-4">
-              <h4 className="text-sm font-medium">New Token Details</h4>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label>Symbol *</Label>
-                  <Input
-                    placeholder="e.g., AAPL"
-                    maxLength={10}
-                    {...form.register('newTokenSymbol')}
-                    onChange={(e) => {
-                      e.target.value = e.target.value.toUpperCase();
-                      form.setValue('newTokenSymbol', e.target.value);
-                    }}
-                  />
-                </div>
-
-                <div className="space-y-2">
-                  <Label>Name *</Label>
-                  <Input placeholder="e.g., Apple Inc." {...form.register('newTokenName')} />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label>Token Type *</Label>
-                  <TokenTypeSelector
-                    value={form.watch('newTokenType') || ''}
-                    onValueChange={(value) => form.setValue('newTokenType', value)}
-                    tokenTypes={tokenTypes}
-                    placeholder="Choose token type..."
-                  />
-                </div>
-
-                <div className="space-y-2">
-                  <Label>Decimals</Label>
-                  <Input
-                    type="number"
-                    min="0"
-                    max="18"
-                    placeholder="2"
-                    {...form.register('newTokenDecimals', {
-                      valueAsNumber: true,
-                    })}
-                  />
-                </div>
-              </div>
-            </div>
-          )}
         </div>
 
         {/* Account Selection */}
@@ -704,6 +576,25 @@ export function QuickAddHolding() {
           </Button>
         </div>
       </form>
+
+      {/* Token Creation Dialog */}
+      <TokenForm
+        isOpen={isTokenFormOpen}
+        onClose={() => setIsTokenFormOpen(false)}
+        mode="create"
+        onSuccess={(token) => {
+          // Invalidate tokens queries to refresh the AsyncTokenSelector
+          utils.tokens.getAll.invalidate();
+          utils.tokens.search.invalidate();
+
+          // Set the newly created token ID in the form
+          form.setValue('tokenId', token.id);
+          toast({
+            title: 'Token selected',
+            description: `${token.symbol} - ${token.name} has been selected for the holding.`,
+          });
+        }}
+      />
     </div>
   );
 }

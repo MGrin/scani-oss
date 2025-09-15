@@ -1,9 +1,11 @@
 import type { LucideIcon } from 'lucide-react';
 import {
   Building,
+  Building2,
   Coins,
   CreditCard,
   DollarSign,
+  Home,
   PiggyBank,
   TrendingUp,
   Wallet,
@@ -123,6 +125,31 @@ export const getAccountTypeIcon = (type: string): LucideIcon => {
       return CreditCard; // Loans are similar to credit products
     default:
       return TrendingUp; // Default for unknown account types
+  }
+};
+
+/**
+ * Get icon component for institution types
+ */
+export const getInstitutionTypeIcon = (type: string): LucideIcon => {
+  switch (type?.toLowerCase()) {
+    case 'bank':
+      return Building;
+    case 'broker':
+    case 'brokerage':
+      return TrendingUp;
+    case 'crypto_wallet':
+      return Wallet;
+    case 'crypto_exchange':
+      return Coins;
+    case 'investment_fund':
+      return TrendingUp;
+    case 'private_equity':
+      return Building2;
+    case 'real_estate':
+      return Home;
+    default:
+      return Building; // Default for unknown institution types
   }
 };
 

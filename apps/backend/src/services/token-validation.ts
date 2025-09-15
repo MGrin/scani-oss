@@ -1,13 +1,13 @@
-import { config } from "../config/pricing";
+import { config } from '../config/pricing';
 
 export interface TokenMetadata {
   symbol: string;
   name: string;
-  type: "Equity" | "ETF" | "Mutual Fund" | "Bond" | "Commodity" | "Crypto";
+  type: 'Equity' | 'ETF' | 'Mutual Fund' | 'Bond' | 'Commodity' | 'Crypto';
   currency: string;
   exchange?: string;
   description?: string;
-  provider: "finnhub" | "coingecko";
+  provider: 'finnhub' | 'coingecko';
   providerMetadata: Record<string, unknown>;
 }
 
@@ -21,13 +21,10 @@ export class TokenValidationService {
   /**
    * Validate a token symbol using appropriate provider based on token characteristics
    */
-  async validateToken(
-    symbol: string,
-    tokenTypeCode?: string
-  ): Promise<ValidationResult> {
+  async validateToken(symbol: string, tokenTypeCode?: string): Promise<ValidationResult> {
     // If we know the token type, use appropriate provider
     if (tokenTypeCode) {
-      return tokenTypeCode === "crypto"
+      return tokenTypeCode === 'crypto'
         ? this.validateCryptoToken(symbol)
         : this.validateFinnhubToken(symbol);
     }
@@ -54,16 +51,14 @@ export class TokenValidationService {
   /**
    * Validate a token symbol using Finnhub (for stocks, ETFs, bonds, commodities)
    */
-  private async validateFinnhubToken(
-    symbol: string
-  ): Promise<ValidationResult> {
+  private async validateFinnhubToken(symbol: string): Promise<ValidationResult> {
     try {
       const apiKey = config.finnhub.apiKey;
 
       if (!apiKey) {
         return {
           isValid: false,
-          error: "Finnhub API key not configured",
+          error: 'Finnhub API key not configured',
         };
       }
 
@@ -92,7 +87,7 @@ export class TokenValidationService {
       if (!quoteData.c || quoteData.c <= 0) {
         return {
           isValid: false,
-          error: "Symbol not found in Finnhub database",
+          error: 'Symbol not found in Finnhub database',
         };
       }
 
@@ -118,23 +113,22 @@ export class TokenValidationService {
       // Determine token type based on available information
       // Finnhub doesn't always provide explicit type information,
       // so we'll default to 'Equity' and let the user specify if needed
-      let tokenType: "Equity" | "ETF" | "Mutual Fund" | "Bond" | "Commodity" =
-        "Equity";
+      let tokenType: 'Equity' | 'ETF' | 'Mutual Fund' | 'Bond' | 'Commodity' = 'Equity';
 
       // Basic heuristics to determine type
-      if (symbol.includes(".") || symbol.length > 4) {
+      if (symbol.includes('.') || symbol.length > 4) {
         // Could be international or ETF
-        tokenType = "Equity";
+        tokenType = 'Equity';
       }
 
       const metadata: TokenMetadata = {
         symbol: symbol,
         name: profileData.name || symbol,
         type: tokenType,
-        currency: profileData.currency || "USD",
-        exchange: profileData.exchange || "US",
+        currency: profileData.currency || 'USD',
+        exchange: profileData.exchange || 'US',
         description: profileData.weburl || undefined,
-        provider: "finnhub",
+        provider: 'finnhub',
         providerMetadata: {
           quote: quoteData,
           profile: profileData,
@@ -149,8 +143,7 @@ export class TokenValidationService {
     } catch (error) {
       return {
         isValid: false,
-        error:
-          error instanceof Error ? error.message : "Unknown validation error",
+        error: error instanceof Error ? error.message : 'Unknown validation error',
       };
     }
   }
@@ -161,11 +154,11 @@ export class TokenValidationService {
   private async validateCryptoToken(symbol: string): Promise<ValidationResult> {
     try {
       const headers: Record<string, string> = {
-        "Content-Type": "application/json",
+        'Content-Type': 'application/json',
       };
 
       if (config.coinGecko.apiKey) {
-        headers["x-cg-pro-api-key"] = config.coinGecko.apiKey;
+        headers['x-cg-pro-api-key'] = config.coinGecko.apiKey;
       }
 
       // Search CoinGecko for the symbol
@@ -196,7 +189,7 @@ export class TokenValidationService {
       if (!match) {
         return {
           isValid: false,
-          error: "Cryptocurrency not found in CoinGecko database",
+          error: 'Cryptocurrency not found in CoinGecko database',
         };
       }
 
@@ -224,9 +217,9 @@ export class TokenValidationService {
       const metadata: TokenMetadata = {
         symbol: symbol.toUpperCase(),
         name: coinData.name,
-        type: "Crypto",
-        currency: "USD", // CoinGecko prices are typically in USD
-        provider: "coingecko",
+        type: 'Crypto',
+        currency: 'USD', // CoinGecko prices are typically in USD
+        provider: 'coingecko',
         providerMetadata: {
           id: coinData.id,
           coinGeckoData: coinData,
@@ -241,9 +234,90 @@ export class TokenValidationService {
     } catch (error) {
       return {
         isValid: false,
-        error:
-          error instanceof Error ? error.message : "Unknown validation error",
+        error: error instanceof Error ? error.message : 'Unknown validation error',
       };
+    }
+  }
+
+  /**
+   * Search for multiple tokens using Finnhub symbol lookup
+   */
+  async searchFinnhubTokens(query: string): Promise<ValidationResult[]> {
+    try {
+      const apiKey = config.finnhub.apiKey;
+
+      if (!apiKey) {
+        return [];
+      }
+
+      // Use Finnhub's symbol lookup endpoint
+      const searchUrl = `${
+        config.finnhub.baseUrl
+      }/search?q=${encodeURIComponent(query)}&token=${apiKey}`;
+      const response = await fetch(searchUrl);
+
+      if (!response.ok) {
+        console.warn(`Finnhub search API error: ${response.statusText}`);
+        return [];
+      }
+
+      const searchData = (await response.json()) as {
+        count: number;
+        result: Array<{
+          description: string;
+          displaySymbol: string;
+          symbol: string;
+          type: string;
+        }>;
+      };
+
+      if (!searchData.result || searchData.result.length === 0) {
+        return [];
+      }
+
+      // Convert search results to ValidationResults
+      const results: ValidationResult[] = [];
+
+      for (const item of searchData.result.slice(0, 10)) {
+        // Limit to 10 results
+        // Map Finnhub types to our types
+        let tokenType: 'Equity' | 'ETF' | 'Mutual Fund' | 'Bond' | 'Commodity' = 'Equity';
+
+        if (item.type) {
+          const type = item.type.toLowerCase();
+          if (type.includes('etf')) {
+            tokenType = 'ETF';
+          } else if (type.includes('fund')) {
+            tokenType = 'Mutual Fund';
+          } else if (type.includes('bond')) {
+            tokenType = 'Bond';
+          } else if (type.includes('commodity')) {
+            tokenType = 'Commodity';
+          }
+        }
+
+        const metadata: TokenMetadata = {
+          symbol: item.displaySymbol || item.symbol,
+          name: item.description,
+          type: tokenType,
+          currency: 'USD', // Default currency for Finnhub
+          provider: 'finnhub',
+          providerMetadata: {
+            searchResult: item,
+            validatedAt: new Date().toISOString(),
+          },
+        };
+
+        results.push({
+          isValid: true,
+          metadata,
+        });
+      }
+
+      return results;
+    } catch (error) {
+      console.warn('Finnhub search error:', error);
+      return [];
     }
   }
 

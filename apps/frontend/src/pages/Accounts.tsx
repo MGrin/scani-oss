@@ -1,7 +1,11 @@
-import { type Account, FinancialMath } from '@scani/shared';
-import { ChevronDown, ChevronUp, MoreHorizontal, Plus, Search, Trash2, Wallet } from 'lucide-react';
-import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import type { Account } from '@scani/shared';
+import { MoreHorizontal, Plus, Trash2, Wallet } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import {
+  AccountTypeSelector,
+  InstitutionFilterSelector,
+} from '@/components/selectors/SearchableSelectors';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import {
@@ -18,27 +22,88 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { Input } from '@/components/ui/input';
+
+import { PageAggregation } from '@/components/ui/page-aggregation';
 import { PageHeader } from '@/components/ui/page-header';
+import { ItemCard, MiniSummaryCard } from '@/components/ui/summary-cards';
 import { useToast } from '@/hooks/use-toast';
-import type { ApiAccount, ApiHolding, ApiInstitution, ApiToken } from '@/lib/api-types';
+import type { ApiAccount, ApiHolding, ApiInstitution } from '@/lib/api-types';
 import { BUTTON_TEXT } from '@/lib/button-constants';
 import { getAccountTypeIcon } from '@/lib/icons';
 import { trpc } from '@/lib/trpc';
 
 export function Accounts() {
   const navigate = useNavigate();
+  const { institutionId } = useParams<{ institutionId: string }>();
   const { toast } = useToast();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [searchTerm, setSearchTerm] = useState('');
+  const [filterBy, setFilterBy] = useState<string>(searchParams.get('type') || 'all');
+  const [filterByInstitution, setFilterByInstitution] = useState<string>(
+    searchParams.get('institution') || 'all'
+  );
   const [accountToDelete, setAccountToDelete] = useState<Account | null>(null);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
-  const [expandedAccounts, setExpandedAccounts] = useState<Set<string>>(new Set());
+
+  // Update filter when URL parameters change
+  useEffect(() => {
+    const typeParam = searchParams.get('type');
+    if (typeParam) {
+      setFilterBy(typeParam);
+    } else {
+      setFilterBy('all');
+    }
+
+    const institutionParam = searchParams.get('institution');
+    if (institutionParam) {
+      setFilterByInstitution(institutionParam);
+    } else {
+      setFilterByInstitution('all');
+    }
+  }, [searchParams]);
+
+  // Update URL when filter changes
+  const handleFilterChange = (newFilter: string) => {
+    setFilterBy(newFilter);
+    const newSearchParams = new URLSearchParams(searchParams);
+    if (newFilter === 'all') {
+      newSearchParams.delete('type');
+    } else {
+      newSearchParams.set('type', newFilter);
+    }
+    setSearchParams(newSearchParams);
+  };
+
+  // Update URL when institution filter changes
+  const handleInstitutionFilterChange = (newFilter: string) => {
+    setFilterByInstitution(newFilter);
+    const newSearchParams = new URLSearchParams(searchParams);
+    if (newFilter === 'all') {
+      newSearchParams.delete('institution');
+    } else {
+      newSearchParams.set('institution', newFilter);
+    }
+    setSearchParams(newSearchParams);
+  };
 
   const { data: accounts, isLoading } = trpc.accounts.getAll.useQuery();
   const { data: holdings } = trpc.holdings.getAll.useQuery();
   const { data: institutions } = trpc.institutions.getAll.useQuery();
   const { data: tokens } = trpc.tokens.getAll.useQuery();
+  const { data: userPrefs } = trpc.users.getCurrent.useQuery();
+  const { data: accountSummaries, isLoading: summariesLoading } =
+    trpc.accounts.getSummaries.useQuery();
   const { data: accountTypes } = trpc.accountTypes.getAll.useQuery();
+
+  // Determine if we're in hierarchical mode (accessed from institution)
+  const isHierarchicalMode = Boolean(institutionId);
+  const selectedInstitution = institutions?.find((inst) => inst.id === institutionId);
+
+  // Filter accounts by institution if in hierarchical mode
+  const baseAccounts = accounts || [];
+  const displayAccounts = isHierarchicalMode
+    ? baseAccounts.filter((account) => account.institutionId === institutionId)
+    : baseAccounts;
 
   const utils = trpc.useUtils();
 
@@ -86,22 +151,21 @@ export function Accounts() {
   const institutionsMap = institutions
     ? Object.fromEntries(institutions.map((inst: ApiInstitution) => [inst.id, inst]))
     : {};
-  const tokensMap = tokens
-    ? Object.fromEntries(tokens.map((token: ApiToken) => [token.id, token]))
-    : {};
 
-  // Filter accounts based on search term
-  const filteredAccounts =
-    accounts?.filter((account: ApiAccount) => {
-      if (!searchTerm) return true;
-      const searchLower = searchTerm.toLowerCase();
-      const institution = institutionsMap[account.institutionId];
-      return (
-        account.name.toLowerCase().includes(searchLower) ||
-        (account.type?.toLowerCase().includes(searchLower) ?? false) ||
-        institution?.name.toLowerCase().includes(searchLower)
-      );
-    }) || [];
+  // Filter accounts based on search term, type, and institution
+  const filteredAccounts = displayAccounts.filter((account: ApiAccount) => {
+    const matchesSearch =
+      !searchTerm ||
+      account.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (account.type?.toLowerCase().includes(searchTerm.toLowerCase()) ?? false) ||
+      institutionsMap[account.institutionId]?.name.toLowerCase().includes(searchTerm.toLowerCase());
+
+    const matchesTypeFilter = filterBy === 'all' || account.type === filterBy;
+    const matchesInstitutionFilter =
+      filterByInstitution === 'all' || account.institutionId === filterByInstitution;
+
+    return matchesSearch && matchesTypeFilter && matchesInstitutionFilter;
+  });
 
   // Action handlers
   const handleDeleteAccount = (account: Account) => {
@@ -115,33 +179,19 @@ export function Accounts() {
     }
   };
 
-  const toggleAccountExpansion = (accountId: string) => {
-    const newExpanded = new Set(expandedAccounts);
-    if (newExpanded.has(accountId)) {
-      newExpanded.delete(accountId);
-    } else {
-      newExpanded.add(accountId);
-    }
-    setExpandedAccounts(newExpanded);
-  };
-
   const getAccountHoldings = (accountId: string) => {
     if (!holdings) return [];
     return holdings.filter((holding: ApiHolding) => holding.accountId === accountId);
   };
 
-  // Calculate account balances from holdings using precise decimal math
+  // Use backend-calculated account balances instead of manual calculations
   const getAccountBalance = (accountId: string): number => {
-    if (!holdings) return 0;
-    const accountHoldings = holdings.filter(
-      (holding: ApiHolding) => holding.accountId === accountId
-    );
-    return FinancialMath.toNumber(
-      FinancialMath.sum(accountHoldings.map((holding: ApiHolding) => holding.balance))
-    );
+    if (!accountSummaries?.accounts) return 0;
+    const accountSummary = accountSummaries.accounts.find((acc) => acc.id === accountId);
+    return accountSummary?.totalBalance ?? 0;
   };
 
-  if (isLoading || !holdings || !institutions || !tokens) {
+  if (isLoading || summariesLoading || !holdings || !institutions || !tokens || !accountSummaries) {
     return (
       <div className="space-y-6">
         <PageHeader title="Accounts" subtitle="Manage your financial accounts" loading={true} />
@@ -162,19 +212,36 @@ export function Accounts() {
     );
   }
 
-  const totalBalance = filteredAccounts
-    ? FinancialMath.toNumber(
-        FinancialMath.sum(
-          filteredAccounts.map((account: ApiAccount) => getAccountBalance(account.id))
-        )
-      )
-    : 0;
+  // Calculate total and filtered balances (ensure they're numbers)
+  const allAccountsBalance =
+    typeof accountSummaries?.totalBalance === 'number'
+      ? accountSummaries.totalBalance
+      : parseFloat(accountSummaries?.totalBalance?.toString() || '0');
+  const displayAccountsBalance = displayAccounts.reduce((total, account) => {
+    const accountBalance = getAccountBalance(account.id);
+    return total + accountBalance;
+  }, 0);
+  const filteredBalance = filteredAccounts.reduce((total, account) => {
+    const accountBalance = getAccountBalance(account.id);
+    return total + accountBalance;
+  }, 0);
+
+  const totalBalance = isHierarchicalMode ? displayAccountsBalance : allAccountsBalance;
+
+  const pageTitle =
+    isHierarchicalMode && selectedInstitution
+      ? `${selectedInstitution.name} Accounts`
+      : 'Your Accounts';
+
+  const pageSubtitle = isHierarchicalMode
+    ? `Accounts at ${selectedInstitution?.name || 'this institution'}`
+    : 'Overview of your financial accounts with holdings';
 
   return (
     <div className="space-y-4">
       <PageHeader
-        title="Your Accounts"
-        subtitle="Overview of your financial accounts with holdings"
+        title={pageTitle}
+        subtitle={pageSubtitle}
         primaryAction={{
           label: 'Add Holding',
           onClick: () => navigate('/quick-add-holding'),
@@ -182,55 +249,47 @@ export function Accounts() {
         }}
       />
 
-      {/* Search Bar */}
-      {accounts && accounts.length > 0 && (
-        <Card>
-          <CardContent className="p-3">
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-              <Input
-                placeholder="Search accounts by name, type, institution, or account number..."
-                className="pl-10 h-9 text-sm"
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
+      <PageAggregation
+        totalCount={displayAccounts.length}
+        filteredCount={filteredAccounts.length}
+        entityLabel="accounts"
+        totalBalance={totalBalance}
+        filteredBalance={filteredBalance}
+        baseCurrency={userPrefs?.baseCurrency?.symbol}
+        searchTerm={searchTerm}
+        onSearchChange={setSearchTerm}
+        searchPlaceholder="Search accounts by name, type, institution, or account number..."
+        filterBy={filterBy}
+        onFilterChange={handleFilterChange}
+        customFilter={
+          <div className="flex gap-2">
+            <div className="md:w-64">
+              <AccountTypeSelector
+                value={filterBy}
+                onValueChange={handleFilterChange}
+                accountTypes={[
+                  { id: 'all', code: 'all', name: 'All Types' },
+                  ...(accountTypes || []),
+                ]}
+                placeholder="Filter by type..."
               />
             </div>
-            {searchTerm && (
-              <p className="text-xs text-muted-foreground mt-2">
-                {filteredAccounts.length} of {accounts.length} accounts match your search
-              </p>
+            {!isHierarchicalMode && (
+              <div className="md:w-64">
+                <InstitutionFilterSelector
+                  value={filterByInstitution}
+                  onValueChange={handleInstitutionFilterChange}
+                  institutions={institutions}
+                  placeholder="Filter by institution..."
+                />
+              </div>
             )}
-          </CardContent>
-        </Card>
-      )}
-
-      {/* Summary Card */}
-      <Card>
-        <CardHeader className="pb-3">
-          <CardTitle className="text-base">
-            {searchTerm ? `Search Results (${filteredAccounts.length})` : 'Account Summary'}
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="pt-0">
-          <div className="grid gap-3 md:grid-cols-2">
-            <div>
-              <p className="text-xs text-muted-foreground">Total Balance</p>
-              <p className="text-lg font-bold">{FinancialMath.formatCurrency(totalBalance)}</p>
-            </div>
-            <div>
-              <p className="text-xs text-muted-foreground">
-                {searchTerm ? 'Matching Accounts' : 'Total Accounts'}
-              </p>
-              <p className="text-lg font-bold">
-                {searchTerm ? filteredAccounts.length : accounts?.length || 0}
-              </p>
-            </div>
           </div>
-        </CardContent>
-      </Card>
+        }
+      />
 
       {/* Accounts Grid */}
-      {!accounts || accounts.length === 0 ? (
+      {displayAccounts.length === 0 ? (
         <Card>
           <CardContent className="p-12 text-center">
             <Wallet className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
@@ -249,7 +308,17 @@ export function Accounts() {
         <Card>
           <CardContent className="p-12 text-center">
             <div className="text-muted-foreground mb-4">No accounts match your search criteria</div>
-            <Button onClick={() => setSearchTerm('')}>Clear Search</Button>
+            <Button
+              onClick={() => {
+                setSearchTerm('');
+                setFilterBy('all');
+                setFilterByInstitution('all');
+                // Clear URL params too
+                navigate('/accounts');
+              }}
+            >
+              Clear Filters
+            </Button>
           </CardContent>
         </Card>
       ) : (
@@ -259,30 +328,50 @@ export function Accounts() {
             const accountBalance = getAccountBalance(account.id);
             const institution = institutionsMap[account.institutionId];
             const accountHoldings = getAccountHoldings(account.id);
-            const isExpanded = expandedAccounts.has(account.id);
-
             return (
-              <Card key={account.id} className="hover:shadow-md transition-shadow">
-                <CardHeader className="pb-2">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center space-x-2">
-                      {IconComponent && <IconComponent className="h-4 w-4 text-muted-foreground" />}
-                      <div>
-                        <CardTitle className="text-base">{account.name}</CardTitle>
-                        <p className="text-xs text-muted-foreground">
-                          {institution?.name || 'Unknown Institution'}
-                        </p>
+              <div key={account.id}>
+                <ItemCard
+                  title={account.name}
+                  subtitle={
+                    <div className="space-y-1">
+                      {!isHierarchicalMode && (
+                        <div className="text-xs text-muted-foreground">
+                          {institution?.name || 'Unknown Institution'} •{' '}
+                          {account.type?.replace('_', ' ') ?? 'Unknown Type'}
+                        </div>
+                      )}
+                      {isHierarchicalMode && (
+                        <div className="text-xs text-muted-foreground">
+                          {account.type?.replace('_', ' ') ?? 'Unknown Type'}
+                        </div>
+                      )}
+                      <div className="flex items-center space-x-2 text-xs text-muted-foreground">
+                        <span>{accountHoldings.length} holdings</span>
+                        <span>•</span>
+                        <span>Updated {new Date(account.updatedAt).toLocaleDateString()}</span>
                       </div>
                     </div>
-                    <div className="flex items-center space-x-3">
-                      <div className="text-right">
-                        <p className="text-lg font-bold">
-                          {FinancialMath.formatCurrency(accountBalance)}
-                        </p>
-                        <p className="text-xs text-muted-foreground capitalize">
-                          {account.type?.replace('_', ' ') ?? 'Unknown Type'}
-                        </p>
-                      </div>
+                  }
+                  currencyValue={accountBalance}
+                  currency={userPrefs?.baseCurrency?.symbol}
+                  icon={
+                    IconComponent && <IconComponent className="h-8 w-8 text-muted-foreground" />
+                  }
+                  onClick={
+                    accountHoldings.length > 0
+                      ? () => {
+                          if (isHierarchicalMode) {
+                            navigate(`/institutions/${institutionId}/accounts/${account.id}`);
+                          } else {
+                            navigate(
+                              `/institutions/${account.institutionId}/accounts/${account.id}`
+                            );
+                          }
+                        }
+                      : undefined
+                  }
+                  actions={
+                    <div className="flex items-center space-x-2">
                       <DropdownMenu>
                         <DropdownMenuTrigger asChild>
                           <Button variant="ghost" size="sm">
@@ -300,83 +389,9 @@ export function Accounts() {
                         </DropdownMenuContent>
                       </DropdownMenu>
                     </div>
-                  </div>
-                </CardHeader>
-                <CardContent className="pt-2">
-                  <div className="space-y-2">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center space-x-2 text-xs text-muted-foreground">
-                        <span>{accountHoldings.length} holdings</span>
-                        <span>•</span>
-                        <span>Updated {new Date(account.updatedAt).toLocaleDateString()}</span>
-                      </div>
-                      {accountHoldings.length > 0 && (
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => toggleAccountExpansion(account.id)}
-                        >
-                          {isExpanded ? (
-                            <ChevronUp className="h-4 w-4" />
-                          ) : (
-                            <ChevronDown className="h-4 w-4" />
-                          )}
-                          {isExpanded ? 'Hide' : 'Show'} Holdings
-                        </Button>
-                      )}
-                    </div>
-
-                    {/* Holdings breakdown */}
-                    {isExpanded && accountHoldings.length > 0 && (
-                      <div className="border-t pt-2">
-                        <h4 className="font-semibold text-xs mb-2 text-muted-foreground uppercase tracking-wide">
-                          Holdings Breakdown
-                        </h4>
-                        <div className="space-y-1.5">
-                          {accountHoldings.map((holding: ApiHolding) => {
-                            const token = tokensMap[holding.tokenId];
-                            const holdingValue = FinancialMath.abs(holding.balance ?? 0);
-
-                            return (
-                              <div
-                                key={holding.id}
-                                className="flex items-center justify-between py-1.5 px-2 bg-muted/30 rounded"
-                              >
-                                <div className="flex items-center space-x-2">
-                                  <div className="w-6 h-6 rounded-full bg-primary/10 flex items-center justify-center">
-                                    <span className="text-xs font-medium">
-                                      {token?.symbol || '?'}
-                                    </span>
-                                  </div>
-                                  <div>
-                                    <p className="font-medium text-xs">
-                                      {token?.name || 'Unknown Token'}
-                                    </p>
-                                    <p className="text-xs text-muted-foreground capitalize">
-                                      {token?.type ?? 'N/A'}
-                                    </p>
-                                  </div>
-                                </div>
-                                <div className="text-right">
-                                  <p className="font-semibold text-sm">
-                                    {FinancialMath.formatCurrency(holdingValue)}
-                                  </p>
-                                  <p className="text-xs text-muted-foreground">
-                                    {parseFloat(holding.balance ?? '0').toFixed(
-                                      token?.decimals || 2
-                                    )}{' '}
-                                    {token?.symbol || ''}
-                                  </p>
-                                </div>
-                              </div>
-                            );
-                          })}
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                </CardContent>
-              </Card>
+                  }
+                />
+              </div>
             );
           })}
         </div>
@@ -390,30 +405,20 @@ export function Accounts() {
           </CardHeader>
           <CardContent className="pt-0">
             <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-4">
-              {accountTypes?.map((accountType) => {
-                const typeAccounts = accounts.filter(
-                  (acc: ApiAccount) => acc.type === accountType.code
-                );
-                const typeBalance = FinancialMath.toNumber(
-                  FinancialMath.sum(
-                    typeAccounts.map((acc: ApiAccount) => getAccountBalance(acc.id))
-                  )
-                );
+              {accountSummaries?.typesSummary?.map((typeSummary) => {
+                if (typeSummary.accountCount === 0) return null;
 
-                if (typeAccounts.length === 0) return null;
-
-                const IconComponent = getAccountTypeIcon(accountType.code);
+                const IconComponent = getAccountTypeIcon(typeSummary.type);
 
                 return (
-                  <div key={accountType.code} className="flex items-center space-x-2">
-                    <IconComponent className="h-4 w-4 text-muted-foreground" />
-                    <div>
-                      <p className="font-medium text-sm">{accountType.name}</p>
-                      <p className="text-xs text-muted-foreground">
-                        {typeAccounts.length} accounts • {FinancialMath.formatCurrency(typeBalance)}
-                      </p>
-                    </div>
-                  </div>
+                  <MiniSummaryCard
+                    key={typeSummary.type}
+                    title={typeSummary.typeName}
+                    value={typeSummary.totalBalance}
+                    currency={userPrefs?.baseCurrency?.symbol}
+                    count={typeSummary.accountCount}
+                    icon={IconComponent}
+                  />
                 );
               })}
             </div>
