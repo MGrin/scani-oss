@@ -147,6 +147,12 @@ export function TransactionForm({
   } = trpc.transactionTypes.getAll.useQuery();
   const { data: userPrefs } = trpc.users.getCurrent.useQuery();
 
+  // Find user's base currency from tokens
+  const baseCurrency = React.useMemo(() => {
+    if (!userPrefs?.baseCurrencyId || !tokens) return null;
+    return tokens.find((token) => token.id === userPrefs.baseCurrencyId) || null;
+  }, [userPrefs?.baseCurrencyId, tokens]);
+
   const utils = trpc.useUtils();
 
   // Merge backend transaction types with UI metadata
@@ -660,21 +666,21 @@ export function TransactionForm({
                   <div>
                     Amount:{' '}
                     {FinancialMath.formatCurrency(parseFloat(watchedAmount) || 0, {
-                      currency: userPrefs?.baseCurrency?.symbol,
+                      currency: baseCurrency?.symbol,
                     })}
                   </div>
                   {watchedFee && parseFloat(watchedFee) > 0 && (
                     <div>
                       Fee:{' '}
                       {FinancialMath.formatCurrency(parseFloat(watchedFee), {
-                        currency: userPrefs?.baseCurrency?.symbol,
+                        currency: baseCurrency?.symbol,
                       })}
                     </div>
                   )}
                   <div className="font-semibold">
                     Total:{' '}
                     {FinancialMath.formatCurrency(totalValue, {
-                      currency: userPrefs?.baseCurrency?.symbol,
+                      currency: baseCurrency?.symbol,
                     })}
                   </div>
                 </div>

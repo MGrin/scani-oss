@@ -3,6 +3,7 @@ import { eq, isNotNull } from 'drizzle-orm';
 import { db } from '../db/connection';
 import * as schema from '../db/schema';
 import { PricingService } from './pricing';
+import { getBaseCurrencyToken } from './user-context';
 
 /**
  * Service to update portfolio values with current token prices
@@ -92,7 +93,10 @@ export class PortfolioValuationService {
   /**
    * Get current portfolio value for a user
    */
-  async getUserPortfolioValue(userId: string): Promise<{
+  async getUserPortfolioValue(
+    userId: string,
+    userBaseCurrencyId?: string
+  ): Promise<{
     totalValue: string;
     baseCurrency: string;
     holdings: Array<{
@@ -102,22 +106,35 @@ export class PortfolioValuationService {
       value?: string;
     }>;
   }> {
-    // Get user's base currency
-    const [user] = await db.select().from(schema.users).where(eq(schema.users.id, userId)).limit(1);
+    let baseCurrency: { id: string; symbol: string; name: string };
 
-    if (!user || !user.baseCurrencyId) {
-      throw new Error('User has no base currency set');
-    }
+    if (userBaseCurrencyId) {
+      // Use user context service to get base currency efficiently
+      baseCurrency = await getBaseCurrencyToken(userBaseCurrencyId);
+    } else {
+      // Fallback: get user and base currency in a single query
+      const [userWithBaseCurrency] = await db
+        .select({
+          userId: schema.users.id,
+          userBaseCurrencyId: schema.users.baseCurrencyId,
+          baseCurrencyId: schema.tokens.id,
+          baseCurrencySymbol: schema.tokens.symbol,
+          baseCurrencyName: schema.tokens.name,
+        })
+        .from(schema.users)
+        .innerJoin(schema.tokens, eq(schema.users.baseCurrencyId, schema.tokens.id))
+        .where(eq(schema.users.id, userId))
+        .limit(1);
 
-    // Get base currency token
-    const [baseCurrency] = await db
-      .select()
-      .from(schema.tokens)
-      .where(eq(schema.tokens.id, user.baseCurrencyId))
-      .limit(1);
+      if (!userWithBaseCurrency) {
+        throw new Error('User not found or has no base currency set');
+      }
 
-    if (!baseCurrency) {
-      throw new Error('Base currency token not found');
+      baseCurrency = {
+        id: userWithBaseCurrency.baseCurrencyId,
+        symbol: userWithBaseCurrency.baseCurrencySymbol,
+        name: userWithBaseCurrency.baseCurrencyName,
+      };
     }
 
     // Get user holdings with token information
@@ -133,8 +150,22 @@ export class PortfolioValuationService {
       .innerJoin(schema.tokens, eq(schema.holdings.tokenId, schema.tokens.id))
       .where(eq(schema.holdings.userId, userId));
 
-    // Get current prices for all tokens
+    // Batch fetch prices for all tokens that need conversion
     const now = new Date();
+    const tokensToPrice = holdings
+      .filter((holding) => holding.tokenId !== baseCurrency.id)
+      .map((holding) => ({
+        tokenSymbol: holding.tokenSymbol,
+        baseCurrency: baseCurrency.symbol,
+        timestamp: now,
+        live: false, // Use cached prices instead of fetching live
+      }));
+
+    // Fetch all prices at once
+    const priceResults =
+      tokensToPrice.length > 0 ? await this.pricingService.getTokenPrices(tokensToPrice) : {};
+
+    // Process holdings with batched price data
     const portfolioHoldings = [];
     let totalValue = new Decimal(0);
 
@@ -150,13 +181,8 @@ export class PortfolioValuationService {
           currentPrice = '1';
           value = balance.toString();
         } else {
-          const priceResult = await this.pricingService.getTokenPrice({
-            tokenSymbol: holding.tokenSymbol,
-            baseCurrency: baseCurrency.symbol,
-            timestamp: now,
-            live: true,
-          });
-
+          // Use batched price result
+          const priceResult = priceResults[holding.tokenSymbol];
           if (priceResult) {
             currentPrice = priceResult;
             value = balance.mul(new Decimal(currentPrice)).toString();

@@ -125,6 +125,22 @@ export const tokensRouter = router({
     return tokens;
   }),
 
+  // Get basic token info for lookups (lightweight)
+  getBasicInfo: protectedProcedure.query(async () => {
+    const tokens = await db
+      .select({
+        id: schema.tokens.id,
+        symbol: schema.tokens.symbol,
+        name: schema.tokens.name,
+        type: schema.tokenTypes.code,
+      })
+      .from(schema.tokens)
+      .leftJoin(schema.tokenTypes, eq(schema.tokens.typeId, schema.tokenTypes.id))
+      .where(eq(schema.tokens.isActive, true))
+      .orderBy(schema.tokens.symbol);
+    return tokens;
+  }),
+
   // Get fiat currencies (tokens with type 'fiat')
   getCurrencies: protectedProcedure.query(async () => {
     const currencies = await db

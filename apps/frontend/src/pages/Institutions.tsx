@@ -1,5 +1,4 @@
 import { Building2, Plus } from 'lucide-react';
-
 import { useNavigate } from 'react-router-dom';
 import { InstitutionRow } from '@/components/InstitutionRow';
 import { InstitutionTypeSelector } from '@/components/selectors/SearchableSelectors';
@@ -9,7 +8,7 @@ import { LoadingSpinner } from '@/components/ui/loading';
 import { PageAggregation } from '@/components/ui/page-aggregation';
 import { PageHeader } from '@/components/ui/page-header';
 import { useFilters } from '@/hooks/useFilters';
-import type { ApiInstitution } from '@/lib/api-types';
+import type { ApiInstitution, ApiToken } from '@/lib/api-types';
 
 import { trpc } from '@/lib/trpc';
 
@@ -28,10 +27,11 @@ export function Institutions() {
   const { data: institutions, isLoading } = trpc.institutions.getByUserId.useQuery();
   const { data: institutionTypes } = trpc.institutionTypes.getAll.useQuery();
   const { data: accounts } = trpc.accounts.getAll.useQuery();
-  const { data: userPrefs } = trpc.users.getCurrent.useQuery();
+
   const { data: portfolioValue } = trpc.users.getPortfolioValue.useQuery();
   const { data: holdings } = trpc.holdings.getAll.useQuery();
-  const { data: tokens } = trpc.tokens.getAll.useQuery();
+  const { data: tokens } = trpc.tokens.getByUserId.useQuery();
+  const { data: baseCurrency } = trpc.users.getBaseCurrency.useQuery();
 
   // Filter institutions based on search and type
   const filteredInstitutions =
@@ -48,7 +48,9 @@ export function Institutions() {
     }) || [];
 
   // Create tokens map for lookups
-  const tokensMap = tokens ? Object.fromEntries(tokens.map((token) => [token.id, token])) : {};
+  const tokensMap = tokens
+    ? Object.fromEntries(tokens.map((token: ApiToken) => [token.id, token]))
+    : {};
 
   // Calculate institution balances and totals using portfolio value (base currency converted)
   const getInstitutionBalance = (institutionId: string): number => {
@@ -141,7 +143,7 @@ export function Institutions() {
         entityLabel="institutions"
         totalBalance={totalBalance}
         filteredBalance={filteredBalance}
-        baseCurrency={userPrefs?.baseCurrency?.symbol}
+        baseCurrency={baseCurrency?.symbol}
         searchTerm={filterValues.search || ''}
         onSearchChange={(value) => updateFilter('search', value)}
         searchPlaceholder="Search institutions by name, type, or description..."
@@ -203,7 +205,7 @@ export function Institutions() {
                   accountCount,
                 }}
                 userPrefs={{
-                  baseCurrency: userPrefs?.baseCurrency || undefined,
+                  baseCurrency: baseCurrency || undefined,
                 }}
                 onClick={() => navigate(`/institutions/${institution.id}`)}
               />

@@ -80,8 +80,6 @@ export function HoldingRow({
                 <span>{holding.institution.name}</span>
               </>
             )}
-            <span>•</span>
-            <span>Updated {new Date(holding.lastUpdated).toLocaleDateString()}</span>
           </div>
         </div>
       }

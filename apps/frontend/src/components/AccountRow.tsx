@@ -71,8 +71,6 @@ export function AccountRow({
               </>
             )}
             <span>{account.holdingCount ?? 0} holdings</span>
-            <span>•</span>
-            <span>Updated {new Date(account.updatedAt).toLocaleDateString()}</span>
           </div>
         </div>
       }

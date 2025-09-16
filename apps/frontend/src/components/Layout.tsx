@@ -49,6 +49,34 @@ const navigation = [
   { name: 'Transactions', href: '/transactions', icon: CreditCard },
 ];
 
+// Helper function to determine which navigation item should be active
+function getActiveNavItem(pathname: string): string {
+  // Exact matches first
+  if (pathname === '/') return '/';
+  if (pathname === '/institutions') return '/institutions';
+  if (pathname === '/accounts') return '/accounts';
+  if (pathname === '/tokens') return '/tokens';
+  if (pathname === '/holdings') return '/holdings';
+  if (pathname === '/transactions') return '/transactions';
+
+  // Hierarchical path matches based on what page is actually rendered
+  if (pathname.match(/^\/institutions\/[^/]+$/)) {
+    // /institutions/:institutionId -> renders Accounts page
+    return '/accounts';
+  }
+  if (pathname.match(/^\/institutions\/[^/]+\/accounts\/[^/]+$/)) {
+    // /institutions/:institutionId/accounts/:accountId -> renders Holdings page
+    return '/holdings';
+  }
+  if (pathname.match(/^\/institutions\/[^/]+\/accounts\/[^/]+\/holdings\/[^/]+$/)) {
+    // /institutions/:institutionId/accounts/:accountId/holdings/:holdingId -> renders Transactions page
+    return '/transactions';
+  }
+
+  // Default fallback
+  return '';
+}
+
 // Helper hook to generate breadcrumbs based on the current path with entity names
 function useBreadcrumbs(pathname: string) {
   // Parse URL to extract entity IDs based on actual routing structure
@@ -226,7 +254,8 @@ export function Layout({ children }: LayoutProps) {
           >
             {navigation.map((item) => {
               const Icon = item.icon;
-              const isActive = location.pathname === item.href;
+              const activeNavItem = getActiveNavItem(location.pathname);
+              const isActive = activeNavItem === item.href;
 
               return (
                 <Link

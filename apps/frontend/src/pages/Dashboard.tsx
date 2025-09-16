@@ -25,8 +25,11 @@ export function Dashboard() {
   const { data: holdings, isLoading: holdingsLoading } = trpc.holdings.getAll.useQuery();
   const { data: transactions, isLoading: transactionsLoading } =
     trpc.transactions.getAll.useQuery();
-  const { data: tokens } = trpc.tokens.getAll.useQuery();
-  const { data: userPrefs } = trpc.users.getCurrent.useQuery();
+  // Use optimized endpoints - only get tokens that user has holdings for
+  const { data: tokens } = trpc.tokens.getByUserId.useQuery();
+
+  const { data: baseCurrency } = trpc.users.getBaseCurrency.useQuery();
+
   const { data: portfolioValue, isLoading: portfolioLoading } =
     trpc.users.getPortfolioValue.useQuery();
   const { data: monthlySummary, isLoading: monthlySummaryLoading } =
@@ -42,7 +45,7 @@ export function Dashboard() {
     onMessage: handleWebSocketMessage,
   });
 
-  // Create maps for quick lookups
+  // Create maps for quick lookups (using only tokens user has holdings for)
   const tokensMap = tokens
     ? Object.fromEntries(tokens.map((token: ApiToken) => [token.id, token]))
     : {};
@@ -207,7 +210,7 @@ export function Dashboard() {
           type="currency"
           title="Total Balance"
           value={totalHoldingsValue}
-          currency={userPrefs?.baseCurrency?.symbol}
+          currency={baseCurrency?.symbol}
           subtitle={`Across ${holdings?.length || 0} holdings in ${accounts?.length || 0} accounts`}
           icon={Wallet}
         />
@@ -216,7 +219,7 @@ export function Dashboard() {
           type="currency"
           title="Monthly Deposits"
           value={monthlyDeposits}
-          currency={userPrefs?.baseCurrency?.symbol}
+          currency={baseCurrency?.symbol}
           subtitle="This month"
           icon={TrendingUp}
           className="[&_.value]:text-green-600"
@@ -226,7 +229,7 @@ export function Dashboard() {
           type="currency"
           title="Monthly Withdrawals"
           value={monthlyWithdrawals}
-          currency={userPrefs?.baseCurrency?.symbol}
+          currency={baseCurrency?.symbol}
           subtitle="This month"
           icon={TrendingDown}
           className="[&_.value]:text-red-600"
@@ -238,7 +241,7 @@ export function Dashboard() {
           value={FinancialMath.toNumber(
             FinancialMath.subtract(monthlyDeposits, monthlyWithdrawals)
           )}
-          currency={userPrefs?.baseCurrency?.symbol}
+          currency={baseCurrency?.symbol}
           subtitle="This month"
           icon={DollarSign}
           showSigned={true}
@@ -315,7 +318,7 @@ export function Dashboard() {
                           </div>
                         }
                         currencyValue={tokenData.totalValue}
-                        currency={userPrefs?.baseCurrency?.symbol}
+                        currency={baseCurrency?.symbol}
                         onClick={() => navigate(`/holdings?type=${encodeURIComponent(tokenType)}`)}
                         icon={<IconComponent className="h-8 w-8 text-muted-foreground" />}
                       />
@@ -348,7 +351,7 @@ export function Dashboard() {
                         institution: undefined, // Not available in Dashboard context
                       }}
                       userPrefs={{
-                        baseCurrency: userPrefs?.baseCurrency || undefined,
+                        baseCurrency: baseCurrency || undefined,
                       }}
                       showRank={true}
                       rank={index + 1}

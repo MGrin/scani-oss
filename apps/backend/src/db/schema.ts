@@ -1,5 +1,5 @@
 import { relations } from 'drizzle-orm';
-import { boolean, pgTable, real, text, timestamp, unique, uuid } from 'drizzle-orm/pg-core';
+import { boolean, index, pgTable, real, text, timestamp, unique, uuid } from 'drizzle-orm/pg-core';
 
 // =============================================================================
 // ENUM TABLES - Dynamic enum values stored in database
@@ -90,6 +90,8 @@ export const institutions = pgTable(
   (table) => ({
     // Unique constraint for institution name globally
     uniqueInstitutionWebsite: unique().on(table.website),
+    // Performance index for institution name lookups
+    nameIdx: index('idx_institutions_name').on(table.name),
   })
 );
 
@@ -113,6 +115,8 @@ export const tokens = pgTable(
   (table) => ({
     // Unique constraint for symbol and type combination
     uniqueSymbolType: unique().on(table.symbol, table.typeId),
+    // Performance index for symbol-based lookups in pricing service
+    symbolIdx: index('idx_tokens_symbol').on(table.symbol),
   })
 );
 
@@ -139,25 +143,37 @@ export const accounts = pgTable(
   (table) => ({
     // Unique constraint for account name per user per institution
     uniqueUserInstitutionAccountName: unique().on(table.userId, table.institutionId, table.name),
+    // Performance indexes for account queries
+    userIdIdx: index('idx_accounts_user_id').on(table.userId),
+    institutionIdIdx: index('idx_accounts_institution_id').on(table.institutionId),
   })
 );
 
 // Holdings table (token balances in accounts) - User-specific for consistency
-export const holdings = pgTable('holdings', {
-  id: uuid('id').defaultRandom().primaryKey(),
-  userId: uuid('user_id')
-    .notNull()
-    .references(() => users.id, { onDelete: 'cascade' }),
-  accountId: uuid('account_id')
-    .notNull()
-    .references(() => accounts.id, { onDelete: 'cascade' }),
-  tokenId: uuid('token_id')
-    .notNull()
-    .references(() => tokens.id, { onDelete: 'restrict' }), // Prevent token deletion if holdings exist
-  balance: text('balance').notNull(), // Store as string for Decimal.js precision
-  lastUpdated: timestamp('last_updated', { withTimezone: true }).notNull().defaultNow(),
-  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-});
+export const holdings = pgTable(
+  'holdings',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    accountId: uuid('account_id')
+      .notNull()
+      .references(() => accounts.id, { onDelete: 'cascade' }),
+    tokenId: uuid('token_id')
+      .notNull()
+      .references(() => tokens.id, { onDelete: 'restrict' }), // Prevent token deletion if holdings exist
+    balance: text('balance').notNull(), // Store as string for Decimal.js precision
+    lastUpdated: timestamp('last_updated', { withTimezone: true }).notNull().defaultNow(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => ({
+    // Performance indexes for frequently queried fields
+    userIdIdx: index('idx_holdings_user_id').on(table.userId),
+    accountIdIdx: index('idx_holdings_account_id').on(table.accountId),
+    tokenIdIdx: index('idx_holdings_token_id').on(table.tokenId),
+  })
+);
 
 // Token prices table (historical prices)
 export const tokenPrices = pgTable(
@@ -178,31 +194,46 @@ export const tokenPrices = pgTable(
   (table) => ({
     // Unique constraint for one price per token per base token per timestamp
     uniqueTokenPriceTimestamp: unique().on(table.tokenId, table.baseTokenId, table.timestamp),
+    // Performance indexes for price lookups
+    pricesLookupIdx: index('idx_token_prices_lookup').on(
+      table.tokenId,
+      table.baseTokenId,
+      table.timestamp.desc()
+    ),
+    timestampIdx: index('idx_token_prices_timestamp').on(table.timestamp.desc()),
   })
 );
 
 // Transactions table - User-specific for consistency
-export const transactions = pgTable('transactions', {
-  id: uuid('id').defaultRandom().primaryKey(),
-  userId: uuid('user_id')
-    .notNull()
-    .references(() => users.id, { onDelete: 'cascade' }),
-  holdingId: uuid('holding_id')
-    .notNull()
-    .references(() => holdings.id, { onDelete: 'cascade' }),
-  typeId: uuid('type_id')
-    .notNull()
-    .references(() => transactionTypes.id, { onDelete: 'restrict' }), // Reference to transaction_types
-  amount: text('amount').notNull(), // Store as string for Decimal.js precision
-  fee: text('fee').notNull().default('0'), // Store as string for Decimal.js precision
-  feeTokenId: uuid('fee_token_id') // Currency of the fee
-    .references(() => tokens.id, { onDelete: 'restrict' }),
-  description: text('description'),
-  reference: text('reference'),
-  timestamp: timestamp('timestamp', { withTimezone: true }).notNull(),
-  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
-});
+export const transactions = pgTable(
+  'transactions',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    holdingId: uuid('holding_id')
+      .notNull()
+      .references(() => holdings.id, { onDelete: 'cascade' }),
+    typeId: uuid('type_id')
+      .notNull()
+      .references(() => transactionTypes.id, { onDelete: 'restrict' }), // Reference to transaction_types
+    amount: text('amount').notNull(), // Store as string for Decimal.js precision
+    fee: text('fee').notNull().default('0'), // Store as string for Decimal.js precision
+    feeTokenId: uuid('fee_token_id') // Currency of the fee
+      .references(() => tokens.id, { onDelete: 'restrict' }),
+    description: text('description'),
+    reference: text('reference'),
+    timestamp: timestamp('timestamp', { withTimezone: true }).notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => ({
+    // Performance indexes for transaction queries
+    userIdIdx: index('idx_transactions_user_id').on(table.userId),
+    holdingIdIdx: index('idx_transactions_holding_id').on(table.holdingId),
+  })
+);
 
 // Relations
 export const institutionTypesRelations = relations(institutionTypes, ({ many }) => ({

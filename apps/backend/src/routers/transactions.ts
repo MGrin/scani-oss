@@ -4,8 +4,9 @@ import { and, desc, eq, gte, lte, not } from 'drizzle-orm';
 import { z } from 'zod';
 import { db } from '../db/connection';
 import * as schema from '../db/schema';
-import { getUserId } from '../middleware/auth';
+import { getUserId, requireAuth } from '../middleware/auth';
 import { PricingService } from '../services/pricing';
+import { getBaseCurrencyToken } from '../services/user-context';
 import { protectedProcedure, router } from '../trpc';
 
 // Type assertion for router operations (development/test environment uses SQLite)
@@ -14,34 +15,15 @@ const routerDb = db as ReturnType<typeof import('drizzle-orm/postgres-js').drizz
 export const transactionsRouter = router({
   // Get all transactions
   getAll: protectedProcedure.query(async ({ ctx }) => {
-    const userId = getUserId(ctx);
+    const { dbUser } = requireAuth(ctx);
 
-    // Get user's base currency
-    const user = await routerDb
-      .select({
-        baseCurrencyId: schema.users.baseCurrencyId,
-      })
-      .from(schema.users)
-      .where(eq(schema.users.id, userId))
-      .limit(1);
-
-    if (!user.length || !user[0]?.baseCurrencyId) {
-      throw new Error('User or base currency not found');
+    if (!dbUser.baseCurrencyId) {
+      throw new Error('User base currency not found');
     }
 
-    const baseCurrency = await routerDb
-      .select({
-        symbol: schema.tokens.symbol,
-      })
-      .from(schema.tokens)
-      .where(eq(schema.tokens.id, user[0].baseCurrencyId))
-      .limit(1);
-
-    if (!baseCurrency.length || !baseCurrency[0]?.symbol) {
-      throw new Error('Base currency not found');
-    }
-
-    const baseCurrencySymbol = baseCurrency[0].symbol;
+    // Use user context service to get base currency efficiently
+    const baseCurrency = await getBaseCurrencyToken(dbUser.baseCurrencyId);
+    const baseCurrencySymbol = baseCurrency.symbol;
 
     const transactions = await routerDb
       .select({
@@ -68,7 +50,7 @@ export const transactionsRouter = router({
       )
       .innerJoin(schema.holdings, eq(schema.transactions.holdingId, schema.holdings.id))
       .innerJoin(schema.tokens, eq(schema.holdings.tokenId, schema.tokens.id))
-      .where(eq(schema.holdings.userId, userId))
+      .where(eq(schema.holdings.userId, dbUser.id))
       .orderBy(desc(schema.transactions.timestamp));
 
     // Convert amounts to base currency
@@ -361,7 +343,20 @@ export const transactionsRouter = router({
         data: UpdateTransactionSchema,
       })
     )
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
+      const userId = getUserId(ctx);
+
+      // First verify the transaction belongs to the user by checking holding ownership
+      const [transactionOwnership] = await routerDb
+        .select({ id: schema.transactions.id })
+        .from(schema.transactions)
+        .innerJoin(schema.holdings, eq(schema.transactions.holdingId, schema.holdings.id))
+        .where(and(eq(schema.transactions.id, input.id), eq(schema.holdings.userId, userId)))
+        .limit(1);
+
+      if (!transactionOwnership) {
+        throw new Error('Transaction not found');
+      }
       const updateData = {
         ...input.data,
         // Monetary fields are already strings in the schema
@@ -411,18 +406,34 @@ export const transactionsRouter = router({
     }),
 
   // Delete transaction
-  delete: protectedProcedure.input(z.object({ id: z.string() })).mutation(async ({ input }) => {
-    const [deletedTransaction] = await routerDb
-      .delete(schema.transactions)
-      .where(eq(schema.transactions.id, input.id))
-      .returning();
+  delete: protectedProcedure
+    .input(z.object({ id: z.string() }))
+    .mutation(async ({ input, ctx }) => {
+      const userId = getUserId(ctx);
 
-    if (!deletedTransaction) {
-      throw new Error('Transaction not found');
-    }
+      // First verify the transaction belongs to the user by checking holding ownership
+      const [transactionOwnership] = await routerDb
+        .select({ id: schema.transactions.id })
+        .from(schema.transactions)
+        .innerJoin(schema.holdings, eq(schema.transactions.holdingId, schema.holdings.id))
+        .where(and(eq(schema.transactions.id, input.id), eq(schema.holdings.userId, userId)))
+        .limit(1);
 
-    return { success: true, deleted: deletedTransaction };
-  }),
+      if (!transactionOwnership) {
+        throw new Error('Transaction not found');
+      }
+
+      const [deletedTransaction] = await routerDb
+        .delete(schema.transactions)
+        .where(eq(schema.transactions.id, input.id))
+        .returning();
+
+      if (!deletedTransaction) {
+        throw new Error('Failed to delete transaction');
+      }
+
+      return { success: true, deleted: deletedTransaction };
+    }),
 
   // Get transactions by date range
   getByDateRange: protectedProcedure
@@ -470,7 +481,7 @@ export const transactionsRouter = router({
       })
     )
     .query(async ({ input, ctx }) => {
-      const userId = getUserId(ctx);
+      const { dbUser } = requireAuth(ctx);
 
       // Default to current month if not specified
       const now = new Date();
@@ -481,14 +492,7 @@ export const transactionsRouter = router({
       const startOfMonth = new Date(targetYear, targetMonth, 1);
       const endOfMonth = new Date(targetYear, targetMonth + 1, 0, 23, 59, 59);
 
-      // Get user's base currency
-      const [user] = await routerDb
-        .select({ baseCurrencyId: schema.users.baseCurrencyId })
-        .from(schema.users)
-        .where(eq(schema.users.id, userId))
-        .limit(1);
-
-      if (!user || !user.baseCurrencyId) {
+      if (!dbUser.baseCurrencyId) {
         return {
           year: targetYear,
           month: targetMonth,
@@ -499,12 +503,8 @@ export const transactionsRouter = router({
         };
       }
 
-      // Get base currency token
-      const [baseCurrency] = await routerDb
-        .select({ symbol: schema.tokens.symbol })
-        .from(schema.tokens)
-        .where(eq(schema.tokens.id, user.baseCurrencyId))
-        .limit(1);
+      // Get base currency token using user context service
+      const baseCurrency = await getBaseCurrencyToken(dbUser.baseCurrencyId);
 
       if (!baseCurrency) {
         return {
@@ -538,7 +538,7 @@ export const transactionsRouter = router({
         .innerJoin(schema.tokens, eq(schema.holdings.tokenId, schema.tokens.id))
         .where(
           and(
-            eq(schema.holdings.userId, userId),
+            eq(schema.holdings.userId, dbUser.id),
             gte(schema.transactions.timestamp, startOfMonth),
             lte(schema.transactions.timestamp, endOfMonth),
             // Exclude opening balance transactions from monthly aggregations
@@ -558,7 +558,7 @@ export const transactionsRouter = router({
 
           // Convert amount to base currency
           let convertedAmount: Decimal;
-          if (transaction.tokenId === user.baseCurrencyId) {
+          if (transaction.tokenId === dbUser.baseCurrencyId) {
             // Same currency, no conversion needed
             convertedAmount = amount;
           } else {

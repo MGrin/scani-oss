@@ -1,5 +1,5 @@
 import { eq } from 'drizzle-orm';
-import { z } from 'zod';
+
 import { db } from '../db/connection';
 import * as schema from '../db/schema';
 import { publicProcedure, router } from '../trpc';
@@ -23,66 +23,4 @@ export const institutionTypesRouter = router({
       displayOrder: type.displayOrder,
     }));
   }),
-
-  /**
-   * Get institution type by ID
-   */
-  getById: publicProcedure
-    .input(
-      z.object({
-        id: z.string(),
-      })
-    )
-    .query(async ({ input }) => {
-      const [institutionType] = await db
-        .select()
-        .from(schema.institutionTypes)
-        .where(eq(schema.institutionTypes.id, input.id))
-        .limit(1);
-
-      if (!institutionType) {
-        throw new Error(`Institution type with ID ${input.id} not found`);
-      }
-
-      return {
-        id: institutionType.id,
-        code: institutionType.code,
-        name: institutionType.name,
-        description: institutionType.description,
-        displayOrder: institutionType.displayOrder,
-        isActive: institutionType.isActive,
-        createdAt: institutionType.createdAt,
-        updatedAt: institutionType.updatedAt,
-      };
-    }),
-
-  /**
-   * Get institution type by code
-   */
-  getByCode: publicProcedure
-    .input(
-      z.object({
-        code: z.string(),
-      })
-    )
-    .query(async ({ input }) => {
-      const [institutionType] = await db
-        .select()
-        .from(schema.institutionTypes)
-        .where(eq(schema.institutionTypes.code, input.code))
-        .limit(1);
-
-      if (!institutionType) {
-        throw new Error(`Institution type with code ${input.code} not found`);
-      }
-
-      return {
-        id: institutionType.id,
-        code: institutionType.code,
-        name: institutionType.name,
-        description: institutionType.description,
-        displayOrder: institutionType.displayOrder,
-        isActive: institutionType.isActive,
-      };
-    }),
 });

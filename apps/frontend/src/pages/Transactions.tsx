@@ -1,6 +1,6 @@
 import type { Transaction } from '@scani/shared';
 import { CreditCard, Plus } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import {
   HoldingFilterSelector,
@@ -58,6 +58,13 @@ export function Transactions() {
   const { data: holdings } = trpc.holdings.getAll.useQuery();
   const { data: tokens } = trpc.tokens.getAll.useQuery();
   const { data: userPrefs } = trpc.users.getCurrent.useQuery();
+
+  // Find user's base currency from tokens
+  const baseCurrency = useMemo(() => {
+    if (!userPrefs?.baseCurrencyId || !tokens) return null;
+    return tokens.find((token) => token.id === userPrefs.baseCurrencyId) || null;
+  }, [userPrefs?.baseCurrencyId, tokens]);
+
   const { data: transactionTypes } = trpc.transactionTypes.getAll.useQuery();
 
   // Determine if we're in hierarchical mode
@@ -370,7 +377,7 @@ export function Transactions() {
         entityLabel="transactions"
         totalBalance={effectiveFilterByHolding ? totalValue : allTransactionsValue}
         filteredBalance={totalValue}
-        baseCurrency={userPrefs?.baseCurrency?.symbol}
+        baseCurrency={baseCurrency?.symbol}
         searchTerm={filterValues.search || ''}
         onSearchChange={(value) => updateFilter('search', value)}
         searchPlaceholder="Search by description, type, account, or token..."

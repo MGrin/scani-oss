@@ -121,6 +121,20 @@ const app = new Elysia()
       requestId,
     };
   })
+  // Add security headers middleware
+  .onBeforeHandle(({ set }) => {
+    // Prevent MIME type sniffing
+    set.headers = set.headers || {};
+    set.headers['X-Content-Type-Options'] = 'nosniff';
+    // Prevent clickjacking
+    set.headers['X-Frame-Options'] = 'DENY';
+    // Enable XSS protection
+    set.headers['X-XSS-Protection'] = '1; mode=block';
+    // Referrer policy
+    set.headers['Referrer-Policy'] = 'strict-origin-when-cross-origin';
+    // Content Security Policy for API responses
+    set.headers['Content-Security-Policy'] = "default-src 'none'";
+  })
   .use(
     cors({
       origin: process.env.FRONTEND_URL ?? 'http://localhost:5173',

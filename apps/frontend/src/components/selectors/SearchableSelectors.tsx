@@ -22,6 +22,7 @@ interface SearchableSelectProps {
   newItemValue?: string;
   id?: string;
   className?: string;
+  isActive?: boolean; // Whether the filter has a non-default value
 }
 
 export function SearchableSelect({
@@ -34,6 +35,7 @@ export function SearchableSelect({
   newItemValue,
   id,
   className,
+  isActive = false,
 }: SearchableSelectProps) {
   // Add the "new item" option if provided
   const allItems =
@@ -56,7 +58,9 @@ export function SearchableSelect({
         placeholder={placeholder}
         emptyMessage={emptyMessage}
         items={allItems}
-        className={className}
+        className={`w-full ${
+          isActive ? 'border-black border-2' : 'border border-input'
+        } ${className || ''}`}
       />
     </div>
   );
@@ -86,6 +90,7 @@ export function AccountSelector({
       subtitle: account.typeName || undefined,
     })) || [];
 
+  const isActive = value !== '' && value !== 'all' && value !== 'new';
   return (
     <SearchableSelect
       id={id}
@@ -100,6 +105,7 @@ export function AccountSelector({
       }
       newItemLabel="Create New Account"
       newItemValue="new"
+      isActive={isActive}
     />
   );
 }
@@ -141,6 +147,7 @@ export function InstitutionSelector({
       };
     }) || [];
 
+  const isActive = value !== '' && value !== 'all' && value !== 'new';
   return (
     <SearchableSelect
       id={id}
@@ -155,6 +162,7 @@ export function InstitutionSelector({
       }
       newItemLabel="Create New Institution"
       newItemValue="new"
+      isActive={isActive}
     />
   );
 }
@@ -229,6 +237,7 @@ export function TokenFilterSelector({
     ? [{ value: 'all', label: 'All Tokens' }, ...tokenOptions]
     : tokenOptions;
 
+  const isActive = value !== '' && value !== 'all';
   return (
     <SearchableSelect
       value={value}
@@ -236,6 +245,7 @@ export function TokenFilterSelector({
       placeholder={placeholder}
       items={allOptions}
       emptyMessage="No tokens found."
+      isActive={isActive}
     />
   );
 }
@@ -267,6 +277,7 @@ export function TokenTypeSelector({
       subtitle: type.description || undefined,
     })) || [];
 
+  const isActive = value !== '' && value !== 'all';
   return (
     <SearchableSelect
       value={value}
@@ -274,6 +285,7 @@ export function TokenTypeSelector({
       placeholder={placeholder}
       items={tokenTypeOptions}
       emptyMessage="No token types found."
+      isActive={isActive}
     />
   );
 }
@@ -305,6 +317,7 @@ export function AccountTypeSelector({
       subtitle: type.description || undefined,
     })) || [];
 
+  const isActive = value !== '' && value !== 'all';
   return (
     <SearchableSelect
       value={value}
@@ -312,6 +325,7 @@ export function AccountTypeSelector({
       placeholder={placeholder}
       items={accountTypeOptions}
       emptyMessage="No account types found."
+      isActive={isActive}
     />
   );
 }
@@ -342,6 +356,7 @@ export function InstitutionTypeSelector({
       subtitle: type.description || undefined,
     })) || [];
 
+  const isActive = value !== '' && value !== 'all';
   return (
     <SearchableSelect
       value={value}
@@ -349,6 +364,7 @@ export function InstitutionTypeSelector({
       placeholder={placeholder}
       items={institutionTypeOptions}
       emptyMessage="No institution types found."
+      isActive={isActive}
     />
   );
 }
@@ -424,6 +440,7 @@ export function InstitutionFilterSelector({
       placeholder={placeholder}
       items={allOptions}
       emptyMessage="No institutions found."
+      isActive={value !== 'all' && value !== ''}
     />
   );
 }
@@ -462,6 +479,7 @@ export function AccountFilterSelector({
       placeholder={placeholder}
       items={allOptions}
       emptyMessage="No accounts found."
+      isActive={value !== 'all' && value !== ''}
     />
   );
 }

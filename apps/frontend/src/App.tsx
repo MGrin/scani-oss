@@ -46,6 +46,7 @@ function App() {
                     </ProtectedRoute>
                   }
                 />
+
                 <Route
                   path="/holdings"
                   element={

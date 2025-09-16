@@ -44,8 +44,11 @@ export function Holdings() {
 
   const { data: holdings, isLoading: holdingsLoading } = trpc.holdings.getAll.useQuery();
   const { data: accounts } = trpc.accounts.getAll.useQuery();
-  const { data: tokens } = trpc.tokens.getAll.useQuery();
-  const { data: userPrefs } = trpc.users.getCurrent.useQuery();
+  // Use optimized endpoints - only get tokens user has holdings for, and base currency separately
+  const { data: tokens } = trpc.tokens.getByUserId.useQuery();
+
+  const { data: baseCurrency } = trpc.users.getBaseCurrency.useQuery();
+
   const { data: institutions } = trpc.institutions.getAll.useQuery();
   const { data: tokenTypes } = trpc.tokenTypes.getAll.useQuery();
   const { data: portfolioValue, isLoading: portfolioLoading } =
@@ -293,7 +296,7 @@ export function Holdings() {
         entityLabel="holdings"
         totalBalance={totalValue}
         filteredBalance={filteredValue}
-        baseCurrency={userPrefs?.baseCurrency?.symbol}
+        baseCurrency={baseCurrency?.symbol}
         searchTerm={searchTerm}
         onSearchChange={setSearchTerm}
         searchPlaceholder="Search holdings by token name, symbol, or account..."
@@ -354,7 +357,7 @@ export function Holdings() {
                   institution: holding.institution || undefined,
                 }}
                 userPrefs={{
-                  baseCurrency: userPrefs?.baseCurrency || undefined,
+                  baseCurrency: baseCurrency || undefined,
                 }}
                 onView={() => handleViewHolding(holding)}
                 onEdit={() => handleEditHolding(holding)}
@@ -408,7 +411,7 @@ export function Holdings() {
                   <MonetaryValue
                     type="currency"
                     value={holdingToView.value}
-                    currency={userPrefs?.baseCurrency?.symbol}
+                    currency={baseCurrency?.symbol}
                     size="lg"
                     className="font-semibold"
                   />

@@ -67,8 +67,9 @@ export function Accounts() {
   const { data: accounts, isLoading } = trpc.accounts.getAll.useQuery();
   const { data: holdings } = trpc.holdings.getAll.useQuery();
   const { data: institutions } = trpc.institutions.getAll.useQuery();
-  const { data: tokens } = trpc.tokens.getAll.useQuery();
-  const { data: userPrefs } = trpc.users.getCurrent.useQuery();
+
+  const { data: baseCurrency } = trpc.users.getBaseCurrency.useQuery();
+
   const { data: accountSummaries, isLoading: summariesLoading } =
     trpc.accounts.getSummaries.useQuery();
   const { data: accountTypes } = trpc.accountTypes.getAll.useQuery();
@@ -192,7 +193,7 @@ export function Accounts() {
     return accountSummary?.totalBalance ?? 0;
   };
 
-  if (isLoading || summariesLoading || !holdings || !institutions || !tokens || !accountSummaries) {
+  if (isLoading || summariesLoading || !holdings || !institutions || !accountSummaries) {
     return (
       <div className="space-y-6">
         <PageHeader title="Accounts" subtitle="Manage your financial accounts" loading={true} />
@@ -256,7 +257,7 @@ export function Accounts() {
         entityLabel="accounts"
         totalBalance={totalBalance}
         filteredBalance={filteredBalance}
-        baseCurrency={userPrefs?.baseCurrency?.symbol}
+        baseCurrency={baseCurrency?.symbol}
         searchTerm={searchTerm}
         onSearchChange={setSearchTerm}
         searchPlaceholder="Search accounts by name, type, institution, or account number..."
@@ -324,7 +325,7 @@ export function Accounts() {
                     holdingCount: accountHoldings.length,
                   }}
                   userPrefs={{
-                    baseCurrency: userPrefs?.baseCurrency || undefined,
+                    baseCurrency: baseCurrency || undefined,
                   }}
                   showInstitution={!isHierarchicalMode}
                   onDelete={() => handleDeleteAccount(account as unknown as Account)}

@@ -3,64 +3,22 @@ import { and, desc, eq, ne } from 'drizzle-orm';
 import { z } from 'zod';
 import { db } from '../db/connection';
 import * as schema from '../db/schema';
-import { getUserId } from '../middleware/auth';
+import { getUserId, requireAuth } from '../middleware/auth';
 import { PricingService } from '../services/pricing';
 import { protectedProcedure, router } from '../trpc';
 
 export const holdingsRouter = router({
   // Get all holdings
-  getAll: protectedProcedure.query(async () => {
+  getAll: protectedProcedure.query(async ({ ctx }) => {
+    const { dbUser } = requireAuth(ctx);
+
     const holdings = await db
       .select()
       .from(schema.holdings)
+      .where(eq(schema.holdings.userId, dbUser.id))
       .orderBy(desc(schema.holdings.lastUpdated));
     return holdings;
   }),
-
-  // Get holdings by account ID
-  getByAccountId: protectedProcedure
-    .input(z.object({ accountId: z.string() }))
-    .query(async ({ input }) => {
-      const holdings = await db
-        .select()
-        .from(schema.holdings)
-        .where(eq(schema.holdings.accountId, input.accountId))
-        .orderBy(desc(schema.holdings.lastUpdated));
-      return holdings;
-    }),
-
-  // Get holdings by token ID
-  getByTokenId: protectedProcedure
-    .input(z.object({ tokenId: z.string() }))
-    .query(async ({ input }) => {
-      const holdings = await db
-        .select()
-        .from(schema.holdings)
-        .where(eq(schema.holdings.tokenId, input.tokenId))
-        .orderBy(desc(schema.holdings.lastUpdated));
-      return holdings;
-    }),
-
-  // Get holding by account and token
-  getByAccountAndToken: protectedProcedure
-    .input(z.object({ accountId: z.string(), tokenId: z.string() }))
-    .query(async ({ input }) => {
-      const [holding] = await db
-        .select()
-        .from(schema.holdings)
-        .where(
-          and(
-            eq(schema.holdings.accountId, input.accountId),
-            eq(schema.holdings.tokenId, input.tokenId)
-          )
-        )
-        .limit(1);
-
-      if (!holding) {
-        throw new Error('Holding not found');
-      }
-      return holding;
-    }),
 
   // Check if holding already exists (for duplicate prevention)
   checkDuplicate: protectedProcedure
@@ -93,19 +51,6 @@ export const holdingsRouter = router({
         holding: existingHolding || null,
       };
     }),
-  // Get holding by ID
-  getById: protectedProcedure.input(z.object({ id: z.string() })).query(async ({ input }) => {
-    const [holding] = await db
-      .select()
-      .from(schema.holdings)
-      .where(eq(schema.holdings.id, input.id))
-      .limit(1);
-
-    if (!holding) {
-      throw new Error('Holding not found');
-    }
-    return holding;
-  }),
 
   // Create new holding
   create: protectedProcedure
@@ -115,7 +60,8 @@ export const holdingsRouter = router({
       })
     )
     .mutation(async ({ input, ctx }) => {
-      const userId = getUserId(ctx);
+      const { dbUser } = requireAuth(ctx);
+      const userId = dbUser.id;
       const now = new Date();
 
       // Validate account existence
@@ -158,20 +104,12 @@ export const holdingsRouter = router({
 
         // Fetch current token price for the user's base currency
         try {
-          // Get user's base currency
-          const [user] = await trx
-            .select({
-              baseCurrencyId: schema.users.baseCurrencyId,
-            })
-            .from(schema.users)
-            .where(eq(schema.users.id, userId))
-            .limit(1);
-
-          if (user?.baseCurrencyId) {
+          // Use cached user data instead of querying database
+          if (dbUser.baseCurrencyId) {
             const [baseCurrency] = await trx
               .select()
               .from(schema.tokens)
-              .where(eq(schema.tokens.id, user.baseCurrencyId))
+              .where(eq(schema.tokens.id, dbUser.baseCurrencyId))
               .limit(1);
 
             if (baseCurrency && token.symbol !== baseCurrency.symbol) {
@@ -233,7 +171,8 @@ export const holdingsRouter = router({
         data: UpdateHoldingSchema,
       })
     )
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
+      const userId = getUserId(ctx);
       const updateData = {
         ...input.data,
         lastUpdated: input.data.lastUpdated || new Date(),
@@ -242,34 +181,7 @@ export const holdingsRouter = router({
       const [updatedHolding] = await db
         .update(schema.holdings)
         .set(updateData)
-        .where(eq(schema.holdings.id, input.id))
-        .returning();
-
-      if (!updatedHolding) {
-        throw new Error('Holding not found');
-      }
-
-      return updatedHolding;
-    }),
-
-  // Update holding balance
-  updateBalance: protectedProcedure
-    .input(
-      z.object({
-        id: z.string(),
-        balance: z.string(), // Changed to string
-      })
-    )
-    .mutation(async ({ input }) => {
-      const updateData: Partial<typeof schema.holdings.$inferInsert> = {
-        balance: input.balance, // Now already a string
-        lastUpdated: new Date(),
-      };
-
-      const [updatedHolding] = await db
-        .update(schema.holdings)
-        .set(updateData)
-        .where(eq(schema.holdings.id, input.id))
+        .where(and(eq(schema.holdings.id, input.id), eq(schema.holdings.userId, userId)))
         .returning();
 
       if (!updatedHolding) {
@@ -280,16 +192,20 @@ export const holdingsRouter = router({
     }),
 
   // Delete holding
-  delete: protectedProcedure.input(z.object({ id: z.string() })).mutation(async ({ input }) => {
-    const [deletedHolding] = await db
-      .delete(schema.holdings)
-      .where(eq(schema.holdings.id, input.id))
-      .returning();
+  delete: protectedProcedure
+    .input(z.object({ id: z.string() }))
+    .mutation(async ({ input, ctx }) => {
+      const { dbUser } = requireAuth(ctx);
 
-    if (!deletedHolding) {
-      throw new Error('Holding not found');
-    }
+      const [deletedHolding] = await db
+        .delete(schema.holdings)
+        .where(and(eq(schema.holdings.id, input.id), eq(schema.holdings.userId, dbUser.id)))
+        .returning();
 
-    return { success: true, deleted: deletedHolding };
-  }),
+      if (!deletedHolding) {
+        throw new Error('Holding not found');
+      }
+
+      return { success: true, deleted: deletedHolding };
+    }),
 });

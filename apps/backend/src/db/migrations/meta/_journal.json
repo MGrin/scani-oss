@@ -134,6 +134,13 @@
       "when": 1757885649890,
       "tag": "0018_seed_private_token_type",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1757988933550,
+      "tag": "0019_nostalgic_exodus",
+      "breakpoints": true
     }
   ]
 }

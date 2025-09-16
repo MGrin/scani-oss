@@ -1,5 +1,5 @@
 import { Plus } from 'lucide-react';
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { PrivateTokenForm } from '@/components/PrivateTokenForm';
 import { TokenTypeSelector } from '@/components/selectors/SearchableSelectors';
@@ -49,6 +49,13 @@ export function Tokens() {
     trpc.tokens.getWithTotalValues.useQuery();
   const { data: tokenTypes } = trpc.tokenTypes.getAll.useQuery();
   const { data: userPrefs } = trpc.users.getCurrent.useQuery();
+  const { data: tokens } = trpc.tokens.getAll.useQuery();
+
+  // Find user's base currency from tokens
+  const baseCurrency = useMemo(() => {
+    if (!userPrefs?.baseCurrencyId || !tokens) return null;
+    return tokens.find((token) => token.id === userPrefs.baseCurrencyId) || null;
+  }, [userPrefs?.baseCurrencyId, tokens]);
 
   const utils = trpc.useUtils();
 
@@ -113,7 +120,7 @@ export function Tokens() {
         entityLabel="tokens"
         totalBalance={totalValue}
         filteredBalance={filteredValue}
-        baseCurrency={userPrefs?.baseCurrency?.symbol}
+        baseCurrency={baseCurrency?.symbol}
         searchTerm={searchTerm}
         onSearchChange={setSearchTerm}
         searchPlaceholder="Search tokens by symbol, name, or type..."

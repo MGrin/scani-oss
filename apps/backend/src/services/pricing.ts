@@ -30,9 +30,14 @@ export class PricingService {
     const { tokenSymbol, baseCurrency, timestamp, live = false } = request;
 
     // First, try to get from cache
-    const cachedPrice = await this.getCachedPrice(tokenSymbol, baseCurrency, timestamp);
+    const cachedPrice = await this.getCachedPrice(tokenSymbol, baseCurrency, timestamp, live);
     if (cachedPrice) {
       return cachedPrice.price;
+    }
+
+    // If live=false and we didn't find a cached price, don't fetch from provider
+    if (!live) {
+      throw new Error(`No cached price found for ${tokenSymbol}/${baseCurrency}`);
     }
 
     // Get token info to determine provider
@@ -80,35 +85,50 @@ export class PricingService {
   private async getCachedPrice(
     tokenSymbol: string,
     baseCurrency: string,
-    timestamp: Date
+    timestamp: Date,
+    requireFresh: boolean = true
   ): Promise<{ price: string } | null> {
     const token = await this.getTokenBySymbol(tokenSymbol);
     const baseCurrencyToken = await this.getTokenBySymbol(baseCurrency);
 
     if (!token || !baseCurrencyToken) return null;
 
-    // Look for price within 1 hour window for current prices, 1 day for historical
-    const isLive = this.isLivePrice(timestamp);
-    const timeWindow = isLive ? 60 * 60 * 1000 : 24 * 60 * 60 * 1000; // 1 hour or 1 day
+    if (requireFresh) {
+      // Look for price within time window for fresh prices
+      const isLive = this.isLivePrice(timestamp);
+      const timeWindow = isLive ? 60 * 60 * 1000 : 24 * 60 * 60 * 1000; // 1 hour or 1 day
 
-    const startTime = new Date(timestamp.getTime() - timeWindow);
-    const endTime = new Date(timestamp.getTime() + timeWindow);
+      const startTime = new Date(timestamp.getTime() - timeWindow);
+      const endTime = new Date(timestamp.getTime() + timeWindow);
 
-    const result = await this.database
-      .select()
-      .from(tokenPrices)
-      .where(
-        and(
-          eq(tokenPrices.tokenId, token.id),
-          eq(tokenPrices.baseTokenId, baseCurrencyToken.id),
-          gte(tokenPrices.timestamp, startTime),
-          lte(tokenPrices.timestamp, endTime)
+      const result = await this.database
+        .select()
+        .from(tokenPrices)
+        .where(
+          and(
+            eq(tokenPrices.tokenId, token.id),
+            eq(tokenPrices.baseTokenId, baseCurrencyToken.id),
+            gte(tokenPrices.timestamp, startTime),
+            lte(tokenPrices.timestamp, endTime)
+          )
         )
-      )
-      .orderBy(desc(tokenPrices.timestamp))
-      .limit(1);
+        .orderBy(desc(tokenPrices.timestamp))
+        .limit(1);
 
-    return result[0] ? { price: result[0].price } : null;
+      return result[0] ? { price: result[0].price } : null;
+    } else {
+      // Get the latest available cached price regardless of age
+      const result = await this.database
+        .select()
+        .from(tokenPrices)
+        .where(
+          and(eq(tokenPrices.tokenId, token.id), eq(tokenPrices.baseTokenId, baseCurrencyToken.id))
+        )
+        .orderBy(desc(tokenPrices.timestamp))
+        .limit(1);
+
+      return result[0] ? { price: result[0].price } : null;
+    }
   }
 
   private async getTokenBySymbol(symbol: string): Promise<Token | null> {
