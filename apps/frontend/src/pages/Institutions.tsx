@@ -1,44 +1,29 @@
 import { Building2, Plus } from 'lucide-react';
-import { useEffect, useState } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+
+import { useNavigate } from 'react-router-dom';
+import { InstitutionRow } from '@/components/InstitutionRow';
 import { InstitutionTypeSelector } from '@/components/selectors/SearchableSelectors';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { LoadingSpinner } from '@/components/ui/loading';
 import { PageAggregation } from '@/components/ui/page-aggregation';
 import { PageHeader } from '@/components/ui/page-header';
-import { ItemCard } from '@/components/ui/summary-cards';
+import { useFilters } from '@/hooks/useFilters';
 import type { ApiInstitution } from '@/lib/api-types';
-import { getInstitutionTypeIcon } from '@/lib/icons';
+
 import { trpc } from '@/lib/trpc';
 
 export function Institutions() {
   const navigate = useNavigate();
-  const [searchParams, setSearchParams] = useSearchParams();
-  const [searchTerm, setSearchTerm] = useState('');
-  const [filterBy, setFilterBy] = useState<string>(searchParams.get('type') || 'all');
 
-  // Update filter when URL parameters change
-  useEffect(() => {
-    const typeParam = searchParams.get('type');
-    if (typeParam) {
-      setFilterBy(typeParam);
-    } else {
-      setFilterBy('all');
-    }
-  }, [searchParams]);
-
-  // Update URL when filter changes
-  const handleFilterChange = (newFilter: string) => {
-    setFilterBy(newFilter);
-    const newSearchParams = new URLSearchParams(searchParams);
-    if (newFilter === 'all') {
-      newSearchParams.delete('type');
-    } else {
-      newSearchParams.set('type', newFilter);
-    }
-    setSearchParams(newSearchParams);
-  };
+  const {
+    filters: filterValues,
+    updateFilter,
+    clearAllFilters,
+  } = useFilters([
+    { key: 'search', defaultValue: '' },
+    { key: 'type', defaultValue: 'all' },
+  ]);
 
   const { data: institutions, isLoading } = trpc.institutions.getByUserId.useQuery();
   const { data: institutionTypes } = trpc.institutionTypes.getAll.useQuery();
@@ -48,22 +33,16 @@ export function Institutions() {
   const { data: holdings } = trpc.holdings.getAll.useQuery();
   const { data: tokens } = trpc.tokens.getAll.useQuery();
 
-  const getInstitutionTypeLabel = (type: string) => {
-    const institutionType = institutionTypes?.find(
-      (t: { code: string; name: string }) => t.code === type
-    );
-    return institutionType?.name || type;
-  };
-
   // Filter institutions based on search and type
   const filteredInstitutions =
     institutions?.filter((institution: ApiInstitution) => {
       const matchesSearch =
-        !searchTerm ||
-        institution.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        institution.description?.toLowerCase().includes(searchTerm.toLowerCase());
+        !(filterValues.search || '') ||
+        institution.name.toLowerCase().includes((filterValues.search || '').toLowerCase()) ||
+        institution.description?.toLowerCase().includes((filterValues.search || '').toLowerCase());
 
-      const matchesFilter = filterBy === 'all' || institution.type === filterBy;
+      const matchesFilter =
+        (filterValues.type || 'all') === 'all' || institution.type === (filterValues.type || 'all');
 
       return matchesSearch && matchesFilter;
     }) || [];
@@ -163,24 +142,25 @@ export function Institutions() {
         totalBalance={totalBalance}
         filteredBalance={filteredBalance}
         baseCurrency={userPrefs?.baseCurrency?.symbol}
-        searchTerm={searchTerm}
-        onSearchChange={setSearchTerm}
+        searchTerm={filterValues.search || ''}
+        onSearchChange={(value) => updateFilter('search', value)}
         searchPlaceholder="Search institutions by name, type, or description..."
-        filterBy={filterBy}
-        onFilterChange={handleFilterChange}
-        customFilter={
-          <div className="md:w-64">
-            <InstitutionTypeSelector
-              value={filterBy}
-              onValueChange={handleFilterChange}
-              institutionTypes={[
-                { id: 'all', code: 'all', name: 'All Types' },
-                ...(institutionTypes || []),
-              ]}
-              placeholder="Filter by type..."
-            />
-          </div>
+        hasActiveFilters={
+          (filterValues.search || '') !== '' || (filterValues.type || 'all') !== 'all'
         }
+        onClearFilters={clearAllFilters}
+        filters={[
+          <InstitutionTypeSelector
+            key="type"
+            value={filterValues.type || 'all'}
+            onValueChange={(value) => updateFilter('type', value)}
+            institutionTypes={[
+              { id: 'all', code: 'all', name: 'All Types' },
+              ...(institutionTypes || []),
+            ]}
+            placeholder="Filter by type..."
+          />,
+        ]}
       />
 
       {!institutions || institutions.length === 0 ? (
@@ -204,70 +184,31 @@ export function Institutions() {
             <div className="text-muted-foreground mb-4">
               No institutions match your search criteria
             </div>
-            <Button
-              onClick={() => {
-                setSearchTerm('');
-                setFilterBy('all');
-              }}
-            >
-              Clear Filters
-            </Button>
+            <Button onClick={clearAllFilters}>Clear Filters</Button>
           </CardContent>
         </Card>
       ) : (
         <div className="space-y-4">
-          <div className="text-sm text-muted-foreground">
-            These are the financial institutions where you have accounts with holdings. Click on an
-            institution to view its accounts.
-          </div>
+          {filteredInstitutions.map((institution: ApiInstitution) => {
+            const balance = getInstitutionBalance(institution.id);
+            const accountCount =
+              accounts?.filter((acc) => acc.institutionId === institution.id).length || 0;
 
-          <div className="space-y-3">
-            {filteredInstitutions.map((institution: ApiInstitution) => {
-              const balance = getInstitutionBalance(institution.id);
-              const accountCount =
-                accounts?.filter((acc) => acc.institutionId === institution.id).length || 0;
-
-              return (
-                <ItemCard
-                  key={institution.id}
-                  title={institution.name}
-                  subtitle={
-                    <div className="space-y-1">
-                      <div className="flex items-center space-x-2">
-                        <span className="text-xs px-1.5 py-0.5 bg-muted rounded capitalize">
-                          {getInstitutionTypeLabel(institution.type ?? '')}
-                        </span>
-                      </div>
-                      <div className="flex items-center space-x-1 text-xs text-muted-foreground">
-                        <span>{accountCount} accounts</span>
-                        <span>•</span>
-                        <span>Added {new Date(institution.createdAt).toLocaleDateString()}</span>
-                      </div>
-                      {institution.description && (
-                        <div
-                          className="text-xs text-muted-foreground truncate"
-                          title={institution.description}
-                        >
-                          {institution.description}
-                        </div>
-                      )}
-                    </div>
-                  }
-                  currencyValue={balance}
-                  currency={userPrefs?.baseCurrency?.symbol}
-                  icon={(() => {
-                    const IconComponent = getInstitutionTypeIcon(institution.type ?? '');
-                    return (
-                      <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center">
-                        <IconComponent className="h-5 w-5 text-primary" />
-                      </div>
-                    );
-                  })()}
-                  onClick={() => navigate(`/institutions/${institution.id}`)}
-                />
-              );
-            })}
-          </div>
+            return (
+              <InstitutionRow
+                key={institution.id}
+                institution={{
+                  ...institution,
+                  balance,
+                  accountCount,
+                }}
+                userPrefs={{
+                  baseCurrency: userPrefs?.baseCurrency || undefined,
+                }}
+                onClick={() => navigate(`/institutions/${institution.id}`)}
+              />
+            );
+          })}
         </div>
       )}
     </div>

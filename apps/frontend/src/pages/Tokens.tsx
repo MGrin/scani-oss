@@ -1,25 +1,19 @@
-import { Edit, MoreHorizontal, Plus } from 'lucide-react';
-import { useEffect, useState } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { Plus } from 'lucide-react';
+import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { PrivateTokenForm } from '@/components/PrivateTokenForm';
 import { TokenTypeSelector } from '@/components/selectors/SearchableSelectors';
+import { TokenRow } from '@/components/TokenRow';
 import { UpdatePrivateTokenForm } from '@/components/UpdatePrivateTokenForm';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
 import { PageAggregation } from '@/components/ui/page-aggregation';
 import { PageHeader } from '@/components/ui/page-header';
-import { ItemCard } from '@/components/ui/summary-cards';
-import { getTokenTypeIcon } from '@/lib/icons';
+import { useFilters } from '@/hooks/useFilters';
 import { trpc } from '@/lib/trpc';
 
 export function Tokens() {
-  const [searchParams, setSearchParams] = useSearchParams();
+  const navigate = useNavigate();
   const [isCreateFormOpen, setIsCreateFormOpen] = useState(false);
   const [isUpdateFormOpen, setIsUpdateFormOpen] = useState(false);
   const [selectedToken, setSelectedToken] = useState<{
@@ -30,7 +24,25 @@ export function Tokens() {
     typeId: string;
   } | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
-  const [filterBy, setFilterBy] = useState(searchParams.get('type') || 'all');
+
+  // Unified filter system
+  const {
+    filters: filterValues,
+    updateFilter,
+    clearAllFilters,
+    hasActiveFilters,
+  } = useFilters([{ key: 'type', defaultValue: 'all' }]);
+
+  const filterBy = filterValues.type || 'all';
+
+  // Compute hasActiveFilters - always include all filters and search term
+  const hasActiveFiltersComputed = hasActiveFilters || Boolean(searchTerm);
+
+  // Clear all filters helper
+  const handleClearAllFilters = () => {
+    setSearchTerm('');
+    clearAllFilters();
+  };
 
   // Data queries - get tokens with their total values
   const { data: tokensWithValues, isLoading: tokensLoading } =
@@ -39,28 +51,6 @@ export function Tokens() {
   const { data: userPrefs } = trpc.users.getCurrent.useQuery();
 
   const utils = trpc.useUtils();
-
-  // Update filter when URL parameters change
-  useEffect(() => {
-    const typeParam = searchParams.get('type');
-    if (typeParam) {
-      setFilterBy(typeParam);
-    } else {
-      setFilterBy('all');
-    }
-  }, [searchParams]);
-
-  // Handler to update filter state and sync with URL
-  const handleFilterChange = (newFilter: string) => {
-    setFilterBy(newFilter);
-    const newSearchParams = new URLSearchParams(searchParams);
-    if (newFilter === 'all') {
-      newSearchParams.delete('type');
-    } else {
-      newSearchParams.set('type', newFilter);
-    }
-    setSearchParams(newSearchParams);
-  };
 
   // Filter tokens based on search term and type
   const filteredTokens =
@@ -127,16 +117,17 @@ export function Tokens() {
         searchTerm={searchTerm}
         onSearchChange={setSearchTerm}
         searchPlaceholder="Search tokens by symbol, name, or type..."
-        customFilter={
-          <div className="md:w-64">
-            <TokenTypeSelector
-              value={filterBy}
-              onValueChange={handleFilterChange}
-              tokenTypes={[{ id: 'all', code: 'all', name: 'All Types' }, ...(tokenTypes || [])]}
-              placeholder="Filter by type..."
-            />
-          </div>
-        }
+        hasActiveFilters={hasActiveFiltersComputed}
+        onClearFilters={handleClearAllFilters}
+        filters={[
+          <TokenTypeSelector
+            key="type"
+            value={filterBy}
+            onValueChange={(value) => updateFilter('type', value)}
+            tokenTypes={[{ id: 'all', code: 'all', name: 'All Types' }, ...(tokenTypes || [])]}
+            placeholder="Filter by type..."
+          />,
+        ]}
       />
 
       {/* Tokens List */}
@@ -153,66 +144,24 @@ export function Tokens() {
       ) : (
         <div className="space-y-4">
           {filteredTokens.map((token) => {
-            const TypeIcon = getTokenTypeIcon(token.type || 'other');
-
             return (
-              <ItemCard
+              <TokenRow
                 key={token.id}
-                title={`${token.symbol}${token.name ? ` - ${token.name}` : ''}`}
-                subtitle={
-                  <div className="flex items-center space-x-2 mb-1">
-                    <span className="text-xs px-1.5 py-0.5 bg-muted rounded capitalize">
-                      {token.typeName}
-                    </span>
-                    <span className="text-xs text-muted-foreground">{token.decimals} decimals</span>
-                  </div>
-                }
-                icon={
-                  <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center">
-                    <TypeIcon className="h-5 w-5 text-primary" />
-                  </div>
-                }
-                actions={
-                  <div className="text-right">
-                    <div className="font-semibold">
-                      {parseFloat(token.totalBalance).toLocaleString()} {token.symbol}
-                    </div>
-                    <div className="text-sm text-muted-foreground">
-                      {parseFloat(token.totalValueInBaseCurrency).toLocaleString('en-US', {
-                        style: 'currency',
-                        currency: token.baseCurrencySymbol,
-                      })}
-                    </div>
-                    {isPrivateToken(token.type || '') && (
-                      <div className="mt-2">
-                        <DropdownMenu>
-                          <DropdownMenuTrigger asChild>
-                            <Button variant="ghost" size="sm">
-                              <MoreHorizontal className="h-4 w-4" />
-                            </Button>
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end">
-                            <DropdownMenuItem
-                              onClick={() => {
-                                setSelectedToken({
-                                  id: token.id,
-                                  symbol: token.symbol,
-                                  name: token.name || '',
-                                  decimals: token.decimals,
-                                  typeId: token.typeId || '',
-                                });
-                                setIsUpdateFormOpen(true);
-                              }}
-                            >
-                              <Edit className="h-4 w-4 mr-2" />
-                              Edit Token
-                            </DropdownMenuItem>
-                          </DropdownMenuContent>
-                        </DropdownMenu>
-                      </div>
-                    )}
-                  </div>
-                }
+                token={token}
+                isEditable={isPrivateToken(token.type || '')}
+                onEdit={() => {
+                  setSelectedToken({
+                    id: token.id,
+                    symbol: token.symbol,
+                    name: token.name || '',
+                    decimals: token.decimals,
+                    typeId: token.typeId || '',
+                  });
+                  setIsUpdateFormOpen(true);
+                }}
+                onClick={() => {
+                  navigate(`/holdings?token=${token.id}`);
+                }}
               />
             );
           })}

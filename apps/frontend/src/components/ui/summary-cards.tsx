@@ -151,7 +151,7 @@ export function ItemCard({
   className,
   onClick,
 }: {
-  title: string;
+  title: string | React.ReactNode;
   subtitle?: string | React.ReactNode;
   currencyValue?: number;
   tokenValue?: number;
@@ -165,7 +165,11 @@ export function ItemCard({
 }) {
   return (
     <Card
-      className={cn('hover:shadow-md transition-shadow', className, onClick && 'cursor-pointer')}
+      className={cn(
+        'hover:shadow-md transition-shadow min-h-[72px]',
+        className,
+        onClick && 'cursor-pointer'
+      )}
       onClick={onClick}
     >
       <CardHeader>
@@ -191,9 +195,9 @@ export function ItemCard({
               {tokenValue !== undefined && tokenSymbol && (
                 <div className="text-xs text-muted-foreground">
                   <MonetaryValue
-                    type="token"
+                    type="currency"
                     value={tokenValue}
-                    tokenSymbol={tokenSymbol}
+                    currency={tokenSymbol}
                     decimals={tokenDecimals}
                     size="xs"
                   />

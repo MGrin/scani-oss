@@ -60,7 +60,6 @@ export const BUTTON_TEXT = {
   GO_TO_ACCOUNTS: 'View Accounts',
   GO_TO_HOLDINGS: 'View Holdings',
   GO_TO_TRANSACTIONS: 'View Transactions',
-  GO_TO_ANALYTICS: 'View Analytics',
 
   // Other common actions
   VIEW_DETAILS: 'View Details',

@@ -11,6 +11,7 @@ interface BaseMonetaryValueProps {
 interface CurrencyValueProps extends BaseMonetaryValueProps {
   type: 'currency';
   currency?: string;
+  decimals?: number;
 }
 
 interface TokenValueProps extends BaseMonetaryValueProps {
@@ -48,6 +49,7 @@ export function MonetaryValue(props: MonetaryValueProps) {
     // Format as currency using FinancialMath
     formattedValue = FinancialMath.formatCurrency(numericValue, {
       currency: props.currency,
+      style: 'currency',
     });
     displayValue = showSign && numericValue > 0 ? `+${formattedValue}` : formattedValue;
   } else {

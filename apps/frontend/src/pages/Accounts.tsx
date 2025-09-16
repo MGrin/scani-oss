@@ -1,13 +1,14 @@
 import type { Account } from '@scani/shared';
-import { MoreHorizontal, Plus, Trash2, Wallet } from 'lucide-react';
+import { Plus, Wallet } from 'lucide-react';
 import { useEffect, useState } from 'react';
-import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom';
+import { AccountRow } from '@/components/AccountRow';
 import {
   AccountTypeSelector,
   InstitutionFilterSelector,
 } from '@/components/selectors/SearchableSelectors';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import {
   Dialog,
   DialogContent,
@@ -16,74 +17,51 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
-
 import { PageAggregation } from '@/components/ui/page-aggregation';
 import { PageHeader } from '@/components/ui/page-header';
-import { ItemCard, MiniSummaryCard } from '@/components/ui/summary-cards';
 import { useToast } from '@/hooks/use-toast';
+import { useFilters } from '@/hooks/useFilters';
 import type { ApiAccount, ApiHolding, ApiInstitution } from '@/lib/api-types';
 import { BUTTON_TEXT } from '@/lib/button-constants';
-import { getAccountTypeIcon } from '@/lib/icons';
 import { trpc } from '@/lib/trpc';
 
 export function Accounts() {
   const navigate = useNavigate();
   const { institutionId } = useParams<{ institutionId: string }>();
   const { toast } = useToast();
-  const [searchParams, setSearchParams] = useSearchParams();
   const [searchTerm, setSearchTerm] = useState('');
-  const [filterBy, setFilterBy] = useState<string>(searchParams.get('type') || 'all');
-  const [filterByInstitution, setFilterByInstitution] = useState<string>(
-    searchParams.get('institution') || 'all'
-  );
   const [accountToDelete, setAccountToDelete] = useState<Account | null>(null);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
 
-  // Update filter when URL parameters change
-  useEffect(() => {
-    const typeParam = searchParams.get('type');
-    if (typeParam) {
-      setFilterBy(typeParam);
-    } else {
-      setFilterBy('all');
-    }
+  // Unified filter system
+  const {
+    filters: filterValues,
+    updateFilter,
+    clearAllFilters,
+    hasActiveFilters,
+  } = useFilters([
+    { key: 'type', defaultValue: 'all' },
+    { key: 'institution', defaultValue: 'all' },
+  ]);
 
-    const institutionParam = searchParams.get('institution');
-    if (institutionParam) {
-      setFilterByInstitution(institutionParam);
-    } else {
-      setFilterByInstitution('all');
-    }
-  }, [searchParams]);
+  const filterBy = filterValues.type || 'all';
+  const filterByInstitution = filterValues.institution || 'all';
 
-  // Update URL when filter changes
-  const handleFilterChange = (newFilter: string) => {
-    setFilterBy(newFilter);
-    const newSearchParams = new URLSearchParams(searchParams);
-    if (newFilter === 'all') {
-      newSearchParams.delete('type');
-    } else {
-      newSearchParams.set('type', newFilter);
-    }
-    setSearchParams(newSearchParams);
-  };
+  // Compute hasActiveFilters - always include all filters and search term
+  const hasActiveFiltersComputed = hasActiveFilters || Boolean(searchTerm);
 
-  // Update URL when institution filter changes
-  const handleInstitutionFilterChange = (newFilter: string) => {
-    setFilterByInstitution(newFilter);
-    const newSearchParams = new URLSearchParams(searchParams);
-    if (newFilter === 'all') {
-      newSearchParams.delete('institution');
+  // Clear all filters helper - exits hierarchical mode when clearing all
+  const handleClearAllFilters = () => {
+    setSearchTerm('');
+
+    // If in hierarchical mode, navigate back to normal accounts page immediately
+    if (isHierarchicalMode) {
+      // Navigate first, clearAllFilters will be called by the normal accounts page
+      navigate('/accounts', { replace: true });
     } else {
-      newSearchParams.set('institution', newFilter);
+      // In normal mode, just clear filters
+      clearAllFilters();
     }
-    setSearchParams(newSearchParams);
   };
 
   const { data: accounts, isLoading } = trpc.accounts.getAll.useQuery();
@@ -98,6 +76,29 @@ export function Accounts() {
   // Determine if we're in hierarchical mode (accessed from institution)
   const isHierarchicalMode = Boolean(institutionId);
   const selectedInstitution = institutions?.find((inst) => inst.id === institutionId);
+
+  // Sync institution filter when navigating between routes
+  useEffect(() => {
+    if (institutionId && institutionId !== filterByInstitution) {
+      // Set the institution filter to match the URL param
+      updateFilter('institution', institutionId);
+    } else if (!institutionId && filterByInstitution !== 'all') {
+      // Clear the institution filter when not in hierarchical mode
+      updateFilter('institution', 'all');
+    }
+  }, [institutionId, filterByInstitution, updateFilter]);
+
+  // Handle institution filter changes with navigation
+  const handleInstitutionFilterChange = (value: string) => {
+    if (value === 'all') {
+      // User selected "All Institutions" - go to normal accounts page
+      navigate('/accounts', { replace: true });
+    } else if (value !== institutionId) {
+      // User selected a different institution - navigate to that institution's page
+      navigate(`/institutions/${value}`, { replace: true });
+    }
+    // If same institution selected, no navigation needed
+  };
 
   // Filter accounts by institution if in hierarchical mode
   const baseAccounts = accounts || [];
@@ -250,7 +251,7 @@ export function Accounts() {
       />
 
       <PageAggregation
-        totalCount={displayAccounts.length}
+        totalCount={baseAccounts.length}
         filteredCount={filteredAccounts.length}
         entityLabel="accounts"
         totalBalance={totalBalance}
@@ -259,37 +260,28 @@ export function Accounts() {
         searchTerm={searchTerm}
         onSearchChange={setSearchTerm}
         searchPlaceholder="Search accounts by name, type, institution, or account number..."
-        filterBy={filterBy}
-        onFilterChange={handleFilterChange}
-        customFilter={
-          <div className="flex gap-2">
-            <div className="md:w-64">
-              <AccountTypeSelector
-                value={filterBy}
-                onValueChange={handleFilterChange}
-                accountTypes={[
-                  { id: 'all', code: 'all', name: 'All Types' },
-                  ...(accountTypes || []),
-                ]}
-                placeholder="Filter by type..."
-              />
-            </div>
-            {!isHierarchicalMode && (
-              <div className="md:w-64">
-                <InstitutionFilterSelector
-                  value={filterByInstitution}
-                  onValueChange={handleInstitutionFilterChange}
-                  institutions={institutions}
-                  placeholder="Filter by institution..."
-                />
-              </div>
-            )}
-          </div>
-        }
+        hasActiveFilters={hasActiveFiltersComputed}
+        onClearFilters={handleClearAllFilters}
+        filters={[
+          <AccountTypeSelector
+            key="type"
+            value={filterBy}
+            onValueChange={(value) => updateFilter('type', value)}
+            accountTypes={[{ id: 'all', code: 'all', name: 'All Types' }, ...(accountTypes || [])]}
+            placeholder="Filter by type..."
+          />,
+          <InstitutionFilterSelector
+            key="institution"
+            value={filterByInstitution}
+            onValueChange={handleInstitutionFilterChange}
+            institutions={institutions}
+            placeholder="Filter by institution..."
+          />,
+        ]}
       />
 
       {/* Accounts Grid */}
-      {displayAccounts.length === 0 ? (
+      {!isHierarchicalMode && displayAccounts.length === 0 ? (
         <Card>
           <CardContent className="p-12 text-center">
             <Wallet className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
@@ -307,56 +299,35 @@ export function Accounts() {
       ) : filteredAccounts.length === 0 ? (
         <Card>
           <CardContent className="p-12 text-center">
-            <div className="text-muted-foreground mb-4">No accounts match your search criteria</div>
-            <Button
-              onClick={() => {
-                setSearchTerm('');
-                setFilterBy('all');
-                setFilterByInstitution('all');
-                // Clear URL params too
-                navigate('/accounts');
-              }}
-            >
-              Clear Filters
-            </Button>
+            <Wallet className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
+            <div className="text-muted-foreground mb-4">
+              {isHierarchicalMode
+                ? `No accounts found for ${selectedInstitution?.name || 'this institution'}.`
+                : 'No accounts match your search criteria.'}
+            </div>
+            {!isHierarchicalMode && <Button onClick={handleClearAllFilters}>Clear Filters</Button>}
           </CardContent>
         </Card>
       ) : (
         <div className="space-y-4">
           {filteredAccounts.map((account: ApiAccount) => {
-            const IconComponent = getAccountTypeIcon(account.type ?? 'other');
             const accountBalance = getAccountBalance(account.id);
             const institution = institutionsMap[account.institutionId];
             const accountHoldings = getAccountHoldings(account.id);
             return (
               <div key={account.id}>
-                <ItemCard
-                  title={account.name}
-                  subtitle={
-                    <div className="space-y-1">
-                      {!isHierarchicalMode && (
-                        <div className="text-xs text-muted-foreground">
-                          {institution?.name || 'Unknown Institution'} •{' '}
-                          {account.type?.replace('_', ' ') ?? 'Unknown Type'}
-                        </div>
-                      )}
-                      {isHierarchicalMode && (
-                        <div className="text-xs text-muted-foreground">
-                          {account.type?.replace('_', ' ') ?? 'Unknown Type'}
-                        </div>
-                      )}
-                      <div className="flex items-center space-x-2 text-xs text-muted-foreground">
-                        <span>{accountHoldings.length} holdings</span>
-                        <span>•</span>
-                        <span>Updated {new Date(account.updatedAt).toLocaleDateString()}</span>
-                      </div>
-                    </div>
-                  }
-                  currencyValue={accountBalance}
-                  currency={userPrefs?.baseCurrency?.symbol}
-                  icon={
-                    IconComponent && <IconComponent className="h-8 w-8 text-muted-foreground" />
-                  }
+                <AccountRow
+                  account={{
+                    ...account,
+                    institution: !isHierarchicalMode ? institution : undefined,
+                    balance: accountBalance,
+                    holdingCount: accountHoldings.length,
+                  }}
+                  userPrefs={{
+                    baseCurrency: userPrefs?.baseCurrency || undefined,
+                  }}
+                  showInstitution={!isHierarchicalMode}
+                  onDelete={() => handleDeleteAccount(account as unknown as Account)}
                   onClick={
                     accountHoldings.length > 0
                       ? () => {
@@ -370,60 +341,11 @@ export function Accounts() {
                         }
                       : undefined
                   }
-                  actions={
-                    <div className="flex items-center space-x-2">
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <Button variant="ghost" size="sm">
-                            <MoreHorizontal className="h-4 w-4" />
-                          </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end">
-                          <DropdownMenuItem
-                            onClick={() => handleDeleteAccount(account as unknown as Account)}
-                            className="text-destructive"
-                          >
-                            <Trash2 className="h-4 w-4 mr-2" />
-                            {BUTTON_TEXT.DELETE_ACCOUNT}
-                          </DropdownMenuItem>
-                        </DropdownMenuContent>
-                      </DropdownMenu>
-                    </div>
-                  }
                 />
               </div>
             );
           })}
         </div>
-      )}
-
-      {/* Account Types Legend */}
-      {accounts && accounts.length > 0 && (
-        <Card>
-          <CardHeader className="pb-3">
-            <CardTitle className="text-base">Account Types</CardTitle>
-          </CardHeader>
-          <CardContent className="pt-0">
-            <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-4">
-              {accountSummaries?.typesSummary?.map((typeSummary) => {
-                if (typeSummary.accountCount === 0) return null;
-
-                const IconComponent = getAccountTypeIcon(typeSummary.type);
-
-                return (
-                  <MiniSummaryCard
-                    key={typeSummary.type}
-                    title={typeSummary.typeName}
-                    value={typeSummary.totalBalance}
-                    currency={userPrefs?.baseCurrency?.symbol}
-                    count={typeSummary.accountCount}
-                    icon={IconComponent}
-                  />
-                );
-              })}
-            </div>
-          </CardContent>
-        </Card>
       )}
 
       {/* Delete Confirmation Dialog */}

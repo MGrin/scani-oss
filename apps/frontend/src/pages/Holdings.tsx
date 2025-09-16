@@ -1,21 +1,11 @@
-import { FinancialMath } from "@scani/shared";
-import {
-  Edit2,
-  Eye,
-  MoreHorizontal,
-  PieChart,
-  Plus,
-  Trash2,
-} from "lucide-react";
-import { useEffect, useState } from "react";
-import { useNavigate, useParams, useSearchParams } from "react-router-dom";
-import { HoldingForm } from "@/components/HoldingForm";
-import {
-  AccountFilterSelector,
-  TokenTypeSelector,
-} from "@/components/selectors/SearchableSelectors";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
+import { FinancialMath } from '@scani/shared';
+import { PieChart, Plus } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { useNavigate, useParams } from 'react-router-dom';
+import { HoldingForm } from '@/components/HoldingForm';
+import { HoldingRow } from '@/components/HoldingRow';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent } from '@/components/ui/card';
 import {
   Dialog,
   DialogContent,
@@ -23,28 +13,20 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from "@/components/ui/dialog";
+} from '@/components/ui/dialog';
+import { MonetaryValue } from '@/components/ui/monetary-value';
+import { PageAggregation } from '@/components/ui/page-aggregation';
+import { PageHeader } from '@/components/ui/page-header';
+import { useToast } from '@/hooks/use-toast';
+import { useFilters } from '@/hooks/useFilters';
+import type { ApiAccount, ApiHolding, ApiInstitution, ApiToken } from '@/lib/api-types';
+import { BUTTON_TEXT } from '@/lib/button-constants';
+import { trpc } from '@/lib/trpc';
 import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
-import { MonetaryValue } from "@/components/ui/monetary-value";
-import { PageAggregation } from "@/components/ui/page-aggregation";
-import { PageHeader } from "@/components/ui/page-header";
-
-import { ItemCard } from "@/components/ui/summary-cards";
-import { useToast } from "@/hooks/use-toast";
-import type {
-  ApiAccount,
-  ApiHolding,
-  ApiInstitution,
-  ApiToken,
-} from "@/lib/api-types";
-import { BUTTON_TEXT } from "@/lib/button-constants";
-import { getTokenTypeIcon } from "@/lib/icons";
-import { trpc } from "@/lib/trpc";
+  AccountFilterSelector,
+  TokenFilterSelector,
+  TokenTypeSelector,
+} from '../components/selectors/SearchableSelectors';
 
 interface ProcessedHolding extends ApiHolding {
   token: ApiToken | undefined;
@@ -55,14 +37,12 @@ interface ProcessedHolding extends ApiHolding {
 
 export function Holdings() {
   const navigate = useNavigate();
-  const [searchParams, setSearchParams] = useSearchParams();
   const { institutionId, accountId } = useParams<{
     institutionId: string;
     accountId: string;
   }>();
 
-  const { data: holdings, isLoading: holdingsLoading } =
-    trpc.holdings.getAll.useQuery();
+  const { data: holdings, isLoading: holdingsLoading } = trpc.holdings.getAll.useQuery();
   const { data: accounts } = trpc.accounts.getAll.useQuery();
   const { data: tokens } = trpc.tokens.getAll.useQuery();
   const { data: userPrefs } = trpc.users.getCurrent.useQuery();
@@ -81,60 +61,75 @@ export function Holdings() {
     ? baseHoldings.filter((holding) => holding.accountId === accountId)
     : baseHoldings;
 
-  const [searchTerm, setSearchTerm] = useState("");
-  const [filterBy, setFilterBy] = useState<string>(
-    searchParams.get("type") || "all"
-  );
-  const [filterByAccount, setFilterByAccount] = useState<string>(
-    searchParams.get("account") || "all"
-  );
+  const [searchTerm, setSearchTerm] = useState('');
 
-  // Update filter when URL parameters change
+  // Unified filter system
+  const {
+    filters: filterValues,
+    updateFilter,
+    clearAllFilters,
+    hasActiveFilters,
+  } = useFilters([
+    { key: 'type', defaultValue: 'all' },
+    { key: 'account', defaultValue: 'all' },
+    { key: 'token', defaultValue: 'all' },
+  ]);
+
+  const filterBy = filterValues.type || 'all';
+  const filterByAccount = filterValues.account || 'all';
+  const filterByToken = filterValues.token || 'all';
+
+  // Compute hasActiveFilters - always include all filters and search term
+  const hasActiveFiltersComputed = hasActiveFilters || Boolean(searchTerm);
+
+  // Sync account filter when navigating between routes
   useEffect(() => {
-    const typeParam = searchParams.get("type");
-    if (typeParam) {
-      setFilterBy(typeParam);
+    if (accountId && accountId !== filterByAccount) {
+      // Set the account filter to match the URL param
+      updateFilter('account', accountId);
+    } else if (!accountId && filterByAccount !== 'all') {
+      // Clear the account filter when not in hierarchical mode
+      updateFilter('account', 'all');
     }
+  }, [accountId, filterByAccount, updateFilter]);
 
-    const accountParam = searchParams.get("account");
-    if (accountParam) {
-      setFilterByAccount(accountParam);
+  // Handle account filter changes with navigation
+  const handleAccountFilterChange = (value: string) => {
+    if (value === 'all') {
+      // User selected "All Accounts" - go to normal holdings page
+      navigate('/holdings', { replace: true });
+    } else if (value !== accountId) {
+      // User selected a single account - navigate to that account's holdings page
+      // Need to find the institution for this account
+      const account = accounts?.find((acc) => acc.id === value);
+      if (account) {
+        navigate(`/institutions/${account.institutionId}/accounts/${value}`, {
+          replace: true,
+        });
+      }
     }
-  }, [searchParams]);
-
-  // Handler to update filter state and sync with URL
-  const handleFilterChange = (newFilter: string) => {
-    setFilterBy(newFilter);
-    const newSearchParams = new URLSearchParams(searchParams);
-    if (newFilter === "all") {
-      newSearchParams.delete("type");
-    } else {
-      newSearchParams.set("type", newFilter);
-    }
-    setSearchParams(newSearchParams);
+    // If same account selected, no navigation needed
   };
 
-  // Handler to update account filter state and sync with URL
-  const handleAccountFilterChange = (newFilter: string) => {
-    setFilterByAccount(newFilter);
-    const newSearchParams = new URLSearchParams(searchParams);
-    if (newFilter === "all") {
-      newSearchParams.delete("account");
+  // Clear all filters helper - exits hierarchical mode when clearing all
+  const handleClearAllFilters = () => {
+    setSearchTerm('');
+
+    // If in hierarchical mode, navigate back to normal holdings page
+    if (isHierarchicalMode) {
+      navigate('/holdings', { replace: true });
     } else {
-      newSearchParams.set("account", newFilter);
+      // In normal mode, just clear filters
+      clearAllFilters();
     }
-    setSearchParams(newSearchParams);
   };
+
   const [isHoldingFormOpen, setIsHoldingFormOpen] = useState(false);
   const [holdingToEdit, setHoldingToEdit] = useState<ApiHolding | undefined>();
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
-  const [holdingToDelete, setHoldingToDelete] = useState<
-    ProcessedHolding | undefined
-  >();
+  const [holdingToDelete, setHoldingToDelete] = useState<ProcessedHolding | undefined>();
   const [isViewDialogOpen, setIsViewDialogOpen] = useState(false);
-  const [holdingToView, setHoldingToView] = useState<
-    ProcessedHolding | undefined
-  >();
+  const [holdingToView, setHoldingToView] = useState<ProcessedHolding | undefined>();
 
   const utils = trpc.useUtils();
   const { toast } = useToast();
@@ -142,11 +137,11 @@ export function Holdings() {
   const deleteHolding = trpc.holdings.delete.useMutation({
     onSuccess: () => {
       toast({
-        title: "Success",
+        title: 'Success',
         description: `Holding for "${
-          holdingToDelete?.token?.symbol || "token"
+          holdingToDelete?.token?.symbol || 'token'
         }" has been deleted successfully.`,
-        variant: "success",
+        variant: 'success',
       });
       utils.holdings.getAll.invalidate();
       setIsDeleteDialogOpen(false);
@@ -154,10 +149,9 @@ export function Holdings() {
     },
     onError: (error) => {
       toast({
-        title: "Error",
-        description:
-          error.message || "Failed to delete holding. Please try again.",
-        variant: "destructive",
+        title: 'Error',
+        description: error.message || 'Failed to delete holding. Please try again.',
+        variant: 'destructive',
       });
     },
   });
@@ -167,61 +161,48 @@ export function Holdings() {
     ? Object.fromEntries(tokens.map((token: ApiToken) => [token.id, token]))
     : {};
   const accountsMap = accounts
-    ? Object.fromEntries(
-        accounts.map((account: ApiAccount) => [account.id, account])
-      )
+    ? Object.fromEntries(accounts.map((account: ApiAccount) => [account.id, account]))
     : {};
   const institutionsMap = institutions
-    ? Object.fromEntries(
-        institutions.map((inst: ApiInstitution) => [inst.id, inst])
-      )
+    ? Object.fromEntries(institutions.map((inst: ApiInstitution) => [inst.id, inst]))
     : {};
 
   // Process holdings with portfolio values and related data
-  const processedHoldings: ProcessedHolding[] = displayHoldings.map(
-    (holding: ApiHolding) => {
-      const token = tokensMap[holding.tokenId];
-      const account = accountsMap[holding.accountId];
-      const institution = account
-        ? institutionsMap[account.institutionId]
-        : null;
+  const processedHoldings: ProcessedHolding[] = displayHoldings.map((holding: ApiHolding) => {
+    const token = tokensMap[holding.tokenId];
+    const account = accountsMap[holding.accountId];
+    const institution = account ? institutionsMap[account.institutionId] : null;
 
-      // Try to find the portfolio value for this holding's token
-      const portfolioHolding = portfolioValue?.holdings.find(
-        (ph) => ph.tokenSymbol === token?.symbol
-      );
+    // Try to find the portfolio value for this holding's token
+    const portfolioHolding = portfolioValue?.holdings.find(
+      (ph) => ph.tokenSymbol === token?.symbol
+    );
 
-      return {
-        ...holding,
-        token,
-        account,
-        institution,
-        value: portfolioHolding?.value
-          ? parseFloat(portfolioHolding.value)
-          : FinancialMath.toNumber(FinancialMath.abs(holding.balance ?? 0)), // fallback to raw balance
-      };
-    }
-  );
+    return {
+      ...holding,
+      token,
+      account,
+      institution,
+      value: portfolioHolding?.value
+        ? parseFloat(portfolioHolding.value)
+        : FinancialMath.toNumber(FinancialMath.abs(holding.balance ?? 0)), // fallback to raw balance
+    };
+  });
 
   // Apply filters and search
-  const filteredHoldings = processedHoldings.filter(
-    (holding: ProcessedHolding) => {
-      const matchesSearch =
-        !searchTerm ||
-        holding.token?.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        holding.token?.symbol
-          .toLowerCase()
-          .includes(searchTerm.toLowerCase()) ||
-        holding.account?.name.toLowerCase().includes(searchTerm.toLowerCase());
+  const filteredHoldings = processedHoldings.filter((holding: ProcessedHolding) => {
+    const matchesSearch =
+      !searchTerm ||
+      holding.token?.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      holding.token?.symbol.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      holding.account?.name.toLowerCase().includes(searchTerm.toLowerCase());
 
-      const matchesTypeFilter =
-        filterBy === "all" || holding.token?.type === filterBy;
-      const matchesAccountFilter =
-        filterByAccount === "all" || holding.accountId === filterByAccount;
+    const matchesTypeFilter = filterBy === 'all' || holding.token?.type === filterBy;
+    const matchesAccountFilter = filterByAccount === 'all' || holding.accountId === filterByAccount;
+    const matchesTokenFilter = filterByToken === 'all' || holding.tokenId === filterByToken;
 
-      return matchesSearch && matchesTypeFilter && matchesAccountFilter;
-    }
-  );
+    return matchesSearch && matchesTypeFilter && matchesAccountFilter && matchesTokenFilter;
+  });
 
   // Sort by balance (highest to lowest) by default
   const sortedHoldings = [...filteredHoldings].sort((a, b) => {
@@ -229,7 +210,7 @@ export function Holdings() {
   });
 
   const handleAddHolding = () => {
-    navigate("/quick-add-holding");
+    navigate('/quick-add-holding');
   };
 
   const handleEditHolding = (holding: ProcessedHolding) => {
@@ -261,20 +242,10 @@ export function Holdings() {
     }
   };
 
-  if (
-    holdingsLoading ||
-    portfolioLoading ||
-    !tokens ||
-    !accounts ||
-    !institutions
-  ) {
+  if (holdingsLoading || portfolioLoading || !tokens || !accounts || !institutions) {
     return (
       <div className="space-y-4">
-        <PageHeader
-          title="Holdings"
-          subtitle="Manage your investment positions"
-          loading={true}
-        />
+        <PageHeader title="Holdings" subtitle="Manage your investment positions" loading={true} />
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
           {[1, 2, 3].map((i) => (
             <Card key={i}>
@@ -293,24 +264,16 @@ export function Holdings() {
   }
 
   // Calculate totals
-  const totalValue = processedHoldings.reduce(
-    (sum, holding) => sum + holding.value,
-    0
-  );
-  const filteredValue = filteredHoldings.reduce(
-    (sum, holding) => sum + holding.value,
-    0
-  );
+  const totalValue = processedHoldings.reduce((sum, holding) => sum + holding.value, 0);
+  const filteredValue = filteredHoldings.reduce((sum, holding) => sum + holding.value, 0);
 
   const pageTitle =
-    isHierarchicalMode && selectedAccount
-      ? `${selectedAccount.name} Holdings`
-      : "Holdings";
+    isHierarchicalMode && selectedAccount ? `${selectedAccount.name} Holdings` : 'Holdings';
 
   const pageSubtitle =
     isHierarchicalMode && selectedAccount
       ? `Holdings in ${selectedAccount.name}`
-      : "Manage your investment positions";
+      : 'Manage your investment positions';
 
   return (
     <div className="space-y-4">
@@ -325,7 +288,7 @@ export function Holdings() {
       />
 
       <PageAggregation
-        totalCount={processedHoldings.length}
+        totalCount={baseHoldings.length}
         filteredCount={filteredHoldings.length}
         entityLabel="holdings"
         totalBalance={totalValue}
@@ -334,31 +297,31 @@ export function Holdings() {
         searchTerm={searchTerm}
         onSearchChange={setSearchTerm}
         searchPlaceholder="Search holdings by token name, symbol, or account..."
-        customFilter={
-          <div className="flex gap-2">
-            <div className="md:w-64">
-              <TokenTypeSelector
-                value={filterBy}
-                onValueChange={handleFilterChange}
-                tokenTypes={[
-                  { id: "all", code: "all", name: "All Types" },
-                  ...(tokenTypes || []),
-                ]}
-                placeholder="Filter by type..."
-              />
-            </div>
-            {!isHierarchicalMode && (
-              <div className="md:w-64">
-                <AccountFilterSelector
-                  value={filterByAccount}
-                  onValueChange={handleAccountFilterChange}
-                  accounts={accounts}
-                  placeholder="Filter by account..."
-                />
-              </div>
-            )}
-          </div>
-        }
+        hasActiveFilters={hasActiveFiltersComputed}
+        onClearFilters={handleClearAllFilters}
+        filters={[
+          <TokenTypeSelector
+            key="type"
+            value={filterBy}
+            onValueChange={(value) => updateFilter('type', value)}
+            tokenTypes={[{ id: 'all', code: 'all', name: 'All Types' }, ...(tokenTypes || [])]}
+            placeholder="Filter by type..."
+          />,
+          <AccountFilterSelector
+            key="account"
+            value={filterByAccount}
+            onValueChange={handleAccountFilterChange}
+            accounts={accounts}
+            placeholder="Filter by account..."
+          />,
+          <TokenFilterSelector
+            key="token"
+            value={filterByToken}
+            onValueChange={(value: string) => updateFilter('token', value)}
+            tokens={tokens}
+            placeholder="Filter by token..."
+          />,
+        ]}
       />
 
       {/* Holdings List */}
@@ -376,65 +339,28 @@ export function Holdings() {
       ) : sortedHoldings.length === 0 ? (
         <Card>
           <CardContent className="p-12 text-center">
-            <div className="text-muted-foreground mb-4">
-              No holdings match your search criteria
-            </div>
-            <Button
-              onClick={() => {
-                setSearchTerm("");
-                setFilterBy("all");
-                setFilterByAccount("all");
-                // Clear URL params too
-                navigate(
-                  isHierarchicalMode
-                    ? `/institutions/${institutionId}/accounts/${accountId}/holdings`
-                    : "/holdings"
-                );
-              }}
-            >
-              Clear Filters
-            </Button>
+            <div className="text-muted-foreground mb-4">No holdings match your search criteria</div>
+            <Button onClick={handleClearAllFilters}>Clear Filters</Button>
           </CardContent>
         </Card>
       ) : (
-        <div className="space-y-3">
+        <div className="space-y-4">
           {sortedHoldings.map((holding) => {
-            const TypeIcon = getTokenTypeIcon(holding.token?.type ?? "");
-
             return (
-              <ItemCard
+              <HoldingRow
                 key={holding.id}
-                title={holding.token?.name || "Unknown Token"}
-                subtitle={
-                  <>
-                    <div className="flex items-center space-x-2 mb-1">
-                      <span className="text-xs px-1.5 py-0.5 bg-muted rounded capitalize">
-                        {holding.token?.type ?? "N/A"}
-                      </span>
-                    </div>
-                    <div className="flex items-center space-x-1 text-xs text-muted-foreground">
-                      <span>{holding.account?.name || "Unknown Account"}</span>
-                      <span>•</span>
-                      <span>
-                        {holding.institution?.name || "Unknown Institution"}
-                      </span>
-                      <span>•</span>
-                      <span>
-                        Updated{" "}
-                        {new Date(holding.lastUpdated).toLocaleDateString()}
-                      </span>
-                    </div>
-                  </>
-                }
-                currencyValue={holding.value}
-                currency={userPrefs?.baseCurrency?.symbol}
-                tokenValue={parseFloat(holding.balance)}
-                tokenSymbol={holding.token?.symbol}
-                tokenDecimals={holding.token?.decimals}
+                holding={{
+                  ...holding,
+                  institution: holding.institution || undefined,
+                }}
+                userPrefs={{
+                  baseCurrency: userPrefs?.baseCurrency || undefined,
+                }}
+                onView={() => handleViewHolding(holding)}
+                onEdit={() => handleEditHolding(holding)}
+                onDelete={() => handleDeleteHolding(holding)}
                 onClick={() => {
-                  const account = accounts?.find(
-                    (acc) => acc.id === holding.accountId
-                  );
+                  const account = accounts?.find((acc) => acc.id === holding.accountId);
                   if (account) {
                     navigate(
                       `/institutions/${account.institutionId}/accounts/${account.id}/holdings/${holding.id}`
@@ -444,58 +370,6 @@ export function Holdings() {
                     navigate(`/transactions?holding=${holding.id}`);
                   }
                 }}
-                icon={
-                  <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center">
-                    <div className="text-center">
-                      <div className="text-xs font-medium">
-                        {holding.token?.symbol || "?"}
-                      </div>
-                      <TypeIcon className="h-2.5 w-2.5 mx-auto mt-0.5" />
-                    </div>
-                  </div>
-                }
-                actions={
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <Button variant="ghost" size="sm">
-                        <MoreHorizontal className="h-4 w-4" />
-                      </Button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end">
-                      <DropdownMenuItem
-                        onClick={() =>
-                          handleViewHolding(
-                            holding as unknown as ProcessedHolding
-                          )
-                        }
-                      >
-                        <Eye className="h-4 w-4 mr-2" />
-                        View Details
-                      </DropdownMenuItem>
-                      <DropdownMenuItem
-                        onClick={() =>
-                          handleEditHolding(
-                            holding as unknown as ProcessedHolding
-                          )
-                        }
-                      >
-                        <Edit2 className="h-4 w-4 mr-2" />
-                        {BUTTON_TEXT.EDIT_HOLDING}
-                      </DropdownMenuItem>
-                      <DropdownMenuItem
-                        onClick={() =>
-                          handleDeleteHolding(
-                            holding as unknown as ProcessedHolding
-                          )
-                        }
-                        className="text-destructive"
-                      >
-                        <Trash2 className="h-4 w-4 mr-2" />
-                        {BUTTON_TEXT.DELETE_HOLDING}
-                      </DropdownMenuItem>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
-                }
               />
             );
           })}
@@ -507,7 +381,7 @@ export function Holdings() {
         isOpen={isHoldingFormOpen}
         onClose={() => setIsHoldingFormOpen(false)}
         holding={holdingToEdit}
-        mode={holdingToEdit ? "edit" : "create"}
+        mode={holdingToEdit ? 'edit' : 'create'}
       />
 
       {/* View Holding Details Dialog */}
@@ -515,17 +389,13 @@ export function Holdings() {
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Holding Details</DialogTitle>
-            <DialogDescription>
-              Complete information about this holding
-            </DialogDescription>
+            <DialogDescription>Complete information about this holding</DialogDescription>
           </DialogHeader>
           {holdingToView && (
             <div className="space-y-4">
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <p className="text-sm font-medium text-muted-foreground">
-                    Token
-                  </p>
+                  <p className="text-sm font-medium text-muted-foreground">Token</p>
                   <p className="font-semibold">
                     {holdingToView.token?.name} ({holdingToView.token?.symbol})
                   </p>
@@ -534,9 +404,7 @@ export function Holdings() {
                   </p>
                 </div>
                 <div>
-                  <p className="text-sm font-medium text-muted-foreground">
-                    Current Value
-                  </p>
+                  <p className="text-sm font-medium text-muted-foreground">Current Value</p>
                   <MonetaryValue
                     type="currency"
                     value={holdingToView.value}
@@ -548,13 +416,11 @@ export function Holdings() {
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <p className="text-sm font-medium text-muted-foreground">
-                    Balance
-                  </p>
+                  <p className="text-sm font-medium text-muted-foreground">Balance</p>
                   <MonetaryValue
                     type="token"
-                    value={parseFloat(holdingToView.balance || "0")}
-                    tokenSymbol={holdingToView.token?.symbol || ""}
+                    value={parseFloat(holdingToView.balance || '0')}
+                    tokenSymbol={holdingToView.token?.symbol || ''}
                     decimals={holdingToView.token?.decimals}
                     className="font-semibold"
                   />
@@ -562,18 +428,12 @@ export function Holdings() {
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <p className="text-sm font-medium text-muted-foreground">
-                    Account
-                  </p>
+                  <p className="text-sm font-medium text-muted-foreground">Account</p>
                   <p className="font-semibold">{holdingToView.account?.name}</p>
-                  <p className="text-xs text-muted-foreground">
-                    {holdingToView.institution?.name}
-                  </p>
+                  <p className="text-xs text-muted-foreground">{holdingToView.institution?.name}</p>
                 </div>
                 <div>
-                  <p className="text-sm font-medium text-muted-foreground">
-                    Last Updated
-                  </p>
+                  <p className="text-sm font-medium text-muted-foreground">Last Updated</p>
                   <p className="font-semibold">
                     {new Date(holdingToView.lastUpdated).toLocaleDateString()}
                   </p>
@@ -583,9 +443,7 @@ export function Holdings() {
                 </div>
               </div>
               <div>
-                <p className="text-sm font-medium text-muted-foreground">
-                  Created
-                </p>
+                <p className="text-sm font-medium text-muted-foreground">Created</p>
                 <p className="font-semibold">
                   {new Date(holdingToView.createdAt).toLocaleDateString()}
                 </p>
@@ -604,10 +462,9 @@ export function Holdings() {
           <DialogHeader>
             <DialogTitle>Delete Holding</DialogTitle>
             <DialogDescription>
-              Are you sure you want to delete this holding for "
-              {holdingToDelete?.token?.name}"? This action cannot be undone and
-              will permanently remove the holding record and all associated
-              transactions.
+              Are you sure you want to delete this holding for "{holdingToDelete?.token?.name}"?
+              This action cannot be undone and will permanently remove the holding record and all
+              associated transactions.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
@@ -623,9 +480,7 @@ export function Holdings() {
               onClick={confirmDeleteHolding}
               disabled={deleteHolding.isPending}
             >
-              {deleteHolding.isPending
-                ? "Deleting..."
-                : BUTTON_TEXT.DELETE_HOLDING}
+              {deleteHolding.isPending ? 'Deleting...' : BUTTON_TEXT.DELETE_HOLDING}
             </Button>
           </DialogFooter>
         </DialogContent>

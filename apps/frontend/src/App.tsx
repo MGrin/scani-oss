@@ -6,7 +6,6 @@ import { AuthProvider } from '@/contexts/AuthContext';
 import { ThemeLoader, ThemeProvider } from '@/contexts/ThemeContext';
 import { TRPCProvider } from '@/lib/trpc-provider';
 import { Accounts } from '@/pages/Accounts';
-import { Analytics } from '@/pages/Analytics';
 import { Auth } from '@/pages/Auth';
 import { AuthCallback } from '@/pages/AuthCallback';
 import { Dashboard } from '@/pages/Dashboard';
@@ -43,16 +42,6 @@ function App() {
                     <ProtectedRoute>
                       <Layout>
                         <Dashboard />
-                      </Layout>
-                    </ProtectedRoute>
-                  }
-                />
-                <Route
-                  path="/analytics"
-                  element={
-                    <ProtectedRoute>
-                      <Layout>
-                        <Analytics />
                       </Layout>
                     </ProtectedRoute>
                   }

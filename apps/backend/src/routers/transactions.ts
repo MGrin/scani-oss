@@ -1,6 +1,6 @@
 import { UpdateTransactionSchema } from '@scani/shared/types';
 import Decimal from 'decimal.js';
-import { and, desc, eq, gte, lte } from 'drizzle-orm';
+import { and, desc, eq, gte, lte, not } from 'drizzle-orm';
 import { z } from 'zod';
 import { db } from '../db/connection';
 import * as schema from '../db/schema';

@@ -1,6 +1,7 @@
 import { Download, FileText, HelpCircle, Trash2, Upload, User } from 'lucide-react';
 import { useCallback, useEffect, useId, useMemo, useState } from 'react';
 
+import { CurrencySelector } from '@/components/selectors/SearchableSelectors';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -8,13 +9,6 @@ import { useConfirmation } from '@/components/ui/confirmation-modal';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { PageHeader } from '@/components/ui/page-header';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
 import { trpc } from '@/lib/trpc';
 
@@ -337,6 +331,7 @@ function GeneralSettings({
   const displayNameId = useId();
   const emailId = useId();
   const avatarId = useId();
+  const currencyId = useId();
   const [localErrors, setLocalErrors] = useState<Record<string, string>>({});
 
   const handleFieldChange = (field: 'name' | 'avatar' | 'baseCurrencyId', value: string) => {
@@ -415,22 +410,14 @@ function GeneralSettings({
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="currency">Base Currency</Label>
-              <Select
+              <Label htmlFor={currencyId}>Base Currency</Label>
+              <CurrencySelector
+                id={currencyId}
                 value={values.baseCurrencyId}
                 onValueChange={(value) => handleFieldChange('baseCurrencyId', value)}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Select currency" />
-                </SelectTrigger>
-                <SelectContent>
-                  {supportedCurrencies.map((currency) => (
-                    <SelectItem key={currency.id} value={currency.id}>
-                      {currency.symbol} {currency.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+                currencies={supportedCurrencies}
+                placeholder="Select currency..."
+              />
             </div>
           </div>
         </CardContent>

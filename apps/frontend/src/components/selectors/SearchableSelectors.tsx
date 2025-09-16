@@ -1,7 +1,7 @@
 import { Plus } from 'lucide-react';
 import { Combobox } from '@/components/ui/combobox';
 import { TokenSymbol } from '@/components/ui/TokenSymbol';
-import type { ApiAccount, ApiInstitution, ApiToken } from '@/lib/api-types';
+import type { ApiAccount, ApiHolding, ApiInstitution, ApiToken } from '@/lib/api-types';
 import { getAccountTypeIcon, getTokenTypeIcon } from '@/lib/icons';
 
 // Base Searchable Select Component using Combobox
@@ -195,6 +195,47 @@ export function TokenSelector({
       emptyMessage="No tokens match your search."
       newItemLabel="Create New Token"
       newItemValue="new"
+    />
+  );
+}
+
+// Token Filter Selector (for filtering entities by token)
+interface TokenFilterSelectorProps {
+  value: string;
+  onValueChange: (value: string) => void;
+  tokens?: ApiToken[];
+  placeholder?: string;
+  includeAllOption?: boolean;
+}
+
+export function TokenFilterSelector({
+  value,
+  onValueChange,
+  tokens,
+  placeholder = 'Filter by token...',
+  includeAllOption = true,
+}: TokenFilterSelectorProps) {
+  const tokenOptions =
+    tokens?.map((token) => ({
+      value: token.id,
+      label: `${token.symbol} - ${token.name}`,
+      icon: ({ className }: { className?: string }) => (
+        <TokenSymbol type={token.type || 'unknown'} symbol={token.symbol} className={className} />
+      ),
+      subtitle: token.typeName || undefined,
+    })) || [];
+
+  const allOptions = includeAllOption
+    ? [{ value: 'all', label: 'All Tokens' }, ...tokenOptions]
+    : tokenOptions;
+
+  return (
+    <SearchableSelect
+      value={value}
+      onValueChange={onValueChange}
+      placeholder={placeholder}
+      items={allOptions}
+      emptyMessage="No tokens found."
     />
   );
 }
@@ -407,7 +448,6 @@ export function AccountFilterSelector({
     accounts?.map((account) => ({
       value: account.id,
       label: account.name,
-      icon: getAccountTypeIcon(account.type || 'unknown'),
       subtitle: account.typeName || undefined,
     })) || [];
 
@@ -426,15 +466,11 @@ export function AccountFilterSelector({
   );
 }
 
-// Holding Filter Selector (for filtering transactions by holding)
+// Holding Filter Selector (for filtering entities by holding)
 interface HoldingFilterSelectorProps {
   value: string;
   onValueChange: (value: string) => void;
-  holdings?: Array<{
-    id: string;
-    tokenId: string;
-    accountId: string;
-  }>;
+  holdings?: ApiHolding[];
   tokens?: ApiToken[];
   accounts?: ApiAccount[];
   placeholder?: string;
@@ -459,9 +495,19 @@ export function HoldingFilterSelector({
       const account = accountsMap[holding.accountId];
       return {
         value: holding.id,
-        label: token ? `${token.symbol} - ${token.name}` : 'Unknown Token',
-        subtitle: account ? `in ${account.name}` : 'Unknown Account',
-        icon: token ? getTokenTypeIcon(token.type || 'unknown') : undefined,
+        label: token
+          ? `${token.symbol} in ${account?.name || 'Unknown Account'}`
+          : `Unknown Token in ${account?.name || 'Unknown Account'}`,
+        subtitle: token ? `${token.name} - ${holding.balance || 'N/A'} units` : undefined,
+        icon: token
+          ? ({ className }: { className?: string }) => (
+              <TokenSymbol
+                type={token.type || 'unknown'}
+                symbol={token.symbol}
+                className={className}
+              />
+            )
+          : undefined,
       };
     }) || [];
 
@@ -476,6 +522,45 @@ export function HoldingFilterSelector({
       placeholder={placeholder}
       items={allOptions}
       emptyMessage="No holdings found."
+    />
+  );
+}
+
+// Currency Selector Component
+interface CurrencySelectorProps {
+  value: string;
+  onValueChange: (value: string) => void;
+  currencies?: Array<{
+    id: string;
+    symbol: string;
+    name: string;
+  }>;
+  id?: string;
+  placeholder?: string;
+}
+
+export function CurrencySelector({
+  value,
+  onValueChange,
+  currencies,
+  id,
+  placeholder = 'Select currency...',
+}: CurrencySelectorProps) {
+  const currencyOptions =
+    currencies?.map((currency) => ({
+      value: currency.id,
+      label: `${currency.symbol} - ${currency.name}`,
+      subtitle: currency.name,
+    })) || [];
+
+  return (
+    <SearchableSelect
+      id={id}
+      value={value}
+      onValueChange={onValueChange}
+      placeholder={placeholder}
+      items={currencyOptions}
+      emptyMessage="No currencies match your search."
     />
   );
 }

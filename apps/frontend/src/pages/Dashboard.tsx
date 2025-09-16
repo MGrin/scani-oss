@@ -1,29 +1,19 @@
-import { FinancialMath, type Holding } from "@scani/shared";
-import {
-  BarChart3,
-  DollarSign,
-  Plus,
-  TrendingDown,
-  TrendingUp,
-  Wallet,
-  Zap,
-} from "lucide-react";
-import { useCallback, useState } from "react";
-import { useNavigate } from "react-router-dom";
-import { TransactionForm } from "@/components/TransactionForm";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import {
-  ColoredMonetaryValue,
-  MonetaryValue,
-} from "@/components/ui/monetary-value";
-import { PageHeader } from "@/components/ui/page-header";
-import { SummaryCard } from "@/components/ui/summary-cards";
-import type { WebSocketMessage } from "@/hooks/useWebSocket";
-import { useScaniWebSocket } from "@/hooks/useWebSocket";
-import type { ApiHolding, ApiToken } from "@/lib/api-types";
-import { getTokenTypeIcon } from "@/lib/icons";
-import { trpc } from "@/lib/trpc";
+import { FinancialMath, type Holding } from '@scani/shared';
+import { DollarSign, Plus, TrendingDown, TrendingUp, Wallet, Zap } from 'lucide-react';
+import { useCallback, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { HoldingRow } from '@/components/HoldingRow';
+import { TransactionForm } from '@/components/TransactionForm';
+import { TransactionRow } from '@/components/TransactionRow';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { PageHeader } from '@/components/ui/page-header';
+import { ItemCard, SummaryCard } from '@/components/ui/summary-cards';
+import type { WebSocketMessage } from '@/hooks/useWebSocket';
+import { useScaniWebSocket } from '@/hooks/useWebSocket';
+import type { ApiHolding, ApiToken } from '@/lib/api-types';
+import { getTokenTypeIcon } from '@/lib/icons';
+import { trpc } from '@/lib/trpc';
 
 export function Dashboard() {
   const navigate = useNavigate();
@@ -31,10 +21,8 @@ export function Dashboard() {
   // State for Quick Actions modals
   const [isTransactionFormOpen, setIsTransactionFormOpen] = useState(false);
 
-  const { data: accounts, isLoading: accountsLoading } =
-    trpc.accounts.getAll.useQuery();
-  const { data: holdings, isLoading: holdingsLoading } =
-    trpc.holdings.getAll.useQuery();
+  const { data: accounts, isLoading: accountsLoading } = trpc.accounts.getAll.useQuery();
+  const { data: holdings, isLoading: holdingsLoading } = trpc.holdings.getAll.useQuery();
   const { data: transactions, isLoading: transactionsLoading } =
     trpc.transactions.getAll.useQuery();
   const { data: tokens } = trpc.tokens.getAll.useQuery();
@@ -45,12 +33,12 @@ export function Dashboard() {
     trpc.transactions.getMonthlySummary.useQuery({});
 
   const handleWebSocketMessage = useCallback((message: WebSocketMessage) => {
-    console.log("Received WebSocket message:", message);
+    console.log('Received WebSocket message:', message);
     // Handle real-time updates here if needed
   }, []);
 
   const { isConnected, connectionStatus } = useScaniWebSocket({
-    url: "ws://localhost:3002",
+    url: 'ws://localhost:3002',
     onMessage: handleWebSocketMessage,
   });
 
@@ -60,9 +48,7 @@ export function Dashboard() {
     : {};
 
   // Use portfolio value calculation instead of raw balance
-  const totalHoldingsValue = portfolioValue
-    ? parseFloat(portfolioValue.totalValue.toString())
-    : 0;
+  const totalHoldingsValue = portfolioValue ? parseFloat(portfolioValue.totalValue.toString()) : 0;
 
   // Calculate holdings by token type
   interface TokenTypeData {
@@ -73,39 +59,36 @@ export function Dashboard() {
 
   const holdingsByTokenType =
     holdings && portfolioValue
-      ? holdings.reduce(
-          (acc: Record<string, TokenTypeData>, holding: ApiHolding) => {
-            const token = tokensMap[holding.tokenId];
-            if (!token) return acc;
+      ? holdings.reduce((acc: Record<string, TokenTypeData>, holding: ApiHolding) => {
+          const token = tokensMap[holding.tokenId];
+          if (!token) return acc;
 
-            const tokenType = token.type ?? "unknown";
-            if (!acc[tokenType]) {
-              acc[tokenType] = {
-                count: 0,
-                totalValue: 0,
-                holdings: [],
-              };
-            }
+          const tokenType = token.type ?? 'unknown';
+          if (!acc[tokenType]) {
+            acc[tokenType] = {
+              count: 0,
+              totalValue: 0,
+              holdings: [],
+            };
+          }
 
-            // Try to find the portfolio value for this holding's token
-            const portfolioHolding = portfolioValue.holdings.find(
-              (ph) => ph.tokenSymbol === token.symbol
-            );
+          // Try to find the portfolio value for this holding's token
+          const portfolioHolding = portfolioValue.holdings.find(
+            (ph) => ph.tokenSymbol === token.symbol
+          );
 
-            const holdingValue = portfolioHolding?.value
-              ? parseFloat(portfolioHolding.value)
-              : FinancialMath.toNumber(FinancialMath.abs(holding.balance ?? 0)); // fallback to raw balance
+          const holdingValue = portfolioHolding?.value
+            ? parseFloat(portfolioHolding.value)
+            : FinancialMath.toNumber(FinancialMath.abs(holding.balance ?? 0)); // fallback to raw balance
 
-            acc[tokenType].count += 1;
-            acc[tokenType].totalValue = FinancialMath.toNumber(
-              FinancialMath.add(acc[tokenType].totalValue, holdingValue)
-            );
-            acc[tokenType].holdings.push(holding as unknown as Holding);
+          acc[tokenType].count += 1;
+          acc[tokenType].totalValue = FinancialMath.toNumber(
+            FinancialMath.add(acc[tokenType].totalValue, holdingValue)
+          );
+          acc[tokenType].holdings.push(holding as unknown as Holding);
 
-            return acc;
-          },
-          {}
-        )
+          return acc;
+        }, {})
       : {};
 
   // Get top 5 holdings by value using portfolio calculation
@@ -137,6 +120,35 @@ export function Dashboard() {
   const monthlyDeposits = monthlySummary?.totalDeposits ?? 0;
   const monthlyWithdrawals = monthlySummary?.totalWithdrawals ?? 0;
 
+  // Transaction utility functions (shared with Transactions page)
+  const getTransactionIcon = (type: string) => {
+    switch (type) {
+      case 'deposit':
+        return '↓';
+      case 'withdrawal':
+        return '↑';
+      case 'buy':
+        return '📈';
+      case 'sell':
+        return '📉';
+      case 'dividend':
+        return '💰';
+      case 'interest':
+        return '💵';
+      default:
+        return '↔';
+    }
+  };
+
+  const getTransactionColor = (type: string) => {
+    if (['deposit', 'sell', 'dividend', 'interest'].includes(type)) {
+      return 'bg-green-500';
+    } else if (['withdrawal', 'buy'].includes(type)) {
+      return 'bg-red-500';
+    }
+    return 'bg-blue-500';
+  };
+
   if (
     transactionsLoading ||
     accountsLoading ||
@@ -152,9 +164,7 @@ export function Dashboard() {
           subtitle="Your financial overview"
           loading={true}
           secondaryActions={
-            <div className="text-sm text-muted-foreground">
-              WebSocket: {connectionStatus}
-            </div>
+            <div className="text-sm text-muted-foreground">WebSocket: {connectionStatus}</div>
           }
         />
 
@@ -162,9 +172,7 @@ export function Dashboard() {
           {[1, 2, 3, 4].map((i) => (
             <Card key={i}>
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">
-                  Loading...
-                </CardTitle>
+                <CardTitle className="text-sm font-medium">Loading...</CardTitle>
               </CardHeader>
               <CardContent>
                 <div className="h-6 bg-muted animate-pulse rounded"></div>
@@ -184,12 +192,10 @@ export function Dashboard() {
         secondaryActions={
           <div className="flex items-center space-x-1.5">
             <div
-              className={`h-1.5 w-1.5 rounded-full ${
-                isConnected ? "bg-green-500" : "bg-red-500"
-              }`}
+              className={`h-1.5 w-1.5 rounded-full ${isConnected ? 'bg-green-500' : 'bg-red-500'}`}
             />
             <span className="text-sm text-muted-foreground">
-              {isConnected ? "Live" : "Offline"}
+              {isConnected ? 'Live' : 'Offline'}
             </span>
           </div>
         }
@@ -202,9 +208,7 @@ export function Dashboard() {
           title="Total Balance"
           value={totalHoldingsValue}
           currency={userPrefs?.baseCurrency?.symbol}
-          subtitle={`Across ${holdings?.length || 0} holdings in ${
-            accounts?.length || 0
-          } accounts`}
+          subtitle={`Across ${holdings?.length || 0} holdings in ${accounts?.length || 0} accounts`}
           icon={Wallet}
         />
 
@@ -251,7 +255,7 @@ export function Dashboard() {
         </CardHeader>
         <CardContent className="grid gap-4 md:grid-cols-4">
           <Button
-            onClick={() => navigate("/quick-add-holding")}
+            onClick={() => navigate('/quick-add-holding')}
             className="flex items-center justify-center space-x-2 h-10"
           >
             <Zap className="h-5 w-5" />
@@ -267,19 +271,11 @@ export function Dashboard() {
           </Button>
           <Button
             variant="outline"
-            onClick={() => navigate("/quick-add-holding")}
+            onClick={() => navigate('/quick-add-holding')}
             className="flex items-center justify-center space-x-2 h-10"
           >
             <Wallet className="h-5 w-5" />
             <span>Add Holding</span>
-          </Button>
-          <Button
-            variant="outline"
-            onClick={() => navigate("/analytics")}
-            className="flex items-center justify-center space-x-2 h-10"
-          >
-            <BarChart3 className="h-5 w-5" />
-            <span>View Analytics</span>
           </Button>
         </CardContent>
       </Card>
@@ -293,61 +289,36 @@ export function Dashboard() {
           </CardHeader>
           <CardContent>
             {Object.keys(holdingsByTokenType).length === 0 ? (
-              <div className="text-center py-6 text-muted-foreground">
-                No holdings found
-              </div>
+              <div className="text-center py-6 text-muted-foreground">No holdings found</div>
             ) : (
               <div className="space-y-3">
                 {Object.entries(holdingsByTokenType)
                   .sort(
                     ([, a], [, b]) =>
-                      (b as TokenTypeData).totalValue -
-                      (a as TokenTypeData).totalValue
+                      (b as TokenTypeData).totalValue - (a as TokenTypeData).totalValue
                   )
                   .map(([tokenType, data]) => {
                     const tokenData = data as TokenTypeData;
                     const IconComponent = getTokenTypeIcon(tokenType);
 
                     return (
-                      <button
+                      <ItemCard
                         key={tokenType}
-                        type="button"
-                        className="w-full flex items-center justify-between p-3 bg-muted/30 rounded-lg hover:bg-muted/50 cursor-pointer transition-colors text-left"
-                        onClick={() =>
-                          navigate(
-                            `/holdings?type=${encodeURIComponent(tokenType)}`
-                          )
+                        title={tokenType.charAt(0).toUpperCase() + tokenType.slice(1)}
+                        subtitle={
+                          <div className="flex items-center space-x-1 text-xs text-muted-foreground">
+                            <span>{tokenData.count} holdings</span>
+                            <span>•</span>
+                            <span>
+                              {((tokenData.totalValue / totalHoldingsValue) * 100).toFixed(1)}%
+                            </span>
+                          </div>
                         }
-                      >
-                        <div className="flex items-center space-x-3">
-                          <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center">
-                            <IconComponent className="h-5 w-5" />
-                          </div>
-                          <div>
-                            <p className="font-medium capitalize">
-                              {tokenType}
-                            </p>
-                            <p className="text-sm text-muted-foreground">
-                              {tokenData.count} holdings
-                            </p>
-                          </div>
-                        </div>
-                        <div className="text-right">
-                          <MonetaryValue
-                            type="currency"
-                            value={tokenData.totalValue}
-                            currency={userPrefs?.baseCurrency?.symbol}
-                            className="font-semibold"
-                          />
-                          <p className="text-sm text-muted-foreground">
-                            {(
-                              (tokenData.totalValue / totalHoldingsValue) *
-                              100
-                            ).toFixed(1)}
-                            %
-                          </p>
-                        </div>
-                      </button>
+                        currencyValue={tokenData.totalValue}
+                        currency={userPrefs?.baseCurrency?.symbol}
+                        onClick={() => navigate(`/holdings?type=${encodeURIComponent(tokenType)}`)}
+                        icon={<IconComponent className="h-8 w-8 text-muted-foreground" />}
+                      />
                     );
                   })}
               </div>
@@ -362,71 +333,38 @@ export function Dashboard() {
           </CardHeader>
           <CardContent>
             {topHoldings.length === 0 ? (
-              <div className="text-center py-6 text-muted-foreground">
-                No holdings found
-              </div>
+              <div className="text-center py-6 text-muted-foreground">No holdings found</div>
             ) : (
               <div className="space-y-3">
-                {topHoldings.map((holding, index: number) => (
-                  <button
-                    key={holding.id}
-                    type="button"
-                    className="w-full flex items-center justify-between p-3 bg-muted/30 rounded-lg hover:bg-muted/50 cursor-pointer transition-colors text-left"
-                    onClick={() => {
-                      const account = accounts?.find(
-                        (acc) => acc.id === holding.accountId
-                      );
-                      if (account) {
-                        navigate(
-                          `/institutions/${account.institutionId}/accounts/${account.id}/holdings/${holding.id}`
-                        );
-                      } else {
-                        // Fallback to old route if account not found
-                        navigate(
-                          `/transactions?holding=${encodeURIComponent(
-                            holding.id
-                          )}`
-                        );
-                      }
-                    }}
-                  >
-                    <div className="flex items-center space-x-3">
-                      <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center">
-                        <span className="text-xs font-medium">
-                          {holding.token?.symbol || "?"}
-                        </span>
-                      </div>
-                      <div>
-                        <p className="font-medium text-sm">
-                          {holding.token?.name || "Unknown Token"}
-                        </p>
-                        <div className="flex items-center space-x-1 text-xs text-muted-foreground">
-                          <span className="capitalize">
-                            {holding.token?.type}
-                          </span>
-                          <span>•</span>
-                          <span>#{index + 1}</span>
-                        </div>
-                      </div>
-                    </div>
-                    <div className="text-right">
-                      <MonetaryValue
-                        type="currency"
-                        value={holding.value}
-                        currency={userPrefs?.baseCurrency?.symbol}
-                        className="font-semibold"
-                      />
-                      <MonetaryValue
-                        type="token"
-                        value={parseFloat(holding.balance)}
-                        tokenSymbol={holding.token?.symbol || ""}
-                        decimals={holding.token?.decimals || 2}
-                        size="xs"
-                        className="text-muted-foreground block"
-                      />
-                    </div>
-                  </button>
-                ))}
+                {topHoldings.map((holding, index: number) => {
+                  const account = accounts?.find((acc) => acc.id === holding.accountId);
+
+                  return (
+                    <HoldingRow
+                      key={holding.id}
+                      holding={{
+                        ...holding,
+                        account,
+                        institution: undefined, // Not available in Dashboard context
+                      }}
+                      userPrefs={{
+                        baseCurrency: userPrefs?.baseCurrency || undefined,
+                      }}
+                      showRank={true}
+                      rank={index + 1}
+                      onClick={() => {
+                        if (account) {
+                          navigate(
+                            `/institutions/${account.institutionId}/accounts/${account.id}/holdings/${holding.id}`
+                          );
+                        } else {
+                          // Fallback to old route if account not found
+                          navigate(`/transactions?holding=${encodeURIComponent(holding.id)}`);
+                        }
+                      }}
+                    />
+                  );
+                })}
               </div>
             )}
           </CardContent>
@@ -442,53 +380,23 @@ export function Dashboard() {
               No transactions yet. Create your first transaction to get started.
             </div>
           ) : (
-            <div className="space-y-4">
-              {recentTransactions.map((transaction) => (
-                <div
-                  key={transaction.id}
-                  className="flex items-center justify-between"
-                >
-                  <div>
-                    <p className="font-medium">
-                      {transaction.description ||
-                        `${transaction.type} transaction`}
-                    </p>
-                    <p className="text-sm text-muted-foreground">
-                      {transaction.type} •{" "}
-                      {new Date(transaction.timestamp).toLocaleDateString()}
-                      {parseFloat(transaction.fee) > 0 && (
-                        <>
-                          {" • Fee: "}
-                          <MonetaryValue
-                            type="currency"
-                            value={parseFloat(transaction.fee)}
-                            currency={userPrefs?.baseCurrency?.symbol}
-                            size="sm"
-                            className="inline"
-                          />
-                        </>
-                      )}
-                    </p>
-                  </div>
-                  <ColoredMonetaryValue
-                    type="currency"
-                    value={
-                      ["deposit", "sell", "dividend", "interest"].includes(
-                        transaction.type
-                      )
-                        ? FinancialMath.toNumber(
-                            FinancialMath.abs(transaction.amount)
-                          )
-                        : -FinancialMath.toNumber(
-                            FinancialMath.abs(transaction.amount)
-                          )
-                    }
-                    currency={userPrefs?.baseCurrency?.symbol}
-                    className="font-semibold"
-                    showSign={true}
+            <div className="space-y-3">
+              {recentTransactions.map((transaction) => {
+                const holding = holdings?.find((h) => h.id === transaction.holdingId);
+                const account = accounts?.find((acc) => acc.id === holding?.accountId);
+                const token = tokensMap[holding?.tokenId || ''];
+
+                return (
+                  <TransactionRow
+                    key={transaction.id}
+                    transaction={transaction}
+                    account={account}
+                    token={token}
+                    getTransactionColor={getTransactionColor}
+                    getTransactionIcon={getTransactionIcon}
                   />
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </CardContent>
