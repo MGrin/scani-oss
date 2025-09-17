@@ -60,6 +60,7 @@ export function HoldingForm({ isOpen, onClose, holding, mode }: HoldingFormProps
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [duplicateWarning, setDuplicateWarning] = useState<string | null>(null);
+  const [isCloseConfirmOpen, setIsCloseConfirmOpen] = useState(false);
   const balanceId = useId();
 
   const { data: accounts, isLoading: accountsLoading } = trpc.accounts.getAll.useQuery();
@@ -77,6 +78,7 @@ export function HoldingForm({ isOpen, onClose, holding, mode }: HoldingFormProps
           : 'Your new holding has been added to your portfolio.',
       });
       utils.holdings.getAll.invalidate();
+      utils.users.getPortfolioValue.invalidate();
       // Invalidate transactions to show the new opening balance transaction
       if (hasBalance) {
         utils.transactions?.getAll?.invalidate?.();
@@ -85,6 +87,7 @@ export function HoldingForm({ isOpen, onClose, holding, mode }: HoldingFormProps
       onClose();
     },
     onError: (error) => {
+      console.error('Error creating holding:', error);
       toast({
         title: 'Error creating holding',
         description: error.message,
@@ -103,6 +106,7 @@ export function HoldingForm({ isOpen, onClose, holding, mode }: HoldingFormProps
         description: 'Your holding has been successfully updated.',
       });
       utils.holdings.getAll.invalidate();
+      utils.users.getPortfolioValue.invalidate();
       onClose();
     },
     onError: (error) => {
@@ -129,7 +133,7 @@ export function HoldingForm({ isOpen, onClose, holding, mode }: HoldingFormProps
     defaultValues: {
       accountId: holding?.accountId || '',
       tokenId: holding?.tokenId || '',
-      balance: holding?.balance || '0',
+      balance: holding?.balance || '',
     },
     mode: 'onChange',
   });
@@ -146,7 +150,7 @@ export function HoldingForm({ isOpen, onClose, holding, mode }: HoldingFormProps
       reset({
         accountId: '',
         tokenId: '',
-        balance: '0',
+        balance: '',
       });
     }
   }, [holding, reset]);
@@ -191,6 +195,7 @@ export function HoldingForm({ isOpen, onClose, holding, mode }: HoldingFormProps
   }, [checkDuplicate.data, accounts, tokens, watchedAccountId, watchedTokenId]);
 
   const onSubmit = async (data: HoldingFormData) => {
+    console.log('Form submitted with data:', data);
     setIsSubmitting(true);
     setHasUnsavedChanges(false); // Reset unsaved changes on submit
 
@@ -199,6 +204,8 @@ export function HoldingForm({ isOpen, onClose, holding, mode }: HoldingFormProps
       tokenId: data.tokenId,
       balance: data.balance,
     };
+
+    console.log('Submitting to backend:', submitData);
 
     if (mode === 'create') {
       createHolding.mutate(submitData);
@@ -213,16 +220,18 @@ export function HoldingForm({ isOpen, onClose, holding, mode }: HoldingFormProps
   const handleOpenChange = (open: boolean) => {
     if (!open) {
       if (hasUnsavedChanges && mode === 'create') {
-        const confirmClose = window.confirm(
-          'You have unsaved changes. Are you sure you want to close without saving?'
-        );
-        if (!confirmClose) {
-          return; // Prevent closing
-        }
+        setIsCloseConfirmOpen(true);
+        return; // Prevent closing and show confirmation dialog
       }
       handleFormReset();
       onClose();
     }
+  };
+
+  const handleConfirmClose = () => {
+    setIsCloseConfirmOpen(false);
+    handleFormReset();
+    onClose();
   };
 
   const handleFormReset = () => {
@@ -236,7 +245,7 @@ export function HoldingForm({ isOpen, onClose, holding, mode }: HoldingFormProps
 
   return (
     <Dialog open={isOpen} onOpenChange={handleOpenChange}>
-      <DialogContent className="sm:max-w-[500px]">
+      <DialogContent className="max-w-[95vw] sm:max-w-[500px] mx-4 sm:mx-auto">
         <DialogHeader>
           <DialogTitle>{mode === 'create' ? 'Add New Holding' : 'Edit Holding'}</DialogTitle>
           <DialogDescription>
@@ -289,12 +298,12 @@ export function HoldingForm({ isOpen, onClose, holding, mode }: HoldingFormProps
             <div className="relative">
               <Input
                 id={balanceId}
-                type="number"
-                step="any"
-                min="0.000001"
-                max="1000000000"
+                type="text"
+                inputMode="decimal"
+                pattern="[0-9]*\.?[0-9]*"
                 {...register('balance', {
                   required: 'Balance is required',
+                  setValueAs: (v) => v.toString(), // Ensure it's always a string
                 })}
                 placeholder={
                   selectedToken ? `Enter amount in ${selectedToken.symbol}` : 'e.g., 100.50'
@@ -334,6 +343,26 @@ export function HoldingForm({ isOpen, onClose, holding, mode }: HoldingFormProps
           </DialogFooter>
         </form>
       </DialogContent>
+
+      {/* Confirmation dialog for unsaved changes */}
+      <Dialog open={isCloseConfirmOpen} onOpenChange={setIsCloseConfirmOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Unsaved Changes</DialogTitle>
+            <DialogDescription>
+              You have unsaved changes. Are you sure you want to close without saving?
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsCloseConfirmOpen(false)}>
+              Continue Editing
+            </Button>
+            <Button variant="destructive" onClick={handleConfirmClose}>
+              Close Without Saving
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </Dialog>
   );
 }

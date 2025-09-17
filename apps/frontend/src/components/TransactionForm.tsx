@@ -30,7 +30,7 @@ import type { ApiAccount, ApiHolding, ApiInstitution, ApiToken } from '@/lib/api
 import { trpc } from '@/lib/trpc';
 
 // Transaction type metadata - icons and additional properties
-const TRANSACTION_TYPE_METADATA: Record<
+export const TRANSACTION_TYPE_METADATA: Record<
   string,
   {
     icon: string;
@@ -125,6 +125,7 @@ export function TransactionForm({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [_showCalculator, _setShowCalculator] = useState(false);
+  const [isCloseConfirmOpen, setIsCloseConfirmOpen] = useState(false);
 
   // Generate unique IDs for form fields
   const holdingId = useId();
@@ -211,6 +212,7 @@ export function TransactionForm({
       utils.transactions.getAll.invalidate();
       utils.holdings.getAll.invalidate();
       utils.accounts.getAll.invalidate();
+      utils.users.getPortfolioValue.invalidate();
       handleFormReset();
       onClose();
     },
@@ -235,6 +237,7 @@ export function TransactionForm({
       utils.transactions.getAll.invalidate();
       utils.holdings.getAll.invalidate();
       utils.accounts.getAll.invalidate();
+      utils.users.getPortfolioValue.invalidate();
       onClose();
     },
     onError: (error) => {
@@ -384,16 +387,18 @@ export function TransactionForm({
   const handleOpenChange = (open: boolean) => {
     if (!open) {
       if (hasUnsavedChanges && mode === 'create') {
-        const confirmClose = window.confirm(
-          'You have unsaved changes. Are you sure you want to close without saving?'
-        );
-        if (!confirmClose) {
-          return;
-        }
+        setIsCloseConfirmOpen(true);
+        return; // Prevent closing and show confirmation dialog
       }
       handleFormReset();
       onClose();
     }
+  };
+
+  const handleConfirmClose = () => {
+    setIsCloseConfirmOpen(false);
+    handleFormReset();
+    onClose();
   };
 
   const handleFormReset = useCallback(() => {
@@ -440,7 +445,7 @@ export function TransactionForm({
   if (holdingsLoading || !tokens || !accounts || !institutions) {
     return (
       <Dialog open={isOpen} onOpenChange={handleOpenChange}>
-        <DialogContent className="sm:max-w-[600px]">
+        <DialogContent className="max-w-[95vw] sm:max-w-[600px] mx-4 sm:mx-auto">
           <DialogHeader>
             <DialogTitle>{mode === 'create' ? 'Add Transaction' : 'Edit Transaction'}</DialogTitle>
             <DialogDescription>Loading transaction form...</DialogDescription>
@@ -455,7 +460,7 @@ export function TransactionForm({
 
   return (
     <Dialog open={isOpen} onOpenChange={handleOpenChange}>
-      <DialogContent className="sm:max-w-[700px] max-h-[90vh] overflow-y-auto">
+      <DialogContent className="max-w-[95vw] sm:max-w-[700px] max-h-[90vh] mx-4 sm:mx-auto overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="flex items-center space-x-2">
             <span>{mode === 'create' ? 'Add New Transaction' : 'Edit Transaction'}</span>
@@ -481,7 +486,14 @@ export function TransactionForm({
               onValueChange={(value) => setValue('type', value as TransactionFormData['type'])}
             >
               <SelectTrigger id={typeId}>
-                <SelectValue placeholder="Select transaction type" />
+                {selectedTransactionType ? (
+                  <div className="flex items-center gap-2">
+                    <span className="text-base">{selectedTransactionType.icon}</span>
+                    <span>{selectedTransactionType.label}</span>
+                  </div>
+                ) : (
+                  <SelectValue placeholder="Select transaction type" />
+                )}
               </SelectTrigger>
               <SelectContent>
                 {transactionTypesLoading ? (
@@ -495,9 +507,9 @@ export function TransactionForm({
                 ) : (
                   TRANSACTION_TYPES.map((type) => (
                     <SelectItem key={type.value} value={type.value}>
-                      <div className="flex items-center space-x-2">
-                        <span>{type.icon}</span>
-                        <div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-base">{type.icon}</span>
+                        <div className="flex-1">
                           <div className="font-medium">{type.label}</div>
                           <div className="text-xs text-muted-foreground">{type.description}</div>
                         </div>
@@ -757,6 +769,26 @@ export function TransactionForm({
           </DialogFooter>
         </form>
       </DialogContent>
+
+      {/* Confirmation dialog for unsaved changes */}
+      <Dialog open={isCloseConfirmOpen} onOpenChange={setIsCloseConfirmOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Unsaved Changes</DialogTitle>
+            <DialogDescription>
+              You have unsaved changes. Are you sure you want to close without saving?
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsCloseConfirmOpen(false)}>
+              Continue Editing
+            </Button>
+            <Button variant="destructive" onClick={handleConfirmClose}>
+              Close Without Saving
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </Dialog>
   );
 }

@@ -1,14 +1,17 @@
-import { FinancialMath, type Holding } from '@scani/shared';
-import { DollarSign, Plus, TrendingDown, TrendingUp, Wallet, Zap } from 'lucide-react';
+import { Decimal, FinancialMath, type Holding } from '@scani/shared';
+import { Camera, DollarSign, Plus, TrendingDown, TrendingUp, Wallet, Zap } from 'lucide-react';
 import { useCallback, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { HoldingRow } from '@/components/HoldingRow';
-import { TransactionForm } from '@/components/TransactionForm';
+import { ScreenshotHoldingForm } from '@/components/ScreenshotHoldingForm';
+import { TRANSACTION_TYPE_METADATA, TransactionForm } from '@/components/TransactionForm';
 import { TransactionRow } from '@/components/TransactionRow';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Dialog, DialogContent } from '@/components/ui/dialog';
 import { PageHeader } from '@/components/ui/page-header';
 import { ItemCard, SummaryCard } from '@/components/ui/summary-cards';
+import { useToast } from '@/hooks/use-toast';
 import type { WebSocketMessage } from '@/hooks/useWebSocket';
 import { useScaniWebSocket } from '@/hooks/useWebSocket';
 import type { ApiHolding, ApiToken } from '@/lib/api-types';
@@ -20,6 +23,21 @@ export function Dashboard() {
 
   // State for Quick Actions modals
   const [isTransactionFormOpen, setIsTransactionFormOpen] = useState(false);
+  const [isScreenshotFormOpen, setIsScreenshotFormOpen] = useState(false);
+
+  const { toast } = useToast();
+
+  // Screenshot upload handlers
+  const handleScreenshotFormOpen = () => setIsScreenshotFormOpen(true);
+  const handleScreenshotFormClose = () => setIsScreenshotFormOpen(false);
+
+  const handleScreenshotSuccess = () => {
+    handleScreenshotFormClose();
+    toast({
+      title: 'Screenshot processed successfully',
+      description: 'Holdings have been added from your screenshot.',
+    });
+  };
 
   const { data: accounts, isLoading: accountsLoading } = trpc.accounts.getAll.useQuery();
   const { data: holdings, isLoading: holdingsLoading } = trpc.holdings.getAll.useQuery();
@@ -75,14 +93,24 @@ export function Dashboard() {
             };
           }
 
-          // Try to find the portfolio value for this holding's token
+          // Calculate individual holding value based on its proportion of total token balance
+          let holdingValue = FinancialMath.toNumber(FinancialMath.abs(holding.balance ?? '0')); // fallback to raw balance
+
           const portfolioHolding = portfolioValue.holdings.find(
             (ph) => ph.tokenSymbol === token.symbol
           );
 
-          const holdingValue = portfolioHolding?.value
-            ? parseFloat(portfolioHolding.value)
-            : FinancialMath.toNumber(FinancialMath.abs(holding.balance ?? 0)); // fallback to raw balance
+          if (portfolioHolding?.value && portfolioHolding?.balance) {
+            // Calculate this holding's proportion of the total token balance
+            const holdingBalance = FinancialMath.toNumber(new Decimal(holding.balance ?? '0'));
+            const totalTokenBalance = FinancialMath.toNumber(new Decimal(portfolioHolding.balance));
+            const totalTokenValue = parseFloat(portfolioHolding.value);
+
+            if (totalTokenBalance > 0) {
+              // Calculate proportional value for this specific holding
+              holdingValue = (holdingBalance / totalTokenBalance) * totalTokenValue;
+            }
+          }
 
           acc[tokenType].count += 1;
           acc[tokenType].totalValue = FinancialMath.toNumber(
@@ -100,17 +128,31 @@ export function Dashboard() {
       ? [...holdings]
           .map((holding) => {
             const token = tokensMap[holding.tokenId];
-            // Try to find the portfolio value for this holding's token
+            // Calculate individual holding value based on its proportion of total token balance
+            let value = FinancialMath.toNumber(FinancialMath.abs(holding.balance ?? '0')); // fallback to raw balance
+
             const portfolioHolding = portfolioValue.holdings.find(
               (ph) => ph.tokenSymbol === token?.symbol
             );
 
+            if (portfolioHolding?.value && portfolioHolding?.balance && token?.symbol) {
+              // Calculate this holding's proportion of the total token balance
+              const holdingBalance = FinancialMath.toNumber(new Decimal(holding.balance ?? '0'));
+              const totalTokenBalance = FinancialMath.toNumber(
+                new Decimal(portfolioHolding.balance)
+              );
+              const totalTokenValue = parseFloat(portfolioHolding.value);
+
+              if (totalTokenBalance > 0) {
+                // Calculate proportional value for this specific holding
+                value = (holdingBalance / totalTokenBalance) * totalTokenValue;
+              }
+            }
+
             return {
               ...holding,
               token,
-              value: portfolioHolding?.value
-                ? parseFloat(portfolioHolding.value)
-                : FinancialMath.toNumber(FinancialMath.abs(holding.balance)), // fallback to raw balance
+              value,
             };
           })
           .sort((a, b) => b.value - a.value)
@@ -125,22 +167,9 @@ export function Dashboard() {
 
   // Transaction utility functions (shared with Transactions page)
   const getTransactionIcon = (type: string) => {
-    switch (type) {
-      case 'deposit':
-        return '↓';
-      case 'withdrawal':
-        return '↑';
-      case 'buy':
-        return '📈';
-      case 'sell':
-        return '📉';
-      case 'dividend':
-        return '💰';
-      case 'interest':
-        return '💵';
-      default:
-        return '↔';
-    }
+    // Use consistent icons from metadata
+    const metadata = TRANSACTION_TYPE_METADATA[type];
+    return metadata?.icon || '�'; // Default to the 'other' icon if not found
   };
 
   const getTransactionColor = (type: string) => {
@@ -205,7 +234,7 @@ export function Dashboard() {
       />
 
       {/* Stats Cards */}
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <SummaryCard
           type="currency"
           title="Total Balance"
@@ -256,10 +285,10 @@ export function Dashboard() {
             <span>Quick Actions</span>
           </CardTitle>
         </CardHeader>
-        <CardContent className="grid gap-4 md:grid-cols-4">
+        <CardContent className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           <Button
             onClick={() => navigate('/quick-add-holding')}
-            className="flex items-center justify-center space-x-2 h-10"
+            className="flex items-center justify-center space-x-2 h-11 touch-manipulation"
           >
             <Zap className="h-5 w-5" />
             <span>Add Holding</span>
@@ -267,24 +296,24 @@ export function Dashboard() {
           <Button
             variant="outline"
             onClick={() => setIsTransactionFormOpen(true)}
-            className="flex items-center justify-center space-x-2 h-10"
+            className="flex items-center justify-center space-x-2 h-11 touch-manipulation"
           >
             <DollarSign className="h-5 w-5" />
             <span>Add Transaction</span>
           </Button>
           <Button
             variant="outline"
-            onClick={() => navigate('/quick-add-holding')}
-            className="flex items-center justify-center space-x-2 h-10"
+            onClick={handleScreenshotFormOpen}
+            className="flex items-center justify-center space-x-2 h-11 touch-manipulation"
           >
-            <Wallet className="h-5 w-5" />
-            <span>Add Holding</span>
+            <Camera className="h-5 w-5" />
+            <span>Upload Screenshot</span>
           </Button>
         </CardContent>
       </Card>
 
       {/* Holdings Overview */}
-      <div className="grid gap-4 md:grid-cols-2">
+      <div className="grid gap-4 lg:grid-cols-2">
         {/* Holdings by Token Type */}
         <Card>
           <CardHeader>
@@ -409,6 +438,13 @@ export function Dashboard() {
         onClose={() => setIsTransactionFormOpen(false)}
         mode="create"
       />
+
+      {/* Screenshot Upload Dialog */}
+      <Dialog open={isScreenshotFormOpen} onOpenChange={setIsScreenshotFormOpen}>
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+          <ScreenshotHoldingForm onSuccess={handleScreenshotSuccess} />
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

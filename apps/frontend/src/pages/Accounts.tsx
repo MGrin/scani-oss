@@ -1,8 +1,9 @@
 import type { Account } from '@scani/shared';
-import { Plus, Wallet } from 'lucide-react';
+import { Camera, ChevronDown, Plus, Wallet } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { AccountRow } from '@/components/AccountRow';
+import { ScreenshotHoldingForm } from '@/components/ScreenshotHoldingForm';
 import {
   AccountTypeSelector,
   InstitutionFilterSelector,
@@ -17,6 +18,12 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { PageAggregation } from '@/components/ui/page-aggregation';
 import { PageHeader } from '@/components/ui/page-header';
 import { useToast } from '@/hooks/use-toast';
@@ -32,6 +39,7 @@ export function Accounts() {
   const [searchTerm, setSearchTerm] = useState('');
   const [accountToDelete, setAccountToDelete] = useState<Account | null>(null);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
+  const [isScreenshotFormOpen, setIsScreenshotFormOpen] = useState(false);
 
   // Unified filter system
   const {
@@ -137,6 +145,7 @@ export function Accounts() {
       });
       utils.accounts.getAll.invalidate();
       utils.holdings.getAll.invalidate();
+      utils.users.getPortfolioValue.invalidate();
       setIsDeleteDialogOpen(false);
       setAccountToDelete(null);
     },
@@ -179,6 +188,16 @@ export function Accounts() {
     if (accountToDelete) {
       deleteAccount.mutate({ id: accountToDelete.id });
     }
+  };
+
+  // Screenshot handlers
+  const handleAddFromScreenshot = () => setIsScreenshotFormOpen(true);
+  const handleScreenshotSuccess = () => {
+    setIsScreenshotFormOpen(false);
+    toast({
+      title: 'Screenshot processed successfully',
+      description: 'Holdings have been added from your screenshot.',
+    });
   };
 
   const getAccountHoldings = (accountId: string) => {
@@ -244,11 +263,27 @@ export function Accounts() {
       <PageHeader
         title={pageTitle}
         subtitle={pageSubtitle}
-        primaryAction={{
-          label: 'Add Holding',
-          onClick: () => navigate('/quick-add-holding'),
-          icon: <Plus className="h-4 w-4 mr-1" />,
-        }}
+        secondaryActions={
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button size="lg">
+                <Plus className="h-4 w-4 mr-1" />
+                Add Holdings
+                <ChevronDown className="h-4 w-4 ml-1" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem onClick={() => navigate('/quick-add-holding')}>
+                <Plus className="h-4 w-4 mr-2" />
+                Add Manually
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={handleAddFromScreenshot}>
+                <Camera className="h-4 w-4 mr-2" />
+                Upload Screenshot
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        }
       />
 
       <PageAggregation
@@ -375,6 +410,13 @@ export function Accounts() {
               {deleteAccount.isPending ? 'Deleting...' : BUTTON_TEXT.DELETE_ACCOUNT}
             </Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Screenshot Upload Dialog */}
+      <Dialog open={isScreenshotFormOpen} onOpenChange={setIsScreenshotFormOpen}>
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+          <ScreenshotHoldingForm onSuccess={handleScreenshotSuccess} />
         </DialogContent>
       </Dialog>
     </div>

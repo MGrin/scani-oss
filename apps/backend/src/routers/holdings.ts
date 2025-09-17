@@ -29,8 +29,12 @@ export const holdingsRouter = router({
         excludeId: z.string().optional(),
       })
     )
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
+      const { dbUser } = requireAuth(ctx);
+      const userId = dbUser.id;
+
       const conditions = [
+        eq(schema.holdings.userId, userId), // Add user scoping
         eq(schema.holdings.accountId, input.accountId),
         eq(schema.holdings.tokenId, input.tokenId),
       ];
@@ -64,15 +68,17 @@ export const holdingsRouter = router({
       const userId = dbUser.id;
       const now = new Date();
 
-      // Validate account existence
+      console.log('Creating holding with data:', { ...input, userId });
+
+      // Validate account existence and ownership
       const [account] = await db
         .select()
         .from(schema.accounts)
-        .where(eq(schema.accounts.id, input.accountId))
+        .where(and(eq(schema.accounts.id, input.accountId), eq(schema.accounts.userId, userId)))
         .limit(1);
 
       if (!account) {
-        throw new Error('Account does not exist for the specified accountId');
+        throw new Error('Account does not exist or does not belong to the current user');
       }
 
       // Validate token existence
@@ -96,11 +102,14 @@ export const holdingsRouter = router({
           lastUpdated: input.lastUpdated || now, // Always ensure lastUpdated is set
         };
 
+        console.log('Inserting holding data:', holdingData);
         const [holding] = await trx.insert(schema.holdings).values(holdingData).returning();
 
         if (!holding) {
           throw new Error('Failed to create holding');
         }
+
+        console.log('Holding created successfully:', holding.id);
 
         // Fetch current token price for the user's base currency
         try {
@@ -191,12 +200,19 @@ export const holdingsRouter = router({
       return updatedHolding;
     }),
 
-  // Delete holding
+  // Delete holding (with cascading to transactions)
   delete: protectedProcedure
     .input(z.object({ id: z.string() }))
     .mutation(async ({ input, ctx }) => {
       const { dbUser } = requireAuth(ctx);
 
+      // Get transaction count for logging purposes before deletion
+      const transactions = await db
+        .select({ id: schema.transactions.id })
+        .from(schema.transactions)
+        .where(eq(schema.transactions.holdingId, input.id));
+
+      // Delete the holding - cascading deletes will handle transactions
       const [deletedHolding] = await db
         .delete(schema.holdings)
         .where(and(eq(schema.holdings.id, input.id), eq(schema.holdings.userId, dbUser.id)))
@@ -206,6 +222,12 @@ export const holdingsRouter = router({
         throw new Error('Holding not found');
       }
 
-      return { success: true, deleted: deletedHolding };
+      return {
+        success: true,
+        deleted: deletedHolding,
+        cascadeInfo: {
+          transactionsDeleted: transactions.length,
+        },
+      };
     }),
 });

@@ -1,4 +1,5 @@
 import { Edit2, Eye, MoreHorizontal, Trash2 } from 'lucide-react';
+import type { MouseEventHandler } from 'react';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
@@ -42,15 +43,18 @@ export function HoldingRow({
 }: HoldingRowProps) {
   const TypeIcon = getTokenTypeIcon(holding.token?.type ?? '');
 
-  const handleView = () => {
+  const handleView: MouseEventHandler<HTMLDivElement> = (e) => {
+    e.stopPropagation();
     if (onView) onView(holding);
   };
 
-  const handleEdit = () => {
+  const handleEdit: MouseEventHandler<HTMLDivElement> = (e) => {
+    e.stopPropagation();
     if (onEdit) onEdit(holding);
   };
 
-  const handleDelete = () => {
+  const handleDelete: MouseEventHandler<HTMLDivElement> = (e) => {
+    e.stopPropagation();
     if (onDelete) onDelete(holding);
   };
 

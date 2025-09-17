@@ -6,7 +6,7 @@ import {
   HoldingFilterSelector,
   TransactionTypeSelector,
 } from '@/components/selectors/SearchableSelectors';
-import { TransactionForm } from '@/components/TransactionForm';
+import { TRANSACTION_TYPE_METADATA, TransactionForm } from '@/components/TransactionForm';
 import { TransactionRow } from '@/components/TransactionRow';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
@@ -132,14 +132,20 @@ export function Transactions() {
   const utils = trpc.useUtils();
 
   const deleteTransaction = trpc.transactions.delete.useMutation({
-    onSuccess: () => {
+    onSuccess: (result) => {
+      let description = 'The transaction has been successfully deleted.';
+      if (result.holdingBalanceUpdated) {
+        description += ' Holding balance has been recalculated.';
+      }
+
       toast({
         title: '✅ Transaction deleted',
-        description: 'The transaction has been successfully deleted.',
+        description,
       });
       utils.transactions.getAll.invalidate();
       utils.holdings.getAll.invalidate();
       utils.accounts.getAll.invalidate();
+      utils.users.getPortfolioValue.invalidate();
       setIsDeleteDialogOpen(false);
       setTransactionToDelete(undefined);
     },
@@ -214,22 +220,9 @@ export function Transactions() {
   }, 0);
 
   const getTransactionIcon = (type: string) => {
-    switch (type) {
-      case 'deposit':
-        return '↓';
-      case 'withdrawal':
-        return '↑';
-      case 'buy':
-        return '📈';
-      case 'sell':
-        return '📉';
-      case 'dividend':
-        return '💰';
-      case 'interest':
-        return '💵';
-      default:
-        return '↔';
-    }
+    // Use consistent icons from metadata
+    const metadata = TRANSACTION_TYPE_METADATA[type];
+    return metadata?.icon || '�'; // Default to the 'other' icon if not found
   };
 
   const getTransactionColor = (type: string) => {

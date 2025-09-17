@@ -1,4 +1,5 @@
 import { Edit2, MoreHorizontal, Trash2 } from 'lucide-react';
+import type { MouseEventHandler } from 'react';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
@@ -45,11 +46,13 @@ export function TransactionRow({
   getTransactionColor,
   getTransactionIcon,
 }: TransactionRowProps) {
-  const handleEdit = () => {
+  const handleEdit: MouseEventHandler<HTMLDivElement> = (e) => {
+    e.stopPropagation();
     if (onEdit) onEdit(transaction);
   };
 
-  const handleDelete = () => {
+  const handleDelete: MouseEventHandler<HTMLDivElement> = (e) => {
+    e.stopPropagation();
     if (onDelete) onDelete(transaction);
   };
 

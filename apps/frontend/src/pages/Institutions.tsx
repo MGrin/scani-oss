@@ -1,12 +1,29 @@
-import { Building2, Plus } from 'lucide-react';
+import { Building2, Camera, ChevronDown, Plus } from 'lucide-react';
+import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { InstitutionRow } from '@/components/InstitutionRow';
+import { ScreenshotHoldingForm } from '@/components/ScreenshotHoldingForm';
 import { InstitutionTypeSelector } from '@/components/selectors/SearchableSelectors';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { LoadingSpinner } from '@/components/ui/loading';
 import { PageAggregation } from '@/components/ui/page-aggregation';
 import { PageHeader } from '@/components/ui/page-header';
+import { useToast } from '@/hooks/use-toast';
 import { useFilters } from '@/hooks/useFilters';
 import type { ApiInstitution, ApiToken } from '@/lib/api-types';
 
@@ -14,6 +31,20 @@ import { trpc } from '@/lib/trpc';
 
 export function Institutions() {
   const navigate = useNavigate();
+  const { toast } = useToast();
+  const [isScreenshotFormOpen, setIsScreenshotFormOpen] = useState(false);
+  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
+  const [institutionToDelete, setInstitutionToDelete] = useState<ApiInstitution | null>(null);
+
+  // Screenshot handlers
+  const handleAddFromScreenshot = () => setIsScreenshotFormOpen(true);
+  const handleScreenshotSuccess = () => {
+    setIsScreenshotFormOpen(false);
+    toast({
+      title: 'Screenshot processed successfully',
+      description: 'Holdings have been added from your screenshot.',
+    });
+  };
 
   const {
     filters: filterValues,
@@ -32,6 +63,46 @@ export function Institutions() {
   const { data: holdings } = trpc.holdings.getAll.useQuery();
   const { data: tokens } = trpc.tokens.getByUserId.useQuery();
   const { data: baseCurrency } = trpc.users.getBaseCurrency.useQuery();
+
+  // Get trpc context for invalidating queries
+  const trpcContext = trpc.useContext();
+
+  // Delete mutation
+  const deleteInstitutionMutation = trpc.institutions.delete.useMutation({
+    onSuccess: (result) => {
+      toast({
+        title: 'Accounts removed from institution',
+        description: `Successfully removed your ${result.cascadeInfo.accountsDeleted} account(s) from "${result.deleted.name}". Also deleted ${result.cascadeInfo.holdingsDeleted} holding(s) and ${result.cascadeInfo.transactionsDeleted} transaction(s).`,
+      });
+      // Refetch data to update UI
+      void trpcContext.institutions.getByUserId.invalidate();
+      void trpcContext.accounts.getAll.invalidate();
+      void trpcContext.holdings.getAll.invalidate();
+      void trpcContext.users.getPortfolioValue.invalidate();
+      // Close dialog and clear state
+      setIsDeleteDialogOpen(false);
+      setInstitutionToDelete(null);
+    },
+    onError: (error) => {
+      toast({
+        title: 'Error',
+        description: error.message || 'Failed to remove accounts from institution',
+        variant: 'destructive',
+      });
+    },
+  });
+
+  // Delete handler
+  const handleDeleteInstitution = (institution: ApiInstitution) => {
+    setInstitutionToDelete(institution);
+    setIsDeleteDialogOpen(true);
+  };
+
+  const confirmDeleteInstitution = () => {
+    if (institutionToDelete) {
+      deleteInstitutionMutation.mutate({ id: institutionToDelete.id });
+    }
+  };
 
   // Filter institutions based on search and type
   const filteredInstitutions =
@@ -75,18 +146,16 @@ export function Institutions() {
           (ph) => ph.tokenSymbol === token.symbol
         );
 
-        if (portfolioHolding?.value) {
-          // Calculate proportion of this holding relative to total holdings of same token
-          const tokenHoldings = holdings.filter((h) => h.tokenId === holding.tokenId);
-          const totalTokenBalance = tokenHoldings.reduce(
-            (sum, h) => sum + parseFloat(h.balance || '0'),
-            0
-          );
+        if (portfolioHolding?.value && portfolioHolding?.balance) {
+          // Calculate this individual holding's value based on its balance proportion
           const holdingBalance = parseFloat(holding.balance || '0');
+          const totalTokenBalance = parseFloat(portfolioHolding.balance);
+          const totalTokenValue = parseFloat(portfolioHolding.value);
 
           if (totalTokenBalance > 0) {
-            const proportion = holdingBalance / totalTokenBalance;
-            return accSum + parseFloat(portfolioHolding.value) * proportion;
+            // Calculate proportional value for this specific holding
+            const individualValue = (holdingBalance / totalTokenBalance) * totalTokenValue;
+            return accSum + individualValue;
           }
         }
         return accSum;
@@ -130,11 +199,27 @@ export function Institutions() {
       <PageHeader
         title="Your Financial Institutions"
         subtitle="Overview of institutions where you have accounts"
-        primaryAction={{
-          label: 'Add Holding',
-          onClick: () => navigate('/quick-add-holding'),
-          icon: <Plus className="h-4 w-4 mr-1" />,
-        }}
+        secondaryActions={
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button size="lg">
+                <Plus className="h-4 w-4 mr-1" />
+                Add Holdings
+                <ChevronDown className="h-4 w-4 ml-1" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem onClick={() => navigate('/quick-add-holding')}>
+                <Plus className="h-4 w-4 mr-2" />
+                Add Manually
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={handleAddFromScreenshot}>
+                <Camera className="h-4 w-4 mr-2" />
+                Upload Screenshot
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        }
       />
 
       <PageAggregation
@@ -207,12 +292,50 @@ export function Institutions() {
                 userPrefs={{
                   baseCurrency: baseCurrency || undefined,
                 }}
+                onDelete={handleDeleteInstitution}
                 onClick={() => navigate(`/institutions/${institution.id}`)}
               />
             );
           })}
         </div>
       )}
+
+      {/* Screenshot Upload Dialog */}
+      <Dialog open={isScreenshotFormOpen} onOpenChange={setIsScreenshotFormOpen}>
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+          <ScreenshotHoldingForm onSuccess={handleScreenshotSuccess} />
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Confirmation Dialog */}
+      <Dialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Remove Accounts from Institution</DialogTitle>
+            <DialogDescription>
+              Are you sure you want to remove all your accounts from "{institutionToDelete?.name}"?
+              This will delete all your accounts, holdings, and transactions associated with this
+              institution. This action cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setIsDeleteDialogOpen(false)}
+              disabled={deleteInstitutionMutation.isPending}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={confirmDeleteInstitution}
+              disabled={deleteInstitutionMutation.isPending}
+            >
+              {deleteInstitutionMutation.isPending ? 'Removing...' : 'Remove My Accounts'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

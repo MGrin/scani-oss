@@ -46,8 +46,9 @@ export const MOBILE_SPACING = {
 export const MOBILE_CLASSES = {
   // Buttons with proper tap targets
   button: {
-    primary: 'h-10 px-5 text-base touch-manipulation', // Reduced from 48px to 40px
-    secondary: 'h-9 px-3 text-sm touch-manipulation', // Reduced from 44px to 36px
+    primary: 'h-11 px-5 text-base touch-manipulation min-h-[44px]', // WCAG AA compliant
+    secondary: 'h-10 px-3 text-sm touch-manipulation min-h-[40px]', // Comfortable size
+    small: 'h-9 px-2.5 text-xs touch-manipulation min-h-[36px]', // Minimum acceptable
     icon: 'h-10 w-10 touch-manipulation', // Reduced from 48x48 to 40x40
     iconSmall: 'h-9 w-9 touch-manipulation', // Reduced from 44x44 to 36x36
   },
@@ -74,9 +75,27 @@ export const MOBILE_CLASSES = {
 
   // Lists with better spacing
   list: {
-    item: 'py-3 px-4 touch-manipulation',
+    item: 'py-3 px-4 touch-manipulation min-h-[44px] flex items-center',
     itemClickable:
-      'py-3 px-4 hover:bg-accent active:bg-accent/80 transition-colors touch-manipulation cursor-pointer',
+      'py-3 px-4 hover:bg-accent active:bg-accent/80 transition-colors touch-manipulation cursor-pointer min-h-[44px] flex items-center',
+  },
+
+  // Typography responsive classes
+  typography: {
+    h1: 'text-2xl sm:text-3xl lg:text-4xl font-bold',
+    h2: 'text-xl sm:text-2xl lg:text-3xl font-semibold',
+    h3: 'text-lg sm:text-xl lg:text-2xl font-medium',
+    body: 'text-sm sm:text-base',
+    caption: 'text-xs sm:text-sm text-muted-foreground',
+    small: 'text-xs',
+  },
+
+  // Mobile-optimized grids
+  grid: {
+    cards: 'grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4',
+    stats: 'grid gap-4 sm:grid-cols-2 lg:grid-cols-4',
+    twoColumn: 'grid gap-4 lg:grid-cols-2',
+    actions: 'grid gap-3 sm:grid-cols-2 lg:grid-cols-4',
   },
 
   // Modal and dialog improvements

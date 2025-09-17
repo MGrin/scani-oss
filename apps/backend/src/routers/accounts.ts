@@ -4,6 +4,7 @@ import { db } from '../db/connection';
 import * as schema from '../db/schema';
 import { getUserId } from '../middleware/auth';
 import { PortfolioValuationService } from '../services/portfolio-valuation';
+import { PricingService } from '../services/pricing';
 import { protectedProcedure, router } from '../trpc';
 
 // Helper function to check if account name already exists within an institution
@@ -233,31 +234,60 @@ export const accountsRouter = router({
         .innerJoin(schema.tokens, eq(schema.holdings.tokenId, schema.tokens.id))
         .where(eq(schema.holdings.userId, userId));
 
-      // Calculate account balances using portfolio service pricing
+      // Get user's base currency for direct price calculations
+      const [user] = await db
+        .select()
+        .from(schema.users)
+        .where(eq(schema.users.id, userId))
+        .limit(1);
+      if (!user?.baseCurrencyId) {
+        throw new Error('User has no base currency set');
+      }
+
+      const [baseCurrency] = await db
+        .select()
+        .from(schema.tokens)
+        .where(eq(schema.tokens.id, user.baseCurrencyId))
+        .limit(1);
+
+      if (!baseCurrency) {
+        throw new Error('Base currency token not found');
+      }
+
+      // Get current token prices for all unique tokens
+      const uniqueTokens = [...new Set(userHoldings.map((h) => h.tokenSymbol))];
+      const priceResults: Record<string, string> = {};
+
+      // Create a separate pricing service instance
+      const pricingService = new PricingService();
+
+      for (const tokenSymbol of uniqueTokens) {
+        if (tokenSymbol !== baseCurrency.symbol) {
+          try {
+            const price = await pricingService.getTokenPrice({
+              tokenSymbol,
+              baseCurrency: baseCurrency.symbol,
+              timestamp: new Date(),
+              live: false, // Use cached prices
+            });
+            priceResults[tokenSymbol] = price;
+          } catch (error) {
+            console.warn(`Failed to get price for ${tokenSymbol}:`, error);
+          }
+        } else {
+          priceResults[tokenSymbol] = '1'; // Base currency price is always 1
+        }
+      }
+
+      // Calculate account balances by summing individual holding values
       const accountSummaries = accounts.map((account) => {
         const accountHoldings = userHoldings.filter((h) => h.accountId === account.id);
 
         // Sum up the base currency values for this account
         const totalBalance = accountHoldings.reduce((sum, holding) => {
-          // Find matching portfolio holding to get base currency value
-          const portfolioHolding = portfolioValue.holdings.find(
-            (ph) => ph.tokenSymbol === holding.tokenSymbol
-          );
-
-          if (portfolioHolding?.value) {
-            // Scale the portfolio holding value based on this account's proportion of the total token balance
-            const accountBalance = parseFloat(holding.balance);
-            const totalTokenBalance = userHoldings
-              .filter((h) => h.tokenSymbol === holding.tokenSymbol)
-              .reduce((total, h) => total + parseFloat(h.balance), 0);
-
-            if (totalTokenBalance > 0) {
-              const proportion = accountBalance / totalTokenBalance;
-              const totalValue = parseFloat(portfolioHolding.value);
-              return sum + totalValue * proportion;
-            }
-          }
-          return sum;
+          const balance = parseFloat(holding.balance || '0');
+          const price = parseFloat(priceResults[holding.tokenSymbol] || '0');
+          return sum + balance * price;
         }, 0);
 
         return {

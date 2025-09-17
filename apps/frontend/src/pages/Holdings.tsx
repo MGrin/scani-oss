@@ -1,9 +1,10 @@
-import { FinancialMath } from '@scani/shared';
-import { PieChart, Plus } from 'lucide-react';
+import { Decimal, FinancialMath } from '@scani/shared';
+import { Camera, ChevronDown, PieChart, Plus } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { HoldingForm } from '@/components/HoldingForm';
 import { HoldingRow } from '@/components/HoldingRow';
+import { ScreenshotHoldingForm } from '@/components/ScreenshotHoldingForm';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import {
@@ -14,6 +15,12 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { MonetaryValue } from '@/components/ui/monetary-value';
 import { PageAggregation } from '@/components/ui/page-aggregation';
 import { PageHeader } from '@/components/ui/page-header';
@@ -133,20 +140,32 @@ export function Holdings() {
   const [holdingToDelete, setHoldingToDelete] = useState<ProcessedHolding | undefined>();
   const [isViewDialogOpen, setIsViewDialogOpen] = useState(false);
   const [holdingToView, setHoldingToView] = useState<ProcessedHolding | undefined>();
+  const [isScreenshotFormOpen, setIsScreenshotFormOpen] = useState(false);
 
   const utils = trpc.useUtils();
   const { toast } = useToast();
 
   const deleteHolding = trpc.holdings.delete.useMutation({
-    onSuccess: () => {
+    onSuccess: (result) => {
+      const { cascadeInfo } = result;
+      let description = `Holding for "${
+        holdingToDelete?.token?.symbol || 'token'
+      }" has been deleted successfully.`;
+
+      if (cascadeInfo && cascadeInfo.transactionsDeleted > 0) {
+        description += ` Also deleted ${
+          cascadeInfo.transactionsDeleted
+        } transaction${cascadeInfo.transactionsDeleted !== 1 ? 's' : ''}.`;
+      }
+
       toast({
         title: 'Success',
-        description: `Holding for "${
-          holdingToDelete?.token?.symbol || 'token'
-        }" has been deleted successfully.`,
+        description,
         variant: 'success',
       });
       utils.holdings.getAll.invalidate();
+      utils.transactions.getAll.invalidate();
+      utils.users.getPortfolioValue.invalidate();
       setIsDeleteDialogOpen(false);
       setHoldingToDelete(undefined);
     },
@@ -176,19 +195,33 @@ export function Holdings() {
     const account = accountsMap[holding.accountId];
     const institution = account ? institutionsMap[account.institutionId] : null;
 
-    // Try to find the portfolio value for this holding's token
-    const portfolioHolding = portfolioValue?.holdings.find(
-      (ph) => ph.tokenSymbol === token?.symbol
-    );
+    // Calculate individual holding value based on its proportion of total token balance
+    let value = FinancialMath.toNumber(FinancialMath.abs(holding.balance ?? '0')); // fallback to raw balance
+
+    if (portfolioValue?.holdings && token?.symbol) {
+      const portfolioHolding = portfolioValue.holdings.find(
+        (ph) => ph.tokenSymbol === token.symbol
+      );
+
+      if (portfolioHolding?.value && portfolioHolding?.balance) {
+        // Calculate this holding's proportion of the total token balance
+        const holdingBalance = FinancialMath.toNumber(new Decimal(holding.balance ?? '0'));
+        const totalTokenBalance = FinancialMath.toNumber(new Decimal(portfolioHolding.balance));
+        const totalTokenValue = parseFloat(portfolioHolding.value);
+
+        if (totalTokenBalance > 0) {
+          // Calculate proportional value for this specific holding
+          value = (holdingBalance / totalTokenBalance) * totalTokenValue;
+        }
+      }
+    }
 
     return {
       ...holding,
       token,
       account,
       institution,
-      value: portfolioHolding?.value
-        ? parseFloat(portfolioHolding.value)
-        : FinancialMath.toNumber(FinancialMath.abs(holding.balance ?? 0)), // fallback to raw balance
+      value,
     };
   });
 
@@ -214,6 +247,20 @@ export function Holdings() {
 
   const handleAddHolding = () => {
     navigate('/quick-add-holding');
+  };
+
+  const handleAddFromScreenshot = () => {
+    setIsScreenshotFormOpen(true);
+  };
+
+  const handleScreenshotSuccess = () => {
+    setIsScreenshotFormOpen(false);
+    // Refresh the holdings data
+    utils.holdings.getAll.invalidate();
+    toast({
+      title: 'Success',
+      description: 'Holdings have been created from your screenshot',
+    });
   };
 
   const handleEditHolding = (holding: ProcessedHolding) => {
@@ -283,11 +330,27 @@ export function Holdings() {
       <PageHeader
         title={pageTitle}
         subtitle={pageSubtitle}
-        primaryAction={{
-          label: BUTTON_TEXT.CREATE_HOLDING,
-          onClick: handleAddHolding,
-          icon: <Plus className="h-4 w-4 mr-1" />,
-        }}
+        secondaryActions={
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button size="lg">
+                <Plus className="h-4 w-4 mr-1" />
+                Add Holdings
+                <ChevronDown className="h-4 w-4 ml-1" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem onClick={handleAddHolding}>
+                <Plus className="h-4 w-4 mr-2" />
+                Add Manually
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={handleAddFromScreenshot}>
+                <Camera className="h-4 w-4 mr-2" />
+                Upload Screenshot
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        }
       />
 
       <PageAggregation
@@ -332,11 +395,30 @@ export function Holdings() {
         <Card>
           <CardContent className="p-12 text-center">
             <PieChart className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
-            <div className="text-muted-foreground mb-4">No holdings found</div>
-            <Button onClick={handleAddHolding}>
-              <Plus className="h-4 w-4 mr-2" />
-              {BUTTON_TEXT.ADD_FIRST_HOLDING}
-            </Button>
+            <div className="text-muted-foreground mb-6">No holdings found</div>
+            <div className="space-y-3">
+              <div className="text-sm text-muted-foreground mb-4">
+                Get started by adding your first holdings:
+              </div>
+              <div className="flex flex-col sm:flex-row gap-3 justify-center">
+                <Button onClick={handleAddFromScreenshot} size="lg" className="flex-1 sm:flex-none">
+                  <Camera className="h-4 w-4 mr-2" />
+                  Upload Screenshot
+                </Button>
+                <Button
+                  onClick={handleAddHolding}
+                  variant="outline"
+                  size="lg"
+                  className="flex-1 sm:flex-none"
+                >
+                  <Plus className="h-4 w-4 mr-2" />
+                  Add Manually
+                </Button>
+              </div>
+              <p className="text-xs text-muted-foreground mt-3">
+                Screenshot upload uses AI to automatically detect your holdings
+              </p>
+            </div>
           </CardContent>
         </Card>
       ) : sortedHoldings.length === 0 ? (
@@ -486,6 +568,16 @@ export function Holdings() {
               {deleteHolding.isPending ? 'Deleting...' : BUTTON_TEXT.DELETE_HOLDING}
             </Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Screenshot Upload Dialog */}
+      <Dialog open={isScreenshotFormOpen} onOpenChange={setIsScreenshotFormOpen}>
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+          <ScreenshotHoldingForm
+            onSuccess={handleScreenshotSuccess}
+            onCancel={() => setIsScreenshotFormOpen(false)}
+          />
         </DialogContent>
       </Dialog>
     </div>

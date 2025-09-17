@@ -1,6 +1,5 @@
 import {
   Building2,
-  Coins,
   CreditCard,
   Home,
   LogOut,
@@ -44,7 +43,7 @@ const navigation = [
   { name: 'Dashboard', href: '/', icon: Home },
   { name: 'Institutions', href: '/institutions', icon: Building2 },
   { name: 'Accounts', href: '/accounts', icon: Wallet },
-  { name: 'Tokens', href: '/tokens', icon: Coins },
+  // { name: "Tokens", href: "/tokens", icon: Coins },
   { name: 'Holdings', href: '/holdings', icon: PieChart },
   { name: 'Transactions', href: '/transactions', icon: CreditCard },
 ];
@@ -378,7 +377,7 @@ export function Layout({ children }: LayoutProps) {
           {/* Page content - scrollable */}
           <main
             id={mainContentId}
-            className={cn('flex-1 overflow-y-auto px-4 pt-5 pb-4 sm:px-6 sm:pt-5 sm:pb-6')}
+            className={cn('flex-1 overflow-y-auto px-4 pt-4 pb-6 sm:px-6 sm:pt-5 sm:pb-6')}
             tabIndex={-1}
           >
             {children}

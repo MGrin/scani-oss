@@ -64,19 +64,24 @@ export function PageHeader({
   }
 
   return (
-    <div className={cn('space-y-2 -mt-1', className)}>
+    <div className={cn('space-y-3 -mt-1', className)}>
       {breadcrumb && <div className="mb-2">{breadcrumb}</div>}
-      <div className="flex items-baseline justify-between">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="space-y-1">
-          <h1 className="text-3xl font-bold tracking-tight leading-tight">{title}</h1>
-          {subtitle && <p className="text-muted-foreground text-lg">{subtitle}</p>}
+          <h1 className="text-2xl sm:text-3xl font-bold tracking-tight leading-tight">{title}</h1>
+          {subtitle && <p className="text-muted-foreground text-sm sm:text-lg">{subtitle}</p>}
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           {secondaryActions}
           {primaryAction && (
-            <Button onClick={primaryAction.onClick} disabled={primaryAction.disabled} size="lg">
+            <Button
+              onClick={primaryAction.onClick}
+              disabled={primaryAction.disabled}
+              className="touch-manipulation min-h-[44px]"
+              size="default"
+            >
               {primaryAction.icon}
-              {primaryAction.label}
+              <span className="ml-2">{primaryAction.label}</span>
             </Button>
           )}
         </div>
@@ -107,7 +112,7 @@ export function SimplePageHeader({
 
   return (
     <div className={cn('mb-6', className)}>
-      <h1 className="text-3xl font-bold tracking-tight">{title}</h1>
+      <h1 className="text-2xl sm:text-3xl font-bold tracking-tight">{title}</h1>
     </div>
   );
 }

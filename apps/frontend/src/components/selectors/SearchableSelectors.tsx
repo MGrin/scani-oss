@@ -1,4 +1,5 @@
 import { Plus } from 'lucide-react';
+import { TRANSACTION_TYPE_METADATA } from '@/components/TransactionForm';
 import { Combobox } from '@/components/ui/combobox';
 import { TokenSymbol } from '@/components/ui/TokenSymbol';
 import type { ApiAccount, ApiHolding, ApiInstitution, ApiToken } from '@/lib/api-types';
@@ -388,13 +389,25 @@ export function TransactionTypeSelector({
   transactionTypes,
   placeholder = 'Choose transaction type...',
 }: TransactionTypeSelectorProps) {
-  const transactionTypeOptions =
-    transactionTypes?.map((type) => ({
-      value: type.code,
-      label: type.name,
-      subtitle: type.description || undefined,
-    })) || [];
+  // Create icon component from emoji string
+  const createEmojiIcon =
+    (emoji: string) =>
+    ({ className }: { className?: string }) => (
+      <span className={`text-base ${className || ''}`}>{emoji}</span>
+    );
 
+  const transactionTypeOptions =
+    transactionTypes?.map((type) => {
+      const metadata = TRANSACTION_TYPE_METADATA[type.code];
+      return {
+        value: type.code,
+        label: type.name,
+        subtitle: type.description || undefined,
+        icon: metadata?.icon ? createEmojiIcon(metadata.icon) : undefined,
+      };
+    }) || [];
+
+  const isActive = value !== '' && value !== 'all';
   return (
     <SearchableSelect
       value={value}
@@ -402,6 +415,7 @@ export function TransactionTypeSelector({
       placeholder={placeholder}
       items={transactionTypeOptions}
       emptyMessage="No transaction types found."
+      isActive={isActive}
     />
   );
 }
@@ -533,6 +547,7 @@ export function HoldingFilterSelector({
     ? [{ value: 'all', label: 'All Holdings' }, ...holdingOptions]
     : holdingOptions;
 
+  const isActive = value !== '' && value !== 'all';
   return (
     <SearchableSelect
       value={value}
@@ -540,6 +555,7 @@ export function HoldingFilterSelector({
       placeholder={placeholder}
       items={allOptions}
       emptyMessage="No holdings found."
+      isActive={isActive}
     />
   );
 }

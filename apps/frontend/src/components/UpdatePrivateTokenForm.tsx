@@ -111,7 +111,7 @@ export function UpdatePrivateTokenForm({
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="sm:max-w-[500px]">
+      <DialogContent className="max-w-[95vw] sm:max-w-[500px] mx-4 sm:mx-auto">
         <DialogHeader>
           <DialogTitle>Update {token?.symbol}</DialogTitle>
           <DialogDescription>

@@ -1,5 +1,6 @@
 import { CreateInstitutionSchema } from '@scani/shared/types';
 import { and, eq, ne, sql } from 'drizzle-orm';
+import { z } from 'zod';
 
 import { db } from '../db/connection';
 import * as schema from '../db/schema';
@@ -155,5 +156,69 @@ export const institutionsRouter = router({
       }
 
       return institution;
+    }),
+
+  // Remove user's accounts from institution (institutions are global, so we don't delete the institution itself)
+  delete: protectedProcedure
+    .input(z.object({ id: z.string() }))
+    .mutation(async ({ input, ctx }) => {
+      const userId = getUserId(ctx);
+
+      // First verify the institution exists
+      const [institution] = await db
+        .select()
+        .from(schema.institutions)
+        .where(eq(schema.institutions.id, input.id))
+        .limit(1);
+
+      if (!institution) {
+        throw new Error('Institution not found');
+      }
+
+      // Get user's accounts for this institution (for logging purposes before deletion)
+      const userAccounts = await db
+        .select({ id: schema.accounts.id, name: schema.accounts.name })
+        .from(schema.accounts)
+        .where(
+          and(eq(schema.accounts.institutionId, input.id), eq(schema.accounts.userId, userId))
+        );
+
+      if (userAccounts.length === 0) {
+        throw new Error('No accounts found for this institution');
+      }
+
+      // Get holdings and transactions counts for cascade info
+      const userHoldings = await db
+        .select({ id: schema.holdings.id })
+        .from(schema.holdings)
+        .innerJoin(schema.accounts, eq(schema.holdings.accountId, schema.accounts.id))
+        .where(
+          and(eq(schema.accounts.institutionId, input.id), eq(schema.accounts.userId, userId))
+        );
+
+      const userTransactions = await db
+        .select({ id: schema.transactions.id })
+        .from(schema.transactions)
+        .innerJoin(schema.holdings, eq(schema.transactions.holdingId, schema.holdings.id))
+        .innerJoin(schema.accounts, eq(schema.holdings.accountId, schema.accounts.id))
+        .where(
+          and(eq(schema.accounts.institutionId, input.id), eq(schema.accounts.userId, userId))
+        );
+
+      // Delete user's accounts for this institution - cascading deletes will handle holdings and transactions
+      const deletedAccounts = await db
+        .delete(schema.accounts)
+        .where(and(eq(schema.accounts.institutionId, input.id), eq(schema.accounts.userId, userId)))
+        .returning();
+
+      return {
+        success: true,
+        deleted: institution, // Return institution info for UI consistency
+        cascadeInfo: {
+          accountsDeleted: deletedAccounts.length,
+          holdingsDeleted: userHoldings.length,
+          transactionsDeleted: userTransactions.length,
+        },
+      };
     }),
 });

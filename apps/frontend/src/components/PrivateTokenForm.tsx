@@ -158,7 +158,7 @@ export function PrivateTokenForm({
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="sm:max-w-[600px]">
+      <DialogContent className="max-w-[95vw] sm:max-w-[600px] mx-4 sm:mx-auto">
         <DialogHeader>
           <DialogTitle>
             {mode === 'create' ? 'Create Private Token' : 'Edit Private Token'}

@@ -82,7 +82,7 @@ export function PageAggregation({
                       ? String(filter.key)
                       : `filter-component-${index}`;
                   return (
-                    <div key={key} className="md:w-48 w-full">
+                    <div key={key} className="w-full sm:max-w-[50%] sm:flex-1">
                       {filter}
                     </div>
                   );

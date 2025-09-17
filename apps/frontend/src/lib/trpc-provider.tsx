@@ -16,9 +16,9 @@ export function TRPCProvider({ children }: TRPCProviderProps) {
           queries: {
             retry: 1,
             refetchOnWindowFocus: false,
-            // Smart caching strategy for different data types
-            staleTime: 5 * 60 * 1000, // 5 minutes - default for dynamic data
-            cacheTime: 10 * 60 * 1000, // 10 minutes - garbage collection
+            // Conservative caching for financial data accuracy
+            staleTime: 0, // Always consider data stale - fetch fresh data
+            cacheTime: 30 * 1000, // 30 seconds - short cache for immediate consistency
             refetchOnMount: 'always', // Always refetch on mount for latest data
           },
         },

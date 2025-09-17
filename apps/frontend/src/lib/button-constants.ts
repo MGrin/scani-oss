@@ -27,7 +27,7 @@ export const BUTTON_TEXT = {
   EDIT_TRANSACTION: 'Edit Transaction',
 
   // Entity-specific delete actions
-  DELETE_INSTITUTION: 'Delete Institution',
+  DELETE_INSTITUTION: 'Remove My Accounts',
   DELETE_ACCOUNT: 'Delete Account',
   DELETE_HOLDING: 'Delete Holding',
   DELETE_TRANSACTION: 'Delete Transaction',

@@ -1,4 +1,5 @@
 import { Edit2, MoreHorizontal, Plus, Trash2 } from 'lucide-react';
+import type { MouseEventHandler } from 'react';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
@@ -39,15 +40,18 @@ export function AccountRow({
 }: AccountRowProps) {
   const IconComponent = getAccountTypeIcon(account.type || '');
 
-  const handleEdit = () => {
+  const handleEdit: MouseEventHandler<HTMLDivElement> = (e) => {
+    e.stopPropagation();
     if (onEdit) onEdit(account);
   };
 
-  const handleDelete = () => {
+  const handleDelete: MouseEventHandler<HTMLDivElement> = (e) => {
+    e.stopPropagation();
     if (onDelete) onDelete(account);
   };
 
-  const handleAddHolding = () => {
+  const handleAddHolding: MouseEventHandler<HTMLDivElement> = (e) => {
+    e.stopPropagation();
     if (onAddHolding) onAddHolding(account);
   };
 

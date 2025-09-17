@@ -129,7 +129,7 @@ export function TokenForm({ isOpen, onClose, mode, onSuccess }: TokenFormProps) 
 
   return (
     <Dialog open={isOpen} onOpenChange={handleClose}>
-      <DialogContent className="sm:max-w-[500px]">
+      <DialogContent className="max-w-[95vw] sm:max-w-[500px] mx-4 sm:mx-auto">
         <DialogHeader>
           <DialogTitle>{mode === 'create' ? 'Create New Token' : 'Edit Token'}</DialogTitle>
           <DialogDescription>

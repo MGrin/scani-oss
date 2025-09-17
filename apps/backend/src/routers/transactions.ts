@@ -411,15 +411,18 @@ export const transactionsRouter = router({
     .mutation(async ({ input, ctx }) => {
       const userId = getUserId(ctx);
 
-      // First verify the transaction belongs to the user by checking holding ownership
-      const [transactionOwnership] = await routerDb
-        .select({ id: schema.transactions.id })
+      // First get the transaction to get the holding ID for balance recalculation
+      const [transaction] = await routerDb
+        .select({
+          id: schema.transactions.id,
+          holdingId: schema.transactions.holdingId,
+        })
         .from(schema.transactions)
         .innerJoin(schema.holdings, eq(schema.transactions.holdingId, schema.holdings.id))
         .where(and(eq(schema.transactions.id, input.id), eq(schema.holdings.userId, userId)))
         .limit(1);
 
-      if (!transactionOwnership) {
+      if (!transaction) {
         throw new Error('Transaction not found');
       }
 
@@ -432,7 +435,16 @@ export const transactionsRouter = router({
         throw new Error('Failed to delete transaction');
       }
 
-      return { success: true, deleted: deletedTransaction };
+      // Recalculate holding balance after transaction deletion
+      const { BalanceCalculationService } = await import('../services/balance-calculation');
+      const balanceService = new BalanceCalculationService();
+      await balanceService.updateHoldingBalance(transaction.holdingId);
+
+      return {
+        success: true,
+        deleted: deletedTransaction,
+        holdingBalanceUpdated: true,
+      };
     }),
 
   // Get transactions by date range

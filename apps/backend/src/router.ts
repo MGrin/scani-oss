@@ -3,6 +3,7 @@ import { accountsRouter } from './routers/accounts';
 import { holdingsRouter } from './routers/holdings';
 import { institutionTypesRouter } from './routers/institution-types';
 import { institutionsRouter } from './routers/institutions';
+import { screenshotParsingRouter } from './routers/screenshot-parsing';
 import { tokenTypesRouter } from './routers/token-types';
 import { tokenPricesRouter } from './routers/tokenPrices';
 import { tokensRouter } from './routers/tokens';
@@ -30,6 +31,9 @@ export const appRouter = router({
   accounts: accountsRouter,
   holdings: holdingsRouter,
   transactions: transactionsRouter,
+
+  // AI-powered features (protected)
+  screenshotParsing: screenshotParsingRouter,
 
   // Health check (public)
   health: router({

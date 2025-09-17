@@ -1,4 +1,5 @@
 import { Edit2, MoreHorizontal, Plus, Trash2 } from 'lucide-react';
+import type { MouseEventHandler } from 'react';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
@@ -42,15 +43,18 @@ export function InstitutionRow({
 }: InstitutionRowProps) {
   const IconComponent = getInstitutionTypeIcon(institution.type || '');
 
-  const handleEdit = () => {
+  const handleEdit: MouseEventHandler<HTMLDivElement> = (e) => {
+    e.stopPropagation();
     if (onEdit) onEdit(institution);
   };
 
-  const handleDelete = () => {
+  const handleDelete: MouseEventHandler<HTMLDivElement> = (e) => {
+    e.stopPropagation();
     if (onDelete) onDelete(institution);
   };
 
-  const handleAddAccount = () => {
+  const handleAddAccount: MouseEventHandler<HTMLDivElement> = (e) => {
+    e.stopPropagation();
     if (onAddAccount) onAddAccount(institution);
   };
 
