@@ -82,6 +82,28 @@ const ProcessHoldingsFromParsingSchema = z.object({
     .optional(),
 });
 
+const ResolveTokenSelectionSchema = z.object({
+  /** Original symbol from screenshot */
+  holdingSymbol: z.string().min(1, 'Symbol is required'),
+  /** Selected provider token */
+  selectedProviderToken: z.object({
+    isValid: z.boolean(),
+    metadata: z
+      .object({
+        symbol: z.string(),
+        name: z.string(),
+        type: z.enum(['Equity', 'ETF', 'Mutual Fund', 'Bond', 'Commodity', 'Crypto']),
+        currency: z.string(),
+        exchange: z.string().optional(),
+        description: z.string().optional(),
+        provider: z.enum(['finnhub', 'coingecko']),
+        providerMetadata: z.record(z.unknown()),
+      })
+      .optional(),
+    error: z.string().optional(),
+  }),
+});
+
 export const screenshotParsingRouter = router({
   // Parse screenshot and return structured data
   parseScreenshot: protectedProcedure
@@ -132,6 +154,7 @@ export const screenshotParsingRouter = router({
           ...h,
           errors: [] as string[],
           warnings: [] as string[],
+          requiresUserSelection: false,
         }));
 
         const result = await parsingService.createHoldingsFromParsing(
@@ -176,6 +199,7 @@ export const screenshotParsingRouter = router({
           ...h,
           errors: [] as string[],
           warnings: [] as string[],
+          requiresUserSelection: false,
         }));
 
         const result = await parsingService.updateHoldingsFromParsing(
@@ -223,6 +247,7 @@ export const screenshotParsingRouter = router({
           ...h,
           errors: [] as string[],
           warnings: [] as string[],
+          requiresUserSelection: false,
         }));
 
         const result = await parsingService.processHoldingsFromParsing(
@@ -269,6 +294,34 @@ export const screenshotParsingRouter = router({
       providers: parsingService.getAvailableProviders(),
     };
   }),
+
+  // Resolve token selection for holdings that require user choice
+  resolveTokenSelection: protectedProcedure
+    .input(ResolveTokenSelectionSchema)
+    .mutation(async ({ input }) => {
+      const parsingService = new ScreenshotParsingService();
+
+      try {
+        const result = await parsingService.resolveTokenSelection(
+          input.holdingSymbol,
+          input.selectedProviderToken
+        );
+
+        return {
+          success: true,
+          data: {
+            resolvedHolding: result,
+          },
+        };
+      } catch (error) {
+        console.error('Token selection resolution failed:', error);
+
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : 'Unknown error occurred',
+        };
+      }
+    }),
 
   // Health check for screenshot parsing
   checkHealth: protectedProcedure.query(async () => {

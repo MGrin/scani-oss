@@ -37,6 +37,8 @@ interface AsyncTokenSelectorProps {
   id?: string;
   className?: string;
   disabled?: boolean;
+  suggestedTokens?: TokenOption[]; // Restrict to these tokens when provided
+  prefillSymbol?: string; // Prefill search with this symbol when opening
 }
 
 export function AsyncTokenSelector({
@@ -46,10 +48,19 @@ export function AsyncTokenSelector({
   id,
   className,
   disabled = false,
+  suggestedTokens,
+  prefillSymbol,
 }: AsyncTokenSelectorProps) {
   const [open, setOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [debouncedQuery, setDebouncedQuery] = useState('');
+
+  // Prefill search when opening if prefillSymbol is provided
+  useEffect(() => {
+    if (open && prefillSymbol && !searchQuery) {
+      setSearchQuery(prefillSymbol);
+    }
+  }, [open, prefillSymbol, searchQuery]);
 
   // Debounce search query
   useEffect(() => {
@@ -60,7 +71,7 @@ export function AsyncTokenSelector({
     return () => clearTimeout(timer);
   }, [searchQuery]);
 
-  // Search tokens using TRPC
+  // Search tokens using TRPC - only if we don't have suggestedTokens
   const {
     data: searchResults = [],
     isLoading: isSearching,
@@ -68,39 +79,56 @@ export function AsyncTokenSelector({
   } = trpc.tokens.search.useQuery(
     { query: debouncedQuery, limit: 20 },
     {
-      enabled: debouncedQuery.length >= 1,
+      enabled: debouncedQuery.length >= 1 && !suggestedTokens,
       staleTime: 30000, // Cache for 30 seconds
     }
   );
 
-  // Get all tokens for initial display (when no search query)
-  const { data: allTokens = [] } = trpc.tokens.getAll.useQuery(
-    undefined,
-    { staleTime: 60000 } // Cache for 1 minute
-  );
+  // Get all tokens for initial display (when no search query and no suggestedTokens)
+  const { data: allTokens = [] } = trpc.tokens.getAll.useQuery(undefined, {
+    enabled: !suggestedTokens,
+    staleTime: 60000, // Cache for 1 minute
+  });
 
   // Combine search results with "Create New Token" option
   const options = useMemo((): TokenOption[] => {
-    const baseOptions: TokenOption[] =
-      debouncedQuery.length >= 1
-        ? searchResults.map((token) => ({
-            ...token,
-            source: token.source as 'database' | 'external',
-          }))
-        : allTokens.map((token) => ({
-            ...token,
-            source: 'database' as const,
-          }));
+    let baseOptions: TokenOption[] = [];
 
-    // Add "Create New Token" option
-    const createNewOption: TokenOption = {
-      symbol: 'NEW',
-      name: 'Create New Token',
-      source: 'create-new' as const,
-    };
+    if (suggestedTokens) {
+      // When suggestedTokens are provided, filter them by search query
+      baseOptions = suggestedTokens.filter((token) => {
+        if (!debouncedQuery) return true;
+        const query = debouncedQuery.toLowerCase();
+        return (
+          token.symbol.toLowerCase().includes(query) || token.name.toLowerCase().includes(query)
+        );
+      });
+    } else {
+      // Normal search behavior
+      baseOptions =
+        debouncedQuery.length >= 1
+          ? searchResults.map((token) => ({
+              ...token,
+              source: token.source as 'database' | 'external',
+            }))
+          : allTokens.map((token) => ({
+              ...token,
+              source: 'database' as const,
+            }));
+    }
 
-    return [createNewOption, ...baseOptions];
-  }, [debouncedQuery, searchResults, allTokens]);
+    // Add "Create New Token" option only if not restricted to suggestedTokens
+    if (!suggestedTokens) {
+      const createNewOption: TokenOption = {
+        symbol: 'NEW',
+        name: 'Create New Token',
+        source: 'create-new' as const,
+      };
+      return [createNewOption, ...baseOptions];
+    }
+
+    return baseOptions;
+  }, [debouncedQuery, searchResults, allTokens, suggestedTokens]);
 
   // Find selected option
   const selectedOption = options.find(
@@ -179,21 +207,21 @@ export function AsyncTokenSelector({
           <div className="flex items-center border-b px-3">
             <Search className="mr-2 h-4 w-4 shrink-0 opacity-50" />
             <CommandInput
-              placeholder="Search tokens..."
+              placeholder={suggestedTokens ? 'Filter suggestions...' : 'Search tokens...'}
               value={searchQuery}
               onValueChange={handleSearchChange}
               className="flex h-10 w-full rounded-md bg-transparent py-3 text-sm outline-none placeholder:text-muted-foreground disabled:cursor-not-allowed disabled:opacity-50"
             />
           </div>
           <CommandList className="max-h-[300px]">
-            {isSearching && debouncedQuery && (
+            {isSearching && debouncedQuery && !suggestedTokens && (
               <div className="flex items-center justify-center p-4">
                 <LoadingSpinner className="h-4 w-4 mr-2" />
                 <span className="text-sm text-muted-foreground">Searching...</span>
               </div>
             )}
 
-            {searchError && (
+            {searchError && !suggestedTokens && (
               <div className="p-4 text-sm text-destructive">
                 Error searching tokens: {searchError.message}
               </div>
@@ -202,9 +230,14 @@ export function AsyncTokenSelector({
             {!isSearching &&
               options.length === 1 &&
               options[0]?.source === 'create-new' &&
-              debouncedQuery && (
+              debouncedQuery &&
+              !suggestedTokens && (
                 <CommandEmpty>No tokens found. You can create a new one.</CommandEmpty>
               )}
+
+            {suggestedTokens && options.length === 0 && debouncedQuery && (
+              <CommandEmpty>No matching suggestions found.</CommandEmpty>
+            )}
 
             <CommandGroup>
               {options.map((option, index) => {

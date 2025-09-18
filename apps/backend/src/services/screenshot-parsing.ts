@@ -5,6 +5,7 @@ import * as schema from '../db/schema';
 import type { AIProviderManagerConfig, AIProviderType } from './ai/provider-manager';
 import { AIProviderManager } from './ai/provider-manager';
 import type { AIProviderResponse, ParsedHolding } from './ai/types';
+import { PricingService } from './pricing';
 import { TokenValidationService, type ValidationResult } from './token-validation';
 
 export interface ScreenshotParsingOptions {
@@ -24,6 +25,8 @@ export interface ParsedHoldingWithValidation extends ParsedHolding {
   errors: string[];
   /** Warnings that don't prevent creation */
   warnings: string[];
+  /** Whether this holding requires user selection from similar provider tokens */
+  requiresUserSelection: boolean;
   /** Provider validation result */
   providerValidation?: {
     /** Exact match found in providers */
@@ -151,15 +154,26 @@ export class ScreenshotParsingService {
     }> = [];
     const errors: Array<{ symbol: string; error: string }> = [];
 
-    // Process each holding in a transaction
-    for (const holding of holdings) {
+    // Process each holding in parallel with controlled concurrency
+    const processHolding = async (
+      holding: ParsedHoldingWithValidation
+    ): Promise<{
+      success: boolean;
+      result?: {
+        holdingId: string;
+        transactionId: string;
+        tokenSymbol: string;
+      };
+      error?: string;
+      symbol: string;
+    }> => {
       try {
         if (holding.errors.length > 0 && !options?.skipValidation) {
-          errors.push({
-            symbol: holding.symbol,
+          return {
+            success: false,
             error: `Validation errors: ${holding.errors.join(', ')}`,
-          });
-          continue;
+            symbol: holding.symbol,
+          };
         }
 
         let tokenId = holding.tokenId;
@@ -168,39 +182,67 @@ export class ScreenshotParsingService {
         if (!holding.tokenExists && options?.createMissingTokens) {
           tokenId = await this.createTokenForHolding(holding);
         } else if (!holding.tokenExists) {
-          errors.push({
-            symbol: holding.symbol,
+          return {
+            success: false,
             error: 'Token does not exist and createMissingTokens is false',
-          });
-          continue;
+            symbol: holding.symbol,
+          };
         }
 
         if (!tokenId) {
-          errors.push({
-            symbol: holding.symbol,
+          return {
+            success: false,
             error: 'No valid token ID available',
-          });
-          continue;
+            symbol: holding.symbol,
+          };
         }
 
-        // Create holding and opening balance transaction
+        // Create holding and opening balance transaction with live price fetching
         const result = await this.createHoldingWithTransaction(
           userId,
           accountId,
           tokenId,
           holding.balance,
-          holding.notes
+          holding.notes,
+          true // Enable live price fetching
         );
 
-        created.push({
-          holdingId: result.holdingId,
-          transactionId: result.transactionId,
-          tokenSymbol: holding.symbol,
-        });
-      } catch (error) {
-        errors.push({
+        return {
+          success: true,
+          result: {
+            holdingId: result.holdingId,
+            transactionId: result.transactionId,
+            tokenSymbol: holding.symbol,
+          },
           symbol: holding.symbol,
+        };
+      } catch (error) {
+        return {
+          success: false,
           error: error instanceof Error ? error.message : 'Unknown error',
+          symbol: holding.symbol,
+        };
+      }
+    };
+
+    // Process holdings with controlled concurrency (limit to 3 concurrent operations)
+    const concurrencyLimit = 3;
+    const results: Array<Awaited<ReturnType<typeof processHolding>>> = [];
+
+    for (let i = 0; i < holdings.length; i += concurrencyLimit) {
+      const batch = holdings.slice(i, i + concurrencyLimit);
+      const batchResults = await Promise.all(batch.map(processHolding));
+      results.push(...batchResults);
+    }
+
+    // Process results
+    for (const result of results) {
+      if (result.success && result.result) {
+        created.push(result.result);
+      } else {
+        errors.push({
+          symbol: result.symbol,
+          error: result.error || 'Unknown error',
         });
       }
     }
@@ -210,6 +252,7 @@ export class ScreenshotParsingService {
 
   /**
    * Process holdings from parsed data - automatically determines create vs update
+   * Uses a single atomic transaction with bulk operations for optimal performance
    */
   async processHoldingsFromParsing(
     userId: string,
@@ -233,53 +276,262 @@ export class ScreenshotParsingService {
     }>;
     errors: Array<{ symbol: string; error: string }>;
   }> {
-    // Get existing holdings for this account
-    const existingHoldings = await db
-      .select({
-        id: schema.holdings.id,
-        tokenId: schema.holdings.tokenId,
-        balance: schema.holdings.balance,
-        token: {
-          id: schema.tokens.id,
-          symbol: schema.tokens.symbol,
-        },
-      })
-      .from(schema.holdings)
-      .innerJoin(schema.tokens, eq(schema.holdings.tokenId, schema.tokens.id))
-      .where(and(eq(schema.holdings.userId, userId), eq(schema.holdings.accountId, accountId)));
+    const created: Array<{
+      holdingId: string;
+      transactionId: string;
+      tokenSymbol: string;
+    }> = [];
+    const updated: Array<{
+      holdingId: string;
+      transactionId?: string;
+      tokenSymbol: string;
+      change: string;
+    }> = [];
+    const errors: Array<{ symbol: string; error: string }> = [];
 
-    // Create a map of existing holdings by tokenId
-    const existingHoldingsMap = new Map(existingHoldings.map((h) => [h.tokenId, h]));
-
-    // Split holdings into create vs update
-    const holdingsToCreate: ParsedHoldingWithValidation[] = [];
-    const holdingsToUpdate: ParsedHoldingWithValidation[] = [];
-
+    // Validate holdings first
+    const validHoldings: ParsedHoldingWithValidation[] = [];
     for (const holding of holdings) {
-      if (holding.tokenExists && holding.tokenId && existingHoldingsMap.has(holding.tokenId)) {
-        holdingsToUpdate.push(holding);
-      } else {
-        holdingsToCreate.push(holding);
+      // Check for tokens requiring user selection (highest priority)
+      if (holding.requiresUserSelection && !options?.skipValidation) {
+        errors.push({
+          symbol: holding.symbol,
+          error: `User selection required: ${holding.errors.join(', ')}`,
+        });
+        continue;
       }
+
+      if (holding.errors.length > 0 && !options?.skipValidation) {
+        errors.push({
+          symbol: holding.symbol,
+          error: `Validation errors: ${holding.errors.join(', ')}`,
+        });
+        continue;
+      }
+
+      if (!holding.tokenExists && !options?.createMissingTokens) {
+        errors.push({
+          symbol: holding.symbol,
+          error: 'Token does not exist and createMissingTokens is false',
+        });
+        continue;
+      }
+
+      validHoldings.push(holding);
     }
 
-    // Process creates
-    const createResult = await this.createHoldingsFromParsing(
-      userId,
-      accountId,
-      holdingsToCreate,
-      options
-    );
+    if (validHoldings.length === 0) {
+      return { created, updated, errors };
+    }
 
-    // Process updates
-    const updateResult = await this.updateHoldingsFromParsing(userId, accountId, holdingsToUpdate);
+    // Pre-fetch all token prices in parallel to avoid delays in the transaction
+    const uniqueSymbols = [...new Set(validHoldings.map((h) => h.symbol))];
+    const pricingService = new PricingService();
 
-    // Combine results
-    return {
-      created: createResult.created,
-      updated: updateResult.updated,
-      errors: [...createResult.errors, ...updateResult.errors],
-    };
+    try {
+      await Promise.all(
+        uniqueSymbols.map(async (symbol) => {
+          try {
+            await pricingService.getTokenPrice({
+              tokenSymbol: symbol,
+              baseCurrency: 'USD',
+              timestamp: new Date(),
+              live: true,
+            });
+          } catch (priceError) {
+            console.warn(`Failed to fetch price for ${symbol}:`, priceError);
+          }
+        })
+      );
+    } catch {
+      console.warn('Some price fetching failed, continuing with transaction');
+    }
+
+    // Execute everything in a single atomic transaction
+    return await db.transaction(async (trx) => {
+      // Get existing holdings for this account
+      const existingHoldings = await trx
+        .select({
+          id: schema.holdings.id,
+          tokenId: schema.holdings.tokenId,
+          balance: schema.holdings.balance,
+          token: {
+            id: schema.tokens.id,
+            symbol: schema.tokens.symbol,
+          },
+        })
+        .from(schema.holdings)
+        .innerJoin(schema.tokens, eq(schema.holdings.tokenId, schema.tokens.id))
+        .where(and(eq(schema.holdings.userId, userId), eq(schema.holdings.accountId, accountId)));
+
+      const existingHoldingsMap = new Map(existingHoldings.map((h) => [h.tokenId, h]));
+
+      // Get deposit transaction type
+      const [depositType] = await trx
+        .select()
+        .from(schema.transactionTypes)
+        .where(eq(schema.transactionTypes.code, 'deposit'))
+        .limit(1);
+
+      if (!depositType) {
+        throw new Error('Deposit transaction type not found');
+      }
+
+      // Process holdings: separate creates and updates
+      const holdingsToCreate: Array<{
+        holding: ParsedHoldingWithValidation;
+        tokenId: string;
+      }> = [];
+      const holdingsToUpdate: Array<{
+        holding: ParsedHoldingWithValidation;
+        existingHolding: (typeof existingHoldings)[0];
+      }> = [];
+
+      // Create missing tokens if needed
+      const tokenCreationPromises: Promise<string>[] = [];
+      for (const holding of validHoldings) {
+        if (!holding.tokenExists && options?.createMissingTokens) {
+          tokenCreationPromises.push(this.createTokenForHolding(holding, trx));
+        } else if (holding.tokenExists && holding.tokenId) {
+          const existingHolding = existingHoldingsMap.get(holding.tokenId);
+          if (existingHolding) {
+            holdingsToUpdate.push({ holding, existingHolding });
+          } else {
+            holdingsToCreate.push({ holding, tokenId: holding.tokenId });
+          }
+        }
+      }
+
+      // Wait for all token creations to complete
+      const createdTokenIds = await Promise.all(tokenCreationPromises);
+      let tokenCreationIndex = 0;
+
+      // Add newly created tokens to the create list
+      for (const holding of validHoldings) {
+        if (!holding.tokenExists && options?.createMissingTokens) {
+          const tokenId = createdTokenIds[tokenCreationIndex++];
+          if (tokenId) {
+            holdingsToCreate.push({ holding, tokenId });
+          } else {
+            errors.push({
+              symbol: holding.symbol,
+              error: 'Failed to create token',
+            });
+          }
+        }
+      }
+
+      // Bulk create new holdings
+      if (holdingsToCreate.length > 0) {
+        const holdingsToInsert = holdingsToCreate.map(({ holding, tokenId }) => ({
+          userId,
+          accountId,
+          tokenId,
+          balance: holding.balance,
+          lastUpdated: new Date(),
+        }));
+
+        const createdHoldings = await trx
+          .insert(schema.holdings)
+          .values(holdingsToInsert)
+          .returning();
+
+        // Bulk create transactions for new holdings
+        const transactionsToInsert = createdHoldings
+          .map((createdHolding, index) => {
+            const holdingData = holdingsToCreate[index];
+            if (holdingData && new Decimal(holdingData.holding.balance).greaterThan(0)) {
+              return {
+                userId,
+                holdingId: createdHolding.id,
+                typeId: depositType.id,
+                amount: holdingData.holding.balance,
+                fee: '0',
+                description: holdingData.holding.notes || 'Opening balance from screenshot',
+                timestamp: new Date(),
+              };
+            }
+            return null;
+          })
+          .filter((tx): tx is NonNullable<typeof tx> => tx !== null);
+
+        const createdTransactions =
+          transactionsToInsert.length > 0
+            ? await trx.insert(schema.transactions).values(transactionsToInsert).returning()
+            : [];
+
+        // Map results
+        let transactionIndex = 0;
+        for (let i = 0; i < createdHoldings.length; i++) {
+          const holdingData = holdingsToCreate[i];
+          const createdHolding = createdHoldings[i];
+
+          if (!holdingData || !createdHolding) continue;
+
+          let transactionId = '';
+          if (new Decimal(holdingData.holding.balance).greaterThan(0)) {
+            transactionId = createdTransactions[transactionIndex++]?.id || '';
+          }
+
+          created.push({
+            holdingId: createdHolding.id,
+            transactionId,
+            tokenSymbol: holdingData.holding.symbol,
+          });
+        }
+      }
+
+      // Bulk update existing holdings
+      if (holdingsToUpdate.length > 0) {
+        const updatePromises = holdingsToUpdate.map(async ({ holding, existingHolding }) => {
+          const oldBalance = new Decimal(existingHolding.balance);
+          const newBalance = new Decimal(holding.balance);
+          const change = newBalance.minus(oldBalance);
+
+          // Update the holding
+          await trx
+            .update(schema.holdings)
+            .set({
+              balance: holding.balance,
+              lastUpdated: new Date(),
+            })
+            .where(eq(schema.holdings.id, existingHolding.id));
+
+          let transactionId = '';
+
+          // Create transaction for the change if significant
+          if (change.abs().greaterThan('0.000001')) {
+            const [transaction] = await trx
+              .insert(schema.transactions)
+              .values({
+                userId,
+                holdingId: existingHolding.id,
+                typeId: depositType.id,
+                amount: change.toString(),
+                fee: '0',
+                description: `Balance adjustment from screenshot: ${
+                  change.greaterThan(0) ? '+' : ''
+                }${change.toString()}`,
+                timestamp: new Date(),
+              })
+              .returning();
+
+            transactionId = transaction?.id || '';
+          }
+
+          updated.push({
+            holdingId: existingHolding.id,
+            transactionId,
+            tokenSymbol: holding.symbol,
+            change: change.toString(),
+          });
+        });
+
+        await Promise.all(updatePromises);
+      }
+
+      return { created, updated, errors };
+    });
   }
 
   /**
@@ -306,14 +558,27 @@ export class ScreenshotParsingService {
     }> = [];
     const errors: Array<{ symbol: string; error: string }> = [];
 
-    for (const parsedHolding of holdings) {
+    // Process updates in parallel with controlled concurrency
+    const processUpdate = async (
+      parsedHolding: ParsedHoldingWithValidation
+    ): Promise<{
+      success: boolean;
+      result?: {
+        holdingId: string;
+        transactionId?: string;
+        tokenSymbol: string;
+        change: string;
+      };
+      error?: string;
+      symbol: string;
+    }> => {
       try {
         if (!parsedHolding.tokenExists || !parsedHolding.tokenId) {
-          errors.push({
-            symbol: parsedHolding.symbol,
+          return {
+            success: false,
             error: 'Token not found for update',
-          });
-          continue;
+            symbol: parsedHolding.symbol,
+          };
         }
 
         // Find existing holding
@@ -330,11 +595,11 @@ export class ScreenshotParsingService {
           .limit(1);
 
         if (!existingHolding) {
-          errors.push({
-            symbol: parsedHolding.symbol,
+          return {
+            success: false,
             error: 'Existing holding not found',
-          });
-          continue;
+            symbol: parsedHolding.symbol,
+          };
         }
 
         const oldBalance = new Decimal(existingHolding.balance);
@@ -350,24 +615,55 @@ export class ScreenshotParsingService {
             `Screenshot update: ${parsedHolding.notes || 'AI detected balance change'}`
           );
 
-          updated.push({
-            holdingId: existingHolding.id,
-            transactionId: result?.transactionId,
-            tokenSymbol: parsedHolding.symbol,
-            change: change.toString(),
-          });
+          return {
+            success: true,
+            result: {
+              holdingId: existingHolding.id,
+              transactionId: result?.transactionId,
+              tokenSymbol: parsedHolding.symbol,
+              change: change.toString(),
+            },
+            symbol: parsedHolding.symbol,
+          };
         } else {
           // No significant change
-          updated.push({
-            holdingId: existingHolding.id,
-            tokenSymbol: parsedHolding.symbol,
-            change: '0',
-          });
+          return {
+            success: true,
+            result: {
+              holdingId: existingHolding.id,
+              tokenSymbol: parsedHolding.symbol,
+              change: '0',
+            },
+            symbol: parsedHolding.symbol,
+          };
         }
       } catch (error) {
-        errors.push({
-          symbol: parsedHolding.symbol,
+        return {
+          success: false,
           error: error instanceof Error ? error.message : 'Unknown error',
+          symbol: parsedHolding.symbol,
+        };
+      }
+    };
+
+    // Process updates with controlled concurrency (limit to 3 concurrent operations)
+    const concurrencyLimit = 3;
+    const results: Array<Awaited<ReturnType<typeof processUpdate>>> = [];
+
+    for (let i = 0; i < holdings.length; i += concurrencyLimit) {
+      const batch = holdings.slice(i, i + concurrencyLimit);
+      const batchResults = await Promise.all(batch.map(processUpdate));
+      results.push(...batchResults);
+    }
+
+    // Process results
+    for (const result of results) {
+      if (result.success && result.result) {
+        updated.push(result.result);
+      } else {
+        errors.push({
+          symbol: result.symbol,
+          error: result.error || 'Unknown error',
         });
       }
     }
@@ -441,6 +737,7 @@ export class ScreenshotParsingService {
         tokenExists: false,
         errors: [],
         warnings: [],
+        requiresUserSelection: false,
       };
 
       // Validate balance format
@@ -480,12 +777,18 @@ export class ScreenshotParsingService {
           providerValidation.similarMatches &&
           providerValidation.similarMatches.length > 0
         ) {
-          validation.warnings.push(
-            `${providerValidation.similarMatches.length} similar tokens found in providers - user selection required`
+          // FORCE user selection when similar matches exist but no exact match
+          validation.requiresUserSelection = true;
+          validation.errors.push(
+            `Token "${holding.symbol}" not found in database. Please select from ${
+              providerValidation.similarMatches.length
+            } similar provider tokens: ${providerValidation.similarMatches
+              .map((m) => m.metadata?.symbol || 'unknown')
+              .join(', ')}`
           );
         } else if (providerValidation.noMatches) {
-          validation.warnings.push(
-            'No matches found in pricing providers - manual token selection required'
+          validation.errors.push(
+            'Token not found in database or pricing providers - cannot proceed without manual token selection'
           );
         }
       }
@@ -499,6 +802,79 @@ export class ScreenshotParsingService {
     }
 
     return validated;
+  }
+
+  /**
+   * Resolve a token selection by updating the holding with user-selected provider token
+   */
+  async resolveTokenSelection(
+    holdingSymbol: string,
+    selectedProviderToken: ValidationResult
+  ): Promise<ParsedHoldingWithValidation> {
+    if (!selectedProviderToken.metadata) {
+      throw new Error('Selected provider token must have metadata');
+    }
+
+    // Create the token in our database based on the user's selection
+    const tokenType = this.mapProviderTypeToTokenType(
+      selectedProviderToken.metadata.type || 'other'
+    );
+
+    const [typeRecord] = await db
+      .select()
+      .from(schema.tokenTypes)
+      .where(eq(schema.tokenTypes.code, tokenType))
+      .limit(1);
+
+    if (!typeRecord) {
+      throw new Error(`Token type ${tokenType} not found`);
+    }
+
+    // Create the token using the selected provider metadata
+    const [newToken] = await db
+      .insert(schema.tokens)
+      .values({
+        symbol: selectedProviderToken.metadata.symbol?.toUpperCase() || holdingSymbol.toUpperCase(),
+        name: selectedProviderToken.metadata.name || holdingSymbol,
+        typeId: typeRecord.id,
+        decimals: 2, // Default precision
+        isActive: true,
+        providerMetadata: JSON.stringify({
+          createdBy: 'user_selection',
+          selectedFrom: 'screenshot_parsing',
+          [selectedProviderToken.metadata.provider]: {
+            ...selectedProviderToken.metadata.providerMetadata,
+            symbol: selectedProviderToken.metadata.symbol,
+            name: selectedProviderToken.metadata.name,
+            type: selectedProviderToken.metadata.type,
+          },
+          validatedAt: new Date().toISOString(),
+        }),
+      })
+      .returning();
+
+    if (!newToken) {
+      throw new Error('Failed to create token from user selection');
+    }
+
+    // Return updated holding with resolved token
+    return {
+      symbol: holdingSymbol,
+      name: selectedProviderToken.metadata.name || holdingSymbol,
+      balance: '0', // Will be set when processing
+      confidence: 1.0, // User-selected, so maximum confidence
+      tokenExists: true,
+      tokenId: newToken.id,
+      suggestedTokenType: tokenType,
+      errors: [],
+      warnings: [],
+      requiresUserSelection: false,
+      providerValidation: {
+        exactMatch: selectedProviderToken,
+        similarMatches: [],
+        noMatches: false,
+      },
+    };
   }
 
   private calculateSummary(holdings: ParsedHoldingWithValidation[]) {
@@ -610,10 +986,15 @@ export class ScreenshotParsingService {
     return 'other';
   }
 
-  private async createTokenForHolding(holding: ParsedHoldingWithValidation): Promise<string> {
+  private async createTokenForHolding(
+    holding: ParsedHoldingWithValidation,
+    trx?: Parameters<Parameters<typeof db.transaction>[0]>[0]
+  ): Promise<string> {
+    const dbInstance = trx || db;
+
     // Get token type
     const tokenType = holding.suggestedTokenType || 'other';
-    const [typeRecord] = await db
+    const [typeRecord] = await dbInstance
       .select()
       .from(schema.tokenTypes)
       .where(eq(schema.tokenTypes.code, tokenType))
@@ -652,7 +1033,7 @@ export class ScreenshotParsingService {
     }
 
     // Create token
-    const [newToken] = await db
+    const [newToken] = await dbInstance
       .insert(schema.tokens)
       .values({
         symbol: holding.symbol.toUpperCase(),
@@ -676,7 +1057,8 @@ export class ScreenshotParsingService {
     accountId: string,
     tokenId: string,
     balance: string,
-    notes?: string
+    notes?: string,
+    livePriceFetching: boolean = false
   ): Promise<{ holdingId: string; transactionId: string }> {
     return await db.transaction(async (trx) => {
       // Create holding
@@ -727,6 +1109,32 @@ export class ScreenshotParsingService {
         }
 
         transactionId = transaction.id;
+
+        // Fetch live price for the token if livePriceFetching is enabled
+        if (livePriceFetching) {
+          try {
+            // Get token symbol for price fetching
+            const [token] = await trx
+              .select({ symbol: schema.tokens.symbol })
+              .from(schema.tokens)
+              .where(eq(schema.tokens.id, tokenId))
+              .limit(1);
+
+            if (token) {
+              const pricingService = new PricingService();
+              // Fetch live price to ensure it's cached for later use
+              await pricingService.getTokenPrice({
+                tokenSymbol: token.symbol,
+                baseCurrency: 'USD', // Default to USD, could be made configurable
+                timestamp: new Date(),
+                live: true, // Enable live fetching to populate cache
+              });
+            }
+          } catch (priceError) {
+            // Log price fetching errors but don't fail the transaction
+            console.warn(`Failed to fetch price for token ${tokenId}:`, priceError);
+          }
+        }
       }
 
       return { holdingId: holding.id, transactionId };

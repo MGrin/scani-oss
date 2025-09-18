@@ -8,6 +8,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { ItemCard } from '@/components/ui/summary-cards';
+import { useUnpriceableTokens } from '@/contexts/UnpriceableTokensContext';
 import type { ApiAccount, ApiInstitution } from '@/lib/api-types';
 import { BUTTON_TEXT } from '@/lib/button-constants';
 import { getAccountTypeIcon } from '@/lib/icons';
@@ -39,6 +40,13 @@ export function AccountRow({
   onClick,
 }: AccountRowProps) {
   const IconComponent = getAccountTypeIcon(account.type || '');
+  const { isAccountAffected, shouldHighlight } = useUnpriceableTokens();
+
+  // Check if this account contains unpriceable tokens
+  const isAffected =
+    shouldHighlight() &&
+    account.institution?.name &&
+    isAccountAffected(account.institution.name, account.name);
 
   const handleEdit: MouseEventHandler<HTMLDivElement> = (e) => {
     e.stopPropagation();
@@ -82,6 +90,7 @@ export function AccountRow({
       currency={userPrefs?.baseCurrency?.symbol}
       icon={IconComponent && <IconComponent className="h-8 w-8 text-muted-foreground" />}
       onClick={onClick}
+      isAffectedByUnpriceableTokens={!!isAffected}
       actions={
         <DropdownMenu>
           <DropdownMenuTrigger asChild>

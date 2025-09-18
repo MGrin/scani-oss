@@ -12,6 +12,7 @@ interface BaseSummaryCardProps {
   subtitle?: string;
   icon?: LucideIcon;
   className?: string;
+  isAffectedByUnpriceableTokens?: boolean;
 }
 
 interface CurrencySummaryCardProps extends BaseSummaryCardProps {
@@ -45,10 +46,10 @@ type SummaryCardProps = CurrencySummaryCardProps | TokenSummaryCardProps | Count
  * Used across Holdings, Accounts, Dashboard for consistent UI
  */
 export function SummaryCard(props: SummaryCardProps) {
-  const { title, subtitle, icon: Icon, className } = props;
+  const { title, subtitle, icon: Icon, className, isAffectedByUnpriceableTokens } = props;
 
   return (
-    <Card className={className}>
+    <Card className={cn(className, isAffectedByUnpriceableTokens && 'bg-blue-50 border-blue-200')}>
       <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
         <CardTitle className="text-sm font-medium">{title}</CardTitle>
         {Icon && <Icon className="h-4 w-4 text-muted-foreground" />}
@@ -150,6 +151,7 @@ export function ItemCard({
   actions,
   className,
   onClick,
+  isAffectedByUnpriceableTokens = false,
 }: {
   title: string | React.ReactNode;
   subtitle?: string | React.ReactNode;
@@ -162,11 +164,13 @@ export function ItemCard({
   actions?: React.ReactNode;
   className?: string;
   onClick?: () => void;
+  isAffectedByUnpriceableTokens?: boolean;
 }) {
   return (
     <Card
       className={cn(
         'hover:shadow-md transition-shadow min-h-[72px]',
+        isAffectedByUnpriceableTokens && 'bg-blue-50 border-blue-200',
         className,
         onClick && 'cursor-pointer'
       )}

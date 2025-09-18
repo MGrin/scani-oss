@@ -10,6 +10,22 @@ The pricing system consists of three main components:
 2. **PortfolioValuationService** - Service for calculating portfolio values
 3. **Transaction Integration** - Automatic price fetching during transaction creation
 
+## Error Handling & Missing Prices
+
+The system gracefully handles unavailable prices:
+
+- **Missing prices return "0"** instead of throwing errors
+- **Zero prices are never cached** to allow future retries
+- **Portfolio calculations include zero-value holdings** in totals
+- **All aggregations treat missing prices as 0** for consistent behavior
+
+This ensures the system remains functional even when:
+
+- Tokens are not found in provider databases
+- API access is restricted (e.g., free tier limitations)
+- Network issues prevent price fetching
+- Manual prices haven't been set for private tokens
+
 ## Providers Used
 
 ### Primary Provider: Finnhub
@@ -17,6 +33,7 @@ The pricing system consists of three main components:
 - **Covers**: Stocks, ETFs, Bonds, Commodities, Mutual Funds
 - **Cost**: Free tier with 60 calls/minute, paid plans available
 - **Strengths**: Comprehensive coverage, real-time data, excellent API documentation
+- **Limitations**: Free tier may not include all markets; paid plans provide broader coverage
 - **API Key Required**: `FINNHUB_API_KEY`
 
 ### Crypto Backup: CoinGecko
@@ -70,12 +87,12 @@ import { PricingService } from "../services/pricing";
 
 const pricingService = new PricingService();
 
-// Get current price
+// Get current price - always fetches if not cached
 const price = await pricingService.getTokenPrice({
   tokenSymbol: "AAPL",
   baseCurrency: "USD",
   timestamp: new Date(),
-  live: true,
+  live: true, // Indicates preference for fresh data, but will fetch regardless
 });
 
 // Get historical price
@@ -148,13 +165,25 @@ Returns:
 
 ## Caching Strategy
 
-The system implements intelligent caching:
+The system implements intelligent caching with automatic provider fetching:
 
-- **Live prices**: Cached for 1 hour
-- **Historical prices**: Cached for 24 hours
+- **Live prices**: Cached for 1 hour, fetched from provider if not cached
+- **Historical prices**: Cached for 24 hours, fetched from provider if not cached
 - **Same currency pairs**: Always return 1.0 (no API call)
+- **Price fetching**: Always attempts to fetch from providers when needed, regardless of `live` flag
+- **1-hour limit**: Provider calls are limited to once per hour per token/currency pair to respect API limits
 
-Cache lookup happens before any external API calls to minimize costs and improve performance.
+## Error Handling & Market Limitations
+
+### Manual Price Override
+
+When provider data is unavailable:
+
+- Tokens can be set to "private-company" or "other" type to use manual pricing
+- Manual prices are stored in the `tokenPrices` table
+- Users can set custom prices via the token management interface
+
+Cache lookup happens first, but if no cached price is available, the system will always attempt to fetch from the appropriate provider (Finnhub, CoinGecko, or ExchangeRate-API) to ensure prices are available when needed.
 
 ## Error Handling
 

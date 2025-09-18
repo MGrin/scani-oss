@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { db } from '../db/connection';
 import * as schema from '../db/schema';
 import { getUserId, requireAuth } from '../middleware/auth';
+import { PortfolioValuationService } from '../services/portfolio-valuation';
 import { PricingService } from '../services/pricing';
 import { protectedProcedure, router } from '../trpc';
 
@@ -230,4 +231,11 @@ export const holdingsRouter = router({
         },
       };
     }),
+
+  // Get unpriceable tokens for monetization notification
+  getUnpriceableTokens: protectedProcedure.query(async ({ ctx }) => {
+    const { dbUser } = requireAuth(ctx);
+    const portfolioService = new PortfolioValuationService();
+    return await portfolioService.getUnpriceableTokens(dbUser.id);
+  }),
 });

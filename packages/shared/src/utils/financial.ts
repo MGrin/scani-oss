@@ -113,7 +113,6 @@ export namespace FinancialMath {
         }).format(numericValue);
       } catch (_error) {
         // If currency is unsupported, fall back to decimal format with currency symbol
-        console.warn(`Currency ${currency} not supported, falling back to decimal format`);
         return `${getCurrencySymbol(currency, locale)}${new Intl.NumberFormat(locale, {
           minimumFractionDigits: decimals,
           maximumFractionDigits: decimals,

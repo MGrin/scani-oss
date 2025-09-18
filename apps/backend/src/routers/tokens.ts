@@ -907,26 +907,21 @@ export const tokensRouter = router({
       summary.totalBalance = summary.totalBalance.add(balance);
 
       // Convert to base currency value
-      try {
-        let convertedValue: Decimal;
-        if (row.symbol === baseCurrencySymbol) {
-          // Same currency, no conversion needed
-          convertedValue = balance;
-        } else {
-          // Get current price in base currency
-          const price = await pricingService.getTokenPrice({
-            tokenSymbol: row.symbol,
-            baseCurrency: baseCurrencySymbol,
-            timestamp: new Date(),
-            live: true,
-          });
-          convertedValue = balance.mul(new Decimal(price));
-        }
-        summary.totalValue = summary.totalValue.add(convertedValue);
-      } catch (error) {
-        console.warn(`Failed to convert ${row.symbol} to base currency:`, error);
-        // Skip this holding if price conversion fails
+      let convertedValue: Decimal;
+      if (row.symbol === baseCurrencySymbol) {
+        // Same currency, no conversion needed
+        convertedValue = balance;
+      } else {
+        // Get current price in base currency - pricing service now always returns a price
+        const price = await pricingService.getTokenPrice({
+          tokenSymbol: row.symbol,
+          baseCurrency: baseCurrencySymbol,
+          timestamp: new Date(),
+          live: true,
+        });
+        convertedValue = balance.mul(new Decimal(price));
       }
+      summary.totalValue = summary.totalValue.add(convertedValue);
     }
 
     // Convert to array and format for response

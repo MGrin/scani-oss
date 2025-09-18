@@ -158,7 +158,7 @@ export class PortfolioValuationService {
         tokenSymbol: holding.tokenSymbol,
         baseCurrency: baseCurrency.symbol,
         timestamp: now,
-        live: false, // Use cached prices instead of fetching live
+        live: true, // Fetch current prices, respecting 1-hour cache
       }));
 
     // Fetch all prices at once
@@ -181,17 +181,14 @@ export class PortfolioValuationService {
           currentPrice = '1';
           value = balance.toString();
         } else {
-          // Use batched price result
+          // Use batched price result - pricing service now always returns a price (even if 0)
           const priceResult = priceResults[holding.tokenSymbol];
-          if (priceResult) {
-            currentPrice = priceResult;
-            value = balance.mul(new Decimal(currentPrice)).toString();
-          }
+          currentPrice = priceResult || '0'; // Fallback to 0 if somehow missing
+          value = balance.mul(new Decimal(currentPrice)).toString();
         }
 
-        if (value) {
-          totalValue = totalValue.add(new Decimal(value));
-        }
+        // Always add to total value, even if price is 0
+        totalValue = totalValue.add(new Decimal(value));
 
         portfolioHoldings.push({
           tokenSymbol: holding.tokenSymbol,
@@ -200,11 +197,14 @@ export class PortfolioValuationService {
           value,
         });
       } catch (error) {
-        console.warn(`Failed to get price for ${holding.tokenSymbol}:`, error);
-        // Add holding without price information
+        console.warn(`Failed to process holding for ${holding.tokenSymbol}:`, error);
+        // Add holding with 0 price as fallback
+        const balance = new Decimal(holding.balance);
         portfolioHoldings.push({
           tokenSymbol: holding.tokenSymbol,
-          balance: new Decimal(holding.balance).toString(),
+          balance: balance.toString(),
+          currentPrice: '0',
+          value: '0',
         });
       }
     }
@@ -213,6 +213,170 @@ export class PortfolioValuationService {
       totalValue: totalValue.toString(),
       baseCurrency: baseCurrency.symbol,
       holdings: portfolioHoldings,
+    };
+  }
+
+  /**
+   * Get unpriceable tokens for a user (tokens with 0 prices due to provider limitations)
+   */
+  async getUnpriceableTokens(
+    userId: string,
+    userBaseCurrencyId?: string
+  ): Promise<{
+    count: number;
+    tokens: Array<{
+      symbol: string;
+      balance: string;
+      reason: string;
+      provider: string;
+      providerPricingUrl?: string;
+      institutionName: string;
+      accountName: string;
+    }>;
+    baseCurrency: string;
+  }> {
+    let baseCurrency: { id: string; symbol: string; name: string };
+
+    if (userBaseCurrencyId) {
+      baseCurrency = await getBaseCurrencyToken(userBaseCurrencyId);
+    } else {
+      // Get user and base currency
+      const [userWithBaseCurrency] = await db
+        .select({
+          userId: schema.users.id,
+          userBaseCurrencyId: schema.users.baseCurrencyId,
+          baseCurrencyId: schema.tokens.id,
+          baseCurrencySymbol: schema.tokens.symbol,
+          baseCurrencyName: schema.tokens.name,
+        })
+        .from(schema.users)
+        .innerJoin(schema.tokens, eq(schema.users.baseCurrencyId, schema.tokens.id))
+        .where(eq(schema.users.id, userId))
+        .limit(1);
+
+      if (!userWithBaseCurrency) {
+        throw new Error('User not found or has no base currency set');
+      }
+
+      baseCurrency = {
+        id: userWithBaseCurrency.baseCurrencyId,
+        symbol: userWithBaseCurrency.baseCurrencySymbol,
+        name: userWithBaseCurrency.baseCurrencyName,
+      };
+    }
+
+    // Get user holdings with token, account, and institution information
+    const holdings = await db
+      .select({
+        balance: schema.holdings.balance,
+        tokenId: schema.tokens.id,
+        tokenSymbol: schema.tokens.symbol,
+        tokenName: schema.tokens.name,
+        accountName: schema.accounts.name,
+        institutionName: schema.institutions.name,
+      })
+      .from(schema.holdings)
+      .innerJoin(schema.tokens, eq(schema.holdings.tokenId, schema.tokens.id))
+      .innerJoin(schema.accounts, eq(schema.holdings.accountId, schema.accounts.id))
+      .innerJoin(schema.institutions, eq(schema.accounts.institutionId, schema.institutions.id))
+      .where(eq(schema.holdings.userId, userId));
+
+    // Check prices for tokens that need conversion (exclude base currency)
+    const tokensToCheck = holdings.filter((holding) => holding.tokenId !== baseCurrency.id);
+
+    const unpriceableTokens: Array<{
+      symbol: string;
+      balance: string;
+      reason: string;
+      provider: string;
+      providerPricingUrl?: string;
+      institutionName: string;
+      accountName: string;
+    }> = [];
+
+    for (const holding of tokensToCheck) {
+      try {
+        const price = await this.pricingService.getTokenPrice({
+          tokenSymbol: holding.tokenSymbol,
+          baseCurrency: baseCurrency.symbol,
+          timestamp: new Date(),
+          live: true,
+        });
+
+        // If price is 0, it means the token is unpriceable
+        if (price === '0') {
+          const providerInfo = this.getProviderInfo(holding.tokenSymbol);
+          unpriceableTokens.push({
+            symbol: holding.tokenSymbol,
+            balance: new Decimal(holding.balance).toString(),
+            reason: providerInfo.reason,
+            provider: providerInfo.provider,
+            providerPricingUrl: providerInfo.pricingUrl,
+            institutionName: holding.institutionName,
+            accountName: holding.accountName,
+          });
+        }
+      } catch {
+        // If there's an error, consider it unpriceable
+        unpriceableTokens.push({
+          symbol: holding.tokenSymbol,
+          balance: new Decimal(holding.balance).toString(),
+          reason: 'API error or provider limitation',
+          provider: 'Unknown',
+          institutionName: holding.institutionName,
+          accountName: holding.accountName,
+        });
+      }
+    }
+
+    return {
+      count: unpriceableTokens.length,
+      tokens: unpriceableTokens,
+      baseCurrency: baseCurrency.symbol,
+    };
+  }
+
+  /**
+   * Get provider information and reasoning for unpriceable tokens
+   */
+  private getProviderInfo(symbol: string): {
+    reason: string;
+    provider: string;
+    pricingUrl?: string;
+  } {
+    const symbolUpper = symbol.toUpperCase();
+
+    if (symbolUpper.endsWith('.TO') || symbolUpper.endsWith('.TSX')) {
+      return {
+        reason: 'Canadian market (TSX) requires premium Finnhub plan',
+        provider: 'Finnhub',
+        pricingUrl: 'https://finnhub.io/pricing',
+      };
+    }
+
+    if (
+      symbolUpper.includes('.') &&
+      !symbolUpper.includes('USDT') &&
+      !symbolUpper.includes('USDC')
+    ) {
+      return {
+        reason: 'International market requires premium Finnhub plan',
+        provider: 'Finnhub',
+        pricingUrl: 'https://finnhub.io/pricing',
+      };
+    }
+
+    if (symbolUpper.includes('PRIVATE') || symbolUpper.includes('UNLISTED')) {
+      return {
+        reason: 'Private/unlisted security not available via data providers',
+        provider: 'Manual Entry Only',
+      };
+    }
+
+    return {
+      reason: 'Limited coverage on free tier of data providers',
+      provider: 'Finnhub/CoinGecko',
+      pricingUrl: 'https://finnhub.io/pricing',
     };
   }
 }

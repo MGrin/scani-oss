@@ -268,7 +268,7 @@ export const accountsRouter = router({
               tokenSymbol,
               baseCurrency: baseCurrency.symbol,
               timestamp: new Date(),
-              live: false, // Use cached prices
+              live: true, // Fetch current prices for account balances
             });
             priceResults[tokenSymbol] = price;
           } catch (error) {

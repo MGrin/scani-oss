@@ -1,15 +1,15 @@
-import type { Account } from '@scani/shared';
-import { Camera, ChevronDown, Plus, Wallet } from 'lucide-react';
-import { useEffect, useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
-import { AccountRow } from '@/components/AccountRow';
-import { ScreenshotHoldingForm } from '@/components/ScreenshotHoldingForm';
+import type { Account } from "@scani/shared";
+import { Wallet } from "lucide-react";
+import { useEffect, useState } from "react";
+import { useNavigate, useParams } from "react-router-dom";
+import { AccountRow } from "@/components/AccountRow";
+
 import {
   AccountTypeSelector,
   InstitutionFilterSelector,
-} from '@/components/selectors/SearchableSelectors';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent } from '@/components/ui/card';
+} from "@/components/selectors/SearchableSelectors";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
 import {
   Dialog,
   DialogContent,
@@ -17,29 +17,24 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from '@/components/ui/dialog';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
-import { PageAggregation } from '@/components/ui/page-aggregation';
-import { PageHeader } from '@/components/ui/page-header';
-import { useToast } from '@/hooks/use-toast';
-import { useFilters } from '@/hooks/useFilters';
-import type { ApiAccount, ApiHolding, ApiInstitution } from '@/lib/api-types';
-import { BUTTON_TEXT } from '@/lib/button-constants';
-import { trpc } from '@/lib/trpc';
+} from "@/components/ui/dialog";
+import { PageAggregation } from "@/components/ui/page-aggregation";
+import { PageHeader } from "@/components/ui/page-header";
+import { useUnpriceableTokens } from "@/contexts/UnpriceableTokensContext";
+import { useToast } from "@/hooks/use-toast";
+import { useFilters } from "@/hooks/useFilters";
+import type { ApiAccount, ApiHolding, ApiInstitution } from "@/lib/api-types";
+import { BUTTON_TEXT } from "@/lib/button-constants";
+import { trpc } from "@/lib/trpc";
 
 export function Accounts() {
   const navigate = useNavigate();
   const { institutionId } = useParams<{ institutionId: string }>();
   const { toast } = useToast();
-  const [searchTerm, setSearchTerm] = useState('');
+  const { isAccountAffected, shouldHighlight } = useUnpriceableTokens();
+  const [searchTerm, setSearchTerm] = useState("");
   const [accountToDelete, setAccountToDelete] = useState<Account | null>(null);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
-  const [isScreenshotFormOpen, setIsScreenshotFormOpen] = useState(false);
 
   // Unified filter system
   const {
@@ -48,24 +43,24 @@ export function Accounts() {
     clearAllFilters,
     hasActiveFilters,
   } = useFilters([
-    { key: 'type', defaultValue: 'all' },
-    { key: 'institution', defaultValue: 'all' },
+    { key: "type", defaultValue: "all" },
+    { key: "institution", defaultValue: "all" },
   ]);
 
-  const filterBy = filterValues.type || 'all';
-  const filterByInstitution = filterValues.institution || 'all';
+  const filterBy = filterValues.type || "all";
+  const filterByInstitution = filterValues.institution || "all";
 
   // Compute hasActiveFilters - always include all filters and search term
   const hasActiveFiltersComputed = hasActiveFilters || Boolean(searchTerm);
 
   // Clear all filters helper - exits hierarchical mode when clearing all
   const handleClearAllFilters = () => {
-    setSearchTerm('');
+    setSearchTerm("");
 
     // If in hierarchical mode, navigate back to normal accounts page immediately
     if (isHierarchicalMode) {
       // Navigate first, clearAllFilters will be called by the normal accounts page
-      navigate('/accounts', { replace: true });
+      navigate("/accounts", { replace: true });
     } else {
       // In normal mode, just clear filters
       clearAllFilters();
@@ -84,24 +79,26 @@ export function Accounts() {
 
   // Determine if we're in hierarchical mode (accessed from institution)
   const isHierarchicalMode = Boolean(institutionId);
-  const selectedInstitution = institutions?.find((inst) => inst.id === institutionId);
+  const selectedInstitution = institutions?.find(
+    (inst) => inst.id === institutionId
+  );
 
   // Sync institution filter when navigating between routes
   useEffect(() => {
     if (institutionId && institutionId !== filterByInstitution) {
       // Set the institution filter to match the URL param
-      updateFilter('institution', institutionId);
-    } else if (!institutionId && filterByInstitution !== 'all') {
+      updateFilter("institution", institutionId);
+    } else if (!institutionId && filterByInstitution !== "all") {
       // Clear the institution filter when not in hierarchical mode
-      updateFilter('institution', 'all');
+      updateFilter("institution", "all");
     }
   }, [institutionId, filterByInstitution, updateFilter]);
 
   // Handle institution filter changes with navigation
   const handleInstitutionFilterChange = (value: string) => {
-    if (value === 'all') {
+    if (value === "all") {
       // User selected "All Institutions" - go to normal accounts page
-      navigate('/accounts', { replace: true });
+      navigate("/accounts", { replace: true });
     } else if (value !== institutionId) {
       // User selected a different institution - navigate to that institution's page
       navigate(`/institutions/${value}`, { replace: true });
@@ -120,27 +117,32 @@ export function Accounts() {
   const deleteAccount = trpc.accounts.delete.useMutation({
     onSuccess: (result) => {
       const { cascadeInfo } = result;
-      let description = 'The account has been successfully deleted.';
+      let description = "The account has been successfully deleted.";
 
-      if (cascadeInfo && (cascadeInfo.holdingsDeleted > 0 || cascadeInfo.transactionsDeleted > 0)) {
+      if (
+        cascadeInfo &&
+        (cascadeInfo.holdingsDeleted > 0 || cascadeInfo.transactionsDeleted > 0)
+      ) {
         const parts = [];
         if (cascadeInfo.holdingsDeleted > 0) {
           parts.push(
-            `${cascadeInfo.holdingsDeleted} holding${cascadeInfo.holdingsDeleted !== 1 ? 's' : ''}`
+            `${cascadeInfo.holdingsDeleted} holding${
+              cascadeInfo.holdingsDeleted !== 1 ? "s" : ""
+            }`
           );
         }
         if (cascadeInfo.transactionsDeleted > 0) {
           parts.push(
             `${cascadeInfo.transactionsDeleted} transaction${
-              cascadeInfo.transactionsDeleted !== 1 ? 's' : ''
+              cascadeInfo.transactionsDeleted !== 1 ? "s" : ""
             }`
           );
         }
-        description += ` Also deleted: ${parts.join(' and ')}.`;
+        description += ` Also deleted: ${parts.join(" and ")}.`;
       }
 
       toast({
-        title: 'Account deleted',
+        title: "Account deleted",
         description,
       });
       utils.accounts.getAll.invalidate();
@@ -151,16 +153,18 @@ export function Accounts() {
     },
     onError: (error) => {
       toast({
-        title: 'Error deleting account',
+        title: "Error deleting account",
         description: error.message,
-        variant: 'destructive',
+        variant: "destructive",
       });
     },
   });
 
   // Create maps for quick lookups
   const institutionsMap = institutions
-    ? Object.fromEntries(institutions.map((inst: ApiInstitution) => [inst.id, inst]))
+    ? Object.fromEntries(
+        institutions.map((inst: ApiInstitution) => [inst.id, inst])
+      )
     : {};
 
   // Filter accounts based on search term, type, and institution
@@ -168,12 +172,16 @@ export function Accounts() {
     const matchesSearch =
       !searchTerm ||
       account.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      (account.type?.toLowerCase().includes(searchTerm.toLowerCase()) ?? false) ||
-      institutionsMap[account.institutionId]?.name.toLowerCase().includes(searchTerm.toLowerCase());
+      (account.type?.toLowerCase().includes(searchTerm.toLowerCase()) ??
+        false) ||
+      institutionsMap[account.institutionId]?.name
+        .toLowerCase()
+        .includes(searchTerm.toLowerCase());
 
-    const matchesTypeFilter = filterBy === 'all' || account.type === filterBy;
+    const matchesTypeFilter = filterBy === "all" || account.type === filterBy;
     const matchesInstitutionFilter =
-      filterByInstitution === 'all' || account.institutionId === filterByInstitution;
+      filterByInstitution === "all" ||
+      account.institutionId === filterByInstitution;
 
     return matchesSearch && matchesTypeFilter && matchesInstitutionFilter;
   });
@@ -191,31 +199,37 @@ export function Accounts() {
   };
 
   // Screenshot handlers
-  const handleAddFromScreenshot = () => setIsScreenshotFormOpen(true);
-  const handleScreenshotSuccess = () => {
-    setIsScreenshotFormOpen(false);
-    toast({
-      title: 'Screenshot processed successfully',
-      description: 'Holdings have been added from your screenshot.',
-    });
-  };
 
   const getAccountHoldings = (accountId: string) => {
     if (!holdings) return [];
-    return holdings.filter((holding: ApiHolding) => holding.accountId === accountId);
+    return holdings.filter(
+      (holding: ApiHolding) => holding.accountId === accountId
+    );
   };
 
   // Use backend-calculated account balances instead of manual calculations
   const getAccountBalance = (accountId: string): number => {
     if (!accountSummaries?.accounts) return 0;
-    const accountSummary = accountSummaries.accounts.find((acc) => acc.id === accountId);
+    const accountSummary = accountSummaries.accounts.find(
+      (acc) => acc.id === accountId
+    );
     return accountSummary?.totalBalance ?? 0;
   };
 
-  if (isLoading || summariesLoading || !holdings || !institutions || !accountSummaries) {
+  if (
+    isLoading ||
+    summariesLoading ||
+    !holdings ||
+    !institutions ||
+    !accountSummaries
+  ) {
     return (
       <div className="space-y-6">
-        <PageHeader title="Accounts" subtitle="Manage your financial accounts" loading={true} />
+        <PageHeader
+          title="Accounts"
+          subtitle="Manage your financial accounts"
+          loading={true}
+        />
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
           {[1, 2, 3].map((i) => (
             <Card key={i}>
@@ -235,9 +249,9 @@ export function Accounts() {
 
   // Calculate total and filtered balances (ensure they're numbers)
   const allAccountsBalance =
-    typeof accountSummaries?.totalBalance === 'number'
+    typeof accountSummaries?.totalBalance === "number"
       ? accountSummaries.totalBalance
-      : parseFloat(accountSummaries?.totalBalance?.toString() || '0');
+      : parseFloat(accountSummaries?.totalBalance?.toString() || "0");
   const displayAccountsBalance = displayAccounts.reduce((total, account) => {
     const accountBalance = getAccountBalance(account.id);
     return total + accountBalance;
@@ -247,44 +261,34 @@ export function Accounts() {
     return total + accountBalance;
   }, 0);
 
-  const totalBalance = isHierarchicalMode ? displayAccountsBalance : allAccountsBalance;
+  const totalBalance = isHierarchicalMode
+    ? displayAccountsBalance
+    : allAccountsBalance;
+
+  // Check if any accounts are affected by unpriceable tokens and should be highlighted
+  const hasAffectedAccounts =
+    shouldHighlight() &&
+    baseAccounts.some((account) => {
+      const institution = institutions.find(
+        (inst) => inst.id === account.institutionId
+      );
+      return institution
+        ? isAccountAffected(institution.name, account.name)
+        : false;
+    });
 
   const pageTitle =
     isHierarchicalMode && selectedInstitution
       ? `${selectedInstitution.name} Accounts`
-      : 'Your Accounts';
+      : "Your Accounts";
 
   const pageSubtitle = isHierarchicalMode
-    ? `Accounts at ${selectedInstitution?.name || 'this institution'}`
-    : 'Overview of your financial accounts with holdings';
+    ? `Accounts at ${selectedInstitution?.name || "this institution"}`
+    : "Overview of your financial accounts with holdings";
 
   return (
     <div className="space-y-4">
-      <PageHeader
-        title={pageTitle}
-        subtitle={pageSubtitle}
-        secondaryActions={
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button size="lg">
-                <Plus className="h-4 w-4 mr-1" />
-                Add Holdings
-                <ChevronDown className="h-4 w-4 ml-1" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-              <DropdownMenuItem onClick={() => navigate('/quick-add-holding')}>
-                <Plus className="h-4 w-4 mr-2" />
-                Add Manually
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={handleAddFromScreenshot}>
-                <Camera className="h-4 w-4 mr-2" />
-                Upload Screenshot
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-        }
-      />
+      <PageHeader title={pageTitle} subtitle={pageSubtitle} />
 
       <PageAggregation
         totalCount={baseAccounts.length}
@@ -302,8 +306,11 @@ export function Accounts() {
           <AccountTypeSelector
             key="type"
             value={filterBy}
-            onValueChange={(value) => updateFilter('type', value)}
-            accountTypes={[{ id: 'all', code: 'all', name: 'All Types' }, ...(accountTypes || [])]}
+            onValueChange={(value) => updateFilter("type", value)}
+            accountTypes={[
+              { id: "all", code: "all", name: "All Types" },
+              ...(accountTypes || []),
+            ]}
             placeholder="Filter by type..."
           />,
           <InstitutionFilterSelector
@@ -314,6 +321,7 @@ export function Accounts() {
             placeholder="Filter by institution..."
           />,
         ]}
+        isAffectedByUnpriceableTokens={hasAffectedAccounts}
       />
 
       {/* Accounts Grid */}
@@ -323,13 +331,13 @@ export function Accounts() {
             <Wallet className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
             <h3 className="text-lg font-semibold mb-2">No accounts yet</h3>
             <p className="text-muted-foreground mb-6 max-w-md mx-auto">
-              You haven't added any holdings yet. When you create your first holding, the associated
-              account will appear here automatically.
+              You haven't added any holdings yet. When you create your first
+              holding, the associated account will appear here automatically.
             </p>
-            <Button onClick={() => navigate('/quick-add-holding')}>
-              <Plus className="h-4 w-4 mr-2" />
-              Create Your First Holding
-            </Button>
+            <p className="text-sm text-muted-foreground">
+              Click the "Add Holding" button in the top right corner to get
+              started.
+            </p>
           </CardContent>
         </Card>
       ) : filteredAccounts.length === 0 ? (
@@ -338,10 +346,14 @@ export function Accounts() {
             <Wallet className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
             <div className="text-muted-foreground mb-4">
               {isHierarchicalMode
-                ? `No accounts found for ${selectedInstitution?.name || 'this institution'}.`
-                : 'No accounts match your search criteria.'}
+                ? `No accounts found for ${
+                    selectedInstitution?.name || "this institution"
+                  }.`
+                : "No accounts match your search criteria."}
             </div>
-            {!isHierarchicalMode && <Button onClick={handleClearAllFilters}>Clear Filters</Button>}
+            {!isHierarchicalMode && (
+              <Button onClick={handleClearAllFilters}>Clear Filters</Button>
+            )}
           </CardContent>
         </Card>
       ) : (
@@ -363,12 +375,16 @@ export function Accounts() {
                     baseCurrency: baseCurrency || undefined,
                   }}
                   showInstitution={!isHierarchicalMode}
-                  onDelete={() => handleDeleteAccount(account as unknown as Account)}
+                  onDelete={() =>
+                    handleDeleteAccount(account as unknown as Account)
+                  }
                   onClick={
                     accountHoldings.length > 0
                       ? () => {
                           if (isHierarchicalMode) {
-                            navigate(`/institutions/${institutionId}/accounts/${account.id}`);
+                            navigate(
+                              `/institutions/${institutionId}/accounts/${account.id}`
+                            );
                           } else {
                             navigate(
                               `/institutions/${account.institutionId}/accounts/${account.id}`
@@ -390,8 +406,9 @@ export function Accounts() {
           <DialogHeader>
             <DialogTitle>Delete Account</DialogTitle>
             <DialogDescription>
-              Are you sure you want to delete "{accountToDelete?.name}"? This action cannot be
-              undone. All associated holdings and transactions will also be permanently deleted.
+              Are you sure you want to delete "{accountToDelete?.name}"? This
+              action cannot be undone. All associated holdings and transactions
+              will also be permanently deleted.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
@@ -407,16 +424,11 @@ export function Accounts() {
               onClick={confirmDeleteAccount}
               disabled={deleteAccount.isPending}
             >
-              {deleteAccount.isPending ? 'Deleting...' : BUTTON_TEXT.DELETE_ACCOUNT}
+              {deleteAccount.isPending
+                ? "Deleting..."
+                : BUTTON_TEXT.DELETE_ACCOUNT}
             </Button>
           </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* Screenshot Upload Dialog */}
-      <Dialog open={isScreenshotFormOpen} onOpenChange={setIsScreenshotFormOpen}>
-        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
-          <ScreenshotHoldingForm onSuccess={handleScreenshotSuccess} />
         </DialogContent>
       </Dialog>
     </div>

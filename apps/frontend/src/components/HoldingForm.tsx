@@ -2,7 +2,12 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import React, { useId, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
-import { AccountSelector, TokenSelector } from '@/components/selectors/SearchableSelectors';
+import {
+  AccountSelectionWithCreation,
+  processAccountCreation,
+  useAccountCreationMutations,
+} from '@/components/selectors/AccountSelectionWithCreation';
+import { TokenSelector } from '@/components/selectors/SearchableSelectors';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -19,32 +24,94 @@ import { useToast } from '@/hooks/use-toast';
 import type { ApiAccount, ApiHolding, ApiToken } from '@/lib/api-types';
 import { trpc } from '@/lib/trpc';
 
-const HoldingFormSchema = z.object({
-  accountId: z.string().min(1, 'Please select an account'),
-  tokenId: z.string().min(1, 'Please select a token'),
-  balance: z
-    .string({
-      required_error: 'Balance is required',
-    })
-    .refine((val) => val.trim() !== '', 'Balance is required')
-    .refine((val) => !Number.isNaN(parseFloat(val)), 'Balance must be a valid number')
-    .refine(
-      (val) => parseFloat(val) !== 0,
-      'Balance cannot be zero. Enter the actual holding amount.'
-    )
-    .refine(
-      (val) => parseFloat(val) > 0,
-      'Balance must be positive. For short positions, use a negative value with a note in the description.'
-    )
-    .refine(
-      (val) => Math.abs(parseFloat(val)) >= 0.000001,
-      'Balance is too small. Minimum value is 0.000001'
-    )
-    .refine(
-      (val) => Math.abs(parseFloat(val)) <= 1_000_000_000,
-      'Balance is too large. Maximum value is 1 billion'
-    ),
-});
+const HoldingFormSchema = z
+  .object({
+    accountId: z.string().min(1, 'Please select an account'),
+    tokenId: z.string().min(1, 'Please select a token'),
+    balance: z
+      .string({
+        required_error: 'Balance is required',
+      })
+      .refine((val) => val.trim() !== '', 'Balance is required')
+      .refine((val) => !Number.isNaN(parseFloat(val)), 'Balance must be a valid number')
+      .refine(
+        (val) => parseFloat(val) !== 0,
+        'Balance cannot be zero. Enter the actual holding amount.'
+      )
+      .refine(
+        (val) => parseFloat(val) > 0,
+        'Balance must be positive. For short positions, use a negative value with a note in the description.'
+      )
+      .refine(
+        (val) => Math.abs(parseFloat(val)) >= 0.000001,
+        'Balance is too small. Minimum value is 0.000001'
+      )
+      .refine(
+        (val) => Math.abs(parseFloat(val)) <= 1_000_000_000,
+        'Balance is too large. Maximum value is 1 billion'
+      ),
+
+    // New account fields (conditionally required when accountId is 'new')
+    newAccountName: z.string().optional(),
+    newAccountType: z.string().optional(),
+    newAccountDescription: z.string().optional(),
+
+    // Institution selection (conditionally required when creating new account)
+    institutionId: z.string().optional(),
+
+    // New institution fields (conditionally required when institutionId is 'new')
+    newInstitutionName: z.string().optional(),
+    newInstitutionType: z.string().optional(),
+    newInstitutionDescription: z.string().optional(),
+    newInstitutionWebsite: z.string().optional(),
+  })
+  .superRefine((data, ctx) => {
+    // Validate new account fields when creating new account
+    if (data.accountId === 'new') {
+      if (!data.newAccountName?.trim()) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'Account name is required when creating a new account',
+          path: ['newAccountName'],
+        });
+      }
+
+      if (!data.newAccountType) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'Account type is required when creating a new account',
+          path: ['newAccountType'],
+        });
+      }
+
+      if (!data.institutionId) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'Institution is required when creating a new account',
+          path: ['institutionId'],
+        });
+      }
+
+      // Validate new institution fields when creating new institution
+      if (data.institutionId === 'new') {
+        if (!data.newInstitutionName?.trim()) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            message: 'Institution name is required when creating a new institution',
+            path: ['newInstitutionName'],
+          });
+        }
+
+        if (!data.newInstitutionType) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            message: 'Institution type is required when creating a new institution',
+            path: ['newInstitutionType'],
+          });
+        }
+      }
+    }
+  });
 
 type HoldingFormData = z.infer<typeof HoldingFormSchema>;
 
@@ -63,10 +130,13 @@ export function HoldingForm({ isOpen, onClose, holding, mode }: HoldingFormProps
   const [isCloseConfirmOpen, setIsCloseConfirmOpen] = useState(false);
   const balanceId = useId();
 
-  const { data: accounts, isLoading: accountsLoading } = trpc.accounts.getAll.useQuery();
+  const { data: accounts } = trpc.accounts.getAll.useQuery();
   const { data: tokens, isLoading: tokensLoading } = trpc.tokens.getAll.useQuery();
 
   const utils = trpc.useUtils();
+
+  // Account creation mutations
+  const accountMutations = useAccountCreationMutations();
 
   const createHolding = trpc.holdings.create.useMutation({
     onSuccess: (newHolding) => {
@@ -121,14 +191,7 @@ export function HoldingForm({ isOpen, onClose, holding, mode }: HoldingFormProps
     },
   });
 
-  const {
-    register,
-    handleSubmit,
-    formState: { errors },
-    setValue,
-    watch,
-    reset,
-  } = useForm<HoldingFormData>({
+  const form = useForm<HoldingFormData>({
     resolver: zodResolver(HoldingFormSchema),
     defaultValues: {
       accountId: holding?.accountId || '',
@@ -137,6 +200,16 @@ export function HoldingForm({ isOpen, onClose, holding, mode }: HoldingFormProps
     },
     mode: 'onChange',
   });
+
+  // Destructure form methods for backward compatibility
+  const {
+    register,
+    handleSubmit,
+    formState: { errors },
+    setValue,
+    watch,
+    reset,
+  } = form;
 
   // Reset form when holding changes
   React.useEffect(() => {
@@ -199,21 +272,37 @@ export function HoldingForm({ isOpen, onClose, holding, mode }: HoldingFormProps
     setIsSubmitting(true);
     setHasUnsavedChanges(false); // Reset unsaved changes on submit
 
-    const submitData = {
-      accountId: data.accountId,
-      tokenId: data.tokenId,
-      balance: data.balance,
-    };
+    try {
+      // Process account creation if needed
+      let accountId = data.accountId;
+      if (data.accountId === 'new') {
+        accountId = await processAccountCreation(data, accountMutations);
+      }
 
-    console.log('Submitting to backend:', submitData);
+      const submitData = {
+        accountId,
+        tokenId: data.tokenId,
+        balance: data.balance,
+      };
 
-    if (mode === 'create') {
-      createHolding.mutate(submitData);
-    } else if (holding) {
-      updateHolding.mutate({
-        id: holding.id,
-        data: submitData,
+      console.log('Submitting to backend:', submitData);
+
+      if (mode === 'create') {
+        createHolding.mutate(submitData);
+      } else if (holding) {
+        updateHolding.mutate({
+          id: holding.id,
+          data: submitData,
+        });
+      }
+    } catch (error) {
+      console.error('Error in form submission:', error);
+      toast({
+        title: 'Error',
+        description: error instanceof Error ? error.message : 'An unexpected error occurred',
+        variant: 'destructive',
       });
+      setIsSubmitting(false);
     }
   };
 
@@ -262,17 +351,10 @@ export function HoldingForm({ isOpen, onClose, holding, mode }: HoldingFormProps
               <p className="text-sm text-yellow-800">{duplicateWarning}</p>
             </div>
           )}
-          <div className="space-y-2">
-            <Label htmlFor="account">Account *</Label>
-            <AccountSelector
-              value={watchedAccountId}
-              onValueChange={(value) => setValue('accountId', value)}
-              accounts={accounts}
-              placeholder={accountsLoading ? 'Loading accounts...' : 'Select an account'}
-            />
-            {errors.accountId && (
-              <p className="text-sm text-destructive">{errors.accountId.message}</p>
-            )}
+
+          {/* Account Selection with Creation */}
+          <div>
+            <AccountSelectionWithCreation form={form} showDescription={mode === 'create'} />
           </div>
 
           {/* Token Selection */}
