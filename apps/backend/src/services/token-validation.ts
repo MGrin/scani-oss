@@ -322,9 +322,76 @@ export class TokenValidationService {
   }
 
   /**
+   * Search for multiple tokens using CoinGecko search
+   */
+  async searchCoinGeckoTokens(query: string): Promise<ValidationResult[]> {
+    try {
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/json',
+      };
+
+      if (config.coinGecko.apiKey) {
+        headers['x-cg-pro-api-key'] = config.coinGecko.apiKey;
+      }
+
+      const searchUrl = `${config.coinGecko.baseUrl}/search?query=${encodeURIComponent(query)}`;
+      const response = await fetch(searchUrl, { headers });
+
+      if (!response.ok) {
+        console.warn(`CoinGecko search API error: ${response.statusText}`);
+        return [];
+      }
+
+      const searchData = (await response.json()) as {
+        coins: Array<{
+          id: string;
+          symbol: string;
+          name: string;
+          large?: string;
+        }>;
+      };
+
+      if (!searchData.coins || searchData.coins.length === 0) {
+        return [];
+      }
+
+      // Convert search results to ValidationResults (limit to top 10)
+      const results: ValidationResult[] = [];
+
+      for (const coin of searchData.coins.slice(0, 10)) {
+        const metadata: TokenMetadata = {
+          symbol: coin.symbol.toUpperCase(),
+          name: coin.name,
+          type: 'Crypto',
+          currency: 'USD',
+          provider: 'coingecko',
+          providerMetadata: {
+            id: coin.id,
+            searchResult: coin,
+            validatedAt: new Date().toISOString(),
+          },
+        };
+
+        results.push({
+          isValid: true,
+          metadata,
+        });
+      }
+
+      return results;
+    } catch (error) {
+      console.warn('CoinGecko search error:', error);
+      return [];
+    }
+  }
+
+  /**
    * Alias for validateToken to maintain compatibility
    */
   async getTokenInfo(symbol: string): Promise<ValidationResult> {
     return this.validateToken(symbol);
   }
 }
+
+// Singleton instance
+export const tokenValidationService = new TokenValidationService();

@@ -16,10 +16,10 @@ export function TRPCProvider({ children }: TRPCProviderProps) {
           queries: {
             retry: 1,
             refetchOnWindowFocus: false,
-            // Conservative caching for financial data accuracy
-            staleTime: 0, // Always consider data stale - fetch fresh data
-            cacheTime: 30 * 1000, // 30 seconds - short cache for immediate consistency
-            refetchOnMount: 'always', // Always refetch on mount for latest data
+            // Optimized caching for better performance while maintaining accuracy
+            staleTime: 5 * 60 * 1000, // 5 minutes - portfolio data doesn't change that frequently
+            cacheTime: 10 * 60 * 1000, // 10 minutes - keep in memory longer
+            refetchOnMount: false, // Use cached data if available and not stale
           },
         },
       })

@@ -1,12 +1,12 @@
 import { UpdateTransactionSchema } from '@scani/shared/types';
 import Decimal from 'decimal.js';
-import { and, desc, eq, gte, lte, not } from 'drizzle-orm';
+import { and, desc, eq, gte, inArray, lte, not } from 'drizzle-orm';
 import { z } from 'zod';
 import { db } from '../db/connection';
 import * as schema from '../db/schema';
 import { getUserId, requireAuth } from '../middleware/auth';
-import { PricingService } from '../services/pricing';
-import { getBaseCurrencyToken } from '../services/user-context';
+import { pricingService } from '../services/pricing';
+import { userContextService } from '../services/user-context-enhanced';
 import { protectedProcedure, router } from '../trpc';
 
 // Type assertion for router operations (development/test environment uses SQLite)
@@ -22,7 +22,7 @@ export const transactionsRouter = router({
     }
 
     // Use user context service to get base currency efficiently
-    const baseCurrency = await getBaseCurrencyToken(dbUser.baseCurrencyId);
+    const baseCurrency = await userContextService.getBaseCurrency(dbUser.id);
     const baseCurrencySymbol = baseCurrency.symbol;
 
     const transactions = await routerDb
@@ -53,53 +53,73 @@ export const transactionsRouter = router({
       .where(eq(schema.holdings.userId, dbUser.id))
       .orderBy(desc(schema.transactions.timestamp));
 
-    // Convert amounts to base currency
-    const pricingService = new PricingService();
-    const transactionsWithConversion = await Promise.all(
-      transactions.map(async (transaction) => {
-        try {
-          let baseCurrencyAmount: string;
-          let baseCurrencyFee: string = '0';
+    // PERFORMANCE OPTIMIZATION: Batch fetch all prices at once
+    // Use singleton pricing service
 
-          // Convert transaction amount to base currency
-          if (transaction.tokenSymbol === baseCurrencySymbol) {
-            // Same currency, no conversion needed
-            baseCurrencyAmount = transaction.amount;
-          } else {
-            // Get price in base currency at transaction time
-            const price = await pricingService.getTokenPrice({
-              tokenSymbol: transaction.tokenSymbol,
-              baseCurrency: baseCurrencySymbol,
-              timestamp: transaction.timestamp,
-              live: false, // Historical price at transaction time
-            });
-            const amount = new Decimal(transaction.amount || '0');
-            baseCurrencyAmount = amount.mul(new Decimal(price)).toString();
-          }
+    // Get unique token symbols that need pricing (excluding base currency)
+    const tokenSymbolsToPrice = [
+      ...new Set(
+        transactions
+          .filter((transaction) => transaction.tokenSymbol !== baseCurrencySymbol)
+          .map((transaction) => transaction.tokenSymbol)
+      ),
+    ];
 
-          // Convert fee if it exists (assuming fee is always in base currency for now)
-          if (parseFloat(transaction.fee) > 0) {
-            baseCurrencyFee = transaction.fee;
-          }
+    // Get full token objects for pricing service
+    const tokensToPrice =
+      tokenSymbolsToPrice.length > 0
+        ? await db
+            .select()
+            .from(schema.tokens)
+            .where(inArray(schema.tokens.symbol, tokenSymbolsToPrice))
+        : [];
 
-          return {
-            ...transaction,
-            baseCurrencyAmount,
-            baseCurrencyFee,
-            baseCurrencySymbol,
-          };
-        } catch (error) {
-          console.warn(`Failed to convert transaction ${transaction.id} to base currency:`, error);
-          // Return original transaction with same amounts if conversion fails
-          return {
-            ...transaction,
-            baseCurrencyAmount: transaction.amount,
-            baseCurrencyFee: transaction.fee,
-            baseCurrencySymbol,
-          };
+    // Fetch all prices at once using the latest timestamp for all tokens
+    const priceResults =
+      tokensToPrice.length > 0
+        ? await pricingService.getTokenPrices(tokensToPrice, baseCurrencySymbol, new Date())
+        : new Map<string, string>();
+
+    // Convert amounts to base currency using batched price data
+    const transactionsWithConversion = transactions.map((transaction) => {
+      try {
+        let baseCurrencyAmount: string;
+        let baseCurrencyFee: string = '0';
+
+        // Convert transaction amount to base currency
+        if (transaction.tokenSymbol === baseCurrencySymbol) {
+          // Same currency, no conversion needed
+          baseCurrencyAmount = transaction.amount;
+        } else {
+          // Use batched price result - find token ID first
+          const token = tokensToPrice.find((t) => t.symbol === transaction.tokenSymbol);
+          const price = token ? priceResults.get(token.id) || '0' : '0';
+          const amount = new Decimal(transaction.amount || '0');
+          baseCurrencyAmount = amount.mul(new Decimal(price)).toString();
         }
-      })
-    );
+
+        // Convert fee if it exists (assuming fee is always in base currency for now)
+        if (parseFloat(transaction.fee) > 0) {
+          baseCurrencyFee = transaction.fee;
+        }
+
+        return {
+          ...transaction,
+          baseCurrencyAmount,
+          baseCurrencyFee,
+          baseCurrencySymbol,
+        };
+      } catch (error) {
+        console.warn(`Failed to convert transaction ${transaction.id} to base currency:`, error);
+        // Return original transaction with same amounts if conversion fails
+        return {
+          ...transaction,
+          baseCurrencyAmount: transaction.amount,
+          baseCurrencyFee: transaction.fee,
+          baseCurrencySymbol,
+        };
+      }
+    });
 
     return transactionsWithConversion;
   }),
@@ -265,13 +285,11 @@ export const transactionsRouter = router({
       // Auto-fetch token price for current price tracking (optional)
       if (baseCurrency) {
         try {
-          const pricingService = new PricingService();
-          await pricingService.getTokenPrice({
-            tokenSymbol: holdingData.token.symbol,
-            baseCurrency: baseCurrency.symbol,
-            timestamp: input.timestamp,
-            live: false, // Use historical price for transaction timestamp
-          });
+          await pricingService.getTokenPrice(
+            holdingData.token,
+            baseCurrency.symbol,
+            input.timestamp
+          );
           // Price is now cached in tokenPrices table
         } catch (error) {
           console.warn(`Failed to fetch price for ${holdingData.token.symbol}:`, error);
@@ -436,9 +454,8 @@ export const transactionsRouter = router({
       }
 
       // Recalculate holding balance after transaction deletion
-      const { BalanceCalculationService } = await import('../services/balance-calculation');
-      const balanceService = new BalanceCalculationService();
-      await balanceService.updateHoldingBalance(transaction.holdingId);
+      const { holdingManagementService } = await import('../services/holding-management');
+      await holdingManagementService.updateHoldingBalance(transaction.holdingId);
 
       return {
         success: true,
@@ -516,7 +533,7 @@ export const transactionsRouter = router({
       }
 
       // Get base currency token using user context service
-      const baseCurrency = await getBaseCurrencyToken(dbUser.baseCurrencyId);
+      const baseCurrency = await userContextService.getBaseCurrency(dbUser.id);
 
       if (!baseCurrency) {
         return {
@@ -558,11 +575,36 @@ export const transactionsRouter = router({
           )
         );
 
-      // Calculate summaries in base currency
+      // PERFORMANCE OPTIMIZATION: Batch fetch all prices at once
+      // Use singleton pricing service
+
+      // Get unique token symbols that need pricing (excluding base currency)
+      const tokenSymbolsToPrice = [
+        ...new Set(
+          transactions
+            .filter((transaction) => transaction.tokenId !== dbUser.baseCurrencyId)
+            .map((transaction) => transaction.tokenSymbol)
+        ),
+      ];
+
+      // Get full token objects for pricing service
+      const tokensToPrice =
+        tokenSymbolsToPrice.length > 0
+          ? await db
+              .select()
+              .from(schema.tokens)
+              .where(inArray(schema.tokens.symbol, tokenSymbolsToPrice))
+          : [];
+
+      // Fetch all prices at once using the latest timestamp for all tokens
+      const priceResults =
+        tokensToPrice.length > 0
+          ? await pricingService.getTokenPrices(tokensToPrice, baseCurrency.symbol, new Date())
+          : new Map<string, string>();
+
+      // Calculate summaries in base currency using batched price data
       let totalDeposits = new Decimal(0);
       let totalWithdrawals = new Decimal(0);
-
-      const pricingService = new PricingService();
 
       for (const transaction of transactions) {
         try {
@@ -574,13 +616,9 @@ export const transactionsRouter = router({
             // Same currency, no conversion needed
             convertedAmount = amount;
           } else {
-            // Get price in base currency at transaction time
-            const price = await pricingService.getTokenPrice({
-              tokenSymbol: transaction.tokenSymbol,
-              baseCurrency: baseCurrency.symbol,
-              timestamp: transaction.timestamp,
-              live: false, // Historical price at transaction time
-            });
+            // Use batched price result - find token ID first
+            const token = tokensToPrice.find((t) => t.symbol === transaction.tokenSymbol);
+            const price = token ? priceResults.get(token.id) || '0' : '0';
             convertedAmount = amount.mul(new Decimal(price));
           }
 

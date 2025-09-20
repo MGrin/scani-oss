@@ -1,10 +1,10 @@
-import { and, eq, ne, sql } from 'drizzle-orm';
+import { and, eq, inArray, ne, sql } from 'drizzle-orm';
 import { z } from 'zod';
 import { db } from '../db/connection';
 import * as schema from '../db/schema';
 import { getUserId } from '../middleware/auth';
-import { PortfolioValuationService } from '../services/portfolio-valuation';
-import { PricingService } from '../services/pricing';
+import { portfolioValuationService } from '../services/portfolio-valuation';
+import { pricingService } from '../services/pricing';
 import { protectedProcedure, router } from '../trpc';
 
 // Helper function to check if account name already exists within an institution
@@ -203,8 +203,7 @@ export const accountsRouter = router({
 
     try {
       // Use portfolio valuation service to get properly converted values
-      const portfolioService = new PortfolioValuationService();
-      const portfolioValue = await portfolioService.getUserPortfolioValue(userId);
+      const portfolioValue = await portfolioValuationService.getUserPortfolioValue(userId);
 
       // Get all user accounts with their institutions and account types
       const accounts = await db
@@ -254,30 +253,66 @@ export const accountsRouter = router({
         throw new Error('Base currency token not found');
       }
 
-      // Get current token prices for all unique tokens
+      // Get current token prices for all unique tokens using batch processing
       const uniqueTokens = [...new Set(userHoldings.map((h) => h.tokenSymbol))];
       const priceResults: Record<string, string> = {};
 
-      // Create a separate pricing service instance
-      const pricingService = new PricingService();
+      // Use singleton pricing service
 
-      for (const tokenSymbol of uniqueTokens) {
-        if (tokenSymbol !== baseCurrency.symbol) {
-          try {
-            const price = await pricingService.getTokenPrice({
-              tokenSymbol,
-              baseCurrency: baseCurrency.symbol,
-              timestamp: new Date(),
-              live: true, // Fetch current prices for account balances
-            });
-            priceResults[tokenSymbol] = price;
-          } catch (error) {
-            console.warn(`Failed to get price for ${tokenSymbol}:`, error);
+      // Use batch price fetching for better performance
+      const tokensToPrice = uniqueTokens.filter((symbol) => symbol !== baseCurrency.symbol);
+
+      if (tokensToPrice.length > 0) {
+        try {
+          // Get full token objects for pricing service
+          const tokens = await db
+            .select()
+            .from(schema.tokens)
+            .where(inArray(schema.tokens.symbol, tokensToPrice));
+
+          const batchPrices = await pricingService.getTokenPrices(
+            tokens,
+            baseCurrency.symbol,
+            new Date()
+          );
+
+          // Map batch results to our price results using token symbol as key
+          for (const token of tokens) {
+            const price = batchPrices.get(token.id);
+            if (price) {
+              priceResults[token.symbol] = price;
+            }
           }
-        } else {
-          priceResults[tokenSymbol] = '1'; // Base currency price is always 1
+        } catch (error) {
+          console.warn('Failed to get batch prices, falling back to individual calls:', error);
+
+          // Fallback to individual calls if batch fails
+          for (const tokenSymbol of tokensToPrice) {
+            try {
+              // Get the token object first
+              const token = await db
+                .select()
+                .from(schema.tokens)
+                .where(eq(schema.tokens.symbol, tokenSymbol))
+                .limit(1);
+
+              if (token[0]) {
+                const price = await pricingService.getTokenPrice(
+                  token[0],
+                  baseCurrency.symbol,
+                  new Date()
+                );
+                priceResults[tokenSymbol] = price;
+              }
+            } catch (error) {
+              console.warn(`Failed to get price for ${tokenSymbol}:`, error);
+            }
+          }
         }
       }
+
+      // Base currency price is always 1
+      priceResults[baseCurrency.symbol] = '1';
 
       // Calculate account balances by summing individual holding values
       const accountSummaries = accounts.map((account) => {

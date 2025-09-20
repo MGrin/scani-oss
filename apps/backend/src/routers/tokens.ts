@@ -1,10 +1,10 @@
 import Decimal from 'decimal.js';
-import { and, eq, sql } from 'drizzle-orm';
+import { and, eq, inArray, sql } from 'drizzle-orm';
 import { z } from 'zod';
 import { db } from '../db/connection';
 import * as schema from '../db/schema';
 import { getUserId } from '../middleware/auth';
-import { PricingService } from '../services/pricing';
+import { pricingService } from '../services/pricing';
 import { TokenValidationService } from '../services/token-validation';
 import { protectedProcedure, router } from '../trpc';
 
@@ -877,8 +877,7 @@ export const tokensRouter = router({
       }
     >();
 
-    const pricingService = new PricingService();
-
+    // First, group holdings by token without pricing
     for (const row of tokensWithHoldings) {
       const tokenId = row.id;
 
@@ -905,6 +904,39 @@ export const tokensRouter = router({
       const summary = tokenSummaries.get(tokenId)!;
       const balance = new Decimal(row.holdingBalance || '0');
       summary.totalBalance = summary.totalBalance.add(balance);
+    }
+
+    // Batch fetch prices for all unique tokens that need conversion
+    // Use singleton pricing service
+    const uniqueTokens = Array.from(tokenSummaries.keys());
+    const uniqueSymbols = Array.from(
+      new Set(
+        uniqueTokens.map((tokenId) => {
+          const summary = tokenSummaries.get(tokenId)!;
+          return summary.token.symbol;
+        })
+      )
+    );
+
+    const tokensToPrice = uniqueSymbols.filter((symbol) => symbol !== baseCurrencySymbol);
+
+    // Get full token objects for pricing service
+    const tokens =
+      tokensToPrice.length > 0
+        ? await db.select().from(schema.tokens).where(inArray(schema.tokens.symbol, tokensToPrice))
+        : [];
+
+    let prices = new Map<string, string>();
+    if (tokens.length > 0) {
+      const now = new Date();
+      prices = await pricingService.getTokenPrices(tokens, baseCurrencySymbol, now);
+    }
+
+    // Now calculate values using the batch-fetched prices
+    for (const row of tokensWithHoldings) {
+      const tokenId = row.id;
+      const summary = tokenSummaries.get(tokenId)!;
+      const balance = new Decimal(row.holdingBalance || '0');
 
       // Convert to base currency value
       let convertedValue: Decimal;
@@ -912,13 +944,9 @@ export const tokensRouter = router({
         // Same currency, no conversion needed
         convertedValue = balance;
       } else {
-        // Get current price in base currency - pricing service now always returns a price
-        const price = await pricingService.getTokenPrice({
-          tokenSymbol: row.symbol,
-          baseCurrency: baseCurrencySymbol,
-          timestamp: new Date(),
-          live: true,
-        });
+        // Use batch-fetched price - find token ID first
+        const token = tokens.find((t) => t.symbol === row.symbol);
+        const price = token ? prices.get(token.id) || '0' : '0';
         convertedValue = balance.mul(new Decimal(price));
       }
       summary.totalValue = summary.totalValue.add(convertedValue);

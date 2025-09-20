@@ -4,8 +4,8 @@ import { z } from 'zod';
 import { db } from '../db/connection';
 import * as schema from '../db/schema';
 import { getUserId, requireAuth } from '../middleware/auth';
-import { PortfolioValuationService } from '../services/portfolio-valuation';
-import { PricingService } from '../services/pricing';
+import { portfolioValuationService } from '../services/portfolio-valuation';
+import { pricingService } from '../services/pricing';
 import { protectedProcedure, router } from '../trpc';
 
 export const holdingsRouter = router({
@@ -123,13 +123,7 @@ export const holdingsRouter = router({
               .limit(1);
 
             if (baseCurrency && token.symbol !== baseCurrency.symbol) {
-              const pricingService = new PricingService();
-              await pricingService.getTokenPrice({
-                tokenSymbol: token.symbol,
-                baseCurrency: baseCurrency.symbol,
-                timestamp: now,
-                live: true, // Get current price for new holdings
-              });
+              await pricingService.getTokenPrice(token, baseCurrency.symbol, now);
               console.log(`Fetched current price for ${token.symbol}/${baseCurrency.symbol}`);
             }
           }
@@ -235,7 +229,6 @@ export const holdingsRouter = router({
   // Get unpriceable tokens for monetization notification
   getUnpriceableTokens: protectedProcedure.query(async ({ ctx }) => {
     const { dbUser } = requireAuth(ctx);
-    const portfolioService = new PortfolioValuationService();
-    return await portfolioService.getUnpriceableTokens(dbUser.id);
+    return await portfolioValuationService.getUnpriceableTokens(dbUser.id);
   }),
 });

@@ -1,9 +1,9 @@
-import { Search } from "lucide-react";
-import type { ReactNode } from "react";
-import { Button } from "./button";
-import { Card, CardContent } from "./card";
-import { Input } from "./input";
-import { SummaryCard } from "./summary-cards";
+import { Search } from 'lucide-react';
+import type { ReactNode } from 'react';
+import { Button } from './button';
+import { Card, CardContent } from './card';
+import { Input } from './input';
+import { SummaryCard } from './summary-cards';
 
 interface PageAggregationProps {
   // Entity counts
@@ -50,12 +50,9 @@ export function PageAggregation({
   isAffectedByUnpriceableTokens,
 }: PageAggregationProps) {
   const isFiltered = searchTerm || hasActiveFilters;
-  const displayCount =
-    isFiltered && filteredCount !== undefined ? filteredCount : totalCount;
+  const displayCount = isFiltered && filteredCount !== undefined ? filteredCount : totalCount;
   const displayBalance =
-    isFiltered && filteredBalance !== undefined
-      ? filteredBalance
-      : totalBalance;
+    isFiltered && filteredBalance !== undefined ? filteredBalance : totalBalance;
 
   return (
     <div className="space-y-4">
@@ -76,11 +73,7 @@ export function PageAggregation({
               </div>
 
               {/* Extra Actions on same line as search */}
-              {extraActions && (
-                <div className="flex items-center space-x-2">
-                  {extraActions}
-                </div>
-              )}
+              {extraActions && <div className="flex items-center space-x-2">{extraActions}</div>}
             </div>
 
             {/* Filters - Second Line */}
@@ -89,10 +82,7 @@ export function PageAggregation({
                 {filters.map((filter, index) => {
                   // Try to extract a more stable key from the React element
                   const key =
-                    typeof filter === "object" &&
-                    filter &&
-                    "key" in filter &&
-                    filter.key
+                    typeof filter === 'object' && filter && 'key' in filter && filter.key
                       ? String(filter.key)
                       : `filter-component-${index}`;
                   return (
@@ -115,7 +105,7 @@ export function PageAggregation({
                 variant="ghost"
                 size="sm"
                 onClick={() => {
-                  onSearchChange("");
+                  onSearchChange('');
                   if (onClearFilters) {
                     onClearFilters();
                   }
@@ -135,28 +125,20 @@ export function PageAggregation({
           {/* Total Balance */}
           <SummaryCard
             type="currency"
-            title={isFiltered ? "Filtered Balance" : "Total Balance"}
+            title={isFiltered ? 'Filtered Balance' : 'Total Balance'}
             value={displayBalance}
             currency={baseCurrency}
-            subtitle={
-              isFiltered
-                ? "Based on current filters"
-                : `All ${entityLabel} combined`
-            }
+            subtitle={isFiltered ? 'Based on current filters' : `All ${entityLabel} combined`}
             isAffectedByUnpriceableTokens={isAffectedByUnpriceableTokens}
           />
 
           {/* Entity Count */}
           <SummaryCard
             type="count"
-            title={
-              isFiltered ? `Filtered ${entityLabel}` : `Total ${entityLabel}`
-            }
+            title={isFiltered ? `Filtered ${entityLabel}` : `Total ${entityLabel}`}
             value={displayCount}
             label={entityLabel.toLowerCase()}
-            subtitle={
-              isFiltered ? "Found with filters" : "Across your portfolio"
-            }
+            subtitle={isFiltered ? 'Found with filters' : 'Across your portfolio'}
           />
 
           {/* Optional third summary card can be added by consumers */}

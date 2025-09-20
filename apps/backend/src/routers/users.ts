@@ -3,7 +3,7 @@ import { eq } from 'drizzle-orm';
 import { db } from '../db/connection';
 import * as schema from '../db/schema';
 import { getUserId, requireAuth } from '../middleware/auth';
-import { PortfolioValuationService } from '../services/portfolio-valuation';
+import { portfolioValuationService } from '../services/portfolio-valuation';
 import { protectedProcedure, router } from '../trpc';
 
 export const usersRouter = router({
@@ -74,11 +74,9 @@ export const usersRouter = router({
   // Get current portfolio value
   getPortfolioValue: protectedProcedure.query(async ({ ctx }) => {
     const { dbUser } = requireAuth(ctx);
-    const portfolioService = new PortfolioValuationService();
-
     try {
       // Pass user's base currency ID to avoid extra database query
-      return await portfolioService.getUserPortfolioValue(
+      return await portfolioValuationService.getUserPortfolioValue(
         dbUser.id,
         dbUser.baseCurrencyId || undefined
       );

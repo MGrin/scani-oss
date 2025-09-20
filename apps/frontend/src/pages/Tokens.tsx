@@ -1,17 +1,17 @@
-import { Plus } from "lucide-react";
-import { useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
-import { PrivateTokenForm } from "@/components/PrivateTokenForm";
-import { TokenTypeSelector } from "@/components/selectors/SearchableSelectors";
-import { TokenRow } from "@/components/TokenRow";
-import { UpdatePrivateTokenForm } from "@/components/UpdatePrivateTokenForm";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
-import { PageAggregation } from "@/components/ui/page-aggregation";
-import { PageHeader } from "@/components/ui/page-header";
-import { useUnpriceableTokens } from "@/contexts/UnpriceableTokensContext";
-import { useFilters } from "@/hooks/useFilters";
-import { trpc } from "@/lib/trpc";
+import { Plus } from 'lucide-react';
+import { useMemo, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { PrivateTokenForm } from '@/components/PrivateTokenForm';
+import { TokenTypeSelector } from '@/components/selectors/SearchableSelectors';
+import { TokenRow } from '@/components/TokenRow';
+import { UpdatePrivateTokenForm } from '@/components/UpdatePrivateTokenForm';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent } from '@/components/ui/card';
+import { PageAggregation } from '@/components/ui/page-aggregation';
+import { PageHeader } from '@/components/ui/page-header';
+import { useUnpriceableTokens } from '@/contexts/UnpriceableTokensContext';
+import { useFilters } from '@/hooks/useFilters';
+import { trpc } from '@/lib/trpc';
 
 export function Tokens() {
   const navigate = useNavigate();
@@ -25,7 +25,7 @@ export function Tokens() {
     decimals: number;
     typeId: string;
   } | null>(null);
-  const [searchTerm, setSearchTerm] = useState("");
+  const [searchTerm, setSearchTerm] = useState('');
 
   // Unified filter system
   const {
@@ -33,16 +33,16 @@ export function Tokens() {
     updateFilter,
     clearAllFilters,
     hasActiveFilters,
-  } = useFilters([{ key: "type", defaultValue: "all" }]);
+  } = useFilters([{ key: 'type', defaultValue: 'all' }]);
 
-  const filterBy = filterValues.type || "all";
+  const filterBy = filterValues.type || 'all';
 
   // Compute hasActiveFilters - always include all filters and search term
   const hasActiveFiltersComputed = hasActiveFilters || Boolean(searchTerm);
 
   // Clear all filters helper
   const handleClearAllFilters = () => {
-    setSearchTerm("");
+    setSearchTerm('');
     clearAllFilters();
   };
 
@@ -56,9 +56,7 @@ export function Tokens() {
   // Find user's base currency from tokens
   const baseCurrency = useMemo(() => {
     if (!userPrefs?.baseCurrencyId || !tokens) return null;
-    return (
-      tokens.find((token) => token.id === userPrefs.baseCurrencyId) || null
-    );
+    return tokens.find((token) => token.id === userPrefs.baseCurrencyId) || null;
   }, [userPrefs?.baseCurrencyId, tokens]);
 
   const utils = trpc.useUtils();
@@ -72,14 +70,14 @@ export function Tokens() {
         token.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
         token.typeName?.toLowerCase().includes(searchTerm.toLowerCase());
 
-      const matchesFilter = filterBy === "all" || token.type === filterBy;
+      const matchesFilter = filterBy === 'all' || token.type === filterBy;
 
       return matchesSearch && matchesFilter;
     }) || [];
 
   // Check if token is private (editable)
   const isPrivateToken = (typeCode: string) => {
-    return typeCode === "private-company" || typeCode === "other";
+    return typeCode === 'private-company' || typeCode === 'other';
   };
 
   // Calculate totals
@@ -95,8 +93,7 @@ export function Tokens() {
   // Check if any tokens are unpriceable and should be highlighted
   const hasUnpriceableTokens =
     shouldHighlight() &&
-    (tokensWithValues?.some((token) => isTokenUnpriceable(token.symbol)) ||
-      false);
+    (tokensWithValues?.some((token) => isTokenUnpriceable(token.symbol)) || false);
 
   if (tokensLoading || !userPrefs) {
     return (
@@ -117,7 +114,7 @@ export function Tokens() {
         title="Tokens"
         subtitle="Manage tokens you currently hold in your portfolio"
         primaryAction={{
-          label: "Add Token",
+          label: 'Add Token',
           onClick: () => setIsCreateFormOpen(true),
           icon: <Plus className="h-4 w-4 mr-1" />,
         }}
@@ -140,11 +137,8 @@ export function Tokens() {
           <TokenTypeSelector
             key="type"
             value={filterBy}
-            onValueChange={(value) => updateFilter("type", value)}
-            tokenTypes={[
-              { id: "all", code: "all", name: "All Types" },
-              ...(tokenTypes || []),
-            ]}
+            onValueChange={(value) => updateFilter('type', value)}
+            tokenTypes={[{ id: 'all', code: 'all', name: 'All Types' }, ...(tokenTypes || [])]}
             placeholder="Filter by type..."
           />,
         ]}
@@ -169,14 +163,14 @@ export function Tokens() {
               <TokenRow
                 key={token.id}
                 token={token}
-                isEditable={isPrivateToken(token.type || "")}
+                isEditable={isPrivateToken(token.type || '')}
                 onEdit={() => {
                   setSelectedToken({
                     id: token.id,
                     symbol: token.symbol,
-                    name: token.name || "",
+                    name: token.name || '',
                     decimals: token.decimals,
-                    typeId: token.typeId || "",
+                    typeId: token.typeId || '',
                   });
                   setIsUpdateFormOpen(true);
                 }}

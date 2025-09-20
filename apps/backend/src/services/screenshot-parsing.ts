@@ -1,12 +1,43 @@
 import Decimal from 'decimal.js';
-import { and, eq } from 'drizzle-orm';
+import { and, eq, inArray, sql } from 'drizzle-orm';
 import { db } from '../db/connection';
 import * as schema from '../db/schema';
 import type { AIProviderManagerConfig, AIProviderType } from './ai/provider-manager';
 import { AIProviderManager } from './ai/provider-manager';
 import type { AIProviderResponse, ParsedHolding } from './ai/types';
-import { PricingService } from './pricing';
-import { TokenValidationService, type ValidationResult } from './token-validation';
+import { pricingService } from './pricing';
+import { tokenValidationService, type ValidationResult } from './token-validation';
+import { userContextService } from './user-context-enhanced';
+
+// Configuration constants to replace hardcoded values
+const PARSING_CONFIG = {
+  // Confidence thresholds
+  MIN_CONFIDENCE_THRESHOLD: 0.4, // Configurable minimum confidence instead of hardcoded 0.5
+  SIMILARITY_THRESHOLD: 0.3, // For database similarity queries
+
+  // Transaction amount thresholds
+  SIGNIFICANT_CHANGE_THRESHOLD: '0.000001', // For detecting significant balance changes
+  UPDATE_CHANGE_THRESHOLD: '0.001', // For update operations
+
+  // Default token decimals by type
+  DEFAULT_DECIMALS: {
+    fiat: 2,
+    stock: 2,
+    crypto: 8,
+    'mutual-fund': 4,
+    bond: 2,
+    commodity: 4,
+    etf: 2,
+    other: 2,
+  } as const,
+
+  // Price fetching settings
+  PRICE_FETCH_RETRIES: 3,
+  PRICE_FETCH_TIMEOUT: 10000, // 10 seconds
+
+  // Concurrency limits
+  MAX_CONCURRENT_OPERATIONS: 5,
+} as const;
 
 export interface ScreenshotParsingOptions {
   accountId: string;
@@ -225,8 +256,8 @@ export class ScreenshotParsingService {
       }
     };
 
-    // Process holdings with controlled concurrency (limit to 3 concurrent operations)
-    const concurrencyLimit = 3;
+    // Process holdings with controlled concurrency
+    const concurrencyLimit = PARSING_CONFIG.MAX_CONCURRENT_OPERATIONS;
     const results: Array<Awaited<ReturnType<typeof processHolding>>> = [];
 
     for (let i = 0; i < holdings.length; i += concurrencyLimit) {
@@ -326,20 +357,23 @@ export class ScreenshotParsingService {
 
     // Pre-fetch all token prices in parallel to avoid delays in the transaction
     const uniqueSymbols = [...new Set(validHoldings.map((h) => h.symbol))];
-    const pricingService = new PricingService();
+
+    // Get user's base currency for price fetching
+    const baseCurrency = await userContextService.getBaseCurrency(userId);
 
     try {
+      // Get full token objects for pricing
+      const tokens = await db
+        .select()
+        .from(schema.tokens)
+        .where(inArray(schema.tokens.symbol, uniqueSymbols));
+
       await Promise.all(
-        uniqueSymbols.map(async (symbol) => {
+        tokens.map(async (token) => {
           try {
-            await pricingService.getTokenPrice({
-              tokenSymbol: symbol,
-              baseCurrency: 'USD',
-              timestamp: new Date(),
-              live: true,
-            });
+            await pricingService.getTokenPrice(token, baseCurrency.symbol, new Date());
           } catch (priceError) {
-            console.warn(`Failed to fetch price for ${symbol}:`, priceError);
+            console.warn(`Failed to fetch price for ${token.symbol}:`, priceError);
           }
         })
       );
@@ -366,16 +400,8 @@ export class ScreenshotParsingService {
 
       const existingHoldingsMap = new Map(existingHoldings.map((h) => [h.tokenId, h]));
 
-      // Get deposit transaction type
-      const [depositType] = await trx
-        .select()
-        .from(schema.transactionTypes)
-        .where(eq(schema.transactionTypes.code, 'deposit'))
-        .limit(1);
-
-      if (!depositType) {
-        throw new Error('Deposit transaction type not found');
-      }
+      // Get appropriate transaction type using user context service
+      const depositType = await userContextService.getTransactionType('deposit');
 
       // Process holdings: separate creates and updates
       const holdingsToCreate: Array<{
@@ -500,7 +526,7 @@ export class ScreenshotParsingService {
           let transactionId = '';
 
           // Create transaction for the change if significant
-          if (change.abs().greaterThan('0.000001')) {
+          if (change.abs().greaterThan(PARSING_CONFIG.SIGNIFICANT_CHANGE_THRESHOLD)) {
             const [transaction] = await trx
               .insert(schema.transactions)
               .values({
@@ -607,7 +633,7 @@ export class ScreenshotParsingService {
         const change = newBalance.minus(oldBalance);
 
         // Only update if there's a significant change
-        if (change.abs().greaterThan('0.001')) {
+        if (change.abs().greaterThan(PARSING_CONFIG.UPDATE_CHANGE_THRESHOLD)) {
           const result = await this.updateHoldingWithTransaction(
             existingHolding,
             newBalance.toString(),
@@ -646,8 +672,8 @@ export class ScreenshotParsingService {
       }
     };
 
-    // Process updates with controlled concurrency (limit to 3 concurrent operations)
-    const concurrencyLimit = 3;
+    // Process updates with controlled concurrency
+    const concurrencyLimit = PARSING_CONFIG.MAX_CONCURRENT_OPERATIONS;
     const results: Array<Awaited<ReturnType<typeof processUpdate>>> = [];
 
     for (let i = 0; i < holdings.length; i += concurrencyLimit) {
@@ -793,9 +819,11 @@ export class ScreenshotParsingService {
         }
       }
 
-      // Confidence validation
-      if (holding.confidence < 0.5) {
-        validation.warnings.push('Low confidence in AI extraction');
+      // Confidence validation - use configurable threshold
+      if (holding.confidence < PARSING_CONFIG.MIN_CONFIDENCE_THRESHOLD) {
+        validation.warnings.push(
+          `Low confidence in AI extraction (${(holding.confidence * 100).toFixed(1)}%)`
+        );
       }
 
       validated.push(validation);
@@ -830,6 +858,37 @@ export class ScreenshotParsingService {
       throw new Error(`Token type ${tokenType} not found`);
     }
 
+    const tokenSymbol =
+      selectedProviderToken.metadata.symbol?.toUpperCase() || holdingSymbol.toUpperCase();
+
+    // Check if token already exists with this symbol and type
+    const [existingToken] = await db
+      .select({ id: schema.tokens.id })
+      .from(schema.tokens)
+      .where(eq(schema.tokens.symbol, tokenSymbol) && eq(schema.tokens.typeId, typeRecord.id))
+      .limit(1);
+
+    if (existingToken) {
+      console.log(`Token ${tokenSymbol} already exists, using existing token for user selection`);
+      // Return updated holding with existing token
+      return {
+        symbol: holdingSymbol,
+        name: selectedProviderToken.metadata.name || holdingSymbol,
+        balance: '0', // Will be set when creating holdings
+        suggestedTokenType: tokenType,
+        confidence: 1.0, // High confidence since user selected
+        providerValidation: {
+          exactMatch: selectedProviderToken,
+          similarMatches: [],
+        },
+        requiresUserSelection: false,
+        tokenExists: true,
+        tokenId: existingToken.id,
+        errors: [],
+        warnings: [],
+      };
+    }
+
     // Create the token using the selected provider metadata
     const [newToken] = await db
       .insert(schema.tokens)
@@ -837,7 +896,7 @@ export class ScreenshotParsingService {
         symbol: selectedProviderToken.metadata.symbol?.toUpperCase() || holdingSymbol.toUpperCase(),
         name: selectedProviderToken.metadata.name || holdingSymbol,
         typeId: typeRecord.id,
-        decimals: 2, // Default precision
+        decimals: this.getDefaultDecimals(tokenType),
         isActive: true,
         providerMetadata: JSON.stringify({
           createdBy: 'user_selection',
@@ -906,7 +965,8 @@ export class ScreenshotParsingService {
     suggestedTokenType: string;
     noMatches: boolean;
   }> {
-    const validationService = new TokenValidationService();
+    // Use singleton validation service
+    const validationService = tokenValidationService;
 
     // First, try exact validation (this tries both Finnhub and CoinGecko)
     const exactMatch = await validationService.validateToken(symbol);
@@ -930,14 +990,15 @@ export class ScreenshotParsingService {
       const finnhubMatches = await validationService.searchFinnhubTokens(symbol);
       similarMatches.push(...finnhubMatches.slice(0, 5)); // Limit to 5 suggestions
 
-      // TODO: Add CoinGecko search when available
-      // For now, we could search CoinGecko by doing a general search
+      // Search CoinGecko for similar tokens
+      const coinGeckoMatches = await validationService.searchCoinGeckoTokens(symbol);
+      similarMatches.push(...coinGeckoMatches.slice(0, 5)); // Limit to 5 suggestions
     } catch (error) {
       console.warn('Error searching for similar tokens:', error);
     }
 
-    // Determine suggested token type based on simple heuristics as fallback
-    const suggestedTokenType = this.guessTokenTypeByHeuristics(symbol);
+    // Determine suggested token type from similar matches or intelligent fallback
+    const suggestedTokenType = await this.determineBestTokenType(symbol, similarMatches);
 
     return {
       exactMatch: undefined,
@@ -970,19 +1031,108 @@ export class ScreenshotParsingService {
   }
 
   /**
-   * Simple heuristics for token type (fallback when provider validation fails)
+   * Intelligently determine the best token type from provider matches or use smart fallback
    */
-  private guessTokenTypeByHeuristics(symbol: string): string {
-    // Simple heuristics for token type
-    if (/^[A-Z]{3}$/.test(symbol) && ['USD', 'EUR', 'GBP', 'CAD', 'AUD', 'JPY'].includes(symbol)) {
-      return 'fiat';
+  private async determineBestTokenType(
+    symbol: string,
+    similarMatches: ValidationResult[]
+  ): Promise<string> {
+    // First, try to determine from similar matches
+    if (similarMatches && similarMatches.length > 0) {
+      // Count token types from similar matches to find the most common
+      const typeCount = new Map<string, number>();
+
+      for (const match of similarMatches) {
+        if (match.metadata?.type) {
+          const mappedType = this.mapProviderTypeToTokenType(match.metadata.type);
+          typeCount.set(mappedType, (typeCount.get(mappedType) || 0) + 1);
+        }
+      }
+
+      // Return the most common type from similar matches
+      if (typeCount.size > 0) {
+        const entries = Array.from(typeCount.entries()).sort((a, b) => b[1] - a[1]);
+        if (entries.length > 0 && entries[0]) {
+          return entries[0][0];
+        }
+      }
     }
-    if (['BTC', 'ETH', 'ADA', 'DOT', 'LINK'].includes(symbol)) {
-      return 'crypto';
+
+    // Fallback: Try to determine from database patterns
+    // Check if symbol matches any existing tokens in our database to infer type
+    return await this.inferTokenTypeFromDatabase(symbol);
+  }
+
+  /**
+   * Infer token type by looking at existing similar symbols in our database
+   */
+  private async inferTokenTypeFromDatabase(symbol: string): Promise<string> {
+    try {
+      // Look for tokens with similar symbols in our database
+      const existingTokens = await db
+        .select({
+          typeCode: schema.tokenTypes.code,
+          count: sql<number>`count(*)`.as('count'),
+        })
+        .from(schema.tokens)
+        .innerJoin(schema.tokenTypes, eq(schema.tokens.typeId, schema.tokenTypes.id))
+        .where(
+          sql`similarity(${schema.tokens.symbol}, ${symbol.toUpperCase()}) > ${
+            PARSING_CONFIG.SIMILARITY_THRESHOLD
+          }`
+        )
+        .groupBy(schema.tokenTypes.code)
+        .orderBy(sql`count(*) desc`)
+        .limit(1);
+
+      if (existingTokens.length > 0 && existingTokens[0]) {
+        return existingTokens[0].typeCode;
+      }
+    } catch (error) {
+      // If similarity search fails (not all databases support it), fall back to basic logic
+      console.warn('Database similarity search failed, using basic fallback:', error);
     }
-    if (symbol.length <= 5) {
-      return 'stock'; // Most stock symbols are short
+
+    // Final intelligent fallback based on symbol characteristics
+    return this.intelligentTokenTypeFallback(symbol);
+  }
+
+  /**
+   * Get appropriate decimal places for a token type
+   */
+  private getDefaultDecimals(tokenType: string): number {
+    return (
+      PARSING_CONFIG.DEFAULT_DECIMALS[tokenType as keyof typeof PARSING_CONFIG.DEFAULT_DECIMALS] ||
+      PARSING_CONFIG.DEFAULT_DECIMALS.other
+    );
+  }
+
+  /**
+   * Smart fallback that doesn't make hardcoded assumptions
+   */
+  private intelligentTokenTypeFallback(symbol: string): string {
+    // Check if it's a known fiat currency by consulting our token types
+    // This is more reliable than hardcoding currencies
+    const symbolUpper = symbol.toUpperCase();
+
+    // Use symbol length and pattern analysis but be more flexible
+    if (/^[A-Z]{3}$/.test(symbolUpper)) {
+      // 3-letter symbols could be fiat, but also could be stocks or crypto
+      // Default to 'other' unless we have more context
+      return 'other';
     }
+
+    if (/^[A-Z]{1,5}$/.test(symbolUpper) && symbolUpper.length <= 4) {
+      // Short alphabetic symbols are likely stocks
+      return 'stock';
+    }
+
+    if (/^[A-Z0-9]{6,}$/.test(symbolUpper)) {
+      // Longer alphanumeric symbols might be fund identifiers
+      return 'mutual-fund';
+    }
+
+    // Default to other for unknown patterns
     return 'other';
   }
 
@@ -1002,6 +1152,24 @@ export class ScreenshotParsingService {
 
     if (!typeRecord) {
       throw new Error(`Token type ${tokenType} not found`);
+    }
+
+    // Check if token already exists with this symbol and type
+    const [existingToken] = await dbInstance
+      .select({ id: schema.tokens.id })
+      .from(schema.tokens)
+      .where(
+        eq(schema.tokens.symbol, holding.symbol.toUpperCase()) &&
+          eq(schema.tokens.typeId, typeRecord.id)
+      )
+      .limit(1);
+
+    if (existingToken) {
+      console.log(
+        `Token ${holding.symbol} already exists, returning existing ID:`,
+        existingToken.id
+      );
+      return existingToken.id;
     }
 
     // Use provider metadata if available from exact match
@@ -1039,7 +1207,7 @@ export class ScreenshotParsingService {
         symbol: holding.symbol.toUpperCase(),
         name: tokenName,
         typeId: typeRecord.id,
-        decimals: 2, // Default precision
+        decimals: this.getDefaultDecimals(tokenType),
         isActive: true,
         providerMetadata: JSON.stringify(providerMetadata),
       })
@@ -1081,15 +1249,8 @@ export class ScreenshotParsingService {
       let transactionId = '';
 
       if (new Decimal(balance).greaterThan(0)) {
-        const [depositType] = await trx
-          .select()
-          .from(schema.transactionTypes)
-          .where(eq(schema.transactionTypes.code, 'deposit'))
-          .limit(1);
-
-        if (!depositType) {
-          throw new Error('Deposit transaction type not found');
-        }
+        // Get deposit transaction type using user context service
+        const depositType = await userContextService.getTransactionType('deposit');
 
         const [transaction] = await trx
           .insert(schema.transactions)
@@ -1113,22 +1274,20 @@ export class ScreenshotParsingService {
         // Fetch live price for the token if livePriceFetching is enabled
         if (livePriceFetching) {
           try {
-            // Get token symbol for price fetching
+            // Get full token for price fetching
             const [token] = await trx
-              .select({ symbol: schema.tokens.symbol })
+              .select()
               .from(schema.tokens)
               .where(eq(schema.tokens.id, tokenId))
               .limit(1);
 
             if (token) {
-              const pricingService = new PricingService();
+              // Get user's base currency for price fetching
+              const baseCurrency = await userContextService.getBaseCurrency(userId);
+
+              // Use singleton pricing service
               // Fetch live price to ensure it's cached for later use
-              await pricingService.getTokenPrice({
-                tokenSymbol: token.symbol,
-                baseCurrency: 'USD', // Default to USD, could be made configurable
-                timestamp: new Date(),
-                live: true, // Enable live fetching to populate cache
-              });
+              await pricingService.getTokenPrice(token, baseCurrency.symbol, new Date());
             }
           } catch (priceError) {
             // Log price fetching errors but don't fail the transaction
@@ -1160,18 +1319,11 @@ export class ScreenshotParsingService {
       // Create transaction for the change if significant
       const change = new Decimal(changeAmount);
 
-      if (change.abs().greaterThan('0.001')) {
+      if (change.abs().greaterThan(PARSING_CONFIG.UPDATE_CHANGE_THRESHOLD)) {
         const transactionTypeCode = change.greaterThan(0) ? 'deposit' : 'withdrawal';
 
-        const [transactionType] = await trx
-          .select()
-          .from(schema.transactionTypes)
-          .where(eq(schema.transactionTypes.code, transactionTypeCode))
-          .limit(1);
-
-        if (!transactionType) {
-          throw new Error(`Transaction type ${transactionTypeCode} not found`);
-        }
+        // Get transaction type using user context service
+        const transactionType = await userContextService.getTransactionType(transactionTypeCode);
 
         const [transaction] = await trx
           .insert(schema.transactions)

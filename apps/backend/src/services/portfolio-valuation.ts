@@ -1,9 +1,9 @@
 import Decimal from 'decimal.js';
-import { eq, isNotNull } from 'drizzle-orm';
+import { eq, inArray, isNotNull } from 'drizzle-orm';
 import { db } from '../db/connection';
 import * as schema from '../db/schema';
-import { PricingService } from './pricing';
-import { getBaseCurrencyToken } from './user-context';
+import { type PricingService, pricingService } from './pricing';
+import { userContextService } from './user-context-enhanced';
 
 /**
  * Service to update portfolio values with current token prices
@@ -12,61 +12,57 @@ export class PortfolioValuationService {
   private pricingService: PricingService;
 
   constructor() {
-    this.pricingService = new PricingService();
+    this.pricingService = pricingService;
   }
 
   /**
    * Update current prices for all user holdings
    */
   async updateUserPortfolioPrices(userId: string): Promise<void> {
-    // Get user's base currency
-    const [user] = await db.select().from(schema.users).where(eq(schema.users.id, userId)).limit(1);
-
-    if (!user || !user.baseCurrencyId) {
-      console.warn(`User ${userId} has no base currency set`);
-      return;
-    }
-
-    // Get base currency token
-    const [baseCurrency] = await db
-      .select()
-      .from(schema.tokens)
-      .where(eq(schema.tokens.id, user.baseCurrencyId))
-      .limit(1);
-
-    if (!baseCurrency) {
-      console.warn(`Base currency token not found for user ${userId}`);
-      return;
-    }
-
-    // Get all unique tokens from user's holdings
-    const userTokens = await db
-      .select({
-        tokenId: schema.holdings.tokenId,
-        symbol: schema.tokens.symbol,
-        name: schema.tokens.name,
-      })
-      .from(schema.holdings)
-      .innerJoin(schema.tokens, eq(schema.holdings.tokenId, schema.tokens.id))
-      .where(eq(schema.holdings.userId, userId))
-      .groupBy(schema.holdings.tokenId, schema.tokens.symbol, schema.tokens.name);
-
-    // Fetch current prices for all tokens
-    const priceRequests = userTokens.map((token) => ({
-      tokenSymbol: token.symbol,
-      baseCurrency: baseCurrency.symbol,
-      timestamp: new Date(),
-      live: true,
-    }));
-
     try {
-      const prices = await this.pricingService.getTokenPrices(priceRequests);
-      console.log(`Updated prices for ${Object.keys(prices).length} tokens for user ${userId}`);
+      // Get base currency using enhanced cached service
+      const baseCurrency = await userContextService.getBaseCurrency(userId);
+
+      // Get current holdings with required token data
+      const holdings = await db
+        .select({
+          id: schema.holdings.id,
+          tokenId: schema.holdings.tokenId,
+          balance: schema.holdings.balance,
+          token: schema.tokens,
+        })
+        .from(schema.holdings)
+        .innerJoin(schema.tokens, eq(schema.holdings.tokenId, schema.tokens.id))
+        .where(eq(schema.holdings.userId, userId));
+
+      if (holdings.length === 0) {
+        console.log(`No holdings found for user ${userId}`);
+        return;
+      }
+
+      // Get unique tokens for price fetching
+      const uniqueTokens = holdings.reduce(
+        (acc, holding) => {
+          if (!acc.find((t) => t.id === holding.token.id)) {
+            acc.push(holding.token);
+          }
+          return acc;
+        },
+        [] as (typeof schema.tokens.$inferSelect)[]
+      );
+
+      // Get current prices using the pricing service
+      const prices = await this.pricingService.getTokenPrices(
+        uniqueTokens,
+        baseCurrency.symbol,
+        new Date()
+      );
+
+      console.log(`Updated prices for ${prices.size} tokens for user ${userId}`);
     } catch (error) {
       console.error(`Failed to update portfolio prices for user ${userId}:`, error);
     }
   }
-
   /**
    * Update current prices for all users' portfolios
    * This could be run as a scheduled job
@@ -109,8 +105,8 @@ export class PortfolioValuationService {
     let baseCurrency: { id: string; symbol: string; name: string };
 
     if (userBaseCurrencyId) {
-      // Use user context service to get base currency efficiently
-      baseCurrency = await getBaseCurrencyToken(userBaseCurrencyId);
+      // Use enhanced user context service with caching
+      baseCurrency = await userContextService.getBaseCurrency(userId);
     } else {
       // Fallback: get user and base currency in a single query
       const [userWithBaseCurrency] = await db
@@ -145,25 +141,24 @@ export class PortfolioValuationService {
         tokenId: schema.tokens.id,
         tokenSymbol: schema.tokens.symbol,
         tokenName: schema.tokens.name,
+        token: schema.tokens,
       })
       .from(schema.holdings)
       .innerJoin(schema.tokens, eq(schema.holdings.tokenId, schema.tokens.id))
       .where(eq(schema.holdings.userId, userId));
 
-    // Batch fetch prices for all tokens that need conversion
+    // Get unique tokens that need pricing (excluding base currency)
     const now = new Date();
     const tokensToPrice = holdings
       .filter((holding) => holding.tokenId !== baseCurrency.id)
-      .map((holding) => ({
-        tokenSymbol: holding.tokenSymbol,
-        baseCurrency: baseCurrency.symbol,
-        timestamp: now,
-        live: true, // Fetch current prices, respecting 1-hour cache
-      }));
+      .map((holding) => holding.token)
+      .filter((token, index, self) => self.findIndex((t) => t.id === token.id) === index);
 
-    // Fetch all prices at once
+    // Fetch all prices at once using the correct API
     const priceResults =
-      tokensToPrice.length > 0 ? await this.pricingService.getTokenPrices(tokensToPrice) : {};
+      tokensToPrice.length > 0
+        ? await this.pricingService.getTokenPrices(tokensToPrice, baseCurrency.symbol, now)
+        : new Map<string, string>();
 
     // Process holdings with batched price data
     const portfolioHoldings = [];
@@ -182,8 +177,7 @@ export class PortfolioValuationService {
           value = balance.toString();
         } else {
           // Use batched price result - pricing service now always returns a price (even if 0)
-          const priceResult = priceResults[holding.tokenSymbol];
-          currentPrice = priceResult || '0'; // Fallback to 0 if somehow missing
+          currentPrice = priceResults.get(holding.tokenId) || '0';
           value = balance.mul(new Decimal(currentPrice)).toString();
         }
 
@@ -238,7 +232,7 @@ export class PortfolioValuationService {
     let baseCurrency: { id: string; symbol: string; name: string };
 
     if (userBaseCurrencyId) {
-      baseCurrency = await getBaseCurrencyToken(userBaseCurrencyId);
+      baseCurrency = await userContextService.getBaseCurrency(userId);
     } else {
       // Get user and base currency
       const [userWithBaseCurrency] = await db
@@ -294,38 +288,145 @@ export class PortfolioValuationService {
       accountName: string;
     }> = [];
 
-    for (const holding of tokensToCheck) {
-      try {
-        const price = await this.pricingService.getTokenPrice({
-          tokenSymbol: holding.tokenSymbol,
-          baseCurrency: baseCurrency.symbol,
-          timestamp: new Date(),
-          live: true,
-        });
+    if (tokensToCheck.length === 0) {
+      return {
+        count: 0,
+        tokens: [],
+        baseCurrency: baseCurrency.symbol,
+      };
+    }
 
-        // If price is 0, it means the token is unpriceable
-        if (price === '0') {
-          const providerInfo = this.getProviderInfo(holding.tokenSymbol);
+    // Get unique tokens for metadata checking
+    const uniqueTokens = tokensToCheck
+      .map((holding) => ({ id: holding.tokenId, symbol: holding.tokenSymbol }))
+      .filter((token, index, self) => self.findIndex((t) => t.id === token.id) === index);
+
+    try {
+      // Get tokens with their provider metadata to check for pricing limitations
+      const tokens = await db
+        .select({
+          id: schema.tokens.id,
+          symbol: schema.tokens.symbol,
+          name: schema.tokens.name,
+          providerMetadata: schema.tokens.providerMetadata,
+        })
+        .from(schema.tokens)
+        .where(
+          inArray(
+            schema.tokens.id,
+            uniqueTokens.map((t) => t.id)
+          )
+        );
+
+      // Create a map for quick token lookup
+      const tokenMap = new Map(tokens.map((token) => [token.id, token]));
+
+      // Process holdings to find unpriceable tokens based on metadata
+      for (const holding of tokensToCheck) {
+        const token = tokenMap.get(holding.tokenId);
+        if (!token) continue;
+
+        let isUnpriceable = false;
+        let reason = '';
+        let provider = '';
+        let providerPricingUrl: string | undefined;
+
+        // Check if token has provider metadata indicating pricing limitations
+        if (token.providerMetadata) {
+          try {
+            const metadata =
+              typeof token.providerMetadata === 'string'
+                ? JSON.parse(token.providerMetadata)
+                : token.providerMetadata;
+
+            if (metadata.pricingUnavailable) {
+              isUnpriceable = true;
+
+              // Extract reason and provider info from metadata
+              if (metadata.pricingUnavailable.finnhub?.tierLimitation) {
+                reason = metadata.pricingUnavailable.finnhub.reason || 'Finnhub tier limitation';
+                provider = 'Finnhub';
+                providerPricingUrl = 'https://finnhub.io/pricing';
+              } else if (metadata.pricingUnavailable.coinGecko?.unavailable) {
+                reason = metadata.pricingUnavailable.coinGecko.reason || 'CoinGecko unavailable';
+                provider = 'CoinGecko';
+              } else if (metadata.pricingUnavailable.general) {
+                reason = metadata.pricingUnavailable.general.reason || 'Provider limitation';
+                provider = metadata.pricingUnavailable.general.provider || 'Multiple providers';
+              } else {
+                // Fallback if metadata structure is different - try to extract provider info
+                if (metadata.pricingUnavailable.provider) {
+                  provider = metadata.pricingUnavailable.provider;
+                  reason =
+                    metadata.pricingUnavailable.reason ||
+                    metadata.pricingUnavailable.message ||
+                    `Pricing unavailable from ${provider}`;
+                  if (metadata.pricingUnavailable.requiresPremium) {
+                    providerPricingUrl = 'https://finnhub.io/pricing';
+                  }
+                } else {
+                  // Last resort: use heuristic detection for proper provider identification
+                  const heuristicInfo = this.getProviderInfoHeuristic(token.symbol);
+                  reason = heuristicInfo.reason;
+                  provider = heuristicInfo.provider;
+                  providerPricingUrl = heuristicInfo.pricingUrl;
+                }
+              }
+            }
+          } catch (parseError) {
+            // If metadata can't be parsed, fall back to heuristic detection
+            console.warn(`Failed to parse metadata for token ${token.symbol}:`, parseError);
+            // Use heuristic detection as fallback
+            const heuristicInfo = this.getProviderInfoHeuristic(token.symbol);
+            if (heuristicInfo.isLikelyUnpriceable) {
+              isUnpriceable = true;
+              reason = heuristicInfo.reason;
+              provider = heuristicInfo.provider;
+              providerPricingUrl = heuristicInfo.pricingUrl;
+            }
+          }
+        }
+
+        // If no metadata indicates limitations, use heuristic detection as fallback
+        if (!isUnpriceable) {
+          const heuristicInfo = this.getProviderInfoHeuristic(token.symbol);
+          if (heuristicInfo.isLikelyUnpriceable) {
+            isUnpriceable = true;
+            reason = heuristicInfo.reason;
+            provider = heuristicInfo.provider;
+            providerPricingUrl = heuristicInfo.pricingUrl;
+          }
+        }
+
+        // Add to unpriceable tokens if determined to be unpriceable
+        if (isUnpriceable) {
           unpriceableTokens.push({
             symbol: holding.tokenSymbol,
             balance: new Decimal(holding.balance).toString(),
-            reason: providerInfo.reason,
-            provider: providerInfo.provider,
-            providerPricingUrl: providerInfo.pricingUrl,
+            reason,
+            provider,
+            providerPricingUrl,
             institutionName: holding.institutionName,
             accountName: holding.accountName,
           });
         }
-      } catch {
-        // If there's an error, consider it unpriceable
-        unpriceableTokens.push({
-          symbol: holding.tokenSymbol,
-          balance: new Decimal(holding.balance).toString(),
-          reason: 'API error or provider limitation',
-          provider: 'Unknown',
-          institutionName: holding.institutionName,
-          accountName: holding.accountName,
-        });
+      }
+    } catch (error) {
+      console.error('Failed to check token metadata for pricing limitations:', error);
+      // Fallback: use heuristic detection for all tokens
+      for (const holding of tokensToCheck) {
+        const heuristicInfo = this.getProviderInfoHeuristic(holding.tokenSymbol);
+        if (heuristicInfo.isLikelyUnpriceable) {
+          unpriceableTokens.push({
+            symbol: holding.tokenSymbol,
+            balance: new Decimal(holding.balance).toString(),
+            reason: heuristicInfo.reason,
+            provider: heuristicInfo.provider,
+            providerPricingUrl: heuristicInfo.pricingUrl,
+            institutionName: holding.institutionName,
+            accountName: holding.accountName,
+          });
+        }
       }
     }
 
@@ -337,9 +438,10 @@ export class PortfolioValuationService {
   }
 
   /**
-   * Get provider information and reasoning for unpriceable tokens
+   * Get provider information and reasoning for potentially unpriceable tokens using heuristics
    */
-  private getProviderInfo(symbol: string): {
+  private getProviderInfoHeuristic(symbol: string): {
+    isLikelyUnpriceable: boolean;
     reason: string;
     provider: string;
     pricingUrl?: string;
@@ -348,6 +450,7 @@ export class PortfolioValuationService {
 
     if (symbolUpper.endsWith('.TO') || symbolUpper.endsWith('.TSX')) {
       return {
+        isLikelyUnpriceable: true,
         reason: 'Canadian market (TSX) requires premium Finnhub plan',
         provider: 'Finnhub',
         pricingUrl: 'https://finnhub.io/pricing',
@@ -360,6 +463,7 @@ export class PortfolioValuationService {
       !symbolUpper.includes('USDC')
     ) {
       return {
+        isLikelyUnpriceable: true,
         reason: 'International market requires premium Finnhub plan',
         provider: 'Finnhub',
         pricingUrl: 'https://finnhub.io/pricing',
@@ -368,15 +472,37 @@ export class PortfolioValuationService {
 
     if (symbolUpper.includes('PRIVATE') || symbolUpper.includes('UNLISTED')) {
       return {
+        isLikelyUnpriceable: true,
         reason: 'Private/unlisted security not available via data providers',
         provider: 'Manual Entry Only',
       };
     }
 
+    // For common symbols that should be priceable, return false
+    // This includes major cryptocurrencies and US stocks
+    const commonSymbols = ['BTC', 'ETH', 'USDT', 'USDC', 'AAPL', 'MSFT', 'GOOGL', 'AMZN', 'TSLA'];
+    if (
+      commonSymbols.includes(symbolUpper) ||
+      (!symbolUpper.includes('.') && symbolUpper.length <= 5)
+    ) {
+      return {
+        isLikelyUnpriceable: false,
+        reason: 'Should be available via standard providers',
+        provider: 'Finnhub/CoinGecko',
+      };
+    }
+
+    // Default: might have limited coverage but not necessarily unpriceable
     return {
-      reason: 'Limited coverage on free tier of data providers',
+      isLikelyUnpriceable: false,
+      reason: 'Standard coverage expected',
       provider: 'Finnhub/CoinGecko',
-      pricingUrl: 'https://finnhub.io/pricing',
     };
   }
 }
+
+// ================================================================
+// SINGLETON INSTANCE
+// ================================================================
+
+export const portfolioValuationService = new PortfolioValuationService();

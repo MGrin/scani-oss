@@ -1,0 +1,231 @@
+[0] $ LOG_LEVEL=debug LOG_PRETTY=true bun run --watch src/index.ts
+[1] $ vite
+[1] 
+[1]   VITE v5.4.20  ready in 371 ms
+[1] 
+[1]   ➜  Local:   http://localhost:5173/
+[1]   ➜  Network: http://192.168.0.67:5173/
+[1]   ➜  Network: http://198.19.249.3:5173/
+[1]   ➜  Network: http://192.168.117.0:5173/
+[1]   ➜  Network: http://192.168.155.0:5173/
+[0] [32m🕒 09:58:56 📝 INFO    🐘 Connected to PostgreSQL database[0m
+[0] [32m🕒 09:58:56 📝 INFO    🚀 Starting Scani Backend Server[0m
+[0] [32m🕒 09:58:56 📝 INFO    🔌 WebSocket server initializing[0m
+[0] [32m🕒 09:58:56 📝 INFO    🎉 Scani Backend Server started successfully[0m
+[0] [32m🕒 09:58:59 📝 INFO   {hyiexvwy} 📨 HTTP Request received | OPTIONS http://localhost:3001/trpc/tokens.getWithTotalValues,tokenTypes.getAll,users.getCurrent,tokens.getAll,holdings.getUnpriceableTokens?batch=1&input=%7B%7D[0m
+[0] [32m🕒 09:58:59 📝 INFO   {hyiexvwy} ✅ HTTP Response sent successfully | OPTIONS http://localhost:3001/trpc/tokens.getWithTotalValues,tokenTypes.getAll,users.getCurrent,tokens.getAll,holdings.getUnpriceableTokens?batch=1&input=%7B%7D | ⏱️ 0.655958ms | 🟢200[0m
+[0] [32m🕒 09:58:59 📝 INFO   {94506say} 📨 HTTP Request received | GET http://localhost:3001/trpc/tokens.getWithTotalValues,tokenTypes.getAll,users.getCurrent,tokens.getAll,holdings.getUnpriceableTokens?batch=1&input=%7B%7D[0m
+[0] [32m🕒 09:58:59 📝 INFO   {t9zuiz89} 🔄 Incoming tRPC request | GET http://localhost:3001/trpc/tokens.getWithTotalValues,tokenTypes.getAll,users.getCurrent,tokens.getAll,holdings.getUnpriceableTokens?batch=1&input=%7B%7D[0m
+[0] [36m🕒 09:59:00 🐛 DEBUG   📊 Drizzle PostgreSQL Query | SQL:select "id", "email", "name", "avatar", ...[0m
+[0] [36m🕒 09:59:00 🐛 DEBUG   🔍 PostgreSQL Query | SQL:
+[0]       select b.oid, b.typarray
+[0]       fr...[0m
+[0] [36m🕒 09:59:00 🐛 DEBUG   🔍 PostgreSQL Query | SQL:select "id", "email", "name", "avatar", ...[0m
+[0] [36m🕒 09:59:00 🐛 DEBUG   ⚡ Starting query procedure: tokens.getWithTotalValues[0m
+[0] [36m🕒 09:59:00 🐛 DEBUG   ⚡ Starting query procedure: tokenTypes.getAll[0m
+[0] [36m🕒 09:59:00 🐛 DEBUG   ⚡ Starting query procedure: users.getCurrent[0m
+[0] [36m🕒 09:59:00 🐛 DEBUG   ⚡ Starting query procedure: tokens.getAll[0m
+[0] [36m🕒 09:59:00 🐛 DEBUG   ⚡ Starting query procedure: holdings.getUnpriceableTokens[0m
+[0] [36m🕒 09:59:00 🐛 DEBUG   📊 Drizzle PostgreSQL Query | SQL:select "base_currency_id" from "users" w...[0m
+[0] [36m🕒 09:59:00 🐛 DEBUG   📊 Drizzle PostgreSQL Query | SQL:select "id", "code", "name", "descriptio...[0m
+[0] [36m🕒 09:59:00 🐛 DEBUG   📊 Drizzle PostgreSQL Query | SQL:select "tokens"."id", "tokens"."symbol",...[0m
+[0] [36m🕒 09:59:00 🐛 DEBUG   📊 Drizzle PostgreSQL Query | SQL:select "users"."id", "users"."base_curre...[0m
+[0] [36m🕒 09:59:00 🐛 DEBUG   🔍 PostgreSQL Query | SQL:select "base_currency_id" from "users" w...[0m
+[0] [32m🕒 09:59:00 📝 INFO    ✅ Procedure completed successfully: users.getCurrent | ⏱️ 4.092125ms[0m
+[0] [36m🕒 09:59:00 🐛 DEBUG   📊 Drizzle PostgreSQL Query | SQL:select "symbol" from "tokens" where "tok...[0m
+[0] [36m🕒 09:59:00 🐛 DEBUG   🔍 PostgreSQL Query | SQL:select "symbol" from "tokens" where "tok...[0m
+[0] [36m🕒 09:59:00 🐛 DEBUG   🔍 PostgreSQL Query | SQL:
+[0]       select b.oid, b.typarray
+[0]       fr...[0m
+[0] [36m🕒 09:59:00 🐛 DEBUG   🔍 PostgreSQL Query | SQL:
+[0]       select b.oid, b.typarray
+[0]       fr...[0m
+[0] [36m🕒 09:59:00 🐛 DEBUG   🔍 PostgreSQL Query | SQL:
+[0]       select b.oid, b.typarray
+[0]       fr...[0m
+[0] [36m🕒 09:59:00 🐛 DEBUG   📊 Drizzle PostgreSQL Query | SQL:select "tokens"."id", "tokens"."symbol",...[0m
+[0] [36m🕒 09:59:00 🐛 DEBUG   🔍 PostgreSQL Query | SQL:select "tokens"."id", "tokens"."symbol",...[0m
+[0] [36m🕒 09:59:00 🐛 DEBUG   🔍 PostgreSQL Query | SQL:select "users"."id", "users"."base_curre...[0m
+[0] [36m🕒 09:59:00 🐛 DEBUG   🔍 PostgreSQL Query | SQL:select "id", "code", "name", "descriptio...[0m
+[0] [36m🕒 09:59:00 🐛 DEBUG   🔍 PostgreSQL Query | SQL:select "tokens"."id", "tokens"."symbol",...[0m
+[0] [32m🕒 09:59:00 📝 INFO    ✅ Procedure completed successfully: tokenTypes.getAll | ⏱️ 360.002542ms[0m
+[0] [36m🕒 09:59:00 🐛 DEBUG   📊 Drizzle PostgreSQL Query | SQL:select "id", "symbol", "name", "type_id"...[0m
+[0] [36m🕒 09:59:00 🐛 DEBUG   🔍 PostgreSQL Query | SQL:select "id", "symbol", "name", "type_id"...[0m
+[0] [36m🕒 09:59:00 🐛 DEBUG   📊 Drizzle PostgreSQL Query | SQL:select "holdings"."balance", "tokens"."i...[0m
+[0] [36m🕒 09:59:00 🐛 DEBUG   🔍 PostgreSQL Query | SQL:select "holdings"."balance", "tokens"."i...[0m
+[0] [32m🕒 09:59:00 📝 INFO    ✅ Procedure completed successfully: tokens.getAll | ⏱️ 466.92275ms[0m
+[0] [36m🕒 09:59:00 🐛 DEBUG   📊 Drizzle PostgreSQL Query | SQL:select "id", "symbol", "name", "type_id"...[0m
+[0] [36m🕒 09:59:00 🐛 DEBUG   🔍 PostgreSQL Query | SQL:select "id", "symbol", "name", "type_id"...[0m
+[0] [36m🕒 09:59:00 🐛 DEBUG   📊 Drizzle PostgreSQL Query | SQL:select "id", "symbol", "name", "type_id"...[0m
+[0] [36m🕒 09:59:00 🐛 DEBUG   🔍 PostgreSQL Query | SQL:select "id", "symbol", "name", "type_id"...[0m
+[0] [36m🕒 09:59:01 🐛 DEBUG   📊 Drizzle PostgreSQL Query | SQL:select "id", "symbol", "name", "type_id"...[0m
+[0] [36m🕒 09:59:01 🐛 DEBUG   🔍 PostgreSQL Query | SQL:select "id", "symbol", "name", "type_id"...[0m
+[0] [36m🕒 09:59:01 🐛 DEBUG   📊 Drizzle PostgreSQL Query | SQL:select "id", "token_id", "base_token_id"...[0m
+[0] [36m🕒 09:59:01 🐛 DEBUG   🔍 PostgreSQL Query | SQL:select "id", "token_id", "base_token_id"...[0m
+[0] [36m🕒 09:59:01 🐛 DEBUG   📊 Drizzle PostgreSQL Query | SQL:select "id", "token_id", "base_token_id"...[0m
+[0] [36m🕒 09:59:01 🐛 DEBUG   🔍 PostgreSQL Query | SQL:select "id", "token_id", "base_token_id"...[0m
+[0] [36m🕒 09:59:01 🐛 DEBUG   📊 Drizzle PostgreSQL Query | SQL:select "id", "symbol", "name", "type_id"...[0m
+[0] [36m🕒 09:59:01 🐛 DEBUG   🔍 PostgreSQL Query | SQL:select "id", "symbol", "name", "type_id"...[0m
+[0] [36m🕒 09:59:01 🐛 DEBUG   📊 Drizzle PostgreSQL Query | SQL:select "id", "symbol", "name", "type_id"...[0m
+[0] [36m🕒 09:59:01 🐛 DEBUG   🔍 PostgreSQL Query | SQL:select "id", "symbol", "name", "type_id"...[0m
+[0] [36m🕒 09:59:01 🐛 DEBUG   📊 Drizzle PostgreSQL Query | SQL:select "id", "symbol", "name", "type_id"...[0m
+[0] [36m🕒 09:59:01 🐛 DEBUG   🔍 PostgreSQL Query | SQL:select "id", "symbol", "name", "type_id"...[0m
+[0] [36m🕒 09:59:01 🐛 DEBUG   📊 Drizzle PostgreSQL Query | SQL:select "id", "symbol", "name", "type_id"...[0m
+[0] [36m🕒 09:59:01 🐛 DEBUG   🔍 PostgreSQL Query | SQL:select "id", "symbol", "name", "type_id"...[0m
+[0] [36m🕒 09:59:01 🐛 DEBUG   📊 Drizzle PostgreSQL Query | SQL:select "id", "token_id", "base_token_id"...[0m
+[0] [36m🕒 09:59:01 🐛 DEBUG   🔍 PostgreSQL Query | SQL:select "id", "token_id", "base_token_id"...[0m
+[0] [36m🕒 09:59:01 🐛 DEBUG   📊 Drizzle PostgreSQL Query | SQL:select "id", "token_id", "base_token_id"...[0m
+[0] [36m🕒 09:59:01 🐛 DEBUG   🔍 PostgreSQL Query | SQL:select "id", "token_id", "base_token_id"...[0m
+[0] [36m🕒 09:59:01 🐛 DEBUG   📊 Drizzle PostgreSQL Query | SQL:select "id", "symbol", "name", "type_id"...[0m
+[0] [36m🕒 09:59:01 🐛 DEBUG   🔍 PostgreSQL Query | SQL:select "id", "symbol", "name", "type_id"...[0m
+[0] [36m🕒 09:59:01 🐛 DEBUG   📊 Drizzle PostgreSQL Query | SQL:select "id", "symbol", "name", "type_id"...[0m
+[0] [36m🕒 09:59:01 🐛 DEBUG   🔍 PostgreSQL Query | SQL:select "id", "symbol", "name", "type_id"...[0m
+[0] [36m🕒 09:59:01 🐛 DEBUG   📊 Drizzle PostgreSQL Query | SQL:select "id", "symbol", "name", "type_id"...[0m
+[0] [36m🕒 09:59:01 🐛 DEBUG   🔍 PostgreSQL Query | SQL:select "id", "symbol", "name", "type_id"...[0m
+[0] [36m🕒 09:59:01 🐛 DEBUG   📊 Drizzle PostgreSQL Query | SQL:select "id", "symbol", "name", "type_id"...[0m
+[0] [36m🕒 09:59:01 🐛 DEBUG   🔍 PostgreSQL Query | SQL:select "id", "symbol", "name", "type_id"...[0m
+[0] [36m🕒 09:59:01 🐛 DEBUG   📊 Drizzle PostgreSQL Query | SQL:select "id", "token_id", "base_token_id"...[0m
+[0] [36m🕒 09:59:01 🐛 DEBUG   🔍 PostgreSQL Query | SQL:select "id", "token_id", "base_token_id"...[0m
+[0] [36m🕒 09:59:01 🐛 DEBUG   📊 Drizzle PostgreSQL Query | SQL:select "id", "token_id", "base_token_id"...[0m
+[0] [36m🕒 09:59:01 🐛 DEBUG   🔍 PostgreSQL Query | SQL:select "id", "token_id", "base_token_id"...[0m
+[0] [36m🕒 09:59:01 🐛 DEBUG   📊 Drizzle PostgreSQL Query | SQL:select "id", "symbol", "name", "type_id"...[0m
+[0] [36m🕒 09:59:01 🐛 DEBUG   🔍 PostgreSQL Query | SQL:select "id", "symbol", "name", "type_id"...[0m
+[0] [36m🕒 09:59:01 🐛 DEBUG   📊 Drizzle PostgreSQL Query | SQL:select "id", "symbol", "name", "type_id"...[0m
+[0] [36m🕒 09:59:01 🐛 DEBUG   🔍 PostgreSQL Query | SQL:select "id", "symbol", "name", "type_id"...[0m
+[0] [36m🕒 09:59:01 🐛 DEBUG   📊 Drizzle PostgreSQL Query | SQL:select "id", "symbol", "name", "type_id"...[0m
+[0] [36m🕒 09:59:01 🐛 DEBUG   🔍 PostgreSQL Query | SQL:select "id", "symbol", "name", "type_id"...[0m
+[0] [36m🕒 09:59:02 🐛 DEBUG   📊 Drizzle PostgreSQL Query | SQL:select "id", "symbol", "name", "type_id"...[0m
+[0] [36m🕒 09:59:02 🐛 DEBUG   🔍 PostgreSQL Query | SQL:select "id", "symbol", "name", "type_id"...[0m
+[0] [36m🕒 09:59:02 🐛 DEBUG   📊 Drizzle PostgreSQL Query | SQL:select "id", "token_id", "base_token_id"...[0m
+[0] [36m🕒 09:59:02 🐛 DEBUG   🔍 PostgreSQL Query | SQL:select "id", "token_id", "base_token_id"...[0m
+[0] [36m🕒 09:59:02 🐛 DEBUG   📊 Drizzle PostgreSQL Query | SQL:select "id", "token_id", "base_token_id"...[0m
+[0] [36m🕒 09:59:02 🐛 DEBUG   🔍 PostgreSQL Query | SQL:select "id", "token_id", "base_token_id"...[0m
+[0] [36m🕒 09:59:02 🐛 DEBUG   📊 Drizzle PostgreSQL Query | SQL:select "id", "symbol", "name", "type_id"...[0m
+[0] [36m🕒 09:59:02 🐛 DEBUG   🔍 PostgreSQL Query | SQL:select "id", "symbol", "name", "type_id"...[0m
+[0] [36m🕒 09:59:02 🐛 DEBUG   📊 Drizzle PostgreSQL Query | SQL:select "id", "symbol", "name", "type_id"...[0m
+[0] [36m🕒 09:59:02 🐛 DEBUG   🔍 PostgreSQL Query | SQL:select "id", "symbol", "name", "type_id"...[0m
+[0] [36m🕒 09:59:02 🐛 DEBUG   📊 Drizzle PostgreSQL Query | SQL:select "id", "symbol", "name", "type_id"...[0m
+[0] [36m🕒 09:59:02 🐛 DEBUG   🔍 PostgreSQL Query | SQL:select "id", "symbol", "name", "type_id"...[0m
+[0] [36m🕒 09:59:02 🐛 DEBUG   📊 Drizzle PostgreSQL Query | SQL:select "id", "symbol", "name", "type_id"...[0m
+[0] [36m🕒 09:59:02 🐛 DEBUG   🔍 PostgreSQL Query | SQL:select "id", "symbol", "name", "type_id"...[0m
+[0] [36m🕒 09:59:02 🐛 DEBUG   📊 Drizzle PostgreSQL Query | SQL:select "id", "token_id", "base_token_id"...[0m
+[0] [36m🕒 09:59:02 🐛 DEBUG   🔍 PostgreSQL Query | SQL:select "id", "token_id", "base_token_id"...[0m
+[0] [36m🕒 09:59:02 🐛 DEBUG   📊 Drizzle PostgreSQL Query | SQL:select "id", "token_id", "base_token_id"...[0m
+[0] [36m🕒 09:59:02 🐛 DEBUG   🔍 PostgreSQL Query | SQL:select "id", "token_id", "base_token_id"...[0m
+[0] [36m🕒 09:59:02 🐛 DEBUG   📊 Drizzle PostgreSQL Query | SQL:select "id", "symbol", "name", "type_id"...[0m
+[0] [36m🕒 09:59:02 🐛 DEBUG   🔍 PostgreSQL Query | SQL:select "id", "symbol", "name", "type_id"...[0m
+[0] [36m🕒 09:59:02 🐛 DEBUG   📊 Drizzle PostgreSQL Query | SQL:select "id", "symbol", "name", "type_id"...[0m
+[0] [36m🕒 09:59:02 🐛 DEBUG   🔍 PostgreSQL Query | SQL:select "id", "symbol", "name", "type_id"...[0m
+[0] [36m🕒 09:59:02 🐛 DEBUG   📊 Drizzle PostgreSQL Query | SQL:select "id", "symbol", "name", "type_id"...[0m
+[0] [36m🕒 09:59:02 🐛 DEBUG   🔍 PostgreSQL Query | SQL:select "id", "symbol", "name", "type_id"...[0m
+[0] [36m🕒 09:59:02 🐛 DEBUG   📊 Drizzle PostgreSQL Query | SQL:select "id", "symbol", "name", "type_id"...[0m
+[0] [36m🕒 09:59:02 🐛 DEBUG   🔍 PostgreSQL Query | SQL:select "id", "symbol", "name", "type_id"...[0m
+[0] [36m🕒 09:59:02 🐛 DEBUG   📊 Drizzle PostgreSQL Query | SQL:select "id", "token_id", "base_token_id"...[0m
+[0] [36m🕒 09:59:02 🐛 DEBUG   🔍 PostgreSQL Query | SQL:select "id", "token_id", "base_token_id"...[0m
+[0] [36m🕒 09:59:02 🐛 DEBUG   📊 Drizzle PostgreSQL Query | SQL:select "id", "token_id", "base_token_id"...[0m
+[0] [36m🕒 09:59:02 🐛 DEBUG   🔍 PostgreSQL Query | SQL:select "id", "token_id", "base_token_id"...[0m
+[0] [36m🕒 09:59:02 🐛 DEBUG   📊 Drizzle PostgreSQL Query | SQL:select "id", "symbol", "name", "type_id"...[0m
+[0] [36m🕒 09:59:02 🐛 DEBUG   🔍 PostgreSQL Query | SQL:select "id", "symbol", "name", "type_id"...[0m
+[0] [36m🕒 09:59:02 🐛 DEBUG   📊 Drizzle PostgreSQL Query | SQL:select "id", "symbol", "name", "type_id"...[0m
+[0] [36m🕒 09:59:02 🐛 DEBUG   🔍 PostgreSQL Query | SQL:select "id", "symbol", "name", "type_id"...[0m
+[0] [36m🕒 09:59:02 🐛 DEBUG   📊 Drizzle PostgreSQL Query | SQL:select "id", "symbol", "name", "type_id"...[0m
+[0] [36m🕒 09:59:02 🐛 DEBUG   🔍 PostgreSQL Query | SQL:select "id", "symbol", "name", "type_id"...[0m
+[0] [36m🕒 09:59:02 🐛 DEBUG   📊 Drizzle PostgreSQL Query | SQL:select "id", "symbol", "name", "type_id"...[0m
+[0] [36m🕒 09:59:02 🐛 DEBUG   🔍 PostgreSQL Query | SQL:select "id", "symbol", "name", "type_id"...[0m
+[0] [36m🕒 09:59:02 🐛 DEBUG   📊 Drizzle PostgreSQL Query | SQL:select "id", "token_id", "base_token_id"...[0m
+[0] [36m🕒 09:59:02 🐛 DEBUG   🔍 PostgreSQL Query | SQL:select "id", "token_id", "base_token_id"...[0m
+[0] [36m🕒 09:59:02 🐛 DEBUG   📊 Drizzle PostgreSQL Query | SQL:select "id", "token_id", "base_token_id"...[0m
+[0] [36m🕒 09:59:02 🐛 DEBUG   🔍 PostgreSQL Query | SQL:select "id", "token_id", "base_token_id"...[0m
+[0] [36m🕒 09:59:02 🐛 DEBUG   📊 Drizzle PostgreSQL Query | SQL:select "id", "symbol", "name", "type_id"...[0m
+[0] [36m🕒 09:59:02 🐛 DEBUG   🔍 PostgreSQL Query | SQL:select "id", "symbol", "name", "type_id"...[0m
+[0] [36m🕒 09:59:03 🐛 DEBUG   📊 Drizzle PostgreSQL Query | SQL:select "id", "symbol", "name", "type_id"...[0m
+[0] [36m🕒 09:59:03 🐛 DEBUG   🔍 PostgreSQL Query | SQL:select "id", "symbol", "name", "type_id"...[0m
+[0] [36m🕒 09:59:03 🐛 DEBUG   📊 Drizzle PostgreSQL Query | SQL:select "id", "symbol", "name", "type_id"...[0m
+[0] [36m🕒 09:59:03 🐛 DEBUG   🔍 PostgreSQL Query | SQL:select "id", "symbol", "name", "type_id"...[0m
+[0] [36m🕒 09:59:03 🐛 DEBUG   📊 Drizzle PostgreSQL Query | SQL:select "id", "symbol", "name", "type_id"...[0m
+[0] [36m🕒 09:59:03 🐛 DEBUG   🔍 PostgreSQL Query | SQL:select "id", "symbol", "name", "type_id"...[0m
+[0] [36m🕒 09:59:03 🐛 DEBUG   📊 Drizzle PostgreSQL Query | SQL:select "id", "token_id", "base_token_id"...[0m
+[0] [36m🕒 09:59:03 🐛 DEBUG   🔍 PostgreSQL Query | SQL:select "id", "token_id", "base_token_id"...[0m
+[0] [36m🕒 09:59:03 🐛 DEBUG   📊 Drizzle PostgreSQL Query | SQL:select "id", "token_id", "base_token_id"...[0m
+[0] [36m🕒 09:59:03 🐛 DEBUG   🔍 PostgreSQL Query | SQL:select "id", "token_id", "base_token_id"...[0m
+[0] [36m🕒 09:59:03 🐛 DEBUG   📊 Drizzle PostgreSQL Query | SQL:select "id", "symbol", "name", "type_id"...[0m
+[0] [36m🕒 09:59:03 🐛 DEBUG   🔍 PostgreSQL Query | SQL:select "id", "symbol", "name", "type_id"...[0m
+[0] [36m🕒 09:59:03 🐛 DEBUG   📊 Drizzle PostgreSQL Query | SQL:select "id", "symbol", "name", "type_id"...[0m
+[0] [36m🕒 09:59:03 🐛 DEBUG   🔍 PostgreSQL Query | SQL:select "id", "symbol", "name", "type_id"...[0m
+[0] [36m🕒 09:59:03 🐛 DEBUG   📊 Drizzle PostgreSQL Query | SQL:select "id", "symbol", "name", "type_id"...[0m
+[0] [36m🕒 09:59:03 🐛 DEBUG   🔍 PostgreSQL Query | SQL:select "id", "symbol", "name", "type_id"...[0m
+[0] [36m🕒 09:59:03 🐛 DEBUG   📊 Drizzle PostgreSQL Query | SQL:select "id", "symbol", "name", "type_id"...[0m
+[0] [36m🕒 09:59:03 🐛 DEBUG   🔍 PostgreSQL Query | SQL:select "id", "symbol", "name", "type_id"...[0m
+[0] [36m🕒 09:59:03 🐛 DEBUG   📊 Drizzle PostgreSQL Query | SQL:select "id", "token_id", "base_token_id"...[0m
+[0] [36m🕒 09:59:03 🐛 DEBUG   🔍 PostgreSQL Query | SQL:select "id", "token_id", "base_token_id"...[0m
+[0] [36m🕒 09:59:03 🐛 DEBUG   📊 Drizzle PostgreSQL Query | SQL:select "id", "token_id", "base_token_id"...[0m
+[0] [36m🕒 09:59:03 🐛 DEBUG   🔍 PostgreSQL Query | SQL:select "id", "token_id", "base_token_id"...[0m
+[0] [36m🕒 09:59:03 🐛 DEBUG   📊 Drizzle PostgreSQL Query | SQL:select "id", "symbol", "name", "type_id"...[0m
+[0] [36m🕒 09:59:03 🐛 DEBUG   🔍 PostgreSQL Query | SQL:select "id", "symbol", "name", "type_id"...[0m
+[0] [36m🕒 09:59:03 🐛 DEBUG   📊 Drizzle PostgreSQL Query | SQL:select "id", "symbol", "name", "type_id"...[0m
+[0] [36m🕒 09:59:03 🐛 DEBUG   🔍 PostgreSQL Query | SQL:select "id", "symbol", "name", "type_id"...[0m
+[0] [36m🕒 09:59:03 🐛 DEBUG   📊 Drizzle PostgreSQL Query | SQL:select "id", "symbol", "name", "type_id"...[0m
+[0] [36m🕒 09:59:03 🐛 DEBUG   🔍 PostgreSQL Query | SQL:select "id", "symbol", "name", "type_id"...[0m
+[0] [36m🕒 09:59:03 🐛 DEBUG   📊 Drizzle PostgreSQL Query | SQL:select "id", "symbol", "name", "type_id"...[0m
+[0] [36m🕒 09:59:03 🐛 DEBUG   🔍 PostgreSQL Query | SQL:select "id", "symbol", "name", "type_id"...[0m
+[0] [36m🕒 09:59:03 🐛 DEBUG   📊 Drizzle PostgreSQL Query | SQL:select "id", "token_id", "base_token_id"...[0m
+[0] [36m🕒 09:59:03 🐛 DEBUG   🔍 PostgreSQL Query | SQL:select "id", "token_id", "base_token_id"...[0m
+[0] [36m🕒 09:59:03 🐛 DEBUG   📊 Drizzle PostgreSQL Query | SQL:select "id", "token_id", "base_token_id"...[0m
+[0] [36m🕒 09:59:03 🐛 DEBUG   🔍 PostgreSQL Query | SQL:select "id", "token_id", "base_token_id"...[0m
+[0] [36m🕒 09:59:03 🐛 DEBUG   📊 Drizzle PostgreSQL Query | SQL:select "id", "symbol", "name", "type_id"...[0m
+[0] [36m🕒 09:59:03 🐛 DEBUG   🔍 PostgreSQL Query | SQL:select "id", "symbol", "name", "type_id"...[0m
+[0] [36m🕒 09:59:03 🐛 DEBUG   📊 Drizzle PostgreSQL Query | SQL:select "id", "symbol", "name", "type_id"...[0m
+[0] [36m🕒 09:59:03 🐛 DEBUG   🔍 PostgreSQL Query | SQL:select "id", "symbol", "name", "type_id"...[0m
+[0] [36m🕒 09:59:03 🐛 DEBUG   📊 Drizzle PostgreSQL Query | SQL:select "id", "symbol", "name", "type_id"...[0m
+[0] [36m🕒 09:59:03 🐛 DEBUG   🔍 PostgreSQL Query | SQL:select "id", "symbol", "name", "type_id"...[0m
+[0] [36m🕒 09:59:03 🐛 DEBUG   📊 Drizzle PostgreSQL Query | SQL:select "id", "code", "name", "descriptio...[0m
+[0] [36m🕒 09:59:03 🐛 DEBUG   🔍 PostgreSQL Query | SQL:select "id", "code", "name", "descriptio...[0m
+[0] [36m🕒 09:59:03 🐛 DEBUG   📊 Drizzle PostgreSQL Query | SQL:select "id", "token_id", "base_token_id"...[0m
+[0] [36m🕒 09:59:03 🐛 DEBUG   🔍 PostgreSQL Query | SQL:select "id", "token_id", "base_token_id"...[0m
+[0] [36m🕒 09:59:04 🐛 DEBUG   📊 Drizzle PostgreSQL Query | SQL:select "id", "symbol", "name", "type_id"...[0m
+[0] [36m🕒 09:59:04 🐛 DEBUG   🔍 PostgreSQL Query | SQL:select "id", "symbol", "name", "type_id"...[0m
+[0] [36m🕒 09:59:04 🐛 DEBUG   📊 Drizzle PostgreSQL Query | SQL:select "id", "code", "name", "descriptio...[0m
+[0] [36m🕒 09:59:04 🐛 DEBUG   🔍 PostgreSQL Query | SQL:select "id", "code", "name", "descriptio...[0m
+[0] Failed to fetch profile for XEQT.TO: 403 Forbidden
+[0] Failed to fetch profile for XEQT.TO: 403 Forbidden
+[0] Failed to fetch price for XEQT.TO/USD: Error: Finnhub API error for XEQT.TO: 403 Forbidden. {"error":"You don't have access to this resource."}. Using price 0.
+[0] [36m🕒 09:59:04 🐛 DEBUG   📊 Drizzle PostgreSQL Query | SQL:select "id", "symbol", "name", "type_id"...[0m
+[0] [36m🕒 09:59:04 🐛 DEBUG   🔍 PostgreSQL Query | SQL:select "id", "symbol", "name", "type_id"...[0m
+[0] [36m🕒 09:59:04 🐛 DEBUG   📊 Drizzle PostgreSQL Query | SQL:select "id", "symbol", "name", "type_id"...[0m
+[0] [36m🕒 09:59:04 🐛 DEBUG   🔍 PostgreSQL Query | SQL:select "id", "symbol", "name", "type_id"...[0m
+[0] Failed to fetch price for XEQT.TO/USD: Error: Finnhub API error for XEQT.TO: 403 Forbidden. {"error":"You don't have access to this resource."}. Using price 0.
+[0] [36m🕒 09:59:04 🐛 DEBUG   📊 Drizzle PostgreSQL Query | SQL:select "id", "symbol", "name", "type_id"...[0m
+[0] [36m🕒 09:59:04 🐛 DEBUG   🔍 PostgreSQL Query | SQL:select "id", "symbol", "name", "type_id"...[0m
+[0] [36m🕒 09:59:04 🐛 DEBUG   📊 Drizzle PostgreSQL Query | SQL:select "id", "token_id", "base_token_id"...[0m
+[0] [36m🕒 09:59:04 🐛 DEBUG   🔍 PostgreSQL Query | SQL:select "id", "token_id", "base_token_id"...[0m
+[0] [36m🕒 09:59:05 🐛 DEBUG   📊 Drizzle PostgreSQL Query | SQL:select "id", "symbol", "name", "type_id"...[0m
+[0] [36m🕒 09:59:05 🐛 DEBUG   🔍 PostgreSQL Query | SQL:select "id", "symbol", "name", "type_id"...[0m
+[0] [36m🕒 09:59:05 🐛 DEBUG   📊 Drizzle PostgreSQL Query | SQL:select "id", "symbol", "name", "type_id"...[0m
+[0] [36m🕒 09:59:05 🐛 DEBUG   🔍 PostgreSQL Query | SQL:select "id", "symbol", "name", "type_id"...[0m
+[0] [36m🕒 09:59:05 🐛 DEBUG   📊 Drizzle PostgreSQL Query | SQL:select "id", "token_id", "base_token_id"...[0m
+[0] [36m🕒 09:59:05 🐛 DEBUG   🔍 PostgreSQL Query | SQL:select "id", "token_id", "base_token_id"...[0m
+[0] [36m🕒 09:59:05 🐛 DEBUG   📊 Drizzle PostgreSQL Query | SQL:select "id", "code", "name", "descriptio...[0m
+[0] [36m🕒 09:59:05 🐛 DEBUG   🔍 PostgreSQL Query | SQL:select "id", "code", "name", "descriptio...[0m
+[0] [36m🕒 09:59:05 🐛 DEBUG   📊 Drizzle PostgreSQL Query | SQL:select "id", "symbol", "name", "type_id"...[0m
+[0] [36m🕒 09:59:05 🐛 DEBUG   🔍 PostgreSQL Query | SQL:select "id", "symbol", "name", "type_id"...[0m
+[0] [36m🕒 09:59:05 🐛 DEBUG   📊 Drizzle PostgreSQL Query | SQL:select "id", "code", "name", "descriptio...[0m
+[0] [36m🕒 09:59:05 🐛 DEBUG   🔍 PostgreSQL Query | SQL:select "id", "code", "name", "descriptio...[0m
+[0] Failed to fetch profile for XUU.TO: 403 Forbidden
+[0] Failed to fetch profile for XUU.TO: 403 Forbidden
+[0] Failed to fetch price for XUU.TO/USD: Error: Finnhub API error for XUU.TO: 403 Forbidden. {"error":"You don't have access to this resource."}. Using price 0.
+[0] [36m🕒 09:59:05 🐛 DEBUG   📊 Drizzle PostgreSQL Query | SQL:select "id", "symbol", "name", "type_id"...[0m
+[0] [36m🕒 09:59:05 🐛 DEBUG   🔍 PostgreSQL Query | SQL:select "id", "symbol", "name", "type_id"...[0m
+[0] Failed to fetch price for XUU.TO/USD: Error: Finnhub API error for XUU.TO: 403 Forbidden. {"error":"You don't have access to this resource."}. Using price 0.
+[0] [32m🕒 09:59:05 📝 INFO    ✅ Procedure completed successfully: tokens.getWithTotalValues | ⏱️ 5469.583459ms[0m
+[0] [36m🕒 09:59:06 🐛 DEBUG   📊 Drizzle PostgreSQL Query | SQL:select "id", "symbol", "name", "type_id"...[0m
+[0] [36m🕒 09:59:06 🐛 DEBUG   🔍 PostgreSQL Query | SQL:select "id", "symbol", "name", "type_id"...[0m
+[0] [36m🕒 09:59:06 🐛 DEBUG   📊 Drizzle PostgreSQL Query | SQL:select "id", "token_id", "base_token_id"...[0m
+[0] [36m🕒 09:59:06 🐛 DEBUG   🔍 PostgreSQL Query | SQL:select "id", "token_id", "base_token_id"...[0m
+[0] [32m🕒 09:59:06 📝 INFO    ✅ Procedure completed successfully: holdings.getUnpriceableTokens | ⏱️ 5723.121708ms[0m
+[0] [32m🕒 09:59:06 📝 INFO   {94506say} ✅ HTTP Response sent successfully | GET http://localhost:3001/trpc/tokens.getWithTotalValues,tokenTypes.getAll,users.getCurrent,tokens.getAll,holdings.getUnpriceableTokens?batch=1&input=%7B%7D | ⏱️ 6667.669625ms | 🟢200[0m
+[0] [32m🕒 09:59:16 📝 INFO    🛑 Graceful shutdown initiated[0m
+[0] [32m🕒 09:59:16 📝 INFO    undefined[0m
+[0] [32m🕒 09:59:16 📝 INFO    undefined[0m
+[0] [32m🕒 09:59:16 📝 INFO    undefined[0m
+[1] cd apps/frontend && bun dev exited with code SIGINT
+[0] cd apps/backend && bun dev exited with code 0

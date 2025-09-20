@@ -1,15 +1,15 @@
-import { Edit2, MoreHorizontal, Trash2 } from "lucide-react";
-import type { MouseEventHandler } from "react";
-import { Button } from "@/components/ui/button";
+import { Edit2, MoreHorizontal, Trash2 } from 'lucide-react';
+import type { MouseEventHandler } from 'react';
+import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
-import { ItemCard } from "@/components/ui/summary-cards";
-import type { ApiAccount, ApiToken } from "@/lib/api-types";
-import { useUnpriceableTokens } from "@/contexts/UnpriceableTokensContext";
+} from '@/components/ui/dropdown-menu';
+import { ItemCard } from '@/components/ui/summary-cards';
+import { useUnpriceableTokens } from '@/contexts/UnpriceableTokensContext';
+import type { ApiAccount, ApiToken } from '@/lib/api-types';
 
 // Types
 type Transaction = {
@@ -58,8 +58,7 @@ export function TransactionRow({
   };
 
   const { isTokenUnpriceable, shouldHighlight } = useUnpriceableTokens();
-  const isAffected =
-    shouldHighlight() && token?.symbol && isTokenUnpriceable(token.symbol);
+  const isAffected = shouldHighlight() && token?.symbol && isTokenUnpriceable(token.symbol);
 
   return (
     <ItemCard
@@ -67,10 +66,7 @@ export function TransactionRow({
         <div className="flex items-center space-x-2">
           <span>
             {transaction.description ||
-              `${
-                transaction.type.charAt(0).toUpperCase() +
-                transaction.type.slice(1)
-              } transaction`}
+              `${transaction.type.charAt(0).toUpperCase() + transaction.type.slice(1)} transaction`}
           </span>
           <span className="text-xs px-1.5 py-0.5 bg-muted rounded capitalize">
             {transaction.type}
@@ -82,7 +78,7 @@ export function TransactionRow({
           <div className="flex items-center space-x-1 text-xs text-muted-foreground">
             <span>{new Date(transaction.timestamp).toLocaleDateString()}</span>
             <span>•</span>
-            <span>{account?.name || "Unknown Account"}</span>
+            <span>{account?.name || 'Unknown Account'}</span>
             {token && (
               <>
                 <span>•</span>
@@ -121,10 +117,7 @@ export function TransactionRow({
                 Edit Transaction
               </DropdownMenuItem>
             )}
-            <DropdownMenuItem
-              onClick={handleDelete}
-              className="text-destructive"
-            >
+            <DropdownMenuItem onClick={handleDelete} className="text-destructive">
               <Trash2 className="h-4 w-4 mr-2" />
               Delete Transaction
             </DropdownMenuItem>

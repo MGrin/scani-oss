@@ -268,7 +268,7 @@ export function QuickAddHolding() {
       // Shift indices that are greater than the deleted index
       const shifted: Record<number, string> = {};
       Object.entries(updated).forEach(([key, value]) => {
-        const numKey = parseInt(key);
+        const numKey = parseInt(key, 10);
         if (numKey > index) {
           shifted[numKey - 1] = value;
         } else {

@@ -1,6 +1,6 @@
-import type React from "react";
-import { createContext, useContext, useState, useEffect } from "react";
-import type { UnpriceableToken } from "@/components/ui/monetization-notification";
+import type React from 'react';
+import { createContext, useContext, useEffect, useState } from 'react';
+import type { UnpriceableToken } from '@/components/ui/monetization-notification';
 
 interface UnpriceableTokensContextType {
   unpriceableTokens: UnpriceableToken[] | undefined;
@@ -17,16 +17,12 @@ interface UnpriceableTokensContextType {
   shouldHighlight: () => boolean;
 }
 
-const UnpriceableTokensContext = createContext<
-  UnpriceableTokensContextType | undefined
->(undefined);
+const UnpriceableTokensContext = createContext<UnpriceableTokensContextType | undefined>(undefined);
 
 export const useUnpriceableTokens = () => {
   const context = useContext(UnpriceableTokensContext);
   if (context === undefined) {
-    throw new Error(
-      "useUnpriceableTokens must be used within an UnpriceableTokensProvider"
-    );
+    throw new Error('useUnpriceableTokens must be used within an UnpriceableTokensProvider');
   }
   return context;
 };
@@ -37,18 +33,15 @@ interface UnpriceableTokensProviderProps {
   notificationDismissed?: boolean;
 }
 
-export const UnpriceableTokensProvider: React.FC<
-  UnpriceableTokensProviderProps
-> = ({
+export const UnpriceableTokensProvider: React.FC<UnpriceableTokensProviderProps> = ({
   children,
   unpriceableTokens: initialTokens,
   notificationDismissed: externalDismissed = false,
 }) => {
-  const [unpriceableTokens, setUnpriceableTokens] = useState<
-    UnpriceableToken[] | undefined
-  >(initialTokens);
-  const [notificationDismissed, setNotificationDismissed] =
-    useState(externalDismissed);
+  const [unpriceableTokens, setUnpriceableTokens] = useState<UnpriceableToken[] | undefined>(
+    initialTokens
+  );
+  const [notificationDismissed, setNotificationDismissed] = useState(externalDismissed);
 
   // Update tokens when they change externally
   useEffect(() => {
@@ -65,23 +58,16 @@ export const UnpriceableTokensProvider: React.FC<
     return unpriceableTokens.some((token) => token.symbol === symbol);
   };
 
-  const isAccountAffected = (
-    institutionName: string,
-    accountName: string
-  ): boolean => {
+  const isAccountAffected = (institutionName: string, accountName: string): boolean => {
     if (!unpriceableTokens) return false;
     return unpriceableTokens.some(
-      (token) =>
-        token.institutionName === institutionName &&
-        token.accountName === accountName
+      (token) => token.institutionName === institutionName && token.accountName === accountName
     );
   };
 
   const isInstitutionAffected = (institutionName: string): boolean => {
     if (!unpriceableTokens) return false;
-    return unpriceableTokens.some(
-      (token) => token.institutionName === institutionName
-    );
+    return unpriceableTokens.some((token) => token.institutionName === institutionName);
   };
 
   const hasUnpriceableTokensOfType = (
@@ -101,11 +87,7 @@ export const UnpriceableTokensProvider: React.FC<
   };
 
   const shouldHighlight = (): boolean => {
-    return Boolean(
-      unpriceableTokens &&
-        unpriceableTokens.length > 0 &&
-        !notificationDismissed
-    );
+    return Boolean(unpriceableTokens && unpriceableTokens.length > 0 && !notificationDismissed);
   };
 
   return (
