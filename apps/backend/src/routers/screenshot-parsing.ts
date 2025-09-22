@@ -15,48 +15,6 @@ const ParseScreenshotSchema = z.object({
   context: z.string().optional(),
 });
 
-const CreateHoldingsFromParsingSchema = z.object({
-  /** Account ID */
-  accountId: z.string().uuid('Invalid account ID'),
-  /** Holdings to create from parsing results */
-  holdings: z.array(
-    z.object({
-      symbol: z.string().min(1, 'Symbol is required'),
-      name: z.string().optional(),
-      balance: z.string().min(1, 'Balance is required'),
-      confidence: z.number().min(0).max(1),
-      notes: z.string().optional(),
-      tokenId: z.string().uuid().optional(),
-      tokenExists: z.boolean(),
-      suggestedTokenType: z.string().optional(),
-    })
-  ),
-  /** Options for creation */
-  options: z
-    .object({
-      createMissingTokens: z.boolean().default(true),
-      skipValidation: z.boolean().default(false),
-    })
-    .optional(),
-});
-
-const UpdateHoldingsFromParsingSchema = z.object({
-  /** Account ID */
-  accountId: z.string().uuid('Invalid account ID'),
-  /** Holdings to update from parsing results */
-  holdings: z.array(
-    z.object({
-      symbol: z.string().min(1, 'Symbol is required'),
-      name: z.string().optional(),
-      balance: z.string().min(1, 'Balance is required'),
-      confidence: z.number().min(0).max(1),
-      notes: z.string().optional(),
-      tokenId: z.string().uuid('Token ID is required for updates'),
-      tokenExists: z.boolean(),
-    })
-  ),
-});
-
 const ProcessHoldingsFromParsingSchema = z.object({
   /** Account ID */
   accountId: z.string().uuid('Invalid account ID'),
@@ -71,6 +29,50 @@ const ProcessHoldingsFromParsingSchema = z.object({
       tokenId: z.string().uuid().optional(),
       tokenExists: z.boolean(),
       suggestedTokenType: z.string().optional(),
+      errors: z.array(z.string()).optional(),
+      warnings: z.array(z.string()).optional(),
+      requiresUserSelection: z.boolean().optional(),
+      providerValidation: z
+        .object({
+          exactMatch: z
+            .object({
+              isValid: z.boolean(),
+              metadata: z
+                .object({
+                  symbol: z.string(),
+                  name: z.string(),
+                  type: z.string().optional(),
+                  provider: z.string(),
+                  currency: z.string().optional(),
+                  exchange: z.string().optional(),
+                  description: z.string().optional(),
+                  providerMetadata: z.record(z.unknown()).optional(),
+                })
+                .optional(),
+            })
+            .optional(),
+          similarMatches: z
+            .array(
+              z.object({
+                isValid: z.boolean(),
+                metadata: z
+                  .object({
+                    symbol: z.string(),
+                    name: z.string(),
+                    type: z.string().optional(),
+                    provider: z.string(),
+                    currency: z.string().optional(),
+                    exchange: z.string().optional(),
+                    description: z.string().optional(),
+                    providerMetadata: z.record(z.unknown()).optional(),
+                  })
+                  .optional(),
+              })
+            )
+            .optional(),
+          noMatches: z.boolean().optional(),
+        })
+        .optional(),
     })
   ),
   /** Options for processing */
@@ -80,28 +82,6 @@ const ProcessHoldingsFromParsingSchema = z.object({
       skipValidation: z.boolean().default(false),
     })
     .optional(),
-});
-
-const ResolveTokenSelectionSchema = z.object({
-  /** Original symbol from screenshot */
-  holdingSymbol: z.string().min(1, 'Symbol is required'),
-  /** Selected provider token */
-  selectedProviderToken: z.object({
-    isValid: z.boolean(),
-    metadata: z
-      .object({
-        symbol: z.string(),
-        name: z.string(),
-        type: z.enum(['Equity', 'ETF', 'Mutual Fund', 'Bond', 'Commodity', 'Crypto']),
-        currency: z.string(),
-        exchange: z.string().optional(),
-        description: z.string().optional(),
-        provider: z.enum(['finnhub', 'coingecko']),
-        providerMetadata: z.record(z.unknown()),
-      })
-      .optional(),
-    error: z.string().optional(),
-  }),
 });
 
 export const screenshotParsingRouter = router({
@@ -138,102 +118,6 @@ export const screenshotParsingRouter = router({
       }
     }),
 
-  // Create holdings from parsing results
-  createHoldingsFromParsing: protectedProcedure
-    .input(CreateHoldingsFromParsingSchema)
-    .mutation(async ({ input, ctx }) => {
-      const userId = getUserId(ctx);
-      const parsingService = new ScreenshotParsingService();
-
-      // Validate account belongs to user (will throw if not found)
-      // This is done inside the service method
-
-      try {
-        // Map input holdings to the expected type
-        const mappedHoldings = input.holdings.map((h) => ({
-          ...h,
-          errors: [] as string[],
-          warnings: [] as string[],
-          requiresUserSelection: false,
-        }));
-
-        const result = await parsingService.createHoldingsFromParsing(
-          userId,
-          input.accountId,
-          mappedHoldings,
-          input.options
-        );
-
-        return {
-          success: true,
-          data: {
-            created: result.created,
-            errors: result.errors,
-            summary: {
-              totalProcessed: input.holdings.length,
-              successfullyCreated: result.created.length,
-              errors: result.errors.length,
-            },
-          },
-        };
-      } catch (error) {
-        console.error('Holdings creation failed:', error);
-
-        return {
-          success: false,
-          error: error instanceof Error ? error.message : 'Unknown error occurred',
-        };
-      }
-    }),
-
-  // Update holdings from parsing results
-  updateHoldingsFromParsing: protectedProcedure
-    .input(UpdateHoldingsFromParsingSchema)
-    .mutation(async ({ input, ctx }) => {
-      const userId = getUserId(ctx);
-      const parsingService = new ScreenshotParsingService();
-
-      try {
-        // Map input holdings to the expected type
-        const mappedHoldings = input.holdings.map((h) => ({
-          ...h,
-          errors: [] as string[],
-          warnings: [] as string[],
-          requiresUserSelection: false,
-        }));
-
-        const result = await parsingService.updateHoldingsFromParsing(
-          userId,
-          input.accountId,
-          mappedHoldings
-        );
-
-        return {
-          success: true,
-          data: {
-            updated: result.updated,
-            errors: result.errors,
-            summary: {
-              totalProcessed: input.holdings.length,
-              successfullyUpdated: result.updated.length,
-              errors: result.errors.length,
-              totalChange: result.updated.reduce((sum, u) => {
-                const change = parseFloat(u.change || '0');
-                return sum + Math.abs(change);
-              }, 0),
-            },
-          },
-        };
-      } catch (error) {
-        console.error('Holdings update failed:', error);
-
-        return {
-          success: false,
-          error: error instanceof Error ? error.message : 'Unknown error occurred',
-        };
-      }
-    }),
-
   // Process holdings from parsing results - automatically determines create vs update
   processHoldingsFromParsing: protectedProcedure
     .input(ProcessHoldingsFromParsingSchema)
@@ -245,9 +129,61 @@ export const screenshotParsingRouter = router({
         // Map input holdings to the expected type
         const mappedHoldings = input.holdings.map((h) => ({
           ...h,
-          errors: [] as string[],
-          warnings: [] as string[],
-          requiresUserSelection: false,
+          errors: h.errors || [],
+          warnings: h.warnings || [],
+          requiresUserSelection: h.requiresUserSelection || false,
+          providerValidation: h.providerValidation
+            ? {
+                exactMatch: h.providerValidation.exactMatch
+                  ? {
+                      isValid: h.providerValidation.exactMatch.isValid,
+                      metadata: h.providerValidation.exactMatch.metadata
+                        ? {
+                            symbol: h.providerValidation.exactMatch.metadata.symbol,
+                            name: h.providerValidation.exactMatch.metadata.name,
+                            type: (h.providerValidation.exactMatch.metadata.type || 'Equity') as
+                              | 'Equity'
+                              | 'ETF'
+                              | 'Mutual Fund'
+                              | 'Bond'
+                              | 'Commodity'
+                              | 'Crypto',
+                            currency: h.providerValidation.exactMatch.metadata.currency || 'USD',
+                            exchange: h.providerValidation.exactMatch.metadata.exchange,
+                            description: h.providerValidation.exactMatch.metadata.description,
+                            provider: h.providerValidation.exactMatch.metadata.provider as
+                              | 'finnhub'
+                              | 'coingecko',
+                            providerMetadata:
+                              h.providerValidation.exactMatch.metadata.providerMetadata || {},
+                          }
+                        : undefined,
+                    }
+                  : undefined,
+                similarMatches: h.providerValidation.similarMatches?.map((sm) => ({
+                  isValid: sm.isValid,
+                  metadata: sm.metadata
+                    ? {
+                        symbol: sm.metadata.symbol,
+                        name: sm.metadata.name,
+                        type: (sm.metadata.type || 'Equity') as
+                          | 'Equity'
+                          | 'ETF'
+                          | 'Mutual Fund'
+                          | 'Bond'
+                          | 'Commodity'
+                          | 'Crypto',
+                        currency: sm.metadata.currency || 'USD',
+                        exchange: sm.metadata.exchange,
+                        description: sm.metadata.description,
+                        provider: sm.metadata.provider as 'finnhub' | 'coingecko',
+                        providerMetadata: sm.metadata.providerMetadata || {},
+                      }
+                    : undefined,
+                })),
+                noMatches: h.providerValidation.noMatches,
+              }
+            : undefined,
         }));
 
         const result = await parsingService.processHoldingsFromParsing(
@@ -284,61 +220,4 @@ export const screenshotParsingRouter = router({
         };
       }
     }),
-
-  // Get available AI providers
-  getAvailableProviders: protectedProcedure.query(async () => {
-    const parsingService = new ScreenshotParsingService();
-
-    return {
-      available: parsingService.isAvailable(),
-      providers: parsingService.getAvailableProviders(),
-    };
-  }),
-
-  // Resolve token selection for holdings that require user choice
-  resolveTokenSelection: protectedProcedure
-    .input(ResolveTokenSelectionSchema)
-    .mutation(async ({ input }) => {
-      const parsingService = new ScreenshotParsingService();
-
-      try {
-        const result = await parsingService.resolveTokenSelection(
-          input.holdingSymbol,
-          input.selectedProviderToken
-        );
-
-        return {
-          success: true,
-          data: {
-            resolvedHolding: result,
-          },
-        };
-      } catch (error) {
-        console.error('Token selection resolution failed:', error);
-
-        return {
-          success: false,
-          error: error instanceof Error ? error.message : 'Unknown error occurred',
-        };
-      }
-    }),
-
-  // Health check for screenshot parsing
-  checkHealth: protectedProcedure.query(async () => {
-    const parsingService = new ScreenshotParsingService();
-    const providers = parsingService.getAvailableProviders();
-
-    return {
-      healthy: parsingService.isAvailable(),
-      providers: providers.map((p) => ({
-        name: p.name,
-        configured: p.configured,
-        isDefault: p.isDefault,
-      })),
-      recommendedProvider:
-        providers.find((p) => p.configured && p.isDefault)?.name ||
-        providers.find((p) => p.configured)?.name ||
-        null,
-    };
-  }),
 });

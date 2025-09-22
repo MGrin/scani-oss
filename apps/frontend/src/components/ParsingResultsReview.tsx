@@ -10,17 +10,22 @@ import {
   Trash2,
   TrendingUp,
   XCircle,
-} from 'lucide-react';
-import React, { useCallback, useId, useState } from 'react';
-import { cn } from '@/lib/utils';
-import { Badge } from './ui/badge';
-import { Button } from './ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
-import { Checkbox } from './ui/checkbox';
-import { Input } from './ui/input';
-import { Label } from './ui/label';
-import { Separator } from './ui/separator';
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from './ui/tooltip';
+} from "lucide-react";
+import React, { useCallback, useId, useState } from "react";
+import { cn } from "@/lib/utils";
+import { Badge } from "./ui/badge";
+import { Button } from "./ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "./ui/card";
+import { Checkbox } from "./ui/checkbox";
+import { Input } from "./ui/input";
+import { Label } from "./ui/label";
+import { Separator } from "./ui/separator";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "./ui/tooltip";
 
 interface ParsedHolding {
   symbol: string;
@@ -100,7 +105,10 @@ interface ParsingResultsReviewProps {
     processingTime?: number;
     tokensUsed?: number;
   };
-  onApprove: (holdings: ParsedHolding[], options: { createMissingTokens: boolean }) => void;
+  onApprove: (
+    holdings: ParsedHolding[],
+    options: { createMissingTokens: boolean }
+  ) => void;
   onCancel: () => void;
   isProcessing?: boolean;
 }
@@ -126,34 +134,34 @@ export function ParsingResultsReview({
     const warnings: string[] = [];
 
     switch (field) {
-      case 'symbol':
+      case "symbol":
         if (!value || value.length === 0) {
-          errors.push('Symbol is required');
+          errors.push("Symbol is required");
         } else if (value.length > 20) {
-          errors.push('Symbol must be 20 characters or less');
+          errors.push("Symbol must be 20 characters or less");
         } else if (!/^[A-Z0-9-_]+$/i.test(value)) {
-          warnings.push('Symbol contains special characters');
+          warnings.push("Symbol contains special characters");
         }
         break;
-      case 'balance':
-        if (!value || value === '0') {
-          errors.push('Balance must be greater than 0');
+      case "balance":
+        if (!value || value === "0") {
+          errors.push("Balance must be greater than 0");
         } else {
           try {
             const num = parseFloat(value);
             if (Number.isNaN(num) || num <= 0) {
-              errors.push('Balance must be a positive number');
+              errors.push("Balance must be a positive number");
             } else if (num > 1e12) {
-              warnings.push('Very large balance - please verify');
+              warnings.push("Very large balance - please verify");
             }
           } catch {
-            errors.push('Invalid balance format');
+            errors.push("Invalid balance format");
           }
         }
         break;
-      case 'name':
+      case "name":
         if (value && value.length > 100) {
-          errors.push('Name must be 100 characters or less');
+          errors.push("Name must be 100 characters or less");
         }
         break;
     }
@@ -172,15 +180,17 @@ export function ParsingResultsReview({
 
           // Clear previous errors and warnings for updated fields
           updated.errors = updated.errors.filter(
-            (error) => !Object.keys(updates).some((field) => error.includes(field))
+            (error) =>
+              !Object.keys(updates).some((field) => error.includes(field))
           );
           updated.warnings = updated.warnings.filter(
-            (warning) => !Object.keys(updates).some((field) => warning.includes(field))
+            (warning) =>
+              !Object.keys(updates).some((field) => warning.includes(field))
           );
 
           // Validate updated fields
           Object.entries(updates).forEach(([field, value]) => {
-            if (typeof value === 'string') {
+            if (typeof value === "string") {
               const validation = validateField(field, value);
               updated.errors.push(...validation.errors);
               updated.warnings.push(...validation.warnings);
@@ -200,12 +210,12 @@ export function ParsingResultsReview({
 
   const addHolding = useCallback(() => {
     const newHolding: ParsedHolding = {
-      symbol: '',
-      balance: '0',
+      symbol: "",
+      balance: "0",
       confidence: 1,
       tokenExists: false,
       errors: [],
-      warnings: ['Manually added holding'],
+      warnings: ["Manually added holding"],
     };
     setHoldings((prev) => [...prev, newHolding]);
     setEditingIndex(holdings.length);
@@ -213,27 +223,30 @@ export function ParsingResultsReview({
 
   // Get confidence color
   const getConfidenceColor = useCallback((confidence: number) => {
-    if (confidence >= 0.8) return 'text-green-600';
-    if (confidence >= 0.6) return 'text-yellow-600';
-    return 'text-red-600';
+    if (confidence >= 0.8) return "text-green-600";
+    if (confidence >= 0.6) return "text-yellow-600";
+    return "text-red-600";
   }, []);
 
   const getConfidenceLabel = useCallback((confidence: number) => {
-    if (confidence >= 0.8) return 'High';
-    if (confidence >= 0.6) return 'Medium';
-    return 'Low';
+    if (confidence >= 0.8) return "High";
+    if (confidence >= 0.6) return "Medium";
+    return "Low";
   }, []);
 
   // Calculate updated summary
   const updatedSummary = React.useMemo(() => {
-    const validHoldings = holdings.filter((h) => h.symbol && h.balance && h.balance !== '0');
+    const validHoldings = holdings.filter(
+      (h) => h.symbol && h.balance && h.balance !== "0"
+    );
     return {
       totalHoldings: validHoldings.length,
       existingTokens: validHoldings.filter((h) => h.tokenExists).length,
       newTokensRequired: validHoldings.filter((h) => !h.tokenExists).length,
       averageConfidence:
         validHoldings.length > 0
-          ? validHoldings.reduce((sum, h) => sum + h.confidence, 0) / validHoldings.length
+          ? validHoldings.reduce((sum, h) => sum + h.confidence, 0) /
+            validHoldings.length
           : 0,
       hasErrors: validHoldings.some((h) => h.errors.length > 0),
       hasWarnings: validHoldings.some((h) => h.warnings.length > 0),
@@ -242,7 +255,7 @@ export function ParsingResultsReview({
 
   const canApprove =
     holdings.length > 0 &&
-    holdings.every((h) => h.symbol && h.balance && h.balance !== '0') &&
+    holdings.every((h) => h.symbol && h.balance && h.balance !== "0") &&
     !updatedSummary.hasErrors;
 
   return (
@@ -254,12 +267,21 @@ export function ParsingResultsReview({
             <div>
               <h2 className="text-2xl font-bold">Review Extracted Holdings</h2>
               <p className="text-muted-foreground">
-                AI detected {portfolio.holdings.length} holdings from your screenshot
+                AI detected {portfolio.holdings.length} holdings from your
+                screenshot
               </p>
             </div>
-            <Button variant="outline" size="sm" onClick={() => setShowDetails(!showDetails)}>
-              {showDetails ? <EyeOff className="h-4 w-4 mr-2" /> : <Eye className="h-4 w-4 mr-2" />}
-              {showDetails ? 'Hide' : 'Show'} Details
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setShowDetails(!showDetails)}
+            >
+              {showDetails ? (
+                <EyeOff className="h-4 w-4 mr-2" />
+              ) : (
+                <Eye className="h-4 w-4 mr-2" />
+              )}
+              {showDetails ? "Hide" : "Show"} Details
             </Button>
           </div>
 
@@ -269,10 +291,14 @@ export function ParsingResultsReview({
               <div className="flex items-center gap-4">
                 <div className="flex-1">
                   <p className="font-medium">{account.name}</p>
-                  <p className="text-sm text-muted-foreground">at {account.institutionName}</p>
+                  <p className="text-sm text-muted-foreground">
+                    at {account.institutionName}
+                  </p>
                 </div>
                 {portfolio.detectedCurrency && (
-                  <Badge variant="secondary">{portfolio.detectedCurrency}</Badge>
+                  <Badge variant="secondary">
+                    {portfolio.detectedCurrency}
+                  </Badge>
                 )}
               </div>
             </CardContent>
@@ -290,25 +316,33 @@ export function ParsingResultsReview({
           <CardContent className="space-y-4">
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
               <div className="text-center">
-                <div className="text-2xl font-bold">{updatedSummary.totalHoldings}</div>
-                <div className="text-sm text-muted-foreground">Holdings Detected</div>
+                <div className="text-2xl font-bold">
+                  {updatedSummary.totalHoldings}
+                </div>
+                <div className="text-sm text-muted-foreground">
+                  Holdings Detected
+                </div>
               </div>
               <div className="text-center">
                 <div
                   className={cn(
-                    'text-2xl font-bold',
+                    "text-2xl font-bold",
                     getConfidenceColor(updatedSummary.averageConfidence)
                   )}
                 >
                   {Math.round(updatedSummary.averageConfidence * 100)}%
                 </div>
-                <div className="text-sm text-muted-foreground">Avg Confidence</div>
+                <div className="text-sm text-muted-foreground">
+                  Avg Confidence
+                </div>
               </div>
               <div className="text-center">
                 <div className="text-2xl font-bold text-green-600">
                   {updatedSummary.existingTokens}
                 </div>
-                <div className="text-sm text-muted-foreground">Known Assets</div>
+                <div className="text-sm text-muted-foreground">
+                  Known Assets
+                </div>
               </div>
               <div className="text-center">
                 <div className="text-2xl font-bold text-orange-600">
@@ -324,7 +358,9 @@ export function ParsingResultsReview({
                 <div className="space-y-2">
                   {aiMetadata && (
                     <div className="flex items-center justify-between text-sm">
-                      <span className="text-muted-foreground">AI Provider:</span>
+                      <span className="text-muted-foreground">
+                        AI Provider:
+                      </span>
                       <span className="font-medium">
                         {aiMetadata.provider} ({aiMetadata.model})
                       </span>
@@ -333,13 +369,19 @@ export function ParsingResultsReview({
                   {portfolio.context && (
                     <div className="flex items-start justify-between text-sm">
                       <span className="text-muted-foreground">Context:</span>
-                      <span className="font-medium text-right max-w-xs">{portfolio.context}</span>
+                      <span className="font-medium text-right max-w-xs">
+                        {portfolio.context}
+                      </span>
                     </div>
                   )}
                   {aiMetadata?.processingTime && (
                     <div className="flex items-center justify-between text-sm">
-                      <span className="text-muted-foreground">Processing Time:</span>
-                      <span className="font-medium">{aiMetadata.processingTime}ms</span>
+                      <span className="text-muted-foreground">
+                        Processing Time:
+                      </span>
+                      <span className="font-medium">
+                        {aiMetadata.processingTime}ms
+                      </span>
                     </div>
                   )}
                 </div>
@@ -351,7 +393,8 @@ export function ParsingResultsReview({
               <div className="flex items-center gap-2 p-3 bg-destructive/10 rounded-lg border border-destructive/20">
                 <XCircle className="h-4 w-4 text-destructive" />
                 <span className="text-sm text-destructive font-medium">
-                  Some holdings have errors that need to be fixed before proceeding
+                  Some holdings have errors that need to be fixed before
+                  proceeding
                 </span>
               </div>
             )}
@@ -383,7 +426,9 @@ export function ParsingResultsReview({
               holding={holding}
               index={index}
               isEditing={editingIndex === index}
-              onEdit={() => setEditingIndex(editingIndex === index ? null : index)}
+              onEdit={() =>
+                setEditingIndex(editingIndex === index ? null : index)
+              }
               onUpdate={(updates) => updateHolding(index, updates)}
               onRemove={() => removeHolding(index)}
               getConfidenceColor={getConfidenceColor}
@@ -394,7 +439,9 @@ export function ParsingResultsReview({
           {holdings.length === 0 && (
             <Card>
               <CardContent className="py-8 text-center">
-                <p className="text-muted-foreground">No holdings detected or all removed</p>
+                <p className="text-muted-foreground">
+                  No holdings detected or all removed
+                </p>
                 <Button variant="outline" onClick={addHolding} className="mt-4">
                   <Plus className="h-4 w-4 mr-2" />
                   Add Holding Manually
@@ -421,7 +468,10 @@ export function ParsingResultsReview({
                   <Info className="h-4 w-4 text-muted-foreground" />
                 </TooltipTrigger>
                 <TooltipContent>
-                  <p>If enabled, new asset types will be created for unrecognized symbols</p>
+                  <p>
+                    If enabled, new asset types will be created for unrecognized
+                    symbols
+                  </p>
                 </TooltipContent>
               </Tooltip>
             </div>
@@ -459,8 +509,13 @@ export function ParsingResultsReview({
 
             {isProcessing && (
               <div className="text-xs text-muted-foreground space-y-1">
-                <p>• Creating holdings and transactions</p>
-                <p>• {createMissingTokens ? 'Creating missing tokens' : 'Using existing tokens'}</p>
+                <p>• Creating holdings</p>
+                <p>
+                  •{" "}
+                  {createMissingTokens
+                    ? "Creating missing tokens"
+                    : "Using existing tokens"}
+                </p>
                 <p>• This may take a few moments...</p>
               </div>
             )}
@@ -495,7 +550,7 @@ function HoldingCard({
 }: HoldingCardProps) {
   const [localSymbol, setLocalSymbol] = useState(holding.symbol);
   const [localBalance, setLocalBalance] = useState(holding.balance);
-  const [localName, setLocalName] = useState(holding.name || '');
+  const [localName, setLocalName] = useState(holding.name || "");
 
   const saveChanges = useCallback(() => {
     onUpdate({
@@ -509,16 +564,18 @@ function HoldingCard({
   const cancelChanges = useCallback(() => {
     setLocalSymbol(holding.symbol);
     setLocalBalance(holding.balance);
-    setLocalName(holding.name || '');
+    setLocalName(holding.name || "");
     onEdit();
   }, [holding, onEdit]);
 
   return (
     <Card
       className={cn(
-        'transition-all',
-        holding.errors.length > 0 && 'border-destructive/50 bg-destructive/5',
-        holding.warnings.length > 0 && !holding.errors.length && 'border-warning/50 bg-warning/5'
+        "transition-all",
+        holding.errors.length > 0 && "border-destructive/50 bg-destructive/5",
+        holding.warnings.length > 0 &&
+          !holding.errors.length &&
+          "border-warning/50 bg-warning/5"
       )}
     >
       <CardContent className="p-4">
@@ -571,7 +628,9 @@ function HoldingCard({
                   <div className="flex items-center gap-2">
                     <span className="font-bold text-lg">{holding.symbol}</span>
                     {holding.name && (
-                      <span className="text-muted-foreground text-sm">({holding.name})</span>
+                      <span className="text-muted-foreground text-sm">
+                        ({holding.name})
+                      </span>
                     )}
                     {!holding.tokenExists && (
                       <Badge variant="outline" className="text-xs">
@@ -580,11 +639,13 @@ function HoldingCard({
                     )}
                   </div>
                   <div className="flex items-center gap-4 mt-1">
-                    <span className="text-xl font-semibold">{holding.balance}</span>
+                    <span className="text-xl font-semibold">
+                      {holding.balance}
+                    </span>
                     <div className="flex items-center gap-1">
                       <span
                         className={cn(
-                          'text-sm font-medium',
+                          "text-sm font-medium",
                           getConfidenceColor(holding.confidence)
                         )}
                       >
@@ -633,10 +694,17 @@ function HoldingCard({
                   {holding.providerValidation.exactMatch && (
                     <div className="flex items-center gap-1 text-xs text-green-600">
                       <CheckCircle className="h-3 w-3" />
-                      Verified in {holding.providerValidation.exactMatch.metadata?.provider}
-                      {holding.providerValidation.exactMatch.metadata?.exchange && (
+                      Verified in{" "}
+                      {holding.providerValidation.exactMatch.metadata?.provider}
+                      {holding.providerValidation.exactMatch.metadata
+                        ?.exchange && (
                         <span className="text-muted-foreground">
-                          ({holding.providerValidation.exactMatch.metadata.exchange})
+                          (
+                          {
+                            holding.providerValidation.exactMatch.metadata
+                              .exchange
+                          }
+                          )
                         </span>
                       )}
                     </div>
@@ -648,9 +716,15 @@ function HoldingCard({
                       <div className="space-y-2">
                         <div className="flex items-center gap-1 text-xs text-orange-600">
                           <Info className="h-3 w-3" />
-                          {holding.providerValidation.similarMatches.length} similar match
-                          {holding.providerValidation.similarMatches.length !== 1 ? 'es' : ''} found
-                          - please select:
+                          {
+                            holding.providerValidation.similarMatches.length
+                          }{" "}
+                          similar match
+                          {holding.providerValidation.similarMatches.length !==
+                          1
+                            ? "es"
+                            : ""}{" "}
+                          found - please select:
                         </div>
 
                         <div className="space-y-1 ml-4">
@@ -659,19 +733,22 @@ function HoldingCard({
                             .map((match, matchIndex) => (
                               <button
                                 type="button"
-                                key={`${match.metadata?.symbol || 'unknown'}-${matchIndex}`}
+                                key={`${
+                                  match.metadata?.symbol || "unknown"
+                                }-${matchIndex}`}
                                 className="flex items-center justify-between w-full text-xs p-2 rounded border hover:bg-muted/50 text-left"
                                 onClick={() => {
                                   // Update the holding with the selected match
                                   onUpdate({
-                                    symbol: match.metadata?.symbol || holding.symbol,
+                                    symbol:
+                                      match.metadata?.symbol || holding.symbol,
                                     selectedProviderMatch: match,
                                   });
                                 }}
                               >
                                 <div className="flex flex-col gap-1">
                                   <div className="font-medium">
-                                    {match.metadata?.symbol || 'Unknown'}
+                                    {match.metadata?.symbol || "Unknown"}
                                   </div>
                                   {match.metadata?.name && (
                                     <div className="text-muted-foreground">
@@ -681,7 +758,7 @@ function HoldingCard({
                                 </div>
                                 <div className="text-right">
                                   <div className="text-muted-foreground">
-                                    {match.metadata?.provider || 'Unknown'}
+                                    {match.metadata?.provider || "Unknown"}
                                   </div>
                                   {match.metadata?.exchange && (
                                     <div className="text-muted-foreground text-xs">
@@ -692,10 +769,13 @@ function HoldingCard({
                               </button>
                             ))}
 
-                          {holding.providerValidation.similarMatches.length > 5 && (
+                          {holding.providerValidation.similarMatches.length >
+                            5 && (
                             <div className="text-xs text-muted-foreground ml-2">
-                              ... and {holding.providerValidation.similarMatches.length - 5} more
-                              matches
+                              ... and{" "}
+                              {holding.providerValidation.similarMatches
+                                .length - 5}{" "}
+                              more matches
                             </div>
                           )}
 
@@ -704,7 +784,7 @@ function HoldingCard({
                             className="flex items-center gap-1 text-xs text-blue-600 hover:text-blue-700 ml-2 mt-1"
                             onClick={() => {
                               // Show full token selector or allow manual token creation
-                              console.log('Show full token selector for:', holding.symbol);
+                              // TODO: Implement token creation/selection modal
                             }}
                           >
                             <Plus className="h-3 w-3" />
@@ -725,7 +805,7 @@ function HoldingCard({
                         className="flex items-center gap-1 text-xs text-blue-600 hover:text-blue-700 ml-4"
                         onClick={() => {
                           // Show full token selector or allow manual token creation
-                          console.log('Show full token selector for:', holding.symbol);
+                          // TODO: Implement token creation/selection modal
                         }}
                       >
                         <Plus className="h-3 w-3" />
@@ -737,7 +817,9 @@ function HoldingCard({
               )}
 
               {holding.notes && (
-                <p className="text-xs text-muted-foreground mt-2">{holding.notes}</p>
+                <p className="text-xs text-muted-foreground mt-2">
+                  {holding.notes}
+                </p>
               )}
             </div>
 

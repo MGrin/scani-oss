@@ -1,12 +1,12 @@
-import { Decimal, FinancialMath } from '@scani/shared';
-import { PieChart } from 'lucide-react';
-import { useEffect, useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
-import { HoldingForm } from '@/components/HoldingForm';
-import { HoldingRow } from '@/components/HoldingRow';
+import { Decimal, FinancialMath } from "@scani/shared";
+import { PieChart } from "lucide-react";
+import { useEffect, useState } from "react";
+import { useNavigate, useParams } from "react-router-dom";
+import { HoldingForm } from "@/components/HoldingForm";
+import { HoldingRow } from "@/components/HoldingRow";
 
-import { Button } from '@/components/ui/button';
-import { Card, CardContent } from '@/components/ui/card';
+import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
 import {
   Dialog,
   DialogContent,
@@ -14,21 +14,26 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from '@/components/ui/dialog';
-import { MonetaryValue } from '@/components/ui/monetary-value';
-import { PageAggregation } from '@/components/ui/page-aggregation';
-import { PageHeader } from '@/components/ui/page-header';
-import { useUnpriceableTokens } from '@/contexts/UnpriceableTokensContext';
-import { useToast } from '@/hooks/use-toast';
-import { useFilters } from '@/hooks/useFilters';
-import type { ApiAccount, ApiHolding, ApiInstitution, ApiToken } from '@/lib/api-types';
-import { BUTTON_TEXT } from '@/lib/button-constants';
-import { trpc } from '@/lib/trpc';
+} from "@/components/ui/dialog";
+
+import { PageAggregation } from "@/components/ui/page-aggregation";
+import { PageHeader } from "@/components/ui/page-header";
+import { useUnpriceableTokens } from "@/contexts/UnpriceableTokensContext";
+import { useToast } from "@/hooks/use-toast";
+import { useFilters } from "@/hooks/useFilters";
+import type {
+  ApiAccount,
+  ApiHolding,
+  ApiInstitution,
+  ApiToken,
+} from "@/lib/api-types";
+import { BUTTON_TEXT } from "@/lib/button-constants";
+import { trpc } from "@/lib/trpc";
 import {
   AccountFilterSelector,
   TokenFilterSelector,
   TokenTypeSelector,
-} from '../components/selectors/SearchableSelectors';
+} from "../components/selectors/SearchableSelectors";
 
 interface ProcessedHolding extends ApiHolding {
   token: ApiToken | undefined;
@@ -45,7 +50,8 @@ export function Holdings() {
   }>();
   const { isTokenUnpriceable, shouldHighlight } = useUnpriceableTokens();
 
-  const { data: holdings, isLoading: holdingsLoading } = trpc.holdings.getAll.useQuery();
+  const { data: holdings, isLoading: holdingsLoading } =
+    trpc.holdings.getAll.useQuery();
   const { data: accounts } = trpc.accounts.getAll.useQuery();
   // Use optimized endpoints - only get tokens user has holdings for, and base currency separately
   const { data: tokens } = trpc.tokens.getByUserId.useQuery();
@@ -67,7 +73,7 @@ export function Holdings() {
     ? baseHoldings.filter((holding) => holding.accountId === accountId)
     : baseHoldings;
 
-  const [searchTerm, setSearchTerm] = useState('');
+  const [searchTerm, setSearchTerm] = useState("");
 
   // Unified filter system
   const {
@@ -76,14 +82,14 @@ export function Holdings() {
     clearAllFilters,
     hasActiveFilters,
   } = useFilters([
-    { key: 'type', defaultValue: 'all' },
-    { key: 'account', defaultValue: 'all' },
-    { key: 'token', defaultValue: 'all' },
+    { key: "type", defaultValue: "all" },
+    { key: "account", defaultValue: "all" },
+    { key: "token", defaultValue: "all" },
   ]);
 
-  const filterBy = filterValues.type || 'all';
-  const filterByAccount = filterValues.account || 'all';
-  const filterByToken = filterValues.token || 'all';
+  const filterBy = filterValues.type || "all";
+  const filterByAccount = filterValues.account || "all";
+  const filterByToken = filterValues.token || "all";
 
   // Compute hasActiveFilters - always include all filters and search term
   const hasActiveFiltersComputed = hasActiveFilters || Boolean(searchTerm);
@@ -92,18 +98,18 @@ export function Holdings() {
   useEffect(() => {
     if (accountId && accountId !== filterByAccount) {
       // Set the account filter to match the URL param
-      updateFilter('account', accountId);
-    } else if (!accountId && filterByAccount !== 'all') {
+      updateFilter("account", accountId);
+    } else if (!accountId && filterByAccount !== "all") {
       // Clear the account filter when not in hierarchical mode
-      updateFilter('account', 'all');
+      updateFilter("account", "all");
     }
   }, [accountId, filterByAccount, updateFilter]);
 
   // Handle account filter changes with navigation
   const handleAccountFilterChange = (value: string) => {
-    if (value === 'all') {
+    if (value === "all") {
       // User selected "All Accounts" - go to normal holdings page
-      navigate('/holdings', { replace: true });
+      navigate("/holdings", { replace: true });
     } else if (value !== accountId) {
       // User selected a single account - navigate to that account's holdings page
       // Need to find the institution for this account
@@ -119,11 +125,11 @@ export function Holdings() {
 
   // Clear all filters helper - exits hierarchical mode when clearing all
   const handleClearAllFilters = () => {
-    setSearchTerm('');
+    setSearchTerm("");
 
     // If in hierarchical mode, navigate back to normal holdings page
     if (isHierarchicalMode) {
-      navigate('/holdings', { replace: true });
+      navigate("/holdings", { replace: true });
     } else {
       // In normal mode, just clear filters
       clearAllFilters();
@@ -133,42 +139,45 @@ export function Holdings() {
   const [isHoldingFormOpen, setIsHoldingFormOpen] = useState(false);
   const [holdingToEdit, setHoldingToEdit] = useState<ApiHolding | undefined>();
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
-  const [holdingToDelete, setHoldingToDelete] = useState<ProcessedHolding | undefined>();
-  const [isViewDialogOpen, setIsViewDialogOpen] = useState(false);
-  const [holdingToView, setHoldingToView] = useState<ProcessedHolding | undefined>();
+  const [holdingToDelete, setHoldingToDelete] = useState<
+    ProcessedHolding | undefined
+  >();
+  // HIDDEN: Transaction UI temporarily hidden
+  // const [isViewDialogOpen, setIsViewDialogOpen] = useState(false);
+  // const [holdingToView, setHoldingToView] = useState<
+  //   ProcessedHolding | undefined
+  // >();
 
   const utils = trpc.useUtils();
   const { toast } = useToast();
 
   const deleteHolding = trpc.holdings.delete.useMutation({
-    onSuccess: (result) => {
-      const { cascadeInfo } = result;
-      let description = `Holding for "${
-        holdingToDelete?.token?.symbol || 'token'
+    onSuccess: () => {
+      const description = `Holding for "${
+        holdingToDelete?.token?.symbol || "token"
       }" has been deleted successfully.`;
-
-      if (cascadeInfo && cascadeInfo.transactionsDeleted > 0) {
-        description += ` Also deleted ${
-          cascadeInfo.transactionsDeleted
-        } transaction${cascadeInfo.transactionsDeleted !== 1 ? 's' : ''}.`;
-      }
+      // Note: Associated transactions are also deleted in the backend but not mentioned in UI
 
       toast({
-        title: 'Success',
+        title: "Success",
         description,
-        variant: 'success',
+        variant: "success",
       });
       utils.holdings.getAll.invalidate();
+      utils.holdings.getUnpriceableTokens.invalidate(); // For unpriceable tokens notification
       utils.transactions.getAll.invalidate();
       utils.users.getPortfolioValue.invalidate();
+      utils.accounts.getAll.invalidate(); // Account lists and balances
+      utils.accounts.getSummaries.invalidate(); // Account summaries with portfolio values
       setIsDeleteDialogOpen(false);
       setHoldingToDelete(undefined);
     },
     onError: (error) => {
       toast({
-        title: 'Error',
-        description: error.message || 'Failed to delete holding. Please try again.',
-        variant: 'destructive',
+        title: "Error",
+        description:
+          error.message || "Failed to delete holding. Please try again.",
+        variant: "destructive",
       });
     },
   });
@@ -178,62 +187,88 @@ export function Holdings() {
     ? Object.fromEntries(tokens.map((token: ApiToken) => [token.id, token]))
     : {};
   const accountsMap = accounts
-    ? Object.fromEntries(accounts.map((account: ApiAccount) => [account.id, account]))
+    ? Object.fromEntries(
+        accounts.map((account: ApiAccount) => [account.id, account])
+      )
     : {};
   const institutionsMap = institutions
-    ? Object.fromEntries(institutions.map((inst: ApiInstitution) => [inst.id, inst]))
+    ? Object.fromEntries(
+        institutions.map((inst: ApiInstitution) => [inst.id, inst])
+      )
     : {};
 
   // Process holdings with portfolio values and related data
-  const processedHoldings: ProcessedHolding[] = displayHoldings.map((holding: ApiHolding) => {
-    const token = tokensMap[holding.tokenId];
-    const account = accountsMap[holding.accountId];
-    const institution = account ? institutionsMap[account.institutionId] : null;
+  const processedHoldings: ProcessedHolding[] = displayHoldings.map(
+    (holding: ApiHolding) => {
+      const token = tokensMap[holding.tokenId];
+      const account = accountsMap[holding.accountId];
+      const institution = account
+        ? institutionsMap[account.institutionId]
+        : null;
 
-    // Calculate individual holding value based on its proportion of total token balance
-    let value = FinancialMath.toNumber(FinancialMath.abs(holding.balance ?? '0')); // fallback to raw balance
+      // Calculate individual holding value based on its proportion of total token balance
+      let value = FinancialMath.toNumber(
+        FinancialMath.abs(holding.balance ?? "0")
+      ); // fallback to raw balance
 
-    if (portfolioValue?.holdings && token?.symbol) {
-      const portfolioHolding = portfolioValue.holdings.find(
-        (ph) => ph.tokenSymbol === token.symbol
-      );
+      if (portfolioValue?.holdings && token?.symbol) {
+        const portfolioHolding = portfolioValue.holdings.find(
+          (ph) => ph.tokenSymbol === token.symbol
+        );
 
-      if (portfolioHolding?.value && portfolioHolding?.balance) {
-        // Calculate this holding's proportion of the total token balance
-        const holdingBalance = FinancialMath.toNumber(new Decimal(holding.balance ?? '0'));
-        const totalTokenBalance = FinancialMath.toNumber(new Decimal(portfolioHolding.balance));
-        const totalTokenValue = parseFloat(portfolioHolding.value);
+        if (portfolioHolding?.value && portfolioHolding?.balance) {
+          // Calculate this holding's proportion of the total token balance
+          const holdingBalance = FinancialMath.toNumber(
+            new Decimal(holding.balance ?? "0")
+          );
+          const totalTokenBalance = FinancialMath.toNumber(
+            new Decimal(portfolioHolding.balance)
+          );
+          const totalTokenValue = parseFloat(portfolioHolding.value);
 
-        if (totalTokenBalance > 0) {
-          // Calculate proportional value for this specific holding
-          value = (holdingBalance / totalTokenBalance) * totalTokenValue;
+          if (totalTokenBalance > 0) {
+            // Calculate proportional value for this specific holding
+            value = (holdingBalance / totalTokenBalance) * totalTokenValue;
+          }
         }
       }
-    }
 
-    return {
-      ...holding,
-      token,
-      account,
-      institution,
-      value,
-    };
-  });
+      return {
+        ...holding,
+        token,
+        account,
+        institution,
+        value,
+      };
+    }
+  );
 
   // Apply filters and search
-  const filteredHoldings = processedHoldings.filter((holding: ProcessedHolding) => {
-    const matchesSearch =
-      !searchTerm ||
-      holding.token?.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      holding.token?.symbol.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      holding.account?.name.toLowerCase().includes(searchTerm.toLowerCase());
+  const filteredHoldings = processedHoldings.filter(
+    (holding: ProcessedHolding) => {
+      const matchesSearch =
+        !searchTerm ||
+        holding.token?.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        holding.token?.symbol
+          .toLowerCase()
+          .includes(searchTerm.toLowerCase()) ||
+        holding.account?.name.toLowerCase().includes(searchTerm.toLowerCase());
 
-    const matchesTypeFilter = filterBy === 'all' || holding.token?.type === filterBy;
-    const matchesAccountFilter = filterByAccount === 'all' || holding.accountId === filterByAccount;
-    const matchesTokenFilter = filterByToken === 'all' || holding.tokenId === filterByToken;
+      const matchesTypeFilter =
+        filterBy === "all" || holding.token?.type === filterBy;
+      const matchesAccountFilter =
+        filterByAccount === "all" || holding.accountId === filterByAccount;
+      const matchesTokenFilter =
+        filterByToken === "all" || holding.tokenId === filterByToken;
 
-    return matchesSearch && matchesTypeFilter && matchesAccountFilter && matchesTokenFilter;
-  });
+      return (
+        matchesSearch &&
+        matchesTypeFilter &&
+        matchesAccountFilter &&
+        matchesTokenFilter
+      );
+    }
+  );
 
   // Sort by balance (highest to lowest) by default
   const sortedHoldings = [...filteredHoldings].sort((a, b) => {
@@ -258,10 +293,11 @@ export function Holdings() {
     setIsDeleteDialogOpen(true);
   };
 
-  const handleViewHolding = (holding: ProcessedHolding) => {
-    setHoldingToView(holding);
-    setIsViewDialogOpen(true);
-  };
+  // HIDDEN: Transaction UI temporarily hidden
+  // const handleViewHolding = (holding: ProcessedHolding) => {
+  //   setHoldingToView(holding);
+  //   setIsViewDialogOpen(true);
+  // };
 
   const confirmDeleteHolding = () => {
     if (holdingToDelete) {
@@ -269,10 +305,20 @@ export function Holdings() {
     }
   };
 
-  if (holdingsLoading || portfolioLoading || !tokens || !accounts || !institutions) {
+  if (
+    holdingsLoading ||
+    portfolioLoading ||
+    !tokens ||
+    !accounts ||
+    !institutions
+  ) {
     return (
       <div className="space-y-4">
-        <PageHeader title="Holdings" subtitle="Manage your investment positions" loading={true} />
+        <PageHeader
+          title="Holdings"
+          subtitle="Manage your investment positions"
+          loading={true}
+        />
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
           {[1, 2, 3].map((i) => (
             <Card key={i}>
@@ -291,8 +337,14 @@ export function Holdings() {
   }
 
   // Calculate totals
-  const totalValue = processedHoldings.reduce((sum, holding) => sum + holding.value, 0);
-  const filteredValue = filteredHoldings.reduce((sum, holding) => sum + holding.value, 0);
+  const totalValue = processedHoldings.reduce(
+    (sum, holding) => sum + holding.value,
+    0
+  );
+  const filteredValue = filteredHoldings.reduce(
+    (sum, holding) => sum + holding.value,
+    0
+  );
 
   // Check if any holdings have unpriceable tokens and should be highlighted
   const hasUnpriceableTokenHoldings =
@@ -302,12 +354,14 @@ export function Holdings() {
     );
 
   const pageTitle =
-    isHierarchicalMode && selectedAccount ? `${selectedAccount.name} Holdings` : 'Holdings';
+    isHierarchicalMode && selectedAccount
+      ? `${selectedAccount.name} Holdings`
+      : "Holdings";
 
   const pageSubtitle =
     isHierarchicalMode && selectedAccount
       ? `Holdings in ${selectedAccount.name}`
-      : 'Manage your investment positions';
+      : "Manage your investment positions";
 
   return (
     <div className="space-y-4">
@@ -329,8 +383,11 @@ export function Holdings() {
           <TokenTypeSelector
             key="type"
             value={filterBy}
-            onValueChange={(value) => updateFilter('type', value)}
-            tokenTypes={[{ id: 'all', code: 'all', name: 'All Types' }, ...(tokenTypes || [])]}
+            onValueChange={(value) => updateFilter("type", value)}
+            tokenTypes={[
+              { id: "all", code: "all", name: "All Types" },
+              ...(tokenTypes || []),
+            ]}
             placeholder="Filter by type..."
           />,
           <AccountFilterSelector
@@ -338,12 +395,13 @@ export function Holdings() {
             value={filterByAccount}
             onValueChange={handleAccountFilterChange}
             accounts={accounts}
+            institutions={institutions}
             placeholder="Filter by account..."
           />,
           <TokenFilterSelector
             key="token"
             value={filterByToken}
-            onValueChange={(value: string) => updateFilter('token', value)}
+            onValueChange={(value: string) => updateFilter("token", value)}
             tokens={tokens}
             placeholder="Filter by token..."
           />,
@@ -359,11 +417,12 @@ export function Holdings() {
             <div className="text-muted-foreground mb-6">No holdings found</div>
             <div className="space-y-3">
               <div className="text-sm text-muted-foreground mb-4">
-                Get started by clicking the "Add Holding" button in the top right corner.
+                Get started by clicking the "Add Holding" button in the top
+                right corner.
               </div>
               <p className="text-xs text-muted-foreground">
-                You can add holdings manually or by uploading a screenshot that will be parsed
-                automatically.
+                You can add holdings manually or by uploading a screenshot that
+                will be parsed automatically.
               </p>
             </div>
           </CardContent>
@@ -371,7 +430,9 @@ export function Holdings() {
       ) : sortedHoldings.length === 0 ? (
         <Card>
           <CardContent className="p-12 text-center">
-            <div className="text-muted-foreground mb-4">No holdings match your search criteria</div>
+            <div className="text-muted-foreground mb-4">
+              No holdings match your search criteria
+            </div>
             <Button onClick={handleClearAllFilters}>Clear Filters</Button>
           </CardContent>
         </Card>
@@ -388,20 +449,23 @@ export function Holdings() {
                 userPrefs={{
                   baseCurrency: baseCurrency || undefined,
                 }}
-                onView={() => handleViewHolding(holding)}
+                // onView={() => handleViewHolding(holding)} // HIDDEN: Transaction UI temporarily hidden
                 onEdit={() => handleEditHolding(holding)}
                 onDelete={() => handleDeleteHolding(holding)}
-                onClick={() => {
-                  const account = accounts?.find((acc) => acc.id === holding.accountId);
-                  if (account) {
-                    navigate(
-                      `/institutions/${account.institutionId}/accounts/${account.id}/holdings/${holding.id}`
-                    );
-                  } else {
-                    // Fallback to old route if account not found
-                    navigate(`/transactions?holding=${holding.id}`);
-                  }
-                }}
+                // HIDDEN: Transaction UI temporarily hidden - no onClick navigation
+                // onClick={() => {
+                //   const account = accounts?.find(
+                //     (acc) => acc.id === holding.accountId
+                //   );
+                //   if (account) {
+                //     navigate(
+                //       `/institutions/${account.institutionId}/accounts/${account.id}/holdings/${holding.id}`
+                //     );
+                //   } else {
+                //     // Fallback to old route if account not found
+                //     navigate(`/transactions?holding=${holding.id}`);
+                //   }
+                // }}
               />
             );
           })}
@@ -413,21 +477,26 @@ export function Holdings() {
         isOpen={isHoldingFormOpen}
         onClose={() => setIsHoldingFormOpen(false)}
         holding={holdingToEdit}
-        mode={holdingToEdit ? 'edit' : 'create'}
+        mode={holdingToEdit ? "edit" : "create"}
       />
 
+      {/* HIDDEN: Transaction UI temporarily hidden */}
       {/* View Holding Details Dialog */}
-      <Dialog open={isViewDialogOpen} onOpenChange={setIsViewDialogOpen}>
+      {/* <Dialog open={isViewDialogOpen} onOpenChange={setIsViewDialogOpen}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Holding Details</DialogTitle>
-            <DialogDescription>Complete information about this holding</DialogDescription>
+            <DialogDescription>
+              Complete information about this holding
+            </DialogDescription>
           </DialogHeader>
           {holdingToView && (
             <div className="space-y-4">
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <p className="text-sm font-medium text-muted-foreground">Token</p>
+                  <p className="text-sm font-medium text-muted-foreground">
+                    Token
+                  </p>
                   <p className="font-semibold">
                     {holdingToView.token?.name} ({holdingToView.token?.symbol})
                   </p>
@@ -436,7 +505,9 @@ export function Holdings() {
                   </p>
                 </div>
                 <div>
-                  <p className="text-sm font-medium text-muted-foreground">Current Value</p>
+                  <p className="text-sm font-medium text-muted-foreground">
+                    Current Value
+                  </p>
                   <MonetaryValue
                     type="currency"
                     value={holdingToView.value}
@@ -448,11 +519,13 @@ export function Holdings() {
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <p className="text-sm font-medium text-muted-foreground">Balance</p>
+                  <p className="text-sm font-medium text-muted-foreground">
+                    Balance
+                  </p>
                   <MonetaryValue
                     type="token"
-                    value={parseFloat(holdingToView.balance || '0')}
-                    tokenSymbol={holdingToView.token?.symbol || ''}
+                    value={parseFloat(holdingToView.balance || "0")}
+                    tokenSymbol={holdingToView.token?.symbol || ""}
                     decimals={holdingToView.token?.decimals}
                     className="font-semibold"
                   />
@@ -460,12 +533,18 @@ export function Holdings() {
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <p className="text-sm font-medium text-muted-foreground">Account</p>
+                  <p className="text-sm font-medium text-muted-foreground">
+                    Account
+                  </p>
                   <p className="font-semibold">{holdingToView.account?.name}</p>
-                  <p className="text-xs text-muted-foreground">{holdingToView.institution?.name}</p>
+                  <p className="text-xs text-muted-foreground">
+                    {holdingToView.institution?.name}
+                  </p>
                 </div>
                 <div>
-                  <p className="text-sm font-medium text-muted-foreground">Last Updated</p>
+                  <p className="text-sm font-medium text-muted-foreground">
+                    Last Updated
+                  </p>
                   <p className="font-semibold">
                     {new Date(holdingToView.lastUpdated).toLocaleDateString()}
                   </p>
@@ -475,7 +554,9 @@ export function Holdings() {
                 </div>
               </div>
               <div>
-                <p className="text-sm font-medium text-muted-foreground">Created</p>
+                <p className="text-sm font-medium text-muted-foreground">
+                  Created
+                </p>
                 <p className="font-semibold">
                   {new Date(holdingToView.createdAt).toLocaleDateString()}
                 </p>
@@ -486,7 +567,7 @@ export function Holdings() {
             <Button onClick={() => setIsViewDialogOpen(false)}>Close</Button>
           </DialogFooter>
         </DialogContent>
-      </Dialog>
+      </Dialog> */}
 
       {/* Delete Confirmation Dialog */}
       <Dialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
@@ -494,9 +575,9 @@ export function Holdings() {
           <DialogHeader>
             <DialogTitle>Delete Holding</DialogTitle>
             <DialogDescription>
-              Are you sure you want to delete this holding for "{holdingToDelete?.token?.name}"?
-              This action cannot be undone and will permanently remove the holding record and all
-              associated transactions.
+              Are you sure you want to delete this holding for "
+              {holdingToDelete?.token?.name}"? This action cannot be undone and
+              will permanently remove the holding record.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
@@ -512,7 +593,9 @@ export function Holdings() {
               onClick={confirmDeleteHolding}
               disabled={deleteHolding.isPending}
             >
-              {deleteHolding.isPending ? 'Deleting...' : BUTTON_TEXT.DELETE_HOLDING}
+              {deleteHolding.isPending
+                ? "Deleting..."
+                : BUTTON_TEXT.DELETE_HOLDING}
             </Button>
           </DialogFooter>
         </DialogContent>

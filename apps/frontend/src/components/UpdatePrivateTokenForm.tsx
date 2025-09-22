@@ -1,8 +1,8 @@
-import { zodResolver } from '@hookform/resolvers/zod';
-import { useEffect } from 'react';
-import { useForm } from 'react-hook-form';
-import { z } from 'zod';
-import { Button } from '@/components/ui/button';
+import { zodResolver } from "@hookform/resolvers/zod";
+import { useEffect } from "react";
+import { useForm } from "react-hook-form";
+import { z } from "zod";
+import { Button } from "@/components/ui/button";
 import {
   Dialog,
   DialogContent,
@@ -10,17 +10,20 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from '@/components/ui/dialog';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Textarea } from '@/components/ui/textarea';
-import { useToast } from '@/hooks/use-toast';
-import { trpc } from '@/lib/trpc';
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import { useToast } from "@/hooks/use-toast";
+import { trpc } from "@/lib/trpc";
 
 // Form schema for updating private tokens
 const UpdatePrivateTokenFormSchema = z.object({
   description: z.string().optional(),
-  manualPrice: z.number().min(0.000001, 'Price must be greater than 0').optional(),
+  manualPrice: z
+    .number()
+    .min(0.000001, "Price must be greater than 0")
+    .optional(),
   priceDescription: z.string().optional(),
 });
 
@@ -44,13 +47,14 @@ export function UpdatePrivateTokenForm({
   onSuccess,
 }: UpdatePrivateTokenFormProps) {
   const { toast } = useToast();
+  const utils = trpc.useUtils();
 
   const form = useForm<UpdatePrivateTokenFormData>({
     resolver: zodResolver(UpdatePrivateTokenFormSchema),
     defaultValues: {
-      description: '',
+      description: "",
       manualPrice: undefined,
-      priceDescription: '',
+      priceDescription: "",
     },
   });
 
@@ -58,9 +62,14 @@ export function UpdatePrivateTokenForm({
   const updateToken = trpc.tokens.update.useMutation({
     onSuccess: () => {
       toast({
-        title: '✅ Token updated successfully!',
-        description: 'The private token has been updated.',
+        title: "✅ Token updated successfully!",
+        description: "The private token has been updated.",
       });
+
+      // Invalidate relevant queries since token price updates could affect portfolio values and unpriceable tokens
+      utils.holdings.getUnpriceableTokens.invalidate();
+      utils.users.getPortfolioValue.invalidate();
+      utils.accounts.getSummaries.invalidate();
 
       if (onSuccess) {
         onSuccess();
@@ -71,9 +80,9 @@ export function UpdatePrivateTokenForm({
     },
     onError: (error) => {
       toast({
-        title: 'Error updating token',
+        title: "Error updating token",
         description: error.message,
-        variant: 'destructive',
+        variant: "destructive",
       });
     },
   });
@@ -82,9 +91,9 @@ export function UpdatePrivateTokenForm({
   useEffect(() => {
     if (token && isOpen) {
       form.reset({
-        description: '',
+        description: "",
         manualPrice: undefined,
-        priceDescription: '',
+        priceDescription: "",
       });
     }
   }, [token, isOpen, form]);
@@ -93,7 +102,7 @@ export function UpdatePrivateTokenForm({
     if (!token) return;
 
     try {
-      console.log('Updating private token:', token.id, data);
+      console.log("Updating private token:", token.id, data);
 
       await updateToken.mutateAsync({
         id: token.id,
@@ -104,7 +113,7 @@ export function UpdatePrivateTokenForm({
         },
       });
     } catch (error) {
-      console.error('Token update failed:', error);
+      console.error("Token update failed:", error);
       // Error is already handled by mutation onError
     }
   };
@@ -115,8 +124,8 @@ export function UpdatePrivateTokenForm({
         <DialogHeader>
           <DialogTitle>Update {token?.symbol}</DialogTitle>
           <DialogDescription>
-            Update the description and current price for your private token. Changes will be
-            reflected in your portfolio calculations.
+            Update the description and current price for your private token.
+            Changes will be reflected in your portfolio calculations.
           </DialogDescription>
         </DialogHeader>
 
@@ -125,7 +134,7 @@ export function UpdatePrivateTokenForm({
           <div className="space-y-2">
             <Label htmlFor="description">Token Description</Label>
             <Textarea
-              {...form.register('description')}
+              {...form.register("description")}
               placeholder="e.g., Private equity investment in Series A"
               className="min-h-[80px]"
             />
@@ -142,8 +151,10 @@ export function UpdatePrivateTokenForm({
               step="0.000001"
               min="0.000001"
               placeholder="e.g., 1250.00"
-              {...form.register('manualPrice', { valueAsNumber: true })}
-              className={form.formState.errors.manualPrice ? 'border-destructive' : ''}
+              {...form.register("manualPrice", { valueAsNumber: true })}
+              className={
+                form.formState.errors.manualPrice ? "border-destructive" : ""
+              }
             />
             {form.formState.errors.manualPrice && (
               <p className="text-sm text-destructive">
@@ -151,7 +162,8 @@ export function UpdatePrivateTokenForm({
               </p>
             )}
             <p className="text-xs text-muted-foreground">
-              Leave empty to keep current price. This will add a new price entry with today's date.
+              Leave empty to keep current price. This will add a new price entry
+              with today's date.
             </p>
           </div>
 
@@ -159,12 +171,13 @@ export function UpdatePrivateTokenForm({
           <div className="space-y-2">
             <Label htmlFor="priceDescription">Price Update Notes</Label>
             <Input
-              {...form.register('priceDescription')}
+              {...form.register("priceDescription")}
               placeholder="e.g., Updated based on Q4 2025 valuation"
               className="text-sm"
             />
             <p className="text-xs text-muted-foreground">
-              Optional notes about the price update (required if updating price).
+              Optional notes about the price update (required if updating
+              price).
             </p>
           </div>
 

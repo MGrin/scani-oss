@@ -1,35 +1,41 @@
-import { Decimal, FinancialMath, type Holding } from '@scani/shared';
-import { Camera, DollarSign, Plus, TrendingDown, TrendingUp, Wallet, Zap } from 'lucide-react';
-import { useCallback, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { HoldingRow } from '@/components/HoldingRow';
-import { TRANSACTION_TYPE_METADATA, TransactionForm } from '@/components/TransactionForm';
-import { TransactionRow } from '@/components/TransactionRow';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { PageHeader } from '@/components/ui/page-header';
-import { ItemCard, SummaryCard } from '@/components/ui/summary-cards';
-import { useUnpriceableTokens } from '@/contexts/UnpriceableTokensContext';
+import { Decimal, FinancialMath, type Holding } from "@scani/shared";
+import { Camera, Plus, Wallet, Zap } from "lucide-react";
+import { useCallback } from "react";
+import { useNavigate } from "react-router-dom";
+import { HoldingRow } from "@/components/HoldingRow";
+// HIDDEN: Transaction UI temporarily hidden
+// import { TRANSACTION_TYPE_METADATA, TransactionForm } from '@/components/TransactionForm';
+// import { TransactionRow } from '@/components/TransactionRow';
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { PageHeader } from "@/components/ui/page-header";
+import { ItemCard, SummaryCard } from "@/components/ui/summary-cards";
+import { useUnpriceableTokens } from "@/contexts/UnpriceableTokensContext";
 
-import type { WebSocketMessage } from '@/hooks/useWebSocket';
-import { useScaniWebSocket } from '@/hooks/useWebSocket';
-import type { ApiHolding, ApiToken } from '@/lib/api-types';
-import { getTokenTypeIcon } from '@/lib/icons';
-import { trpc } from '@/lib/trpc';
+import type { WebSocketMessage } from "@/hooks/useWebSocket";
+import { useScaniWebSocket } from "@/hooks/useWebSocket";
+import type { ApiHolding, ApiToken } from "@/lib/api-types";
+import { getTokenTypeIcon } from "@/lib/icons";
+import { trpc } from "@/lib/trpc";
 
 export function Dashboard() {
   const navigate = useNavigate();
-  const { shouldHighlight, hasUnpriceableTokensOfType } = useUnpriceableTokens();
+  const { shouldHighlight, hasUnpriceableTokensOfType } =
+    useUnpriceableTokens();
 
   // State for Quick Actions modals
-  const [isTransactionFormOpen, setIsTransactionFormOpen] = useState(false);
+  // HIDDEN: Transaction UI temporarily hidden
+  // const [isTransactionFormOpen, setIsTransactionFormOpen] = useState(false);
   // Screenshot upload handler
-  const handleScreenshotFormOpen = () => navigate('/quick-add-holding');
+  const handleScreenshotFormOpen = () => navigate("/quick-add-holding");
 
-  const { data: accounts, isLoading: accountsLoading } = trpc.accounts.getAll.useQuery();
-  const { data: holdings, isLoading: holdingsLoading } = trpc.holdings.getAll.useQuery();
-  const { data: transactions, isLoading: transactionsLoading } =
-    trpc.transactions.getAll.useQuery();
+  const { data: accounts, isLoading: accountsLoading } =
+    trpc.accounts.getAll.useQuery();
+  const { data: holdings, isLoading: holdingsLoading } =
+    trpc.holdings.getAll.useQuery();
+  // HIDDEN: Transaction UI temporarily hidden
+  // const { data: transactions, isLoading: transactionsLoading } =
+  //   trpc.transactions.getAll.useQuery();
   // Use optimized endpoints - only get tokens that user has holdings for
   const { data: tokens } = trpc.tokens.getByUserId.useQuery();
 
@@ -37,16 +43,17 @@ export function Dashboard() {
 
   const { data: portfolioValue, isLoading: portfolioLoading } =
     trpc.users.getPortfolioValue.useQuery();
-  const { data: monthlySummary, isLoading: monthlySummaryLoading } =
-    trpc.transactions.getMonthlySummary.useQuery({});
+  // HIDDEN: Transaction UI temporarily hidden
+  // const { data: monthlySummary, isLoading: monthlySummaryLoading } =
+  //   trpc.transactions.getMonthlySummary.useQuery({});
 
   const handleWebSocketMessage = useCallback((message: WebSocketMessage) => {
-    console.log('Received WebSocket message:', message);
+    console.log("Received WebSocket message:", message);
     // Handle real-time updates here if needed
   }, []);
 
   const { isConnected, connectionStatus } = useScaniWebSocket({
-    url: 'ws://localhost:3002',
+    url: "ws://localhost:3002",
     onMessage: handleWebSocketMessage,
   });
 
@@ -56,7 +63,9 @@ export function Dashboard() {
     : {};
 
   // Use portfolio value calculation instead of raw balance
-  const totalHoldingsValue = portfolioValue ? parseFloat(portfolioValue.totalValue.toString()) : 0;
+  const totalHoldingsValue = portfolioValue
+    ? parseFloat(portfolioValue.totalValue.toString())
+    : 0;
 
   // Calculate holdings by token type
   interface TokenTypeData {
@@ -67,46 +76,56 @@ export function Dashboard() {
 
   const holdingsByTokenType =
     holdings && portfolioValue
-      ? holdings.reduce((acc: Record<string, TokenTypeData>, holding: ApiHolding) => {
-          const token = tokensMap[holding.tokenId];
-          if (!token) return acc;
+      ? holdings.reduce(
+          (acc: Record<string, TokenTypeData>, holding: ApiHolding) => {
+            const token = tokensMap[holding.tokenId];
+            if (!token) return acc;
 
-          const tokenType = token.type ?? 'unknown';
-          if (!acc[tokenType]) {
-            acc[tokenType] = {
-              count: 0,
-              totalValue: 0,
-              holdings: [],
-            };
-          }
-
-          // Calculate individual holding value based on its proportion of total token balance
-          let holdingValue = FinancialMath.toNumber(FinancialMath.abs(holding.balance ?? '0')); // fallback to raw balance
-
-          const portfolioHolding = portfolioValue.holdings.find(
-            (ph) => ph.tokenSymbol === token.symbol
-          );
-
-          if (portfolioHolding?.value && portfolioHolding?.balance) {
-            // Calculate this holding's proportion of the total token balance
-            const holdingBalance = FinancialMath.toNumber(new Decimal(holding.balance ?? '0'));
-            const totalTokenBalance = FinancialMath.toNumber(new Decimal(portfolioHolding.balance));
-            const totalTokenValue = parseFloat(portfolioHolding.value);
-
-            if (totalTokenBalance > 0) {
-              // Calculate proportional value for this specific holding
-              holdingValue = (holdingBalance / totalTokenBalance) * totalTokenValue;
+            const tokenType = token.type ?? "unknown";
+            if (!acc[tokenType]) {
+              acc[tokenType] = {
+                count: 0,
+                totalValue: 0,
+                holdings: [],
+              };
             }
-          }
 
-          acc[tokenType].count += 1;
-          acc[tokenType].totalValue = FinancialMath.toNumber(
-            FinancialMath.add(acc[tokenType].totalValue, holdingValue)
-          );
-          acc[tokenType].holdings.push(holding as unknown as Holding);
+            // Calculate individual holding value based on its proportion of total token balance
+            let holdingValue = FinancialMath.toNumber(
+              FinancialMath.abs(holding.balance ?? "0")
+            ); // fallback to raw balance
 
-          return acc;
-        }, {})
+            const portfolioHolding = portfolioValue.holdings.find(
+              (ph) => ph.tokenSymbol === token.symbol
+            );
+
+            if (portfolioHolding?.value && portfolioHolding?.balance) {
+              // Calculate this holding's proportion of the total token balance
+              const holdingBalance = FinancialMath.toNumber(
+                new Decimal(holding.balance ?? "0")
+              );
+              const totalTokenBalance = FinancialMath.toNumber(
+                new Decimal(portfolioHolding.balance)
+              );
+              const totalTokenValue = parseFloat(portfolioHolding.value);
+
+              if (totalTokenBalance > 0) {
+                // Calculate proportional value for this specific holding
+                holdingValue =
+                  (holdingBalance / totalTokenBalance) * totalTokenValue;
+              }
+            }
+
+            acc[tokenType].count += 1;
+            acc[tokenType].totalValue = FinancialMath.toNumber(
+              FinancialMath.add(acc[tokenType].totalValue, holdingValue)
+            );
+            acc[tokenType].holdings.push(holding as unknown as Holding);
+
+            return acc;
+          },
+          {}
+        )
       : {};
 
   // Get top 5 holdings by value using portfolio calculation
@@ -116,15 +135,23 @@ export function Dashboard() {
           .map((holding) => {
             const token = tokensMap[holding.tokenId];
             // Calculate individual holding value based on its proportion of total token balance
-            let value = FinancialMath.toNumber(FinancialMath.abs(holding.balance ?? '0')); // fallback to raw balance
+            let value = FinancialMath.toNumber(
+              FinancialMath.abs(holding.balance ?? "0")
+            ); // fallback to raw balance
 
             const portfolioHolding = portfolioValue.holdings.find(
               (ph) => ph.tokenSymbol === token?.symbol
             );
 
-            if (portfolioHolding?.value && portfolioHolding?.balance && token?.symbol) {
+            if (
+              portfolioHolding?.value &&
+              portfolioHolding?.balance &&
+              token?.symbol
+            ) {
               // Calculate this holding's proportion of the total token balance
-              const holdingBalance = FinancialMath.toNumber(new Decimal(holding.balance ?? '0'));
+              const holdingBalance = FinancialMath.toNumber(
+                new Decimal(holding.balance ?? "0")
+              );
               const totalTokenBalance = FinancialMath.toNumber(
                 new Decimal(portfolioHolding.balance)
               );
@@ -146,34 +173,37 @@ export function Dashboard() {
           .slice(0, 5)
       : [];
 
-  const recentTransactions = transactions?.slice(0, 5) || [];
+  // HIDDEN: Transaction UI temporarily hidden
+  // const recentTransactions = transactions?.slice(0, 5) || [];
 
   // Use backend-calculated monthly summaries (now properly converted to base currency)
-  const monthlyDeposits = monthlySummary?.totalDeposits ?? 0;
-  const monthlyWithdrawals = monthlySummary?.totalWithdrawals ?? 0;
+  // HIDDEN: Transaction UI temporarily hidden
+  // const monthlyDeposits = monthlySummary?.totalDeposits ?? 0;
+  // const monthlyWithdrawals = monthlySummary?.totalWithdrawals ?? 0;
 
+  // HIDDEN: Transaction UI temporarily hidden
   // Transaction utility functions (shared with Transactions page)
-  const getTransactionIcon = (type: string) => {
-    // Use consistent icons from metadata
-    const metadata = TRANSACTION_TYPE_METADATA[type];
-    return metadata?.icon || '�'; // Default to the 'other' icon if not found
-  };
+  // const getTransactionIcon = (type: string) => {
+  //   // Use consistent icons from metadata
+  //   const metadata = TRANSACTION_TYPE_METADATA[type];
+  //   return metadata?.icon || '�'; // Default to the 'other' icon if not found
+  // };
 
-  const getTransactionColor = (type: string) => {
-    if (['deposit', 'sell', 'dividend', 'interest'].includes(type)) {
-      return 'bg-green-500';
-    } else if (['withdrawal', 'buy'].includes(type)) {
-      return 'bg-red-500';
-    }
-    return 'bg-blue-500';
-  };
+  // const getTransactionColor = (type: string) => {
+  //   if (['deposit', 'sell', 'dividend', 'interest'].includes(type)) {
+  //     return 'bg-green-500';
+  //   } else if (['withdrawal', 'buy'].includes(type)) {
+  //     return 'bg-red-500';
+  //   }
+  //   return 'bg-blue-500';
+  // };
 
   if (
-    transactionsLoading ||
+    // transactionsLoading || // HIDDEN: Transaction UI temporarily hidden
     accountsLoading ||
     holdingsLoading ||
     portfolioLoading ||
-    monthlySummaryLoading ||
+    // monthlySummaryLoading || // HIDDEN: Transaction UI temporarily hidden
     !tokens
   ) {
     return (
@@ -183,7 +213,9 @@ export function Dashboard() {
           subtitle="Your financial overview"
           loading={true}
           secondaryActions={
-            <div className="text-sm text-muted-foreground">WebSocket: {connectionStatus}</div>
+            <div className="text-sm text-muted-foreground">
+              WebSocket: {connectionStatus}
+            </div>
           }
         />
 
@@ -191,7 +223,9 @@ export function Dashboard() {
           {[1, 2, 3, 4].map((i) => (
             <Card key={i}>
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">Loading...</CardTitle>
+                <CardTitle className="text-sm font-medium">
+                  Loading...
+                </CardTitle>
               </CardHeader>
               <CardContent>
                 <div className="h-6 bg-muted animate-pulse rounded"></div>
@@ -211,10 +245,12 @@ export function Dashboard() {
         secondaryActions={
           <div className="flex items-center space-x-1.5">
             <div
-              className={`h-1.5 w-1.5 rounded-full ${isConnected ? 'bg-green-500' : 'bg-red-500'}`}
+              className={`h-1.5 w-1.5 rounded-full ${
+                isConnected ? "bg-green-500" : "bg-red-500"
+              }`}
             />
             <span className="text-sm text-muted-foreground">
-              {isConnected ? 'Live' : 'Offline'}
+              {isConnected ? "Live" : "Offline"}
             </span>
           </div>
         }
@@ -227,12 +263,15 @@ export function Dashboard() {
           title="Total Balance"
           value={totalHoldingsValue}
           currency={baseCurrency?.symbol}
-          subtitle={`Across ${holdings?.length || 0} holdings in ${accounts?.length || 0} accounts`}
+          subtitle={`Across ${holdings?.length || 0} holdings in ${
+            accounts?.length || 0
+          } accounts`}
           icon={Wallet}
           isAffectedByUnpriceableTokens={shouldHighlight()}
         />
 
-        <SummaryCard
+        {/* HIDDEN: Transaction UI temporarily hidden */}
+        {/* <SummaryCard
           type="currency"
           title="Monthly Deposits"
           value={monthlyDeposits}
@@ -262,7 +301,7 @@ export function Dashboard() {
           subtitle="This month"
           icon={DollarSign}
           showSigned={true}
-        />
+        /> */}
       </div>
 
       {/* Quick Actions */}
@@ -275,20 +314,21 @@ export function Dashboard() {
         </CardHeader>
         <CardContent className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           <Button
-            onClick={() => navigate('/quick-add-holding')}
+            onClick={() => navigate("/quick-add-holding")}
             className="flex items-center justify-center space-x-2 h-11 touch-manipulation"
           >
             <Zap className="h-5 w-5" />
             <span>Add Holding</span>
           </Button>
-          <Button
+          {/* HIDDEN: Transaction UI temporarily hidden */}
+          {/* <Button
             variant="outline"
             onClick={() => setIsTransactionFormOpen(true)}
             className="flex items-center justify-center space-x-2 h-11 touch-manipulation"
           >
             <DollarSign className="h-5 w-5" />
             <span>Add Transaction</span>
-          </Button>
+          </Button> */}
           <Button
             variant="outline"
             onClick={handleScreenshotFormOpen}
@@ -309,13 +349,16 @@ export function Dashboard() {
           </CardHeader>
           <CardContent>
             {Object.keys(holdingsByTokenType).length === 0 ? (
-              <div className="text-center py-6 text-muted-foreground">No holdings found</div>
+              <div className="text-center py-6 text-muted-foreground">
+                No holdings found
+              </div>
             ) : (
               <div className="space-y-3">
                 {Object.entries(holdingsByTokenType)
                   .sort(
                     ([, a], [, b]) =>
-                      (b as TokenTypeData).totalValue - (a as TokenTypeData).totalValue
+                      (b as TokenTypeData).totalValue -
+                      (a as TokenTypeData).totalValue
                   )
                   .map(([tokenType, data]) => {
                     const tokenData = data as TokenTypeData;
@@ -324,22 +367,36 @@ export function Dashboard() {
                     return (
                       <ItemCard
                         key={tokenType}
-                        title={tokenType.charAt(0).toUpperCase() + tokenType.slice(1)}
+                        title={
+                          tokenType.charAt(0).toUpperCase() + tokenType.slice(1)
+                        }
                         subtitle={
                           <div className="flex items-center space-x-1 text-xs text-muted-foreground">
                             <span>{tokenData.count} holdings</span>
                             <span>•</span>
                             <span>
-                              {((tokenData.totalValue / totalHoldingsValue) * 100).toFixed(1)}%
+                              {(
+                                (tokenData.totalValue / totalHoldingsValue) *
+                                100
+                              ).toFixed(1)}
+                              %
                             </span>
                           </div>
                         }
                         currencyValue={tokenData.totalValue}
                         currency={baseCurrency?.symbol}
-                        onClick={() => navigate(`/holdings?type=${encodeURIComponent(tokenType)}`)}
-                        icon={<IconComponent className="h-8 w-8 text-muted-foreground" />}
+                        onClick={() =>
+                          navigate(
+                            `/holdings?type=${encodeURIComponent(tokenType)}`
+                          )
+                        }
+                        icon={
+                          <IconComponent className="h-8 w-8 text-muted-foreground" />
+                        }
                         isAffectedByUnpriceableTokens={
-                          tokens ? hasUnpriceableTokensOfType(tokenType, tokens) : false
+                          tokens
+                            ? hasUnpriceableTokensOfType(tokenType, tokens)
+                            : false
                         }
                       />
                     );
@@ -356,11 +413,15 @@ export function Dashboard() {
           </CardHeader>
           <CardContent>
             {topHoldings.length === 0 ? (
-              <div className="text-center py-6 text-muted-foreground">No holdings found</div>
+              <div className="text-center py-6 text-muted-foreground">
+                No holdings found
+              </div>
             ) : (
               <div className="space-y-3">
                 {topHoldings.map((holding, index: number) => {
-                  const account = accounts?.find((acc) => acc.id === holding.accountId);
+                  const account = accounts?.find(
+                    (acc) => acc.id === holding.accountId
+                  );
 
                   return (
                     <HoldingRow
@@ -382,7 +443,11 @@ export function Dashboard() {
                           );
                         } else {
                           // Fallback to old route if account not found
-                          navigate(`/transactions?holding=${encodeURIComponent(holding.id)}`);
+                          navigate(
+                            `/transactions?holding=${encodeURIComponent(
+                              holding.id
+                            )}`
+                          );
                         }
                       }}
                     />
@@ -393,7 +458,8 @@ export function Dashboard() {
           </CardContent>
         </Card>
       </div>
-      <Card>
+      {/* HIDDEN: Transaction UI temporarily hidden */}
+      {/* <Card>
         <CardHeader>
           <CardTitle>Recent Transactions</CardTitle>
         </CardHeader>
@@ -428,7 +494,7 @@ export function Dashboard() {
         isOpen={isTransactionFormOpen}
         onClose={() => setIsTransactionFormOpen(false)}
         mode="create"
-      />
+      /> */}
     </div>
   );
 }
