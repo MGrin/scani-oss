@@ -658,10 +658,137 @@ export class PricingService {
     providerTokenId: string;
     tokenType: string;
   } | null> {
-    // For now, return null - this will be implemented later with actual provider API calls
-    // This method will search CoinGecko, Finnhub, etc. for tokens not in our database
-    logger.info({ symbol }, "Token lookup not yet implemented");
-    return null;
+    logger.info({ symbol }, "Looking up token from external providers");
+
+    try {
+      // Try both providers concurrently
+      const [finnhubResult, coinGeckoResult] = await Promise.all([
+        this.lookupTokenFromFinnhub(symbol),
+        this.lookupTokenFromCoinGecko(symbol),
+      ]);
+
+      // Return the first valid result, preferring CoinGecko for crypto tokens
+      if (coinGeckoResult) {
+        logger.info(
+          { symbol, provider: "coingecko" },
+          "Token found via CoinGecko"
+        );
+        return coinGeckoResult;
+      }
+
+      if (finnhubResult) {
+        logger.info({ symbol, provider: "finnhub" }, "Token found via Finnhub");
+        return finnhubResult;
+      }
+
+      logger.info({ symbol }, "Token not found in any provider");
+      return null;
+    } catch (error) {
+      logger.error({ error, symbol }, "Error looking up token from providers");
+      return null;
+    }
+  }
+
+  /**
+   * Lookup token from Finnhub
+   */
+  private async lookupTokenFromFinnhub(symbol: string): Promise<{
+    symbol: string;
+    name: string;
+    provider: string;
+    providerTokenId: string;
+    tokenType: string;
+  } | null> {
+    try {
+      const apiKey = config.finnhub.apiKey;
+      if (!apiKey) return null;
+
+      // Try to get symbol profile from Finnhub
+      const profileResponse = await this.finnhubRateLimiter.execute(
+        async () => {
+          const url = `${config.finnhub.baseUrl}/stock/profile2?symbol=${symbol}&token=${apiKey}`;
+          return await fetch(url);
+        }
+      );
+
+      if (!profileResponse.ok) return null;
+
+      const profileData =
+        (await profileResponse.json()) as FinnhubProfileResponse;
+      if (!profileData.name || !profileData.exchange) return null;
+
+      return {
+        symbol: symbol.toUpperCase(),
+        name: profileData.name,
+        provider: "finnhub",
+        providerTokenId: symbol.toUpperCase(),
+        tokenType: "stock", // Default for Finnhub
+      };
+    } catch (error) {
+      logger.debug({ error, symbol }, "Finnhub lookup failed");
+      return null;
+    }
+  }
+
+  /**
+   * Lookup token from CoinGecko
+   */
+  private async lookupTokenFromCoinGecko(symbol: string): Promise<{
+    symbol: string;
+    name: string;
+    provider: string;
+    providerTokenId: string;
+    tokenType: string;
+  } | null> {
+    try {
+      const headers: Record<string, string> = {
+        "Content-Type": "application/json",
+      };
+
+      if (config.coinGecko.apiKey) {
+        headers["x-cg-pro-api-key"] = config.coinGecko.apiKey;
+      }
+
+      // Search CoinGecko for the symbol
+      const searchResponse = await this.coinGeckoRateLimiter.execute(
+        async () => {
+          const url = `${
+            config.coinGecko.baseUrl
+          }/search?query=${encodeURIComponent(symbol)}`;
+          return await fetch(url, { headers });
+        }
+      );
+
+      if (!searchResponse.ok) return null;
+
+      const searchData = (await searchResponse.json()) as {
+        coins: Array<{
+          id: string;
+          symbol: string;
+          name: string;
+          large?: string;
+        }>;
+      };
+
+      if (!searchData.coins || searchData.coins.length === 0) return null;
+
+      // Find exact symbol match or use first result
+      const exactMatch = searchData.coins.find(
+        (coin) => coin.symbol.toLowerCase() === symbol.toLowerCase()
+      );
+      const coin = exactMatch || searchData.coins[0];
+
+      return {
+        symbol: coin.symbol.toUpperCase(),
+        name: coin.name,
+        provider: "coingecko",
+        providerTokenId: coin.id,
+        tokenType: "crypto",
+      };
+    } catch (error) {
+      logger.debug({ error, symbol }, "CoinGecko lookup failed");
+      return null;
+    }
   }
 
   // ================================================================

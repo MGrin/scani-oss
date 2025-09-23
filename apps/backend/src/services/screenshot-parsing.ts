@@ -11,6 +11,7 @@ import type { AIProviderResponse, ParsedHolding } from "./ai/types";
 import { pricingService } from "./pricing";
 import {
   tokenValidationService,
+  type TokenMetadata,
   type ValidationResult,
 } from "./token-validation";
 import { userContextService } from "./user-context-enhanced";
@@ -235,10 +236,35 @@ export class ScreenshotParsingService {
         holding.requiresUserSelection = false;
         holding.errors = [];
         holding.warnings = [];
+
+        // Check if existing token needs provider metadata update
+        const exactMatch = holding.providerValidation?.exactMatch;
+        if (
+          exactMatch?.metadata &&
+          this.shouldUpdateTokenMetadata(existingToken, exactMatch.metadata)
+        ) {
+          try {
+            await this.updateTokenWithProviderMetadata(
+              existingToken.id,
+              exactMatch.metadata
+            );
+            console.log(
+              `Updated provider metadata for existing token: ${existingToken.symbol}`
+            );
+          } catch (error) {
+            console.warn(
+              `Failed to update provider metadata for ${existingToken.symbol}:`,
+              error
+            );
+          }
+        }
       } else {
         // Fix suggestedTokenType from provider metadata if available
         const exactMatch = holding.providerValidation?.exactMatch;
-        if (exactMatch?.metadata?.type) {
+        if (exactMatch?.metadata?.provider === "coingecko") {
+          // CoinGecko tokens are always crypto, regardless of metadata type
+          holding.suggestedTokenType = "crypto";
+        } else if (exactMatch?.metadata?.type) {
           const providerType = exactMatch.metadata.type;
           holding.suggestedTokenType =
             this.mapProviderTypeToTokenType(providerType);
@@ -378,7 +404,7 @@ export class ScreenshotParsingService {
           .where(eq(schema.tokenTypes.isActive, true));
 
         const tokenTypeMap = new Map(
-          tokenTypes.map((tt) => [tt.name.toLowerCase(), tt])
+          tokenTypes.map((tt) => [tt.code.toLowerCase(), tt])
         );
 
         const newTokensInsert = newTokens.map((nt) => {
@@ -389,6 +415,7 @@ export class ScreenshotParsingService {
             );
           }
 
+          console.log(`DEBUG ${type}`);
           // Extract name from provider metadata structure
           const exactMatch = nt.providerData?.exactMatch;
           let tokenName = nt.symbol;
@@ -982,6 +1009,15 @@ export class ScreenshotParsingService {
   ): Promise<string> {
     // First, try to determine from similar matches
     if (similarMatches && similarMatches.length > 0) {
+      // Check if any matches come from CoinGecko - if so, it's definitely crypto
+      const hasCoinGeckoMatches = similarMatches.some(
+        (match) => match.metadata?.provider === "coingecko"
+      );
+
+      if (hasCoinGeckoMatches) {
+        return "crypto"; // CoinGecko only provides crypto tokens
+      }
+
       // Count token types from similar matches to find the most common
       const typeCount = new Map<string, number>();
 
@@ -1077,5 +1113,92 @@ export class ScreenshotParsingService {
 
     // Default to other for unknown patterns
     return "other";
+  }
+
+  /**
+   * Check if an existing token should be updated with new provider metadata
+   */
+  private shouldUpdateTokenMetadata(
+    existingToken: schema.Token,
+    newMetadata: TokenMetadata
+  ): boolean {
+    try {
+      // Parse existing provider metadata
+      const existingMetadata = JSON.parse(
+        existingToken.providerMetadata || "{}"
+      );
+
+      // Check if the token has no provider metadata or incomplete metadata
+      const hasNoProviderData = Object.keys(existingMetadata).length === 0;
+
+      // Check if we have new provider data that's different/better
+      const newProvider = newMetadata.provider;
+
+      // Update if:
+      // 1. Token has no existing provider metadata, OR
+      // 2. Token doesn't have this specific provider's data
+      return (
+        hasNoProviderData ||
+        !existingMetadata[newProvider] ||
+        !existingMetadata[newProvider]?.id
+      );
+    } catch (error) {
+      console.warn("Error parsing existing provider metadata:", error);
+      return true; // Update on parse error to fix corrupted metadata
+    }
+  }
+
+  /**
+   * Update an existing token with new provider metadata
+   */
+  private async updateTokenWithProviderMetadata(
+    tokenId: string,
+    newMetadata: TokenMetadata
+  ): Promise<void> {
+    try {
+      // Get current token data
+      const [currentToken] = await db
+        .select()
+        .from(schema.tokens)
+        .where(eq(schema.tokens.id, tokenId))
+        .limit(1);
+
+      if (!currentToken) {
+        throw new Error(`Token ${tokenId} not found`);
+      }
+
+      // Parse existing metadata
+      const existingMetadata = JSON.parse(
+        currentToken.providerMetadata || "{}"
+      );
+
+      // Add new provider data
+      const provider = newMetadata.provider;
+      if (provider && newMetadata.providerMetadata) {
+        existingMetadata[provider] = {
+          id:
+            newMetadata.providerMetadata.id ||
+            newMetadata.providerMetadata.coinGeckoId,
+          symbol: newMetadata.symbol,
+          name: newMetadata.name,
+          ...newMetadata.providerMetadata,
+        };
+      }
+
+      // Update token in database
+      await db
+        .update(schema.tokens)
+        .set({
+          providerMetadata: JSON.stringify(existingMetadata),
+        })
+        .where(eq(schema.tokens.id, tokenId));
+
+      console.log(
+        `Successfully updated provider metadata for token ${currentToken.symbol} with ${provider} data`
+      );
+    } catch (error) {
+      console.error("Failed to update token provider metadata:", error);
+      throw error;
+    }
   }
 }
