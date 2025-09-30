@@ -1,14 +1,16 @@
-import { useEffect, useId } from "react";
-import type { UseFormReturn } from "react-hook-form";
+import { useEffect, useId } from 'react';
+import type { UseFormReturn } from 'react-hook-form';
 import {
   AccountSelector,
   AccountTypeSelector,
   InstitutionSelector,
   InstitutionTypeSelector,
-} from "@/components/selectors/SearchableSelectors";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { trpc } from "@/lib/trpc";
+} from '@/components/selectors/SearchableSelectors';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { useEntityData } from '@/contexts/EntityDataContext';
+import { withOptimisticHandlers } from '@/lib/cache/optimistic/entityManager';
+import { trpc } from '@/lib/trpc';
 
 // Form data interface that matches the structure expected by this component
 export interface AccountSelectionFormData {
@@ -51,30 +53,34 @@ export function AccountSelectionWithCreation({
   institutionLabelOverride,
   onAccountSelected,
 }: AccountSelectionWithCreationProps) {
-  // Form IDs for accessibility - EXACTLY FROM QuickAddHolding.tsx
   const accountSelectId = useId();
   const institutionSelectId = useId();
 
-  // Data queries - EXACTLY FROM QuickAddHolding.tsx
-  const { data: accounts, isLoading: accountsLoading } =
-    trpc.accounts.getAll.useQuery();
-  const { data: institutions, isLoading: institutionsLoading } =
-    trpc.institutions.getAll.useQuery();
-  const { data: accountTypes } = trpc.accountTypes.getAll.useQuery();
-  const { data: institutionTypes } = trpc.institutionTypes.getAll.useQuery();
+  const {
+    accounts: accountsState,
+    institutions: institutionsState,
+    accountTypes: accountTypesState,
+    institutionTypes: institutionTypesState,
+  } = useEntityData();
 
-  // Watch values for conditional rendering - EXACTLY FROM QuickAddHolding.tsx
-  const watchAccountId = form.watch("accountId");
-  const watchInstitutionId = form.watch("institutionId");
+  const accounts = accountsState.data;
+  const accountsLoading = accountsState.isLoading;
+  const institutions = institutionsState.data;
+  const institutionsLoading = institutionsState.isLoading;
+  const accountTypes = accountTypesState.data;
+  const institutionTypes = institutionTypesState.data;
+
+  const watchAccountId = form.watch('accountId');
+  const watchInstitutionId = form.watch('institutionId');
 
   // EXACT LOGIC FROM QuickAddHolding.tsx - Set default values based on available data
   useEffect(() => {
     if (!accountsLoading && accounts !== undefined && !watchAccountId) {
       if (!accounts || accounts.length === 0) {
-        form.setValue("accountId", "new");
+        form.setValue('accountId', 'new');
       } else {
         // Default to the first available account
-        form.setValue("accountId", accounts[0]?.id || "new");
+        form.setValue('accountId', accounts[0]?.id || 'new');
       }
     }
   }, [accounts, accountsLoading, form, watchAccountId]);
@@ -83,39 +89,30 @@ export function AccountSelectionWithCreation({
     if (
       !institutionsLoading &&
       institutions !== undefined &&
-      watchAccountId === "new" &&
+      watchAccountId === 'new' &&
       !watchInstitutionId
     ) {
       // Get institutions where the user has accounts
-      const userInstitutionIds = new Set(
-        accounts?.map((account) => account.institutionId) || []
-      );
+      const userInstitutionIds = new Set(accounts?.map((account) => account.institutionId) || []);
       const userInstitutions =
         institutions?.filter((inst) => userInstitutionIds.has(inst.id)) || [];
 
       if (userInstitutions.length > 0) {
         // Default to the first institution where the user has accounts
-        form.setValue("institutionId", userInstitutions[0]!.id);
+        form.setValue('institutionId', userInstitutions[0]!.id);
       } else if (institutions && institutions.length > 0) {
         // If no user institutions, default to the first available institution
-        form.setValue("institutionId", institutions[0]!.id);
+        form.setValue('institutionId', institutions[0]!.id);
       } else {
         // No institutions available, default to "new"
-        form.setValue("institutionId", "new");
+        form.setValue('institutionId', 'new');
       }
     }
-  }, [
-    accounts,
-    institutions,
-    institutionsLoading,
-    form,
-    watchInstitutionId,
-    watchAccountId,
-  ]);
+  }, [accounts, institutions, institutionsLoading, form, watchInstitutionId, watchAccountId]);
 
   // Handle account selection callback
   useEffect(() => {
-    if (watchAccountId && watchAccountId !== "new" && onAccountSelected) {
+    if (watchAccountId && watchAccountId !== 'new' && onAccountSelected) {
       onAccountSelected(watchAccountId);
     }
   }, [watchAccountId, onAccountSelected]);
@@ -127,13 +124,11 @@ export function AccountSelectionWithCreation({
 
       <div className="space-y-3">
         <div className="space-y-1.5">
-          <Label htmlFor={accountSelectId}>
-            {accountLabelOverride || "Select Account"} *
-          </Label>
+          <Label htmlFor={accountSelectId}>{accountLabelOverride || 'Select Account'} *</Label>
           <AccountSelector
             id={accountSelectId}
-            value={form.watch("accountId") || ""}
-            onValueChange={(value) => form.setValue("accountId", value)}
+            value={form.watch('accountId') || ''}
+            onValueChange={(value) => form.setValue('accountId', value)}
             accounts={accounts}
             institutions={institutions}
             placeholder="Choose an account..."
@@ -146,7 +141,7 @@ export function AccountSelectionWithCreation({
         </div>
       </div>
 
-      {watchAccountId === "new" && (
+      {watchAccountId === 'new' && (
         <div className="space-y-4 border-t pt-4">
           {/* Institution Selection - Now First */}
           <div className="space-y-4">
@@ -154,18 +149,18 @@ export function AccountSelectionWithCreation({
 
             <div className="space-y-2">
               <Label htmlFor={institutionSelectId}>
-                {institutionLabelOverride || "Select Institution"} *
+                {institutionLabelOverride || 'Select Institution'} *
               </Label>
               <InstitutionSelector
                 id={institutionSelectId}
-                value={form.watch("institutionId") || ""}
-                onValueChange={(value) => form.setValue("institutionId", value)}
+                value={form.watch('institutionId') || ''}
+                onValueChange={(value) => form.setValue('institutionId', value)}
                 institutions={institutions}
                 placeholder="Choose an institution..."
               />
             </div>
 
-            {watchInstitutionId === "new" && (
+            {watchInstitutionId === 'new' && (
               <div className="space-y-4 border rounded-lg p-4">
                 <h4 className="font-medium">New Institution Details</h4>
 
@@ -174,17 +169,15 @@ export function AccountSelectionWithCreation({
                     <Label>Institution Name *</Label>
                     <Input
                       placeholder="e.g., Bank of America"
-                      {...form.register("newInstitutionName")}
+                      {...form.register('newInstitutionName')}
                     />
                   </div>
 
                   <div className="space-y-2">
                     <Label>Institution Type *</Label>
                     <InstitutionTypeSelector
-                      value={form.watch("newInstitutionType") || ""}
-                      onValueChange={(value) =>
-                        form.setValue("newInstitutionType", value)
-                      }
+                      value={form.watch('newInstitutionType') || ''}
+                      onValueChange={(value) => form.setValue('newInstitutionType', value)}
                       institutionTypes={institutionTypes}
                       placeholder="Choose institution type..."
                     />
@@ -196,7 +189,7 @@ export function AccountSelectionWithCreation({
                     <Label>Website</Label>
                     <Input
                       placeholder="https://example.com"
-                      {...form.register("newInstitutionWebsite")}
+                      {...form.register('newInstitutionWebsite')}
                     />
                   </div>
 
@@ -204,7 +197,7 @@ export function AccountSelectionWithCreation({
                     <Label>Description</Label>
                     <Input
                       placeholder="Optional description"
-                      {...form.register("newInstitutionDescription")}
+                      {...form.register('newInstitutionDescription')}
                     />
                   </div>
                 </div>
@@ -219,19 +212,14 @@ export function AccountSelectionWithCreation({
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
               <div className="space-y-1.5">
                 <Label>Account Name *</Label>
-                <Input
-                  placeholder="e.g., Primary Checking"
-                  {...form.register("newAccountName")}
-                />
+                <Input placeholder="e.g., Primary Checking" {...form.register('newAccountName')} />
               </div>
 
               <div className="space-y-2">
                 <Label>Account Type *</Label>
                 <AccountTypeSelector
-                  value={form.watch("newAccountType") || ""}
-                  onValueChange={(value) =>
-                    form.setValue("newAccountType", value)
-                  }
+                  value={form.watch('newAccountType') || ''}
+                  onValueChange={(value) => form.setValue('newAccountType', value)}
                   accountTypes={accountTypes}
                   placeholder="Choose account type..."
                 />
@@ -243,7 +231,7 @@ export function AccountSelectionWithCreation({
                 <Label>Description</Label>
                 <Input
                   placeholder="Optional description"
-                  {...form.register("newAccountDescription")}
+                  {...form.register('newAccountDescription')}
                 />
               </div>
             )}
@@ -258,18 +246,13 @@ export function AccountSelectionWithCreation({
 export function useAccountCreationMutations() {
   const utils = trpc.useUtils();
 
-  const createInstitution = trpc.institutions.create.useMutation({
-    onSuccess: () => {
-      utils.institutions.getAll.invalidate();
-    },
-  });
+  const createInstitution = trpc.institutions.create.useMutation(
+    withOptimisticHandlers('institution', 'create', utils)
+  );
 
-  const createAccount = trpc.accounts.create.useMutation({
-    onSuccess: () => {
-      utils.accounts.getAll.invalidate();
-      utils.accounts.getSummaries.invalidate();
-    },
-  });
+  const createAccount = trpc.accounts.create.useMutation(
+    withOptimisticHandlers('account', 'create', utils)
+  );
 
   return {
     createInstitution,
@@ -286,55 +269,51 @@ export async function processAccountCreation(
   let institutionId = data.institutionId;
 
   // Step 1: Create institution if needed
-  if (data.accountId === "new" && data.institutionId === "new") {
+  if (data.accountId === 'new' && data.institutionId === 'new') {
     if (!data.newInstitutionName || !data.newInstitutionType) {
-      throw new Error(
-        "Institution name and type are required when creating a new institution"
-      );
+      throw new Error('Institution name and type are required when creating a new institution');
     }
 
     const newInstitution = await mutations.createInstitution.mutateAsync({
       name: data.newInstitutionName.trim(),
       type: data.newInstitutionType,
-      description: data.newInstitutionDescription?.trim() || "",
-      website: data.newInstitutionWebsite?.trim() || "",
+      description: data.newInstitutionDescription?.trim() || '',
+      website: data.newInstitutionWebsite?.trim() || '',
     });
 
     if (!newInstitution?.id) {
-      throw new Error("Failed to create institution - no ID returned");
+      throw new Error('Failed to create institution - no ID returned');
     }
 
     institutionId = newInstitution.id;
   }
 
   // Step 2: Create account if needed
-  if (data.accountId === "new") {
+  if (data.accountId === 'new') {
     if (!institutionId) {
-      throw new Error("Institution ID is required to create an account");
+      throw new Error('Institution ID is required to create an account');
     }
 
     if (!data.newAccountName || !data.newAccountType) {
-      throw new Error(
-        "Account name and type are required when creating a new account"
-      );
+      throw new Error('Account name and type are required when creating a new account');
     }
 
     const newAccount = await mutations.createAccount.mutateAsync({
       name: data.newAccountName.trim(),
       type: data.newAccountType,
       institutionId: institutionId,
-      description: data.newAccountDescription?.trim() || "",
+      description: data.newAccountDescription?.trim() || '',
     });
 
     if (!newAccount?.id) {
-      throw new Error("Failed to create account - no ID returned");
+      throw new Error('Failed to create account - no ID returned');
     }
 
     accountId = newAccount.id;
   }
 
-  if (accountId === "new") {
-    throw new Error("Failed to resolve account ID after creation process");
+  if (accountId === 'new') {
+    throw new Error('Failed to resolve account ID after creation process');
   }
 
   return accountId;

@@ -9,8 +9,10 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { PageAggregation } from '@/components/ui/page-aggregation';
 import { PageHeader } from '@/components/ui/page-header';
+import { useEntityData } from '@/contexts/EntityDataContext';
 import { useUnpriceableTokens } from '@/contexts/UnpriceableTokensContext';
 import { useFilters } from '@/hooks/useFilters';
+import { invalidateTokensRelated } from '@/lib/cache/invalidateHoldingsRelated';
 import { trpc } from '@/lib/trpc';
 
 export function Tokens() {
@@ -49,9 +51,10 @@ export function Tokens() {
   // Data queries - get tokens with their total values
   const { data: tokensWithValues, isLoading: tokensLoading } =
     trpc.tokens.getWithTotalValues.useQuery();
-  const { data: tokenTypes } = trpc.tokenTypes.getAll.useQuery();
+  const { tokens: tokensState, tokenTypes: tokenTypesState } = useEntityData();
   const { data: userPrefs } = trpc.users.getCurrent.useQuery();
-  const { data: tokens } = trpc.tokens.getAll.useQuery();
+  const tokenTypes = tokenTypesState.data;
+  const tokens = tokensState.data;
 
   // Find user's base currency from tokens
   const baseCurrency = useMemo(() => {
@@ -190,7 +193,12 @@ export function Tokens() {
         mode="create"
         token={null}
         onSuccess={() => {
-          utils.tokens.getWithTotalValues.invalidate();
+          void invalidateTokensRelated(utils, {
+            includeList: false,
+            includeWithTotals: true,
+            includeByUser: false,
+            includeSearch: false,
+          });
           setIsCreateFormOpen(false);
         }}
       />
@@ -204,7 +212,12 @@ export function Tokens() {
         }}
         token={selectedToken}
         onSuccess={() => {
-          utils.tokens.getWithTotalValues.invalidate();
+          void invalidateTokensRelated(utils, {
+            includeList: false,
+            includeWithTotals: true,
+            includeByUser: false,
+            includeSearch: false,
+          });
           setIsUpdateFormOpen(false);
           setSelectedToken(null);
         }}

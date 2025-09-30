@@ -41,10 +41,15 @@ export const MonetizationNotification: React.FC<MonetizationNotificationProps> =
               <p className="font-medium mb-2">
                 {tokenCount} {pluralTokens} couldn't be priced automatically
               </p>
+              <p className="text-sm mb-2">
+                Some of these assets are being priced through a temporary Google Sheet fallback we
+                maintain by hand. It's fine for demos, but it's not reliable enough for the
+                long-term portfolio tracking you deserve.
+              </p>
               <p className="text-sm mb-3">
-                We're using basic/free plans from data providers which have limited coverage.
-                Developers are funding data costs from their own pocket but can't afford premium
-                subscriptions. Upgrade to help cover these costs.
+                Scani is a bootstrapped project with no investors—we stretch free provider tiers and
+                hacky workarounds to keep things running. Upgrading to Premium helps us cover real
+                market data costs and invest more time into building the product faster.
               </p>
 
               <details className="text-sm mb-3">

@@ -141,11 +141,19 @@ export class OpenAIProvider extends AIProvider {
 IMPORTANT GUIDELINES:
 1. Extract ONLY holdings/positions that are clearly visible and readable
 2. Be conservative - if you're not confident about a value, mark it with lower confidence
-3. Common symbols: Stocks (AAPL, MSFT), Crypto (BTC, ETH), Fiat (USD, EUR, GBP)
-4. Look for: Asset names/symbols, quantities, balances, market values
+3. Look for: Asset names/symbols, quantities, balances, market values, cash or currency balances
+4. Identify assets across all sections (e.g., Positions, Cash Balances, currency pickers, summaries)
 5. Ignore: Pending transactions, unavailable balances, margin requirements
-6. If amounts are in different currencies, note the detected currency
-7. Return ONLY valid JSON in the specified format
+6. Always return ONLY valid JSON in the specified format
+
+DETAILED EXTRACTION RULES:
+- MULTI-CURRENCY LISTS: When you see currency rows like "Indonesian Rupiah 7.324.280,51" or "USD 2,535.99", treat each as a holding with the ISO currency code as the symbol (IDR, USD) and the row label as the name.
+- CASH SECTIONS: Rows such as "CAD Cash" or "USD Cash" must be captured as holdings. Use the currency code (CAD, USD) for the symbol and the full label for the name.
+- TABLES: For tables with columns like Instrument/Symbol, Position/Quantity, Balance/Value, use the ticker or instrument as the symbol and the numeric position or balance (prefer quantities if both exist).
+- NUMBER NORMALIZATION: Remove thousand separators regardless of locale and convert decimal commas to periods. Examples: "7.324.280,51" -> "7324280.51", "2,535.99" -> "2535.99".
+- ZERO VS NON-ZERO: Include holdings with non-zero balances or quantities. If a balance is exactly zero, you may omit it unless it is the only entry for that asset.
+- CURRENCY DETECTION: If multiple currencies appear, set "detectedCurrency" to the primary currency used for valuations when obvious; otherwise omit the field.
+- NOTES: Use the notes field to capture helpful context (e.g., "Value copied from currency selector list").
 
 ${
   options?.accountType
@@ -181,16 +189,15 @@ RESPONSE FORMAT - Return valid JSON only:
     expectedCurrency?: string;
     context?: string;
   }): string {
-    return `Please analyze this financial portfolio screenshot and extract all visible holdings/positions. 
+    return `Review the entire screenshot and extract every visible holding or balance, including currency rows, cash sections, and instrument tables.
 
-Look for:
-- Stock symbols and quantities
-- Cryptocurrency holdings  
-- Cash balances
-- Mutual funds, ETFs
-- Any other investment positions
+Key reminders:
+- Capture each currency row as a holding with the ISO code symbol (e.g., "Indonesian Rupiah" -> IDR)
+- Normalize numbers by removing thousand separators and using '.' as the decimal separator
+- Prefer the quantity/position column when both quantity and value are shown
+- Provide conservative confidence scores between 0 and 1
 
-Extract the data into the JSON format specified in the system prompt. Be accurate and conservative with confidence scores.`;
+Return ONLY the JSON structure described in the system prompt.`;
   }
 
   private validateAndNormalizePortfolio(data: unknown): ParsedPortfolio {

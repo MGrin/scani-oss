@@ -1,38 +1,35 @@
-import { Decimal, FinancialMath, type Holding } from "@scani/shared";
-import { Camera, Plus, Wallet, Zap } from "lucide-react";
-import { useCallback } from "react";
-import { useNavigate } from "react-router-dom";
-import { HoldingRow } from "@/components/HoldingRow";
+import { Decimal, FinancialMath, type Holding } from '@scani/shared';
+import { Camera, Plus, Wallet, Zap } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { HoldingRow } from '@/components/HoldingRow';
 // HIDDEN: Transaction UI temporarily hidden
 // import { TRANSACTION_TYPE_METADATA, TransactionForm } from '@/components/TransactionForm';
 // import { TransactionRow } from '@/components/TransactionRow';
-import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { PageHeader } from "@/components/ui/page-header";
-import { ItemCard, SummaryCard } from "@/components/ui/summary-cards";
-import { useUnpriceableTokens } from "@/contexts/UnpriceableTokensContext";
-
-import type { WebSocketMessage } from "@/hooks/useWebSocket";
-import { useScaniWebSocket } from "@/hooks/useWebSocket";
-import type { ApiHolding, ApiToken } from "@/lib/api-types";
-import { getTokenTypeIcon } from "@/lib/icons";
-import { trpc } from "@/lib/trpc";
+import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { PageHeader } from '@/components/ui/page-header';
+import { ItemCard, SummaryCard } from '@/components/ui/summary-cards';
+import { useEntityData } from '@/contexts/EntityDataContext';
+import { useRealtimeConnection } from '@/contexts/RealtimeContext';
+import { useUnpriceableTokens } from '@/contexts/UnpriceableTokensContext';
+import type { ApiHolding, ApiToken } from '@/lib/api-types';
+import { getTokenTypeIcon } from '@/lib/icons';
+import { trpc } from '@/lib/trpc';
 
 export function Dashboard() {
   const navigate = useNavigate();
-  const { shouldHighlight, hasUnpriceableTokensOfType } =
-    useUnpriceableTokens();
+  const { shouldHighlight, hasUnpriceableTokensOfType } = useUnpriceableTokens();
 
   // State for Quick Actions modals
   // HIDDEN: Transaction UI temporarily hidden
   // const [isTransactionFormOpen, setIsTransactionFormOpen] = useState(false);
   // Screenshot upload handler
-  const handleScreenshotFormOpen = () => navigate("/quick-add-holding");
+  const handleScreenshotFormOpen = () => navigate('/quick-add-holding');
 
-  const { data: accounts, isLoading: accountsLoading } =
-    trpc.accounts.getAll.useQuery();
-  const { data: holdings, isLoading: holdingsLoading } =
-    trpc.holdings.getAll.useQuery();
+  const { accounts: accountsState } = useEntityData();
+  const accounts = accountsState.data;
+  const accountsLoading = accountsState.isLoading;
+  const { data: holdings, isLoading: holdingsLoading } = trpc.holdings.getAll.useQuery();
   // HIDDEN: Transaction UI temporarily hidden
   // const { data: transactions, isLoading: transactionsLoading } =
   //   trpc.transactions.getAll.useQuery();
@@ -47,15 +44,7 @@ export function Dashboard() {
   // const { data: monthlySummary, isLoading: monthlySummaryLoading } =
   //   trpc.transactions.getMonthlySummary.useQuery({});
 
-  const handleWebSocketMessage = useCallback((message: WebSocketMessage) => {
-    console.log("Received WebSocket message:", message);
-    // Handle real-time updates here if needed
-  }, []);
-
-  const { isConnected, connectionStatus } = useScaniWebSocket({
-    url: "ws://localhost:3002",
-    onMessage: handleWebSocketMessage,
-  });
+  const { isConnected, connectionStatus } = useRealtimeConnection();
 
   // Create maps for quick lookups (using only tokens user has holdings for)
   const tokensMap = tokens
@@ -63,9 +52,7 @@ export function Dashboard() {
     : {};
 
   // Use portfolio value calculation instead of raw balance
-  const totalHoldingsValue = portfolioValue
-    ? parseFloat(portfolioValue.totalValue.toString())
-    : 0;
+  const totalHoldingsValue = portfolioValue ? parseFloat(portfolioValue.totalValue.toString()) : 0;
 
   // Calculate holdings by token type
   interface TokenTypeData {
@@ -76,56 +63,46 @@ export function Dashboard() {
 
   const holdingsByTokenType =
     holdings && portfolioValue
-      ? holdings.reduce(
-          (acc: Record<string, TokenTypeData>, holding: ApiHolding) => {
-            const token = tokensMap[holding.tokenId];
-            if (!token) return acc;
+      ? holdings.reduce((acc: Record<string, TokenTypeData>, holding: ApiHolding) => {
+          const token = tokensMap[holding.tokenId];
+          if (!token) return acc;
 
-            const tokenType = token.type ?? "unknown";
-            if (!acc[tokenType]) {
-              acc[tokenType] = {
-                count: 0,
-                totalValue: 0,
-                holdings: [],
-              };
+          const tokenType = token.type ?? 'unknown';
+          if (!acc[tokenType]) {
+            acc[tokenType] = {
+              count: 0,
+              totalValue: 0,
+              holdings: [],
+            };
+          }
+
+          // Calculate individual holding value based on its proportion of total token balance
+          let holdingValue = FinancialMath.toNumber(FinancialMath.abs(holding.balance ?? '0')); // fallback to raw balance
+
+          const portfolioHolding = portfolioValue.holdings.find(
+            (ph) => ph.tokenSymbol === token.symbol
+          );
+
+          if (portfolioHolding?.value && portfolioHolding?.balance) {
+            // Calculate this holding's proportion of the total token balance
+            const holdingBalance = FinancialMath.toNumber(new Decimal(holding.balance ?? '0'));
+            const totalTokenBalance = FinancialMath.toNumber(new Decimal(portfolioHolding.balance));
+            const totalTokenValue = parseFloat(portfolioHolding.value);
+
+            if (totalTokenBalance > 0) {
+              // Calculate proportional value for this specific holding
+              holdingValue = (holdingBalance / totalTokenBalance) * totalTokenValue;
             }
+          }
 
-            // Calculate individual holding value based on its proportion of total token balance
-            let holdingValue = FinancialMath.toNumber(
-              FinancialMath.abs(holding.balance ?? "0")
-            ); // fallback to raw balance
+          acc[tokenType].count += 1;
+          acc[tokenType].totalValue = FinancialMath.toNumber(
+            FinancialMath.add(acc[tokenType].totalValue, holdingValue)
+          );
+          acc[tokenType].holdings.push(holding as unknown as Holding);
 
-            const portfolioHolding = portfolioValue.holdings.find(
-              (ph) => ph.tokenSymbol === token.symbol
-            );
-
-            if (portfolioHolding?.value && portfolioHolding?.balance) {
-              // Calculate this holding's proportion of the total token balance
-              const holdingBalance = FinancialMath.toNumber(
-                new Decimal(holding.balance ?? "0")
-              );
-              const totalTokenBalance = FinancialMath.toNumber(
-                new Decimal(portfolioHolding.balance)
-              );
-              const totalTokenValue = parseFloat(portfolioHolding.value);
-
-              if (totalTokenBalance > 0) {
-                // Calculate proportional value for this specific holding
-                holdingValue =
-                  (holdingBalance / totalTokenBalance) * totalTokenValue;
-              }
-            }
-
-            acc[tokenType].count += 1;
-            acc[tokenType].totalValue = FinancialMath.toNumber(
-              FinancialMath.add(acc[tokenType].totalValue, holdingValue)
-            );
-            acc[tokenType].holdings.push(holding as unknown as Holding);
-
-            return acc;
-          },
-          {}
-        )
+          return acc;
+        }, {})
       : {};
 
   // Get top 5 holdings by value using portfolio calculation
@@ -135,23 +112,15 @@ export function Dashboard() {
           .map((holding) => {
             const token = tokensMap[holding.tokenId];
             // Calculate individual holding value based on its proportion of total token balance
-            let value = FinancialMath.toNumber(
-              FinancialMath.abs(holding.balance ?? "0")
-            ); // fallback to raw balance
+            let value = FinancialMath.toNumber(FinancialMath.abs(holding.balance ?? '0')); // fallback to raw balance
 
             const portfolioHolding = portfolioValue.holdings.find(
               (ph) => ph.tokenSymbol === token?.symbol
             );
 
-            if (
-              portfolioHolding?.value &&
-              portfolioHolding?.balance &&
-              token?.symbol
-            ) {
+            if (portfolioHolding?.value && portfolioHolding?.balance && token?.symbol) {
               // Calculate this holding's proportion of the total token balance
-              const holdingBalance = FinancialMath.toNumber(
-                new Decimal(holding.balance ?? "0")
-              );
+              const holdingBalance = FinancialMath.toNumber(new Decimal(holding.balance ?? '0'));
               const totalTokenBalance = FinancialMath.toNumber(
                 new Decimal(portfolioHolding.balance)
               );
@@ -213,9 +182,7 @@ export function Dashboard() {
           subtitle="Your financial overview"
           loading={true}
           secondaryActions={
-            <div className="text-sm text-muted-foreground">
-              WebSocket: {connectionStatus}
-            </div>
+            <div className="text-sm text-muted-foreground">WebSocket: {connectionStatus}</div>
           }
         />
 
@@ -223,9 +190,7 @@ export function Dashboard() {
           {[1, 2, 3, 4].map((i) => (
             <Card key={i}>
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">
-                  Loading...
-                </CardTitle>
+                <CardTitle className="text-sm font-medium">Loading...</CardTitle>
               </CardHeader>
               <CardContent>
                 <div className="h-6 bg-muted animate-pulse rounded"></div>
@@ -245,12 +210,10 @@ export function Dashboard() {
         secondaryActions={
           <div className="flex items-center space-x-1.5">
             <div
-              className={`h-1.5 w-1.5 rounded-full ${
-                isConnected ? "bg-green-500" : "bg-red-500"
-              }`}
+              className={`h-1.5 w-1.5 rounded-full ${isConnected ? 'bg-green-500' : 'bg-red-500'}`}
             />
             <span className="text-sm text-muted-foreground">
-              {isConnected ? "Live" : "Offline"}
+              {isConnected ? 'Live' : 'Offline'}
             </span>
           </div>
         }
@@ -263,9 +226,7 @@ export function Dashboard() {
           title="Total Balance"
           value={totalHoldingsValue}
           currency={baseCurrency?.symbol}
-          subtitle={`Across ${holdings?.length || 0} holdings in ${
-            accounts?.length || 0
-          } accounts`}
+          subtitle={`Across ${holdings?.length || 0} holdings in ${accounts?.length || 0} accounts`}
           icon={Wallet}
           isAffectedByUnpriceableTokens={shouldHighlight()}
         />
@@ -314,7 +275,7 @@ export function Dashboard() {
         </CardHeader>
         <CardContent className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           <Button
-            onClick={() => navigate("/quick-add-holding")}
+            onClick={() => navigate('/quick-add-holding')}
             className="flex items-center justify-center space-x-2 h-11 touch-manipulation"
           >
             <Zap className="h-5 w-5" />
@@ -349,16 +310,13 @@ export function Dashboard() {
           </CardHeader>
           <CardContent>
             {Object.keys(holdingsByTokenType).length === 0 ? (
-              <div className="text-center py-6 text-muted-foreground">
-                No holdings found
-              </div>
+              <div className="text-center py-6 text-muted-foreground">No holdings found</div>
             ) : (
               <div className="space-y-3">
                 {Object.entries(holdingsByTokenType)
                   .sort(
                     ([, a], [, b]) =>
-                      (b as TokenTypeData).totalValue -
-                      (a as TokenTypeData).totalValue
+                      (b as TokenTypeData).totalValue - (a as TokenTypeData).totalValue
                   )
                   .map(([tokenType, data]) => {
                     const tokenData = data as TokenTypeData;
@@ -367,36 +325,22 @@ export function Dashboard() {
                     return (
                       <ItemCard
                         key={tokenType}
-                        title={
-                          tokenType.charAt(0).toUpperCase() + tokenType.slice(1)
-                        }
+                        title={tokenType.charAt(0).toUpperCase() + tokenType.slice(1)}
                         subtitle={
                           <div className="flex items-center space-x-1 text-xs text-muted-foreground">
                             <span>{tokenData.count} holdings</span>
                             <span>•</span>
                             <span>
-                              {(
-                                (tokenData.totalValue / totalHoldingsValue) *
-                                100
-                              ).toFixed(1)}
-                              %
+                              {((tokenData.totalValue / totalHoldingsValue) * 100).toFixed(1)}%
                             </span>
                           </div>
                         }
                         currencyValue={tokenData.totalValue}
                         currency={baseCurrency?.symbol}
-                        onClick={() =>
-                          navigate(
-                            `/holdings?type=${encodeURIComponent(tokenType)}`
-                          )
-                        }
-                        icon={
-                          <IconComponent className="h-8 w-8 text-muted-foreground" />
-                        }
+                        onClick={() => navigate(`/holdings?type=${encodeURIComponent(tokenType)}`)}
+                        icon={<IconComponent className="h-8 w-8 text-muted-foreground" />}
                         isAffectedByUnpriceableTokens={
-                          tokens
-                            ? hasUnpriceableTokensOfType(tokenType, tokens)
-                            : false
+                          tokens ? hasUnpriceableTokensOfType(tokenType, tokens) : false
                         }
                       />
                     );
@@ -413,15 +357,11 @@ export function Dashboard() {
           </CardHeader>
           <CardContent>
             {topHoldings.length === 0 ? (
-              <div className="text-center py-6 text-muted-foreground">
-                No holdings found
-              </div>
+              <div className="text-center py-6 text-muted-foreground">No holdings found</div>
             ) : (
               <div className="space-y-3">
                 {topHoldings.map((holding, index: number) => {
-                  const account = accounts?.find(
-                    (acc) => acc.id === holding.accountId
-                  );
+                  const account = accounts?.find((acc) => acc.id === holding.accountId);
 
                   return (
                     <HoldingRow
@@ -443,11 +383,7 @@ export function Dashboard() {
                           );
                         } else {
                           // Fallback to old route if account not found
-                          navigate(
-                            `/transactions?holding=${encodeURIComponent(
-                              holding.id
-                            )}`
-                          );
+                          navigate(`/transactions?holding=${encodeURIComponent(holding.id)}`);
                         }
                       }}
                     />

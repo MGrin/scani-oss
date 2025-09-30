@@ -1,7 +1,13 @@
 import { zodResolver } from '@hookform/resolvers/zod';
-import { useEffect } from 'react';
+import { manualPriceMinimum, privateTokenCreateSchema } from '@scani/shared';
+import { useEffect, useMemo } from 'react';
 import { useForm } from 'react-hook-form';
-import { z } from 'zod';
+import type { z } from 'zod';
+import {
+  ManualPriceField,
+  PriceDescriptionField,
+  TokenDescriptionField,
+} from '@/components/tokens/fields';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -13,7 +19,6 @@ import {
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-
 import {
   Select,
   SelectContent,
@@ -21,24 +26,12 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { Textarea } from '@/components/ui/textarea';
 import { useToast } from '@/hooks/use-toast';
+import { withOptimisticHandlers } from '@/lib/cache/optimistic/entityManager';
 import { trpc } from '@/lib/trpc';
+import { normalizeSymbol } from '@/lib/utils';
 
-// Form schema for private tokens
-const PrivateTokenFormSchema = z.object({
-  symbol: z.string().min(1, 'Symbol is required').max(20, 'Symbol must be 20 characters or less'),
-  name: z.string().min(1, 'Name is required'),
-  decimals: z.number().int().min(0).max(18),
-  specificType: z.enum(['private-company', 'other'], {
-    required_error: 'Please select a token type',
-  }),
-  description: z.string().optional(),
-  manualPrice: z.number().min(0.000001, 'Price must be greater than 0'),
-  priceDescription: z.string().optional(),
-});
-
-type PrivateTokenFormData = z.infer<typeof PrivateTokenFormSchema>;
+type PrivateTokenFormValues = z.infer<typeof privateTokenCreateSchema>;
 
 interface PrivateTokenFormProps {
   isOpen: boolean;
@@ -54,6 +47,16 @@ interface PrivateTokenFormProps {
   onSuccess?: (token: { id: string; symbol: string; name: string }) => void;
 }
 
+const DEFAULT_VALUES: PrivateTokenFormValues = {
+  symbol: '',
+  name: '',
+  decimals: 2,
+  typeCode: 'private-company',
+  description: '',
+  manualPrice: manualPriceMinimum,
+  priceDescription: '',
+};
+
 export function PrivateTokenForm({
   isOpen,
   onClose,
@@ -62,99 +65,102 @@ export function PrivateTokenForm({
   onSuccess,
 }: PrivateTokenFormProps) {
   const { toast } = useToast();
+  const utils = trpc.useUtils();
 
-  const form = useForm<PrivateTokenFormData>({
-    resolver: zodResolver(PrivateTokenFormSchema),
-    defaultValues: {
-      symbol: '',
-      name: '',
-      decimals: 2,
-      specificType: 'private-company',
-      description: '',
-      manualPrice: undefined,
-      priceDescription: '',
-    },
+  const form = useForm<PrivateTokenFormValues>({
+    resolver: zodResolver(privateTokenCreateSchema),
+    defaultValues: DEFAULT_VALUES,
+    mode: 'onBlur',
   });
 
-  // TRPC mutations
-  const createToken = trpc.tokens.create.useMutation({
-    onSuccess: (data) => {
-      toast({
-        title: '✅ Token created successfully!',
-        description: 'The private token has been added to your portfolio.',
-      });
-
-      if (onSuccess && data) {
-        onSuccess({
-          id: data.id,
-          symbol: data.symbol,
-          name: data.name || data.symbol,
+  const createToken = trpc.tokens.create.useMutation(
+    withOptimisticHandlers('token', 'create', utils, {
+      onSuccess: (data) => {
+        toast({
+          title: '✅ Token created successfully!',
+          description: 'The private token has been added to your portfolio.',
         });
-      }
 
-      onClose();
-      form.reset();
-    },
-    onError: (error) => {
-      toast({
-        title: 'Error creating token',
-        description: error.message,
-        variant: 'destructive',
-      });
-    },
-  });
+        if (onSuccess && data) {
+          onSuccess({
+            id: data.id,
+            symbol: data.symbol,
+            name: data.name || data.symbol,
+          });
+        }
 
-  // Populate form when editing
+        form.reset(DEFAULT_VALUES);
+        onClose();
+      },
+      onError: (error) => {
+        toast({
+          title: 'Error creating token',
+          description: error.message,
+          variant: 'destructive',
+        });
+      },
+    })
+  );
+
   useEffect(() => {
+    if (!isOpen) {
+      return;
+    }
+
     if (mode === 'edit' && token) {
       form.reset({
+        ...DEFAULT_VALUES,
         symbol: token.symbol,
         name: token.name,
         decimals: token.decimals,
-        specificType: token.typeId === 'other' ? 'other' : 'private-company',
-        description: '',
-        manualPrice: undefined,
-        priceDescription: '',
+        typeCode: token.typeId === 'other' ? 'other' : 'private-company',
       });
     } else {
-      form.reset({
-        symbol: '',
-        name: '',
-        decimals: 2,
-        specificType: 'private-company',
-        description: '',
-        manualPrice: undefined,
-        priceDescription: '',
-      });
+      form.reset(DEFAULT_VALUES);
     }
-  }, [mode, token, form]);
+  }, [form, isOpen, mode, token]);
 
-  const onSubmit = async (data: PrivateTokenFormData) => {
+  const onSubmit = async (values: PrivateTokenFormValues) => {
     try {
-      // Create token data
-      const tokenData = {
-        symbol: data.symbol.toUpperCase(),
-        name: data.name,
-        decimals: data.decimals,
-        typeId: data.specificType, // This will be 'private-company' or 'other'
-        description: data.description || '',
-        manualPrice: data.manualPrice,
-        priceDescription: data.priceDescription || '',
+      const payload = {
+        symbol: normalizeSymbol(values.symbol),
+        name: values.name,
+        decimals: values.decimals,
+        typeId: values.typeCode,
+        description: values.description ?? '',
+        manualPrice: values.manualPrice,
+        priceDescription: values.priceDescription ?? '',
       };
 
-      console.log('Creating private token:', tokenData);
-
       if (mode === 'create') {
-        await createToken.mutateAsync(tokenData);
+        await createToken.mutateAsync(payload);
       } else {
-        // TODO: Add edit mutation when needed
-        console.log('Edit mode not implemented yet');
+        // Editing private tokens uses dedicated update form
+        console.warn('PrivateTokenForm edit mode is not supported.');
       }
     } catch (error) {
       console.error('Token creation failed:', error);
-      // Error is already handled by mutation onError
     }
   };
+
+  const manualPriceError = form.formState.errors.manualPrice?.message;
+  const priceDescriptionError = form.formState.errors.priceDescription?.message;
+
+  const typeOptions = useMemo(
+    () => [
+      {
+        value: 'private-company' as const,
+        label: 'Private Company',
+        description: 'Unlisted company shares or equity',
+      },
+      {
+        value: 'other' as const,
+        label: 'Other',
+        description: 'Custom assets, collectibles, etc.',
+      },
+    ],
+    []
+  );
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
@@ -170,15 +176,14 @@ export function PrivateTokenForm({
         </DialogHeader>
 
         <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
-          {/* Symbol Input */}
           <div className="space-y-2">
             <Label htmlFor="symbol">Symbol *</Label>
             <Input
               {...form.register('symbol')}
               placeholder="e.g., MY-COMPANY, STARTUP-XYZ"
               className={form.formState.errors.symbol ? 'border-destructive' : ''}
-              onChange={(e) => {
-                form.setValue('symbol', e.target.value.toUpperCase());
+              onChange={(event) => {
+                form.setValue('symbol', normalizeSymbol(event.target.value));
               }}
             />
             {form.formState.errors.symbol && (
@@ -186,7 +191,6 @@ export function PrivateTokenForm({
             )}
           </div>
 
-          {/* Name Input */}
           <div className="space-y-2">
             <Label htmlFor="name">Name *</Label>
             <Input
@@ -199,79 +203,50 @@ export function PrivateTokenForm({
             )}
           </div>
 
-          {/* Token Type Selection */}
           <div className="space-y-2">
-            <Label htmlFor="specificType">Token Type *</Label>
+            <Label htmlFor="typeCode">Token Type *</Label>
             <Select
-              value={form.watch('specificType')}
+              value={form.watch('typeCode')}
               onValueChange={(value: 'private-company' | 'other') =>
-                form.setValue('specificType', value)
+                form.setValue('typeCode', value)
               }
             >
               <SelectTrigger>
                 <SelectValue placeholder="Select token type" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="private-company">
-                  <div className="flex flex-col items-start">
-                    <span className="font-medium">Private Company</span>
-                    <span className="text-xs text-muted-foreground">
-                      Unlisted company shares or equity
-                    </span>
-                  </div>
-                </SelectItem>
-                <SelectItem value="other">
-                  <div className="flex flex-col items-start">
-                    <span className="font-medium">Other</span>
-                    <span className="text-xs text-muted-foreground">
-                      Custom assets, collectibles, etc.
-                    </span>
-                  </div>
-                </SelectItem>
+                {typeOptions.map((option) => (
+                  <SelectItem key={option.value} value={option.value}>
+                    <div className="flex flex-col items-start">
+                      <span className="font-medium">{option.label}</span>
+                      <span className="text-xs text-muted-foreground">{option.description}</span>
+                    </div>
+                  </SelectItem>
+                ))}
               </SelectContent>
             </Select>
-            {form.formState.errors.specificType && (
-              <p className="text-sm text-destructive">
-                {form.formState.errors.specificType.message}
-              </p>
+            {form.formState.errors.typeCode && (
+              <p className="text-sm text-destructive">{form.formState.errors.typeCode.message}</p>
             )}
           </div>
 
-          {/* Manual Price Input */}
-          <div className="space-y-2">
-            <Label htmlFor="manualPrice">Current Price (USD) *</Label>
-            <Input
-              type="number"
-              step="0.000001"
-              min="0.000001"
-              placeholder="e.g., 1000.00"
-              {...form.register('manualPrice', { valueAsNumber: true })}
-              className={form.formState.errors.manualPrice ? 'border-destructive' : ''}
-            />
-            {form.formState.errors.manualPrice && (
-              <p className="text-sm text-destructive">
-                {form.formState.errors.manualPrice.message}
-              </p>
-            )}
-            <p className="text-xs text-muted-foreground">
-              Set the current value per token. This will be used for portfolio calculations.
-            </p>
-          </div>
+          <ManualPriceField
+            label="Current Price (USD) *"
+            registration={form.register('manualPrice', { valueAsNumber: true })}
+            errorMessage={manualPriceError}
+            helperText="Set the current value per token. This will be used for portfolio calculations."
+            min={manualPriceMinimum}
+            placeholder="e.g., 1000.00"
+          />
 
-          {/* Price Description */}
-          <div className="space-y-2">
-            <Label htmlFor="priceDescription">Price Notes (Optional)</Label>
-            <Input
-              {...form.register('priceDescription')}
-              placeholder="e.g., Based on latest valuation round, Q3 2025"
-              className="text-sm"
-            />
-            <p className="text-xs text-muted-foreground">
-              Optional notes about how this price was determined.
-            </p>
-          </div>
+          <PriceDescriptionField
+            label="Price Notes (Optional)"
+            registration={form.register('priceDescription')}
+            errorMessage={priceDescriptionError}
+            helperText="Optional notes about how this price was determined."
+            placeholder="e.g., Based on latest valuation round, Q3 2025"
+          />
 
-          {/* Decimals Input */}
           <div className="space-y-2">
             <Label htmlFor="decimals">Decimal Places</Label>
             <Input
@@ -289,15 +264,10 @@ export function PrivateTokenForm({
             </p>
           </div>
 
-          {/* Description */}
-          <div className="space-y-2">
-            <Label htmlFor="description">Description (Optional)</Label>
-            <Textarea
-              {...form.register('description')}
-              placeholder="Additional notes about this token..."
-              className="min-h-[80px]"
-            />
-          </div>
+          <TokenDescriptionField
+            label="Description (Optional)"
+            registration={form.register('description')}
+          />
 
           <DialogFooter>
             <Button type="button" variant="outline" onClick={onClose}>

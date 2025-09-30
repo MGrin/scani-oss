@@ -5,6 +5,7 @@ INSERT INTO
     name,
     description,
     is_active,
+    display_order,
     created_at,
     updated_at
   )
@@ -14,6 +15,7 @@ VALUES
     'Private Company',
     'Private Company, not having a public price available',
     true,
+    7,
     now (),
     now ()
   ) ON CONFLICT (code) DO NOTHING;
@@ -25,6 +27,7 @@ INSERT INTO
     name,
     description,
     is_active,
+    display_order,
     created_at,
     updated_at
   )
@@ -34,6 +37,7 @@ VALUES
     'Other',
     'Other type of asset',
     true,
+    8,
     now (),
     now ()
   ) ON CONFLICT (code) DO NOTHING;

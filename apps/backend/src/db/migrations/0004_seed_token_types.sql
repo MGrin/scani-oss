@@ -6,6 +6,7 @@ INSERT INTO
     name,
     description,
     is_active,
+    display_order,
     created_at,
     updated_at
   )
@@ -15,6 +16,7 @@ VALUES
     'Fiat Currency',
     'Government-issued currencies (USD, EUR, etc.)',
     true,
+    0,
     now (),
     now ()
   ),
@@ -23,6 +25,7 @@ VALUES
     'Cryptocurrency',
     'Digital cryptocurrencies (BTC, ETH, etc.)',
     true,
+    1,
     now (),
     now ()
   ),
@@ -31,6 +34,7 @@ VALUES
     'Stock',
     'Individual company stocks and equities',
     true,
+    2,
     now (),
     now ()
   ),
@@ -39,6 +43,7 @@ VALUES
     'ETF',
     'Exchange-traded funds',
     true,
+    3,
     now (),
     now ()
   ),
@@ -47,6 +52,7 @@ VALUES
     'Bond',
     'Government and corporate bonds',
     true,
+    4,
     now (),
     now ()
   ),
@@ -55,6 +61,7 @@ VALUES
     'Commodity',
     'Physical commodities (gold, oil, etc.)',
     true,
+    5,
     now (),
     now ()
   );

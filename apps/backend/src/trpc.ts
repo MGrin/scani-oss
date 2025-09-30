@@ -1,7 +1,7 @@
-import { initTRPC } from '@trpc/server';
+import { initTRPC, TRPCError } from '@trpc/server';
 import type { FetchCreateContextFnOptions } from '@trpc/server/adapters/fetch';
 import { type AuthContext, createAuthContext } from './middleware/auth';
-import { createTimer, generateRequestId, trpcLogger } from './utils/logger';
+import { createTimer, generateRequestId, logConfig, trpcLogger } from './utils/logger';
 
 // Create context type with request tracking and auth
 export type Context = {
@@ -82,13 +82,18 @@ const loggingMiddleware = t.middleware(async ({ ctx, path, type, input, next }) 
     type,
   });
 
+  const shouldLogPayload = logConfig.level === 'debug' || logConfig.level === 'trace';
+  const serializedInput =
+    shouldLogPayload && input !== undefined ? safeStringify(input) : undefined;
+
   procedureLogger.debug(
     {
-      input: input
-        ? JSON.stringify(input).length > 1000
-          ? `[Large input: ${JSON.stringify(input).length} chars]`
-          : input
-        : undefined,
+      input:
+        shouldLogPayload && serializedInput
+          ? serializedInput.length > 1000
+            ? `[Large input: ${serializedInput.length} chars]`
+            : input
+          : undefined,
     },
     `⚡ Starting ${type} procedure: ${path}`
   );
@@ -96,12 +101,22 @@ const loggingMiddleware = t.middleware(async ({ ctx, path, type, input, next }) 
   try {
     const result = await next();
     const duration = timer.end();
+    const serializedOutput =
+      shouldLogPayload && result.ok && result.data !== undefined
+        ? safeStringify(result.data)
+        : undefined;
 
     if (result.ok) {
       procedureLogger.info(
         {
           duration: `${duration}ms`,
-          outputSize: result.data ? JSON.stringify(result.data).length : 0,
+          outputSize: serializedOutput ? serializedOutput.length : undefined,
+          output:
+            shouldLogPayload && serializedOutput
+              ? serializedOutput.length > 1000
+                ? `[Large output: ${serializedOutput.length} chars]`
+                : result.data
+              : undefined,
         },
         `✅ Procedure completed successfully: ${path}`
       );
@@ -138,18 +153,30 @@ const loggingMiddleware = t.middleware(async ({ ctx, path, type, input, next }) 
   }
 });
 
+const safeStringify = (value: unknown): string => {
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return '[Unserializable payload]';
+  }
+};
+
 // Enhanced procedure with logging
 export const publicProcedure = t.procedure.use(loggingMiddleware);
 
 // Protected procedure that requires authentication
 export const protectedProcedure = t.procedure.use(loggingMiddleware).use(async ({ ctx, next }) => {
-  if (!ctx.isAuthenticated || !ctx.user) {
-    throw new Error('Authentication required');
+  if (!ctx.isAuthenticated || !ctx.user || !ctx.dbUser) {
+    throw new TRPCError({
+      code: 'UNAUTHORIZED',
+      message: 'Authentication required',
+    });
   }
   return next({
     ctx: {
       ...ctx,
-      user: ctx.user, // Ensure user is not null in protected procedures
+      user: ctx.user,
+      dbUser: ctx.dbUser,
     },
   });
 });

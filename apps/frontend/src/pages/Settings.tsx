@@ -10,6 +10,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { PageHeader } from '@/components/ui/page-header';
 import { useToast } from '@/hooks/use-toast';
+import { withOptimisticHandlers } from '@/lib/cache/optimistic/entityManager';
 import { trpc } from '@/lib/trpc';
 
 export function Settings() {
@@ -21,12 +22,9 @@ export function Settings() {
   const { data: userPrefs, isLoading } = trpc.users.getCurrent.useQuery();
   const { data: supportedCurrencies } = trpc.users.getSupportedCurrencies.useQuery();
   const utils = trpc.useUtils();
-  const updateUserPrefs = trpc.users.updateCurrent.useMutation({
-    onSuccess: async () => {
-      // Manually invalidate to ensure fresh data
-      await utils.users.getCurrent.invalidate();
-    },
-  });
+  const updateUserPrefs = trpc.users.updateCurrent.useMutation(
+    withOptimisticHandlers('user', 'update', utils)
+  );
 
   // Unified form state - only persisted settings (email is read-only)
   type FormData = {

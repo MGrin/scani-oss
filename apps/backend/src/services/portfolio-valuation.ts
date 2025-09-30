@@ -2,6 +2,7 @@ import Decimal from 'decimal.js';
 import { eq, inArray, isNotNull } from 'drizzle-orm';
 import { db } from '../db/connection';
 import * as schema from '../db/schema';
+import { createComponentLogger } from '../utils/logger';
 import { type PricingService, pricingService } from './pricing';
 import { userContextService } from './user-context-enhanced';
 
@@ -10,6 +11,7 @@ import { userContextService } from './user-context-enhanced';
  */
 export class PortfolioValuationService {
   private pricingService: PricingService;
+  private readonly logger = createComponentLogger('portfolio-valuation');
 
   constructor() {
     this.pricingService = pricingService;
@@ -36,20 +38,16 @@ export class PortfolioValuationService {
         .where(eq(schema.holdings.userId, userId));
 
       if (holdings.length === 0) {
-        console.log(`No holdings found for user ${userId}`);
+        this.logger.debug({ userId }, 'No holdings found for user');
         return;
       }
 
       // Get unique tokens for price fetching
-      const uniqueTokens = holdings.reduce(
-        (acc, holding) => {
-          if (!acc.find((t) => t.id === holding.token.id)) {
-            acc.push(holding.token);
-          }
-          return acc;
-        },
-        [] as (typeof schema.tokens.$inferSelect)[]
-      );
+      const uniqueTokenMap = new Map<string, typeof schema.tokens.$inferSelect>();
+      for (const holding of holdings) {
+        uniqueTokenMap.set(holding.token.id, holding.token);
+      }
+      const uniqueTokens = Array.from(uniqueTokenMap.values());
 
       // Get current prices using the pricing service
       const prices = await this.pricingService.getTokenPrices(
@@ -58,9 +56,22 @@ export class PortfolioValuationService {
         new Date()
       );
 
-      console.log(`Updated prices for ${prices.size} tokens for user ${userId}`);
+      this.logger.info(
+        {
+          userId,
+          pricedTokenCount: prices.size,
+          holdingsCount: holdings.length,
+        },
+        'Updated portfolio token prices for user'
+      );
     } catch (error) {
-      console.error(`Failed to update portfolio prices for user ${userId}:`, error);
+      this.logger.error(
+        {
+          userId,
+          error: error instanceof Error ? { name: error.name, message: error.message } : error,
+        },
+        'Failed to update portfolio prices for user'
+      );
     }
   }
   /**
@@ -74,13 +85,19 @@ export class PortfolioValuationService {
       .from(schema.users)
       .where(isNotNull(schema.users.baseCurrencyId));
 
-    console.log(`Updating portfolio prices for ${users.length} users`);
+    this.logger.info({ userCount: users.length }, 'Updating portfolio prices for all users');
 
     for (const user of users) {
       try {
         await this.updateUserPortfolioPrices(user.id);
       } catch (error) {
-        console.error(`Failed to update prices for user ${user.id}:`, error);
+        this.logger.error(
+          {
+            userId: user.id,
+            error: error instanceof Error ? { name: error.name, message: error.message } : error,
+          },
+          'Failed to update prices for user'
+        );
         // Continue with other users
       }
     }
@@ -191,7 +208,14 @@ export class PortfolioValuationService {
           value,
         });
       } catch (error) {
-        console.warn(`Failed to process holding for ${holding.tokenSymbol}:`, error);
+        this.logger.warn(
+          {
+            userId,
+            tokenSymbol: holding.tokenSymbol,
+            error: error instanceof Error ? { name: error.name, message: error.message } : error,
+          },
+          'Failed to process holding while computing portfolio value'
+        );
         // Add holding with 0 price as fallback
         const balance = new Decimal(holding.balance);
         portfolioHoldings.push({
@@ -375,7 +399,17 @@ export class PortfolioValuationService {
             }
           } catch (parseError) {
             // If metadata can't be parsed, fall back to heuristic detection
-            console.warn(`Failed to parse metadata for token ${token.symbol}:`, parseError);
+            this.logger.warn(
+              {
+                tokenId: token.id,
+                symbol: token.symbol,
+                error:
+                  parseError instanceof Error
+                    ? { name: parseError.name, message: parseError.message }
+                    : parseError,
+              },
+              'Failed to parse provider metadata for token'
+            );
             // Use heuristic detection as fallback
             const heuristicInfo = this.getProviderInfoHeuristic(token.symbol);
             if (heuristicInfo.isLikelyUnpriceable) {
@@ -412,7 +446,13 @@ export class PortfolioValuationService {
         }
       }
     } catch (error) {
-      console.error('Failed to check token metadata for pricing limitations:', error);
+      this.logger.error(
+        {
+          userId,
+          error: error instanceof Error ? { name: error.name, message: error.message } : error,
+        },
+        'Failed to check token metadata for pricing limitations'
+      );
       // Fallback: use heuristic detection for all tokens
       for (const holding of tokensToCheck) {
         const heuristicInfo = this.getProviderInfoHeuristic(holding.tokenSymbol);

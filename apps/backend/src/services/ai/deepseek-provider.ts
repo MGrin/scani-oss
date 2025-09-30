@@ -146,12 +146,19 @@ export class DeepSeekProvider extends AIProvider {
     return `You are a financial data extraction expert. Your task is to analyze portfolio screenshots and extract holding information as structured JSON data.
 
 INSTRUCTIONS:
-- Extract only clearly visible holdings/positions
+- Extract only clearly visible holdings/positions and cash or currency balances
 - Use conservative confidence scores (0-1)
-- Look for asset symbols, names, quantities, balances
-- Support stocks (AAPL), crypto (BTC), fiat currencies (USD)
-- Ignore unavailable or pending balances
-- Return ONLY valid JSON
+- Review all sections (tables, summaries, cash lists, currency selectors)
+- Ignore unavailable, pending, or duplicated balances
+- Return ONLY valid JSON in the specified format
+
+ADDITIONAL GUIDANCE:
+- MULTI-CURRENCY LISTS: Convert rows like "Indonesian Rupiah 7.324.280,51" or "USD 2,535.99" into holdings using the ISO code (IDR, USD) as the symbol. Keep the descriptive label as the name.
+- CASH BALANCES: Include entries such as "CAD Cash" or "USD Cash" when they show non-zero amounts, using the currency code as the symbol.
+- TABLE INTERPRETATION: For tables with columns such as Instrument/Symbol and Position/Quantity, use the ticker or instrument as the symbol and the numeric quantity or balance as the holding balance.
+- NUMBER NORMALIZATION: Remove thousand separators and convert decimal commas to '.' (e.g., "7.324.280,51" -> "7324280.51").
+- NOTES: Capture helpful context in the notes field when necessary (e.g., "From currency selector list").
+- DETECTED CURRENCY: Provide a detectedCurrency value when a dominant valuation currency is obvious; otherwise omit it.
 
 ${options?.accountType ? `Account context: ${options.accountType}` : ''}
 ${options?.expectedCurrency ? `Primary currency: ${options.expectedCurrency}` : ''}
@@ -179,7 +186,7 @@ JSON Response Format:
     expectedCurrency?: string;
     context?: string;
   }): string {
-    return `Please analyze this financial portfolio screenshot and extract all visible holdings. Return the data in the exact JSON format specified in the system prompt. Focus on accuracy and provide conservative confidence scores.`;
+    return `Analyze the screenshot carefully and extract every visible holding, including currency balances and cash sections. Normalize numbers (remove thousand separators, convert decimal commas to '.') and return the exact JSON structure described in the system prompt with conservative confidence scores.`;
   }
 
   private validateAndNormalizePortfolio(data: unknown): ParsedPortfolio {

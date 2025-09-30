@@ -6,11 +6,14 @@ import { db } from '../db/connection';
 import * as schema from '../db/schema';
 import { getUserId, requireAuth } from '../middleware/auth';
 import { pricingService } from '../services/pricing';
+import { emitEntityChange } from '../services/real-time-updates';
 import { userContextService } from '../services/user-context-enhanced';
 import { protectedProcedure, router } from '../trpc';
+import { createComponentLogger } from '../utils/logger';
 
 // Type assertion for router operations (development/test environment uses SQLite)
 const routerDb = db as ReturnType<typeof import('drizzle-orm/postgres-js').drizzle>;
+const transactionsLogger = createComponentLogger('router:transactions');
 
 export const transactionsRouter = router({
   // Get all transactions
@@ -110,7 +113,15 @@ export const transactionsRouter = router({
           baseCurrencySymbol,
         };
       } catch (error) {
-        console.warn(`Failed to convert transaction ${transaction.id} to base currency:`, error);
+        transactionsLogger.warn(
+          {
+            transactionId: transaction.id,
+            holdingId: transaction.holdingId,
+            symbol: transaction.tokenSymbol,
+            error: error instanceof Error ? { name: error.name, message: error.message } : error,
+          },
+          'Failed to convert transaction amount to base currency'
+        );
         // Return original transaction with same amounts if conversion fails
         return {
           ...transaction,
@@ -189,8 +200,9 @@ export const transactionsRouter = router({
       return await query.orderBy(desc(schema.transactions.timestamp));
     }),
 
-  // Get transaction by ID
-  getById: protectedProcedure.input(z.object({ id: z.string() })).query(async ({ input }) => {
+  // Get transaction by ID (enforce ownership via holding.userId)
+  getById: protectedProcedure.input(z.object({ id: z.string() })).query(async ({ input, ctx }) => {
+    const userId = getUserId(ctx);
     const [transaction] = await routerDb
       .select({
         id: schema.transactions.id,
@@ -212,7 +224,8 @@ export const transactionsRouter = router({
         schema.transactionTypes,
         eq(schema.transactions.typeId, schema.transactionTypes.id)
       )
-      .where(eq(schema.transactions.id, input.id))
+      .innerJoin(schema.holdings, eq(schema.transactions.holdingId, schema.holdings.id))
+      .where(and(eq(schema.transactions.id, input.id), eq(schema.holdings.userId, userId)))
       .limit(1);
 
     if (!transaction) {
@@ -292,7 +305,15 @@ export const transactionsRouter = router({
           );
           // Price is now cached in tokenPrices table
         } catch (error) {
-          console.warn(`Failed to fetch price for ${holdingData.token.symbol}:`, error);
+          transactionsLogger.warn(
+            {
+              tokenId: holdingData.token.id,
+              symbol: holdingData.token.symbol,
+              holdingId: holdingData.holding.id,
+              error: error instanceof Error ? { name: error.name, message: error.message } : error,
+            },
+            'Failed to fetch token price during transaction creation'
+          );
           // Continue without price - transaction can still be created
         }
       }
@@ -349,6 +370,33 @@ export const transactionsRouter = router({
       if (!transactionWithType) {
         throw new Error('Failed to fetch created transaction');
       }
+
+      emitEntityChange({
+        type: 'entity_changed',
+        entityType: 'transaction',
+        operationType: 'create',
+        entityId: transactionWithType.id,
+        userId,
+        data: {
+          holdingId: transactionWithType.holdingId,
+          typeId: transactionWithType.typeId,
+          type: transactionWithType.type,
+          amount: transactionWithType.amount,
+          fee: transactionWithType.fee,
+          timestamp:
+            transactionWithType.timestamp instanceof Date
+              ? transactionWithType.timestamp.toISOString()
+              : transactionWithType.timestamp,
+        },
+        metadata: {
+          relatedEntities: [
+            {
+              type: 'holding',
+              id: transactionWithType.holdingId,
+            },
+          ],
+        },
+      });
 
       return transactionWithType;
     }),
@@ -420,6 +468,37 @@ export const transactionsRouter = router({
         throw new Error('Failed to fetch updated transaction');
       }
 
+      emitEntityChange({
+        type: 'entity_changed',
+        entityType: 'transaction',
+        operationType: 'update',
+        entityId: transactionWithType.id,
+        userId,
+        data: {
+          holdingId: transactionWithType.holdingId,
+          typeId: transactionWithType.typeId,
+          type: transactionWithType.type,
+          amount: transactionWithType.amount,
+          fee: transactionWithType.fee,
+          timestamp:
+            transactionWithType.timestamp instanceof Date
+              ? transactionWithType.timestamp.toISOString()
+              : transactionWithType.timestamp,
+          updatedAt:
+            transactionWithType.updatedAt instanceof Date
+              ? transactionWithType.updatedAt.toISOString()
+              : transactionWithType.updatedAt,
+        },
+        metadata: {
+          relatedEntities: [
+            {
+              type: 'holding',
+              id: transactionWithType.holdingId,
+            },
+          ],
+        },
+      });
+
       return transactionWithType;
     }),
 
@@ -456,6 +535,30 @@ export const transactionsRouter = router({
       // Recalculate holding balance after transaction deletion
       const { holdingManagementService } = await import('../services/holding-management');
       await holdingManagementService.updateHoldingBalance(transaction.holdingId);
+
+      emitEntityChange({
+        type: 'entity_changed',
+        entityType: 'transaction',
+        operationType: 'delete',
+        entityId: deletedTransaction.id,
+        userId,
+        data: {
+          holdingId: transaction.holdingId,
+          typeId: deletedTransaction.typeId,
+          timestamp:
+            deletedTransaction.timestamp instanceof Date
+              ? deletedTransaction.timestamp.toISOString()
+              : deletedTransaction.timestamp,
+        },
+        metadata: {
+          relatedEntities: [
+            {
+              type: 'holding',
+              id: transaction.holdingId,
+            },
+          ],
+        },
+      });
 
       return {
         success: true,
@@ -628,7 +731,15 @@ export const transactionsRouter = router({
             totalWithdrawals = totalWithdrawals.add(convertedAmount.abs());
           }
         } catch (error) {
-          console.warn(`Failed to convert transaction ${transaction.id} to base currency:`, error);
+          transactionsLogger.warn(
+            {
+              transactionId: transaction.id,
+              holdingId: transaction.holdingId,
+              symbol: transaction.tokenSymbol,
+              error: error instanceof Error ? { name: error.name, message: error.message } : error,
+            },
+            'Failed to convert transaction amount to base currency'
+          );
           // Skip this transaction if price conversion fails
         }
       }

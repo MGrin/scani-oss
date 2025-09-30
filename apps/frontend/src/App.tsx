@@ -1,19 +1,20 @@
-import { Route, BrowserRouter as Router, Routes } from "react-router-dom";
-import { Layout } from "@/components/Layout";
-import { ProtectedRoute } from "@/components/ProtectedRoute";
-import { Toaster } from "@/components/ui/toaster";
-import { AuthProvider } from "@/contexts/AuthContext";
-import { ThemeLoader, ThemeProvider } from "@/contexts/ThemeContext";
-import { TRPCProvider } from "@/lib/trpc-provider";
-import { Accounts } from "@/pages/Accounts";
-import { Auth } from "@/pages/Auth";
-import { AuthCallback } from "@/pages/AuthCallback";
-import { Dashboard } from "@/pages/Dashboard";
-import { Holdings } from "@/pages/Holdings";
-import { Institutions } from "@/pages/Institutions";
-import { QuickAddHolding } from "@/pages/QuickAddHolding";
-import { Settings } from "@/pages/Settings";
-import { Tokens } from "@/pages/Tokens";
+import { Route, BrowserRouter as Router, Routes } from 'react-router-dom';
+import { Layout } from '@/components/Layout';
+import { ProtectedRoute } from '@/components/ProtectedRoute';
+import { Toaster } from '@/components/ui/toaster';
+import { AuthProvider } from '@/contexts/AuthContext';
+import { ThemeLoader, ThemeProvider } from '@/contexts/ThemeContext';
+import { TRPCProvider } from '@/lib/trpc-provider';
+import { Accounts } from '@/pages/Accounts';
+import { Auth } from '@/pages/Auth';
+import { AuthCallback } from '@/pages/AuthCallback';
+import { Dashboard } from '@/pages/Dashboard';
+import { Holdings } from '@/pages/Holdings';
+import { Institutions } from '@/pages/Institutions';
+import { QuickAddHolding } from '@/pages/QuickAddHolding';
+import { Settings } from '@/pages/Settings';
+import { Tokens } from '@/pages/Tokens';
+
 // import { Transactions } from '@/pages/Transactions'; // HIDDEN: Transaction UI temporarily hidden
 
 function App() {

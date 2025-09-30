@@ -6,7 +6,7 @@
  */
 
 import type { AppRouter } from '@scani/backend/router';
-import type { inferRouterOutputs } from '@trpc/server';
+import type { inferRouterInputs, inferRouterOutputs } from '@trpc/server';
 
 // Infer all router outputs
 type RouterOutputs = inferRouterOutputs<AppRouter>;
@@ -17,6 +17,9 @@ export type TRPCAccount = RouterOutputs['accounts']['getAll'][number];
 export type TRPCToken = RouterOutputs['tokens']['getAll'][number];
 export type TRPCHolding = RouterOutputs['holdings']['getAll'][number];
 export type TRPCTransaction = RouterOutputs['transactions']['getAll'][number];
+export type TRPCAccountType = RouterOutputs['accountTypes']['getAll'][number];
+export type TRPCInstitutionType = RouterOutputs['institutionTypes']['getAll'][number];
+export type TRPCTokenType = RouterOutputs['tokenTypes']['getAll'][number];
 
 // Create aliases for easier migration
 export type ApiInstitution = TRPCInstitution;
@@ -24,6 +27,11 @@ export type ApiAccount = TRPCAccount;
 export type ApiToken = TRPCToken;
 export type ApiHolding = TRPCHolding;
 export type ApiTransaction = TRPCTransaction;
+export type ApiAccountType = TRPCAccountType;
+export type ApiInstitutionType = TRPCInstitutionType;
+export type ApiTokenType = TRPCTokenType;
 
 // Export the router outputs type for advanced usage
-export type { RouterOutputs };
+type RouterInputs = inferRouterInputs<AppRouter>;
+
+export type { RouterOutputs, RouterInputs };

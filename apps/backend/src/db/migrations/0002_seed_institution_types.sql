@@ -6,6 +6,7 @@ INSERT INTO
     name,
     description,
     is_active,
+    display_order,
     created_at,
     updated_at
   )
@@ -15,6 +16,7 @@ VALUES
     'Bank',
     'Traditional banks and credit unions',
     true,
+    0,
     now (),
     now ()
   ),
@@ -23,6 +25,7 @@ VALUES
     'Brokerage',
     'Investment brokerages and trading platforms',
     true,
+    3,
     now (),
     now ()
   ),
@@ -31,6 +34,7 @@ VALUES
     'Crypto Wallet',
     'Cryptocurrency wallets and custodial services',
     true,
+    1,
     now (),
     now ()
   ),
@@ -39,6 +43,7 @@ VALUES
     'Crypto Exchange',
     'Cryptocurrency exchanges and trading platforms',
     true,
+    2,
     now (),
     now ()
   ),
@@ -47,6 +52,7 @@ VALUES
     'Investment Fund',
     'Mutual funds, ETFs, and other pooled investment vehicles',
     true,
+    4,
     now (),
     now ()
   ),
@@ -55,6 +61,7 @@ VALUES
     'Private Equity',
     'Private equity and venture capital firms',
     true,
+    6,
     now (),
     now ()
   ),
@@ -63,6 +70,7 @@ VALUES
     'Real Estate',
     'Real estate investment and management firms',
     true,
+    5,
     now (),
     now ()
   ),
@@ -71,6 +79,7 @@ VALUES
     'Other',
     'Other financial institutions',
     true,
+    7,
     now (),
     now ()
   ) ON CONFLICT (code) DO NOTHING;

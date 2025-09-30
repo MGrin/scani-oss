@@ -1,3 +1,4 @@
+import { createComponentLogger } from '../../utils/logger';
 import { DeepSeekProvider } from './deepseek-provider';
 import { OpenAIProvider } from './openai-provider';
 import { PerplexityProvider } from './perplexity-provider';
@@ -27,6 +28,7 @@ export interface AIProviderManagerConfig {
 export class AIProviderManager {
   private providers: Map<AIProviderType, AIProvider> = new Map();
   private config: AIProviderManagerConfig;
+  private readonly logger = createComponentLogger('ai-provider-manager');
 
   constructor(config: AIProviderManagerConfig) {
     this.config = config;
@@ -99,7 +101,13 @@ export class AIProviderManager {
         context: options?.context,
       });
     } catch (error) {
-      console.error(`Primary provider ${targetProvider} failed:`, error);
+      this.logger.error(
+        {
+          provider: targetProvider,
+          error: error instanceof Error ? { name: error.name, message: error.message } : error,
+        },
+        'Primary AI provider failed'
+      );
 
       if (!useFallback) {
         throw error;
@@ -114,7 +122,7 @@ export class AIProviderManager {
 
       for (const providerName of availableProviders) {
         try {
-          console.log(`Trying fallback provider: ${providerName}`);
+          this.logger.debug({ provider: providerName }, 'Trying fallback AI provider');
           const provider = this.getProvider(providerName);
           const result = await provider.parseScreenshot(imageBase64, {
             accountType: options?.accountType,
@@ -130,7 +138,16 @@ export class AIProviderManager {
 
           return result;
         } catch (fallbackError) {
-          console.error(`Fallback provider ${providerName} failed:`, fallbackError);
+          this.logger.error(
+            {
+              provider: providerName,
+              error:
+                fallbackError instanceof Error
+                  ? { name: fallbackError.name, message: fallbackError.message }
+                  : fallbackError,
+            },
+            'Fallback AI provider failed'
+          );
         }
       }
     }

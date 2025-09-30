@@ -1,6 +1,7 @@
 import { EventEmitter } from 'node:events';
 import type { IncomingMessage, Server } from 'node:http';
-import { WebSocket, WebSocketServer } from 'ws';
+import { type RawData, WebSocket, WebSocketServer } from 'ws';
+import { logConfig, wsLogger } from '../utils/logger';
 
 export type EntityType = 'institution' | 'account' | 'holding' | 'transaction' | 'user' | 'token';
 export type OperationType = 'create' | 'update' | 'delete' | 'sync';
@@ -29,6 +30,13 @@ export interface ClientConnection {
   websocket: WebSocket;
   subscriptions: Set<EntityType>;
   lastSeen: Date;
+}
+
+interface RegisterConnectionOptions {
+  userId: string;
+  connectionId?: string;
+  initialSubscriptions?: EntityType[];
+  request?: IncomingMessage;
 }
 
 class RealTimeUpdatesService extends EventEmitter {
@@ -61,37 +69,53 @@ class RealTimeUpdatesService extends EventEmitter {
       this.cleanupStaleConnections();
     }, 30000); // Every 30 seconds
 
-    console.log(`Real-time updates service initialized on ${path}`);
+    if (logConfig.logWebSocketMessages) {
+      wsLogger.info({ path }, 'Real-time updates service initialised');
+    }
   }
 
   /**
    * Handle new WebSocket connection
    */
   private handleConnection(ws: WebSocket, request: IncomingMessage) {
-    const connectionId = this.generateConnectionId();
-
-    // Extract user ID from query params or headers
+    // Extract user ID from query params as a last resort fallback
     const url = new URL(request.url || '', 'http://localhost');
     const userId = url.searchParams.get('userId') || 'anonymous';
 
+    this.registerConnection(ws, {
+      userId,
+      request,
+    });
+  }
+
+  /**
+   * Register a WebSocket that has already been authenticated by the caller.
+   */
+  registerConnection(ws: WebSocket, options: RegisterConnectionOptions) {
+    const connectionId = options.connectionId ?? this.generateConnectionId();
+    const subscriptions = new Set<EntityType>(
+      options.initialSubscriptions?.length
+        ? options.initialSubscriptions
+        : ['institution', 'account', 'holding', 'transaction']
+    );
+
     const client: ClientConnection = {
       id: connectionId,
-      userId,
+      userId: options.userId,
       websocket: ws,
-      subscriptions: new Set(['institution', 'account', 'holding', 'transaction']), // Default subscriptions
+      subscriptions,
       lastSeen: new Date(),
     };
 
     this.clients.set(connectionId, client);
 
-    // Track user connections
-    if (!this.userConnections.has(userId)) {
-      this.userConnections.set(userId, new Set());
+    if (!this.userConnections.has(options.userId)) {
+      this.userConnections.set(options.userId, new Set());
     }
-    this.userConnections.get(userId)?.add(connectionId);
+    this.userConnections.get(options.userId)?.add(connectionId);
 
     ws.on('message', (data) => {
-      this.handleMessage(connectionId, Buffer.from(data as ArrayBuffer));
+      this.handleMessage(connectionId, data);
     });
 
     ws.on('close', () => {
@@ -99,11 +123,19 @@ class RealTimeUpdatesService extends EventEmitter {
     });
 
     ws.on('error', (error) => {
-      console.error(`WebSocket error for client ${connectionId}:`, error);
+      wsLogger.error(
+        {
+          connectionId,
+          error: {
+            name: (error as Error).name,
+            message: (error as Error).message,
+          },
+        },
+        'WebSocket connection error'
+      );
       this.handleDisconnection(connectionId);
     });
 
-    // Send welcome message
     this.sendToClient(connectionId, {
       type: 'connected',
       connectionId,
@@ -111,18 +143,34 @@ class RealTimeUpdatesService extends EventEmitter {
       timestamp: new Date().toISOString(),
     });
 
-    console.log(`Client connected: ${connectionId} (user: ${userId})`);
+    const remoteIp = options.request?.socket.remoteAddress
+      ? ` from ${options.request.socket.remoteAddress}`
+      : '';
+
+    if (logConfig.logWebSocketMessages) {
+      wsLogger.info(
+        {
+          connectionId,
+          userId: options.userId,
+          remoteIp: remoteIp || undefined,
+        },
+        'WebSocket client registered'
+      );
+    }
+
+    return connectionId;
   }
 
   /**
    * Handle incoming messages from clients
    */
-  private handleMessage(connectionId: string, data: Buffer) {
+  private handleMessage(connectionId: string, data: RawData) {
     try {
       const client = this.clients.get(connectionId);
       if (!client) return;
 
-      const message = JSON.parse(data.toString());
+      const payload = typeof data === 'string' ? data : data.toString();
+      const message = JSON.parse(payload);
       client.lastSeen = new Date();
 
       switch (message.type) {
@@ -133,13 +181,27 @@ class RealTimeUpdatesService extends EventEmitter {
           this.handleUnsubscription(connectionId, message.entityTypes || []);
           break;
         case 'ping':
-          this.sendToClient(connectionId, { type: 'pong', timestamp: new Date().toISOString() });
+          this.sendToClient(connectionId, {
+            type: 'pong',
+            timestamp: new Date().toISOString(),
+          });
           break;
         default:
-          console.warn(`Unknown message type: ${message.type}`);
+          if (logConfig.logWebSocketMessages) {
+            wsLogger.warn(
+              { connectionId, messageType: message.type },
+              'Unknown WebSocket message type'
+            );
+          }
       }
     } catch (error) {
-      console.error(`Error handling message from client ${connectionId}:`, error);
+      wsLogger.error(
+        {
+          connectionId,
+          error: error instanceof Error ? error : { message: String(error) },
+        },
+        'Error handling WebSocket message'
+      );
     }
   }
 
@@ -196,7 +258,9 @@ class RealTimeUpdatesService extends EventEmitter {
     }
 
     this.clients.delete(connectionId);
-    console.log(`Client disconnected: ${connectionId}`);
+    if (logConfig.logWebSocketMessages) {
+      wsLogger.info({ connectionId }, 'WebSocket client disconnected');
+    }
   }
 
   /**
@@ -216,7 +280,19 @@ class RealTimeUpdatesService extends EventEmitter {
 
     // Get all connections for the user
     const userConnections = this.userConnections.get(event.userId);
-    if (!userConnections) return;
+    if (!userConnections) {
+      if (logConfig.logWebSocketMessages) {
+        wsLogger.debug(
+          {
+            entityType: event.entityType,
+            operationType: event.operationType || event.type,
+            userId: event.userId,
+          },
+          'No active WebSocket connections for user'
+        );
+      }
+      return;
+    }
 
     let sentCount = 0;
 
@@ -237,14 +313,26 @@ class RealTimeUpdatesService extends EventEmitter {
         client.websocket.send(JSON.stringify(message));
         sentCount++;
       } catch (error) {
-        console.error(`Failed to send message to client ${connectionId}:`, error);
+        wsLogger.error(
+          {
+            connectionId,
+            error: error instanceof Error ? error : { message: String(error) },
+          },
+          'Failed to send WebSocket message'
+        );
         this.handleDisconnection(connectionId);
       }
     }
 
-    if (sentCount > 0) {
-      console.log(
-        `Broadcasted ${event.entityType} ${event.operationType || event.type} to ${sentCount} clients`
+    if (logConfig.logWebSocketMessages) {
+      wsLogger.info(
+        {
+          entityType: event.entityType,
+          operationType: event.operationType || event.type,
+          userId: event.userId,
+          recipients: sentCount,
+        },
+        'Broadcasted real-time event'
       );
     }
   }
@@ -259,7 +347,13 @@ class RealTimeUpdatesService extends EventEmitter {
     try {
       client.websocket.send(JSON.stringify(message));
     } catch (error) {
-      console.error(`Failed to send message to client ${connectionId}:`, error);
+      wsLogger.error(
+        {
+          connectionId,
+          error: error instanceof Error ? error : { message: String(error) },
+        },
+        'Failed to send direct WebSocket message'
+      );
       this.handleDisconnection(connectionId);
     }
   }
@@ -289,7 +383,9 @@ class RealTimeUpdatesService extends EventEmitter {
 
     for (const [connectionId, client] of this.clients) {
       if (now.getTime() - client.lastSeen.getTime() > staleThreshold) {
-        console.log(`Cleaning up stale connection: ${connectionId}`);
+        if (logConfig.logWebSocketMessages) {
+          wsLogger.debug({ connectionId }, 'Cleaning up stale WebSocket connection');
+        }
         this.handleDisconnection(connectionId);
       }
     }

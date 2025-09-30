@@ -3,6 +3,7 @@ import { eq } from 'drizzle-orm';
 import { nanoid } from 'nanoid';
 import { db } from '../db/connection';
 import * as schema from '../db/schema';
+import { createComponentLogger } from '../utils/logger';
 import { userContextService } from './user-context-enhanced';
 
 /**
@@ -14,6 +15,7 @@ import { userContextService } from './user-context-enhanced';
  * Eliminates redundant balance calculation and transaction creation logic
  */
 export class HoldingManagementService {
+  private readonly logger = createComponentLogger('holding-management');
   /**
    * Calculate holding balance from transaction history
    * Consolidates multiple implementations from different services
@@ -203,7 +205,14 @@ export class HoldingManagementService {
         transactionId,
       };
     } catch (error) {
-      console.error('Failed to reconcile holding:', error);
+      this.logger.error(
+        {
+          holdingId,
+          expectedBalance,
+          error: error instanceof Error ? { name: error.name, message: error.message } : error,
+        },
+        'Failed to reconcile holding'
+      );
       return {
         reconciled: false,
         discrepancy: '0',
@@ -352,7 +361,13 @@ export class HoldingManagementService {
         discrepancies,
       };
     } catch (error) {
-      console.error('Failed to validate holdings:', error);
+      this.logger.error(
+        {
+          userId,
+          error: error instanceof Error ? { name: error.name, message: error.message } : error,
+        },
+        'Failed to validate holdings'
+      );
       return {
         valid: false,
         holdingsChecked: 0,
@@ -387,9 +402,13 @@ export class HoldingManagementService {
           transactionIds.push(result.transactionId);
         }
       } catch (error) {
-        console.error(
-          `Failed to auto-correct discrepancy for holding ${discrepancy.holdingId}:`,
-          error
+        this.logger.error(
+          {
+            holdingId: discrepancy.holdingId,
+            userId,
+            error: error instanceof Error ? { name: error.name, message: error.message } : error,
+          },
+          'Failed to auto-correct holding discrepancy'
         );
       }
     }

@@ -5,6 +5,7 @@ INSERT INTO
     name,
     description,
     is_active,
+    display_order,
     created_at,
     updated_at
   )
@@ -14,6 +15,7 @@ VALUES
     'Mutual Fund',
     'Mutual funds and investment funds',
     true,
+    6,
     now (),
     now ()
   ) ON CONFLICT (code) DO NOTHING;

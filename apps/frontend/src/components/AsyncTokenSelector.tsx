@@ -1,3 +1,4 @@
+import type { TokenProvider } from '@scani/shared';
 import { Check, ChevronsUpDown, Plus, Search } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Button } from '@/components/ui/button';
@@ -12,8 +13,15 @@ import {
 import { LoadingSpinner } from '@/components/ui/loading';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { TokenSymbol } from '@/components/ui/TokenSymbol';
+import { useEntityData } from '@/contexts/EntityDataContext';
+import { useDebouncedValue } from '@/hooks/useDebouncedValue';
+import {
+  buildExternalTokenValue,
+  isExternalTokenValue,
+  parseExternalTokenValue,
+} from '@/lib/external-token';
 import { trpc } from '@/lib/trpc';
-import { cn } from '@/lib/utils';
+import { cn, normalizeSymbol } from '@/lib/utils';
 
 interface TokenOption {
   id?: string;
@@ -26,7 +34,7 @@ interface TokenOption {
   iconUrl?: string | null;
   isActive?: boolean;
   source: 'database' | 'external' | 'create-new';
-  provider?: 'finnhub' | 'coingecko';
+  provider?: TokenProvider;
   metadata?: Record<string, unknown>;
 }
 
@@ -53,7 +61,7 @@ export function AsyncTokenSelector({
 }: AsyncTokenSelectorProps) {
   const [open, setOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
-  const [debouncedQuery, setDebouncedQuery] = useState('');
+  const debouncedQuery = useDebouncedValue(searchQuery, 300);
 
   // Prefill search when opening if prefillSymbol is provided
   useEffect(() => {
@@ -62,14 +70,7 @@ export function AsyncTokenSelector({
     }
   }, [open, prefillSymbol, searchQuery]);
 
-  // Debounce search query
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      setDebouncedQuery(searchQuery);
-    }, 300);
-
-    return () => clearTimeout(timer);
-  }, [searchQuery]);
+  // Debounce handled by useDebouncedValue
 
   // Search tokens using TRPC - only if we don't have suggestedTokens
   const {
@@ -85,10 +86,11 @@ export function AsyncTokenSelector({
   );
 
   // Get all tokens for initial display (when no search query and no suggestedTokens)
-  const { data: allTokens = [] } = trpc.tokens.getAll.useQuery(undefined, {
-    enabled: !suggestedTokens,
-    staleTime: 60000, // Cache for 1 minute
-  });
+  const { tokens: tokensState } = useEntityData();
+  const allTokens = useMemo(
+    () => (suggestedTokens ? [] : tokensState.data),
+    [suggestedTokens, tokensState.data]
+  );
 
   // Combine search results with "Create New Token" option
   const options = useMemo((): TokenOption[] => {
@@ -130,10 +132,23 @@ export function AsyncTokenSelector({
     return baseOptions;
   }, [debouncedQuery, searchResults, allTokens, suggestedTokens]);
 
-  // Find selected option
-  const selectedOption = options.find(
-    (option) => option.id === value || (option.source === 'create-new' && value === 'new')
-  );
+  // Find selected option (robust handling for external value format)
+  const selectedOption = useMemo(() => {
+    if (!value) return undefined;
+
+    if (value === 'new') {
+      return options.find((o) => o.source === 'create-new');
+    }
+
+    const ext = isExternalTokenValue(value) ? parseExternalTokenValue(value) : null;
+    if (ext?.symbol) {
+      return options.find(
+        (o) => o.source === 'external' && normalizeSymbol(o.symbol) === normalizeSymbol(ext.symbol)
+      );
+    }
+
+    return options.find((o) => o.id === value);
+  }, [value, options]);
 
   // Handle selection
   const handleSelect = useCallback(
@@ -146,12 +161,13 @@ export function AsyncTokenSelector({
         // For external tokens, we'll use a special format that includes the metadata
         // The parent component will handle creating the token when saving the holding
         onValueChange(
-          `external:${option.symbol}:${JSON.stringify({
+          buildExternalTokenValue({
             symbol: option.symbol,
             name: option.name,
             provider: option.provider,
             metadata: option.metadata,
-          })}`
+            type: option.type || undefined,
+          })
         );
       }
       setOpen(false);
@@ -170,14 +186,9 @@ export function AsyncTokenSelector({
 
     if (value === 'new') return 'Create New Token';
 
-    if (value.startsWith('external:')) {
-      try {
-        const parts = value.split(':');
-        const metadata = JSON.parse(parts.slice(2).join(':'));
-        return `${metadata.symbol} - ${metadata.name} (External)`;
-      } catch {
-        return 'External Token';
-      }
+    if (isExternalTokenValue(value)) {
+      const meta = parseExternalTokenValue(value);
+      return meta ? `${meta.symbol} - ${meta.name} (External)` : 'External Token';
     }
 
     if (selectedOption) {
@@ -241,10 +252,14 @@ export function AsyncTokenSelector({
 
             <CommandGroup>
               {options.map((option, index) => {
-                const isSelected =
-                  option.source === 'create-new'
-                    ? value === 'new'
-                    : option.id === value || value.includes(option.symbol);
+                const isSelected = (() => {
+                  if (option.source === 'create-new') return value === 'new';
+                  if (option.source === 'external' && isExternalTokenValue(value)) {
+                    const meta = parseExternalTokenValue(value);
+                    return normalizeSymbol(meta?.symbol ?? '') === normalizeSymbol(option.symbol);
+                  }
+                  return option.id === value;
+                })();
 
                 return (
                   <CommandItem
@@ -276,7 +291,7 @@ export function AsyncTokenSelector({
                             <span className="truncate">{option.name}</span>
                             {option.source === 'external' && (
                               <span className="text-xs bg-blue-100 text-blue-800 px-2 py-0.5 rounded">
-                                {option.provider?.toUpperCase()}
+                                {option.provider}
                               </span>
                             )}
                           </div>

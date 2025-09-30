@@ -5,7 +5,11 @@ import * as schema from '../db/schema';
 import { getUserId } from '../middleware/auth';
 import { portfolioValuationService } from '../services/portfolio-valuation';
 import { pricingService } from '../services/pricing';
+import { emitEntityChange } from '../services/real-time-updates';
 import { protectedProcedure, router } from '../trpc';
+import { createComponentLogger } from '../utils/logger';
+
+const accountsLogger = createComponentLogger('router:accounts');
 
 // Helper function to check if account name already exists within an institution
 async function checkAccountNameExists(name: string, institutionId: string, excludeId?: string) {
@@ -51,6 +55,29 @@ export const accountsRouter = router({
       .innerJoin(schema.institutions, eq(schema.accounts.institutionId, schema.institutions.id))
       .leftJoin(schema.accountTypes, eq(schema.accounts.typeId, schema.accountTypes.id))
       .where(and(eq(schema.accounts.isActive, true), eq(schema.accounts.userId, userId)));
+  }),
+
+  getById: protectedProcedure.input(z.object({ id: z.string() })).query(async ({ input, ctx }) => {
+    const userId = getUserId(ctx);
+
+    const [account] = await db
+      .select({
+        id: schema.accounts.id,
+        name: schema.accounts.name,
+        institutionId: schema.accounts.institutionId,
+        typeId: schema.accounts.typeId,
+      })
+      .from(schema.accounts)
+      .where(
+        and(
+          eq(schema.accounts.id, input.id),
+          eq(schema.accounts.userId, userId),
+          eq(schema.accounts.isActive, true)
+        )
+      )
+      .limit(1);
+
+    return account ?? null;
   }),
 
   // Create new account
@@ -118,17 +145,42 @@ export const accountsRouter = router({
         updatedAt: now,
       };
 
-      console.log('Creating account with data:', JSON.stringify(accountData, null, 2));
-      console.log('Account type found:', JSON.stringify(accountType, null, 2));
-      console.log('Institution found:', JSON.stringify(institution, null, 2));
+      accountsLogger.debug(
+        {
+          userId,
+          institutionId: accountData.institutionId,
+          accountType: accountType.code,
+        },
+        'Creating account'
+      );
 
       try {
         const [account] = await db.insert(schema.accounts).values(accountData).returning();
 
+        if (account) {
+          emitEntityChange({
+            type: 'entity_changed',
+            entityType: 'account',
+            operationType: 'create',
+            entityId: account.id,
+            userId,
+            data: {
+              institutionId: account.institutionId,
+              typeId: account.typeId,
+            },
+          });
+        }
+
         return account;
       } catch (error) {
-        console.error('Database insert error:', error);
-        console.error('Account data:', accountData);
+        accountsLogger.error(
+          {
+            userId,
+            accountData,
+            error: error instanceof Error ? { name: error.name, message: error.message } : error,
+          },
+          'Failed to create account'
+        );
 
         // Check if it's a foreign key constraint error
         if (error instanceof Error && error.message.includes('foreign key')) {
@@ -186,6 +238,28 @@ export const accountsRouter = router({
       if (!deletedAccount) {
         throw new Error('Account not found');
       }
+
+      emitEntityChange({
+        type: 'entity_changed',
+        entityType: 'account',
+        operationType: 'delete',
+        entityId: deletedAccount.id,
+        userId,
+        metadata: {
+          relatedEntities: [
+            {
+              type: 'institution',
+              id: deletedAccount.institutionId,
+            },
+          ],
+        },
+        data: {
+          cascadeInfo: {
+            holdingsDeleted: holdings.length,
+            transactionsDeleted: transactions.length,
+          },
+        },
+      });
 
       return {
         success: true,
@@ -284,7 +358,14 @@ export const accountsRouter = router({
             }
           }
         } catch (error) {
-          console.warn('Failed to get batch prices, falling back to individual calls:', error);
+          accountsLogger.warn(
+            {
+              userId,
+              tokenCount: tokensToPrice.length,
+              error: error instanceof Error ? { name: error.name, message: error.message } : error,
+            },
+            'Batch price fetch failed, falling back to individual calls'
+          );
 
           // Fallback to individual calls if batch fails
           for (const tokenSymbol of tokensToPrice) {
@@ -304,8 +385,18 @@ export const accountsRouter = router({
                 );
                 priceResults[tokenSymbol] = price;
               }
-            } catch (error) {
-              console.warn(`Failed to get price for ${tokenSymbol}:`, error);
+            } catch (priceError) {
+              accountsLogger.warn(
+                {
+                  userId,
+                  symbol: tokenSymbol,
+                  error:
+                    priceError instanceof Error
+                      ? { name: priceError.name, message: priceError.message }
+                      : priceError,
+                },
+                'Failed to fetch token price for account summary'
+              );
             }
           }
         }
@@ -373,7 +464,13 @@ export const accountsRouter = router({
         totalAccounts: accountSummaries.length,
       };
     } catch (error) {
-      console.warn('Failed to get portfolio value for account summaries:', error);
+      accountsLogger.warn(
+        {
+          userId,
+          error: error instanceof Error ? { name: error.name, message: error.message } : error,
+        },
+        'Failed to get portfolio value for account summaries'
+      );
 
       // Fallback to raw balance calculation if portfolio service fails
       const accounts = await db

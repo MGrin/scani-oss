@@ -6,6 +6,7 @@ INSERT INTO
     name,
     description,
     is_active,
+    display_order,
     created_at,
     updated_at
   )
@@ -15,6 +16,7 @@ VALUES
     'Checking Account',
     'Everyday spending and transaction accounts',
     true,
+    0,
     now (),
     now ()
   ),
@@ -23,6 +25,7 @@ VALUES
     'Savings Account',
     'Interest-bearing savings accounts',
     true,
+    1,
     now (),
     now ()
   ),
@@ -31,6 +34,7 @@ VALUES
     'Credit Card',
     'Credit card accounts',
     true,
+    3,
     now (),
     now ()
   ),
@@ -39,14 +43,7 @@ VALUES
     'Investment Account',
     'General investment and brokerage accounts',
     true,
-    now (),
-    now ()
-  ),
-  (
-    'retirement',
-    'Retirement Account',
-    'IRA, 401k, and other retirement accounts',
-    true,
+    2,
     now (),
     now ()
   ),
@@ -55,6 +52,7 @@ VALUES
     'Crypto Wallet',
     'Cryptocurrency wallet accounts',
     true,
+    4,
     now (),
     now ()
   ),
@@ -63,6 +61,7 @@ VALUES
     'Loan Account',
     'Personal loans, mortgages, and debt accounts',
     true,
+    5,
     now (),
     now ()
   ),
@@ -71,6 +70,7 @@ VALUES
     'Other',
     'Other account types',
     true,
+    6,
     now (),
     now ()
   ) ON CONFLICT (code) DO NOTHING;

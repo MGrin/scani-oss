@@ -12,6 +12,7 @@ import {
   CommandList,
 } from '@/components/ui/command';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { useDebouncedValue } from '@/hooks/useDebouncedValue';
 import { cn } from '@/lib/utils';
 
 interface ComboboxProps {
@@ -30,6 +31,8 @@ interface ComboboxProps {
   }>;
   className?: string;
   disabled?: boolean;
+  onSearchChange?: (value: string) => void;
+  searchDebounceMs?: number;
 }
 
 export function Combobox({
@@ -41,8 +44,17 @@ export function Combobox({
   items,
   className,
   disabled = false,
+  onSearchChange,
+  searchDebounceMs = 250,
 }: ComboboxProps) {
   const [open, setOpen] = React.useState(false);
+  const [search, setSearch] = React.useState('');
+  const debouncedSearch = useDebouncedValue(search, searchDebounceMs);
+
+  // Notify parent when debounced search changes
+  React.useEffect(() => {
+    if (onSearchChange) onSearchChange(debouncedSearch);
+  }, [debouncedSearch, onSearchChange]);
 
   const selectedItem = items.find((item) => item.value === value);
 
@@ -69,7 +81,7 @@ export function Combobox({
       </PopoverTrigger>
       <PopoverContent className="w-[--radix-popover-trigger-width] p-0">
         <Command>
-          <CommandInput placeholder={searchPlaceholder} />
+          <CommandInput placeholder={searchPlaceholder} value={search} onValueChange={setSearch} />
           <CommandList>
             <CommandEmpty>{emptyMessage}</CommandEmpty>
             <CommandGroup>

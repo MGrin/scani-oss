@@ -10,6 +10,7 @@ import {
   TrendingUp,
   Wallet,
 } from 'lucide-react';
+import { normalizeSymbol } from '@/lib/utils';
 
 // Type for token display information
 export type TokenDisplay = {
@@ -21,7 +22,7 @@ export type TokenDisplay = {
  * Get symbol or icon for fiat currencies based on symbol
  */
 export const getFiatCurrencyDisplay = (symbol: string): TokenDisplay => {
-  switch (symbol?.toUpperCase()) {
+  switch (normalizeSymbol(symbol)) {
     case 'USD':
       return { type: 'symbol', value: '$' };
     case 'EUR':
@@ -63,7 +64,7 @@ export const getFiatCurrencyDisplay = (symbol: string): TokenDisplay => {
  * Most cryptocurrencies don't have standardized Unicode symbols, so we use generic crypto icon
  */
 export const getCryptoCurrencyDisplay = (symbol: string): TokenDisplay => {
-  switch (symbol?.toUpperCase()) {
+  switch (normalizeSymbol(symbol)) {
     case 'BTC':
     case 'BITCOIN':
       return { type: 'symbol', value: '₿' }; // Bitcoin has an official Unicode symbol

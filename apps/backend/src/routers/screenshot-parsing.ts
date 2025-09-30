@@ -1,81 +1,43 @@
+import { normalizeSymbol, normText, ProviderValidationInputSchema } from '@scani/shared';
 import { z } from 'zod';
 import { getUserId } from '../middleware/auth';
 import { ScreenshotParsingService } from '../services/screenshot-parsing';
 import { protectedProcedure, router } from '../trpc';
+import { createComponentLogger } from '../utils/logger';
 
-// Zod schemas for validation
+const screenshotParsingLogger = createComponentLogger('router:screenshot-parsing');
+
+// Normalization and provider validation schemas are imported from shared
+
+// Zod schemas with payload/size limits
 const ParseScreenshotSchema = z.object({
-  /** Base64 encoded image data (without data: prefix) */
-  imageBase64: z.string().min(1, 'Image data is required'),
-  /** Account ID where holdings will be created/updated */
+  // Base64 image (no data: prefix); cap at ~10MB
+  imageBase64: z.string().min(1).max(10_000_000),
   accountId: z.string().uuid('Invalid account ID'),
-  /** Expected currency in the screenshot */
-  expectedCurrency: z.string().optional(),
-  /** Additional context for AI parsing */
-  context: z.string().optional(),
+  expectedCurrency: z.string().max(10).optional(),
+  context: z.string().max(2000).optional(),
 });
 
 const ProcessHoldingsFromParsingSchema = z.object({
-  /** Account ID */
   accountId: z.string().uuid('Invalid account ID'),
-  /** Holdings to process from parsing results */
-  holdings: z.array(
-    z.object({
-      symbol: z.string().min(1, 'Symbol is required'),
-      name: z.string().optional(),
-      balance: z.string().min(1, 'Balance is required'),
-      confidence: z.number().min(0).max(1),
-      notes: z.string().optional(),
-      tokenId: z.string().uuid().optional(),
-      tokenExists: z.boolean(),
-      suggestedTokenType: z.string().optional(),
-      errors: z.array(z.string()).optional(),
-      warnings: z.array(z.string()).optional(),
-      requiresUserSelection: z.boolean().optional(),
-      providerValidation: z
-        .object({
-          exactMatch: z
-            .object({
-              isValid: z.boolean(),
-              metadata: z
-                .object({
-                  symbol: z.string(),
-                  name: z.string(),
-                  type: z.string().optional(),
-                  provider: z.string(),
-                  currency: z.string().optional(),
-                  exchange: z.string().optional(),
-                  description: z.string().optional(),
-                  providerMetadata: z.record(z.unknown()).optional(),
-                })
-                .optional(),
-            })
-            .optional(),
-          similarMatches: z
-            .array(
-              z.object({
-                isValid: z.boolean(),
-                metadata: z
-                  .object({
-                    symbol: z.string(),
-                    name: z.string(),
-                    type: z.string().optional(),
-                    provider: z.string(),
-                    currency: z.string().optional(),
-                    exchange: z.string().optional(),
-                    description: z.string().optional(),
-                    providerMetadata: z.record(z.unknown()).optional(),
-                  })
-                  .optional(),
-              })
-            )
-            .optional(),
-          noMatches: z.boolean().optional(),
-        })
-        .optional(),
-    })
-  ),
-  /** Options for processing */
+  holdings: z
+    .array(
+      z.object({
+        symbol: z.string().min(1).max(40),
+        name: z.string().max(100).optional(),
+        balance: z.string().min(1).max(64),
+        confidence: z.number().min(0).max(1),
+        notes: z.string().max(1000).optional(),
+        tokenId: z.string().uuid().optional(),
+        tokenExists: z.boolean(),
+        suggestedTokenType: z.string().max(40).optional(),
+        errors: z.array(z.string().max(200)).max(50).optional(),
+        warnings: z.array(z.string().max(200)).max(50).optional(),
+        requiresUserSelection: z.boolean().optional(),
+        providerValidation: ProviderValidationInputSchema.optional(),
+      })
+    )
+    .max(200),
   options: z
     .object({
       createMissingTokens: z.boolean().default(true),
@@ -85,32 +47,37 @@ const ProcessHoldingsFromParsingSchema = z.object({
 });
 
 export const screenshotParsingRouter = router({
-  // Parse screenshot and return structured data
+  // Parse screenshot to structured holdings using configured AI provider(s)
   parseScreenshot: protectedProcedure
     .input(ParseScreenshotSchema)
     .mutation(async ({ input, ctx }) => {
       const userId = getUserId(ctx);
       const parsingService = new ScreenshotParsingService();
 
-      // Check if service is available
       if (!parsingService.isAvailable()) {
         throw new Error('Screenshot parsing is not available - no AI providers configured');
       }
 
+      // Light normalization of context fields
+      const normalizedContext = normText(input.context, 2000);
+      const expectedCurrency = normText(input.expectedCurrency, 10);
+
       try {
         const result = await parsingService.parseScreenshot(input.imageBase64, userId, {
           accountId: input.accountId,
-          expectedCurrency: input.expectedCurrency,
-          context: input.context,
+          expectedCurrency: expectedCurrency,
+          context: normalizedContext,
         });
-
-        return {
-          success: true,
-          data: result,
-        };
+        return { success: true, data: result };
       } catch (error) {
-        console.error('Screenshot parsing failed:', error);
-
+        screenshotParsingLogger.error(
+          {
+            userId,
+            accountId: input.accountId,
+            error: error instanceof Error ? { name: error.name, message: error.message } : error,
+          },
+          'Screenshot parsing failed'
+        );
         return {
           success: false,
           error: error instanceof Error ? error.message : 'Unknown error occurred',
@@ -118,7 +85,7 @@ export const screenshotParsingRouter = router({
       }
     }),
 
-  // Process holdings from parsing results - automatically determines create vs update
+  // Persist parsed holdings (create/update) with optional provider validations
   processHoldingsFromParsing: protectedProcedure
     .input(ProcessHoldingsFromParsingSchema)
     .mutation(async ({ input, ctx }) => {
@@ -126,12 +93,16 @@ export const screenshotParsingRouter = router({
       const parsingService = new ScreenshotParsingService();
 
       try {
-        // Map input holdings to the expected type
+        // Normalize holdings defensively to reduce variance upstream
         const mappedHoldings = input.holdings.map((h) => ({
           ...h,
-          errors: h.errors || [],
-          warnings: h.warnings || [],
-          requiresUserSelection: h.requiresUserSelection || false,
+          symbol: normalizeSymbol(h.symbol),
+          name: normText(h.name, 100),
+          balance: h.balance.trim(),
+          notes: normText(h.notes, 1000),
+          errors: h.errors?.map((e) => normText(e, 200) || '').filter(Boolean) ?? [],
+          warnings: h.warnings?.map((w) => normText(w, 200) || '').filter(Boolean) ?? [],
+          requiresUserSelection: Boolean(h.requiresUserSelection),
           providerValidation: h.providerValidation
             ? {
                 exactMatch: h.providerValidation.exactMatch
@@ -139,49 +110,53 @@ export const screenshotParsingRouter = router({
                       isValid: h.providerValidation.exactMatch.isValid,
                       metadata: h.providerValidation.exactMatch.metadata
                         ? {
-                            symbol: h.providerValidation.exactMatch.metadata.symbol,
-                            name: h.providerValidation.exactMatch.metadata.name,
-                            type: (h.providerValidation.exactMatch.metadata.type || 'Equity') as
-                              | 'Equity'
-                              | 'ETF'
-                              | 'Mutual Fund'
-                              | 'Bond'
-                              | 'Commodity'
-                              | 'Crypto',
-                            currency: h.providerValidation.exactMatch.metadata.currency || 'USD',
-                            exchange: h.providerValidation.exactMatch.metadata.exchange,
-                            description: h.providerValidation.exactMatch.metadata.description,
-                            provider: h.providerValidation.exactMatch.metadata.provider as
-                              | 'finnhub'
-                              | 'coingecko',
+                            symbol: normalizeSymbol(
+                              h.providerValidation.exactMatch.metadata.symbol
+                            ),
+                            name:
+                              normText(h.providerValidation.exactMatch.metadata.name, 100) || '',
+                            type: h.providerValidation.exactMatch.metadata.type,
+                            currency:
+                              normText(h.providerValidation.exactMatch.metadata.currency, 10) ||
+                              'USD',
+                            exchange: normText(
+                              h.providerValidation.exactMatch.metadata.exchange,
+                              40
+                            ),
+                            description: normText(
+                              h.providerValidation.exactMatch.metadata.description,
+                              200
+                            ),
+                            provider: (h.providerValidation.exactMatch.metadata.provider ===
+                            'coingecko'
+                              ? 'coingecko'
+                              : 'finnhub') as 'finnhub' | 'coingecko',
                             providerMetadata:
                               h.providerValidation.exactMatch.metadata.providerMetadata || {},
                           }
                         : undefined,
+                      error: h.providerValidation.exactMatch.error,
                     }
                   : undefined,
-                similarMatches: h.providerValidation.similarMatches?.map((sm) => ({
+                similarMatches: h.providerValidation.similarMatches?.slice(0, 50).map((sm) => ({
                   isValid: sm.isValid,
                   metadata: sm.metadata
                     ? {
-                        symbol: sm.metadata.symbol,
-                        name: sm.metadata.name,
-                        type: (sm.metadata.type || 'Equity') as
-                          | 'Equity'
-                          | 'ETF'
-                          | 'Mutual Fund'
-                          | 'Bond'
-                          | 'Commodity'
-                          | 'Crypto',
-                        currency: sm.metadata.currency || 'USD',
-                        exchange: sm.metadata.exchange,
-                        description: sm.metadata.description,
-                        provider: sm.metadata.provider as 'finnhub' | 'coingecko',
+                        symbol: normalizeSymbol(sm.metadata.symbol),
+                        name: normText(sm.metadata.name, 100) || '',
+                        type: sm.metadata.type,
+                        currency: normText(sm.metadata.currency, 10) || 'USD',
+                        exchange: normText(sm.metadata.exchange, 40),
+                        description: normText(sm.metadata.description, 200),
+                        provider: (sm.metadata.provider === 'coingecko'
+                          ? 'coingecko'
+                          : 'finnhub') as 'finnhub' | 'coingecko',
                         providerMetadata: sm.metadata.providerMetadata || {},
                       }
                     : undefined,
+                  error: sm.error,
                 })),
-                noMatches: h.providerValidation.noMatches,
+                noMatches: Boolean(h.providerValidation.noMatches),
               }
             : undefined,
         }));
@@ -193,27 +168,24 @@ export const screenshotParsingRouter = router({
           input.options
         );
 
-        return {
-          success: true,
-          data: {
-            created: result.created,
-            updated: result.updated,
-            errors: result.errors,
-            summary: {
-              totalProcessed: input.holdings.length,
-              successfullyCreated: result.created.length,
-              successfullyUpdated: result.updated.length,
-              errors: result.errors.length,
-              totalChange: result.updated.reduce((sum, u) => {
-                const change = parseFloat(u.change || '0');
-                return sum + Math.abs(change);
-              }, 0),
-            },
-          },
+        // Provide a compact summary for the client
+        const summary = {
+          totalProcessed: input.holdings.length,
+          successfullyCreated: result.created.length,
+          successfullyUpdated: result.updated.length,
+          errors: result.errors.length,
         };
-      } catch (error) {
-        console.error('Holdings processing failed:', error);
 
+        return { success: true, data: { ...result, summary } };
+      } catch (error) {
+        screenshotParsingLogger.error(
+          {
+            userId,
+            accountId: input.accountId,
+            error: error instanceof Error ? { name: error.name, message: error.message } : error,
+          },
+          'Holdings processing failed'
+        );
         return {
           success: false,
           error: error instanceof Error ? error.message : 'Unknown error occurred',

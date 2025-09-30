@@ -6,7 +6,11 @@ import * as schema from '../db/schema';
 import { getUserId, requireAuth } from '../middleware/auth';
 import { portfolioValuationService } from '../services/portfolio-valuation';
 import { pricingService } from '../services/pricing';
+import { emitEntityChange } from '../services/real-time-updates';
 import { protectedProcedure, router } from '../trpc';
+import { createComponentLogger } from '../utils/logger';
+
+const holdingsLogger = createComponentLogger('router:holdings');
 
 export const holdingsRouter = router({
   // Get all holdings
@@ -19,6 +23,25 @@ export const holdingsRouter = router({
       .where(eq(schema.holdings.userId, dbUser.id))
       .orderBy(desc(schema.holdings.lastUpdated));
     return holdings;
+  }),
+
+  getById: protectedProcedure.input(z.object({ id: z.string() })).query(async ({ input, ctx }) => {
+    const { dbUser } = requireAuth(ctx);
+
+    const [holding] = await db
+      .select({
+        id: schema.holdings.id,
+        accountId: schema.holdings.accountId,
+        tokenId: schema.holdings.tokenId,
+        tokenSymbol: schema.tokens.symbol,
+        tokenName: schema.tokens.name,
+      })
+      .from(schema.holdings)
+      .leftJoin(schema.tokens, eq(schema.holdings.tokenId, schema.tokens.id))
+      .where(and(eq(schema.holdings.id, input.id), eq(schema.holdings.userId, dbUser.id)))
+      .limit(1);
+
+    return holding ?? null;
   }),
 
   // Check if holding already exists (for duplicate prevention)
@@ -69,7 +92,13 @@ export const holdingsRouter = router({
       const userId = dbUser.id;
       const now = new Date();
 
-      console.log('Creating holding with data:', { ...input, userId });
+      holdingsLogger.debug(
+        {
+          userId,
+          input,
+        },
+        'Creating holding'
+      );
 
       // Validate account existence and ownership
       const [account] = await db
@@ -94,7 +123,7 @@ export const holdingsRouter = router({
       }
 
       // Use database transaction to ensure atomicity
-      return await db.transaction(async (trx) => {
+      const holding = await db.transaction(async (trx) => {
         const holdingData = {
           ...input,
           userId,
@@ -103,14 +132,27 @@ export const holdingsRouter = router({
           lastUpdated: input.lastUpdated || now, // Always ensure lastUpdated is set
         };
 
-        console.log('Inserting holding data:', holdingData);
+        holdingsLogger.debug(
+          {
+            userId,
+            accountId: holdingData.accountId,
+            tokenId: holdingData.tokenId,
+          },
+          'Inserting holding data'
+        );
         const [holding] = await trx.insert(schema.holdings).values(holdingData).returning();
 
         if (!holding) {
           throw new Error('Failed to create holding');
         }
 
-        console.log('Holding created successfully:', holding.id);
+        holdingsLogger.debug(
+          {
+            holdingId: holding.id,
+            accountId: holding.accountId,
+          },
+          'Holding created successfully'
+        );
 
         // Fetch current token price for the user's base currency
         try {
@@ -124,11 +166,25 @@ export const holdingsRouter = router({
 
             if (baseCurrency && token.symbol !== baseCurrency.symbol) {
               await pricingService.getTokenPrice(token, baseCurrency.symbol, now);
-              console.log(`Fetched current price for ${token.symbol}/${baseCurrency.symbol}`);
+              holdingsLogger.debug(
+                {
+                  tokenId: token.id,
+                  symbol: token.symbol,
+                  baseCurrency: baseCurrency.symbol,
+                },
+                'Fetched current price after holding creation'
+              );
             }
           }
         } catch (error) {
-          console.warn(`Failed to fetch price for ${token.symbol}:`, error);
+          holdingsLogger.warn(
+            {
+              tokenId: token.id,
+              symbol: token.symbol,
+              error: error instanceof Error ? { name: error.name, message: error.message } : error,
+            },
+            'Failed to fetch token price during holding creation'
+          );
           // Continue without price - holding can still be created
         }
 
@@ -165,6 +221,22 @@ export const holdingsRouter = router({
 
         return holding;
       });
+
+      if (holding) {
+        emitEntityChange({
+          type: 'entity_changed',
+          entityType: 'holding',
+          operationType: 'create',
+          entityId: holding.id,
+          userId,
+          data: {
+            accountId: holding.accountId,
+            tokenId: holding.tokenId,
+          },
+        });
+      }
+
+      return holding;
     }),
 
   // Update holding
@@ -192,6 +264,18 @@ export const holdingsRouter = router({
         throw new Error('Holding not found');
       }
 
+      emitEntityChange({
+        type: 'entity_changed',
+        entityType: 'holding',
+        operationType: 'update',
+        entityId: updatedHolding.id,
+        userId,
+        data: {
+          accountId: updatedHolding.accountId,
+          tokenId: updatedHolding.tokenId,
+        },
+      });
+
       return updatedHolding;
     }),
 
@@ -216,6 +300,27 @@ export const holdingsRouter = router({
       if (!deletedHolding) {
         throw new Error('Holding not found');
       }
+
+      emitEntityChange({
+        type: 'entity_changed',
+        entityType: 'holding',
+        operationType: 'delete',
+        entityId: deletedHolding.id,
+        userId: dbUser.id,
+        metadata: {
+          relatedEntities: [
+            {
+              type: 'account',
+              id: deletedHolding.accountId,
+            },
+          ],
+        },
+        data: {
+          cascadeInfo: {
+            transactionsDeleted: transactions.length,
+          },
+        },
+      });
 
       return {
         success: true,

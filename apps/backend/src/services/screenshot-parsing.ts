@@ -1,20 +1,15 @@
-import Decimal from "decimal.js";
-import { and, eq, inArray, sql } from "drizzle-orm";
-import { db } from "../db/connection";
-import * as schema from "../db/schema";
-import type {
-  AIProviderManagerConfig,
-  AIProviderType,
-} from "./ai/provider-manager";
-import { AIProviderManager } from "./ai/provider-manager";
-import type { AIProviderResponse, ParsedHolding } from "./ai/types";
-import { pricingService } from "./pricing";
-import {
-  tokenValidationService,
-  type TokenMetadata,
-  type ValidationResult,
-} from "./token-validation";
-import { userContextService } from "./user-context-enhanced";
+import type { TokenMetadata, TokenValidationResult as ValidationResult } from '@scani/shared';
+import Decimal from 'decimal.js';
+import { and, eq, inArray, sql } from 'drizzle-orm';
+import { db } from '../db/connection';
+import * as schema from '../db/schema';
+import { createComponentLogger } from '../utils/logger';
+import type { AIProviderManagerConfig, AIProviderType } from './ai/provider-manager';
+import { AIProviderManager } from './ai/provider-manager';
+import type { AIProviderResponse, ParsedHolding } from './ai/types';
+import { pricingService } from './pricing';
+import { tokenValidationService } from './token-validation';
+import { userContextService } from './user-context-enhanced';
 
 // Configuration constants to replace hardcoded values
 const PARSING_CONFIG = {
@@ -23,15 +18,15 @@ const PARSING_CONFIG = {
   SIMILARITY_THRESHOLD: 0.3, // For database similarity queries
 
   // Transaction amount thresholds
-  SIGNIFICANT_CHANGE_THRESHOLD: "0.000001", // For detecting significant balance changes
-  UPDATE_CHANGE_THRESHOLD: "0.001", // For update operations
+  SIGNIFICANT_CHANGE_THRESHOLD: '0.000001', // For detecting significant balance changes
+  UPDATE_CHANGE_THRESHOLD: '0.001', // For update operations
 
   // Default token decimals by type
   DEFAULT_DECIMALS: {
     fiat: 2,
     stock: 8,
     crypto: 8,
-    "mutual-fund": 4,
+    'mutual-fund': 4,
     bond: 8,
     commodity: 8,
     etf: 8,
@@ -100,12 +95,12 @@ export interface ScreenshotParsingResult {
 
 export class ScreenshotParsingService {
   private aiManager: AIProviderManager;
+  private readonly logger = createComponentLogger('screenshot-parsing');
 
   constructor() {
     // Initialize AI provider manager with configuration from environment
     const config: AIProviderManagerConfig = {
-      defaultProvider:
-        (process.env.DEFAULT_AI_PROVIDER as AIProviderType) || "openai",
+      defaultProvider: (process.env.DEFAULT_AI_PROVIDER as AIProviderType) || 'openai',
       providers: {
         ...(process.env.OPENAI_API_KEY && {
           openai: {
@@ -145,17 +140,12 @@ export class ScreenshotParsingService {
     // Parse with AI (using default provider)
     const aiResponse = await this.aiManager.parseScreenshot(imageBase64, {
       accountType: account.type?.name,
-      expectedCurrency:
-        options.expectedCurrency || account.baseCurrency?.symbol,
-      context: `${options.context || ""} Account: ${account.name} at ${
-        account.institution.name
-      }`,
+      expectedCurrency: options.expectedCurrency || account.baseCurrency?.symbol,
+      context: `${options.context || ''} Account: ${account.name} at ${account.institution.name}`,
     });
 
     // Validate and enrich holdings
-    const validatedHoldings = await this.validateHoldings(
-      aiResponse.portfolio.holdings
-    );
+    const validatedHoldings = await this.validateHoldings(aiResponse.portfolio.holdings);
 
     // Calculate summary statistics
     const summary = this.calculateSummary(validatedHoldings);
@@ -212,15 +202,10 @@ export class ScreenshotParsingService {
     const errors: Array<{ symbol: string; error: string }> = [];
 
     // Re-check token existence for all symbols (user may have selected different symbols from providers)
-    const allSymbols = [
-      ...new Set(holdings.map((h) => h.symbol.toUpperCase())),
-    ];
+    const allSymbols = [...new Set(holdings.map((h) => h.symbol.toUpperCase()))];
     const existingTokensCheck =
       allSymbols.length > 0
-        ? await db
-            .select()
-            .from(schema.tokens)
-            .where(inArray(schema.tokens.symbol, allSymbols))
+        ? await db.select().from(schema.tokens).where(inArray(schema.tokens.symbol, allSymbols))
         : [];
 
     const existingTokenMap = new Map(
@@ -244,40 +229,41 @@ export class ScreenshotParsingService {
           this.shouldUpdateTokenMetadata(existingToken, exactMatch.metadata)
         ) {
           try {
-            await this.updateTokenWithProviderMetadata(
-              existingToken.id,
-              exactMatch.metadata
-            );
-            console.log(
-              `Updated provider metadata for existing token: ${existingToken.symbol}`
+            await this.updateTokenWithProviderMetadata(existingToken.id, exactMatch.metadata);
+            this.logger.debug(
+              {
+                tokenId: existingToken.id,
+                symbol: existingToken.symbol,
+              },
+              'Updated provider metadata for existing token'
             );
           } catch (error) {
-            console.warn(
-              `Failed to update provider metadata for ${existingToken.symbol}:`,
-              error
+            this.logger.warn(
+              {
+                tokenId: existingToken.id,
+                symbol: existingToken.symbol,
+                error:
+                  error instanceof Error ? { name: error.name, message: error.message } : error,
+              },
+              'Failed to update provider metadata for existing token'
             );
           }
         }
       } else {
         // Fix suggestedTokenType from provider metadata if available
         const exactMatch = holding.providerValidation?.exactMatch;
-        if (exactMatch?.metadata?.provider === "coingecko") {
+        if (exactMatch?.metadata?.provider === 'coingecko') {
           // CoinGecko tokens are always crypto, regardless of metadata type
-          holding.suggestedTokenType = "crypto";
+          holding.suggestedTokenType = 'crypto';
         } else if (exactMatch?.metadata?.type) {
           const providerType = exactMatch.metadata.type;
-          holding.suggestedTokenType =
-            this.mapProviderTypeToTokenType(providerType);
-        } else if (exactMatch?.metadata && "metadata" in exactMatch.metadata) {
+          holding.suggestedTokenType = this.mapProviderTypeToTokenType(providerType);
+        } else if (exactMatch?.metadata && 'metadata' in exactMatch.metadata) {
           // Handle nested metadata structure from the request
-          const nestedMetadata = exactMatch.metadata.metadata as Record<
-            string,
-            unknown
-          >;
-          if (nestedMetadata?.type && typeof nestedMetadata.type === "string") {
+          const nestedMetadata = exactMatch.metadata.metadata as Record<string, unknown>;
+          if (nestedMetadata?.type && typeof nestedMetadata.type === 'string') {
             const providerType = nestedMetadata.type;
-            holding.suggestedTokenType =
-              this.mapProviderTypeToTokenType(providerType);
+            holding.suggestedTokenType = this.mapProviderTypeToTokenType(providerType);
           }
         }
       }
@@ -288,18 +274,18 @@ export class ScreenshotParsingService {
 
     for (const holding of holdings) {
       // Basic field validation
-      if (!holding.symbol || holding.symbol.trim() === "") {
+      if (!holding.symbol || holding.symbol.trim() === '') {
         errors.push({
-          symbol: holding.symbol || "UNKNOWN",
-          error: "Symbol is required and cannot be empty",
+          symbol: holding.symbol || 'UNKNOWN',
+          error: 'Symbol is required and cannot be empty',
         });
         continue;
       }
 
-      if (!holding.balance || holding.balance.trim() === "") {
+      if (!holding.balance || holding.balance.trim() === '') {
         errors.push({
           symbol: holding.symbol,
-          error: "Balance is required and cannot be empty",
+          error: 'Balance is required and cannot be empty',
         });
         continue;
       }
@@ -307,21 +293,17 @@ export class ScreenshotParsingService {
       // Validate balance is a positive number
       try {
         const balanceDecimal = new Decimal(holding.balance);
-        if (
-          balanceDecimal.isNaN() ||
-          !balanceDecimal.isFinite() ||
-          balanceDecimal.lte(0)
-        ) {
+        if (balanceDecimal.isNaN() || !balanceDecimal.isFinite() || balanceDecimal.lte(0)) {
           errors.push({
             symbol: holding.symbol,
-            error: "Balance must be a positive number",
+            error: 'Balance must be a positive number',
           });
           continue;
         }
       } catch {
         errors.push({
           symbol: holding.symbol,
-          error: "Balance must be a valid number",
+          error: 'Balance must be a valid number',
         });
         continue;
       }
@@ -330,7 +312,7 @@ export class ScreenshotParsingService {
       if (holding.requiresUserSelection && !options?.skipValidation) {
         errors.push({
           symbol: holding.symbol,
-          error: `User selection required: ${holding.errors.join(", ")}`,
+          error: `User selection required: ${holding.errors.join(', ')}`,
         });
         continue;
       }
@@ -338,7 +320,7 @@ export class ScreenshotParsingService {
       if (holding.errors.length > 0 && !options?.skipValidation) {
         errors.push({
           symbol: holding.symbol,
-          error: `Validation errors: ${holding.errors.join(", ")}`,
+          error: `Validation errors: ${holding.errors.join(', ')}`,
         });
         continue;
       }
@@ -349,14 +331,10 @@ export class ScreenshotParsingService {
         holding.requiresUserSelection = false;
       }
 
-      if (
-        !holding.tokenExists &&
-        !holding.tokenId &&
-        !options?.createMissingTokens
-      ) {
+      if (!holding.tokenExists && !holding.tokenId && !options?.createMissingTokens) {
         errors.push({
           symbol: holding.symbol,
-          error: "Token does not exist and createMissingTokens is false",
+          error: 'Token does not exist and createMissingTokens is false',
         });
         continue;
       }
@@ -393,8 +371,7 @@ export class ScreenshotParsingService {
     const baseCurrency = await userContextService.getBaseCurrency(userId);
 
     const now = new Date();
-    const tokensToFetchPricesFor: typeof existingTokens | typeof newTokens =
-      existingTokens;
+    const tokensToFetchPricesFor: typeof existingTokens | typeof newTokens = existingTokens;
     // Execute everything in a single atomic transaction
     const result = await db
       .transaction(async (trx) => {
@@ -403,37 +380,24 @@ export class ScreenshotParsingService {
           .from(schema.tokenTypes)
           .where(eq(schema.tokenTypes.isActive, true));
 
-        const tokenTypeMap = new Map(
-          tokenTypes.map((tt) => [tt.code.toLowerCase(), tt])
-        );
+        const tokenTypeMap = new Map(tokenTypes.map((tt) => [tt.code.toLowerCase(), tt]));
 
         const newTokensInsert = newTokens.map((nt) => {
           const type = nt.suggestedType;
           if (!type) {
-            throw new Error(
-              `Cannot create token ${nt.symbol} without a suggested type`
-            );
+            throw new Error(`Cannot create token ${nt.symbol} without a suggested type`);
           }
 
-          console.log(`DEBUG ${type}`);
+          this.logger.debug({ symbol: nt.symbol, type }, 'Creating new token from parsing');
           // Extract name from provider metadata structure
           const exactMatch = nt.providerData?.exactMatch;
           let tokenName = nt.symbol;
 
           if (exactMatch?.metadata?.name) {
             tokenName = exactMatch.metadata.name;
-          } else if (
-            exactMatch?.metadata &&
-            "metadata" in exactMatch.metadata
-          ) {
-            const nestedMetadata = exactMatch.metadata.metadata as Record<
-              string,
-              unknown
-            >;
-            if (
-              nestedMetadata?.name &&
-              typeof nestedMetadata.name === "string"
-            ) {
+          } else if (exactMatch?.metadata && 'metadata' in exactMatch.metadata) {
+            const nestedMetadata = exactMatch.metadata.metadata as Record<string, unknown>;
+            if (nestedMetadata?.name && typeof nestedMetadata.name === 'string') {
               tokenName = nestedMetadata.name;
             }
           }
@@ -445,13 +409,11 @@ export class ScreenshotParsingService {
             decimals:
               PARSING_CONFIG.DEFAULT_DECIMALS[
                 (
-                  nt.suggestedType || "other"
+                  nt.suggestedType || 'other'
                 ).toLowerCase() as keyof typeof PARSING_CONFIG.DEFAULT_DECIMALS
               ] || 2,
             iconUrl: null,
-            providerMetadata: JSON.stringify(
-              nt.providerData?.exactMatch?.metadata ?? {}
-            ),
+            providerMetadata: JSON.stringify(nt.providerData?.exactMatch?.metadata ?? {}),
             isActive: true,
             createdAt: now,
             updatedAt: now,
@@ -462,10 +424,7 @@ export class ScreenshotParsingService {
 
         const createdTokens =
           newTokensInsert.length > 0
-            ? await trx
-                .insert(schema.tokens)
-                .values(newTokensInsert)
-                .returning()
+            ? await trx.insert(schema.tokens).values(newTokensInsert).returning()
             : [];
 
         tokensToFetchPricesFor.push(...createdTokens);
@@ -481,25 +440,27 @@ export class ScreenshotParsingService {
             },
           })
           .from(schema.holdings)
-          .innerJoin(
-            schema.tokens,
-            eq(schema.holdings.tokenId, schema.tokens.id)
-          )
-          .where(
-            and(
-              eq(schema.holdings.userId, userId),
-              eq(schema.holdings.accountId, accountId)
-            )
-          );
+          .innerJoin(schema.tokens, eq(schema.holdings.tokenId, schema.tokens.id))
+          .where(and(eq(schema.holdings.userId, userId), eq(schema.holdings.accountId, accountId)));
+        const existingHoldingsById = new Map(existingHoldings.map((h) => [h.id, h]));
+        const existingHoldingsByTokenId = new Map<
+          string,
+          Array<(typeof existingHoldings)[number]>
+        >();
 
-        const existingHoldingsMap = new Map(
-          existingHoldings.map((h) => [h.tokenId, h])
-        );
+        for (const holding of existingHoldings) {
+          const items = existingHoldingsByTokenId.get(holding.tokenId);
+          if (items) {
+            items.push(holding);
+          } else {
+            existingHoldingsByTokenId.set(holding.tokenId, [holding]);
+          }
+        }
+
+        const consumedExistingHoldingIds = new Set<string>();
 
         // Get appropriate transaction type using user context service
-        const depositType = await userContextService.getTransactionType(
-          "deposit"
-        );
+        const depositType = await userContextService.getTransactionType('deposit');
 
         // Process holdings: separate creates and updates
         const holdingsToCreate: Array<{
@@ -512,54 +473,83 @@ export class ScreenshotParsingService {
         }> = [];
 
         for (const holding of validHoldings) {
-          let token = holding.tokenId
-            ? existingTokensMap.get(holding.tokenId)
-            : undefined;
+          let token = holding.tokenId ? existingTokensMap.get(holding.tokenId) : undefined;
 
           // If tokenId is not set, it must be a newly created token
           if (!token) {
-            const createdToken = createdTokens.find(
-              (t) => t.symbol === holding.symbol
-            );
+            const createdToken = createdTokens.find((t) => t.symbol === holding.symbol);
             if (createdToken) {
               token = createdToken;
             } else {
               // This should not happen due to prior validation
               errors.push({
                 symbol: holding.symbol,
-                error: "Internal error: Token ID not found after creation",
+                error: 'Internal error: Token ID not found after creation',
               });
               continue;
             }
 
             holdingsToCreate.push({ holding, tokenId: token.id });
-          } else if (token && existingHoldingsMap.has(token.id)) {
-            const existingHolding = existingHoldingsMap.get(token.id)!;
-            holdingsToUpdate.push({ holding, existingHolding });
-          } else if (token && !existingHoldingsMap.has(token.id)) {
+            continue;
+          }
+
+          const explicitHoldingId = holding.existingHoldingId;
+          if (explicitHoldingId) {
+            const targetHolding = existingHoldingsById.get(explicitHoldingId);
+            if (!targetHolding) {
+              errors.push({
+                symbol: holding.symbol,
+                error: 'Selected existing holding could not be found for update',
+              });
+              continue;
+            }
+
+            if (targetHolding.tokenId !== token.id) {
+              errors.push({
+                symbol: holding.symbol,
+                error: 'Selected holding uses a different token than the parsed holding',
+              });
+              continue;
+            }
+
+            holdingsToUpdate.push({ holding, existingHolding: targetHolding });
+            consumedExistingHoldingIds.add(targetHolding.id);
+            continue;
+          }
+
+          const candidates = existingHoldingsByTokenId.get(token.id) ?? [];
+          const availableCandidates = candidates.filter(
+            (candidate) => !consumedExistingHoldingIds.has(candidate.id)
+          );
+
+          if (availableCandidates.length === 1) {
+            const [targetHolding] = availableCandidates;
+            if (!targetHolding) {
+              holdingsToCreate.push({ holding, tokenId: token.id });
+              continue;
+            }
+
+            holdingsToUpdate.push({ holding, existingHolding: targetHolding });
+            consumedExistingHoldingIds.add(targetHolding.id);
+          } else if (availableCandidates.length === 0) {
             // Token exists but no existing holding - treat as new holding
             holdingsToCreate.push({ holding, tokenId: token.id });
           } else {
-            // This should not happen due to prior validation
-            errors.push({
-              symbol: holding.symbol,
-              error: "Internal error: Unable to determine create vs update",
-            });
+            // Multiple holdings share this token and no explicit selection exists - create a new holding
+            holdingsToCreate.push({ holding, tokenId: token.id });
           }
         }
 
         // Bulk create new holdings
 
         if (holdingsToCreate.length > 0) {
-          const holdingsToInsert = holdingsToCreate.map(
-            ({ holding, tokenId }) => ({
-              userId,
-              accountId,
-              tokenId,
-              balance: holding.balance,
-              lastUpdated: new Date(),
-            })
-          );
+          const holdingsToInsert = holdingsToCreate.map(({ holding, tokenId }) => ({
+            userId,
+            accountId,
+            tokenId,
+            balance: holding.balance,
+            lastUpdated: new Date(),
+          }));
 
           const createdHoldings = await trx
             .insert(schema.holdings)
@@ -571,19 +561,14 @@ export class ScreenshotParsingService {
           const transactionsToInsert = createdHoldings
             .map((createdHolding, index) => {
               const holdingData = holdingsToCreate[index];
-              if (
-                holdingData &&
-                new Decimal(holdingData.holding.balance).greaterThan(0)
-              ) {
+              if (holdingData && new Decimal(holdingData.holding.balance).greaterThan(0)) {
                 return {
                   userId,
                   holdingId: createdHolding.id,
                   typeId: depositType.id,
                   amount: holdingData.holding.balance,
-                  fee: "0",
-                  description:
-                    holdingData.holding.notes ||
-                    "Opening balance from screenshot",
+                  fee: '0',
+                  description: holdingData.holding.notes || 'Opening balance from screenshot',
                   timestamp: new Date(),
                 };
               }
@@ -593,10 +578,7 @@ export class ScreenshotParsingService {
 
           const createdTransactions =
             transactionsToInsert.length > 0
-              ? await trx
-                  .insert(schema.transactions)
-                  .values(transactionsToInsert)
-                  .returning()
+              ? await trx.insert(schema.transactions).values(transactionsToInsert).returning()
               : [];
 
           // Map results
@@ -607,9 +589,9 @@ export class ScreenshotParsingService {
 
             if (!holdingData || !createdHolding) continue;
 
-            let transactionId = "";
+            let transactionId = '';
             if (new Decimal(holdingData.holding.balance).greaterThan(0)) {
-              transactionId = createdTransactions[transactionIndex++]?.id || "";
+              transactionId = createdTransactions[transactionIndex++]?.id || '';
             }
 
             created.push({
@@ -622,55 +604,49 @@ export class ScreenshotParsingService {
 
         // Bulk update existing holdings
         if (holdingsToUpdate.length > 0) {
-          const updatePromises = holdingsToUpdate.map(
-            async ({ holding, existingHolding }) => {
-              const oldBalance = new Decimal(existingHolding.balance);
-              const newBalance = new Decimal(holding.balance);
-              const change = newBalance.minus(oldBalance);
+          const updatePromises = holdingsToUpdate.map(async ({ holding, existingHolding }) => {
+            const oldBalance = new Decimal(existingHolding.balance);
+            const newBalance = new Decimal(holding.balance);
+            const change = newBalance.minus(oldBalance);
 
-              // Update the holding
-              await trx
-                .update(schema.holdings)
-                .set({
-                  balance: holding.balance,
-                  lastUpdated: new Date(),
+            // Update the holding
+            await trx
+              .update(schema.holdings)
+              .set({
+                balance: holding.balance,
+                lastUpdated: new Date(),
+              })
+              .where(eq(schema.holdings.id, existingHolding.id));
+
+            let transactionId = '';
+
+            // Create transaction for the change if significant
+            if (change.abs().greaterThan(PARSING_CONFIG.SIGNIFICANT_CHANGE_THRESHOLD)) {
+              const [transaction] = await trx
+                .insert(schema.transactions)
+                .values({
+                  userId,
+                  holdingId: existingHolding.id,
+                  typeId: depositType.id,
+                  amount: change.toString(),
+                  fee: '0',
+                  description: `Balance adjustment from screenshot: ${
+                    change.greaterThan(0) ? '+' : ''
+                  }${change.toString()}`,
+                  timestamp: new Date(),
                 })
-                .where(eq(schema.holdings.id, existingHolding.id));
+                .returning();
 
-              let transactionId = "";
-
-              // Create transaction for the change if significant
-              if (
-                change
-                  .abs()
-                  .greaterThan(PARSING_CONFIG.SIGNIFICANT_CHANGE_THRESHOLD)
-              ) {
-                const [transaction] = await trx
-                  .insert(schema.transactions)
-                  .values({
-                    userId,
-                    holdingId: existingHolding.id,
-                    typeId: depositType.id,
-                    amount: change.toString(),
-                    fee: "0",
-                    description: `Balance adjustment from screenshot: ${
-                      change.greaterThan(0) ? "+" : ""
-                    }${change.toString()}`,
-                    timestamp: new Date(),
-                  })
-                  .returning();
-
-                transactionId = transaction?.id || "";
-              }
-
-              updated.push({
-                holdingId: existingHolding.id,
-                transactionId,
-                tokenSymbol: holding.symbol,
-                change: change.toString(),
-              });
+              transactionId = transaction?.id || '';
             }
-          );
+
+            updated.push({
+              holdingId: existingHolding.id,
+              transactionId,
+              tokenSymbol: holding.symbol,
+              change: change.toString(),
+            });
+          });
 
           await Promise.all(updatePromises);
         }
@@ -683,11 +659,7 @@ export class ScreenshotParsingService {
         throw error;
       });
 
-    await pricingService.getTokenPrices(
-      tokensToFetchPricesFor,
-      baseCurrency.symbol,
-      now
-    );
+    await pricingService.getTokenPrices(tokensToFetchPricesFor, baseCurrency.symbol, now);
     return result;
   }
 
@@ -719,19 +691,10 @@ export class ScreenshotParsingService {
         },
       })
       .from(schema.accounts)
-      .innerJoin(
-        schema.institutions,
-        eq(schema.accounts.institutionId, schema.institutions.id)
-      )
-      .leftJoin(
-        schema.accountTypes,
-        eq(schema.accounts.typeId, schema.accountTypes.id)
-      )
+      .innerJoin(schema.institutions, eq(schema.accounts.institutionId, schema.institutions.id))
+      .leftJoin(schema.accountTypes, eq(schema.accounts.typeId, schema.accountTypes.id))
       .leftJoin(schema.users, eq(schema.accounts.userId, schema.users.id))
-      .leftJoin(
-        schema.tokens,
-        eq(schema.users.baseCurrencyId, schema.tokens.id)
-      )
+      .leftJoin(schema.tokens, eq(schema.users.baseCurrencyId, schema.tokens.id))
       .where(
         and(
           eq(schema.accounts.id, accountId),
@@ -742,7 +705,7 @@ export class ScreenshotParsingService {
       .limit(1);
 
     if (!account) {
-      throw new Error("Account not found or access denied");
+      throw new Error('Account not found or access denied');
     }
 
     return account;
@@ -754,25 +717,16 @@ export class ScreenshotParsingService {
     const validated: ParsedHoldingWithValidation[] = [];
 
     // Batch query for all token symbols to avoid N+1 queries
-    const uniqueSymbols = [
-      ...new Set(holdings.map((h) => h.symbol.toUpperCase())),
-    ];
+    const uniqueSymbols = [...new Set(holdings.map((h) => h.symbol.toUpperCase()))];
     const existingTokens =
       uniqueSymbols.length > 0
-        ? await db
-            .select()
-            .from(schema.tokens)
-            .where(inArray(schema.tokens.symbol, uniqueSymbols))
+        ? await db.select().from(schema.tokens).where(inArray(schema.tokens.symbol, uniqueSymbols))
         : [];
 
-    const tokenMap = new Map(
-      existingTokens.map((token) => [token.symbol.toUpperCase(), token])
-    );
+    const tokenMap = new Map(existingTokens.map((token) => [token.symbol.toUpperCase(), token]));
 
     // Batch provider validation for missing tokens
-    const missingSymbols = uniqueSymbols.filter(
-      (symbol) => !tokenMap.has(symbol)
-    );
+    const missingSymbols = uniqueSymbols.filter((symbol) => !tokenMap.has(symbol));
     const providerValidationMap = new Map<
       string,
       {
@@ -793,18 +747,22 @@ export class ScreenshotParsingService {
             const validation = await this.validateTokenWithProviders(symbol);
             return { symbol, validation };
           } catch (error) {
-            console.warn(`Provider validation failed for ${symbol}:`, error);
+            this.logger.warn(
+              {
+                symbol,
+                error:
+                  error instanceof Error ? { name: error.name, message: error.message } : error,
+              },
+              'Provider validation failed'
+            );
             return { symbol, validation: null };
           }
         });
 
         const batchResults = await Promise.allSettled(batchPromises);
         batchResults.forEach((result) => {
-          if (result.status === "fulfilled" && result.value.validation) {
-            providerValidationMap.set(
-              result.value.symbol,
-              result.value.validation
-            );
+          if (result.status === 'fulfilled' && result.value.validation) {
+            providerValidationMap.set(result.value.symbol, result.value.validation);
           }
         });
       }
@@ -823,10 +781,10 @@ export class ScreenshotParsingService {
       try {
         const balance = new Decimal(holding.balance);
         if (balance.isNaN() || !balance.isFinite()) {
-          validation.errors.push("Invalid balance format");
+          validation.errors.push('Invalid balance format');
         }
       } catch {
-        validation.errors.push("Balance is not a valid number");
+        validation.errors.push('Balance is not a valid number');
       }
 
       // Check if token exists using our batched lookup
@@ -836,14 +794,10 @@ export class ScreenshotParsingService {
         validation.tokenExists = true;
         validation.tokenId = existingToken.id;
       } else {
-        validation.warnings.push(
-          "Token not found in database - will need to be created"
-        );
+        validation.warnings.push('Token not found in database - will need to be created');
 
         // Use batched provider validation
-        const providerValidation = providerValidationMap.get(
-          holding.symbol.toUpperCase()
-        );
+        const providerValidation = providerValidationMap.get(holding.symbol.toUpperCase());
         if (providerValidation) {
           validation.suggestedTokenType = providerValidation.suggestedTokenType;
           validation.providerValidation = providerValidation;
@@ -860,22 +814,20 @@ export class ScreenshotParsingService {
             // FORCE user selection when similar matches exist but no exact match
             validation.requiresUserSelection = true;
             validation.errors.push(
-              `Token "${
-                holding.symbol
-              }" not found in database. Please select from ${
+              `Token "${holding.symbol}" not found in database. Please select from ${
                 providerValidation.similarMatches.length
               } similar provider tokens: ${providerValidation.similarMatches
-                .map((m: ValidationResult) => m.metadata?.symbol || "unknown")
-                .join(", ")}`
+                .map((m: ValidationResult) => m.metadata?.symbol || 'unknown')
+                .join(', ')}`
             );
           } else if (providerValidation.noMatches) {
             validation.errors.push(
-              "Token not found in database or pricing providers - cannot proceed without manual token selection"
+              'Token not found in database or pricing providers - cannot proceed without manual token selection'
             );
           }
         } else {
           validation.errors.push(
-            "Token validation failed - cannot proceed without manual token selection"
+            'Token validation failed - cannot proceed without manual token selection'
           );
         }
       }
@@ -883,9 +835,7 @@ export class ScreenshotParsingService {
       // Confidence validation - use configurable threshold
       if (holding.confidence < PARSING_CONFIG.MIN_CONFIDENCE_THRESHOLD) {
         validation.warnings.push(
-          `Low confidence in AI extraction (${(
-            holding.confidence * 100
-          ).toFixed(1)}%)`
+          `Low confidence in AI extraction (${(holding.confidence * 100).toFixed(1)}%)`
         );
       }
 
@@ -932,9 +882,7 @@ export class ScreenshotParsingService {
 
     if (exactMatch.isValid && exactMatch.metadata) {
       // We found an exact match - convert provider type to our token type
-      const tokenType = this.mapProviderTypeToTokenType(
-        exactMatch.metadata.type
-      );
+      const tokenType = this.mapProviderTypeToTokenType(exactMatch.metadata.type);
       return {
         exactMatch,
         similarMatches: [],
@@ -948,25 +896,24 @@ export class ScreenshotParsingService {
 
     try {
       // Search Finnhub for similar tokens
-      const finnhubMatches = await validationService.searchFinnhubTokens(
-        symbol
-      );
+      const finnhubMatches = await validationService.searchFinnhubTokens(symbol);
       similarMatches.push(...finnhubMatches.slice(0, 5)); // Limit to 5 suggestions
 
       // Search CoinGecko for similar tokens
-      const coinGeckoMatches = await validationService.searchCoinGeckoTokens(
-        symbol
-      );
+      const coinGeckoMatches = await validationService.searchCoinGeckoTokens(symbol);
       similarMatches.push(...coinGeckoMatches.slice(0, 5)); // Limit to 5 suggestions
     } catch (error) {
-      console.warn("Error searching for similar tokens:", error);
+      this.logger.warn(
+        {
+          symbol,
+          error: error instanceof Error ? { name: error.name, message: error.message } : error,
+        },
+        'Error searching for similar tokens'
+      );
     }
 
     // Determine suggested token type from similar matches or intelligent fallback
-    const suggestedTokenType = await this.determineBestTokenType(
-      symbol,
-      similarMatches
-    );
+    const suggestedTokenType = await this.determineBestTokenType(symbol, similarMatches);
 
     return {
       exactMatch: undefined,
@@ -981,22 +928,22 @@ export class ScreenshotParsingService {
    */
   private mapProviderTypeToTokenType(providerType: string): string {
     switch (providerType.toLowerCase()) {
-      case "equity":
-        return "stock";
-      case "etp": // Exchange Traded Product (includes ETFs)
-        return "etf";
-      case "etf":
-        return "etf";
-      case "mutual fund":
-        return "mutual-fund";
-      case "bond":
-        return "bond";
-      case "commodity":
-        return "commodity";
-      case "crypto":
-        return "crypto";
+      case 'equity':
+        return 'stock';
+      case 'etp': // Exchange Traded Product (includes ETFs)
+        return 'etf';
+      case 'etf':
+        return 'etf';
+      case 'mutual fund':
+        return 'mutual-fund';
+      case 'bond':
+        return 'bond';
+      case 'commodity':
+        return 'commodity';
+      case 'crypto':
+        return 'crypto';
       default:
-        return "other";
+        return 'other';
     }
   }
 
@@ -1011,11 +958,11 @@ export class ScreenshotParsingService {
     if (similarMatches && similarMatches.length > 0) {
       // Check if any matches come from CoinGecko - if so, it's definitely crypto
       const hasCoinGeckoMatches = similarMatches.some(
-        (match) => match.metadata?.provider === "coingecko"
+        (match) => match.metadata?.provider === 'coingecko'
       );
 
       if (hasCoinGeckoMatches) {
-        return "crypto"; // CoinGecko only provides crypto tokens
+        return 'crypto'; // CoinGecko only provides crypto tokens
       }
 
       // Count token types from similar matches to find the most common
@@ -1023,18 +970,14 @@ export class ScreenshotParsingService {
 
       for (const match of similarMatches) {
         if (match.metadata?.type) {
-          const mappedType = this.mapProviderTypeToTokenType(
-            match.metadata.type
-          );
+          const mappedType = this.mapProviderTypeToTokenType(match.metadata.type);
           typeCount.set(mappedType, (typeCount.get(mappedType) || 0) + 1);
         }
       }
 
       // Return the most common type from similar matches
       if (typeCount.size > 0) {
-        const entries = Array.from(typeCount.entries()).sort(
-          (a, b) => b[1] - a[1]
-        );
+        const entries = Array.from(typeCount.entries()).sort((a, b) => b[1] - a[1]);
         if (entries.length > 0 && entries[0]) {
           return entries[0][0];
         }
@@ -1055,13 +998,10 @@ export class ScreenshotParsingService {
       const existingTokens = await db
         .select({
           typeCode: schema.tokenTypes.code,
-          count: sql<number>`count(*)`.as("count"),
+          count: sql<number>`count(*)`.as('count'),
         })
         .from(schema.tokens)
-        .innerJoin(
-          schema.tokenTypes,
-          eq(schema.tokens.typeId, schema.tokenTypes.id)
-        )
+        .innerJoin(schema.tokenTypes, eq(schema.tokens.typeId, schema.tokenTypes.id))
         .where(
           sql`similarity(${schema.tokens.symbol}, ${symbol.toUpperCase()}) > ${
             PARSING_CONFIG.SIMILARITY_THRESHOLD
@@ -1076,9 +1016,12 @@ export class ScreenshotParsingService {
       }
     } catch (error) {
       // If similarity search fails (not all databases support it), fall back to basic logic
-      console.warn(
-        "Database similarity search failed, using basic fallback:",
-        error
+      this.logger.warn(
+        {
+          symbol,
+          error: error instanceof Error ? { name: error.name, message: error.message } : error,
+        },
+        'Database similarity search failed, using basic fallback'
       );
     }
 
@@ -1098,21 +1041,21 @@ export class ScreenshotParsingService {
     if (/^[A-Z]{3}$/.test(symbolUpper)) {
       // 3-letter symbols could be fiat, but also could be stocks or crypto
       // Default to 'other' unless we have more context
-      return "other";
+      return 'other';
     }
 
     if (/^[A-Z]{1,5}$/.test(symbolUpper) && symbolUpper.length <= 4) {
       // Short alphabetic symbols are likely stocks
-      return "stock";
+      return 'stock';
     }
 
     if (/^[A-Z0-9]{6,}$/.test(symbolUpper)) {
       // Longer alphanumeric symbols might be fund identifiers
-      return "mutual-fund";
+      return 'mutual-fund';
     }
 
     // Default to other for unknown patterns
-    return "other";
+    return 'other';
   }
 
   /**
@@ -1124,9 +1067,7 @@ export class ScreenshotParsingService {
   ): boolean {
     try {
       // Parse existing provider metadata
-      const existingMetadata = JSON.parse(
-        existingToken.providerMetadata || "{}"
-      );
+      const existingMetadata = JSON.parse(existingToken.providerMetadata || '{}');
 
       // Check if the token has no provider metadata or incomplete metadata
       const hasNoProviderData = Object.keys(existingMetadata).length === 0;
@@ -1138,12 +1079,17 @@ export class ScreenshotParsingService {
       // 1. Token has no existing provider metadata, OR
       // 2. Token doesn't have this specific provider's data
       return (
-        hasNoProviderData ||
-        !existingMetadata[newProvider] ||
-        !existingMetadata[newProvider]?.id
+        hasNoProviderData || !existingMetadata[newProvider] || !existingMetadata[newProvider]?.id
       );
     } catch (error) {
-      console.warn("Error parsing existing provider metadata:", error);
+      this.logger.warn(
+        {
+          tokenId: existingToken.id,
+          symbol: existingToken.symbol,
+          error: error instanceof Error ? { name: error.name, message: error.message } : error,
+        },
+        'Error parsing existing provider metadata'
+      );
       return true; // Update on parse error to fix corrupted metadata
     }
   }
@@ -1168,17 +1114,13 @@ export class ScreenshotParsingService {
       }
 
       // Parse existing metadata
-      const existingMetadata = JSON.parse(
-        currentToken.providerMetadata || "{}"
-      );
+      const existingMetadata = JSON.parse(currentToken.providerMetadata || '{}');
 
       // Add new provider data
       const provider = newMetadata.provider;
       if (provider && newMetadata.providerMetadata) {
         existingMetadata[provider] = {
-          id:
-            newMetadata.providerMetadata.id ||
-            newMetadata.providerMetadata.coinGeckoId,
+          id: newMetadata.providerMetadata.id || newMetadata.providerMetadata.coinGeckoId,
           symbol: newMetadata.symbol,
           name: newMetadata.name,
           ...newMetadata.providerMetadata,
@@ -1193,11 +1135,22 @@ export class ScreenshotParsingService {
         })
         .where(eq(schema.tokens.id, tokenId));
 
-      console.log(
-        `Successfully updated provider metadata for token ${currentToken.symbol} with ${provider} data`
+      this.logger.info(
+        {
+          tokenId: currentToken.id,
+          symbol: currentToken.symbol,
+          provider,
+        },
+        'Updated provider metadata for token'
       );
     } catch (error) {
-      console.error("Failed to update token provider metadata:", error);
+      this.logger.error(
+        {
+          tokenId,
+          error: error instanceof Error ? { name: error.name, message: error.message } : error,
+        },
+        'Failed to update token provider metadata'
+      );
       throw error;
     }
   }

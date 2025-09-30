@@ -5,6 +5,9 @@ import * as schema from '../db/schema';
 import { getUserId, requireAuth } from '../middleware/auth';
 import { portfolioValuationService } from '../services/portfolio-valuation';
 import { protectedProcedure, router } from '../trpc';
+import { createComponentLogger } from '../utils/logger';
+
+const usersLogger = createComponentLogger('router:users');
 
 export const usersRouter = router({
   // Get current authenticated user
@@ -82,7 +85,13 @@ export const usersRouter = router({
       );
     } catch (error) {
       // If error occurs (e.g., no base currency), return empty portfolio
-      console.warn(`Failed to get portfolio value for user ${dbUser.id}:`, error);
+      usersLogger.warn(
+        {
+          userId: dbUser.id,
+          error: error instanceof Error ? { name: error.name, message: error.message } : error,
+        },
+        'Failed to get portfolio value for user'
+      );
       return {
         totalValue: 0,
         baseCurrency: 'USD',

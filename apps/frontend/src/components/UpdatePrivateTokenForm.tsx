@@ -1,8 +1,14 @@
-import { zodResolver } from "@hookform/resolvers/zod";
-import { useEffect } from "react";
-import { useForm } from "react-hook-form";
-import { z } from "zod";
-import { Button } from "@/components/ui/button";
+import { zodResolver } from '@hookform/resolvers/zod';
+import { manualPriceMinimum, privateTokenUpdateSchema } from '@scani/shared';
+import { useEffect } from 'react';
+import { useForm } from 'react-hook-form';
+import type { z } from 'zod';
+import {
+  ManualPriceField,
+  PriceDescriptionField,
+  TokenDescriptionField,
+} from '@/components/tokens/fields';
+import { Button } from '@/components/ui/button';
 import {
   Dialog,
   DialogContent,
@@ -10,24 +16,12 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
-import { useToast } from "@/hooks/use-toast";
-import { trpc } from "@/lib/trpc";
+} from '@/components/ui/dialog';
+import { useToast } from '@/hooks/use-toast';
+import { withOptimisticHandlers } from '@/lib/cache/optimistic/entityManager';
+import { trpc } from '@/lib/trpc';
 
-// Form schema for updating private tokens
-const UpdatePrivateTokenFormSchema = z.object({
-  description: z.string().optional(),
-  manualPrice: z
-    .number()
-    .min(0.000001, "Price must be greater than 0")
-    .optional(),
-  priceDescription: z.string().optional(),
-});
-
-type UpdatePrivateTokenFormData = z.infer<typeof UpdatePrivateTokenFormSchema>;
+type UpdatePrivateTokenFormValues = z.infer<typeof privateTokenUpdateSchema>;
 
 interface UpdatePrivateTokenFormProps {
   isOpen: boolean;
@@ -40,6 +34,12 @@ interface UpdatePrivateTokenFormProps {
   onSuccess?: () => void;
 }
 
+const DEFAULT_VALUES: UpdatePrivateTokenFormValues = {
+  description: '',
+  manualPrice: undefined,
+  priceDescription: '',
+};
+
 export function UpdatePrivateTokenForm({
   isOpen,
   onClose,
@@ -49,74 +49,57 @@ export function UpdatePrivateTokenForm({
   const { toast } = useToast();
   const utils = trpc.useUtils();
 
-  const form = useForm<UpdatePrivateTokenFormData>({
-    resolver: zodResolver(UpdatePrivateTokenFormSchema),
-    defaultValues: {
-      description: "",
-      manualPrice: undefined,
-      priceDescription: "",
-    },
+  const form = useForm<UpdatePrivateTokenFormValues>({
+    resolver: zodResolver(privateTokenUpdateSchema),
+    defaultValues: DEFAULT_VALUES,
+    mode: 'onBlur',
   });
 
-  // TRPC mutation for updating token
-  const updateToken = trpc.tokens.update.useMutation({
-    onSuccess: () => {
-      toast({
-        title: "✅ Token updated successfully!",
-        description: "The private token has been updated.",
-      });
+  const updateToken = trpc.tokens.update.useMutation(
+    withOptimisticHandlers('token', 'update', utils, {
+      onSuccess: () => {
+        toast({
+          title: '✅ Token updated successfully!',
+          description: 'The private token has been updated.',
+        });
 
-      // Invalidate relevant queries since token price updates could affect portfolio values and unpriceable tokens
-      utils.holdings.getUnpriceableTokens.invalidate();
-      utils.users.getPortfolioValue.invalidate();
-      utils.accounts.getSummaries.invalidate();
+        onSuccess?.();
+        form.reset(DEFAULT_VALUES);
+        onClose();
+      },
+      onError: (error) => {
+        toast({
+          title: 'Error updating token',
+          description: error.message,
+          variant: 'destructive',
+        });
+      },
+    })
+  );
 
-      if (onSuccess) {
-        onSuccess();
-      }
-
-      onClose();
-      form.reset();
-    },
-    onError: (error) => {
-      toast({
-        title: "Error updating token",
-        description: error.message,
-        variant: "destructive",
-      });
-    },
-  });
-
-  // Reset form when token changes
   useEffect(() => {
-    if (token && isOpen) {
-      form.reset({
-        description: "",
-        manualPrice: undefined,
-        priceDescription: "",
-      });
+    if (isOpen) {
+      form.reset(DEFAULT_VALUES);
     }
-  }, [token, isOpen, form]);
+  }, [form, isOpen]);
 
-  const onSubmit = async (data: UpdatePrivateTokenFormData) => {
-    if (!token) return;
+  const onSubmit = async (values: UpdatePrivateTokenFormValues) => {
+    if (!token) {
+      return;
+    }
 
     try {
-      console.log("Updating private token:", token.id, data);
-
       await updateToken.mutateAsync({
         id: token.id,
-        data: {
-          description: data.description || undefined,
-          manualPrice: data.manualPrice || undefined,
-          priceDescription: data.priceDescription || undefined,
-        },
+        data: values,
       });
     } catch (error) {
-      console.error("Token update failed:", error);
-      // Error is already handled by mutation onError
+      console.error('Token update failed:', error);
     }
   };
+
+  const manualPriceError = form.formState.errors.manualPrice?.message;
+  const priceDescriptionError = form.formState.errors.priceDescription?.message;
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
@@ -124,62 +107,35 @@ export function UpdatePrivateTokenForm({
         <DialogHeader>
           <DialogTitle>Update {token?.symbol}</DialogTitle>
           <DialogDescription>
-            Update the description and current price for your private token.
-            Changes will be reflected in your portfolio calculations.
+            Update the description and current price for your private token. Changes will be
+            reflected in your portfolio calculations.
           </DialogDescription>
         </DialogHeader>
 
         <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
-          {/* Token Description */}
-          <div className="space-y-2">
-            <Label htmlFor="description">Token Description</Label>
-            <Textarea
-              {...form.register("description")}
-              placeholder="e.g., Private equity investment in Series A"
-              className="min-h-[80px]"
-            />
-            <p className="text-xs text-muted-foreground">
-              Update the description for your records and portfolio notes.
-            </p>
-          </div>
+          <TokenDescriptionField
+            label="Token Description"
+            registration={form.register('description')}
+            helperText="Update the description for your records and portfolio notes."
+            placeholder="e.g., Private equity investment in Series A"
+          />
 
-          {/* Current Price Update */}
-          <div className="space-y-2">
-            <Label htmlFor="manualPrice">New Current Price (USD)</Label>
-            <Input
-              type="number"
-              step="0.000001"
-              min="0.000001"
-              placeholder="e.g., 1250.00"
-              {...form.register("manualPrice", { valueAsNumber: true })}
-              className={
-                form.formState.errors.manualPrice ? "border-destructive" : ""
-              }
-            />
-            {form.formState.errors.manualPrice && (
-              <p className="text-sm text-destructive">
-                {form.formState.errors.manualPrice.message}
-              </p>
-            )}
-            <p className="text-xs text-muted-foreground">
-              Leave empty to keep current price. This will add a new price entry
-              with today's date.
-            </p>
-          </div>
+          <ManualPriceField
+            label="New Current Price (USD)"
+            registration={form.register('manualPrice', { valueAsNumber: true })}
+            errorMessage={manualPriceError}
+            helperText="Leave empty to keep the current price. Adding a value will create a new price entry with today's date."
+            min={manualPriceMinimum}
+            placeholder="e.g., 1250.00"
+          />
 
-          {/* Price Notes */}
-          <div className="space-y-2">
-            <Label htmlFor="priceDescription">Price Update Notes</Label>
-            <Input
-              {...form.register("priceDescription")}
-              placeholder="e.g., Updated based on Q4 2025 valuation"
-              className="text-sm"
-            />
-            <p className="text-xs text-muted-foreground">
-              Optional notes about the price update (required if updating
-              price).
-            </p>
-          </div>
+          <PriceDescriptionField
+            label="Price Update Notes"
+            registration={form.register('priceDescription')}
+            errorMessage={priceDescriptionError}
+            helperText="Required when providing a new price. Add context like valuation source or effective date."
+            placeholder="e.g., Updated based on Q4 2025 valuation"
+          />
 
           <DialogFooter>
             <Button type="button" variant="outline" onClick={onClose}>

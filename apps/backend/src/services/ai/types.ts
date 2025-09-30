@@ -9,6 +9,8 @@ export interface ParsedHolding {
   confidence: number;
   /** Additional notes or context from the AI */
   notes?: string;
+  /** Optional ID of an existing holding selected for update */
+  existingHoldingId?: string;
 }
 
 export interface ParsedPortfolio {

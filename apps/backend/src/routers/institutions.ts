@@ -5,6 +5,7 @@ import { z } from 'zod';
 import { db } from '../db/connection';
 import * as schema from '../db/schema';
 import { getUserId } from '../middleware/auth';
+import { emitEntityChange } from '../services/real-time-updates';
 import { protectedProcedure, router } from '../trpc';
 
 // Helper function to check if institution name already exists
@@ -52,6 +53,23 @@ export const institutionsRouter = router({
     return institutions;
   }),
 
+  getById: protectedProcedure.input(z.object({ id: z.string() })).query(async ({ input }) => {
+    const [institution] = await db
+      .select({
+        id: schema.institutions.id,
+        name: schema.institutions.name,
+        typeId: schema.institutions.typeId,
+        type: schema.institutionTypes.code,
+        typeName: schema.institutionTypes.name,
+      })
+      .from(schema.institutions)
+      .leftJoin(schema.institutionTypes, eq(schema.institutions.typeId, schema.institutionTypes.id))
+      .where(and(eq(schema.institutions.id, input.id), eq(schema.institutions.isActive, true)))
+      .limit(1);
+
+    return institution ?? null;
+  }),
+
   // Get institutions where the current user has accounts
   getByUserId: protectedProcedure.query(async ({ ctx }) => {
     const userId = getUserId(ctx);
@@ -87,7 +105,8 @@ export const institutionsRouter = router({
   // Create new institution
   create: protectedProcedure
     .input(CreateInstitutionSchema.omit({ userId: true }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
+      const userId = getUserId(ctx);
       const now = new Date();
 
       // Check if institution name already exists
@@ -155,6 +174,17 @@ export const institutionsRouter = router({
         throw new Error('Failed to retrieve created institution');
       }
 
+      emitEntityChange({
+        type: 'entity_changed',
+        entityType: 'institution',
+        operationType: 'create',
+        entityId: institution.id,
+        userId,
+        data: {
+          typeId: institution.typeId,
+        },
+      });
+
       return institution;
     }),
 
@@ -210,6 +240,27 @@ export const institutionsRouter = router({
         .delete(schema.accounts)
         .where(and(eq(schema.accounts.institutionId, input.id), eq(schema.accounts.userId, userId)))
         .returning();
+
+      emitEntityChange({
+        type: 'entity_changed',
+        entityType: 'institution',
+        operationType: 'delete',
+        entityId: input.id,
+        userId,
+        metadata: {
+          relatedEntities: userAccounts.map((account) => ({
+            type: 'account',
+            id: account.id,
+          })),
+        },
+        data: {
+          cascadeInfo: {
+            accountsDeleted: deletedAccounts.length,
+            holdingsDeleted: userHoldings.length,
+            transactionsDeleted: userTransactions.length,
+          },
+        },
+      });
 
       return {
         success: true,

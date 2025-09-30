@@ -9,9 +9,9 @@ import {
   Settings,
   Wallet,
   X,
-} from "lucide-react";
-import React, { useId, useState } from "react";
-import { Link, useLocation } from "react-router-dom";
+} from 'lucide-react';
+import React, { useId, useState } from 'react';
+import { Link, useLocation } from 'react-router-dom';
 import {
   Breadcrumb,
   BreadcrumbItem,
@@ -19,8 +19,8 @@ import {
   BreadcrumbList,
   BreadcrumbPage,
   BreadcrumbSeparator,
-} from "@/components/ui/breadcrumb";
-import { Button } from "@/components/ui/button";
+} from '@/components/ui/breadcrumb';
+import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -28,47 +28,49 @@ import {
   DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
-import { MonetizationNotification } from "@/components/ui/monetization-notification";
-import { SkipLinks } from "@/components/ui/skip-links";
-import { ThemeToggle } from "@/components/ui/theme-toggle";
-import { useAuth } from "@/contexts/AuthContext";
-import { UnpriceableTokensProvider } from "@/contexts/UnpriceableTokensContext";
-import { MOBILE_SPACING } from "@/lib/mobile-utils";
-import { trpc } from "@/lib/trpc";
-import { cn } from "@/lib/utils";
+} from '@/components/ui/dropdown-menu';
+import { MonetizationNotification } from '@/components/ui/monetization-notification';
+import { SkipLinks } from '@/components/ui/skip-links';
+import { ThemeToggle } from '@/components/ui/theme-toggle';
+import { useAuth } from '@/contexts/AuthContext';
+import { EntityDataProvider } from '@/contexts/EntityDataContext';
+import { RealtimeProvider } from '@/contexts/RealtimeContext';
+import { UnpriceableTokensProvider } from '@/contexts/UnpriceableTokensContext';
+import { MOBILE_SPACING } from '@/lib/mobile-utils';
+import { trpc } from '@/lib/trpc';
+import { cn } from '@/lib/utils';
 
 interface LayoutProps {
   children: React.ReactNode;
 }
 
 const navigation = [
-  { name: "Dashboard", href: "/", icon: Home },
-  { name: "Institutions", href: "/institutions", icon: Building2 },
-  { name: "Accounts", href: "/accounts", icon: Wallet },
-  { name: "Tokens", href: "/tokens", icon: Coins },
-  { name: "Holdings", href: "/holdings", icon: PieChart },
+  { name: 'Dashboard', href: '/', icon: Home },
+  { name: 'Institutions', href: '/institutions', icon: Building2 },
+  { name: 'Accounts', href: '/accounts', icon: Wallet },
+  { name: 'Tokens', href: '/tokens', icon: Coins },
+  { name: 'Holdings', href: '/holdings', icon: PieChart },
   // { name: 'Transactions', href: '/transactions', icon: CreditCard }, // HIDDEN: Transaction UI temporarily hidden
 ];
 
 // Helper function to determine which navigation item should be active
 function getActiveNavItem(pathname: string): string {
   // Exact matches first
-  if (pathname === "/") return "/";
-  if (pathname === "/institutions") return "/institutions";
-  if (pathname === "/accounts") return "/accounts";
-  if (pathname === "/tokens") return "/tokens";
-  if (pathname === "/holdings") return "/holdings";
+  if (pathname === '/') return '/';
+  if (pathname === '/institutions') return '/institutions';
+  if (pathname === '/accounts') return '/accounts';
+  if (pathname === '/tokens') return '/tokens';
+  if (pathname === '/holdings') return '/holdings';
   // if (pathname === '/transactions') return '/transactions'; // HIDDEN: Transaction UI temporarily hidden
 
   // Hierarchical path matches based on what page is actually rendered
   if (pathname.match(/^\/institutions\/[^/]+$/)) {
     // /institutions/:institutionId -> renders Accounts page
-    return "/accounts";
+    return '/accounts';
   }
   if (pathname.match(/^\/institutions\/[^/]+\/accounts\/[^/]+$/)) {
     // /institutions/:institutionId/accounts/:accountId -> renders Holdings page
-    return "/holdings";
+    return '/holdings';
   }
   // HIDDEN: Transaction UI temporarily hidden
   // if (pathname.match(/^\/institutions\/[^/]+\/accounts\/[^/]+\/holdings\/[^/]+$/)) {
@@ -77,13 +79,13 @@ function getActiveNavItem(pathname: string): string {
   // }
 
   // Default fallback
-  return "";
+  return '';
 }
 
 // Helper hook to generate breadcrumbs based on the current path with entity names
 function useBreadcrumbs(pathname: string) {
   // Parse URL to extract entity IDs based on actual routing structure
-  const pathSegments = pathname.split("/").filter(Boolean);
+  const pathSegments = pathname.split('/').filter(Boolean);
 
   // Extract IDs from URL patterns
   let institutionId = null;
@@ -91,84 +93,83 @@ function useBreadcrumbs(pathname: string) {
   let holdingId = null;
 
   // /institutions/:institutionId → show institution accounts
-  if (pathSegments[0] === "institutions" && pathSegments[1]) {
+  if (pathSegments[0] === 'institutions' && pathSegments[1]) {
     institutionId = pathSegments[1];
 
     // /institutions/:institutionId/accounts/:accountId → show account holdings
-    if (pathSegments[2] === "accounts" && pathSegments[3]) {
+    if (pathSegments[2] === 'accounts' && pathSegments[3]) {
       accountId = pathSegments[3];
 
       // /institutions/:institutionId/accounts/:accountId/holdings/:holdingId → show holding details
-      if (pathSegments[4] === "holdings" && pathSegments[5]) {
+      if (pathSegments[4] === 'holdings' && pathSegments[5]) {
         holdingId = pathSegments[5];
       }
     }
   }
 
   // Query data only when needed
-  const { data: institutions } = trpc.institutions.getAll.useQuery(undefined, {
-    enabled: Boolean(institutionId),
-  });
-  const { data: accounts } = trpc.accounts.getAll.useQuery(undefined, {
-    enabled: Boolean(accountId || holdingId),
-  });
-  const { data: holdings } = trpc.holdings.getAll.useQuery(undefined, {
-    enabled: Boolean(holdingId),
-  });
-  const { data: tokens } = trpc.tokens.getAll.useQuery(undefined, {
-    enabled: Boolean(holdingId),
-  });
+  const { data: institution } = trpc.institutions.getById.useQuery(
+    { id: institutionId ?? '' },
+    {
+      enabled: Boolean(institutionId),
+    }
+  );
+  const { data: account } = trpc.accounts.getById.useQuery(
+    { id: accountId ?? '' },
+    {
+      enabled: Boolean(accountId),
+    }
+  );
+  const { data: holding } = trpc.holdings.getById.useQuery(
+    { id: holdingId ?? '' },
+    {
+      enabled: Boolean(holdingId),
+    }
+  );
 
   // Generate breadcrumbs
-  const breadcrumbs = [{ name: "Dashboard", href: "/", isHome: true }];
+  const breadcrumbs = [{ name: 'Dashboard', href: '/', isHome: true }];
 
   // Special handling for specific routes
   const routeMap: Record<string, string> = {
-    institutions: "Institutions",
-    accounts: "Accounts",
-    tokens: "Tokens",
-    holdings: "Holdings",
+    institutions: 'Institutions',
+    accounts: 'Accounts',
+    tokens: 'Tokens',
+    holdings: 'Holdings',
     // transactions: 'Transactions', // HIDDEN: Transaction UI temporarily hidden
-    settings: "Settings",
-    "quick-add-holding": "Add Holding",
+    settings: 'Settings',
+    'quick-add-holding': 'Add Holding',
   };
 
-  let currentPath = "";
+  let currentPath = '';
   pathSegments.forEach((segment, index) => {
     currentPath += `/${segment}`;
 
     // Default name from route map or capitalize segment
-    let name =
-      routeMap[segment] || segment.charAt(0).toUpperCase() + segment.slice(1);
+    let name = routeMap[segment] || segment.charAt(0).toUpperCase() + segment.slice(1);
 
     // Override with entity names when available
-    if (pathSegments[0] === "institutions") {
+    if (pathSegments[0] === 'institutions') {
       if (index === 1 && institutionId === segment) {
         // Institution ID segment - show institution name
-        const institution = institutions?.find((inst) => inst.id === segment);
         if (institution) {
           name = institution.name;
         }
       } else if (index === 3 && segment && accountId === segment) {
         // Account ID segment in /institutions/:id/accounts/:accountId
-        const account = accounts?.find((acc) => acc.id === segment);
         if (account) {
           name = account.name;
         }
       } else if (index === 5 && segment && holdingId === segment) {
         // Holding ID segment in /institutions/:id/accounts/:id/holdings/:holdingId
-        const holding = holdings?.find((h) => h.id === segment);
-        const token = holding
-          ? tokens?.find((t) => t.id === holding.tokenId)
-          : null;
-        if (token) {
-          name = token.symbol || token.name;
+        if (holding) {
+          name = holding.tokenSymbol || holding.tokenName || name;
         }
       }
       // Skip 'accounts' and 'holdings' literal segments in nested paths - they're redundant
       else if (
-        (segment === "accounts" && pathSegments.length > 2) ||
-        (segment === "holdings" && pathSegments.length > 4)
+        (segment === 'accounts' && pathSegments.length > 2) ||
+        (segment === 'holdings' && pathSegments.length > 4)
       ) {
         return; // Skip adding this breadcrumb
       }
@@ -183,15 +184,11 @@ function useBreadcrumbs(pathname: string) {
 
   // Special case: if we're on a hierarchical holding route that shows transactions
   // (i.e., /institutions/:id/accounts/:id/holdings/:id), modify the last breadcrumb to be "Transactions"
-  if (
-    holdingId &&
-    pathSegments.length === 6 &&
-    pathSegments[4] === "holdings"
-  ) {
+  if (holdingId && pathSegments.length === 6 && pathSegments[4] === 'holdings') {
     // The last breadcrumb should be "Transactions" instead of the holding name
     const lastBreadcrumb = breadcrumbs[breadcrumbs.length - 1];
     if (lastBreadcrumb) {
-      lastBreadcrumb.name = "Transactions";
+      lastBreadcrumb.name = 'Transactions';
     }
   }
 
@@ -207,11 +204,10 @@ export function Layout({ children }: LayoutProps) {
   const mainContentId = useId();
 
   // Query for unpriceable tokens to show monetization notification
-  const { data: unpriceableTokens } =
-    trpc.holdings.getUnpriceableTokens.useQuery(undefined, {
-      enabled: Boolean(user), // Only query if user is logged in
-      refetchOnWindowFocus: false, // Don't refetch on window focus to avoid spam
-    });
+  const { data: unpriceableTokens } = trpc.holdings.getUnpriceableTokens.useQuery(undefined, {
+    enabled: Boolean(user), // Only query if user is logged in
+    refetchOnWindowFocus: false, // Don't refetch on window focus to avoid spam
+  });
 
   const handleSignOut = async () => {
     await signOut();
@@ -221,28 +217,30 @@ export function Layout({ children }: LayoutProps) {
   const breadcrumbs = useBreadcrumbs(location.pathname);
 
   return (
-    <>
-      <SkipLinks />
-      <UnpriceableTokensProvider
-        unpriceableTokens={unpriceableTokens?.tokens}
-        notificationDismissed={notificationDismissed}
-      >
-        <LayoutContent
-          sidebarOpen={sidebarOpen}
-          setSidebarOpen={setSidebarOpen}
+    <RealtimeProvider>
+      <EntityDataProvider>
+        <SkipLinks />
+        <UnpriceableTokensProvider
+          unpriceableTokens={unpriceableTokens?.tokens}
           notificationDismissed={notificationDismissed}
-          setNotificationDismissed={setNotificationDismissed}
-          user={user}
-          handleSignOut={handleSignOut}
-          breadcrumbs={breadcrumbs}
-          navigationId={navigationId}
-          mainContentId={mainContentId}
-          unpriceableTokens={unpriceableTokens}
         >
-          {children}
-        </LayoutContent>
-      </UnpriceableTokensProvider>
-    </>
+          <LayoutContent
+            sidebarOpen={sidebarOpen}
+            setSidebarOpen={setSidebarOpen}
+            notificationDismissed={notificationDismissed}
+            setNotificationDismissed={setNotificationDismissed}
+            user={user}
+            handleSignOut={handleSignOut}
+            breadcrumbs={breadcrumbs}
+            navigationId={navigationId}
+            mainContentId={mainContentId}
+            unpriceableTokens={unpriceableTokens}
+          >
+            {children}
+          </LayoutContent>
+        </UnpriceableTokensProvider>
+      </EntityDataProvider>
+    </RealtimeProvider>
   );
 }
 
@@ -308,7 +306,7 @@ function LayoutContent({
           className="fixed inset-0 z-40 bg-background/80 backdrop-blur-sm md:hidden border-0 p-0 cursor-default"
           onClick={() => setSidebarOpen(false)}
           onKeyDown={(e) => {
-            if (e.key === "Escape" || e.key === "Enter") {
+            if (e.key === 'Escape' || e.key === 'Enter') {
               setSidebarOpen(false);
             }
           }}
@@ -318,17 +316,15 @@ function LayoutContent({
       {/* Sidebar */}
       <aside
         className={cn(
-          "fixed inset-y-0 left-0 z-50 w-64 bg-card border-r transform transition-transform duration-200 ease-in-out md:translate-x-0 md:static md:inset-0",
-          sidebarOpen ? "translate-x-0" : "-translate-x-full"
+          'fixed inset-y-0 left-0 z-50 w-64 bg-card border-r transform transition-transform duration-200 ease-in-out md:translate-x-0 md:static md:inset-0',
+          sidebarOpen ? 'translate-x-0' : '-translate-x-full'
         )}
         aria-label="Main navigation"
       >
         <div className="flex items-center justify-between h-14 px-4 border-b">
           <div className="flex items-center space-x-2">
             <div className="w-7 h-7 bg-primary rounded-lg flex items-center justify-center">
-              <span className="text-primary-foreground font-bold text-base">
-                S
-              </span>
+              <span className="text-primary-foreground font-bold text-base">S</span>
             </div>
             <span className="text-lg font-semibold">Scani</span>
           </div>
@@ -346,10 +342,7 @@ function LayoutContent({
 
         <nav
           id={navigationId}
-          className={cn(
-            "flex-1 px-3 py-3 mt-2 overflow-y-auto",
-            MOBILE_SPACING.listGap
-          )}
+          className={cn('flex-1 px-3 py-3 mt-2 overflow-y-auto', MOBILE_SPACING.listGap)}
           aria-label="Main menu"
         >
           {navigation.map((item) => {
@@ -362,12 +355,12 @@ function LayoutContent({
                 key={item.name}
                 to={item.href}
                 className={cn(
-                  "flex items-center space-x-2.5 px-2.5 py-2 sm:py-1.5 rounded-md font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 touch-manipulation min-h-[36px]",
+                  'flex items-center space-x-2.5 px-2.5 py-2 sm:py-1.5 rounded-md font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 touch-manipulation min-h-[36px]',
                   isActive
-                    ? "bg-primary text-primary-foreground"
-                    : "text-muted-foreground hover:text-foreground hover:bg-accent"
+                    ? 'bg-primary text-primary-foreground'
+                    : 'text-muted-foreground hover:text-foreground hover:bg-accent'
                 )}
-                aria-current={isActive ? "page" : undefined}
+                aria-current={isActive ? 'page' : undefined}
                 onClick={() => setSidebarOpen(false)}
               >
                 <Icon className="h-4 w-4" />
@@ -405,17 +398,11 @@ function LayoutContent({
                           <BreadcrumbPage>{crumb.name}</BreadcrumbPage>
                         ) : (
                           <BreadcrumbLink to={crumb.href}>
-                            {crumb.isHome ? (
-                              <Home className="h-3.5 w-3.5" />
-                            ) : (
-                              crumb.name
-                            )}
+                            {crumb.isHome ? <Home className="h-3.5 w-3.5" /> : crumb.name}
                           </BreadcrumbLink>
                         )}
                       </BreadcrumbItem>
-                      {index < breadcrumbs.length - 1 && (
-                        <BreadcrumbSeparator />
-                      )}
+                      {index < breadcrumbs.length - 1 && <BreadcrumbSeparator />}
                     </React.Fragment>
                   ))}
                 </BreadcrumbList>
@@ -435,11 +422,11 @@ function LayoutContent({
                       >
                         <div className="h-7 w-7 bg-muted rounded-full flex items-center justify-center">
                           <span className="text-xs font-medium">
-                            {user.email?.[0]?.toUpperCase() || "?"}
+                            {user.email?.[0]?.toUpperCase() || '?'}
                           </span>
                         </div>
                         <span className="text-sm hidden sm:inline">
-                          {user.email?.split("@")[0] || "User"}
+                          {user.email?.split('@')[0] || 'User'}
                         </span>
                       </Button>
                     </DropdownMenuTrigger>
@@ -447,19 +434,14 @@ function LayoutContent({
                       <DropdownMenuLabel className="font-normal">
                         <div className="flex flex-col space-y-0.5">
                           <p className="text-sm font-medium leading-none">
-                            {user.email?.split("@")[0] || "User"}
+                            {user.email?.split('@')[0] || 'User'}
                           </p>
-                          <p className="text-xs leading-none text-muted-foreground">
-                            {user.email}
-                          </p>
+                          <p className="text-xs leading-none text-muted-foreground">{user.email}</p>
                         </div>
                       </DropdownMenuLabel>
                       <DropdownMenuSeparator />
                       <DropdownMenuItem asChild>
-                        <Link
-                          to="/settings"
-                          className="flex items-center space-x-1.5 w-full"
-                        >
+                        <Link to="/settings" className="flex items-center space-x-1.5 w-full">
                           <Settings className="h-3.5 w-3.5" />
                           <span>Settings</span>
                         </Link>
@@ -485,23 +467,19 @@ function LayoutContent({
         </header>
 
         {/* Monetization notification for unpriceable tokens */}
-        {unpriceableTokens &&
-          unpriceableTokens.count > 0 &&
-          !notificationDismissed && (
-            <div className="px-4 sm:px-6 pt-4">
-              <MonetizationNotification
-                unpriceableTokens={unpriceableTokens.tokens}
-                onDismiss={() => setNotificationDismissed(true)}
-              />
-            </div>
-          )}
+        {unpriceableTokens && unpriceableTokens.count > 0 && !notificationDismissed && (
+          <div className="px-4 sm:px-6 pt-4">
+            <MonetizationNotification
+              unpriceableTokens={unpriceableTokens.tokens}
+              onDismiss={() => setNotificationDismissed(true)}
+            />
+          </div>
+        )}
 
         {/* Page content - scrollable */}
         <main
           id={mainContentId}
-          className={cn(
-            "flex-1 overflow-y-auto px-4 pt-4 pb-6 sm:px-6 sm:pt-5 sm:pb-6"
-          )}
+          className={cn('flex-1 overflow-y-auto px-4 pt-4 pb-6 sm:px-6 sm:pt-5 sm:pb-6')}
           tabIndex={-1}
         >
           {children}

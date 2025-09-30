@@ -1,18 +1,11 @@
-import { zodResolver } from "@hookform/resolvers/zod";
-import { FinancialMath, type Transaction } from "@scani/shared";
-import {
-  Calculator,
-  Calendar,
-  DollarSign,
-  Info,
-  Loader2,
-  Plus,
-} from "lucide-react";
-import React, { useCallback, useEffect, useId, useState } from "react";
-import { useForm } from "react-hook-form";
-import { z } from "zod";
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { Button } from "@/components/ui/button";
+import { zodResolver } from '@hookform/resolvers/zod';
+import { FinancialMath, type Transaction } from '@scani/shared';
+import { Calculator, Calendar, DollarSign, Info, Loader2, Plus } from 'lucide-react';
+import React, { useCallback, useEffect, useId, useState } from 'react';
+import { useForm } from 'react-hook-form';
+import { z } from 'zod';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { Button } from '@/components/ui/button';
 import {
   Dialog,
   DialogContent,
@@ -20,26 +13,23 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { LoadingButton } from "@/components/ui/loading";
+} from '@/components/ui/dialog';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { LoadingButton } from '@/components/ui/loading';
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from "@/components/ui/select";
-import { Textarea } from "@/components/ui/textarea";
-import { useToast } from "@/hooks/use-toast";
-import type {
-  ApiAccount,
-  ApiHolding,
-  ApiInstitution,
-  ApiToken,
-} from "@/lib/api-types";
-import { trpc } from "@/lib/trpc";
+} from '@/components/ui/select';
+import { Textarea } from '@/components/ui/textarea';
+import { useEntityData } from '@/contexts/EntityDataContext';
+import { useToast } from '@/hooks/use-toast';
+import type { ApiAccount, ApiHolding, ApiInstitution, ApiToken } from '@/lib/api-types';
+import { withOptimisticHandlers } from '@/lib/cache/optimistic/entityManager';
+import { trpc } from '@/lib/trpc';
 
 // Transaction type metadata - icons and additional properties
 export const TRANSACTION_TYPE_METADATA: Record<
@@ -49,77 +39,62 @@ export const TRANSACTION_TYPE_METADATA: Record<
     requiresPrice: boolean;
   }
 > = {
-  buy: { icon: "📈", requiresPrice: true },
-  sell: { icon: "📉", requiresPrice: true },
-  deposit: { icon: "💰", requiresPrice: false },
-  withdrawal: { icon: "🏧", requiresPrice: false },
-  dividend: { icon: "💵", requiresPrice: false },
-  interest: { icon: "📊", requiresPrice: false },
-  fee: { icon: "💸", requiresPrice: false },
-  transfer: { icon: "↔️", requiresPrice: false },
-  other: { icon: "📝", requiresPrice: false },
+  buy: { icon: '📈', requiresPrice: true },
+  sell: { icon: '📉', requiresPrice: true },
+  deposit: { icon: '💰', requiresPrice: false },
+  withdrawal: { icon: '🏧', requiresPrice: false },
+  dividend: { icon: '💵', requiresPrice: false },
+  interest: { icon: '📊', requiresPrice: false },
+  fee: { icon: '💸', requiresPrice: false },
+  transfer: { icon: '↔️', requiresPrice: false },
+  other: { icon: '📝', requiresPrice: false },
 };
 
 // Enhanced transaction form schema with comprehensive validation
 const TransactionFormSchema = z.object({
-  holdingId: z.string().min(1, "Please select a holding/account"),
+  holdingId: z.string().min(1, 'Please select a holding/account'),
   type: z.enum([
-    "buy",
-    "sell",
-    "deposit",
-    "withdrawal",
-    "dividend",
-    "interest",
-    "fee",
-    "transfer",
-    "other",
+    'buy',
+    'sell',
+    'deposit',
+    'withdrawal',
+    'dividend',
+    'interest',
+    'fee',
+    'transfer',
+    'other',
   ]),
   amount: z
     .string({
-      required_error: "Amount is required",
+      required_error: 'Amount is required',
     })
-    .refine((val) => val.trim() !== "", "Amount is required")
-    .refine(
-      (val) => !Number.isNaN(parseFloat(val)),
-      "Amount must be a valid number"
-    )
-    .refine((val) => parseFloat(val) !== 0, "Amount cannot be zero")
+    .refine((val) => val.trim() !== '', 'Amount is required')
+    .refine((val) => !Number.isNaN(parseFloat(val)), 'Amount must be a valid number')
+    .refine((val) => parseFloat(val) !== 0, 'Amount cannot be zero')
     .refine(
       (val) => Math.abs(parseFloat(val)) >= 0.01,
-      "Amount is too small. Minimum value is 0.01"
+      'Amount is too small. Minimum value is 0.01'
     )
     .refine(
       (val) => Math.abs(parseFloat(val)) <= 1_000_000_000,
-      "Amount is too large. Maximum value is 1 billion"
+      'Amount is too large. Maximum value is 1 billion'
     ),
   fee: z
     .string({
-      invalid_type_error: "Fee must be a valid number",
+      invalid_type_error: 'Fee must be a valid number',
     })
+    .refine((val) => val === '' || !Number.isNaN(parseFloat(val)), 'Fee must be a valid number')
+    .refine((val) => val === '' || parseFloat(val) >= 0, 'Fee cannot be negative')
     .refine(
-      (val) => val === "" || !Number.isNaN(parseFloat(val)),
-      "Fee must be a valid number"
+      (val) => val === '' || parseFloat(val) <= 10_000,
+      'Fee seems unreasonably high (max: $10K)'
     )
-    .refine(
-      (val) => val === "" || parseFloat(val) >= 0,
-      "Fee cannot be negative"
-    )
-    .refine(
-      (val) => val === "" || parseFloat(val) <= 10_000,
-      "Fee seems unreasonably high (max: $10K)"
-    )
-    .default("0"),
-  description: z
-    .string()
-    .max(500, "Description must be at most 500 characters")
-    .optional(),
-  reference: z
-    .string()
-    .max(100, "Reference must be at most 100 characters")
-    .optional(),
+    .default('0'),
+  description: z.string().max(500, 'Description must be at most 500 characters').optional(),
+  reference: z.string().max(100, 'Reference must be at most 100 characters').optional(),
   timestamp: z.date({
-    required_error: "Transaction date is required",
-    invalid_type_error: "Invalid date",
+    required_error: 'Transaction date is required',
+    invalid_type_error: 'Invalid date',
   }),
 });
 
@@ -129,7 +104,7 @@ interface TransactionFormProps {
   isOpen: boolean;
   onClose: () => void;
   transaction?: Transaction;
-  mode: "create" | "edit";
+  mode: 'create' | 'edit';
   defaultHoldingId?: string;
 }
 
@@ -164,11 +139,15 @@ export function TransactionForm({
   const timestampId = useId();
 
   // Fetch data
-  const { data: holdings, isLoading: holdingsLoading } =
-    trpc.holdings.getAll.useQuery();
-  const { data: accounts } = trpc.accounts.getAll.useQuery();
-  const { data: tokens } = trpc.tokens.getAll.useQuery();
-  const { data: institutions } = trpc.institutions.getAll.useQuery();
+  const { data: holdings, isLoading: holdingsLoading } = trpc.holdings.getAll.useQuery();
+  const {
+    accounts: accountsState,
+    tokens: tokensState,
+    institutions: institutionsState,
+  } = useEntityData();
+  const accounts = accountsState.data;
+  const tokens = tokensState.data;
+  const institutions = institutionsState.data;
   const {
     data: transactionTypes,
     isLoading: transactionTypesLoading,
@@ -179,9 +158,7 @@ export function TransactionForm({
   // Find user's base currency from tokens
   const baseCurrency = React.useMemo(() => {
     if (!userPrefs?.baseCurrencyId || !tokens) return null;
-    return (
-      tokens.find((token) => token.id === userPrefs.baseCurrencyId) || null
-    );
+    return tokens.find((token) => token.id === userPrefs.baseCurrencyId) || null;
   }, [userPrefs?.baseCurrencyId, tokens]);
 
   const utils = trpc.useUtils();
@@ -193,28 +170,22 @@ export function TransactionForm({
     return transactionTypes.map((type) => ({
       value: type.code,
       label: type.name,
-      description: type.description || "",
-      icon: TRANSACTION_TYPE_METADATA[type.code]?.icon || "📝",
-      requiresPrice:
-        TRANSACTION_TYPE_METADATA[type.code]?.requiresPrice || false,
+      description: type.description || '',
+      icon: TRANSACTION_TYPE_METADATA[type.code]?.icon || '📝',
+      requiresPrice: TRANSACTION_TYPE_METADATA[type.code]?.requiresPrice || false,
     }));
   }, [transactionTypes]);
 
   // Show error if backend fails to return transaction types
   if (transactionTypesError) {
-    console.error(
-      "Failed to load transaction types from backend:",
-      transactionTypesError
-    );
+    console.error('Failed to load transaction types from backend:', transactionTypesError);
   }
 
   // Create maps for quick lookups
   const accountsMap = accounts
     ? Object.fromEntries(accounts.map((a: ApiAccount) => [a.id, a]))
     : {};
-  const tokensMap = tokens
-    ? Object.fromEntries(tokens.map((t: ApiToken) => [t.id, t]))
-    : {};
+  const tokensMap = tokens ? Object.fromEntries(tokens.map((t: ApiToken) => [t.id, t])) : {};
   const institutionsMap = institutions
     ? Object.fromEntries(institutions.map((i: ApiInstitution) => [i.id, i]))
     : {};
@@ -224,77 +195,65 @@ export function TransactionForm({
     holdings?.map((holding: ApiHolding) => {
       const account = accountsMap[holding.accountId];
       const token = tokensMap[holding.tokenId];
-      const institution = account
-        ? institutionsMap[account.institutionId]
-        : null;
+      const institution = account ? institutionsMap[account.institutionId] : null;
 
       return {
         ...holding,
         account,
         token,
         institution,
-        displayName: `${token?.name || "Unknown Token"} in ${
-          account?.name || "Unknown Account"
-        }`,
-        balanceDisplay: `${parseFloat(holding.balance ?? "0").toFixed(
+        displayName: `${token?.name || 'Unknown Token'} in ${account?.name || 'Unknown Account'}`,
+        balanceDisplay: `${parseFloat(holding.balance ?? '0').toFixed(
           token?.decimals || 2
-        )} ${token?.symbol || ""}`,
+        )} ${token?.symbol || ''}`,
       };
     }) || [];
 
   // Mutations
-  const createTransaction = trpc.transactions.create.useMutation({
-    onSuccess: (data) => {
-      toast({
-        title: "✅ Transaction created successfully!",
-        description: `Your ${data?.type || "transaction"} has been recorded.`,
-      });
-      utils.transactions.getAll.invalidate();
-      utils.holdings.getAll.invalidate();
-      utils.holdings.getUnpriceableTokens.invalidate();
-      utils.accounts.getAll.invalidate();
-      utils.accounts.getSummaries.invalidate();
-      utils.users.getPortfolioValue.invalidate();
-      handleFormReset();
-      onClose();
-    },
-    onError: (error) => {
-      toast({
-        title: "Error creating transaction",
-        description: error.message,
-        variant: "destructive",
-      });
-    },
-    onSettled: () => {
-      setIsSubmitting(false);
-    },
-  });
+  const createTransaction = trpc.transactions.create.useMutation(
+    withOptimisticHandlers('transaction', 'create', utils, {
+      onSuccess: (data) => {
+        toast({
+          title: '✅ Transaction created successfully!',
+          description: `Your ${data?.type || 'transaction'} has been recorded.`,
+        });
+        handleFormReset();
+        onClose();
+      },
+      onError: (error) => {
+        toast({
+          title: 'Error creating transaction',
+          description: error.message,
+          variant: 'destructive',
+        });
+      },
+      onSettled: () => {
+        setIsSubmitting(false);
+      },
+    })
+  );
 
-  const updateTransaction = trpc.transactions.update.useMutation({
-    onSuccess: (data) => {
-      toast({
-        title: "✅ Transaction updated successfully!",
-        description: `Your ${data?.type || "transaction"} has been updated.`,
-      });
-      utils.transactions.getAll.invalidate();
-      utils.holdings.getAll.invalidate();
-      utils.holdings.getUnpriceableTokens.invalidate();
-      utils.accounts.getAll.invalidate();
-      utils.accounts.getSummaries.invalidate();
-      utils.users.getPortfolioValue.invalidate();
-      onClose();
-    },
-    onError: (error) => {
-      toast({
-        title: "Error updating transaction",
-        description: error.message,
-        variant: "destructive",
-      });
-    },
-    onSettled: () => {
-      setIsSubmitting(false);
-    },
-  });
+  const updateTransaction = trpc.transactions.update.useMutation(
+    withOptimisticHandlers('transaction', 'update', utils, {
+      onSuccess: (data) => {
+        toast({
+          title: '✅ Transaction updated successfully!',
+          description: `Your ${data?.type || 'transaction'} has been updated.`,
+        });
+        onClose();
+      },
+      onError: (error) => {
+        toast({
+          title: 'Error updating transaction',
+          description: error.message,
+          variant: 'destructive',
+        });
+      },
+      onSettled: () => {
+        setIsSubmitting(false);
+      },
+    })
+  );
 
   // Form setup
   const {
@@ -309,27 +268,25 @@ export function TransactionForm({
   } = useForm({
     resolver: zodResolver(TransactionFormSchema),
     defaultValues: {
-      holdingId: transaction?.holdingId || defaultHoldingId || "",
-      type: (transaction?.type as TransactionFormData["type"]) || "deposit",
-      amount: transaction?.amount || "0",
-      fee: transaction?.fee || "0",
-      description: transaction?.description || "",
-      reference: transaction?.reference || "",
+      holdingId: transaction?.holdingId || defaultHoldingId || '',
+      type: (transaction?.type as TransactionFormData['type']) || 'deposit',
+      amount: transaction?.amount || '0',
+      fee: transaction?.fee || '0',
+      description: transaction?.description || '',
+      reference: transaction?.reference || '',
       timestamp: transaction?.timestamp || new Date(),
     },
-    mode: "onChange",
+    mode: 'onChange',
   });
 
   // Watch form values for real-time validation and calculations
-  const watchedHoldingId = watch("holdingId");
-  const watchedType = watch("type");
-  const watchedAmount = watch("amount");
-  const watchedFee = watch("fee");
+  const watchedHoldingId = watch('holdingId');
+  const watchedType = watch('type');
+  const watchedAmount = watch('amount');
+  const watchedFee = watch('fee');
 
   // Get transaction type info
-  const selectedTransactionType = TRANSACTION_TYPES.find(
-    (t) => t.value === watchedType
-  );
+  const selectedTransactionType = TRANSACTION_TYPES.find((t) => t.value === watchedType);
   const selectedHolding = processedHoldings.find(
     (h: ProcessedHolding) => h.id === watchedHoldingId
   );
@@ -350,21 +307,21 @@ export function TransactionForm({
     if (transaction) {
       reset({
         holdingId: transaction.holdingId,
-        type: transaction.type as TransactionFormData["type"],
+        type: transaction.type as TransactionFormData['type'],
         amount: transaction.amount,
         fee: transaction.fee,
-        description: transaction.description || "",
-        reference: transaction.reference || "",
+        description: transaction.description || '',
+        reference: transaction.reference || '',
         timestamp: new Date(transaction.timestamp),
       });
     } else {
       reset({
-        holdingId: defaultHoldingId || "",
-        type: "deposit",
-        amount: "0",
-        fee: "0",
-        description: "",
-        reference: "",
+        holdingId: defaultHoldingId || '',
+        type: 'deposit',
+        amount: '0',
+        fee: '0',
+        description: '',
+        reference: '',
         timestamp: new Date(),
       });
     }
@@ -382,10 +339,10 @@ export function TransactionForm({
     // Prevent submission if transaction types failed to load
     if (transactionTypesError) {
       toast({
-        title: "Error",
+        title: 'Error',
         description:
-          "Transaction types could not be loaded. Please refresh the page and try again.",
-        variant: "destructive",
+          'Transaction types could not be loaded. Please refresh the page and try again.',
+        variant: 'destructive',
       });
       return;
     }
@@ -395,14 +352,14 @@ export function TransactionForm({
 
     // Validate that we have the required data
     if (!data.amount || parseFloat(data.amount) === 0) {
-      setError("amount", {
-        type: "manual",
-        message: "Amount is required and cannot be zero",
+      setError('amount', {
+        type: 'manual',
+        message: 'Amount is required and cannot be zero',
       });
       toast({
-        title: "Validation Error",
-        description: "Amount is required and cannot be zero",
-        variant: "destructive",
+        title: 'Validation Error',
+        description: 'Amount is required and cannot be zero',
+        variant: 'destructive',
       });
       return;
     }
@@ -414,13 +371,13 @@ export function TransactionForm({
       holdingId: data.holdingId,
       type: data.type,
       amount: data.amount,
-      fee: data.fee || "0",
+      fee: data.fee || '0',
       description: data.description?.trim() || undefined,
       reference: data.reference?.trim() || undefined,
       timestamp: data.timestamp,
     };
 
-    if (mode === "create") {
+    if (mode === 'create') {
       createTransaction.mutate(submitData);
     } else if (transaction) {
       updateTransaction.mutate({
@@ -432,7 +389,7 @@ export function TransactionForm({
 
   const handleOpenChange = (open: boolean) => {
     if (!open) {
-      if (hasUnsavedChanges && mode === "create") {
+      if (hasUnsavedChanges && mode === 'create') {
         setIsCloseConfirmOpen(true);
         return; // Prevent closing and show confirmation dialog
       }
@@ -459,53 +416,41 @@ export function TransactionForm({
       const token = selectedHolding.token;
       const account = selectedHolding.account;
 
-      let description = "";
+      let description = '';
       switch (watchedType) {
-        case "buy":
-          description = `Buy ${token?.symbol || "asset"} in ${
-            account?.name || "account"
-          }`;
+        case 'buy':
+          description = `Buy ${token?.symbol || 'asset'} in ${account?.name || 'account'}`;
           break;
-        case "sell":
-          description = `Sell ${token?.symbol || "asset"} from ${
-            account?.name || "account"
-          }`;
+        case 'sell':
+          description = `Sell ${token?.symbol || 'asset'} from ${account?.name || 'account'}`;
           break;
-        case "deposit":
-          description = `Deposit to ${account?.name || "account"}`;
+        case 'deposit':
+          description = `Deposit to ${account?.name || 'account'}`;
           break;
-        case "withdrawal":
-          description = `Withdrawal from ${account?.name || "account"}`;
+        case 'withdrawal':
+          description = `Withdrawal from ${account?.name || 'account'}`;
           break;
-        case "dividend":
-          description = `${token?.symbol || "Asset"} dividend payment`;
+        case 'dividend':
+          description = `${token?.symbol || 'Asset'} dividend payment`;
           break;
-        case "interest":
-          description = `Interest earned in ${account?.name || "account"}`;
+        case 'interest':
+          description = `Interest earned in ${account?.name || 'account'}`;
           break;
         default:
           description = `${selectedTransactionType.label} transaction`;
       }
 
-      setValue("description", description);
-      trigger("description");
+      setValue('description', description);
+      trigger('description');
     }
-  }, [
-    selectedTransactionType,
-    selectedHolding,
-    watchedType,
-    setValue,
-    trigger,
-  ]);
+  }, [selectedTransactionType, selectedHolding, watchedType, setValue, trigger]);
 
   if (holdingsLoading || !tokens || !accounts || !institutions) {
     return (
       <Dialog open={isOpen} onOpenChange={handleOpenChange}>
         <DialogContent className="max-w-[95vw] sm:max-w-[600px] mx-4 sm:mx-auto">
           <DialogHeader>
-            <DialogTitle>
-              {mode === "create" ? "Add Transaction" : "Edit Transaction"}
-            </DialogTitle>
+            <DialogTitle>{mode === 'create' ? 'Add Transaction' : 'Edit Transaction'}</DialogTitle>
             <DialogDescription>Loading transaction form...</DialogDescription>
           </DialogHeader>
           <div className="flex justify-center py-8">
@@ -521,17 +466,15 @@ export function TransactionForm({
       <DialogContent className="max-w-[95vw] sm:max-w-[700px] max-h-[90vh] mx-4 sm:mx-auto overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="flex items-center space-x-2">
-            <span>
-              {mode === "create" ? "Add New Transaction" : "Edit Transaction"}
-            </span>
+            <span>{mode === 'create' ? 'Add New Transaction' : 'Edit Transaction'}</span>
             {selectedTransactionType && (
               <span className="text-xl">{selectedTransactionType.icon}</span>
             )}
           </DialogTitle>
           <DialogDescription>
-            {mode === "create"
-              ? "Record a new transaction to track your financial activity"
-              : "Update the details of your transaction"}
+            {mode === 'create'
+              ? 'Record a new transaction to track your financial activity'
+              : 'Update the details of your transaction'}
           </DialogDescription>
         </DialogHeader>
 
@@ -543,16 +486,12 @@ export function TransactionForm({
             </Label>
             <Select
               value={watchedType}
-              onValueChange={(value) =>
-                setValue("type", value as TransactionFormData["type"])
-              }
+              onValueChange={(value) => setValue('type', value as TransactionFormData['type'])}
             >
               <SelectTrigger id={typeId}>
                 {selectedTransactionType ? (
                   <div className="flex items-center gap-2">
-                    <span className="text-base">
-                      {selectedTransactionType.icon}
-                    </span>
+                    <span className="text-base">{selectedTransactionType.icon}</span>
                     <span>{selectedTransactionType.label}</span>
                   </div>
                 ) : (
@@ -575,9 +514,7 @@ export function TransactionForm({
                         <span className="text-base">{type.icon}</span>
                         <div className="flex-1">
                           <div className="font-medium">{type.label}</div>
-                          <div className="text-xs text-muted-foreground">
-                            {type.description}
-                          </div>
+                          <div className="text-xs text-muted-foreground">{type.description}</div>
                         </div>
                       </div>
                     </SelectItem>
@@ -585,19 +522,13 @@ export function TransactionForm({
                 )}
               </SelectContent>
             </Select>
-            {errors.type && (
-              <p className="text-sm text-destructive">{errors.type.message}</p>
-            )}
+            {errors.type && <p className="text-sm text-destructive">{errors.type.message}</p>}
 
             {selectedTransactionType && (
               <Alert>
                 <Info className="h-4 w-4" />
-                <AlertTitle>
-                  {selectedTransactionType.label} Transaction
-                </AlertTitle>
-                <AlertDescription>
-                  {selectedTransactionType.description}
-                </AlertDescription>
+                <AlertTitle>{selectedTransactionType.label} Transaction</AlertTitle>
+                <AlertDescription>{selectedTransactionType.description}</AlertDescription>
               </Alert>
             )}
           </div>
@@ -609,7 +540,7 @@ export function TransactionForm({
             </Label>
             <Select
               value={watchedHoldingId}
-              onValueChange={(value) => setValue("holdingId", value)}
+              onValueChange={(value) => setValue('holdingId', value)}
             >
               <SelectTrigger id={holdingId}>
                 <SelectValue placeholder="Select account and asset" />
@@ -625,8 +556,7 @@ export function TransactionForm({
                       <div className="flex flex-col">
                         <div className="font-medium">{holding.displayName}</div>
                         <div className="text-xs text-muted-foreground">
-                          Balance: {holding.balanceDisplay} •{" "}
-                          {holding.institution?.name}
+                          Balance: {holding.balanceDisplay} • {holding.institution?.name}
                         </div>
                       </div>
                     </SelectItem>
@@ -635,9 +565,7 @@ export function TransactionForm({
               </SelectContent>
             </Select>
             {errors.holdingId && (
-              <p className="text-sm text-destructive">
-                {errors.holdingId.message}
-              </p>
+              <p className="text-sm text-destructive">{errors.holdingId.message}</p>
             )}
           </div>
 
@@ -660,22 +588,17 @@ export function TransactionForm({
                   step="any"
                   min="0.01"
                   max="1000000000"
-                  {...register("amount", {
+                  {...register('amount', {
                     valueAsNumber: true,
-                    required: "Amount is required",
+                    required: 'Amount is required',
                     setValueAs: (value) => {
-                      if (value === "" || value === null || value === undefined)
-                        return 0;
+                      if (value === '' || value === null || value === undefined) return 0;
                       const num = Number(value);
                       return Number.isNaN(num) ? 0 : num;
                     },
                   })}
                   placeholder="0.00"
-                  className={
-                    errors.amount
-                      ? "border-destructive focus:ring-destructive"
-                      : ""
-                  }
+                  className={errors.amount ? 'border-destructive focus:ring-destructive' : ''}
                   disabled={isSubmitting}
                 />
                 {totalValue && (
@@ -684,14 +607,9 @@ export function TransactionForm({
                   </div>
                 )}
               </div>
-              {errors.amount && (
-                <p className="text-sm text-destructive">
-                  {errors.amount.message}
-                </p>
-              )}
+              {errors.amount && <p className="text-sm text-destructive">{errors.amount.message}</p>}
               <p className="text-xs text-muted-foreground">
-                Enter the quantity for asset transactions or money amount for
-                deposits/withdrawals
+                Enter the quantity for asset transactions or money amount for deposits/withdrawals
               </p>
             </div>
 
@@ -711,26 +629,21 @@ export function TransactionForm({
                   step="0.01"
                   min="0"
                   max="10000"
-                  {...register("fee", {
+                  {...register('fee', {
                     setValueAs: (value) => {
-                      if (value === "" || value === null || value === undefined)
-                        return 0;
+                      if (value === '' || value === null || value === undefined) return 0;
                       const num = Number(value);
                       return Number.isNaN(num) ? 0 : num;
                     },
                   })}
                   placeholder="0.00"
                   className={`pl-10 ${
-                    errors.fee
-                      ? "border-destructive focus:ring-destructive"
-                      : ""
+                    errors.fee ? 'border-destructive focus:ring-destructive' : ''
                   }`}
                   disabled={isSubmitting}
                 />
               </div>
-              {errors.fee && (
-                <p className="text-sm text-destructive">{errors.fee.message}</p>
-              )}
+              {errors.fee && <p className="text-sm text-destructive">{errors.fee.message}</p>}
             </div>
 
             {/* Date */}
@@ -743,22 +656,17 @@ export function TransactionForm({
                 <Input
                   id={timestampId}
                   type="datetime-local"
-                  {...register("timestamp", {
-                    setValueAs: (value) =>
-                      value ? new Date(value) : new Date(),
+                  {...register('timestamp', {
+                    setValueAs: (value) => (value ? new Date(value) : new Date()),
                   })}
                   className={`pl-10 ${
-                    errors.timestamp
-                      ? "border-destructive focus:ring-destructive"
-                      : ""
+                    errors.timestamp ? 'border-destructive focus:ring-destructive' : ''
                   }`}
                   disabled={isSubmitting}
                 />
               </div>
               {errors.timestamp && (
-                <p className="text-sm text-destructive">
-                  {errors.timestamp.message}
-                </p>
+                <p className="text-sm text-destructive">{errors.timestamp.message}</p>
               )}
             </div>
           </div>
@@ -771,24 +679,21 @@ export function TransactionForm({
               <AlertDescription>
                 <div className="space-y-1">
                   <div>
-                    Amount:{" "}
-                    {FinancialMath.formatCurrency(
-                      parseFloat(watchedAmount) || 0,
-                      {
-                        currency: baseCurrency?.symbol,
-                      }
-                    )}
+                    Amount:{' '}
+                    {FinancialMath.formatCurrency(parseFloat(watchedAmount) || 0, {
+                      currency: baseCurrency?.symbol,
+                    })}
                   </div>
                   {watchedFee && parseFloat(watchedFee) > 0 && (
                     <div>
-                      Fee:{" "}
+                      Fee:{' '}
                       {FinancialMath.formatCurrency(parseFloat(watchedFee), {
                         currency: baseCurrency?.symbol,
                       })}
                     </div>
                   )}
                   <div className="font-semibold">
-                    Total:{" "}
+                    Total:{' '}
                     {FinancialMath.formatCurrency(totalValue, {
                       currency: baseCurrency?.symbol,
                     })}
@@ -816,21 +721,15 @@ export function TransactionForm({
             </div>
             <Textarea
               id={descriptionId}
-              {...register("description")}
+              {...register('description')}
               placeholder="Optional description for this transaction..."
               rows={3}
               maxLength={500}
-              className={
-                errors.description
-                  ? "border-destructive focus:ring-destructive"
-                  : ""
-              }
+              className={errors.description ? 'border-destructive focus:ring-destructive' : ''}
               disabled={isSubmitting}
             />
             {errors.description && (
-              <p className="text-sm text-destructive">
-                {errors.description.message}
-              </p>
+              <p className="text-sm text-destructive">{errors.description.message}</p>
             )}
           </div>
 
@@ -839,20 +738,14 @@ export function TransactionForm({
             <Label htmlFor={referenceId}>Reference/ID (Optional)</Label>
             <Input
               id={referenceId}
-              {...register("reference")}
+              {...register('reference')}
               placeholder="e.g., check number, transaction ID"
               maxLength={100}
-              className={
-                errors.reference
-                  ? "border-destructive focus:ring-destructive"
-                  : ""
-              }
+              className={errors.reference ? 'border-destructive focus:ring-destructive' : ''}
               disabled={isSubmitting}
             />
             {errors.reference && (
-              <p className="text-sm text-destructive">
-                {errors.reference.message}
-              </p>
+              <p className="text-sm text-destructive">{errors.reference.message}</p>
             )}
             <p className="text-xs text-muted-foreground">
               External reference number or transaction ID for your records
@@ -871,11 +764,9 @@ export function TransactionForm({
             <Button type="submit" disabled={isSubmitting}>
               <LoadingButton
                 isLoading={isSubmitting}
-                loadingText={mode === "create" ? "Creating..." : "Updating..."}
+                loadingText={mode === 'create' ? 'Creating...' : 'Updating...'}
               >
-                {mode === "create"
-                  ? "Create Transaction"
-                  : "Update Transaction"}
+                {mode === 'create' ? 'Create Transaction' : 'Update Transaction'}
               </LoadingButton>
             </Button>
           </DialogFooter>
@@ -888,15 +779,11 @@ export function TransactionForm({
           <DialogHeader>
             <DialogTitle>Unsaved Changes</DialogTitle>
             <DialogDescription>
-              You have unsaved changes. Are you sure you want to close without
-              saving?
+              You have unsaved changes. Are you sure you want to close without saving?
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={() => setIsCloseConfirmOpen(false)}
-            >
+            <Button variant="outline" onClick={() => setIsCloseConfirmOpen(false)}>
               Continue Editing
             </Button>
             <Button variant="destructive" onClick={handleConfirmClose}>

@@ -1,14 +1,9 @@
-import { Plus } from "lucide-react";
-import { TRANSACTION_TYPE_METADATA } from "@/components/TransactionForm";
-import { Combobox } from "@/components/ui/combobox";
-import { TokenSymbol } from "@/components/ui/TokenSymbol";
-import type {
-  ApiAccount,
-  ApiHolding,
-  ApiInstitution,
-  ApiToken,
-} from "@/lib/api-types";
-import { getAccountTypeIcon, getTokenTypeIcon } from "@/lib/icons";
+import { Plus } from 'lucide-react';
+import { TRANSACTION_TYPE_METADATA } from '@/components/TransactionForm';
+import { Combobox } from '@/components/ui/combobox';
+import { TokenSymbol } from '@/components/ui/TokenSymbol';
+import type { ApiAccount, ApiHolding, ApiInstitution, ApiToken } from '@/lib/api-types';
+import { getAccountTypeIcon, getTokenTypeIcon } from '@/lib/icons';
 
 // Base Searchable Select Component using Combobox
 interface SearchableSelectProps {
@@ -36,7 +31,7 @@ export function SearchableSelect({
   onValueChange,
   placeholder,
   items,
-  emptyMessage = "No items found",
+  emptyMessage = 'No items found',
   newItemLabel,
   newItemValue,
   id,
@@ -64,9 +59,12 @@ export function SearchableSelect({
         placeholder={placeholder}
         emptyMessage={emptyMessage}
         items={allItems}
+        onSearchChange={() => {
+          /* debounced in Combobox; consumers can pass-through later */
+        }}
         className={`w-full ${
-          isActive ? "border-black border-2" : "border border-input"
-        } ${className || ""}`}
+          isActive ? 'border-black border-2' : 'border border-input'
+        } ${className || ''}`}
       />
     </div>
   );
@@ -88,7 +86,7 @@ export function AccountSelector({
   accounts,
   institutions,
   id,
-  placeholder = "Choose an account...",
+  placeholder = 'Choose an account...',
 }: AccountSelectorProps) {
   // Create institutions map for quick lookups
   const institutionsMap = institutions
@@ -107,18 +105,17 @@ export function AccountSelector({
       if (account.typeName) {
         subtitleParts.push(account.typeName);
       }
-      const subtitle =
-        subtitleParts.length > 0 ? subtitleParts.join(" • ") : undefined;
+      const subtitle = subtitleParts.length > 0 ? subtitleParts.join(' • ') : undefined;
 
       return {
         value: account.id,
         label: account.name,
-        icon: getAccountTypeIcon(account.type || "unknown"),
+        icon: getAccountTypeIcon(account.type || 'unknown'),
         subtitle,
       };
     }) || [];
 
-  const isActive = value !== "" && value !== "all" && value !== "new";
+  const isActive = value !== '' && value !== 'all' && value !== 'new';
   return (
     <SearchableSelect
       id={id}
@@ -128,8 +125,8 @@ export function AccountSelector({
       items={accountOptions}
       emptyMessage={
         accounts?.length === 0
-          ? "No accounts found. Create a new one below."
-          : "No accounts match your search."
+          ? 'No accounts found. Create a new one below.'
+          : 'No accounts match your search.'
       }
       newItemLabel="Create New Account"
       newItemValue="new"
@@ -152,7 +149,7 @@ export function InstitutionSelector({
   onValueChange,
   institutions,
   id,
-  placeholder = "Choose an institution...",
+  placeholder = 'Choose an institution...',
 }: InstitutionSelectorProps) {
   const institutionOptions =
     institutions?.map((institution) => {
@@ -164,8 +161,7 @@ export function InstitutionSelector({
       if (institution.website) {
         firstLineParts.push(institution.website);
       }
-      const firstLine =
-        firstLineParts.length > 0 ? firstLineParts.join(" | ") : undefined;
+      const firstLine = firstLineParts.length > 0 ? firstLineParts.join(' | ') : undefined;
 
       return {
         value: institution.id,
@@ -176,7 +172,7 @@ export function InstitutionSelector({
       };
     }) || [];
 
-  const isActive = value !== "" && value !== "all" && value !== "new";
+  const isActive = value !== '' && value !== 'all' && value !== 'new';
   return (
     <SearchableSelect
       id={id}
@@ -186,8 +182,8 @@ export function InstitutionSelector({
       items={institutionOptions}
       emptyMessage={
         institutions?.length === 0
-          ? "No institutions found. Create a new one below."
-          : "No institutions match your search."
+          ? 'No institutions found. Create a new one below.'
+          : 'No institutions match your search.'
       }
       newItemLabel="Create New Institution"
       newItemValue="new"
@@ -210,18 +206,14 @@ export function TokenSelector({
   onValueChange,
   tokens,
   id,
-  placeholder = "Choose a token...",
+  placeholder = 'Choose a token...',
 }: TokenSelectorProps) {
   const tokenOptions =
     tokens?.map((token) => ({
       value: token.id,
       label: `${token.symbol} - ${token.name}`,
       icon: ({ className }: { className?: string }) => (
-        <TokenSymbol
-          type={token.type || "unknown"}
-          symbol={token.symbol}
-          className={className}
-        />
+        <TokenSymbol type={token.type || 'unknown'} symbol={token.symbol} className={className} />
       ),
       subtitle: token.typeName || undefined,
     })) || [];
@@ -253,7 +245,7 @@ export function TokenFilterSelector({
   value,
   onValueChange,
   tokens,
-  placeholder = "Filter by token...",
+  placeholder = 'Filter by token...',
   includeAllOption = true,
 }: TokenFilterSelectorProps) {
   const tokenOptions =
@@ -261,20 +253,16 @@ export function TokenFilterSelector({
       value: token.id,
       label: `${token.symbol} - ${token.name}`,
       icon: ({ className }: { className?: string }) => (
-        <TokenSymbol
-          type={token.type || "unknown"}
-          symbol={token.symbol}
-          className={className}
-        />
+        <TokenSymbol type={token.type || 'unknown'} symbol={token.symbol} className={className} />
       ),
       subtitle: token.typeName || undefined,
     })) || [];
 
   const allOptions = includeAllOption
-    ? [{ value: "all", label: "All Tokens" }, ...tokenOptions]
+    ? [{ value: 'all', label: 'All Tokens' }, ...tokenOptions]
     : tokenOptions;
 
-  const isActive = value !== "" && value !== "all";
+  const isActive = value !== '' && value !== 'all';
   return (
     <SearchableSelect
       value={value}
@@ -304,7 +292,7 @@ export function TokenTypeSelector({
   value,
   onValueChange,
   tokenTypes,
-  placeholder = "Choose token type...",
+  placeholder = 'Choose token type...',
 }: TokenTypeSelectorProps) {
   const tokenTypeOptions =
     tokenTypes?.map((type) => ({
@@ -314,7 +302,7 @@ export function TokenTypeSelector({
       subtitle: type.description || undefined,
     })) || [];
 
-  const isActive = value !== "" && value !== "all";
+  const isActive = value !== '' && value !== 'all';
   return (
     <SearchableSelect
       value={value}
@@ -344,7 +332,7 @@ export function AccountTypeSelector({
   value,
   onValueChange,
   accountTypes,
-  placeholder = "Choose account type...",
+  placeholder = 'Choose account type...',
 }: AccountTypeSelectorProps) {
   const accountTypeOptions =
     accountTypes?.map((type) => ({
@@ -354,7 +342,7 @@ export function AccountTypeSelector({
       subtitle: type.description || undefined,
     })) || [];
 
-  const isActive = value !== "" && value !== "all";
+  const isActive = value !== '' && value !== 'all';
   return (
     <SearchableSelect
       value={value}
@@ -384,7 +372,7 @@ export function InstitutionTypeSelector({
   value,
   onValueChange,
   institutionTypes,
-  placeholder = "Choose institution type...",
+  placeholder = 'Choose institution type...',
 }: InstitutionTypeSelectorProps) {
   const institutionTypeOptions =
     institutionTypes?.map((type) => ({
@@ -393,7 +381,7 @@ export function InstitutionTypeSelector({
       subtitle: type.description || undefined,
     })) || [];
 
-  const isActive = value !== "" && value !== "all";
+  const isActive = value !== '' && value !== 'all';
   return (
     <SearchableSelect
       value={value}
@@ -423,13 +411,14 @@ export function TransactionTypeSelector({
   value,
   onValueChange,
   transactionTypes,
-  placeholder = "Choose transaction type...",
+  placeholder = 'Choose transaction type...',
 }: TransactionTypeSelectorProps) {
   // Create icon component from emoji string
   const createEmojiIcon =
     (emoji: string) =>
-    ({ className }: { className?: string }) =>
-      <span className={`text-base ${className || ""}`}>{emoji}</span>;
+    ({ className }: { className?: string }) => (
+      <span className={`text-base ${className || ''}`}>{emoji}</span>
+    );
 
   const transactionTypeOptions =
     transactionTypes?.map((type) => {
@@ -442,7 +431,7 @@ export function TransactionTypeSelector({
       };
     }) || [];
 
-  const isActive = value !== "" && value !== "all";
+  const isActive = value !== '' && value !== 'all';
   return (
     <SearchableSelect
       value={value}
@@ -468,7 +457,7 @@ export function InstitutionFilterSelector({
   value,
   onValueChange,
   institutions,
-  placeholder = "Filter by institution...",
+  placeholder = 'Filter by institution...',
   includeAllOption = true,
 }: InstitutionFilterSelectorProps) {
   const institutionOptions =
@@ -479,7 +468,7 @@ export function InstitutionFilterSelector({
     })) || [];
 
   const allOptions = includeAllOption
-    ? [{ value: "all", label: "All Institutions" }, ...institutionOptions]
+    ? [{ value: 'all', label: 'All Institutions' }, ...institutionOptions]
     : institutionOptions;
 
   return (
@@ -489,7 +478,7 @@ export function InstitutionFilterSelector({
       placeholder={placeholder}
       items={allOptions}
       emptyMessage="No institutions found."
-      isActive={value !== "all" && value !== ""}
+      isActive={value !== 'all' && value !== ''}
     />
   );
 }
@@ -509,7 +498,7 @@ export function AccountFilterSelector({
   onValueChange,
   accounts,
   institutions,
-  placeholder = "Filter by account...",
+  placeholder = 'Filter by account...',
   includeAllOption = true,
 }: AccountFilterSelectorProps) {
   // Create institution lookup map
@@ -520,10 +509,11 @@ export function AccountFilterSelector({
   const accountOptions =
     accounts?.map((account) => {
       const institution = institutionsMap[account.institutionId];
-      const subtitle = institution?.name && account.typeName 
-        ? `${institution.name} • ${account.typeName}`
-        : account.typeName || institution?.name || undefined;
-      
+      const subtitle =
+        institution?.name && account.typeName
+          ? `${institution.name} • ${account.typeName}`
+          : account.typeName || institution?.name || undefined;
+
       return {
         value: account.id,
         label: account.name,
@@ -532,7 +522,7 @@ export function AccountFilterSelector({
     }) || [];
 
   const allOptions = includeAllOption
-    ? [{ value: "all", label: "All Accounts" }, ...accountOptions]
+    ? [{ value: 'all', label: 'All Accounts' }, ...accountOptions]
     : accountOptions;
 
   return (
@@ -542,7 +532,7 @@ export function AccountFilterSelector({
       placeholder={placeholder}
       items={allOptions}
       emptyMessage="No accounts found."
-      isActive={value !== "all" && value !== ""}
+      isActive={value !== 'all' && value !== ''}
     />
   );
 }
@@ -564,15 +554,11 @@ export function HoldingFilterSelector({
   holdings,
   tokens,
   accounts,
-  placeholder = "Filter by holding...",
+  placeholder = 'Filter by holding...',
   includeAllOption = true,
 }: HoldingFilterSelectorProps) {
-  const tokensMap = tokens
-    ? Object.fromEntries(tokens.map((t) => [t.id, t]))
-    : {};
-  const accountsMap = accounts
-    ? Object.fromEntries(accounts.map((a) => [a.id, a]))
-    : {};
+  const tokensMap = tokens ? Object.fromEntries(tokens.map((t) => [t.id, t])) : {};
+  const accountsMap = accounts ? Object.fromEntries(accounts.map((a) => [a.id, a])) : {};
 
   const holdingOptions =
     holdings?.map((holding) => {
@@ -581,15 +567,13 @@ export function HoldingFilterSelector({
       return {
         value: holding.id,
         label: token
-          ? `${token.symbol} in ${account?.name || "Unknown Account"}`
-          : `Unknown Token in ${account?.name || "Unknown Account"}`,
-        subtitle: token
-          ? `${token.name} - ${holding.balance || "N/A"} units`
-          : undefined,
+          ? `${token.symbol} in ${account?.name || 'Unknown Account'}`
+          : `Unknown Token in ${account?.name || 'Unknown Account'}`,
+        subtitle: token ? `${token.name} - ${holding.balance || 'N/A'} units` : undefined,
         icon: token
           ? ({ className }: { className?: string }) => (
               <TokenSymbol
-                type={token.type || "unknown"}
+                type={token.type || 'unknown'}
                 symbol={token.symbol}
                 className={className}
               />
@@ -599,10 +583,10 @@ export function HoldingFilterSelector({
     }) || [];
 
   const allOptions = includeAllOption
-    ? [{ value: "all", label: "All Holdings" }, ...holdingOptions]
+    ? [{ value: 'all', label: 'All Holdings' }, ...holdingOptions]
     : holdingOptions;
 
-  const isActive = value !== "" && value !== "all";
+  const isActive = value !== '' && value !== 'all';
   return (
     <SearchableSelect
       value={value}
@@ -633,7 +617,7 @@ export function CurrencySelector({
   onValueChange,
   currencies,
   id,
-  placeholder = "Select currency...",
+  placeholder = 'Select currency...',
 }: CurrencySelectorProps) {
   const currencyOptions =
     currencies?.map((currency) => ({

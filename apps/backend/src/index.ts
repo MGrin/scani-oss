@@ -2,9 +2,12 @@ import { cors } from '@elysiajs/cors';
 import { trpc } from '@elysiajs/trpc';
 import { Elysia } from 'elysia';
 import { WebSocketServer } from 'ws';
+import { supabase } from './lib/supabase';
+import { createStandardLimiter, createStrictLimiter } from './middleware/rate-limit';
 import { appRouter } from './router';
+import { realTimeUpdatesService } from './services/real-time-updates';
 import { createContext } from './trpc';
-import { createTimer, logConfig, logger, wsLogger } from './utils/logger';
+import { createTimer, logger, wsLogger } from './utils/logger';
 
 const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3001;
 const HOST = process.env.HOST ?? 'localhost';
@@ -27,6 +30,10 @@ interface RequestWithTracking extends Request {
 }
 
 // Create Elysia app with enhanced logging
+// Create limiters
+const globalLimiter = createStandardLimiter(300, 500);
+const strictLimiter = createStrictLimiter(60, 90); // use for heavy/AI routes
+
 const app = new Elysia()
   // Add request logging middleware
   .onBeforeHandle(({ request, set }) => {
@@ -52,6 +59,19 @@ const app = new Elysia()
     // Store timer and request ID for response logging
     (request as RequestWithTracking)._timer = timer;
     (request as RequestWithTracking)._requestId = requestId;
+  })
+  // Global rate limiting (lightweight)
+  .onBeforeHandle(({ request, set }) => {
+    const res = globalLimiter.tryConsume(request);
+    if ('ok' in res && res.ok) return;
+    set.status = 429;
+    set.headers = set.headers || {};
+    set.headers['Retry-After'] = String(res.retryAfterSec);
+    return {
+      error: 'Too Many Requests',
+      message: 'Global rate limit exceeded',
+      retryAfterSec: res.retryAfterSec,
+    };
   })
   // Add response logging middleware
   .onAfterHandle(({ request, response, set }) => {
@@ -134,11 +154,14 @@ const app = new Elysia()
     set.headers['Referrer-Policy'] = 'strict-origin-when-cross-origin';
     // Content Security Policy for API responses
     set.headers['Content-Security-Policy'] = "default-src 'none'";
+    // CORS vary for caches
+    set.headers.Vary = 'Origin';
   })
   .use(
     cors({
       origin: process.env.FRONTEND_URL ?? 'http://localhost:5173',
       credentials: true,
+      allowedHeaders: ['Authorization', 'Content-Type'],
     })
   )
   .use(
@@ -146,12 +169,34 @@ const app = new Elysia()
       createContext,
       endpoint: '/trpc',
     })
-  );
+  )
+  // Stricter limiter for AI-related HTTP endpoints (if any are added later)
+  .onBeforeHandle(({ request, set }) => {
+    // Apply only to the tRPC endpoint with potential heavy procedures
+    try {
+      const url = new URL(request.url);
+      if (url.pathname === '/trpc' && request.method === 'POST') {
+        const res = strictLimiter.tryConsume(request);
+        if ('ok' in res && res.ok) return;
+        set.status = 429;
+        set.headers = set.headers || {};
+        set.headers['Retry-After'] = String(res.retryAfterSec);
+        return {
+          error: 'Too Many Requests',
+          message: 'tRPC route rate limit exceeded',
+          retryAfterSec: res.retryAfterSec,
+        };
+      }
+    } catch {
+      // ignore parsing issues, fail open to avoid blocking unrelated routes
+    }
+  });
 
 // Create WebSocket server for real-time updates with enhanced logging
 const wss = new WebSocketServer({
   port: PORT + 1,
   host: HOST,
+  maxPayload: 256 * 1024, // 256KB
 });
 
 wsLogger.info(
@@ -163,89 +208,48 @@ wsLogger.info(
 );
 
 // WebSocket connection handling with comprehensive logging
-wss.on('connection', (ws, req) => {
+wss.on('connection', async (ws, req) => {
   const connectionId = Math.random().toString(36).substring(2, 15);
   const clientIP = req.socket.remoteAddress;
   const userAgent = req.headers['user-agent'];
 
   const connectionLogger = wsLogger.child({ connectionId });
 
+  // Require auth via query param token (e.g., ws://host:port?token=JWT)
+  let authenticatedUserId: string | null = null;
+  try {
+    const urlStr = req.url || '/';
+    const url = new URL(urlStr, `ws://${HOST}:${PORT + 1}`);
+    const token = url.searchParams.get('token') || undefined;
+    if (!token) {
+      ws.close(4401, 'Unauthorized');
+      return;
+    }
+    const { data, error } = await supabase.auth.getUser(token);
+    if (error || !data?.user) {
+      ws.close(4401, 'Unauthorized');
+      return;
+    }
+    authenticatedUserId = data.user.id;
+  } catch {
+    ws.close(1011, 'Auth failure');
+    return;
+  }
+
   connectionLogger.info(
     {
       clientIP,
       userAgent,
       url: req.url,
+      userId: authenticatedUserId,
     },
     '🔗 WebSocket client connected'
   );
-
-  ws.on('message', (data) => {
-    const messageTimer = createTimer();
-
-    try {
-      const message = JSON.parse(data.toString());
-      const messageSize = data.toString().length;
-
-      // Only log WebSocket messages if configured to do so
-      if (logConfig.logWebSocketMessages) {
-        connectionLogger.debug(
-          {
-            messageType: message.type,
-            messageSize,
-            timestamp: message.timestamp,
-          },
-          '📨 WebSocket message received'
-        );
-      }
-
-      // Echo back for now - will be enhanced with real-time data updates
-      const response = {
-        type: 'echo',
-        data: message,
-        timestamp: new Date().toISOString(),
-        connectionId,
-      };
-
-      ws.send(JSON.stringify(response));
-
-      const duration = messageTimer.end();
-
-      if (logConfig.logWebSocketMessages) {
-        connectionLogger.debug(
-          {
-            responseSize: JSON.stringify(response).length,
-            duration: `${duration}ms`,
-          },
-          '📤 WebSocket response sent'
-        );
-      }
-    } catch (error) {
-      const duration = messageTimer.end();
-      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-
-      connectionLogger.error(
-        {
-          error: {
-            name: error instanceof Error ? error.name : 'ParseError',
-            message: errorMessage,
-            stack: error instanceof Error ? error.stack : undefined,
-          },
-          rawData: data.toString().substring(0, 500), // Limit log size
-          duration: `${duration}ms`,
-        },
-        '💥 WebSocket message parsing failed'
-      );
-
-      // Send error response
-      ws.send(
-        JSON.stringify({
-          type: 'error',
-          error: 'Invalid message format',
-          timestamp: new Date().toISOString(),
-          connectionId,
-        })
-      );
-    }
+  // Heartbeat flags
+  // Track connection liveness for heartbeat without weakening types
+  (ws as unknown as { isAlive?: boolean }).isAlive = true;
+  ws.on('pong', () => {
+    (ws as unknown as { isAlive?: boolean }).isAlive = true;
   });
 
   ws.on('close', (code, reason) => {
@@ -271,24 +275,11 @@ wss.on('connection', (ws, req) => {
     );
   });
 
-  // Send welcome message
-  const welcomeMessage = {
-    type: 'welcome',
-    message: 'Connected to Scani WebSocket server',
-    timestamp: new Date().toISOString(),
+  realTimeUpdatesService.registerConnection(ws, {
+    userId: authenticatedUserId,
     connectionId,
-  };
-
-  ws.send(JSON.stringify(welcomeMessage));
-
-  if (logConfig.logWebSocketMessages) {
-    connectionLogger.debug(
-      {
-        messageSize: JSON.stringify(welcomeMessage).length,
-      },
-      '👋 Welcome message sent'
-    );
-  }
+    request: req,
+  });
 });
 
 wss.on('error', (error) => {
@@ -303,6 +294,34 @@ wss.on('error', (error) => {
     '💥 WebSocket server error'
   );
 });
+
+// Heartbeat to terminate dead connections and enforce max connection age
+const MAX_WS_AGE_MS = 2 * 60 * 60 * 1000; // 2 hours
+const heartbeat = setInterval(() => {
+  wss.clients.forEach((client) => {
+    const sock = client as unknown as {
+      isAlive?: boolean;
+      ping: () => void;
+      terminate: () => void;
+      _connectedAt?: number;
+    };
+    // Initialize connection time if not set
+    if (!sock._connectedAt) {
+      sock._connectedAt = Date.now();
+    }
+    if (sock.isAlive === false) {
+      client.terminate();
+      return;
+    }
+    // Enforce max age for token freshness (require reconnect)
+    if (Date.now() - (sock._connectedAt || 0) > MAX_WS_AGE_MS) {
+      client.terminate();
+      return;
+    }
+    sock.isAlive = false;
+    client.ping();
+  });
+}, 30000);
 
 // Start HTTP server with enhanced logging
 const server = app.listen(PORT, () => {
@@ -327,6 +346,7 @@ const gracefulShutdown = (signal: string) => {
   wss.close(() => {
     logger.info('WebSocket server closed');
   });
+  clearInterval(heartbeat);
 
   logger.info('🏁 Graceful shutdown completed');
   process.exit(0);
