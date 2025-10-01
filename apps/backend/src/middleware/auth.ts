@@ -33,7 +33,7 @@ async function syncUserWithDatabase(supabaseUser: User): Promise<typeof schema.u
       .limit(1);
 
     if (existingUser) {
-      // Update existing user email if needed, but never update the name
+      // Update existing user email if needed, but never update the name or avatar
       const needsUpdate = existingUser.email !== supabaseUser.email;
 
       if (needsUpdate) {

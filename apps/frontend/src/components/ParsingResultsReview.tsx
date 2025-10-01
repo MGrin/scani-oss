@@ -308,8 +308,8 @@ export function ParsingResultsReview({
 
             {/* Alerts */}
             {updatedSummary.hasErrors && (
-              <div className="flex items-center gap-2 p-3 bg-destructive/10 rounded-lg border border-destructive/20">
-                <XCircle className="h-4 w-4 text-destructive" />
+              <div className="flex items-center gap-2 p-3 bg-destructive/10 dark:bg-destructive/20 rounded-lg border border-destructive/20 dark:border-destructive/30">
+                <XCircle className="h-4 w-4 text-destructive dark:text-destructive" />
                 <span className="text-sm text-destructive font-medium">
                   Some holdings have errors that need to be fixed before proceeding
                 </span>
@@ -317,9 +317,9 @@ export function ParsingResultsReview({
             )}
 
             {updatedSummary.hasWarnings && (
-              <div className="flex items-center gap-2 p-3 bg-warning/10 rounded-lg border border-warning/20">
-                <AlertTriangle className="h-4 w-4 text-warning" />
-                <span className="text-sm text-warning font-medium">
+              <div className="flex items-center gap-2 p-3 bg-yellow-50 dark:bg-yellow-950 rounded-lg border border-yellow-200 dark:border-yellow-800">
+                <AlertTriangle className="h-4 w-4 text-yellow-600 dark:text-yellow-500" />
+                <span className="text-sm text-yellow-800 dark:text-yellow-200 font-medium">
                   Some holdings have warnings - please review carefully
                 </span>
               </div>
@@ -507,8 +507,11 @@ const HoldingCard = React.memo(function HoldingCard({
     <Card
       className={cn(
         'transition-all',
-        holding.errors.length > 0 && 'border-destructive/50 bg-destructive/5',
-        holding.warnings.length > 0 && !holding.errors.length && 'border-warning/50 bg-warning/5',
+        holding.errors.length > 0 &&
+          'border-destructive/50 bg-destructive/5 dark:bg-destructive/10',
+        holding.warnings.length > 0 &&
+          !holding.errors.length &&
+          'border-yellow-300 dark:border-yellow-800 bg-yellow-50 dark:bg-yellow-950',
         isEditing && 'ring-2 ring-primary/40'
       )}
     >

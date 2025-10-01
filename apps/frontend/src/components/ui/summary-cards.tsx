@@ -49,7 +49,13 @@ export function SummaryCard(props: SummaryCardProps) {
   const { title, subtitle, icon: Icon, className, isAffectedByUnpriceableTokens } = props;
 
   return (
-    <Card className={cn(className, isAffectedByUnpriceableTokens && 'bg-blue-50 border-blue-200')}>
+    <Card
+      className={cn(
+        className,
+        isAffectedByUnpriceableTokens &&
+          'bg-blue-50 dark:bg-blue-950 border-blue-200 dark:border-blue-800'
+      )}
+    >
       <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
         <CardTitle className="text-sm font-medium">{title}</CardTitle>
         {Icon && <Icon className="h-4 w-4 text-muted-foreground" />}
@@ -170,7 +176,8 @@ export function ItemCard({
     <Card
       className={cn(
         'hover:shadow-md transition-shadow min-h-[72px]',
-        isAffectedByUnpriceableTokens && 'bg-blue-50 border-blue-200',
+        isAffectedByUnpriceableTokens &&
+          'bg-blue-50 dark:bg-blue-950 border-blue-200 dark:border-blue-800',
         className,
         onClick && 'cursor-pointer'
       )}

@@ -1,9 +1,81 @@
 {
-  "id": "86e26089-3d58-432c-a7a8-3ffabdeca4f9",
+  "id": "96200670-8514-443d-803f-199d9b0fb79a",
   "prevId": "00000000-0000-0000-0000-000000000000",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
+    "public.account_types": {
+      "name": "account_types",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "code": {
+          "name": "code",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "description": {
+          "name": "description",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "display_order": {
+          "name": "display_order",
+          "type": "real",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "is_active": {
+          "name": "is_active",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "account_types_code_unique": {
+          "name": "account_types_code_unique",
+          "nullsNotDistinct": false,
+          "columns": ["code"]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
     "public.accounts": {
       "name": "accounts",
       "schema": "",
@@ -14,6 +86,12 @@
           "primaryKey": true,
           "notNull": true,
           "default": "gen_random_uuid()"
+        },
+        "user_id": {
+          "name": "user_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
         },
         "institution_id": {
           "name": "institution_id",
@@ -27,20 +105,14 @@
           "primaryKey": false,
           "notNull": true
         },
-        "type": {
-          "name": "type",
-          "type": "text",
+        "type_id": {
+          "name": "type_id",
+          "type": "uuid",
           "primaryKey": false,
           "notNull": true
         },
         "description": {
           "name": "description",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "account_number": {
-          "name": "account_number",
           "type": "text",
           "primaryKey": false,
           "notNull": false
@@ -67,8 +139,48 @@
           "default": "now()"
         }
       },
-      "indexes": {},
+      "indexes": {
+        "idx_accounts_user_id": {
+          "name": "idx_accounts_user_id",
+          "columns": [
+            {
+              "expression": "user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_accounts_institution_id": {
+          "name": "idx_accounts_institution_id",
+          "columns": [
+            {
+              "expression": "institution_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
       "foreignKeys": {
+        "accounts_user_id_users_id_fk": {
+          "name": "accounts_user_id_users_id_fk",
+          "tableFrom": "accounts",
+          "tableTo": "users",
+          "columnsFrom": ["user_id"],
+          "columnsTo": ["id"],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
         "accounts_institution_id_institutions_id_fk": {
           "name": "accounts_institution_id_institutions_id_fk",
           "tableFrom": "accounts",
@@ -77,14 +189,23 @@
           "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
+        },
+        "accounts_type_id_account_types_id_fk": {
+          "name": "accounts_type_id_account_types_id_fk",
+          "tableFrom": "accounts",
+          "tableTo": "account_types",
+          "columnsFrom": ["type_id"],
+          "columnsTo": ["id"],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {
-        "accounts_institution_id_name_unique": {
-          "name": "accounts_institution_id_name_unique",
+        "accounts_user_id_institution_id_name_unique": {
+          "name": "accounts_user_id_institution_id_name_unique",
           "nullsNotDistinct": false,
-          "columns": ["institution_id", "name"]
+          "columns": ["user_id", "institution_id", "name"]
         }
       },
       "policies": {},
@@ -102,6 +223,12 @@
           "notNull": true,
           "default": "gen_random_uuid()"
         },
+        "user_id": {
+          "name": "user_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
         "account_id": {
           "name": "account_id",
           "type": "uuid",
@@ -116,15 +243,9 @@
         },
         "balance": {
           "name": "balance",
-          "type": "real",
+          "type": "text",
           "primaryKey": false,
           "notNull": true
-        },
-        "average_cost_basis": {
-          "name": "average_cost_basis",
-          "type": "real",
-          "primaryKey": false,
-          "notNull": false
         },
         "last_updated": {
           "name": "last_updated",
@@ -141,8 +262,63 @@
           "default": "now()"
         }
       },
-      "indexes": {},
+      "indexes": {
+        "idx_holdings_user_id": {
+          "name": "idx_holdings_user_id",
+          "columns": [
+            {
+              "expression": "user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_holdings_account_id": {
+          "name": "idx_holdings_account_id",
+          "columns": [
+            {
+              "expression": "account_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_holdings_token_id": {
+          "name": "idx_holdings_token_id",
+          "columns": [
+            {
+              "expression": "token_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
       "foreignKeys": {
+        "holdings_user_id_users_id_fk": {
+          "name": "holdings_user_id_users_id_fk",
+          "tableFrom": "holdings",
+          "tableTo": "users",
+          "columnsFrom": ["user_id"],
+          "columnsTo": ["id"],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
         "holdings_account_id_accounts_id_fk": {
           "name": "holdings_account_id_accounts_id_fk",
           "tableFrom": "holdings",
@@ -163,13 +339,7 @@
         }
       },
       "compositePrimaryKeys": {},
-      "uniqueConstraints": {
-        "holdings_account_id_token_id_unique": {
-          "name": "holdings_account_id_token_id_unique",
-          "nullsNotDistinct": false,
-          "columns": ["account_id", "token_id"]
-        }
-      },
+      "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {},
       "isRLSEnabled": false
@@ -257,12 +427,6 @@
           "notNull": true,
           "default": "gen_random_uuid()"
         },
-        "user_id": {
-          "name": "user_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
         "name": {
           "name": "name",
           "type": "text",
@@ -315,17 +479,24 @@
           "default": "now()"
         }
       },
-      "indexes": {},
+      "indexes": {
+        "idx_institutions_name": {
+          "name": "idx_institutions_name",
+          "columns": [
+            {
+              "expression": "name",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
       "foreignKeys": {
-        "institutions_user_id_users_id_fk": {
-          "name": "institutions_user_id_users_id_fk",
-          "tableFrom": "institutions",
-          "tableTo": "users",
-          "columnsFrom": ["user_id"],
-          "columnsTo": ["id"],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
         "institutions_type_id_institution_types_id_fk": {
           "name": "institutions_type_id_institution_types_id_fk",
           "tableFrom": "institutions",
@@ -338,10 +509,10 @@
       },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {
-        "institutions_user_id_name_unique": {
-          "name": "institutions_user_id_name_unique",
+        "institutions_website_unique": {
+          "name": "institutions_website_unique",
           "nullsNotDistinct": false,
-          "columns": ["user_id", "name"]
+          "columns": ["website"]
         }
       },
       "policies": {},
@@ -373,7 +544,7 @@
         },
         "price": {
           "name": "price",
-          "type": "real",
+          "type": "text",
           "primaryKey": false,
           "notNull": true
         },
@@ -397,7 +568,50 @@
           "default": "now()"
         }
       },
-      "indexes": {},
+      "indexes": {
+        "idx_token_prices_lookup": {
+          "name": "idx_token_prices_lookup",
+          "columns": [
+            {
+              "expression": "token_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "base_token_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "timestamp",
+              "isExpression": false,
+              "asc": false,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_token_prices_timestamp": {
+          "name": "idx_token_prices_timestamp",
+          "columns": [
+            {
+              "expression": "timestamp",
+              "isExpression": false,
+              "asc": false,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
       "foreignKeys": {
         "token_prices_token_id_tokens_id_fk": {
           "name": "token_prices_token_id_tokens_id_fk",
@@ -430,8 +644,8 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.tokens": {
-      "name": "tokens",
+    "public.token_types": {
+      "name": "token_types",
       "schema": "",
       "columns": {
         "id": {
@@ -441,8 +655,8 @@
           "notNull": true,
           "default": "gen_random_uuid()"
         },
-        "symbol": {
-          "name": "symbol",
+        "code": {
+          "name": "code",
           "type": "text",
           "primaryKey": false,
           "notNull": true
@@ -453,24 +667,18 @@
           "primaryKey": false,
           "notNull": true
         },
-        "type": {
-          "name": "type",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "decimals": {
-          "name": "decimals",
-          "type": "real",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 2
-        },
-        "icon_url": {
-          "name": "icon_url",
+        "description": {
+          "name": "description",
           "type": "text",
           "primaryKey": false,
           "notNull": false
+        },
+        "display_order": {
+          "name": "display_order",
+          "type": "real",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
         },
         "is_active": {
           "name": "is_active",
@@ -497,7 +705,196 @@
       "indexes": {},
       "foreignKeys": {},
       "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
+      "uniqueConstraints": {
+        "token_types_code_unique": {
+          "name": "token_types_code_unique",
+          "nullsNotDistinct": false,
+          "columns": ["code"]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.tokens": {
+      "name": "tokens",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "symbol": {
+          "name": "symbol",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "type_id": {
+          "name": "type_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "decimals": {
+          "name": "decimals",
+          "type": "real",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 2
+        },
+        "icon_url": {
+          "name": "icon_url",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "provider_metadata": {
+          "name": "provider_metadata",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'{}'"
+        },
+        "is_active": {
+          "name": "is_active",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "idx_tokens_symbol": {
+          "name": "idx_tokens_symbol",
+          "columns": [
+            {
+              "expression": "symbol",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "tokens_type_id_token_types_id_fk": {
+          "name": "tokens_type_id_token_types_id_fk",
+          "tableFrom": "tokens",
+          "tableTo": "token_types",
+          "columnsFrom": ["type_id"],
+          "columnsTo": ["id"],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "tokens_symbol_type_id_unique": {
+          "name": "tokens_symbol_type_id_unique",
+          "nullsNotDistinct": false,
+          "columns": ["symbol", "type_id"]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.transaction_types": {
+      "name": "transaction_types",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "code": {
+          "name": "code",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "description": {
+          "name": "description",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "display_order": {
+          "name": "display_order",
+          "type": "real",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "is_active": {
+          "name": "is_active",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "transaction_types_code_unique": {
+          "name": "transaction_types_code_unique",
+          "nullsNotDistinct": false,
+          "columns": ["code"]
+        }
+      },
       "policies": {},
       "checkConstraints": {},
       "isRLSEnabled": false
@@ -513,42 +910,36 @@
           "notNull": true,
           "default": "gen_random_uuid()"
         },
+        "user_id": {
+          "name": "user_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
         "holding_id": {
           "name": "holding_id",
           "type": "uuid",
           "primaryKey": false,
           "notNull": true
         },
-        "type": {
-          "name": "type",
-          "type": "text",
+        "type_id": {
+          "name": "type_id",
+          "type": "uuid",
           "primaryKey": false,
           "notNull": true
         },
         "amount": {
           "name": "amount",
-          "type": "real",
+          "type": "text",
           "primaryKey": false,
           "notNull": true
         },
-        "price": {
-          "name": "price",
-          "type": "real",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "price_token_id": {
-          "name": "price_token_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
         "fee": {
           "name": "fee",
-          "type": "real",
+          "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "default": 0
+          "default": "'0'"
         },
         "fee_token_id": {
           "name": "fee_token_id",
@@ -589,8 +980,48 @@
           "default": "now()"
         }
       },
-      "indexes": {},
+      "indexes": {
+        "idx_transactions_user_id": {
+          "name": "idx_transactions_user_id",
+          "columns": [
+            {
+              "expression": "user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_transactions_holding_id": {
+          "name": "idx_transactions_holding_id",
+          "columns": [
+            {
+              "expression": "holding_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
       "foreignKeys": {
+        "transactions_user_id_users_id_fk": {
+          "name": "transactions_user_id_users_id_fk",
+          "tableFrom": "transactions",
+          "tableTo": "users",
+          "columnsFrom": ["user_id"],
+          "columnsTo": ["id"],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
         "transactions_holding_id_holdings_id_fk": {
           "name": "transactions_holding_id_holdings_id_fk",
           "tableFrom": "transactions",
@@ -600,11 +1031,11 @@
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
-        "transactions_price_token_id_tokens_id_fk": {
-          "name": "transactions_price_token_id_tokens_id_fk",
+        "transactions_type_id_transaction_types_id_fk": {
+          "name": "transactions_type_id_transaction_types_id_fk",
           "tableFrom": "transactions",
-          "tableTo": "tokens",
-          "columnsFrom": ["price_token_id"],
+          "tableTo": "transaction_types",
+          "columnsFrom": ["type_id"],
           "columnsTo": ["id"],
           "onDelete": "restrict",
           "onUpdate": "no action"
@@ -654,12 +1085,11 @@
           "primaryKey": false,
           "notNull": false
         },
-        "base_currency": {
-          "name": "base_currency",
-          "type": "text",
+        "base_currency_id": {
+          "name": "base_currency_id",
+          "type": "uuid",
           "primaryKey": false,
-          "notNull": true,
-          "default": "'USD'"
+          "notNull": false
         },
         "created_at": {
           "name": "created_at",
@@ -677,7 +1107,17 @@
         }
       },
       "indexes": {},
-      "foreignKeys": {},
+      "foreignKeys": {
+        "users_base_currency_id_tokens_id_fk": {
+          "name": "users_base_currency_id_tokens_id_fk",
+          "tableFrom": "users",
+          "tableTo": "tokens",
+          "columnsFrom": ["base_currency_id"],
+          "columnsTo": ["id"],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        }
+      },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {
         "users_email_unique": {

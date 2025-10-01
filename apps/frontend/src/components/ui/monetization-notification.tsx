@@ -32,10 +32,12 @@ export const MonetizationNotification: React.FC<MonetizationNotificationProps> =
   const pluralTokens = tokenCount === 1 ? 'token' : 'tokens';
 
   return (
-    <Alert className={`bg-blue-50 border-blue-200 ${className}`}>
-      <Info className="h-4 w-4 text-blue-600" />
+    <Alert
+      className={`bg-blue-50 dark:bg-blue-950 border-blue-200 dark:border-blue-800 ${className}`}
+    >
+      <Info className="h-4 w-4 text-blue-600 dark:text-blue-300" />
       <div className="flex-1">
-        <AlertDescription className="text-blue-800">
+        <AlertDescription className="text-blue-800 dark:text-blue-100">
           <div className="flex justify-between items-start">
             <div className="flex-1">
               <p className="font-medium mb-2">
@@ -53,32 +55,36 @@ export const MonetizationNotification: React.FC<MonetizationNotificationProps> =
               </p>
 
               <details className="text-sm mb-3">
-                <summary className="cursor-pointer hover:text-blue-900 font-medium">
+                <summary className="cursor-pointer hover:text-blue-900 dark:hover:text-blue-50 font-medium">
                   View affected tokens ({tokenCount})
                 </summary>
-                <div className="mt-2 pl-4 border-l-2 border-blue-200">
+                <div className="mt-2 pl-4 border-l-2 border-blue-200 dark:border-blue-700">
                   {unpriceableTokens.map((token) => (
                     <div
                       key={`${token.symbol}-${token.institutionName}-${token.accountName}`}
-                      className="mb-2 p-2 bg-blue-25 rounded border"
+                      className="mb-2 p-2 bg-blue-50 dark:bg-blue-950 rounded border"
                     >
                       <div className="flex items-center gap-2 mb-1">
-                        <span className="font-mono text-xs bg-blue-100 px-2 py-1 rounded">
+                        <span className="font-mono text-xs bg-blue-100 dark:bg-blue-900 dark:text-blue-100 px-2 py-1 rounded">
                           {token.symbol}
                         </span>
-                        <span className="text-xs text-blue-600">
+                        <span className="text-xs text-blue-600 dark:text-blue-200">
                           {token.institutionName} → {token.accountName}
                         </span>
                       </div>
-                      <div className="text-xs text-blue-700 mb-1">{token.reason}</div>
+                      <div className="text-xs text-blue-700 dark:text-blue-200 mb-1">
+                        {token.reason}
+                      </div>
                       <div className="flex items-center gap-1 text-xs">
-                        <span className="text-blue-600">Provider: {token.provider}</span>
+                        <span className="text-blue-600 dark:text-blue-200">
+                          Provider: {token.provider}
+                        </span>
                         {token.providerPricingUrl && (
                           <a
                             href={token.providerPricingUrl}
                             target="_blank"
                             rel="noopener noreferrer"
-                            className="text-blue-800 hover:text-blue-900 underline"
+                            className="text-blue-800 dark:text-blue-100 hover:text-blue-900 dark:hover:text-blue-50 underline"
                           >
                             (view pricing)
                           </a>
@@ -93,7 +99,7 @@ export const MonetizationNotification: React.FC<MonetizationNotificationProps> =
                 <Button
                   variant="outline"
                   size="sm"
-                  className="text-blue-700 border-blue-300 hover:bg-blue-100"
+                  className="text-blue-700 dark:text-blue-300 border-blue-300 dark:border-blue-700 hover:bg-blue-100 dark:hover:bg-blue-900"
                   onClick={() => window.open('#', '_blank')}
                 >
                   Upgrade to Premium
@@ -106,7 +112,7 @@ export const MonetizationNotification: React.FC<MonetizationNotificationProps> =
               variant="ghost"
               size="sm"
               onClick={onDismiss}
-              className="text-blue-600 hover:bg-blue-100 ml-4"
+              className="text-blue-600 dark:text-blue-400 hover:bg-blue-100 dark:hover:bg-blue-900 ml-4"
             >
               <X className="h-4 w-4" />
             </Button>

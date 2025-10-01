@@ -24,6 +24,10 @@ interface SearchableSelectProps {
   id?: string;
   className?: string;
   isActive?: boolean; // Whether the filter has a non-default value
+  popoverWidth?: string;
+  compact?: boolean;
+  buttonSize?: 'default' | 'sm';
+  displayLabel?: string;
 }
 
 export function SearchableSelect({
@@ -37,6 +41,10 @@ export function SearchableSelect({
   id,
   className,
   isActive = false,
+  popoverWidth,
+  compact = false,
+  buttonSize = 'default',
+  displayLabel,
 }: SearchableSelectProps) {
   // Add the "new item" option if provided
   const allItems =
@@ -65,6 +73,10 @@ export function SearchableSelect({
         className={`w-full ${
           isActive ? 'border-black border-2' : 'border border-input'
         } ${className || ''}`}
+        popoverWidth={popoverWidth}
+        compact={compact}
+        buttonSize={buttonSize}
+        displayLabel={displayLabel}
       />
     </div>
   );
@@ -610,6 +622,10 @@ interface CurrencySelectorProps {
   }>;
   id?: string;
   placeholder?: string;
+  popoverWidth?: string;
+  compact?: boolean;
+  buttonSize?: 'default' | 'sm';
+  className?: string;
 }
 
 export function CurrencySelector({
@@ -618,6 +634,10 @@ export function CurrencySelector({
   currencies,
   id,
   placeholder = 'Select currency...',
+  popoverWidth,
+  compact = false,
+  buttonSize = 'default',
+  className,
 }: CurrencySelectorProps) {
   const currencyOptions =
     currencies?.map((currency) => ({
@@ -625,6 +645,10 @@ export function CurrencySelector({
       label: `${currency.symbol} - ${currency.name}`,
       subtitle: currency.name,
     })) || [];
+
+  // Find selected currency to display only its symbol in compact mode
+  const selectedCurrency = currencies?.find((c) => c.id === value);
+  const displayLabel = compact && selectedCurrency ? selectedCurrency.symbol : undefined;
 
   return (
     <SearchableSelect
@@ -634,6 +658,11 @@ export function CurrencySelector({
       placeholder={placeholder}
       items={currencyOptions}
       emptyMessage="No currencies match your search."
+      popoverWidth={popoverWidth}
+      compact={compact}
+      buttonSize={buttonSize}
+      displayLabel={displayLabel}
+      className={className}
     />
   );
 }

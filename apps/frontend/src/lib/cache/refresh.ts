@@ -21,14 +21,13 @@ export function refreshInstitutionsViews(
   utils: TrpcUtils,
   { institutionIds = [], cascadeAccounts = false }: InstitutionRefreshOptions = {}
 ) {
+  // Only invalidate queries, don't force refetch
   const tasks: Array<Promise<unknown>> = [
     invalidateInstitutionsRelated(utils, {
       institutionIds,
       includeAccounts: cascadeAccounts,
       includeByUser: true,
     }),
-    safeRefetch(utils.institutions.getAll.refetch),
-    safeRefetch(utils.institutions.getByUserId?.refetch),
   ];
 
   if (cascadeAccounts) {
@@ -46,16 +45,6 @@ export function refreshInstitutionsViews(
     );
     tasks.push(invalidateTokensRelated(utils));
     tasks.push(invalidateTransactionsRelated(utils));
-
-    tasks.push(safeRefetch(utils.accounts.getAll.refetch));
-    tasks.push(safeRefetch(utils.accounts.getSummaries.refetch));
-    tasks.push(safeRefetch(utils.holdings.getAll.refetch));
-    tasks.push(safeRefetch(utils.holdings.getUnpriceableTokens.refetch));
-    tasks.push(safeRefetch(utils.users.getPortfolioValue.refetch));
-    tasks.push(safeRefetch(utils.tokens.getAll.refetch));
-    tasks.push(safeRefetch(utils.tokens.getByUserId.refetch));
-    tasks.push(safeRefetch(utils.tokens.getWithTotalValues?.refetch));
-    tasks.push(safeRefetch(utils.transactions.getAll?.refetch));
   }
 
   return collectTasks(tasks);
@@ -71,14 +60,13 @@ export function refreshAccountsViews(
   utils: TrpcUtils,
   { accountIds = [], institutionIds = [], cascadeHoldings = true }: AccountRefreshOptions = {}
 ) {
+  // Only invalidate queries, don't force refetch
   const tasks: Array<Promise<unknown>> = [
     invalidateAccountsRelated(utils, {
       accountIds,
       includeSummaries: true,
       includePortfolioValue: true,
     }),
-    safeRefetch(utils.accounts.getAll.refetch),
-    safeRefetch(utils.accounts.getSummaries.refetch),
   ];
 
   if (institutionIds.length > 0) {
@@ -89,8 +77,6 @@ export function refreshAccountsViews(
         includeByUser: true,
       })
     );
-    tasks.push(safeRefetch(utils.institutions.getAll.refetch));
-    tasks.push(safeRefetch(utils.institutions.getByUserId?.refetch));
   }
 
   if (cascadeHoldings) {
@@ -102,14 +88,6 @@ export function refreshAccountsViews(
     );
     tasks.push(invalidateTokensRelated(utils));
     tasks.push(invalidateTransactionsRelated(utils));
-
-    tasks.push(safeRefetch(utils.holdings.getAll.refetch));
-    tasks.push(safeRefetch(utils.holdings.getUnpriceableTokens.refetch));
-    tasks.push(safeRefetch(utils.users.getPortfolioValue.refetch));
-    tasks.push(safeRefetch(utils.tokens.getAll.refetch));
-    tasks.push(safeRefetch(utils.tokens.getByUserId.refetch));
-    tasks.push(safeRefetch(utils.tokens.getWithTotalValues?.refetch));
-    tasks.push(safeRefetch(utils.transactions.getAll?.refetch));
   }
 
   return collectTasks(tasks);
@@ -131,6 +109,7 @@ export function refreshHoldingsViews(
     cascadeTransactions = false,
   }: HoldingRefreshOptions = {}
 ) {
+  // Invalidate all related queries
   const tasks: Array<Promise<unknown>> = [
     invalidateHoldingsRelated(utils, {
       holdingIds,
@@ -143,15 +122,17 @@ export function refreshHoldingsViews(
       includePortfolioValue: true,
     }),
     invalidateTokensRelated(utils),
-    safeRefetch(utils.holdings.getAll.refetch),
-    safeRefetch(utils.holdings.getUnpriceableTokens.refetch),
-    safeRefetch(utils.accounts.getAll.refetch),
-    safeRefetch(utils.accounts.getSummaries.refetch),
-    safeRefetch(utils.tokens.getAll.refetch),
-    safeRefetch(utils.tokens.getByUserId.refetch),
-    safeRefetch(utils.tokens.getWithTotalValues?.refetch),
-    safeRefetch(utils.users.getPortfolioValue.refetch),
   ];
+
+  // Refetch core queries that EntityDataContext and other pages depend on
+  // These need to be fresh for navigation to work properly
+  tasks.push(safeRefetch(utils.holdings.getAll.refetch));
+  tasks.push(safeRefetch(utils.accounts.getAll.refetch));
+  tasks.push(safeRefetch(utils.tokens.getAll.refetch));
+  // Also refetch tokens.getByUserId which is used by Holdings page
+  if (utils.tokens.getByUserId) {
+    tasks.push(safeRefetch(utils.tokens.getByUserId.refetch));
+  }
 
   if (institutionIds.length > 0) {
     tasks.push(
@@ -162,12 +143,10 @@ export function refreshHoldingsViews(
       })
     );
     tasks.push(safeRefetch(utils.institutions.getAll.refetch));
-    tasks.push(safeRefetch(utils.institutions.getByUserId?.refetch));
   }
 
   if (cascadeTransactions) {
     tasks.push(invalidateTransactionsRelated(utils));
-    tasks.push(safeRefetch(utils.transactions.getAll?.refetch));
   }
 
   return collectTasks(tasks);
@@ -181,12 +160,8 @@ export function refreshTokensViews(
   utils: TrpcUtils,
   { cascadeHoldings = true }: TokenRefreshOptions = {}
 ) {
-  const tasks: Array<Promise<unknown>> = [
-    invalidateTokensRelated(utils),
-    safeRefetch(utils.tokens.getAll.refetch),
-    safeRefetch(utils.tokens.getByUserId.refetch),
-    safeRefetch(utils.tokens.getWithTotalValues?.refetch),
-  ];
+  // Only invalidate queries, don't force refetch
+  const tasks: Array<Promise<unknown>> = [invalidateTokensRelated(utils)];
 
   if (cascadeHoldings) {
     tasks.push(
@@ -219,10 +194,8 @@ export function refreshTransactionsViews(
   utils: TrpcUtils,
   { holdingIds = [] }: TransactionRefreshOptions = {}
 ) {
-  const tasks: Array<Promise<unknown>> = [
-    invalidateTransactionsRelated(utils),
-    safeRefetch(utils.transactions.getAll?.refetch),
-  ];
+  // Only invalidate queries, don't force refetch
+  const tasks: Array<Promise<unknown>> = [invalidateTransactionsRelated(utils)];
 
   if (holdingIds.length > 0) {
     tasks.push(
@@ -232,19 +205,12 @@ export function refreshTransactionsViews(
         includePortfolioValue: true,
       })
     );
-    tasks.push(safeRefetch(utils.holdings.getAll.refetch));
-    tasks.push(safeRefetch(utils.holdings.getUnpriceableTokens.refetch));
-    tasks.push(safeRefetch(utils.accounts.getAll.refetch));
-    tasks.push(safeRefetch(utils.accounts.getSummaries.refetch));
-    tasks.push(safeRefetch(utils.users.getPortfolioValue.refetch));
   }
 
   return collectTasks(tasks);
 }
 
 export function refreshPortfolioValue(utils: TrpcUtils) {
-  return collectTasks([
-    invalidatePortfolioValue(utils),
-    safeRefetch(utils.users.getPortfolioValue.refetch),
-  ]);
+  // Only invalidate, don't force refetch
+  return collectTasks([invalidatePortfolioValue(utils)]);
 }

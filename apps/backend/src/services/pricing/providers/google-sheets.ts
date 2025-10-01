@@ -635,7 +635,8 @@ export class GoogleSheetsProvider implements PricingProvider {
       typeCodeLookup.set(row.tokenId, row.typeCode);
     }
 
-    const googleSheetsCompatibleTypes = ['stock', 'etf', 'mutual_fund', 'equity'];
+    // Google Sheets supports stock type (which covers Stock/ETF/Equity/Commodity)
+    const googleSheetsCompatibleTypes = ['stock'];
 
     const eligibleTokens = tokensToFilter.filter((token) => {
       const typeCode = typeCodeLookup.get(token.id);

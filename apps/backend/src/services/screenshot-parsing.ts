@@ -21,15 +21,12 @@ const PARSING_CONFIG = {
   SIGNIFICANT_CHANGE_THRESHOLD: '0.000001', // For detecting significant balance changes
   UPDATE_CHANGE_THRESHOLD: '0.001', // For update operations
 
-  // Default token decimals by type
+  // Default token decimals by type (only seeded types)
   DEFAULT_DECIMALS: {
     fiat: 2,
-    stock: 8,
+    stock: 8, // Covers Stock/ETF/Equity/Commodity
     crypto: 8,
-    'mutual-fund': 4,
-    bond: 8,
-    commodity: 8,
-    etf: 8,
+    'private-company': 8,
     other: 8,
   } as const,
 
@@ -149,6 +146,22 @@ export class ScreenshotParsingService {
 
     // Calculate summary statistics
     const summary = this.calculateSummary(validatedHoldings);
+
+    // Debug: Check what we're returning
+    console.log('=== PARSE SCREENSHOT RETURN DEBUG ===');
+    const holdingsWithProviderData = validatedHoldings.filter(
+      (h) => h.providerValidation?.similarMatches && h.providerValidation.similarMatches.length > 0
+    );
+    if (holdingsWithProviderData.length > 0) {
+      console.log(`Found ${holdingsWithProviderData.length} holdings with provider validation`);
+      holdingsWithProviderData.forEach((h) => {
+        console.log(`\nHolding: ${h.symbol}`);
+        h.providerValidation?.similarMatches?.forEach((match, i) => {
+          console.log(`  Match ${i + 1}:`, JSON.stringify(match.metadata, null, 2));
+        });
+      });
+    }
+    console.log('=== END PARSE SCREENSHOT RETURN DEBUG ===');
 
     return {
       aiResponse,
@@ -360,18 +373,91 @@ export class ScreenshotParsingService {
 
     const newTokens = validHoldings
       .filter((h) => !h.tokenExists && !h.tokenId)
-      .map((h) => ({
-        symbol: h.symbol,
-        suggestedType: h.suggestedTokenType,
-        exists: h.tokenExists,
-        providerData: h.providerValidation,
-      }));
+      .map((h) => {
+        // Ensure suggestedTokenType is valid for screenshot parsing
+        let suggestedType = h.suggestedTokenType;
+
+        // CRITICAL: Screenshot parsing should NEVER create 'other' or 'private-company' tokens
+        // These types must be manually created by users
+        if (!suggestedType || suggestedType === 'other' || suggestedType === 'private-company') {
+          this.logger.warn(
+            {
+              symbol: h.symbol,
+              originalType: suggestedType,
+            },
+            'Invalid token type for screenshot parsing, defaulting to stock'
+          );
+          suggestedType = 'stock';
+        }
+
+        return {
+          symbol: h.symbol,
+          suggestedType,
+          exists: h.tokenExists,
+          providerData: h.providerValidation,
+        };
+      });
 
     // Get user's base currency for price fetching
     const baseCurrency = await userContextService.getBaseCurrency(userId);
 
+    // WORKAROUND: Re-validate CoinGecko tokens if providerMetadata is missing
+    // This handles the case where frontend loses the nested providerMetadata during state management
+    this.logger.info('Checking for tokens with missing CoinGecko metadata...');
+    for (const nt of newTokens) {
+      const metadata = nt.providerData?.exactMatch?.metadata;
+      if (
+        metadata &&
+        metadata.provider === 'coingecko' &&
+        (!metadata.providerMetadata || Object.keys(metadata.providerMetadata).length === 0)
+      ) {
+        this.logger.warn(
+          {
+            symbol: metadata.symbol,
+            name: metadata.name,
+          },
+          'CoinGecko token missing providerMetadata - re-validating to fetch ID'
+        );
+
+        try {
+          // Re-validate to get the CoinGecko ID
+          const validationService = tokenValidationService;
+          const revalidated = await validationService.validateToken(metadata.symbol, 'crypto');
+
+          if (revalidated.isValid && revalidated.metadata?.providerMetadata) {
+            // Merge the recovered metadata
+            metadata.providerMetadata = revalidated.metadata.providerMetadata;
+            this.logger.info(
+              {
+                symbol: metadata.symbol,
+                coinGeckoId: (revalidated.metadata.providerMetadata as Record<string, unknown>).id,
+              },
+              'Successfully recovered CoinGecko ID via re-validation'
+            );
+          } else {
+            this.logger.error(
+              {
+                symbol: metadata.symbol,
+                error: revalidated.error,
+              },
+              'Failed to recover CoinGecko metadata - token will not be priceable'
+            );
+          }
+        } catch (error) {
+          this.logger.error(
+            {
+              symbol: metadata.symbol,
+              error: error instanceof Error ? error.message : String(error),
+            },
+            'Exception during CoinGecko metadata recovery'
+          );
+        }
+      }
+    }
+
     const now = new Date();
-    const tokensToFetchPricesFor: typeof existingTokens | typeof newTokens = existingTokens;
+    // Only fetch prices for tokens we actually created/updated, not all existing tokens
+    const tokensToFetchPricesFor: (typeof schema.tokens.$inferSelect)[] = [];
     // Execute everything in a single atomic transaction
     const result = await db
       .transaction(async (trx) => {
@@ -388,7 +474,36 @@ export class ScreenshotParsingService {
             throw new Error(`Cannot create token ${nt.symbol} without a suggested type`);
           }
 
-          this.logger.debug({ symbol: nt.symbol, type }, 'Creating new token from parsing');
+          console.log('=== TOKEN CREATION DEBUG ===');
+          console.log('Symbol:', nt.symbol);
+          console.log('Type:', type);
+          console.log('Has provider data:', !!nt.providerData);
+          console.log('Has exact match:', !!nt.providerData?.exactMatch);
+          if (nt.providerData?.exactMatch?.metadata) {
+            console.log('Provider:', nt.providerData.exactMatch.metadata.provider);
+            console.log(
+              'Full metadata:',
+              JSON.stringify(nt.providerData.exactMatch.metadata, null, 2)
+            );
+            console.log(
+              'Provider metadata field:',
+              JSON.stringify(nt.providerData.exactMatch.metadata.providerMetadata, null, 2)
+            );
+          } else {
+            console.log('NO METADATA FOUND');
+          }
+          console.log('=== END TOKEN CREATION DEBUG ===');
+
+          this.logger.info(
+            {
+              symbol: nt.symbol,
+              type,
+              hasProviderData: !!nt.providerData,
+              hasExactMatch: !!nt.providerData?.exactMatch,
+            },
+            'Creating new token from parsing - checking provider data'
+          );
+
           // Extract name from provider metadata structure
           const exactMatch = nt.providerData?.exactMatch;
           let tokenName = nt.symbol;
@@ -413,7 +528,7 @@ export class ScreenshotParsingService {
                 ).toLowerCase() as keyof typeof PARSING_CONFIG.DEFAULT_DECIMALS
               ] || 2,
             iconUrl: null,
-            providerMetadata: JSON.stringify(nt.providerData?.exactMatch?.metadata ?? {}),
+            providerMetadata: this.buildProviderMetadata(nt.providerData?.exactMatch?.metadata),
             isActive: true,
             createdAt: now,
             updatedAt: now,
@@ -804,6 +919,7 @@ export class ScreenshotParsingService {
 
           // Add appropriate warnings/errors based on provider validation
           if (providerValidation.exactMatch) {
+            // Exact match found - auto-create the token
             validation.warnings.push(
               `Exact match found in ${providerValidation.exactMatch.metadata?.provider} - will be created automatically`
             );
@@ -811,15 +927,47 @@ export class ScreenshotParsingService {
             providerValidation.similarMatches &&
             providerValidation.similarMatches.length > 0
           ) {
-            // FORCE user selection when similar matches exist but no exact match
-            validation.requiresUserSelection = true;
-            validation.errors.push(
-              `Token "${holding.symbol}" not found in database. Please select from ${
-                providerValidation.similarMatches.length
-              } similar provider tokens: ${providerValidation.similarMatches
-                .map((m: ValidationResult) => m.metadata?.symbol || 'unknown')
-                .join(', ')}`
+            const similarCount = providerValidation.similarMatches.length;
+
+            // Check if similar matches come from different providers (ambiguity indicator)
+            const providers = new Set(
+              providerValidation.similarMatches
+                .map((m: ValidationResult) => m.metadata?.provider)
+                .filter(Boolean)
             );
+
+            const hasMultipleProviders = providers.size > 1;
+
+            // ALWAYS require user selection when we have similar matches but no exact match
+            // This prevents misclassification (e.g., "ETH" as stock vs crypto)
+            validation.requiresUserSelection = true;
+
+            const matchList = providerValidation.similarMatches
+              .slice(0, 5) // Show max 5 options
+              .map((m: ValidationResult) => {
+                const symbol = m.metadata?.symbol || 'unknown';
+                const name = m.metadata?.name || '';
+                const provider = m.metadata?.provider || '';
+                return `${symbol}${name ? ` (${name})` : ''}${provider ? ` [${provider}]` : ''}`;
+              })
+              .join(', ');
+
+            if (hasMultipleProviders) {
+              // Cross-provider ambiguity (e.g., ETH in both stock and crypto providers)
+              validation.errors.push(
+                `Symbol "${holding.symbol}" is ambiguous - found in multiple asset types. Please select the correct one from: ${matchList}`
+              );
+            } else if (similarCount === 1) {
+              // Single similar match but not exact - could still be wrong
+              validation.errors.push(
+                `Token "${holding.symbol}" not found exactly. Found similar: ${matchList}. Please confirm this is correct.`
+              );
+            } else {
+              // Multiple similar matches from same provider
+              validation.errors.push(
+                `Token "${holding.symbol}" not found exactly. Please select from ${similarCount} similar matches: ${matchList}`
+              );
+            }
           } else if (providerValidation.noMatches) {
             validation.errors.push(
               'Token not found in database or pricing providers - cannot proceed without manual token selection'
@@ -866,6 +1014,22 @@ export class ScreenshotParsingService {
 
   /**
    * Enhanced token type guessing using provider validation
+   *
+   * Token validation flow:
+   * 1. Check if symbol exists in database (handled in validateHoldings)
+   * 2. Try exact validation against Finnhub and CoinGecko APIs
+   * 3. If no exact match, search both providers for similar symbols
+   * 4. If search finds exact symbol match (case-insensitive), treat as exact
+   * 5. If only one similar match found, use it automatically (user can verify later)
+   * 6. If multiple similar matches, require user selection
+   * 7. If no matches at all, return error
+   *
+   * This handles cases like:
+   * - AAPL → finds exact match in Finnhub search (even if quote needs AAPL.US)
+   * - XEQT → finds XEQT.TO in similar matches (user selects from similar)
+   * - BTC → finds exact match in CoinGecko
+   * - INVALID → no matches found (error)
+   *
    * Returns validation result with exact matches and similar suggestions
    */
   private async validateTokenWithProviders(symbol: string): Promise<{
@@ -877,30 +1041,127 @@ export class ScreenshotParsingService {
     // Use singleton validation service
     const validationService = tokenValidationService;
 
-    // First, try exact validation (this tries both Finnhub and CoinGecko)
-    const exactMatch = await validationService.validateToken(symbol);
+    // CRITICAL: We need to check BOTH providers to detect ambiguity
+    // Don't use validateToken() as it returns early on first match
+    // Instead, explicitly validate with both Finnhub and CoinGecko
 
-    if (exactMatch.isValid && exactMatch.metadata) {
-      // We found an exact match - convert provider type to our token type
-      const tokenType = this.mapProviderTypeToTokenType(exactMatch.metadata.type);
+    const finnhubExact = await validationService.validateToken(symbol, 'stock');
+    const coinGeckoExact = await validationService.validateToken(symbol, 'crypto');
+
+    const hasFinnhubExact = finnhubExact.isValid && finnhubExact.metadata;
+    const hasCoinGeckoExact = coinGeckoExact.isValid && coinGeckoExact.metadata;
+
+    // Check for ambiguity: both providers have exact matches
+    if (hasFinnhubExact && hasCoinGeckoExact) {
+      this.logger.info(
+        {
+          symbol,
+          finnhub: finnhubExact.metadata?.name,
+          coingecko: coinGeckoExact.metadata?.name,
+        },
+        'AMBIGUOUS: Symbol found in both Finnhub and CoinGecko - requiring user selection'
+      );
+
+      // Return both as similar matches for user selection
       return {
-        exactMatch,
+        exactMatch: undefined,
+        similarMatches: [finnhubExact, coinGeckoExact],
+        suggestedTokenType: 'crypto', // Suggest crypto as more likely for exact match
+        noMatches: false,
+      };
+    }
+
+    // Only one provider has exact match - use it
+    if (hasFinnhubExact) {
+      const tokenType = this.mapProviderTypeToTokenType(finnhubExact.metadata!.type);
+      return {
+        exactMatch: finnhubExact,
         similarMatches: [],
         suggestedTokenType: tokenType,
         noMatches: false,
       };
     }
 
-    // No exact match found, let's search for similar matches
+    if (hasCoinGeckoExact) {
+      return {
+        exactMatch: coinGeckoExact,
+        similarMatches: [],
+        suggestedTokenType: 'crypto',
+        noMatches: false,
+      };
+    }
+
+    // No exact matches found, let's search for similar matches
     const similarMatches: ValidationResult[] = [];
 
     try {
       // Search Finnhub for similar tokens
       const finnhubMatches = await validationService.searchFinnhubTokens(symbol);
+
+      // Check if any Finnhub match is an exact symbol match (case-insensitive)
+      const finnhubExactMatch = finnhubMatches.find(
+        (match) => match.metadata?.symbol.toUpperCase() === symbol.toUpperCase()
+      );
+
+      if (finnhubExactMatch) {
+        // Found exact match in search results - treat it as exact match
+        const tokenType = this.mapProviderTypeToTokenType(
+          finnhubExactMatch.metadata?.type || 'Equity'
+        );
+        return {
+          exactMatch: finnhubExactMatch,
+          similarMatches: [],
+          suggestedTokenType: tokenType,
+          noMatches: false,
+        };
+      }
+
       similarMatches.push(...finnhubMatches.slice(0, 5)); // Limit to 5 suggestions
 
       // Search CoinGecko for similar tokens
       const coinGeckoMatches = await validationService.searchCoinGeckoTokens(symbol);
+
+      // Check if any CoinGecko match is an exact symbol match (case-insensitive)
+      const coinGeckoExactMatch = coinGeckoMatches.find(
+        (match) => match.metadata?.symbol.toUpperCase() === symbol.toUpperCase()
+      );
+
+      if (coinGeckoExactMatch) {
+        // Found exact match in CoinGecko search results
+
+        // CRITICAL: Check if we also have Finnhub matches - this indicates ambiguity!
+        // Example: "ETH" could be Ethereum (crypto) OR a stock ticker
+        if (finnhubMatches.length > 0) {
+          // Ambiguous symbol - require user selection between stock and crypto
+          this.logger.info(
+            {
+              symbol,
+              finnhubMatches: finnhubMatches.length,
+              coinGeckoMatches: coinGeckoMatches.length,
+            },
+            'Ambiguous symbol found in both Finnhub and CoinGecko - requiring user selection'
+          );
+
+          // Return all matches for user to choose from
+          similarMatches.push(...coinGeckoMatches.slice(0, 5));
+
+          return {
+            exactMatch: undefined,
+            similarMatches, // Includes both Finnhub and CoinGecko matches
+            suggestedTokenType: 'crypto', // Suggest crypto as it's more likely for exact symbol match
+            noMatches: false,
+          };
+        }
+
+        // No ambiguity - only CoinGecko has matches, treat as exact crypto match
+        return {
+          exactMatch: coinGeckoExactMatch,
+          similarMatches: [],
+          suggestedTokenType: 'crypto',
+          noMatches: false,
+        };
+      }
+
       similarMatches.push(...coinGeckoMatches.slice(0, 5)); // Limit to 5 suggestions
     } catch (error) {
       this.logger.warn(
@@ -925,25 +1186,35 @@ export class ScreenshotParsingService {
 
   /**
    * Map provider token types to our internal token types
+   * Note: Only maps to seeded types: fiat, crypto, stock, private-company, other
+   * 'stock' type covers Stock/ETF/Equity/Commodity as per seed data
+   * For screenshot parsing, unknown provider types default to 'stock'
    */
   private mapProviderTypeToTokenType(providerType: string): string {
     switch (providerType.toLowerCase()) {
       case 'equity':
-        return 'stock';
       case 'etp': // Exchange Traded Product (includes ETFs)
-        return 'etf';
       case 'etf':
-        return 'etf';
       case 'mutual fund':
-        return 'mutual-fund';
       case 'bond':
-        return 'bond';
       case 'commodity':
-        return 'commodity';
+      case 'stock':
+        // All equity-like instruments map to 'stock' type
+        return 'stock';
       case 'crypto':
+      case 'cryptocurrency':
         return 'crypto';
+      case 'fiat':
+      case 'currency':
+        return 'fiat';
       default:
-        return 'other';
+        // For screenshot parsing, unknown provider types should default to 'stock'
+        // since assets in screenshots are tradeable instruments
+        this.logger.debug(
+          { providerType },
+          'Unknown provider type, defaulting to stock for screenshot parsing'
+        );
+        return 'stock';
     }
   }
 
@@ -1030,32 +1301,277 @@ export class ScreenshotParsingService {
   }
 
   /**
-   * Smart fallback that doesn't make hardcoded assumptions
+   * Smart fallback for screenshot parsing - should only return fiat, crypto, or stock
+   * NEVER returns 'other' or 'private-company' as those are not suitable for screenshot parsing
    */
   private intelligentTokenTypeFallback(symbol: string): string {
-    // Check if it's a known fiat currency by consulting our token types
-    // This is more reliable than hardcoding currencies
     const symbolUpper = symbol.toUpperCase();
 
-    // Use symbol length and pattern analysis but be more flexible
-    if (/^[A-Z]{3}$/.test(symbolUpper)) {
-      // 3-letter symbols could be fiat, but also could be stocks or crypto
-      // Default to 'other' unless we have more context
-      return 'other';
+    // Check for common crypto tokens (top 100+ cryptocurrencies by market cap)
+    // This is a safety net if CoinGecko API fails or doesn't find the token
+    const commonCryptoSymbols = [
+      'BTC',
+      'ETH',
+      'USDT',
+      'BNB',
+      'SOL',
+      'USDC',
+      'XRP',
+      'DOGE',
+      'TON',
+      'ADA',
+      'SHIB',
+      'AVAX',
+      'TRX',
+      'DOT',
+      'LINK',
+      'MATIC',
+      'BCH',
+      'NEAR',
+      'UNI',
+      'LTC',
+      'DAI',
+      'ICP',
+      'APT',
+      'FET',
+      'STX',
+      'ARB',
+      'OP',
+      'INJ',
+      'IMX',
+      'MNT',
+      'HBAR',
+      'VET',
+      'ATOM',
+      'FIL',
+      'OKB',
+      'XLM',
+      'CRO',
+      'GRT',
+      'ALGO',
+      'ETC',
+      'WLD',
+      'RUNE',
+      'AAVE',
+      'SNX',
+      'MKR',
+      'THETA',
+      'FTM',
+      'XMR',
+      'EGLD',
+      'SAND',
+      'MANA',
+      'CHZ',
+      'ZEC',
+      'KAVA',
+      'FLOW',
+      'TUSD',
+      'XTZ',
+      'AXS',
+      'EOS',
+      'NEO',
+      'CAKE',
+      'BSV',
+      'QNT',
+      'FXS',
+      'DASH',
+      'RNDR',
+      'GALA',
+      'ZIL',
+      'ENJ',
+      'BAT',
+      '1INCH',
+      'COMP',
+      'LDO',
+      'CRV',
+      'SUSHI',
+      'YFI',
+      'CELO',
+      'RVN',
+      'WAVES',
+      'ZRX',
+      'MINA',
+      'QTUM',
+      'ROSE',
+      'KSM',
+      'SUI',
+      'SEI',
+      'PEPE',
+      'FLOKI',
+      'BONK',
+      'WIF',
+    ];
+
+    if (commonCryptoSymbols.includes(symbolUpper)) {
+      return 'crypto';
     }
 
-    if (/^[A-Z]{1,5}$/.test(symbolUpper) && symbolUpper.length <= 4) {
-      // Short alphabetic symbols are likely stocks
+    // Check for common fiat currency codes (3-letter ISO codes)
+    // Note: This is a heuristic - fiat currencies should ideally already be in DB
+    const commonFiatCodes = [
+      'USD',
+      'EUR',
+      'GBP',
+      'JPY',
+      'CNY',
+      'CAD',
+      'AUD',
+      'CHF',
+      'INR',
+      'KRW',
+      'BRL',
+      'MXN',
+      'ARS',
+      'RUB',
+      'ZAR',
+      'SGD',
+      'HKD',
+      'NZD',
+      'SEK',
+      'NOK',
+      'DKK',
+      'PLN',
+      'TRY',
+      'THB',
+    ];
+
+    if (/^[A-Z]{3}$/.test(symbolUpper) && commonFiatCodes.includes(symbolUpper)) {
+      // 3-letter symbol matching common fiat codes
+      return 'fiat';
+    }
+
+    // For screenshot parsing, if we can't determine the type:
+    // - Alphabetic symbols (1-5 chars) are most likely stocks/ETFs
+    // - This includes 3-letter stock tickers (e.g., IBM, AMD, AMD)
+    // - Default to 'stock' rather than 'other' since screenshots contain tradeable assets
+    if (/^[A-Z]{1,5}$/.test(symbolUpper)) {
       return 'stock';
     }
 
+    // Longer alphanumeric symbols are likely fund identifiers or complex tickers
     if (/^[A-Z0-9]{6,}$/.test(symbolUpper)) {
-      // Longer alphanumeric symbols might be fund identifiers
-      return 'mutual-fund';
+      return 'stock';
     }
 
-    // Default to other for unknown patterns
-    return 'other';
+    // Symbols with dots or hyphens (e.g., BRK.B, XEQT.TO) are stocks
+    if (/^[A-Z0-9.-]+$/.test(symbolUpper)) {
+      return 'stock';
+    }
+
+    // Default to stock for screenshot parsing - assets in screenshots are tradeable
+    // NEVER default to 'other' or 'private-company' in screenshot context
+    return 'stock';
+  }
+
+  /**
+   * Build provider metadata in the format expected by the pricing service
+   *
+   * The pricing service expects:
+   * {
+   *   "coingecko": { "id": "ethereum" },
+   *   "finnhub": { "symbol": "AAPL" }
+   * }
+   *
+   * But token validation returns:
+   * {
+   *   "symbol": "ETH",
+   *   "provider": "coingecko",
+   *   "providerMetadata": { "id": "ethereum" }
+   * }
+   */
+  private buildProviderMetadata(metadata?: TokenMetadata): string {
+    console.log('=== BUILD PROVIDER METADATA DEBUG ===');
+
+    if (!metadata) {
+      console.log('NO METADATA PROVIDED');
+      this.logger.debug('buildProviderMetadata: No metadata provided, returning empty object');
+      return '{}';
+    }
+
+    console.log('Metadata received:', JSON.stringify(metadata, null, 2));
+    console.log('Provider:', metadata.provider);
+    console.log('Symbol:', metadata.symbol);
+    console.log('Provider metadata field:', JSON.stringify(metadata.providerMetadata, null, 2));
+
+    this.logger.debug(
+      {
+        provider: metadata.provider,
+        symbol: metadata.symbol,
+        hasProviderMetadata: !!metadata.providerMetadata,
+      },
+      'buildProviderMetadata: Processing metadata'
+    );
+
+    const result: Record<string, unknown> = {};
+
+    // Extract provider-specific data based on the provider
+    if (metadata.provider === 'coingecko') {
+      const coinGeckoData = metadata.providerMetadata as
+        | { id?: string; coinGeckoData?: unknown }
+        | undefined;
+
+      console.log('CoinGecko data extracted:', JSON.stringify(coinGeckoData, null, 2));
+      console.log('CoinGecko ID:', coinGeckoData?.id);
+
+      this.logger.info(
+        {
+          symbol: metadata.symbol,
+          coinGeckoId: coinGeckoData?.id,
+        },
+        'Building CoinGecko metadata for token'
+      );
+
+      result.coingecko = {
+        id: coinGeckoData?.id,
+        name: metadata.name,
+        symbol: metadata.symbol,
+        type: metadata.type,
+      };
+      // Also add as legacy coinGeckoId for backwards compatibility
+      if (coinGeckoData?.id) {
+        result.coinGeckoId = coinGeckoData.id;
+        console.log('Set coinGeckoId to:', coinGeckoData.id);
+      } else {
+        console.log('WARNING: No CoinGecko ID found in metadata!');
+      }
+    } else if (metadata.provider === 'finnhub') {
+      this.logger.info(
+        {
+          symbol: metadata.symbol,
+          finnhubSymbol: metadata.symbol,
+        },
+        'Building Finnhub metadata for token'
+      );
+
+      result.finnhub = {
+        symbol: metadata.symbol,
+        name: metadata.name,
+        type: metadata.type,
+        exchange: metadata.exchange,
+        currency: metadata.currency,
+      };
+    }
+
+    // Keep original metadata for reference
+    result._original = metadata;
+
+    const resultString = JSON.stringify(result);
+
+    console.log('Final result object:', JSON.stringify(result, null, 2));
+    console.log('Has coinGeckoId:', !!result.coinGeckoId);
+    console.log('coinGeckoId value:', result.coinGeckoId);
+    console.log('=== END BUILD PROVIDER METADATA DEBUG ===');
+
+    this.logger.info(
+      {
+        symbol: metadata.symbol,
+        provider: metadata.provider,
+        hasCoinGeckoId: !!result.coinGeckoId,
+      },
+      'Built provider metadata for token'
+    );
+
+    return resultString;
   }
 
   /**

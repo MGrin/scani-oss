@@ -31,9 +31,12 @@ interface EntityDataContextValue {
 const EntityDataContext = createContext<EntityDataContextValue | null>(null);
 
 const DEFAULT_QUERY_OPTIONS = {
-  staleTime: 1000 * 60 * 5,
+  staleTime: 1000 * 60 * 5, // 5 minutes
+  gcTime: 1000 * 60 * 10, // 10 minutes (formerly cacheTime)
   refetchOnWindowFocus: false,
   refetchOnReconnect: false,
+  refetchOnMount: false, // Don't refetch on mount - handled by selective refetch in mutations
+  retry: 1, // Only retry once on failure
 };
 
 export function EntityDataProvider({ children }: { children: ReactNode }) {

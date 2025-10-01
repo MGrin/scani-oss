@@ -30,15 +30,6 @@ VALUES
     now ()
   ),
   (
-    'credit_card',
-    'Credit Card',
-    'Credit card accounts',
-    true,
-    3,
-    now (),
-    now ()
-  ),
-  (
     'investment',
     'Investment Account',
     'General investment and brokerage accounts',
@@ -48,20 +39,11 @@ VALUES
     now ()
   ),
   (
-    'crypto_wallet',
-    'Crypto Wallet',
-    'Cryptocurrency wallet accounts',
+    'crypto',
+    'Cryptocurrency',
+    'Cryptocurrency accounts',
     true,
-    4,
-    now (),
-    now ()
-  ),
-  (
-    'loan',
-    'Loan Account',
-    'Personal loans, mortgages, and debt accounts',
-    true,
-    5,
+    3,
     now (),
     now ()
   ),
@@ -70,7 +52,7 @@ VALUES
     'Other',
     'Other account types',
     true,
-    6,
+    4,
     now (),
     now ()
-  ) ON CONFLICT (code) DO NOTHING;
+  );

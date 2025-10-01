@@ -73,6 +73,7 @@ export class RateLimiter {
   private requestTimes: number[] = [];
   private readonly maxRequests: number;
   private readonly windowMs: number;
+  private isProcessing = false;
 
   constructor(maxRequests: number, windowMs: number) {
     this.maxRequests = maxRequests;
@@ -94,24 +95,48 @@ export class RateLimiter {
   }
 
   private processQueue(): void {
-    if (this.requestQueue.length === 0) return;
+    if (this.isProcessing || this.requestQueue.length === 0) return;
+
+    this.isProcessing = true;
 
     const now = Date.now();
 
+    // Remove expired request timestamps
     this.requestTimes = this.requestTimes.filter((time) => now - time < this.windowMs);
 
-    if (this.requestTimes.length < this.maxRequests) {
-      const nextRequest = this.requestQueue.shift();
-      if (nextRequest) {
-        this.requestTimes.push(now);
-        nextRequest();
-        setTimeout(() => this.processQueue(), 0);
+    // Calculate how many requests we can process in parallel
+    const availableSlots = this.maxRequests - this.requestTimes.length;
+
+    if (availableSlots > 0) {
+      // Process multiple requests in parallel (batch processing)
+      const batchSize = Math.min(availableSlots, this.requestQueue.length);
+      const batch: Array<() => void> = [];
+
+      for (let i = 0; i < batchSize; i++) {
+        const nextRequest = this.requestQueue.shift();
+        if (nextRequest) {
+          batch.push(nextRequest);
+          this.requestTimes.push(now);
+        }
       }
+
+      // Execute batch in parallel
+      for (const request of batch) {
+        request();
+      }
+
+      // Continue processing queue after a short delay
+      this.isProcessing = false;
+      setTimeout(() => this.processQueue(), 0);
     } else {
+      // Need to wait before processing more requests
       const oldestRequest = this.requestTimes[0];
       if (oldestRequest) {
         const waitTime = this.windowMs - (now - oldestRequest) + 100;
+        this.isProcessing = false;
         setTimeout(() => this.processQueue(), waitTime);
+      } else {
+        this.isProcessing = false;
       }
     }
   }

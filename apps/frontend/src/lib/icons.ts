@@ -74,7 +74,8 @@ export const getCryptoCurrencyDisplay = (symbol: string): TokenDisplay => {
 };
 
 /**
- * Get icon component for token types (fallback function)
+ * Get icon component for token types
+ * Note: Only handles seeded types: fiat, crypto, stock, private-company, other
  */
 export const getTokenTypeIcon = (type: string): LucideIcon => {
   switch (type?.toLowerCase()) {
@@ -84,16 +85,10 @@ export const getTokenTypeIcon = (type: string): LucideIcon => {
     case 'cryptocurrency':
       return Coins;
     case 'stock':
-    case 'equity':
+      // 'stock' type covers Stock/ETF/Equity/Commodity
       return TrendingUp;
-    case 'etf':
-    case 'fund':
-      return Building;
-    case 'bond':
-    case 'fixed_income':
-      return CreditCard;
-    case 'commodity':
-      return Building; // Using Building for commodities (could represent storage/warehouses)
+    case 'private-company':
+      return Building2;
     default:
       return CreditCard;
   }
@@ -101,29 +96,18 @@ export const getTokenTypeIcon = (type: string): LucideIcon => {
 
 /**
  * Get icon component for account types
+ * Note: Only handles seeded types: checking, savings, investment, crypto, other
  */
 export const getAccountTypeIcon = (type: string): LucideIcon => {
   switch (type?.toLowerCase()) {
     case 'checking':
-    case 'current':
       return Wallet;
     case 'savings':
       return PiggyBank;
-    case 'credit':
-    case 'credit_card':
-      return CreditCard;
     case 'investment':
-    case 'brokerage':
-    case 'trading':
       return TrendingUp;
     case 'crypto':
-    case 'crypto_wallet':
       return Wallet;
-    case 'retirement':
-    case 'pension':
-      return TrendingUp;
-    case 'loan':
-      return CreditCard; // Loans are similar to credit products
     default:
       return TrendingUp; // Default for unknown account types
   }

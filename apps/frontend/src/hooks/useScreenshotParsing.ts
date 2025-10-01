@@ -434,7 +434,8 @@ export function useScreenshotParsing({
         return true;
       }
 
-      const maxAttempts = 5;
+      // Reduced to 3 attempts with smarter polling
+      const maxAttempts = 3;
 
       const extractData = (result: unknown) => {
         if (result && typeof result === 'object' && 'data' in result) {
@@ -444,9 +445,10 @@ export function useScreenshotParsing({
       };
 
       for (let attempt = 0; attempt < maxAttempts; attempt++) {
+        // Fetch both queries in parallel
         const [portfolioResult, unpriceableResult] = await Promise.allSettled([
-          utils.users.getPortfolioValue.refetch(),
-          utils.holdings.getUnpriceableTokens.refetch(),
+          utils.users.getPortfolioValue.fetch(),
+          utils.holdings.getUnpriceableTokens.fetch(),
         ]);
 
         const portfolioData =
@@ -494,7 +496,11 @@ export function useScreenshotParsing({
           return true;
         }
 
-        await new Promise((resolve) => setTimeout(resolve, 800 * (attempt + 1)));
+        // Only wait if not the last attempt
+        if (attempt < maxAttempts - 1) {
+          // Progressive delay: 500ms, 1000ms, 1500ms
+          await new Promise((resolve) => setTimeout(resolve, 500 * (attempt + 1)));
+        }
       }
 
       return false;
@@ -612,6 +618,12 @@ export function useScreenshotParsing({
           }
         }
 
+        // The mutation's onSettled has triggered refreshHoldingsViews which invalidates
+        // and refetches all related queries. Wait briefly to ensure updates propagate.
+        // The Holdings page has refetchOnMount: 'always' so it will fetch fresh data.
+        setFinalizingMessage('Finalizing...');
+        await new Promise((resolve) => setTimeout(resolve, 500));
+
         setState('success');
         setFinalizingMessage(null);
         setIsFinalizing(false);
@@ -670,9 +682,10 @@ export function useScreenshotParsing({
           );
         }
 
+        // Brief delay to ensure state updates before navigation
         setTimeout(() => {
           onSuccess?.();
-        }, 500);
+        }, 100);
       } catch (error) {
         console.error('Holdings processing failed:', error);
 

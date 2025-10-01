@@ -92,6 +92,27 @@ export const screenshotParsingRouter = router({
       const userId = getUserId(ctx);
       const parsingService = new ScreenshotParsingService();
 
+      // Debug: Check what frontend is sending
+      console.log('=== PROCESS HOLDINGS INPUT DEBUG ===');
+      const holdingsWithProviderData = input.holdings.filter(
+        (h) => h.providerValidation?.exactMatch
+      );
+      if (holdingsWithProviderData.length > 0) {
+        console.log(
+          `Received ${holdingsWithProviderData.length} holdings with provider validation`
+        );
+        holdingsWithProviderData.forEach((h) => {
+          console.log(`\nHolding: ${h.symbol}`);
+          if (h.providerValidation?.exactMatch?.metadata) {
+            console.log(
+              '  Exact match metadata:',
+              JSON.stringify(h.providerValidation.exactMatch.metadata, null, 2)
+            );
+          }
+        });
+      }
+      console.log('=== END PROCESS HOLDINGS INPUT DEBUG ===');
+
       try {
         // Normalize holdings defensively to reduce variance upstream
         const mappedHoldings = input.holdings.map((h) => ({

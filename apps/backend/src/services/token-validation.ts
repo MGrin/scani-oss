@@ -1,9 +1,22 @@
 import type { TokenMetadata, TokenValidationResult as ValidationResult } from '@scani/shared';
 import { config } from '../config/pricing';
 import { createComponentLogger } from '../utils/logger';
+import type { RateLimiter } from './pricing/utils';
+
+interface TokenValidationServiceDependencies {
+  coinGeckoRateLimiter: RateLimiter;
+  finnhubRateLimiter: RateLimiter;
+}
 
 export class TokenValidationService {
   private readonly logger = createComponentLogger('token-validation');
+  private readonly coinGeckoRateLimiter: RateLimiter;
+  private readonly finnhubRateLimiter: RateLimiter;
+
+  constructor(deps: TokenValidationServiceDependencies) {
+    this.coinGeckoRateLimiter = deps.coinGeckoRateLimiter;
+    this.finnhubRateLimiter = deps.finnhubRateLimiter;
+  }
 
   /**
    * Validate a specific token by its CoinGecko ID
@@ -21,7 +34,9 @@ export class TokenValidationService {
 
       // Get detailed coin info directly by ID
       const coinUrl = `${config.coinGecko.baseUrl}/coins/${coinGeckoId}?localization=false&tickers=false&market_data=true&community_data=false&developer_data=false&sparkline=false`;
-      const coinResponse = await fetch(coinUrl, { headers });
+      const coinResponse = await this.coinGeckoRateLimiter.execute(() =>
+        fetch(coinUrl, { headers })
+      );
 
       if (!coinResponse.ok) {
         return {
@@ -111,7 +126,7 @@ export class TokenValidationService {
 
       // First, try to get a quote to see if the symbol exists
       const quoteUrl = `${config.finnhub.baseUrl}/quote?symbol=${symbol}&token=${apiKey}`;
-      const quoteResponse = await fetch(quoteUrl);
+      const quoteResponse = await this.finnhubRateLimiter.execute(() => fetch(quoteUrl));
 
       if (!quoteResponse.ok) {
         return {
@@ -140,7 +155,7 @@ export class TokenValidationService {
 
       // Try to get company profile for additional metadata
       const profileUrl = `${config.finnhub.baseUrl}/stock/profile2?symbol=${symbol}&token=${apiKey}`;
-      const profileResponse = await fetch(profileUrl);
+      const profileResponse = await this.finnhubRateLimiter.execute(() => fetch(profileUrl));
 
       let profileData: {
         name?: string;
@@ -158,14 +173,14 @@ export class TokenValidationService {
       }
 
       // Determine token type based on available information
-      // Finnhub doesn't always provide explicit type information,
-      // so we'll default to 'Equity' and let the user specify if needed
-      let tokenType: string = 'Equity';
+      // Note: Using provider metadata type ('Stock', 'ETF', etc.) for metadata,
+      // but these all map to 'stock' type in our database
+      let tokenType: string = 'Stock';
 
       // Basic heuristics to determine type
       if (symbol.includes('.') || symbol.length > 4) {
         // Could be international or ETF
-        tokenType = 'Equity';
+        tokenType = 'Stock';
       }
 
       const metadata: TokenMetadata = {
@@ -210,7 +225,7 @@ export class TokenValidationService {
 
       // Search CoinGecko for the symbol
       const searchUrl = `${config.coinGecko.baseUrl}/search?query=${symbol}`;
-      const response = await fetch(searchUrl, { headers });
+      const response = await this.coinGeckoRateLimiter.execute(() => fetch(searchUrl, { headers }));
 
       if (!response.ok) {
         return {
@@ -259,7 +274,9 @@ export class TokenValidationService {
 
       // Get detailed coin info
       const coinUrl = `${config.coinGecko.baseUrl}/coins/${match.id}?localization=false&tickers=false&market_data=true&community_data=false&developer_data=false&sparkline=false`;
-      const coinResponse = await fetch(coinUrl, { headers });
+      const coinResponse = await this.coinGeckoRateLimiter.execute(() =>
+        fetch(coinUrl, { headers })
+      );
 
       if (!coinResponse.ok) {
         return {
@@ -318,7 +335,7 @@ export class TokenValidationService {
       const searchUrl = `${
         config.finnhub.baseUrl
       }/search?q=${encodeURIComponent(query)}&token=${apiKey}`;
-      const response = await fetch(searchUrl);
+      const response = await this.finnhubRateLimiter.execute(() => fetch(searchUrl));
 
       if (!response.ok) {
         this.logger.warn(
@@ -347,8 +364,9 @@ export class TokenValidationService {
 
       for (const item of searchData.result.slice(0, 10)) {
         // Limit to 10 results
-        // Map Finnhub types to our types
-        let tokenType: 'Equity' | 'ETF' | 'Mutual Fund' | 'Bond' | 'Commodity' = 'Equity';
+        // Use provider metadata types for display, but they all map to 'stock' in our database
+        // Note: Provider types are preserved in metadata for user information
+        let tokenType: string = 'Equity';
 
         if (item.type) {
           const type = item.type.toLowerCase();
@@ -408,7 +426,7 @@ export class TokenValidationService {
       }
 
       const searchUrl = `${config.coinGecko.baseUrl}/search?query=${encodeURIComponent(query)}`;
-      const response = await fetch(searchUrl, { headers });
+      const response = await this.coinGeckoRateLimiter.execute(() => fetch(searchUrl, { headers }));
 
       if (!response.ok) {
         this.logger.warn(
@@ -475,5 +493,11 @@ export class TokenValidationService {
   }
 }
 
-// Singleton instance
-export const tokenValidationService = new TokenValidationService();
+// Import AFTER class definition to avoid circular dependency
+import { pricingService } from './pricing';
+
+// Singleton instance using GLOBAL rate limiters from PricingService
+export const tokenValidationService = new TokenValidationService({
+  coinGeckoRateLimiter: pricingService.coinGeckoRateLimiter,
+  finnhubRateLimiter: pricingService.finnhubRateLimiter,
+});

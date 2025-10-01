@@ -12,6 +12,8 @@ import {
 } from 'lucide-react';
 import React, { useId, useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
+import { HelpWidget } from '@/components/help/HelpWidget';
+import { CurrencySelector } from '@/components/selectors/SearchableSelectors';
 import {
   Breadcrumb,
   BreadcrumbItem,
@@ -29,13 +31,15 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import { EnhancedThemeToggle } from '@/components/ui/enhanced-theme-toggle';
 import { MonetizationNotification } from '@/components/ui/monetization-notification';
+import { QueryLoadingIndicator } from '@/components/ui/query-loading-indicator';
 import { SkipLinks } from '@/components/ui/skip-links';
-import { ThemeToggle } from '@/components/ui/theme-toggle';
+
 import { useAuth } from '@/contexts/AuthContext';
-import { EntityDataProvider } from '@/contexts/EntityDataContext';
 import { RealtimeProvider } from '@/contexts/RealtimeContext';
 import { UnpriceableTokensProvider } from '@/contexts/UnpriceableTokensContext';
+import { useEnhancedToast } from '@/hooks/use-enhanced-toast';
 import { MOBILE_SPACING } from '@/lib/mobile-utils';
 import { trpc } from '@/lib/trpc';
 import { cn } from '@/lib/utils';
@@ -203,6 +207,40 @@ export function Layout({ children }: LayoutProps) {
   const navigationId = useId();
   const mainContentId = useId();
 
+  // Query for user preferences to get avatar and name
+  const { data: userPrefs } = trpc.users.getCurrent.useQuery(undefined, {
+    enabled: Boolean(user), // Only query if user is logged in
+  });
+
+  // Query for supported currencies for currency selector
+  const { data: supportedCurrencies } = trpc.users.getSupportedCurrencies.useQuery(undefined, {
+    enabled: Boolean(user), // Only query if user is logged in
+  });
+
+  // Query for base currency
+  const { data: baseCurrency } = trpc.users.getBaseCurrency.useQuery(undefined, {
+    enabled: Boolean(user), // Only query if user is logged in
+  });
+
+  const { success, error: showError } = useEnhancedToast();
+  const utils = trpc.useUtils();
+  const updateUser = trpc.users.updateCurrent.useMutation({
+    onSuccess: () => {
+      utils.users.getBaseCurrency.invalidate();
+      utils.users.getPortfolioValue.invalidate();
+      success(
+        'Currency updated successfully. All values will now be displayed in the new currency.'
+      );
+    },
+    onError: (err) => {
+      showError(err.message || 'Failed to update currency');
+    },
+  });
+
+  const handleCurrencyChange = (currencyId: string) => {
+    updateUser.mutate({ baseCurrencyId: currencyId });
+  };
+
   // Query for unpriceable tokens to show monetization notification
   const { data: unpriceableTokens } = trpc.holdings.getUnpriceableTokens.useQuery(undefined, {
     enabled: Boolean(user), // Only query if user is logged in
@@ -218,28 +256,30 @@ export function Layout({ children }: LayoutProps) {
 
   return (
     <RealtimeProvider>
-      <EntityDataProvider>
-        <SkipLinks />
-        <UnpriceableTokensProvider
-          unpriceableTokens={unpriceableTokens?.tokens}
+      <SkipLinks />
+      <UnpriceableTokensProvider
+        unpriceableTokens={unpriceableTokens?.tokens}
+        notificationDismissed={notificationDismissed}
+      >
+        <LayoutContent
+          sidebarOpen={sidebarOpen}
+          setSidebarOpen={setSidebarOpen}
           notificationDismissed={notificationDismissed}
+          setNotificationDismissed={setNotificationDismissed}
+          user={user}
+          userPrefs={userPrefs}
+          supportedCurrencies={supportedCurrencies}
+          baseCurrency={baseCurrency}
+          handleCurrencyChange={handleCurrencyChange}
+          handleSignOut={handleSignOut}
+          breadcrumbs={breadcrumbs}
+          navigationId={navigationId}
+          mainContentId={mainContentId}
+          unpriceableTokens={unpriceableTokens}
         >
-          <LayoutContent
-            sidebarOpen={sidebarOpen}
-            setSidebarOpen={setSidebarOpen}
-            notificationDismissed={notificationDismissed}
-            setNotificationDismissed={setNotificationDismissed}
-            user={user}
-            handleSignOut={handleSignOut}
-            breadcrumbs={breadcrumbs}
-            navigationId={navigationId}
-            mainContentId={mainContentId}
-            unpriceableTokens={unpriceableTokens}
-          >
-            {children}
-          </LayoutContent>
-        </UnpriceableTokensProvider>
-      </EntityDataProvider>
+          {children}
+        </LayoutContent>
+      </UnpriceableTokensProvider>
     </RealtimeProvider>
   );
 }
@@ -276,6 +316,22 @@ interface LayoutContentProps {
   notificationDismissed: boolean;
   setNotificationDismissed: (dismissed: boolean) => void;
   user: User | null;
+  userPrefs?: {
+    name: string | null;
+    email: string;
+    avatar: string | null;
+  };
+  supportedCurrencies?: Array<{
+    id: string;
+    symbol: string;
+    name: string;
+  }>;
+  baseCurrency?: {
+    id: string;
+    symbol: string;
+    name: string;
+  } | null;
+  handleCurrencyChange: (currencyId: string) => void;
   handleSignOut: () => Promise<void>;
   breadcrumbs: BreadcrumbData[];
   navigationId: string;
@@ -290,6 +346,10 @@ function LayoutContent({
   notificationDismissed,
   setNotificationDismissed,
   user,
+  userPrefs,
+  supportedCurrencies,
+  baseCurrency,
+  handleCurrencyChange,
   handleSignOut,
   breadcrumbs,
   navigationId,
@@ -413,6 +473,23 @@ function LayoutContent({
             <div className="flex items-center space-x-3">
               {user && (
                 <>
+                  {/* Currency Selector */}
+                  {supportedCurrencies && supportedCurrencies.length > 0 && (
+                    <CurrencySelector
+                      value={baseCurrency?.id || ''}
+                      onValueChange={handleCurrencyChange}
+                      currencies={supportedCurrencies}
+                      placeholder="Currency"
+                      popoverWidth="w-80"
+                      compact={true}
+                      buttonSize="sm"
+                      className="w-24"
+                    />
+                  )}
+
+                  {/* Theme Toggle */}
+                  <EnhancedThemeToggle />
+
                   {/* User Menu */}
                   <DropdownMenu>
                     <DropdownMenuTrigger asChild>
@@ -420,13 +497,26 @@ function LayoutContent({
                         variant="ghost"
                         className="flex items-center space-x-1.5 h-auto p-1.5"
                       >
-                        <div className="h-7 w-7 bg-muted rounded-full flex items-center justify-center">
-                          <span className="text-xs font-medium">
-                            {user.email?.[0]?.toUpperCase() || '?'}
-                          </span>
+                        <div className="h-7 w-7 bg-muted rounded-full flex items-center justify-center overflow-hidden">
+                          {userPrefs?.avatar ? (
+                            <img
+                              src={userPrefs.avatar}
+                              alt={userPrefs.name || user.email || 'User'}
+                              className="h-full w-full object-cover"
+                              onError={(e) => {
+                                // Hide the image and show fallback if it fails to load
+                                e.currentTarget.style.display = 'none';
+                              }}
+                            />
+                          ) : null}
+                          {!userPrefs?.avatar && (
+                            <span className="text-xs font-medium">
+                              {(userPrefs?.name?.[0] || user.email?.[0])?.toUpperCase() || '?'}
+                            </span>
+                          )}
                         </div>
                         <span className="text-sm hidden sm:inline">
-                          {user.email?.split('@')[0] || 'User'}
+                          {userPrefs?.name || user.email?.split('@')[0] || 'User'}
                         </span>
                       </Button>
                     </DropdownMenuTrigger>
@@ -434,7 +524,7 @@ function LayoutContent({
                       <DropdownMenuLabel className="font-normal">
                         <div className="flex flex-col space-y-0.5">
                           <p className="text-sm font-medium leading-none">
-                            {user.email?.split('@')[0] || 'User'}
+                            {userPrefs?.name || user.email?.split('@')[0] || 'User'}
                           </p>
                           <p className="text-xs leading-none text-muted-foreground">{user.email}</p>
                         </div>
@@ -456,15 +546,15 @@ function LayoutContent({
                       </DropdownMenuItem>
                     </DropdownMenuContent>
                   </DropdownMenu>
-
-                  {/* Theme Toggle */}
-                  <ThemeToggle />
                 </>
               )}
             </div>
           </div>
           {/* Session status will be rendered here by SessionStatusIndicator */}
         </header>
+
+        {/* Loading indicator for query refetches */}
+        <QueryLoadingIndicator />
 
         {/* Monetization notification for unpriceable tokens */}
         {unpriceableTokens && unpriceableTokens.count > 0 && !notificationDismissed && (
@@ -484,6 +574,9 @@ function LayoutContent({
         >
           {children}
         </main>
+
+        {/* Help Widget */}
+        <HelpWidget />
       </div>
     </div>
   );

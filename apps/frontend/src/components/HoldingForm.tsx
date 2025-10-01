@@ -360,7 +360,7 @@ export function HoldingForm({ isOpen, onClose, holding, mode }: HoldingFormProps
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
           {/* Duplicate Warning */}
           {duplicateWarning && (
-            <div className="border-yellow-200 bg-yellow-50 border rounded-md p-3">
+            <div className="border-yellow-200 dark:border-yellow-800 bg-yellow-50 dark:bg-yellow-950 border rounded-md p-3">
               <p className="text-sm text-yellow-800">{duplicateWarning}</p>
             </div>
           )}

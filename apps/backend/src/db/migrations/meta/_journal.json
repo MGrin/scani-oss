@@ -5,141 +5,50 @@
     {
       "idx": 0,
       "version": "7",
-      "when": 1757549086316,
-      "tag": "0000_premium_ma_gnuci",
+      "when": 1759296712620,
+      "tag": "0000_wise_the_initiative",
       "breakpoints": true
     },
     {
       "idx": 1,
       "version": "7",
-      "when": 1757556313924,
-      "tag": "0001_loud_king_cobra",
+      "when": 1759296729072,
+      "tag": "0001_seed_token_types",
       "breakpoints": true
     },
     {
       "idx": 2,
       "version": "7",
-      "when": 1757559926841,
+      "when": 1759296745619,
       "tag": "0002_seed_institution_types",
       "breakpoints": true
     },
     {
       "idx": 3,
       "version": "7",
-      "when": 1757561459966,
+      "when": 1759296771449,
       "tag": "0003_seed_account_types",
       "breakpoints": true
     },
     {
       "idx": 4,
       "version": "7",
-      "when": 1757561467712,
-      "tag": "0004_seed_token_types",
+      "when": 1759297014307,
+      "tag": "0004_seed_fiat_tokens",
       "breakpoints": true
     },
     {
       "idx": 5,
       "version": "7",
-      "when": 1757571465731,
-      "tag": "0005_seed_fiat_tokens",
+      "when": 1759297907740,
+      "tag": "0005_seed_institutions",
       "breakpoints": true
     },
     {
       "idx": 6,
       "version": "7",
-      "when": 1757571475604,
-      "tag": "0006_seed_crypto_tokens",
-      "breakpoints": true
-    },
-    {
-      "idx": 7,
-      "version": "7",
-      "when": 1757574103703,
-      "tag": "0007_mature_marauders",
-      "breakpoints": true
-    },
-    {
-      "idx": 8,
-      "version": "7",
-      "when": 1757574159672,
-      "tag": "0008_open_toad",
-      "breakpoints": true
-    },
-    {
-      "idx": 9,
-      "version": "7",
-      "when": 1757578624053,
-      "tag": "0009_magenta_taskmaster",
-      "breakpoints": true
-    },
-    {
-      "idx": 10,
-      "version": "7",
-      "when": 1757578633461,
-      "tag": "0010_seed_institutions",
-      "breakpoints": true
-    },
-    {
-      "idx": 11,
-      "version": "7",
-      "when": 1757661126517,
-      "tag": "0011_bright_meggan",
-      "breakpoints": true
-    },
-    {
-      "idx": 12,
-      "version": "7",
-      "when": 1757666438975,
-      "tag": "0012_old_power_pack",
-      "breakpoints": true
-    },
-    {
-      "idx": 13,
-      "version": "7",
-      "when": 1757669191000,
-      "tag": "0013_bouncy_maverick",
-      "breakpoints": true
-    },
-    {
-      "idx": 14,
-      "version": "7",
-      "when": 1757694389595,
-      "tag": "0014_lean_speed_demon",
-      "breakpoints": true
-    },
-    {
-      "idx": 15,
-      "version": "7",
-      "when": 1757696269742,
-      "tag": "0015_seed_transaction_types",
-      "breakpoints": true
-    },
-    {
-      "idx": 16,
-      "version": "7",
-      "when": 1757845818132,
-      "tag": "0016_fancy_molecule_man",
-      "breakpoints": true
-    },
-    {
-      "idx": 17,
-      "version": "7",
-      "when": 1757850028130,
-      "tag": "0017_seed_mutual_fund_token_type",
-      "breakpoints": true
-    },
-    {
-      "idx": 18,
-      "version": "7",
-      "when": 1757885649890,
-      "tag": "0018_seed_private_token_type",
-      "breakpoints": true
-    },
-    {
-      "idx": 19,
-      "version": "7",
-      "when": 1757988933550,
-      "tag": "0019_nostalgic_exodus",
+      "when": 1759298700093,
+      "tag": "0006_seed_transaction_types",
       "breakpoints": true
     }
   ]

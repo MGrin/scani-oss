@@ -1,11 +1,8 @@
-import { Building2 } from 'lucide-react';
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { InstitutionRow } from '@/components/InstitutionRow';
-
 import { InstitutionTypeSelector } from '@/components/selectors/SearchableSelectors';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent } from '@/components/ui/card';
 import {
   Dialog,
   DialogContent,
@@ -14,12 +11,13 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
+import { InstitutionsEmptyState, NoResultsEmptyState } from '@/components/ui/empty-state';
 import { LoadingSpinner } from '@/components/ui/loading';
 import { PageAggregation } from '@/components/ui/page-aggregation';
 import { PageHeader } from '@/components/ui/page-header';
 import { useEntityData } from '@/contexts/EntityDataContext';
 import { useUnpriceableTokens } from '@/contexts/UnpriceableTokensContext';
-import { useToast } from '@/hooks/use-toast';
+import { useEnhancedToast } from '@/hooks/use-enhanced-toast';
 import { useFilters } from '@/hooks/useFilters';
 import type { ApiInstitution, ApiToken } from '@/lib/api-types';
 import { withOptimisticHandlers } from '@/lib/cache/optimistic/entityManager';
@@ -28,7 +26,7 @@ import { trpc } from '@/lib/trpc';
 
 export function Institutions() {
   const navigate = useNavigate();
-  const { toast } = useToast();
+  const { success, error: showError } = useEnhancedToast();
   const { isInstitutionAffected, shouldHighlight } = useUnpriceableTokens();
 
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
@@ -45,14 +43,20 @@ export function Institutions() {
     { key: 'type', defaultValue: 'all' },
   ]);
 
-  const { data: institutions, isLoading } = trpc.institutions.getByUserId.useQuery();
+  const { data: institutions, isLoading } = trpc.institutions.getByUserId.useQuery(undefined, {
+    refetchOnMount: 'always', // Always refetch to ensure fresh data
+  });
   const { institutionTypes: institutionTypesState, accounts: accountsState } = useEntityData();
   const institutionTypes = institutionTypesState.data;
   const accounts = accountsState.data;
 
   const { data: portfolioValue } = trpc.users.getPortfolioValue.useQuery();
-  const { data: holdings } = trpc.holdings.getAll.useQuery();
-  const { data: tokens } = trpc.tokens.getByUserId.useQuery();
+  const { data: holdings } = trpc.holdings.getAll.useQuery(undefined, {
+    refetchOnMount: 'always', // Always refetch to ensure fresh data
+  });
+  const { data: tokens } = trpc.tokens.getByUserId.useQuery(undefined, {
+    refetchOnMount: 'always', // Always refetch to ensure fresh data
+  });
   const { data: baseCurrency } = trpc.users.getBaseCurrency.useQuery();
 
   // Get trpc context for invalidating queries
@@ -62,21 +66,16 @@ export function Institutions() {
   const deleteInstitutionMutation = trpc.institutions.delete.useMutation(
     withOptimisticHandlers('institution', 'delete', utils, {
       onSuccess: (result) => {
-        toast({
-          title: 'Accounts removed from institution',
-          description: `Successfully removed your ${result.cascadeInfo.accountsDeleted} account(s) from "${result.deleted.name}". Also deleted ${result.cascadeInfo.holdingsDeleted} holding(s).`,
-          // Note: Transactions are also deleted in backend but not mentioned in UI
-        });
+        success(
+          `Successfully removed your ${result.cascadeInfo.accountsDeleted} account(s) from "${result.deleted.name}". Also deleted ${result.cascadeInfo.holdingsDeleted} holding(s).`,
+          'Accounts removed from institution'
+        );
         // Close dialog and clear state
         setIsDeleteDialogOpen(false);
         setInstitutionToDelete(null);
       },
       onError: (error) => {
-        toast({
-          title: 'Error',
-          description: error.message || 'Failed to remove accounts from institution',
-          variant: 'destructive',
-        });
+        showError(error.message || 'Failed to remove accounts from institution', 'Error');
       },
     })
   );
@@ -225,28 +224,9 @@ export function Institutions() {
       />
 
       {!institutions || institutions.length === 0 ? (
-        <Card>
-          <CardContent className="p-12 text-center">
-            <Building2 className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
-            <h3 className="text-lg font-semibold mb-2">No institutions yet</h3>
-            <p className="text-muted-foreground mb-6 max-w-md mx-auto">
-              You haven't added any holdings yet. When you create your first holding, the associated
-              institution will appear here automatically.
-            </p>
-            <p className="text-sm text-muted-foreground">
-              Click the "Add Holding" button in the top right corner to get started.
-            </p>
-          </CardContent>
-        </Card>
+        <InstitutionsEmptyState />
       ) : filteredInstitutions.length === 0 ? (
-        <Card>
-          <CardContent className="p-12 text-center">
-            <div className="text-muted-foreground mb-4">
-              No institutions match your search criteria
-            </div>
-            <Button onClick={clearAllFilters}>Clear Filters</Button>
-          </CardContent>
-        </Card>
+        <NoResultsEmptyState onClearFilters={clearAllFilters} />
       ) : (
         <div className="space-y-4">
           {filteredInstitutions.map((institution: ApiInstitution) => {

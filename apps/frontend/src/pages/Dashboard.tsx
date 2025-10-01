@@ -24,7 +24,7 @@ export function Dashboard() {
   // HIDDEN: Transaction UI temporarily hidden
   // const [isTransactionFormOpen, setIsTransactionFormOpen] = useState(false);
   // Screenshot upload handler
-  const handleScreenshotFormOpen = () => navigate('/quick-add-holding');
+  const handleScreenshotFormOpen = () => navigate('/add-data');
 
   const { accounts: accountsState } = useEntityData();
   const accounts = accountsState.data;
@@ -275,11 +275,11 @@ export function Dashboard() {
         </CardHeader>
         <CardContent className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           <Button
-            onClick={() => navigate('/quick-add-holding')}
+            onClick={() => navigate('/add-data')}
             className="flex items-center justify-center space-x-2 h-11 touch-manipulation"
           >
             <Zap className="h-5 w-5" />
-            <span>Add Holding</span>
+            <span>Add Data</span>
           </Button>
           {/* HIDDEN: Transaction UI temporarily hidden */}
           {/* <Button
@@ -378,12 +378,11 @@ export function Dashboard() {
                       rank={index + 1}
                       onClick={() => {
                         if (account) {
-                          navigate(
-                            `/institutions/${account.institutionId}/accounts/${account.id}/holdings/${holding.id}`
-                          );
+                          // Navigate to account page which shows all holdings for this account
+                          navigate(`/institutions/${account.institutionId}/accounts/${account.id}`);
                         } else {
-                          // Fallback to old route if account not found
-                          navigate(`/transactions?holding=${encodeURIComponent(holding.id)}`);
+                          // Fallback to holdings page if account not found
+                          navigate('/holdings');
                         }
                       }}
                     />

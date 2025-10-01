@@ -1,1 +1,0 @@
-ALTER TABLE "holdings" DROP COLUMN "average_cost_basis";

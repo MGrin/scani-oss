@@ -33,6 +33,10 @@ interface ComboboxProps {
   disabled?: boolean;
   onSearchChange?: (value: string) => void;
   searchDebounceMs?: number;
+  popoverWidth?: string;
+  compact?: boolean;
+  buttonSize?: 'default' | 'sm';
+  displayLabel?: string;
 }
 
 export function Combobox({
@@ -46,6 +50,10 @@ export function Combobox({
   disabled = false,
   onSearchChange,
   searchDebounceMs = 250,
+  popoverWidth,
+  compact = false,
+  buttonSize = 'default',
+  displayLabel,
 }: ComboboxProps) {
   const [open, setOpen] = React.useState(false);
   const [search, setSearch] = React.useState('');
@@ -58,6 +66,16 @@ export function Combobox({
 
   const selectedItem = items.find((item) => item.value === value);
 
+  // Sort items to show selected item first
+  const sortedItems = React.useMemo(() => {
+    if (!value) return items;
+    const selected = items.filter((item) => item.value === value);
+    const others = items.filter((item) => item.value !== value);
+    return [...selected, ...others];
+  }, [items, value]);
+
+  const heightClass = buttonSize === 'sm' ? 'h-9 min-h-[36px]' : 'h-11 min-h-[44px]';
+
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
@@ -65,13 +83,15 @@ export function Combobox({
           variant="outline"
           role="combobox"
           aria-expanded={open}
-          className={cn('w-full h-11 min-h-[44px] justify-between', className)}
+          className={cn('w-full justify-between', heightClass, className)}
           disabled={disabled}
         >
           {selectedItem ? (
             <div className="flex items-center space-x-2 truncate">
               {selectedItem.icon && <selectedItem.icon className="h-4 w-4 shrink-0" />}
-              <span className="truncate">{selectedItem.label}</span>
+              <span className="truncate">
+                {compact && displayLabel ? displayLabel : selectedItem.label}
+              </span>
             </div>
           ) : (
             <span className="text-muted-foreground">{placeholder}</span>
@@ -79,13 +99,16 @@ export function Combobox({
           <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
         </Button>
       </PopoverTrigger>
-      <PopoverContent className="w-[--radix-popover-trigger-width] p-0">
+      <PopoverContent
+        className={cn('p-0', popoverWidth || 'w-[--radix-popover-trigger-width]')}
+        align="start"
+      >
         <Command>
           <CommandInput placeholder={searchPlaceholder} value={search} onValueChange={setSearch} />
           <CommandList>
             <CommandEmpty>{emptyMessage}</CommandEmpty>
             <CommandGroup>
-              {items.map((item) => (
+              {sortedItems.map((item) => (
                 <CommandItem
                   key={item.value}
                   value={item.label}

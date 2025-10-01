@@ -62,10 +62,11 @@ export function PageHeader({
   const location = useLocation();
   const params = useParams();
 
-  // Don't show Add Holding button on the Add Holding page itself or on the dashboard
+  // Don't show Add Data button on the Add Data page itself, dashboard, or settings
   const showAddHoldingButton =
-    !location.pathname.includes('/quick-add-holding') &&
+    !location.pathname.includes('/add-data') &&
     !location.pathname.includes('/dashboard') &&
+    !location.pathname.includes('/settings') &&
     location.pathname !== '/';
 
   // Check if we're in hierarchical mode (has accountId in URL)
@@ -74,10 +75,10 @@ export function PageHeader({
   const handleAddHoldingClick = () => {
     if (isHierarchicalMode && params.accountId) {
       // Navigate with pre-selected account
-      navigate(`/quick-add-holding?accountId=${params.accountId}`);
+      navigate(`/add-data?accountId=${params.accountId}`);
     } else {
       // Navigate normally
-      navigate('/quick-add-holding');
+      navigate('/add-data');
     }
   };
 
@@ -135,7 +136,7 @@ export function PageHeader({
               size="lg"
             >
               <Plus className="h-4 w-4" />
-              <span className="ml-2 font-semibold">Add Holding</span>
+              <span className="ml-2 font-semibold">Add Data</span>
             </Button>
           )}
         </div>

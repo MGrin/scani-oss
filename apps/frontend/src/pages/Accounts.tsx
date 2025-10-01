@@ -1,5 +1,4 @@
 import type { Account } from '@scani/shared';
-import { Wallet } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { AccountRow } from '@/components/AccountRow';
@@ -18,11 +17,12 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
+import { AccountsEmptyState, NoResultsEmptyState } from '@/components/ui/empty-state';
 import { PageAggregation } from '@/components/ui/page-aggregation';
 import { PageHeader } from '@/components/ui/page-header';
 import { useEntityData } from '@/contexts/EntityDataContext';
 import { useUnpriceableTokens } from '@/contexts/UnpriceableTokensContext';
-import { useToast } from '@/hooks/use-toast';
+import { useEnhancedToast } from '@/hooks/use-enhanced-toast';
 import { useFilters } from '@/hooks/useFilters';
 import type { ApiAccount, ApiHolding, ApiInstitution } from '@/lib/api-types';
 import { BUTTON_TEXT } from '@/lib/button-constants';
@@ -32,7 +32,7 @@ import { trpc } from '@/lib/trpc';
 export function Accounts() {
   const navigate = useNavigate();
   const { institutionId } = useParams<{ institutionId: string }>();
-  const { toast } = useToast();
+  const { success, error } = useEnhancedToast();
   const { isAccountAffected, shouldHighlight } = useUnpriceableTokens();
   const [searchTerm, setSearchTerm] = useState('');
   const [accountToDelete, setAccountToDelete] = useState<Account | null>(null);
@@ -78,12 +78,16 @@ export function Accounts() {
   const institutions = institutionsState.data;
   const accountTypes = accountTypesState.data;
   const isLoading = accountsState.isLoading || institutionsState.isLoading;
-  const { data: holdings } = trpc.holdings.getAll.useQuery();
+  const { data: holdings } = trpc.holdings.getAll.useQuery(undefined, {
+    refetchOnMount: 'always', // Always refetch to ensure fresh data after deletions
+  });
 
   const { data: baseCurrency } = trpc.users.getBaseCurrency.useQuery();
 
   const { data: accountSummaries, isLoading: summariesLoading } =
-    trpc.accounts.getSummaries.useQuery();
+    trpc.accounts.getSummaries.useQuery(undefined, {
+      refetchOnMount: 'always', // Always refetch to ensure fresh data after deletions
+    });
 
   // Determine if we're in hierarchical mode (accessed from institution)
   const isHierarchicalMode = Boolean(institutionId);
@@ -133,19 +137,12 @@ export function Accounts() {
           // Note: Transaction deletions are hidden from UI but still happen in backend
         }
 
-        toast({
-          title: 'Account deleted',
-          description,
-        });
+        success(description);
         setIsDeleteDialogOpen(false);
         setAccountToDelete(null);
       },
-      onError: (error) => {
-        toast({
-          title: 'Error deleting account',
-          description: error.message,
-          variant: 'destructive',
-        });
+      onError: (err) => {
+        error(err.message);
       },
     })
   );
@@ -287,31 +284,9 @@ export function Accounts() {
 
       {/* Accounts Grid */}
       {!isHierarchicalMode && displayAccounts.length === 0 ? (
-        <Card>
-          <CardContent className="p-12 text-center">
-            <Wallet className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
-            <h3 className="text-lg font-semibold mb-2">No accounts yet</h3>
-            <p className="text-muted-foreground mb-6 max-w-md mx-auto">
-              You haven't added any holdings yet. When you create your first holding, the associated
-              account will appear here automatically.
-            </p>
-            <p className="text-sm text-muted-foreground">
-              Click the "Add Holding" button in the top right corner to get started.
-            </p>
-          </CardContent>
-        </Card>
+        <AccountsEmptyState />
       ) : filteredAccounts.length === 0 ? (
-        <Card>
-          <CardContent className="p-12 text-center">
-            <Wallet className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
-            <div className="text-muted-foreground mb-4">
-              {isHierarchicalMode
-                ? `No accounts found for ${selectedInstitution?.name || 'this institution'}.`
-                : 'No accounts match your search criteria.'}
-            </div>
-            {!isHierarchicalMode && <Button onClick={handleClearAllFilters}>Clear Filters</Button>}
-          </CardContent>
-        </Card>
+        <NoResultsEmptyState onClearFilters={handleClearAllFilters} />
       ) : (
         <div className="space-y-4">
           {filteredAccounts.map((account: ApiAccount) => {

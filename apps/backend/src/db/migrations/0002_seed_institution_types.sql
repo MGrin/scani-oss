@@ -50,7 +50,7 @@ VALUES
   (
     'investment_fund',
     'Investment Fund',
-    'Mutual funds, ETFs, and other pooled investment vehicles',
+    'Any type of investement fund you keep your money in',
     true,
     4,
     now (),
@@ -59,7 +59,7 @@ VALUES
   (
     'private_equity',
     'Private Equity',
-    'Private equity and venture capital firms',
+    'Institution focused on private equity investments. Example: Carta, EquityZen, Ledgy',
     true,
     6,
     now (),

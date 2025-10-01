@@ -5,8 +5,7 @@ import { PrivateTokenForm } from '@/components/PrivateTokenForm';
 import { TokenTypeSelector } from '@/components/selectors/SearchableSelectors';
 import { TokenRow } from '@/components/TokenRow';
 import { UpdatePrivateTokenForm } from '@/components/UpdatePrivateTokenForm';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent } from '@/components/ui/card';
+import { NoResultsEmptyState, TokensEmptyState } from '@/components/ui/empty-state';
 import { PageAggregation } from '@/components/ui/page-aggregation';
 import { PageHeader } from '@/components/ui/page-header';
 import { useEntityData } from '@/contexts/EntityDataContext';
@@ -50,7 +49,9 @@ export function Tokens() {
 
   // Data queries - get tokens with their total values
   const { data: tokensWithValues, isLoading: tokensLoading } =
-    trpc.tokens.getWithTotalValues.useQuery();
+    trpc.tokens.getWithTotalValues.useQuery(undefined, {
+      refetchOnMount: 'always', // Always refetch to ensure fresh data after account/holding changes
+    });
   const { tokens: tokensState, tokenTypes: tokenTypesState } = useEntityData();
   const { data: userPrefs } = trpc.users.getCurrent.useQuery();
   const tokenTypes = tokenTypesState.data;
@@ -117,8 +118,8 @@ export function Tokens() {
         title="Tokens"
         subtitle="Manage tokens you currently hold in your portfolio"
         primaryAction={{
-          label: 'Add Token',
-          onClick: () => setIsCreateFormOpen(true),
+          label: 'Add Data',
+          onClick: () => navigate('/add-data'),
           icon: <Plus className="h-4 w-4 mr-1" />,
         }}
       />
@@ -149,16 +150,10 @@ export function Tokens() {
       />
 
       {/* Tokens List */}
-      {!filteredTokens.length ? (
-        <Card>
-          <CardContent className="p-12 text-center">
-            <div className="text-muted-foreground mb-4">No tokens found</div>
-            <Button onClick={() => setIsCreateFormOpen(true)}>
-              <Plus className="h-4 w-4 mr-2" />
-              Add Your First Token
-            </Button>
-          </CardContent>
-        </Card>
+      {!tokensWithValues?.length ? (
+        <TokensEmptyState />
+      ) : !filteredTokens.length ? (
+        <NoResultsEmptyState onClearFilters={handleClearAllFilters} />
       ) : (
         <div className="space-y-4">
           {filteredTokens.map((token) => {

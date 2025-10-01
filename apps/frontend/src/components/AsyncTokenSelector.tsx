@@ -290,7 +290,7 @@ export function AsyncTokenSelector({
                             <span className="text-muted-foreground">-</span>
                             <span className="truncate">{option.name}</span>
                             {option.source === 'external' && (
-                              <span className="text-xs bg-blue-100 text-blue-800 px-2 py-0.5 rounded">
+                              <span className="text-xs bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200 px-2 py-0.5 rounded">
                                 {option.provider}
                               </span>
                             )}

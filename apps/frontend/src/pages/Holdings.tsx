@@ -1,5 +1,4 @@
 import { Decimal, FinancialMath } from '@scani/shared';
-import { PieChart } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { HoldingForm } from '@/components/HoldingForm';
@@ -15,12 +14,13 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
+import { HoldingsEmptyState, NoResultsEmptyState } from '@/components/ui/empty-state';
 
 import { PageAggregation } from '@/components/ui/page-aggregation';
 import { PageHeader } from '@/components/ui/page-header';
 import { useEntityData } from '@/contexts/EntityDataContext';
 import { useUnpriceableTokens } from '@/contexts/UnpriceableTokensContext';
-import { useToast } from '@/hooks/use-toast';
+import { useEnhancedToast } from '@/hooks/use-enhanced-toast';
 import { useFilters } from '@/hooks/useFilters';
 import type { ApiAccount, ApiHolding, ApiInstitution, ApiToken } from '@/lib/api-types';
 import { BUTTON_TEXT } from '@/lib/button-constants';
@@ -47,7 +47,9 @@ export function Holdings() {
   }>();
   const { isTokenUnpriceable, shouldHighlight } = useUnpriceableTokens();
 
-  const { data: holdings, isLoading: holdingsLoading } = trpc.holdings.getAll.useQuery();
+  const { data: holdings, isLoading: holdingsLoading } = trpc.holdings.getAll.useQuery(undefined, {
+    refetchOnMount: 'always', // Always refetch to ensure fresh data after mutations
+  });
   const {
     accounts: accountsState,
     institutions: institutionsState,
@@ -55,7 +57,9 @@ export function Holdings() {
   } = useEntityData();
   const accounts = accountsState.data;
   // Use optimized endpoints - only get tokens user has holdings for, and base currency separately
-  const { data: tokens } = trpc.tokens.getByUserId.useQuery();
+  const { data: tokens } = trpc.tokens.getByUserId.useQuery(undefined, {
+    refetchOnMount: 'always', // Always refetch to ensure fresh data after mutations
+  });
 
   const { data: baseCurrency } = trpc.users.getBaseCurrency.useQuery();
 
@@ -148,7 +152,7 @@ export function Holdings() {
   // >();
 
   const utils = trpc.useUtils();
-  const { toast } = useToast();
+  const { success, error: showError } = useEnhancedToast();
 
   const deleteHolding = trpc.holdings.delete.useMutation(
     withOptimisticHandlers('holding', 'delete', utils, {
@@ -158,20 +162,12 @@ export function Holdings() {
         }" has been deleted successfully.`;
         // Note: Associated transactions are also deleted in the backend but not mentioned in UI
 
-        toast({
-          title: 'Success',
-          description,
-          variant: 'success',
-        });
+        success(description, 'Success');
         setIsDeleteDialogOpen(false);
         setHoldingToDelete(undefined);
       },
       onError: (error) => {
-        toast({
-          title: 'Error',
-          description: error.message || 'Failed to delete holding. Please try again.',
-          variant: 'destructive',
-        });
+        showError(error.message || 'Failed to delete holding. Please try again.', 'Error');
       },
     })
   );
@@ -358,28 +354,9 @@ export function Holdings() {
 
       {/* Holdings List */}
       {!processedHoldings || processedHoldings.length === 0 ? (
-        <Card>
-          <CardContent className="p-12 text-center">
-            <PieChart className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
-            <div className="text-muted-foreground mb-6">No holdings found</div>
-            <div className="space-y-3">
-              <div className="text-sm text-muted-foreground mb-4">
-                Get started by clicking the "Add Holding" button in the top right corner.
-              </div>
-              <p className="text-xs text-muted-foreground">
-                You can add holdings manually or by uploading a screenshot that will be parsed
-                automatically.
-              </p>
-            </div>
-          </CardContent>
-        </Card>
+        <HoldingsEmptyState />
       ) : sortedHoldings.length === 0 ? (
-        <Card>
-          <CardContent className="p-12 text-center">
-            <div className="text-muted-foreground mb-4">No holdings match your search criteria</div>
-            <Button onClick={handleClearAllFilters}>Clear Filters</Button>
-          </CardContent>
-        </Card>
+        <NoResultsEmptyState onClearFilters={handleClearAllFilters} />
       ) : (
         <div className="space-y-4">
           {sortedHoldings.map((holding) => {
