@@ -1,28 +1,35 @@
 # Fix Supabase Magic Link Redirect to Production URL
 
 ## Issue
+
 Supabase magic link emails are redirecting to `localhost:5173` instead of the production frontend URL.
 
 ## Root Cause
+
 Supabase stores the **Site URL** and **Redirect URLs** in the project's authentication configuration. These were set to localhost during development and need to be updated for production deployment.
 
 ## Solution
 
 ### Step 1: Get Your Production Frontend URL
+
 Your frontend should be deployed on Render at a URL like:
+
 - `https://scani-frontend.onrender.com` (or similar)
 
 ### Step 2: Update Supabase Authentication Settings
 
 1. **Go to Supabase Dashboard**
+
    - Navigate to: https://supabase.com/dashboard
    - Select your Scani project
 
 2. **Open Authentication Settings**
+
    - In the left sidebar, click **Authentication**
    - Click **URL Configuration**
 
 3. **Update Site URL**
+
    - Find the **Site URL** field
    - Change from: `http://localhost:5173`
    - Change to: `https://your-frontend-url.onrender.com`
@@ -38,7 +45,6 @@ Your frontend should be deployed on Render at a URL like:
      ```
      http://localhost:5173/**
      ```
-   
 5. **Save Changes**
    - Click **Save** at the bottom of the page
    - Changes take effect immediately
@@ -46,11 +52,13 @@ Your frontend should be deployed on Render at a URL like:
 ### Step 3: Verify the Fix
 
 1. **Request a new magic link**
+
    - Go to your production login page
    - Enter your email
    - Click "Send Magic Link"
 
 2. **Check your email**
+
    - Open the magic link email
    - Hover over the link (don't click yet)
    - Verify the URL shows your production domain
@@ -64,6 +72,7 @@ Your frontend should be deployed on Render at a URL like:
 ## Additional Configuration (Optional)
 
 ### Email Templates
+
 If you want to customize the magic link email:
 
 1. **Go to Authentication → Email Templates**
@@ -72,9 +81,11 @@ If you want to customize the magic link email:
 4. **Save**
 
 ### Multiple Environments
+
 To support both development and production:
 
 **Redirect URLs** (add both):
+
 ```
 http://localhost:5173/**
 http://localhost:3000/**
@@ -87,19 +98,25 @@ https://your-production-url.onrender.com/**
 ## Troubleshooting
 
 ### Problem: Still redirecting to localhost
-**Solution**: 
+
+**Solution**:
+
 - Clear your browser cache
 - Request a NEW magic link (old ones cache the redirect)
 - Wait 1-2 minutes for Supabase changes to propagate
 
 ### Problem: "Invalid redirect URL" error
+
 **Solution**:
+
 - Verify the URL in Redirect URLs ends with `/**`
 - Check for typos in the domain
 - Ensure protocol matches (http vs https)
 
 ### Problem: Magic link doesn't work at all
+
 **Solution**:
+
 - Check that your frontend has `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` env vars
 - Verify the backend has `SUPABASE_URL` and `SUPABASE_ANON_KEY`
 - Check browser console for errors
@@ -109,6 +126,7 @@ https://your-production-url.onrender.com/**
 Your Render services should have these environment variables:
 
 ### Frontend (Static Site)
+
 ```bash
 VITE_SUPABASE_URL=https://your-project.supabase.co
 VITE_SUPABASE_ANON_KEY=eyJhbGc...your-anon-key...
@@ -116,6 +134,7 @@ VITE_API_URL=https://your-backend-url.onrender.com
 ```
 
 ### Backend (Web Service)
+
 ```bash
 SUPABASE_URL=https://your-project.supabase.co
 SUPABASE_ANON_KEY=eyJhbGc...your-anon-key...
@@ -126,6 +145,7 @@ FRONTEND_URL=https://your-frontend-url.onrender.com
 The `FRONTEND_URL` is used for CORS configuration, not for Supabase redirects.
 
 ## Status
+
 - Issue: Magic link redirects to localhost
 - Action Required: Update Supabase dashboard settings
 - Location: Supabase Dashboard → Authentication → URL Configuration
