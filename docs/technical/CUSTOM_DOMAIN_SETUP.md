@@ -24,19 +24,19 @@
 
 ### Option 1: Separate Subdomains (Recommended)
 
-- **Frontend**: `app.scani.com` or `www.scani.com`
-- **Backend**: `api.scani.com`
-- **Root**: `scani.com` → redirects to `app.scani.com`
+- **Frontend**: `app.scani.xyz` or `www.scani.xyz`
+- **Backend**: `api.scani.xyz`
+- **Root**: `scani.xyz` → redirects to `app.scani.xyz`
 
 ### Option 2: Root + API Subdomain
 
-- **Frontend**: `scani.com`
-- **Backend**: `api.scani.com`
+- **Frontend**: `scani.xyz`
+- **Backend**: `api.scani.xyz`
 
 ### Option 3: All Subdomains
 
-- **Frontend**: `app.scani.com`
-- **Backend**: `api.scani.com`
+- **Frontend**: `app.scani.xyz`
+- **Backend**: `api.scani.xyz`
 
 ---
 
@@ -59,18 +59,18 @@
 
    - Scroll to **Custom Domains** section
    - Click **Add Custom Domain**
-   - Enter your domain (e.g., `app.scani.com` or `www.scani.com`)
+   - Enter your domain (e.g., `app.scani.xyz` or `www.scani.xyz`)
    - Click **Save**
 
 4. **Get DNS Records**
    - Render will show you the DNS records to add
-   - **For subdomains** (app.scani.com, www.scani.com):
+   - **For subdomains** (app.scani.xyz, www.scani.xyz):
      ```
      Type: CNAME
      Name: app (or www)
      Value: scani-frontend.onrender.com
      ```
-   - **For root domain** (scani.com):
+   - **For root domain** (scani.xyz):
      ```
      Type: A
      Name: @ (or leave blank)
@@ -92,7 +92,7 @@
 
    - Scroll to **Custom Domains** section
    - Click **Add Custom Domain**
-   - Enter your domain (e.g., `api.scani.com`)
+   - Enter your domain (e.g., `api.scani.xyz`)
    - Click **Save**
 
 4. **Get DNS Records**
@@ -141,7 +141,7 @@
    ```
 
 5. **Add Root Domain Redirect** (Optional)
-   - If you want `scani.com` → `app.scani.com`
+   - If you want `scani.xyz` → `app.scani.xyz`
    - Use Cloudflare Page Rules or redirect
 
 #### For Other DNS Providers (GoDaddy, Namecheap, etc.)
@@ -164,18 +164,18 @@
 
    ```bash
    # Check frontend
-   nslookup app.scani.com
+   nslookup app.scani.xyz
    # Should show: scani-frontend.onrender.com
 
    # Check backend
-   nslookup api.scani.com
+   nslookup api.scani.xyz
    # Should show: scani-backend-217c.onrender.com
    ```
 
 2. **Test HTTPS**
 
-   - Visit: `https://app.scani.com`
-   - Visit: `https://api.scani.com/health`
+   - Visit: `https://app.scani.xyz`
+   - Visit: `https://api.scani.xyz/health`
    - Both should have valid SSL certificates (Render auto-provisions)
 
 3. **Check Render Dashboard**
@@ -194,7 +194,7 @@ After custom domains are active, update these configurations:
 In Render backend service settings:
 
 ```bash
-FRONTEND_URL=https://app.scani.com
+FRONTEND_URL=https://app.scani.xyz
 # (or whatever your frontend domain is)
 ```
 
@@ -203,7 +203,7 @@ FRONTEND_URL=https://app.scani.com
 In Render frontend service settings:
 
 ```bash
-VITE_API_URL=https://api.scani.com
+VITE_API_URL=https://api.scani.xyz
 # (or whatever your backend domain is)
 ```
 
@@ -213,11 +213,11 @@ VITE_API_URL=https://api.scani.com
 2. **Authentication → URL Configuration**
 3. **Update Site URL**:
    ```
-   https://app.scani.com
+   https://app.scani.xyz
    ```
 4. **Update Redirect URLs** (add your custom domain):
    ```
-   https://app.scani.com/**
+   https://app.scani.xyz/**
    ```
 
 ### 4. Trigger Redeploy
@@ -341,9 +341,9 @@ For a production-ready setup, I recommend:
 
 1. **Domain structure**:
 
-   - `app.scani.com` → Frontend (Static Site)
-   - `api.scani.com` → Backend (Web Service)
-   - `scani.com` → Redirect to `app.scani.com`
+   - `app.scani.xyz` → Frontend (Static Site)
+   - `api.scani.xyz` → Backend (Web Service)
+   - `scani.xyz` → Redirect to `app.scani.xyz`
 
 2. **DNS provider**: Cloudflare (free tier)
 
