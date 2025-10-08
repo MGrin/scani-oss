@@ -7,12 +7,14 @@ The frontend build process was hanging indefinitely when running `bun run build`
 ## Root Cause
 
 **Zombie esbuild Processes**: Multiple esbuild processes (Vite's bundler dependency) were stuck in "uninterruptible exit" (UE) state on macOS. These processes were:
+
 - Created during previous build attempts
 - Stuck in kernel-level I/O wait state
 - Unkillable even with `kill -9`
 - Blocking new esbuild processes from starting
 
 Evidence from process inspection:
+
 ```bash
 ps aux | grep esbuild
 # Output: 16+ processes all showing:
@@ -24,15 +26,18 @@ ps aux | grep esbuild
 ## Investigation Process
 
 1. **Initial suspicion**: Backend dependency resolution
+
    - Tested: Building with backend imports removed → Still hung
    - Conclusion: Not the backend import
 
 2. **Configuration issues**: Vite/TypeScript config
+
    - Tested: Minimal Vite config, no config at all → Still hung
    - Tested: TypeScript with `--skipLibCheck` → Worked fine
    - Conclusion: Not a config issue
 
 3. **Bun vs Node**: Runtime-specific problem
+
    - Tested: Building with Node.js instead of Bun → Still hung
    - Conclusion: Not a Bun issue
 
@@ -58,6 +63,7 @@ This cleared out the corrupted/stuck esbuild binaries and resolved the issue com
 While debugging, also fixed incorrect build scripts in root `package.json`:
 
 ### Before:
+
 ```json
 {
   "scripts": {
@@ -68,6 +74,7 @@ While debugging, also fixed incorrect build scripts in root `package.json`:
 ```
 
 ### After:
+
 ```json
 {
   "scripts": {
@@ -77,7 +84,8 @@ While debugging, also fixed incorrect build scripts in root `package.json`:
 }
 ```
 
-**Why this matters**: 
+**Why this matters**:
+
 - `bun build` expects entrypoint arguments
 - `bun run build` executes the package's build script
 - Each workspace package has its own `build` script with proper configuration
@@ -85,6 +93,7 @@ While debugging, also fixed incorrect build scripts in root `package.json`:
 ## Verification
 
 ### Backend build:
+
 ```bash
 $ cd apps/backend && bun run build
 ✓ Bundled 1827 modules in 377ms
@@ -92,6 +101,7 @@ $ cd apps/backend && bun run build
 ```
 
 ### Frontend build:
+
 ```bash
 $ cd apps/frontend && bun run build
 $ vite build
@@ -100,6 +110,7 @@ $ vite build
 ```
 
 ### Complete build from root:
+
 ```bash
 $ bun run build
 ✓ Backend: 377ms
@@ -128,6 +139,7 @@ To avoid this issue in the future:
 This fix unblocks deployment preparation. Build commands verified for Render:
 
 ### Backend:
+
 ```bash
 curl -fsSL https://bun.sh/install | bash && \
   export BUN_INSTALL="$HOME/.bun" && \
@@ -138,6 +150,7 @@ curl -fsSL https://bun.sh/install | bash && \
 ```
 
 ### Frontend:
+
 ```bash
 curl -fsSL https://bun.sh/install | bash && \
   export BUN_INSTALL="$HOME/.bun" && \
@@ -152,6 +165,7 @@ Both commands now execute successfully in under 3 seconds total.
 ## Status
 
 ✅ **RESOLVED** - October 8, 2025
+
 - Issue: Frontend build hanging indefinitely
 - Root cause: Zombie esbuild processes
 - Solution: Reinstalled node_modules
