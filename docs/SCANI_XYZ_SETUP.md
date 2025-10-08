@@ -19,6 +19,7 @@
 ### Step 1: Add Custom Domains in Render
 
 1. **Frontend Service**:
+
    - URL: https://dashboard.render.com/static/srv-d3j8p37diees73fl6q30
    - Settings → Custom Domains → Add: `app.scani.xyz`
 
@@ -40,7 +41,8 @@ Type: URL      Host: @      Value: https://app.scani.xyz               TTL: Auto
    Redirect                 (Unmasked redirect)
 ```
 
-**⚠️ Important**: 
+**⚠️ Important**:
+
 - Include the trailing dot in CNAME values: `.onrender.com.`
 - Host is just `app` or `api`, not the full domain
 - Delete any conflicting A or CNAME records first
@@ -48,6 +50,7 @@ Type: URL      Host: @      Value: https://app.scani.xyz               TTL: Auto
 ### Step 3: Wait for DNS (10-30 minutes)
 
 Check propagation:
+
 ```bash
 nslookup app.scani.xyz
 nslookup api.scani.xyz
@@ -58,16 +61,19 @@ Or use: https://dnschecker.org
 ### Step 4: Update Environment Variables
 
 **Backend** (srv-d3j88295pdvs739osbig):
+
 ```bash
 FRONTEND_URL=https://app.scani.xyz
 ```
 
 **Frontend** (srv-d3j8p37diees73fl6q30):
+
 ```bash
 VITE_API_URL=https://api.scani.xyz
 ```
 
 **Supabase** (https://supabase.com/dashboard):
+
 - Site URL: `https://app.scani.xyz`
 - Redirect URLs: Add `https://app.scani.xyz/**`
 
@@ -109,18 +115,22 @@ Render will auto-redeploy after env var changes, or manually deploy both service
 ## 🔗 Quick Links
 
 ### Render Services
+
 - Frontend: https://dashboard.render.com/static/srv-d3j8p37diees73fl6q30
 - Backend: https://dashboard.render.com/web/srv-d3j88295pdvs739osbig
 
 ### DNS Management
+
 - Namecheap: https://ap.www.namecheap.com/domains/list/
 - Direct to scani.xyz: https://ap.www.namecheap.com/Domains/DomainControlPanel/scani.xyz/advancedns
 
 ### Supabase
+
 - Dashboard: https://supabase.com/dashboard
 - Auth Settings: Authentication → URL Configuration
 
 ### Testing Tools
+
 - DNS Checker: https://dnschecker.org
 - SSL Test: https://www.ssllabs.com/ssltest/
 
@@ -129,6 +139,7 @@ Render will auto-redeploy after env var changes, or manually deploy both service
 ## 📝 Your Production URLs
 
 **After setup complete**:
+
 - Application: `https://app.scani.xyz`
 - API: `https://api.scani.xyz`
 - Health Check: `https://api.scani.xyz/health`
@@ -139,6 +150,7 @@ Render will auto-redeploy after env var changes, or manually deploy both service
 ## 🚨 Troubleshooting
 
 **DNS not resolving?**
+
 ```bash
 # Flush local DNS cache (macOS)
 sudo dscacheutil -flushcache; sudo killall -HUP mDNSResponder
@@ -149,16 +161,19 @@ dig app.scani.xyz CNAME
 ```
 
 **SSL not provisioning?**
+
 - Wait 30 minutes after DNS propagates
 - Check Render shows "Active" status first
 - SSL auto-provisions after DNS verified
 
 **CORS errors?**
+
 - Verify backend FRONTEND_URL is `https://app.scani.xyz`
 - Redeploy backend service
 - Clear browser cache
 
 **Magic link wrong URL?**
+
 - Update Supabase Site URL to `https://app.scani.xyz`
 - Request a NEW magic link (old ones are cached)
 
