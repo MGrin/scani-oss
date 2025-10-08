@@ -301,9 +301,9 @@ export function HoldingForm({ isOpen, onClose, holding, mode }: HoldingFormProps
       console.log('Submitting to backend:', submitData);
 
       if (mode === 'create') {
-        createHolding.mutate(submitData);
+        await createHolding.mutateAsync(submitData);
       } else if (holding) {
-        updateHolding.mutate({
+        await updateHolding.mutateAsync({
           id: holding.id,
           data: submitData,
         });

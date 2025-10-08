@@ -175,7 +175,17 @@ const getInstitutionCreateHandlers = (
   },
   async onSuccess(result, _variables, context) {
     const created = (result as Institution | null) ?? null;
-    if (!created) return;
+    if (!created) {
+      // Null result means creation failed - remove optimistic entity
+      const tempId = context?.tempId;
+      if (tempId) {
+        utils.institutions.getAll.setData(undefined, (current) => removeEntity(current, tempId));
+        utils.institutions.getByUserId.setData(undefined, (current) =>
+          removeEntity(current, tempId)
+        );
+      }
+      return;
+    }
 
     const normalized: Institution = {
       ...created,
@@ -292,7 +302,14 @@ const getAccountCreateHandlers = (
   },
   async onSuccess(result, _variables, context) {
     const created = result as Account | null;
-    if (!created) return;
+    if (!created) {
+      // Null result means creation failed - remove optimistic entity
+      const tempId = context?.tempId;
+      if (tempId) {
+        utils.accounts.getAll.setData(undefined, (current) => removeEntity(current, tempId));
+      }
+      return;
+    }
 
     const normalized: Account = {
       ...created,
@@ -400,7 +417,14 @@ const getHoldingCreateHandlers = (
   },
   async onSuccess(result, _variables, context) {
     const created = result as Holding | null;
-    if (!created) return;
+    if (!created) {
+      // Null result means creation failed - remove optimistic entity
+      const tempId = context?.tempId;
+      if (tempId) {
+        utils.holdings.getAll.setData(undefined, (current) => removeEntity(current, tempId));
+      }
+      return;
+    }
 
     const normalized: Holding = {
       ...created,
@@ -644,7 +668,14 @@ const getTokenCreateHandlers = (
   },
   async onSuccess(result, variables, context) {
     const created = result as Token | null;
-    if (!created) return;
+    if (!created) {
+      // Null result means creation failed - remove optimistic entity
+      const tempId = context?.tempId;
+      if (tempId) {
+        utils.tokens.getAll.setData(undefined, (current) => removeEntity(current, tempId));
+      }
+      return;
+    }
 
     const normalized: Token = {
       ...created,
@@ -768,7 +799,14 @@ const getTransactionCreateHandlers = (
   },
   async onSuccess(result, _variables, context) {
     const created = result as Transaction | null;
-    if (!created) return;
+    if (!created) {
+      // Null result means creation failed - remove optimistic entity
+      const tempId = context?.tempId;
+      if (tempId) {
+        utils.transactions.getAll.setData(undefined, (current) => removeEntity(current, tempId));
+      }
+      return;
+    }
 
     const normalized: Transaction = {
       ...created,

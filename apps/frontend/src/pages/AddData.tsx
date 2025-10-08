@@ -14,7 +14,6 @@ import {
   InstitutionSelector,
   InstitutionTypeSelector,
 } from '@/components/selectors/SearchableSelectors';
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -32,12 +31,6 @@ import {
 import { useEntityData } from '@/contexts/EntityDataContext';
 import { useToast } from '@/hooks/use-toast';
 import { type ParsedHolding, useScreenshotParsing } from '@/hooks/useScreenshotParsing';
-import {
-  invalidateAccountsRelated,
-  invalidateHoldingsRelated,
-  invalidateInstitutionsRelated,
-  invalidateTokensRelated,
-} from '@/lib/cache/invalidateHoldingsRelated';
 import { isExternalTokenValue, parseExternalTokenValue } from '@/lib/external-token';
 import { withRetry } from '@/lib/retry';
 import { trpc } from '@/lib/trpc';
@@ -158,6 +151,9 @@ export function AddData() {
   const [searchParams] = useSearchParams();
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isTokenFormOpen, setIsTokenFormOpen] = useState(false);
+  const [walletAddress, setWalletAddress] = useState('');
+  const [isImportingWallet, setIsImportingWallet] = useState(false);
+  const walletInputId = useId();
 
   // Get pre-selected account and method from URL params
   const preSelectedAccountId = searchParams.get('accountId');
@@ -448,12 +444,43 @@ export function AddData() {
 
   const utils = trpc.useUtils();
 
+  // CRITICAL FIX: Helper to wait for entity to appear in cache after mutation
+  const waitForCacheSettlement = async (
+    queryKey: 'institutions' | 'accounts' | 'holdings',
+    expectedId?: string,
+    maxRetries = 10
+  ) => {
+    for (let i = 0; i < maxRetries; i++) {
+      await new Promise((resolve) => setTimeout(resolve, 100));
+
+      let data: Array<{ id: string }> | undefined;
+      switch (queryKey) {
+        case 'institutions':
+          data = utils.institutions.getAll.getData();
+          break;
+        case 'accounts':
+          data = utils.accounts.getAll.getData();
+          break;
+        case 'holdings':
+          data = utils.holdings.getAll.getData();
+          break;
+      }
+
+      if (expectedId && data?.some((item) => item.id === expectedId)) {
+        console.log(`✅ Cache settled for ${queryKey}:`, expectedId);
+        return true;
+      }
+    }
+
+    throw new Error(`⏱️ Cache settlement timeout for ${queryKey}`);
+  };
+
   // Mutations
   const createInstitution = trpc.institutions.create.useMutation();
   const createAccount = trpc.accounts.create.useMutation();
   const createTokenFromExternal = trpc.tokens.createFromExternal.useMutation();
-
   const createHolding = trpc.holdings.create.useMutation();
+  const importWallet = trpc.wallet.importWalletAddress.useMutation();
 
   const form = useForm<AddDataFormData>({
     resolver: zodResolver(AddDataSchema),
@@ -659,7 +686,8 @@ export function AddData() {
 
   const handleEntryMethodSelected = (method: 'manual' | 'screenshot' | 'wallet') => {
     if (method === 'wallet') {
-      // TODO: Implement wallet integration
+      // Wallet import doesn't need account selection (creates accounts automatically)
+      setCurrentStep('wallet-entry');
       return;
     }
 
@@ -973,7 +1001,11 @@ export function AddData() {
           }
 
           institutionId = newInstitution.id;
-          console.log('Institution created successfully:', institutionId);
+
+          // CRITICAL FIX: Wait for institution to settle in cache
+          await waitForCacheSettlement('institutions', institutionId);
+
+          console.log('Institution created and settled:', institutionId);
         } catch (error) {
           console.error('Institution creation failed:', error);
           throw new Error(
@@ -1010,7 +1042,11 @@ export function AddData() {
           }
 
           accountId = newAccount.id;
-          console.log('Account created successfully:', accountId);
+
+          // CRITICAL FIX: Wait for account to settle in cache
+          await waitForCacheSettlement('accounts', accountId);
+
+          console.log('Account created and settled:', accountId);
         } catch (error) {
           console.error('Account creation failed:', error);
           throw new Error(
@@ -1037,7 +1073,14 @@ export function AddData() {
           balance: data.balance.toString(),
         });
 
-        console.log('Holding created successfully');
+        if (!createdHolding?.id) {
+          throw new Error('Failed to create holding - no ID returned');
+        }
+
+        // CRITICAL FIX: Wait for holding to settle in cache
+        await waitForCacheSettlement('holdings', createdHolding.id);
+
+        console.log('Holding created and settled:', createdHolding.id);
 
         toast({
           title: '✅ Success!',
@@ -1045,21 +1088,16 @@ export function AddData() {
             'Holding created successfully! Your new holding has been added to your portfolio.',
         });
 
-        // Invalidate relevant queries to refresh data
+        // CRITICAL FIX: Ensure all invalidations complete before navigation
         await Promise.all([
-          invalidateHoldingsRelated(utils, {
-            holdingIds: createdHolding?.id ? [createdHolding.id] : [],
-          }),
-          invalidateAccountsRelated(utils, {
-            includeSummaries: false,
-            includePortfolioValue: false,
-            accountIds: accountId ? [accountId] : [],
-          }),
-          invalidateInstitutionsRelated(utils, {
-            institutionIds: institutionId ? [institutionId] : [],
-          }),
-          invalidateTokensRelated(utils),
+          utils.holdings.getAll.invalidate(),
+          utils.accounts.getAll.invalidate(),
+          utils.institutions.getAll.invalidate(),
+          utils.tokens.getAll.invalidate(),
         ]);
+
+        // Give React Query time to process invalidations
+        await new Promise((resolve) => setTimeout(resolve, 100));
 
         navigate('/holdings');
       } catch (error) {
@@ -1248,6 +1286,138 @@ export function AddData() {
     </div>
   );
 
+  const handleWalletImport = async () => {
+    if (!walletAddress.trim()) {
+      toast({
+        variant: 'destructive',
+        title: 'Invalid Input',
+        description: 'Please enter a valid wallet address',
+      });
+      return;
+    }
+
+    setIsImportingWallet(true);
+
+    try {
+      const result = await importWallet.mutateAsync({
+        walletAddress: walletAddress.trim(),
+      });
+
+      // Invalidate related queries to refresh data
+      await Promise.all([
+        utils.accounts.getAll.invalidate(),
+        utils.holdings.getAll.invalidate(),
+        utils.tokens.getAll.invalidate(),
+      ]);
+
+      toast({
+        title: 'Wallet Import Successful!',
+        description: (
+          <div className="space-y-2">
+            <p>
+              Successfully imported {result.holdingsCreated} holdings across{' '}
+              {result.accountsCreated} accounts
+            </p>
+            {result.accountsSkipped > 0 && (
+              <p className="text-sm text-muted-foreground">
+                ({result.accountsSkipped} account(s) already existed)
+              </p>
+            )}
+          </div>
+        ),
+      });
+
+      // Navigate to holdings page to show imported data
+      navigate('/holdings');
+    } catch (error) {
+      console.error('Wallet import failed:', error);
+      toast({
+        variant: 'destructive',
+        title: 'Import Failed',
+        description:
+          error instanceof Error
+            ? error.message
+            : 'Failed to import wallet. Please check the address and try again.',
+      });
+    } finally {
+      setIsImportingWallet(false);
+    }
+  };
+
+  const renderWalletEntry = () => (
+    <div className="relative flex min-h-screen flex-col">
+      <div className="flex-1 space-y-6 pb-32">
+        <PageHeader
+          title="Add Data - Wallet Import"
+          subtitle="Import holdings automatically from your crypto wallet address"
+        />
+
+        <Card>
+          <CardHeader>
+            <CardTitle>Enter Wallet Address</CardTitle>
+            <CardDescription>
+              We'll automatically detect your wallet type and import balances from all supported
+              chains
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor={walletInputId}>Wallet Address</Label>
+              <Input
+                id={walletInputId}
+                placeholder="0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb"
+                value={walletAddress}
+                onChange={(e) => setWalletAddress(e.target.value)}
+                disabled={isImportingWallet}
+              />
+              <p className="text-sm text-muted-foreground">
+                Supported: EVM (Ethereum, Polygon, BSC, Arbitrum, Base), Bitcoin, Tron, Solana, and
+                12+ other chains
+              </p>
+            </div>
+
+            <div className="bg-blue-50 dark:bg-blue-950 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
+              <div className="flex items-start space-x-2">
+                <Info className="h-4 w-4 text-blue-600 dark:text-blue-400 mt-0.5 flex-shrink-0" />
+                <div className="space-y-1">
+                  <p className="text-sm font-medium text-blue-800 dark:text-blue-200">
+                    What happens next?
+                  </p>
+                  <ul className="text-xs text-blue-600 dark:text-blue-400 space-y-1 list-disc list-inside">
+                    <li>System detects your wallet type automatically</li>
+                    <li>Fetches native token + ERC-20 token balances from all chains</li>
+                    <li>Creates accounts for each chain with balances</li>
+                    <li>Creates holdings for all tokens found</li>
+                    <li>All data will be available in your dashboard immediately</li>
+                  </ul>
+                </div>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        <div className="flex justify-between items-center pt-8">
+          <Button type="button" variant="outline" onClick={goBack} disabled={isImportingWallet}>
+            Back
+          </Button>
+          <Button
+            onClick={handleWalletImport}
+            disabled={isImportingWallet || !walletAddress.trim()}
+          >
+            {isImportingWallet ? (
+              <>
+                <LoadingSpinner className="mr-2 h-4 w-4" />
+                Importing Wallet...
+              </>
+            ) : (
+              'Import Wallet'
+            )}
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+
   const renderEntryMethodSelection = () => (
     <div className="space-y-6">
       <PageHeader title="Add Data" subtitle="Choose how you want to add data to your portfolio" />
@@ -1308,20 +1478,21 @@ export function AddData() {
             </CardContent>
           </Card>
 
-          <Card className="relative opacity-60 cursor-not-allowed transition-shadow">
+          <Card
+            className="cursor-pointer hover:shadow-md transition-shadow"
+            onClick={() => handleEntryMethodSelected('wallet')}
+          >
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <Wallet className="h-5 w-5" />
                 Crypto Wallet
-                <Badge variant="secondary" className="ml-auto">
-                  Coming Soon
-                </Badge>
               </CardTitle>
-              <CardDescription>Connect your wallet to import holdings</CardDescription>
+              <CardDescription>Import holdings from your wallet address</CardDescription>
             </CardHeader>
             <CardContent>
               <p className="text-sm text-muted-foreground">
-                Connect your cryptocurrency wallet to automatically sync your holdings.
+                Enter your wallet address to automatically import balances from all supported
+                chains.
               </p>
             </CardContent>
           </Card>
@@ -2227,6 +2398,7 @@ export function AddData() {
           {currentStep === 'entry-method' && renderEntryMethodSelection()}
           {currentStep === 'manual-entry' && renderManualEntry()}
           {currentStep === 'screenshot-entry' && renderScreenshotEntry()}
+          {currentStep === 'wallet-entry' && renderWalletEntry()}
         </>
       )}
 
@@ -2238,10 +2410,7 @@ export function AddData() {
         token={null}
         onSuccess={(token) => {
           // Invalidate tokens queries to refresh the AsyncTokenSelector
-          void invalidateTokensRelated(utils, {
-            includeWithTotals: false,
-            includeByUser: false,
-          });
+          void utils.tokens.getAll.invalidate();
 
           // Set the newly created token ID in the form
           form.setValue('tokenId', token.id);

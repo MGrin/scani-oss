@@ -141,8 +141,15 @@ const app = new Elysia()
       requestId,
     };
   })
-  // Add security headers middleware
-  .onBeforeHandle(({ set }) => {
+  .use(
+    cors({
+      origin: process.env.FRONTEND_URL ?? 'http://localhost:5173',
+      credentials: true,
+      allowedHeaders: ['Authorization', 'Content-Type'],
+    })
+  )
+  // Add security headers middleware (after CORS to avoid conflicts)
+  .onAfterHandle(({ set }) => {
     // Prevent MIME type sniffing
     set.headers = set.headers || {};
     set.headers['X-Content-Type-Options'] = 'nosniff';
@@ -154,22 +161,31 @@ const app = new Elysia()
     set.headers['Referrer-Policy'] = 'strict-origin-when-cross-origin';
     // Content Security Policy for API responses
     set.headers['Content-Security-Policy'] = "default-src 'none'";
-    // CORS vary for caches
-    set.headers.Vary = 'Origin';
+    // HSTS - Force HTTPS for 1 year (only in production)
+    if (process.env.NODE_ENV === 'production') {
+      set.headers['Strict-Transport-Security'] = 'max-age=31536000; includeSubDomains; preload';
+    }
+    // Note: Vary header is set by CORS middleware
   })
-  .use(
-    cors({
-      origin: process.env.FRONTEND_URL ?? 'http://localhost:5173',
-      credentials: true,
-      allowedHeaders: ['Authorization', 'Content-Type'],
-    })
-  )
   .use(
     trpc(appRouter, {
       createContext,
       endpoint: '/trpc',
     })
   )
+  // Health check endpoint (GET and HEAD)
+  .get('/health', () => {
+    return {
+      status: 'ok',
+      timestamp: new Date().toISOString(),
+      version: '1.0.0',
+    };
+  })
+  .head('/health', ({ set }: { set: { status: number; headers: Record<string, string> } }) => {
+    set.status = 200;
+    set.headers['Content-Type'] = 'application/json';
+    return;
+  })
   // Stricter limiter for AI-related HTTP endpoints (if any are added later)
   .onBeforeHandle(({ request, set }) => {
     // Apply only to the tRPC endpoint with potential heavy procedures

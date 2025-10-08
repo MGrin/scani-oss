@@ -326,9 +326,13 @@ export function Transactions() {
     setIsDeleteDialogOpen(true);
   };
 
-  const confirmDeleteTransaction = () => {
+  const confirmDeleteTransaction = async () => {
     if (transactionToDelete) {
-      deleteTransaction.mutate({ id: transactionToDelete.id });
+      try {
+        await deleteTransaction.mutateAsync({ id: transactionToDelete.id });
+      } catch (error) {
+        console.error('Error deleting transaction:', error);
+      }
     }
   };
 

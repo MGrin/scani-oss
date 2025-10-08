@@ -43,20 +43,14 @@ export function Institutions() {
     { key: 'type', defaultValue: 'all' },
   ]);
 
-  const { data: institutions, isLoading } = trpc.institutions.getByUserId.useQuery(undefined, {
-    refetchOnMount: 'always', // Always refetch to ensure fresh data
-  });
+  const { data: institutions, isLoading } = trpc.institutions.getByUserId.useQuery();
   const { institutionTypes: institutionTypesState, accounts: accountsState } = useEntityData();
   const institutionTypes = institutionTypesState.data;
   const accounts = accountsState.data;
 
   const { data: portfolioValue } = trpc.users.getPortfolioValue.useQuery();
-  const { data: holdings } = trpc.holdings.getAll.useQuery(undefined, {
-    refetchOnMount: 'always', // Always refetch to ensure fresh data
-  });
-  const { data: tokens } = trpc.tokens.getByUserId.useQuery(undefined, {
-    refetchOnMount: 'always', // Always refetch to ensure fresh data
-  });
+  const { data: holdings } = trpc.holdings.getAll.useQuery();
+  const { data: tokens } = trpc.tokens.getByUserId.useQuery();
   const { data: baseCurrency } = trpc.users.getBaseCurrency.useQuery();
 
   // Get trpc context for invalidating queries
@@ -86,9 +80,15 @@ export function Institutions() {
     setIsDeleteDialogOpen(true);
   };
 
-  const confirmDeleteInstitution = () => {
+  const confirmDeleteInstitution = async () => {
     if (institutionToDelete) {
-      deleteInstitutionMutation.mutate({ id: institutionToDelete.id });
+      try {
+        await deleteInstitutionMutation.mutateAsync({
+          id: institutionToDelete.id,
+        });
+      } catch (error) {
+        console.error('Error deleting institution:', error);
+      }
     }
   };
 

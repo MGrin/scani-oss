@@ -9,6 +9,11 @@ export const PROVIDER_CONFIGS = {
     baseUrl: 'https://api.coingecko.com/api/v3',
     rateLimit: 50,
   },
+  defiLlama: {
+    name: 'DeFiLlama',
+    baseUrl: 'https://coins.llama.fi',
+    rateLimit: 300, // 5 calls/sec = 300 calls/min
+  },
   finnhub: {
     name: 'Finnhub',
     baseUrl: 'https://finnhub.io/api/v1',

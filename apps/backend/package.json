@@ -36,6 +36,7 @@
     "decimal.js": "^10.6.0",
     "drizzle-orm": "^0.44.5",
     "elysia": "^1.3.21",
+    "ethers": "^6.15.0",
     "googleapis": "^160.0.0",
     "jsonwebtoken": "^9.0.2",
     "pino": "^9.9.4",

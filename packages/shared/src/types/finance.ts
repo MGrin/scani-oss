@@ -174,6 +174,7 @@ export const AccountSchema = z.object({
   name: accountNameValidation,
   type: AccountTypeSchema,
   description: accountDescriptionValidation,
+  metadata: z.record(z.unknown()).default({}), // JSONB field for wallet addresses, chain-specific data
   isActive: z.boolean().default(true),
   createdAt: z.date(),
   updatedAt: z.date(),
@@ -366,3 +367,66 @@ export const TransactionCategory = z.enum([
 ]);
 
 export type TransactionCategoryType = z.infer<typeof TransactionCategory>;
+
+// =============================================================================
+// WALLET & BLOCKCHAIN TYPES
+// =============================================================================
+
+/**
+ * Wallet metadata stored in account.metadata field
+ */
+export const WalletMetadataSchema = z.object({
+  walletAddress: z
+    .string()
+    .min(1, 'Wallet address is required')
+    .refine((addr) => {
+      // EVM addresses (0x + 40 hex chars)
+      if (/^0x[a-fA-F0-9]{40}$/.test(addr)) return true;
+      // Bitcoin addresses (various formats)
+      if (/^(1|3|bc1)[a-zA-HJ-NP-Z0-9]{25,62}$/.test(addr)) return true;
+      // Tron addresses (T + 33 base58 chars)
+      if (/^T[a-zA-HJ-NP-Z0-9]{33}$/.test(addr)) return true;
+      // Solana addresses (base58, 32-44 chars)
+      if (/^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(addr)) return true;
+      // Add more formats as needed
+      return false;
+    }, 'Invalid wallet address format'),
+  addressType: z
+    .enum([
+      'evm',
+      'bitcoin',
+      'bitcoin-cash',
+      'litecoin',
+      'tron',
+      'solana',
+      'algorand',
+      'aptos',
+      'cardano',
+      'cosmos',
+      'hedera',
+      'near',
+      'polkadot',
+      'ripple',
+      'stellar',
+      'sui',
+    ])
+    .optional(), // Detected address type (all supported chains)
+  chainIds: z.array(z.number().int()).optional(), // Chains to track (can include negative IDs for non-EVM)
+  lastSyncedAt: z.date().optional(),
+  autoSync: z.boolean().default(true), // Future: auto-sync every 15 minutes
+});
+
+export type WalletMetadata = z.infer<typeof WalletMetadataSchema>;
+
+/**
+ * Schema for creating/updating wallet accounts
+ */
+export const CreateWalletAccountSchema = z.object({
+  institutionId: z.string().uuid('Invalid institution ID'),
+  name: accountNameValidation,
+  description: accountDescriptionValidation,
+  walletAddress: WalletMetadataSchema.shape.walletAddress,
+  chainIds: WalletMetadataSchema.shape.chainIds,
+});
+
+export type CreateWalletAccount = z.infer<typeof CreateWalletAccountSchema>;

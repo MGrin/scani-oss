@@ -50,7 +50,7 @@ export function useRealtimeEntitySync() {
   const websocketUrl = useMemo(() => resolveWebSocketUrl(), []);
 
   const handleMessage = useCallback(
-    (message: WebSocketMessage) => {
+    async (message: WebSocketMessage) => {
       if (message.type !== 'entity_changed') {
         return;
       }
@@ -66,87 +66,91 @@ export function useRealtimeEntitySync() {
       const related = payload.metadata?.relatedEntities ?? [];
       const data = payload.data ?? {};
 
-      switch (entityType) {
-        case 'account':
-          void invalidateAccountsRelated(utils, {
-            includePortfolioValue: true,
-            accountIds: entityId ? [entityId] : [],
-          });
-          if (related.length) {
-            const institutionIds = related
-              .filter((entity) => entity.type === 'institution')
-              .map((entity) => entity.id);
-            if (institutionIds.length) {
-              void invalidateInstitutionsRelated(utils, {
-                includeAccounts: true,
-                institutionIds,
-              });
-            }
-          } else if (typeof data === 'object' && data && 'institutionId' in data) {
-            const institutionId = data.institutionId;
-            if (typeof institutionId === 'string') {
-              void invalidateInstitutionsRelated(utils, {
-                includeAccounts: true,
-                institutionIds: [institutionId],
-              });
-            }
-          }
-          break;
-        case 'institution':
-          void invalidateInstitutionsRelated(utils, {
-            includeAccounts: true,
-            institutionIds: entityId ? [entityId] : [],
-          });
-          break;
-        case 'holding':
-          void invalidateHoldingsRelated(utils, {
-            holdingIds: entityId ? [entityId] : [],
-          });
-          if (related.length) {
-            const accountIds = related
-              .filter((entity) => entity.type === 'account')
-              .map((entity) => entity.id);
-            if (accountIds.length) {
-              void invalidateAccountsRelated(utils, {
-                includeSummaries: false,
-                accountIds,
-              });
-            }
-          } else if (typeof data === 'object' && data && 'accountId' in data) {
-            const accountId = data.accountId;
-            if (typeof accountId === 'string') {
-              void invalidateAccountsRelated(utils, {
-                includeSummaries: false,
-                accountIds: [accountId],
-              });
-            }
-          }
-          break;
-        case 'transaction':
-          void invalidateTransactionsRelated(utils);
-          {
-            const holdingIdsFromMetadata = related
-              .filter((entity) => entity.type === 'holding')
-              .map((entity) => entity.id);
-            if (holdingIdsFromMetadata.length) {
-              void invalidateHoldingsRelated(utils, {
-                holdingIds: holdingIdsFromMetadata,
-              });
-            } else if (typeof data === 'object' && data && 'holdingId' in data) {
-              const holdingId = data.holdingId;
-              if (typeof holdingId === 'string') {
-                void invalidateHoldingsRelated(utils, {
-                  holdingIds: [holdingId],
+      try {
+        switch (entityType) {
+          case 'account':
+            await invalidateAccountsRelated(utils, {
+              includePortfolioValue: true,
+              accountIds: entityId ? [entityId] : [],
+            });
+            if (related.length) {
+              const institutionIds = related
+                .filter((entity) => entity.type === 'institution')
+                .map((entity) => entity.id);
+              if (institutionIds.length) {
+                await invalidateInstitutionsRelated(utils, {
+                  includeAccounts: true,
+                  institutionIds,
+                });
+              }
+            } else if (typeof data === 'object' && data && 'institutionId' in data) {
+              const institutionId = data.institutionId;
+              if (typeof institutionId === 'string') {
+                await invalidateInstitutionsRelated(utils, {
+                  includeAccounts: true,
+                  institutionIds: [institutionId],
                 });
               }
             }
-          }
-          break;
-        case 'token':
-          void invalidateTokensRelated(utils);
-          break;
-        default:
-          break;
+            break;
+          case 'institution':
+            await invalidateInstitutionsRelated(utils, {
+              includeAccounts: true,
+              institutionIds: entityId ? [entityId] : [],
+            });
+            break;
+          case 'holding':
+            await invalidateHoldingsRelated(utils, {
+              holdingIds: entityId ? [entityId] : [],
+            });
+            if (related.length) {
+              const accountIds = related
+                .filter((entity) => entity.type === 'account')
+                .map((entity) => entity.id);
+              if (accountIds.length) {
+                await invalidateAccountsRelated(utils, {
+                  includeSummaries: false,
+                  accountIds,
+                });
+              }
+            } else if (typeof data === 'object' && data && 'accountId' in data) {
+              const accountId = data.accountId;
+              if (typeof accountId === 'string') {
+                await invalidateAccountsRelated(utils, {
+                  includeSummaries: false,
+                  accountIds: [accountId],
+                });
+              }
+            }
+            break;
+          case 'transaction':
+            await invalidateTransactionsRelated(utils);
+            {
+              const holdingIdsFromMetadata = related
+                .filter((entity) => entity.type === 'holding')
+                .map((entity) => entity.id);
+              if (holdingIdsFromMetadata.length) {
+                await invalidateHoldingsRelated(utils, {
+                  holdingIds: holdingIdsFromMetadata,
+                });
+              } else if (typeof data === 'object' && data && 'holdingId' in data) {
+                const holdingId = data.holdingId;
+                if (typeof holdingId === 'string') {
+                  await invalidateHoldingsRelated(utils, {
+                    holdingIds: [holdingId],
+                  });
+                }
+              }
+            }
+            break;
+          case 'token':
+            await invalidateTokensRelated(utils);
+            break;
+          default:
+            break;
+        }
+      } catch (error) {
+        console.error('Error invalidating cache during realtime sync:', error);
       }
     },
     [utils]

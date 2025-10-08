@@ -47,9 +47,7 @@ export function Holdings() {
   }>();
   const { isTokenUnpriceable, shouldHighlight } = useUnpriceableTokens();
 
-  const { data: holdings, isLoading: holdingsLoading } = trpc.holdings.getAll.useQuery(undefined, {
-    refetchOnMount: 'always', // Always refetch to ensure fresh data after mutations
-  });
+  const { data: holdings, isLoading: holdingsLoading } = trpc.holdings.getAll.useQuery();
   const {
     accounts: accountsState,
     institutions: institutionsState,
@@ -57,9 +55,7 @@ export function Holdings() {
   } = useEntityData();
   const accounts = accountsState.data;
   // Use optimized endpoints - only get tokens user has holdings for, and base currency separately
-  const { data: tokens } = trpc.tokens.getByUserId.useQuery(undefined, {
-    refetchOnMount: 'always', // Always refetch to ensure fresh data after mutations
-  });
+  const { data: tokens } = trpc.tokens.getByUserId.useQuery();
 
   const { data: baseCurrency } = trpc.users.getBaseCurrency.useQuery();
 
@@ -263,9 +259,13 @@ export function Holdings() {
   //   setIsViewDialogOpen(true);
   // };
 
-  const confirmDeleteHolding = () => {
+  const confirmDeleteHolding = async () => {
     if (holdingToDelete) {
-      deleteHolding.mutate({ id: holdingToDelete.id });
+      try {
+        await deleteHolding.mutateAsync({ id: holdingToDelete.id });
+      } catch (error) {
+        console.error('Error deleting holding:', error);
+      }
     }
   };
 

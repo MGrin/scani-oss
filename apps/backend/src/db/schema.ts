@@ -1,5 +1,15 @@
 import { relations } from 'drizzle-orm';
-import { boolean, index, pgTable, real, text, timestamp, unique, uuid } from 'drizzle-orm/pg-core';
+import {
+  boolean,
+  index,
+  jsonb,
+  pgTable,
+  real,
+  text,
+  timestamp,
+  unique,
+  uuid,
+} from 'drizzle-orm/pg-core';
 
 // =============================================================================
 // ENUM TABLES - Dynamic enum values stored in database
@@ -136,6 +146,7 @@ export const accounts = pgTable(
       .notNull()
       .references(() => accountTypes.id, { onDelete: 'restrict' }), // Reference to account_types
     description: text('description'),
+    metadata: jsonb('metadata').notNull().default('{}'), // Store wallet addresses and chain-specific data
     isActive: boolean('is_active').notNull().default(true),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),

@@ -78,16 +78,12 @@ export function Accounts() {
   const institutions = institutionsState.data;
   const accountTypes = accountTypesState.data;
   const isLoading = accountsState.isLoading || institutionsState.isLoading;
-  const { data: holdings } = trpc.holdings.getAll.useQuery(undefined, {
-    refetchOnMount: 'always', // Always refetch to ensure fresh data after deletions
-  });
+  const { data: holdings } = trpc.holdings.getAll.useQuery();
 
   const { data: baseCurrency } = trpc.users.getBaseCurrency.useQuery();
 
   const { data: accountSummaries, isLoading: summariesLoading } =
-    trpc.accounts.getSummaries.useQuery(undefined, {
-      refetchOnMount: 'always', // Always refetch to ensure fresh data after deletions
-    });
+    trpc.accounts.getSummaries.useQuery();
 
   // Determine if we're in hierarchical mode (accessed from institution)
   const isHierarchicalMode = Boolean(institutionId);
@@ -173,9 +169,13 @@ export function Accounts() {
     setIsDeleteDialogOpen(true);
   };
 
-  const confirmDeleteAccount = () => {
+  const confirmDeleteAccount = async () => {
     if (accountToDelete) {
-      deleteAccount.mutate({ id: accountToDelete.id });
+      try {
+        await deleteAccount.mutateAsync({ id: accountToDelete.id });
+      } catch (error) {
+        console.error('Error deleting account:', error);
+      }
     }
   };
 

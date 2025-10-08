@@ -12,7 +12,7 @@ export interface HoldingsInvalidationOptions {
   holdingIds?: string[];
 }
 
-export function invalidateHoldingsRelated(
+export async function invalidateHoldingsRelated(
   utils: TrpcUtils,
   {
     includeList = true,
@@ -21,7 +21,7 @@ export function invalidateHoldingsRelated(
     includePortfolioValue = true,
     holdingIds = [],
   }: HoldingsInvalidationOptions = {}
-) {
+): Promise<void> {
   const tasks: InvalidationTask[] = [];
 
   if (includeList) {
@@ -46,7 +46,7 @@ export function invalidateHoldingsRelated(
     }
   }
 
-  return runInvalidations(tasks);
+  await runInvalidations(tasks);
 }
 
 export interface AccountsInvalidationOptions {
@@ -56,7 +56,7 @@ export interface AccountsInvalidationOptions {
   accountIds?: string[];
 }
 
-export function invalidateAccountsRelated(
+export async function invalidateAccountsRelated(
   utils: TrpcUtils,
   {
     includeList = true,
@@ -64,7 +64,7 @@ export function invalidateAccountsRelated(
     includePortfolioValue = false,
     accountIds = [],
   }: AccountsInvalidationOptions = {}
-) {
+): Promise<void> {
   const tasks: InvalidationTask[] = [];
 
   if (includeList) {
@@ -85,7 +85,7 @@ export function invalidateAccountsRelated(
     }
   }
 
-  return runInvalidations(tasks);
+  await runInvalidations(tasks);
 }
 
 export interface InstitutionsInvalidationOptions {
@@ -95,7 +95,7 @@ export interface InstitutionsInvalidationOptions {
   institutionIds?: string[];
 }
 
-export function invalidateInstitutionsRelated(
+export async function invalidateInstitutionsRelated(
   utils: TrpcUtils,
   {
     includeList = true,
@@ -103,7 +103,7 @@ export function invalidateInstitutionsRelated(
     includeByUser = true,
     institutionIds = [],
   }: InstitutionsInvalidationOptions = {}
-) {
+): Promise<void> {
   const tasks: InvalidationTask[] = [];
 
   if (includeList) {
@@ -129,7 +129,7 @@ export function invalidateInstitutionsRelated(
     }
   }
 
-  return runInvalidations(tasks);
+  await runInvalidations(tasks);
 }
 
 export interface TokensInvalidationOptions {
@@ -139,7 +139,7 @@ export interface TokensInvalidationOptions {
   includeSearch?: boolean;
 }
 
-export function invalidateTokensRelated(
+export async function invalidateTokensRelated(
   utils: TrpcUtils,
   {
     includeList = true,
@@ -147,7 +147,7 @@ export function invalidateTokensRelated(
     includeByUser = true,
     includeSearch = true,
   }: TokensInvalidationOptions = {}
-) {
+): Promise<void> {
   const tasks: InvalidationTask[] = [];
 
   if (includeList) {
@@ -166,26 +166,26 @@ export function invalidateTokensRelated(
     tasks.push(utils.tokens.search.invalidate());
   }
 
-  return runInvalidations(tasks);
+  await runInvalidations(tasks);
 }
 
 export interface TransactionsInvalidationOptions {
   includeList?: boolean;
 }
 
-export function invalidateTransactionsRelated(
+export async function invalidateTransactionsRelated(
   utils: TrpcUtils,
   { includeList = true }: TransactionsInvalidationOptions = {}
-) {
+): Promise<void> {
   const tasks: InvalidationTask[] = [];
 
   if (includeList && utils.transactions?.getAll) {
     tasks.push(utils.transactions.getAll.invalidate());
   }
 
-  return runInvalidations(tasks);
+  await runInvalidations(tasks);
 }
 
-export function invalidatePortfolioValue(utils: TrpcUtils) {
-  return utils.users.getPortfolioValue.invalidate();
+export async function invalidatePortfolioValue(utils: TrpcUtils): Promise<void> {
+  await utils.users.getPortfolioValue.invalidate();
 }

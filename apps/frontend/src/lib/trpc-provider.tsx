@@ -16,10 +16,16 @@ export function TRPCProvider({ children }: TRPCProviderProps) {
           queries: {
             retry: 1,
             refetchOnWindowFocus: false,
-            // Optimized caching for better performance while maintaining accuracy
-            staleTime: 5 * 60 * 1000, // 5 minutes - portfolio data doesn't change that frequently
-            cacheTime: 10 * 60 * 1000, // 10 minutes - keep in memory longer
-            refetchOnMount: false, // Use cached data if available and not stale
+            // CRITICAL FIX: Reduce stale time to prevent cache issues
+            staleTime: 30 * 1000, // 30 seconds (was 5 minutes)
+            cacheTime: 5 * 60 * 1000, // 5 minutes (was 10 minutes)
+            refetchOnMount: 'always', // Always refetch to ensure fresh data (was false)
+            refetchOnReconnect: true, // Enable background refetch for stale queries
+            networkMode: 'online', // Prevent multiple identical requests in flight
+          },
+          mutations: {
+            retry: 1, // Add retry logic for transient failures
+            networkMode: 'online',
           },
         },
       })

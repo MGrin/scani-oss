@@ -1,6 +1,11 @@
 import type { Token } from '../../db/schema';
 
-export type PricingProviderKey = 'exchangeRate' | 'coinGecko' | 'finnhub' | 'googleSheets';
+export type PricingProviderKey =
+  | 'exchangeRate'
+  | 'coinGecko'
+  | 'defiLlama'
+  | 'finnhub'
+  | 'googleSheets';
 
 export interface ProviderPriceResult {
   tokenId: string;

@@ -1,29 +1,26 @@
-import { and, desc, eq, gte, inArray, sql } from "drizzle-orm";
-import { config } from "../config/pricing";
-import { db } from "../db/connection";
-import type { NewTokenPrice, Token } from "../db/schema";
-import { tokenPrices, tokens, tokenTypes } from "../db/schema";
-import { createComponentLogger, logger } from "../utils/logger";
-import { PROVIDER_CONFIGS } from "./pricing/provider-config";
+import { and, desc, eq, gte, inArray, sql } from 'drizzle-orm';
+import { config } from '../config/pricing';
+import { db } from '../db/connection';
+import type { NewTokenPrice, Token } from '../db/schema';
+import { tokenPrices, tokens, tokenTypes } from '../db/schema';
+import { createComponentLogger, logger } from '../utils/logger';
+import { PROVIDER_CONFIGS } from './pricing/provider-config';
 import type {
   ConvertPriceFn,
   PricingProvider,
   ProviderExecutionContext,
-} from "./pricing/providers/base";
-import { CoinGeckoProvider } from "./pricing/providers/coingecko";
-import { ExchangeRateProvider } from "./pricing/providers/exchange-rate";
-import { FinnhubProvider } from "./pricing/providers/finnhub";
-import { GoogleSheetsProvider } from "./pricing/providers/google-sheets";
-import type {
-  PricingProviderKey,
-  ProviderPriceResult,
-  TokenWithProvider,
-} from "./pricing/types";
-import { fetchWithTimeout, RateLimiter } from "./pricing/utils";
+} from './pricing/providers/base';
+import { CoinGeckoProvider } from './pricing/providers/coingecko';
+import { DeFiLlamaProvider } from './pricing/providers/defillama';
+import { ExchangeRateProvider } from './pricing/providers/exchange-rate';
+import { FinnhubProvider } from './pricing/providers/finnhub';
+import { GoogleSheetsProvider } from './pricing/providers/google-sheets';
+import type { PricingProviderKey, ProviderPriceResult, TokenWithProvider } from './pricing/types';
+import { fetchWithTimeout, RateLimiter } from './pricing/utils';
 
-const pricingLogger = createComponentLogger("pricing");
+const pricingLogger = createComponentLogger('pricing');
 
-type PrimaryProviderKey = Exclude<PricingProviderKey, "googleSheets">;
+type PrimaryProviderKey = Exclude<PricingProviderKey, 'googleSheets'>;
 
 type ProviderRegistry = Record<PrimaryProviderKey, PricingProvider>;
 
@@ -52,20 +49,16 @@ export class PricingService {
   // CoinGecko Demo/Public API: ~30 calls/min, use 10 for safety under ANY load
   // Reference: https://docs.coingecko.com/docs/common-errors-rate-limit
   public readonly coinGeckoRateLimiter = new RateLimiter(10, 60 * 1000);
+  // DeFiLlama: Free tier, 5 calls/sec = 300 calls/min
+  private readonly defiLlamaRateLimiter = new RateLimiter(5, 1000);
   private readonly googleSheetsRateLimiter = new RateLimiter(100, 100 * 1000);
 
   private readonly providers: ProviderRegistry;
   private readonly googleSheetsProvider: GoogleSheetsProvider;
   private readonly googleSheetsAvailable: boolean;
 
-  private readonly ongoingRequests = new Map<
-    string,
-    Promise<Map<string, string>>
-  >();
-  private readonly currencyRateCache = new Map<
-    string,
-    { rate: string; expiresAt: number }
-  >();
+  private readonly ongoingRequests = new Map<string, Promise<Map<string, string>>>();
+  private readonly currencyRateCache = new Map<string, { rate: string; expiresAt: number }>();
   private readonly CURRENCY_CONVERSION_TTL_MS = 10 * 60 * 1000;
 
   constructor(private readonly database = db) {
@@ -81,11 +74,16 @@ export class PricingService {
         convertPrice: convertPriceBound,
         createFailureResult: createFailureResultBound,
       }),
+      defiLlama: new DeFiLlamaProvider({
+        rateLimiter: this.defiLlamaRateLimiter,
+        convertPrice: convertPriceBound,
+        createFailureResult: createFailureResultBound,
+      }),
       finnhub: new FinnhubProvider({
         rateLimiter: this.finnhubRateLimiter,
         convertPrice: convertPriceBound,
         createFailureResult: createFailureResultBound,
-        logger: createComponentLogger("pricing:finnhub"),
+        logger: createComponentLogger('pricing:finnhub'),
       }),
     } satisfies ProviderRegistry;
 
@@ -95,37 +93,26 @@ export class PricingService {
       finnhubRateLimiter: this.finnhubRateLimiter,
       convertPrice: convertPriceBound,
       createFailureResult: createFailureResultBound,
-      logger: createComponentLogger("pricing:googleSheets"),
+      logger: createComponentLogger('pricing:googleSheets'),
     });
 
     this.googleSheetsAvailable = this.googleSheetsProvider.isAvailable();
   }
 
-  async getTokenPrice(
-    token: Token,
-    baseCurrencySymbol: string,
-    timestamp: Date
-  ): Promise<string> {
+  async getTokenPrice(token: Token, baseCurrencySymbol: string, timestamp: Date): Promise<string> {
     const baseCurrencyToken = await this.getTokenBySymbol(baseCurrencySymbol);
     if (!baseCurrencyToken) {
-      pricingLogger.debug(
-        { baseCurrencySymbol },
-        "Base currency token not found in getTokenPrice"
-      );
-      return "0";
+      pricingLogger.debug({ baseCurrencySymbol }, 'Base currency token not found in getTokenPrice');
+      return '0';
     }
 
     if (token.id === baseCurrencyToken.id) {
-      return "1";
+      return '1';
     }
 
-    const cached = await this.getCachedPrice(
-      token.id,
-      baseCurrencyToken.id,
-      timestamp
-    );
+    const cached = await this.getCachedPrice(token.id, baseCurrencyToken.id, timestamp);
 
-    if (cached && cached.price !== "0") {
+    if (cached && cached.price !== '0') {
       // Check if currency conversion is needed
       if (cached.baseTokenId !== baseCurrencyToken.id) {
         // Get the token for the cached price's base currency
@@ -145,7 +132,7 @@ export class PricingService {
               toCurrency: baseCurrencyToken.symbol,
               originalPrice: cached.price,
             },
-            "Converting cached price to requested base currency"
+            'Converting cached price to requested base currency'
           );
 
           const convertedPrice = await this.convertPrice(
@@ -163,21 +150,17 @@ export class PricingService {
     }
 
     const hasFailedFinnhubCache =
-      cached && cached.price === "0" && cached.source?.includes("Finnhub");
+      cached && cached.price === '0' && cached.source?.includes('Finnhub');
     const hasFinnhubMetadata = this.tokenHasFinnhubMetadata(token);
 
-    if (
-      hasFailedFinnhubCache &&
-      hasFinnhubMetadata &&
-      this.googleSheetsAvailable
-    ) {
+    if (hasFailedFinnhubCache && hasFinnhubMetadata && this.googleSheetsAvailable) {
       pricingLogger.debug(
         {
           tokenId: token.id,
           symbol: token.symbol,
           cachedSource: cached.source,
         },
-        "Token has failed Finnhub cache but Finnhub metadata - forcing fresh fetch with Google Sheets fallback"
+        'Token has failed Finnhub cache but Finnhub metadata - forcing fresh fetch with Google Sheets fallback'
       );
     }
 
@@ -189,12 +172,12 @@ export class PricingService {
     );
 
     const priceResult = freshPrices.find((p) => p.tokenId === token.id);
-    const finalPrice = priceResult?.price || "0";
+    const finalPrice = priceResult?.price || '0';
 
-    if (hasFinnhubMetadata && finalPrice === "0") {
+    if (hasFinnhubMetadata && finalPrice === '0') {
       logger.warn(
         { tokenId: token.id, symbol: token.symbol },
-        "Token with Finnhub metadata still has no price after fresh fetch - check Google Sheets configuration"
+        'Token with Finnhub metadata still has no price after fresh fetch - check Google Sheets configuration'
       );
     }
 
@@ -213,39 +196,30 @@ export class PricingService {
     const tokenIds = tokensToPrice
       .map((t) => t.id)
       .sort()
-      .join(",");
-    const timestampMinute =
-      Math.floor(timestamp.getTime() / (60 * 1000)) * 60 * 1000;
+      .join(',');
+    const timestampMinute = Math.floor(timestamp.getTime() / (60 * 1000)) * 60 * 1000;
     const deduplicationKey = `getTokenPrices:${tokenIds}:${baseCurrencySymbol}:${timestampMinute}`;
 
     const ongoingRequest = this.ongoingRequests.get(deduplicationKey);
     if (ongoingRequest) {
-      logger.debug(
-        { deduplicationKey },
-        "Deduplicating concurrent getTokenPrices request"
-      );
+      logger.debug({ deduplicationKey }, 'Deduplicating concurrent getTokenPrices request');
       return await ongoingRequest;
     }
 
     const requestPromise = (async (): Promise<Map<string, string>> => {
       try {
-        const baseCurrencyToken = await this.getTokenBySymbol(
-          baseCurrencySymbol
-        );
+        const baseCurrencyToken = await this.getTokenBySymbol(baseCurrencySymbol);
         if (!baseCurrencyToken) {
-          logger.warn(
-            { baseCurrencySymbol },
-            "Base currency token not found in getTokenPrices"
-          );
+          logger.warn({ baseCurrencySymbol }, 'Base currency token not found in getTokenPrices');
           for (const token of tokensToPrice) {
-            results.set(token.id, "0");
+            results.set(token.id, '0');
           }
           return results;
         }
 
         const tokensToProcess = tokensToPrice.filter((token) => {
           if (token.id === baseCurrencyToken.id) {
-            results.set(token.id, "1");
+            results.set(token.id, '1');
             return false;
           }
           return true;
@@ -283,7 +257,7 @@ export class PricingService {
                     toCurrency: baseCurrencyToken.symbol,
                     originalPrice: cached.price,
                   },
-                  "Converting cached price to requested base currency in batch"
+                  'Converting cached price to requested base currency in batch'
                 );
 
                 const convertedPrice = await this.convertPrice(
@@ -311,12 +285,10 @@ export class PricingService {
               cachedCount: tokensToProcess.length - tokensNeedingPrices.length,
               baseCurrency: baseCurrencySymbol,
             },
-            "Fetching prices from external providers"
+            'Fetching prices from external providers'
           );
 
-          const tokensByProvider = await this.groupTokensByProvider(
-            tokensNeedingPrices
-          );
+          const tokensByProvider = await this.groupTokensByProvider(tokensNeedingPrices);
           const freshPrices = await this.fetchFromAllProviders(
             tokensByProvider,
             baseCurrencyToken,
@@ -329,7 +301,7 @@ export class PricingService {
 
           for (const token of tokensNeedingPrices) {
             if (!results.has(token.id)) {
-              results.set(token.id, "0");
+              results.set(token.id, '0');
             }
           }
         }
@@ -345,7 +317,7 @@ export class PricingService {
   }
 
   async lookupToken(symbol: string): Promise<TokenLookupResult | null> {
-    logger.info({ symbol }, "Looking up token from external providers");
+    logger.info({ symbol }, 'Looking up token from external providers');
 
     try {
       const [finnhubResult, coinGeckoResult] = await Promise.all([
@@ -354,39 +326,32 @@ export class PricingService {
       ]);
 
       if (coinGeckoResult) {
-        logger.info(
-          { symbol, provider: "coingecko" },
-          "Token found via CoinGecko"
-        );
+        logger.info({ symbol, provider: 'coingecko' }, 'Token found via CoinGecko');
         return coinGeckoResult;
       }
 
       if (finnhubResult) {
-        logger.info({ symbol, provider: "finnhub" }, "Token found via Finnhub");
+        logger.info({ symbol, provider: 'finnhub' }, 'Token found via Finnhub');
         return finnhubResult;
       }
 
-      logger.info({ symbol }, "Token not found in any provider");
+      logger.info({ symbol }, 'Token not found in any provider');
       return null;
     } catch (error) {
-      logger.error({ error, symbol }, "Error looking up token from providers");
+      logger.error({ error, symbol }, 'Error looking up token from providers');
       return null;
     }
   }
 
-  private async lookupTokenFromFinnhub(
-    symbol: string
-  ): Promise<TokenLookupResult | null> {
+  private async lookupTokenFromFinnhub(symbol: string): Promise<TokenLookupResult | null> {
     try {
       const apiKey = config.finnhub.apiKey;
       if (!apiKey) return null;
 
-      const profileResponse = await this.finnhubRateLimiter.execute(
-        async () => {
-          const url = `${config.finnhub.baseUrl}/stock/profile2?symbol=${symbol}&token=${apiKey}`;
-          return await fetchWithTimeout(url);
-        }
-      );
+      const profileResponse = await this.finnhubRateLimiter.execute(async () => {
+        const url = `${config.finnhub.baseUrl}/stock/profile2?symbol=${symbol}&token=${apiKey}`;
+        return await fetchWithTimeout(url);
+      });
 
       if (!profileResponse.ok) return null;
 
@@ -400,36 +365,30 @@ export class PricingService {
       return {
         symbol: symbol.toUpperCase(),
         name: profileData.name,
-        provider: "finnhub",
+        provider: 'finnhub',
         providerTokenId: symbol.toUpperCase(),
-        tokenType: "stock",
+        tokenType: 'stock',
       };
     } catch (error) {
-      logger.debug({ error, symbol }, "Finnhub lookup failed");
+      logger.debug({ error, symbol }, 'Finnhub lookup failed');
       return null;
     }
   }
 
-  private async lookupTokenFromCoinGecko(
-    symbol: string
-  ): Promise<TokenLookupResult | null> {
+  private async lookupTokenFromCoinGecko(symbol: string): Promise<TokenLookupResult | null> {
     try {
       const headers: Record<string, string> = {
-        "Content-Type": "application/json",
+        'Content-Type': 'application/json',
       };
 
       if (config.coinGecko.apiKey) {
-        headers["x-cg-pro-api-key"] = config.coinGecko.apiKey;
+        headers['x-cg-pro-api-key'] = config.coinGecko.apiKey;
       }
 
-      const searchResponse = await this.coinGeckoRateLimiter.execute(
-        async () => {
-          const url = `${
-            config.coinGecko.baseUrl
-          }/search?query=${encodeURIComponent(symbol)}`;
-          return await fetchWithTimeout(url, { headers });
-        }
-      );
+      const searchResponse = await this.coinGeckoRateLimiter.execute(async () => {
+        const url = `${config.coinGecko.baseUrl}/search?query=${encodeURIComponent(symbol)}`;
+        return await fetchWithTimeout(url, { headers });
+      });
 
       if (!searchResponse.ok) return null;
 
@@ -452,13 +411,106 @@ export class PricingService {
       return {
         symbol: coin.symbol.toUpperCase(),
         name: coin.name,
-        provider: "coingecko",
+        provider: 'coingecko',
         providerTokenId: coin.id,
-        tokenType: "crypto",
+        tokenType: 'crypto',
       };
     } catch (error) {
-      logger.debug({ error, symbol }, "CoinGecko lookup failed");
+      logger.debug({ error, symbol }, 'CoinGecko lookup failed');
       return null;
+    }
+  }
+
+  /**
+   * Look up CoinGecko ID for a token by contract address
+   * Used during wallet import to enrich discovered tokens with pricing IDs
+   *
+   * @param tokenAddress - Token contract address
+   * @param chainId - EVM chain ID
+   * @returns CoinGecko ID if found, undefined otherwise
+   */
+  async getCoinGeckoIdByContractAddress(
+    tokenAddress: string,
+    chainId: number
+  ): Promise<string | undefined> {
+    const COINGECKO_PLATFORMS: Record<number, string> = {
+      1: 'ethereum',
+      137: 'polygon-pos',
+      56: 'binance-smart-chain',
+      42161: 'arbitrum-one',
+      10: 'optimistic-ethereum',
+      8453: 'base',
+      43114: 'avalanche',
+      250: 'fantom',
+      100: 'xdai',
+      42220: 'celo',
+      1284: 'moonbeam',
+      1285: 'moonriver',
+      25: 'cronos',
+      199: 'bittorrent',
+      324: 'zksync',
+      59144: 'linea',
+      534352: 'scroll',
+      5000: 'mantle',
+      81457: 'blast',
+    };
+
+    const platform = COINGECKO_PLATFORMS[chainId];
+
+    if (!platform) {
+      pricingLogger.info({ chainId }, `Chain ${chainId} not mapped to CoinGecko platform`);
+      return undefined;
+    }
+
+    try {
+      const headers: Record<string, string> = {
+        Accept: 'application/json',
+      };
+
+      if (config.coinGecko.apiKey) {
+        headers['x-cg-pro-api-key'] = config.coinGecko.apiKey;
+      }
+
+      const response = await this.coinGeckoRateLimiter.execute(async () => {
+        const url = `${
+          config.coinGecko.baseUrl
+        }/coins/${platform}/contract/${tokenAddress.toLowerCase()}`;
+        return await fetchWithTimeout(url, { headers });
+      });
+
+      if (!response.ok) {
+        if (response.status === 404) {
+          pricingLogger.debug(
+            { tokenAddress, chainId, platform },
+            `Token ${tokenAddress} not found on CoinGecko`
+          );
+          return undefined;
+        }
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      }
+
+      const data = (await response.json()) as {
+        id: string;
+        symbol: string;
+        name: string;
+      };
+
+      pricingLogger.info(
+        { tokenAddress, chainId, coingeckoId: data.id, symbol: data.symbol },
+        `Found CoinGecko ID: ${data.id} for ${data.symbol}`
+      );
+
+      return data.id;
+    } catch (error) {
+      pricingLogger.debug(
+        {
+          tokenAddress,
+          chainId,
+          error: error instanceof Error ? error.message : String(error),
+        },
+        `Failed to look up CoinGecko ID for token ${tokenAddress}`
+      );
+      return undefined;
     }
   }
 
@@ -468,9 +520,7 @@ export class PricingService {
     timestamp: Date
   ): Promise<CachedPrice | null> {
     const isLive = this.isLivePrice(timestamp);
-    const maxAge = isLive
-      ? this.LIVE_PRICE_WINDOW_MS
-      : this.HISTORICAL_PRICE_WINDOW_MS;
+    const maxAge = isLive ? this.LIVE_PRICE_WINDOW_MS : this.HISTORICAL_PRICE_WINDOW_MS;
     const minTimestamp = new Date(timestamp.getTime() - maxAge);
 
     const result = await this.database
@@ -495,7 +545,7 @@ export class PricingService {
       return {
         price: result[0].price,
         timestamp: result[0].timestamp,
-        source: result[0].source || "cached",
+        source: result[0].source || 'cached',
         baseTokenId: result[0].baseTokenId,
       };
     }
@@ -515,7 +565,7 @@ export class PricingService {
       .orderBy(desc(tokenPrices.timestamp))
       .limit(1);
 
-    if (manualPriceResult[0]?.source?.startsWith("manual")) {
+    if (manualPriceResult[0]?.source?.startsWith('manual')) {
       pricingLogger.debug(
         {
           tokenId,
@@ -524,7 +574,7 @@ export class PricingService {
           source: manualPriceResult[0].source,
           timestamp: manualPriceResult[0].timestamp,
         },
-        "Found manual price for private token"
+        'Found manual price for private token'
       );
       return {
         price: manualPriceResult[0].price,
@@ -547,9 +597,7 @@ export class PricingService {
     if (tokenIds.length === 0) return results;
 
     const isLive = this.isLivePrice(timestamp);
-    const maxAge = isLive
-      ? this.LIVE_PRICE_WINDOW_MS
-      : this.HISTORICAL_PRICE_WINDOW_MS;
+    const maxAge = isLive ? this.LIVE_PRICE_WINDOW_MS : this.HISTORICAL_PRICE_WINDOW_MS;
     const minTimestamp = new Date(timestamp.getTime() - maxAge);
 
     const cachedPrices = await this.database
@@ -574,7 +622,7 @@ export class PricingService {
       results.set(price.tokenId, {
         price: price.price,
         timestamp: price.timestamp,
-        source: price.source || "cached",
+        source: price.source || 'cached',
         baseTokenId: price.baseTokenId,
       });
     }
@@ -595,14 +643,14 @@ export class PricingService {
         .orderBy(tokenPrices.tokenId, desc(tokenPrices.timestamp));
 
       for (const price of manualPrices) {
-        if (price.source?.startsWith("manual")) {
+        if (price.source?.startsWith('manual')) {
           pricingLogger.debug(
             {
               tokenId: price.tokenId,
               source: price.source,
               timestamp: price.timestamp,
             },
-            "Using manual price in batch without time restriction"
+            'Using manual price in batch without time restriction'
           );
           results.set(price.tokenId, {
             price: price.price,
@@ -623,22 +671,16 @@ export class PricingService {
     _timestamp: Date
   ): Promise<string> {
     if (fromCurrency === toCurrency) {
-      return "1";
+      return '1';
     }
 
-    const cacheKey = this.getCurrencyConversionCacheKey(
-      fromCurrency,
-      toCurrency
-    );
+    const cacheKey = this.getCurrencyConversionCacheKey(fromCurrency, toCurrency);
     const cached = this.currencyRateCache.get(cacheKey);
     const now = Date.now();
 
     if (cached) {
       if (cached.expiresAt > now) {
-        logger.debug(
-          { fromCurrency, toCurrency },
-          "Using cached currency conversion rate"
-        );
+        logger.debug({ fromCurrency, toCurrency }, 'Using cached currency conversion rate');
         return cached.rate;
       }
       this.currencyRateCache.delete(cacheKey);
@@ -659,9 +701,7 @@ export class PricingService {
       };
 
       if (!data.rates?.[toCurrency]) {
-        throw new Error(
-          `No conversion rate available from ${fromCurrency} to ${toCurrency}`
-        );
+        throw new Error(`No conversion rate available from ${fromCurrency} to ${toCurrency}`);
       }
 
       const conversionRate = data.rates[toCurrency];
@@ -669,7 +709,7 @@ export class PricingService {
 
       logger.debug(
         { fromCurrency, toCurrency, rate: conversionRate, apiUrl: url },
-        "Currency conversion rate fetched"
+        'Currency conversion rate fetched'
       );
 
       this.currencyRateCache.set(cacheKey, {
@@ -679,18 +719,12 @@ export class PricingService {
 
       return rateString;
     } catch (error) {
-      logger.warn(
-        { fromCurrency, toCurrency, error },
-        "Failed to get currency conversion rate"
-      );
-      return "0";
+      logger.warn({ fromCurrency, toCurrency, error }, 'Failed to get currency conversion rate');
+      return '0';
     }
   }
 
-  private getCurrencyConversionCacheKey(
-    fromCurrency: string,
-    toCurrency: string
-  ): string {
+  private getCurrencyConversionCacheKey(fromCurrency: string, toCurrency: string): string {
     return `${fromCurrency.toUpperCase()}->${toCurrency.toUpperCase()}`;
   }
 
@@ -700,7 +734,7 @@ export class PricingService {
     toCurrency: string,
     timestamp: Date
   ): Promise<string> {
-    if (fromCurrency === toCurrency || price === "0") {
+    if (fromCurrency === toCurrency || price === '0') {
       return price;
     }
 
@@ -711,8 +745,8 @@ export class PricingService {
         timestamp
       );
 
-      if (conversionRate === "0") {
-        return "0";
+      if (conversionRate === '0') {
+        return '0';
       }
 
       let rate = parseFloat(conversionRate);
@@ -730,16 +764,13 @@ export class PricingService {
           fromCurrency,
           toCurrency,
         },
-        "Price converted (with inversion check)"
+        'Price converted (with inversion check)'
       );
 
       return convertedPrice.toString();
     } catch (error) {
-      logger.error(
-        { error, price, fromCurrency, toCurrency },
-        "Price conversion failed"
-      );
-      return "0";
+      logger.error({ error, price, fromCurrency, toCurrency }, 'Price conversion failed');
+      return '0';
     }
   }
 
@@ -777,10 +808,10 @@ export class PricingService {
       let providerTokenId: string | undefined;
 
       try {
-        const metadata = JSON.parse(token.providerMetadata || "{}");
+        const metadata = JSON.parse(token.providerMetadata || '{}');
 
         if (metadata.finnhub?.symbol) {
-          provider = "finnhub";
+          provider = 'finnhub';
           providerTokenId = metadata.finnhub.symbol;
           logger.info(
             {
@@ -789,10 +820,10 @@ export class PricingService {
               typeCode,
               finnhubSymbol: metadata.finnhub.symbol,
             },
-            "Assigning token to Finnhub based on provider metadata (overriding type-based assignment)"
+            'Assigning token to Finnhub based on provider metadata (overriding type-based assignment)'
           );
         } else if (metadata.coingecko?.id || metadata.coinGeckoId) {
-          provider = "coinGecko";
+          provider = 'coinGecko';
           providerTokenId = metadata.coingecko?.id || metadata.coinGeckoId;
           logger.info(
             {
@@ -801,7 +832,22 @@ export class PricingService {
               typeCode,
               coinGeckoId: providerTokenId,
             },
-            "Assigning token to CoinGecko based on provider metadata (overriding type-based assignment)"
+            'Assigning token to CoinGecko based on provider metadata (overriding type-based assignment)'
+          );
+        } else if (typeCode.toLowerCase() === 'crypto') {
+          // Crypto tokens: Try CoinGecko first (primary provider for crypto)
+          // DeFiLlama will be used as fallback if CoinGecko fails
+          provider = 'coinGecko';
+          providerTokenId = this.getProviderTokenId(provider, token, metadata);
+          logger.info(
+            {
+              tokenId: token.id,
+              symbol: token.symbol,
+              typeCode,
+              hasContractAddress: !!metadata.contractAddress,
+              chainId: metadata.chainId,
+            },
+            'Assigning crypto token to CoinGecko (primary provider) - DeFiLlama fallback available'
           );
         } else {
           provider = this.getProviderByTokenType(typeCode, token);
@@ -814,7 +860,7 @@ export class PricingService {
             symbol: token.symbol,
             error: error instanceof Error ? error.message : String(error),
           },
-          "Failed to parse provider metadata, using type-based provider assignment"
+          'Failed to parse provider metadata, using type-based provider assignment'
         );
         provider = this.getProviderByTokenType(typeCode, token);
         providerTokenId = this.getProviderTokenId(provider, token, {});
@@ -836,23 +882,20 @@ export class PricingService {
     return groupedTokens;
   }
 
-  private getProviderByTokenType(
-    typeCode: string,
-    token: Token
-  ): PricingProviderKey | null {
+  private getProviderByTokenType(typeCode: string, token: Token): PricingProviderKey | null {
     switch (typeCode.toLowerCase()) {
-      case "fiat":
-        return "exchangeRate";
+      case 'fiat':
+        return 'exchangeRate';
 
-      case "crypto":
-        return "coinGecko";
+      case 'crypto':
+        return 'coinGecko';
 
-      case "stock":
+      case 'stock':
         // 'stock' type covers Stock/ETF/Equity/Commodity as per seed data
-        return "finnhub";
+        return 'finnhub';
 
-      case "private-company":
-      case "other":
+      case 'private-company':
+      case 'other':
         // Private tokens use manual pricing only, no external provider
         return null;
 
@@ -863,7 +906,7 @@ export class PricingService {
             symbol: token.symbol,
             typeCode,
           },
-          "Unknown token type, skipping provider assignment"
+          'Unknown token type, skipping provider assignment'
         );
         return null;
     }
@@ -877,14 +920,23 @@ export class PricingService {
     if (!provider) return undefined;
 
     switch (provider) {
-      case "exchangeRate":
+      case 'exchangeRate':
         return token.symbol;
-      case "coinGecko": {
+      case 'coinGecko': {
         const coinGeckoData = metadata.coingecko as { id?: string } | undefined;
         const coinGeckoId = metadata.coinGeckoId as string | undefined;
         return coinGeckoData?.id || coinGeckoId || token.symbol.toLowerCase();
       }
-      case "finnhub": {
+      case 'defiLlama': {
+        // DeFiLlama uses format "chainId:contractAddress"
+        const contractAddress = metadata.contractAddress as string | undefined;
+        const chainId = metadata.chainId as number | undefined;
+        if (contractAddress && chainId) {
+          return `${chainId}:${contractAddress}`;
+        }
+        return undefined;
+      }
+      case 'finnhub': {
         const finnhubData = metadata.finnhub as { symbol?: string } | undefined;
         return finnhubData?.symbol || token.symbol;
       }
@@ -906,9 +958,10 @@ export class PricingService {
     const allResults: ProviderPriceResult[] = [];
 
     const primaryProviders: PrimaryProviderKey[] = [
-      "exchangeRate",
-      "coinGecko",
-      "finnhub",
+      'exchangeRate',
+      'coinGecko',
+      'finnhub',
+      'defiLlama', // Added to fetch ERC-20 token prices
     ];
 
     const providerPromises = primaryProviders.map(async (providerKey) => {
@@ -925,7 +978,7 @@ export class PricingService {
       try {
         return await provider.fetchPrices(tokensForProvider, context);
       } catch (error) {
-        logger.error({ error, provider: providerKey }, "Provider fetch failed");
+        logger.error({ error, provider: providerKey }, 'Provider fetch failed');
         return tokensForProvider.map(({ token }) =>
           this.createFailureResult(token.id, timestamp, provider.key, error)
         );
@@ -937,19 +990,92 @@ export class PricingService {
       allResults.push(...results);
     }
 
+    // DeFiLlama fallback for crypto tokens that failed CoinGecko
+    // Check for crypto tokens with contract addresses that got empty CoinGecko responses
+    const tokensNeedingDeFiLlamaFallback: TokenWithProvider[] = [];
+
+    for (const [providerKey, tokensForProvider] of tokensByProvider.entries()) {
+      if (providerKey === 'coinGecko') {
+        for (const tokenWithProvider of tokensForProvider) {
+          try {
+            const metadata = JSON.parse(tokenWithProvider.token.providerMetadata || '{}');
+
+            // Check if token has contract address (can use DeFiLlama)
+            if (metadata.contractAddress && metadata.chainId) {
+              // Check if CoinGecko failed for this token
+              const coinGeckoResult = allResults.find(
+                (r) => r.tokenId === tokenWithProvider.token.id && r.source?.includes('CoinGecko')
+              );
+
+              if (
+                coinGeckoResult &&
+                (coinGeckoResult.price === '0' || coinGeckoResult.source?.includes('empty'))
+              ) {
+                // CoinGecko failed, try DeFiLlama
+                tokensNeedingDeFiLlamaFallback.push({
+                  token: tokenWithProvider.token,
+                  provider: 'defiLlama',
+                  providerTokenId: `${metadata.chainId}:${metadata.contractAddress}`,
+                });
+
+                logger.info(
+                  {
+                    tokenId: tokenWithProvider.token.id,
+                    symbol: tokenWithProvider.token.symbol,
+                    contractAddress: metadata.contractAddress,
+                    chainId: metadata.chainId,
+                  },
+                  'CoinGecko failed, falling back to DeFiLlama for token with contract address'
+                );
+              }
+            }
+          } catch (_error) {
+            // Ignore parsing errors
+          }
+        }
+      }
+    }
+
+    // Fetch prices from DeFiLlama for fallback tokens
+    if (tokensNeedingDeFiLlamaFallback.length > 0) {
+      const defiLlamaProvider = this.providers.defiLlama;
+      if (defiLlamaProvider) {
+        try {
+          logger.info(
+            { tokenCount: tokensNeedingDeFiLlamaFallback.length },
+            'Fetching DeFiLlama fallback prices for tokens that failed CoinGecko'
+          );
+
+          const defiLlamaResults = await defiLlamaProvider.fetchPrices(
+            tokensNeedingDeFiLlamaFallback,
+            context
+          );
+
+          // Replace failed CoinGecko results with DeFiLlama results
+          for (const defiLlamaResult of defiLlamaResults) {
+            const existingIndex = allResults.findIndex(
+              (r) => r.tokenId === defiLlamaResult.tokenId
+            );
+            if (existingIndex !== -1) {
+              allResults.splice(existingIndex, 1);
+            }
+            allResults.push(defiLlamaResult);
+          }
+        } catch (error) {
+          logger.error({ error }, 'DeFiLlama fallback failed');
+        }
+      }
+    }
+
     const allTokens = Array.from(tokensByProvider.values()).flat();
     const tokensStillNeedingPrices = allTokens.filter((tokenWithProvider) => {
       const hasSuccessfulPrice = allResults.some(
-        (result) =>
-          result.tokenId === tokenWithProvider.token.id && result.price !== "0"
+        (result) => result.tokenId === tokenWithProvider.token.id && result.price !== '0'
       );
       if (hasSuccessfulPrice) {
         return false;
       }
-      return this.isEligibleForSheetsByFailure(
-        allResults,
-        tokenWithProvider.token.id
-      );
+      return this.isEligibleForSheetsByFailure(allResults, tokenWithProvider.token.id);
     });
 
     logger.info(
@@ -964,7 +1090,7 @@ export class PricingService {
           source: r.source,
         })),
       },
-      "Checking tokens for Google Sheets fallback"
+      'Checking tokens for Google Sheets fallback'
     );
 
     if (tokensStillNeedingPrices.length > 0 && this.googleSheetsAvailable) {
@@ -973,41 +1099,33 @@ export class PricingService {
         tokenMap.set(token.id, token);
       }
 
-      const eligibleTokens =
-        await this.googleSheetsProvider.filterEligibleTokens(
-          Array.from(tokenMap.values())
-        );
+      const eligibleTokens = await this.googleSheetsProvider.filterEligibleTokens(
+        Array.from(tokenMap.values())
+      );
 
       if (eligibleTokens.length > 0) {
-        const googleTokens: TokenWithProvider[] = eligibleTokens.map(
-          (token) => ({
-            token,
-            provider: "googleSheets",
-          })
-        );
+        const googleTokens: TokenWithProvider[] = eligibleTokens.map((token) => ({
+          token,
+          provider: 'googleSheets',
+        }));
 
         try {
-          const googleResults = await this.googleSheetsProvider.fetchPrices(
-            googleTokens,
-            context
-          );
+          const googleResults = await this.googleSheetsProvider.fetchPrices(googleTokens, context);
 
           for (const result of googleResults) {
-            const existingIndex = allResults.findIndex(
-              (r) => r.tokenId === result.tokenId
-            );
+            const existingIndex = allResults.findIndex((r) => r.tokenId === result.tokenId);
             if (existingIndex !== -1) {
               allResults.splice(existingIndex, 1);
             }
             allResults.push(result);
           }
         } catch (error) {
-          logger.warn({ error }, "Google Sheets fallback failed");
+          logger.warn({ error }, 'Google Sheets fallback failed');
         }
       } else {
         logger.debug(
           { totalTokens: tokensStillNeedingPrices.length },
-          "No tokens eligible for Google Sheets fallback"
+          'No tokens eligible for Google Sheets fallback'
         );
       }
     }
@@ -1025,21 +1143,18 @@ export class PricingService {
       const r = existingResults[i];
       if (!r) continue;
       if (r.tokenId !== tokenId) continue;
-      if (r.price !== "0") return false;
+      if (r.price !== '0') return false;
 
-      const source = (r.source ?? "").toLowerCase();
+      const source = (r.source ?? '').toLowerCase();
       if (
-        source.includes("tier_limitation") ||
-        source.includes("unauthorized_access") ||
-        source.includes("unavailable") ||
-        source.includes("empty_response")
+        source.includes('tier_limitation') ||
+        source.includes('unauthorized_access') ||
+        source.includes('unavailable') ||
+        source.includes('empty_response')
       ) {
         return true;
       }
-      if (
-        source.includes("network_error") ||
-        source.includes("retryable_error")
-      ) {
+      if (source.includes('network_error') || source.includes('retryable_error')) {
         return false;
       }
       return false;
@@ -1059,7 +1174,7 @@ export class PricingService {
         sources: results.map((r) => r.source),
         baseCurrencyId,
       },
-      "Caching price results to database"
+      'Caching price results to database'
     );
 
     const priceRecords: NewTokenPrice[] = results.map((result) => ({
@@ -1079,7 +1194,7 @@ export class PricingService {
           timestamp: p.timestamp.toISOString(),
         })),
       },
-      "Price records to be cached"
+      'Price records to be cached'
     );
 
     try {
@@ -1087,11 +1202,7 @@ export class PricingService {
         .insert(tokenPrices)
         .values(priceRecords)
         .onConflictDoUpdate({
-          target: [
-            tokenPrices.tokenId,
-            tokenPrices.baseTokenId,
-            tokenPrices.timestamp,
-          ],
+          target: [tokenPrices.tokenId, tokenPrices.baseTokenId, tokenPrices.timestamp],
           set: {
             price: sql`excluded.price`,
             source: sql`excluded.source`,
@@ -1099,10 +1210,10 @@ export class PricingService {
         });
       logger.debug(
         { cachedCount: priceRecords.length },
-        "Successfully cached price results to database"
+        'Successfully cached price results to database'
       );
     } catch (error) {
-      logger.error({ error, priceRecords }, "Failed to cache price results");
+      logger.error({ error, priceRecords }, 'Failed to cache price results');
     }
   }
 
@@ -1122,26 +1233,25 @@ export class PricingService {
     sourcePrefix: string;
     isTierLimitation?: boolean;
   } {
-    if (error && typeof error === "object" && "code" in error) {
+    if (error && typeof error === 'object' && 'code' in error) {
       const nodeError = error as { code: string };
-      if (nodeError.code === "ECONNRESET" || nodeError.code === "ENOTFOUND") {
+      if (nodeError.code === 'ECONNRESET' || nodeError.code === 'ENOTFOUND') {
         return {
           shouldCache: false,
           cacheWindow: 0,
-          sourcePrefix: "network_error",
+          sourcePrefix: 'network_error',
         };
       }
     }
 
     if (
       response &&
-      (response.status === 429 ||
-        (response.status >= 500 && response.status < 600))
+      (response.status === 429 || (response.status >= 500 && response.status < 600))
     ) {
       return {
         shouldCache: false,
         cacheWindow: 0,
-        sourcePrefix: "retryable_error",
+        sourcePrefix: 'retryable_error',
       };
     }
 
@@ -1149,7 +1259,7 @@ export class PricingService {
       return {
         shouldCache: true,
         cacheWindow: this.UNAVAILABLE_CACHE_MS,
-        sourcePrefix: "tier_limitation",
+        sourcePrefix: 'tier_limitation',
         isTierLimitation: true,
       };
     }
@@ -1158,7 +1268,7 @@ export class PricingService {
       return {
         shouldCache: true,
         cacheWindow: this.UNAVAILABLE_CACHE_MS,
-        sourcePrefix: "unauthorized_access",
+        sourcePrefix: 'unauthorized_access',
         isTierLimitation: true,
       };
     }
@@ -1167,17 +1277,16 @@ export class PricingService {
       return {
         shouldCache: true,
         cacheWindow: this.RETRYABLE_FAILURE_CACHE_MS,
-        sourcePrefix: "empty_response",
+        sourcePrefix: 'empty_response',
       };
     }
 
     if (response && response.status >= 400 && response.status < 500) {
-      const isTierIssue =
-        response.status === 404 && this.isPotentialTierLimitation(error);
+      const isTierIssue = response.status === 404 && this.isPotentialTierLimitation(error);
       return {
         shouldCache: true,
         cacheWindow: this.UNAVAILABLE_CACHE_MS,
-        sourcePrefix: isTierIssue ? "tier_limitation" : "unavailable",
+        sourcePrefix: isTierIssue ? 'tier_limitation' : 'unavailable',
         isTierLimitation: isTierIssue,
       };
     }
@@ -1185,7 +1294,7 @@ export class PricingService {
     return {
       shouldCache: true,
       cacheWindow: this.RETRYABLE_FAILURE_CACHE_MS,
-      sourcePrefix: "unknown_error",
+      sourcePrefix: 'unknown_error',
     };
   }
 
@@ -1194,15 +1303,15 @@ export class PricingService {
 
     const message = error.message.toLowerCase();
     const tierKeywords = [
-      "subscription",
-      "plan",
-      "tier",
-      "premium",
-      "upgrade",
-      "access denied",
-      "not authorized",
-      "forbidden",
-      "limit exceeded",
+      'subscription',
+      'plan',
+      'tier',
+      'premium',
+      'upgrade',
+      'access denied',
+      'not authorized',
+      'forbidden',
+      'limit exceeded',
     ];
 
     return tierKeywords.some((keyword) => message.includes(keyword));
@@ -1210,7 +1319,7 @@ export class PricingService {
 
   private tokenHasFinnhubMetadata(token: Token): boolean {
     try {
-      const metadata = JSON.parse(token.providerMetadata || "{}");
+      const metadata = JSON.parse(token.providerMetadata || '{}');
       return !!metadata.finnhub?.symbol;
     } catch {
       return false;
@@ -1227,31 +1336,19 @@ export class PricingService {
       dataEmpty?: boolean;
     }
   ): ProviderPriceResult {
-    const cacheStrategy = this.shouldCacheFailure(
-      error,
-      options?.response,
-      options?.dataEmpty
-    );
+    const cacheStrategy = this.shouldCacheFailure(error, options?.response, options?.dataEmpty);
 
     if (!cacheStrategy.shouldCache) {
       logger.debug(
         { error, tokenId, provider: providerName },
         `${providerName}: Not caching ${cacheStrategy.sourcePrefix}, will retry`
       );
-      const errorMessage =
-        error instanceof Error ? error.message : String(error);
-      throw new Error(
-        `${providerName} ${cacheStrategy.sourcePrefix}: ${errorMessage}`
-      );
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      throw new Error(`${providerName} ${cacheStrategy.sourcePrefix}: ${errorMessage}`);
     }
 
     if (cacheStrategy.isTierLimitation) {
-      this.updateTokenProviderMetadata(
-        tokenId,
-        providerName,
-        cacheStrategy.sourcePrefix,
-        error
-      );
+      this.updateTokenProviderMetadata(tokenId, providerName, cacheStrategy.sourcePrefix, error);
     }
 
     logger.warn(
@@ -1268,7 +1365,7 @@ export class PricingService {
 
     return {
       tokenId,
-      price: "0",
+      price: '0',
       timestamp,
       source: `${providerName}_${cacheStrategy.sourcePrefix}`,
     };
@@ -1293,20 +1390,17 @@ export class PricingService {
         return;
       }
 
-      const errorMessage =
-        error instanceof Error ? error.message : String(error);
+      const errorMessage = error instanceof Error ? error.message : String(error);
 
       let currentMetadata = {} as Record<string, unknown>;
       if (token.providerMetadata) {
         try {
           currentMetadata =
-            typeof token.providerMetadata === "string"
+            typeof token.providerMetadata === 'string'
               ? JSON.parse(token.providerMetadata)
               : (token.providerMetadata as Record<string, unknown>);
         } catch (parseError) {
-          logger.warn(
-            `Failed to parse existing metadata for token ${tokenId}: ${parseError}`
-          );
+          logger.warn(`Failed to parse existing metadata for token ${tokenId}: ${parseError}`);
           currentMetadata = {};
         }
       }
@@ -1318,9 +1412,7 @@ export class PricingService {
           reason: sourcePrefix,
           message: errorMessage,
           detectedAt: new Date().toISOString(),
-          requiresPremium:
-            sourcePrefix.includes("tier") ||
-            sourcePrefix.includes("unauthorized"),
+          requiresPremium: sourcePrefix.includes('tier') || sourcePrefix.includes('unauthorized'),
         },
       };
 
@@ -1340,7 +1432,7 @@ export class PricingService {
           sourcePrefix,
           requiresPremium: updatedMetadata.pricingUnavailable.requiresPremium,
         },
-        "Updated token metadata for pricing limitation"
+        'Updated token metadata for pricing limitation'
       );
     } catch (err) {
       logger.error(
@@ -1348,7 +1440,7 @@ export class PricingService {
           tokenId,
           error: err instanceof Error ? err.message : String(err),
         },
-        "Failed to update token metadata"
+        'Failed to update token metadata'
       );
     }
   }
@@ -1361,6 +1453,151 @@ export class PricingService {
       .limit(1);
 
     return result[0] || null;
+  }
+
+  /**
+   * Validate if a token can be priced by CoinGecko or DeFiLlama
+   * Used before creating tokens during wallet import to filter out unpriceable tokens
+   *
+   * @param tokenData - Token information including symbol, name, and metadata
+   * @param baseCurrency - Base currency for pricing (usually "USD")
+   * @returns true if token can be priced, false otherwise
+   */
+  async canTokenBePriced(
+    tokenData: {
+      symbol: string;
+      name: string;
+      metadata: Record<string, unknown>;
+      typeCode: string;
+    },
+    baseCurrency = 'USD'
+  ): Promise<{ canBePriced: boolean; provider?: string; reason?: string }> {
+    // Skip validation for non-crypto tokens (they use other providers)
+    if (tokenData.typeCode.toLowerCase() !== 'crypto') {
+      return {
+        canBePriced: true,
+        provider: 'other',
+        reason: 'Non-crypto token type',
+      };
+    }
+
+    try {
+      const baseCurrencyToken = await this.getTokenBySymbol(baseCurrency);
+      if (!baseCurrencyToken) {
+        logger.warn({ baseCurrency }, 'Base currency token not found in validation');
+        return { canBePriced: false, reason: 'Base currency not found' };
+      }
+
+      const context: ProviderExecutionContext = {
+        baseCurrency: baseCurrencyToken,
+        timestamp: new Date(),
+      };
+
+      // Try CoinGecko first
+      const coinGeckoId =
+        (tokenData.metadata.coingecko as { id?: string })?.id || tokenData.symbol.toLowerCase();
+      const coinGeckoProvider = this.providers.coinGecko;
+
+      if (coinGeckoProvider) {
+        try {
+          const coinGeckoResults = await coinGeckoProvider.fetchPrices(
+            [
+              {
+                token: {
+                  id: 'temp-validation-id',
+                  symbol: tokenData.symbol,
+                  name: tokenData.name,
+                  typeId: 'temp',
+                  decimals: 18,
+                  iconUrl: null,
+                  providerMetadata: JSON.stringify(tokenData.metadata),
+                  isActive: true,
+                  createdAt: new Date(),
+                  updatedAt: new Date(),
+                },
+                provider: 'coinGecko',
+                providerTokenId: coinGeckoId,
+              },
+            ],
+            context
+          );
+
+          const coinGeckoResult = coinGeckoResults[0];
+          if (
+            coinGeckoResult &&
+            coinGeckoResult.price !== '0' &&
+            !coinGeckoResult.source?.includes('empty')
+          ) {
+            return {
+              canBePriced: true,
+              provider: 'CoinGecko',
+              reason: 'Found on CoinGecko',
+            };
+          }
+        } catch (error) {
+          logger.debug(
+            { error, symbol: tokenData.symbol },
+            'CoinGecko validation failed, trying DeFiLlama'
+          );
+        }
+      }
+
+      // Try DeFiLlama fallback if token has contract address
+      const contractAddress = tokenData.metadata.contractAddress as string | undefined;
+      const chainId = tokenData.metadata.chainId as number | undefined;
+
+      if (contractAddress && chainId) {
+        const defiLlamaProvider = this.providers.defiLlama;
+        if (defiLlamaProvider) {
+          try {
+            const defiLlamaResults = await defiLlamaProvider.fetchPrices(
+              [
+                {
+                  token: {
+                    id: 'temp-validation-id',
+                    symbol: tokenData.symbol,
+                    name: tokenData.name,
+                    typeId: 'temp',
+                    decimals: 18,
+                    iconUrl: null,
+                    providerMetadata: JSON.stringify(tokenData.metadata),
+                    isActive: true,
+                    createdAt: new Date(),
+                    updatedAt: new Date(),
+                  },
+                  provider: 'defiLlama',
+                  providerTokenId: `${chainId}:${contractAddress}`,
+                },
+              ],
+              context
+            );
+
+            const defiLlamaResult = defiLlamaResults[0];
+            if (
+              defiLlamaResult &&
+              defiLlamaResult.price !== '0' &&
+              !defiLlamaResult.source?.includes('empty')
+            ) {
+              return {
+                canBePriced: true,
+                provider: 'DeFiLlama',
+                reason: 'Found on DeFiLlama',
+              };
+            }
+          } catch (error) {
+            logger.debug({ error, symbol: tokenData.symbol }, 'DeFiLlama validation failed');
+          }
+        }
+      }
+
+      return {
+        canBePriced: false,
+        reason: 'Not found on CoinGecko or DeFiLlama',
+      };
+    } catch (error) {
+      logger.error({ error, symbol: tokenData.symbol }, 'Token pricing validation failed');
+      return { canBePriced: false, reason: 'Validation error' };
+    }
   }
 }
 

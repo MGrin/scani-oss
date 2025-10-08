@@ -126,3 +126,28 @@ const createAccount = trpc.accounts.create.useMutation();
 - Don't hardcode financial calculations (use `Decimal.js` and shared utilities)
 - Never expose sensitive data in frontend - all auth via backend tRPC procedures
 - Never use `npm` or `yarn` or `npx` or something else - always use `bun` and `bunx`
+
+## Documentation Organization
+
+**All documentation files (.md) must follow this structure:**
+
+- **Root README.md**: Project overview and quick start guide (keep in root)
+- **Core Documentation**: Only 3 files allowed in `/docs`:
+  - `ARCHITECTURE.md` - Technical architecture and design patterns
+  - `EXECUTIVE_SUMMARY.md` - Project status and strategic overview
+  - `ROADMAP.md` - Development roadmap and feature tracking
+- **Detailed Documentation**: All other documentation in `/docs` subfolders:
+  - `/docs/features/` - Feature specifications and implementation guides
+  - `/docs/technical/` - Technical deep-dives and API documentation
+  - `/docs/stability/` - Stability fixes, debugging guides, and analysis reports
+  - `/docs/implementation/` - Implementation summaries and batch operation docs
+  - `/docs/backend-fixes/` - Backend-specific bug fixes and patches
+  - `/docs/archive/` - Historical documentation and deprecated guides
+
+**Rules:**
+
+- Never create .md files in root (except README.md)
+- Never create .md files in `/apps/backend` or `/apps/frontend`
+- Never create .md files in nested source directories
+- All AI-generated reports must go into appropriate `/docs` subfolder
+- Keep the 3 core docs files updated with current project state

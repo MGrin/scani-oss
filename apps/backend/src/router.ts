@@ -1,5 +1,6 @@
 import { accountTypesRouter } from './routers/account-types';
 import { accountsRouter } from './routers/accounts';
+import { batchOperationsRouter } from './routers/batch-operations';
 import { holdingsRouter } from './routers/holdings';
 import { institutionTypesRouter } from './routers/institution-types';
 import { institutionsRouter } from './routers/institutions';
@@ -10,6 +11,7 @@ import { tokensRouter } from './routers/tokens';
 import { transactionTypesRouter } from './routers/transaction-types';
 import { transactionsRouter } from './routers/transactions';
 import { usersRouter } from './routers/users';
+import { walletRouter } from './routers/wallet';
 import { publicProcedure, router } from './trpc';
 
 export const appRouter = router({
@@ -31,6 +33,12 @@ export const appRouter = router({
   accounts: accountsRouter,
   holdings: holdingsRouter,
   transactions: transactionsRouter,
+
+  // Batch operations (protected) - Atomic multi-entity operations
+  batchOperations: batchOperationsRouter,
+
+  // Wallet & blockchain features (protected)
+  wallet: walletRouter,
 
   // AI-powered features (protected)
   screenshotParsing: screenshotParsingRouter,

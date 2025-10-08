@@ -367,23 +367,33 @@ export function TransactionForm({
     setIsSubmitting(true);
     setHasUnsavedChanges(false);
 
-    const submitData = {
-      holdingId: data.holdingId,
-      type: data.type,
-      amount: data.amount,
-      fee: data.fee || '0',
-      description: data.description?.trim() || undefined,
-      reference: data.reference?.trim() || undefined,
-      timestamp: data.timestamp,
-    };
+    try {
+      const submitData = {
+        holdingId: data.holdingId,
+        type: data.type,
+        amount: data.amount,
+        fee: data.fee || '0',
+        description: data.description?.trim() || undefined,
+        reference: data.reference?.trim() || undefined,
+        timestamp: data.timestamp,
+      };
 
-    if (mode === 'create') {
-      createTransaction.mutate(submitData);
-    } else if (transaction) {
-      updateTransaction.mutate({
-        id: transaction.id,
-        data: submitData,
+      if (mode === 'create') {
+        await createTransaction.mutateAsync(submitData);
+      } else if (transaction) {
+        await updateTransaction.mutateAsync({
+          id: transaction.id,
+          data: submitData,
+        });
+      }
+    } catch (error) {
+      console.error('Error submitting transaction:', error);
+      toast({
+        title: 'Error',
+        description: error instanceof Error ? error.message : 'Failed to save transaction',
+        variant: 'destructive',
       });
+      setIsSubmitting(false);
     }
   };
 

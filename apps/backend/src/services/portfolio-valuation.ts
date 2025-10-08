@@ -171,11 +171,30 @@ export class PortfolioValuationService {
       .map((holding) => holding.token)
       .filter((token, index, self) => self.findIndex((t) => t.id === token.id) === index);
 
+    this.logger.info(
+      {
+        userId,
+        totalHoldings: holdings.length,
+        tokensNeedingPrice: tokensToPrice.length,
+        baseCurrency: baseCurrency.symbol,
+      },
+      `Processing portfolio value: ${tokensToPrice.length} tokens need pricing`
+    );
+
     // Fetch all prices at once using the correct API
     const priceResults =
       tokensToPrice.length > 0
         ? await this.pricingService.getTokenPrices(tokensToPrice, baseCurrency.symbol, now)
         : new Map<string, string>();
+
+    this.logger.info(
+      {
+        userId,
+        pricesFetched: priceResults.size,
+        tokensRequested: tokensToPrice.length,
+      },
+      `Pricing complete: ${priceResults.size}/${tokensToPrice.length} prices retrieved`
+    );
 
     // Process holdings with batched price data
     const portfolioHoldings = [];
