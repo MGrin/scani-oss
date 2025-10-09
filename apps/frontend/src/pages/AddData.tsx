@@ -444,11 +444,11 @@ export function AddData() {
 
   const utils = trpc.useUtils();
 
-  // CRITICAL FIX: Helper to wait for entity to appear in cache after mutation
+  // Helper to wait for entity to appear in cache after mutation
   const waitForCacheSettlement = async (
     queryKey: 'institutions' | 'accounts' | 'holdings',
     expectedId?: string,
-    maxRetries = 10
+    maxRetries = 30 // Increased from 10 to 30 (3 seconds total)
   ) => {
     for (let i = 0; i < maxRetries; i++) {
       await new Promise((resolve) => setTimeout(resolve, 100));
@@ -1077,7 +1077,15 @@ export function AddData() {
           throw new Error('Failed to create holding - no ID returned');
         }
 
-        // CRITICAL FIX: Wait for holding to settle in cache
+        // Invalidate caches first to trigger refetch
+        await Promise.all([
+          utils.holdings.getAll.invalidate(),
+          utils.accounts.getAll.invalidate(),
+          utils.institutions.getAll.invalidate(),
+          utils.tokens.getAll.invalidate(),
+        ]);
+
+        // Then wait for holding to appear in the refetched cache
         await waitForCacheSettlement('holdings', createdHolding.id);
 
         console.log('Holding created and settled:', createdHolding.id);
@@ -1088,15 +1096,7 @@ export function AddData() {
             'Holding created successfully! Your new holding has been added to your portfolio.',
         });
 
-        // CRITICAL FIX: Ensure all invalidations complete before navigation
-        await Promise.all([
-          utils.holdings.getAll.invalidate(),
-          utils.accounts.getAll.invalidate(),
-          utils.institutions.getAll.invalidate(),
-          utils.tokens.getAll.invalidate(),
-        ]);
-
-        // Give React Query time to process invalidations
+        // Give React Query a moment to finish processing before navigation
         await new Promise((resolve) => setTimeout(resolve, 100));
 
         navigate('/holdings');
