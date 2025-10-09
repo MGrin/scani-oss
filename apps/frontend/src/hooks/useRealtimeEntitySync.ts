@@ -34,10 +34,9 @@ function resolveWebSocketUrl() {
 
   const apiUrl = (import.meta.env.VITE_API_URL as string | undefined) ?? 'http://localhost:3001';
   const parsed = new URL(apiUrl);
-  const port = parsed.port ? Number(parsed.port) : parsed.protocol === 'https:' ? 443 : 80;
 
+  // Use the same port as the API server, just change protocol to ws/wss
   parsed.protocol = parsed.protocol === 'https:' ? 'wss:' : 'ws:';
-  parsed.port = String(port + 1);
   parsed.pathname = '';
   parsed.search = '';
 

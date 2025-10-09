@@ -209,18 +209,18 @@ const app = new Elysia()
   });
 
 // Create WebSocket server for real-time updates with enhanced logging
+// Use noServer mode - we'll attach to HTTP server after it's created
 const wss = new WebSocketServer({
-  port: PORT + 1,
-  host: HOST,
+  noServer: true, // Don't create a new HTTP server
   maxPayload: 256 * 1024, // 256KB
 });
 
 wsLogger.info(
   {
-    port: PORT + 1,
+    port: PORT,
     host: HOST,
   },
-  '🔌 WebSocket server initializing'
+  '🔌 WebSocket server initializing (will attach to HTTP server)'
 );
 
 // WebSocket connection handling with comprehensive logging
@@ -235,7 +235,7 @@ wss.on('connection', async (ws, req) => {
   let authenticatedUserId: string | null = null;
   try {
     const urlStr = req.url || '/';
-    const url = new URL(urlStr, `ws://${HOST}:${PORT + 1}`);
+    const url = new URL(urlStr, `ws://${HOST}:${PORT}`);
     const token = url.searchParams.get('token') || undefined;
     if (!token) {
       ws.close(4401, 'Unauthorized');
@@ -344,12 +344,35 @@ const server = app.listen(PORT, () => {
   logger.info(
     {
       httpUrl: `http://${HOST}:${PORT}`,
-      wsUrl: `ws://${HOST}:${PORT + 1}`,
+      wsUrl: `ws://${HOST}:${PORT}`,
       environment: process.env.NODE_ENV || 'development',
     },
     '🎉 Scani Backend Server started successfully'
   );
 });
+
+// Attach WebSocket upgrade handler to the HTTP server
+// Get the underlying Node.js HTTP server from Elysia
+const httpServer = (server as unknown as { server: import('http').Server }).server;
+if (httpServer && typeof httpServer.on === 'function') {
+  httpServer.on('upgrade', (request: import('http').IncomingMessage, socket: import('stream').Duplex, head: Buffer) => {
+    wsLogger.info(
+      {
+        url: request.url,
+        origin: request.headers.origin,
+      },
+      '🔄 WebSocket upgrade request received'
+    );
+
+    wss.handleUpgrade(request, socket, head, (ws) => {
+      wss.emit('connection', ws, request);
+    });
+  });
+
+  wsLogger.info('✅ WebSocket upgrade handler attached to HTTP server');
+} else {
+  wsLogger.error('❌ Failed to attach WebSocket upgrade handler - no underlying HTTP server found');
+}
 
 // Graceful shutdown with logging
 const gracefulShutdown = (signal: string) => {
