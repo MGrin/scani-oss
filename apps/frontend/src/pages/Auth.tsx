@@ -29,6 +29,9 @@ export function Auth() {
 
   // Detect if running in PWA
   const runningAsPWA = isPWA();
+  
+  // Log for debugging
+  console.log('[Auth Page] Running as PWA:', runningAsPWA);
 
   const emailId = useId();
 
@@ -183,10 +186,18 @@ export function Auth() {
 
             <div className="text-center text-sm text-muted-foreground">
               <p>
-                We'll send you a secure magic link to sign in. <br />
+                {runningAsPWA
+                  ? "We'll send you a 6-digit code to sign in."
+                  : "We'll send you a secure magic link to sign in."}{' '}
+                <br />
                 New to Scani? Your account will be created automatically.
               </p>
             </div>
+            {import.meta.env.DEV && (
+              <div className="text-center text-xs text-muted-foreground mt-2">
+                Mode: {runningAsPWA ? 'PWA (Code)' : 'Browser (Link)'}
+              </div>
+            )}
           </form>
         </CardContent>
       </Card>

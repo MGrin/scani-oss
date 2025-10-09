@@ -10,40 +10,46 @@ export type DisplayMode = 'standalone' | 'minimal-ui' | 'fullscreen' | 'browser'
 
 /**
  * Detects if the app is running as an installed PWA
+ * Returns true only if app is installed AND running in standalone mode
  */
 export function isPWA(): boolean {
-  // Check if running in standalone mode
-  if (isStandalone()) {
-    return true;
-  }
+  // Must be in standalone mode (not in browser tab)
+  const standalone = isStandalone();
+  
+  // Check if launched from home screen (iOS specific)
+  const iosStandalone = window.navigator && 'standalone' in window.navigator 
+    ? (window.navigator as Navigator & { standalone?: boolean }).standalone === true
+    : false;
 
-  // Check if launched from home screen (iOS)
-  if (window.navigator && 'standalone' in window.navigator) {
-    return (window.navigator as Navigator & { standalone?: boolean }).standalone === true;
-  }
-
-  return false;
+  const result = standalone || iosStandalone;
+  
+  // Debug logging
+  console.log('[PWA Detection]', {
+    standalone,
+    iosStandalone,
+    displayMode: getDisplayMode(),
+    result,
+  });
+  
+  return result;
 }
 
 /**
  * Detects if the app is running in standalone display mode
+ * Note: Does NOT include fullscreen mode (which is just F11 in browser)
  */
 export function isStandalone(): boolean {
-  // Check display-mode media query
+  // Check display-mode: standalone (actual PWA mode)
   if (window.matchMedia('(display-mode: standalone)').matches) {
     return true;
   }
 
-  // Check display-mode: fullscreen (also counts as standalone)
-  if (window.matchMedia('(display-mode: fullscreen)').matches) {
-    return true;
-  }
-
-  // Check display-mode: minimal-ui (also counts as standalone-like)
+  // Check display-mode: minimal-ui (PWA-like mode)
   if (window.matchMedia('(display-mode: minimal-ui)').matches) {
     return true;
   }
 
+  // DO NOT check fullscreen - that's just F11 in a browser, not PWA mode
   return false;
 }
 
