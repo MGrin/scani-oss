@@ -1,39 +1,53 @@
-import { Building2, Camera, Check, Coins, PenTool, Wallet, X } from 'lucide-react';
-import { useEffect, useId, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import {
+  Building2,
+  Camera,
+  Check,
+  Coins,
+  PenTool,
+  Wallet,
+  X,
+} from "lucide-react";
+import { useEffect, useId, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import {
   AccountTypeSelector,
   InstitutionSelector,
   InstitutionTypeSelector,
-} from '@/components/selectors/SearchableSelectors';
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Progress } from '@/components/ui/progress';
-import { useAuth } from '@/contexts/AuthContext';
-import { useEntityData } from '@/contexts/EntityDataContext';
-import { useToast } from '@/hooks/use-toast';
-import { trpc } from '@/lib/trpc';
+} from "@/components/selectors/SearchableSelectors";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Progress } from "@/components/ui/progress";
+import { useAuth } from "@/contexts/AuthContext";
+import { useEntityData } from "@/contexts/EntityDataContext";
+import { useToast } from "@/hooks/use-toast";
+import { trpc } from "@/lib/trpc";
 
 type OnboardingStep =
-  | 'welcome'
-  | 'entry-method'
-  | 'institution-selection'
-  | 'account-creation'
-  | 'data-entry'
-  | 'complete';
+  | "welcome"
+  | "entry-method"
+  | "institution-selection"
+  | "account-creation"
+  | "data-entry"
+  | "complete";
 
-type EntryMethod = 'manual' | 'screenshot' | 'wallet' | null;
+type EntryMethod = "manual" | "screenshot" | "wallet" | null;
 
 const STEP_ORDER: OnboardingStep[] = [
-  'welcome',
-  'entry-method',
-  'institution-selection',
-  'account-creation',
-  'data-entry',
-  'complete',
+  "welcome",
+  "entry-method",
+  "institution-selection",
+  "account-creation",
+  "data-entry",
+  "complete",
 ];
 
 export function OnboardingWizard() {
@@ -42,18 +56,19 @@ export function OnboardingWizard() {
   const { user, loading: authLoading } = useAuth();
   const institutionSelectId = useId();
 
-  const [currentStep, setCurrentStep] = useState<OnboardingStep>('welcome');
+  const [currentStep, setCurrentStep] = useState<OnboardingStep>("welcome");
   const [showWizard, setShowWizard] = useState(false);
-  const [selectedEntryMethod, setSelectedEntryMethod] = useState<EntryMethod>(null);
+  const [selectedEntryMethod, setSelectedEntryMethod] =
+    useState<EntryMethod>(null);
 
   // Form state for institution and account creation
   const [createNewInstitution, setCreateNewInstitution] = useState(false);
-  const [selectedInstitutionId, setSelectedInstitutionId] = useState('');
-  const [newInstitutionName, setNewInstitutionName] = useState('');
-  const [newInstitutionType, setNewInstitutionType] = useState('');
-  const [newInstitutionWebsite, setNewInstitutionWebsite] = useState('');
-  const [newAccountName, setNewAccountName] = useState('');
-  const [newAccountType, setNewAccountType] = useState('');
+  const [selectedInstitutionId, setSelectedInstitutionId] = useState("");
+  const [newInstitutionName, setNewInstitutionName] = useState("");
+  const [newInstitutionType, setNewInstitutionType] = useState("");
+  const [newInstitutionWebsite, setNewInstitutionWebsite] = useState("");
+  const [newAccountName, setNewAccountName] = useState("");
+  const [newAccountType, setNewAccountType] = useState("");
   const [createdAccountId, setCreatedAccountId] = useState<string | null>(null);
 
   // Get entity data
@@ -78,7 +93,7 @@ export function OnboardingWizard() {
       return;
     }
 
-    const hasCompleted = localStorage.getItem('scani-onboarding-completed');
+    const hasCompleted = localStorage.getItem("scani-onboarding-completed");
     if (!hasCompleted) {
       setShowWizard(true);
     }
@@ -88,14 +103,14 @@ export function OnboardingWizard() {
   const progress = ((currentStepIndex + 1) / STEP_ORDER.length) * 100;
 
   const handleSkip = () => {
-    localStorage.setItem('scani-onboarding-completed', 'true');
+    localStorage.setItem("scani-onboarding-completed", "true");
     setShowWizard(false);
   };
 
   const handleComplete = () => {
-    localStorage.setItem('scani-onboarding-completed', 'true');
+    localStorage.setItem("scani-onboarding-completed", "true");
     setShowWizard(false);
-    navigate('/dashboard');
+    navigate("/dashboard");
   };
 
   const handleBack = () => {
@@ -112,8 +127,10 @@ export function OnboardingWizard() {
     }
   };
 
-  const handleEntryMethodSelect = (method: 'manual' | 'screenshot' | 'wallet') => {
-    if (method === 'wallet') {
+  const handleEntryMethodSelect = (
+    method: "manual" | "screenshot" | "wallet"
+  ) => {
+    if (method === "wallet") {
       // Not implemented yet
       return;
     }
@@ -135,7 +152,7 @@ export function OnboardingWizard() {
         institutionId = institution.id;
 
         toast({
-          title: 'Institution created',
+          title: "Institution created",
           description: `${newInstitutionName} has been added to your institutions.`,
         });
       }
@@ -149,11 +166,11 @@ export function OnboardingWizard() {
         });
 
         if (!account) {
-          throw new Error('Failed to create account');
+          throw new Error("Failed to create account");
         }
 
         toast({
-          title: 'Account created',
+          title: "Account created",
           description: `${newAccountName} is ready to track your holdings.`,
         });
 
@@ -165,13 +182,14 @@ export function OnboardingWizard() {
         setCreatedAccountId(account.id);
 
         // Move to data-entry step
-        setCurrentStep('data-entry');
+        setCurrentStep("data-entry");
       }
     } catch (error) {
       toast({
-        title: 'Error',
-        description: error instanceof Error ? error.message : 'Failed to create account',
-        variant: 'destructive',
+        title: "Error",
+        description:
+          error instanceof Error ? error.message : "Failed to create account",
+        variant: "destructive",
       });
     }
   };
@@ -180,7 +198,8 @@ export function OnboardingWizard() {
     ? newInstitutionName && newInstitutionType
     : selectedInstitutionId;
 
-  const canCreateAccount = newAccountName && newAccountType && canProceedToAccountCreation;
+  const canCreateAccount =
+    newAccountName && newAccountType && canProceedToAccountCreation;
 
   if (!showWizard) {
     return null;
@@ -205,16 +224,17 @@ export function OnboardingWizard() {
 
         <CardContent className="space-y-6">
           {/* Welcome Step */}
-          {currentStep === 'welcome' && (
+          {currentStep === "welcome" && (
             <div className="flex flex-col items-center text-center space-y-4 py-8">
               <Coins className="h-16 w-16 text-primary mb-4" />
               <h2 className="text-3xl font-bold">Welcome to Scani!</h2>
               <p className="text-muted-foreground max-w-md text-lg">
-                Your personal finance companion for tracking investments across all your accounts.
+                Your personal finance companion for tracking investments across
+                all your accounts.
               </p>
               <p className="text-muted-foreground max-w-md">
-                Let's get you set up in just a few steps. We'll create your first account and help
-                you add your holdings.
+                Let's get you set up in just a few steps. We'll create your
+                first account and help you add your holdings.
               </p>
 
               <div className="flex justify-center pt-4">
@@ -227,17 +247,21 @@ export function OnboardingWizard() {
           )}
 
           {/* Entry Method Selection */}
-          {currentStep === 'entry-method' && (
+          {currentStep === "entry-method" && (
             <div className="space-y-6 py-4">
               <div className="text-center space-y-2">
-                <h2 className="text-2xl font-bold">How would you like to add your data?</h2>
-                <p className="text-muted-foreground">Choose the method that works best for you</p>
+                <h2 className="text-2xl font-bold">
+                  How would you like to add your data?
+                </h2>
+                <p className="text-muted-foreground">
+                  Choose the method that works best for you
+                </p>
               </div>
 
               <div className="grid gap-4 md:grid-cols-3">
                 <Card
                   className="cursor-pointer hover:shadow-md transition-shadow hover:border-primary"
-                  onClick={() => handleEntryMethodSelect('manual')}
+                  onClick={() => handleEntryMethodSelect("manual")}
                 >
                   <CardHeader>
                     <CardTitle className="flex items-center gap-2 text-base">
@@ -254,7 +278,7 @@ export function OnboardingWizard() {
 
                 <Card
                   className="cursor-pointer hover:shadow-md transition-shadow hover:border-primary"
-                  onClick={() => handleEntryMethodSelect('screenshot')}
+                  onClick={() => handleEntryMethodSelect("screenshot")}
                 >
                   <CardHeader>
                     <CardTitle className="flex items-center gap-2 text-base">
@@ -297,13 +321,16 @@ export function OnboardingWizard() {
           )}
 
           {/* Institution Selection */}
-          {currentStep === 'institution-selection' && (
+          {currentStep === "institution-selection" && (
             <div className="space-y-6 py-4">
               <div className="text-center space-y-2">
                 <Building2 className="h-12 w-12 text-primary mx-auto mb-2" />
-                <h2 className="text-2xl font-bold">Select or Create Institution</h2>
+                <h2 className="text-2xl font-bold">
+                  Select or Create Institution
+                </h2>
                 <p className="text-muted-foreground">
-                  Choose where you hold your assets (bank, brokerage, exchange, etc.)
+                  Choose where you hold your assets (bank, brokerage, exchange,
+                  etc.)
                 </p>
               </div>
 
@@ -312,11 +339,11 @@ export function OnboardingWizard() {
                   <Label htmlFor={institutionSelectId}>Institution</Label>
                   <InstitutionSelector
                     id={institutionSelectId}
-                    value={createNewInstitution ? 'new' : selectedInstitutionId}
+                    value={createNewInstitution ? "new" : selectedInstitutionId}
                     onValueChange={(val) => {
-                      if (val === 'new') {
+                      if (val === "new") {
                         setCreateNewInstitution(true);
-                        setSelectedInstitutionId('');
+                        setSelectedInstitutionId("");
                       } else {
                         setCreateNewInstitution(false);
                         setSelectedInstitutionId(val);
@@ -329,15 +356,17 @@ export function OnboardingWizard() {
                 {createNewInstitution && (
                   <div className="space-y-4 border rounded-lg p-4 bg-muted/20">
                     <div className="flex justify-between items-center">
-                      <h3 className="text-sm font-medium">New Institution Details</h3>
+                      <h3 className="text-sm font-medium">
+                        New Institution Details
+                      </h3>
                       <Button
                         variant="ghost"
                         size="sm"
                         onClick={() => {
                           setCreateNewInstitution(false);
-                          setNewInstitutionName('');
-                          setNewInstitutionType('');
-                          setNewInstitutionWebsite('');
+                          setNewInstitutionName("");
+                          setNewInstitutionType("");
+                          setNewInstitutionWebsite("");
                         }}
                       >
                         Cancel
@@ -367,7 +396,9 @@ export function OnboardingWizard() {
                       <Input
                         placeholder="https://example.com"
                         value={newInstitutionWebsite}
-                        onChange={(e) => setNewInstitutionWebsite(e.target.value)}
+                        onChange={(e) =>
+                          setNewInstitutionWebsite(e.target.value)
+                        }
                       />
                     </div>
                   </div>
@@ -378,7 +409,10 @@ export function OnboardingWizard() {
                 <Button variant="outline" onClick={handleBack}>
                   Back
                 </Button>
-                <Button onClick={handleNext} disabled={!canProceedToAccountCreation}>
+                <Button
+                  onClick={handleNext}
+                  disabled={!canProceedToAccountCreation}
+                >
                   Continue
                 </Button>
               </div>
@@ -386,16 +420,17 @@ export function OnboardingWizard() {
           )}
 
           {/* Account Creation */}
-          {currentStep === 'account-creation' && (
+          {currentStep === "account-creation" && (
             <div className="space-y-6 py-4">
               <div className="text-center space-y-2">
                 <Wallet className="h-12 w-12 text-primary mx-auto mb-2" />
                 <h2 className="text-2xl font-bold">Create Your Account</h2>
                 <p className="text-muted-foreground">
-                  Set up an account to track holdings within{' '}
+                  Set up an account to track holdings within{" "}
                   {createNewInstitution
                     ? newInstitutionName
-                    : institutions?.find((i) => i.id === selectedInstitutionId)?.name}
+                    : institutions?.find((i) => i.id === selectedInstitutionId)
+                        ?.name}
                 </p>
               </div>
 
@@ -426,43 +461,53 @@ export function OnboardingWizard() {
                 <Button
                   onClick={handleCreateInstitutionAndAccount}
                   disabled={
-                    !canCreateAccount || createInstitution.isPending || createAccount.isPending
+                    !canCreateAccount ||
+                    createInstitution.isPending ||
+                    createAccount.isPending
                   }
                 >
                   {createInstitution.isPending || createAccount.isPending
-                    ? 'Creating...'
-                    : 'Create Account'}
+                    ? "Creating..."
+                    : "Create Account"}
                 </Button>
               </div>
             </div>
           )}
 
           {/* Data Entry Step */}
-          {currentStep === 'data-entry' && (
+          {currentStep === "data-entry" && (
             <div className="space-y-6 py-4">
-              {selectedEntryMethod === 'manual' ? (
+              {selectedEntryMethod === "manual" ? (
                 <>
                   <div className="text-center space-y-2">
                     <Coins className="h-12 w-12 text-primary mx-auto mb-2" />
-                    <h2 className="text-2xl font-bold">Add Your First Holding</h2>
+                    <h2 className="text-2xl font-bold">
+                      Add Your First Holding
+                    </h2>
                     <p className="text-muted-foreground">
-                      Enter details about the assets you hold in {newAccountName}
+                      Enter details about the assets you hold in{" "}
+                      {newAccountName}
                     </p>
                   </div>
 
                   <div className="flex flex-col items-center gap-4 py-6">
                     <p className="text-sm text-muted-foreground text-center max-w-md">
-                      You'll be redirected to the data entry page where you can add holdings to your
-                      account.
+                      You'll be redirected to the data entry page where you can
+                      add holdings to your account.
                     </p>
 
                     <div className="flex flex-col gap-2 w-full max-w-xs">
                       <Button
                         onClick={() => {
                           // Complete onboarding and navigate to add-data with account prefilled
-                          localStorage.setItem('scani-onboarding-completed', 'true');
+                          localStorage.setItem(
+                            "scani-onboarding-completed",
+                            "true"
+                          );
                           setShowWizard(false);
-                          navigate(`/add-data?accountId=${createdAccountId}&method=manual`);
+                          navigate(
+                            `/add-data?accountId=${createdAccountId}&method=manual`
+                          );
                         }}
                         className="gap-2"
                       >
@@ -470,7 +515,10 @@ export function OnboardingWizard() {
                         Go to Manual Entry
                       </Button>
 
-                      <Button variant="outline" onClick={() => setCurrentStep('complete')}>
+                      <Button
+                        variant="outline"
+                        onClick={() => setCurrentStep("complete")}
+                      >
                         Skip for Now
                       </Button>
                     </div>
@@ -483,29 +531,36 @@ export function OnboardingWizard() {
                     <div />
                   </div>
                 </>
-              ) : selectedEntryMethod === 'screenshot' ? (
+              ) : selectedEntryMethod === "screenshot" ? (
                 <>
                   <div className="text-center space-y-2">
                     <Camera className="h-12 w-12 text-primary mx-auto mb-2" />
                     <h2 className="text-2xl font-bold">Upload a Screenshot</h2>
                     <p className="text-muted-foreground">
-                      Let's add your holdings from a screenshot of {newAccountName}
+                      Let's add your holdings from a screenshot of{" "}
+                      {newAccountName}
                     </p>
                   </div>
 
                   <div className="flex flex-col items-center gap-4 py-6">
                     <p className="text-sm text-muted-foreground text-center max-w-md">
-                      You'll be redirected to the screenshot upload page where you can upload images
-                      and our AI will extract your holdings automatically.
+                      You'll be redirected to the screenshot upload page where
+                      you can upload images and our AI will extract your
+                      holdings automatically.
                     </p>
 
                     <div className="flex flex-col gap-2 w-full max-w-xs">
                       <Button
                         onClick={() => {
                           // Complete onboarding and navigate to add-data with account prefilled
-                          localStorage.setItem('scani-onboarding-completed', 'true');
+                          localStorage.setItem(
+                            "scani-onboarding-completed",
+                            "true"
+                          );
                           setShowWizard(false);
-                          navigate(`/add-data?accountId=${createdAccountId}&method=screenshot`);
+                          navigate(
+                            `/add-data?accountId=${createdAccountId}&method=screenshot`
+                          );
                         }}
                         className="gap-2"
                       >
@@ -513,7 +568,10 @@ export function OnboardingWizard() {
                         Go to Screenshot Upload
                       </Button>
 
-                      <Button variant="outline" onClick={() => setCurrentStep('complete')}>
+                      <Button
+                        variant="outline"
+                        onClick={() => setCurrentStep("complete")}
+                      >
                         Skip for Now
                       </Button>
                     </div>
@@ -531,15 +589,15 @@ export function OnboardingWizard() {
           )}
 
           {/* Complete Step */}
-          {currentStep === 'complete' && (
+          {currentStep === "complete" && (
             <div className="flex flex-col items-center text-center space-y-4 py-8">
               <div className="h-16 w-16 rounded-full bg-primary/10 flex items-center justify-center mb-4">
                 <Check className="h-8 w-8 text-primary" />
               </div>
               <h2 className="text-3xl font-bold">Welcome to Scani!</h2>
               <p className="text-muted-foreground max-w-md">
-                Your account <strong>{newAccountName}</strong> is ready. You can add holdings
-                anytime from your dashboard or the accounts page.
+                Your account <strong>{newAccountName}</strong> is ready. You can
+                add holdings anytime from your dashboard or the accounts page.
               </p>
 
               <div className="flex gap-3 pt-4">
