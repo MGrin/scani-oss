@@ -1,8 +1,6 @@
 import {
   Building2,
   Coins,
-  // CreditCard, // HIDDEN: Transaction UI temporarily hidden
-  DollarSign,
   Home,
   LogOut,
   Menu,
@@ -42,7 +40,7 @@ import { SkipLinks } from '@/components/ui/skip-links';
 import { useAuth } from '@/contexts/AuthContext';
 import { RealtimeProvider } from '@/contexts/RealtimeContext';
 import { useEnhancedToast } from '@/hooks/use-enhanced-toast';
-import { useTheme } from '@/hooks/useTheme';
+import { useTheme } from '@/hooks/use-theme';
 import { MOBILE_SPACING } from '@/lib/mobile-utils';
 import { trpc } from '@/lib/trpc';
 import { cn } from '@/lib/utils';
@@ -419,7 +417,7 @@ function LayoutContent({
       {/* Main content */}
       <div className="flex-1 md:ml-0 flex flex-col h-screen">
         {/* Top bar - not fixed, takes natural space */}
-        <header 
+        <header
           className="flex-shrink-0 bg-card border-b safe-top"
           style={{
             // Add safe area padding for status bar on mobile PWA
@@ -523,7 +521,7 @@ function LayoutContent({
                         </div>
                       </DropdownMenuLabel>
                       <DropdownMenuSeparator />
-                      
+
                       {/* Mobile-only: Theme Toggle */}
                       <div className="md:hidden">
                         <DropdownMenuItem onClick={toggleTheme}>

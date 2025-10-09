@@ -15,14 +15,15 @@ export type DisplayMode = 'standalone' | 'minimal-ui' | 'fullscreen' | 'browser'
 export function isPWA(): boolean {
   // Must be in standalone mode (not in browser tab)
   const standalone = isStandalone();
-  
+
   // Check if launched from home screen (iOS specific)
-  const iosStandalone = window.navigator && 'standalone' in window.navigator 
-    ? (window.navigator as Navigator & { standalone?: boolean }).standalone === true
-    : false;
+  const iosStandalone =
+    window.navigator && 'standalone' in window.navigator
+      ? (window.navigator as Navigator & { standalone?: boolean }).standalone === true
+      : false;
 
   const result = standalone || iosStandalone;
-  
+
   // Debug logging
   console.log('[PWA Detection]', {
     standalone,
@@ -30,7 +31,7 @@ export function isPWA(): boolean {
     displayMode: getDisplayMode(),
     result,
   });
-  
+
   return result;
 }
 

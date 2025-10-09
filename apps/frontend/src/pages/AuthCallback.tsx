@@ -83,7 +83,7 @@ export function AuthCallback() {
 
   if (status === 'loading') {
     return (
-      <div 
+      <div
         className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-950 py-12 px-4 sm:px-6 lg:px-8"
         style={{
           paddingTop: 'max(3rem, calc(3rem + env(safe-area-inset-top)))',
@@ -110,7 +110,7 @@ export function AuthCallback() {
 
   if (status === 'success') {
     return (
-      <div 
+      <div
         className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-950 py-12 px-4 sm:px-6 lg:px-8"
         style={{
           paddingTop: 'max(3rem, calc(3rem + env(safe-area-inset-top)))',
@@ -137,7 +137,7 @@ export function AuthCallback() {
 
   // Error state
   return (
-    <div 
+    <div
       className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-950 py-12 px-4 sm:px-6 lg:px-8"
       style={{
         paddingTop: 'max(3rem, calc(3rem + env(safe-area-inset-top)))',

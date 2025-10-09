@@ -37,14 +37,14 @@ export function PullToRefresh({ onRefresh, children, disabled = false }: PullToR
     const handleTouchStart = (e: TouchEvent) => {
       // Only start if we're at the top of the scrollable container
       const scrollTop = container.scrollTop;
-      if (scrollTop === 0 && !isRefreshing) {
+      if (scrollTop === 0 && !isRefreshing && e.touches[0]) {
         startY.current = e.touches[0].clientY;
         setIsPulling(true);
       }
     };
 
     const handleTouchMove = (e: TouchEvent) => {
-      if (!isPulling || isRefreshing) return;
+      if (!isPulling || isRefreshing || !e.touches[0]) return;
 
       currentY.current = e.touches[0].clientY;
       const deltaY = currentY.current - startY.current;
@@ -143,7 +143,8 @@ export function PullToRefresh({ onRefresh, children, disabled = false }: PullToR
                 isTriggered && !isRefreshing ? 'rotate-180' : ''
               )}
               style={{
-                transform: !isRefreshing && !isTriggered ? `rotate(${progress * 3.6}deg)` : undefined,
+                transform:
+                  !isRefreshing && !isTriggered ? `rotate(${progress * 3.6}deg)` : undefined,
               }}
             />
           </div>

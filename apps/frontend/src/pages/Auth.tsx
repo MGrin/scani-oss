@@ -29,7 +29,7 @@ export function Auth() {
 
   // Detect if running in PWA
   const runningAsPWA = isPWA();
-  
+
   // Log for debugging
   console.log('[Auth Page] Running as PWA:', runningAsPWA);
 
@@ -85,7 +85,7 @@ export function Auth() {
     if (runningAsPWA) {
       // Show code input for PWA users
       return (
-        <div 
+        <div
           className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-950 py-12 px-4 sm:px-6 lg:px-8"
           style={{
             paddingTop: 'max(3rem, calc(3rem + env(safe-area-inset-top)))',
@@ -127,7 +127,7 @@ export function Auth() {
 
     // Show magic link message for browser users
     return (
-      <div 
+      <div
         className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-950 py-12 px-4 sm:px-6 lg:px-8"
         style={{
           paddingTop: 'max(3rem, calc(3rem + env(safe-area-inset-top)))',
@@ -167,7 +167,7 @@ export function Auth() {
   }
 
   return (
-    <div 
+    <div
       className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-950 py-12 px-4 sm:px-6 lg:px-8"
       style={{
         paddingTop: 'max(3rem, calc(3rem + env(safe-area-inset-top)))',
