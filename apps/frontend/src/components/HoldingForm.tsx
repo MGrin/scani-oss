@@ -142,14 +142,23 @@ export function HoldingForm({ isOpen, onClose, holding, mode }: HoldingFormProps
 
   const createHolding = trpc.holdings.create.useMutation(
     withOptimisticHandlers('holding', 'create', utils, {
-      onSuccess: (newHolding: ApiHolding) => {
+      onSuccess: (result: { holding: ApiHolding; priceFetchSuccessful: boolean; priceFetchError: string | null }) => {
+        const newHolding = result.holding;
         const hasBalance = parseFloat(newHolding.balance) > 0;
-        toast({
-          title: 'Holding created successfully! ✅',
-          description: hasBalance
-            ? 'Your new holding and opening balance have been added to your portfolio.'
-            : 'Your new holding has been added to your portfolio.',
-        });
+        
+        if (result.priceFetchError) {
+          toast({
+            title: '⚠️ Holding Created (Price Unavailable)',
+            description: `Your holding was created${hasBalance ? ' with opening balance' : ''}, but we couldn't fetch the current price: ${result.priceFetchError}. You can manually update the price later.`,
+          });
+        } else {
+          toast({
+            title: 'Holding created successfully! ✅',
+            description: hasBalance
+              ? 'Your new holding and opening balance have been added to your portfolio.'
+              : 'Your new holding has been added to your portfolio.',
+          });
+        }
         handleFormReset();
         onClose();
       },

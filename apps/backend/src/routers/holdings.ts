@@ -155,6 +155,9 @@ export const holdingsRouter = router({
         );
 
         // Fetch current token price for the user's base currency
+        let priceFetchSuccessful = false;
+        let priceFetchError: string | null = null;
+        
         try {
           // Use cached user data instead of querying database
           if (dbUser.baseCurrencyId) {
@@ -166,6 +169,7 @@ export const holdingsRouter = router({
 
             if (baseCurrency && token.symbol !== baseCurrency.symbol) {
               await pricingService.getTokenPrice(token, baseCurrency.symbol, now);
+              priceFetchSuccessful = true;
               holdingsLogger.debug(
                 {
                   tokenId: token.id,
@@ -174,13 +178,20 @@ export const holdingsRouter = router({
                 },
                 'Fetched current price after holding creation'
               );
+            } else if (token.symbol === baseCurrency?.symbol) {
+              // Base currency doesn't need pricing
+              priceFetchSuccessful = true;
             }
           }
         } catch (error) {
+          const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+          priceFetchError = errorMessage;
+          
           holdingsLogger.warn(
             {
               tokenId: token.id,
               symbol: token.symbol,
+              baseCurrency: dbUser.baseCurrencyId,
               error: error instanceof Error ? { name: error.name, message: error.message } : error,
             },
             'Failed to fetch token price during holding creation'
@@ -219,19 +230,20 @@ export const holdingsRouter = router({
           });
         }
 
-        return holding;
+        return { holding, priceFetchSuccessful, priceFetchError };
       });
 
-      if (holding) {
+      if (holding.holding) {
         emitEntityChange({
           type: 'entity_changed',
           entityType: 'holding',
           operationType: 'create',
-          entityId: holding.id,
+          entityId: holding.holding.id,
           userId,
           data: {
-            accountId: holding.accountId,
-            tokenId: holding.tokenId,
+            accountId: holding.holding.accountId,
+            tokenId: holding.holding.tokenId,
+            pricingWarning: holding.priceFetchError || undefined,
           },
         });
       }

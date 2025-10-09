@@ -1,40 +1,67 @@
-import { zodResolver } from '@hookform/resolvers/zod';
-import type { TokenProvider } from '@scani/shared';
-import { AlertCircle, Camera, Info, PenTool, Plus, Trash2, Wallet } from 'lucide-react';
-import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
-import { useForm } from 'react-hook-form';
-import { useNavigate, useSearchParams } from 'react-router-dom';
-import { z } from 'zod';
-import { AsyncTokenSelector } from '@/components/AsyncTokenSelector';
-import { PrivateTokenForm } from '@/components/PrivateTokenForm';
-import { ScreenshotUpload } from '@/components/ScreenshotUpload';
+import { zodResolver } from "@hookform/resolvers/zod";
+import type { TokenProvider } from "@scani/shared";
+import {
+  AlertCircle,
+  Camera,
+  Info,
+  PenTool,
+  Plus,
+  Trash2,
+  Wallet,
+} from "lucide-react";
+import {
+  useCallback,
+  useEffect,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
+import { useForm } from "react-hook-form";
+import { useNavigate, useSearchParams } from "react-router-dom";
+import { z } from "zod";
+import { AsyncTokenSelector } from "@/components/AsyncTokenSelector";
+import { PrivateTokenForm } from "@/components/PrivateTokenForm";
+import { ScreenshotUpload } from "@/components/ScreenshotUpload";
 import {
   AccountSelector,
   AccountTypeSelector,
   InstitutionSelector,
   InstitutionTypeSelector,
-} from '@/components/selectors/SearchableSelectors';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { LoadingSpinner } from '@/components/ui/loading';
-import { PageHeader } from '@/components/ui/page-header';
-import { Progress } from '@/components/ui/progress';
+} from "@/components/selectors/SearchableSelectors";
+import { Button } from "@/components/ui/button";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { LoadingSpinner } from "@/components/ui/loading";
+import { PageHeader } from "@/components/ui/page-header";
+import { Progress } from "@/components/ui/progress";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from '@/components/ui/select';
-import { useEntityData } from '@/contexts/EntityDataContext';
-import { useToast } from '@/hooks/use-toast';
-import { type ParsedHolding, useScreenshotParsing } from '@/hooks/useScreenshotParsing';
-import { isExternalTokenValue, parseExternalTokenValue } from '@/lib/external-token';
-import { withRetry } from '@/lib/retry';
-import { trpc } from '@/lib/trpc';
-import { normalizeSymbol } from '@/lib/utils';
+} from "@/components/ui/select";
+import { useEntityData } from "@/contexts/EntityDataContext";
+import { useToast } from "@/hooks/use-toast";
+import {
+  type ParsedHolding,
+  useScreenshotParsing,
+} from "@/hooks/useScreenshotParsing";
+import {
+  isExternalTokenValue,
+  parseExternalTokenValue,
+} from "@/lib/external-token";
+import { withRetry } from "@/lib/retry";
+import { trpc } from "@/lib/trpc";
+import { normalizeSymbol } from "@/lib/utils";
 
 type ExistingHoldingOption = {
   id: string;
@@ -46,7 +73,7 @@ type ExistingHoldingOption = {
 };
 
 type EditableHoldingState = ParsedHolding & {
-  processingAction: 'create' | 'update-existing';
+  processingAction: "create" | "update-existing";
   availableExistingHoldings: ExistingHoldingOption[];
 };
 
@@ -56,19 +83,25 @@ const AddDataSchema = z
     // Holding fields - Keep as number in frontend, convert to string for backend
     balance: z
       .number({
-        required_error: 'Balance is required',
-        invalid_type_error: 'Balance must be a valid number',
+        required_error: "Balance is required",
+        invalid_type_error: "Balance must be a valid number",
       })
-      .refine((val) => !Number.isNaN(val), 'Balance must be a valid number')
-      .refine((val) => val !== 0, 'Balance cannot be zero. Enter the actual holding amount.')
-      .refine((val) => Math.abs(val) >= 0.000001, 'Balance is too small. Minimum value is 0.000001')
+      .refine((val) => !Number.isNaN(val), "Balance must be a valid number")
+      .refine(
+        (val) => val !== 0,
+        "Balance cannot be zero. Enter the actual holding amount."
+      )
+      .refine(
+        (val) => Math.abs(val) >= 0.000001,
+        "Balance is too small. Minimum value is 0.000001"
+      )
       .refine(
         (val) => Math.abs(val) <= 1_000_000_000,
-        'Balance is too large. Maximum value is 1 billion'
+        "Balance is too large. Maximum value is 1 billion"
       ),
 
     // Account selection
-    accountId: z.string().min(1, 'Please select an account'),
+    accountId: z.string().min(1, "Please select an account"),
 
     // New account fields (conditionally required when accountId is 'new')
     newAccountName: z.string().optional(),
@@ -85,50 +118,52 @@ const AddDataSchema = z
     newInstitutionWebsite: z.string().optional(),
 
     // Token selection
-    tokenId: z.string().min(1, 'Please select a token'),
+    tokenId: z.string().min(1, "Please select a token"),
   })
   .superRefine((data, ctx) => {
     // Validate new account fields when creating new account
-    if (data.accountId === 'new') {
+    if (data.accountId === "new") {
       if (!data.newAccountName?.trim()) {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
-          message: 'Account name is required when creating a new account',
-          path: ['newAccountName'],
+          message: "Account name is required when creating a new account",
+          path: ["newAccountName"],
         });
       }
 
       if (!data.newAccountType) {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
-          message: 'Account type is required when creating a new account',
-          path: ['newAccountType'],
+          message: "Account type is required when creating a new account",
+          path: ["newAccountType"],
         });
       }
 
       if (!data.institutionId) {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
-          message: 'Institution is required when creating a new account',
-          path: ['institutionId'],
+          message: "Institution is required when creating a new account",
+          path: ["institutionId"],
         });
       }
 
       // Validate new institution fields when creating new institution
-      if (data.institutionId === 'new') {
+      if (data.institutionId === "new") {
         if (!data.newInstitutionName?.trim()) {
           ctx.addIssue({
             code: z.ZodIssueCode.custom,
-            message: 'Institution name is required when creating a new institution',
-            path: ['newInstitutionName'],
+            message:
+              "Institution name is required when creating a new institution",
+            path: ["newInstitutionName"],
           });
         }
 
         if (!data.newInstitutionType) {
           ctx.addIssue({
             code: z.ZodIssueCode.custom,
-            message: 'Institution type is required when creating a new institution',
-            path: ['newInstitutionType'],
+            message:
+              "Institution type is required when creating a new institution",
+            path: ["newInstitutionType"],
           });
         }
       }
@@ -139,11 +174,11 @@ type AddDataFormData = z.infer<typeof AddDataSchema>;
 
 // Step definitions
 type WorkflowStep =
-  | 'entry-method'
-  | 'account-selection'
-  | 'manual-entry'
-  | 'screenshot-entry'
-  | 'wallet-entry';
+  | "entry-method"
+  | "account-selection"
+  | "manual-entry"
+  | "screenshot-entry"
+  | "wallet-entry";
 
 export function AddData() {
   const navigate = useNavigate();
@@ -151,36 +186,43 @@ export function AddData() {
   const [searchParams] = useSearchParams();
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isTokenFormOpen, setIsTokenFormOpen] = useState(false);
-  const [walletAddress, setWalletAddress] = useState('');
+  const [walletAddress, setWalletAddress] = useState("");
   const [isImportingWallet, setIsImportingWallet] = useState(false);
   const walletInputId = useId();
 
   // Get pre-selected account and method from URL params
-  const preSelectedAccountId = searchParams.get('accountId');
-  const preSelectedMethod = searchParams.get('method') as 'manual' | 'screenshot' | null;
+  const preSelectedAccountId = searchParams.get("accountId");
+  const preSelectedMethod = searchParams.get("method") as
+    | "manual"
+    | "screenshot"
+    | null;
 
   // State for manually selected account (when going through account selection step)
-  const [selectedAccountId, setSelectedAccountId] = useState<string>(preSelectedAccountId || '');
+  const [selectedAccountId, setSelectedAccountId] = useState<string>(
+    preSelectedAccountId || ""
+  );
 
   // Track the selected entry method when going through account selection
-  const [selectedEntryMethod, setSelectedEntryMethod] = useState<'manual' | 'screenshot' | null>(
-    preSelectedMethod || null
-  );
+  const [selectedEntryMethod, setSelectedEntryMethod] = useState<
+    "manual" | "screenshot" | null
+  >(preSelectedMethod || null);
 
   // Step management - if method and account are provided, skip to that workflow
   const getInitialStep = (): WorkflowStep => {
     if (preSelectedAccountId && preSelectedMethod) {
       // Skip directly to the entry form
-      if (preSelectedMethod === 'manual') {
-        return 'manual-entry';
-      } else if (preSelectedMethod === 'screenshot') {
-        return 'screenshot-entry';
+      if (preSelectedMethod === "manual") {
+        return "manual-entry";
+      } else if (preSelectedMethod === "screenshot") {
+        return "screenshot-entry";
       }
     }
-    return 'entry-method';
+    return "entry-method";
   };
 
-  const [currentStep, setCurrentStep] = useState<WorkflowStep>(getInitialStep());
+  const [currentStep, setCurrentStep] = useState<WorkflowStep>(
+    getInitialStep()
+  );
 
   // Track if we should skip account selection (when coming from account page)
   const shouldSkipAccountSelection = Boolean(preSelectedAccountId);
@@ -190,40 +232,49 @@ export function AddData() {
     allowMultiple: true,
     onSuccess: () => {
       toast({
-        title: 'Success!',
-        description: 'Holdings have been successfully added to your account.',
+        title: "Success!",
+        description: "Holdings have been successfully added to your account.",
       });
-      navigate('/holdings');
+      navigate("/holdings");
     },
     onMultipleParsingComplete: (result) => {
       // Handle multiple screenshot results - use combined holdings
       if (result.combinedHoldings) {
         setEditableHoldings(
-          result.combinedHoldings.map((holding) => mapParsedHoldingToEditableState(holding))
+          result.combinedHoldings.map((holding) =>
+            mapParsedHoldingToEditableState(holding)
+          )
         );
       }
     },
   });
 
   const isScreenshotProcessing =
-    screenshotParsing.state === 'processing' || screenshotParsing.isFinalizing;
+    screenshotParsing.state === "processing" || screenshotParsing.isFinalizing;
   const isScreenshotBusy = screenshotParsing.isBusy;
-  const baseFinalizingMessage = screenshotParsing.finalizingMessage ?? 'Processing holdings...';
+  const baseFinalizingMessage =
+    screenshotParsing.finalizingMessage ?? "Processing holdings...";
 
   // State for editable holdings from screenshot
-  const [editableHoldings, setEditableHoldings] = useState<EditableHoldingState[]>([]);
-  const [editingHoldingIds, setEditingHoldingIds] = useState<Set<number>>(new Set());
-  // Track token selection for each editable holding by index
-  const [editableHoldingTokenIds, setEditableHoldingTokenIds] = useState<Record<number, string>>(
-    {}
+  const [editableHoldings, setEditableHoldings] = useState<
+    EditableHoldingState[]
+  >([]);
+  const [editingHoldingIds, setEditingHoldingIds] = useState<Set<number>>(
+    new Set()
   );
+  // Track token selection for each editable holding by index
+  const [editableHoldingTokenIds, setEditableHoldingTokenIds] = useState<
+    Record<number, string>
+  >({});
   // Stable keys for editable holdings to prevent remounts on every keystroke
   const rowKeysRef = useRef<string[]>([]);
 
   const mapParsedHoldingToEditableState = useCallback(
     (holding: ParsedHolding): EditableHoldingState => ({
       ...holding,
-      processingAction: holding.existingHoldingId ? 'update-existing' : 'create',
+      processingAction: holding.existingHoldingId
+        ? "update-existing"
+        : "create",
       availableExistingHoldings: [],
     }),
     []
@@ -285,7 +336,9 @@ export function AddData() {
     const needed = editableHoldings.length - rowKeysRef.current.length;
     if (needed > 0) {
       for (let i = 0; i < needed; i++) {
-        rowKeysRef.current.push(`eh-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`);
+        rowKeysRef.current.push(
+          `eh-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`
+        );
       }
     }
   }, [editableHoldings.length]);
@@ -316,13 +369,15 @@ export function AddData() {
 
   // Get currently selected account (either from URL params or manual selection)
   const currentlySelectedAccountId = preSelectedAccountId || selectedAccountId;
-  const currentlySelectedAccount = accounts?.find((acc) => acc.id === currentlySelectedAccountId);
+  const currentlySelectedAccount = accounts?.find(
+    (acc) => acc.id === currentlySelectedAccountId
+  );
 
   // Get existing holdings for the selected account to show create/update status
   const { data: allHoldings } = trpc.holdings.getAll.useQuery(undefined, {
     enabled:
       !!currentlySelectedAccountId &&
-      (currentStep === 'screenshot-entry' || currentStep === 'manual-entry'),
+      (currentStep === "screenshot-entry" || currentStep === "manual-entry"),
   });
 
   // Filter holdings for current account and add token info
@@ -376,8 +431,11 @@ export function AddData() {
 
     setEditableHoldings((prev) =>
       prev.map((holding, index) => {
-        const selectedTokenId = editableHoldingTokenIds[index] ?? holding.tokenId;
-        const normalizedSymbol = holding.symbol ? normalizeSymbol(holding.symbol) : null;
+        const selectedTokenId =
+          editableHoldingTokenIds[index] ?? holding.tokenId;
+        const normalizedSymbol = holding.symbol
+          ? normalizeSymbol(holding.symbol)
+          : null;
 
         let nextOptions: ExistingHoldingOption[] = [];
 
@@ -391,7 +449,9 @@ export function AddData() {
           nextOptions = existingHoldingsBySymbol.get(normalizedSymbol) ?? [];
         }
 
-        const currentOptionIds = holding.availableExistingHoldings.map((option) => option.id);
+        const currentOptionIds = holding.availableExistingHoldings.map(
+          (option) => option.id
+        );
         const nextOptionIds = nextOptions.map((option) => option.id);
         const optionsChanged =
           currentOptionIds.length !== nextOptionIds.length ||
@@ -401,22 +461,29 @@ export function AddData() {
         let nextExistingHoldingId = holding.existingHoldingId;
 
         if (nextProcessingAction === undefined) {
-          nextProcessingAction = holding.existingHoldingId ? 'update-existing' : 'create';
+          nextProcessingAction = holding.existingHoldingId
+            ? "update-existing"
+            : "create";
         }
 
-        const hadNoOptionsPreviously = holding.availableExistingHoldings.length === 0;
+        const hadNoOptionsPreviously =
+          holding.availableExistingHoldings.length === 0;
 
-        if (!nextExistingHoldingId && nextOptions.length === 1 && hadNoOptionsPreviously) {
-          nextProcessingAction = 'update-existing';
+        if (
+          !nextExistingHoldingId &&
+          nextOptions.length === 1 &&
+          hadNoOptionsPreviously
+        ) {
+          nextProcessingAction = "update-existing";
           nextExistingHoldingId = nextOptions[0]!.id;
         } else if (
           nextExistingHoldingId &&
           !nextOptions.some((option) => option.id === nextExistingHoldingId)
         ) {
           nextExistingHoldingId = undefined;
-          nextProcessingAction = 'create';
+          nextProcessingAction = "create";
         } else if (nextExistingHoldingId) {
-          nextProcessingAction = 'update-existing';
+          nextProcessingAction = "update-existing";
         }
 
         if (
@@ -446,7 +513,7 @@ export function AddData() {
 
   // Helper to wait for entity to appear in cache after mutation
   const waitForCacheSettlement = async (
-    queryKey: 'institutions' | 'accounts' | 'holdings',
+    queryKey: "institutions" | "accounts" | "holdings",
     expectedId?: string,
     maxRetries = 30 // Increased from 10 to 30 (3 seconds total)
   ) => {
@@ -455,13 +522,13 @@ export function AddData() {
 
       let data: Array<{ id: string }> | undefined;
       switch (queryKey) {
-        case 'institutions':
+        case "institutions":
           data = utils.institutions.getAll.getData();
           break;
-        case 'accounts':
+        case "accounts":
           data = utils.accounts.getAll.getData();
           break;
-        case 'holdings':
+        case "holdings":
           data = utils.holdings.getAll.getData();
           break;
       }
@@ -484,17 +551,22 @@ export function AddData() {
 
   const form = useForm<AddDataFormData>({
     resolver: zodResolver(AddDataSchema),
-    mode: 'onChange', // Validate on change for better UX
-    reValidateMode: 'onChange',
+    mode: "onChange", // Validate on change for better UX
+    reValidateMode: "onChange",
     defaultValues: {
-      accountId: preSelectedAccountId || '',
+      accountId: preSelectedAccountId || "",
     },
   });
 
   // Helper functions for editable holdings
-  const updateHolding = (index: number, updates: Partial<EditableHoldingState>) => {
+  const updateHolding = (
+    index: number,
+    updates: Partial<EditableHoldingState>
+  ) => {
     setEditableHoldings((prev) =>
-      prev.map((holding, i) => (i === index ? { ...holding, ...updates } : holding))
+      prev.map((holding, i) =>
+        i === index ? { ...holding, ...updates } : holding
+      )
     );
   };
 
@@ -509,16 +581,16 @@ export function AddData() {
 
       const errorSet = new Set(updatedHolding.errors);
 
-      if (!updatedHolding.symbol || updatedHolding.symbol.trim() === '') {
-        errorSet.add('Symbol is required');
+      if (!updatedHolding.symbol || updatedHolding.symbol.trim() === "") {
+        errorSet.add("Symbol is required");
       }
 
       if (
         !updatedHolding.balance ||
-        updatedHolding.balance.trim() === '' ||
+        updatedHolding.balance.trim() === "" ||
         parseFloat(updatedHolding.balance) <= 0
       ) {
-        errorSet.add('Valid balance amount is required');
+        errorSet.add("Valid balance amount is required");
       }
 
       if (selectedTokenId && selectedTokenId !== updatedHolding.tokenId) {
@@ -537,19 +609,19 @@ export function AddData() {
                   isValid: true,
                   metadata: {
                     ...metadata,
-                    type: metadata.type || 'Equity',
-                    provider: metadata.provider || 'external',
+                    type: metadata.type || "Equity",
+                    provider: metadata.provider || "external",
                   },
                 },
               },
-              suggestedTokenType: metadata.type || 'other',
+              suggestedTokenType: metadata.type || "other",
             };
 
-            errorSet.delete('User selection required');
-            errorSet.delete('Token not found');
+            errorSet.delete("User selection required");
+            errorSet.delete("Token not found");
           } catch (error) {
-            console.error('Failed to parse external token metadata:', error);
-            errorSet.add('Failed to parse selected token metadata');
+            console.error("Failed to parse external token metadata:", error);
+            errorSet.add("Failed to parse selected token metadata");
           }
         } else {
           updatedHolding = {
@@ -558,22 +630,22 @@ export function AddData() {
             tokenExists: true,
             requiresUserSelection: false,
           };
-          errorSet.delete('User selection required');
-          errorSet.delete('Token not found');
+          errorSet.delete("User selection required");
+          errorSet.delete("Token not found");
         }
       }
 
-      if (updatedHolding.processingAction === 'create') {
+      if (updatedHolding.processingAction === "create") {
         updatedHolding = {
           ...updatedHolding,
           existingHoldingId: undefined,
         };
-        errorSet.delete('Select existing holding to update');
-      } else if (updatedHolding.processingAction === 'update-existing') {
+        errorSet.delete("Select existing holding to update");
+      } else if (updatedHolding.processingAction === "update-existing") {
         if (!updatedHolding.existingHoldingId) {
-          errorSet.add('Select existing holding to update');
+          errorSet.add("Select existing holding to update");
         } else {
-          errorSet.delete('Select existing holding to update');
+          errorSet.delete("Select existing holding to update");
         }
       }
 
@@ -628,18 +700,20 @@ export function AddData() {
       return;
     }
     const newHolding: EditableHoldingState = {
-      symbol: '',
-      name: '',
-      balance: '',
+      symbol: "",
+      name: "",
+      balance: "",
       confidence: 1,
       tokenExists: false,
       errors: [],
       warnings: [],
-      processingAction: 'create',
+      processingAction: "create",
       availableExistingHoldings: [],
     };
     setEditableHoldings((prev) => [...prev, newHolding]);
-    rowKeysRef.current.push(`eh-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`);
+    rowKeysRef.current.push(
+      `eh-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`
+    );
   };
 
   // Helper functions for per-row edit mode
@@ -661,8 +735,13 @@ export function AddData() {
   const isEditingHolding = (index: number) => editingHoldingIds.has(index);
 
   const getHoldingStatus = (holding: EditableHoldingState) => {
-    if (holding.processingAction === 'update-existing' && holding.existingHoldingId) {
-      const existingHolding = existingHoldingsById.get(holding.existingHoldingId);
+    if (
+      holding.processingAction === "update-existing" &&
+      holding.existingHoldingId
+    ) {
+      const existingHolding = existingHoldingsById.get(
+        holding.existingHoldingId
+      );
 
       if (existingHolding) {
         const currentBalance = Number.parseFloat(existingHolding.balance);
@@ -670,24 +749,26 @@ export function AddData() {
         const difference = newBalance - currentBalance;
 
         return {
-          type: 'update' as const,
+          type: "update" as const,
           currentBalance: existingHolding.balance,
-          difference: Number.isFinite(difference) ? difference.toString() : '0',
+          difference: Number.isFinite(difference) ? difference.toString() : "0",
           isIncrease: difference > 0,
           reference: existingHolding,
         };
       }
     }
 
-    return { type: 'create' as const };
+    return { type: "create" as const };
   };
 
   // Step navigation functions
 
-  const handleEntryMethodSelected = (method: 'manual' | 'screenshot' | 'wallet') => {
-    if (method === 'wallet') {
+  const handleEntryMethodSelected = (
+    method: "manual" | "screenshot" | "wallet"
+  ) => {
+    if (method === "wallet") {
       // Wallet import doesn't need account selection (creates accounts automatically)
-      setCurrentStep('wallet-entry');
+      setCurrentStep("wallet-entry");
       return;
     }
 
@@ -697,34 +778,34 @@ export function AddData() {
     // Check if we need to select an account first
     if (shouldSkipAccountSelection) {
       // Account is pre-selected, go directly to entry form
-      if (method === 'manual') {
-        setCurrentStep('manual-entry');
+      if (method === "manual") {
+        setCurrentStep("manual-entry");
       } else {
-        setCurrentStep('screenshot-entry');
+        setCurrentStep("screenshot-entry");
       }
     } else {
       // Need to select account first
-      setCurrentStep('account-selection');
+      setCurrentStep("account-selection");
     }
   };
 
   const goBack = () => {
     switch (currentStep) {
-      case 'entry-method':
+      case "entry-method":
         // First step, go back to previous page
         navigate(-1);
         break;
-      case 'account-selection':
+      case "account-selection":
         // Go back to entry method selection
-        setCurrentStep('entry-method');
+        setCurrentStep("entry-method");
         break;
-      case 'manual-entry':
-      case 'screenshot-entry':
+      case "manual-entry":
+      case "screenshot-entry":
         // If account was pre-selected, skip account selection
         if (shouldSkipAccountSelection) {
-          setCurrentStep('entry-method');
+          setCurrentStep("entry-method");
         } else {
-          setCurrentStep('account-selection');
+          setCurrentStep("account-selection");
         }
         break;
       default:
@@ -733,15 +814,15 @@ export function AddData() {
   };
 
   // Watch for account changes to update selected account state
-  const watchedAccountId = form.watch('accountId');
+  const watchedAccountId = form.watch("accountId");
   useEffect(() => {
     if (watchedAccountId && watchedAccountId !== preSelectedAccountId) {
       setSelectedAccountId(watchedAccountId);
     }
   }, [watchedAccountId, preSelectedAccountId]);
 
-  const watchAccountId = form.watch('accountId');
-  const watchInstitutionId = form.watch('institutionId');
+  const watchAccountId = form.watch("accountId");
+  const watchInstitutionId = form.watch("institutionId");
 
   // Watch all form values for reactive validation
   const formValues = form.watch();
@@ -753,19 +834,26 @@ export function AddData() {
     // Check core required fields
     if (!formValues.accountId || errors.accountId) return false;
     if (!formValues.tokenId || errors.tokenId) return false;
-    if (formValues.balance === undefined || formValues.balance === null || errors.balance)
+    if (
+      formValues.balance === undefined ||
+      formValues.balance === null ||
+      errors.balance
+    )
       return false;
 
     // If creating new account, check required account fields
-    if (formValues.accountId === 'new') {
-      if (!formValues.newAccountName?.trim() || errors.newAccountName) return false;
+    if (formValues.accountId === "new") {
+      if (!formValues.newAccountName?.trim() || errors.newAccountName)
+        return false;
       if (!formValues.newAccountType || errors.newAccountType) return false;
       if (!formValues.institutionId || errors.institutionId) return false;
 
       // If creating new institution, check required institution fields
-      if (formValues.institutionId === 'new') {
-        if (!formValues.newInstitutionName?.trim() || errors.newInstitutionName) return false;
-        if (!formValues.newInstitutionType || errors.newInstitutionType) return false;
+      if (formValues.institutionId === "new") {
+        if (!formValues.newInstitutionName?.trim() || errors.newInstitutionName)
+          return false;
+        if (!formValues.newInstitutionType || errors.newInstitutionType)
+          return false;
       }
     }
 
@@ -781,17 +869,20 @@ export function AddData() {
     if (!accountId) return false;
 
     // If existing account selected, valid
-    if (accountId !== 'new') return true;
+    if (accountId !== "new") return true;
 
     // If creating new account, check required fields
-    if (!formValues.newAccountName?.trim() || errors.newAccountName) return false;
+    if (!formValues.newAccountName?.trim() || errors.newAccountName)
+      return false;
     if (!formValues.newAccountType || errors.newAccountType) return false;
     if (!formValues.institutionId || errors.institutionId) return false;
 
     // If creating new institution, check required institution fields
-    if (formValues.institutionId === 'new') {
-      if (!formValues.newInstitutionName?.trim() || errors.newInstitutionName) return false;
-      if (!formValues.newInstitutionType || errors.newInstitutionType) return false;
+    if (formValues.institutionId === "new") {
+      if (!formValues.newInstitutionName?.trim() || errors.newInstitutionName)
+        return false;
+      if (!formValues.newInstitutionType || errors.newInstitutionType)
+        return false;
     }
 
     return true;
@@ -801,10 +892,10 @@ export function AddData() {
   useEffect(() => {
     if (!accountsLoading && accounts !== undefined && !watchAccountId) {
       if (!accounts || accounts.length === 0) {
-        form.setValue('accountId', 'new');
+        form.setValue("accountId", "new");
       } else {
         // Default to the first available account
-        form.setValue('accountId', accounts[0]?.id || 'new');
+        form.setValue("accountId", accounts[0]?.id || "new");
       }
     }
   }, [accounts, accountsLoading, form, watchAccountId]);
@@ -813,26 +904,35 @@ export function AddData() {
     if (
       !institutionsLoading &&
       institutions !== undefined &&
-      watchAccountId === 'new' &&
+      watchAccountId === "new" &&
       !watchInstitutionId
     ) {
       // Get institutions where the user has accounts
-      const userInstitutionIds = new Set(accounts?.map((account) => account.institutionId) || []);
+      const userInstitutionIds = new Set(
+        accounts?.map((account) => account.institutionId) || []
+      );
       const userInstitutions =
         institutions?.filter((inst) => userInstitutionIds.has(inst.id)) || [];
 
       if (userInstitutions.length > 0) {
         // Default to the first institution where the user has accounts
-        form.setValue('institutionId', userInstitutions[0]!.id);
+        form.setValue("institutionId", userInstitutions[0]!.id);
       } else if (institutions && institutions.length > 0) {
         // If no user institutions, default to the first available institution
-        form.setValue('institutionId', institutions[0]!.id);
+        form.setValue("institutionId", institutions[0]!.id);
       } else {
         // No institutions available, default to "new"
-        form.setValue('institutionId', 'new');
+        form.setValue("institutionId", "new");
       }
     }
-  }, [accounts, institutions, institutionsLoading, form, watchInstitutionId, watchAccountId]);
+  }, [
+    accounts,
+    institutions,
+    institutionsLoading,
+    form,
+    watchInstitutionId,
+    watchAccountId,
+  ]);
 
   // Note: Token auto-selection removed - AsyncTokenSelector handles its own defaults
 
@@ -841,7 +941,7 @@ export function AddData() {
     const formData = form.getValues();
     const accountId = formData.accountId || selectedAccountId;
 
-    if (accountId !== 'new') {
+    if (accountId !== "new") {
       // Existing account selected, no need to create
       return accountId;
     }
@@ -850,66 +950,67 @@ export function AddData() {
       let institutionId = formData.institutionId;
 
       // Step 1: Create institution if needed
-      if (institutionId === 'new') {
-        console.log('Creating institution:', {
+      if (institutionId === "new") {
+        console.log("Creating institution:", {
           name: formData.newInstitutionName,
           type: formData.newInstitutionType,
-          description: formData.newInstitutionDescription || '',
-          website: formData.newInstitutionWebsite || '',
+          description: formData.newInstitutionDescription || "",
+          website: formData.newInstitutionWebsite || "",
         });
 
         const newInstitution = await createInstitution.mutateAsync({
           name: formData.newInstitutionName!.trim(),
           type: formData.newInstitutionType!,
-          description: formData.newInstitutionDescription?.trim() || '',
-          website: formData.newInstitutionWebsite?.trim() || '',
+          description: formData.newInstitutionDescription?.trim() || "",
+          website: formData.newInstitutionWebsite?.trim() || "",
         });
 
         if (!newInstitution?.id) {
-          throw new Error('Failed to create institution - no ID returned');
+          throw new Error("Failed to create institution - no ID returned");
         }
 
         institutionId = newInstitution.id;
-        console.log('Institution created successfully:', institutionId);
+        console.log("Institution created successfully:", institutionId);
       }
 
       // Step 2: Create account
-      console.log('Creating account:', {
+      console.log("Creating account:", {
         name: formData.newAccountName,
         type: formData.newAccountType,
         institutionId: institutionId,
-        description: formData.newAccountDescription || '',
+        description: formData.newAccountDescription || "",
       });
 
       const newAccount = await createAccount.mutateAsync({
         name: formData.newAccountName!.trim(),
         type: formData.newAccountType!,
         institutionId: institutionId!,
-        description: formData.newAccountDescription?.trim() || '',
+        description: formData.newAccountDescription?.trim() || "",
       });
 
       if (!newAccount?.id) {
-        throw new Error('Failed to create account - no ID returned');
+        throw new Error("Failed to create account - no ID returned");
       }
 
       // Update form and state with the new account ID
-      form.setValue('accountId', newAccount.id);
+      form.setValue("accountId", newAccount.id);
       setSelectedAccountId(newAccount.id);
 
       toast({
-        title: '✅ Account Created',
+        title: "✅ Account Created",
         description: `Account "${newAccount.name}" has been successfully created.`,
       });
 
       return newAccount.id;
     } catch (error) {
-      console.error('Account creation failed:', error);
-      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      console.error("Account creation failed:", error);
+      const errorMessage =
+        error instanceof Error ? error.message : "Unknown error";
 
       toast({
-        title: '❌ Failed to Create Account',
+        title: "❌ Failed to Create Account",
         description: errorMessage,
-        variant: 'destructive',
+        variant: "destructive",
       });
 
       throw error;
@@ -926,9 +1027,9 @@ export function AddData() {
       let institutionId = data.institutionId;
 
       console.log(
-        'Form submission - accountId:',
+        "Form submission - accountId:",
         accountId,
-        'currentlySelectedAccountId:',
+        "currentlySelectedAccountId:",
         currentlySelectedAccountId
       );
 
@@ -937,10 +1038,12 @@ export function AddData() {
         try {
           const externalTokenData = parseExternalTokenValue(tokenId)!;
 
-          console.log('Creating external token:', externalTokenData);
+          console.log("Creating external token:", externalTokenData);
 
           const provider: TokenProvider =
-            externalTokenData.provider === 'coingecko' ? 'coingecko' : 'finnhub';
+            externalTokenData.provider === "coingecko"
+              ? "coingecko"
+              : "finnhub";
 
           const newToken = await withRetry(
             () =>
@@ -956,112 +1059,126 @@ export function AddData() {
               retries: 2,
               baseDelayMs: 800,
               maxDelayMs: 4000,
-              strategy: 'exponential',
+              strategy: "exponential",
               shouldRetry: (e: unknown) => {
-                const msg = e instanceof Error ? e.message.toLowerCase() : String(e).toLowerCase();
+                const msg =
+                  e instanceof Error
+                    ? e.message.toLowerCase()
+                    : String(e).toLowerCase();
                 return (
-                  msg.includes('network') ||
-                  msg.includes('timeout') ||
-                  msg.includes('connection') ||
-                  msg.includes('rate')
+                  msg.includes("network") ||
+                  msg.includes("timeout") ||
+                  msg.includes("connection") ||
+                  msg.includes("rate")
                 );
               },
             }
           );
 
           tokenId = newToken.id;
-          console.log('External token created successfully:', tokenId);
+          console.log("External token created successfully:", tokenId);
         } catch (error) {
-          console.error('External token creation failed:', error);
+          console.error("External token creation failed:", error);
           throw new Error(
-            `Failed to create token: ${error instanceof Error ? error.message : 'Unknown error'}`
+            `Failed to create token: ${
+              error instanceof Error ? error.message : "Unknown error"
+            }`
           );
         }
       }
 
       // Step 1: Create institution if needed
-      if (accountId === 'new' && data.institutionId === 'new') {
+      if (accountId === "new" && data.institutionId === "new") {
         try {
-          console.log('Creating institution:', {
+          console.log("Creating institution:", {
             name: data.newInstitutionName,
             type: data.newInstitutionType,
-            description: data.newInstitutionDescription || '',
-            website: data.newInstitutionWebsite || '',
+            description: data.newInstitutionDescription || "",
+            website: data.newInstitutionWebsite || "",
           });
 
           const newInstitution = await createInstitution.mutateAsync({
             name: data.newInstitutionName!.trim(),
             type: data.newInstitutionType!,
-            description: data.newInstitutionDescription?.trim() || '',
-            website: data.newInstitutionWebsite?.trim() || '',
+            description: data.newInstitutionDescription?.trim() || "",
+            website: data.newInstitutionWebsite?.trim() || "",
           });
 
           if (!newInstitution?.id) {
-            throw new Error('Failed to create institution - no ID returned');
+            throw new Error("Failed to create institution - no ID returned");
           }
 
           institutionId = newInstitution.id;
 
           // CRITICAL FIX: Wait for institution to settle in cache
-          await waitForCacheSettlement('institutions', institutionId);
+          await waitForCacheSettlement("institutions", institutionId);
 
-          console.log('Institution created and settled:', institutionId);
+          console.log("Institution created and settled:", institutionId);
         } catch (error) {
-          console.error('Institution creation failed:', error);
+          console.error("Institution creation failed:", error);
           throw new Error(
             `Failed to create institution: ${
-              error instanceof Error ? error.message : 'Unknown error'
+              error instanceof Error ? error.message : "Unknown error"
             }`
           );
         }
       }
 
       // Step 2: Create account if needed (only if not already created)
-      if (accountId === 'new') {
+      if (accountId === "new") {
         try {
           if (!institutionId) {
-            throw new Error('Institution ID is required to create an account');
+            throw new Error("Institution ID is required to create an account");
           }
 
-          console.log('Creating account:', {
+          console.log("Creating account:", {
             name: data.newAccountName,
             type: data.newAccountType,
             institutionId: institutionId,
-            description: data.newAccountDescription || '',
+            description: data.newAccountDescription || "",
           });
 
           const newAccount = await createAccount.mutateAsync({
             name: data.newAccountName!.trim(),
             type: data.newAccountType!,
             institutionId: institutionId,
-            description: data.newAccountDescription?.trim() || '',
+            description: data.newAccountDescription?.trim() || "",
           });
 
           if (!newAccount?.id) {
-            throw new Error('Failed to create account - no ID returned');
+            throw new Error("Failed to create account - no ID returned");
           }
 
           accountId = newAccount.id;
 
           // CRITICAL FIX: Wait for account to settle in cache
-          await waitForCacheSettlement('accounts', accountId);
+          await waitForCacheSettlement("accounts", accountId);
 
-          console.log('Account created and settled:', accountId);
+          console.log("Account created and settled:", accountId);
         } catch (error) {
-          console.error('Account creation failed:', error);
+          console.error("Account creation failed:", error);
           throw new Error(
-            `Failed to create account: ${error instanceof Error ? error.message : 'Unknown error'}`
+            `Failed to create account: ${
+              error instanceof Error ? error.message : "Unknown error"
+            }`
           );
         }
       }
 
       // Step 3: Create holding
       try {
-        if (!accountId || !tokenId || accountId === 'new' || tokenId === 'new') {
-          throw new Error(`Missing required IDs - Account: ${accountId}, Token: ${tokenId}`);
+        if (
+          !accountId ||
+          !tokenId ||
+          accountId === "new" ||
+          tokenId === "new"
+        ) {
+          throw new Error(
+            `Missing required IDs - Account: ${accountId}, Token: ${tokenId}`
+          );
         }
 
-        console.log('Creating holding:', {
+        console.log("Creating holding:", {
           accountId,
           tokenId,
           balance: data.balance.toString(),
@@ -1073,8 +1190,8 @@ export function AddData() {
           balance: data.balance.toString(),
         });
 
-        if (!createdHolding?.id) {
-          throw new Error('Failed to create holding - no ID returned');
+        if (!createdHolding?.holding?.id) {
+          throw new Error("Failed to create holding - no ID returned");
         }
 
         // Invalidate caches first to trigger refetch
@@ -1086,35 +1203,47 @@ export function AddData() {
         ]);
 
         // Then wait for holding to appear in the refetched cache
-        await waitForCacheSettlement('holdings', createdHolding.id);
+        await waitForCacheSettlement("holdings", createdHolding.holding.id);
 
-        console.log('Holding created and settled:', createdHolding.id);
+        console.log("Holding created and settled:", createdHolding.holding.id);
 
-        toast({
-          title: '✅ Success!',
-          description:
-            'Holding created successfully! Your new holding has been added to your portfolio.',
-        });
+        // Check if pricing failed and show appropriate message
+        if (createdHolding.priceFetchError) {
+          toast({
+            title: "⚠️ Holding Created (Price Unavailable)",
+            description: `Your holding was created successfully, but we couldn't fetch the current price: ${createdHolding.priceFetchError}. You can manually update the price later.`,
+            variant: "default",
+          });
+        } else {
+          toast({
+            title: "✅ Success!",
+            description:
+              "Holding created successfully! Your new holding has been added to your portfolio.",
+          });
+        }
 
         // Give React Query a moment to finish processing before navigation
         await new Promise((resolve) => setTimeout(resolve, 100));
 
-        navigate('/holdings');
+        navigate("/holdings");
       } catch (error) {
-        console.error('Holding creation failed:', error);
+        console.error("Holding creation failed:", error);
         throw new Error(
-          `Failed to create holding: ${error instanceof Error ? error.message : 'Unknown error'}`
+          `Failed to create holding: ${
+            error instanceof Error ? error.message : "Unknown error"
+          }`
         );
       }
     } catch (error) {
-      console.error('Overall submission failed:', error);
+      console.error("Overall submission failed:", error);
 
-      const errorMessage = error instanceof Error ? error.message : 'An unexpected error occurred';
+      const errorMessage =
+        error instanceof Error ? error.message : "An unexpected error occurred";
 
       toast({
-        title: '❌ Error Creating Holding',
+        title: "❌ Error Creating Holding",
         description: `${errorMessage}. Please check your information and try again.`,
-        variant: 'destructive',
+        variant: "destructive",
       });
     } finally {
       setIsSubmitting(false);
@@ -1122,7 +1251,10 @@ export function AddData() {
   };
 
   const isLoading =
-    accountsLoading || institutionsLoading || accountTypesLoading || institutionTypesLoading;
+    accountsLoading ||
+    institutionsLoading ||
+    accountTypesLoading ||
+    institutionTypesLoading;
 
   // Step components
   const renderAccountSelection = () => (
@@ -1141,7 +1273,7 @@ export function AddData() {
           value={selectedAccountId}
           onValueChange={(accountId: string) => {
             setSelectedAccountId(accountId);
-            form.setValue('accountId', accountId);
+            form.setValue("accountId", accountId);
           }}
           accounts={accounts}
           institutions={institutions}
@@ -1149,24 +1281,28 @@ export function AddData() {
         />
 
         {/* New Account Creation Form */}
-        {selectedAccountId === 'new' && (
+        {selectedAccountId === "new" && (
           <div className="space-y-4 border-t pt-4">
             {/* Institution Selection - First */}
             <div className="space-y-4">
               <h3 className="text-base font-medium">Institution</h3>
 
               <div className="space-y-2">
-                <Label htmlFor={institutionSelectId}>Select Institution *</Label>
+                <Label htmlFor={institutionSelectId}>
+                  Select Institution *
+                </Label>
                 <InstitutionSelector
                   id={institutionSelectId}
-                  value={form.watch('institutionId') || ''}
-                  onValueChange={(value) => form.setValue('institutionId', value)}
+                  value={form.watch("institutionId") || ""}
+                  onValueChange={(value) =>
+                    form.setValue("institutionId", value)
+                  }
                   institutions={institutions}
                   placeholder="Choose an institution..."
                 />
               </div>
 
-              {form.watch('institutionId') === 'new' && (
+              {form.watch("institutionId") === "new" && (
                 <div className="space-y-4 border rounded-lg p-4">
                   <h4 className="font-medium">New Institution Details</h4>
 
@@ -1175,15 +1311,17 @@ export function AddData() {
                       <Label>Institution Name *</Label>
                       <Input
                         placeholder="e.g., Bank of America"
-                        {...form.register('newInstitutionName')}
+                        {...form.register("newInstitutionName")}
                       />
                     </div>
 
                     <div className="space-y-2">
                       <Label>Institution Type *</Label>
                       <InstitutionTypeSelector
-                        value={form.watch('newInstitutionType') || ''}
-                        onValueChange={(value) => form.setValue('newInstitutionType', value)}
+                        value={form.watch("newInstitutionType") || ""}
+                        onValueChange={(value) =>
+                          form.setValue("newInstitutionType", value)
+                        }
                         institutionTypes={institutionTypes}
                         placeholder="Choose institution type..."
                       />
@@ -1195,7 +1333,7 @@ export function AddData() {
                       <Label>Website</Label>
                       <Input
                         placeholder="https://example.com"
-                        {...form.register('newInstitutionWebsite')}
+                        {...form.register("newInstitutionWebsite")}
                       />
                     </div>
 
@@ -1203,7 +1341,7 @@ export function AddData() {
                       <Label>Description</Label>
                       <Input
                         placeholder="Optional description"
-                        {...form.register('newInstitutionDescription')}
+                        {...form.register("newInstitutionDescription")}
                       />
                     </div>
                   </div>
@@ -1220,15 +1358,17 @@ export function AddData() {
                   <Label>Account Name *</Label>
                   <Input
                     placeholder="e.g., Primary Checking"
-                    {...form.register('newAccountName')}
+                    {...form.register("newAccountName")}
                   />
                 </div>
 
                 <div className="space-y-2">
                   <Label>Account Type *</Label>
                   <AccountTypeSelector
-                    value={form.watch('newAccountType') || ''}
-                    onValueChange={(value) => form.setValue('newAccountType', value)}
+                    value={form.watch("newAccountType") || ""}
+                    onValueChange={(value) =>
+                      form.setValue("newAccountType", value)
+                    }
                     accountTypes={accountTypes}
                     placeholder="Choose account type..."
                   />
@@ -1239,7 +1379,7 @@ export function AddData() {
                 <Label>Description</Label>
                 <Input
                   placeholder="Optional description"
-                  {...form.register('newAccountDescription')}
+                  {...form.register("newAccountDescription")}
                 />
               </div>
             </div>
@@ -1255,21 +1395,23 @@ export function AddData() {
               try {
                 await handleAccountCreation();
                 // Navigate to the selected entry method
-                if (selectedEntryMethod === 'manual') {
-                  setCurrentStep('manual-entry');
-                } else if (selectedEntryMethod === 'screenshot') {
-                  setCurrentStep('screenshot-entry');
+                if (selectedEntryMethod === "manual") {
+                  setCurrentStep("manual-entry");
+                } else if (selectedEntryMethod === "screenshot") {
+                  setCurrentStep("screenshot-entry");
                 } else {
                   // Fallback to manual entry if no method selected
-                  setCurrentStep('manual-entry');
+                  setCurrentStep("manual-entry");
                 }
               } catch (error) {
                 // Error already handled in handleAccountCreation
-                console.error('Failed to create account:', error);
+                console.error("Failed to create account:", error);
               }
             }}
             disabled={
-              !isAccountSelectionValid || createAccount.isPending || createInstitution.isPending
+              !isAccountSelectionValid ||
+              createAccount.isPending ||
+              createInstitution.isPending
             }
           >
             {createAccount.isPending || createInstitution.isPending ? (
@@ -1278,7 +1420,7 @@ export function AddData() {
                 Creating Account...
               </>
             ) : (
-              'Continue'
+              "Continue"
             )}
           </Button>
         </div>
@@ -1289,9 +1431,9 @@ export function AddData() {
   const handleWalletImport = async () => {
     if (!walletAddress.trim()) {
       toast({
-        variant: 'destructive',
-        title: 'Invalid Input',
-        description: 'Please enter a valid wallet address',
+        variant: "destructive",
+        title: "Invalid Input",
+        description: "Please enter a valid wallet address",
       });
       return;
     }
@@ -1311,11 +1453,11 @@ export function AddData() {
       ]);
 
       toast({
-        title: 'Wallet Import Successful!',
+        title: "Wallet Import Successful!",
         description: (
           <div className="space-y-2">
             <p>
-              Successfully imported {result.holdingsCreated} holdings across{' '}
+              Successfully imported {result.holdingsCreated} holdings across{" "}
               {result.accountsCreated} accounts
             </p>
             {result.accountsSkipped > 0 && (
@@ -1328,16 +1470,16 @@ export function AddData() {
       });
 
       // Navigate to holdings page to show imported data
-      navigate('/holdings');
+      navigate("/holdings");
     } catch (error) {
-      console.error('Wallet import failed:', error);
+      console.error("Wallet import failed:", error);
       toast({
-        variant: 'destructive',
-        title: 'Import Failed',
+        variant: "destructive",
+        title: "Import Failed",
         description:
           error instanceof Error
             ? error.message
-            : 'Failed to import wallet. Please check the address and try again.',
+            : "Failed to import wallet. Please check the address and try again.",
       });
     } finally {
       setIsImportingWallet(false);
@@ -1356,8 +1498,8 @@ export function AddData() {
           <CardHeader>
             <CardTitle>Enter Wallet Address</CardTitle>
             <CardDescription>
-              We'll automatically detect your wallet type and import balances from all supported
-              chains
+              We'll automatically detect your wallet type and import balances
+              from all supported chains
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
@@ -1371,8 +1513,8 @@ export function AddData() {
                 disabled={isImportingWallet}
               />
               <p className="text-sm text-muted-foreground">
-                Supported: EVM (Ethereum, Polygon, BSC, Arbitrum, Base), Bitcoin, Tron, Solana, and
-                12+ other chains
+                Supported: EVM (Ethereum, Polygon, BSC, Arbitrum, Base),
+                Bitcoin, Tron, Solana, and 12+ other chains
               </p>
             </div>
 
@@ -1385,10 +1527,15 @@ export function AddData() {
                   </p>
                   <ul className="text-xs text-blue-600 dark:text-blue-400 space-y-1 list-disc list-inside">
                     <li>System detects your wallet type automatically</li>
-                    <li>Fetches native token + ERC-20 token balances from all chains</li>
+                    <li>
+                      Fetches native token + ERC-20 token balances from all
+                      chains
+                    </li>
                     <li>Creates accounts for each chain with balances</li>
                     <li>Creates holdings for all tokens found</li>
-                    <li>All data will be available in your dashboard immediately</li>
+                    <li>
+                      All data will be available in your dashboard immediately
+                    </li>
                   </ul>
                 </div>
               </div>
@@ -1397,7 +1544,12 @@ export function AddData() {
         </Card>
 
         <div className="flex justify-between items-center pt-8">
-          <Button type="button" variant="outline" onClick={goBack} disabled={isImportingWallet}>
+          <Button
+            type="button"
+            variant="outline"
+            onClick={goBack}
+            disabled={isImportingWallet}
+          >
             Back
           </Button>
           <Button
@@ -1410,7 +1562,7 @@ export function AddData() {
                 Importing Wallet...
               </>
             ) : (
-              'Import Wallet'
+              "Import Wallet"
             )}
           </Button>
         </div>
@@ -1420,7 +1572,10 @@ export function AddData() {
 
   const renderEntryMethodSelection = () => (
     <div className="space-y-6">
-      <PageHeader title="Add Data" subtitle="Choose how you want to add data to your portfolio" />
+      <PageHeader
+        title="Add Data"
+        subtitle="Choose how you want to add data to your portfolio"
+      />
 
       {/* Show selected account info */}
       {currentlySelectedAccount && (
@@ -1432,8 +1587,8 @@ export function AddData() {
                 Your data will be added to: {currentlySelectedAccount.name}
               </p>
               <p className="text-xs text-blue-600 dark:text-blue-400 mt-0.5">
-                After completing this form, your new holdings will be added to this account and will
-                appear in your portfolio.
+                After completing this form, your new holdings will be added to
+                this account and will appear in your portfolio.
               </p>
             </div>
           </div>
@@ -1444,55 +1599,63 @@ export function AddData() {
         <div className="grid gap-4 md:grid-cols-3">
           <Card
             className="cursor-pointer hover:shadow-md transition-shadow"
-            onClick={() => handleEntryMethodSelected('manual')}
+            onClick={() => handleEntryMethodSelected("manual")}
           >
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <PenTool className="h-5 w-5" />
                 Manual Entry
               </CardTitle>
-              <CardDescription>Enter holding details manually using forms</CardDescription>
+              <CardDescription>
+                Enter holding details manually using forms
+              </CardDescription>
             </CardHeader>
             <CardContent>
               <p className="text-sm text-muted-foreground">
-                Perfect for entering holdings step by step with full control over all details.
+                Perfect for entering holdings step by step with full control
+                over all details.
               </p>
             </CardContent>
           </Card>
 
           <Card
             className="cursor-pointer hover:shadow-md transition-shadow"
-            onClick={() => handleEntryMethodSelected('screenshot')}
+            onClick={() => handleEntryMethodSelected("screenshot")}
           >
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <Camera className="h-5 w-5" />
                 Screenshot Upload
               </CardTitle>
-              <CardDescription>Upload a screenshot and let AI extract the details</CardDescription>
+              <CardDescription>
+                Upload a screenshot and let AI extract the details
+              </CardDescription>
             </CardHeader>
             <CardContent>
               <p className="text-sm text-muted-foreground">
-                Take a photo of your portfolio and we'll automatically detect holdings.
+                Take a photo of your portfolio and we'll automatically detect
+                holdings.
               </p>
             </CardContent>
           </Card>
 
           <Card
             className="cursor-pointer hover:shadow-md transition-shadow"
-            onClick={() => handleEntryMethodSelected('wallet')}
+            onClick={() => handleEntryMethodSelected("wallet")}
           >
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <Wallet className="h-5 w-5" />
                 Crypto Wallet
               </CardTitle>
-              <CardDescription>Import holdings from your wallet address</CardDescription>
+              <CardDescription>
+                Import holdings from your wallet address
+              </CardDescription>
             </CardHeader>
             <CardContent>
               <p className="text-sm text-muted-foreground">
-                Enter your wallet address to automatically import balances from all supported
-                chains.
+                Enter your wallet address to automatically import balances from
+                all supported chains.
               </p>
             </CardContent>
           </Card>
@@ -1516,7 +1679,7 @@ export function AddData() {
           subtitle={
             currentlySelectedAccount
               ? `Adding to: ${currentlySelectedAccount.name} • Upload a screenshot to automatically extract holdings.`
-              : 'Upload a screenshot to automatically extract holdings.'
+              : "Upload a screenshot to automatically extract holdings."
           }
         />
 
@@ -1527,11 +1690,12 @@ export function AddData() {
               <Info className="h-4 w-4 text-blue-600" />
               <div>
                 <p className="text-sm font-medium text-blue-800">
-                  Your holdings will be added to: {currentlySelectedAccount.name}
+                  Your holdings will be added to:{" "}
+                  {currentlySelectedAccount.name}
                 </p>
                 <p className="text-xs text-blue-600 mt-0.5">
-                  After uploading and reviewing your screenshot, the detected holdings will be added
-                  to this account.
+                  After uploading and reviewing your screenshot, the detected
+                  holdings will be added to this account.
                 </p>
               </div>
             </div>
@@ -1539,13 +1703,16 @@ export function AddData() {
         )}
 
         <div className="space-y-6">
-          {screenshotParsing.state === 'upload' && (
+          {screenshotParsing.state === "upload" && (
             <div className="space-y-4">
-              <h3 className="text-lg font-semibold">Upload Portfolio Screenshots</h3>
+              <h3 className="text-lg font-semibold">
+                Upload Portfolio Screenshots
+              </h3>
               <p className="text-muted-foreground">
-                Take screenshots or photos of your portfolio, trading apps, or any screens showing
-                your holdings. You can upload multiple screenshots at once. Our AI will
-                automatically detect and extract the token symbols and balances from all images.
+                Take screenshots or photos of your portfolio, trading apps, or
+                any screens showing your holdings. You can upload multiple
+                screenshots at once. Our AI will automatically detect and
+                extract the token symbols and balances from all images.
               </p>
 
               <ScreenshotUpload
@@ -1561,20 +1728,25 @@ export function AddData() {
                     );
                   } else {
                     toast({
-                      title: 'No account selected',
-                      description: 'Please go back and select an account first.',
-                      variant: 'destructive',
+                      title: "No account selected",
+                      description:
+                        "Please go back and select an account first.",
+                      variant: "destructive",
                     });
                   }
                 }}
                 onMultipleImageUpload={(files) => {
                   if (currentlySelectedAccountId) {
-                    screenshotParsing.handleMultipleImageUpload(files, currentlySelectedAccountId);
+                    screenshotParsing.handleMultipleImageUpload(
+                      files,
+                      currentlySelectedAccountId
+                    );
                   } else {
                     toast({
-                      title: 'No account selected',
-                      description: 'Please go back and select an account first.',
-                      variant: 'destructive',
+                      title: "No account selected",
+                      description:
+                        "Please go back and select an account first.",
+                      variant: "destructive",
                     });
                   }
                 }}
@@ -1584,20 +1756,23 @@ export function AddData() {
             </div>
           )}
 
-          {screenshotParsing.state === 'parsing' && (
+          {screenshotParsing.state === "parsing" && (
             <div className="text-center py-8 space-y-6">
               <LoadingSpinner className="h-8 w-8 mx-auto mb-4" />
               <div className="space-y-4">
                 <h3 className="text-lg font-semibold">
                   {screenshotParsing.processingProgress
                     ? `Analyzing Screenshots...`
-                    : 'Analyzing Screenshot...'}
+                    : "Analyzing Screenshot..."}
                 </h3>
 
                 {screenshotParsing.processingProgress && (
                   <div className="max-w-md mx-auto space-y-3">
                     <div className="space-y-2">
-                      <Progress value={undefined} className="w-full animate-pulse" />
+                      <Progress
+                        value={undefined}
+                        className="w-full animate-pulse"
+                      />
                       <div className="text-xs text-muted-foreground text-center">
                         Processing screenshots in parallel...
                       </div>
@@ -1608,20 +1783,24 @@ export function AddData() {
                 <p className="text-muted-foreground">
                   {screenshotParsing.processingProgress
                     ? `Processing ${screenshotParsing.processingProgress.total} screenshots in parallel. Each image takes 10-30 seconds.`
-                    : 'Our AI is extracting holdings from your screenshot. This usually takes 10-30 seconds.'}
+                    : "Our AI is extracting holdings from your screenshot. This usually takes 10-30 seconds."}
                 </p>
               </div>
             </div>
           )}
 
-          {(screenshotParsing.state === 'review' || screenshotParsing.state === 'processing') &&
-            (screenshotParsing.parsingResults || screenshotParsing.multipleResults) && (
+          {(screenshotParsing.state === "review" ||
+            screenshotParsing.state === "processing") &&
+            (screenshotParsing.parsingResults ||
+              screenshotParsing.multipleResults) && (
               <div className="space-y-6">
                 <div>
-                  <h3 className="text-lg font-semibold mb-2">Review Detected Holdings</h3>
+                  <h3 className="text-lg font-semibold mb-2">
+                    Review Detected Holdings
+                  </h3>
                   <p className="text-muted-foreground mb-4">
-                    Please review the holdings we detected and make any necessary adjustments before
-                    adding them to your account.
+                    Please review the holdings we detected and make any
+                    necessary adjustments before adding them to your account.
                   </p>
                 </div>
 
@@ -1630,35 +1809,47 @@ export function AddData() {
                   {screenshotParsing.multipleResults ? (
                     <>
                       <div className="mb-4 text-sm text-muted-foreground">
-                        Analysis from{' '}
-                        {screenshotParsing.multipleResults.overallSummary.totalScreenshots}{' '}
+                        Analysis from{" "}
+                        {
+                          screenshotParsing.multipleResults.overallSummary
+                            .totalScreenshots
+                        }{" "}
                         screenshots
                       </div>
                       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
                         <div>
                           <span className="font-medium">Total Holdings:</span>
                           <div className="text-lg font-semibold">
-                            {screenshotParsing.multipleResults.overallSummary.totalHoldings}
+                            {
+                              screenshotParsing.multipleResults.overallSummary
+                                .totalHoldings
+                            }
                           </div>
                         </div>
                         <div>
                           <span className="font-medium">Existing Tokens:</span>
                           <div className="text-lg font-semibold text-green-600">
-                            {screenshotParsing.multipleResults.overallSummary.existingTokens}
+                            {
+                              screenshotParsing.multipleResults.overallSummary
+                                .existingTokens
+                            }
                           </div>
                         </div>
                         <div>
                           <span className="font-medium">New Tokens:</span>
                           <div className="text-lg font-semibold text-orange-600">
-                            {screenshotParsing.multipleResults.overallSummary.newTokensRequired}
+                            {
+                              screenshotParsing.multipleResults.overallSummary
+                                .newTokensRequired
+                            }
                           </div>
                         </div>
                         <div>
                           <span className="font-medium">Avg Confidence:</span>
                           <div className="text-lg font-semibold">
                             {Math.round(
-                              screenshotParsing.multipleResults.overallSummary.averageConfidence *
-                                100
+                              screenshotParsing.multipleResults.overallSummary
+                                .averageConfidence * 100
                             )}
                             %
                           </div>
@@ -1670,26 +1861,36 @@ export function AddData() {
                       <div>
                         <span className="font-medium">Total Holdings:</span>
                         <div className="text-lg font-semibold">
-                          {screenshotParsing.parsingResults.summary.totalHoldings}
+                          {
+                            screenshotParsing.parsingResults.summary
+                              .totalHoldings
+                          }
                         </div>
                       </div>
                       <div>
                         <span className="font-medium">Existing Tokens:</span>
                         <div className="text-lg font-semibold text-green-600">
-                          {screenshotParsing.parsingResults.summary.existingTokens}
+                          {
+                            screenshotParsing.parsingResults.summary
+                              .existingTokens
+                          }
                         </div>
                       </div>
                       <div>
                         <span className="font-medium">New Tokens:</span>
                         <div className="text-lg font-semibold text-orange-600">
-                          {screenshotParsing.parsingResults.summary.newTokensRequired}
+                          {
+                            screenshotParsing.parsingResults.summary
+                              .newTokensRequired
+                          }
                         </div>
                       </div>
                       <div>
                         <span className="font-medium">Avg Confidence:</span>
                         <div className="text-lg font-semibold">
                           {Math.round(
-                            screenshotParsing.parsingResults.summary.averageConfidence * 100
+                            screenshotParsing.parsingResults.summary
+                              .averageConfidence * 100
                           )}
                           %
                         </div>
@@ -1719,14 +1920,18 @@ export function AddData() {
                   <div className="space-y-3">
                     {editableHoldings.map((holding, index) => {
                       const status = getHoldingStatus(holding);
-                      const hasErrors = holding.requiresUserSelection || holding.errors.length > 0;
+                      const hasErrors =
+                        holding.requiresUserSelection ||
+                        holding.errors.length > 0;
                       const isEditing = isEditingHolding(index);
 
                       return (
                         <div
                           key={rowKeysRef.current[index] || `${index}`}
                           className={`border rounded-lg p-4 ${
-                            hasErrors ? 'border-yellow-300 bg-yellow-50' : 'border-border'
+                            hasErrors
+                              ? "border-yellow-300 bg-yellow-50"
+                              : "border-border"
                           }`}
                         >
                           {/* Error Message at Top */}
@@ -1734,7 +1939,7 @@ export function AddData() {
                             <div className="mb-3 flex items-start gap-2 p-2 bg-yellow-100 border border-yellow-300 rounded">
                               <AlertCircle className="h-4 w-4 text-yellow-600 mt-0.5 flex-shrink-0" />
                               <div className="text-sm text-yellow-800">
-                                {holding.errors.join(', ')}
+                                {holding.errors.join(", ")}
                               </div>
                             </div>
                           )}
@@ -1745,9 +1950,13 @@ export function AddData() {
                               <div className="flex items-start gap-3">
                                 <div className="flex-1 grid grid-cols-1 md:grid-cols-2 gap-3">
                                   <div>
-                                    <Label className="text-xs text-muted-foreground">Token *</Label>
+                                    <Label className="text-xs text-muted-foreground">
+                                      Token *
+                                    </Label>
                                     <AsyncTokenSelector
-                                      value={editableHoldingTokenIds[index] || ''}
+                                      value={
+                                        editableHoldingTokenIds[index] || ""
+                                      }
                                       onValueChange={(tokenId) => {
                                         setEditableHoldingTokenIds((prev) => ({
                                           ...prev,
@@ -1755,15 +1964,18 @@ export function AddData() {
                                         }));
 
                                         // Update holding with selected token info
-                                        let updateData: Partial<ParsedHolding> = {};
+                                        let updateData: Partial<ParsedHolding> =
+                                          {};
 
                                         if (isExternalTokenValue(tokenId)) {
                                           // Handle external token selection
                                           try {
-                                            const parts = tokenId.split(':');
-                                            const metadata = JSON.parse(parts.slice(2).join(':'));
+                                            const parts = tokenId.split(":");
+                                            const metadata = JSON.parse(
+                                              parts.slice(2).join(":")
+                                            );
                                             console.log(
-                                              'Parsed external token metadata:',
+                                              "Parsed external token metadata:",
                                               metadata
                                             );
                                             updateData = {
@@ -1777,15 +1989,17 @@ export function AddData() {
                                                   isValid: true,
                                                   metadata: {
                                                     ...metadata,
-                                                    type: metadata.type || 'Equity', // Ensure type is always present
+                                                    type:
+                                                      metadata.type || "Equity", // Ensure type is always present
                                                   },
                                                 },
                                               },
-                                              suggestedTokenType: metadata.type || 'other',
+                                              suggestedTokenType:
+                                                metadata.type || "other",
                                             };
                                           } catch (error) {
                                             console.error(
-                                              'Failed to parse external token metadata:',
+                                              "Failed to parse external token metadata:",
                                               error
                                             );
                                           }
@@ -1796,7 +2010,7 @@ export function AddData() {
                                           if (selectedToken) {
                                             updateData = {
                                               symbol: selectedToken.symbol,
-                                              name: selectedToken.name || '',
+                                              name: selectedToken.name || "",
                                               tokenId: selectedToken.id,
                                               tokenExists: true,
                                               requiresUserSelection: false,
@@ -1805,36 +2019,42 @@ export function AddData() {
                                           }
                                         }
 
-                                        if (Object.keys(updateData).length > 0) {
+                                        if (
+                                          Object.keys(updateData).length > 0
+                                        ) {
                                           updateHolding(index, updateData);
                                         }
                                       }}
                                       placeholder={
                                         holding.requiresUserSelection
-                                          ? 'Select from provider suggestions...'
-                                          : 'Search for a token...'
+                                          ? "Select from provider suggestions..."
+                                          : "Search for a token..."
                                       }
                                       className="h-8"
                                       disabled={isScreenshotBusy}
                                       suggestedTokens={
                                         holding.requiresUserSelection &&
-                                        holding.providerValidation?.similarMatches
+                                        holding.providerValidation
+                                          ?.similarMatches
                                           ? holding.providerValidation.similarMatches
                                               .filter((match) => match.metadata)
                                               .map((match) => ({
                                                 symbol: match.metadata!.symbol,
                                                 name: match.metadata!.name,
                                                 type: match.metadata!.type.toLowerCase(),
-                                                source: 'external' as const,
-                                                provider: match.metadata!.provider as
-                                                  | 'finnhub'
-                                                  | 'coingecko',
+                                                source: "external" as const,
+                                                provider: match.metadata!
+                                                  .provider as
+                                                  | "finnhub"
+                                                  | "coingecko",
                                                 metadata: match.metadata,
                                               }))
                                           : undefined
                                       }
                                       prefillSymbol={
-                                        holding.requiresUserSelection ? holding.symbol : undefined
+                                        holding.requiresUserSelection
+                                          ? holding.symbol
+                                          : undefined
                                       }
                                     />
                                   </div>
@@ -1849,7 +2069,9 @@ export function AddData() {
                                           balance: e.target.value,
                                           errors: holding.errors.filter(
                                             (error) =>
-                                              !error.includes('Valid balance amount is required')
+                                              !error.includes(
+                                                "Valid balance amount is required"
+                                              )
                                           ),
                                         })
                                       }
@@ -1860,35 +2082,42 @@ export function AddData() {
                                       disabled={isScreenshotBusy}
                                     />
                                   </div>
-                                  {holding.availableExistingHoldings.length > 0 && (
+                                  {holding.availableExistingHoldings.length >
+                                    0 && (
                                     <div className="md:col-span-2">
                                       <Label className="text-xs text-muted-foreground">
                                         Apply to existing holding
                                       </Label>
                                       <Select
                                         value={
-                                          holding.processingAction === 'update-existing' &&
+                                          holding.processingAction ===
+                                            "update-existing" &&
                                           holding.existingHoldingId
                                             ? holding.existingHoldingId
-                                            : 'create'
+                                            : "create"
                                         }
                                         onValueChange={(value) => {
-                                          if (value === 'create') {
+                                          if (value === "create") {
                                             updateHolding(index, {
-                                              processingAction: 'create',
+                                              processingAction: "create",
                                               existingHoldingId: undefined,
                                               errors: holding.errors.filter(
                                                 (error) =>
-                                                  !error.includes('Select existing holding')
+                                                  !error.includes(
+                                                    "Select existing holding"
+                                                  )
                                               ),
                                             });
                                           } else {
                                             updateHolding(index, {
-                                              processingAction: 'update-existing',
+                                              processingAction:
+                                                "update-existing",
                                               existingHoldingId: value,
                                               errors: holding.errors.filter(
                                                 (error) =>
-                                                  !error.includes('Select existing holding')
+                                                  !error.includes(
+                                                    "Select existing holding"
+                                                  )
                                               ),
                                             });
                                           }
@@ -1899,40 +2128,58 @@ export function AddData() {
                                           <SelectValue placeholder="Create new holding" />
                                         </SelectTrigger>
                                         <SelectContent>
-                                          <SelectItem value="create">Create new holding</SelectItem>
-                                          {holding.availableExistingHoldings.map((option) => {
-                                            const lastUpdated = option.lastUpdated
-                                              ? new Date(option.lastUpdated).toLocaleDateString()
-                                              : null;
+                                          <SelectItem value="create">
+                                            Create new holding
+                                          </SelectItem>
+                                          {holding.availableExistingHoldings.map(
+                                            (option) => {
+                                              const lastUpdated =
+                                                option.lastUpdated
+                                                  ? new Date(
+                                                      option.lastUpdated
+                                                    ).toLocaleDateString()
+                                                  : null;
 
-                                            return (
-                                              <SelectItem key={option.id} value={option.id}>
-                                                {option.tokenSymbol || option.tokenId}
-                                                {option.tokenName ? ` (${option.tokenName})` : ''}
-                                                {option.balance
-                                                  ? ` • Balance ${option.balance}`
-                                                  : ''}
-                                                {lastUpdated ? ` • Updated ${lastUpdated}` : ''}
-                                              </SelectItem>
-                                            );
-                                          })}
+                                              return (
+                                                <SelectItem
+                                                  key={option.id}
+                                                  value={option.id}
+                                                >
+                                                  {option.tokenSymbol ||
+                                                    option.tokenId}
+                                                  {option.tokenName
+                                                    ? ` (${option.tokenName})`
+                                                    : ""}
+                                                  {option.balance
+                                                    ? ` • Balance ${option.balance}`
+                                                    : ""}
+                                                  {lastUpdated
+                                                    ? ` • Updated ${lastUpdated}`
+                                                    : ""}
+                                                </SelectItem>
+                                              );
+                                            }
+                                          )}
                                         </SelectContent>
                                       </Select>
                                       {(() => {
                                         if (
-                                          holding.processingAction === 'update-existing' &&
+                                          holding.processingAction ===
+                                            "update-existing" &&
                                           holding.existingHoldingId
                                         ) {
                                           const targetOption =
                                             holding.availableExistingHoldings.find(
-                                              (option) => option.id === holding.existingHoldingId
+                                              (option) =>
+                                                option.id ===
+                                                holding.existingHoldingId
                                             );
                                           return (
                                             <p className="mt-1 text-xs text-muted-foreground">
                                               Updating existing holding
                                               {targetOption?.balance
                                                 ? ` with current balance ${targetOption.balance}`
-                                                : ''}
+                                                : ""}
                                               .
                                             </p>
                                           );
@@ -1956,7 +2203,9 @@ export function AddData() {
 
                               {holding.notes && (
                                 <div>
-                                  <Label className="text-xs text-muted-foreground">Notes</Label>
+                                  <Label className="text-xs text-muted-foreground">
+                                    Notes
+                                  </Label>
                                   <Input
                                     value={holding.notes}
                                     onChange={(e) =>
@@ -1977,27 +2226,34 @@ export function AddData() {
                               <div className="flex-1">
                                 <div className="flex items-center gap-2 mb-2">
                                   <span className="font-medium text-lg">
-                                    {holding.symbol || 'Unknown Symbol'}
+                                    {holding.symbol || "Unknown Symbol"}
                                   </span>
                                   {holding.name && (
-                                    <span className="text-muted-foreground">({holding.name})</span>
+                                    <span className="text-muted-foreground">
+                                      ({holding.name})
+                                    </span>
                                   )}
 
                                   {/* Status Badge */}
-                                  {status.type === 'create' ? (
+                                  {status.type === "create" ? (
                                     <span className="text-xs bg-green-100 text-green-800 px-2 py-1 rounded">
                                       New Holding
                                     </span>
-                                  ) : status.type === 'update' ? (
+                                  ) : status.type === "update" ? (
                                     <span
                                       className={`text-xs px-2 py-1 rounded ${
                                         status.isIncrease
-                                          ? 'bg-blue-100 text-blue-800'
-                                          : 'bg-yellow-100 text-yellow-800'
+                                          ? "bg-blue-100 text-blue-800"
+                                          : "bg-yellow-100 text-yellow-800"
                                       }`}
                                     >
-                                      {status.isIncrease ? 'Increase' : 'Decrease'} by{' '}
-                                      {Math.abs(Number.parseFloat(status.difference)).toFixed(6)}
+                                      {status.isIncrease
+                                        ? "Increase"
+                                        : "Decrease"}{" "}
+                                      by{" "}
+                                      {Math.abs(
+                                        Number.parseFloat(status.difference)
+                                      ).toFixed(6)}
                                     </span>
                                   ) : null}
 
@@ -2010,27 +2266,38 @@ export function AddData() {
 
                                 <div className="space-y-1">
                                   <div className="text-sm">
-                                    <span className="text-muted-foreground">Balance:</span>{' '}
-                                    <span className="font-medium">{holding.balance || '0'}</span>
+                                    <span className="text-muted-foreground">
+                                      Balance:
+                                    </span>{" "}
+                                    <span className="font-medium">
+                                      {holding.balance || "0"}
+                                    </span>
                                   </div>
 
-                                  {status.type === 'update' && (
+                                  {status.type === "update" && (
                                     <div className="text-sm">
-                                      <span className="text-muted-foreground">Current:</span>{' '}
-                                      <span>{status.reference?.balance ?? '—'}</span>
-                                      {' → '}
-                                      <span className="font-medium">{holding.balance}</span>
+                                      <span className="text-muted-foreground">
+                                        Current:
+                                      </span>{" "}
+                                      <span>
+                                        {status.reference?.balance ?? "—"}
+                                      </span>
+                                      {" → "}
+                                      <span className="font-medium">
+                                        {holding.balance}
+                                      </span>
                                     </div>
                                   )}
-                                  {status.type === 'update' && status.reference && (
-                                    <div className="text-xs text-muted-foreground">
-                                      Updating existing holding
-                                      {status.reference.tokenSymbol
-                                        ? ` (${status.reference.tokenSymbol})`
-                                        : ''}
-                                      .
-                                    </div>
-                                  )}
+                                  {status.type === "update" &&
+                                    status.reference && (
+                                      <div className="text-xs text-muted-foreground">
+                                        Updating existing holding
+                                        {status.reference.tokenSymbol
+                                          ? ` (${status.reference.tokenSymbol})`
+                                          : ""}
+                                        .
+                                      </div>
+                                    )}
                                 </div>
                               </div>
 
@@ -2039,13 +2306,14 @@ export function AddData() {
                                   <div
                                     className={`text-sm font-medium ${
                                       holding.confidence >= 0.8
-                                        ? 'text-green-600'
+                                        ? "text-green-600"
                                         : holding.confidence >= 0.6
-                                          ? 'text-yellow-600'
-                                          : 'text-red-600'
+                                        ? "text-yellow-600"
+                                        : "text-red-600"
                                     }`}
                                   >
-                                    {Math.round(holding.confidence * 100)}% confidence
+                                    {Math.round(holding.confidence * 100)}%
+                                    confidence
                                   </div>
                                 </div>
 
@@ -2076,14 +2344,20 @@ export function AddData() {
               </div>
             )}
 
-          {screenshotParsing.state === 'error' && (
+          {screenshotParsing.state === "error" && (
             <div className="text-center py-8">
               <div className="text-red-500 mb-4">
                 <AlertCircle className="h-12 w-12 mx-auto mb-2" />
-                <h3 className="text-lg font-semibold">Error Processing Screenshot</h3>
+                <h3 className="text-lg font-semibold">
+                  Error Processing Screenshot
+                </h3>
               </div>
-              <p className="text-muted-foreground mb-4">{screenshotParsing.errorMessage}</p>
-              <Button onClick={() => screenshotParsing.handleRetry()}>Try Again</Button>
+              <p className="text-muted-foreground mb-4">
+                {screenshotParsing.errorMessage}
+              </p>
+              <Button onClick={() => screenshotParsing.handleRetry()}>
+                Try Again
+              </Button>
             </div>
           )}
         </div>
@@ -2091,25 +2365,31 @@ export function AddData() {
 
       <div className="sticky bottom-0 left-0 right-0 z-40 border-t border-border/70 bg-background/95 px-4 py-4 shadow-[0_-1px_3px_rgba(15,23,42,0.08)] backdrop-blur supports-[backdrop-filter]:bg-background/80">
         <div className="mx-auto flex w-full max-w-5xl flex-wrap items-center justify-between gap-4">
-          <Button type="button" variant="outline" onClick={goBack} disabled={isScreenshotBusy}>
+          <Button
+            type="button"
+            variant="outline"
+            onClick={goBack}
+            disabled={isScreenshotBusy}
+          >
             Back
           </Button>
 
           <div className="flex flex-1 items-center justify-end gap-4">
-            {(screenshotParsing.state === 'review' || isScreenshotProcessing) &&
-              (screenshotParsing.parsingResults || screenshotParsing.multipleResults) &&
+            {(screenshotParsing.state === "review" || isScreenshotProcessing) &&
+              (screenshotParsing.parsingResults ||
+                screenshotParsing.multipleResults) &&
               (() => {
                 const creates = editableHoldings.filter((h) => {
                   const status = getHoldingStatus(h);
-                  return status.type === 'create';
+                  return status.type === "create";
                 }).length;
 
                 const updates = editableHoldings.filter((h) => {
                   const status = getHoldingStatus(h);
-                  return status.type === 'update';
+                  return status.type === "update";
                 }).length;
 
-                let buttonText = 'Process Holdings';
+                let buttonText = "Process Holdings";
                 if (creates > 0 && updates > 0) {
                   buttonText = `Add ${creates} New, Update ${updates} Existing`;
                 } else if (creates > 0) {
@@ -2119,14 +2399,16 @@ export function AddData() {
                 }
 
                 const hasUnresolvedIssues = editableHoldings.some(
-                  (holding) => holding.requiresUserSelection || holding.errors.length > 0
+                  (holding) =>
+                    holding.requiresUserSelection || holding.errors.length > 0
                 );
 
                 return (
                   <Button
                     onClick={() => {
                       if (currentlySelectedAccountId && !isScreenshotBusy) {
-                        const synchronizedHoldings = synchronizeTokenSelections();
+                        const synchronizedHoldings =
+                          synchronizeTokenSelections();
                         screenshotParsing.handleProcessHoldings(
                           synchronizedHoldings,
                           currentlySelectedAccountId
@@ -2150,16 +2432,20 @@ export function AddData() {
         </div>
       </div>
 
-      {(screenshotParsing.state === 'processing' || screenshotParsing.isFinalizing) && (
+      {(screenshotParsing.state === "processing" ||
+        screenshotParsing.isFinalizing) && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-blue-900/60 backdrop-blur-sm">
           <div className="mx-4 max-w-md rounded-lg border border-blue-200 bg-blue-50/95 p-6 text-center shadow-xl">
             <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-white/80">
               <LoadingSpinner className="h-6 w-6 text-blue-700" />
             </div>
-            <h3 className="text-lg font-semibold text-blue-900">Processing holdings</h3>
+            <h3 className="text-lg font-semibold text-blue-900">
+              Processing holdings
+            </h3>
             <p className="mt-2 text-sm text-blue-800">
               {baseFinalizingMessage}
-              {!screenshotParsing.finalizingMessage && ' This may take a few seconds.'}
+              {!screenshotParsing.finalizingMessage &&
+                " This may take a few seconds."}
             </p>
           </div>
         </div>
@@ -2174,7 +2460,7 @@ export function AddData() {
         subtitle={
           currentlySelectedAccount
             ? `Adding to: ${currentlySelectedAccount.name} • Enter your holding details below.`
-            : 'Enter your holding details below.'
+            : "Enter your holding details below."
         }
       />
 
@@ -2188,8 +2474,8 @@ export function AddData() {
                 Adding holding to: {currentlySelectedAccount.name}
               </p>
               <p className="text-xs text-blue-600 mt-0.5">
-                Fill out the form below to add a new holding to this account. All required fields
-                are marked with *.
+                Fill out the form below to add a new holding to this account.
+                All required fields are marked with *.
               </p>
             </div>
           </div>
@@ -2206,21 +2492,23 @@ export function AddData() {
               <Label htmlFor={tokenSelectId}>Select Token *</Label>
               <AsyncTokenSelector
                 id={tokenSelectId}
-                value={form.watch('tokenId') || ''}
+                value={form.watch("tokenId") || ""}
                 onValueChange={(value: string) => {
-                  if (value === 'new') {
+                  if (value === "new") {
                     setIsTokenFormOpen(true);
                   } else if (isExternalTokenValue(value)) {
                     // Store external token data for later creation
-                    form.setValue('tokenId', value);
+                    form.setValue("tokenId", value);
                   } else {
-                    form.setValue('tokenId', value);
+                    form.setValue("tokenId", value);
                   }
                 }}
                 placeholder="Choose a token..."
               />
               {form.formState.errors.tokenId && (
-                <p className="text-sm text-red-500">{form.formState.errors.tokenId.message}</p>
+                <p className="text-sm text-red-500">
+                  {form.formState.errors.tokenId.message}
+                </p>
               )}
             </div>
 
@@ -2231,11 +2519,15 @@ export function AddData() {
                 type="number"
                 step="any"
                 placeholder="e.g., 100.50"
-                {...form.register('balance', { valueAsNumber: true })}
-                className={form.formState.errors.balance ? 'border-red-500' : ''}
+                {...form.register("balance", { valueAsNumber: true })}
+                className={
+                  form.formState.errors.balance ? "border-red-500" : ""
+                }
               />
               {form.formState.errors.balance && (
-                <p className="text-sm text-red-500">{form.formState.errors.balance.message}</p>
+                <p className="text-sm text-red-500">
+                  {form.formState.errors.balance.message}
+                </p>
               )}
             </div>
           </div>
@@ -2251,36 +2543,42 @@ export function AddData() {
                 <Label htmlFor={accountSelectId}>Select Account *</Label>
                 <AccountSelector
                   id={accountSelectId}
-                  value={form.watch('accountId') || ''}
-                  onValueChange={(value) => form.setValue('accountId', value)}
+                  value={form.watch("accountId") || ""}
+                  onValueChange={(value) => form.setValue("accountId", value)}
                   accounts={accounts}
                   institutions={institutions}
                   placeholder="Choose an account..."
                 />
                 {form.formState.errors.accountId && (
-                  <p className="text-sm text-red-500">{form.formState.errors.accountId.message}</p>
+                  <p className="text-sm text-red-500">
+                    {form.formState.errors.accountId.message}
+                  </p>
                 )}
               </div>
             </div>
 
-            {watchAccountId === 'new' && (
+            {watchAccountId === "new" && (
               <div className="space-y-4 border-t pt-4">
                 {/* Institution Selection - Now First */}
                 <div className="space-y-4">
                   <h3 className="text-base font-medium">Institution</h3>
 
                   <div className="space-y-2">
-                    <Label htmlFor={institutionSelectId}>Select Institution *</Label>
+                    <Label htmlFor={institutionSelectId}>
+                      Select Institution *
+                    </Label>
                     <InstitutionSelector
                       id={institutionSelectId}
-                      value={form.watch('institutionId') || ''}
-                      onValueChange={(value) => form.setValue('institutionId', value)}
+                      value={form.watch("institutionId") || ""}
+                      onValueChange={(value) =>
+                        form.setValue("institutionId", value)
+                      }
                       institutions={institutions}
                       placeholder="Choose an institution..."
                     />
                   </div>
 
-                  {watchInstitutionId === 'new' && (
+                  {watchInstitutionId === "new" && (
                     <div className="space-y-4 border rounded-lg p-4">
                       <h4 className="font-medium">New Institution Details</h4>
 
@@ -2289,15 +2587,17 @@ export function AddData() {
                           <Label>Institution Name *</Label>
                           <Input
                             placeholder="e.g., Bank of America"
-                            {...form.register('newInstitutionName')}
+                            {...form.register("newInstitutionName")}
                           />
                         </div>
 
                         <div className="space-y-2">
                           <Label>Institution Type *</Label>
                           <InstitutionTypeSelector
-                            value={form.watch('newInstitutionType') || ''}
-                            onValueChange={(value) => form.setValue('newInstitutionType', value)}
+                            value={form.watch("newInstitutionType") || ""}
+                            onValueChange={(value) =>
+                              form.setValue("newInstitutionType", value)
+                            }
                             institutionTypes={institutionTypes}
                             placeholder="Choose institution type..."
                           />
@@ -2309,7 +2609,7 @@ export function AddData() {
                           <Label>Website</Label>
                           <Input
                             placeholder="https://example.com"
-                            {...form.register('newInstitutionWebsite')}
+                            {...form.register("newInstitutionWebsite")}
                           />
                         </div>
 
@@ -2317,7 +2617,7 @@ export function AddData() {
                           <Label>Description</Label>
                           <Input
                             placeholder="Optional description"
-                            {...form.register('newInstitutionDescription')}
+                            {...form.register("newInstitutionDescription")}
                           />
                         </div>
                       </div>
@@ -2334,15 +2634,17 @@ export function AddData() {
                       <Label>Account Name *</Label>
                       <Input
                         placeholder="e.g., Primary Checking"
-                        {...form.register('newAccountName')}
+                        {...form.register("newAccountName")}
                       />
                     </div>
 
                     <div className="space-y-2">
                       <Label>Account Type *</Label>
                       <AccountTypeSelector
-                        value={form.watch('newAccountType') || ''}
-                        onValueChange={(value) => form.setValue('newAccountType', value)}
+                        value={form.watch("newAccountType") || ""}
+                        onValueChange={(value) =>
+                          form.setValue("newAccountType", value)
+                        }
                         accountTypes={accountTypes}
                         placeholder="Choose account type..."
                       />
@@ -2353,7 +2655,7 @@ export function AddData() {
                     <Label>Description</Label>
                     <Input
                       placeholder="Optional description"
-                      {...form.register('newAccountDescription')}
+                      {...form.register("newAccountDescription")}
                     />
                   </div>
                 </div>
@@ -2373,7 +2675,7 @@ export function AddData() {
             className="min-w-[140px]"
           >
             {isSubmitting && <LoadingSpinner className="mr-2 h-4 w-4" />}
-            {isSubmitting ? 'Creating...' : 'Create Holding'}
+            {isSubmitting ? "Creating..." : "Create Holding"}
           </Button>
         </div>
       </form>
@@ -2394,11 +2696,11 @@ export function AddData() {
         </div>
       ) : (
         <>
-          {currentStep === 'account-selection' && renderAccountSelection()}
-          {currentStep === 'entry-method' && renderEntryMethodSelection()}
-          {currentStep === 'manual-entry' && renderManualEntry()}
-          {currentStep === 'screenshot-entry' && renderScreenshotEntry()}
-          {currentStep === 'wallet-entry' && renderWalletEntry()}
+          {currentStep === "account-selection" && renderAccountSelection()}
+          {currentStep === "entry-method" && renderEntryMethodSelection()}
+          {currentStep === "manual-entry" && renderManualEntry()}
+          {currentStep === "screenshot-entry" && renderScreenshotEntry()}
+          {currentStep === "wallet-entry" && renderWalletEntry()}
         </>
       )}
 
@@ -2413,9 +2715,9 @@ export function AddData() {
           void utils.tokens.getAll.invalidate();
 
           // Set the newly created token ID in the form
-          form.setValue('tokenId', token.id);
+          form.setValue("tokenId", token.id);
           toast({
-            title: 'Token selected',
+            title: "Token selected",
             description: `${token.symbol} - ${token.name} has been selected for the holding.`,
           });
         }}
