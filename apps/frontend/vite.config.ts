@@ -6,28 +6,8 @@ import { VitePWA } from 'vite-plugin-pwa';
 export default defineConfig({
   plugins: [
     react(),
-    VitePWA({
-      // Use custom service worker
-      injectRegister: null,
-      strategies: 'injectManifest',
-      srcDir: 'public',
-      filename: 'sw.js',
-      // Include assets
-      includeAssets: [
-        'favicon.ico',
-        'favicon-16x16.png',
-        'favicon-32x32.png',
-        'robots.txt',
-        'icons/*.png',
-        '.well-known/*',
-      ],
-      // Use manifest from public directory
-      manifest: false,
-      // Disable dev options to prevent conflicts
-      devOptions: {
-        enabled: false,
-      },
-    }),
+    // Note: Using custom service worker (public/sw.js) and manifest (public/manifest.json)
+    // VitePWA plugin is disabled since we manage these files manually
   ],
   resolve: {
     alias: {
