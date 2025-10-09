@@ -2,13 +2,16 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { Loader2, Mail } from 'lucide-react';
 import { useId, useState } from 'react';
 import { useForm } from 'react-hook-form';
+import { useNavigate } from 'react-router-dom';
 import { z } from 'zod';
+import { MagicCodeInput } from '@/components/MagicCodeInput';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useAuth } from '@/contexts/AuthContext';
+import { isPWA } from '@/lib/pwa-utils';
 
 const authSchema = z.object({
   email: z.string().email('Please enter a valid email address'),
@@ -17,10 +20,15 @@ const authSchema = z.object({
 type AuthFormData = z.infer<typeof authSchema>;
 
 export function Auth() {
-  const { authenticate } = useAuth();
+  const { authenticate, verifyCode } = useAuth();
+  const navigate = useNavigate();
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [isEmailSent, setIsEmailSent] = useState(false);
+  const [userEmail, setUserEmail] = useState<string>('');
+
+  // Detect if running in PWA
+  const runningAsPWA = isPWA();
 
   const emailId = useId();
 
@@ -35,6 +43,7 @@ export function Auth() {
   const onSubmit = async (data: AuthFormData) => {
     setIsLoading(true);
     setError(null);
+    setUserEmail(data.email);
 
     const result = await authenticate(data.email);
 
@@ -47,7 +56,65 @@ export function Auth() {
     setIsLoading(false);
   };
 
+  const handleCodeSubmit = async (code: string) => {
+    setError(null);
+    const result = await verifyCode(userEmail, code);
+
+    if (result.error) {
+      setError(result.error);
+      throw new Error(result.error);
+    } else {
+      // Successfully authenticated, redirect to dashboard
+      navigate('/', { replace: true });
+    }
+  };
+
+  const handleResendCode = async () => {
+    setError(null);
+    const result = await authenticate(userEmail);
+    if (result.error) {
+      setError(result.error);
+      throw new Error(result.error);
+    }
+  };
+
   if (isEmailSent) {
+    if (runningAsPWA) {
+      // Show code input for PWA users
+      return (
+        <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-950 py-12 px-4 sm:px-6 lg:px-8">
+          <Card className="w-full max-w-md">
+            <CardHeader className="space-y-1">
+              <CardTitle className="text-2xl text-center">Enter verification code</CardTitle>
+              <CardDescription className="text-center">
+                We've sent a 6-digit code to {userEmail}
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <MagicCodeInput
+                onSubmit={handleCodeSubmit}
+                onResend={handleResendCode}
+                isLoading={isLoading}
+                error={error}
+              />
+              <Button
+                type="button"
+                variant="ghost"
+                onClick={() => {
+                  setIsEmailSent(false);
+                  setError(null);
+                }}
+                className="w-full mt-4"
+              >
+                Use a different email
+              </Button>
+            </CardContent>
+          </Card>
+        </div>
+      );
+    }
+
+    // Show magic link message for browser users
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-950 py-12 px-4 sm:px-6 lg:px-8">
         <Card className="w-full max-w-md">

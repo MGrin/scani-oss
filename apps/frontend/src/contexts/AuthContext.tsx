@@ -9,6 +9,7 @@ interface AuthContextType {
   session: Session | null;
   loading: boolean;
   authenticate: (email: string) => Promise<{ error?: string }>;
+  verifyCode: (email: string, token: string) => Promise<{ error?: string }>;
   signOut: () => Promise<void>;
   resetPassword: (email: string) => Promise<{ error?: string }>;
 }
@@ -41,21 +42,56 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const authenticate = async (email: string) => {
+    // Check if running in PWA
+    const runningAsPWA = isPWA();
+
     // Log PWA detection info for debugging
     if (import.meta.env.DEV) {
       logPWAInfo();
+      console.log(`[Auth] Running as PWA: ${runningAsPWA}`);
     }
 
-    // Determine redirect URL based on PWA context
+    if (runningAsPWA) {
+      // For PWA: Send magic CODE (no redirect needed)
+      console.log('[Auth] PWA detected: Sending magic code');
+      const { error } = await supabase.auth.signInWithOtp({
+        email,
+        options: {
+          shouldCreateUser: true,
+          // No emailRedirectTo - user will enter code in app
+        },
+      });
+
+      if (error) {
+        return { error: error.message };
+      }
+
+      return {};
+    }
+
+    // For browser: Send magic LINK with redirect
     const redirectUrl = `${window.location.origin}/auth/callback`;
-    console.log(`[Auth] Requesting magic link with redirect to: ${redirectUrl}`);
-    console.log(`[Auth] Running as PWA: ${isPWA()}`);
+    console.log(`[Auth] Browser detected: Sending magic link with redirect to: ${redirectUrl}`);
 
     const { error } = await supabase.auth.signInWithOtp({
       email,
       options: {
         emailRedirectTo: redirectUrl,
       },
+    });
+
+    if (error) {
+      return { error: error.message };
+    }
+
+    return {};
+  };
+
+  const verifyCode = async (email: string, token: string) => {
+    const { error } = await supabase.auth.verifyOtp({
+      email,
+      token,
+      type: 'email',
     });
 
     if (error) {
@@ -86,6 +122,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     session,
     loading,
     authenticate,
+    verifyCode,
     signOut,
     resetPassword,
   };
