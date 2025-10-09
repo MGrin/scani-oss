@@ -21,14 +21,14 @@ export function AuthCallback() {
   const runningAsPWA = isPWA();
   const fromExternal = isExternalNavigation();
 
-  // Log PWA info for debugging
+  // Log PWA info for debugging (always log in production for troubleshooting)
   useEffect(() => {
-    if (import.meta.env.DEV) {
-      console.log('[AuthCallback] PWA Detection:');
-      logPWAInfo();
-      console.log('[AuthCallback] Running as PWA:', runningAsPWA);
-      console.log('[AuthCallback] From external navigation:', fromExternal);
-    }
+    console.log('[AuthCallback] PWA Detection:');
+    logPWAInfo();
+    console.log('[AuthCallback] Running as PWA:', runningAsPWA);
+    console.log('[AuthCallback] From external navigation:', fromExternal);
+    console.log('[AuthCallback] Current URL:', window.location.href);
+    console.log('[AuthCallback] Referrer:', document.referrer || 'none');
   }, [runningAsPWA, fromExternal]);
 
   // This will trigger a user sync on the backend when the user is authenticated
