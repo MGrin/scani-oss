@@ -39,8 +39,8 @@ import { SkipLinks } from '@/components/ui/skip-links';
 
 import { useAuth } from '@/contexts/AuthContext';
 import { RealtimeProvider } from '@/contexts/RealtimeContext';
+import { useTheme } from '@/contexts/ThemeContext';
 import { useEnhancedToast } from '@/hooks/use-enhanced-toast';
-import { useTheme } from '@/hooks/use-theme';
 import { MOBILE_SPACING } from '@/lib/mobile-utils';
 import { trpc } from '@/lib/trpc';
 import { cn } from '@/lib/utils';
