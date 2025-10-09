@@ -1,8 +1,8 @@
 // Simple PWA icon generator using Canvas
 // Run with: bun run generate-icons.ts
 
-import { writeFileSync } from 'fs';
-import { join } from 'path';
+import { writeFileSync } from "fs";
+import { join } from "path";
 
 // Simple SVG to use as base
 const generateIconSVG = (size: number) => `
@@ -18,12 +18,14 @@ const generateIconSVG = (size: number) => `
 `;
 
 const sizes = [72, 96, 128, 144, 152, 192, 384, 512];
-const iconsDir = join(import.meta.dir, 'public', 'icons');
+const iconsDir = join(import.meta.dir, "public", "icons");
 
-console.log('Generating PWA icons as SVG files...');
-console.log('Note: For production, convert these to PNG using an image converter.');
+console.log("Generating PWA icons as SVG files...");
+console.log(
+  "Note: For production, convert these to PNG using an image converter."
+);
 
-sizes.forEach(size => {
+sizes.forEach((size) => {
   const svg = generateIconSVG(size);
   const filename = `icon-${size}x${size}.svg`;
   const filepath = join(iconsDir, filename);
@@ -33,11 +35,13 @@ sizes.forEach(size => {
 
 // Also create a master SVG at 512x512
 const masterSVG = generateIconSVG(512);
-writeFileSync(join(iconsDir, 'icon.svg'), masterSVG);
-console.log('✓ Created master icon.svg');
+writeFileSync(join(iconsDir, "icon.svg"), masterSVG);
+console.log("✓ Created master icon.svg");
 
-console.log('\nSVG icons created!');
-console.log('\nFor production, convert these SVGs to PNG:');
-console.log('1. Use an online tool: https://realfavicongenerator.net/');
-console.log('2. Or use ImageMagick: convert icon.svg -resize 192x192 icon-192x192.png');
-console.log('3. Or use your design tool (Figma, Sketch, etc.)');
+console.log("\nSVG icons created!");
+console.log("\nFor production, convert these SVGs to PNG:");
+console.log("1. Use an online tool: https://realfavicongenerator.net/");
+console.log(
+  "2. Or use ImageMagick: convert icon.svg -resize 192x192 icon-192x192.png"
+);
+console.log("3. Or use your design tool (Figma, Sketch, etc.)");
