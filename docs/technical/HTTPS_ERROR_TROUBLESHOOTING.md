@@ -9,6 +9,7 @@
 ## ✅ What's Working
 
 DNS is correctly configured and propagated:
+
 ```
 app.scani.xyz → scani-frontend.onrender.com ✓
 api.scani.xyz → scani-backend-217c.onrender.com ✓
@@ -18,9 +19,14 @@ api.scani.xyz → scani-backend-217c.onrender.com ✓
 
 ## ❌ The Problem
 
-**SSL Error**: `SSL routines:ST_CONNECT:sslv3 alert handshake failure`
+**SSL Errors**:
+- `SSL routines:ST_CONNECT:sslv3 alert handshake failure`
+- `ERR_SSL_VERSION_OR_CIPHER_MISMATCH`
 
-**What this means**: Render hasn't provisioned the SSL certificate yet, or there's a configuration issue.
+**What this means**: 
+1. Render hasn't provisioned the SSL certificate yet, OR
+2. Custom domain not properly added in Render, OR
+3. SSL is provisioning but not complete yet
 
 ---
 
@@ -31,6 +37,7 @@ api.scani.xyz → scani-backend-217c.onrender.com ✓
 You need to verify the custom domains were added correctly:
 
 #### Frontend Service
+
 1. Go to: https://dashboard.render.com/static/srv-d3j8p37diees73fl6q30
 2. Click **"Settings"** tab
 3. Scroll to **"Custom Domains"** section
@@ -41,6 +48,7 @@ You need to verify the custom domains were added correctly:
    - ❌ **"Failed"** or not listed = Need to add/re-add domain
 
 #### Backend Service
+
 1. Go to: https://dashboard.render.com/web/srv-d3j88295pdvs739osbig
 2. Click **"Settings"** tab
 3. Scroll to **"Custom Domains"** section
@@ -51,17 +59,26 @@ You need to verify the custom domains were added correctly:
 
 ## 🛠️ Solutions
 
-### Solution 1: Domains Not Added in Render
+### Solution 1: Custom Domain Not Added in Render (MOST COMMON)
 
-If the custom domains are **not listed** in Render:
+**This is the most common cause!** If you only added DNS records in Namecheap but didn't add the custom domain in Render dashboard:
+
+**Symptoms**:
+- DNS resolves correctly
+- `.onrender.com` URL works fine
+- Custom domain gives SSL errors
+
+**Fix**:
 
 1. **Add Frontend Domain**:
+
    - Go to frontend service settings
    - Custom Domains → **Add Custom Domain**
    - Enter: `app.scani.xyz`
    - Click **Save**
 
 2. **Add Backend Domain**:
+
    - Go to backend service settings
    - Custom Domains → **Add Custom Domain**
    - Enter: `api.scani.xyz`
@@ -69,15 +86,22 @@ If the custom domains are **not listed** in Render:
 
 3. **Wait 10-30 minutes** for SSL to provision
 
+**Important**: After adding the domains, you MUST wait for SSL provisioning:
+- Don't try to access via HTTPS immediately
+- Check Render dashboard for "Active" status
+- Look for "SSL: Provisioned" indicator
+
 ### Solution 2: SSL Still Provisioning
 
 If domains show **"Verifying..."**:
 
 **This is normal!** SSL provisioning takes time:
+
 - **First verification**: 5-30 minutes after DNS propagates
 - **SSL issuance**: Additional 5-10 minutes
 
-**What to do**: 
+**What to do**:
+
 - ✅ Wait patiently
 - ✅ Check back in 30 minutes
 - ✅ DNS is working, so SSL will come
@@ -88,6 +112,7 @@ If domains show **"Verifying..."**:
 If domains show **"Failed"** or still verifying after 60 minutes:
 
 #### Option A: Remove and Re-add
+
 1. In Render service settings → Custom Domains
 2. Click the **X** or **Remove** next to the domain
 3. Wait 5 minutes
@@ -96,6 +121,7 @@ If domains show **"Failed"** or still verifying after 60 minutes:
 6. Wait 30 minutes for new SSL attempt
 
 #### Option B: Check for Conflicting DNS Records
+
 1. Go to Namecheap DNS management
 2. Check for conflicting records:
    - Multiple CNAME records for `app` or `api`
@@ -115,6 +141,7 @@ Type: CNAME    Host: api    Value: scani-backend-217c.onrender.com.
 ```
 
 **Remove any**:
+
 - A records for `app` or `api`
 - Other CNAME records for these hosts
 - Proxy/CDN settings (must be DNS only)
@@ -140,15 +167,18 @@ Normal SSL provisioning timeline:
 ### Immediate Actions
 
 1. **Check Render Dashboard**:
+
    - Visit both service settings pages
    - Verify `app.scani.xyz` and `api.scani.xyz` are listed
    - Note the status (Active/Verifying/Failed)
 
 2. **If domains are NOT listed**:
+
    - Add them now (see Solution 1)
    - Wait 30 minutes
 
 3. **If domains show "Verifying..."**:
+
    - This is normal
    - Wait 30 more minutes
    - Check back periodically
@@ -167,6 +197,7 @@ Normal SSL provisioning timeline:
 ### Temporary Workaround
 
 While waiting for SSL, you can test via the `.onrender.com` URLs:
+
 - Frontend: https://scani-frontend.onrender.com
 - Backend: https://scani-backend-217c.onrender.com/health
 
@@ -178,11 +209,13 @@ These already have SSL and should work immediately.
 
 You'll know SSL is ready when:
 
-1. **Render Dashboard**: 
+1. **Render Dashboard**:
+
    - Custom domains show **"Active"** ✅
    - SSL shows **"Provisioned"** ✅
 
 2. **Command Line**:
+
    ```bash
    curl -I https://app.scani.xyz
    # Should return: HTTP/2 200 (or 301/302)
@@ -201,16 +234,19 @@ You'll know SSL is ready when:
 Once SSL is provisioned:
 
 1. **Update Backend Environment Variable**:
+
    ```bash
    FRONTEND_URL=https://app.scani.xyz
    ```
 
 2. **Update Frontend Environment Variable**:
+
    ```bash
    VITE_API_URL=https://api.scani.xyz
    ```
 
 3. **Update Supabase Settings**:
+
    - Site URL: `https://app.scani.xyz`
    - Redirect URLs: `https://app.scani.xyz/**`
 
@@ -226,16 +262,19 @@ Once SSL is provisioned:
 ## 📞 Current Status Summary
 
 **What's Working**: ✅
+
 - DNS resolution (app.scani.xyz → Render)
 - DNS resolution (api.scani.xyz → Render)
 - Render services are running
 - .onrender.com URLs have SSL
 
 **What's Pending**: ⏳
+
 - SSL certificate provisioning for custom domains
 - Waiting for Let's Encrypt to issue certificates
 
-**What You Need to Do**: 
+**What You Need to Do**:
+
 1. Check Render dashboard for custom domain status
 2. If not added, add them now
 3. If verifying, wait patiently (30 min)
