@@ -38,6 +38,7 @@
     "@types/bun": "latest",
     "concurrently": "^8.2.2",
     "msw": "^2.4.9",
+    "sharp": "^0.34.4",
     "typescript": "^5"
   }
 }

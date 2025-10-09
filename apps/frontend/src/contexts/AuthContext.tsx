@@ -1,6 +1,7 @@
 import type { Session, User } from '@supabase/supabase-js';
 import type React from 'react';
 import { createContext, useContext, useEffect, useState } from 'react';
+import { isPWA, logPWAInfo } from '@/lib/pwa-utils';
 import { supabase } from '@/lib/supabase';
 
 interface AuthContextType {
@@ -40,11 +41,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const authenticate = async (email: string) => {
-    console.log(`redirecting to ${window.location.origin}/auth/callback`);
+    // Log PWA detection info for debugging
+    if (import.meta.env.DEV) {
+      logPWAInfo();
+    }
+
+    // Determine redirect URL based on PWA context
+    const redirectUrl = `${window.location.origin}/auth/callback`;
+    console.log(`[Auth] Requesting magic link with redirect to: ${redirectUrl}`);
+    console.log(`[Auth] Running as PWA: ${isPWA()}`);
+
     const { error } = await supabase.auth.signInWithOtp({
       email,
       options: {
-        emailRedirectTo: `${window.location.origin}/auth/callback`,
+        emailRedirectTo: redirectUrl,
       },
     });
 

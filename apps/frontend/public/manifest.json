@@ -3,7 +3,9 @@
   "short_name": "Scani",
   "description": "Personal finance management made simple. Track your portfolio, crypto wallets, and investments in one place.",
   "start_url": "/",
+  "scope": "/",
   "display": "standalone",
+  "display_override": ["standalone", "minimal-ui", "browser"],
   "background_color": "#1a1f2e",
   "theme_color": "#1a1f2e",
   "orientation": "portrait-primary",
@@ -37,6 +39,12 @@
       "sizes": "152x152",
       "type": "image/png",
       "purpose": "any maskable"
+    },
+    {
+      "src": "/icons/icon-180x180.png",
+      "sizes": "180x180",
+      "type": "image/png",
+      "purpose": "any"
     },
     {
       "src": "/icons/icon-192x192.png",

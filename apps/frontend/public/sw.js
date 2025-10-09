@@ -58,6 +58,22 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
+  // Auth callback routes - always fetch from network, don't cache
+  if (
+    url.pathname.startsWith('/auth/callback') ||
+    url.pathname === '/auth' ||
+    url.pathname === '/signin' ||
+    url.pathname === '/signup'
+  ) {
+    event.respondWith(
+      fetch(request).catch(() => {
+        // If offline, redirect to offline page or show cached home
+        return caches.match('/');
+      })
+    );
+    return;
+  }
+
   // For navigation requests (HTML pages)
   if (request.mode === 'navigate') {
     event.respondWith(

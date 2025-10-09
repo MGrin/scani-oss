@@ -344,8 +344,12 @@ function LayoutContent({
       >
         <div className="flex items-center justify-between h-14 px-4 border-b">
           <div className="flex items-center space-x-2">
-            <div className="w-7 h-7 bg-primary rounded-lg flex items-center justify-center">
-              <span className="text-primary-foreground font-bold text-base">S</span>
+            <div className="w-7 h-7 rounded-lg overflow-hidden flex items-center justify-center">
+              <img
+                src="/icons/icon-192x192.png"
+                alt="Scani"
+                className="w-full h-full object-contain"
+              />
             </div>
             <span className="text-lg font-semibold">Scani</span>
           </div>

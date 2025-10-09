@@ -7,45 +7,25 @@ export default defineConfig({
   plugins: [
     react(),
     VitePWA({
-      registerType: 'autoUpdate',
-      includeAssets: ['favicon.ico', 'robots.txt', 'icons/*.png'],
-      manifest: {
-        name: 'Scani - Personal Finance',
-        short_name: 'Scani',
-        description: 'Personal finance management made simple',
-        theme_color: '#1a1f2e',
-        background_color: '#1a1f2e',
-        display: 'standalone',
-        icons: [
-          {
-            src: '/icons/icon-192x192.png',
-            sizes: '192x192',
-            type: 'image/png',
-          },
-          {
-            src: '/icons/icon-512x512.png',
-            sizes: '512x512',
-            type: 'image/png',
-          },
-        ],
-      },
-      workbox: {
-        runtimeCaching: [
-          {
-            urlPattern: /^https:\/\/api\.scani\.xyz\/.*/i,
-            handler: 'NetworkFirst',
-            options: {
-              cacheName: 'api-cache',
-              expiration: {
-                maxEntries: 100,
-                maxAgeSeconds: 60 * 60, // 1 hour
-              },
-              cacheableResponse: {
-                statuses: [0, 200],
-              },
-            },
-          },
-        ],
+      // Use custom service worker
+      injectRegister: null,
+      strategies: 'injectManifest',
+      srcDir: 'public',
+      filename: 'sw.js',
+      // Include assets
+      includeAssets: [
+        'favicon.ico',
+        'favicon-16x16.png',
+        'favicon-32x32.png',
+        'robots.txt',
+        'icons/*.png',
+        '.well-known/*',
+      ],
+      // Use manifest from public directory
+      manifest: false,
+      // Disable dev options to prevent conflicts
+      devOptions: {
+        enabled: false,
       },
     }),
   ],

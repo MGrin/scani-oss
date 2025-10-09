@@ -1,9 +1,11 @@
 import { AlertCircle, CheckCircle, Loader2 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
+import { PWAAuthBridge } from '@/components/PWAAuthBridge';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { isExternalNavigation, isPWA, logPWAInfo } from '@/lib/pwa-utils';
 import { supabase } from '@/lib/supabase';
 import { trpc } from '@/lib/trpc';
 
@@ -12,8 +14,22 @@ export function AuthCallback() {
   const searchParams = new URLSearchParams(location.hash.replace(/^#/, '?'));
 
   const navigate = useNavigate();
-  const [status, setStatus] = useState<'loading' | 'success' | 'error'>('loading');
+  const [status, setStatus] = useState<'loading' | 'success' | 'error' | 'pwa-bridge'>('loading');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  // Detect PWA context
+  const runningAsPWA = isPWA();
+  const fromExternal = isExternalNavigation();
+
+  // Log PWA info for debugging
+  useEffect(() => {
+    if (import.meta.env.DEV) {
+      console.log('[AuthCallback] PWA Detection:');
+      logPWAInfo();
+      console.log('[AuthCallback] Running as PWA:', runningAsPWA);
+      console.log('[AuthCallback] From external navigation:', fromExternal);
+    }
+  }, [runningAsPWA, fromExternal]);
 
   // This will trigger a user sync on the backend when the user is authenticated
   const getCurrentUser = trpc.users.getCurrent.useQuery(undefined, {
@@ -44,7 +60,17 @@ export function AuthCallback() {
         }
 
         if (data.session) {
-          // Successfully authenticated - now sync user with backend
+          // Successfully authenticated
+          console.log('[AuthCallback] Authentication successful');
+
+          // Check if we're in browser but should be in PWA
+          if (!runningAsPWA && fromExternal) {
+            console.log('[AuthCallback] Auth succeeded in browser, showing PWA bridge');
+            setStatus('pwa-bridge');
+            return;
+          }
+
+          // Now sync user with backend
           setStatus('success');
 
           // Trigger user sync by making an API call
@@ -79,7 +105,7 @@ export function AuthCallback() {
     };
 
     handleAuthCallback();
-  }, [searchParams, navigate, getCurrentUser.refetch]);
+  }, [searchParams, navigate, getCurrentUser.refetch, runningAsPWA, fromExternal]);
 
   if (status === 'loading') {
     return (
@@ -98,6 +124,11 @@ export function AuthCallback() {
         </Card>
       </div>
     );
+  }
+
+  // Show PWA bridge if auth succeeded in browser
+  if (status === 'pwa-bridge') {
+    return <PWAAuthBridge authSuccess={true} />;
   }
 
   if (status === 'success') {

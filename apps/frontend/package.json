@@ -8,7 +8,9 @@
     "build": "vite build",
     "preview": "vite preview",
     "clean": "rm -rf dist",
-    "type-check": "tsc --noEmit"
+    "type-check": "tsc --noEmit",
+    "generate-icons": "node scripts/generate-icons.js",
+    "prebuild": "bun run generate-icons"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.2.1",
