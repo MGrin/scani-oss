@@ -781,9 +781,20 @@ export const tokensRouter = router({
       }
 
       // Create provider metadata
+      // Extract the provider-specific data (like CoinGecko ID) from metadata
+      let providerSpecificData = metadata;
+      
+      // If metadata has providerMetadata (from token search), extract it
+      if (metadata.providerMetadata && typeof metadata.providerMetadata === 'object') {
+        providerSpecificData = {
+          ...metadata,
+          ...(metadata.providerMetadata as Record<string, unknown>),
+        };
+      }
+      
       const providerMetadata = JSON.stringify({
         provider,
-        [provider]: metadata,
+        [provider]: providerSpecificData,
         validatedAt: new Date().toISOString(),
       });
 
