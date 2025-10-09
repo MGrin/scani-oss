@@ -83,7 +83,15 @@ export function AuthCallback() {
 
   if (status === 'loading') {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-950 py-12 px-4 sm:px-6 lg:px-8">
+      <div 
+        className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-950 py-12 px-4 sm:px-6 lg:px-8"
+        style={{
+          paddingTop: 'max(3rem, calc(3rem + env(safe-area-inset-top)))',
+          paddingBottom: 'max(3rem, calc(3rem + env(safe-area-inset-bottom)))',
+          paddingLeft: 'max(1rem, calc(1rem + env(safe-area-inset-left)))',
+          paddingRight: 'max(1rem, calc(1rem + env(safe-area-inset-right)))',
+        }}
+      >
         <Card className="w-full max-w-md">
           <CardHeader className="space-y-1">
             <CardTitle className="text-2xl text-center">Signing you in...</CardTitle>
@@ -102,7 +110,15 @@ export function AuthCallback() {
 
   if (status === 'success') {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-950 py-12 px-4 sm:px-6 lg:px-8">
+      <div 
+        className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-950 py-12 px-4 sm:px-6 lg:px-8"
+        style={{
+          paddingTop: 'max(3rem, calc(3rem + env(safe-area-inset-top)))',
+          paddingBottom: 'max(3rem, calc(3rem + env(safe-area-inset-bottom)))',
+          paddingLeft: 'max(1rem, calc(1rem + env(safe-area-inset-left)))',
+          paddingRight: 'max(1rem, calc(1rem + env(safe-area-inset-right)))',
+        }}
+      >
         <Card className="w-full max-w-md">
           <CardHeader className="space-y-1">
             <CardTitle className="text-2xl text-center">Welcome!</CardTitle>
@@ -121,7 +137,15 @@ export function AuthCallback() {
 
   // Error state
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-950 py-12 px-4 sm:px-6 lg:px-8">
+    <div 
+      className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-950 py-12 px-4 sm:px-6 lg:px-8"
+      style={{
+        paddingTop: 'max(3rem, calc(3rem + env(safe-area-inset-top)))',
+        paddingBottom: 'max(3rem, calc(3rem + env(safe-area-inset-bottom)))',
+        paddingLeft: 'max(1rem, calc(1rem + env(safe-area-inset-left)))',
+        paddingRight: 'max(1rem, calc(1rem + env(safe-area-inset-right)))',
+      }}
+    >
       <Card className="w-full max-w-md">
         <CardHeader className="space-y-1">
           <CardTitle className="text-2xl text-center">Authentication Error</CardTitle>

@@ -340,6 +340,11 @@ function LayoutContent({
           'fixed inset-y-0 left-0 z-50 w-64 bg-card border-r transform transition-transform duration-200 ease-in-out md:translate-x-0 md:static md:inset-0',
           sidebarOpen ? 'translate-x-0' : '-translate-x-full'
         )}
+        style={{
+          // Ensure sidebar extends under safe areas on mobile
+          paddingTop: 'env(safe-area-inset-top)',
+          paddingLeft: 'env(safe-area-inset-left)',
+        }}
         aria-label="Main navigation"
       >
         <div className="flex items-center justify-between h-14 px-4 border-b">
@@ -399,7 +404,13 @@ function LayoutContent({
       {/* Main content */}
       <div className="flex-1 md:ml-0 flex flex-col h-screen">
         {/* Top bar - not fixed, takes natural space */}
-        <header className="flex-shrink-0 bg-card border-b">
+        <header 
+          className="flex-shrink-0 bg-card border-b safe-top"
+          style={{
+            // Add safe area padding for status bar on mobile PWA
+            paddingTop: 'max(env(safe-area-inset-top), 0px)',
+          }}
+        >
           <div className="h-14 flex items-center justify-between px-3 md:px-4">
             {/* Left side - Mobile menu button and Breadcrumbs */}
             <div className="flex items-center space-x-3">
@@ -525,6 +536,12 @@ function LayoutContent({
         <main
           id={mainContentId}
           className={cn('flex-1 overflow-y-auto px-4 pt-4 pb-6 sm:px-6 sm:pt-5 sm:pb-6')}
+          style={{
+            // Add safe area padding for PWA (bottom home indicator, side insets)
+            paddingBottom: 'max(1.5rem, calc(1.5rem + env(safe-area-inset-bottom)))',
+            paddingLeft: 'max(1rem, calc(1rem + env(safe-area-inset-left)))',
+            paddingRight: 'max(1rem, calc(1rem + env(safe-area-inset-right)))',
+          }}
           tabIndex={-1}
         >
           {children}
