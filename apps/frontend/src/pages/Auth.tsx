@@ -1,17 +1,23 @@
-import { zodResolver } from '@hookform/resolvers/zod';
-import { Loader2, Mail } from 'lucide-react';
-import { useId, useState } from 'react';
-import { useForm } from 'react-hook-form';
-import { z } from 'zod';
-import { Alert, AlertDescription } from '@/components/ui/alert';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { useAuth } from '@/contexts/AuthContext';
+import { zodResolver } from "@hookform/resolvers/zod";
+import { Loader2, Mail } from "lucide-react";
+import { useId, useState } from "react";
+import { useForm } from "react-hook-form";
+import { z } from "zod";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Button } from "@/components/ui/button";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { useAuth } from "@/contexts/AuthContext";
 
 const authSchema = z.object({
-  email: z.string().email('Please enter a valid email address'),
+  email: z.string().email("Please enter a valid email address"),
 });
 
 type AuthFormData = z.infer<typeof authSchema>;
@@ -52,7 +58,9 @@ export function Auth() {
       <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-950 py-12 px-4 sm:px-6 lg:px-8">
         <Card className="w-full max-w-md">
           <CardHeader className="space-y-1">
-            <CardTitle className="text-2xl text-center">Check your email</CardTitle>
+            <CardTitle className="text-2xl text-center">
+              Check your email
+            </CardTitle>
             <CardDescription className="text-center">
               We've sent you a magic link to sign in
             </CardDescription>
@@ -60,8 +68,8 @@ export function Auth() {
           <CardContent className="text-center space-y-4">
             <Mail className="mx-auto h-12 w-12 text-blue-600" />
             <p className="text-sm text-muted-foreground">
-              Click the link in your email to access your account. If this is your first time, we'll
-              create an account for you automatically.
+              Click the link in your email to access your account. If this is
+              your first time, we'll create an account for you automatically.
             </p>
             <Button
               type="button"
@@ -84,7 +92,9 @@ export function Auth() {
     <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-950 py-12 px-4 sm:px-6 lg:px-8">
       <Card className="w-full max-w-md">
         <CardHeader className="space-y-1">
-          <CardTitle className="text-2xl text-center">Welcome to Scani</CardTitle>
+          <CardTitle className="text-2xl text-center">
+            Welcome to Scani
+          </CardTitle>
           <CardDescription className="text-center">
             Enter your email to sign in or create an account
           </CardDescription>
@@ -103,10 +113,12 @@ export function Auth() {
                 id={emailId}
                 type="email"
                 placeholder="Enter your email address"
-                {...register('email')}
+                {...register("email")}
                 disabled={isLoading}
               />
-              {errors.email && <p className="text-sm text-red-600">{errors.email.message}</p>}
+              {errors.email && (
+                <p className="text-sm text-red-600">{errors.email.message}</p>
+              )}
             </div>
 
             <Button type="submit" className="w-full" disabled={isLoading}>
