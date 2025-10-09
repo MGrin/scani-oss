@@ -971,6 +971,10 @@ export function AddData() {
 
           tokenId = newToken.id;
           console.log('External token created successfully:', tokenId);
+
+          // CRITICAL FIX: Refresh token cache immediately after creation
+          // This ensures the token is available in cache before creating the holding
+          await Promise.all([utils.tokens.getAll.refetch(), utils.tokens.getByUserId.refetch()]);
         } catch (error) {
           console.error('External token creation failed:', error);
           throw new Error(
@@ -1084,6 +1088,7 @@ export function AddData() {
           utils.accounts.getAll.refetch(),
           utils.institutions.getAll.refetch(),
           utils.tokens.getAll.refetch(),
+          utils.tokens.getByUserId.refetch(), // Also refetch tokens by user ID for Holdings page
         ]);
 
         // No need for waitForCacheSettlement - refetch() guarantees data is fresh

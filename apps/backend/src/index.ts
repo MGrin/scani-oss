@@ -232,25 +232,38 @@ const app = new Elysia()
       ws.data.connectedAt = Date.now();
 
       // Register with real-time updates service
-      // Note: realTimeUpdatesService handles its own message/close/error events
-      // so we pass the raw WebSocket here
-      realTimeUpdatesService.registerConnection(ws.raw, {
+      realTimeUpdatesService.registerConnection({
         userId: authenticatedUserId,
         connectionId,
       });
+
+      // Subscribe to user's topic for pub/sub
+      ws.subscribe(`user:${authenticatedUserId}`);
+
+      // Send connection confirmation
+      ws.send(
+        JSON.stringify({
+          type: 'connected',
+          connectionId,
+          subscriptions: ['institution', 'account', 'holding', 'transaction', 'token'],
+          timestamp: new Date().toISOString(),
+        })
+      );
     },
     // biome-ignore lint/suspicious/noExplicitAny: Elysia WebSocket types not well documented
     message: (ws: any, message: any) => {
-      // Real-time updates service handles messages via its own event handlers
-      // This is just for logging
+      // Forward message to realTimeUpdatesService for handling
       if (ws.data.connectionId) {
         const connectionLogger = wsLogger.child({ connectionId: ws.data.connectionId });
         connectionLogger.debug({ message }, '📨 WebSocket message received');
+
+        // Handle subscription messages, pings, etc.
+        realTimeUpdatesService.handleMessage(ws.data.connectionId, message);
       }
     },
     // biome-ignore lint/suspicious/noExplicitAny: Elysia WebSocket types not well documented
     close: (ws: any, code: any, reason: any) => {
-      // Disconnection is handled by realTimeUpdatesService via ws.on('close')
+      // Notify realTimeUpdatesService about disconnection
       if (ws.data?.connectionId) {
         const connectionLogger = wsLogger.child({ connectionId: ws.data.connectionId });
         connectionLogger.info(
@@ -260,6 +273,9 @@ const app = new Elysia()
           },
           '🔚 WebSocket client disconnected'
         );
+
+        // Clean up connection tracking
+        realTimeUpdatesService.handleDisconnection(ws.data.connectionId);
       }
     },
   })
@@ -305,8 +321,9 @@ const server = app.listen(PORT, () => {
   );
 });
 
-// WebSocket is now handled by Elysia's native .ws() method above
-// No need for separate upgrade handler
+// Initialize real-time updates service with Elysia app
+realTimeUpdatesService.setElysiaApp(app);
+realTimeUpdatesService.initialize();
 
 // Graceful shutdown with logging
 const gracefulShutdown = (signal: string) => {

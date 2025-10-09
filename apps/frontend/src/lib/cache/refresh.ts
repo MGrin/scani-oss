@@ -176,8 +176,15 @@ export function refreshTokensViews(
   utils: TrpcUtils,
   { cascadeHoldings = true }: TokenRefreshOptions = {}
 ) {
-  // Only invalidate queries, don't force refetch
+  // Invalidate related queries
   const tasks: Array<Promise<unknown>> = [invalidateTokensRelated(utils)];
+
+  // CRITICAL FIX: Refetch core token queries that EntityDataContext depends on
+  // These need to be fresh for newly created tokens to appear in dropdowns and holdings list
+  tasks.push(safeRefetch(utils.tokens.getAll.refetch));
+  if (utils.tokens.getByUserId) {
+    tasks.push(safeRefetch(utils.tokens.getByUserId.refetch));
+  }
 
   if (cascadeHoldings) {
     tasks.push(

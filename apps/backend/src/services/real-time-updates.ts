@@ -1,6 +1,4 @@
 import { EventEmitter } from 'node:events';
-import type { IncomingMessage, Server } from 'node:http';
-import { type RawData, WebSocket, WebSocketServer } from 'ws';
 import { logConfig, wsLogger } from '../utils/logger';
 
 export type EntityType = 'institution' | 'account' | 'holding' | 'transaction' | 'user' | 'token';
@@ -27,7 +25,6 @@ export interface RealTimeEvent {
 export interface ClientConnection {
   id: string;
   userId: string;
-  websocket: WebSocket;
   subscriptions: Set<EntityType>;
   lastSeen: Date;
 }
@@ -36,14 +33,15 @@ interface RegisterConnectionOptions {
   userId: string;
   connectionId?: string;
   initialSubscriptions?: EntityType[];
-  request?: IncomingMessage;
 }
 
 class RealTimeUpdatesService extends EventEmitter {
-  private wss: WebSocketServer | null = null;
+  // Use Elysia's pub/sub instead of managing WebSocket connections directly
   private clients = new Map<string, ClientConnection>();
   private userConnections = new Map<string, Set<string>>(); // userId -> Set of connection IDs
   private heartbeatInterval: NodeJS.Timeout | null = null;
+  // biome-ignore lint/suspicious/noExplicitAny: Elysia type not well defined, using any for app instance
+  private elysiaApp: any = null; // Store Elysia app instance for pub/sub
 
   constructor() {
     super();
@@ -51,58 +49,44 @@ class RealTimeUpdatesService extends EventEmitter {
   }
 
   /**
-   * Initialize the WebSocket server
+   * Set Elysia app instance for pub/sub functionality
    */
-  initialize(server: Server, path = '/ws') {
-    this.wss = new WebSocketServer({
-      server,
-      path,
-      clientTracking: true,
-    });
+  // biome-ignore lint/suspicious/noExplicitAny: Elysia type not well defined, using any for app instance
+  setElysiaApp(app: any) {
+    this.elysiaApp = app;
+    wsLogger.info('Elysia app instance registered with realTimeUpdatesService');
+  }
 
-    this.wss.on('connection', (ws, request) => {
-      this.handleConnection(ws, request);
-    });
-
+  /**
+   * Initialize heartbeat for cleanup
+   * Note: WebSocket connections are managed by Elysia, not this service
+   */
+  initialize() {
     // Setup heartbeat to remove stale connections
     this.heartbeatInterval = setInterval(() => {
       this.cleanupStaleConnections();
     }, 30000); // Every 30 seconds
 
     if (logConfig.logWebSocketMessages) {
-      wsLogger.info({ path }, 'Real-time updates service initialised');
+      wsLogger.info('Real-time updates service initialized (Elysia mode)');
     }
   }
 
   /**
-   * Handle new WebSocket connection
+   * Register a connection (metadata only - actual WebSocket managed by Elysia)
+   * This is called from the Elysia WebSocket 'open' handler
    */
-  private handleConnection(ws: WebSocket, request: IncomingMessage) {
-    // Extract user ID from query params as a last resort fallback
-    const url = new URL(request.url || '', 'http://localhost');
-    const userId = url.searchParams.get('userId') || 'anonymous';
-
-    this.registerConnection(ws, {
-      userId,
-      request,
-    });
-  }
-
-  /**
-   * Register a WebSocket that has already been authenticated by the caller.
-   */
-  registerConnection(ws: WebSocket, options: RegisterConnectionOptions) {
+  registerConnection(options: RegisterConnectionOptions) {
     const connectionId = options.connectionId ?? this.generateConnectionId();
     const subscriptions = new Set<EntityType>(
       options.initialSubscriptions?.length
         ? options.initialSubscriptions
-        : ['institution', 'account', 'holding', 'transaction']
+        : ['institution', 'account', 'holding', 'transaction', 'token']
     );
 
     const client: ClientConnection = {
       id: connectionId,
       userId: options.userId,
-      websocket: ws,
       subscriptions,
       lastSeen: new Date(),
     };
@@ -114,45 +98,11 @@ class RealTimeUpdatesService extends EventEmitter {
     }
     this.userConnections.get(options.userId)?.add(connectionId);
 
-    ws.on('message', (data) => {
-      this.handleMessage(connectionId, data);
-    });
-
-    ws.on('close', () => {
-      this.handleDisconnection(connectionId);
-    });
-
-    ws.on('error', (error) => {
-      wsLogger.error(
-        {
-          connectionId,
-          error: {
-            name: (error as Error).name,
-            message: (error as Error).message,
-          },
-        },
-        'WebSocket connection error'
-      );
-      this.handleDisconnection(connectionId);
-    });
-
-    this.sendToClient(connectionId, {
-      type: 'connected',
-      connectionId,
-      subscriptions: Array.from(client.subscriptions),
-      timestamp: new Date().toISOString(),
-    });
-
-    const remoteIp = options.request?.socket.remoteAddress
-      ? ` from ${options.request.socket.remoteAddress}`
-      : '';
-
     if (logConfig.logWebSocketMessages) {
       wsLogger.info(
         {
           connectionId,
           userId: options.userId,
-          remoteIp: remoteIp || undefined,
         },
         'WebSocket client registered'
       );
@@ -163,8 +113,9 @@ class RealTimeUpdatesService extends EventEmitter {
 
   /**
    * Handle incoming messages from clients
+   * Called from Elysia WebSocket 'message' handler
    */
-  private handleMessage(connectionId: string, data: RawData) {
+  handleMessage(connectionId: string, data: string | Buffer) {
     try {
       const client = this.clients.get(connectionId);
       if (!client) return;
@@ -181,10 +132,16 @@ class RealTimeUpdatesService extends EventEmitter {
           this.handleUnsubscription(connectionId, message.entityTypes || []);
           break;
         case 'ping':
-          this.sendToClient(connectionId, {
-            type: 'pong',
-            timestamp: new Date().toISOString(),
-          });
+          // Send pong response via pub/sub to user's topic
+          if (this.elysiaApp?.server && client.userId) {
+            this.elysiaApp.server.publish(
+              `user:${client.userId}`,
+              JSON.stringify({
+                type: 'pong',
+                timestamp: new Date().toISOString(),
+              })
+            );
+          }
           break;
         default:
           if (logConfig.logWebSocketMessages) {
@@ -216,11 +173,17 @@ class RealTimeUpdatesService extends EventEmitter {
       client.subscriptions.add(type);
     }
 
-    this.sendToClient(connectionId, {
-      type: 'subscription_updated',
-      subscriptions: Array.from(client.subscriptions),
-      timestamp: new Date().toISOString(),
-    });
+    // Send subscription update via pub/sub to user's topic
+    if (this.elysiaApp?.server) {
+      this.elysiaApp.server.publish(
+        `user:${client.userId}`,
+        JSON.stringify({
+          type: 'subscription_updated',
+          subscriptions: Array.from(client.subscriptions),
+          timestamp: new Date().toISOString(),
+        })
+      );
+    }
   }
 
   /**
@@ -234,17 +197,24 @@ class RealTimeUpdatesService extends EventEmitter {
       client.subscriptions.delete(type);
     }
 
-    this.sendToClient(connectionId, {
-      type: 'subscription_updated',
-      subscriptions: Array.from(client.subscriptions),
-      timestamp: new Date().toISOString(),
-    });
+    // Send subscription update via pub/sub to user's topic
+    if (this.elysiaApp?.server) {
+      this.elysiaApp.server.publish(
+        `user:${client.userId}`,
+        JSON.stringify({
+          type: 'subscription_updated',
+          subscriptions: Array.from(client.subscriptions),
+          timestamp: new Date().toISOString(),
+        })
+      );
+    }
   }
 
   /**
    * Handle client disconnection
+   * Called from Elysia WebSocket 'close' handler
    */
-  private handleDisconnection(connectionId: string) {
+  handleDisconnection(connectionId: string) {
     const client = this.clients.get(connectionId);
     if (!client) return;
 
@@ -264,7 +234,7 @@ class RealTimeUpdatesService extends EventEmitter {
   }
 
   /**
-   * Broadcast entity change to relevant clients
+   * Broadcast entity change to relevant clients using Elysia pub/sub
    */
   broadcast(event: RealTimeEvent) {
     const message = {
@@ -280,7 +250,7 @@ class RealTimeUpdatesService extends EventEmitter {
 
     // Get all connections for the user
     const userConnections = this.userConnections.get(event.userId);
-    if (!userConnections) {
+    if (!userConnections || userConnections.size === 0) {
       if (logConfig.logWebSocketMessages) {
         wsLogger.debug(
           {
@@ -294,67 +264,28 @@ class RealTimeUpdatesService extends EventEmitter {
       return;
     }
 
-    let sentCount = 0;
+    // Use Elysia's pub/sub to broadcast to user's topic
+    // All connections for this user are subscribed to `user:${userId}`
+    const topic = `user:${event.userId}`;
 
-    for (const connectionId of userConnections) {
-      const client = this.clients.get(connectionId);
-      if (!client) continue;
+    if (this.elysiaApp?.server) {
+      // Publish to all subscribers of this topic
+      this.elysiaApp.server.publish(topic, JSON.stringify(message));
 
-      // Check if client is subscribed to this entity type
-      if (!client.subscriptions.has(event.entityType)) continue;
-
-      // Check if WebSocket is still open
-      if (client.websocket.readyState !== WebSocket.OPEN) {
-        this.handleDisconnection(connectionId);
-        continue;
-      }
-
-      try {
-        client.websocket.send(JSON.stringify(message));
-        sentCount++;
-      } catch (error) {
-        wsLogger.error(
+      if (logConfig.logWebSocketMessages) {
+        wsLogger.info(
           {
-            connectionId,
-            error: error instanceof Error ? error : { message: String(error) },
+            entityType: event.entityType,
+            operationType: event.operationType || event.type,
+            userId: event.userId,
+            topic,
+            connectionCount: userConnections.size,
           },
-          'Failed to send WebSocket message'
+          'Broadcasted real-time event via pub/sub'
         );
-        this.handleDisconnection(connectionId);
       }
-    }
-
-    if (logConfig.logWebSocketMessages) {
-      wsLogger.info(
-        {
-          entityType: event.entityType,
-          operationType: event.operationType || event.type,
-          userId: event.userId,
-          recipients: sentCount,
-        },
-        'Broadcasted real-time event'
-      );
-    }
-  }
-
-  /**
-   * Send message to specific client
-   */
-  private sendToClient(connectionId: string, message: Record<string, unknown>) {
-    const client = this.clients.get(connectionId);
-    if (!client || client.websocket.readyState !== WebSocket.OPEN) return;
-
-    try {
-      client.websocket.send(JSON.stringify(message));
-    } catch (error) {
-      wsLogger.error(
-        {
-          connectionId,
-          error: error instanceof Error ? error : { message: String(error) },
-        },
-        'Failed to send direct WebSocket message'
-      );
-      this.handleDisconnection(connectionId);
+    } else {
+      wsLogger.warn('Elysia app not set, cannot broadcast');
     }
   }
 
@@ -419,13 +350,9 @@ class RealTimeUpdatesService extends EventEmitter {
       this.heartbeatInterval = null;
     }
 
-    if (this.wss) {
-      this.wss.close();
-      this.wss = null;
-    }
-
     this.clients.clear();
     this.userConnections.clear();
+    this.elysiaApp = null;
   }
 }
 
