@@ -49,7 +49,7 @@ export function Auth() {
 
   if (isEmailSent) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
+      <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-950 py-12 px-4 sm:px-6 lg:px-8">
         <Card className="w-full max-w-md">
           <CardHeader className="space-y-1">
             <CardTitle className="text-2xl text-center">Check your email</CardTitle>
@@ -59,7 +59,7 @@ export function Auth() {
           </CardHeader>
           <CardContent className="text-center space-y-4">
             <Mail className="mx-auto h-12 w-12 text-blue-600" />
-            <p className="text-sm text-gray-600">
+            <p className="text-sm text-muted-foreground">
               Click the link in your email to access your account. If this is your first time, we'll
               create an account for you automatically.
             </p>
@@ -81,7 +81,7 @@ export function Auth() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
+    <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-950 py-12 px-4 sm:px-6 lg:px-8">
       <Card className="w-full max-w-md">
         <CardHeader className="space-y-1">
           <CardTitle className="text-2xl text-center">Welcome to Scani</CardTitle>
@@ -114,7 +114,7 @@ export function Auth() {
               Continue with Email
             </Button>
 
-            <div className="text-center text-sm text-gray-600">
+            <div className="text-center text-sm text-muted-foreground">
               <p>
                 We'll send you a secure magic link to sign in. <br />
                 New to Scani? Your account will be created automatically.

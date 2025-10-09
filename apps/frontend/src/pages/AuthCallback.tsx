@@ -83,7 +83,7 @@ export function AuthCallback() {
 
   if (status === 'loading') {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
+      <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-950 py-12 px-4 sm:px-6 lg:px-8">
         <Card className="w-full max-w-md">
           <CardHeader className="space-y-1">
             <CardTitle className="text-2xl text-center">Signing you in...</CardTitle>
@@ -93,7 +93,7 @@ export function AuthCallback() {
           </CardHeader>
           <CardContent className="text-center space-y-4">
             <Loader2 className="mx-auto h-12 w-12 animate-spin text-blue-600" />
-            <p className="text-sm text-gray-600">This should only take a moment.</p>
+            <p className="text-sm text-muted-foreground">This should only take a moment.</p>
           </CardContent>
         </Card>
       </div>
@@ -102,7 +102,7 @@ export function AuthCallback() {
 
   if (status === 'success') {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
+      <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-950 py-12 px-4 sm:px-6 lg:px-8">
         <Card className="w-full max-w-md">
           <CardHeader className="space-y-1">
             <CardTitle className="text-2xl text-center">Welcome!</CardTitle>
@@ -112,7 +112,7 @@ export function AuthCallback() {
           </CardHeader>
           <CardContent className="text-center space-y-4">
             <CheckCircle className="mx-auto h-12 w-12 text-green-600" />
-            <p className="text-sm text-gray-600">Redirecting you to your dashboard...</p>
+            <p className="text-sm text-muted-foreground">Redirecting you to your dashboard...</p>
           </CardContent>
         </Card>
       </div>
@@ -121,7 +121,7 @@ export function AuthCallback() {
 
   // Error state
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
+    <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-950 py-12 px-4 sm:px-6 lg:px-8">
       <Card className="w-full max-w-md">
         <CardHeader className="space-y-1">
           <CardTitle className="text-2xl text-center">Authentication Error</CardTitle>
@@ -146,7 +146,7 @@ export function AuthCallback() {
             </Button>
           </div>
 
-          <div className="text-center text-sm text-gray-600">
+          <div className="text-center text-sm text-muted-foreground">
             <p>If you continue to have issues, please contact support.</p>
           </div>
         </CardContent>
