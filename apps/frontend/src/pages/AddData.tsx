@@ -1077,16 +1077,17 @@ export function AddData() {
           throw new Error('Failed to create holding - no ID returned');
         }
 
-        // Invalidate caches first to trigger refetch
+        // CRITICAL FIX: Use refetch() instead of invalidate() to wait for completion
+        // This prevents race conditions where UI expects data before it's fetched
         await Promise.all([
-          utils.holdings.getAll.invalidate(),
-          utils.accounts.getAll.invalidate(),
-          utils.institutions.getAll.invalidate(),
-          utils.tokens.getAll.invalidate(),
+          utils.holdings.getAll.refetch(),
+          utils.accounts.getAll.refetch(),
+          utils.institutions.getAll.refetch(),
+          utils.tokens.getAll.refetch(),
         ]);
 
-        // Then wait for holding to appear in the refetched cache
-        await waitForCacheSettlement('holdings', createdHolding.holding.id);
+        // No need for waitForCacheSettlement - refetch() guarantees data is fresh
+        console.log('✅ Cache refreshed with new holding:', createdHolding.holding.id);
 
         console.log('Holding created and settled:', createdHolding.holding.id);
 
@@ -1312,11 +1313,11 @@ export function AddData() {
         walletAddress: walletAddress.trim(),
       });
 
-      // Invalidate related queries to refresh data
+      // CRITICAL FIX: Use refetch() to ensure data is loaded before continuing
       await Promise.all([
-        utils.accounts.getAll.invalidate(),
-        utils.holdings.getAll.invalidate(),
-        utils.tokens.getAll.invalidate(),
+        utils.accounts.getAll.refetch(),
+        utils.holdings.getAll.refetch(),
+        utils.tokens.getAll.refetch(),
       ]);
 
       toast({

@@ -1,22 +1,102 @@
 export const DEFAULT_FETCH_TIMEOUT_MS = 8000;
+export const DEFAULT_MAX_RETRIES = 2;
 
+/**
+ * HIGH PRIORITY FIX: Enhanced fetch with timeout and retry logic
+ *
+ * Features:
+ * - Timeout protection (prevents hanging requests)
+ * - Exponential backoff retry for transient failures
+ * - Respects 429 (rate limit) and 5xx (server error) responses
+ * - Does not retry 4xx client errors (except 429)
+ */
 export async function fetchWithTimeout(
   url: string,
   init?: RequestInit,
-  timeoutMs: number = DEFAULT_FETCH_TIMEOUT_MS
+  timeoutMs: number = DEFAULT_FETCH_TIMEOUT_MS,
+  maxRetries: number = DEFAULT_MAX_RETRIES
 ): Promise<Response> {
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  const timeoutPromise = new Promise<Response>((_, reject) => {
-    timer = setTimeout(() => reject(new Error(`Fetch timeout after ${timeoutMs}ms`)), timeoutMs);
-  });
-  const fetchPromise = fetch(url, init);
+  let lastError: Error | null = null;
 
-  try {
-    const result = (await Promise.race([fetchPromise, timeoutPromise])) as Response;
-    return result;
-  } finally {
-    if (timer) clearTimeout(timer);
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      // Setup timeout
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      const timeoutPromise = new Promise<Response>((_, reject) => {
+        timer = setTimeout(
+          () => reject(new Error(`Fetch timeout after ${timeoutMs}ms`)),
+          timeoutMs
+        );
+      });
+      const fetchPromise = fetch(url, init);
+
+      let response: Response;
+      try {
+        response = (await Promise.race([fetchPromise, timeoutPromise])) as Response;
+      } finally {
+        if (timer) clearTimeout(timer);
+      }
+
+      // Check if response indicates we should retry
+      if (attempt < maxRetries && shouldRetry(response)) {
+        lastError = new Error(`HTTP ${response.status}: ${response.statusText}`);
+
+        // Exponential backoff: 1s, 2s, 4s...
+        const backoffMs = 2 ** attempt * 1000;
+        await new Promise((resolve) => setTimeout(resolve, backoffMs));
+        continue;
+      }
+
+      return response;
+    } catch (error) {
+      lastError = error instanceof Error ? error : new Error(String(error));
+
+      // Network errors and timeouts are retryable
+      if (attempt < maxRetries && isRetryableError(lastError)) {
+        // Exponential backoff
+        const backoffMs = 2 ** attempt * 1000;
+        await new Promise((resolve) => setTimeout(resolve, backoffMs));
+        continue;
+      }
+
+      // Max retries exceeded or non-retryable error
+      throw lastError;
+    }
   }
+
+  throw lastError || new Error('Max retries exceeded');
+}
+
+/**
+ * Determines if an HTTP response should be retried
+ */
+function shouldRetry(response: Response): boolean {
+  // Retry on rate limit
+  if (response.status === 429) return true;
+
+  // Retry on server errors (5xx)
+  if (response.status >= 500 && response.status < 600) return true;
+
+  // Don't retry other status codes
+  return false;
+}
+
+/**
+ * Determines if an error is retryable (network errors, timeouts)
+ */
+function isRetryableError(error: Error): boolean {
+  const message = error.message.toLowerCase();
+
+  // Timeout errors
+  if (message.includes('timeout')) return true;
+
+  // Network errors
+  if (message.includes('network')) return true;
+  if (message.includes('econnreset')) return true;
+  if (message.includes('enotfound')) return true;
+  if (message.includes('connection')) return true;
+
+  return false;
 }
 
 export function parseInternationalNumber(value: string | null | undefined): number | null {

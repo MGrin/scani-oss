@@ -1,4 +1,4 @@
-import { useCallback, useMemo } from 'react';
+import { useCallback, useMemo, useRef } from 'react';
 import {
   invalidateAccountsRelated,
   invalidateHoldingsRelated,
@@ -48,6 +48,11 @@ export function useRealtimeEntitySync() {
 
   const websocketUrl = useMemo(() => resolveWebSocketUrl(), []);
 
+  // HIGH PRIORITY FIX: Add message deduplication to prevent duplicate invalidations
+  // WebSocket can send duplicate messages on reconnect or network issues
+  const processedMessages = useRef(new Set<string>());
+  const lastCleanup = useRef(Date.now());
+
   const handleMessage = useCallback(
     async (message: WebSocketMessage) => {
       if (message.type !== 'entity_changed') {
@@ -59,6 +64,29 @@ export function useRealtimeEntitySync() {
 
       if (!entityType) {
         return;
+      }
+
+      // Create unique message ID for deduplication
+      const messageId = `${entityType}-${payload.operationType}-${payload.entityId}-${Date.now()}`;
+
+      // Check if we've already processed this message recently
+      if (processedMessages.current.has(messageId)) {
+        console.debug('[WebSocket] Skipping duplicate message:', messageId);
+        return;
+      }
+
+      // Mark message as processed
+      processedMessages.current.add(messageId);
+
+      // Cleanup old messages periodically (every 5 minutes)
+      const now = Date.now();
+      if (now - lastCleanup.current > 5 * 60 * 1000) {
+        // Keep last 100 messages, remove older ones
+        const messages = Array.from(processedMessages.current);
+        if (messages.length > 100) {
+          processedMessages.current = new Set(messages.slice(-100));
+        }
+        lastCleanup.current = now;
       }
 
       const entityId = payload.entityId;

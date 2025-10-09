@@ -196,36 +196,26 @@ export class PortfolioValuationService {
       `Pricing complete: ${priceResults.size}/${tokensToPrice.length} prices retrieved`
     );
 
-    // Process holdings with batched price data
-    const portfolioHoldings = [];
-    let totalValue = new Decimal(0);
-
-    for (const holding of holdings) {
+    // HIGH PRIORITY FIX: Process holdings with pure map() transformation
+    // This prevents accidental N+1 queries and makes it clear this is data transformation only
+    const portfolioHoldings = holdings.map((holding) => {
       try {
-        let currentPrice: string | undefined;
-        let value: string | undefined;
-
         const balance = new Decimal(holding.balance);
 
-        // Skip price lookup if token is same as base currency
-        if (holding.tokenId === baseCurrency.id) {
-          currentPrice = '1';
-          value = balance.toString();
-        } else {
-          // Use batched price result - pricing service now always returns a price (even if 0)
-          currentPrice = priceResults.get(holding.tokenId) || '0';
-          value = balance.mul(new Decimal(currentPrice)).toString();
-        }
+        // Determine price based on whether it's base currency or needs lookup
+        const currentPrice =
+          holding.tokenId === baseCurrency.id
+            ? '1' // Base currency is always 1:1
+            : priceResults.get(holding.tokenId) || '0'; // Use batched price result
 
-        // Always add to total value, even if price is 0
-        totalValue = totalValue.add(new Decimal(value));
+        const value = balance.mul(new Decimal(currentPrice)).toString();
 
-        portfolioHoldings.push({
+        return {
           tokenSymbol: holding.tokenSymbol,
           balance: balance.toString(),
           currentPrice,
           value,
-        });
+        };
       } catch (error) {
         this.logger.warn(
           {
@@ -235,16 +225,23 @@ export class PortfolioValuationService {
           },
           'Failed to process holding while computing portfolio value'
         );
-        // Add holding with 0 price as fallback
+
+        // Return fallback holding with 0 value
         const balance = new Decimal(holding.balance);
-        portfolioHoldings.push({
+        return {
           tokenSymbol: holding.tokenSymbol,
           balance: balance.toString(),
           currentPrice: '0',
           value: '0',
-        });
+        };
       }
-    }
+    });
+
+    // Calculate total value separately (pure aggregation)
+    const totalValue = portfolioHoldings.reduce(
+      (sum, holding) => sum.add(new Decimal(holding.value)),
+      new Decimal(0)
+    );
 
     return {
       totalValue: totalValue.toString(),

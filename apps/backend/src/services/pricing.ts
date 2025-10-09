@@ -39,19 +39,30 @@ interface TokenLookupResult {
   tokenType: string;
 }
 
+// HIGH PRIORITY FIX: Global rate limiters (singleton pattern)
+// This ensures all PricingService instances share the same rate limiters
+// Prevents exceeding API provider limits when multiple instances exist
+const GLOBAL_RATE_LIMITERS = {
+  finnhub: new RateLimiter(50, 60 * 1000), // 50 calls per minute
+  // CoinGecko Demo/Public API: ~30 calls/min, use 10 for safety under ANY load
+  // Reference: https://docs.coingecko.com/docs/common-errors-rate-limit
+  coinGecko: new RateLimiter(10, 60 * 1000), // 10 calls per minute
+  // DeFiLlama: Free tier, 5 calls/sec = 300 calls/min
+  defiLlama: new RateLimiter(5, 1000), // 5 calls per second
+  googleSheets: new RateLimiter(100, 100 * 1000), // 100 calls per 100 seconds
+};
+
 export class PricingService {
   private readonly LIVE_PRICE_WINDOW_MS = 60 * 60 * 1000;
   private readonly HISTORICAL_PRICE_WINDOW_MS = 24 * 60 * 60 * 1000;
   private readonly UNAVAILABLE_CACHE_MS = 60 * 60 * 1000;
   private readonly RETRYABLE_FAILURE_CACHE_MS = 5 * 60 * 1000;
 
-  public readonly finnhubRateLimiter = new RateLimiter(50, 60 * 1000);
-  // CoinGecko Demo/Public API: ~30 calls/min, use 10 for safety under ANY load
-  // Reference: https://docs.coingecko.com/docs/common-errors-rate-limit
-  public readonly coinGeckoRateLimiter = new RateLimiter(10, 60 * 1000);
-  // DeFiLlama: Free tier, 5 calls/sec = 300 calls/min
-  private readonly defiLlamaRateLimiter = new RateLimiter(5, 1000);
-  private readonly googleSheetsRateLimiter = new RateLimiter(100, 100 * 1000);
+  // Use global rate limiters to prevent exceeding API limits across instances
+  public readonly finnhubRateLimiter = GLOBAL_RATE_LIMITERS.finnhub;
+  public readonly coinGeckoRateLimiter = GLOBAL_RATE_LIMITERS.coinGecko;
+  private readonly defiLlamaRateLimiter = GLOBAL_RATE_LIMITERS.defiLlama;
+  private readonly googleSheetsRateLimiter = GLOBAL_RATE_LIMITERS.googleSheets;
 
   private readonly providers: ProviderRegistry;
   private readonly googleSheetsProvider: GoogleSheetsProvider;

@@ -15,16 +15,17 @@ export function TRPCProvider({ children }: TRPCProviderProps) {
         defaultOptions: {
           queries: {
             retry: 1,
-            refetchOnWindowFocus: false,
-            // CRITICAL FIX: Reduce stale time to prevent cache issues
-            staleTime: 30 * 1000, // 30 seconds (was 5 minutes)
-            cacheTime: 5 * 60 * 1000, // 5 minutes (was 10 minutes)
-            refetchOnMount: 'always', // Always refetch to ensure fresh data (was false)
-            refetchOnReconnect: true, // Enable background refetch for stale queries
-            networkMode: 'online', // Prevent multiple identical requests in flight
+            // MEDIUM FIX: Optimized cache configuration for better performance
+            // Balance between freshness and reducing unnecessary API calls
+            staleTime: 5 * 60 * 1000, // 5 minutes (reasonable freshness)
+            cacheTime: 10 * 60 * 1000, // 10 minutes (keep data in memory longer)
+            refetchOnMount: false, // Don't refetch if data is still fresh
+            refetchOnWindowFocus: false, // Avoid refetch on tab switching
+            refetchOnReconnect: true, // Still refetch on reconnect for consistency
+            networkMode: 'online',
           },
           mutations: {
-            retry: 1, // Add retry logic for transient failures
+            retry: 1, // Retry once for transient failures
             networkMode: 'online',
           },
         },

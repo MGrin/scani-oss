@@ -166,11 +166,23 @@ const getInstitutionCreateHandlers = (
     } satisfies MutationContext;
   },
   async onError(_error, _variables, context) {
+    // Rollback optimistic update
     if (context?.institutionsAll) {
       utils.institutions.getAll.setData(undefined, context.institutionsAll);
     }
     if (context?.institutionsByUser) {
       utils.institutions.getByUserId.setData(undefined, context.institutionsByUser);
+    }
+
+    // CRITICAL FIX: Refetch to sync with server state after error
+    // This ensures cache reflects database truth even if partial operation succeeded
+    try {
+      await Promise.all([
+        utils.institutions.getAll.refetch(),
+        utils.institutions.getByUserId.refetch(),
+      ]);
+    } catch (refetchError) {
+      console.error('Failed to refetch institutions after error:', refetchError);
     }
   },
   async onSuccess(result, _variables, context) {
@@ -236,8 +248,19 @@ const getInstitutionDeleteHandlers = (
     } satisfies MutationContext;
   },
   async onError(_error, _variables, context) {
+    // Rollback optimistic update
     if (context?.institutionsByUser) {
       utils.institutions.getByUserId.setData(undefined, context.institutionsByUser);
+    }
+
+    // CRITICAL FIX: Refetch to ensure cache is in sync
+    try {
+      await Promise.all([
+        utils.institutions.getAll.refetch(),
+        utils.institutions.getByUserId.refetch(),
+      ]);
+    } catch (refetchError) {
+      console.error('Failed to refetch institutions after delete error:', refetchError);
     }
   },
   async onSuccess(result, _variables, context) {
@@ -296,8 +319,16 @@ const getAccountCreateHandlers = (
     } satisfies MutationContext;
   },
   async onError(_error, _variables, context) {
+    // Rollback optimistic update
     if (context?.accountsAll) {
       utils.accounts.getAll.setData(undefined, context.accountsAll);
+    }
+
+    // CRITICAL FIX: Refetch to sync with server state
+    try {
+      await Promise.all([utils.accounts.getAll.refetch(), utils.accounts.getSummaries.refetch()]);
+    } catch (refetchError) {
+      console.error('Failed to refetch accounts after error:', refetchError);
     }
   },
   async onSuccess(result, _variables, context) {
