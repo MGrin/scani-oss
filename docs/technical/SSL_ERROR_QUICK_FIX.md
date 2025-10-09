@@ -18,13 +18,16 @@ You've correctly configured DNS in Namecheap, but **you also need to add the cus
 ### Step 1: Add Custom Domain in Render Frontend
 
 1. **Open Render Dashboard**:
+
    - Go to: https://dashboard.render.com/static/srv-d3j8p37diees73fl6q30
    - Or: Dashboard → Select "scani-frontend"
 
 2. **Go to Settings**:
+
    - Click the **"Settings"** tab at the top
 
 3. **Add Custom Domain**:
+
    - Scroll down to **"Custom Domains"** section
    - Click **"Add Custom Domain"** button
    - Enter: `app.scani.xyz`
@@ -38,6 +41,7 @@ You've correctly configured DNS in Namecheap, but **you also need to add the cus
 ### Step 2: Add Custom Domain in Render Backend
 
 1. **Open Backend Service**:
+
    - Go to: https://dashboard.render.com/web/srv-d3j88295pdvs739osbig
    - Or: Dashboard → Select "scani-backend-217c"
 
@@ -51,6 +55,7 @@ You've correctly configured DNS in Namecheap, but **you also need to add the cus
 ### Step 3: Wait for SSL Provisioning
 
 After adding the domains, Render will:
+
 1. ✅ Verify DNS (instant - already done)
 2. ⏳ Request SSL from Let's Encrypt (5-10 min)
 3. ⏳ Install SSL certificate (5-10 min)
@@ -63,16 +68,19 @@ After adding the domains, Render will:
 ## 🕐 What to Expect
 
 ### Immediate (0-2 minutes)
+
 - Custom domain appears in dashboard
 - Status: "Verifying..."
 - SSL: Not yet
 
 ### After 10-15 minutes
+
 - Status may still show "Verifying..."
 - This is normal - SSL takes time
 - Don't panic, don't remove/re-add
 
 ### After 20-30 minutes
+
 - Status: "Active" ✅
 - SSL: "Provisioned" ✅
 - `https://app.scani.xyz` works!
@@ -85,6 +93,7 @@ After adding the domains, Render will:
 ### In Render Dashboard
 
 **Frontend Service**: https://dashboard.render.com/static/srv-d3j8p37diees73fl6q30
+
 - Settings → Custom Domains
 - Look for `app.scani.xyz`
 - Check status:
@@ -93,6 +102,7 @@ After adding the domains, Render will:
   - ❌ "Failed" = Remove and re-add
 
 **Backend Service**: https://dashboard.render.com/web/srv-d3j88295pdvs739osbig
+
 - Same process for `api.scani.xyz`
 
 ### Using Command Line
@@ -115,22 +125,26 @@ curl -I https://app.scani.xyz
 You'll know it's working when:
 
 1. **Render Dashboard Shows**:
+
    - `app.scani.xyz` - Status: Active, SSL: Provisioned ✅
    - `api.scani.xyz` - Status: Active, SSL: Provisioned ✅
 
 2. **Browser Test**:
+
    ```
    https://app.scani.xyz
    ```
+
    - Loads without errors
    - Shows 🔒 padlock icon
    - No certificate warnings
 
 3. **Command Line Test**:
+
    ```bash
    curl -I https://app.scani.xyz
    # Returns: HTTP/2 200
-   
+
    curl https://api.scani.xyz/health
    # Returns: {"status":"ok",...}
    ```
@@ -144,7 +158,6 @@ You'll know it's working when:
 1. **Remove the domain**:
    - Render → Service Settings → Custom Domains
    - Click X or Remove next to the domain
-   
 2. **Wait 5 minutes**
 
 3. **Add it back**:
@@ -156,6 +169,7 @@ You'll know it's working when:
 **Check for these issues**:
 
 1. **DNS Conflicts in Namecheap**:
+
    - Go to Namecheap → Advanced DNS
    - Verify ONLY these records exist:
      ```
@@ -166,6 +180,7 @@ You'll know it's working when:
    - Delete any other CNAME records for these hosts
 
 2. **CAA Records Blocking Let's Encrypt**:
+
    - In Namecheap Advanced DNS
    - Check for CAA records
    - If exists, ensure Let's Encrypt is allowed
@@ -181,22 +196,26 @@ You'll know it's working when:
 ## 🎯 Bottom Line
 
 **Current State**:
+
 - ✅ DNS: Working perfectly
 - ✅ Services: Running fine on `.onrender.com`
 - ❌ SSL: Not provisioned for custom domain yet
 
 **What You Need to Do**:
+
 1. Add `app.scani.xyz` in Render frontend service settings
 2. Add `api.scani.xyz` in Render backend service settings
 3. Wait 30 minutes for SSL to provision
 4. Test `https://app.scani.xyz`
 
 **Why This Happens**:
+
 - Namecheap DNS tells the internet where to route traffic
 - Render custom domains tell Render to provision SSL
 - Both are needed for HTTPS to work
 
 **Time Required**:
+
 - Adding domains: 2 minutes
 - Waiting for SSL: 30 minutes
 - Total: ~32 minutes

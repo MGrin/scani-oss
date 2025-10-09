@@ -12,6 +12,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Progress } from '@/components/ui/progress';
+import { useAuth } from '@/contexts/AuthContext';
 import { useEntityData } from '@/contexts/EntityDataContext';
 import { useToast } from '@/hooks/use-toast';
 import { trpc } from '@/lib/trpc';
@@ -38,6 +39,7 @@ const STEP_ORDER: OnboardingStep[] = [
 export function OnboardingWizard() {
   const navigate = useNavigate();
   const { toast } = useToast();
+  const { user, loading: authLoading } = useAuth();
   const institutionSelectId = useId();
 
   const [currentStep, setCurrentStep] = useState<OnboardingStep>('welcome');
@@ -68,13 +70,19 @@ export function OnboardingWizard() {
   const createInstitution = trpc.institutions.create.useMutation();
   const createAccount = trpc.accounts.create.useMutation();
 
-  // Check if user has completed onboarding
+  // Check if user has completed onboarding - only show for authenticated users
   useEffect(() => {
+    // Don't show onboarding if user is not authenticated or still loading
+    if (authLoading || !user) {
+      setShowWizard(false);
+      return;
+    }
+
     const hasCompleted = localStorage.getItem('scani-onboarding-completed');
     if (!hasCompleted) {
       setShowWizard(true);
     }
-  }, []);
+  }, [user, authLoading]);
 
   const currentStepIndex = STEP_ORDER.indexOf(currentStep);
   const progress = ((currentStepIndex + 1) / STEP_ORDER.length) * 100;

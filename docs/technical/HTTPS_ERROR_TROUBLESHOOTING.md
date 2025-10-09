@@ -20,10 +20,12 @@ api.scani.xyz → scani-backend-217c.onrender.com ✓
 ## ❌ The Problem
 
 **SSL Errors**:
+
 - `SSL routines:ST_CONNECT:sslv3 alert handshake failure`
 - `ERR_SSL_VERSION_OR_CIPHER_MISMATCH`
 
-**What this means**: 
+**What this means**:
+
 1. Render hasn't provisioned the SSL certificate yet, OR
 2. Custom domain not properly added in Render, OR
 3. SSL is provisioning but not complete yet
@@ -64,6 +66,7 @@ You need to verify the custom domains were added correctly:
 **This is the most common cause!** If you only added DNS records in Namecheap but didn't add the custom domain in Render dashboard:
 
 **Symptoms**:
+
 - DNS resolves correctly
 - `.onrender.com` URL works fine
 - Custom domain gives SSL errors
@@ -87,6 +90,7 @@ You need to verify the custom domains were added correctly:
 3. **Wait 10-30 minutes** for SSL to provision
 
 **Important**: After adding the domains, you MUST wait for SSL provisioning:
+
 - Don't try to access via HTTPS immediately
 - Check Render dashboard for "Active" status
 - Look for "SSL: Provisioned" indicator
