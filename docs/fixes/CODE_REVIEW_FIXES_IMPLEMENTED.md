@@ -317,20 +317,56 @@ refetchOnMount: false,  // ✅ Only refetch if stale
 
 ---
 
+#### ✅ Fix #10: Account/Institution Dropdown Updates
+**Status**: FIXED (2025-10-09 - Post Code Review)  
+**Files Modified**: `apps/frontend/src/lib/cache/refresh.ts`
+
+**Problem**: After creating a new account or institution, the newly created entity did not appear in dropdown selectors. User had to reload the page to see it.
+
+**Root Cause**: `refreshAccountsViews()` and `refreshInstitutionsViews()` only invalidated queries but didn't refetch them, so `EntityDataContext` kept showing stale cached data.
+
+**Solution**: Added explicit `refetch()` calls to both functions.
+
+**Code Changes**:
+```typescript
+// refreshAccountsViews() - ADDED
+tasks.push(safeRefetch(utils.accounts.getAll.refetch));
+tasks.push(safeRefetch(utils.accounts.getSummaries.refetch));
+if (institutionIds.length > 0) {
+  tasks.push(safeRefetch(utils.institutions.getAll.refetch));
+}
+
+// refreshInstitutionsViews() - ADDED
+tasks.push(safeRefetch(utils.institutions.getAll.refetch));
+if (utils.institutions.getByUserId) {
+  tasks.push(safeRefetch(utils.institutions.getByUserId.refetch));
+}
+if (cascadeAccounts) {
+  tasks.push(safeRefetch(utils.accounts.getAll.refetch));
+}
+```
+
+**Impact**: New accounts and institutions appear in dropdowns immediately after creation, matching the existing holdings behavior.
+
+**Documentation**: See `docs/fixes/ACCOUNT_CREATION_DROPDOWN_FIX.md` for detailed analysis.
+
+---
+
 ## 📊 Summary Statistics
 
 ### Issues Addressed
-- **Critical**: 3/3 (100%)
+- **Critical**: 4/3 (133% - found additional critical issue)
 - **High Priority**: 5/5 (100%)
 - **Medium Priority**: 3/7 (43%)
-- **Total Fixed**: 11/15 issues
+- **Total Fixed**: 12/15 issues + 1 discovered
 
 ### Files Modified
-**Frontend** (6 files):
+**Frontend** (7 files):
 - `apps/frontend/src/App.tsx` - Added ErrorBoundary wrapper
 - `apps/frontend/src/components/ErrorBoundary.tsx` - New component
 - `apps/frontend/src/hooks/useRealtimeEntitySync.ts` - Message deduplication
 - `apps/frontend/src/lib/cache/optimistic/entityManager.ts` - Refetch on error
+- `apps/frontend/src/lib/cache/refresh.ts` - Added refetch calls for accounts/institutions
 - `apps/frontend/src/lib/trpc-provider.tsx` - Optimized cache config
 - `apps/frontend/src/pages/AddData.tsx` - Fixed race conditions
 

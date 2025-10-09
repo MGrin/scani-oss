@@ -1,29 +1,25 @@
-import { cors } from "@elysiajs/cors";
-import { trpc } from "@elysiajs/trpc";
-import { Elysia } from "elysia";
-import { WebSocketServer } from "ws";
-import { supabase } from "./lib/supabase";
-import {
-  createStandardLimiter,
-  createStrictLimiter,
-} from "./middleware/rate-limit";
-import { appRouter } from "./router";
-import { realTimeUpdatesService } from "./services/real-time-updates";
-import { createContext } from "./trpc";
-import { createTimer, logger, wsLogger } from "./utils/logger";
+import { cors } from '@elysiajs/cors';
+import { trpc } from '@elysiajs/trpc';
+import { Elysia } from 'elysia';
+import { supabase } from './lib/supabase';
+import { createStandardLimiter, createStrictLimiter } from './middleware/rate-limit';
+import { appRouter } from './router';
+import { realTimeUpdatesService } from './services/real-time-updates';
+import { createContext } from './trpc';
+import { createTimer, logger, wsLogger } from './utils/logger';
 
 const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3001;
-const HOST = process.env.HOST ?? "localhost";
+const HOST = process.env.HOST ?? 'localhost';
 
 // Log startup information
 logger.info(
   {
     port: PORT,
     host: HOST,
-    nodeEnv: process.env.NODE_ENV || "development",
-    frontendUrl: process.env.FRONTEND_URL ?? "http://localhost:5173",
+    nodeEnv: process.env.NODE_ENV || 'development',
+    frontendUrl: process.env.FRONTEND_URL ?? 'http://localhost:5173',
   },
-  "🚀 Starting Scani Backend Server"
+  '🚀 Starting Scani Backend Server'
 );
 
 // Extended request interface for tracking
@@ -45,18 +41,18 @@ const app = new Elysia()
 
     // Add request ID to headers for tracing
     set.headers = set.headers || {};
-    set.headers["x-request-id"] = requestId;
+    set.headers['x-request-id'] = requestId;
 
     logger.info(
       {
         requestId,
         method: request.method,
         url: request.url,
-        userAgent: request.headers.get("user-agent"),
-        contentType: request.headers.get("content-type"),
-        origin: request.headers.get("origin"),
+        userAgent: request.headers.get('user-agent'),
+        contentType: request.headers.get('content-type'),
+        origin: request.headers.get('origin'),
       },
-      "📨 HTTP Request received"
+      '📨 HTTP Request received'
     );
 
     // Store timer and request ID for response logging
@@ -66,13 +62,13 @@ const app = new Elysia()
   // Global rate limiting (lightweight)
   .onBeforeHandle(({ request, set }) => {
     const res = globalLimiter.tryConsume(request);
-    if ("ok" in res && res.ok) return;
+    if ('ok' in res && res.ok) return;
     set.status = 429;
     set.headers = set.headers || {};
-    set.headers["Retry-After"] = String(res.retryAfterSec);
+    set.headers['Retry-After'] = String(res.retryAfterSec);
     return {
-      error: "Too Many Requests",
-      message: "Global rate limit exceeded",
+      error: 'Too Many Requests',
+      message: 'Global rate limit exceeded',
       retryAfterSec: res.retryAfterSec,
     };
   })
@@ -84,11 +80,11 @@ const app = new Elysia()
     const duration = timer ? timer.end() : undefined;
 
     const statusCode =
-      typeof set.status === "number"
+      typeof set.status === 'number'
         ? set.status
         : set.status
-        ? parseInt(set.status.toString(), 10)
-        : 200;
+          ? parseInt(set.status.toString(), 10)
+          : 200;
     const isError = statusCode >= 400;
 
     const logData = {
@@ -97,16 +93,13 @@ const app = new Elysia()
       url: request.url,
       statusCode,
       duration: duration ? `${duration}ms` : undefined,
-      contentType: set.headers?.["content-type"],
+      contentType: set.headers?.['content-type'],
     };
 
     if (isError) {
-      logger.warn(
-        logData,
-        `⚠️ HTTP Response sent with error status: ${statusCode}`
-      );
+      logger.warn(logData, `⚠️ HTTP Response sent with error status: ${statusCode}`);
     } else {
-      logger.info(logData, "✅ HTTP Response sent successfully");
+      logger.info(logData, '✅ HTTP Response sent successfully');
     }
 
     return response;
@@ -119,9 +112,8 @@ const app = new Elysia()
     const duration = timer ? timer.end() : undefined;
 
     // Handle different error types
-    const errorMessage =
-      error instanceof Error ? error.message : "Unknown error";
-    const errorName = error instanceof Error ? error.name : "UnknownError";
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    const errorName = error instanceof Error ? error.name : 'UnknownError';
     const errorStack = error instanceof Error ? error.stack : undefined;
 
     logger.error(
@@ -143,82 +135,148 @@ const app = new Elysia()
     set.status = 500;
 
     return {
-      error: "Internal Server Error",
+      error: 'Internal Server Error',
       message: errorMessage,
       requestId,
     };
   })
   .use(
     cors({
-      origin: process.env.FRONTEND_URL ?? "http://localhost:5173",
+      origin: process.env.FRONTEND_URL ?? 'http://localhost:5173',
       credentials: true,
-      allowedHeaders: ["Authorization", "Content-Type"],
+      allowedHeaders: ['Authorization', 'Content-Type'],
     })
   )
   // Add security headers middleware (after CORS to avoid conflicts)
   .onAfterHandle(({ set }) => {
     // Prevent MIME type sniffing
     set.headers = set.headers || {};
-    set.headers["X-Content-Type-Options"] = "nosniff";
+    set.headers['X-Content-Type-Options'] = 'nosniff';
     // Prevent clickjacking
-    set.headers["X-Frame-Options"] = "DENY";
+    set.headers['X-Frame-Options'] = 'DENY';
     // Enable XSS protection
-    set.headers["X-XSS-Protection"] = "1; mode=block";
+    set.headers['X-XSS-Protection'] = '1; mode=block';
     // Referrer policy
-    set.headers["Referrer-Policy"] = "strict-origin-when-cross-origin";
+    set.headers['Referrer-Policy'] = 'strict-origin-when-cross-origin';
     // Content Security Policy for API responses
-    set.headers["Content-Security-Policy"] = "default-src 'none'";
+    set.headers['Content-Security-Policy'] = "default-src 'none'";
     // HSTS - Force HTTPS for 1 year (only in production)
-    if (process.env.NODE_ENV === "production") {
-      set.headers["Strict-Transport-Security"] =
-        "max-age=31536000; includeSubDomains; preload";
+    if (process.env.NODE_ENV === 'production') {
+      set.headers['Strict-Transport-Security'] = 'max-age=31536000; includeSubDomains; preload';
     }
     // Note: Vary header is set by CORS middleware
   })
   .use(
     trpc(appRouter, {
       createContext,
-      endpoint: "/trpc",
+      endpoint: '/trpc',
     })
   )
   // Health check endpoint (GET and HEAD)
-  .get("/health", () => {
+  .get('/health', () => {
     return {
-      status: "ok",
+      status: 'ok',
       timestamp: new Date().toISOString(),
-      version: "1.0.0",
+      version: '1.0.0',
     };
   })
-  .head(
-    "/health",
-    ({ set }: { set: { status: number; headers: Record<string, string> } }) => {
-      set.status = 200;
-      set.headers["Content-Type"] = "application/json";
-      return;
-    }
-  )
-  // Temporary: Return 200 for root GET requests (WebSocket upgrade attempts)
-  // TODO: Implement proper WebSocket using Elysia's native .ws() method
-  .get("/", () => {
-    return {
-      message: "WebSocket endpoint - temporarily disabled",
-      note: "Real-time updates will be re-enabled with Elysia native WebSocket support",
-    };
+  .head('/health', ({ set }: { set: { status: number; headers: Record<string, string> } }) => {
+    set.status = 200;
+    set.headers['Content-Type'] = 'application/json';
+    return;
+  })
+  // WebSocket endpoint using Elysia's native WebSocket support
+  .ws('/', {
+    // biome-ignore lint/suspicious/noExplicitAny: Elysia WebSocket types not well documented
+    open: async (ws: any) => {
+      const connectionId = Math.random().toString(36).substring(2, 15);
+      const connectionLogger = wsLogger.child({ connectionId });
+
+      // Require auth via query param token
+      let authenticatedUserId: string | null = null;
+      try {
+        // In Elysia WebSocket, query params are in ws.data.query
+        const query = ws.data.query as Record<string, string> | undefined;
+        const token = query?.token;
+
+        if (!token) {
+          connectionLogger.warn('No auth token provided');
+          ws.close(4401, 'Unauthorized');
+          return;
+        }
+
+        const { data, error } = await supabase.auth.getUser(token);
+        if (error || !data?.user) {
+          connectionLogger.warn({ error }, 'Invalid auth token');
+          ws.close(4401, 'Unauthorized');
+          return;
+        }
+
+        authenticatedUserId = data.user.id;
+      } catch (err) {
+        connectionLogger.error({ error: err }, 'Auth failure');
+        ws.close(1011, 'Auth failure');
+        return;
+      }
+
+      connectionLogger.info(
+        {
+          userId: authenticatedUserId,
+        },
+        '🔗 WebSocket client connected'
+      );
+
+      // Store connection metadata
+      ws.data.connectionId = connectionId;
+      ws.data.userId = authenticatedUserId;
+      ws.data.connectedAt = Date.now();
+
+      // Register with real-time updates service
+      // Note: realTimeUpdatesService handles its own message/close/error events
+      // so we pass the raw WebSocket here
+      realTimeUpdatesService.registerConnection(ws.raw, {
+        userId: authenticatedUserId,
+        connectionId,
+      });
+    },
+    // biome-ignore lint/suspicious/noExplicitAny: Elysia WebSocket types not well documented
+    message: (ws: any, message: any) => {
+      // Real-time updates service handles messages via its own event handlers
+      // This is just for logging
+      if (ws.data.connectionId) {
+        const connectionLogger = wsLogger.child({ connectionId: ws.data.connectionId });
+        connectionLogger.debug({ message }, '📨 WebSocket message received');
+      }
+    },
+    // biome-ignore lint/suspicious/noExplicitAny: Elysia WebSocket types not well documented
+    close: (ws: any, code: any, reason: any) => {
+      // Disconnection is handled by realTimeUpdatesService via ws.on('close')
+      if (ws.data?.connectionId) {
+        const connectionLogger = wsLogger.child({ connectionId: ws.data.connectionId });
+        connectionLogger.info(
+          {
+            code,
+            reason,
+          },
+          '🔚 WebSocket client disconnected'
+        );
+      }
+    },
   })
   // Stricter limiter for AI-related HTTP endpoints (if any are added later)
   .onBeforeHandle(({ request, set }) => {
     // Apply only to the tRPC endpoint with potential heavy procedures
     try {
       const url = new URL(request.url);
-      if (url.pathname === "/trpc" && request.method === "POST") {
+      if (url.pathname === '/trpc' && request.method === 'POST') {
         const res = strictLimiter.tryConsume(request);
-        if ("ok" in res && res.ok) return;
+        if ('ok' in res && res.ok) return;
         set.status = 429;
         set.headers = set.headers || {};
-        set.headers["Retry-After"] = String(res.retryAfterSec);
+        set.headers['Retry-After'] = String(res.retryAfterSec);
         return {
-          error: "Too Many Requests",
-          message: "tRPC route rate limit exceeded",
+          error: 'Too Many Requests',
+          message: 'tRPC route rate limit exceeded',
           retryAfterSec: res.retryAfterSec,
         };
       }
@@ -227,136 +285,13 @@ const app = new Elysia()
     }
   });
 
-// Create WebSocket server for real-time updates with enhanced logging
-// Use noServer mode - we'll attach to HTTP server after it's created
-const wss = new WebSocketServer({
-  noServer: true, // Don't create a new HTTP server
-  maxPayload: 256 * 1024, // 256KB
-});
-
 wsLogger.info(
   {
     port: PORT,
     host: HOST,
   },
-  "🔌 WebSocket server initializing (will attach to HTTP server)"
+  '🔌 WebSocket endpoint configured (using Elysia native WebSocket)'
 );
-
-// WebSocket connection handling with comprehensive logging
-wss.on("connection", async (ws, req) => {
-  const connectionId = Math.random().toString(36).substring(2, 15);
-  const clientIP = req.socket.remoteAddress;
-  const userAgent = req.headers["user-agent"];
-
-  const connectionLogger = wsLogger.child({ connectionId });
-
-  // Require auth via query param token (e.g., ws://host:port?token=JWT)
-  let authenticatedUserId: string | null = null;
-  try {
-    const urlStr = req.url || "/";
-    const url = new URL(urlStr, `ws://${HOST}:${PORT}`);
-    const token = url.searchParams.get("token") || undefined;
-    if (!token) {
-      ws.close(4401, "Unauthorized");
-      return;
-    }
-    const { data, error } = await supabase.auth.getUser(token);
-    if (error || !data?.user) {
-      ws.close(4401, "Unauthorized");
-      return;
-    }
-    authenticatedUserId = data.user.id;
-  } catch {
-    ws.close(1011, "Auth failure");
-    return;
-  }
-
-  connectionLogger.info(
-    {
-      clientIP,
-      userAgent,
-      url: req.url,
-      userId: authenticatedUserId,
-    },
-    "🔗 WebSocket client connected"
-  );
-  // Heartbeat flags
-  // Track connection liveness for heartbeat without weakening types
-  (ws as unknown as { isAlive?: boolean }).isAlive = true;
-  ws.on("pong", () => {
-    (ws as unknown as { isAlive?: boolean }).isAlive = true;
-  });
-
-  ws.on("close", (code, reason) => {
-    connectionLogger.info(
-      {
-        code,
-        reason: reason.toString(),
-      },
-      "🔚 WebSocket client disconnected"
-    );
-  });
-
-  ws.on("error", (error) => {
-    connectionLogger.error(
-      {
-        error: {
-          name: error.name,
-          message: error.message,
-          stack: error.stack,
-        },
-      },
-      "⚠️ WebSocket connection error"
-    );
-  });
-
-  realTimeUpdatesService.registerConnection(ws, {
-    userId: authenticatedUserId,
-    connectionId,
-    request: req,
-  });
-});
-
-wss.on("error", (error) => {
-  wsLogger.error(
-    {
-      error: {
-        name: error.name,
-        message: error.message,
-        stack: error.stack,
-      },
-    },
-    "💥 WebSocket server error"
-  );
-});
-
-// Heartbeat to terminate dead connections and enforce max connection age
-const MAX_WS_AGE_MS = 2 * 60 * 60 * 1000; // 2 hours
-const heartbeat = setInterval(() => {
-  wss.clients.forEach((client) => {
-    const sock = client as unknown as {
-      isAlive?: boolean;
-      ping: () => void;
-      terminate: () => void;
-      _connectedAt?: number;
-    };
-    // Initialize connection time if not set
-    if (!sock._connectedAt) {
-      sock._connectedAt = Date.now();
-    }
-    if (sock.isAlive === false) {
-      client.terminate();
-      return;
-    }
-    // Enforce max age for token freshness (require reconnect)
-    if (Date.now() - (sock._connectedAt || 0) > MAX_WS_AGE_MS) {
-      client.terminate();
-      return;
-    }
-    sock.isAlive = false;
-    client.ping();
-  });
-}, 30000);
 
 // Start HTTP server with enhanced logging
 const server = app.listen(PORT, () => {
@@ -364,117 +299,31 @@ const server = app.listen(PORT, () => {
     {
       httpUrl: `http://${HOST}:${PORT}`,
       wsUrl: `ws://${HOST}:${PORT}`,
-      environment: process.env.NODE_ENV || "development",
+      environment: process.env.NODE_ENV || 'development',
     },
-    "🎉 Scani Backend Server started successfully"
+    '🎉 Scani Backend Server started successfully'
   );
 });
 
-// Attach WebSocket upgrade handler to the HTTP server
-// Use setImmediate to ensure server variable is initialized
-setImmediate(() => {
-  // Elysia uses Bun's server, not Node's http.Server
-  // Try different ways to access the underlying server
-  let httpServer: unknown = null;
-  const serverObj = server as unknown as Record<string, unknown>;
-
-  // Try 1: Direct server property
-  if (serverObj.server) {
-    httpServer = serverObj.server;
-  }
-  // Try 2: Look for upgrade method directly on server
-  else if (typeof serverObj.on === "function") {
-    httpServer = server;
-  }
-  // Try 3: Check if it's a Bun server with different structure
-  else if (serverObj.httpServer) {
-    httpServer = serverObj.httpServer;
-  }
-
-  wsLogger.debug(
-    {
-      serverType: typeof server,
-      serverKeys: server ? Object.keys(server).slice(0, 10) : [],
-      hasServerProp: !!serverObj.server,
-      hasOnMethod: typeof serverObj.on === "function",
-      constructorName: server?.constructor?.name,
-    },
-    "Inspecting server object structure"
-  );
-
-  // Type for Node.js HTTP server with upgrade event
-  type HttpServer = {
-    on: (
-      event: "upgrade",
-      handler: (
-        request: import("http").IncomingMessage,
-        socket: import("stream").Duplex,
-        head: Buffer
-      ) => void
-    ) => void;
-  };
-
-  const httpServerWithOn = httpServer as HttpServer | null;
-
-  if (
-    httpServer &&
-    httpServerWithOn &&
-    typeof httpServerWithOn.on === "function"
-  ) {
-    httpServerWithOn.on(
-      "upgrade",
-      (
-        request: import("http").IncomingMessage,
-        socket: import("stream").Duplex,
-        head: Buffer
-      ) => {
-        wsLogger.info(
-          {
-            url: request.url,
-            origin: request.headers.origin,
-          },
-          "🔄 WebSocket upgrade request received"
-        );
-
-        wss.handleUpgrade(request, socket, head, (ws) => {
-          wss.emit("connection", ws, request);
-        });
-      }
-    );
-
-    wsLogger.info("✅ WebSocket upgrade handler attached to HTTP server");
-  } else {
-    wsLogger.error(
-      "❌ Elysia/Bun server doesn't expose Node.js HTTP server - WebSocket upgrade cannot be attached this way"
-    );
-    wsLogger.warn(
-      "⚠️ WebSocket connections may not work. Consider using Elysia's built-in WebSocket support instead."
-    );
-  }
-});
+// WebSocket is now handled by Elysia's native .ws() method above
+// No need for separate upgrade handler
 
 // Graceful shutdown with logging
 const gracefulShutdown = (signal: string) => {
-  logger.info({ signal }, "🛑 Graceful shutdown initiated");
+  logger.info({ signal }, '🛑 Graceful shutdown initiated');
 
-  logger.info("Closing HTTP server...");
+  logger.info('Closing HTTP server...');
   server.stop();
 
-  logger.info("Closing WebSocket server...");
-  wss.close(() => {
-    logger.info("WebSocket server closed");
-  });
-  clearInterval(heartbeat);
-
-  logger.info("🏁 Graceful shutdown completed");
+  logger.info('🏁 Graceful shutdown completed');
   process.exit(0);
 };
 
-process.on("SIGINT", () => gracefulShutdown("SIGINT"));
-process.on("SIGTERM", () => gracefulShutdown("SIGTERM"));
+process.on('SIGINT', () => gracefulShutdown('SIGINT'));
+process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
 
 // Handle uncaught exceptions and unhandled rejections
-process.on("uncaughtException", (error) => {
+process.on('uncaughtException', (error) => {
   logger.fatal(
     {
       error: {
@@ -483,20 +332,20 @@ process.on("uncaughtException", (error) => {
         stack: error.stack,
       },
     },
-    "💀 Uncaught Exception - shutting down"
+    '💀 Uncaught Exception - shutting down'
   );
   process.exit(1);
 });
 
-process.on("unhandledRejection", (reason, promise) => {
+process.on('unhandledRejection', (reason, promise) => {
   logger.fatal(
     {
       reason,
       promise: promise.toString(),
     },
-    "💀 Unhandled Promise Rejection - shutting down"
+    '💀 Unhandled Promise Rejection - shutting down'
   );
   process.exit(1);
 });
 
-export type { AppRouter } from "./router";
+export type { AppRouter } from './router';

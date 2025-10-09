@@ -21,7 +21,7 @@ export function refreshInstitutionsViews(
   utils: TrpcUtils,
   { institutionIds = [], cascadeAccounts = false }: InstitutionRefreshOptions = {}
 ) {
-  // Only invalidate queries, don't force refetch
+  // Invalidate related queries
   const tasks: Array<Promise<unknown>> = [
     invalidateInstitutionsRelated(utils, {
       institutionIds,
@@ -29,6 +29,13 @@ export function refreshInstitutionsViews(
       includeByUser: true,
     }),
   ];
+
+  // CRITICAL FIX: Refetch core queries that EntityDataContext and other components depend on
+  // These need to be fresh for the newly created institution to appear in dropdowns
+  tasks.push(safeRefetch(utils.institutions.getAll.refetch));
+  if (utils.institutions.getByUserId) {
+    tasks.push(safeRefetch(utils.institutions.getByUserId.refetch));
+  }
 
   if (cascadeAccounts) {
     tasks.push(
@@ -45,6 +52,8 @@ export function refreshInstitutionsViews(
     );
     tasks.push(invalidateTokensRelated(utils));
     tasks.push(invalidateTransactionsRelated(utils));
+    // Also refetch accounts so they reflect the new institution
+    tasks.push(safeRefetch(utils.accounts.getAll.refetch));
   }
 
   return collectTasks(tasks);
@@ -60,7 +69,7 @@ export function refreshAccountsViews(
   utils: TrpcUtils,
   { accountIds = [], institutionIds = [], cascadeHoldings = true }: AccountRefreshOptions = {}
 ) {
-  // Only invalidate queries, don't force refetch
+  // Invalidate related queries
   const tasks: Array<Promise<unknown>> = [
     invalidateAccountsRelated(utils, {
       accountIds,
@@ -68,6 +77,11 @@ export function refreshAccountsViews(
       includePortfolioValue: true,
     }),
   ];
+
+  // CRITICAL FIX: Refetch core queries that EntityDataContext and other components depend on
+  // These need to be fresh for the newly created account to appear in dropdowns
+  tasks.push(safeRefetch(utils.accounts.getAll.refetch));
+  tasks.push(safeRefetch(utils.accounts.getSummaries.refetch));
 
   if (institutionIds.length > 0) {
     tasks.push(
@@ -77,6 +91,8 @@ export function refreshAccountsViews(
         includeByUser: true,
       })
     );
+    // Also refetch institutions so they show updated account counts
+    tasks.push(safeRefetch(utils.institutions.getAll.refetch));
   }
 
   if (cascadeHoldings) {
