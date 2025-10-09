@@ -29,6 +29,7 @@ self.addEventListener("activate", (event) => {
             console.log("[SW] Deleting old cache:", cacheName);
             return caches.delete(cacheName);
           }
+          return Promise.resolve();
         })
       );
     })
@@ -90,7 +91,7 @@ self.addEventListener("fetch", (event) => {
     caches.match(request).then((cachedResponse) => {
       if (cachedResponse) {
         // Return cached version and update in background
-        const fetchPromise = fetch(request)
+        fetch(request)
           .then((networkResponse) => {
             if (networkResponse.ok) {
               caches.open(RUNTIME_CACHE).then((cache) => {

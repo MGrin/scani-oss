@@ -1,16 +1,16 @@
-import { CreateHoldingSchema, UpdateHoldingSchema } from "@scani/shared/types";
-import { and, desc, eq, ne } from "drizzle-orm";
-import { z } from "zod";
-import { db } from "../db/connection";
-import * as schema from "../db/schema";
-import { getUserId, requireAuth } from "../middleware/auth";
-import { portfolioValuationService } from "../services/portfolio-valuation";
-import { pricingService } from "../services/pricing";
-import { emitEntityChange } from "../services/real-time-updates";
-import { protectedProcedure, router } from "../trpc";
-import { createComponentLogger } from "../utils/logger";
+import { CreateHoldingSchema, UpdateHoldingSchema } from '@scani/shared/types';
+import { and, desc, eq, ne } from 'drizzle-orm';
+import { z } from 'zod';
+import { db } from '../db/connection';
+import * as schema from '../db/schema';
+import { getUserId, requireAuth } from '../middleware/auth';
+import { portfolioValuationService } from '../services/portfolio-valuation';
+import { pricingService } from '../services/pricing';
+import { emitEntityChange } from '../services/real-time-updates';
+import { protectedProcedure, router } from '../trpc';
+import { createComponentLogger } from '../utils/logger';
 
-const holdingsLogger = createComponentLogger("router:holdings");
+const holdingsLogger = createComponentLogger('router:holdings');
 
 export const holdingsRouter = router({
   // Get all holdings
@@ -25,31 +25,24 @@ export const holdingsRouter = router({
     return holdings;
   }),
 
-  getById: protectedProcedure
-    .input(z.object({ id: z.string() }))
-    .query(async ({ input, ctx }) => {
-      const { dbUser } = requireAuth(ctx);
+  getById: protectedProcedure.input(z.object({ id: z.string() })).query(async ({ input, ctx }) => {
+    const { dbUser } = requireAuth(ctx);
 
-      const [holding] = await db
-        .select({
-          id: schema.holdings.id,
-          accountId: schema.holdings.accountId,
-          tokenId: schema.holdings.tokenId,
-          tokenSymbol: schema.tokens.symbol,
-          tokenName: schema.tokens.name,
-        })
-        .from(schema.holdings)
-        .leftJoin(schema.tokens, eq(schema.holdings.tokenId, schema.tokens.id))
-        .where(
-          and(
-            eq(schema.holdings.id, input.id),
-            eq(schema.holdings.userId, dbUser.id)
-          )
-        )
-        .limit(1);
+    const [holding] = await db
+      .select({
+        id: schema.holdings.id,
+        accountId: schema.holdings.accountId,
+        tokenId: schema.holdings.tokenId,
+        tokenSymbol: schema.tokens.symbol,
+        tokenName: schema.tokens.name,
+      })
+      .from(schema.holdings)
+      .leftJoin(schema.tokens, eq(schema.holdings.tokenId, schema.tokens.id))
+      .where(and(eq(schema.holdings.id, input.id), eq(schema.holdings.userId, dbUser.id)))
+      .limit(1);
 
-      return holding ?? null;
-    }),
+    return holding ?? null;
+  }),
 
   // Check if holding already exists (for duplicate prevention)
   checkDuplicate: protectedProcedure
@@ -104,25 +97,18 @@ export const holdingsRouter = router({
           userId,
           input,
         },
-        "Creating holding"
+        'Creating holding'
       );
 
       // Validate account existence and ownership
       const [account] = await db
         .select()
         .from(schema.accounts)
-        .where(
-          and(
-            eq(schema.accounts.id, input.accountId),
-            eq(schema.accounts.userId, userId)
-          )
-        )
+        .where(and(eq(schema.accounts.id, input.accountId), eq(schema.accounts.userId, userId)))
         .limit(1);
 
       if (!account) {
-        throw new Error(
-          "Account does not exist or does not belong to the current user"
-        );
+        throw new Error('Account does not exist or does not belong to the current user');
       }
 
       // Validate token existence
@@ -133,7 +119,7 @@ export const holdingsRouter = router({
         .limit(1);
 
       if (!token) {
-        throw new Error("Token does not exist for the specified tokenId");
+        throw new Error('Token does not exist for the specified tokenId');
       }
 
       // Use database transaction to ensure atomicity
@@ -141,7 +127,7 @@ export const holdingsRouter = router({
         const holdingData = {
           ...input,
           userId,
-          balance: input.balance || "0", // Ensure balance is always a string
+          balance: input.balance || '0', // Ensure balance is always a string
           createdAt: now,
           lastUpdated: input.lastUpdated || now, // Always ensure lastUpdated is set
         };
@@ -152,15 +138,12 @@ export const holdingsRouter = router({
             accountId: holdingData.accountId,
             tokenId: holdingData.tokenId,
           },
-          "Inserting holding data"
+          'Inserting holding data'
         );
-        const [holding] = await trx
-          .insert(schema.holdings)
-          .values(holdingData)
-          .returning();
+        const [holding] = await trx.insert(schema.holdings).values(holdingData).returning();
 
         if (!holding) {
-          throw new Error("Failed to create holding");
+          throw new Error('Failed to create holding');
         }
 
         holdingsLogger.debug(
@@ -168,7 +151,7 @@ export const holdingsRouter = router({
             holdingId: holding.id,
             accountId: holding.accountId,
           },
-          "Holding created successfully"
+          'Holding created successfully'
         );
 
         // Fetch current token price for the user's base currency
@@ -185,11 +168,7 @@ export const holdingsRouter = router({
               .limit(1);
 
             if (baseCurrency && token.symbol !== baseCurrency.symbol) {
-              await pricingService.getTokenPrice(
-                token,
-                baseCurrency.symbol,
-                now
-              );
+              await pricingService.getTokenPrice(token, baseCurrency.symbol, now);
               priceFetchSuccessful = true;
               holdingsLogger.debug(
                 {
@@ -197,7 +176,7 @@ export const holdingsRouter = router({
                   symbol: token.symbol,
                   baseCurrency: baseCurrency.symbol,
                 },
-                "Fetched current price after holding creation"
+                'Fetched current price after holding creation'
               );
             } else if (token.symbol === baseCurrency?.symbol) {
               // Base currency doesn't need pricing
@@ -205,8 +184,7 @@ export const holdingsRouter = router({
             }
           }
         } catch (error) {
-          const errorMessage =
-            error instanceof Error ? error.message : "Unknown error";
+          const errorMessage = error instanceof Error ? error.message : 'Unknown error';
           priceFetchError = errorMessage;
 
           holdingsLogger.warn(
@@ -214,12 +192,9 @@ export const holdingsRouter = router({
               tokenId: token.id,
               symbol: token.symbol,
               baseCurrency: dbUser.baseCurrencyId,
-              error:
-                error instanceof Error
-                  ? { name: error.name, message: error.message }
-                  : error,
+              error: error instanceof Error ? { name: error.name, message: error.message } : error,
             },
-            "Failed to fetch token price during holding creation"
+            'Failed to fetch token price during holding creation'
           );
           // Continue without price - holding can still be created
         }
@@ -232,14 +207,14 @@ export const holdingsRouter = router({
             .from(schema.transactionTypes)
             .where(
               and(
-                eq(schema.transactionTypes.code, "deposit"),
+                eq(schema.transactionTypes.code, 'deposit'),
                 eq(schema.transactionTypes.isActive, true)
               )
             )
             .limit(1);
 
           if (!depositType) {
-            throw new Error("Deposit transaction type not found");
+            throw new Error('Deposit transaction type not found');
           }
 
           await trx.insert(schema.transactions).values({
@@ -247,8 +222,8 @@ export const holdingsRouter = router({
             holdingId: holding.id,
             typeId: depositType.id, // Use typeId instead of type
             amount: holding.balance, // Already a string
-            fee: "0", // Convert fee to string
-            description: "Opening balance - initial holding position",
+            fee: '0', // Convert fee to string
+            description: 'Opening balance - initial holding position',
             timestamp: now,
             createdAt: now,
             updatedAt: now,
@@ -260,9 +235,9 @@ export const holdingsRouter = router({
 
       if (holding.holding) {
         emitEntityChange({
-          type: "entity_changed",
-          entityType: "holding",
-          operationType: "create",
+          type: 'entity_changed',
+          entityType: 'holding',
+          operationType: 'create',
           entityId: holding.holding.id,
           userId,
           data: {
@@ -294,22 +269,17 @@ export const holdingsRouter = router({
       const [updatedHolding] = await db
         .update(schema.holdings)
         .set(updateData)
-        .where(
-          and(
-            eq(schema.holdings.id, input.id),
-            eq(schema.holdings.userId, userId)
-          )
-        )
+        .where(and(eq(schema.holdings.id, input.id), eq(schema.holdings.userId, userId)))
         .returning();
 
       if (!updatedHolding) {
-        throw new Error("Holding not found");
+        throw new Error('Holding not found');
       }
 
       emitEntityChange({
-        type: "entity_changed",
-        entityType: "holding",
-        operationType: "update",
+        type: 'entity_changed',
+        entityType: 'holding',
+        operationType: 'update',
         entityId: updatedHolding.id,
         userId,
         data: {
@@ -336,28 +306,23 @@ export const holdingsRouter = router({
       // Delete the holding - cascading deletes will handle transactions
       const [deletedHolding] = await db
         .delete(schema.holdings)
-        .where(
-          and(
-            eq(schema.holdings.id, input.id),
-            eq(schema.holdings.userId, dbUser.id)
-          )
-        )
+        .where(and(eq(schema.holdings.id, input.id), eq(schema.holdings.userId, dbUser.id)))
         .returning();
 
       if (!deletedHolding) {
-        throw new Error("Holding not found");
+        throw new Error('Holding not found');
       }
 
       emitEntityChange({
-        type: "entity_changed",
-        entityType: "holding",
-        operationType: "delete",
+        type: 'entity_changed',
+        entityType: 'holding',
+        operationType: 'delete',
         entityId: deletedHolding.id,
         userId: dbUser.id,
         metadata: {
           relatedEntities: [
             {
-              type: "account",
+              type: 'account',
               id: deletedHolding.accountId,
             },
           ],

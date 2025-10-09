@@ -1,22 +1,16 @@
-import { useCallback, useMemo } from "react";
+import { useCallback, useMemo } from 'react';
 import {
   invalidateAccountsRelated,
   invalidateHoldingsRelated,
   invalidateInstitutionsRelated,
   invalidateTokensRelated,
   invalidateTransactionsRelated,
-} from "@/lib/cache/invalidateHoldingsRelated";
-import { trpc } from "@/lib/trpc";
-import { useScaniWebSocket, type WebSocketMessage } from "./useWebSocket";
+} from '@/lib/cache/invalidateHoldingsRelated';
+import { trpc } from '@/lib/trpc';
+import { useScaniWebSocket, type WebSocketMessage } from './useWebSocket';
 
-type EntityType =
-  | "institution"
-  | "account"
-  | "holding"
-  | "transaction"
-  | "token"
-  | "user";
-type OperationType = "create" | "update" | "delete" | "sync";
+type EntityType = 'institution' | 'account' | 'holding' | 'transaction' | 'token' | 'user';
+type OperationType = 'create' | 'update' | 'delete' | 'sync';
 
 interface EntityChangedMessage extends WebSocketMessage {
   entityType?: EntityType;
@@ -38,15 +32,13 @@ function resolveWebSocketUrl() {
     return explicitUrl;
   }
 
-  const apiUrl =
-    (import.meta.env.VITE_API_URL as string | undefined) ??
-    "http://localhost:3001";
+  const apiUrl = (import.meta.env.VITE_API_URL as string | undefined) ?? 'http://localhost:3001';
   const parsed = new URL(apiUrl);
 
   // Use the same port as the API server, just change protocol to ws/wss
-  parsed.protocol = parsed.protocol === "https:" ? "wss:" : "ws:";
-  parsed.pathname = "";
-  parsed.search = "";
+  parsed.protocol = parsed.protocol === 'https:' ? 'wss:' : 'ws:';
+  parsed.pathname = '';
+  parsed.search = '';
 
   return parsed.toString();
 }
@@ -58,7 +50,7 @@ export function useRealtimeEntitySync() {
 
   const handleMessage = useCallback(
     async (message: WebSocketMessage) => {
-      if (message.type !== "entity_changed") {
+      if (message.type !== 'entity_changed') {
         return;
       }
 
@@ -75,14 +67,14 @@ export function useRealtimeEntitySync() {
 
       try {
         switch (entityType) {
-          case "account":
+          case 'account':
             await invalidateAccountsRelated(utils, {
               includePortfolioValue: true,
               accountIds: entityId ? [entityId] : [],
             });
             if (related.length) {
               const institutionIds = related
-                .filter((entity) => entity.type === "institution")
+                .filter((entity) => entity.type === 'institution')
                 .map((entity) => entity.id);
               if (institutionIds.length) {
                 await invalidateInstitutionsRelated(utils, {
@@ -90,13 +82,9 @@ export function useRealtimeEntitySync() {
                   institutionIds,
                 });
               }
-            } else if (
-              typeof data === "object" &&
-              data &&
-              "institutionId" in data
-            ) {
+            } else if (typeof data === 'object' && data && 'institutionId' in data) {
               const institutionId = data.institutionId;
-              if (typeof institutionId === "string") {
+              if (typeof institutionId === 'string') {
                 await invalidateInstitutionsRelated(utils, {
                   includeAccounts: true,
                   institutionIds: [institutionId],
@@ -104,19 +92,19 @@ export function useRealtimeEntitySync() {
               }
             }
             break;
-          case "institution":
+          case 'institution':
             await invalidateInstitutionsRelated(utils, {
               includeAccounts: true,
               institutionIds: entityId ? [entityId] : [],
             });
             break;
-          case "holding":
+          case 'holding':
             await invalidateHoldingsRelated(utils, {
               holdingIds: entityId ? [entityId] : [],
             });
             if (related.length) {
               const accountIds = related
-                .filter((entity) => entity.type === "account")
+                .filter((entity) => entity.type === 'account')
                 .map((entity) => entity.id);
               if (accountIds.length) {
                 await invalidateAccountsRelated(utils, {
@@ -124,13 +112,9 @@ export function useRealtimeEntitySync() {
                   accountIds,
                 });
               }
-            } else if (
-              typeof data === "object" &&
-              data &&
-              "accountId" in data
-            ) {
+            } else if (typeof data === 'object' && data && 'accountId' in data) {
               const accountId = data.accountId;
-              if (typeof accountId === "string") {
+              if (typeof accountId === 'string') {
                 await invalidateAccountsRelated(utils, {
                   includeSummaries: false,
                   accountIds: [accountId],
@@ -138,23 +122,19 @@ export function useRealtimeEntitySync() {
               }
             }
             break;
-          case "transaction":
+          case 'transaction':
             await invalidateTransactionsRelated(utils);
             {
               const holdingIdsFromMetadata = related
-                .filter((entity) => entity.type === "holding")
+                .filter((entity) => entity.type === 'holding')
                 .map((entity) => entity.id);
               if (holdingIdsFromMetadata.length) {
                 await invalidateHoldingsRelated(utils, {
                   holdingIds: holdingIdsFromMetadata,
                 });
-              } else if (
-                typeof data === "object" &&
-                data &&
-                "holdingId" in data
-              ) {
+              } else if (typeof data === 'object' && data && 'holdingId' in data) {
                 const holdingId = data.holdingId;
-                if (typeof holdingId === "string") {
+                if (typeof holdingId === 'string') {
                   await invalidateHoldingsRelated(utils, {
                     holdingIds: [holdingId],
                   });
@@ -162,14 +142,14 @@ export function useRealtimeEntitySync() {
               }
             }
             break;
-          case "token":
+          case 'token':
             await invalidateTokensRelated(utils);
             break;
           default:
             break;
         }
       } catch (error) {
-        console.error("Error invalidating cache during realtime sync:", error);
+        console.error('Error invalidating cache during realtime sync:', error);
       }
     },
     [utils]
