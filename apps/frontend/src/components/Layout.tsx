@@ -2,11 +2,14 @@ import {
   Building2,
   Coins,
   // CreditCard, // HIDDEN: Transaction UI temporarily hidden
+  DollarSign,
   Home,
   LogOut,
   Menu,
+  Moon,
   PieChart,
   Settings,
+  Sun,
   Wallet,
   X,
 } from 'lucide-react';
@@ -39,6 +42,7 @@ import { SkipLinks } from '@/components/ui/skip-links';
 import { useAuth } from '@/contexts/AuthContext';
 import { RealtimeProvider } from '@/contexts/RealtimeContext';
 import { useEnhancedToast } from '@/hooks/use-enhanced-toast';
+import { useTheme } from '@/hooks/useTheme';
 import { MOBILE_SPACING } from '@/lib/mobile-utils';
 import { trpc } from '@/lib/trpc';
 import { cn } from '@/lib/utils';
@@ -328,6 +332,7 @@ function LayoutContent({
   mainContentId,
   children,
 }: LayoutContentProps) {
+  const { theme, toggleTheme } = useTheme();
   return (
     <div className="h-screen bg-background flex">
       {/* Mobile sidebar backdrop */}
@@ -423,27 +428,27 @@ function LayoutContent({
         >
           <div className="h-14 flex items-center justify-between px-3 md:px-4">
             {/* Left side - Mobile menu button and Breadcrumbs */}
-            <div className="flex items-center space-x-3">
+            <div className="flex items-center space-x-3 flex-1 min-w-0">
               <Button
                 variant="ghost"
                 size="icon"
-                className="md:hidden h-7 w-7"
+                className="md:hidden h-7 w-7 flex-shrink-0"
                 onClick={() => setSidebarOpen(true)}
                 aria-label="Open navigation menu"
               >
                 <Menu className="h-4 w-4" />
               </Button>
 
-              {/* Breadcrumbs */}
-              <Breadcrumb className="hidden md:flex">
-                <BreadcrumbList>
+              {/* Breadcrumbs - hide on mobile, truncate on desktop */}
+              <Breadcrumb className="hidden md:flex min-w-0 flex-1">
+                <BreadcrumbList className="flex-wrap">
                   {breadcrumbs.map((crumb: BreadcrumbData, index: number) => (
                     <React.Fragment key={`${crumb.href}-${index}`}>
-                      <BreadcrumbItem>
+                      <BreadcrumbItem className="max-w-[200px]">
                         {index === breadcrumbs.length - 1 ? (
-                          <BreadcrumbPage>{crumb.name}</BreadcrumbPage>
+                          <BreadcrumbPage className="truncate">{crumb.name}</BreadcrumbPage>
                         ) : (
-                          <BreadcrumbLink to={crumb.href}>
+                          <BreadcrumbLink to={crumb.href} className="truncate block">
                             {crumb.isHome ? <Home className="h-3.5 w-3.5" /> : crumb.name}
                           </BreadcrumbLink>
                         )}
@@ -456,10 +461,10 @@ function LayoutContent({
             </div>
 
             {/* Right side - User menu and theme toggle */}
-            <div className="flex items-center space-x-3">
+            <div className="flex items-center space-x-3 flex-shrink-0">
               {user && (
                 <>
-                  {/* Currency Selector */}
+                  {/* Currency Selector - hidden on mobile */}
                   {supportedCurrencies && supportedCurrencies.length > 0 && (
                     <CurrencySelector
                       value={baseCurrency?.id || ''}
@@ -469,12 +474,14 @@ function LayoutContent({
                       popoverWidth="w-80"
                       compact={true}
                       buttonSize="sm"
-                      className="w-24"
+                      className="w-24 hidden md:inline-flex"
                     />
                   )}
 
-                  {/* Theme Toggle */}
-                  <EnhancedThemeToggle />
+                  {/* Theme Toggle - hidden on mobile */}
+                  <div className="hidden md:block">
+                    <EnhancedThemeToggle />
+                  </div>
 
                   {/* User Menu */}
                   <DropdownMenu>
@@ -506,7 +513,7 @@ function LayoutContent({
                         </span>
                       </Button>
                     </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end" className="w-48">
+                    <DropdownMenuContent align="end" className="w-56">
                       <DropdownMenuLabel className="font-normal">
                         <div className="flex flex-col space-y-0.5">
                           <p className="text-sm font-medium leading-none">
@@ -516,6 +523,40 @@ function LayoutContent({
                         </div>
                       </DropdownMenuLabel>
                       <DropdownMenuSeparator />
+                      
+                      {/* Mobile-only: Theme Toggle */}
+                      <div className="md:hidden">
+                        <DropdownMenuItem onClick={toggleTheme}>
+                          {theme === 'dark' ? (
+                            <Sun className="h-3.5 w-3.5 mr-2" />
+                          ) : (
+                            <Moon className="h-3.5 w-3.5 mr-2" />
+                          )}
+                          <span>{theme === 'dark' ? 'Light Mode' : 'Dark Mode'}</span>
+                        </DropdownMenuItem>
+                      </div>
+
+                      {/* Mobile-only: Currency Selector */}
+                      {supportedCurrencies && supportedCurrencies.length > 0 && (
+                        <div className="md:hidden px-2 py-1.5">
+                          <div className="text-xs text-muted-foreground mb-1.5">Currency</div>
+                          <CurrencySelector
+                            value={baseCurrency?.id || ''}
+                            onValueChange={handleCurrencyChange}
+                            currencies={supportedCurrencies}
+                            placeholder="Select currency"
+                            popoverWidth="w-80"
+                            compact={false}
+                            buttonSize="sm"
+                            className="w-full"
+                          />
+                        </div>
+                      )}
+
+                      <div className="md:hidden">
+                        <DropdownMenuSeparator />
+                      </div>
+
                       <DropdownMenuItem asChild>
                         <Link to="/settings" className="flex items-center space-x-1.5 w-full">
                           <Settings className="h-3.5 w-3.5" />

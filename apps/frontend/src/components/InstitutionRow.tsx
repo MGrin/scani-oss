@@ -8,7 +8,6 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { ItemCard } from '@/components/ui/summary-cards';
-import { useUnpriceableTokens } from '@/contexts/UnpriceableTokensContext';
 import type { ApiInstitution } from '@/lib/api-types';
 import { BUTTON_TEXT } from '@/lib/button-constants';
 import { getInstitutionTypeIcon } from '@/lib/icons';
@@ -43,10 +42,6 @@ export function InstitutionRow({
   onClick,
 }: InstitutionRowProps) {
   const IconComponent = getInstitutionTypeIcon(institution.type || '');
-  const { isInstitutionAffected, shouldHighlight } = useUnpriceableTokens();
-
-  // Check if this institution contains unpriceable tokens
-  const isAffected = shouldHighlight() && isInstitutionAffected(institution.name);
 
   const handleEdit: MouseEventHandler<HTMLDivElement> = (e) => {
     e.stopPropagation();
@@ -93,7 +88,6 @@ export function InstitutionRow({
       onClick={onClick}
       currencyValue={institution.balance}
       currency={userPrefs?.baseCurrency?.symbol}
-      isAffectedByUnpriceableTokens={isAffected}
       actions={
         <DropdownMenu>
           <DropdownMenuTrigger asChild>

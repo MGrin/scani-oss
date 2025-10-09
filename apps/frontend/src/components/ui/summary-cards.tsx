@@ -175,7 +175,7 @@ export function ItemCard({
   return (
     <Card
       className={cn(
-        'hover:shadow-md transition-shadow min-h-[72px]',
+        'hover:shadow-md transition-shadow min-h-[72px] overflow-hidden',
         isAffectedByUnpriceableTokens &&
           'bg-blue-50 dark:bg-blue-950 border-blue-200 dark:border-blue-800',
         className,
@@ -184,15 +184,15 @@ export function ItemCard({
       onClick={onClick}
     >
       <CardHeader>
-        <div className="flex items-center justify-between">
-          <div className="flex items-center space-x-3">
-            {icon}
-            <div>
-              <div className="font-medium text-sm">{title}</div>
-              {subtitle && <div className="text-xs text-muted-foreground">{subtitle}</div>}
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex items-center space-x-3 min-w-0 flex-1">
+            {icon && <div className="flex-shrink-0">{icon}</div>}
+            <div className="min-w-0 flex-1">
+              <div className="font-medium text-sm truncate">{title}</div>
+              {subtitle && <div className="text-xs text-muted-foreground truncate">{subtitle}</div>}
             </div>
           </div>
-          <div className="flex items-center space-x-3">
+          <div className="flex items-center space-x-3 flex-shrink-0">
             <div className="text-right">
               {currencyValue !== undefined && (
                 <MonetaryValue
@@ -200,11 +200,11 @@ export function ItemCard({
                   value={currencyValue}
                   currency={currency}
                   size="base"
-                  className="font-semibold"
+                  className="font-semibold whitespace-nowrap"
                 />
               )}
               {tokenValue !== undefined && tokenSymbol && (
-                <div className="text-xs text-muted-foreground">
+                <div className="text-xs text-muted-foreground whitespace-nowrap">
                   <MonetaryValue
                     type="currency"
                     value={tokenValue}
@@ -215,7 +215,7 @@ export function ItemCard({
                 </div>
               )}
             </div>
-            {actions}
+            {actions && <div className="flex-shrink-0">{actions}</div>}
           </div>
         </div>
       </CardHeader>

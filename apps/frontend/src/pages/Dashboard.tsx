@@ -81,7 +81,7 @@ export function Dashboard() {
             (ph) => ph.tokenSymbol === token.symbol
           );
 
-          if (portfolioHolding?.value && portfolioHolding?.balance) {
+          if (portfolioHolding?.value !== undefined && portfolioHolding?.balance) {
             // Calculate this holding's proportion of the total token balance
             const holdingBalance = FinancialMath.toNumber(new Decimal(holding.balance ?? '0'));
             const totalTokenBalance = FinancialMath.toNumber(new Decimal(portfolioHolding.balance));
@@ -116,7 +116,7 @@ export function Dashboard() {
               (ph) => ph.tokenSymbol === token?.symbol
             );
 
-            if (portfolioHolding?.value && portfolioHolding?.balance && token?.symbol) {
+            if (portfolioHolding?.value !== undefined && portfolioHolding?.balance && token?.symbol) {
               // Calculate this holding's proportion of the total token balance
               const holdingBalance = FinancialMath.toNumber(new Decimal(holding.balance ?? '0'));
               const totalTokenBalance = FinancialMath.toNumber(
