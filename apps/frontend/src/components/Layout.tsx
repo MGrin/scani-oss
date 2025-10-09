@@ -12,7 +12,7 @@ import {
 } from 'lucide-react';
 import React, { useId, useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { HelpWidget } from '@/components/help/HelpWidget';
+
 import { CurrencySelector } from '@/components/selectors/SearchableSelectors';
 import {
   Breadcrumb,
@@ -32,13 +32,11 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { EnhancedThemeToggle } from '@/components/ui/enhanced-theme-toggle';
-import { MonetizationNotification } from '@/components/ui/monetization-notification';
 import { QueryLoadingIndicator } from '@/components/ui/query-loading-indicator';
 import { SkipLinks } from '@/components/ui/skip-links';
 
 import { useAuth } from '@/contexts/AuthContext';
 import { RealtimeProvider } from '@/contexts/RealtimeContext';
-import { UnpriceableTokensProvider } from '@/contexts/UnpriceableTokensContext';
 import { useEnhancedToast } from '@/hooks/use-enhanced-toast';
 import { MOBILE_SPACING } from '@/lib/mobile-utils';
 import { trpc } from '@/lib/trpc';
@@ -201,7 +199,6 @@ function useBreadcrumbs(pathname: string) {
 
 export function Layout({ children }: LayoutProps) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [notificationDismissed, setNotificationDismissed] = useState(false);
   const location = useLocation();
   const { signOut, user } = useAuth();
   const navigationId = useId();
@@ -241,12 +238,6 @@ export function Layout({ children }: LayoutProps) {
     updateUser.mutate({ baseCurrencyId: currencyId });
   };
 
-  // Query for unpriceable tokens to show monetization notification
-  const { data: unpriceableTokens } = trpc.holdings.getUnpriceableTokens.useQuery(undefined, {
-    enabled: Boolean(user), // Only query if user is logged in
-    refetchOnWindowFocus: false, // Don't refetch on window focus to avoid spam
-  });
-
   const handleSignOut = async () => {
     await signOut();
   };
@@ -257,29 +248,21 @@ export function Layout({ children }: LayoutProps) {
   return (
     <RealtimeProvider>
       <SkipLinks />
-      <UnpriceableTokensProvider
-        unpriceableTokens={unpriceableTokens?.tokens}
-        notificationDismissed={notificationDismissed}
+      <LayoutContent
+        sidebarOpen={sidebarOpen}
+        setSidebarOpen={setSidebarOpen}
+        user={user}
+        userPrefs={userPrefs}
+        supportedCurrencies={supportedCurrencies}
+        baseCurrency={baseCurrency}
+        handleCurrencyChange={handleCurrencyChange}
+        handleSignOut={handleSignOut}
+        breadcrumbs={breadcrumbs}
+        navigationId={navigationId}
+        mainContentId={mainContentId}
       >
-        <LayoutContent
-          sidebarOpen={sidebarOpen}
-          setSidebarOpen={setSidebarOpen}
-          notificationDismissed={notificationDismissed}
-          setNotificationDismissed={setNotificationDismissed}
-          user={user}
-          userPrefs={userPrefs}
-          supportedCurrencies={supportedCurrencies}
-          baseCurrency={baseCurrency}
-          handleCurrencyChange={handleCurrencyChange}
-          handleSignOut={handleSignOut}
-          breadcrumbs={breadcrumbs}
-          navigationId={navigationId}
-          mainContentId={mainContentId}
-          unpriceableTokens={unpriceableTokens}
-        >
-          {children}
-        </LayoutContent>
-      </UnpriceableTokensProvider>
+        {children}
+      </LayoutContent>
     </RealtimeProvider>
   );
 }
@@ -294,27 +277,9 @@ interface BreadcrumbData {
   isHome: boolean;
 }
 
-interface UnpriceableToken {
-  symbol: string;
-  balance: string;
-  reason: string;
-  provider: string;
-  providerPricingUrl?: string;
-  institutionName: string;
-  accountName: string;
-}
-
-interface UnpriceableTokensData {
-  count: number;
-  tokens: UnpriceableToken[];
-  baseCurrency: string;
-}
-
 interface LayoutContentProps {
   sidebarOpen: boolean;
   setSidebarOpen: (open: boolean) => void;
-  notificationDismissed: boolean;
-  setNotificationDismissed: (dismissed: boolean) => void;
   user: User | null;
   userPrefs?: {
     name: string | null;
@@ -336,15 +301,12 @@ interface LayoutContentProps {
   breadcrumbs: BreadcrumbData[];
   navigationId: string;
   mainContentId: string;
-  unpriceableTokens: UnpriceableTokensData | undefined;
   children: React.ReactNode;
 }
 
 function LayoutContent({
   sidebarOpen,
   setSidebarOpen,
-  notificationDismissed,
-  setNotificationDismissed,
   user,
   userPrefs,
   supportedCurrencies,
@@ -354,7 +316,6 @@ function LayoutContent({
   breadcrumbs,
   navigationId,
   mainContentId,
-  unpriceableTokens,
   children,
 }: LayoutContentProps) {
   return (
@@ -556,16 +517,6 @@ function LayoutContent({
         {/* Loading indicator for query refetches */}
         <QueryLoadingIndicator />
 
-        {/* Monetization notification for unpriceable tokens */}
-        {unpriceableTokens && unpriceableTokens.count > 0 && !notificationDismissed && (
-          <div className="px-4 sm:px-6 pt-4">
-            <MonetizationNotification
-              unpriceableTokens={unpriceableTokens.tokens}
-              onDismiss={() => setNotificationDismissed(true)}
-            />
-          </div>
-        )}
-
         {/* Page content - scrollable */}
         <main
           id={mainContentId}
@@ -574,9 +525,6 @@ function LayoutContent({
         >
           {children}
         </main>
-
-        {/* Help Widget */}
-        <HelpWidget />
       </div>
     </div>
   );

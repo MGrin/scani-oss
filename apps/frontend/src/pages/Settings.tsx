@@ -1,4 +1,4 @@
-import { Download, FileText, HelpCircle, Trash2, Upload, User } from 'lucide-react';
+import { User } from 'lucide-react';
 import { useCallback, useEffect, useId, useMemo, useState } from 'react';
 
 import { CurrencySelector } from '@/components/selectors/SearchableSelectors';
@@ -15,8 +15,7 @@ import { trpc } from '@/lib/trpc';
 
 export function Settings() {
   const { toast } = useToast();
-  const { confirm, ConfirmationComponent } = useConfirmation();
-  const [activeSection, setActiveSection] = useState('general');
+  const { ConfirmationComponent } = useConfirmation();
 
   // Data fetching
   const { data: userPrefs, isLoading } = trpc.users.getCurrent.useQuery();
@@ -158,72 +157,6 @@ export function Settings() {
     return () => window.removeEventListener('keydown', onKey);
   }, [isDirty, handleSave]);
 
-  const handleExportData = async (format: 'json' | 'csv') => {
-    try {
-      // This would typically call an API endpoint to generate and download the export
-      toast({
-        title: 'Export Started',
-        description: `Your data export in ${format.toUpperCase()} format has been queued. You'll receive a download link shortly.`,
-      });
-    } catch (_error) {
-      toast({
-        title: 'Export Failed',
-        description: 'Failed to export your data. Please try again.',
-        variant: 'destructive',
-      });
-    }
-  };
-
-  const handleDeleteAllData = async () => {
-    const confirmed = await confirm({
-      title: 'Delete All Data',
-      description:
-        'This will permanently delete all your financial data including institutions, accounts, holdings, and transactions. This action cannot be undone.',
-      confirmText: 'Delete All Data',
-      variant: 'danger',
-      entityName: 'CONFIRM DELETE',
-      entityType: 'all data',
-    });
-
-    if (confirmed) {
-      try {
-        // This would call the delete all data API
-        toast({
-          title: 'Data Deletion Started',
-          description: 'All your data is being deleted. This may take a few moments.',
-          variant: 'destructive',
-        });
-      } catch (_error) {
-        toast({
-          title: 'Deletion Failed',
-          description: 'Failed to delete your data. Please contact support.',
-          variant: 'destructive',
-        });
-      }
-    }
-  };
-
-  const sections = [
-    {
-      id: 'general',
-      title: 'General',
-      icon: User,
-      component: GeneralSettings,
-    },
-    {
-      id: 'data',
-      title: 'Data & Export',
-      icon: FileText,
-      component: DataSettings,
-    },
-    {
-      id: 'help',
-      title: 'Help & Support',
-      icon: HelpCircle,
-      component: HelpSettings,
-    },
-  ] as const;
-
   if (isLoading || !formData) {
     return (
       <div className="space-y-6">
@@ -252,56 +185,18 @@ export function Settings() {
           </div>
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
-          {/* Navigation Sidebar */}
-          <nav className="lg:col-span-1">
-            <Card>
-              <CardContent className="p-4">
-                <div className="space-y-1">
-                  {sections.map((section) => {
-                    const Icon = section.icon;
-                    return (
-                      <button
-                        key={section.id}
-                        type="button"
-                        onClick={() => setActiveSection(section.id)}
-                        className={`w-full flex items-center space-x-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors text-left ${
-                          activeSection === section.id
-                            ? 'bg-primary text-primary-foreground'
-                            : 'text-muted-foreground hover:text-foreground hover:bg-accent'
-                        }`}
-                      >
-                        <Icon className="h-4 w-4" />
-                        <span>{section.title}</span>
-                      </button>
-                    );
-                  })}
-                </div>
-              </CardContent>
-            </Card>
-          </nav>
-
-          {/* Content Area */}
-          <div className="lg:col-span-3">
-            {activeSection === 'general' && (
-              <GeneralSettings
-                values={{
-                  name: formData.name,
-                  email: formData.email,
-                  avatar: formData.avatar,
-                  baseCurrencyId: formData.baseCurrencyId,
-                }}
-                errors={formErrors}
-                onChange={(field, value) => setField(field, value)}
-                supportedCurrencies={supportedCurrencies || []}
-              />
-            )}
-            {activeSection === 'data' && (
-              <DataSettings onExportData={handleExportData} onDeleteAllData={handleDeleteAllData} />
-            )}
-            {activeSection === 'help' && <HelpSettings />}
-          </div>
-        </div>
+        {/* Content Area */}
+        <GeneralSettings
+          values={{
+            name: formData.name,
+            email: formData.email,
+            avatar: formData.avatar,
+            baseCurrencyId: formData.baseCurrencyId,
+          }}
+          errors={formErrors}
+          onChange={(field, value) => setField(field, value)}
+          supportedCurrencies={supportedCurrencies || []}
+        />
       </div>
 
       <ConfirmationComponent />
@@ -417,157 +312,6 @@ function GeneralSettings({
                 placeholder="Select currency..."
               />
             </div>
-          </div>
-        </CardContent>
-      </Card>
-    </div>
-  );
-}
-
-function DataSettings({
-  onExportData,
-  onDeleteAllData,
-}: {
-  onExportData: (format: 'json' | 'csv') => void;
-  onDeleteAllData: () => void;
-}) {
-  return (
-    <div className="space-y-6">
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center space-x-2">
-            <Download className="h-5 w-5" />
-            <span>Export Data</span>
-          </CardTitle>
-          <CardDescription>
-            Download your financial data in various formats for backup or analysis.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="flex flex-col sm:flex-row gap-3">
-            <Button onClick={() => onExportData('json')} className="flex-1">
-              <FileText className="h-4 w-4 mr-2" />
-              Export as JSON
-            </Button>
-            <Button variant="outline" onClick={() => onExportData('csv')} className="flex-1">
-              <FileText className="h-4 w-4 mr-2" />
-              Export as CSV
-            </Button>
-          </div>
-          <Alert>
-            <AlertDescription>
-              Exported data includes all your institutions, accounts, holdings, transactions, and
-              preferences. Personal identifiers are excluded for privacy.
-            </AlertDescription>
-          </Alert>
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center space-x-2">
-            <Upload className="h-5 w-5" />
-            <span>Import Data</span>
-          </CardTitle>
-          <CardDescription>
-            Import financial data from other applications or restore from backup.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <Button variant="outline">
-            <Upload className="h-4 w-4 mr-2" />
-            Choose File to Import
-          </Button>
-          <Alert>
-            <AlertDescription>
-              Supported formats: JSON, CSV. Importing will merge with existing data. Duplicates will
-              be skipped.
-            </AlertDescription>
-          </Alert>
-        </CardContent>
-      </Card>
-
-      <Card className="border-destructive">
-        <CardHeader>
-          <CardTitle className="flex items-center space-x-2 text-destructive">
-            <Trash2 className="h-5 w-5" />
-            <span>Danger Zone</span>
-          </CardTitle>
-          <CardDescription>
-            Irreversible actions that permanently modify or delete your data.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <Button variant="destructive" onClick={onDeleteAllData}>
-            <Trash2 className="h-4 w-4 mr-2" />
-            Delete All Data
-          </Button>
-        </CardContent>
-      </Card>
-    </div>
-  );
-}
-
-function HelpSettings() {
-  return (
-    <div className="space-y-6">
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center space-x-2">
-            <HelpCircle className="h-5 w-5" />
-            <span>Help & Support</span>
-          </CardTitle>
-          <CardDescription>Get help, report issues, and access documentation.</CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <Button variant="outline" className="justify-start h-auto p-4">
-              <div className="text-left">
-                <h4 className="font-medium">Documentation</h4>
-                <p className="text-sm text-muted-foreground">User guide and API documentation</p>
-              </div>
-            </Button>
-            <Button variant="outline" className="justify-start h-auto p-4">
-              <div className="text-left">
-                <h4 className="font-medium">Contact Support</h4>
-                <p className="text-sm text-muted-foreground">Get help from our support team</p>
-              </div>
-            </Button>
-            <Button variant="outline" className="justify-start h-auto p-4">
-              <div className="text-left">
-                <h4 className="font-medium">Feature Requests</h4>
-                <p className="text-sm text-muted-foreground">
-                  Suggest new features and improvements
-                </p>
-              </div>
-            </Button>
-            <Button variant="outline" className="justify-start h-auto p-4">
-              <div className="text-left">
-                <h4 className="font-medium">Report a Bug</h4>
-                <p className="text-sm text-muted-foreground">Help us fix issues you encounter</p>
-              </div>
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle>About Scani</CardTitle>
-          <CardDescription>Application information and version details.</CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-2">
-          <div className="flex justify-between">
-            <span className="text-sm font-medium">Version</span>
-            <span className="text-sm text-muted-foreground">1.0.0</span>
-          </div>
-          <div className="flex justify-between">
-            <span className="text-sm font-medium">Last Updated</span>
-            <span className="text-sm text-muted-foreground">{new Date().toLocaleDateString()}</span>
-          </div>
-          <div className="flex justify-between">
-            <span className="text-sm font-medium">Environment</span>
-            <span className="text-sm text-muted-foreground">Development</span>
           </div>
         </CardContent>
       </Card>
