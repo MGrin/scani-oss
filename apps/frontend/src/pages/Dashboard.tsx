@@ -11,14 +11,12 @@ import { PageHeader } from '@/components/ui/page-header';
 import { ItemCard, SummaryCard } from '@/components/ui/summary-cards';
 import { useEntityData } from '@/contexts/EntityDataContext';
 import { useRealtimeConnection } from '@/contexts/RealtimeContext';
-import { useUnpriceableTokens } from '@/contexts/UnpriceableTokensContext';
 import type { ApiHolding, ApiToken } from '@/lib/api-types';
 import { getTokenTypeIcon } from '@/lib/icons';
 import { trpc } from '@/lib/trpc';
 
 export function Dashboard() {
   const navigate = useNavigate();
-  const { shouldHighlight, hasUnpriceableTokensOfType } = useUnpriceableTokens();
 
   // State for Quick Actions modals
   // HIDDEN: Transaction UI temporarily hidden
@@ -228,7 +226,6 @@ export function Dashboard() {
           currency={baseCurrency?.symbol}
           subtitle={`Across ${holdings?.length || 0} holdings in ${accounts?.length || 0} accounts`}
           icon={Wallet}
-          isAffectedByUnpriceableTokens={shouldHighlight()}
         />
 
         {/* HIDDEN: Transaction UI temporarily hidden */}
@@ -339,9 +336,6 @@ export function Dashboard() {
                         currency={baseCurrency?.symbol}
                         onClick={() => navigate(`/holdings?type=${encodeURIComponent(tokenType)}`)}
                         icon={<IconComponent className="h-8 w-8 text-muted-foreground" />}
-                        isAffectedByUnpriceableTokens={
-                          tokens ? hasUnpriceableTokensOfType(tokenType, tokens) : false
-                        }
                       />
                     );
                   })}

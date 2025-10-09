@@ -123,6 +123,7 @@ export const holdingsRouter = router({
       }
 
       // Use database transaction to ensure atomicity
+      // CRITICAL FIX: Pricing is now OUTSIDE the transaction to prevent rollback on price failures
       const holding = await db.transaction(async (trx) => {
         const holdingData = {
           ...input,
@@ -137,67 +138,33 @@ export const holdingsRouter = router({
             userId,
             accountId: holdingData.accountId,
             tokenId: holdingData.tokenId,
+            balance: holdingData.balance,
           },
           'Inserting holding data'
         );
         const [holding] = await trx.insert(schema.holdings).values(holdingData).returning();
 
         if (!holding) {
-          throw new Error('Failed to create holding');
+          holdingsLogger.error(
+            {
+              userId,
+              accountId: holdingData.accountId,
+              tokenId: holdingData.tokenId,
+            },
+            'Failed to create holding - database insert returned no data'
+          );
+          throw new Error('Failed to create holding - no data returned from database');
         }
 
-        holdingsLogger.debug(
+        holdingsLogger.info(
           {
             holdingId: holding.id,
             accountId: holding.accountId,
+            tokenId: holding.tokenId,
+            balance: holding.balance,
           },
-          'Holding created successfully'
+          'Holding created successfully in database'
         );
-
-        // Fetch current token price for the user's base currency
-        let priceFetchSuccessful = false;
-        let priceFetchError: string | null = null;
-
-        try {
-          // Use cached user data instead of querying database
-          if (dbUser.baseCurrencyId) {
-            const [baseCurrency] = await trx
-              .select()
-              .from(schema.tokens)
-              .where(eq(schema.tokens.id, dbUser.baseCurrencyId))
-              .limit(1);
-
-            if (baseCurrency && token.symbol !== baseCurrency.symbol) {
-              await pricingService.getTokenPrice(token, baseCurrency.symbol, now);
-              priceFetchSuccessful = true;
-              holdingsLogger.debug(
-                {
-                  tokenId: token.id,
-                  symbol: token.symbol,
-                  baseCurrency: baseCurrency.symbol,
-                },
-                'Fetched current price after holding creation'
-              );
-            } else if (token.symbol === baseCurrency?.symbol) {
-              // Base currency doesn't need pricing
-              priceFetchSuccessful = true;
-            }
-          }
-        } catch (error) {
-          const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-          priceFetchError = errorMessage;
-
-          holdingsLogger.warn(
-            {
-              tokenId: token.id,
-              symbol: token.symbol,
-              baseCurrency: dbUser.baseCurrencyId,
-              error: error instanceof Error ? { name: error.name, message: error.message } : error,
-            },
-            'Failed to fetch token price during holding creation'
-          );
-          // Continue without price - holding can still be created
-        }
 
         // Create opening balance transaction if balance > 0
         if (parseFloat(holding.balance) > 0) {
@@ -214,6 +181,7 @@ export const holdingsRouter = router({
             .limit(1);
 
           if (!depositType) {
+            holdingsLogger.error('Deposit transaction type not found in database');
             throw new Error('Deposit transaction type not found');
           }
 
@@ -228,27 +196,118 @@ export const holdingsRouter = router({
             createdAt: now,
             updatedAt: now,
           });
+
+          holdingsLogger.debug(
+            { holdingId: holding.id, amount: holding.balance },
+            'Created opening balance transaction'
+          );
         }
 
-        return { holding, priceFetchSuccessful, priceFetchError };
+        // Return holding without pricing info - pricing happens after transaction commits
+        return holding;
       });
 
-      if (holding.holding) {
-        emitEntityChange({
-          type: 'entity_changed',
-          entityType: 'holding',
-          operationType: 'create',
-          entityId: holding.holding.id,
-          userId,
-          data: {
-            accountId: holding.holding.accountId,
-            tokenId: holding.holding.tokenId,
-            pricingWarning: holding.priceFetchError || undefined,
+      // CRITICAL FIX: Fetch price AFTER transaction commits to ensure holding exists even if pricing fails
+      let priceFetchSuccessful = false;
+      let priceFetchError: string | null = null;
+
+      try {
+        // Use cached user data instead of querying database
+        if (dbUser.baseCurrencyId) {
+          const [baseCurrency] = await db
+            .select()
+            .from(schema.tokens)
+            .where(eq(schema.tokens.id, dbUser.baseCurrencyId))
+            .limit(1);
+
+          if (baseCurrency && token.symbol !== baseCurrency.symbol) {
+            holdingsLogger.debug(
+              {
+                tokenId: token.id,
+                symbol: token.symbol,
+                baseCurrency: baseCurrency.symbol,
+              },
+              'Fetching current price for newly created holding'
+            );
+
+            const price = await pricingService.getTokenPrice(token, baseCurrency.symbol, now);
+
+            if (price && parseFloat(price) > 0) {
+              priceFetchSuccessful = true;
+              holdingsLogger.info(
+                {
+                  holdingId: holding.id,
+                  tokenId: token.id,
+                  symbol: token.symbol,
+                  price,
+                  baseCurrency: baseCurrency.symbol,
+                },
+                'Successfully fetched price for newly created holding'
+              );
+            } else {
+              priceFetchError = 'Price returned as zero or invalid';
+              holdingsLogger.warn(
+                {
+                  holdingId: holding.id,
+                  tokenId: token.id,
+                  symbol: token.symbol,
+                  price,
+                },
+                'Token price returned as zero or invalid'
+              );
+            }
+          } else if (token.symbol === baseCurrency?.symbol) {
+            // Base currency doesn't need pricing
+            priceFetchSuccessful = true;
+            holdingsLogger.debug(
+              { tokenId: token.id, symbol: token.symbol },
+              'Token is base currency, no pricing needed'
+            );
+          }
+        } else {
+          priceFetchError = 'User has no base currency configured';
+          holdingsLogger.warn(
+            { userId, tokenId: token.id },
+            'Cannot fetch price - user has no base currency'
+          );
+        }
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+        priceFetchError = errorMessage;
+
+        holdingsLogger.warn(
+          {
+            holdingId: holding.id,
+            tokenId: token.id,
+            symbol: token.symbol,
+            baseCurrency: dbUser.baseCurrencyId,
+            error: error instanceof Error ? { name: error.name, message: error.message } : error,
           },
-        });
+          'Failed to fetch token price after holding creation - holding still created successfully'
+        );
+        // Holding was already created successfully, pricing failure is non-blocking
       }
 
-      return holding;
+      // Emit entity change for real-time updates
+      emitEntityChange({
+        type: 'entity_changed',
+        entityType: 'holding',
+        operationType: 'create',
+        entityId: holding.id,
+        userId,
+        data: {
+          accountId: holding.accountId,
+          tokenId: holding.tokenId,
+          pricingWarning: priceFetchError || undefined,
+        },
+      });
+
+      // Return complete holding information with pricing status
+      return {
+        holding,
+        priceFetchSuccessful,
+        priceFetchError,
+      };
     }),
 
   // Update holding

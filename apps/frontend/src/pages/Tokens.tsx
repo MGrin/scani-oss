@@ -9,14 +9,12 @@ import { NoResultsEmptyState, TokensEmptyState } from '@/components/ui/empty-sta
 import { PageAggregation } from '@/components/ui/page-aggregation';
 import { PageHeader } from '@/components/ui/page-header';
 import { useEntityData } from '@/contexts/EntityDataContext';
-import { useUnpriceableTokens } from '@/contexts/UnpriceableTokensContext';
 import { useFilters } from '@/hooks/useFilters';
 import { invalidateTokensRelated } from '@/lib/cache/invalidateHoldingsRelated';
 import { trpc } from '@/lib/trpc';
 
 export function Tokens() {
   const navigate = useNavigate();
-  const { isTokenUnpriceable, shouldHighlight } = useUnpriceableTokens();
   const [isCreateFormOpen, setIsCreateFormOpen] = useState(false);
   const [isUpdateFormOpen, setIsUpdateFormOpen] = useState(false);
   const [selectedToken, setSelectedToken] = useState<{
@@ -94,11 +92,6 @@ export function Tokens() {
     return sum + parseFloat(token.totalValueInBaseCurrency);
   }, 0);
 
-  // Check if any tokens are unpriceable and should be highlighted
-  const hasUnpriceableTokens =
-    shouldHighlight() &&
-    (tokensWithValues?.some((token) => isTokenUnpriceable(token.symbol)) || false);
-
   if (tokensLoading || !userPrefs) {
     return (
       <div className="space-y-4">
@@ -146,7 +139,6 @@ export function Tokens() {
             placeholder="Filter by type..."
           />,
         ]}
-        isAffectedByUnpriceableTokens={hasUnpriceableTokens}
       />
 
       {/* Tokens List */}

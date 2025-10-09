@@ -745,6 +745,15 @@ export const tokensRouter = router({
       const userId = getUserId(ctx);
       const { symbol, metadata, provider } = input;
 
+      tokensLogger.info(
+        {
+          symbol,
+          provider,
+          metadata,
+        },
+        'Creating token from external provider'
+      );
+
       // Validate the metadata has the required fields
       if (!metadata.name || typeof metadata.name !== 'string') {
         throw new Error('External token metadata must include a name');
@@ -776,22 +785,64 @@ export const tokensRouter = router({
         .limit(1);
 
       if (existingToken) {
+        tokensLogger.info(
+          { tokenId: existingToken.id, symbol, typeCode: mappedTypeCode },
+          'Token already exists, returning existing token'
+        );
         // Return existing token instead of creating duplicate
         return existingToken;
       }
 
-      // Create provider metadata
-      // Extract the provider-specific data (like CoinGecko ID) from metadata
-      let providerSpecificData = metadata;
+      // CRITICAL FIX: Create proper provider metadata structure for pricing service
+      // The pricing service expects nested provider-specific data with proper identifiers
+      let providerSpecificData: Record<string, unknown> = {};
 
-      // If metadata has providerMetadata (from token search), extract it
-      if (metadata.providerMetadata && typeof metadata.providerMetadata === 'object') {
+      if (provider === 'coingecko') {
+        // CoinGecko needs the 'id' field for pricing lookups
+        const coinGeckoId =
+          (metadata.providerMetadata as Record<string, unknown>)?.id ||
+          (metadata as Record<string, unknown>).coinGeckoId ||
+          (metadata as Record<string, unknown>).id;
+
+        if (coinGeckoId && typeof coinGeckoId === 'string') {
+          providerSpecificData = {
+            id: coinGeckoId,
+            symbol: symbol,
+            name: metadata.name,
+          };
+          tokensLogger.info(
+            { symbol, coinGeckoId },
+            'Structured CoinGecko metadata with ID for pricing'
+          );
+        } else {
+          // Fallback: use symbol as lowercase ID (CoinGecko convention)
+          providerSpecificData = {
+            id: symbol.toLowerCase(),
+            symbol: symbol,
+            name: metadata.name,
+          };
+          tokensLogger.warn(
+            { symbol },
+            'CoinGecko ID not found in metadata, using lowercase symbol as fallback'
+          );
+        }
+      } else if (provider === 'finnhub') {
+        // Finnhub needs the 'symbol' field for pricing lookups
+        const finnhubSymbol =
+          (metadata.providerMetadata as Record<string, unknown>)?.symbol ||
+          (metadata as Record<string, unknown>).finnhubSymbol ||
+          symbol;
+
         providerSpecificData = {
-          ...metadata,
-          ...(metadata.providerMetadata as Record<string, unknown>),
+          symbol: finnhubSymbol,
+          name: metadata.name,
+          type: metadata.type,
         };
+        tokensLogger.info({ symbol, finnhubSymbol }, 'Structured Finnhub metadata for pricing');
       }
 
+      // Create the complete provider metadata structure
+      // This structure is what the pricing service expects to read
       const providerMetadata = JSON.stringify({
         provider,
         [provider]: providerSpecificData,
@@ -803,7 +854,7 @@ export const tokensRouter = router({
         symbol,
         name: metadata.name as string,
         typeId: tokenType.id,
-        decimals: 2, // Default for external tokens
+        decimals: mappedTypeCode === 'crypto' ? 18 : 2, // Crypto tokens typically use 18 decimals
         iconUrl: null,
         providerMetadata,
         isActive: true,
@@ -811,11 +862,40 @@ export const tokensRouter = router({
         updatedAt: now,
       };
 
+      tokensLogger.debug(
+        {
+          symbol,
+          typeCode: mappedTypeCode,
+          providerMetadata,
+        },
+        'Creating token with structured metadata'
+      );
+
       const [createdToken] = await db.insert(schema.tokens).values(tokenData).returning();
 
       if (!createdToken) {
-        throw new Error('Failed to create external token');
+        tokensLogger.error({ symbol, provider, typeId: tokenType.id }, 'Database insert failed');
+        throw new Error('Failed to create external token - database insert returned no data');
       }
+
+      if (!createdToken.id) {
+        tokensLogger.error(
+          { symbol, provider, createdToken },
+          'Token created but has no ID - critical database error'
+        );
+        throw new Error('Failed to create external token - no ID assigned by database');
+      }
+
+      tokensLogger.info(
+        {
+          tokenId: createdToken.id,
+          symbol: createdToken.symbol,
+          name: createdToken.name,
+          provider,
+          typeId: tokenType.id,
+        },
+        'External token created successfully with valid ID'
+      );
 
       emitEntityChange({
         type: 'entity_changed',

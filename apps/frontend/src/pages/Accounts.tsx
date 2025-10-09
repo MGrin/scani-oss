@@ -21,7 +21,6 @@ import { AccountsEmptyState, NoResultsEmptyState } from '@/components/ui/empty-s
 import { PageAggregation } from '@/components/ui/page-aggregation';
 import { PageHeader } from '@/components/ui/page-header';
 import { useEntityData } from '@/contexts/EntityDataContext';
-import { useUnpriceableTokens } from '@/contexts/UnpriceableTokensContext';
 import { useEnhancedToast } from '@/hooks/use-enhanced-toast';
 import { useFilters } from '@/hooks/useFilters';
 import type { ApiAccount, ApiHolding, ApiInstitution } from '@/lib/api-types';
@@ -33,7 +32,6 @@ export function Accounts() {
   const navigate = useNavigate();
   const { institutionId } = useParams<{ institutionId: string }>();
   const { success, error } = useEnhancedToast();
-  const { isAccountAffected, shouldHighlight } = useUnpriceableTokens();
   const [searchTerm, setSearchTerm] = useState('');
   const [accountToDelete, setAccountToDelete] = useState<Account | null>(null);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
@@ -230,14 +228,6 @@ export function Accounts() {
 
   const totalBalance = isHierarchicalMode ? displayAccountsBalance : allAccountsBalance;
 
-  // Check if any accounts are affected by unpriceable tokens and should be highlighted
-  const hasAffectedAccounts =
-    shouldHighlight() &&
-    baseAccounts.some((account) => {
-      const institution = institutions.find((inst) => inst.id === account.institutionId);
-      return institution ? isAccountAffected(institution.name, account.name) : false;
-    });
-
   const pageTitle =
     isHierarchicalMode && selectedInstitution
       ? `${selectedInstitution.name} Accounts`
@@ -279,7 +269,6 @@ export function Accounts() {
             placeholder="Filter by institution..."
           />,
         ]}
-        isAffectedByUnpriceableTokens={hasAffectedAccounts}
       />
 
       {/* Accounts Grid */}

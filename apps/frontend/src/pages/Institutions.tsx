@@ -16,7 +16,6 @@ import { LoadingSpinner } from '@/components/ui/loading';
 import { PageAggregation } from '@/components/ui/page-aggregation';
 import { PageHeader } from '@/components/ui/page-header';
 import { useEntityData } from '@/contexts/EntityDataContext';
-import { useUnpriceableTokens } from '@/contexts/UnpriceableTokensContext';
 import { useEnhancedToast } from '@/hooks/use-enhanced-toast';
 import { useFilters } from '@/hooks/useFilters';
 import type { ApiInstitution, ApiToken } from '@/lib/api-types';
@@ -27,7 +26,6 @@ import { trpc } from '@/lib/trpc';
 export function Institutions() {
   const navigate = useNavigate();
   const { success, error: showError } = useEnhancedToast();
-  const { isInstitutionAffected, shouldHighlight } = useUnpriceableTokens();
 
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [institutionToDelete, setInstitutionToDelete] = useState<ApiInstitution | null>(null);
@@ -164,11 +162,6 @@ export function Institutions() {
     0
   );
 
-  // Check if any institutions are affected by unpriceable tokens and should be highlighted
-  const hasAffectedInstitutions =
-    shouldHighlight() &&
-    (institutions?.some((institution) => isInstitutionAffected(institution.name)) || false);
-
   if (isLoading) {
     return (
       <div className="space-y-4">
@@ -208,7 +201,6 @@ export function Institutions() {
           (filterValues.search || '') !== '' || (filterValues.type || 'all') !== 'all'
         }
         onClearFilters={clearAllFilters}
-        isAffectedByUnpriceableTokens={hasAffectedInstitutions}
         filters={[
           <InstitutionTypeSelector
             key="type"

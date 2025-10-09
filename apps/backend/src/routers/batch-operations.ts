@@ -1,9 +1,9 @@
-import { eq } from "drizzle-orm";
-import { z } from "zod";
-import { db } from "../db/connection";
-import * as schema from "../db/schema";
-import { getUserId } from "../middleware/auth";
-import { protectedProcedure, router } from "../trpc";
+import { eq } from 'drizzle-orm';
+import { z } from 'zod';
+import { db } from '../db/connection';
+import * as schema from '../db/schema';
+import { getUserId } from '../middleware/auth';
+import { protectedProcedure, router } from '../trpc';
 
 /**
  * Batch Operations Router
@@ -18,39 +18,37 @@ const CreateHoldingWithDependenciesSchema = z.object({
   // Institution (optional - create if needed)
   institution: z
     .object({
-      name: z.string().min(1, "Institution name is required"),
-      type: z.string().min(1, "Institution type is required"),
+      name: z.string().min(1, 'Institution name is required'),
+      type: z.string().min(1, 'Institution type is required'),
       description: z.string().optional(),
-      website: z.string().url().optional().or(z.literal("")),
-      logoUrl: z.string().url().optional().or(z.literal("")),
+      website: z.string().url().optional().or(z.literal('')),
+      logoUrl: z.string().url().optional().or(z.literal('')),
     })
     .optional(),
 
   // Account (required)
   account: z.object({
     institutionId: z.string().uuid().optional(), // Use if institution not being created
-    name: z.string().min(1, "Account name is required"),
-    type: z.string().min(1, "Account type is required"),
+    name: z.string().min(1, 'Account name is required'),
+    type: z.string().min(1, 'Account type is required'),
     description: z.string().optional(),
   }),
 
   // Token (optional - create if external token)
   token: z
     .object({
-      symbol: z.string().min(1, "Token symbol is required"),
+      symbol: z.string().min(1, 'Token symbol is required'),
       name: z.string().optional(),
       typeId: z.string().optional(),
       decimals: z.number().int().min(0).max(18).optional(),
-      iconUrl: z.string().url().optional().or(z.literal("")),
+      iconUrl: z.string().url().optional().or(z.literal('')),
     })
     .optional(),
 
   // Holding (required)
   holding: z.object({
     tokenId: z.string().uuid().optional(), // Use if token not being created
-    balance: z
-      .string()
-      .regex(/^-?\d+\.?\d*$/, "Balance must be a valid decimal string"),
+    balance: z.string().regex(/^-?\d+\.?\d*$/, 'Balance must be a valid decimal string'),
     lastUpdated: z.string().datetime().optional(),
   }),
 });
@@ -96,9 +94,7 @@ export const batchOperationsRouter = router({
             .limit(1);
 
           if (!institutionType) {
-            throw new Error(
-              `Invalid institution type: ${input.institution.type}`
-            );
+            throw new Error(`Invalid institution type: ${input.institution.type}`);
           }
 
           // Create institution
@@ -117,7 +113,7 @@ export const batchOperationsRouter = router({
             .returning();
 
           if (!institution) {
-            throw new Error("Failed to create institution");
+            throw new Error('Failed to create institution');
           }
 
           institutionId = institution.id;
@@ -127,7 +123,7 @@ export const batchOperationsRouter = router({
         }
 
         if (!institutionId) {
-          throw new Error("Institution ID is required");
+          throw new Error('Institution ID is required');
         }
 
         // Step 2: Create account
@@ -156,7 +152,7 @@ export const batchOperationsRouter = router({
           .returning();
 
         if (!account) {
-          throw new Error("Failed to create account");
+          throw new Error('Failed to create account');
         }
 
         const accountId = account.id;
@@ -170,7 +166,7 @@ export const batchOperationsRouter = router({
             const [otherType] = await tx
               .select()
               .from(schema.tokenTypes)
-              .where(eq(schema.tokenTypes.code, "other"))
+              .where(eq(schema.tokenTypes.code, 'other'))
               .limit(1);
 
             if (!otherType) {
@@ -185,9 +181,7 @@ export const batchOperationsRouter = router({
             .insert(schema.tokens)
             .values({
               symbol: input.token.symbol.trim().toUpperCase(),
-              name:
-                input.token.name?.trim() ||
-                input.token.symbol.trim().toUpperCase(),
+              name: input.token.name?.trim() || input.token.symbol.trim().toUpperCase(),
               typeId: tokenTypeId,
               decimals: input.token.decimals ?? 18,
               iconUrl: input.token.iconUrl?.trim() || null,
@@ -198,7 +192,7 @@ export const batchOperationsRouter = router({
             .returning();
 
           if (!token) {
-            throw new Error("Failed to create token");
+            throw new Error('Failed to create token');
           }
 
           tokenId = token.id;
@@ -208,7 +202,7 @@ export const batchOperationsRouter = router({
         }
 
         if (!tokenId) {
-          throw new Error("Token ID is required");
+          throw new Error('Token ID is required');
         }
 
         // Step 4: Create holding
@@ -219,15 +213,13 @@ export const batchOperationsRouter = router({
             accountId,
             tokenId,
             balance: input.holding.balance,
-            lastUpdated: input.holding.lastUpdated
-              ? new Date(input.holding.lastUpdated)
-              : now,
+            lastUpdated: input.holding.lastUpdated ? new Date(input.holding.lastUpdated) : now,
             createdAt: now,
           })
           .returning();
 
         if (!holding) {
-          throw new Error("Failed to create holding");
+          throw new Error('Failed to create holding');
         }
 
         // Return result with all IDs

@@ -19,7 +19,6 @@ import { HoldingsEmptyState, NoResultsEmptyState } from '@/components/ui/empty-s
 import { PageAggregation } from '@/components/ui/page-aggregation';
 import { PageHeader } from '@/components/ui/page-header';
 import { useEntityData } from '@/contexts/EntityDataContext';
-import { useUnpriceableTokens } from '@/contexts/UnpriceableTokensContext';
 import { useEnhancedToast } from '@/hooks/use-enhanced-toast';
 import { useFilters } from '@/hooks/useFilters';
 import type { ApiAccount, ApiHolding, ApiInstitution, ApiToken } from '@/lib/api-types';
@@ -45,7 +44,6 @@ export function Holdings() {
     institutionId: string;
     accountId: string;
   }>();
-  const { isTokenUnpriceable, shouldHighlight } = useUnpriceableTokens();
 
   const { data: holdings, isLoading: holdingsLoading } = trpc.holdings.getAll.useQuery();
   const {
@@ -294,13 +292,6 @@ export function Holdings() {
   const totalValue = processedHoldings.reduce((sum, holding) => sum + holding.value, 0);
   const filteredValue = filteredHoldings.reduce((sum, holding) => sum + holding.value, 0);
 
-  // Check if any holdings have unpriceable tokens and should be highlighted
-  const hasUnpriceableTokenHoldings =
-    shouldHighlight() &&
-    processedHoldings.some((holding) =>
-      holding.token ? isTokenUnpriceable(holding.token.symbol) : false
-    );
-
   const pageTitle =
     isHierarchicalMode && selectedAccount ? `${selectedAccount.name} Holdings` : 'Holdings';
 
@@ -349,7 +340,6 @@ export function Holdings() {
             placeholder="Filter by token..."
           />,
         ]}
-        isAffectedByUnpriceableTokens={hasUnpriceableTokenHoldings}
       />
 
       {/* Holdings List */}

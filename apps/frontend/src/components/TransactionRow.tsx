@@ -8,7 +8,6 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { ItemCard } from '@/components/ui/summary-cards';
-import { useUnpriceableTokens } from '@/contexts/UnpriceableTokensContext';
 import type { ApiAccount, ApiToken } from '@/lib/api-types';
 
 // Types
@@ -57,9 +56,6 @@ export function TransactionRow({
     if (onDelete) onDelete(transaction);
   };
 
-  const { isTokenUnpriceable, shouldHighlight } = useUnpriceableTokens();
-  const isAffected = shouldHighlight() && token?.symbol && isTokenUnpriceable(token.symbol);
-
   return (
     <ItemCard
       title={
@@ -102,7 +98,6 @@ export function TransactionRow({
       tokenValue={parseFloat(transaction.amount)}
       tokenSymbol={token?.symbol}
       tokenDecimals={token?.decimals}
-      isAffectedByUnpriceableTokens={!!isAffected}
       actions={
         <DropdownMenu>
           <DropdownMenuTrigger asChild>

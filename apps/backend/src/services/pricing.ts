@@ -1177,7 +1177,31 @@ export class PricingService {
       'Caching price results to database'
     );
 
-    const priceRecords: NewTokenPrice[] = results.map((result) => ({
+    // CRITICAL FIX: Filter out zero prices from caching
+    // Zero prices indicate failures and should never be persisted to the database
+    // This prevents pollution of price cache with failure states
+    const validPriceResults = results.filter((result) => {
+      const price = parseFloat(result.price);
+      if (price === 0 || Number.isNaN(price)) {
+        logger.debug(
+          {
+            tokenId: result.tokenId,
+            price: result.price,
+            source: result.source,
+          },
+          'Skipping cache of zero/invalid price - failures should not be persisted'
+        );
+        return false;
+      }
+      return true;
+    });
+
+    if (validPriceResults.length === 0) {
+      logger.debug('No valid prices to cache after filtering out zeros');
+      return;
+    }
+
+    const priceRecords: NewTokenPrice[] = validPriceResults.map((result) => ({
       tokenId: result.tokenId,
       baseTokenId: baseCurrencyId,
       price: result.price,
@@ -1193,8 +1217,9 @@ export class PricingService {
           source: p.source,
           timestamp: p.timestamp.toISOString(),
         })),
+        filteredOut: results.length - validPriceResults.length,
       },
-      'Price records to be cached'
+      'Price records to be cached (after filtering)'
     );
 
     try {

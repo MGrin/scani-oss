@@ -8,7 +8,6 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { ItemCard } from '@/components/ui/summary-cards';
-import { useUnpriceableTokens } from '@/contexts/UnpriceableTokensContext';
 import type { ApiAccount, ApiHolding, ApiInstitution, ApiToken } from '@/lib/api-types';
 import { BUTTON_TEXT } from '@/lib/button-constants';
 import { getTokenTypeIcon } from '@/lib/icons';
@@ -43,11 +42,6 @@ export function HoldingRow({
   onClick,
 }: HoldingRowProps) {
   const TypeIcon = getTokenTypeIcon(holding.token?.type ?? '');
-  const { isTokenUnpriceable, shouldHighlight } = useUnpriceableTokens();
-
-  // Check if this holding contains an unpriceable token
-  const isAffected =
-    shouldHighlight() && !!holding.token?.symbol && isTokenUnpriceable(holding.token.symbol);
 
   const handleView: MouseEventHandler<HTMLDivElement> = (e) => {
     e.stopPropagation();
@@ -100,7 +94,6 @@ export function HoldingRow({
       tokenDecimals={holding.token?.decimals}
       onClick={onClick}
       icon={TypeIcon && <TypeIcon className="h-8 w-8 text-muted-foreground" />}
-      isAffectedByUnpriceableTokens={isAffected}
       actions={
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
