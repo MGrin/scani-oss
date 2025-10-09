@@ -13,6 +13,7 @@ import {
 import React, { useId, useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 
+import { PullToRefresh } from '@/components/PullToRefresh';
 import { CurrencySelector } from '@/components/selectors/SearchableSelectors';
 import {
   Breadcrumb,
@@ -242,6 +243,12 @@ export function Layout({ children }: LayoutProps) {
     await signOut();
   };
 
+  // Handle pull-to-refresh
+  const handleRefresh = async () => {
+    // Invalidate all queries to refetch data
+    await utils.invalidate();
+  };
+
   // Generate breadcrumbs for current path
   const breadcrumbs = useBreadcrumbs(location.pathname);
 
@@ -257,6 +264,7 @@ export function Layout({ children }: LayoutProps) {
         baseCurrency={baseCurrency}
         handleCurrencyChange={handleCurrencyChange}
         handleSignOut={handleSignOut}
+        handleRefresh={handleRefresh}
         breadcrumbs={breadcrumbs}
         navigationId={navigationId}
         mainContentId={mainContentId}
@@ -298,6 +306,7 @@ interface LayoutContentProps {
   } | null;
   handleCurrencyChange: (currencyId: string) => void;
   handleSignOut: () => Promise<void>;
+  handleRefresh: () => Promise<void>;
   breadcrumbs: BreadcrumbData[];
   navigationId: string;
   mainContentId: string;
@@ -313,6 +322,7 @@ function LayoutContent({
   baseCurrency,
   handleCurrencyChange,
   handleSignOut,
+  handleRefresh,
   breadcrumbs,
   navigationId,
   mainContentId,
@@ -532,20 +542,22 @@ function LayoutContent({
         {/* Loading indicator for query refetches */}
         <QueryLoadingIndicator />
 
-        {/* Page content - scrollable */}
-        <main
-          id={mainContentId}
-          className={cn('flex-1 overflow-y-auto px-4 pt-4 pb-6 sm:px-6 sm:pt-5 sm:pb-6')}
-          style={{
-            // Add safe area padding for PWA (bottom home indicator, side insets)
-            paddingBottom: 'max(1.5rem, calc(1.5rem + env(safe-area-inset-bottom)))',
-            paddingLeft: 'max(1rem, calc(1rem + env(safe-area-inset-left)))',
-            paddingRight: 'max(1rem, calc(1rem + env(safe-area-inset-right)))',
-          }}
-          tabIndex={-1}
-        >
-          {children}
-        </main>
+        {/* Page content - scrollable with pull-to-refresh */}
+        <PullToRefresh onRefresh={handleRefresh}>
+          <main
+            id={mainContentId}
+            className={cn('px-4 pt-4 pb-6 sm:px-6 sm:pt-5 sm:pb-6')}
+            style={{
+              // Add safe area padding for PWA (bottom home indicator, side insets)
+              paddingBottom: 'max(1.5rem, calc(1.5rem + env(safe-area-inset-bottom)))',
+              paddingLeft: 'max(1rem, calc(1rem + env(safe-area-inset-left)))',
+              paddingRight: 'max(1rem, calc(1rem + env(safe-area-inset-right)))',
+            }}
+            tabIndex={-1}
+          >
+            {children}
+          </main>
+        </PullToRefresh>
       </div>
     </div>
   );
