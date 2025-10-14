@@ -6,8 +6,8 @@
  */
 
 import { describe, expect, test } from 'bun:test';
-import { solanaService } from '../../services/chain/solana';
-import { tronService } from '../../services/chain/tron';
+import { solanaService } from '../../infrastructure/external-services/blockchain/solana';
+import { tronService } from '../../infrastructure/external-services/blockchain/tron';
 
 describe('TronService', () => {
   describe('Service Info', () => {

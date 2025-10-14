@@ -6,7 +6,7 @@
  */
 
 import { describe, expect, test } from 'bun:test';
-import { bitcoinService } from '../../services/chain/bitcoin';
+import { bitcoinService } from '../../infrastructure/external-services/blockchain/bitcoin';
 
 describe('BitcoinService', () => {
   describe('getServiceName', () => {

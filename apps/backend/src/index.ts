@@ -1,12 +1,21 @@
+import 'reflect-metadata';
 import { cors } from '@elysiajs/cors';
 import { trpc } from '@elysiajs/trpc';
 import { Elysia } from 'elysia';
+import { Container } from 'typedi';
+// CRITICAL: Initialize container BEFORE importing any routers
+// This must happen before any module that calls Container.get()
+import { initializeContainer } from './config/container';
+import { RealTimeUpdatesService } from './infrastructure/websocket/RealTimeUpdatesService';
 import { supabase } from './lib/supabase';
 import { createStandardLimiter, createStrictLimiter } from './middleware/rate-limit';
-import { appRouter } from './router';
-import { realTimeUpdatesService } from './services/real-time-updates';
-import { createContext } from './trpc';
+import { createContext } from './presentation/trpc';
 import { createTimer, logger, wsLogger } from './utils/logger';
+
+initializeContainer();
+
+// Import router AFTER container is initialized
+import { appRouter } from './presentation/router';
 
 const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3001;
 const HOST = process.env.HOST ?? 'localhost';
@@ -232,6 +241,7 @@ const app = new Elysia()
       ws.data.connectedAt = Date.now();
 
       // Register with real-time updates service
+      const realTimeUpdatesService = Container.get(RealTimeUpdatesService);
       realTimeUpdatesService.registerConnection({
         userId: authenticatedUserId,
         connectionId,
@@ -258,6 +268,7 @@ const app = new Elysia()
         connectionLogger.debug({ message }, '📨 WebSocket message received');
 
         // Handle subscription messages, pings, etc.
+        const realTimeUpdatesService = Container.get(RealTimeUpdatesService);
         realTimeUpdatesService.handleMessage(ws.data.connectionId, message);
       }
     },
@@ -275,6 +286,7 @@ const app = new Elysia()
         );
 
         // Clean up connection tracking
+        const realTimeUpdatesService = Container.get(RealTimeUpdatesService);
         realTimeUpdatesService.handleDisconnection(ws.data.connectionId);
       }
     },
@@ -322,6 +334,7 @@ const server = app.listen(PORT, () => {
 });
 
 // Initialize real-time updates service with Elysia app
+const realTimeUpdatesService = Container.get(RealTimeUpdatesService);
 realTimeUpdatesService.setElysiaApp(app);
 realTimeUpdatesService.initialize();
 
@@ -329,10 +342,10 @@ realTimeUpdatesService.initialize();
 const gracefulShutdown = (signal: string) => {
   logger.info({ signal }, '🛑 Graceful shutdown initiated');
 
-  logger.info('Closing HTTP server...');
+  logger.info({}, 'Closing HTTP server...');
   server.stop();
 
-  logger.info('🏁 Graceful shutdown completed');
+  logger.info({}, '🏁 Graceful shutdown completed');
   process.exit(0);
 };
 
@@ -365,4 +378,4 @@ process.on('unhandledRejection', (reason, promise) => {
   process.exit(1);
 });
 
-export type { AppRouter } from './router';
+export type { AppRouter } from './presentation/router';

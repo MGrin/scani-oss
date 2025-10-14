@@ -14,7 +14,7 @@ import {
   rippleService,
   stellarService,
   suiService,
-} from '../../services/chain/additional-chains';
+} from '../../infrastructure/external-services/blockchain/additional-chains';
 
 describe('CosmosService', () => {
   describe('Service Info', () => {

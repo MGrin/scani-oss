@@ -9,7 +9,7 @@ import { describe, expect, test } from 'bun:test';
 import Decimal from 'decimal.js';
 import type { PopularToken } from '../../config/popular-tokens';
 import { getPopularTokensForChain, POPULAR_TOKENS } from '../../config/popular-tokens';
-import { evmChainService } from '../../services/chain/evm';
+import { evmChainService } from '../../infrastructure/external-services/blockchain/evm';
 
 describe('ERC-20 Token Support', () => {
   describe('Token Metadata', () => {

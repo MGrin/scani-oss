@@ -6,11 +6,11 @@
  */
 
 import { describe, expect, test } from 'bun:test';
-import { algorandService } from '../../services/chain/algorand';
-import { aptosService } from '../../services/chain/aptos';
-import { bitcoinCashService } from '../../services/chain/bitcoin-cash';
-import { cardanoService } from '../../services/chain/cardano';
-import { litecoinService } from '../../services/chain/litecoin';
+import { algorandService } from '../../infrastructure/external-services/blockchain/algorand';
+import { aptosService } from '../../infrastructure/external-services/blockchain/aptos';
+import { bitcoinCashService } from '../../infrastructure/external-services/blockchain/bitcoin-cash';
+import { cardanoService } from '../../infrastructure/external-services/blockchain/cardano';
+import { litecoinService } from '../../infrastructure/external-services/blockchain/litecoin';
 
 describe('AlgorandService', () => {
   describe('Service Info', () => {

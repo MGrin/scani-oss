@@ -7,7 +7,7 @@
 
 import { describe, expect, test } from 'bun:test';
 import { EVM_CHAINS } from '../../config/chains';
-import { evmChainService } from '../../services/chain/evm';
+import { evmChainService } from '../../infrastructure/external-services/blockchain/evm';
 
 describe('EVMChainService', () => {
   describe('getServiceName', () => {
