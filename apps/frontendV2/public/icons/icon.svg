@@ -1,0 +1,22 @@
+
+<svg width="512" height="512" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">
+  <!-- Background -->
+  <rect width="512" height="512" fill="#1a1f2e" rx="96"/>
+
+  <!-- Minimal bar chart -->
+  <g>
+    <rect x="120" y="320" width="40" height="72" rx="12" fill="#4f46e5"/>
+    <rect x="200" y="256" width="40" height="136" rx="12" fill="#06b6d4"/>
+    <rect x="280" y="208" width="40" height="184" rx="12" fill="#10b981"/>
+    <rect x="360" y="144" width="40" height="248" rx="12" fill="#facc15"/>
+  </g>
+
+  <!-- Upward arrow overlay -->
+  <path d="M 120 360 L 200 280 L 280 220 L 360 160" stroke="#10b981" stroke-width="16" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+  <polygon points="350,170 360,144 370,170" fill="#10b981"/>
+
+  <!-- Subtle dollar sign in background -->
+  <g opacity="0.13">
+    <text x="256" y="300" font-family="Arial, Helvetica, sans-serif" font-size="200" font-weight="bold" fill="#ffffff" text-anchor="middle" alignment-baseline="middle">$</text>
+  </g>
+</svg>

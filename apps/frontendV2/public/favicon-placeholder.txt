@@ -1,0 +1,3 @@
+# Favicon Placeholder
+# TODO: Replace with actual favicon files
+# Can be copied from frontend v1 or regenerated
