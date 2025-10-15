@@ -1,5 +1,6 @@
 import { useParams } from "react-router-dom";
 import { useMemo, useState } from "react";
+import TimeAgo from "react-timeago";
 import { Grid3X3, List } from "lucide-react";
 import { TokenTypeBadge } from "@/components/features";
 import {
@@ -471,7 +472,7 @@ export function AccountDetail() {
                       token={baseCurrencyToken}
                     />
                     <div className="text-xs text-muted-foreground">
-                      {new Date(row.price.timestamp).toLocaleDateString()}
+                      <TimeAgo date={new Date(row.price.timestamp)} />
                       {row.price.source && ` • ${row.price.source}`}
                     </div>
                   </div>
@@ -534,7 +535,8 @@ export function AccountDetail() {
                         token={baseCurrencyToken}
                       />
                       <div className="text-xs text-muted-foreground">
-                        {new Date(holding.price.timestamp).toLocaleDateString()}
+                        <TimeAgo date={new Date(holding.price.timestamp)} />
+                        {holding.price.source && ` • ${holding.price.source}`}
                       </div>
                     </div>
                   </div>
