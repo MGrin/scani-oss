@@ -232,7 +232,7 @@ export function AccountDetail() {
         <PageHeader title="" loading={true} />
 
         {/* Skeleton summary cards */}
-        <div className="grid gap-4 md:grid-cols-3">
+        <div className="grid gap-4 grid-cols-1 md:grid-cols-3 max-w-[calc(100vw-2rem)]">
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <Skeleton className="h-4 w-24" />
@@ -500,7 +500,7 @@ export function AccountDetail() {
           sortDirection={sortDirection}
         />
       ) : (
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+        <div className="grid gap-4 grid-cols-1 md:grid-cols-2 lg:grid-cols-3">
           {filteredAndSortedHoldings.map((holding) => (
             <Card
               key={holding.id}

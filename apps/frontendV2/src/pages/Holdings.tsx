@@ -366,7 +366,7 @@ export function Holdings() {
       />
 
       {isLoading ? (
-        <div className="space-y-6">
+        <div className="space-y-6 max-w-[calc(100vw-2rem)]">
           {/* Summary cards skeletons */}
           <div className="grid gap-4 md:grid-cols-2">
             <Card>
@@ -411,7 +411,7 @@ export function Holdings() {
           </Card>
 
           {/* Holdings cards skeletons */}
-          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+          <div className="grid gap-4 grid-cols-1 md:grid-cols-2 lg:grid-cols-3">
             {[1, 2, 3, 4].map((num) => (
               <Card key={`skeleton-${num}`}>
                 <CardHeader>
@@ -532,9 +532,9 @@ export function Holdings() {
               </div>
             }
             additionalControls={
-              <div className="flex items-center gap-2 w-full">
+              <div className="flex flex-col md:flex-row items-start md:items-center gap-2 w-full">
                 <Select value={valueRange} onValueChange={setValueRange}>
-                  <SelectTrigger className="w-40">
+                  <SelectTrigger className="w-full md:w-40">
                     <SelectValue placeholder="All Values" />
                   </SelectTrigger>
                   <SelectContent>
@@ -550,7 +550,7 @@ export function Holdings() {
                   value={groupBy}
                   onValueChange={(value: GroupBy) => setGroupBy(value)}
                 >
-                  <SelectTrigger className="w-40">
+                  <SelectTrigger className="w-full md:w-40">
                     <SelectValue placeholder="Group by..." />
                   </SelectTrigger>
                   <SelectContent>
@@ -590,7 +590,7 @@ export function Holdings() {
                   )}
 
                   {viewMode === "cards" ? (
-                    <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+                    <div className="grid gap-4 grid-cols-1 md:grid-cols-2 lg:grid-cols-3">
                       {holdings.map((holding) => (
                         <Card
                           key={holding.id}

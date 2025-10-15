@@ -44,7 +44,7 @@ export function InstitutionDetail() {
         <PageHeader title="" loading={true} />
 
         {/* Skeleton summary cards */}
-        <div className="grid gap-4 md:grid-cols-3">
+        <div className="grid gap-4 grid-cols-1 md:grid-cols-3">
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <Skeleton className="h-4 w-24" />
@@ -142,7 +142,7 @@ export function InstitutionDetail() {
       />
 
       {/* Institution Summary */}
-      <div className="grid gap-4 md:grid-cols-3">
+      <div className="grid gap-4 grid-cols-1 md:grid-cols-3">
         <SummaryCard
           type="currency"
           title="Total Value"
@@ -173,7 +173,7 @@ export function InstitutionDetail() {
             No accounts in this institution yet.
           </p>
         ) : (
-          <div className="grid gap-4 md:grid-cols-2">
+          <div className="grid gap-4 grid-cols-1 md:grid-cols-2">
             {institutionAccounts.map((account) => {
               const accountHoldings = institutionHoldings.filter(
                 (holding) => holding.account.id === account.id

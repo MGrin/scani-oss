@@ -27,7 +27,7 @@ export function Institutions() {
           title="Institutions"
           subtitle="Your financial institutions"
         />
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+        <div className="grid gap-4 grid-cols-1 md:grid-cols-2 lg:grid-cols-3">
           {[1, 2, 3, 4, 5, 6].map((num) => (
             <Card key={`skeleton-${num}`} className="min-h-[160px]">
               <CardHeader>
@@ -67,7 +67,7 @@ export function Institutions() {
           </CardContent>
         </Card>
       ) : (
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+        <div className="grid gap-4 grid-cols-1 md:grid-cols-2 lg:grid-cols-3">
           {institutions?.map((institution) => {
             const institutionType = institutionTypes?.find(
               (type) => type.id === institution.typeId
