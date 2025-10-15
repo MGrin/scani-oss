@@ -55,14 +55,14 @@ export function DataTable<T>({
     return (
       <Card>
         <CardContent className="p-0">
-          <div className="overflow-x-auto">
+          <div className="overflow-x-auto max-w-[calc(100vw-2rem)]">
             <table className="w-full">
               <thead className="border-b bg-muted/50">
                 <tr className="text-left">
                   {columns.map((column) => (
                     <th
                       key={column.header}
-                      className={`p-4 font-medium ${
+                      className={`p-4 font-medium whitespace-nowrap ${
                         column.headerClassName || ""
                       }`}
                     >
@@ -77,7 +77,7 @@ export function DataTable<T>({
                     {columns.map((column) => (
                       <td
                         key={`skeleton-cell-${rowIndex}-${column.header}`}
-                        className="p-4"
+                        className="p-4 whitespace-nowrap"
                       >
                         <Skeleton className="h-4 w-full" />
                       </td>
@@ -105,14 +105,14 @@ export function DataTable<T>({
   return (
     <Card>
       <CardContent className="p-0">
-        <div className="overflow-x-auto">
+        <div className="overflow-x-auto max-w-[calc(100vw-2rem)]">
           <table className="w-full">
             <thead className="border-b bg-muted/50">
               <tr className="text-left">
                 {columns.map((column) => (
                   <th
                     key={column.header}
-                    className={`p-4 font-medium ${
+                    className={`p-4 font-medium whitespace-nowrap ${
                       column.sortable ? "cursor-pointer hover:bg-muted/70" : ""
                     } ${column.headerClassName || ""}`}
                     onClick={() => handleSort(column)}
@@ -134,7 +134,9 @@ export function DataTable<T>({
                   {columns.map((column) => (
                     <td
                       key={`${getRowKey(row)}-${column.header}`}
-                      className={`p-4 ${column.className || ""}`}
+                      className={`p-4 whitespace-nowrap ${
+                        column.className || ""
+                      }`}
                     >
                       {getCellValue(row, column)}
                     </td>

@@ -264,7 +264,7 @@ export function AccountDetail() {
         </div>
 
         {/* Skeleton holdings table */}
-        <Card>
+        <Card className="max-w-[calc(100vw-2rem)]">
           <CardHeader>
             <Skeleton className="h-6 w-32" />
           </CardHeader>

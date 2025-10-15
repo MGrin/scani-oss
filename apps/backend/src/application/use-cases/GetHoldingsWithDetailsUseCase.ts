@@ -1,14 +1,6 @@
 import Decimal from "decimal.js";
 import { Container, Service } from "typedi";
-import { AccountRepository } from "../../infrastructure/repositories/AccountRepository";
-import {
-  AccountTypeRepository,
-  InstitutionTypeRepository,
-  TokenTypeRepository,
-} from "../../infrastructure/repositories/EnumRepositories";
 import { HoldingRepository } from "../../infrastructure/repositories/HoldingRepository";
-import { InstitutionRepository } from "../../infrastructure/repositories/InstitutionRepository";
-import { TokenRepository } from "../../infrastructure/repositories/TokenRepository";
 import { createComponentLogger } from "../../utils/logger";
 import { PortfolioValuationService } from "../services/PortfolioValuationService";
 
@@ -64,14 +56,6 @@ export interface HoldingWithDetails {
 @Service()
 export class GetHoldingsWithDetailsUseCase {
   private readonly holdingRepository = Container.get(HoldingRepository);
-  private readonly tokenRepository = Container.get(TokenRepository);
-  private readonly accountRepository = Container.get(AccountRepository);
-  private readonly institutionRepository = Container.get(InstitutionRepository);
-  private readonly tokenTypeRepository = Container.get(TokenTypeRepository);
-  private readonly accountTypeRepository = Container.get(AccountTypeRepository);
-  private readonly institutionTypeRepository = Container.get(
-    InstitutionTypeRepository
-  );
   private readonly portfolioValuationService = Container.get(
     PortfolioValuationService
   );
@@ -83,30 +67,21 @@ export class GetHoldingsWithDetailsUseCase {
   ): Promise<HoldingWithDetails[]> {
     logger.debug({ userId, accountId }, "Getting holdings with details");
 
-    // Get holdings for user, optionally filtered by account
-    // Note: We still fetch from repository first to maintain consistency,
-    // but the portfolio valuation service will also filter by account
-    let holdings = await this.holdingRepository.findByUser(userId);
-
-    // Filter by account if specified
-    if (accountId) {
-      holdings = holdings.filter((h) => h.accountId === accountId);
-    }
-
-    if (holdings.length === 0) {
-      return [];
-    }
-
-    // Get portfolio valuation to get current values and prices
-    // Pass accountId to optimize pricing calculation
-    const portfolioValue =
-      await this.portfolioValuationService.getUserPortfolioValue(
+    // Parallel fetch: optimized holdings query + portfolio valuation
+    const [holdingsWithFullDetails, portfolioValue] = await Promise.all([
+      this.holdingRepository.findByUserWithFullDetails(userId, accountId),
+      this.portfolioValuationService.getUserPortfolioValue(
         userId,
         baseCurrencyId,
         accountId
-      );
+      ),
+    ]);
 
-    // Create maps for efficient lookups - get individual token prices, not total values
+    if (holdingsWithFullDetails.length === 0) {
+      return [];
+    }
+
+    // Create maps for efficient lookups - get individual token prices
     const portfolioPriceMap = new Map(
       portfolioValue.holdings.map((h) => [h.tokenSymbol, h.currentPrice || "0"])
     );
@@ -125,137 +100,52 @@ export class GetHoldingsWithDetailsUseCase {
         ])
     );
 
-    // Get all unique IDs for batch fetching
-    const uniqueTokenIds = [...new Set(holdings.map((h) => h.tokenId))];
-    const uniqueAccountIds = [...new Set(holdings.map((h) => h.accountId))];
+    // Build detailed holdings from pre-fetched data
+    const detailedHoldings: HoldingWithDetails[] = holdingsWithFullDetails.map(
+      ({ holding, token, account, institution }) => {
+        // Get current price and calculate individual holding value
+        const currentPrice = portfolioPriceMap.get(token.symbol) || "0";
+        const currentValue = new Decimal(holding.balance)
+          .mul(new Decimal(currentPrice))
+          .toString();
 
-    // Batch fetch related entities
-    const [tokens, accounts] = await Promise.all([
-      this.tokenRepository.findByIds(uniqueTokenIds),
-      this.accountRepository.findByIds(uniqueAccountIds),
-    ]);
+        // For now, cost basis is the same as current value (simplified)
+        const costBasis = currentValue;
 
-    // Create lookup maps
-    const tokenMap = new Map(tokens.map((t) => [t.id, t]));
-    const accountMap = new Map(accounts.map((a) => [a.id, a]));
+        // Get price information from portfolio valuation service
+        const priceInfo = priceMetadataMap.get(token.symbol);
 
-    // Get unique institution IDs from accounts
-    const uniqueInstitutionIds = [
-      ...new Set(accounts.map((a) => a.institutionId)),
-    ];
-    const institutions = await this.institutionRepository.findByIds(
-      uniqueInstitutionIds
-    );
-    const institutionMap = new Map(institutions.map((i) => [i.id, i]));
-
-    // Get unique token type IDs
-    const uniqueTokenTypeIds = [...new Set(tokens.map((t) => t.typeId))];
-    const tokenTypes = await this.tokenTypeRepository.findByIds(
-      uniqueTokenTypeIds
-    );
-    const tokenTypeMap = new Map(tokenTypes.map((tt) => [tt.id, tt]));
-
-    // Get unique account type IDs
-    const uniqueAccountTypeIds = [...new Set(accounts.map((a) => a.typeId))];
-    const accountTypes = await this.accountTypeRepository.findByIds(
-      uniqueAccountTypeIds
-    );
-    const accountTypeMap = new Map(accountTypes.map((at) => [at.id, at]));
-
-    // Get unique institution type IDs
-    const uniqueInstitutionTypeIds = [
-      ...new Set(institutions.map((i) => i.typeId)),
-    ];
-    const institutionTypes = await this.institutionTypeRepository.findByIds(
-      uniqueInstitutionTypeIds
-    );
-    const institutionTypeMap = new Map(
-      institutionTypes.map((it) => [it.id, it])
-    );
-
-    // Build detailed holdings
-    const detailedHoldings: HoldingWithDetails[] = [];
-
-    for (const holding of holdings) {
-      const token = tokenMap.get(holding.tokenId);
-      const account = accountMap.get(holding.accountId);
-
-      if (!token || !account) {
-        logger.warn(
-          {
-            holdingId: holding.id,
-            tokenId: holding.tokenId,
-            accountId: holding.accountId,
+        return {
+          id: holding.id,
+          token: {
+            symbol: token.symbol,
+            name: token.name,
+            type: token.typeName,
+            typeCode: token.typeCode,
+            iconUrl: token.iconUrl,
           },
-          "Missing token or account for holding"
-        );
-        continue;
-      }
-
-      const institution = institutionMap.get(account.institutionId);
-      const tokenType = tokenTypeMap.get(token.typeId);
-      const accountType = accountTypeMap.get(account.typeId);
-
-      if (!institution || !tokenType || !accountType) {
-        logger.warn(
-          {
-            holdingId: holding.id,
+          amount: holding.balance,
+          value: currentValue,
+          costBasis: costBasis,
+          price: priceInfo,
+          account: {
+            id: account.id,
+            name: account.name,
+            type: account.typeName,
+            typeCode: account.typeCode,
             institutionId: account.institutionId,
-            tokenTypeId: token.typeId,
-            accountTypeId: account.typeId,
           },
-          "Missing institution, token type, or account type for holding"
-        );
-        continue;
+          institution: {
+            id: institution.id,
+            name: institution.name,
+            type: institution.typeName,
+            typeCode: institution.typeCode,
+            website: institution.website,
+          },
+          lastUpdated: holding.lastUpdated.toISOString(),
+        };
       }
-
-      const institutionType = institutionTypeMap.get(institution.typeId);
-
-      // Get current price and calculate individual holding value
-      const currentPrice = portfolioPriceMap.get(token.symbol) || "0";
-      const currentValue = new Decimal(holding.balance)
-        .mul(new Decimal(currentPrice))
-        .toString();
-
-      // For now, cost basis is the same as current value (simplified)
-      // In a real implementation, this would be calculated from transactions
-      const costBasis = currentValue;
-
-      // Get price information from portfolio valuation service
-      const priceInfo = priceMetadataMap.get(token.symbol);
-
-      const detailedHolding: HoldingWithDetails = {
-        id: holding.id,
-        token: {
-          symbol: token.symbol,
-          name: token.name,
-          type: tokenType.name,
-          typeCode: tokenType.code,
-          iconUrl: token.iconUrl,
-        },
-        amount: holding.balance,
-        value: currentValue,
-        costBasis: costBasis,
-        price: priceInfo,
-        account: {
-          id: account.id,
-          name: account.name,
-          type: accountType.name,
-          typeCode: accountType.code,
-          institutionId: account.institutionId,
-        },
-        institution: {
-          id: institution.id,
-          name: institution.name,
-          type: institutionType?.name || "Unknown",
-          typeCode: institutionType?.code || "other",
-          website: institution.website,
-        },
-        lastUpdated: holding.lastUpdated.toISOString(),
-      };
-
-      detailedHoldings.push(detailedHolding);
-    }
+    );
 
     logger.debug(
       { userId, accountId, count: detailedHoldings.length },

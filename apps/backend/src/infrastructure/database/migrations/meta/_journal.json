@@ -64,6 +64,13 @@
       "when": 1759312162935,
       "tag": "0008_seed_evm_chains",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1760515391710,
+      "tag": "0009_fat_kulan_gath",
+      "breakpoints": true
     }
   ]
 }
