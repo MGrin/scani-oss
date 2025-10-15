@@ -73,7 +73,13 @@ export function DataTable<T>({
               </thead>
               <tbody>
                 {Array.from({ length: loadingRowCount }).map((_, rowIndex) => (
-                  <tr key={`skeleton-row-${rowIndex}`} className="border-b">
+                  <tr
+                    key={`skeleton-row-${
+                      // biome-ignore lint/suspicious/noArrayIndexKey: this is just for loading state
+                      rowIndex
+                    }`}
+                    className="border-b"
+                  >
                     {columns.map((column) => (
                       <td
                         key={`skeleton-cell-${rowIndex}-${column.header}`}
