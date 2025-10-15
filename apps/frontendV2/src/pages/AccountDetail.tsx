@@ -1,12 +1,81 @@
-import { Link, useParams } from 'react-router-dom';
-import { TokenTypeBadge } from '@/components/features';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { PageHeader } from '@/components/ui/page-header';
-import { SummaryCard } from '@/components/ui/summary-card';
-import { trpc } from '@/lib/trpc';
+import { useParams } from "react-router-dom";
+import { useMemo, useState } from "react";
+import { Grid3X3, List } from "lucide-react";
+import { TokenTypeBadge } from "@/components/features";
+import {
+  TokenFilterSelector,
+  TokenTypeSelector,
+} from "@/components/selectors/SearchableSelectors";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader } from "@/components/ui/card";
+import { DataTable } from "@/components/ui/data-table";
+import { MoneyDisplay } from "@/components/ui/money-display";
+import { PageAggregation } from "@/components/ui/page-aggregation";
+import { PageHeader } from "@/components/ui/page-header";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Skeleton } from "@/components/ui/skeleton";
+import { trpc } from "@/lib/trpc";
+import { createCurrencyToken } from "@/lib/utils";
+import { useViewMode } from "@/hooks/use-view-mode";
+
+type HoldingWithDetails = {
+  id: string;
+  token: {
+    symbol: string;
+    name: string;
+    type: string;
+    typeCode: string;
+    iconUrl?: string | null;
+  };
+  amount: string;
+  value: string;
+  costBasis: string;
+  price?: {
+    value: string;
+    timestamp: string; // Changed from Date to string since it comes from API as string
+    source?: string;
+  };
+  account: {
+    id: string;
+    name: string;
+    type: string;
+    typeCode: string;
+    institutionId: string;
+  };
+  institution: {
+    id: string;
+    name: string;
+    type: string;
+    typeCode: string;
+    website?: string | null;
+  };
+  lastUpdated: string;
+};
 
 export function AccountDetail() {
   const { id } = useParams<{ id: string }>();
+
+  // Sorting state
+  const [sortField, setSortField] = useState("value");
+  const [sortDirection, setSortDirection] = useState<"asc" | "desc">("desc");
+
+  // Filtering and view state
+  const [searchTerm, setSearchTerm] = useState("");
+  const [filterBy, setFilterBy] = useState(""); // Token type filter
+  const [filterByToken, setFilterByToken] = useState(""); // Token filter
+  const [valueRange, setValueRange] = useState("all");
+  const [viewMode, setViewMode] = useViewMode("table");
+
+  // Fetch base currency
+  const { data: baseCurrency } = trpc.users.getBaseCurrency.useQuery();
+  const currency = baseCurrency?.symbol || "USD";
+  const baseCurrencyToken = createCurrencyToken(currency);
 
   // Fetch account data
   const {
@@ -16,24 +85,236 @@ export function AccountDetail() {
   } = trpc.accounts.getById.useQuery({ id: id! }, { enabled: !!id });
 
   // Fetch holdings for this account
-  const { data: allHoldings } = trpc.holdings.getWithDetails.useQuery();
-  const accountHoldings = allHoldings?.filter((holding) => holding.account.id === id) || [];
+  const { data: accountHoldings } = trpc.accounts.getHoldings.useQuery(
+    { id: id! },
+    { enabled: !!id }
+  );
+
+  // Filter and sort holdings
+  const filteredAndSortedHoldings = useMemo(() => {
+    if (!accountHoldings) return [];
+
+    const filtered = accountHoldings.filter((holding) => {
+      const matchesSearch =
+        searchTerm === "" ||
+        holding.token.symbol.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        holding.token.name.toLowerCase().includes(searchTerm.toLowerCase());
+
+      const matchesType =
+        filterBy === "" || holding.token.typeCode === filterBy;
+
+      const matchesToken =
+        filterByToken === "" || holding.token.symbol === filterByToken;
+
+      const matchesValueRange = (() => {
+        const value = parseFloat(holding.value);
+        switch (valueRange) {
+          case "under-1k":
+            return value < 1000;
+          case "1k-10k":
+            return value >= 1000 && value < 10000;
+          case "10k-100k":
+            return value >= 10000 && value < 100000;
+          case "over-100k":
+            return value >= 100000;
+          default:
+            return true;
+        }
+      })();
+
+      return matchesSearch && matchesType && matchesToken && matchesValueRange;
+    });
+
+    // Sort filtered holdings
+    return filtered.sort((a, b) => {
+      let aValue: number | string, bValue: number | string;
+
+      switch (sortField) {
+        case "token":
+          aValue = a.token.name.toLowerCase();
+          bValue = b.token.name.toLowerCase();
+          break;
+        case "amount":
+          aValue = parseFloat(a.amount);
+          bValue = parseFloat(b.amount);
+          break;
+        case "price":
+          aValue = a.price ? parseFloat(a.price.value) : 0;
+          bValue = b.price ? parseFloat(b.price.value) : 0;
+          break;
+        default:
+          aValue = parseFloat(a.value);
+          bValue = parseFloat(b.value);
+          break;
+      }
+
+      if (typeof aValue === "string") {
+        return sortDirection === "asc"
+          ? aValue.localeCompare(bValue as string)
+          : (bValue as string).localeCompare(aValue);
+      }
+
+      return sortDirection === "asc"
+        ? (aValue as number) - (bValue as number)
+        : (bValue as number) - (aValue as number);
+    });
+  }, [
+    accountHoldings,
+    searchTerm,
+    filterBy,
+    filterByToken,
+    valueRange,
+    sortField,
+    sortDirection,
+  ]);
+
+  // Get unique values for filters
+  const filterData = useMemo(() => {
+    if (!accountHoldings) return { tokenTypes: [], tokens: [] };
+
+    // Deduplicate token types by code
+    const tokenTypeMap = new Map();
+    accountHoldings.forEach((h) => {
+      if (!tokenTypeMap.has(h.token.typeCode)) {
+        tokenTypeMap.set(h.token.typeCode, {
+          code: h.token.typeCode,
+          name: h.token.type,
+        });
+      }
+    });
+    const tokenTypes = Array.from(tokenTypeMap.values());
+
+    // Deduplicate tokens by symbol
+    const tokenMap = new Map();
+    accountHoldings.forEach((h) => {
+      if (!tokenMap.has(h.token.symbol)) {
+        tokenMap.set(h.token.symbol, h.token);
+      }
+    });
+    const tokens = Array.from(tokenMap.values()).map((token) => ({
+      id: token.symbol,
+      symbol: token.symbol,
+      name: token.name,
+      type: token.typeCode,
+      typeName: token.type,
+      iconUrl: token.iconUrl,
+    }));
+
+    return { tokenTypes, tokens };
+  }, [accountHoldings]);
 
   // Fetch account types and institutions for display
   const { data: accountTypes } = trpc.accountTypes.getAll.useQuery();
-  const { data: institutions } = trpc.institutions.getByUserId.useQuery();
-
-  // Fetch base currency for money display
-  const { data: baseCurrency } = trpc.users.getBaseCurrency.useQuery();
-  const currency = baseCurrency?.symbol || 'USD';
 
   const accountType = accountTypes?.find((type) => type.id === account?.typeId);
-  const institution = institutions?.find((inst) => inst.id === account?.institutionId);
+
+  const handleSort = (field: string) => {
+    if (sortField === field) {
+      setSortDirection(sortDirection === "asc" ? "desc" : "asc");
+    } else {
+      setSortField(field);
+      setSortDirection("desc");
+    }
+  };
+
+  const clearFilters = () => {
+    setSearchTerm("");
+    setFilterBy("");
+    setFilterByToken("");
+    setValueRange("all");
+    setSortField("value");
+    setSortDirection("desc");
+  };
 
   if (accountLoading) {
     return (
       <div className="space-y-6">
-        <PageHeader title="Loading..." subtitle="Loading account details" />
+        <PageHeader title="" loading={true} />
+
+        {/* Skeleton summary cards */}
+        <div className="grid gap-4 md:grid-cols-3">
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <Skeleton className="h-4 w-24" />
+            </CardHeader>
+            <CardContent>
+              <Skeleton className="h-8 w-20 mb-2" />
+              <Skeleton className="h-3 w-12" />
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <Skeleton className="h-4 w-20" />
+            </CardHeader>
+            <CardContent>
+              <Skeleton className="h-8 w-16 mb-2" />
+              <Skeleton className="h-3 w-16" />
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <Skeleton className="h-4 w-28" />
+            </CardHeader>
+            <CardContent>
+              <Skeleton className="h-8 w-16 mb-2" />
+              <Skeleton className="h-3 w-20" />
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* Skeleton holdings table */}
+        <Card>
+          <CardHeader>
+            <Skeleton className="h-6 w-32" />
+          </CardHeader>
+          <CardContent>
+            <div className="overflow-x-auto">
+              <table className="w-full">
+                <thead className="border-b bg-muted/50">
+                  <tr className="text-left">
+                    <th className="p-4">
+                      <Skeleton className="h-4 w-12" />
+                    </th>
+                    <th className="p-4">
+                      <Skeleton className="h-4 w-12" />
+                    </th>
+                    <th className="p-4">
+                      <Skeleton className="h-4 w-12" />
+                    </th>
+                    <th className="p-4">
+                      <Skeleton className="h-4 w-12" />
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {[1, 2, 3, 4].map((num) => (
+                    <tr key={num} className="border-b">
+                      <td className="p-4">
+                        <div className="space-y-2">
+                          <Skeleton className="h-4 w-16" />
+                          <Skeleton className="h-3 w-24" />
+                          <Skeleton className="h-4 w-12" />
+                        </div>
+                      </td>
+                      <td className="p-4">
+                        <Skeleton className="h-4 w-16" />
+                      </td>
+                      <td className="p-4">
+                        <div className="space-y-1">
+                          <Skeleton className="h-4 w-20" />
+                          <Skeleton className="h-3 w-24" />
+                        </div>
+                      </td>
+                      <td className="p-4">
+                        <Skeleton className="h-4 w-20" />
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </CardContent>
+        </Card>
       </div>
     );
   }
@@ -41,80 +322,237 @@ export function AccountDetail() {
   if (accountError || !account) {
     return (
       <div className="space-y-6">
-        <PageHeader title="Account Not Found" subtitle="The requested account could not be found" />
+        <PageHeader
+          title="Account Not Found"
+          subtitle="The requested account could not be found"
+        />
       </div>
     );
   }
 
-  const totalValue = accountHoldings.reduce((sum, holding) => sum + parseFloat(holding.value), 0);
+  const totalValue = (filteredAndSortedHoldings || []).reduce(
+    (sum: number, holding) => sum + parseFloat(holding.value),
+    0
+  );
 
   return (
     <div className="space-y-6">
       <PageHeader
         title={account.name}
-        subtitle={`Account • ${accountType?.name || 'Unknown Type'}`}
+        subtitle={`Account • ${accountType?.name || "Unknown Type"}`}
       />
 
-      {/* Account Overview */}
-      <div className="grid gap-4 md:grid-cols-3">
-        <SummaryCard type="currency" title="Total Value" value={totalValue} currency={currency} />
-
-        <SummaryCard
-          type="count"
-          title="Holdings"
-          value={accountHoldings.length}
-          label="holdings"
-        />
-
-        <Link to={`/institutions/${account.institutionId}`}>
-          <SummaryCard
-            type="count"
-            title="Institution"
-            value={1}
-            label={institution?.name || 'Unknown'}
-          />
-        </Link>
-      </div>
-
       {/* Holdings */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Holdings in this Account</CardTitle>
-        </CardHeader>
-        <CardContent>
-          {accountHoldings.length === 0 ? (
-            <p className="text-muted-foreground">No holdings in this account yet.</p>
-          ) : (
-            <div className="space-y-4">
-              {accountHoldings.map((holding) => (
-                <div
-                  key={holding.id}
-                  className="flex items-center justify-between border-b pb-4 last:border-b-0 last:pb-0"
-                >
-                  <div className="flex items-center gap-3">
-                    <div className="w-8 h-8 rounded-full bg-muted flex items-center justify-center">
-                      <span className="text-sm font-medium">
-                        {holding.token.symbol.charAt(0).toUpperCase()}
-                      </span>
+      <PageAggregation
+        totalCount={(accountHoldings || []).length}
+        filteredCount={filteredAndSortedHoldings.length}
+        entityLabel="holdings"
+        totalBalance={totalValue}
+        filteredBalance={totalValue}
+        baseCurrency={currency}
+        searchTerm={searchTerm}
+        onSearchChange={setSearchTerm}
+        searchPlaceholder="Search holdings by token name, symbol..."
+        hasActiveFilters={
+          filterBy !== "" || filterByToken !== "" || valueRange !== "all"
+        }
+        filters={[
+          <TokenTypeSelector
+            key="type"
+            value={filterBy}
+            onValueChange={setFilterBy}
+            tokenTypes={filterData.tokenTypes.map((type) => ({
+              id: type.code,
+              code: type.code,
+              name: type.name,
+            }))}
+            placeholder="Filter by type..."
+          />,
+          <TokenFilterSelector
+            key="token"
+            value={filterByToken}
+            onValueChange={setFilterByToken}
+            tokens={filterData.tokens}
+            placeholder="Filter by token..."
+            includeAllOption={false}
+          />,
+        ]}
+        extraActions={
+          <div className="flex items-center gap-2">
+            <Button
+              variant={viewMode === "cards" ? "default" : "outline"}
+              size="sm"
+              onClick={() => setViewMode("cards")}
+            >
+              <Grid3X3 className="h-4 w-4 mr-2" />
+              Cards
+            </Button>
+            <Button
+              variant={viewMode === "table" ? "default" : "outline"}
+              size="sm"
+              onClick={() => setViewMode("table")}
+            >
+              <List className="h-4 w-4 mr-2" />
+              Table
+            </Button>
+          </div>
+        }
+        additionalControls={
+          <div className="flex items-center gap-2 w-full">
+            <Select value={valueRange} onValueChange={setValueRange}>
+              <SelectTrigger className="w-40">
+                <SelectValue placeholder="All Values" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Values</SelectItem>
+                <SelectItem value="under-1k">Under $1K</SelectItem>
+                <SelectItem value="1k-10k">$1K - $10K</SelectItem>
+                <SelectItem value="10k-100k">$10K - $100K</SelectItem>
+                <SelectItem value="over-100k">Over $100K</SelectItem>
+              </SelectContent>
+            </Select>
+
+            <div className="ml-auto mr-0">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={clearFilters}
+                disabled={
+                  searchTerm === "" &&
+                  filterBy === "" &&
+                  filterByToken === "" &&
+                  valueRange === "all"
+                }
+              >
+                Clear Filters
+              </Button>
+            </div>
+          </div>
+        }
+      />
+
+      {/* Holdings Display */}
+      {viewMode === "table" ? (
+        <DataTable
+          data={filteredAndSortedHoldings}
+          columns={[
+            {
+              header: "Token",
+              accessor: (row: HoldingWithDetails) => (
+                <div>
+                  <div className="font-medium flex items-center gap-2">
+                    {row.token.symbol}
+                  </div>
+                  <div className="text-sm text-muted-foreground">
+                    {row.token.name}
+                  </div>
+                  <TokenTypeBadge tokenTypeCode={row.token.typeCode} />
+                </div>
+              ),
+              sortable: true,
+            },
+            {
+              header: "Amount",
+              accessor: (row: HoldingWithDetails) => (
+                <span className="font-mono">
+                  {parseFloat(row.amount).toLocaleString()}
+                </span>
+              ),
+              className: "font-mono",
+              sortable: true,
+            },
+            {
+              header: "Price",
+              accessor: (row: HoldingWithDetails) =>
+                row.price ? (
+                  <div>
+                    <MoneyDisplay
+                      value={parseFloat(row.price.value)}
+                      token={baseCurrencyToken}
+                    />
+                    <div className="text-xs text-muted-foreground">
+                      {new Date(row.price.timestamp).toLocaleDateString()}
+                      {row.price.source && ` • ${row.price.source}`}
                     </div>
-                    <div>
-                      <div className="font-medium">{holding.token.name}</div>
-                      <div className="text-sm text-muted-foreground">{holding.token.symbol}</div>
-                    </div>
+                  </div>
+                ) : (
+                  <span className="text-muted-foreground">-</span>
+                ),
+              className: "font-mono",
+              sortable: true,
+            },
+            {
+              header: "Value",
+              accessor: (row: HoldingWithDetails) => (
+                <MoneyDisplay
+                  value={parseFloat(row.value)}
+                  token={baseCurrencyToken}
+                />
+              ),
+              className: "font-mono font-medium",
+              sortable: true,
+            },
+          ]}
+          getRowKey={(row: HoldingWithDetails) => row.id}
+          emptyMessage="No holdings match your filters."
+          onSort={handleSort}
+          sortField={sortField}
+          sortDirection={sortDirection}
+        />
+      ) : (
+        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+          {filteredAndSortedHoldings.map((holding) => (
+            <Card
+              key={holding.id}
+              className="hover:shadow-md transition-shadow"
+            >
+              <CardHeader className="pb-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <div className="font-medium">{holding.token.symbol}</div>
                     <TokenTypeBadge tokenTypeCode={holding.token.typeCode} />
                   </div>
-                  <div className="text-right">
-                    <div className="font-mono text-sm">
-                      {parseFloat(holding.amount).toLocaleString()} {holding.token.symbol}
-                    </div>
-                    <div className="font-medium">${parseFloat(holding.value).toLocaleString()}</div>
-                  </div>
                 </div>
-              ))}
-            </div>
-          )}
-        </CardContent>
-      </Card>
+                <div className="text-sm text-muted-foreground">
+                  {holding.token.name}
+                </div>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <div className="flex justify-between items-center">
+                  <span className="text-sm text-muted-foreground">Amount</span>
+                  <span className="font-mono font-medium">
+                    {parseFloat(holding.amount).toLocaleString()}
+                  </span>
+                </div>
+
+                {holding.price && (
+                  <div className="flex justify-between items-center">
+                    <span className="text-sm text-muted-foreground">Price</span>
+                    <div className="text-right">
+                      <MoneyDisplay
+                        value={parseFloat(holding.price.value)}
+                        token={baseCurrencyToken}
+                      />
+                      <div className="text-xs text-muted-foreground">
+                        {new Date(holding.price.timestamp).toLocaleDateString()}
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                <div className="flex justify-between items-center pt-2 border-t">
+                  <span className="text-sm font-medium">Value</span>
+                  <MoneyDisplay
+                    value={parseFloat(holding.value)}
+                    token={baseCurrencyToken}
+                    className="font-medium"
+                  />
+                </div>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

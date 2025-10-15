@@ -1,18 +1,18 @@
-import Decimal from 'decimal.js';
-import { Container, Service } from 'typedi';
-import { AccountRepository } from '../../infrastructure/repositories/AccountRepository';
+import Decimal from "decimal.js";
+import { Container, Service } from "typedi";
+import { AccountRepository } from "../../infrastructure/repositories/AccountRepository";
 import {
   AccountTypeRepository,
   InstitutionTypeRepository,
   TokenTypeRepository,
-} from '../../infrastructure/repositories/EnumRepositories';
-import { HoldingRepository } from '../../infrastructure/repositories/HoldingRepository';
-import { InstitutionRepository } from '../../infrastructure/repositories/InstitutionRepository';
-import { TokenRepository } from '../../infrastructure/repositories/TokenRepository';
-import { createComponentLogger } from '../../utils/logger';
-import { PortfolioValuationService } from '../services/PortfolioValuationService';
+} from "../../infrastructure/repositories/EnumRepositories";
+import { HoldingRepository } from "../../infrastructure/repositories/HoldingRepository";
+import { InstitutionRepository } from "../../infrastructure/repositories/InstitutionRepository";
+import { TokenRepository } from "../../infrastructure/repositories/TokenRepository";
+import { createComponentLogger } from "../../utils/logger";
+import { PortfolioValuationService } from "../services/PortfolioValuationService";
 
-const logger = createComponentLogger('use-case:get-holdings-with-details');
+const logger = createComponentLogger("use-case:get-holdings-with-details");
 
 export interface HoldingWithDetails {
   id: string;
@@ -21,19 +21,29 @@ export interface HoldingWithDetails {
     name: string;
     type: string;
     typeCode: string;
+    iconUrl?: string | null;
   };
   amount: string;
   value: string;
   costBasis: string;
+  price?: {
+    value: string;
+    timestamp: Date;
+    source?: string;
+  };
   account: {
     id: string;
     name: string;
     type: string;
+    typeCode: string;
+    institutionId: string;
   };
   institution: {
     id: string;
     name: string;
     type: string;
+    typeCode: string;
+    website?: string | null;
   };
   lastUpdated: string;
 }
@@ -46,6 +56,10 @@ export interface HoldingWithDetails {
  *
  * Note: Performance/P&L calculations are not included as accurate computation methods
  * are not currently available.
+ *
+ * @param userId - The user ID
+ * @param baseCurrencyId - Optional base currency ID
+ * @param accountId - Optional account ID to filter holdings by specific account
  */
 @Service()
 export class GetHoldingsWithDetailsUseCase {
@@ -55,28 +69,60 @@ export class GetHoldingsWithDetailsUseCase {
   private readonly institutionRepository = Container.get(InstitutionRepository);
   private readonly tokenTypeRepository = Container.get(TokenTypeRepository);
   private readonly accountTypeRepository = Container.get(AccountTypeRepository);
-  private readonly institutionTypeRepository = Container.get(InstitutionTypeRepository);
-  private readonly portfolioValuationService = Container.get(PortfolioValuationService);
+  private readonly institutionTypeRepository = Container.get(
+    InstitutionTypeRepository
+  );
+  private readonly portfolioValuationService = Container.get(
+    PortfolioValuationService
+  );
 
-  async execute(userId: string, baseCurrencyId?: string): Promise<HoldingWithDetails[]> {
-    logger.debug({ userId }, 'Getting holdings with details');
+  async execute(
+    userId: string,
+    baseCurrencyId?: string,
+    accountId?: string
+  ): Promise<HoldingWithDetails[]> {
+    logger.debug({ userId, accountId }, "Getting holdings with details");
 
-    // Get all holdings for user
-    const holdings = await this.holdingRepository.findByUser(userId);
+    // Get holdings for user, optionally filtered by account
+    // Note: We still fetch from repository first to maintain consistency,
+    // but the portfolio valuation service will also filter by account
+    let holdings = await this.holdingRepository.findByUser(userId);
+
+    // Filter by account if specified
+    if (accountId) {
+      holdings = holdings.filter((h) => h.accountId === accountId);
+    }
 
     if (holdings.length === 0) {
       return [];
     }
 
     // Get portfolio valuation to get current values and prices
-    const portfolioValue = await this.portfolioValuationService.getUserPortfolioValue(
-      userId,
-      baseCurrencyId
-    );
+    // Pass accountId to optimize pricing calculation
+    const portfolioValue =
+      await this.portfolioValuationService.getUserPortfolioValue(
+        userId,
+        baseCurrencyId,
+        accountId
+      );
 
     // Create maps for efficient lookups - get individual token prices, not total values
     const portfolioPriceMap = new Map(
-      portfolioValue.holdings.map((h) => [h.tokenSymbol, h.currentPrice || '0'])
+      portfolioValue.holdings.map((h) => [h.tokenSymbol, h.currentPrice || "0"])
+    );
+
+    // Create price metadata map keyed by token symbol
+    const priceMetadataMap = new Map(
+      portfolioValue.holdings
+        .filter((h) => h.priceTimestamp && h.priceSource)
+        .map((h) => [
+          h.tokenSymbol,
+          {
+            value: h.currentPrice || "0",
+            timestamp: h.priceTimestamp!,
+            source: h.priceSource,
+          },
+        ])
     );
 
     // Get all unique IDs for batch fetching
@@ -94,25 +140,38 @@ export class GetHoldingsWithDetailsUseCase {
     const accountMap = new Map(accounts.map((a) => [a.id, a]));
 
     // Get unique institution IDs from accounts
-    const uniqueInstitutionIds = [...new Set(accounts.map((a) => a.institutionId))];
-    const institutions = await this.institutionRepository.findByIds(uniqueInstitutionIds);
+    const uniqueInstitutionIds = [
+      ...new Set(accounts.map((a) => a.institutionId)),
+    ];
+    const institutions = await this.institutionRepository.findByIds(
+      uniqueInstitutionIds
+    );
     const institutionMap = new Map(institutions.map((i) => [i.id, i]));
 
     // Get unique token type IDs
     const uniqueTokenTypeIds = [...new Set(tokens.map((t) => t.typeId))];
-    const tokenTypes = await this.tokenTypeRepository.findByIds(uniqueTokenTypeIds);
+    const tokenTypes = await this.tokenTypeRepository.findByIds(
+      uniqueTokenTypeIds
+    );
     const tokenTypeMap = new Map(tokenTypes.map((tt) => [tt.id, tt]));
 
     // Get unique account type IDs
     const uniqueAccountTypeIds = [...new Set(accounts.map((a) => a.typeId))];
-    const accountTypes = await this.accountTypeRepository.findByIds(uniqueAccountTypeIds);
+    const accountTypes = await this.accountTypeRepository.findByIds(
+      uniqueAccountTypeIds
+    );
     const accountTypeMap = new Map(accountTypes.map((at) => [at.id, at]));
 
     // Get unique institution type IDs
-    const uniqueInstitutionTypeIds = [...new Set(institutions.map((i) => i.typeId))];
-    const institutionTypes =
-      await this.institutionTypeRepository.findByIds(uniqueInstitutionTypeIds);
-    const institutionTypeMap = new Map(institutionTypes.map((it) => [it.id, it]));
+    const uniqueInstitutionTypeIds = [
+      ...new Set(institutions.map((i) => i.typeId)),
+    ];
+    const institutionTypes = await this.institutionTypeRepository.findByIds(
+      uniqueInstitutionTypeIds
+    );
+    const institutionTypeMap = new Map(
+      institutionTypes.map((it) => [it.id, it])
+    );
 
     // Build detailed holdings
     const detailedHoldings: HoldingWithDetails[] = [];
@@ -128,7 +187,7 @@ export class GetHoldingsWithDetailsUseCase {
             tokenId: holding.tokenId,
             accountId: holding.accountId,
           },
-          'Missing token or account for holding'
+          "Missing token or account for holding"
         );
         continue;
       }
@@ -145,7 +204,7 @@ export class GetHoldingsWithDetailsUseCase {
             tokenTypeId: token.typeId,
             accountTypeId: account.typeId,
           },
-          'Missing institution, token type, or account type for holding'
+          "Missing institution, token type, or account type for holding"
         );
         continue;
       }
@@ -153,12 +212,17 @@ export class GetHoldingsWithDetailsUseCase {
       const institutionType = institutionTypeMap.get(institution.typeId);
 
       // Get current price and calculate individual holding value
-      const currentPrice = portfolioPriceMap.get(token.symbol) || '0';
-      const currentValue = new Decimal(holding.balance).mul(new Decimal(currentPrice)).toString();
+      const currentPrice = portfolioPriceMap.get(token.symbol) || "0";
+      const currentValue = new Decimal(holding.balance)
+        .mul(new Decimal(currentPrice))
+        .toString();
 
       // For now, cost basis is the same as current value (simplified)
       // In a real implementation, this would be calculated from transactions
       const costBasis = currentValue;
+
+      // Get price information from portfolio valuation service
+      const priceInfo = priceMetadataMap.get(token.symbol);
 
       const detailedHolding: HoldingWithDetails = {
         id: holding.id,
@@ -167,19 +231,25 @@ export class GetHoldingsWithDetailsUseCase {
           name: token.name,
           type: tokenType.name,
           typeCode: tokenType.code,
+          iconUrl: token.iconUrl,
         },
         amount: holding.balance,
         value: currentValue,
         costBasis: costBasis,
+        price: priceInfo,
         account: {
           id: account.id,
           name: account.name,
           type: accountType.name,
+          typeCode: accountType.code,
+          institutionId: account.institutionId,
         },
         institution: {
           id: institution.id,
           name: institution.name,
-          type: institutionType?.name || 'Unknown',
+          type: institutionType?.name || "Unknown",
+          typeCode: institutionType?.code || "other",
+          website: institution.website,
         },
         lastUpdated: holding.lastUpdated.toISOString(),
       };
@@ -187,7 +257,12 @@ export class GetHoldingsWithDetailsUseCase {
       detailedHoldings.push(detailedHolding);
     }
 
-    logger.debug({ userId, count: detailedHoldings.length }, 'Holdings with details retrieved');
+    logger.debug(
+      { userId, accountId, count: detailedHoldings.length },
+      accountId
+        ? "Account holdings with details retrieved"
+        : "Holdings with details retrieved"
+    );
 
     return detailedHoldings;
   }

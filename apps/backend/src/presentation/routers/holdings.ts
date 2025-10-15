@@ -1,21 +1,21 @@
-import { CreateHoldingSchema, UpdateHoldingSchema } from '@scani/shared/types';
-import { Container } from 'typedi';
-import { z } from 'zod';
-import type { HoldingService } from '../../application/services/HoldingService';
-import { PortfolioValuationService } from '../../application/services/PortfolioValuationService';
+import { CreateHoldingSchema, UpdateHoldingSchema } from "@scani/shared/types";
+import { Container } from "typedi";
+import { z } from "zod";
+import type { HoldingService } from "../../application/services/HoldingService";
+import { PortfolioValuationService } from "../../application/services/PortfolioValuationService";
 import {
   CreateHoldingUseCase,
   DeleteHoldingUseCase,
   GetHoldingsWithDetailsUseCase,
   UpdateHoldingUseCase,
-} from '../../application/use-cases';
-import type { HoldingRepository } from '../../infrastructure/repositories/HoldingRepository';
-import { emitEntityChange } from '../../infrastructure/websocket/RealTimeUpdatesService';
-import { getUserId, requireAuth } from '../../middleware/auth';
-import { createComponentLogger } from '../../utils/logger';
-import { protectedProcedure, router } from '../trpc';
+} from "../../application/use-cases";
+import type { HoldingRepository } from "../../infrastructure/repositories/HoldingRepository";
+import { emitEntityChange } from "../../infrastructure/websocket/RealTimeUpdatesService";
+import { getUserId, requireAuth } from "../../middleware/auth";
+import { createComponentLogger } from "../../utils/logger";
+import { protectedProcedure, router } from "../trpc";
 
-const holdingsLogger = createComponentLogger('router:holdings');
+const holdingsLogger = createComponentLogger("router:holdings");
 
 /**
  * Factory function to create the holdings router with injected dependencies
@@ -35,7 +35,10 @@ export function createHoldingsRouter(
     // Get all holdings with full details (for Holdings page)
     getWithDetails: protectedProcedure.query(async ({ ctx }) => {
       const { dbUser } = requireAuth(ctx);
-      const getHoldingsWithDetailsUseCase = Container.get(GetHoldingsWithDetailsUseCase);
+      const getHoldingsWithDetailsUseCase = Container.get(
+        GetHoldingsWithDetailsUseCase
+      );
+      // No accountId - fetch all user holdings
       return await getHoldingsWithDetailsUseCase.execute(
         dbUser.id,
         dbUser.baseCurrencyId || undefined
@@ -46,7 +49,10 @@ export function createHoldingsRouter(
       .input(z.object({ id: z.string() }))
       .query(async ({ input, ctx }) => {
         const { dbUser } = requireAuth(ctx);
-        const holding = await holdingService.getHoldingById(input.id, dbUser.id);
+        const holding = await holdingService.getHoldingById(
+          input.id,
+          dbUser.id
+        );
         return holding ?? null;
       }),
 
@@ -62,7 +68,10 @@ export function createHoldingsRouter(
       .query(async ({ input, ctx }) => {
         const { dbUser } = requireAuth(ctx);
         // Use repository to check for duplicates
-        const holdings = await holdingRepository.findByAccount(input.accountId, dbUser.id);
+        const holdings = await holdingRepository.findByAccount(
+          input.accountId,
+          dbUser.id
+        );
         const existingHolding = holdings.find(
           (h) => h.tokenId === input.tokenId && h.id !== input.excludeId
         );
@@ -89,7 +98,7 @@ export function createHoldingsRouter(
             userId,
             input,
           },
-          'Creating holding'
+          "Creating holding"
         );
 
         // Use CreateHoldingUseCase for business logic
@@ -98,7 +107,7 @@ export function createHoldingsRouter(
           {
             accountId: input.accountId,
             tokenId: input.tokenId,
-            balance: input.balance || '0',
+            balance: input.balance || "0",
             lastUpdated: input.lastUpdated,
           },
           userId,
@@ -107,9 +116,9 @@ export function createHoldingsRouter(
 
         // Emit entity change for real-time updates
         emitEntityChange({
-          type: 'entity_changed',
-          entityType: 'holding',
-          operationType: 'create',
+          type: "entity_changed",
+          entityType: "holding",
+          operationType: "create",
           entityId: result.holding.id,
           userId,
           data: {
@@ -136,12 +145,16 @@ export function createHoldingsRouter(
 
         // Use UpdateHoldingUseCase for business logic
         const updateHoldingUseCase = Container.get(UpdateHoldingUseCase);
-        const updatedHolding = await updateHoldingUseCase.execute(input.id, input.data, userId);
+        const updatedHolding = await updateHoldingUseCase.execute(
+          input.id,
+          input.data,
+          userId
+        );
 
         emitEntityChange({
-          type: 'entity_changed',
-          entityType: 'holding',
-          operationType: 'update',
+          type: "entity_changed",
+          entityType: "holding",
+          operationType: "update",
           entityId: updatedHolding.id,
           userId,
           data: {
@@ -164,15 +177,15 @@ export function createHoldingsRouter(
         const result = await deleteHoldingUseCase.execute(input.id, dbUser.id);
 
         emitEntityChange({
-          type: 'entity_changed',
-          entityType: 'holding',
-          operationType: 'delete',
+          type: "entity_changed",
+          entityType: "holding",
+          operationType: "delete",
           entityId: result.deleted.id,
           userId: dbUser.id,
           metadata: {
             relatedEntities: [
               {
-                type: 'account',
+                type: "account",
                 id: result.deleted.accountId,
               },
             ],
@@ -188,7 +201,9 @@ export function createHoldingsRouter(
     // Get unpriceable tokens for monetization notification
     getUnpriceableTokens: protectedProcedure.query(async ({ ctx }) => {
       const { dbUser } = requireAuth(ctx);
-      const portfolioValuationService = Container.get(PortfolioValuationService);
+      const portfolioValuationService = Container.get(
+        PortfolioValuationService
+      );
       return await portfolioValuationService.getUnpriceableTokens(dbUser.id);
     }),
     // Note: create/update/delete endpoints contain complex transaction and pricing logic

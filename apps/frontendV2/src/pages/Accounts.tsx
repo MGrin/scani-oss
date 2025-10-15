@@ -1,15 +1,17 @@
-import { CreditCard } from 'lucide-react';
-import { Link } from 'react-router-dom';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { MoneyDisplay } from '@/components/ui/money-display';
-import { PageHeader } from '@/components/ui/page-header';
-import { Skeleton } from '@/components/ui/skeleton';
-import { trpc } from '@/lib/trpc';
-import { createCurrencyToken } from '@/lib/utils';
+import { Link } from "react-router-dom";
+import { AddDataButton } from "@/components/ui/add-data-button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { MoneyDisplay } from "@/components/ui/money-display";
+import { PageHeader } from "@/components/ui/page-header";
+import { Skeleton } from "@/components/ui/skeleton";
+import { trpc } from "@/lib/trpc";
+import { createCurrencyToken } from "@/lib/utils";
+import { CreditCard } from "lucide-react";
 
 export function Accounts() {
   // Fetch accounts with summary data
-  const { data: accounts, isLoading } = trpc.accounts.getByUserIdWithSummary.useQuery();
+  const { data: accounts, isLoading } =
+    trpc.accounts.getByUserIdWithSummary.useQuery();
 
   // Fetch account types and institutions for display
   const { data: accountTypes } = trpc.accountTypes.getAll.useQuery();
@@ -17,7 +19,7 @@ export function Accounts() {
 
   // Fetch base currency for money display
   const { data: baseCurrency } = trpc.users.getBaseCurrency.useQuery();
-  const currency = baseCurrency?.symbol || 'USD';
+  const currency = baseCurrency?.symbol || "USD";
   const baseCurrencyToken = createCurrencyToken(currency);
 
   if (isLoading) {
@@ -54,19 +56,18 @@ export function Accounts() {
             <p className="text-muted-foreground text-center mb-4">
               Add your first financial account to start tracking your holdings.
             </p>
-            <button
-              type="button"
-              className="bg-primary text-primary-foreground px-4 py-2 rounded-md hover:bg-primary/90"
-            >
-              Add Account
-            </button>
+            <AddDataButton />
           </CardContent>
         </Card>
       ) : (
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
           {accounts?.map((account) => {
-            const accountType = accountTypes?.find((type) => type.id === account.typeId);
-            const institution = institutions?.find((inst) => inst.id === account.institutionId);
+            const accountType = accountTypes?.find(
+              (type) => type.id === account.typeId
+            );
+            const institution = institutions?.find(
+              (inst) => inst.id === account.institutionId
+            );
 
             return (
               <Link key={account.id} to={`/accounts/${account.id}`}>
@@ -75,17 +76,19 @@ export function Accounts() {
                     <CardTitle className="flex items-center justify-between">
                       <span className="truncate">{account.name}</span>
                       <div className="text-sm text-muted-foreground ml-2">
-                        {accountType?.name || 'Unknown'}
+                        {accountType?.name || "Unknown"}
                       </div>
                     </CardTitle>
                     <div className="text-sm text-muted-foreground">
-                      {institution?.name || 'Unknown Institution'}
+                      {institution?.name || "Unknown Institution"}
                     </div>
                   </CardHeader>
                   <CardContent>
                     <div className="space-y-2">
                       <div>
-                        <p className="text-sm text-muted-foreground">Total Value</p>
+                        <p className="text-sm text-muted-foreground">
+                          Total Value
+                        </p>
                         <div className="text-xl font-semibold">
                           <MoneyDisplay
                             value={account.summary.totalValue}
@@ -96,7 +99,7 @@ export function Accounts() {
                       <div>
                         <p className="text-sm text-muted-foreground">
                           {account.summary.holdingsCount} holding
-                          {account.summary.holdingsCount !== 1 ? 's' : ''}
+                          {account.summary.holdingsCount !== 1 ? "s" : ""}
                         </p>
                       </div>
                     </div>

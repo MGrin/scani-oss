@@ -1,53 +1,60 @@
 import {
   AlertTriangle,
-  ArrowUpDown,
   Download,
   Filter,
   Grid3X3,
   List,
-  MoreHorizontal,
   PieChart,
-} from 'lucide-react';
-import { useMemo, useState } from 'react';
-import { AccountBadge, InstitutionBadge, TokenTypeBadge } from '@/components/features';
+} from "lucide-react";
+import { useMemo, useState } from "react";
+import {
+  AccountBadge,
+  InstitutionBadge,
+  TokenTypeBadge,
+} from "@/components/features";
 import {
   AccountFilterSelector,
   TokenFilterSelector,
   TokenTypeSelector,
-} from '@/components/selectors/SearchableSelectors';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+} from "@/components/selectors/SearchableSelectors";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { DataTable } from "@/components/ui/data-table";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
-import { MoneyDisplay } from '@/components/ui/money-display';
-import { PageAggregation } from '@/components/ui/page-aggregation';
-import { PageHeader } from '@/components/ui/page-header';
+} from "@/components/ui/dropdown-menu";
+import { MoneyDisplay } from "@/components/ui/money-display";
+import { PageAggregation } from "@/components/ui/page-aggregation";
+import { PageHeader } from "@/components/ui/page-header";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from '@/components/ui/select';
-import { Tabs, TabsContent } from '@/components/ui/tabs';
-import { useFilters } from '@/hooks/use-filters';
-import { trpc } from '@/lib/trpc';
-import { createCurrencyToken } from '@/lib/utils';
+} from "@/components/ui/select";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Tabs, TabsContent } from "@/components/ui/tabs";
+import { useFilters, useViewMode } from "@/hooks";
+import { trpc } from "@/lib/trpc";
+import { createCurrencyToken } from "@/lib/utils";
 
-type GroupBy = 'none' | 'institution' | 'account' | 'tokenType';
-type ViewMode = 'cards' | 'table';
+type GroupBy = "none" | "institution" | "account" | "tokenType";
 
 export function Holdings() {
   // Fetch holdings data from tRPC
-  const { data: holdingsData, isLoading, error } = trpc.holdings.getWithDetails.useQuery();
+  const {
+    data: holdingsData,
+    isLoading,
+    error,
+  } = trpc.holdings.getWithDetails.useQuery();
 
   // Fetch base currency for proper formatting
   const { data: baseCurrency } = trpc.users.getBaseCurrency.useQuery();
-  const currency = baseCurrency?.symbol || 'USD';
+  const currency = baseCurrency?.symbol || "USD";
   const baseCurrencyToken = createCurrencyToken(currency);
 
   // Transform backend data to match frontend expectations
@@ -59,12 +66,12 @@ export function Holdings() {
       costBasis: parseFloat(holding.costBasis),
     })) || [];
 
-  const [searchTerm, setSearchTerm] = useState('');
-  const [groupBy, setGroupBy] = useState<GroupBy>('none');
-  const [viewMode, setViewMode] = useState<ViewMode>('cards');
-  const [sortField, setSortField] = useState('value');
-  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc');
-  const [valueRange, setValueRange] = useState('all');
+  const [searchTerm, setSearchTerm] = useState("");
+  const [groupBy, setGroupBy] = useState<GroupBy>("none");
+  const [viewMode, setViewMode] = useViewMode("cards");
+  const [sortField, setSortField] = useState("value");
+  const [sortDirection, setSortDirection] = useState<"asc" | "desc">("desc");
+  const [valueRange, setValueRange] = useState("all");
 
   // Unified filter system
   const {
@@ -72,14 +79,14 @@ export function Holdings() {
     updateFilter,
     clearAllFilters,
   } = useFilters([
-    { key: 'type', defaultValue: 'all' },
-    { key: 'account', defaultValue: 'all' },
-    { key: 'token', defaultValue: 'all' },
+    { key: "type", defaultValue: "" },
+    { key: "account", defaultValue: "" },
+    { key: "token", defaultValue: "" },
   ]);
 
-  const filterBy = filterValues.type || 'all';
-  const filterByAccount = filterValues.account || 'all';
-  const filterByToken = filterValues.token || 'all';
+  const filterBy = filterValues.type || "";
+  const filterByAccount = filterValues.account || "";
+  const filterByToken = filterValues.token || "";
 
   // Get unique values for filters
   // Deduplicate institutions by ID
@@ -117,13 +124,15 @@ export function Holdings() {
     id: inst.id,
     name: inst.name,
     type: inst.type,
+    typeCode: inst.typeCode,
+    website: inst.website,
   }));
 
   const accountOptions = accounts.map((acc) => ({
     id: acc.id,
     name: acc.name,
     typeName: acc.type,
-    institutionId: 'dummy', // We don't have this in the current data structure
+    institutionId: acc.institutionId,
   }));
 
   // Deduplicate tokens by symbol
@@ -138,38 +147,44 @@ export function Holdings() {
     symbol: token.symbol,
     name: token.name,
     type: token.typeCode,
+    typeName: token.type,
+    iconUrl: token.iconUrl,
   }));
 
   // Filter and sort holdings
   const filteredAndSortedHoldings = useMemo(() => {
     const filtered = holdings.filter((holding) => {
       const matchesSearch =
-        searchTerm === '' ||
+        searchTerm === "" ||
         holding.token.symbol.toLowerCase().includes(searchTerm.toLowerCase()) ||
         holding.token.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        holding.institution.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        holding.institution.name
+          .toLowerCase()
+          .includes(searchTerm.toLowerCase()) ||
         holding.account.name.toLowerCase().includes(searchTerm.toLowerCase());
 
-      const matchesTypeFilter = filterBy === 'all' || holding.token.typeCode === filterBy;
+      const matchesTypeFilter =
+        filterBy === "" || holding.token.typeCode === filterBy;
       const matchesAccountFilter =
-        filterByAccount === 'all' || holding.account.id === filterByAccount;
-      const matchesTokenFilter = filterByToken === 'all' || holding.token.symbol === filterByToken;
+        filterByAccount === "" || holding.account.id === filterByAccount;
+      const matchesTokenFilter =
+        filterByToken === "" || holding.token.symbol === filterByToken;
 
       // Value range filter
       let matchesValueRange = true;
-      if (valueRange !== 'all') {
+      if (valueRange !== "all") {
         const value = holding.value;
         switch (valueRange) {
-          case 'under-1k':
+          case "under-1k":
             matchesValueRange = value < 1000;
             break;
-          case '1k-10k':
+          case "1k-10k":
             matchesValueRange = value >= 1000 && value < 10000;
             break;
-          case '10k-100k':
+          case "10k-100k":
             matchesValueRange = value >= 10000 && value < 100000;
             break;
-          case 'over-100k':
+          case "over-100k":
             matchesValueRange = value >= 100000;
             break;
         }
@@ -190,19 +205,19 @@ export function Holdings() {
       let aValue: any, bValue: any;
 
       switch (sortField) {
-        case 'value':
+        case "value":
           aValue = a.value;
           bValue = b.value;
           break;
-        case 'amount':
+        case "amount":
           aValue = a.amount;
           bValue = b.amount;
           break;
-        case 'name':
+        case "name":
           aValue = a.token.name.toLowerCase();
           bValue = b.token.name.toLowerCase();
           break;
-        case 'institution':
+        case "institution":
           aValue = a.institution.name.toLowerCase();
           bValue = b.institution.name.toLowerCase();
           break;
@@ -211,13 +226,13 @@ export function Holdings() {
           bValue = b.value;
       }
 
-      if (typeof aValue === 'string') {
-        return sortDirection === 'asc'
+      if (typeof aValue === "string") {
+        return sortDirection === "asc"
           ? aValue.localeCompare(bValue)
           : bValue.localeCompare(aValue);
       }
 
-      return sortDirection === 'asc' ? aValue - bValue : bValue - aValue;
+      return sortDirection === "asc" ? aValue - bValue : bValue - aValue;
     });
 
     return filtered;
@@ -234,32 +249,32 @@ export function Holdings() {
 
   // Group holdings if needed
   const groupedHoldings =
-    groupBy === 'none'
-      ? { 'All Holdings': filteredAndSortedHoldings }
-      : filteredAndSortedHoldings.reduce(
-          (groups, holding) => {
-            let key = '';
-            switch (groupBy) {
-              case 'institution':
-                key = holding.institution.name;
-                break;
-              case 'account':
-                key = holding.account.name;
-                break;
-              case 'tokenType':
-                key = holding.token.type;
-                break;
-            }
-            if (!groups[key]) groups[key] = [];
-            groups[key]!.push(holding);
-            return groups;
-          },
-          {} as Record<string, typeof filteredAndSortedHoldings>
-        );
+    groupBy === "none"
+      ? { "All Holdings": filteredAndSortedHoldings }
+      : filteredAndSortedHoldings.reduce((groups, holding) => {
+          let key = "";
+          switch (groupBy) {
+            case "institution":
+              key = holding.institution.name;
+              break;
+            case "account":
+              key = holding.account.name;
+              break;
+            case "tokenType":
+              key = holding.token.type;
+              break;
+          }
+          if (!groups[key]) groups[key] = [];
+          groups[key]!.push(holding);
+          return groups;
+        }, {} as Record<string, typeof filteredAndSortedHoldings>);
 
   // Calculate summary statistics
   const summaryStats = useMemo(() => {
-    const totalValue = filteredAndSortedHoldings.reduce((sum, h) => sum + h.value, 0);
+    const totalValue = filteredAndSortedHoldings.reduce(
+      (sum, h) => sum + h.value,
+      0
+    );
 
     return {
       totalValue,
@@ -269,14 +284,14 @@ export function Holdings() {
 
   const handleSort = (field: string) => {
     if (sortField === field) {
-      setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc');
+      setSortDirection(sortDirection === "asc" ? "desc" : "asc");
     } else {
       setSortField(field);
-      setSortDirection('desc');
+      setSortDirection("desc");
     }
   };
 
-  const exportData = (format: 'csv' | 'json') => {
+  const exportData = (format: "csv" | "json") => {
     const data = filteredAndSortedHoldings.map((h) => ({
       Institution: h.institution.name,
       Account: h.account.name,
@@ -287,42 +302,42 @@ export function Holdings() {
       Value: h.value,
     }));
 
-    if (format === 'csv') {
+    if (format === "csv") {
       if (data.length === 0 || !data[0]) return;
 
-      const headers = Object.keys(data[0]).join(',');
+      const headers = Object.keys(data[0]).join(",");
       const rows = data.map((row) =>
         Object.values(row)
           .map((val) => `"${val}"`)
-          .join(',')
+          .join(",")
       );
-      const csv = [headers, ...rows].join('\n');
+      const csv = [headers, ...rows].join("\n");
 
-      const blob = new Blob([csv], { type: 'text/csv' });
+      const blob = new Blob([csv], { type: "text/csv" });
       const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
+      const a = document.createElement("a");
       a.href = url;
-      a.download = 'holdings.csv';
+      a.download = "holdings.csv";
       a.click();
       URL.revokeObjectURL(url);
     } else {
       const json = JSON.stringify(data, null, 2);
-      const blob = new Blob([json], { type: 'application/json' });
+      const blob = new Blob([json], { type: "application/json" });
       const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
+      const a = document.createElement("a");
       a.href = url;
-      a.download = 'holdings.json';
+      a.download = "holdings.json";
       a.click();
       URL.revokeObjectURL(url);
     }
   };
 
   const clearFilters = () => {
-    setSearchTerm('');
+    setSearchTerm("");
     clearAllFilters();
-    setValueRange('all');
-    setSortField('value');
-    setSortDirection('desc');
+    setValueRange("all");
+    setSortField("value");
+    setSortDirection("desc");
   };
 
   return (
@@ -339,18 +354,87 @@ export function Holdings() {
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent>
-              <DropdownMenuItem onClick={() => exportData('csv')}>Export as CSV</DropdownMenuItem>
-              <DropdownMenuItem onClick={() => exportData('json')}>Export as JSON</DropdownMenuItem>
+              <DropdownMenuItem onClick={() => exportData("csv")}>
+                Export as CSV
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => exportData("json")}>
+                Export as JSON
+              </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
         }
       />
 
       {isLoading ? (
-        <div className="flex items-center justify-center py-12">
-          <div className="text-center">
-            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto mb-4"></div>
-            <p className="text-muted-foreground">Loading your holdings...</p>
+        <div className="space-y-6">
+          {/* Summary cards skeletons */}
+          <div className="grid gap-4 md:grid-cols-2">
+            <Card>
+              <CardHeader>
+                <Skeleton className="h-5 w-32" />
+              </CardHeader>
+              <CardContent>
+                <Skeleton className="h-8 w-24 mb-2" />
+                <Skeleton className="h-4 w-16" />
+              </CardContent>
+            </Card>
+            <Card>
+              <CardHeader>
+                <Skeleton className="h-5 w-28" />
+              </CardHeader>
+              <CardContent>
+                <Skeleton className="h-8 w-20 mb-2" />
+                <Skeleton className="h-4 w-12" />
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* Filters card skeleton */}
+          <Card className="min-h-[200px]">
+            <CardHeader>
+              <Skeleton className="h-6 w-48" />
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-4">
+                <div className="flex gap-4">
+                  <Skeleton className="h-10 w-48" />
+                  <Skeleton className="h-10 w-40" />
+                  <Skeleton className="h-10 w-44" />
+                </div>
+                <div className="flex gap-4">
+                  <Skeleton className="h-10 w-40" />
+                  <Skeleton className="h-10 w-40" />
+                  <Skeleton className="h-10 w-32 ml-auto" />
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Holdings cards skeletons */}
+          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+            {[1, 2, 3, 4].map((num) => (
+              <Card key={`skeleton-${num}`}>
+                <CardHeader>
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <Skeleton className="h-6 w-6 rounded-full" />
+                      <Skeleton className="h-4 w-24" />
+                    </div>
+                    <Skeleton className="h-5 w-16" />
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Skeleton className="h-4 w-4" />
+                    <Skeleton className="h-4 w-20" />
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-2">
+                    <Skeleton className="h-8 w-32" />
+                    <Skeleton className="h-6 w-24" />
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
           </div>
         </div>
       ) : error ? (
@@ -358,7 +442,9 @@ export function Holdings() {
           <CardContent className="py-12 text-center">
             <div className="text-muted-foreground">
               <AlertTriangle className="h-12 w-12 mx-auto mb-4 opacity-50" />
-              <h3 className="text-lg font-medium mb-2">Error loading holdings</h3>
+              <h3 className="text-lg font-medium mb-2">
+                Error loading holdings
+              </h3>
               <p>Unable to load your holdings data. Please try again later.</p>
             </div>
           </CardContent>
@@ -369,7 +455,10 @@ export function Holdings() {
             <div className="text-muted-foreground">
               <PieChart className="h-12 w-12 mx-auto mb-4 opacity-50" />
               <h3 className="text-lg font-medium mb-2">No holdings found</h3>
-              <p>You don't have any holdings yet. Connect your accounts to get started.</p>
+              <p>
+                You don't have any holdings yet. Connect your accounts to get
+                started.
+              </p>
             </div>
           </CardContent>
         </Card>
@@ -387,16 +476,16 @@ export function Holdings() {
             onSearchChange={setSearchTerm}
             searchPlaceholder="Search holdings by token name, symbol, or account..."
             hasActiveFilters={
-              filterBy !== 'all' ||
-              filterByAccount !== 'all' ||
-              filterByToken !== 'all' ||
-              valueRange !== 'all'
+              filterBy !== "" ||
+              filterByAccount !== "" ||
+              filterByToken !== "" ||
+              valueRange !== "all"
             }
             filters={[
               <TokenTypeSelector
                 key="type"
                 value={filterBy}
-                onValueChange={(value) => updateFilter('type', value)}
+                onValueChange={(value) => updateFilter("type", value)}
                 tokenTypes={tokenTypes.map((type) => ({
                   id: type.code,
                   code: type.code,
@@ -407,33 +496,35 @@ export function Holdings() {
               <AccountFilterSelector
                 key="account"
                 value={filterByAccount}
-                onValueChange={(value) => updateFilter('account', value)}
+                onValueChange={(value) => updateFilter("account", value)}
                 accounts={accountOptions}
                 institutions={institutionOptions}
                 placeholder="Filter by account..."
+                includeAllOption={false}
               />,
               <TokenFilterSelector
                 key="token"
                 value={filterByToken}
-                onValueChange={(value) => updateFilter('token', value)}
+                onValueChange={(value) => updateFilter("token", value)}
                 tokens={tokenOptions}
                 placeholder="Filter by token..."
+                includeAllOption={false}
               />,
             ]}
             extraActions={
               <div className="flex items-center gap-2">
                 <Button
-                  variant={viewMode === 'cards' ? 'default' : 'outline'}
+                  variant={viewMode === "cards" ? "default" : "outline"}
                   size="sm"
-                  onClick={() => setViewMode('cards')}
+                  onClick={() => setViewMode("cards")}
                 >
                   <Grid3X3 className="h-4 w-4 mr-2" />
                   Cards
                 </Button>
                 <Button
-                  variant={viewMode === 'table' ? 'default' : 'outline'}
+                  variant={viewMode === "table" ? "default" : "outline"}
                   size="sm"
-                  onClick={() => setViewMode('table')}
+                  onClick={() => setViewMode("table")}
                 >
                   <List className="h-4 w-4 mr-2" />
                   Table
@@ -455,7 +546,10 @@ export function Holdings() {
                   </SelectContent>
                 </Select>
 
-                <Select value={groupBy} onValueChange={(value: GroupBy) => setGroupBy(value)}>
+                <Select
+                  value={groupBy}
+                  onValueChange={(value: GroupBy) => setGroupBy(value)}
+                >
                   <SelectTrigger className="w-40">
                     <SelectValue placeholder="Group by..." />
                   </SelectTrigger>
@@ -481,24 +575,35 @@ export function Holdings() {
             <TabsContent value="holdings" className="space-y-6">
               {Object.entries(groupedHoldings).map(([groupName, holdings]) => (
                 <div key={groupName}>
-                  {groupBy !== 'none' && (
+                  {groupBy !== "none" && (
                     <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
                       <Filter className="h-5 w-5" />
-                      {groupName} ({holdings.length} holdings • $
-                      {holdings.reduce((sum, h) => sum + h.value, 0).toLocaleString()})
+                      {groupName} ({holdings.length} holdings •{" "}
+                      <MoneyDisplay
+                        value={holdings.reduce((sum, h) => sum + h.value, 0)}
+                        token={baseCurrencyToken}
+                        minimumFractionDigits={0}
+                        maximumFractionDigits={0}
+                      />
+                      )
                     </h3>
                   )}
 
-                  {viewMode === 'cards' ? (
+                  {viewMode === "cards" ? (
                     <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
                       {holdings.map((holding) => (
-                        <Card key={holding.id} className="hover:shadow-md transition-shadow">
+                        <Card
+                          key={holding.id}
+                          className="hover:shadow-md transition-shadow"
+                        >
                           <CardHeader>
                             <CardTitle className="flex items-center justify-between">
                               <span className="flex items-center gap-2">
                                 {holding.token.symbol || holding.token.name}
                               </span>
-                              <TokenTypeBadge tokenTypeCode={holding.token.typeCode} />
+                              <TokenTypeBadge
+                                tokenTypeCode={holding.token.typeCode}
+                              />
                             </CardTitle>
                             <div className="flex items-center gap-2">
                               <AccountBadge
@@ -514,14 +619,14 @@ export function Holdings() {
                           <CardContent>
                             <div className="space-y-2">
                               <div className="text-2xl font-bold">
-                                {holding.amount.toLocaleString()} {holding.token.symbol}
+                                {holding.amount.toLocaleString()}{" "}
+                                {holding.token.symbol}
                               </div>
                               <div className="text-lg font-semibold">
-                                $
-                                {holding.value.toLocaleString(undefined, {
-                                  minimumFractionDigits: 2,
-                                  maximumFractionDigits: 2,
-                                })}
+                                <MoneyDisplay
+                                  value={holding.value}
+                                  token={baseCurrencyToken}
+                                />
                               </div>
                             </div>
                           </CardContent>
@@ -529,111 +634,66 @@ export function Holdings() {
                       ))}
                     </div>
                   ) : (
-                    <Card>
-                      <CardContent className="p-0">
-                        <div className="overflow-x-auto">
-                          <table className="w-full">
-                            <thead className="border-b bg-muted/50">
-                              <tr className="text-left">
-                                <th
-                                  className="p-4 font-medium cursor-pointer hover:bg-muted/70"
-                                  onClick={() => handleSort('name')}
-                                >
-                                  <div className="flex items-center gap-2">
-                                    Token
-                                    <ArrowUpDown className="h-4 w-4" />
-                                  </div>
-                                </th>
-                                <th
-                                  className="p-4 font-medium cursor-pointer hover:bg-muted/70"
-                                  onClick={() => handleSort('amount')}
-                                >
-                                  <div className="flex items-center gap-2">
-                                    Amount
-                                    <ArrowUpDown className="h-4 w-4" />
-                                  </div>
-                                </th>
-                                <th
-                                  className="p-4 font-medium cursor-pointer hover:bg-muted/70"
-                                  onClick={() => handleSort('value')}
-                                >
-                                  <div className="flex items-center gap-2">
-                                    Value
-                                    <ArrowUpDown className="h-4 w-4" />
-                                  </div>
-                                </th>
-                                <th
-                                  className="p-4 font-medium cursor-pointer hover:bg-muted/70"
-                                  onClick={() => handleSort('institution')}
-                                >
-                                  <div className="flex items-center gap-2">
-                                    Institution
-                                    <ArrowUpDown className="h-4 w-4" />
-                                  </div>
-                                </th>
-                                <th className="p-4 font-medium">Account</th>
-                                <th className="p-4 font-medium">Actions</th>
-                              </tr>
-                            </thead>
-                            <tbody>
-                              {holdings.map((holding) => (
-                                <tr
-                                  key={holding.id}
-                                  className="border-b hover:bg-muted/50 transition-colors"
-                                >
-                                  <td className="p-4">
-                                    <div>
-                                      <div className="font-medium flex items-center gap-2">
-                                        {holding.token.symbol}
-                                      </div>
-                                      <div className="text-sm text-muted-foreground">
-                                        {holding.token.name}
-                                      </div>
-                                      <TokenTypeBadge tokenTypeCode={holding.token.typeCode} />
-                                    </div>
-                                  </td>
-                                  <td className="p-4 font-mono">
-                                    {holding.amount.toLocaleString()}
-                                  </td>
-                                  <td className="p-4 font-mono font-medium">
-                                    <MoneyDisplay value={holding.value} token={baseCurrencyToken} />
-                                  </td>
-                                  <td className="p-4">
-                                    <InstitutionBadge
-                                      institutionId={holding.institution.id}
-                                      institutionName={holding.institution.name}
-                                    />
-                                  </td>
-                                  <td className="p-4">
-                                    <AccountBadge
-                                      accountId={holding.account.id}
-                                      accountName={holding.account.name}
-                                    />
-                                  </td>
-                                  <td className="p-4">
-                                    <DropdownMenu>
-                                      <DropdownMenuTrigger asChild>
-                                        <Button variant="ghost" size="sm">
-                                          <MoreHorizontal className="h-4 w-4" />
-                                        </Button>
-                                      </DropdownMenuTrigger>
-                                      <DropdownMenuContent>
-                                        <DropdownMenuItem>View Details</DropdownMenuItem>
-                                        <DropdownMenuItem>View Transactions</DropdownMenuItem>
-                                        <DropdownMenuItem className="text-red-600">
-                                          <AlertTriangle className="h-4 w-4 mr-2" />
-                                          Flag for Review
-                                        </DropdownMenuItem>
-                                      </DropdownMenuContent>
-                                    </DropdownMenu>
-                                  </td>
-                                </tr>
-                              ))}
-                            </tbody>
-                          </table>
-                        </div>
-                      </CardContent>
-                    </Card>
+                    <DataTable
+                      data={holdings}
+                      columns={[
+                        {
+                          header: "Token",
+                          accessor: (row) => (
+                            <div>
+                              <div className="font-medium flex items-center gap-2">
+                                {row.token.symbol}
+                              </div>
+                              <div className="text-sm text-muted-foreground">
+                                {row.token.name}
+                              </div>
+                              <TokenTypeBadge
+                                tokenTypeCode={row.token.typeCode}
+                              />
+                            </div>
+                          ),
+                          sortable: true,
+                        },
+                        {
+                          header: "Amount",
+                          accessor: (row) => row.amount.toLocaleString(),
+                          className: "font-mono",
+                          sortable: true,
+                        },
+                        {
+                          header: "Value",
+                          accessor: (row) => (
+                            <MoneyDisplay
+                              value={row.value}
+                              token={baseCurrencyToken}
+                            />
+                          ),
+                          className: "font-mono font-medium",
+                          sortable: true,
+                        },
+                        {
+                          header: "Institution",
+                          accessor: (row) => (
+                            <InstitutionBadge
+                              institutionId={row.institution.id}
+                              institutionName={row.institution.name}
+                            />
+                          ),
+                          sortable: true,
+                        },
+                        {
+                          header: "Account",
+                          accessor: (row) => (
+                            <AccountBadge
+                              accountId={row.account.id}
+                              accountName={row.account.name}
+                            />
+                          ),
+                        },
+                      ]}
+                      getRowKey={(row) => row.id}
+                      onSort={handleSort}
+                    />
                   )}
                 </div>
               ))}
@@ -643,7 +703,9 @@ export function Holdings() {
                   <CardContent className="py-12 text-center">
                     <div className="text-muted-foreground">
                       <Filter className="h-12 w-12 mx-auto mb-4 opacity-50" />
-                      <h3 className="text-lg font-medium mb-2">No holdings found</h3>
+                      <h3 className="text-lg font-medium mb-2">
+                        No holdings found
+                      </h3>
                       <p>Try adjusting your filters or search terms.</p>
                     </div>
                   </CardContent>

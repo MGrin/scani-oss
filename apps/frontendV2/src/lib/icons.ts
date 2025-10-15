@@ -1,4 +1,4 @@
-import type { LucideIcon } from 'lucide-react';
+import type { LucideIcon } from "lucide-react";
 import {
   Building,
   Building2,
@@ -9,69 +9,32 @@ import {
   PiggyBank,
   TrendingUp,
   Wallet,
-} from 'lucide-react';
-import { normalizeSymbol } from '@/lib/utils';
+} from "lucide-react";
 
 // Type for token display information
 export type TokenDisplay = {
-  type: 'symbol' | 'icon';
+  type: "symbol" | "icon";
   value: string | LucideIcon;
 };
 
 /**
- * Get symbol or icon for fiat currencies based on symbol
+ * Get favicon URL from a website URL
+ * Uses Google's favicon service as a fallback
  */
-export const getFiatCurrencyDisplay = (symbol: string): TokenDisplay => {
-  switch (normalizeSymbol(symbol)) {
-    case 'USD':
-      return { type: 'symbol', value: '$' };
-    case 'EUR':
-      return { type: 'symbol', value: '€' };
-    case 'GBP':
-      return { type: 'symbol', value: '£' };
-    case 'JPY':
-      return { type: 'symbol', value: '¥' };
-    case 'RUB':
-      return { type: 'symbol', value: '₽' };
-    case 'KRW':
-      return { type: 'symbol', value: '₩' };
-    case 'INR':
-      return { type: 'symbol', value: '₹' };
-    case 'CHF':
-      return { type: 'symbol', value: 'CHF' };
-    case 'CAD':
-    case 'AUD':
-      return { type: 'symbol', value: '$' };
-    case 'CNY':
-      return { type: 'symbol', value: '¥' };
-    case 'PLN':
-      return { type: 'symbol', value: 'zł' };
-    case 'BRL':
-      return { type: 'symbol', value: 'R$' };
-    case 'SEK':
-      return { type: 'symbol', value: 'kr' };
-    case 'DKK':
-      return { type: 'symbol', value: 'kr' };
-    case 'CZK':
-      return { type: 'symbol', value: 'Kč' };
-    default:
-      return { type: 'icon', value: DollarSign }; // Default to dollar icon for unknown fiat currencies
-  }
-};
+export function getFaviconUrl(
+  websiteUrl: string | null | undefined
+): string | null {
+  if (!websiteUrl) return null;
 
-/**
- * Get symbol or icon for cryptocurrencies based on symbol
- * Most cryptocurrencies don't have standardized Unicode symbols, so we use generic crypto icon
- */
-export const getCryptoCurrencyDisplay = (symbol: string): TokenDisplay => {
-  switch (normalizeSymbol(symbol)) {
-    case 'BTC':
-    case 'BITCOIN':
-      return { type: 'symbol', value: '₿' }; // Bitcoin has an official Unicode symbol
-    default:
-      return { type: 'icon', value: Coins }; // Default to generic coins icon for other cryptocurrencies
+  try {
+    const url = new URL(
+      websiteUrl.startsWith("http") ? websiteUrl : `https://${websiteUrl}`
+    );
+    return `https://www.google.com/s2/favicons?domain=${url.hostname}&sz=64`;
+  } catch {
+    return null;
   }
-};
+}
 
 /**
  * Get icon component for token types
@@ -79,15 +42,15 @@ export const getCryptoCurrencyDisplay = (symbol: string): TokenDisplay => {
  */
 export const getTokenTypeIcon = (type: string): LucideIcon => {
   switch (type?.toLowerCase()) {
-    case 'fiat':
+    case "fiat":
       return DollarSign;
-    case 'crypto':
-    case 'cryptocurrency':
+    case "crypto":
+    case "cryptocurrency":
       return Coins;
-    case 'stock':
+    case "stock":
       // 'stock' type covers Stock/ETF/Equity/Commodity
       return TrendingUp;
-    case 'private-company':
+    case "private-company":
       return Building2;
     default:
       return CreditCard;
@@ -100,16 +63,14 @@ export const getTokenTypeIcon = (type: string): LucideIcon => {
  */
 export const getAccountTypeIcon = (type: string): LucideIcon => {
   switch (type?.toLowerCase()) {
-    case 'checking':
+    case "checking":
       return Wallet;
-    case 'savings':
+    case "savings":
       return PiggyBank;
-    case 'investment':
+    case "investment":
       return TrendingUp;
-    case 'crypto':
+    case "crypto":
       return Coins;
-    case 'real estate':
-      return Home;
     default:
       return CreditCard;
   }
@@ -117,20 +78,28 @@ export const getAccountTypeIcon = (type: string): LucideIcon => {
 
 /**
  * Get icon component for institution types
- * Note: Only handles seeded types: bank, brokerage, crypto-exchange, real-estate, other
+ * Note: Database codes use underscores (crypto_exchange, real_estate, etc.)
+ * Seeded types: bank, broker, crypto_wallet, crypto_exchange, investment_fund, private_equity, real_estate, other
  */
 export const getInstitutionTypeIcon = (type: string): LucideIcon => {
   switch (type?.toLowerCase()) {
-    case 'bank':
+    case "bank":
       return Building;
-    case 'brokerage':
+    case "broker":
       return TrendingUp;
-    case 'crypto-exchange':
+    case "crypto_wallet":
+      return Wallet;
+    case "crypto_exchange":
       return Coins;
-    case 'real-estate':
-    case 'real estate':
-      return Home;
-    default:
+    case "investment_fund":
+      return TrendingUp;
+    case "private_equity":
       return Building2;
+    case "real_estate":
+      return Home;
+    case "other":
+      return Building2;
+    default:
+      return Building; // Default for unknown institution types
   }
 };

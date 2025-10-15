@@ -1,11 +1,12 @@
-import Decimal from 'decimal.js';
-import { eq, inArray, isNotNull } from 'drizzle-orm';
-import { Container, Service } from 'typedi';
-import { db } from '../../infrastructure/database/connection';
-import * as schema from '../../infrastructure/database/schema';
-import { createComponentLogger } from '../../utils/logger';
-import { PricingService } from './PricingService';
-import { UserContextService } from './UserContextService';
+import Decimal from "decimal.js";
+import { and, eq, inArray, isNotNull } from "drizzle-orm";
+import { Container, Service } from "typedi";
+import { db } from "../../infrastructure/database/connection";
+import * as schema from "../../infrastructure/database/schema";
+import { TokenPriceRepository } from "../../infrastructure/repositories/TokenPriceRepository";
+import { createComponentLogger } from "../../utils/logger";
+import { PricingService } from "./PricingService";
+import { UserContextService } from "./UserContextService";
 
 /**
  * Service to update portfolio values with current token prices
@@ -13,9 +14,10 @@ import { UserContextService } from './UserContextService';
  */
 @Service()
 export class PortfolioValuationService {
-  private readonly logger = createComponentLogger('portfolio-valuation');
+  private readonly logger = createComponentLogger("portfolio-valuation");
   private readonly pricingService = Container.get(PricingService);
   private readonly userContextService = Container.get(UserContextService);
+  private readonly tokenPriceRepository = Container.get(TokenPriceRepository);
 
   /**
    * Update current prices for all user holdings
@@ -23,7 +25,9 @@ export class PortfolioValuationService {
   async updateUserPortfolioPrices(userId: string): Promise<void> {
     try {
       // Get base currency using enhanced cached service
-      const baseCurrency = await this.userContextService.getBaseCurrency(userId);
+      const baseCurrency = await this.userContextService.getBaseCurrency(
+        userId
+      );
 
       // Get current holdings with required token data
       const holdings = await db
@@ -38,12 +42,15 @@ export class PortfolioValuationService {
         .where(eq(schema.holdings.userId, userId));
 
       if (holdings.length === 0) {
-        this.logger.debug({ userId }, 'No holdings found for user');
+        this.logger.debug({ userId }, "No holdings found for user");
         return;
       }
 
       // Get unique tokens for price fetching
-      const uniqueTokenMap = new Map<string, typeof schema.tokens.$inferSelect>();
+      const uniqueTokenMap = new Map<
+        string,
+        typeof schema.tokens.$inferSelect
+      >();
       for (const holding of holdings) {
         uniqueTokenMap.set(holding.token.id, holding.token);
       }
@@ -62,15 +69,18 @@ export class PortfolioValuationService {
           pricedTokenCount: prices.size,
           holdingsCount: holdings.length,
         },
-        'Updated portfolio token prices for user'
+        "Updated portfolio token prices for user"
       );
     } catch (error) {
       this.logger.error(
         {
           userId,
-          error: error instanceof Error ? { name: error.name, message: error.message } : error,
+          error:
+            error instanceof Error
+              ? { name: error.name, message: error.message }
+              : error,
         },
-        'Failed to update portfolio prices for user'
+        "Failed to update portfolio prices for user"
       );
     }
   }
@@ -85,7 +95,10 @@ export class PortfolioValuationService {
       .from(schema.users)
       .where(isNotNull(schema.users.baseCurrencyId));
 
-    this.logger.info({ userCount: users.length }, 'Updating portfolio prices for all users');
+    this.logger.info(
+      { userCount: users.length },
+      "Updating portfolio prices for all users"
+    );
 
     for (const user of users) {
       try {
@@ -94,9 +107,12 @@ export class PortfolioValuationService {
         this.logger.error(
           {
             userId: user.id,
-            error: error instanceof Error ? { name: error.name, message: error.message } : error,
+            error:
+              error instanceof Error
+                ? { name: error.name, message: error.message }
+                : error,
           },
-          'Failed to update prices for user'
+          "Failed to update prices for user"
         );
         // Continue with other users
       }
@@ -105,10 +121,14 @@ export class PortfolioValuationService {
 
   /**
    * Get current portfolio value for a user
+   * @param userId - The user ID
+   * @param userBaseCurrencyId - Optional base currency ID (if not provided, will be fetched)
+   * @param accountId - Optional account ID to filter holdings by specific account
    */
   async getUserPortfolioValue(
     userId: string,
-    userBaseCurrencyId?: string
+    userBaseCurrencyId?: string,
+    accountId?: string
   ): Promise<{
     totalValue: string;
     baseCurrency: string;
@@ -117,6 +137,8 @@ export class PortfolioValuationService {
       balance: string;
       currentPrice?: string;
       value?: string;
+      priceTimestamp?: Date;
+      priceSource?: string;
     }>;
   }> {
     let baseCurrency: { id: string; symbol: string; name: string };
@@ -135,12 +157,15 @@ export class PortfolioValuationService {
           baseCurrencyName: schema.tokens.name,
         })
         .from(schema.users)
-        .innerJoin(schema.tokens, eq(schema.users.baseCurrencyId, schema.tokens.id))
+        .innerJoin(
+          schema.tokens,
+          eq(schema.users.baseCurrencyId, schema.tokens.id)
+        )
         .where(eq(schema.users.id, userId))
         .limit(1);
 
       if (!userWithBaseCurrency) {
-        throw new Error('User not found or has no base currency set');
+        throw new Error("User not found or has no base currency set");
       }
 
       baseCurrency = {
@@ -151,9 +176,18 @@ export class PortfolioValuationService {
     }
 
     // Get user holdings with token information
+    // Optionally filter by account ID if provided
+    const whereConditions = accountId
+      ? and(
+          eq(schema.holdings.userId, userId),
+          eq(schema.holdings.accountId, accountId)
+        )
+      : eq(schema.holdings.userId, userId);
+
     const holdings = await db
       .select({
         holdingId: schema.holdings.id,
+        accountId: schema.holdings.accountId,
         balance: schema.holdings.balance,
         tokenId: schema.tokens.id,
         tokenSymbol: schema.tokens.symbol,
@@ -162,39 +196,58 @@ export class PortfolioValuationService {
       })
       .from(schema.holdings)
       .innerJoin(schema.tokens, eq(schema.holdings.tokenId, schema.tokens.id))
-      .where(eq(schema.holdings.userId, userId));
+      .where(whereConditions);
 
     // Get unique tokens that need pricing (excluding base currency)
     const now = new Date();
     const tokensToPrice = holdings
       .filter((holding) => holding.tokenId !== baseCurrency.id)
       .map((holding) => holding.token)
-      .filter((token, index, self) => self.findIndex((t) => t.id === token.id) === index);
+      .filter(
+        (token, index, self) =>
+          self.findIndex((t) => t.id === token.id) === index
+      );
 
     this.logger.info(
       {
         userId,
+        accountId,
         totalHoldings: holdings.length,
         tokensNeedingPrice: tokensToPrice.length,
         baseCurrency: baseCurrency.symbol,
       },
-      `Processing portfolio value: ${tokensToPrice.length} tokens need pricing`
+      accountId
+        ? `Processing account portfolio value: ${tokensToPrice.length} tokens need pricing`
+        : `Processing portfolio value: ${tokensToPrice.length} tokens need pricing`
     );
 
     // Fetch all prices at once using the correct API
     const priceResults =
       tokensToPrice.length > 0
-        ? await this.pricingService.getTokenPrices(tokensToPrice, baseCurrency.symbol, now)
+        ? await this.pricingService.getTokenPrices(
+            tokensToPrice,
+            baseCurrency.symbol,
+            now
+          )
         : new Map<string, string>();
 
     this.logger.info(
       {
         userId,
+        accountId,
         pricesFetched: priceResults.size,
         tokensRequested: tokensToPrice.length,
       },
       `Pricing complete: ${priceResults.size}/${tokensToPrice.length} prices retrieved`
     );
+
+    // Fetch price metadata (timestamp and source) from database
+    const tokenIds = Array.from(new Set(holdings.map((h) => h.tokenId)));
+    const priceMetadata =
+      await this.tokenPriceRepository.findLatestPricesForTokens(
+        tokenIds,
+        baseCurrency.id
+      );
 
     // HIGH PRIORITY FIX: Process holdings with pure map() transformation
     // This prevents accidental N+1 queries and makes it clear this is data transformation only
@@ -205,25 +258,33 @@ export class PortfolioValuationService {
         // Determine price based on whether it's base currency or needs lookup
         const currentPrice =
           holding.tokenId === baseCurrency.id
-            ? '1' // Base currency is always 1:1
-            : priceResults.get(holding.tokenId) || '0'; // Use batched price result
+            ? "1" // Base currency is always 1:1
+            : priceResults.get(holding.tokenId) || "0"; // Use batched price result
 
         const value = balance.mul(new Decimal(currentPrice)).toString();
+
+        // Get price metadata for this token
+        const priceInfo = priceMetadata.get(holding.tokenId);
 
         return {
           tokenSymbol: holding.tokenSymbol,
           balance: balance.toString(),
           currentPrice,
           value,
+          priceTimestamp: priceInfo?.timestamp,
+          priceSource: priceInfo?.source || undefined,
         };
       } catch (error) {
         this.logger.warn(
           {
             userId,
             tokenSymbol: holding.tokenSymbol,
-            error: error instanceof Error ? { name: error.name, message: error.message } : error,
+            error:
+              error instanceof Error
+                ? { name: error.name, message: error.message }
+                : error,
           },
-          'Failed to process holding while computing portfolio value'
+          "Failed to process holding while computing portfolio value"
         );
 
         // Return fallback holding with 0 value
@@ -231,8 +292,10 @@ export class PortfolioValuationService {
         return {
           tokenSymbol: holding.tokenSymbol,
           balance: balance.toString(),
-          currentPrice: '0',
-          value: '0',
+          currentPrice: "0",
+          value: "0",
+          priceTimestamp: undefined,
+          priceSource: undefined,
         };
       }
     });
@@ -284,12 +347,15 @@ export class PortfolioValuationService {
           baseCurrencyName: schema.tokens.name,
         })
         .from(schema.users)
-        .innerJoin(schema.tokens, eq(schema.users.baseCurrencyId, schema.tokens.id))
+        .innerJoin(
+          schema.tokens,
+          eq(schema.users.baseCurrencyId, schema.tokens.id)
+        )
         .where(eq(schema.users.id, userId))
         .limit(1);
 
       if (!userWithBaseCurrency) {
-        throw new Error('User not found or has no base currency set');
+        throw new Error("User not found or has no base currency set");
       }
 
       baseCurrency = {
@@ -311,12 +377,20 @@ export class PortfolioValuationService {
       })
       .from(schema.holdings)
       .innerJoin(schema.tokens, eq(schema.holdings.tokenId, schema.tokens.id))
-      .innerJoin(schema.accounts, eq(schema.holdings.accountId, schema.accounts.id))
-      .innerJoin(schema.institutions, eq(schema.accounts.institutionId, schema.institutions.id))
+      .innerJoin(
+        schema.accounts,
+        eq(schema.holdings.accountId, schema.accounts.id)
+      )
+      .innerJoin(
+        schema.institutions,
+        eq(schema.accounts.institutionId, schema.institutions.id)
+      )
       .where(eq(schema.holdings.userId, userId));
 
     // Check prices for tokens that need conversion (exclude base currency)
-    const tokensToCheck = holdings.filter((holding) => holding.tokenId !== baseCurrency.id);
+    const tokensToCheck = holdings.filter(
+      (holding) => holding.tokenId !== baseCurrency.id
+    );
 
     const unpriceableTokens: Array<{
       symbol: string;
@@ -339,7 +413,10 @@ export class PortfolioValuationService {
     // Get unique tokens for metadata checking
     const uniqueTokens = tokensToCheck
       .map((holding) => ({ id: holding.tokenId, symbol: holding.tokenSymbol }))
-      .filter((token, index, self) => self.findIndex((t) => t.id === token.id) === index);
+      .filter(
+        (token, index, self) =>
+          self.findIndex((t) => t.id === token.id) === index
+      );
 
     try {
       // Get tokens with their provider metadata to check for pricing limitations
@@ -367,15 +444,15 @@ export class PortfolioValuationService {
         if (!token) continue;
 
         let isUnpriceable = false;
-        let reason = '';
-        let provider = '';
+        let reason = "";
+        let provider = "";
         let providerPricingUrl: string | undefined;
 
         // Check if token has provider metadata indicating pricing limitations
         if (token.providerMetadata) {
           try {
             const metadata =
-              typeof token.providerMetadata === 'string'
+              typeof token.providerMetadata === "string"
                 ? JSON.parse(token.providerMetadata)
                 : token.providerMetadata;
 
@@ -384,15 +461,23 @@ export class PortfolioValuationService {
 
               // Extract reason and provider info from metadata
               if (metadata.pricingUnavailable.finnhub?.tierLimitation) {
-                reason = metadata.pricingUnavailable.finnhub.reason || 'Finnhub tier limitation';
-                provider = 'Finnhub';
-                providerPricingUrl = 'https://finnhub.io/pricing';
+                reason =
+                  metadata.pricingUnavailable.finnhub.reason ||
+                  "Finnhub tier limitation";
+                provider = "Finnhub";
+                providerPricingUrl = "https://finnhub.io/pricing";
               } else if (metadata.pricingUnavailable.coinGecko?.unavailable) {
-                reason = metadata.pricingUnavailable.coinGecko.reason || 'CoinGecko unavailable';
-                provider = 'CoinGecko';
+                reason =
+                  metadata.pricingUnavailable.coinGecko.reason ||
+                  "CoinGecko unavailable";
+                provider = "CoinGecko";
               } else if (metadata.pricingUnavailable.general) {
-                reason = metadata.pricingUnavailable.general.reason || 'Provider limitation';
-                provider = metadata.pricingUnavailable.general.provider || 'Multiple providers';
+                reason =
+                  metadata.pricingUnavailable.general.reason ||
+                  "Provider limitation";
+                provider =
+                  metadata.pricingUnavailable.general.provider ||
+                  "Multiple providers";
               } else {
                 // Fallback if metadata structure is different - try to extract provider info
                 if (metadata.pricingUnavailable.provider) {
@@ -402,11 +487,13 @@ export class PortfolioValuationService {
                     metadata.pricingUnavailable.message ||
                     `Pricing unavailable from ${provider}`;
                   if (metadata.pricingUnavailable.requiresPremium) {
-                    providerPricingUrl = 'https://finnhub.io/pricing';
+                    providerPricingUrl = "https://finnhub.io/pricing";
                   }
                 } else {
                   // Last resort: use heuristic detection for proper provider identification
-                  const heuristicInfo = this.getProviderInfoHeuristic(token.symbol);
+                  const heuristicInfo = this.getProviderInfoHeuristic(
+                    token.symbol
+                  );
                   reason = heuristicInfo.reason;
                   provider = heuristicInfo.provider;
                   providerPricingUrl = heuristicInfo.pricingUrl;
@@ -424,7 +511,7 @@ export class PortfolioValuationService {
                     ? { name: parseError.name, message: parseError.message }
                     : parseError,
               },
-              'Failed to parse provider metadata for token'
+              "Failed to parse provider metadata for token"
             );
             // Use heuristic detection as fallback
             const heuristicInfo = this.getProviderInfoHeuristic(token.symbol);
@@ -465,13 +552,18 @@ export class PortfolioValuationService {
       this.logger.error(
         {
           userId,
-          error: error instanceof Error ? { name: error.name, message: error.message } : error,
+          error:
+            error instanceof Error
+              ? { name: error.name, message: error.message }
+              : error,
         },
-        'Failed to check token metadata for pricing limitations'
+        "Failed to check token metadata for pricing limitations"
       );
       // Fallback: use heuristic detection for all tokens
       for (const holding of tokensToCheck) {
-        const heuristicInfo = this.getProviderInfoHeuristic(holding.tokenSymbol);
+        const heuristicInfo = this.getProviderInfoHeuristic(
+          holding.tokenSymbol
+        );
         if (heuristicInfo.isLikelyUnpriceable) {
           unpriceableTokens.push({
             symbol: holding.tokenSymbol,
@@ -504,55 +596,65 @@ export class PortfolioValuationService {
   } {
     const symbolUpper = symbol.toUpperCase();
 
-    if (symbolUpper.endsWith('.TO') || symbolUpper.endsWith('.TSX')) {
+    if (symbolUpper.endsWith(".TO") || symbolUpper.endsWith(".TSX")) {
       return {
         isLikelyUnpriceable: true,
-        reason: 'Canadian market (TSX) requires premium Finnhub plan',
-        provider: 'Finnhub',
-        pricingUrl: 'https://finnhub.io/pricing',
+        reason: "Canadian market (TSX) requires premium Finnhub plan",
+        provider: "Finnhub",
+        pricingUrl: "https://finnhub.io/pricing",
       };
     }
 
     if (
-      symbolUpper.includes('.') &&
-      !symbolUpper.includes('USDT') &&
-      !symbolUpper.includes('USDC')
+      symbolUpper.includes(".") &&
+      !symbolUpper.includes("USDT") &&
+      !symbolUpper.includes("USDC")
     ) {
       return {
         isLikelyUnpriceable: true,
-        reason: 'International market requires premium Finnhub plan',
-        provider: 'Finnhub',
-        pricingUrl: 'https://finnhub.io/pricing',
+        reason: "International market requires premium Finnhub plan",
+        provider: "Finnhub",
+        pricingUrl: "https://finnhub.io/pricing",
       };
     }
 
-    if (symbolUpper.includes('PRIVATE') || symbolUpper.includes('UNLISTED')) {
+    if (symbolUpper.includes("PRIVATE") || symbolUpper.includes("UNLISTED")) {
       return {
         isLikelyUnpriceable: true,
-        reason: 'Private/unlisted security not available via data providers',
-        provider: 'Manual Entry Only',
+        reason: "Private/unlisted security not available via data providers",
+        provider: "Manual Entry Only",
       };
     }
 
     // For common symbols that should be priceable, return false
     // This includes major cryptocurrencies and US stocks
-    const commonSymbols = ['BTC', 'ETH', 'USDT', 'USDC', 'AAPL', 'MSFT', 'GOOGL', 'AMZN', 'TSLA'];
+    const commonSymbols = [
+      "BTC",
+      "ETH",
+      "USDT",
+      "USDC",
+      "AAPL",
+      "MSFT",
+      "GOOGL",
+      "AMZN",
+      "TSLA",
+    ];
     if (
       commonSymbols.includes(symbolUpper) ||
-      (!symbolUpper.includes('.') && symbolUpper.length <= 5)
+      (!symbolUpper.includes(".") && symbolUpper.length <= 5)
     ) {
       return {
         isLikelyUnpriceable: false,
-        reason: 'Should be available via standard providers',
-        provider: 'Finnhub/CoinGecko',
+        reason: "Should be available via standard providers",
+        provider: "Finnhub/CoinGecko",
       };
     }
 
     // Default: might have limited coverage but not necessarily unpriceable
     return {
       isLikelyUnpriceable: false,
-      reason: 'Standard coverage expected',
-      provider: 'Finnhub/CoinGecko',
+      reason: "Standard coverage expected",
+      provider: "Finnhub/CoinGecko",
     };
   }
 }

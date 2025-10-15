@@ -1,5 +1,11 @@
-import { useEffect, useId, useState } from "react";
-import { useNavigate, useSearchParams } from "react-router-dom";
+import { useCallback, useEffect, useId, useState } from "react";
+import { createPortal } from "react-dom";
+import { useSearchParams } from "react-router-dom";
+import {
+  AccountTypeSelector,
+  InstitutionSelector,
+  InstitutionTypeSelector,
+} from "@/components/selectors/SearchableSelectors";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -7,14 +13,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { PageHeader } from "@/components/ui/page-header";
 import { Progress } from "@/components/ui/progress";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import { Separator } from "@/components/ui/separator";
+import { Skeleton } from "@/components/ui/skeleton";
 import { trpc } from "@/lib/trpc";
 
 type Step = "method" | "account" | "data";
@@ -27,9 +26,17 @@ interface FormData {
 
 export function AddData() {
   const [searchParams, setSearchParams] = useSearchParams();
-  const navigate = useNavigate();
   const [currentStep, setCurrentStep] = useState<Step>("method");
   const [formData, setFormData] = useState<FormData>({});
+  const [navContainer, setNavContainer] = useState<Element | null>(null);
+  const [isAccountStepValid, setIsAccountStepValid] = useState(false);
+  const [accountDisplayText, setAccountDisplayText] =
+    useState<string>("Choose Account");
+
+  useEffect(() => {
+    const container = document.getElementById("mobile-bottom-nav");
+    setNavContainer(container);
+  }, []);
 
   // Load form data from URL params on mount
   useEffect(() => {
@@ -59,14 +66,35 @@ export function AddData() {
     setSearchParams(params);
   };
 
+  // Fetch data needed for progress bar display
+  // Note: Account and institution data is handled by AccountSelectionStep
+
   const nextStep = () => {
     if (currentStep === "method") setCurrentStep("account");
     else if (currentStep === "account") setCurrentStep("data");
   };
 
   const prevStep = () => {
-    if (currentStep === "data") setCurrentStep("account");
-    else if (currentStep === "account") setCurrentStep("method");
+    if (currentStep === "data") {
+      // Going back from data entry to account selection
+      // Clear accountId from form data and URL
+      const newData = { ...formData };
+      delete newData.accountId;
+      setFormData(newData);
+
+      const params = new URLSearchParams();
+      if (newData.method) params.set("method", newData.method);
+      // Don't set accountId since we're clearing it
+      setSearchParams(params);
+
+      setCurrentStep("account");
+    } else if (currentStep === "account") {
+      // Going back from account selection to method selection
+      // Clear method and accountId from form data and URL
+      setFormData({});
+      setSearchParams(new URLSearchParams());
+      setCurrentStep("method");
+    }
   };
 
   const getStepNumber = (step: Step): number => {
@@ -84,45 +112,59 @@ export function AddData() {
     return (getStepNumber(currentStep) / 3) * 100;
   };
 
+  // Helper functions for progress bar display text
+  const getMethodDisplayText = (): string => {
+    if (!formData.method) return "Select Method";
+
+    const methods = [
+      { id: "manual", title: "Manual Entry" },
+      { id: "screenshots", title: "Screenshots Upload" },
+      { id: "wallet", title: "Cryptocurrency Wallet" },
+    ];
+
+    const selectedMethod = methods.find((m) => m.id === formData.method);
+    return selectedMethod ? selectedMethod.title : "Select Method";
+  };
+
+  const getAccountDisplayText = (): string => {
+    return accountDisplayText;
+  };
+
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 pb-24">
       <PageHeader
         title="Add Data"
         subtitle="Import your financial data into Scani"
-        backButton={{
-          onClick: () => navigate("/"),
-          label: "Back to Dashboard",
-        }}
       />
 
-      {/* Progress Indicator */}
-      <Card>
-        <CardContent className="pt-6">
-          <div className="space-y-4">
+      {/* Progress Indicator - Sticky on mobile */}
+      <Card className="md:static sticky top-0 z-10 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
+        <CardContent className="pt-3 pb-3 md:pt-6 md:pb-6">
+          <div className="space-y-2 md:space-y-4">
             <div className="flex items-center justify-between">
-              <h2 className="text-lg font-semibold">
+              <h2 className="text-base md:text-lg font-semibold">
                 Step {getStepNumber(currentStep)} of 3
               </h2>
-              <Badge variant="outline">
+              <Badge variant="outline" className="text-xs">
                 {Math.round(getProgress())}% Complete
               </Badge>
             </div>
-            <Progress value={getProgress()} className="w-full" />
+            <Progress value={getProgress()} className="w-full h-1 md:h-2" />
 
-            <div className="flex justify-between text-sm text-muted-foreground">
+            <div className="hidden md:flex justify-between text-sm text-muted-foreground">
               <span
                 className={
                   currentStep === "method" ? "font-medium text-foreground" : ""
                 }
               >
-                1. Select Method
+                1. {getMethodDisplayText()}
               </span>
               <span
                 className={
                   currentStep === "account" ? "font-medium text-foreground" : ""
                 }
               >
-                2. Choose Account
+                2. {getAccountDisplayText()}
               </span>
               <span
                 className={
@@ -138,23 +180,60 @@ export function AddData() {
 
       {/* Step Content */}
       {currentStep === "method" && (
-        <MethodSelectionStep
-          formData={formData}
-          onUpdate={updateFormData}
-          onNext={nextStep}
-        />
+        <MethodSelectionStep formData={formData} onUpdate={updateFormData} />
       )}
       {currentStep === "account" && (
         <AccountSelectionStep
-          formData={formData}
           onUpdate={updateFormData}
-          onNext={nextStep}
-          onPrev={prevStep}
+          onValidationChange={setIsAccountStepValid}
+          onAccountDisplayChange={(displayText) =>
+            setAccountDisplayText(displayText)
+          }
         />
       )}
-      {currentStep === "data" && (
-        <DataEntryStep formData={formData} onPrev={prevStep} />
-      )}
+      {currentStep === "data" && <DataEntryStep formData={formData} />}
+
+      {/* Bottom Navigation - Rendered via Portal */}
+      {navContainer &&
+        createPortal(
+          <div
+            className="fixed bottom-0 left-0 right-0 md:left-64 bg-background border-t p-4"
+            style={{
+              paddingBottom: "max(1rem, env(safe-area-inset-bottom))",
+            }}
+          >
+            <div className="flex justify-between max-w-screen-sm mx-auto">
+              <Button
+                variant="outline"
+                onClick={prevStep}
+                disabled={currentStep === "method"}
+              >
+                Back
+              </Button>
+              <Button
+                onClick={() => {
+                  if (currentStep === "method" && formData.method) {
+                    nextStep();
+                  } else if (currentStep === "account") {
+                    // For account step, we can always proceed since account selection is optional
+                    nextStep();
+                  } else if (currentStep === "data") {
+                    // Handle completion
+                    console.log("Completing import...");
+                  }
+                }}
+                disabled={
+                  (currentStep === "method" && !formData.method) ||
+                  (currentStep === "account" && !isAccountStepValid) ||
+                  (currentStep === "data" && false) // Always allow completion on data step
+                }
+              >
+                {currentStep === "data" ? "Complete Import" : "Continue"}
+              </Button>
+            </div>
+          </div>,
+          navContainer
+        )}
     </div>
   );
 }
@@ -162,11 +241,9 @@ export function AddData() {
 function MethodSelectionStep({
   formData,
   onUpdate,
-  onNext,
 }: {
   formData: FormData;
   onUpdate: (updates: Partial<FormData>) => void;
-  onNext: () => void;
 }) {
   const methods = [
     {
@@ -207,21 +284,19 @@ function MethodSelectionStep({
               }`}
               onClick={() => onUpdate({ method: method.id })}
             >
-              <CardContent className="p-6 text-center">
-                <div className="text-4xl mb-4">{method.icon}</div>
-                <h3 className="font-semibold mb-2">{method.title}</h3>
-                <p className="text-sm text-muted-foreground">
+              <CardContent className="p-4 md:p-6 text-center">
+                <div className="text-3xl md:text-4xl mb-2 md:mb-4">
+                  {method.icon}
+                </div>
+                <h3 className="font-semibold mb-1 md:mb-2 text-sm md:text-base">
+                  {method.title}
+                </h3>
+                <p className="text-xs md:text-sm text-muted-foreground">
                   {method.description}
                 </p>
               </CardContent>
             </Card>
           ))}
-        </div>
-
-        <div className="flex justify-end pt-4">
-          <Button onClick={onNext} disabled={!formData.method}>
-            Continue
-          </Button>
         </div>
       </CardContent>
     </Card>
@@ -230,50 +305,228 @@ function MethodSelectionStep({
 
 function AccountSelectionStep({
   onUpdate,
-  onNext,
-  onPrev,
+  onValidationChange,
+  onAccountDisplayChange,
 }: {
-  formData: FormData;
   onUpdate: (updates: Partial<FormData>) => void;
-  onNext: () => void;
-  onPrev: () => void;
+  onValidationChange?: (isValid: boolean) => void;
+  onAccountDisplayChange?: (displayText: string) => void;
 }) {
   const [mode, setMode] = useState<"select" | "create">("select");
   const accountNameId = useId();
   const institutionNameId = useId();
+  const institutionWebsiteId = useId();
+  const institutionDescriptionId = useId();
   const [selectedAccountId, setSelectedAccountId] = useState<string>("");
+  const [institutionMode, setInstitutionMode] = useState<"select" | "create">(
+    "select"
+  );
   const [newAccountData, setNewAccountData] = useState({
     name: "",
     institutionId: "",
     typeId: "",
     newInstitutionName: "",
     newInstitutionTypeId: "",
+    newInstitutionWebsite: "",
+    newInstitutionDescription: "",
   });
+  const [, setInstitutionMetadata] = useState<{
+    title: string;
+    description: string;
+    siteName: string;
+  } | null>(null);
+  const [hasFetchedMetadata, setHasFetchedMetadata] = useState(false);
+  const [searchTerm, setSearchTerm] = useState("");
 
   // Fetch data
-  const { data: accounts } = trpc.accounts.getAll.useQuery();
+  const { data: accounts, isLoading: accountsLoading } =
+    trpc.accounts.getAll.useQuery();
   const { data: institutions } = trpc.institutions.getAll.useQuery();
   const { data: accountTypes } = trpc.accountTypes.getAll.useQuery();
   const { data: institutionTypes } = trpc.institutionTypes.getAll.useQuery();
+
+  // Mutations for creating new items
+  const utils = trpc.useUtils();
+  const createInstitution = trpc.institutions.create.useMutation({
+    onSuccess: () => {
+      // Refetch institutions
+      utils.institutions.getAll.invalidate();
+    },
+  });
+
+  // Query for fetching Open Graph metadata (disabled by default, triggered manually)
+  const metadataQuery = trpc.institutions.getOpenGraphMetadata.useQuery(
+    { url: newAccountData.newInstitutionWebsite },
+    {
+      enabled: false, // Don't fetch automatically
+      onSuccess: (data) => {
+        setInstitutionMetadata(data);
+        setHasFetchedMetadata(true);
+        // Auto-populate fields with metadata if available
+        if (data.title && !newAccountData.newInstitutionName) {
+          setNewAccountData((prev) => ({
+            ...prev,
+            newInstitutionName: data.title,
+          }));
+        }
+        if (data.description && !newAccountData.newInstitutionDescription) {
+          setNewAccountData((prev) => ({
+            ...prev,
+            newInstitutionDescription: data.description,
+          }));
+        }
+      },
+    }
+  );
+
+  // Callback functions for creating new items
+  const handleCreateInstitution = async (name: string) => {
+    try {
+      // For new institutions, we need an institution type. Use the first available one or prompt user
+      const defaultTypeId = institutionTypes?.[0]?.id;
+      if (!defaultTypeId) {
+        alert("Please create an institution type first");
+        return;
+      }
+      const result = await createInstitution.mutateAsync({
+        name,
+        type: defaultTypeId,
+      });
+      // Set the newly created institution as selected
+      setNewAccountData((prev) => ({ ...prev, institutionId: result.id }));
+    } catch (error) {
+      console.error("Failed to create institution:", error);
+    }
+  };
+
+  // Handler for fetching metadata from website
+  const handleFetchMetadata = async () => {
+    if (!newAccountData.newInstitutionWebsite.trim()) {
+      alert("Please enter a website URL first");
+      return;
+    }
+
+    try {
+      await metadataQuery.refetch();
+    } catch (error) {
+      console.error("Failed to fetch metadata:", error);
+      // Even on error, show the form fields
+      setHasFetchedMetadata(true);
+    }
+  };
+
+  // Validation function
+  const isValidForContinue = useCallback(() => {
+    if (mode === "select") {
+      return selectedAccountId.trim() !== "";
+    } else if (mode === "create") {
+      // Check account details
+      const hasAccountDetails =
+        newAccountData.name.trim() !== "" &&
+        newAccountData.typeId.trim() !== "";
+
+      if (!hasAccountDetails) return false;
+
+      // Check institution details
+      if (institutionMode === "select") {
+        return newAccountData.institutionId.trim() !== "";
+      } else if (institutionMode === "create") {
+        return (
+          newAccountData.newInstitutionName.trim() !== "" &&
+          newAccountData.newInstitutionTypeId.trim() !== ""
+        );
+      }
+
+      return false;
+    }
+    return false;
+  }, [
+    institutionMode,
+    mode,
+    newAccountData.institutionId,
+    newAccountData.name,
+    newAccountData.newInstitutionName,
+    newAccountData.newInstitutionTypeId,
+    newAccountData.typeId,
+    selectedAccountId,
+  ]);
+
+  // Notify parent of validation changes
+  useEffect(() => {
+    onValidationChange?.(isValidForContinue());
+  }, [onValidationChange, isValidForContinue]);
+
+  // Update account display text for progress bar
+  useEffect(() => {
+    let displayText = "Choose Account";
+
+    if (mode === "select" && selectedAccountId) {
+      // Existing account selected
+      const selectedAccount = accounts?.find(
+        (acc) => acc.id === selectedAccountId
+      );
+      if (selectedAccount) {
+        const institution = institutions?.find(
+          (inst) => inst.id === selectedAccount.institutionId
+        );
+        const institutionName = institution?.name || "Unknown Institution";
+        displayText = `${selectedAccount.name} (${institutionName})`;
+      }
+    } else if (mode === "create" && newAccountData.name.trim()) {
+      // New account being created
+      let institutionName = "New Institution";
+
+      if (institutionMode === "select" && newAccountData.institutionId) {
+        // Existing institution selected for new account
+        const institution = institutions?.find(
+          (inst) => inst.id === newAccountData.institutionId
+        );
+        institutionName = institution?.name || "Unknown Institution";
+      } else if (
+        institutionMode === "create" &&
+        newAccountData.newInstitutionName.trim()
+      ) {
+        // New institution being created
+        institutionName = newAccountData.newInstitutionName;
+      }
+
+      displayText = `${newAccountData.name} (${institutionName})`;
+    }
+
+    onAccountDisplayChange?.(displayText);
+  }, [
+    mode,
+    selectedAccountId,
+    newAccountData.name,
+    newAccountData.institutionId,
+    newAccountData.newInstitutionName,
+    institutionMode,
+    accounts,
+    institutions,
+    onAccountDisplayChange,
+  ]);
 
   const handleAccountSelect = (accountId: string) => {
     setSelectedAccountId(accountId);
     onUpdate({ accountId });
   };
 
-  const handleCreateAccount = () => {
-    // TODO: Implement account creation
-    console.log("Creating account:", newAccountData);
-    // For now, just proceed
-    onNext();
-  };
+  // Filter accounts based on search term
+  const filteredAccounts = accounts?.filter((account) => {
+    if (!searchTerm.trim()) return true;
 
-  const canProceed =
-    mode === "select"
-      ? !!selectedAccountId
-      : newAccountData.name &&
-        newAccountData.institutionId &&
-        newAccountData.typeId;
+    const accountName = account.name.toLowerCase();
+    const institution = institutions?.find(
+      (inst) => inst.id === account.institutionId
+    );
+    const institutionName = institution?.name.toLowerCase() || "";
+
+    const searchLower = searchTerm.toLowerCase();
+
+    return (
+      accountName.includes(searchLower) || institutionName.includes(searchLower)
+    );
+  });
 
   return (
     <div className="space-y-6">
@@ -290,10 +543,12 @@ function AccountSelectionStep({
               }`}
               onClick={() => setMode("select")}
             >
-              <CardContent className="p-6 text-center">
-                <div className="text-3xl mb-4">📋</div>
-                <h3 className="font-semibold mb-2">Select Existing Account</h3>
-                <p className="text-sm text-muted-foreground">
+              <CardContent className="p-4 md:p-6 text-center">
+                <div className="text-2xl md:text-3xl mb-2 md:mb-4">📋</div>
+                <h3 className="font-semibold mb-1 md:mb-2 text-sm md:text-base">
+                  Select Existing Account
+                </h3>
+                <p className="text-xs md:text-sm text-muted-foreground">
                   Choose from your existing accounts
                 </p>
               </CardContent>
@@ -305,10 +560,12 @@ function AccountSelectionStep({
               }`}
               onClick={() => setMode("create")}
             >
-              <CardContent className="p-6 text-center">
-                <div className="text-3xl mb-4">➕</div>
-                <h3 className="font-semibold mb-2">Create New Account</h3>
-                <p className="text-sm text-muted-foreground">
+              <CardContent className="p-4 md:p-6 text-center">
+                <div className="text-2xl md:text-3xl mb-2 md:mb-4">➕</div>
+                <h3 className="font-semibold mb-1 md:mb-2 text-sm md:text-base">
+                  Create New Account
+                </h3>
+                <p className="text-xs md:text-sm text-muted-foreground">
                   Set up a new account and institution
                 </p>
               </CardContent>
@@ -324,210 +581,361 @@ function AccountSelectionStep({
             <CardTitle>Select Account</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-              {accounts?.map((account) => {
-                const institution = institutions?.find(
-                  (inst) => inst.id === account.institutionId
-                );
-                const accountType = accountTypes?.find(
-                  (type) => type.id === account.typeId
-                );
-
-                return (
-                  <Card
-                    key={account.id}
-                    className={`cursor-pointer transition-all hover:shadow-md ${
-                      selectedAccountId === account.id
-                        ? "ring-2 ring-primary"
-                        : ""
-                    }`}
-                    onClick={() => handleAccountSelect(account.id)}
-                  >
-                    <CardContent className="p-4">
-                      <h4 className="font-medium mb-1">{account.name}</h4>
-                      <p className="text-sm text-muted-foreground mb-2">
-                        {accountType?.name || "Unknown Type"}
-                      </p>
-                      <p className="text-xs text-muted-foreground">
-                        {institution?.name || "Unknown Institution"}
-                      </p>
-                    </CardContent>
-                  </Card>
-                );
-              })}
+            {/* Search Input - Show skeleton when loading */}
+            <div className="mb-4">
+              {accountsLoading ? (
+                <Skeleton className="h-10 w-full" />
+              ) : (
+                <Input
+                  placeholder="Search accounts by name or institution..."
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  className="w-full"
+                />
+              )}
             </div>
-            {(!accounts || accounts.length === 0) && (
-              <div className="text-center py-8 text-muted-foreground">
-                <p>No accounts found. Try creating a new account instead.</p>
+
+            {/* Account Grid - Show skeletons when loading */}
+            {accountsLoading ? (
+              <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+                {["skeleton-1", "skeleton-2", "skeleton-3", "skeleton-4"].map(
+                  (key) => (
+                    <Card key={key}>
+                      <CardContent className="p-4">
+                        <Skeleton className="h-4 w-3/4 mb-2" />
+                        <Skeleton className="h-3 w-1/2 mb-2" />
+                        <Skeleton className="h-3 w-2/3" />
+                      </CardContent>
+                    </Card>
+                  )
+                )}
+              </div>
+            ) : (
+              <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+                {filteredAccounts?.map((account) => {
+                  const institution = institutions?.find(
+                    (inst) => inst.id === account.institutionId
+                  );
+                  const accountType = accountTypes?.find(
+                    (type) => type.id === account.typeId
+                  );
+
+                  return (
+                    <Card
+                      key={account.id}
+                      className={`cursor-pointer transition-all hover:shadow-md ${
+                        selectedAccountId === account.id
+                          ? "ring-2 ring-primary"
+                          : ""
+                      }`}
+                      onClick={() => handleAccountSelect(account.id)}
+                    >
+                      <CardContent className="p-4">
+                        <h4 className="font-medium mb-1">{account.name}</h4>
+                        <p className="text-sm text-muted-foreground mb-2">
+                          {accountType?.name || "Unknown Type"}
+                        </p>
+                        <p className="text-xs text-muted-foreground">
+                          {institution?.name || "Unknown Institution"}
+                        </p>
+                      </CardContent>
+                    </Card>
+                  );
+                })}
               </div>
             )}
+
+            {/* Empty state - Only show when not loading and no accounts */}
+            {!accountsLoading &&
+              (!filteredAccounts || filteredAccounts.length === 0) && (
+                <div className="text-center py-8 text-muted-foreground">
+                  {searchTerm.trim() ? (
+                    <p>No accounts found matching "{searchTerm}".</p>
+                  ) : (
+                    <p>
+                      No accounts found. Try creating a new account instead.
+                    </p>
+                  )}
+                </div>
+              )}
           </CardContent>
         </Card>
       )}
 
       {/* Account Creation */}
       {mode === "create" && (
-        <Card>
-          <CardHeader>
-            <CardTitle>Create New Account</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-6">
-            {/* Account Details */}
-            <div className="space-y-4">
-              <div>
-                <Label htmlFor="account-name">Account Name</Label>
-                <Input
-                  id={accountNameId}
-                  placeholder="e.g., Checking Account, Investment Portfolio"
-                  value={newAccountData.name}
-                  onChange={(e) =>
-                    setNewAccountData((prev) => ({
-                      ...prev,
-                      name: e.target.value,
-                    }))
-                  }
-                />
-              </div>
-
-              <div>
-                <Label htmlFor="account-type">Account Type</Label>
-                <Select
-                  value={newAccountData.typeId}
-                  onValueChange={(value) =>
-                    setNewAccountData((prev) => ({ ...prev, typeId: value }))
-                  }
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select account type" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {accountTypes?.map((type) => (
-                      <SelectItem key={type.id} value={type.id}>
-                        {type.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-
-            <Separator />
-
-            {/* Institution Selection/Creation */}
-            <div className="space-y-4">
-              <h4 className="font-medium">Institution</h4>
-
-              <div>
-                <Label htmlFor="institution">Select Existing Institution</Label>
-                <Select
-                  value={newAccountData.institutionId}
-                  onValueChange={(value) =>
-                    setNewAccountData((prev) => ({
-                      ...prev,
-                      institutionId: value,
-                      newInstitutionName: "",
-                      newInstitutionTypeId: "",
-                    }))
-                  }
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Choose institution" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {institutions?.map((inst) => (
-                      <SelectItem key={inst.id} value={inst.id}>
-                        {inst.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div className="text-center text-sm text-muted-foreground">
-                <span>or</span>
-              </div>
-
-              <div className="space-y-4 p-4 border rounded-lg bg-muted/50">
-                <h5 className="font-medium">Create New Institution</h5>
-
-                <div>
-                  <Label htmlFor="new-institution-name">Institution Name</Label>
+        <div className="space-y-6">
+          {/* Account Details */}
+          <Card>
+            <CardHeader>
+              <CardTitle>Account Information</CardTitle>
+              <p className="text-sm text-muted-foreground">
+                Provide details for your new account
+              </p>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="grid gap-4 md:grid-cols-2">
+                <div className="space-y-2">
+                  <Label htmlFor="account-name">Account Name *</Label>
                   <Input
-                    id={institutionNameId}
-                    placeholder="e.g., Bank of America, Vanguard"
-                    value={newAccountData.newInstitutionName}
+                    id={accountNameId}
+                    placeholder="e.g., Primary Checking, Retirement Portfolio"
+                    value={newAccountData.name}
                     onChange={(e) =>
                       setNewAccountData((prev) => ({
                         ...prev,
-                        newInstitutionName: e.target.value,
-                        institutionId: "",
+                        name: e.target.value,
                       }))
                     }
                   />
+                  <p className="text-xs text-muted-foreground">
+                    Choose a descriptive name for this account
+                  </p>
                 </div>
 
-                <div>
-                  <Label htmlFor="new-institution-type">Institution Type</Label>
-                  <Select
-                    value={newAccountData.newInstitutionTypeId}
+                <div className="space-y-2">
+                  <Label htmlFor="account-type">Account Type *</Label>
+                  <AccountTypeSelector
+                    value={newAccountData.typeId}
+                    onValueChange={(value) =>
+                      setNewAccountData((prev) => ({ ...prev, typeId: value }))
+                    }
+                    accountTypes={accountTypes}
+                    placeholder="Select account type"
+                    allowCreate={false}
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    What kind of account is this?
+                  </p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Institution Selection */}
+          <Card>
+            <CardHeader>
+              <CardTitle>Institution</CardTitle>
+              <p className="text-sm text-muted-foreground">
+                Where is this account held?
+              </p>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              {/* Institution Mode Selection */}
+              <div className="grid gap-4 md:grid-cols-2">
+                <Card
+                  className={`cursor-pointer transition-all hover:shadow-md ${
+                    institutionMode === "select" ? "ring-2 ring-primary" : ""
+                  }`}
+                  onClick={() => {
+                    setInstitutionMode("select");
+                    setNewAccountData((prev) => ({
+                      ...prev,
+                      institutionId: "",
+                      newInstitutionName: "",
+                      newInstitutionTypeId: "",
+                    }));
+                  }}
+                >
+                  <CardContent className="p-4 md:p-6 text-center">
+                    <div className="text-3xl md:text-4xl mb-4">🏦</div>
+                    <h3 className="font-semibold mb-2 text-sm md:text-base">
+                      Select Existing Institution
+                    </h3>
+                    <p className="text-sm text-muted-foreground">
+                      Choose from your previously added institutions
+                    </p>
+                  </CardContent>
+                </Card>
+
+                <Card
+                  className={`cursor-pointer transition-all hover:shadow-md ${
+                    institutionMode === "create" ? "ring-2 ring-primary" : ""
+                  }`}
+                  onClick={() => {
+                    setInstitutionMode("create");
+                    setNewAccountData((prev) => ({
+                      ...prev,
+                      institutionId: "",
+                      newInstitutionName: "",
+                      newInstitutionTypeId: "",
+                    }));
+                  }}
+                >
+                  <CardContent className="p-4 md:p-6 text-center">
+                    <div className="text-3xl md:text-4xl mb-4">🏗️</div>
+                    <h3 className="font-semibold mb-2 text-sm md:text-base">
+                      Create New Institution
+                    </h3>
+                    <p className="text-sm text-muted-foreground">
+                      Add a new bank, broker, or financial institution
+                    </p>
+                  </CardContent>
+                </Card>
+              </div>
+
+              {/* Institution Selection Form */}
+              {institutionMode === "select" && (
+                <div className="space-y-3">
+                  <Label className="text-base font-medium">
+                    Choose Institution
+                  </Label>
+                  <InstitutionSelector
+                    value={newAccountData.institutionId}
                     onValueChange={(value) =>
                       setNewAccountData((prev) => ({
                         ...prev,
-                        newInstitutionTypeId: value,
-                        institutionId: "",
+                        institutionId: value,
                       }))
                     }
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select type" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {institutionTypes?.map((type) => (
-                        <SelectItem key={type.id} value={type.id}>
-                          {type.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                    institutions={institutions}
+                    placeholder="Select an institution"
+                    onCreateNew={handleCreateInstitution}
+                    allowCreate={false}
+                  />
+                  {(!institutions || institutions.length === 0) && (
+                    <p className="text-sm text-muted-foreground">
+                      No institutions found. Try creating a new institution
+                      instead.
+                    </p>
+                  )}
                 </div>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-      )}
+              )}
 
-      {/* Navigation */}
-      <div className="flex justify-between">
-        <Button variant="outline" onClick={onPrev}>
-          Back
-        </Button>
-        <Button
-          onClick={mode === "create" ? handleCreateAccount : onNext}
-          disabled={!canProceed}
-        >
-          Continue
-        </Button>
-      </div>
+              {/* New Institution Creation Form */}
+              {institutionMode === "create" && (
+                <div className="space-y-4 p-4 border rounded-lg bg-muted/30">
+                  <div className="space-y-2">
+                    <Label className="text-base font-medium">
+                      Institution Details
+                    </Label>
+                    <p className="text-xs text-muted-foreground">
+                      Provide information about the new institution
+                    </p>
+                  </div>
+
+                  {/* Website Field - Always visible */}
+                  <div className="space-y-2">
+                    <Label htmlFor={institutionWebsiteId}>
+                      Institution Website
+                    </Label>
+                    <div className="flex gap-2">
+                      <Input
+                        id={institutionWebsiteId}
+                        type="url"
+                        placeholder="https://www.example.com"
+                        value={newAccountData.newInstitutionWebsite}
+                        onChange={(e) =>
+                          setNewAccountData((prev) => ({
+                            ...prev,
+                            newInstitutionWebsite: e.target.value,
+                          }))
+                        }
+                        disabled={metadataQuery.isFetching}
+                        className="flex-1"
+                      />
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={handleFetchMetadata}
+                        disabled={
+                          !newAccountData.newInstitutionWebsite.trim() ||
+                          metadataQuery.isFetching
+                        }
+                        className="h-10"
+                      >
+                        {metadataQuery.isFetching
+                          ? "Fetching..."
+                          : "Fetch Info"}
+                      </Button>
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      Enter the institution's website to automatically fetch
+                      information
+                    </p>
+                  </div>
+
+                  {/* Additional fields - Show after fetching metadata or when hasFetchedMetadata is true */}
+                  {(hasFetchedMetadata || metadataQuery.isFetching) && (
+                    <>
+                      <div className="grid gap-4 md:grid-cols-2">
+                        <div className="space-y-2">
+                          <Label htmlFor={institutionNameId}>
+                            Institution Name *
+                          </Label>
+                          <Input
+                            id={institutionNameId}
+                            placeholder="e.g., Chase Bank, Fidelity Investments"
+                            value={newAccountData.newInstitutionName}
+                            onChange={(e) =>
+                              setNewAccountData((prev) => ({
+                                ...prev,
+                                newInstitutionName: e.target.value,
+                              }))
+                            }
+                            disabled={metadataQuery.isFetching}
+                          />
+                          <p className="text-xs text-muted-foreground">
+                            Full name of the financial institution
+                          </p>
+                        </div>
+
+                        <div className="space-y-2">
+                          <Label htmlFor="new-institution-type">
+                            Institution Type *
+                          </Label>
+                          <InstitutionTypeSelector
+                            value={newAccountData.newInstitutionTypeId}
+                            onValueChange={(value) =>
+                              setNewAccountData((prev) => ({
+                                ...prev,
+                                newInstitutionTypeId: value,
+                              }))
+                            }
+                            institutionTypes={institutionTypes}
+                            placeholder="Select type"
+                            allowCreate={false}
+                            disabled={metadataQuery.isFetching}
+                          />
+                          <p className="text-xs text-muted-foreground">
+                            Bank, investment firm, crypto exchange, etc.
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="space-y-2">
+                        <Label htmlFor={institutionDescriptionId}>
+                          Description
+                        </Label>
+                        <Input
+                          id={institutionDescriptionId}
+                          placeholder="Brief description of the institution"
+                          value={newAccountData.newInstitutionDescription}
+                          onChange={(e) =>
+                            setNewAccountData((prev) => ({
+                              ...prev,
+                              newInstitutionDescription: e.target.value,
+                            }))
+                          }
+                          disabled={metadataQuery.isFetching}
+                        />
+                        <p className="text-xs text-muted-foreground">
+                          Optional description of the institution's services
+                        </p>
+                      </div>
+                    </>
+                  )}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </div>
+      )}
     </div>
   );
 }
 
-function DataEntryStep({
-  formData,
-  onPrev,
-}: {
-  formData: FormData;
-  onPrev: () => void;
-}) {
-  const navigate = useNavigate();
-
-  const handleComplete = () => {
-    // TODO: Implement data submission based on method
-    console.log("Submitting data:", formData);
-    // For now, just navigate back to dashboard
-    navigate("/");
-  };
-
+function DataEntryStep({ formData }: { formData: FormData }) {
   const renderDataEntryForm = () => {
     switch (formData.method) {
       case "manual":
@@ -610,16 +1018,5 @@ function DataEntryStep({
     }
   };
 
-  return (
-    <div className="space-y-6">
-      {renderDataEntryForm()}
-
-      <div className="flex justify-between">
-        <Button variant="outline" onClick={onPrev}>
-          Back
-        </Button>
-        <Button onClick={handleComplete}>Complete Import</Button>
-      </div>
-    </div>
-  );
+  return <div className="space-y-6">{renderDataEntryForm()}</div>;
 }

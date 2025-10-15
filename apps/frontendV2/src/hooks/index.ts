@@ -3,4 +3,5 @@
  * TODO: Implement custom hooks for common functionality
  */
 
-export { useFilters } from './use-filters';
+export { useFilters } from "./use-filters";
+export { useViewMode } from "./use-view-mode";

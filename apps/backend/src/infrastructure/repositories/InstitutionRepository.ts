@@ -1,12 +1,16 @@
-import { and, eq, sql } from 'drizzle-orm';
-import { Service } from 'typedi';
-import type { Account, Institution, NewInstitution } from '../../domain/entities';
+import { and, eq, sql } from "drizzle-orm";
+import { Service } from "typedi";
+import type {
+  Account,
+  Institution,
+  NewInstitution,
+} from "../../domain/entities";
 import type {
   DatabaseTransaction,
   IInstitutionRepository,
-} from '../../domain/interfaces/repositories';
-import * as schema from '../database/schema';
-import { BaseRepository } from './BaseRepository';
+} from "../../domain/interfaces/repositories";
+import * as schema from "../database/schema";
+import { BaseRepository } from "./BaseRepository";
 
 @Service()
 export class InstitutionRepository
@@ -14,9 +18,43 @@ export class InstitutionRepository
   implements IInstitutionRepository
 {
   protected readonly table = schema.institutions;
-  protected readonly tableName = 'institutions';
+  protected readonly tableName = "institutions";
 
-  async findByName(name: string, transaction?: DatabaseTransaction): Promise<Institution | null> {
+  async findAll(
+    filters?: Record<string, unknown>,
+    transaction?: DatabaseTransaction
+  ): Promise<Institution[]> {
+    try {
+      const database = this.getDb(transaction);
+      const results = await database
+        .select({
+          institution: schema.institutions,
+          type: schema.institutionTypes.code,
+          typeName: schema.institutionTypes.name,
+        })
+        .from(schema.institutions)
+        .leftJoin(
+          schema.institutionTypes,
+          eq(schema.institutions.typeId, schema.institutionTypes.id)
+        )
+        .where(eq(schema.institutions.isActive, true))
+        .orderBy(schema.institutions.name);
+
+      return results.map((result) => ({
+        ...result.institution,
+        type: result.type,
+        typeName: result.typeName,
+      }));
+    } catch (error) {
+      this.logger.error({ filters, error }, "Failed to find all institutions");
+      throw error;
+    }
+  }
+
+  async findByName(
+    name: string,
+    transaction?: DatabaseTransaction
+  ): Promise<Institution | null> {
     try {
       const database = this.getDb(transaction);
       const results = await database
@@ -27,20 +65,32 @@ export class InstitutionRepository
 
       return results[0] || null;
     } catch (error) {
-      this.logger.error({ name, error }, 'Failed to find institution by name');
+      this.logger.error({ name, error }, "Failed to find institution by name");
       throw error;
     }
   }
 
-  async findByUserId(userId: string, transaction?: DatabaseTransaction): Promise<Institution[]> {
+  async findByUserId(
+    userId: string,
+    transaction?: DatabaseTransaction
+  ): Promise<Institution[]> {
     try {
       const database = this.getDb(transaction);
       const results = await database
         .selectDistinct({
           institution: schema.institutions,
+          type: schema.institutionTypes.code,
+          typeName: schema.institutionTypes.name,
         })
         .from(schema.institutions)
-        .innerJoin(schema.accounts, eq(schema.accounts.institutionId, schema.institutions.id))
+        .leftJoin(
+          schema.institutionTypes,
+          eq(schema.institutions.typeId, schema.institutionTypes.id)
+        )
+        .innerJoin(
+          schema.accounts,
+          eq(schema.accounts.institutionId, schema.institutions.id)
+        )
         .where(
           and(
             eq(schema.accounts.userId, userId),
@@ -50,9 +100,16 @@ export class InstitutionRepository
         )
         .orderBy(schema.institutions.name);
 
-      return results.map((r) => r.institution);
+      return results.map((r) => ({
+        ...r.institution,
+        type: r.type,
+        typeName: r.typeName,
+      }));
     } catch (error) {
-      this.logger.error({ userId, error }, 'Failed to find institutions by user');
+      this.logger.error(
+        { userId, error },
+        "Failed to find institutions by user"
+      );
       throw error;
     }
   }
@@ -86,7 +143,10 @@ export class InstitutionRepository
 
       return (results[0] as Institution & { typeCode: string | null }) || null;
     } catch (error) {
-      this.logger.error({ institutionId, error }, 'Failed to find institution with type');
+      this.logger.error(
+        { institutionId, error },
+        "Failed to find institution with type"
+      );
       throw error;
     }
   }
@@ -122,7 +182,7 @@ export class InstitutionRepository
     } catch (error) {
       this.logger.error(
         { institutionId, userId, error },
-        'Failed to find institution with accounts'
+        "Failed to find institution with accounts"
       );
       throw error;
     }
@@ -148,7 +208,10 @@ export class InstitutionRepository
 
       return results[0] || null;
     } catch (error) {
-      this.logger.error({ name, typeId, error }, 'Failed to find institution by name and type');
+      this.logger.error(
+        { name, typeId, error },
+        "Failed to find institution by name and type"
+      );
       throw error;
     }
   }
