@@ -3,7 +3,8 @@
  */
 
 import { describe, expect, test } from 'bun:test';
-import { pricingService } from '../services/pricing';
+import { Container } from 'typedi';
+import { PricingService } from '../application/services/PricingService';
 
 describe('DeFiLlama Integration', () => {
   test('should route ERC-20 token with contractAddress to DeFiLlama provider', async () => {
@@ -28,6 +29,7 @@ describe('DeFiLlama Integration', () => {
     // Test that the pricing service groups this token correctly
     // We can't directly test the private groupTokensByProvider method,
     // but we can test that getting a price works
+    const pricingService = Container.get(PricingService);
     const price = await pricingService.getTokenPrice(mockToken, 'USD', new Date());
 
     console.log('stETH price from pricing service:', price);
@@ -56,6 +58,7 @@ describe('DeFiLlama Integration', () => {
       updatedAt: new Date(),
     };
 
+    const pricingService = Container.get(PricingService);
     const price = await pricingService.getTokenPrice(mockToken, 'USD', new Date());
 
     console.log('USDC (Base) price from pricing service:', price);

@@ -8,18 +8,18 @@
   ],
   "scripts": {
     "check-env": "bun run scripts/check-env.ts",
-    "dev": "concurrently \"cd apps/backend && bun dev\" \"cd apps/frontend && bun dev\"",
+    "dev": "concurrently \"cd apps/backend && bun dev\" \"cd apps/frontendV2 && bun dev\"",
     "dev:backend": "cd apps/backend && bun dev",
-    "dev:frontend": "cd apps/frontend && bun dev",
-    "build": "bun run build:backend && bun run build:frontend",
+    "dev:frontend": "cd apps/frontendV2 && bun dev",
+    "build": "bun run build:backend && bun run build:frontendV2",
     "build:backend": "cd apps/backend && bun run build",
-    "build:frontend": "cd apps/frontend && bun run build",
-    "clean": "cd apps/backend && bun clean && cd ../frontend && bun clean",
-    "type-check": "cd apps/backend && bun type-check && cd ../frontend && bun type-check",
+    "build:frontend": "cd apps/frontendV2 && bun run build",
+    "clean": "cd apps/backend && bun clean && cd ../frontendV2 && bun clean",
+    "type-check": "cd apps/backend && bun type-check && cd ../frontendV2 && bun type-check",
     "test": "bun test",
     "test:shared": "cd packages/shared && bun test",
     "test:backend": "cd apps/backend && bun test",
-    "test:frontend": "cd apps/frontend && bun test",
+    "test:frontend": "cd apps/frontendV2 && bun test",
     "test:watch": "bun test --watch",
     "test:coverage": "bun test --coverage",
     "test:coverage:html": "bun test --coverage --coverage-reporter=html",
@@ -40,5 +40,8 @@
     "msw": "^2.4.9",
     "sharp": "^0.34.4",
     "typescript": "^5"
+  },
+  "dependencies": {
+    "decimal.js": "^10.6.0"
   }
 }

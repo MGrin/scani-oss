@@ -1,0 +1,157 @@
+/**
+ * Accessibility-focused CSS for comprehensive focus management and high contrast support
+ */
+
+/* Enhanced focus indicators */
+:focus-visible {
+  outline: 2px solid hsl(var(--ring));
+  outline-offset: 2px;
+}
+
+/* High contrast focus indicators */
+@media (prefers-contrast: high) {
+  :focus-visible {
+    outline: 3px solid;
+    outline-color: Highlight;
+    outline-offset: 1px;
+  }
+}
+
+/* Ensure focus indicators work in Windows High Contrast Mode */
+@media (-ms-high-contrast: active) {
+  :focus {
+    outline: 2px solid ButtonText;
+    outline-offset: 2px;
+  }
+}
+
+/* Skip links */
+.skip-link {
+  position: absolute;
+  top: -40px;
+  left: 6px;
+  background: hsl(var(--primary));
+  color: hsl(var(--primary-foreground));
+  padding: 8px 16px;
+  text-decoration: none;
+  border-radius: 4px;
+  z-index: 1000;
+}
+
+.skip-link:focus {
+  top: 6px;
+}
+
+/* Screen reader only content */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* Show on focus for keyboard navigation */
+.sr-only:focus {
+  position: static;
+  width: auto;
+  height: auto;
+  padding: inherit;
+  margin: inherit;
+  overflow: visible;
+  clip: auto;
+  white-space: inherit;
+}
+
+/* Reduced motion support */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* High contrast adjustments */
+@media (prefers-contrast: high) {
+  /* Increase border weights */
+  input,
+  textarea,
+  select,
+  button {
+    border-width: 2px;
+  }
+
+  /* Ensure adequate contrast for focus states */
+  button:focus-visible,
+  input:focus-visible,
+  textarea:focus-visible,
+  select:focus-visible {
+    box-shadow: 0 0 0 3px currentColor;
+  }
+
+  /* Make text more prominent */
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6 {
+    font-weight: bolder;
+  }
+}
+
+/* Forced colors support (Windows High Contrast Mode) */
+@media (forced-colors: active) {
+  /* Use system colors */
+  .btn-primary {
+    background: ButtonFace;
+    border: 1px solid ButtonText;
+    color: ButtonText;
+  }
+
+  .btn-primary:hover,
+  .btn-primary:focus {
+    background: Highlight;
+    color: HighlightText;
+  }
+
+  /* Ensure icons and graphics remain visible */
+  svg,
+  img {
+    forced-color-adjust: auto;
+  }
+
+  /* Custom focus indicators */
+  :focus-visible {
+    outline: 2px solid Highlight;
+    outline-offset: 2px;
+  }
+}
+
+/* Touch target sizing */
+button,
+[role="button"],
+input[type="button"],
+input[type="submit"],
+input[type="checkbox"],
+input[type="radio"],
+a {
+  min-height: 44px;
+  min-width: 44px;
+}
+
+/* Exception for inline links */
+p a,
+span a,
+li a {
+  min-height: auto;
+  min-width: auto;
+}

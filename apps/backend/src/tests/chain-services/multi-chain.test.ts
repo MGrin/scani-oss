@@ -6,7 +6,10 @@
  */
 
 import { describe, expect, test } from 'bun:test';
-import { detectAddressType, multiChainService } from '../../services/chain/multi-chain';
+import {
+  detectAddressType,
+  multiChainService,
+} from '../../infrastructure/external-services/blockchain/multi-chain';
 
 describe('MultiChainService', () => {
   describe('Address Type Detection', () => {

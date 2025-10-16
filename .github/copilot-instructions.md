@@ -79,18 +79,45 @@ const { data: accounts } = trpc.accounts.getAll.useQuery();
 const createAccount = trpc.accounts.create.useMutation();
 ```
 
-### Service Layer Pattern
+### Clean Architecture with Use Cases ✨ NEW
 
-- Business logic in `apps/backend/src/services/` (pricing, portfolio-valuation, user-context)
-- Services handle complex operations like price fetching (Finnhub API), portfolio calculations
-- Real-time updates via WebSocket for live price updates
+**The backend follows clean architecture principles with a dedicated use cases layer:**
+
+- **Use Cases** (`apps/backend/src/application/use-cases/`) - Business logic encapsulation
+  - 11 use cases created (transactions, tokens, holdings, wallets)
+  - Each use case handles a single business operation
+  - Reusable across routers, background jobs, and CLI tools
+  - Examples: `CreateHoldingUseCase`, `ImportWalletAddressUseCase`
+  
+- **Services** (`apps/backend/src/application/services/`) - Infrastructure & external integrations
+  - PricingService, PortfolioValuationService, UserContextService
+  - Handle complex operations like price fetching (Finnhub, CoinGecko)
+  - Rate limiting and external API management
+  
+- **Repositories** (`apps/backend/src/infrastructure/repositories/`) - Data access layer
+  - Clean abstraction over database operations
+  - Used by use cases for data persistence
+  
+- **Routers** (`apps/backend/src/presentation/routers/`) - Thin controllers
+  - Delegate to use cases for business logic
+  - Handle HTTP concerns (validation, response formatting)
+  - Real-time updates via WebSocket
+
+**Architecture Benefits:**
+- ~1,178 lines removed from routers (51-91% reduction)
+- Improved testability (use cases can be unit tested)
+- Better separation of concerns
+- Easier to maintain and scale
 
 ## Key Files to Understand
 
-- `apps/backend/src/db/schema.ts` - Complete database schema with relationships
+- `apps/backend/src/infrastructure/database/schema.ts` - Complete database schema with relationships
+- `apps/backend/src/application/use-cases/` - Business logic layer (11 use cases)
+- `apps/backend/src/application/use-cases/index.ts` - All use case exports
 - `packages/shared/src/types/finance.ts` - All validation schemas using Zod
 - `apps/backend/src/middleware/auth.ts` - Authentication and user sync logic
-- `apps/backend/src/router.ts` - Main tRPC router assembly
+- `apps/backend/src/presentation/router.ts` - Main tRPC router assembly
+- `apps/backend/src/presentation/routers/` - Individual route handlers (thin controllers)
 - `apps/frontend/src/lib/trpc-provider.tsx` - Frontend tRPC client setup
 
 ## Critical Integration Points

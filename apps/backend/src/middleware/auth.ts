@@ -2,8 +2,8 @@ import type { User } from '@supabase/supabase-js';
 import { TRPCError } from '@trpc/server';
 import { eq } from 'drizzle-orm';
 import jwt, { type JwtPayload } from 'jsonwebtoken';
-import { db } from '../db/connection';
-import * as schema from '../db/schema';
+import { db } from '../infrastructure/database/connection';
+import * as schema from '../infrastructure/database/schema';
 import { supabase } from '../lib/supabase';
 import { authLogger } from '../utils/logger';
 
