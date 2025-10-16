@@ -5,6 +5,8 @@ import {
   Grid3X3,
   List,
   PieChart,
+  MoreHorizontal,
+  Trash2,
 } from "lucide-react";
 import { useMemo, useState } from "react";
 import {
@@ -40,6 +42,7 @@ import {
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent } from "@/components/ui/tabs";
 import { useFilters, useViewMode } from "@/hooks";
+import { useToast } from "@/hooks/use-toast";
 import { trpc } from "@/lib/trpc";
 import { createCurrencyToken } from "@/lib/utils";
 import type { HoldingWithDetails } from "@scani/shared/types";
@@ -58,6 +61,27 @@ export function Holdings() {
   const { data: baseCurrency } = trpc.users.getBaseCurrency.useQuery();
   const currency = baseCurrency?.symbol || "USD";
   const baseCurrencyToken = createCurrencyToken(currency);
+
+  const { toast } = useToast();
+
+  // Delete holding mutation
+  const deleteHoldingMutation = trpc.holdings.delete.useMutation({
+    onSuccess: () => {
+      toast({
+        title: "Holding deleted",
+        description: "The holding has been successfully deleted.",
+      });
+      // Refetch holdings data
+      // The TRPC query will automatically refetch when the modal deletes
+    },
+    onError: (error) => {
+      toast({
+        title: "Delete failed",
+        description: error.message || "Failed to delete holding.",
+        variant: "destructive",
+      });
+    },
+  });
 
   // Transform backend data to match frontend expectations
   const holdings = holdingsData || [];
@@ -312,6 +336,33 @@ export function Holdings() {
     // Refetch holdings data
     // The TRPC query will automatically refetch when the modal deletes
   };
+
+  const handleDeleteHolding = (holding: HoldingWithDetails) => {
+    deleteHoldingMutation.mutate({ id: holding.id });
+  };
+
+  const renderActions = (holding: HoldingWithDetails) => (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button variant="ghost" className="h-8 w-8 p-0">
+          <span className="sr-only">Open menu</span>
+          <MoreHorizontal className="h-4 w-4" />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end">
+        <DropdownMenuItem
+          onClick={(e) => {
+            e.stopPropagation();
+            handleDeleteHolding(holding);
+          }}
+          className="text-destructive focus:text-destructive"
+        >
+          <Trash2 className="mr-2 h-4 w-4" />
+          Remove Holding
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
 
   const exportData = (format: "csv" | "json") => {
     const data = filteredAndSortedHoldings.map((h) => ({
@@ -717,6 +768,7 @@ export function Holdings() {
                       getRowKey={(row) => row.id}
                       onSort={handleSort}
                       onRowClick={(row) => handleHoldingClick(row)}
+                      actions={renderActions}
                     />
                   )}
                 </div>

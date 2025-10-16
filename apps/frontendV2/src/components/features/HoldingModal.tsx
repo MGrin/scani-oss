@@ -121,13 +121,7 @@ export function HoldingModal({
   const handleDelete = () => {
     if (!holding) return;
 
-    if (
-      confirm(
-        "Are you sure you want to delete this holding? This action cannot be undone."
-      )
-    ) {
-      deleteHoldingMutation.mutate({ id: holding.id });
-    }
+    deleteHoldingMutation.mutate({ id: holding.id });
   };
 
   if (!holding) return null;

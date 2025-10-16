@@ -1,7 +1,7 @@
 import { useParams } from "react-router-dom";
 import { useMemo, useState } from "react";
 import TimeAgo from "react-timeago";
-import { Grid3X3, List } from "lucide-react";
+import { Grid3X3, List, MoreHorizontal, Trash2 } from "lucide-react";
 import { HoldingModal, TokenTypeBadge } from "@/components/features";
 import {
   TokenFilterSelector,
@@ -20,10 +20,17 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Skeleton } from "@/components/ui/skeleton";
 import { trpc } from "@/lib/trpc";
 import { createCurrencyToken } from "@/lib/utils";
 import { useViewMode } from "@/hooks/use-view-mode";
+import { useToast } from "@/hooks/use-toast";
 import type { HoldingWithDetails } from "@scani/shared/types";
 
 export function AccountDetail() {
@@ -49,6 +56,27 @@ export function AccountDetail() {
   const { data: baseCurrency } = trpc.users.getBaseCurrency.useQuery();
   const currency = baseCurrency?.symbol || "USD";
   const baseCurrencyToken = createCurrencyToken(currency);
+
+  const { toast } = useToast();
+
+  // Delete holding mutation
+  const deleteHoldingMutation = trpc.holdings.delete.useMutation({
+    onSuccess: () => {
+      toast({
+        title: "Holding deleted",
+        description: "The holding has been successfully deleted.",
+      });
+      // Refetch account holdings data
+      // The TRPC query will automatically refetch when the modal deletes
+    },
+    onError: (error) => {
+      toast({
+        title: "Delete failed",
+        description: error.message || "Failed to delete holding.",
+        variant: "destructive",
+      });
+    },
+  });
 
   // Fetch account data
   const {
@@ -219,6 +247,33 @@ export function AccountDetail() {
     // Refetch account holdings data
     // The TRPC query will automatically refetch when the modal deletes
   };
+
+  const handleDeleteHolding = (holding: HoldingWithDetails) => {
+    deleteHoldingMutation.mutate({ id: holding.id });
+  };
+
+  const renderActions = (holding: HoldingWithDetails) => (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button variant="ghost" className="h-8 w-8 p-0">
+          <span className="sr-only">Open menu</span>
+          <MoreHorizontal className="h-4 w-4" />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end">
+        <DropdownMenuItem
+          onClick={(e) => {
+            e.stopPropagation();
+            handleDeleteHolding(holding);
+          }}
+          className="text-destructive focus:text-destructive"
+        >
+          <Trash2 className="mr-2 h-4 w-4" />
+          Remove Holding
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
 
   if (accountLoading) {
     return (
@@ -488,6 +543,7 @@ export function AccountDetail() {
           sortField={sortField}
           sortDirection={sortDirection}
           onRowClick={(row) => handleHoldingClick(row)}
+          actions={renderActions}
         />
       ) : (
         <div className="grid gap-4 grid-cols-1 md:grid-cols-2 lg:grid-cols-3">

@@ -22,6 +22,7 @@ export interface DataTableProps<T> {
   loadingRowCount?: number;
   getRowKey: (row: T) => string;
   onRowClick?: (row: T) => void;
+  actions?: (row: T) => ReactNode;
 }
 
 export function DataTable<T>({
@@ -33,6 +34,7 @@ export function DataTable<T>({
   loadingRowCount = 4,
   getRowKey,
   onRowClick,
+  actions,
 }: DataTableProps<T>) {
   const handleSort = (column: Column<T>) => {
     if (!column.sortable || !onSort) return;
@@ -71,6 +73,11 @@ export function DataTable<T>({
                       <Skeleton className="h-4 w-20" />
                     </th>
                   ))}
+                  {actions && (
+                    <th className="p-4 font-medium whitespace-nowrap w-12">
+                      <Skeleton className="h-4 w-4" />
+                    </th>
+                  )}
                 </tr>
               </thead>
               <tbody>
@@ -90,6 +97,11 @@ export function DataTable<T>({
                         <Skeleton className="h-4 w-full" />
                       </td>
                     ))}
+                    {actions && (
+                      <td className="p-4 whitespace-nowrap">
+                        <Skeleton className="h-4 w-4" />
+                      </td>
+                    )}
                   </tr>
                 ))}
               </tbody>
@@ -131,6 +143,11 @@ export function DataTable<T>({
                     </div>
                   </th>
                 ))}
+                {actions && (
+                  <th className="p-4 font-medium whitespace-nowrap w-12">
+                    <span className="sr-only">Actions</span>
+                  </th>
+                )}
               </tr>
             </thead>
             <tbody>
@@ -152,6 +169,9 @@ export function DataTable<T>({
                       {getCellValue(row, column)}
                     </td>
                   ))}
+                  {actions && (
+                    <td className="p-4 whitespace-nowrap">{actions(row)}</td>
+                  )}
                 </tr>
               ))}
             </tbody>

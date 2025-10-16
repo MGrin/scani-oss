@@ -1,5 +1,5 @@
-import { Link } from 'react-router-dom';
-import { Badge } from '@/components/ui/badge';
+import { useNavigate } from "react-router-dom";
+import { Badge } from "@/components/ui/badge";
 
 interface InstitutionBadgeProps {
   institutionId: string;
@@ -12,16 +12,22 @@ export function InstitutionBadge({
   institutionName,
   className,
 }: InstitutionBadgeProps) {
+  const navigate = useNavigate();
+
+  const handleClick = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    navigate(`/institutions/${institutionId}`);
+  };
+
   return (
-    <Link to={`/institutions/${institutionId}`}>
-      <Badge
-        variant="outline"
-        className={`cursor-pointer hover:bg-accent hover:text-accent-foreground transition-colors ${
-          className || ''
-        }`}
-      >
-        {institutionName}
-      </Badge>
-    </Link>
+    <Badge
+      variant="outline"
+      className={`px-4 py-2 cursor-pointer hover:bg-accent hover:text-accent-foreground transition-colors ${
+        className || ""
+      }`}
+      onClick={handleClick}
+    >
+      {institutionName}
+    </Badge>
   );
 }

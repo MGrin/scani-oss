@@ -1,5 +1,5 @@
-import { Link } from 'react-router-dom';
-import { Badge } from '@/components/ui/badge';
+import { useNavigate } from "react-router-dom";
+import { Badge } from "@/components/ui/badge";
 
 interface AccountBadgeProps {
   accountId: string;
@@ -7,17 +7,27 @@ interface AccountBadgeProps {
   className?: string;
 }
 
-export function AccountBadge({ accountId, accountName, className }: AccountBadgeProps) {
+export function AccountBadge({
+  accountId,
+  accountName,
+  className,
+}: AccountBadgeProps) {
+  const navigate = useNavigate();
+
+  const handleClick = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    navigate(`/accounts/${accountId}`);
+  };
+
   return (
-    <Link to={`/accounts/${accountId}`}>
-      <Badge
-        variant="outline"
-        className={`cursor-pointer hover:bg-accent hover:text-accent-foreground transition-colors ${
-          className || ''
-        }`}
-      >
-        {accountName}
-      </Badge>
-    </Link>
+    <Badge
+      variant="outline"
+      className={`px-4 py-2 cursor-pointer hover:bg-accent hover:text-accent-foreground transition-colors ${
+        className || ""
+      }`}
+      onClick={handleClick}
+    >
+      {accountName}
+    </Badge>
   );
 }
