@@ -1,5 +1,4 @@
 import { Container } from "typedi";
-import { BatchOperationsService } from "../application/services";
 import { AccountService } from "../application/services/AccountService";
 import { InstitutionService } from "../application/services/InstitutionService";
 import { PricingService } from "../application/services/PricingService";
@@ -75,9 +74,7 @@ const screenshotParsingRouter = createScreenshotParsingRouter(
   Container.get(ScreenshotParsingService)
 );
 
-const batchOperationsRouter = createBatchOperationsRouter(
-  Container.get(BatchOperationsService)
-);
+const batchOperationsRouter = createBatchOperationsRouter();
 
 export const appRouter = router({
   // User management (protected)

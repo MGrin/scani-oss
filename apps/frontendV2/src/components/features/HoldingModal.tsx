@@ -19,8 +19,8 @@ import { Label } from "@/components/ui/label";
 import { MoneyDisplay } from "@/components/ui/money-display";
 import { trpc } from "@/lib/trpc";
 import { createCurrencyToken } from "@/lib/utils";
+import { invalidateAllFinancialData } from "@/utils/invalidation";
 import { useToast } from "@/hooks/use-toast";
-import { useQueryClient } from "@tanstack/react-query";
 import type { HoldingWithDetails } from "@scani/shared/types";
 
 interface HoldingModalProps {
@@ -39,7 +39,7 @@ export function HoldingModal({
   onHoldingDeleted,
 }: HoldingModalProps) {
   const { toast } = useToast();
-  const queryClient = useQueryClient();
+  const utils = trpc.useUtils();
   const [editTokenId, setEditTokenId] = useState("");
   const [editBalance, setEditBalance] = useState("");
 
@@ -56,28 +56,8 @@ export function HoldingModal({
         description: "The holding has been successfully updated.",
       });
 
-      // Invalidate all related queries
-      queryClient.invalidateQueries({
-        queryKey: trpc.holdings.getAll.getQueryKey(),
-      });
-      queryClient.invalidateQueries({
-        queryKey: trpc.holdings.getWithDetails.getQueryKey(),
-      });
-      queryClient.invalidateQueries({
-        queryKey: trpc.accounts.getAll.getQueryKey(),
-      });
-      queryClient.invalidateQueries({
-        queryKey: trpc.accounts.getByUserIdWithSummary.getQueryKey(),
-      });
-      queryClient.invalidateQueries({
-        queryKey: trpc.institutions.getAll.getQueryKey(),
-      });
-      queryClient.invalidateQueries({
-        queryKey: trpc.institutions.getByUserIdWithSummary.getQueryKey(),
-      });
-      queryClient.invalidateQueries({
-        queryKey: trpc.dashboard.getOverview.getQueryKey(),
-      });
+      // Invalidate all related queries using utility function
+      invalidateAllFinancialData(utils);
 
       onHoldingUpdated?.();
     },
@@ -98,28 +78,8 @@ export function HoldingModal({
         description: "The holding has been successfully deleted.",
       });
 
-      // Invalidate all related queries
-      queryClient.invalidateQueries({
-        queryKey: trpc.holdings.getAll.getQueryKey(),
-      });
-      queryClient.invalidateQueries({
-        queryKey: trpc.holdings.getWithDetails.getQueryKey(),
-      });
-      queryClient.invalidateQueries({
-        queryKey: trpc.accounts.getAll.getQueryKey(),
-      });
-      queryClient.invalidateQueries({
-        queryKey: trpc.accounts.getByUserIdWithSummary.getQueryKey(),
-      });
-      queryClient.invalidateQueries({
-        queryKey: trpc.institutions.getAll.getQueryKey(),
-      });
-      queryClient.invalidateQueries({
-        queryKey: trpc.institutions.getByUserIdWithSummary.getQueryKey(),
-      });
-      queryClient.invalidateQueries({
-        queryKey: trpc.dashboard.getOverview.getQueryKey(),
-      });
+      // Invalidate all related queries using utility function
+      invalidateAllFinancialData(utils);
 
       onClose();
       onHoldingDeleted?.();

@@ -39,7 +39,7 @@ import { useFilters, useViewMode } from "@/hooks";
 import { useToast } from "@/hooks/use-toast";
 import { trpc } from "@/lib/trpc";
 import { createCurrencyToken } from "@/lib/utils";
-import { useQueryClient } from "@tanstack/react-query";
+import { invalidateAllFinancialData } from "@/utils/invalidation";
 
 type Account = {
   id: string;
@@ -79,45 +79,54 @@ export function Accounts() {
 
   const { toast } = useToast();
   const navigate = useNavigate();
-  const queryClient = useQueryClient();
+  const utils = trpc.useUtils();
 
-  // Delete account mutation
+  // Delete account mutation with proper invalidation and optimistic updates
   const deleteAccountMutation = trpc.accounts.delete.useMutation({
+    onMutate: async (removedAccount) => {
+      // Cancel outgoing refetches
+      await utils.accounts.getByUserIdWithSummary.cancel();
+
+      // Snapshot previous value
+      const previousAccounts = utils.accounts.getByUserIdWithSummary.getData();
+
+      // Optimistically remove the account
+      utils.accounts.getByUserIdWithSummary.setData(undefined, (old) =>
+        old?.filter((account) => account.id !== removedAccount.id)
+      );
+
+      return { previousAccounts };
+    },
     onSuccess: () => {
       toast({
         title: "Account deleted",
         description: "The account has been successfully deleted.",
       });
 
-      // Invalidate all related queries
-      queryClient.invalidateQueries({
-        queryKey: trpc.accounts.getAll.getQueryKey(),
-      });
-      queryClient.invalidateQueries({
-        queryKey: trpc.accounts.getByUserIdWithSummary.getQueryKey(),
-      });
-      queryClient.invalidateQueries({
-        queryKey: trpc.holdings.getAll.getQueryKey(),
-      });
-      queryClient.invalidateQueries({
-        queryKey: trpc.holdings.getWithDetails.getQueryKey(),
-      });
-      queryClient.invalidateQueries({
-        queryKey: trpc.institutions.getAll.getQueryKey(),
-      });
-      queryClient.invalidateQueries({
-        queryKey: trpc.institutions.getByUserIdWithSummary.getQueryKey(),
-      });
-      queryClient.invalidateQueries({
-        queryKey: trpc.dashboard.getOverview.getQueryKey(),
-      });
+      // Invalidate all related queries using utility function
+      invalidateAllFinancialData(utils);
+
+      // Navigate to accounts page
+      navigate("/accounts");
     },
-    onError: (error) => {
+    onError: (err, _accountId, context) => {
+      // Rollback on error
+      if (context?.previousAccounts) {
+        utils.accounts.getByUserIdWithSummary.setData(
+          undefined,
+          context.previousAccounts
+        );
+      }
+
       toast({
         title: "Delete failed",
-        description: error.message || "Failed to delete account.",
+        description: err.message || "Failed to delete account.",
         variant: "destructive",
       });
+    },
+    onSettled: () => {
+      // Always refetch after error or success
+      utils.accounts.getByUserIdWithSummary.invalidate();
     },
   });
 

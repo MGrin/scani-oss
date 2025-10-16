@@ -20,11 +20,14 @@ export function PullToRefresh({
   const containerRef = useRef<HTMLDivElement>(null);
   const startY = useRef(0);
   const currentY = useRef(0);
+  const startScrollTop = useRef(0);
 
   // Only enable pull-to-refresh in PWA mode
   const runningAsPWA = isPWA();
   const isEnabled = runningAsPWA && !disabled;
 
+  // Minimum pull distance to start pull-to-refresh (prevents accidental triggers)
+  const MIN_PULL_DISTANCE = 10;
   // Threshold to trigger refresh (in pixels)
   const PULL_THRESHOLD = 80;
   // Maximum pull distance (in pixels)
@@ -41,20 +44,26 @@ export function PullToRefresh({
     const handleTouchStart = (e: TouchEvent) => {
       // Only start if we're at the top of the scrollable container
       const scrollTop = container.scrollTop;
-      if (scrollTop === 0 && !isRefreshing && e.touches[0]) {
+      if (scrollTop <= 1 && !isRefreshing && e.touches[0]) {
         startY.current = e.touches[0].clientY;
-        setIsPulling(true);
+        startScrollTop.current = scrollTop;
       }
     };
 
     const handleTouchMove = (e: TouchEvent) => {
-      if (!isPulling || isRefreshing || !e.touches[0]) return;
+      if (isRefreshing || !e.touches[0]) return;
 
       currentY.current = e.touches[0].clientY;
       const deltaY = currentY.current - startY.current;
 
-      // Only pull down (positive deltaY)
-      if (deltaY > 0) {
+      // Only pull down (positive deltaY) and only if we're still at the top
+      const scrollTop = container.scrollTop;
+      if (deltaY > MIN_PULL_DISTANCE && scrollTop <= 1) {
+        // Start pulling if we haven't already
+        if (!isPulling) {
+          setIsPulling(true);
+        }
+
         // Prevent default scrolling behavior when pulling
         e.preventDefault();
 
@@ -69,6 +78,10 @@ export function PullToRefresh({
         rafId = requestAnimationFrame(() => {
           setPullDistance(distance);
         });
+      } else if (isPulling && deltaY <= 0) {
+        // User is scrolling up, cancel pull-to-refresh
+        setIsPulling(false);
+        setPullDistance(0);
       }
     };
 

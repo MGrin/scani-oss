@@ -5,48 +5,58 @@ export {
   type CreateHoldingInput,
   type CreateHoldingResult,
   CreateHoldingUseCase,
-} from './CreateHoldingUseCase';
+} from "./CreateHoldingUseCase";
+export {
+  type CreateHoldingsWithDependenciesInput,
+  type CreateHoldingsWithDependenciesResult,
+  CreateHoldingsWithDependenciesUseCase,
+} from "./CreateHoldingsWithDependenciesUseCase";
 export {
   type CreateTokenInput,
   type CreateTokenResult,
   CreateTokenUseCase,
-} from './CreateTokenUseCase';
+} from "./CreateTokenUseCase";
 export {
   type CreateTransactionInput,
   CreateTransactionUseCase,
-} from './CreateTransactionUseCase';
+} from "./CreateTransactionUseCase";
 export {
   type DeleteHoldingResult,
   DeleteHoldingUseCase,
-} from './DeleteHoldingUseCase';
-export { DeleteTransactionUseCase } from './DeleteTransactionUseCase';
+} from "./DeleteHoldingUseCase";
+export { DeleteTransactionUseCase } from "./DeleteTransactionUseCase";
 export {
   GetHoldingsWithDetailsUseCase,
   type HoldingWithDetails,
-} from './GetHoldingsWithDetailsUseCase';
+} from "./GetHoldingsWithDetailsUseCase";
 // Wallet Use Cases
 export {
   ImportWalletAddressUseCase,
   type ImportWalletInput,
   type ImportWalletResult,
-} from './ImportWalletAddressUseCase';
-export { RecalculateHoldingBalanceUseCase } from './RecalculateHoldingBalanceUseCase';
+} from "./ImportWalletAddressUseCase";
+export { RecalculateHoldingBalanceUseCase } from "./RecalculateHoldingBalanceUseCase";
 export {
   type UpdateHoldingInput,
   UpdateHoldingUseCase,
-} from './UpdateHoldingUseCase';
+} from "./UpdateHoldingUseCase";
+export {
+  type UpdateHoldingsBatchInput,
+  type UpdateHoldingsBatchResult,
+  UpdateHoldingsBatchUseCase,
+} from "./UpdateHoldingsBatchUseCase";
 export {
   type UpdateTokenInput,
   UpdateTokenUseCase,
-} from './UpdateTokenUseCase';
+} from "./UpdateTokenUseCase";
 export {
   type UpdateTransactionInput,
   type UpdateTransactionResult,
   UpdateTransactionUseCase,
-} from './UpdateTransactionUseCase';
+} from "./UpdateTransactionUseCase";
 // Token Use Cases
 export {
   type ValidateTokenInput,
   type ValidateTokenResult,
   ValidateTokenUseCase,
-} from './ValidateTokenUseCase';
+} from "./ValidateTokenUseCase";

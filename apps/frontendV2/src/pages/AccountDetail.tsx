@@ -29,9 +29,9 @@ import {
 import { Skeleton } from "@/components/ui/skeleton";
 import { trpc } from "@/lib/trpc";
 import { createCurrencyToken } from "@/lib/utils";
+import { invalidateAllFinancialData } from "@/utils/invalidation";
 import { useViewMode } from "@/hooks/use-view-mode";
 import { useToast } from "@/hooks/use-toast";
-import { useQueryClient } from "@tanstack/react-query";
 import type { HoldingWithDetails } from "@scani/shared/types";
 
 export function AccountDetail() {
@@ -59,7 +59,7 @@ export function AccountDetail() {
   const baseCurrencyToken = createCurrencyToken(currency);
 
   const { toast } = useToast();
-  const queryClient = useQueryClient();
+  const utils = trpc.useUtils();
 
   // Delete holding mutation
   const deleteHoldingMutation = trpc.holdings.delete.useMutation({
@@ -69,28 +69,8 @@ export function AccountDetail() {
         description: "The holding has been successfully deleted.",
       });
 
-      // Invalidate all related queries
-      queryClient.invalidateQueries({
-        queryKey: trpc.holdings.getAll.getQueryKey(),
-      });
-      queryClient.invalidateQueries({
-        queryKey: trpc.holdings.getWithDetails.getQueryKey(),
-      });
-      queryClient.invalidateQueries({
-        queryKey: trpc.accounts.getAll.getQueryKey(),
-      });
-      queryClient.invalidateQueries({
-        queryKey: trpc.accounts.getByUserIdWithSummary.getQueryKey(),
-      });
-      queryClient.invalidateQueries({
-        queryKey: trpc.institutions.getAll.getQueryKey(),
-      });
-      queryClient.invalidateQueries({
-        queryKey: trpc.institutions.getByUserIdWithSummary.getQueryKey(),
-      });
-      queryClient.invalidateQueries({
-        queryKey: trpc.dashboard.getOverview.getQueryKey(),
-      });
+      // Invalidate all related queries using utility function
+      invalidateAllFinancialData(utils);
     },
     onError: (error) => {
       toast({
