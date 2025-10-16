@@ -26,7 +26,7 @@ export function AccountBadge({
   return (
     <Badge
       variant="outline"
-      className={`px-4 py-2 cursor-pointer hover:bg-accent hover:text-accent-foreground transition-colors inline-flex items-center max-w-full ${
+      className={`px-4 py-2 cursor-pointer hover:bg-accent hover:text-accent-foreground transition-colors inline-flex items-center ${
         className || ""
       }`}
       onClick={handleClick}

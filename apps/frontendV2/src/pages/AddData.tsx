@@ -249,7 +249,7 @@ export function AddData() {
   }, []);
 
   return (
-    <div className="space-y-6 pb-24 relative">
+    <div className="space-y-6 pb-16 relative max-w-[calc(100vw-2rem)] md:max-w-3xl lg:max-w-4xl xl:max-w-5xl mx-auto">
       {/* Full screen loading overlay */}
       {(createTokenFromExternalMutation.isPending ||
         createHoldingsBatchMutation.isPending ||
@@ -1520,6 +1520,7 @@ function DataEntryStep({
                             onValueChange={(value) =>
                               updateHolding(holding.id, "tokenValue", value)
                             }
+                            // className="max-w-[calc(100%-8rem)]"
                             placeholder="Search tokens..."
                             disabled={isCreatingHoldings || true} // Disable token changes for existing holdings
                           />
@@ -1584,6 +1585,7 @@ function DataEntryStep({
                         onValueChange={(value) =>
                           updateHolding(holding.id, "tokenValue", value)
                         }
+                        // className="max-w-[calc(100%-8rem)]"
                         placeholder="Search tokens..."
                         disabled={isCreatingHoldings}
                       />

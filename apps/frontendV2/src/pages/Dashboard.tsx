@@ -193,7 +193,7 @@ export function Dashboard() {
                       <div className="text-sm text-muted-foreground mt-1">
                         {holding.name}
                       </div>
-                      <div className="flex items-center gap-2 mt-1">
+                      <div className="flex flex-col md:flex-row items-start md:items-center gap-2 mt-1">
                         <AccountBadge
                           accountId={holding.accountId}
                           accountName={holding.accountName}
