@@ -123,10 +123,7 @@ export function InstitutionDetail() {
     );
     return (
       sum +
-      accountHoldings.reduce(
-        (accSum, holding) => accSum + parseFloat(holding.value),
-        0
-      )
+      accountHoldings.reduce((accSum, holding) => accSum + holding.value, 0)
     );
   }, 0);
 
@@ -179,7 +176,7 @@ export function InstitutionDetail() {
                 (holding) => holding.account.id === account.id
               );
               const accountValue = accountHoldings.reduce(
-                (sum, holding) => sum + parseFloat(holding.value),
+                (sum, holding) => sum + holding.value,
                 0
               );
               const accountType = accountTypes?.find(

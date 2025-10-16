@@ -1,7 +1,9 @@
-import { z } from 'zod';
-import type { BatchOperationsService } from '../../application/services';
-import { getUserId } from '../../middleware/auth';
-import { protectedProcedure, router } from '../trpc';
+import { z } from "zod";
+import type { BatchOperationsService } from "../../application/services";
+import { CreateHoldingUseCase } from "../../application/use-cases";
+import { Container } from "typedi";
+import { getUserId } from "../../middleware/auth";
+import { protectedProcedure, router } from "../trpc";
 
 /**
  * Batch Operations Router
@@ -18,40 +20,74 @@ const CreateHoldingWithDependenciesSchema = z.object({
   // Institution (optional - create if needed)
   institution: z
     .object({
-      name: z.string().min(1, 'Institution name is required'),
-      type: z.string().min(1, 'Institution type is required'),
+      name: z.string().min(1, "Institution name is required"),
+      type: z.string().min(1, "Institution type is required"),
       description: z.string().optional(),
-      website: z.string().url().optional().or(z.literal('')),
-      logoUrl: z.string().url().optional().or(z.literal('')),
+      website: z.string().url().optional().or(z.literal("")),
+      logoUrl: z.string().url().optional().or(z.literal("")),
     })
     .optional(),
 
   // Account (required)
   account: z.object({
     institutionId: z.string().uuid().optional(), // Use if institution not being created
-    name: z.string().min(1, 'Account name is required'),
-    type: z.string().min(1, 'Account type is required'),
+    name: z.string().min(1, "Account name is required"),
+    type: z.string().min(1, "Account type is required"),
     description: z.string().optional(),
   }),
 
   // Token (optional - create if external token)
   token: z
     .object({
-      symbol: z.string().min(1, 'Token symbol is required'),
+      symbol: z.string().min(1, "Token symbol is required"),
       name: z.string().optional(),
       typeId: z.string().optional(),
       decimals: z.number().int().min(0).max(18).optional(),
-      iconUrl: z.string().url().optional().or(z.literal('')),
+      iconUrl: z.string().url().optional().or(z.literal("")),
     })
     .optional(),
 
   // Holding (required)
   holding: z.object({
     tokenId: z.string().uuid().optional(), // Use if token not being created
-    balance: z.string().regex(/^-?\d+\.?\d*$/, 'Balance must be a valid decimal string'),
+    balance: z
+      .string()
+      .regex(/^-?\d+\.?\d*$/, "Balance must be a valid decimal string"),
     lastUpdated: z.string().datetime().optional(),
   }),
 });
+
+const CreateHoldingsBatchSchema = z.object({
+  accountId: z.string().uuid(),
+  holdings: z.array(
+    z.object({
+      tokenId: z.string().uuid().optional(), // Use if token not being created
+      token: z
+        .object({
+          symbol: z.string().min(1, "Token symbol is required"),
+          name: z.string().optional(),
+          typeId: z.string().optional(),
+          decimals: z.number().int().min(0).max(18).optional(),
+          iconUrl: z.string().url().optional().or(z.literal("")),
+        })
+        .optional(),
+      balance: z
+        .string()
+        .regex(/^-?\d+\.?\d*$/, "Balance must be a valid decimal string"),
+      lastUpdated: z.string().datetime().optional(),
+    })
+  ),
+});
+
+type CreateHoldingsBatchResult = {
+  accountId: string;
+  holdings: Array<{
+    holdingId: string;
+    tokenId?: string;
+    createdToken?: boolean;
+    createdHolding: boolean;
+  }>;
+};
 
 type CreateHoldingResult = {
   institutionId?: string;
@@ -67,7 +103,9 @@ type CreateHoldingResult = {
 /**
  * Factory function to create batch operations router with injected dependencies
  */
-export function createBatchOperationsRouter(batchOperationsService: BatchOperationsService) {
+export function createBatchOperationsRouter(
+  batchOperationsService: BatchOperationsService
+) {
   return router({
     /**
      * Create holding with all dependencies atomically
@@ -119,11 +157,68 @@ export function createBatchOperationsRouter(batchOperationsService: BatchOperati
         // For now, convert string to number temporarily
         const userId = parseInt(userIdStr, 10);
         if (Number.isNaN(userId)) {
-          throw new Error('Invalid user ID');
+          throw new Error("Invalid user ID");
         }
 
         // Delegate to service for atomic operation
-        return await batchOperationsService.createHoldingWithDependencies(serviceInput, userIdStr);
+        return await batchOperationsService.createHoldingWithDependencies(
+          serviceInput,
+          userIdStr
+        );
+      }),
+
+    /**
+     * Create multiple holdings in batch
+     *
+     * This endpoint creates multiple holdings for the same account.
+     * Assumes all tokens are already created (database or external).
+     */
+    createHoldingsBatch: protectedProcedure
+      .input(CreateHoldingsBatchSchema)
+      .mutation(async ({ input, ctx }): Promise<CreateHoldingsBatchResult> => {
+        const userIdStr = getUserId(ctx);
+        const createHoldingUseCase = Container.get(CreateHoldingUseCase);
+
+        const results = [];
+        for (const holdingInput of input.holdings) {
+          try {
+            if (!holdingInput.tokenId) {
+              throw new Error("tokenId is required for batch holding creation");
+            }
+
+            const result = await createHoldingUseCase.execute(
+              {
+                accountId: input.accountId,
+                tokenId: holdingInput.tokenId,
+                balance: holdingInput.balance,
+                lastUpdated: holdingInput.lastUpdated
+                  ? new Date(holdingInput.lastUpdated)
+                  : undefined,
+              },
+              userIdStr
+            );
+
+            results.push({
+              holdingId: result.holding.id,
+              tokenId: holdingInput.tokenId,
+              createdToken: false, // Tokens assumed to be pre-created
+              createdHolding: true,
+            });
+          } catch (error) {
+            console.error("Failed to create holding in batch:", error);
+            results.push({
+              holdingId: "",
+              tokenId: holdingInput.tokenId || "",
+              createdToken: false,
+              createdHolding: false,
+            });
+          }
+        }
+
+        return {
+          accountId: input.accountId,
+          holdings: results,
+        };
       }),
   });
 }

@@ -11,12 +11,6 @@ import {
   Wallet,
 } from "lucide-react";
 
-// Type for token display information
-export type TokenDisplay = {
-  type: "symbol" | "icon";
-  value: string | LucideIcon;
-};
-
 /**
  * Get favicon URL from a website URL
  * Uses Google's favicon service as a fallback

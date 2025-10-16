@@ -1,7 +1,6 @@
 import { CreateHoldingSchema, UpdateHoldingSchema } from "@scani/shared/types";
 import { Container } from "typedi";
 import { z } from "zod";
-import type { HoldingService } from "../../application/services/HoldingService";
 import { PortfolioValuationService } from "../../application/services/PortfolioValuationService";
 import {
   CreateHoldingUseCase,
@@ -20,10 +19,7 @@ const holdingsLogger = createComponentLogger("router:holdings");
 /**
  * Factory function to create the holdings router with injected dependencies
  */
-export function createHoldingsRouter(
-  holdingRepository: HoldingRepository,
-  holdingService: HoldingService
-) {
+export function createHoldingsRouter(holdingRepository: HoldingRepository) {
   return router({
     // Get all holdings
     getAll: protectedProcedure.query(async ({ ctx }) => {
@@ -49,10 +45,15 @@ export function createHoldingsRouter(
       .input(z.object({ id: z.string() }))
       .query(async ({ input, ctx }) => {
         const { dbUser } = requireAuth(ctx);
-        const holding = await holdingService.getHoldingById(
-          input.id,
-          dbUser.id
+        const getHoldingsWithDetailsUseCase = Container.get(
+          GetHoldingsWithDetailsUseCase
         );
+        // Get all holdings with details and find the specific one
+        const allHoldings = await getHoldingsWithDetailsUseCase.execute(
+          dbUser.id,
+          dbUser.baseCurrencyId || undefined
+        );
+        const holding = allHoldings.find((h) => h.id === input.id);
         return holding ?? null;
       }),
 

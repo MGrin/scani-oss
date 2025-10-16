@@ -9,6 +9,7 @@ import {
 import { useMemo, useState } from "react";
 import {
   AccountBadge,
+  HoldingModal,
   InstitutionBadge,
   TokenTypeBadge,
 } from "@/components/features";
@@ -41,6 +42,7 @@ import { Tabs, TabsContent } from "@/components/ui/tabs";
 import { useFilters, useViewMode } from "@/hooks";
 import { trpc } from "@/lib/trpc";
 import { createCurrencyToken } from "@/lib/utils";
+import type { HoldingWithDetails } from "@scani/shared/types";
 
 type GroupBy = "none" | "institution" | "account" | "tokenType";
 
@@ -58,13 +60,7 @@ export function Holdings() {
   const baseCurrencyToken = createCurrencyToken(currency);
 
   // Transform backend data to match frontend expectations
-  const holdings =
-    holdingsData?.map((holding) => ({
-      ...holding,
-      amount: parseFloat(holding.amount),
-      value: parseFloat(holding.value),
-      costBasis: parseFloat(holding.costBasis),
-    })) || [];
+  const holdings = holdingsData || [];
 
   const [searchTerm, setSearchTerm] = useState("");
   const [groupBy, setGroupBy] = useState<GroupBy>("none");
@@ -72,6 +68,11 @@ export function Holdings() {
   const [sortField, setSortField] = useState("value");
   const [sortDirection, setSortDirection] = useState<"asc" | "desc">("desc");
   const [valueRange, setValueRange] = useState("all");
+
+  // Modal state
+  const [selectedHolding, setSelectedHolding] =
+    useState<HoldingWithDetails | null>(null);
+  const [isModalOpen, setIsModalOpen] = useState(false);
 
   // Unified filter system
   const {
@@ -289,6 +290,27 @@ export function Holdings() {
       setSortField(field);
       setSortDirection("desc");
     }
+  };
+
+  // Modal handlers
+  const handleHoldingClick = (holding: HoldingWithDetails) => {
+    setSelectedHolding(holding);
+    setIsModalOpen(true);
+  };
+
+  const handleModalClose = () => {
+    setIsModalOpen(false);
+    setSelectedHolding(null);
+  };
+
+  const handleHoldingUpdated = () => {
+    // Refetch holdings data
+    // The TRPC query will automatically refetch when the modal updates
+  };
+
+  const handleHoldingDeleted = () => {
+    // Refetch holdings data
+    // The TRPC query will automatically refetch when the modal deletes
   };
 
   const exportData = (format: "csv" | "json") => {
@@ -594,7 +616,8 @@ export function Holdings() {
                       {holdings.map((holding) => (
                         <Card
                           key={holding.id}
-                          className="hover:shadow-md transition-shadow"
+                          className="hover:shadow-md transition-shadow cursor-pointer"
+                          onClick={() => handleHoldingClick(holding)}
                         >
                           <CardHeader>
                             <CardTitle className="flex items-center justify-between">
@@ -693,6 +716,7 @@ export function Holdings() {
                       ]}
                       getRowKey={(row) => row.id}
                       onSort={handleSort}
+                      onRowClick={(row) => handleHoldingClick(row)}
                     />
                   )}
                 </div>
@@ -715,6 +739,15 @@ export function Holdings() {
           </Tabs>
         </>
       )}
+
+      {/* Holding Modal */}
+      <HoldingModal
+        holding={selectedHolding}
+        isOpen={isModalOpen}
+        onClose={handleModalClose}
+        onHoldingUpdated={handleHoldingUpdated}
+        onHoldingDeleted={handleHoldingDeleted}
+      />
     </div>
   );
 }

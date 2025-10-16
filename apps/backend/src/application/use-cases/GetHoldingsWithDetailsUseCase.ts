@@ -9,18 +9,19 @@ const logger = createComponentLogger("use-case:get-holdings-with-details");
 export interface HoldingWithDetails {
   id: string;
   token: {
+    id: string;
     symbol: string;
     name: string;
     type: string;
     typeCode: string;
     iconUrl?: string | null;
   };
-  amount: string;
-  value: string;
-  costBasis: string;
+  amount: number;
+  value: number;
+  costBasis: number;
   price?: {
     value: string;
-    timestamp: Date;
+    timestamp: string;
     source?: string;
   };
   account: {
@@ -38,6 +39,7 @@ export interface HoldingWithDetails {
     website?: string | null;
   };
   lastUpdated: string;
+  createdAt: string;
 }
 
 /**
@@ -94,7 +96,7 @@ export class GetHoldingsWithDetailsUseCase {
           h.tokenSymbol,
           {
             value: h.currentPrice || "0",
-            timestamp: h.priceTimestamp!,
+            timestamp: h.priceTimestamp!.toISOString(),
             source: h.priceSource,
           },
         ])
@@ -107,7 +109,7 @@ export class GetHoldingsWithDetailsUseCase {
         const currentPrice = portfolioPriceMap.get(token.symbol) || "0";
         const currentValue = new Decimal(holding.balance)
           .mul(new Decimal(currentPrice))
-          .toString();
+          .toNumber();
 
         // For now, cost basis is the same as current value (simplified)
         const costBasis = currentValue;
@@ -118,13 +120,14 @@ export class GetHoldingsWithDetailsUseCase {
         return {
           id: holding.id,
           token: {
+            id: token.id,
             symbol: token.symbol,
             name: token.name,
             type: token.typeName,
             typeCode: token.typeCode,
             iconUrl: token.iconUrl,
           },
-          amount: holding.balance,
+          amount: new Decimal(holding.balance).toNumber(),
           value: currentValue,
           costBasis: costBasis,
           price: priceInfo,
@@ -143,6 +146,7 @@ export class GetHoldingsWithDetailsUseCase {
             website: institution.website,
           },
           lastUpdated: holding.lastUpdated.toISOString(),
+          createdAt: holding.createdAt.toISOString(),
         };
       }
     );

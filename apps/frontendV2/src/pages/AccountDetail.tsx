@@ -2,7 +2,7 @@ import { useParams } from "react-router-dom";
 import { useMemo, useState } from "react";
 import TimeAgo from "react-timeago";
 import { Grid3X3, List } from "lucide-react";
-import { TokenTypeBadge } from "@/components/features";
+import { HoldingModal, TokenTypeBadge } from "@/components/features";
 import {
   TokenFilterSelector,
   TokenTypeSelector,
@@ -24,40 +24,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { trpc } from "@/lib/trpc";
 import { createCurrencyToken } from "@/lib/utils";
 import { useViewMode } from "@/hooks/use-view-mode";
-
-type HoldingWithDetails = {
-  id: string;
-  token: {
-    symbol: string;
-    name: string;
-    type: string;
-    typeCode: string;
-    iconUrl?: string | null;
-  };
-  amount: string;
-  value: string;
-  costBasis: string;
-  price?: {
-    value: string;
-    timestamp: string; // Changed from Date to string since it comes from API as string
-    source?: string;
-  };
-  account: {
-    id: string;
-    name: string;
-    type: string;
-    typeCode: string;
-    institutionId: string;
-  };
-  institution: {
-    id: string;
-    name: string;
-    type: string;
-    typeCode: string;
-    website?: string | null;
-  };
-  lastUpdated: string;
-};
+import type { HoldingWithDetails } from "@scani/shared/types";
 
 export function AccountDetail() {
   const { id } = useParams<{ id: string }>();
@@ -72,6 +39,11 @@ export function AccountDetail() {
   const [filterByToken, setFilterByToken] = useState(""); // Token filter
   const [valueRange, setValueRange] = useState("all");
   const [viewMode, setViewMode] = useViewMode("table");
+
+  // Modal state
+  const [selectedHolding, setSelectedHolding] =
+    useState<HoldingWithDetails | null>(null);
+  const [isModalOpen, setIsModalOpen] = useState(false);
 
   // Fetch base currency
   const { data: baseCurrency } = trpc.users.getBaseCurrency.useQuery();
@@ -108,7 +80,7 @@ export function AccountDetail() {
         filterByToken === "" || holding.token.symbol === filterByToken;
 
       const matchesValueRange = (() => {
-        const value = parseFloat(holding.value);
+        const value = holding.value;
         switch (valueRange) {
           case "under-1k":
             return value < 1000;
@@ -136,16 +108,16 @@ export function AccountDetail() {
           bValue = b.token.name.toLowerCase();
           break;
         case "amount":
-          aValue = parseFloat(a.amount);
-          bValue = parseFloat(b.amount);
+          aValue = a.amount;
+          bValue = b.amount;
           break;
         case "price":
           aValue = a.price ? parseFloat(a.price.value) : 0;
           bValue = b.price ? parseFloat(b.price.value) : 0;
           break;
         default:
-          aValue = parseFloat(a.value);
-          bValue = parseFloat(b.value);
+          aValue = a.value;
+          bValue = b.value;
           break;
       }
 
@@ -225,6 +197,27 @@ export function AccountDetail() {
     setValueRange("all");
     setSortField("value");
     setSortDirection("desc");
+  };
+
+  // Modal handlers
+  const handleHoldingClick = (holding: HoldingWithDetails) => {
+    setSelectedHolding(holding);
+    setIsModalOpen(true);
+  };
+
+  const handleModalClose = () => {
+    setIsModalOpen(false);
+    setSelectedHolding(null);
+  };
+
+  const handleHoldingUpdated = () => {
+    // Refetch account holdings data
+    // The TRPC query will automatically refetch when the modal updates
+  };
+
+  const handleHoldingDeleted = () => {
+    // Refetch account holdings data
+    // The TRPC query will automatically refetch when the modal deletes
   };
 
   if (accountLoading) {
@@ -332,7 +325,7 @@ export function AccountDetail() {
   }
 
   const totalValue = (filteredAndSortedHoldings || []).reduce(
-    (sum: number, holding) => sum + parseFloat(holding.value),
+    (sum: number, holding) => sum + holding.value,
     0
   );
 
@@ -455,9 +448,7 @@ export function AccountDetail() {
             {
               header: "Amount",
               accessor: (row: HoldingWithDetails) => (
-                <span className="font-mono">
-                  {parseFloat(row.amount).toLocaleString()}
-                </span>
+                <span className="font-mono">{row.amount.toLocaleString()}</span>
               ),
               className: "font-mono",
               sortable: true,
@@ -485,10 +476,7 @@ export function AccountDetail() {
             {
               header: "Value",
               accessor: (row: HoldingWithDetails) => (
-                <MoneyDisplay
-                  value={parseFloat(row.value)}
-                  token={baseCurrencyToken}
-                />
+                <MoneyDisplay value={row.value} token={baseCurrencyToken} />
               ),
               className: "font-mono font-medium",
               sortable: true,
@@ -499,13 +487,15 @@ export function AccountDetail() {
           onSort={handleSort}
           sortField={sortField}
           sortDirection={sortDirection}
+          onRowClick={(row) => handleHoldingClick(row)}
         />
       ) : (
         <div className="grid gap-4 grid-cols-1 md:grid-cols-2 lg:grid-cols-3">
           {filteredAndSortedHoldings.map((holding) => (
             <Card
               key={holding.id}
-              className="hover:shadow-md transition-shadow"
+              className="hover:shadow-md transition-shadow cursor-pointer"
+              onClick={() => handleHoldingClick(holding)}
             >
               <CardHeader className="pb-3">
                 <div className="flex items-center justify-between">
@@ -522,7 +512,7 @@ export function AccountDetail() {
                 <div className="flex justify-between items-center">
                   <span className="text-sm text-muted-foreground">Amount</span>
                   <span className="font-mono font-medium">
-                    {parseFloat(holding.amount).toLocaleString()}
+                    {holding.amount.toLocaleString()}
                   </span>
                 </div>
 
@@ -545,7 +535,7 @@ export function AccountDetail() {
                 <div className="flex justify-between items-center pt-2 border-t">
                   <span className="text-sm font-medium">Value</span>
                   <MoneyDisplay
-                    value={parseFloat(holding.value)}
+                    value={holding.value}
                     token={baseCurrencyToken}
                     className="font-medium"
                   />
@@ -555,6 +545,15 @@ export function AccountDetail() {
           ))}
         </div>
       )}
+
+      {/* Holding Modal */}
+      <HoldingModal
+        holding={selectedHolding}
+        isOpen={isModalOpen}
+        onClose={handleModalClose}
+        onHoldingUpdated={handleHoldingUpdated}
+        onHoldingDeleted={handleHoldingDeleted}
+      />
     </div>
   );
 }

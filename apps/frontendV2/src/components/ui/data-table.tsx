@@ -21,6 +21,7 @@ export interface DataTableProps<T> {
   emptyMessage?: string;
   loadingRowCount?: number;
   getRowKey: (row: T) => string;
+  onRowClick?: (row: T) => void;
 }
 
 export function DataTable<T>({
@@ -31,6 +32,7 @@ export function DataTable<T>({
   emptyMessage = "No data available",
   loadingRowCount = 4,
   getRowKey,
+  onRowClick,
 }: DataTableProps<T>) {
   const handleSort = (column: Column<T>) => {
     if (!column.sortable || !onSort) return;
@@ -135,7 +137,10 @@ export function DataTable<T>({
               {data.map((row) => (
                 <tr
                   key={getRowKey(row)}
-                  className="border-b hover:bg-muted/50 transition-colors"
+                  className={`border-b hover:bg-muted/50 transition-colors ${
+                    onRowClick ? "cursor-pointer" : ""
+                  }`}
+                  onClick={() => onRowClick?.(row)}
                 >
                   {columns.map((column) => (
                     <td
