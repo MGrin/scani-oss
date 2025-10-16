@@ -328,13 +328,7 @@ export function Accounts() {
   };
 
   const handleDeleteAccount = (account: Account) => {
-    if (
-      confirm(
-        `Are you sure you want to delete the account "${account.name}"? This action cannot be undone and will also delete all associated holdings and transactions.`
-      )
-    ) {
-      deleteAccountMutation.mutate({ id: account.id });
-    }
+    deleteAccountMutation.mutate({ id: account.id });
   };
 
   const renderActions = (account: Account) => (
@@ -347,7 +341,10 @@ export function Accounts() {
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end">
         <DropdownMenuItem
-          onClick={() => handleDeleteAccount(account)}
+          onClick={(e) => {
+            e.stopPropagation();
+            handleDeleteAccount(account);
+          }}
           className="text-destructive focus:text-destructive"
         >
           <Trash2 className="mr-2 h-4 w-4" />
