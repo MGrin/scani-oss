@@ -39,6 +39,7 @@ import { useFilters, useViewMode } from "@/hooks";
 import { useToast } from "@/hooks/use-toast";
 import { trpc } from "@/lib/trpc";
 import { createCurrencyToken } from "@/lib/utils";
+import { useQueryClient } from "@tanstack/react-query";
 
 type Account = {
   id: string;
@@ -78,6 +79,7 @@ export function Accounts() {
 
   const { toast } = useToast();
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
 
   // Delete account mutation
   const deleteAccountMutation = trpc.accounts.delete.useMutation({
@@ -85,6 +87,29 @@ export function Accounts() {
       toast({
         title: "Account deleted",
         description: "The account has been successfully deleted.",
+      });
+
+      // Invalidate all related queries
+      queryClient.invalidateQueries({
+        queryKey: trpc.accounts.getAll.getQueryKey(),
+      });
+      queryClient.invalidateQueries({
+        queryKey: trpc.accounts.getByUserIdWithSummary.getQueryKey(),
+      });
+      queryClient.invalidateQueries({
+        queryKey: trpc.holdings.getAll.getQueryKey(),
+      });
+      queryClient.invalidateQueries({
+        queryKey: trpc.holdings.getWithDetails.getQueryKey(),
+      });
+      queryClient.invalidateQueries({
+        queryKey: trpc.institutions.getAll.getQueryKey(),
+      });
+      queryClient.invalidateQueries({
+        queryKey: trpc.institutions.getByUserIdWithSummary.getQueryKey(),
+      });
+      queryClient.invalidateQueries({
+        queryKey: trpc.dashboard.getOverview.getQueryKey(),
       });
     },
     onError: (error) => {

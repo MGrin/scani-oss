@@ -53,6 +53,8 @@ type CompleteImportData = {
       id: string;
       tokenValue: string;
       amount: string;
+      isExisting?: boolean; // New field to distinguish existing vs new holdings
+      originalAmount?: string; // Track original amount for change detection
     }>;
   };
 };
@@ -65,13 +67,42 @@ export function AddData() {
   const [isAccountStepValid, setIsAccountStepValid] = useState(false);
   const [accountDisplayText, setAccountDisplayText] =
     useState<string>("Choose Account");
+  const [hasDataChanges, setHasDataChanges] = useState(false);
+
+  const utils = trpc.useUtils();
 
   const createTokenFromExternalMutation =
     trpc.tokens.createFromExternal.useMutation();
   const createHoldingsBatchMutation =
-    trpc.batchOperations.createHoldingsBatch.useMutation();
+    trpc.batchOperations.createHoldingsBatch.useMutation({
+      onSuccess: () => {
+        // Invalidate all related queries after creating holdings
+        utils.holdings.getAll.invalidate();
+        utils.holdings.getWithDetails.invalidate();
+        utils.accounts.getAll.invalidate();
+        utils.accounts.getByUserIdWithSummary.invalidate();
+        utils.institutions.getAll.invalidate();
+        utils.institutions.getByUserIdWithSummary.invalidate();
+        utils.dashboard.getOverview.invalidate();
+      },
+    });
+  const updateHoldingMutation = trpc.holdings.update.useMutation({
+    onSuccess: () => {
+      // Invalidate all related queries after updating holdings
+      utils.holdings.getAll.invalidate();
+      utils.holdings.getWithDetails.invalidate();
+      utils.accounts.getAll.invalidate();
+      utils.accounts.getByUserIdWithSummary.invalidate();
+      utils.institutions.getAll.invalidate();
+      utils.institutions.getByUserIdWithSummary.invalidate();
+      utils.dashboard.getOverview.invalidate();
+    },
+  });
   const [completeImportData, setCompleteImportData] =
     useState<CompleteImportData>({});
+
+  const selectedAccountId =
+    completeImportData.accountSelection?.selectedAccountId;
 
   useEffect(() => {
     const container = document.getElementById("mobile-bottom-nav");
@@ -173,9 +204,23 @@ export function AddData() {
     const hasInvalidHoldings = holdings.some(
       (holding) => !holding.tokenValue.trim() || !holding.amount.trim()
     );
+
+    // For existing accounts, also check if there are changes to existing holdings
+    const hasExistingChanges =
+      selectedAccountId &&
+      completeImportData.accountSelection?.mode === "select"
+        ? holdings.some(
+            (h) =>
+              h.isExisting &&
+              h.amount !== h.originalAmount &&
+              h.amount.trim() !== ""
+          )
+        : false;
+
     return {
       count: validHoldings.length,
       hasInvalid: hasInvalidHoldings || holdings.length === 0,
+      hasChanges: hasDataChanges || hasExistingChanges,
     };
   };
 
@@ -207,11 +252,12 @@ export function AddData() {
     <div className="space-y-6 pb-24 relative">
       {/* Full screen loading overlay */}
       {(createTokenFromExternalMutation.isPending ||
-        createHoldingsBatchMutation.isPending) && (
+        createHoldingsBatchMutation.isPending ||
+        updateHoldingMutation.isPending) && (
         <div className="fixed inset-0 bg-background/80 backdrop-blur-sm flex items-center justify-center z-50">
           <div className="text-center">
             <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto mb-2"></div>
-            <p className="text-sm font-medium">Creating holdings...</p>
+            <p className="text-sm font-medium">Updating holdings...</p>
           </div>
         </div>
       )}
@@ -282,8 +328,10 @@ export function AddData() {
           onCompleteDataUpdate={updateCompleteImportData}
           isCreatingHoldings={
             createTokenFromExternalMutation.isPending ||
-            createHoldingsBatchMutation.isPending
+            createHoldingsBatchMutation.isPending ||
+            updateHoldingMutation.isPending
           }
+          onChangesDetected={setHasDataChanges}
         />
       )}
 
@@ -312,78 +360,110 @@ export function AddData() {
                     // For account step, we can always proceed since account selection is optional
                     nextStep();
                   } else if (currentStep === "data") {
-                    // Handle completion - create all holdings in batch
+                    // Handle completion - update existing holdings and create new ones
                     const accountId =
                       completeImportData.accountSelection?.selectedAccountId;
                     const holdings =
                       completeImportData.dataEntry?.holdings || [];
 
-                    if (!accountId || holdings.length === 0) {
-                      console.log(
-                        "No account selected or no holdings to create"
-                      );
+                    if (!accountId) {
+                      console.log("No account selected");
                       return;
                     }
 
-                    // First, create any external tokens that don't exist
-                    const processedHoldings = [];
-                    for (const holding of holdings) {
-                      if (!holding.tokenValue || !holding.amount) continue;
+                    // Separate existing holdings that have changed from new holdings
+                    const existingHoldingsToUpdate = holdings.filter(
+                      (h) =>
+                        h.isExisting &&
+                        h.amount !== h.originalAmount &&
+                        h.amount.trim() !== ""
+                    );
+                    const newHoldingsToCreate = holdings.filter(
+                      (h) =>
+                        !h.isExisting && h.tokenValue.trim() && h.amount.trim()
+                    );
 
-                      let tokenId = holding.tokenValue;
+                    try {
+                      // Update existing holdings
+                      for (const holding of existingHoldingsToUpdate) {
+                        if (!holding.id.startsWith("existing-")) continue;
+                        const actualHoldingId = holding.id.replace(
+                          "existing-",
+                          ""
+                        );
 
-                      // Handle external token creation if needed
-                      if (isExternalTokenValue(tokenId)) {
-                        const externalTokenData =
-                          parseExternalTokenValue(tokenId);
-                        if (!externalTokenData) {
-                          console.error("Failed to parse external token data");
-                          continue;
-                        }
-
-                        const provider =
-                          externalTokenData.provider === "coingecko"
-                            ? "coingecko"
-                            : "finnhub";
-
-                        try {
-                          const newToken =
-                            await createTokenFromExternalMutation.mutateAsync({
-                              symbol: externalTokenData.symbol,
-                              provider,
-                              metadata: {
-                                ...externalTokenData.metadata,
-                                name: externalTokenData.name,
-                              },
-                            });
-                          tokenId = newToken.id;
-                        } catch (error) {
-                          console.error(
-                            "Failed to create external token:",
-                            error
-                          );
-                          continue;
-                        }
+                        await updateHoldingMutation.mutateAsync({
+                          id: actualHoldingId,
+                          data: {
+                            balance: holding.amount,
+                          },
+                        });
                       }
 
-                      processedHoldings.push({
-                        tokenId,
-                        balance: holding.amount,
-                      });
-                    }
+                      // Create new holdings if any
+                      if (newHoldingsToCreate.length > 0) {
+                        // First, create any external tokens that don't exist
+                        const processedHoldings = [];
+                        for (const holding of newHoldingsToCreate) {
+                          let tokenId = holding.tokenValue;
 
-                    // Create all holdings in batch
-                    try {
-                      await createHoldingsBatchMutation.mutateAsync({
-                        accountId,
-                        holdings: processedHoldings,
-                      });
-                      console.log("Successfully created holdings in batch");
+                          // Handle external token creation if needed
+                          if (isExternalTokenValue(tokenId)) {
+                            const externalTokenData =
+                              parseExternalTokenValue(tokenId);
+                            if (!externalTokenData) {
+                              console.error(
+                                "Failed to parse external token data"
+                              );
+                              continue;
+                            }
+
+                            const provider =
+                              externalTokenData.provider === "coingecko"
+                                ? "coingecko"
+                                : "finnhub";
+
+                            try {
+                              const newToken =
+                                await createTokenFromExternalMutation.mutateAsync(
+                                  {
+                                    symbol: externalTokenData.symbol,
+                                    provider,
+                                    metadata: {
+                                      ...externalTokenData.metadata,
+                                      name: externalTokenData.name,
+                                    },
+                                  }
+                                );
+                              tokenId = newToken.id;
+                            } catch (error) {
+                              console.error(
+                                "Failed to create external token:",
+                                error
+                              );
+                              continue;
+                            }
+                          }
+
+                          processedHoldings.push({
+                            tokenId,
+                            balance: holding.amount,
+                          });
+                        }
+
+                        // Create all new holdings in batch
+                        await createHoldingsBatchMutation.mutateAsync({
+                          accountId,
+                          holdings: processedHoldings,
+                        });
+                      }
+
+                      console.log("Successfully updated and created holdings");
 
                       // Redirect to account details page
                       navigate(`/accounts/${accountId}`);
                     } catch (error) {
-                      console.error("Failed to create holdings batch:", error);
+                      console.error("Failed to update/create holdings:", error);
                     }
                   }
                 }}
@@ -391,16 +471,13 @@ export function AddData() {
                   (currentStep === "method" && !completeImportData.method) ||
                   (currentStep === "account" && !isAccountStepValid) ||
                   (currentStep === "data" &&
-                    getValidHoldingsInfo().hasInvalid) ||
+                    !getValidHoldingsInfo().hasChanges) ||
                   createTokenFromExternalMutation.isPending ||
-                  createHoldingsBatchMutation.isPending
+                  createHoldingsBatchMutation.isPending ||
+                  updateHoldingMutation.isPending
                 }
               >
-                {currentStep === "data"
-                  ? `Create ${getValidHoldingsInfo().count} Holding${
-                      getValidHoldingsInfo().count !== 1 ? "s" : ""
-                    }`
-                  : "Continue"}
+                {currentStep === "data" ? "Submit" : "Continue"}
               </Button>
             </div>
           </div>,
@@ -524,11 +601,11 @@ function AccountSelectionStep({
   const { data: institutionTypes } = trpc.institutionTypes.getAll.useQuery();
 
   // Mutations for creating new items
-  const utils = trpc.useUtils();
+
   const createInstitution = trpc.institutions.create.useMutation({
     onSuccess: () => {
-      // Refetch institutions
-      utils.institutions.getAll.invalidate();
+      // Refetch institutions - simplified for now
+      // utils.institutions.getAll.invalidate();
     },
   });
 
@@ -1236,22 +1313,126 @@ function DataEntryStep({
   completeImportData,
   onCompleteDataUpdate,
   isCreatingHoldings,
+  onChangesDetected,
 }: {
   completeImportData: CompleteImportData;
   onCompleteDataUpdate: (updates: Partial<CompleteImportData>) => void;
   isCreatingHoldings: boolean;
+  onChangesDetected?: (hasChanges: boolean) => void;
 }) {
-  const holdings = completeImportData.dataEntry?.holdings || [
-    { id: `holding-${Date.now()}-initial`, tokenValue: "", amount: "" },
-  ];
+  // Fetch existing holdings for the selected account
+  const selectedAccountId =
+    completeImportData.accountSelection?.selectedAccountId;
+  const { data: allHoldings, isLoading: isLoadingHoldings } =
+    trpc.holdings.getWithDetails.useQuery(undefined, {
+      enabled:
+        !!selectedAccountId &&
+        completeImportData.accountSelection?.mode === "select",
+    });
+
+  // Filter holdings for the selected account
+  const existingHoldings =
+    allHoldings?.filter(
+      (holding) => holding.account.id === selectedAccountId
+    ) || [];
+
+  // Initialize holdings data when account changes
+  const holdings = useMemo(() => {
+    const currentHoldings = completeImportData.dataEntry?.holdings || [];
+
+    // If we have an existing account selected and no holdings initialized yet, and query has completed
+    if (
+      selectedAccountId &&
+      completeImportData.accountSelection?.mode === "select" &&
+      currentHoldings.length < 2 &&
+      !isLoadingHoldings
+    ) {
+      // Initialize with existing holdings
+      const initializedHoldings = existingHoldings.map((holding) => ({
+        id: `existing-${holding.id}`,
+        tokenValue: holding.token.id,
+        amount: holding.amount.toString(),
+        isExisting: true,
+        originalAmount: holding.amount.toString(),
+      }));
+
+      // Add one empty new holding
+      initializedHoldings.push({
+        id: `new-${Date.now()}-initial`,
+        tokenValue: "",
+        amount: "",
+        isExisting: false,
+        originalAmount: "",
+      });
+
+      return initializedHoldings;
+    }
+
+    // For new accounts or when holdings are already initialized
+    if (currentHoldings.length === 0) {
+      return [
+        {
+          id: `new-${Date.now()}-initial`,
+          tokenValue: "",
+          amount: "",
+          isExisting: false,
+          originalAmount: "",
+        },
+      ];
+    }
+
+    return currentHoldings;
+  }, [
+    selectedAccountId,
+    completeImportData.accountSelection?.mode,
+    completeImportData.dataEntry?.holdings,
+    existingHoldings,
+    isLoadingHoldings,
+  ]);
+
+  // Update holdings in state when they change
+  useEffect(() => {
+    if (holdings !== completeImportData.dataEntry?.holdings) {
+      onCompleteDataUpdate({
+        dataEntry: {
+          ...completeImportData.dataEntry,
+          holdings,
+        },
+      });
+    }
+  }, [holdings, completeImportData.dataEntry, onCompleteDataUpdate]);
+
+  // Check if there are any changes to existing holdings or new holdings added
+  const hasChanges = useMemo(() => {
+    const newHoldings = holdings.filter((h) => !h.isExisting);
+    const existingHoldings = holdings.filter((h) => h.isExisting);
+
+    // Check if any new holdings have data
+    const hasNewHoldings = newHoldings.some(
+      (h) => h.tokenValue.trim() && h.amount.trim()
+    );
+
+    // Check if any existing holdings have changed
+    const hasExistingChanges = existingHoldings.some(
+      (h) => h.amount !== h.originalAmount && h.amount.trim() !== ""
+    );
+
+    return hasNewHoldings || hasExistingChanges;
+  }, [holdings]);
+
+  // Notify parent of changes
+  useEffect(() => {
+    onChangesDetected?.(hasChanges);
+  }, [hasChanges, onChangesDetected]);
 
   const addHolding = useCallback(() => {
     const newHoldings = [
       ...holdings,
       {
-        id: `holding-${Date.now()}-${Math.random()}`,
+        id: `new-${Date.now()}-${Math.random()}`,
         tokenValue: "",
         amount: "",
+        isExisting: false,
       },
     ];
     onCompleteDataUpdate({
@@ -1291,6 +1472,9 @@ function DataEntryStep({
   );
 
   const renderDataEntryForm = () => {
+    const existingHoldingsList = holdings.filter((h) => h.isExisting);
+    const newHoldingsList = holdings.filter((h) => !h.isExisting);
+
     switch (completeImportData.method) {
       case "manual":
         return (
@@ -1298,18 +1482,101 @@ function DataEntryStep({
             <div className="text-center">
               <h3 className="text-lg font-semibold mb-2">Manual Data Entry</h3>
               <p className="text-muted-foreground">
-                Add holdings to your account by selecting tokens and entering
-                amounts.
+                {selectedAccountId &&
+                completeImportData.accountSelection?.mode === "select"
+                  ? "Edit existing holdings or add new ones to your account."
+                  : "Add holdings to your account by selecting tokens and entering amounts."}
               </p>
             </div>
 
+            {/* Existing Holdings Section */}
+            {existingHoldingsList.length > 0 && (
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <span>Existing Holdings</span>
+                    <Badge variant="secondary">
+                      {existingHoldingsList.length}
+                    </Badge>
+                  </CardTitle>
+                  <p className="text-sm text-muted-foreground">
+                    Edit the amounts of your existing holdings
+                  </p>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  {existingHoldingsList.map((holding) => {
+                    const hasChanged =
+                      holding.amount !== holding.originalAmount &&
+                      holding.amount.trim() !== "";
+                    return (
+                      <div
+                        key={holding.id}
+                        className="flex flex-col md:flex-row gap-4 md:items-end"
+                      >
+                        <div className="flex-1">
+                          <Label htmlFor={`token-${holding.id}`}>Token</Label>
+                          <TokenSearchableSelector
+                            value={holding.tokenValue}
+                            onValueChange={(value) =>
+                              updateHolding(holding.id, "tokenValue", value)
+                            }
+                            placeholder="Search tokens..."
+                            disabled={isCreatingHoldings || true} // Disable token changes for existing holdings
+                          />
+                        </div>
+                        <div className="w-32">
+                          <Label htmlFor={`amount-${holding.id}`}>Amount</Label>
+                          <Input
+                            id={`amount-${holding.id}`}
+                            type="number"
+                            step="any"
+                            value={holding.amount}
+                            onChange={(e) =>
+                              updateHolding(
+                                holding.id,
+                                "amount",
+                                e.target.value
+                              )
+                            }
+                            placeholder="0.00"
+                            disabled={isCreatingHoldings}
+                            className={hasChanged ? "border-blue-500" : ""}
+                          />
+                        </div>
+                        {hasChanged && (
+                          <Badge
+                            variant="outline"
+                            className="text-blue-600 border-blue-500"
+                          >
+                            Modified
+                          </Badge>
+                        )}
+                      </div>
+                    );
+                  })}
+                </CardContent>
+              </Card>
+            )}
+
+            {/* New Holdings Section */}
             <Card>
               <CardHeader>
-                <CardTitle>Add Holdings</CardTitle>
+                <CardTitle className="flex items-center gap-2">
+                  <span>Add New Holdings</span>
+                  {newHoldingsList.length > 0 && (
+                    <Badge variant="secondary">{newHoldingsList.length}</Badge>
+                  )}
+                </CardTitle>
+                <p className="text-sm text-muted-foreground">
+                  Add additional holdings to your account
+                </p>
               </CardHeader>
               <CardContent className="space-y-4">
-                {holdings.map((holding) => (
-                  <div key={holding.id} className="flex gap-4 items-end">
+                {newHoldingsList.map((holding) => (
+                  <div
+                    key={holding.id}
+                    className="flex flex-col md:flex-row gap-4 md:items-end"
+                  >
                     <div className="flex-1">
                       <Label htmlFor={`token-${holding.id}`}>Token</Label>
                       <TokenSearchableSelector
@@ -1335,7 +1602,7 @@ function DataEntryStep({
                         disabled={isCreatingHoldings}
                       />
                     </div>
-                    {holdings.length > 1 && (
+                    {newHoldingsList.length > 1 && (
                       <Button
                         type="button"
                         variant="outline"
