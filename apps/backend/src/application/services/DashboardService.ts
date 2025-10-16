@@ -24,8 +24,13 @@ type PortfolioValueResult = {
 type HoldingWithDetails = {
   holding: Holding;
   token: Token & { typeCode: string; typeName: string };
-  account: { id: string; name: string; institutionId: string };
-  institution: { id: string; name: string };
+  account: {
+    id: string;
+    name: string;
+    institutionId: string;
+    typeCode: string;
+  };
+  institution: { id: string; name: string; website?: string };
 };
 
 export interface DashboardOverview {
@@ -49,8 +54,10 @@ export interface DashboardOverview {
     tokenTypeCode: string;
     accountId: string;
     accountName: string;
+    accountTypeCode: string;
     institutionId: string;
     institutionName: string;
+    institutionWebsite?: string;
   }>;
   assetAllocation: Array<{
     type: string;
@@ -195,8 +202,10 @@ export class DashboardService extends BaseService {
         tokenTypeCode: h.token.typeCode,
         accountId: h.account.id,
         accountName: h.account.name,
+        accountTypeCode: h.account.typeCode,
         institutionId: h.institution.id,
         institutionName: h.institution.name,
+        institutionWebsite: h.institution.website || undefined,
       }));
 
     return topHoldings;

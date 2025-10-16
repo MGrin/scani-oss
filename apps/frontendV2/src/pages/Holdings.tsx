@@ -683,10 +683,14 @@ export function Holdings() {
                               <AccountBadge
                                 accountId={holding.account.id}
                                 accountName={holding.account.name}
+                                accountTypeCode={holding.account.typeCode}
                               />
                               <InstitutionBadge
                                 institutionId={holding.institution.id}
                                 institutionName={holding.institution.name}
+                                institutionWebsite={
+                                  holding.institution.website ?? undefined
+                                }
                               />
                             </div>
                           </CardHeader>
@@ -751,6 +755,9 @@ export function Holdings() {
                             <InstitutionBadge
                               institutionId={row.institution.id}
                               institutionName={row.institution.name}
+                              institutionWebsite={
+                                row.institution.website ?? undefined
+                              }
                             />
                           ),
                           sortable: true,
@@ -761,6 +768,7 @@ export function Holdings() {
                             <AccountBadge
                               accountId={row.account.id}
                               accountName={row.account.name}
+                              accountTypeCode={row.account.typeCode}
                             />
                           ),
                         },

@@ -1,4 +1,5 @@
 import {
+  CreditCard,
   FileText,
   Home,
   LogOut,
@@ -50,6 +51,7 @@ interface LayoutProps {
 
 const navigation = [
   { name: "Dashboard", href: "/", icon: Home },
+  { name: "Accounts", href: "/accounts", icon: CreditCard },
   { name: "Holdings", href: "/holdings", icon: TrendingUp },
   { name: "Settings", href: "/settings", icon: Settings },
 ];
@@ -62,6 +64,7 @@ const comingSoonNavigation = [
 // Helper function to determine which navigation item should be active
 function getActiveNavItem(pathname: string): string {
   if (pathname === "/") return "/";
+  if (pathname.startsWith("/accounts")) return "/accounts";
   if (pathname.startsWith("/holdings")) return "/holdings";
   if (pathname.startsWith("/settings")) return "/settings";
   return "";
@@ -74,6 +77,7 @@ function useBreadcrumbs(pathname: string) {
   const breadcrumbs = [{ name: "Dashboard", href: "/", isHome: true }];
 
   const routeMap: Record<string, string> = {
+    accounts: "Accounts",
     holdings: "Holdings",
     settings: "Settings",
   };

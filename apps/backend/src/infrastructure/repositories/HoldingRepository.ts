@@ -263,8 +263,13 @@ export class HoldingRepository
     Array<{
       holding: Holding;
       token: Token & { typeCode: string; typeName: string };
-      account: { id: string; name: string; institutionId: string };
-      institution: { id: string; name: string };
+      account: {
+        id: string;
+        name: string;
+        institutionId: string;
+        typeCode: string;
+      };
+      institution: { id: string; name: string; website?: string };
     }>
   > {
     try {
@@ -287,9 +292,11 @@ export class HoldingRepository
           accountId: schema.accounts.id,
           accountName: schema.accounts.name,
           accountInstitutionId: schema.accounts.institutionId,
+          accountTypeCode: schema.accountTypes.code,
           // Institution data
           institutionId: schema.institutions.id,
           institutionName: schema.institutions.name,
+          institutionWebsite: schema.institutions.website,
         })
         .from(schema.holdings)
         .innerJoin(schema.tokens, eq(schema.holdings.tokenId, schema.tokens.id))
@@ -304,6 +311,10 @@ export class HoldingRepository
         .innerJoin(
           schema.institutions,
           eq(schema.accounts.institutionId, schema.institutions.id)
+        )
+        .innerJoin(
+          schema.accountTypes,
+          eq(schema.accounts.typeId, schema.accountTypes.id)
         )
         .where(eq(schema.holdings.userId, userId));
 
@@ -326,10 +337,12 @@ export class HoldingRepository
           id: r.accountId,
           name: r.accountName,
           institutionId: r.accountInstitutionId,
+          typeCode: r.accountTypeCode,
         },
         institution: {
           id: r.institutionId,
           name: r.institutionName,
+          website: r.institutionWebsite ?? undefined,
         },
       }));
     } catch (error) {

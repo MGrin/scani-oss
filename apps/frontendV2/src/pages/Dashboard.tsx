@@ -183,7 +183,7 @@ export function Dashboard() {
                 {overview.topHoldings.map((holding) => (
                   <div
                     key={holding.id}
-                    className="flex items-center justify-between border-b last:border-b-0 "
+                    className="flex items-center justify-between border-b last:border-b-0 pb-2"
                   >
                     <div className="flex-1">
                       <div className="flex items-center gap-2">
@@ -197,10 +197,14 @@ export function Dashboard() {
                         <AccountBadge
                           accountId={holding.accountId}
                           accountName={holding.accountName}
+                          accountTypeCode={holding.accountTypeCode}
                         />
                         <InstitutionBadge
                           institutionId={holding.institutionId}
                           institutionName={holding.institutionName}
+                          institutionWebsite={
+                            holding.institutionWebsite ?? undefined
+                          }
                         />
                       </div>
                     </div>

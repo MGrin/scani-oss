@@ -182,6 +182,7 @@ export function HoldingModal({
                   <AccountBadge
                     accountId={holding.account.id}
                     accountName={holding.account.name}
+                    accountTypeCode={holding.account.typeCode}
                   />
                 ) : (
                   <span className="text-sm text-muted-foreground">
@@ -199,6 +200,9 @@ export function HoldingModal({
                   <InstitutionBadge
                     institutionId={holding.institution.id}
                     institutionName={holding.institution.name}
+                    institutionWebsite={
+                      holding.institution.website ?? undefined
+                    }
                   />
                 ) : (
                   <span className="text-sm text-muted-foreground">
