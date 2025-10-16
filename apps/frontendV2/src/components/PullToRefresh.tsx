@@ -125,7 +125,13 @@ export function PullToRefresh({
   const progress = Math.min((pullDistance / PULL_THRESHOLD) * 100, 100);
 
   return (
-    <div ref={containerRef} className="relative h-full overflow-y-hidden">
+    <div
+      ref={containerRef}
+      className={cn(
+        "relative h-full overflow-x-hidden touch-pan-y",
+        isPWA() ? "overflow-y-auto" : "overflow-y-hidden"
+      )}
+    >
       {/* Pull-to-refresh indicator */}
       {isEnabled && (
         <div
