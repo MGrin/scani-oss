@@ -1,400 +1,296 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta http-equiv="X-UA-Compatible" content="IE=edge">
   <title>Sign in to Scani</title>
-  <!--[if mso]>
-  <noscript>
-    <xml>
-      <o:OfficeDocumentSettings>
-        <o:PixelsPerInch>96</o:PixelsPerInch>
-      </o:OfficeDocumentSettings>
-    </xml>
-  </noscript>
-  <![endif]-->
   <style>
-    * {
-      margin: 0;
-      padding: 0;
-      box-sizing: border-box;
-    }
-
     body {
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
-      line-height: 1.6;
-      color: #333333;
-      background-color: #f5f5f5;
-      padding: 0;
+      background: #f8f9fb;
+      color: #16181c;
+      font-family: 'Inter', sans-serif;
       margin: 0;
+      padding: 0;
+      font-size: 16px;
     }
 
     .email-wrapper {
       width: 100%;
-      background-color: #f5f5f5;
-      padding: 40px 20px;
+      padding: 32px 0;
     }
 
     .email-container {
-      max-width: 600px;
+      max-width: 460px;
+      background: #fff;
       margin: 0 auto;
-      background-color: #ffffff;
-      border-radius: 8px;
+      border-radius: 12px;
+      border: 1px solid #e6e8ec;
+      box-shadow: 0 1px 4px rgba(22, 24, 28, 0.04);
       overflow: hidden;
-      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
     }
 
     .email-header {
-      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-      padding: 32px 40px;
-      text-align: center;
+      padding: 28px 32px 12px 32px;
+      text-align: left;
+      border-bottom: 1px solid #f2f3f5;
     }
 
-    .logo {
-      font-size: 28px;
-      font-weight: 700;
-      color: #ffffff;
-      text-decoration: none;
-      display: inline-block;
-      margin-bottom: 8px;
+    .logo-container {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .logo-image {
+      width: 40px;
+      height: 40px;
+      border-radius: 8px;
+    }
+
+    .logo-text {
+      font-size: 22px;
+      font-weight: 600;
+      letter-spacing: -0.5px;
+      color: #16181c;
+      margin-left: 4px;
     }
 
     .header-subtitle {
-      color: rgba(255, 255, 255, 0.9);
-      font-size: 16px;
+      margin-top: 8px;
+      font-size: 14px;
+      color: #666a73;
       font-weight: 400;
     }
 
     .email-content {
-      padding: 40px 40px 32px;
+      padding: 24px 32px 12px 32px;
     }
 
     .greeting {
-      font-size: 24px;
-      font-weight: 600;
-      margin-bottom: 16px;
-      color: #1a1a1a;
+      font-size: 18px;
+      font-weight: 500;
+      margin-bottom: 12px;
     }
 
     .message-text {
-      font-size: 16px;
-      margin-bottom: 32px;
-      color: #555555;
+      margin-bottom: 18px;
+      color: #444950;
     }
 
-    /* OTP Code Styles */
+    .code-container,
+    .cta-container,
+    .alternative-link,
+    .expiry-info,
+    .instructions,
+    .security-notice {
+      margin-bottom: 24px;
+    }
+
     .code-container {
-      background: linear-gradient(135deg, #f8f9ff 0%, #e8edff 100%);
-      border: 2px solid #e1e8ff;
-      border-radius: 12px;
-      padding: 24px;
+      border: 1px solid #e6e8ec;
+      background: #fafbfc;
+      border-radius: 8px;
+      padding: 20px 0;
       text-align: center;
-      margin: 24px 0;
     }
 
     .code-label {
-      font-size: 14px;
-      font-weight: 600;
-      color: #667eea;
-      margin-bottom: 8px;
       text-transform: uppercase;
-      letter-spacing: 0.5px;
+      font-size: 12px;
+      color: #6d7280;
+      margin-bottom: 12px;
+      letter-spacing: 1px;
+      font-weight: 500;
     }
 
     .verification-code {
       font-size: 32px;
-      font-weight: 700;
-      font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
-      color: #1a1a1a;
-      letter-spacing: 8px;
-      padding: 16px 24px;
-      background-color: #ffffff;
-      border-radius: 8px;
-      border: 1px solid #e1e8ff;
-      margin: 12px auto;
+      font-family: 'Menlo', 'Monaco', 'Consolas', monospace;
+      background: #fff;
+      border-radius: 6px;
+      border: 1px solid #e6e8ec;
+      padding: 10px 22px;
+      margin: 0 auto;
       display: inline-block;
+      color: #222428;
+      font-weight: 600;
+      letter-spacing: 6px;
       user-select: all;
-      -webkit-user-select: all;
-      -moz-user-select: all;
-      -ms-user-select: all;
     }
 
     .code-hint {
-      font-size: 13px;
-      color: #888888;
+      font-size: 12px;
+      color: #888d97;
       margin-top: 8px;
     }
 
-    /* Magic Link Button Styles */
     .cta-container {
       text-align: center;
-      margin: 32px 0;
     }
 
     .cta-button {
-      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-      color: #ffffff;
-      text-decoration: none;
-      padding: 16px 32px;
-      border-radius: 8px;
-      font-size: 16px;
-      font-weight: 600;
       display: inline-block;
-      transition: transform 0.2s ease, box-shadow 0.2s ease;
-      box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
+      padding: 14px 24px;
+      border-radius: 6px;
+      background-color: #16181c;
+      color: #fff;
+      font-size: 16px;
+      font-weight: 500;
+      text-decoration: none;
+      border: 1px solid #16181c;
+      transition: background 0.2s, color 0.2s;
     }
 
     .cta-button:hover {
-      transform: translateY(-2px);
-      box-shadow: 0 6px 20px rgba(102, 126, 234, 0.4);
+      background-color: #23272f;
+      color: #fff;
     }
 
     .alternative-link {
-      margin-top: 24px;
-      padding: 16px;
-      background-color: #f8f9fa;
-      border-radius: 8px;
-      border: 1px solid #e9ecef;
-    }
-
-    .alternative-text {
+      background: #f6f7f9;
+      border-radius: 6px;
+      padding: 14px;
+      border: 1px solid #e6e8ec;
       font-size: 13px;
-      color: #666666;
-      margin-bottom: 8px;
-    }
-
-    .link-text {
-      font-size: 12px;
-      color: #667eea;
       word-break: break-all;
-      font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
-    }
-
-    .divider {
-      margin: 32px 0;
-      text-align: center;
-      position: relative;
-    }
-
-    .divider::before {
-      content: '';
-      position: absolute;
-      top: 50%;
-      left: 0;
-      right: 0;
-      height: 1px;
-      background-color: #e1e8ff;
-    }
-
-    .divider-text {
-      background-color: #ffffff;
-      padding: 0 16px;
-      color: #888888;
-      font-size: 14px;
-      font-weight: 500;
+      font-family: 'Menlo', 'Monaco', 'Consolas', monospace;
+      color: #27282c;
     }
 
     .expiry-info {
-      background-color: #fff8e1;
-      border: 1px solid #ffecb3;
-      border-radius: 8px;
-      padding: 16px;
-      margin: 24px 0;
-    }
-
-    .expiry-info p {
-      margin: 0;
-      color: #f57c00;
-      font-size: 14px;
-      font-weight: 500;
+      background: #f6f7f9;
+      border-radius: 6px;
+      padding: 12px;
+      font-size: 13px;
+      color: #666a73;
+      border: 1px solid #e6e8ec;
     }
 
     .instructions {
-      background-color: #f0f7ff;
-      border-radius: 8px;
-      padding: 20px;
-      margin: 24px 0;
+      background: #fafbfc;
+      border-radius: 6px;
+      border: 1px solid #e6e8ec;
+      padding: 14px;
+      font-size: 14px;
+      color: #444950;
     }
 
     .instructions ul {
-      margin: 8px 0 0 20px;
-      padding: 0;
+      margin: 8px 0 0 18px;
     }
 
     .instructions li {
-      margin-bottom: 8px;
-      color: #555555;
+      margin-bottom: 5px;
     }
 
     .security-notice {
-      background-color: #fff3e0;
-      border-left: 4px solid #ff9800;
-      padding: 16px 20px;
-      margin: 24px 0;
-      border-radius: 0 8px 8px 0;
-    }
-
-    .security-notice p {
-      margin: 0;
-      color: #e65100;
-      font-size: 14px;
+      background: #fff6eb;
+      border-left: 3px solid #ffd699;
+      padding: 10px 16px;
+      border-radius: 0 6px 6px 0;
+      color: #9e6108;
+      font-size: 13px;
     }
 
     .email-footer {
-      background-color: #f8f9fa;
-      padding: 32px 40px;
-      text-align: center;
-      border-top: 1px solid #e9ecef;
+      padding: 20px 32px;
+      text-align: left;
+      border-top: 1px solid #f2f3f5;
+      background: #f8f9fb;
+      font-size: 13px;
+      color: #888d97;
     }
 
-    .footer-logo {
-      font-size: 20px;
-      font-weight: 600;
-      color: #333333;
-      margin-bottom: 8px;
-    }
+    @media only screen and (max-width: 520px) {
 
-    .footer-text {
-      color: #888888;
-      font-size: 14px;
-      line-height: 1.5;
-    }
-
-    .footer-text a {
-      color: #667eea;
-      text-decoration: none;
-    }
-
-    /* Responsive Design */
-    @media only screen and (max-width: 600px) {
-      .email-wrapper {
-        padding: 20px 10px;
-      }
-
-      .email-content {
-        padding: 24px 20px;
-      }
-
-      .email-header {
-        padding: 24px 20px;
-      }
-
-      .logo {
-        font-size: 24px;
-      }
-
-      .greeting {
-        font-size: 20px;
-      }
-
-      .verification-code {
-        font-size: 24px;
-        letter-spacing: 4px;
-        padding: 12px 16px;
-      }
-
-      .cta-button {
-        display: block;
-        margin: 0 auto;
-        width: fit-content;
-      }
-
+      .email-container,
+      .email-header,
+      .email-content,
       .email-footer {
-        padding: 24px 20px;
-      }
-    }
-
-    /* Dark mode support */
-    @media (prefers-color-scheme: dark) {
-      .verification-code {
-        background-color: #f8f9ff !important;
-        color: #1a1a1a !important;
+        padding-left: 16px !important;
+        padding-right: 16px !important;
       }
     }
   </style>
 </head>
+
 <body>
   <div class="email-wrapper">
     <div class="email-container">
       <!-- Header -->
       <div class="email-header">
-        <div class="logo">Scani</div>
+        <div class="logo-container">
+          <img src="https://app.scani.xyz/icons/icon-152x152.png" alt="Scani Logo" class="logo-image">
+          <div class="logo-text">Scani</div>
+        </div>
         <div class="header-subtitle">Personal Finance Management</div>
       </div>
 
       <!-- Main Content -->
       <div class="email-content">
-        <h2 class="greeting">Sign in to your account</h2>
+        <div class="greeting">Sign in to your account</div>
+        <div class="message-text">
+          Choose your preferred way to sign in. Your sign-in method is secure and temporary.
+        </div>
 
-        <p class="message-text">
-          Choose your preferred way to sign in to your Scani account. Both options are secure and will expire automatically.
-        </p>
+        <div class="instructions">
+          <strong>📱 Using Scani as a PWA (installed app)?</strong><br>
+          Please copy the verification code below and paste it into the app. Magic links will open in your default
+          browser instead of the PWA.
+        </div>
 
-        <!-- OTP Section (only shows if Token is available) -->
+        <!-- Logic: Check custom variable from .Data -->
+        {{ if .ConfirmationURL }}
+        <!-- Magic Link Section -->
+        <div class="cta-container">
+          <a href="{{ .ConfirmationURL }}" class="cta-button" style="color:#fff !important;text-decoration:none;">
+            Sign in to Scani
+          </a>
+        </div>
+        <div class="alternative-link">
+          Copy and paste this link:<br>
+          {{ .ConfirmationURL }}
+        </div>
+        <div class="expiry-info">
+          <strong>⏰ This magic link expires in 1 hour</strong>
+        </div>
+        {{ end }}
         {{ if .Token }}
+        <!-- OTP Section -->
         <div class="code-container">
           <div class="code-label">Verification Code</div>
           <div class="verification-code">{{ .Token }}</div>
           <div class="code-hint">Tap to copy • Valid for 10 minutes</div>
         </div>
-
         <div class="expiry-info">
-          <p><strong>⏰ This code expires in 10 minutes</strong></p>
+          <strong>⏰ This code expires in 10 minutes</strong>
         </div>
-
         <div class="instructions">
-          <p><strong>📱 How to use this code:</strong></p>
+          <strong>How to use this code:</strong>
           <ul>
             <li>Open the Scani app on your device</li>
-            <li>Enter this 6-digit code when prompted</li>
+            <li>Enter this code when prompted</li>
             <li>Complete your sign-in process</li>
           </ul>
         </div>
         {{ end }}
 
-        <!-- Divider (only shows if both Token and ConfirmationURL are available) -->
-        {{ if and .Token .ConfirmationURL }}
-        <div class="divider">
-          <span class="divider-text">OR</span>
-        </div>
-        {{ end }}
-
-        <!-- Magic Link Section (only shows if ConfirmationURL is available) -->
-        {{ if .ConfirmationURL }}
-        <div class="cta-container">
-          <a href="{{ .ConfirmationURL }}" class="cta-button">
-            Sign In to Scani
-          </a>
-        </div>
-
-        <div class="alternative-link">
-          <div class="alternative-text">Or copy and paste this link in your browser:</div>
-          <div class="link-text">{{ .ConfirmationURL }}</div>
-        </div>
-
-        <div class="expiry-info">
-          <p><strong>⏰ This magic link expires in 1 hour</strong></p>
-        </div>
-        {{ end }}
-
-        <!-- Security Notice -->
         <div class="security-notice">
-          <p>
-            <strong>⚠️ Security Notice:</strong> If you didn't request this {{ if .Token }}code{{ else }}link{{ end }}, please ignore this email. Never share {{ if .Token }}this code{{ else }}this link{{ end }} with anyone.
-          </p>
+          <strong>Security Notice:</strong>
+          If you didn't request this {{ if eq .Data.email_type "magic_link" }}link{{ else }}code{{ end }}, please ignore
+          this email. Never share {{ if eq .Data.email_type "magic_link" }}this link{{ else }}this code{{ end }} with
+          anyone.
         </div>
       </div>
 
       <!-- Footer -->
       <div class="email-footer">
-        <div class="footer-logo">Scani</div>
-        <div class="footer-text">
-          Personal Finance Management<br>
-          This is an automated security email, please do not reply.
-        </div>
+        Scani • Personal Finance Management<br>
+        This is an automated email, please do not reply.
       </div>
     </div>
   </div>
 </body>
+
 </html>
