@@ -72,9 +72,7 @@ function App() {
               <button
                 type="button"
                 className="bg-black text-white px-6 py-2 rounded-lg hover:bg-gray-800 transition-colors flex items-center gap-2"
-                onClick={() =>
-                  window.open("https://app.scani.xyz/auth", "_blank")
-                }
+                onClick={() => window.open("https://app.scani.xyz", "_blank")}
               >
                 Get Started
                 <ArrowRight className="w-4 h-4" />
@@ -124,9 +122,7 @@ function App() {
               <button
                 type="button"
                 className="group bg-gradient-to-r from-gray-900 to-black text-white px-8 py-4 rounded-xl hover:from-black hover:to-gray-900 transition-all duration-200 flex items-center justify-center gap-2 text-lg font-semibold shadow-lg hover:shadow-xl transform hover:-translate-y-0.5"
-                onClick={() =>
-                  window.open("https://app.scani.xyz/auth", "_blank")
-                }
+                onClick={() => window.open("https://app.scani.xyz", "_blank")}
               >
                 Join Alpha
                 <ArrowRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
@@ -370,9 +366,7 @@ function App() {
                 <button
                   type="button"
                   className="bg-gradient-to-r from-gray-900 to-black text-white px-8 py-3 rounded-xl hover:from-black hover:to-gray-900 transition-all duration-200 flex items-center justify-center gap-2 text-lg font-semibold shadow-lg"
-                  onClick={() =>
-                    window.open("https://app.scani.xyz/auth", "_blank")
-                  }
+                  onClick={() => window.open("https://app.scani.xyz", "_blank")}
                 >
                   Request Alpha Access
                   <ArrowRight className="w-5 h-5" />
@@ -506,9 +500,7 @@ function App() {
             <div className="flex flex-col sm:flex-row gap-4 justify-center mb-8">
               <button
                 type="button"
-                onClick={() =>
-                  window.open("https://app.scani.xyz/auth", "_blank")
-                }
+                onClick={() => window.open("https://app.scani.xyz", "_blank")}
                 className="group bg-white text-gray-900 px-10 py-5 rounded-2xl hover:bg-gray-50 transition-all duration-200 flex items-center justify-center gap-3 text-xl font-bold shadow-2xl hover:shadow-white/25 transform hover:-translate-y-1"
               >
                 Request Alpha Access
