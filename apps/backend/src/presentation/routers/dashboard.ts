@@ -1,7 +1,9 @@
-import { Container } from "typedi";
-import { DashboardService } from "../../application/services/DashboardService";
-import { getUserId } from "../middleware/auth";
-import { protectedProcedure, router } from "../trpc";
+import { Container } from 'typedi';
+import { DashboardService } from '../../application/services/DashboardService';
+import { requireAuth } from '../middleware/auth';
+import { protectedProcedure, router } from '../trpc';
+
+const dashboardService = Container.get(DashboardService);
 
 export const dashboardRouter = router({
   /**
@@ -9,12 +11,11 @@ export const dashboardRouter = router({
    * Includes: portfolio value, counts, top holdings, and asset allocation
    */
   getOverview: protectedProcedure.query(async ({ ctx }) => {
-    const userId = getUserId(ctx);
-    const dashboardService = Container.get(DashboardService);
+    const { dbUser } = requireAuth(ctx);
 
     // Get user's base currency if available
-    const userBaseCurrencyId = ctx.dbUser?.baseCurrencyId || undefined;
+    const userBaseCurrencyId = dbUser.baseCurrencyId || undefined;
 
-    return dashboardService.getDashboardOverview(userId, userBaseCurrencyId);
+    return dashboardService.getDashboardOverview(dbUser.id, userBaseCurrencyId);
   }),
 });

@@ -1,20 +1,11 @@
+import type { CreateTokenInput } from '@scani/shared';
 import { Container, Service } from 'typedi';
-import type { CreateTokenInput, UpdateTokenInput } from '../../domain/dtos/token';
 import type { Token, TokenType } from '../../domain/entities';
 import { TokenTypeRepository } from '../../infrastructure/repositories/EnumRepositories';
 import { TokenPriceRepository } from '../../infrastructure/repositories/TokenPriceRepository';
 import { TokenRepository } from '../../infrastructure/repositories/TokenRepository';
 import { BaseService } from './BaseService';
 
-/**
- * TokenService
- *
- * Handles all business logic related to token management including:
- * - Token creation with proper provider metadata structure
- * - Atomic token + price creation for private tokens
- * - Token validation and updates
- * - Provider metadata management for CoinGecko and Finnhub
- */
 @Service()
 export class TokenService extends BaseService {
   private readonly tokenRepository = Container.get(TokenRepository);
@@ -51,19 +42,6 @@ export class TokenService extends BaseService {
     }
   }
 
-  /**
-   * Create a new token with proper validation and metadata handling
-   *
-   * **CRITICAL BUG FIXES:**
-   * 1. Properly structures provider metadata for CoinGecko (with id field)
-   * 2. Properly structures provider metadata for Finnhub (with symbol field)
-   * 3. Creates manual price entry atomically for private tokens
-   * 4. Uses database transaction for atomic operations
-   *
-   * @param data - Token creation data
-   * @param userId - ID of the user creating the token
-   * @returns Created token entity
-   */
   async createToken(data: CreateTokenInput): Promise<Token> {
     try {
       this.logInfo('Creating new token', {
@@ -287,107 +265,6 @@ export class TokenService extends BaseService {
   }
 
   /**
-   * Find tokens by multiple symbols
-   *
-   * @param symbols - Array of token symbols to find
-   * @returns Array of found tokens
-   */
-  async findTokensBySymbols(symbols: string[]): Promise<Token[]> {
-    try {
-      if (symbols.length === 0) return [];
-      return await this.tokenRepository.findBySymbols(symbols);
-    } catch (error) {
-      throw this.handleError(error, 'findTokensBySymbols');
-    }
-  }
-
-  /**
-   * Update a token (only private tokens can be updated)
-   *
-   * @param tokenId - ID of the token to update
-   * @param data - Token update data
-   * @param userId - ID of the user updating the token
-   * @returns Updated token entity
-   */
-  async updateToken(tokenId: string, data: UpdateTokenInput): Promise<Token> {
-    try {
-      this.logInfo('Updating token', { tokenId, data });
-
-      // Get current token with type
-      const currentToken = await this.tokenRepository.findByIdWithType(tokenId);
-      this.assertExists(currentToken, `Token with ID ${tokenId} not found`);
-
-      // Only allow updating private tokens (check metadata for type since entity doesn't have typeCode)
-      const metadata = JSON.parse(currentToken.providerMetadata || '{}');
-      if (metadata.provider !== 'manual') {
-        throw new Error('Only manually created tokens can be updated');
-      }
-
-      return await this.withTransaction(async (tx) => {
-        let updatedToken = currentToken;
-
-        // Update description if provided
-        if (data.description !== undefined) {
-          const currentMetadata = JSON.parse(currentToken.providerMetadata || '{}');
-          const updatedMetadata = {
-            ...currentMetadata,
-            manual: {
-              ...(currentMetadata.manual || {}),
-              description: data.description,
-            },
-            updatedAt: new Date().toISOString(),
-          };
-
-          const result = await this.tokenRepository.update(
-            tokenId,
-            {
-              providerMetadata: JSON.stringify(updatedMetadata),
-            },
-            tx
-          );
-          this.assertExists(result, 'Failed to update token description');
-          // Re-fetch with type info
-          const reloaded = await this.tokenRepository.findByIdWithType(tokenId, tx);
-          this.assertExists(reloaded, 'Failed to reload updated token');
-          updatedToken = reloaded;
-        }
-
-        // Update manual price if provided
-        if (data.manualPrice !== undefined) {
-          // Find USD token for base currency
-          const fiatType = await this.tokenTypeRepository.findByCode('fiat', tx);
-          this.assertExists(fiatType, 'Fiat token type not found');
-
-          const usdToken = await this.tokenRepository.findBySymbolAndType('USD', fiatType.id, tx);
-          this.assertExists(usdToken, 'USD base token not found - required for manual pricing');
-
-          // Insert new price entry
-          await this.tokenPriceRepository.create(
-            {
-              tokenId,
-              baseTokenId: usdToken.id,
-              price: data.manualPrice.toString(),
-              timestamp: new Date(),
-              source: `manual_update - ${data.priceDescription || 'Price updated'}`,
-            },
-            tx
-          );
-
-          this.logInfo('Manual price updated for token', {
-            tokenId,
-            symbol: currentToken.symbol,
-            newPrice: data.manualPrice,
-          });
-        }
-
-        return updatedToken;
-      });
-    } catch (error) {
-      throw this.handleError(error, 'updateToken');
-    }
-  }
-
-  /**
    * Get token by ID
    */
   async getTokenById(tokenId: string): Promise<Token> {
@@ -397,49 +274,6 @@ export class TokenService extends BaseService {
       return token;
     } catch (error) {
       throw this.handleError(error, 'getTokenById');
-    }
-  }
-
-  /**
-   * Get token by symbol
-   */
-  async getTokenBySymbol(symbol: string): Promise<Token | null> {
-    try {
-      this.validateNonEmptyString(symbol, 'symbol');
-      return await this.tokenRepository.findBySymbol(symbol.toUpperCase());
-    } catch (error) {
-      throw this.handleError(error, 'getTokenBySymbol');
-    }
-  }
-
-  /**
-   * Get token by symbol and type
-   */
-  async getTokenBySymbolAndType(symbol: string, typeCode: string): Promise<Token | null> {
-    try {
-      this.validateNonEmptyString(symbol, 'symbol');
-      this.validateNonEmptyString(typeCode, 'typeCode');
-
-      const tokenType = await this.tokenTypeRepository.findByCode(typeCode);
-      if (!tokenType) {
-        return null;
-      }
-
-      return await this.tokenRepository.findBySymbolAndType(symbol.toUpperCase(), tokenType.id);
-    } catch (error) {
-      throw this.handleError(error, 'getTokenBySymbolAndType');
-    }
-  }
-
-  /**
-   * Get all active tokens
-   */
-  async getAllTokens(limit?: number, offset?: number): Promise<Token[]> {
-    try {
-      this.logDebug('Fetching all active tokens', { limit, offset });
-      return await this.tokenRepository.findAll({ limit, offset });
-    } catch (error) {
-      throw this.handleError(error, 'getAllTokens');
     }
   }
 
@@ -457,23 +291,6 @@ export class TokenService extends BaseService {
       return await this.tokenRepository.findByType(typeCode, undefined);
     } catch (error) {
       throw this.handleError(error, 'getTokensByType');
-    }
-  }
-
-  /**
-   * Check if a token exists
-   */
-  async tokenExists(symbol: string, typeCode?: string): Promise<boolean> {
-    try {
-      if (typeCode) {
-        const token = await this.getTokenBySymbolAndType(symbol, typeCode);
-        return token !== null;
-      } else {
-        const token = await this.getTokenBySymbol(symbol);
-        return token !== null;
-      }
-    } catch (error) {
-      throw this.handleError(error, 'tokenExists');
     }
   }
 }

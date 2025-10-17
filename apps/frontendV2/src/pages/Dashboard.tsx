@@ -102,7 +102,7 @@ export function Dashboard() {
       </div>
 
       {/* Asset Allocation & Top Holdings */}
-      <div className="flex flex-col gap-6 md:flex-row md:align-center md:justify-stretch">
+      <div className="flex flex-col gap-4 md:flex-row md:align-center md:justify-stretch">
         <Card className="w-full h-fit">
           <CardHeader>
             <CardTitle>Asset Allocation</CardTitle>

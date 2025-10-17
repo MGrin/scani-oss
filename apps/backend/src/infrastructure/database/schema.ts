@@ -311,13 +311,10 @@ export type User = typeof users.$inferSelect;
 export type NewUser = typeof users.$inferInsert;
 
 export type InstitutionType = typeof institutionTypes.$inferSelect;
-export type NewInstitutionType = typeof institutionTypes.$inferInsert;
 
 export type AccountType = typeof accountTypes.$inferSelect;
-export type NewAccountType = typeof accountTypes.$inferInsert;
 
 export type TokenType = typeof tokenTypes.$inferSelect;
-export type NewTokenType = typeof tokenTypes.$inferInsert;
 
 export type Institution = typeof institutions.$inferSelect;
 export type NewInstitution = typeof institutions.$inferInsert;

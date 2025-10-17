@@ -1,7 +1,7 @@
-import type { LucideIcon } from 'lucide-react';
-import { Check, ChevronsUpDown, Plus } from 'lucide-react';
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Button } from '@/components/ui/button';
+import type { LucideIcon } from "lucide-react";
+import { Check, ChevronsUpDown, Plus } from "lucide-react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { Button } from "@/components/ui/button";
 import {
   Command,
   CommandEmpty,
@@ -9,19 +9,23 @@ import {
   CommandInput,
   CommandItem,
   CommandList,
-} from '@/components/ui/command';
-import { LoadingSpinner } from '@/components/ui/loading';
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
-import { Skeleton } from '@/components/ui/skeleton';
-import { useDebouncedValue } from '@/hooks/useDebouncedValue';
+} from "@/components/ui/command";
+import { LoadingSpinner } from "@/components/ui/loading";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
+import { Skeleton } from "@/components/ui/skeleton";
+import { useDebouncedValue } from "@/hooks/useDebouncedValue";
 import {
   buildExternalTokenValue,
   isExternalTokenValue,
   parseExternalTokenValue,
-} from '@/lib/external-token';
-import { getFaviconUrl, getTokenTypeIcon } from '@/lib/icons';
-import { trpc } from '@/lib/trpc';
-import { cn, normalizeSymbol } from '@/lib/utils';
+} from "@/lib/external-token";
+import { getFaviconUrl, getTokenTypeIcon } from "@/lib/icons";
+import { trpc } from "@/lib/trpc";
+import { cn, normalizeSymbol } from "@/lib/utils";
 
 interface TokenOption {
   id?: string;
@@ -32,8 +36,8 @@ interface TokenOption {
   typeName?: string | null;
   decimals?: number;
   isActive?: boolean;
-  source: 'database' | 'external' | 'create-new';
-  provider?: 'finnhub' | 'coingecko';
+  source: "database" | "external" | "create-new";
+  provider?: "finnhub" | "coingecko";
   metadata?: Record<string, unknown>;
 }
 
@@ -51,7 +55,7 @@ interface TokenSearchableSelectorProps {
 export function TokenSearchableSelector({
   value,
   onValueChange,
-  placeholder = 'Search for tokens...',
+  placeholder = "Search for tokens...",
   id,
   className,
   disabled = false,
@@ -59,42 +63,47 @@ export function TokenSearchableSelector({
   allowCreateNew = true,
 }: TokenSearchableSelectorProps) {
   const [open, setOpen] = useState(false);
-  const [searchQuery, setSearchQuery] = useState('');
-  const debouncedQuery = useDebouncedValue(searchQuery, 50);
+  const [searchQuery, setSearchQuery] = useState("");
+  const debouncedQuery = useDebouncedValue(searchQuery, 300);
 
   // Helper function to get icon for a token option
-  const getTokenIcon = useCallback((option: TokenOption): string | LucideIcon | null => {
-    if (option.source === 'database') {
-      // For database tokens, use the token type icon
-      return getTokenTypeIcon(option.type || 'other');
-    } else if (option.source === 'external') {
-      if (option.provider === 'finnhub') {
-        return getFaviconUrl('https://finnhub.io/');
-      } else if (option.provider === 'coingecko') {
-        return getFaviconUrl('https://www.coingecko.com/');
+  const getTokenIcon = useCallback(
+    (option: TokenOption): string | LucideIcon | null => {
+      if (option.source === "database") {
+        // For database tokens, use the token type icon
+        return getTokenTypeIcon(option.type || "other");
+      } else if (option.source === "external") {
+        if (option.provider === "finnhub") {
+          return getFaviconUrl("https://finnhub.io/");
+        } else if (option.provider === "coingecko") {
+          return getFaviconUrl("https://www.coingecko.com/");
+        }
       }
-    }
-    return null;
-  }, []);
+      return null;
+    },
+    []
+  );
 
   // Clear search when opening popover to show all tokens
   useEffect(() => {
     if (open) {
-      setSearchQuery('');
+      setSearchQuery("");
     }
   }, [open]);
 
   // Search tokens using TRPC - only if we don't have suggestedTokens
-  const { data: searchResults = [], isFetching: isSearching } = trpc.tokens.search.useQuery(
-    { query: debouncedQuery, limit: 20 },
-    {
-      enabled: debouncedQuery.length >= 1 && !suggestedTokens && open,
-      staleTime: 30000, // Cache for 30 seconds
-    }
-  );
+  const { data: searchResults = [], isFetching: isSearching } =
+    trpc.tokens.search.useQuery(
+      { query: debouncedQuery, limit: 20 },
+      {
+        enabled: debouncedQuery.length >= 1 && !suggestedTokens && open,
+        staleTime: 30000, // Cache for 30 seconds
+      }
+    );
 
   // Get all tokens for initial display (when no search query and no suggestedTokens)
-  const { data: allTokens, isLoading: isLoadingAllTokens } = trpc.tokens.getAll.useQuery();
+  const { data: allTokens, isLoading: isLoadingAllTokens } =
+    trpc.tokens.getAll.useQuery();
 
   // Combine search results with "Create New Token" option
   const options = useMemo((): TokenOption[] => {
@@ -106,7 +115,8 @@ export function TokenSearchableSelector({
         if (!searchQuery) return true;
         const query = searchQuery.toLowerCase();
         return (
-          token.symbol.toLowerCase().includes(query) || token.name.toLowerCase().includes(query)
+          token.symbol.toLowerCase().includes(query) ||
+          token.name.toLowerCase().includes(query)
         );
       });
     } else {
@@ -115,20 +125,20 @@ export function TokenSearchableSelector({
         searchQuery.length >= 1
           ? searchResults.map((token) => ({
               ...token,
-              source: token.source as 'database' | 'external',
+              source: token.source as "database" | "external",
             }))
           : (allTokens || []).map((token) => ({
               ...token,
-              source: 'database' as const,
+              source: "database" as const,
             }));
     }
 
     // Add "Create New Token" option only if not restricted to suggestedTokens and allowed
     if (!suggestedTokens && allowCreateNew) {
       const createNewOption: TokenOption = {
-        symbol: 'NEW',
-        name: 'Create New Token',
-        source: 'create-new' as const,
+        symbol: "NEW",
+        name: "Create New Token",
+        source: "create-new" as const,
       };
       return [createNewOption, ...baseOptions];
     }
@@ -140,14 +150,18 @@ export function TokenSearchableSelector({
   const selectedOption = useMemo(() => {
     if (!value) return undefined;
 
-    if (value === 'new') {
-      return options.find((o) => o.source === 'create-new');
+    if (value === "new") {
+      return options.find((o) => o.source === "create-new");
     }
 
-    const ext = isExternalTokenValue(value) ? parseExternalTokenValue(value) : null;
+    const ext = isExternalTokenValue(value)
+      ? parseExternalTokenValue(value)
+      : null;
     if (ext?.symbol) {
       return options.find(
-        (o) => o.source === 'external' && normalizeSymbol(o.symbol) === normalizeSymbol(ext.symbol)
+        (o) =>
+          o.source === "external" &&
+          normalizeSymbol(o.symbol) === normalizeSymbol(ext.symbol)
       );
     }
 
@@ -157,11 +171,11 @@ export function TokenSearchableSelector({
   // Handle selection
   const handleSelect = useCallback(
     (option: TokenOption) => {
-      if (option.source === 'create-new') {
-        onValueChange('new');
-      } else if (option.source === 'database' && option.id) {
+      if (option.source === "create-new") {
+        onValueChange("new");
+      } else if (option.source === "database" && option.id) {
         onValueChange(option.id);
-      } else if (option.source === 'external') {
+      } else if (option.source === "external") {
         // For external tokens, we'll use a special format that includes the metadata
         // The parent component will handle creating the token when saving the holding
         onValueChange(
@@ -188,11 +202,13 @@ export function TokenSearchableSelector({
   const displayValue = useMemo(() => {
     if (!value) return placeholder;
 
-    if (value === 'new') return 'Create New Token';
+    if (value === "new") return "Create New Token";
 
     if (isExternalTokenValue(value)) {
       const meta = parseExternalTokenValue(value);
-      return meta ? `${meta.symbol} - ${meta.name} (External)` : 'External Token';
+      return meta
+        ? `${meta.symbol} - ${meta.name} (External)`
+        : "External Token";
     }
 
     if (selectedOption) {
@@ -205,7 +221,7 @@ export function TokenSearchableSelector({
   return (
     <>
       {isLoadingAllTokens && !suggestedTokens ? (
-        <Skeleton className={cn('w-full h-10', className)} />
+        <Skeleton className={cn("w-full h-10", className)} />
       ) : (
         <Popover open={open} onOpenChange={setOpen} modal={true}>
           <PopoverTrigger asChild>
@@ -213,7 +229,7 @@ export function TokenSearchableSelector({
               variant="outline"
               role="combobox"
               aria-expanded={open}
-              className={cn('w-full justify-between', className)}
+              className={cn("w-full justify-between", className)}
               disabled={disabled}
               id={id}
             >
@@ -221,7 +237,7 @@ export function TokenSearchableSelector({
                 {selectedOption &&
                   (() => {
                     const icon = getTokenIcon(selectedOption);
-                    if (typeof icon === 'string') {
+                    if (typeof icon === "string") {
                       return (
                         <img
                           src={icon}
@@ -251,7 +267,9 @@ export function TokenSearchableSelector({
                 {isSearching && searchQuery.length >= 1 && (
                   <div className="flex items-center justify-center py-4">
                     <LoadingSpinner size="sm" className="mr-2" />
-                    <span className="text-sm text-muted-foreground">Searching...</span>
+                    <span className="text-sm text-muted-foreground">
+                      Searching...
+                    </span>
                   </div>
                 )}
 
@@ -270,9 +288,9 @@ export function TokenSearchableSelector({
                                 size="sm"
                                 onClick={() =>
                                   handleSelect({
-                                    symbol: 'NEW',
-                                    name: 'Create New Token',
-                                    source: 'create-new',
+                                    symbol: "NEW",
+                                    name: "Create New Token",
+                                    source: "create-new",
                                   })
                                 }
                               >
@@ -282,7 +300,7 @@ export function TokenSearchableSelector({
                             )}
                           </div>
                         ) : (
-                          'Start typing to search for tokens...'
+                          "Start typing to search for tokens..."
                         )}
                       </CommandEmpty>
                     )}
@@ -291,14 +309,16 @@ export function TokenSearchableSelector({
                       <CommandGroup>
                         {options.map((option) => (
                           <CommandItem
-                            key={`${option.source}-${option.id || option.symbol}`}
+                            key={`${option.source}-${
+                              option.id || option.symbol
+                            }`}
                             value={`${option.symbol} ${option.name}`}
                             onSelect={() => handleSelect(option)}
                             className="flex items-center gap-2 px-2"
                           >
                             {(() => {
                               const icon = getTokenIcon(option);
-                              if (typeof icon === 'string') {
+                              if (typeof icon === "string") {
                                 return (
                                   <img
                                     src={icon}
@@ -308,30 +328,34 @@ export function TokenSearchableSelector({
                                 );
                               } else if (icon) {
                                 const IconComponent = icon;
-                                return <IconComponent className="h-4 w-4 shrink-0" />;
+                                return (
+                                  <IconComponent className="h-4 w-4 shrink-0" />
+                                );
                               }
                               return null;
                             })()}
                             <div className="flex flex-col flex-1 min-w-0">
-                              <span className="font-medium truncate">{option.symbol}</span>
+                              <span className="font-medium truncate">
+                                {option.symbol}
+                              </span>
                               <span className="text-sm text-muted-foreground truncate">
                                 {option.name}
                               </span>
                             </div>
-                            {option.source === 'external' && (
+                            {option.source === "external" && (
                               <span className="text-xs text-muted-foreground shrink-0">
                                 {option.provider}
                               </span>
                             )}
-                            {option.source === 'create-new' && (
+                            {option.source === "create-new" && (
                               <Plus className="h-4 w-4 text-muted-foreground shrink-0" />
                             )}
                             <Check
                               className={cn(
-                                'h-4 w-4 shrink-0',
+                                "h-4 w-4 shrink-0",
                                 value ===
                                   (option.id ||
-                                    (option.source === 'external'
+                                    (option.source === "external"
                                       ? buildExternalTokenValue({
                                           symbol: option.symbol,
                                           name: option.name,
@@ -339,11 +363,11 @@ export function TokenSearchableSelector({
                                           metadata: option.metadata,
                                           type: option.type || undefined,
                                         })
-                                      : option.source === 'create-new'
-                                        ? 'new'
-                                        : ''))
-                                  ? 'opacity-100'
-                                  : 'opacity-0'
+                                      : option.source === "create-new"
+                                      ? "new"
+                                      : ""))
+                                  ? "opacity-100"
+                                  : "opacity-0"
                               )}
                             />
                           </CommandItem>

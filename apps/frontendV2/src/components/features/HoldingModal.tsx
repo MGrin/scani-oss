@@ -1,4 +1,4 @@
-import type { HoldingWithDetails } from '@scani/shared/types';
+import type { HoldingWithDetails } from '@scani/shared';
 import { Save, Trash2 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import TimeAgo from 'react-timeago';
@@ -18,7 +18,6 @@ import { MoneyDisplay } from '@/components/ui/money-display';
 import { useToast } from '@/hooks/use-toast';
 import { trpc } from '@/lib/trpc';
 import { createCurrencyToken } from '@/lib/utils';
-import { invalidateAllFinancialData } from '@/utils/invalidation';
 import { AccountBadge } from './AccountBadge';
 import { InstitutionBadge } from './InstitutionBadge';
 import { TokenTypeBadge } from './TokenTypeBadge';
@@ -51,13 +50,16 @@ export function HoldingModal({
   // Update holding mutation
   const updateHoldingMutation = trpc.holdings.update.useMutation({
     onSuccess: () => {
+      // Invalidate all holding-related queries
+      utils.holdings.getWithDetails.invalidate();
+      utils.accounts.getHoldings.invalidate();
+      utils.accounts.getByUserIdWithSummary.invalidate();
+      utils.dashboard.getOverview.invalidate();
+
       toast({
         title: 'Holding updated',
         description: 'The holding has been successfully updated.',
       });
-
-      // Invalidate all related queries using utility function
-      invalidateAllFinancialData(utils);
 
       onHoldingUpdated?.();
     },
@@ -73,13 +75,16 @@ export function HoldingModal({
   // Delete holding mutation
   const deleteHoldingMutation = trpc.holdings.delete.useMutation({
     onSuccess: () => {
+      // Invalidate all holding-related queries
+      utils.holdings.getWithDetails.invalidate();
+      utils.accounts.getHoldings.invalidate();
+      utils.accounts.getByUserIdWithSummary.invalidate();
+      utils.dashboard.getOverview.invalidate();
+
       toast({
         title: 'Holding deleted',
         description: 'The holding has been successfully deleted.',
       });
-
-      // Invalidate all related queries using utility function
-      invalidateAllFinancialData(utils);
 
       onClose();
       onHoldingDeleted?.();

@@ -1,10 +1,3 @@
-/**
- * Domain Entities
- *
- * These are exported from the database schema and represent the core business entities.
- * They are used throughout the application layers.
- */
-
 export type {
   Account,
   AccountType,
@@ -12,13 +5,10 @@ export type {
   Institution,
   InstitutionType,
   NewAccount,
-  NewAccountType,
   NewHolding,
   NewInstitution,
-  NewInstitutionType,
   NewToken,
   NewTokenPrice,
-  NewTokenType,
   NewUser,
   Token,
   TokenPrice,

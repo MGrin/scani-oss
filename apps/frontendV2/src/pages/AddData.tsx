@@ -20,10 +20,6 @@ import {
   parseExternalTokenValue,
 } from "@/lib/external-token";
 import { trpc } from "@/lib/trpc";
-import {
-  invalidateAllFinancialData,
-  invalidateInstitutionData,
-} from "@/utils/invalidation";
 
 type Step = "method" | "account" | "data";
 
@@ -73,32 +69,18 @@ export function AddData() {
     useState<string>("Choose Account");
   const [hasDataChanges, setHasDataChanges] = useState(false);
 
-  const utils = trpc.useUtils();
+  const createTokensFromExternalMutation =
+    trpc.tokens.createManyfromExternal.useMutation();
 
   const createTokenFromExternalMutation =
-    trpc.tokens.createFromExternal.useMutation({
-      onSuccess: () => {
-        // Invalidate all financial data since new tokens affect everything
-        invalidateAllFinancialData(utils);
-      },
-    });
+    trpc.tokens.createFromExternal.useMutation();
   const createHoldingsWithDependenciesMutation =
-    trpc.batchOperations.createHoldingsWithDependencies.useMutation({
-      onSuccess: () => {
-        invalidateAllFinancialData(utils);
-      },
-    });
+    trpc.batchOperations.createHoldingsWithDependencies.useMutation();
   const updateHoldingsBatchMutation =
-    trpc.batchOperations.updateHoldingsBatch.useMutation({
-      onSuccess: () => {
-        invalidateAllFinancialData(utils);
-        utils.dashboard.getOverview.invalidate();
-      },
-    });
+    trpc.batchOperations.updateHoldingsBatch.useMutation();
   const updateHoldingMutation = trpc.holdings.update.useMutation({
     onSuccess: () => {
       // Invalidate all related queries using utility function
-      invalidateAllFinancialData(utils);
     },
   });
   const [completeImportData, setCompleteImportData] =
@@ -251,6 +233,244 @@ export function AddData() {
     setAccountDisplayText(displayText);
   }, []);
 
+  const completeWithNewAccount = useCallback(async () => {
+    const accountSelection = completeImportData.accountSelection;
+
+    if (!accountSelection || accountSelection.mode !== "create") {
+      console.error("Account selection is not set to create mode");
+      return;
+    }
+
+    const holdings = completeImportData.dataEntry?.holdings || [];
+
+    const newAccountData = accountSelection.newAccountData;
+    if (!newAccountData) {
+      console.error("No new account data provided");
+      return;
+    }
+
+    const newHoldingsToCreate = holdings.filter(
+      (h) => !h.isExisting && h.tokenValue.trim() && h.amount.trim()
+    );
+
+    if (newHoldingsToCreate.length === 0) {
+      console.error("No holdings to create");
+      return;
+    }
+
+    // Process all holdings - convert external tokens first
+    const externalTokensToCreate = newHoldingsToCreate
+      .filter((holding) => isExternalTokenValue(holding.tokenValue))
+      .map((holding) => {
+        const externalTokenData = parseExternalTokenValue(holding.tokenValue);
+        if (!externalTokenData) return null;
+
+        return {
+          externalId: holding.tokenValue,
+          symbol: externalTokenData.symbol,
+          provider:
+            externalTokenData.provider === "coingecko"
+              ? ("coingecko" as const)
+              : ("finnhub" as const),
+          metadata: {
+            ...externalTokenData.metadata,
+            name: externalTokenData.name,
+          },
+        };
+      })
+      .filter((token): token is NonNullable<typeof token> => token !== null);
+
+    // Create all external tokens in batch if any exist
+    let createdTokensMap: Record<string, string> = {};
+    if (externalTokensToCreate.length > 0) {
+      const createdTokens = await createTokensFromExternalMutation.mutateAsync(
+        externalTokensToCreate
+      );
+
+      // Map external token values to created token IDs
+      createdTokensMap = createdTokens.reduce((acc, token) => {
+        const externalValue = newHoldingsToCreate.find((h) => {
+          const data = parseExternalTokenValue(h.tokenValue);
+          return data?.symbol === token.symbol;
+        })?.tokenValue;
+        if (externalValue) {
+          acc[externalValue] = token.id;
+        }
+        return acc;
+      }, {} as Record<string, string>);
+    }
+
+    // Build processed holdings with created token IDs
+    const processedHoldings = newHoldingsToCreate.map((holding) => ({
+      tokenId: createdTokensMap[holding.tokenValue] || holding.tokenValue,
+      balance: holding.amount,
+    }));
+
+    // Use unified batch operation to create institution (if needed), account, and ALL holdings atomically
+    const result = await createHoldingsWithDependenciesMutation.mutateAsync({
+      institution:
+        newAccountData.institutionSelection?.mode === "create"
+          ? {
+              name:
+                newAccountData.institutionSelection.newInstitutionData?.name ||
+                "",
+              typeId:
+                newAccountData.institutionSelection.newInstitutionData
+                  ?.typeId || "",
+              description:
+                newAccountData.institutionSelection.newInstitutionData
+                  ?.description,
+              website:
+                newAccountData.institutionSelection.newInstitutionData?.website,
+            }
+          : undefined,
+      account: {
+        institutionId:
+          newAccountData.institutionSelection?.selectedInstitutionId ||
+          undefined,
+        name: newAccountData.name,
+        typeId: newAccountData.typeId,
+      },
+      holdings: processedHoldings,
+    });
+
+    console.log("Successfully created account and holdings");
+    navigate(`/accounts/${result.accountId}`);
+    return;
+  }, [
+    completeImportData.accountSelection,
+    completeImportData.dataEntry?.holdings,
+    createHoldingsWithDependenciesMutation.mutateAsync,
+    navigate,
+    createTokensFromExternalMutation.mutateAsync,
+  ]);
+
+  const completeWithExistingAccount = useCallback(async () => {
+    const accountSelection = completeImportData.accountSelection;
+
+    const accountId = accountSelection?.selectedAccountId;
+    if (!accountId) {
+      console.error("No account selected");
+      return;
+    }
+    const holdings = completeImportData.dataEntry?.holdings || [];
+
+    // Separate existing holdings that have changed from new holdings
+    const existingHoldingsToUpdate = holdings.filter(
+      (h) =>
+        h.isExisting && h.amount !== h.originalAmount && h.amount.trim() !== ""
+    );
+    const newHoldingsToCreate = holdings.filter(
+      (h) => !h.isExisting && h.tokenValue.trim() && h.amount.trim()
+    );
+
+    // Update existing holdings in batch
+    if (existingHoldingsToUpdate.length > 0) {
+      const holdingsToUpdate = existingHoldingsToUpdate
+        .filter((h) => h.id.startsWith("existing-"))
+        .map((holding) => ({
+          id: holding.id.replace("existing-", ""),
+          balance: holding.amount,
+        }));
+
+      await updateHoldingsBatchMutation.mutateAsync({
+        holdings: holdingsToUpdate,
+      });
+    }
+
+    // Create new holdings if any
+    if (newHoldingsToCreate.length > 0) {
+      // Process all holdings - convert external tokens first
+      const externalTokensToCreate = newHoldingsToCreate
+        .filter((holding) => isExternalTokenValue(holding.tokenValue))
+        .map((holding) => {
+          const externalTokenData = parseExternalTokenValue(holding.tokenValue);
+          if (!externalTokenData) return null;
+
+          return {
+            externalId: holding.tokenValue,
+            symbol: externalTokenData.symbol,
+            provider:
+              externalTokenData.provider === "coingecko"
+                ? ("coingecko" as const)
+                : ("finnhub" as const),
+            metadata: {
+              ...externalTokenData.metadata,
+              name: externalTokenData.name,
+            },
+          };
+        })
+        .filter((token): token is NonNullable<typeof token> => token !== null);
+
+      // Create all external tokens in batch if any exist
+      let createdTokensMap: Record<string, string> = {};
+      if (externalTokensToCreate.length > 0) {
+        const createdTokens =
+          await createTokensFromExternalMutation.mutateAsync(
+            externalTokensToCreate
+          );
+
+        // Map external token values to created token IDs
+        createdTokensMap = createdTokens.reduce((acc, token) => {
+          const externalValue = newHoldingsToCreate.find((h) => {
+            const data = parseExternalTokenValue(h.tokenValue);
+            return data?.symbol === token.symbol;
+          })?.tokenValue;
+          if (externalValue) {
+            acc[externalValue] = token.id;
+          }
+          return acc;
+        }, {} as Record<string, string>);
+      }
+
+      // Build processed holdings with created token IDs
+      const processedHoldings = newHoldingsToCreate.map((holding) => ({
+        tokenId: createdTokensMap[holding.tokenValue] || holding.tokenValue,
+        balance: holding.amount,
+      }));
+
+      // Create all new holdings in batch (account already exists)
+      await createHoldingsWithDependenciesMutation.mutateAsync({
+        accountId,
+        holdings: processedHoldings,
+      });
+    }
+  }, [
+    completeImportData.accountSelection,
+    completeImportData.dataEntry?.holdings,
+    createHoldingsWithDependenciesMutation.mutateAsync,
+    updateHoldingsBatchMutation.mutateAsync,
+    createTokensFromExternalMutation.mutateAsync,
+  ]);
+
+  const complete = useCallback(async () => {
+    // Handle completion - create account with holdings or update existing
+    const accountSelection = completeImportData.accountSelection;
+    const accountId = accountSelection?.selectedAccountId;
+
+    try {
+      // Case 1: Creating a new account with holdings
+      if (accountSelection?.mode === "create") {
+        await completeWithNewAccount();
+        return;
+      }
+
+      // Case 2: Using existing account - update existing holdings and/or create new ones
+      await completeWithExistingAccount();
+      console.log("Successfully updated and created holdings");
+
+      // Redirect to account details page
+      navigate(`/accounts/${accountId}`);
+    } catch (error) {
+      console.error("Failed to update/create holdings:", error);
+    }
+  }, [
+    completeWithNewAccount,
+    completeWithExistingAccount,
+    navigate,
+    completeImportData.accountSelection,
+  ]);
+
   return (
     <div className="space-y-6 pb-16 relative max-w-[calc(100vw-2rem)] md:max-w-3xl lg:max-w-4xl xl:max-w-5xl mx-auto">
       {/* Full screen loading overlay */}
@@ -324,7 +544,6 @@ export function AddData() {
           onValidationChange={setIsAccountStepValid}
           onAccountDisplayChange={handleAccountDisplayChange}
           onCompleteDataUpdate={updateCompleteImportData}
-          utils={utils}
         />
       )}
       {currentStep === "data" && (
@@ -366,215 +585,7 @@ export function AddData() {
                     // For account step, we can always proceed since account selection is optional
                     nextStep();
                   } else if (currentStep === "data") {
-                    // Handle completion - create account with holdings or update existing
-                    const accountSelection =
-                      completeImportData.accountSelection;
-                    const holdings =
-                      completeImportData.dataEntry?.holdings || [];
-
-                    try {
-                      // Case 1: Creating a new account with holdings
-                      if (accountSelection?.mode === "create") {
-                        const newAccountData = accountSelection.newAccountData;
-                        if (!newAccountData) {
-                          console.error("No new account data provided");
-                          return;
-                        }
-
-                        const newHoldingsToCreate = holdings.filter(
-                          (h) =>
-                            !h.isExisting &&
-                            h.tokenValue.trim() &&
-                            h.amount.trim()
-                        );
-
-                        if (newHoldingsToCreate.length === 0) {
-                          console.error("No holdings to create");
-                          return;
-                        }
-
-                        // Process all holdings - convert external tokens first
-                        const processedHoldings = [];
-                        for (const holding of newHoldingsToCreate) {
-                          let tokenId = holding.tokenValue;
-
-                          // Handle external token creation if needed
-                          if (isExternalTokenValue(tokenId)) {
-                            const externalTokenData =
-                              parseExternalTokenValue(tokenId);
-                            if (!externalTokenData) {
-                              console.error(
-                                "Failed to parse external token data"
-                              );
-                              continue;
-                            }
-
-                            const provider =
-                              externalTokenData.provider === "coingecko"
-                                ? "coingecko"
-                                : "finnhub";
-                            const newToken =
-                              await createTokenFromExternalMutation.mutateAsync(
-                                {
-                                  symbol: externalTokenData.symbol,
-                                  provider,
-                                  metadata: {
-                                    ...externalTokenData.metadata,
-                                    name: externalTokenData.name,
-                                  },
-                                }
-                              );
-                            tokenId = newToken.id;
-                          }
-
-                          processedHoldings.push({
-                            tokenId,
-                            balance: holding.amount,
-                          });
-                        }
-
-                        // Use unified batch operation to create institution (if needed), account, and ALL holdings atomically
-                        const result =
-                          await createHoldingsWithDependenciesMutation.mutateAsync(
-                            {
-                              institution:
-                                newAccountData.institutionSelection?.mode ===
-                                "create"
-                                  ? {
-                                      name:
-                                        newAccountData.institutionSelection
-                                          .newInstitutionData?.name || "",
-                                      type:
-                                        newAccountData.institutionSelection
-                                          .newInstitutionData?.typeId || "",
-                                      description:
-                                        newAccountData.institutionSelection
-                                          .newInstitutionData?.description,
-                                      website:
-                                        newAccountData.institutionSelection
-                                          .newInstitutionData?.website,
-                                    }
-                                  : undefined,
-                              account: {
-                                institutionId:
-                                  newAccountData.institutionSelection
-                                    ?.selectedInstitutionId,
-                                name: newAccountData.name,
-                                type: newAccountData.typeId,
-                              },
-                              holdings: processedHoldings,
-                            }
-                          );
-
-                        console.log(
-                          "Successfully created account and holdings"
-                        );
-                        navigate(`/accounts/${result.accountId}`);
-                        return;
-                      }
-
-                      // Case 2: Using existing account - update existing holdings and/or create new ones
-                      const accountId = accountSelection?.selectedAccountId;
-                      if (!accountId) {
-                        console.error("No account selected");
-                        return;
-                      }
-
-                      // Separate existing holdings that have changed from new holdings
-                      const existingHoldingsToUpdate = holdings.filter(
-                        (h) =>
-                          h.isExisting &&
-                          h.amount !== h.originalAmount &&
-                          h.amount.trim() !== ""
-                      );
-                      const newHoldingsToCreate = holdings.filter(
-                        (h) =>
-                          !h.isExisting &&
-                          h.tokenValue.trim() &&
-                          h.amount.trim()
-                      );
-
-                      // Update existing holdings in batch
-                      if (existingHoldingsToUpdate.length > 0) {
-                        const holdingsToUpdate = existingHoldingsToUpdate
-                          .filter((h) => h.id.startsWith("existing-"))
-                          .map((holding) => ({
-                            id: holding.id.replace("existing-", ""),
-                            balance: holding.amount,
-                          }));
-
-                        await updateHoldingsBatchMutation.mutateAsync({
-                          holdings: holdingsToUpdate,
-                        });
-                      }
-
-                      // Create new holdings if any
-                      if (newHoldingsToCreate.length > 0) {
-                        // First, create any external tokens that don't exist
-                        const processedHoldings = [];
-                        for (const holding of newHoldingsToCreate) {
-                          let tokenId = holding.tokenValue;
-
-                          // Handle external token creation if needed
-                          if (isExternalTokenValue(tokenId)) {
-                            const externalTokenData =
-                              parseExternalTokenValue(tokenId);
-                            if (!externalTokenData) {
-                              console.error(
-                                "Failed to parse external token data"
-                              );
-                              continue;
-                            }
-
-                            const provider =
-                              externalTokenData.provider === "coingecko"
-                                ? "coingecko"
-                                : "finnhub";
-
-                            try {
-                              const newToken =
-                                await createTokenFromExternalMutation.mutateAsync(
-                                  {
-                                    symbol: externalTokenData.symbol,
-                                    provider,
-                                    metadata: {
-                                      ...externalTokenData.metadata,
-                                      name: externalTokenData.name,
-                                    },
-                                  }
-                                );
-                              tokenId = newToken.id;
-                            } catch (error) {
-                              console.error(
-                                "Failed to create external token:",
-                                error
-                              );
-                              continue;
-                            }
-                          }
-
-                          processedHoldings.push({
-                            tokenId,
-                            balance: holding.amount,
-                          });
-                        }
-
-                        // Create all new holdings in batch (account already exists)
-                        await createHoldingsWithDependenciesMutation.mutateAsync(
-                          {
-                            accountId,
-                            holdings: processedHoldings,
-                          }
-                        );
-                      }
-
-                      console.log("Successfully updated and created holdings");
-
-                      // Redirect to account details page
-                      navigate(`/accounts/${accountId}`);
-                    } catch (error) {
-                      console.error("Failed to update/create holdings:", error);
-                    }
+                    await complete();
                   }
                 }}
                 disabled={
@@ -688,12 +699,10 @@ function AccountSelectionStep({
   onValidationChange,
   onAccountDisplayChange,
   onCompleteDataUpdate,
-  utils,
 }: {
   onValidationChange?: (isValid: boolean) => void;
   onAccountDisplayChange?: (displayText: string) => void;
   onCompleteDataUpdate: (updates: Partial<CompleteImportData>) => void;
-  utils: ReturnType<typeof trpc.useUtils>;
 }) {
   const [mode, setMode] = useState<"select" | "create">("select");
   const accountNameId = useId();
@@ -737,10 +746,6 @@ function AccountSelectionStep({
     }
   }, [accountsLoading, accounts]);
 
-  // Mutations for creating new items
-
-  const createInstitution = trpc.institutions.create.useMutation();
-
   // Query for fetching Open Graph metadata (disabled by default, triggered manually)
   const metadataQuery = trpc.institutions.getOpenGraphMetadata.useQuery(
     { url: newAccountData.institutionSelection.newInstitutionData.website },
@@ -783,34 +788,6 @@ function AccountSelectionStep({
       },
     }
   );
-
-  // Callback functions for creating new items
-  const handleCreateInstitution = async (name: string) => {
-    try {
-      // For new institutions, we need an institution type. Use the first available one or prompt user
-      const defaultTypeId = institutionTypes?.[0]?.id;
-      if (!defaultTypeId) {
-        alert("Please create an institution type first");
-        return;
-      }
-      const result = await createInstitution.mutateAsync({
-        name,
-        type: defaultTypeId,
-      });
-      // Invalidate institution-related queries
-      invalidateInstitutionData(utils);
-      // Set the newly created institution as selected
-      setNewAccountData((prev) => ({
-        ...prev,
-        institutionSelection: {
-          ...prev.institutionSelection,
-          selectedInstitutionId: result.id,
-        },
-      }));
-    } catch (error) {
-      console.error("Failed to create institution:", error);
-    }
-  };
 
   // Handler for fetching metadata from website
   const handleFetchMetadata = async () => {
@@ -1259,7 +1236,6 @@ function AccountSelectionStep({
                     }
                     institutions={institutions}
                     placeholder="Select an institution"
-                    onCreateNew={handleCreateInstitution}
                     allowCreate={false}
                   />
                   {(!institutions || institutions.length === 0) && (
@@ -1657,6 +1633,7 @@ function DataEntryStep({
                             // className="max-w-[calc(100%-8rem)]"
                             placeholder="Search tokens..."
                             disabled={isCreatingHoldings || true} // Disable token changes for existing holdings
+                            allowCreateNew={false}
                           />
                         </div>
                         <div className="w-32">
@@ -1722,6 +1699,7 @@ function DataEntryStep({
                         // className="max-w-[calc(100%-8rem)]"
                         placeholder="Search tokens..."
                         disabled={isCreatingHoldings}
+                        allowCreateNew={false}
                       />
                     </div>
                     <div className="w-32">

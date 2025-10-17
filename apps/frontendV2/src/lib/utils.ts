@@ -38,12 +38,11 @@ export function createCurrencyToken(currencySymbol: string): Token {
     id: `currency-${currencySymbol}`,
     symbol: currencySymbol,
     name: currencyNames[currencySymbol] || `${currencySymbol} Currency`,
-    type: 'fiat',
     decimals: 2,
-    iconUrl: undefined,
+    iconUrl: null,
     isActive: true,
-    createdAt: new Date(),
-    updatedAt: new Date(),
+    typeId: '',
+    providerMetadata: '',
   };
 }
 

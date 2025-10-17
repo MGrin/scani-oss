@@ -131,21 +131,6 @@ export abstract class BaseService {
   }
 
   /**
-   * Validate that an ID is a valid positive number
-   *
-   * @param id - ID to validate
-   * @param fieldName - Name of the field being validated (for error messages)
-   * @throws Error if ID is invalid
-   */
-  protected validateId(id: number, fieldName = 'id'): void {
-    if (!Number.isInteger(id) || id <= 0) {
-      const error = new Error(`Invalid ${fieldName}: must be a positive integer`);
-      this.logger.error({ id, fieldName }, `Invalid ${fieldName} provided`);
-      throw error;
-    }
-  }
-
-  /**
    * Validate that a string is not empty
    *
    * @param value - String to validate

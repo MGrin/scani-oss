@@ -1,18 +1,11 @@
 import { and, desc, eq, gte, inArray, lte, sql } from 'drizzle-orm';
 import { Service } from 'typedi';
 import type { NewTokenPrice, TokenPrice } from '../../domain/entities';
-import type {
-  DatabaseTransaction,
-  ITokenPriceRepository,
-} from '../../domain/interfaces/repositories';
 import * as schema from '../database/schema';
-import { BaseRepository } from './BaseRepository';
+import { BaseRepository, type DatabaseTransaction } from './BaseRepository';
 
 @Service()
-export class TokenPriceRepository
-  extends BaseRepository<TokenPrice, NewTokenPrice>
-  implements ITokenPriceRepository
-{
+export class TokenPriceRepository extends BaseRepository<TokenPrice, NewTokenPrice> {
   protected readonly table = schema.tokenPrices;
   protected readonly tableName = 'token_prices';
 
@@ -38,38 +31,6 @@ export class TokenPriceRepository
       return results[0] || null;
     } catch (error) {
       this.logger.error({ tokenId, baseTokenId, error }, 'Failed to find latest price');
-      throw error;
-    }
-  }
-
-  async findPriceHistory(
-    tokenId: string,
-    baseTokenId: string,
-    startDate: Date,
-    endDate: Date,
-    transaction?: DatabaseTransaction
-  ): Promise<TokenPrice[]> {
-    try {
-      const database = this.getDb(transaction);
-      const results = await database
-        .select()
-        .from(schema.tokenPrices)
-        .where(
-          and(
-            eq(schema.tokenPrices.tokenId, tokenId),
-            eq(schema.tokenPrices.baseTokenId, baseTokenId),
-            gte(schema.tokenPrices.timestamp, startDate),
-            lte(schema.tokenPrices.timestamp, endDate)
-          )
-        )
-        .orderBy(schema.tokenPrices.timestamp);
-
-      return results;
-    } catch (error) {
-      this.logger.error(
-        { tokenId, baseTokenId, startDate, endDate, error },
-        'Failed to find price history'
-      );
       throw error;
     }
   }

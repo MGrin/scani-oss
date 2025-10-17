@@ -1,9 +1,13 @@
 import { eq, inArray, type SQL, sql } from 'drizzle-orm';
-import type { PgColumn, PgTable, TableConfig } from 'drizzle-orm/pg-core';
+import type { PgColumn, PgTable, PgTransaction, TableConfig } from 'drizzle-orm/pg-core';
+import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 import { Service } from 'typedi';
-import type { DatabaseTransaction } from '../../domain/interfaces/repositories';
 import { createComponentLogger } from '../../utils/logger';
 import { db } from '../database/connection';
+
+export type DatabaseTransaction =
+  // biome-ignore lint/suspicious/noExplicitAny: Transaction type must be flexible to accept any schema
+  PgTransaction<any, any, any> | PostgresJsDatabase<any>;
 
 /**
  * Base Repository Implementation

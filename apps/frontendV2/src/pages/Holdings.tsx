@@ -1,4 +1,4 @@
-import type { HoldingWithDetails } from '@scani/shared/types';
+import type { HoldingWithDetails } from '@scani/shared';
 import {
   AlertTriangle,
   Download,
@@ -46,7 +46,6 @@ import { useFilters, useViewMode } from '@/hooks';
 import { useToast } from '@/hooks/use-toast';
 import { trpc } from '@/lib/trpc';
 import { createCurrencyToken } from '@/lib/utils';
-import { invalidateAllFinancialData } from '@/utils/invalidation';
 
 type GroupBy = 'none' | 'institution' | 'account' | 'tokenType';
 
@@ -65,13 +64,16 @@ export function Holdings() {
   // Delete holding mutation
   const deleteHoldingMutation = trpc.holdings.delete.useMutation({
     onSuccess: () => {
+      // Invalidate all holding-related queries
+      utils.holdings.getWithDetails.invalidate();
+      utils.accounts.getHoldings.invalidate();
+      utils.accounts.getByUserIdWithSummary.invalidate();
+      utils.dashboard.getOverview.invalidate();
+
       toast({
         title: 'Holding deleted',
         description: 'The holding has been successfully deleted.',
       });
-
-      // Invalidate all related queries using utility function
-      invalidateAllFinancialData(utils);
     },
     onError: (error) => {
       toast({

@@ -1,10 +1,12 @@
+import type { CreateHoldingInput, HoldingWithDetails } from '@scani/shared';
 import Decimal from 'decimal.js';
 import { Container, Service } from 'typedi';
-import type { CreateHoldingInput, UpdateHoldingInput } from '../../domain/dtos/holding';
-import type { Holding } from '../../domain/entities';
+import type { Holding, User } from '../../domain/entities';
 import { AccountRepository } from '../../infrastructure/repositories/AccountRepository';
+import type { DatabaseTransaction } from '../../infrastructure/repositories/BaseRepository';
 import { HoldingRepository } from '../../infrastructure/repositories/HoldingRepository';
 import { BaseService } from './BaseService';
+import { PortfolioValuationService } from './PortfolioValuationService';
 
 /**
  * HoldingService
@@ -15,14 +17,12 @@ import { BaseService } from './BaseService';
 export class HoldingService extends BaseService {
   private readonly holdingRepository = Container.get(HoldingRepository);
   private readonly accountRepository = Container.get(AccountRepository);
+  private readonly portfolioValuationService = Container.get(PortfolioValuationService);
 
   constructor() {
     super('HoldingService');
   }
 
-  /**
-   * Create a new holding
-   */
   async createHolding(data: CreateHoldingInput, userId: string): Promise<Holding> {
     try {
       this.logInfo('Creating holding', {
@@ -76,177 +76,122 @@ export class HoldingService extends BaseService {
     }
   }
 
-  /**
-   * Update a holding
-   */
-  async updateHolding(
-    holdingId: string,
-    data: UpdateHoldingInput,
-    userId: string
-  ): Promise<Holding> {
+  async createManyHoldings(
+    data: CreateHoldingInput[],
+    userId: string,
+    tx?: DatabaseTransaction
+  ): Promise<Holding[]> {
     try {
-      this.logInfo('Updating holding', { holdingId, data });
+      this.logInfo('Creating multiple holdings', { count: data.length });
 
-      const existing = await this.holdingRepository.findById(holdingId);
-      this.assertExists(existing, `Holding with ID ${holdingId} not found`);
+      const createdHoldings: Holding[] = await this.holdingRepository.createMany(
+        data.map((holdingInput) => ({
+          ...holdingInput,
+          userId,
+        })),
+        tx
+      );
 
-      // Verify ownership through account
-      const account = await this.accountRepository.findById(existing.accountId);
-      this.assertExists(account, `Account not found for holding ${holdingId}`);
-
-      if (account.userId !== userId) {
-        throw new Error('Unauthorized: Holding does not belong to user');
-      }
-
-      // Validate balance if provided
-      if (data.balance !== undefined) {
-        const balance = new Decimal(data.balance);
-        if (balance.isNegative()) {
-          throw new Error('Balance cannot be negative');
-        }
-      }
-
-      const updated = await this.holdingRepository.update(holdingId, data);
-      this.assertExists(updated, 'Failed to update holding');
-
-      this.logInfo('Holding updated', { holdingId });
-      return updated;
-    } catch (error) {
-      throw this.handleError(error, 'updateHolding');
-    }
-  }
-
-  /**
-   * Get holding by ID
-   */
-  async getHoldingById(holdingId: string, userId: string): Promise<Holding> {
-    try {
-      const holding = await this.holdingRepository.findById(holdingId);
-      this.assertExists(holding, `Holding with ID ${holdingId} not found`);
-
-      // Verify ownership
-      const account = await this.accountRepository.findById(holding.accountId);
-      this.assertExists(account, `Account not found for holding ${holdingId}`);
-
-      if (account.userId !== userId) {
-        throw new Error('Unauthorized: Holding does not belong to user');
-      }
-
-      return holding;
-    } catch (error) {
-      throw this.handleError(error, 'getHoldingById');
-    }
-  }
-
-  /**
-   * Get holdings by account
-   */
-  async getHoldingsByAccountId(accountId: string, userId: string): Promise<Holding[]> {
-    try {
-      // Verify account ownership
-      const account = await this.accountRepository.findById(accountId);
-      this.assertExists(account, `Account with ID ${accountId} not found`);
-
-      if (account.userId !== userId) {
-        throw new Error('Unauthorized: Account does not belong to user');
-      }
-
-      return await this.holdingRepository.findByAccount(accountId, userId);
-    } catch (error) {
-      throw this.handleError(error, 'getHoldingsByAccountId');
-    }
-  }
-
-  /**
-   * Get holdings by token
-   */
-  async getHoldingsByTokenId(tokenId: string, userId: string): Promise<Holding[]> {
-    try {
-      const holdings = await this.holdingRepository.findByToken(tokenId, userId);
-
-      // Filter to only holdings owned by this user
-      const userHoldings = [];
-      for (const holding of holdings) {
-        const account = await this.accountRepository.findById(holding.accountId);
-        if (account && account.userId === userId) {
-          userHoldings.push(holding);
-        }
-      }
-
-      return userHoldings;
-    } catch (error) {
-      throw this.handleError(error, 'getHoldingsByTokenId');
-    }
-  }
-
-  /**
-   * Get holding with details (token, account)
-   */
-  async getHoldingWithDetails(holdingId: string, userId: string) {
-    try {
-      const holding = await this.holdingRepository.findWithDetails(holdingId, userId);
-      this.assertExists(holding, `Holding with ID ${holdingId} not found`);
-
-      // Verify ownership
-      const account = await this.accountRepository.findById(holding.accountId);
-      this.assertExists(account, `Account not found for holding ${holdingId}`);
-
-      if (account.userId !== userId) {
-        throw new Error('Unauthorized: Holding does not belong to user');
-      }
-
-      return holding;
-    } catch (error) {
-      throw this.handleError(error, 'getHoldingWithDetails');
-    }
-  }
-
-  /**
-   * Delete a holding
-   */
-  async deleteHolding(holdingId: string, userId: string): Promise<boolean> {
-    try {
-      this.logInfo('Deleting holding', { holdingId });
-
-      const existing = await this.holdingRepository.findById(holdingId);
-      this.assertExists(existing, `Holding with ID ${holdingId} not found`);
-
-      // Verify ownership
-      const account = await this.accountRepository.findById(existing.accountId);
-      this.assertExists(account, `Account not found for holding ${holdingId}`);
-
-      if (account.userId !== userId) {
-        throw new Error('Unauthorized: Holding does not belong to user');
-      }
-
-      const deleted = await this.holdingRepository.delete(holdingId);
-      this.logInfo('Holding deleted', { holdingId, deleted });
-      return deleted;
-    } catch (error) {
-      throw this.handleError(error, 'deleteHolding');
-    }
-  }
-
-  /**
-   * Calculate total value of holdings for a user
-   * (This would integrate with pricing service in full implementation)
-   */
-  async calculateHoldingValue(holdingId: string, userId: string): Promise<string> {
-    try {
-      const holding = await this.getHoldingById(holdingId, userId);
-
-      // Placeholder: In full implementation, this would:
-      // 1. Get latest price for token
-      // 2. Multiply by balance
-      // 3. Convert to user's base currency
-
-      this.logDebug('Calculating holding value', {
-        holdingId,
-        balance: holding.balance,
+      this.logInfo('Multiple holdings created successfully', {
+        count: createdHoldings.length,
       });
-      return holding.balance; // Simplified for now
+      return createdHoldings;
     } catch (error) {
-      throw this.handleError(error, 'calculateHoldingValue');
+      throw this.handleError(error, 'createManyHoldings');
     }
+  }
+
+  async getHoldingsByAccountIdWithDetails(
+    user: User,
+    accountId?: string
+  ): Promise<HoldingWithDetails[]> {
+    if (!user.baseCurrencyId) {
+      throw new Error('User does not have a base currency set');
+    }
+
+    this.logger.debug({ userId: user.id, accountId }, 'Getting holdings with details');
+
+    // Parallel fetch: optimized holdings query + portfolio valuation
+    const [holdingsWithFullDetails, portfolioValue] = await Promise.all([
+      this.holdingRepository.findByUserWithFullDetails(user.id, accountId),
+      this.portfolioValuationService.getUserPortfolioValue(user.id, user.baseCurrencyId, accountId),
+    ]);
+
+    if (holdingsWithFullDetails.length === 0) {
+      return [];
+    }
+
+    // Create maps for efficient lookups - get individual token prices
+    const portfolioPriceMap = new Map(
+      portfolioValue.holdings.map((h) => [h.tokenSymbol, h.currentPrice || '0'])
+    );
+
+    // Create price metadata map keyed by token symbol
+    const priceMetadataMap = new Map(
+      portfolioValue.holdings
+        .filter((h) => h.priceTimestamp && h.priceSource)
+        .map((h) => [
+          h.tokenSymbol,
+          {
+            value: h.currentPrice || '0',
+            timestamp: h.priceTimestamp!.toISOString(),
+            source: h.priceSource,
+          },
+        ])
+    );
+
+    // Build detailed holdings from pre-fetched data
+    const detailedHoldings: HoldingWithDetails[] = holdingsWithFullDetails.map(
+      ({ holding, token, account, institution }) => {
+        // Get current price and calculate individual holding value
+        const currentPrice = portfolioPriceMap.get(token.symbol) || '0';
+        const currentValue = new Decimal(holding.balance).mul(new Decimal(currentPrice)).toNumber();
+
+        // For now, cost basis is the same as current value (simplified)
+        const costBasis = currentValue;
+
+        // Get price information from portfolio valuation service
+        const priceInfo = priceMetadataMap.get(token.symbol);
+
+        return {
+          id: holding.id,
+          token: {
+            id: token.id,
+            symbol: token.symbol,
+            name: token.name,
+            type: token.typeName,
+            typeCode: token.typeCode,
+            iconUrl: token.iconUrl,
+          },
+          amount: new Decimal(holding.balance).toNumber(),
+          value: currentValue,
+          costBasis: costBasis,
+          price: priceInfo,
+          account: {
+            id: account.id,
+            name: account.name,
+            type: account.typeName,
+            typeCode: account.typeCode,
+            institutionId: account.institutionId,
+          },
+          institution: {
+            id: institution.id,
+            name: institution.name,
+            type: institution.typeName,
+            typeCode: institution.typeCode,
+            website: institution.website,
+          },
+          lastUpdated: holding.lastUpdated.toISOString(),
+          createdAt: holding.createdAt.toISOString(),
+        };
+      }
+    );
+
+    this.logger.debug(
+      { userId: user.id, accountId, count: detailedHoldings.length },
+      accountId ? 'Account holdings with details retrieved' : 'Holdings with details retrieved'
+    );
+
+    return detailedHoldings;
   }
 }

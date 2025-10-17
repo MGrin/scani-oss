@@ -1,4 +1,4 @@
-import type { HoldingWithDetails } from '@scani/shared/types';
+import type { HoldingWithDetails } from '@scani/shared';
 import { Grid3X3, List, MoreHorizontal, Trash2 } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { useParams } from 'react-router-dom';
@@ -29,7 +29,6 @@ import { useToast } from '@/hooks/use-toast';
 import { useViewMode } from '@/hooks/use-view-mode';
 import { trpc } from '@/lib/trpc';
 import { createCurrencyToken } from '@/lib/utils';
-import { invalidateAllFinancialData } from '@/utils/invalidation';
 
 export function AccountDetail() {
   const { id } = useParams<{ id: string }>();
@@ -60,13 +59,17 @@ export function AccountDetail() {
   // Delete holding mutation
   const deleteHoldingMutation = trpc.holdings.delete.useMutation({
     onSuccess: () => {
+      // Invalidate all holding-related queries
+      utils.holdings.getWithDetails.invalidate();
+      utils.accounts.getHoldings.invalidate();
+      utils.accounts.getById.invalidate();
+      utils.accounts.getByUserIdWithSummary.invalidate();
+      utils.dashboard.getOverview.invalidate();
+
       toast({
         title: 'Holding deleted',
         description: 'The holding has been successfully deleted.',
       });
-
-      // Invalidate all related queries using utility function
-      invalidateAllFinancialData(utils);
     },
     onError: (error) => {
       toast({

@@ -127,26 +127,6 @@ export namespace FinancialMath {
   }
 
   /**
-   * Legacy formatCurrency function for backward compatibility
-   */
-  export function formatCurrencyLegacy(
-    value: number | string | Decimal,
-    decimals = 2,
-    symbol = '$'
-  ): string {
-    const decimal = new Decimal(value);
-    const formatted = decimal.toFixed(decimals);
-
-    // Add thousand separators
-    const parts = formatted.split('.');
-    if (parts[0]) {
-      parts[0] = parts[0].replace(/\B(?=(\d{3})+(?!\d))/g, ',');
-    }
-
-    return `${symbol}${parts.join('.')}`;
-  }
-
-  /**
    * Round to specified decimal places for display
    */
   export function round(value: number | string | Decimal, decimals = 2): Decimal {

@@ -1,6 +1,5 @@
 import { User } from 'lucide-react';
 import { useCallback, useEffect, useId, useMemo, useState } from 'react';
-
 import { CurrencySelector } from '@/components/selectors/CurrencySelector';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
@@ -14,15 +13,24 @@ import { trpc } from '@/lib/trpc';
 
 export function Settings() {
   const { toast } = useToast();
+  const utils = trpc.useUtils();
 
   // Data fetching
   const { data: userPrefs, isLoading } = trpc.users.getCurrent.useQuery();
   const { data: supportedCurrencies } = trpc.users.getSupportedCurrencies.useQuery();
-  const utils = trpc.useUtils();
+
   const updateUserPrefs = trpc.users.updateCurrent.useMutation({
-    onSuccess: () => {
+    onSuccess: (_data, variables) => {
+      // If base currency changed, invalidate all financial queries
+      if (variables.baseCurrencyId) {
+        utils.users.getBaseCurrency.invalidate();
+        utils.dashboard.getOverview.invalidate();
+        utils.holdings.getWithDetails.invalidate();
+        utils.accounts.getByUserIdWithSummary.invalidate();
+        utils.institutions.getByUserIdWithSummary.invalidate();
+      }
+      // Always invalidate user data
       utils.users.getCurrent.invalidate();
-      utils.users.getBaseCurrency.invalidate();
     },
   });
 
@@ -130,18 +138,6 @@ export function Settings() {
       setFormErrors({});
     }
   }, [originalData]);
-
-  // Warn on unload with unsaved changes
-  useEffect(() => {
-    const handler = (e: BeforeUnloadEvent) => {
-      if (isDirty) {
-        e.preventDefault();
-        e.returnValue = '';
-      }
-    };
-    window.addEventListener('beforeunload', handler);
-    return () => window.removeEventListener('beforeunload', handler);
-  }, [isDirty]);
 
   // Cmd/Ctrl+S to save
   useEffect(() => {

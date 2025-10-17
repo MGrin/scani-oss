@@ -14,18 +14,13 @@ export function TRPCProvider({ children }: TRPCProviderProps) {
       new QueryClient({
         defaultOptions: {
           queries: {
-            retry: 1,
-            // Optimized cache configuration for better performance
-            // Balance between freshness and reducing unnecessary API calls
-            staleTime: 5 * 60 * 1000, // 5 minutes (reasonable freshness)
-            cacheTime: 10 * 60 * 1000, // 10 minutes (keep data in memory longer)
-            refetchOnMount: false, // Don't refetch if data is still fresh
-            refetchOnWindowFocus: false, // Avoid refetch on tab switching
-            refetchOnReconnect: true, // Still refetch on reconnect for consistency
+            refetchOnMount: true,
+            refetchOnWindowFocus: true,
+            refetchOnReconnect: true,
             networkMode: 'online',
           },
           mutations: {
-            retry: 1, // Retry once for transient failures
+            // retry: 1, // Retry once for transient failures
             networkMode: 'online',
           },
         },

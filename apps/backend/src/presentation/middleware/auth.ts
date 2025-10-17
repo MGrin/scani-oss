@@ -1,11 +1,11 @@
-import type { User } from "@supabase/supabase-js";
-import { TRPCError } from "@trpc/server";
-import { eq } from "drizzle-orm";
-import jwt, { type JwtPayload } from "jsonwebtoken";
-import { db } from "../../infrastructure/database/connection";
-import * as schema from "../../infrastructure/database/schema";
-import { supabase } from "../../lib/supabase";
-import { authLogger } from "../../utils/logger";
+import type { User } from '@supabase/supabase-js';
+import { TRPCError } from '@trpc/server';
+import { eq } from 'drizzle-orm';
+import jwt, { type JwtPayload } from 'jsonwebtoken';
+import { db } from '../../infrastructure/database/connection';
+import * as schema from '../../infrastructure/database/schema';
+import { supabase } from '../../lib/supabase';
+import { authLogger } from '../../utils/logger';
 
 export interface AuthContext {
   user: User | null;
@@ -23,9 +23,7 @@ const SUPABASE_JWT_SECRET =
 /**
  * Creates or updates a user in the database based on Supabase user data
  */
-async function syncUserWithDatabase(
-  supabaseUser: User
-): Promise<typeof schema.users.$inferSelect> {
+async function syncUserWithDatabase(supabaseUser: User): Promise<typeof schema.users.$inferSelect> {
   try {
     // Check if user already exists
     const [existingUser] = await db
@@ -58,18 +56,18 @@ async function syncUserWithDatabase(
     const now = new Date();
 
     // Extract username from email (everything before @)
-    const emailUsername = supabaseUser.email?.split("@")[0] || "User";
+    const emailUsername = supabaseUser.email?.split('@')[0] || 'User';
 
     // Get USD token ID as default base currency
     const [usdToken] = await db
       .select({ id: schema.tokens.id })
       .from(schema.tokens)
-      .where(eq(schema.tokens.symbol, "USD"))
+      .where(eq(schema.tokens.symbol, 'USD'))
       .limit(1);
 
     const userData = {
       id: supabaseUser.id, // Use Supabase user ID
-      email: supabaseUser.email || "",
+      email: supabaseUser.email || '',
       name: emailUsername, // Use email prefix as username
       avatar: supabaseUser.user_metadata?.avatar_url || null,
       baseCurrencyId: usdToken?.id || null, // Use USD token ID or null if not found
@@ -77,29 +75,23 @@ async function syncUserWithDatabase(
       updatedAt: now,
     };
 
-    const [newUser] = await db
-      .insert(schema.users)
-      .values(userData)
-      .returning();
+    const [newUser] = await db.insert(schema.users).values(userData).returning();
 
     if (!newUser) {
-      throw new Error("Failed to create user in database");
+      throw new Error('Failed to create user in database');
     }
 
     return newUser;
   } catch (error) {
     authLogger.error(
       {
-        error:
-          error instanceof Error
-            ? { name: error.name, message: error.message }
-            : error,
+        error: error instanceof Error ? { name: error.name, message: error.message } : error,
       },
-      "Error syncing user with database"
+      'Error syncing user with database'
     );
     throw new TRPCError({
-      code: "INTERNAL_SERVER_ERROR",
-      message: "Failed to sync user data",
+      code: 'INTERNAL_SERVER_ERROR',
+      message: 'Failed to sync user data',
     });
   }
 }
@@ -107,12 +99,10 @@ async function syncUserWithDatabase(
 /**
  * Extracts and validates the JWT token from the Authorization header
  */
-export async function createAuthContext(
-  opts: CreateContextOptions
-): Promise<AuthContext> {
-  const authHeader = opts.req.headers.get("authorization");
+export async function createAuthContext(opts: CreateContextOptions): Promise<AuthContext> {
+  const authHeader = opts.req.headers.get('authorization');
 
-  if (!authHeader || !authHeader.startsWith("Bearer ")) {
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
     return {
       user: null,
       isAuthenticated: false,
@@ -124,16 +114,13 @@ export async function createAuthContext(
 
   try {
     let user: User | null = null;
-    let verificationSource: "local" | "remote" | "none" = "none";
+    let verificationSource: 'local' | 'remote' | 'none' = 'none';
 
     if (SUPABASE_JWT_SECRET) {
       user = verifyTokenLocally(token);
       if (user) {
-        verificationSource = "local";
-        authLogger.debug(
-          { userId: user.id },
-          "Authenticated via local JWT verification"
-        );
+        verificationSource = 'local';
+        authLogger.debug({ userId: user.id }, 'Authenticated via local JWT verification');
       }
     }
 
@@ -149,7 +136,7 @@ export async function createAuthContext(
           {
             error: error?.message,
           },
-          "Supabase token verification failed"
+          'Supabase token verification failed'
         );
         return {
           user: null,
@@ -159,7 +146,7 @@ export async function createAuthContext(
       }
 
       user = remoteUser;
-      verificationSource = "remote";
+      verificationSource = 'remote';
     }
 
     if (!user) {
@@ -178,7 +165,7 @@ export async function createAuthContext(
         userId: user.id,
         verificationSource,
       },
-      "User authenticated successfully"
+      'User authenticated successfully'
     );
 
     return {
@@ -189,12 +176,9 @@ export async function createAuthContext(
   } catch (error) {
     authLogger.error(
       {
-        error:
-          error instanceof Error
-            ? { name: error.name, message: error.message }
-            : error,
+        error: error instanceof Error ? { name: error.name, message: error.message } : error,
       },
-      "Auth verification error"
+      'Auth verification error'
     );
     return {
       user: null,
@@ -211,7 +195,7 @@ function verifyTokenLocally(token: string): User | null {
 
   try {
     const payload = jwt.verify(token, SUPABASE_JWT_SECRET, {
-      algorithms: ["HS256"],
+      algorithms: ['HS256'],
     }) as JwtPayload & {
       email?: string;
       phone?: string;
@@ -219,8 +203,8 @@ function verifyTokenLocally(token: string): User | null {
       user_metadata?: Record<string, unknown>;
       app_metadata?: Record<string, unknown>;
       is_anonymous?: boolean;
-      identities?: User["identities"];
-      factors?: User["factors"];
+      identities?: User['identities'];
+      factors?: User['factors'];
     };
 
     if (!payload.sub) {
@@ -231,33 +215,26 @@ function verifyTokenLocally(token: string): User | null {
   } catch (error) {
     authLogger.debug(
       {
-        error:
-          error instanceof Error
-            ? { name: error.name, message: error.message }
-            : error,
+        error: error instanceof Error ? { name: error.name, message: error.message } : error,
       },
-      "Local JWT verification failed, falling back to Supabase"
+      'Local JWT verification failed, falling back to Supabase'
     );
     return null;
   }
 }
 
-function buildUserFromPayload(
-  payload: JwtPayload & { email?: string; phone?: string }
-): User {
+function buildUserFromPayload(payload: JwtPayload & { email?: string; phone?: string }): User {
   const nowIso = new Date().toISOString();
   const issuedAtIso =
-    typeof payload.iat === "number"
-      ? new Date(payload.iat * 1000).toISOString()
-      : nowIso;
+    typeof payload.iat === 'number' ? new Date(payload.iat * 1000).toISOString() : nowIso;
 
   return {
-    id: payload.sub ?? "",
+    id: payload.sub ?? '',
     email: payload.email ?? undefined,
     phone: payload.phone ?? undefined,
     app_metadata: (payload.app_metadata as Record<string, unknown>) ?? {},
     user_metadata: (payload.user_metadata as Record<string, unknown>) ?? {},
-    aud: (payload.aud as string) ?? "authenticated",
+    aud: (payload.aud as string) ?? 'authenticated',
     created_at: (payload.created_at as string) ?? issuedAtIso,
     updated_at: (payload.updated_at as string) ?? nowIso,
     last_sign_in_at: (payload.last_sign_in_at as string) ?? nowIso,
@@ -265,7 +242,7 @@ function buildUserFromPayload(
     identities: payload.identities ?? [],
     factors: payload.factors ?? [],
     is_anonymous: payload.is_anonymous ?? false,
-    expires_at: typeof payload.exp === "number" ? payload.exp : undefined,
+    expires_at: typeof payload.exp === 'number' ? payload.exp : undefined,
   } as User;
 }
 
@@ -275,8 +252,8 @@ function buildUserFromPayload(
 export function requireAuth(ctx: AuthContext) {
   if (!ctx.isAuthenticated || !ctx.user || !ctx.dbUser) {
     throw new TRPCError({
-      code: "UNAUTHORIZED",
-      message: "Authentication required",
+      code: 'UNAUTHORIZED',
+      message: 'Authentication required',
     });
   }
 
@@ -284,20 +261,4 @@ export function requireAuth(ctx: AuthContext) {
     supabaseUser: ctx.user,
     dbUser: ctx.dbUser,
   };
-}
-
-/**
- * Get user ID from context, throwing if not authenticated
- */
-export function getUserId(ctx: AuthContext): string {
-  const { dbUser } = requireAuth(ctx);
-  return dbUser.id;
-}
-
-/**
- * Get database user from context, throwing if not authenticated
- */
-export function getDbUser(ctx: AuthContext): typeof schema.users.$inferSelect {
-  const { dbUser } = requireAuth(ctx);
-  return dbUser;
 }

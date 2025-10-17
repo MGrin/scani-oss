@@ -489,11 +489,4 @@ export class TokenValidationService {
       return [];
     }
   }
-
-  /**
-   * Alias for validateToken to maintain compatibility
-   */
-  async getTokenInfo(symbol: string): Promise<ValidationResult> {
-    return this.validateToken(symbol);
-  }
 }

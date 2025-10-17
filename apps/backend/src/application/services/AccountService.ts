@@ -1,45 +1,58 @@
+import type { AccountWihSumaryDTO, CreateAccountInput } from '@scani/shared';
+import Decimal from 'decimal.js';
 import { Container, Service } from 'typedi';
-import type { CreateAccountInput, UpdateAccountInput } from '../../domain/dtos/account';
 import type { Account } from '../../domain/entities';
 import { AccountRepository } from '../../infrastructure/repositories/AccountRepository';
-import { AccountTypeRepository } from '../../infrastructure/repositories/EnumRepositories';
+import type { DatabaseTransaction } from '../../infrastructure/repositories/BaseRepository';
+import { HoldingRepository } from '../../infrastructure/repositories/HoldingRepository';
 import { InstitutionRepository } from '../../infrastructure/repositories/InstitutionRepository';
+import { TokenRepository } from '../../infrastructure/repositories/TokenRepository';
 import { BaseService } from './BaseService';
+import { PortfolioValuationService } from './PortfolioValuationService';
 
 @Service()
 export class AccountService extends BaseService {
+  private readonly holdingRepository = Container.get(HoldingRepository);
   private readonly accountRepository = Container.get(AccountRepository);
-  private readonly accountTypeRepository = Container.get(AccountTypeRepository);
+  private readonly tokenRepository = Container.get(TokenRepository);
   private readonly institutionRepository = Container.get(InstitutionRepository);
+
+  private readonly portfolioService = Container.get(PortfolioValuationService);
 
   constructor() {
     super('AccountService');
   }
 
-  async createAccount(data: CreateAccountInput, userId: string): Promise<Account> {
+  async createAccount(
+    data: CreateAccountInput,
+    userId: string,
+    tx?: DatabaseTransaction
+  ): Promise<Account> {
     try {
-      this.logInfo('Creating account', { name: data.name, institutionId: data.institutionId });
+      this.logInfo('Creating account', {
+        name: data.name,
+        institutionId: data.institutionId,
+      });
 
-      this.validateRequiredFields(data, ['name', 'typeCode', 'institutionId']);
+      this.validateRequiredFields(data, ['institutionId', 'name', 'typeId', 'institutionId']);
       this.validateNonEmptyString(data.name, 'name');
 
-      // Validate account type exists
-      const accountType = await this.accountTypeRepository.findByCode(data.typeCode);
-      this.assertExists(accountType, `Account type with code ${data.typeCode} not found`);
-
       // Validate institution exists and belongs to user
-      const institution = await this.institutionRepository.findById(data.institutionId);
+      const institution = await this.institutionRepository.findById(data.institutionId!, tx);
       this.assertExists(institution, `Institution with ID ${data.institutionId} not found`);
 
-      const account = await this.accountRepository.create({
-        name: data.name,
-        typeId: accountType.id,
-        institutionId: data.institutionId,
-        userId,
-        description: data.description || null,
-        metadata: (data.metadata as Record<string, unknown>) || {},
-        isActive: true,
-      });
+      const account = await this.accountRepository.create(
+        {
+          name: data.name,
+          typeId: data.typeId,
+          institutionId: data.institutionId!,
+          userId,
+          description: data.description || null,
+          metadata: (data.metadata as Record<string, unknown>) || {},
+          isActive: true,
+        },
+        tx
+      );
 
       this.logInfo('Account created', { accountId: account.id });
       return account;
@@ -48,46 +61,18 @@ export class AccountService extends BaseService {
     }
   }
 
-  async updateAccount(
+  async getAccountById(
+    userId: string,
     accountId: string,
-    data: UpdateAccountInput,
-    _userId: string
+    tx?: DatabaseTransaction
   ): Promise<Account> {
     try {
-      this.logInfo('Updating account', { accountId, data });
-
-      const existing = await this.accountRepository.findById(accountId);
-      this.assertExists(existing, `Account with ID ${accountId} not found`);
-
-      // Validate type if provided
-      let typeId = existing.typeId;
-      if (data.typeCode) {
-        const accountType = await this.accountTypeRepository.findByCode(data.typeCode);
-        this.assertExists(accountType, `Account type with code ${data.typeCode} not found`);
-        typeId = accountType.id;
-      }
-
-      const updated = await this.accountRepository.update(accountId, {
-        ...(data.name && { name: data.name }),
-        ...(data.typeCode && { typeId }),
-        ...(data.description !== undefined && { description: data.description }),
-        ...(data.metadata && { metadata: data.metadata as Record<string, unknown> }),
-        ...(data.isActive !== undefined && { isActive: data.isActive }),
-      });
-      this.assertExists(updated, 'Failed to update account');
-
-      this.logInfo('Account updated', { accountId });
-      return updated;
-    } catch (error) {
-      throw this.handleError(error, 'updateAccount');
-    }
-  }
-
-  async getAccountById(accountId: string, _userId: string): Promise<Account> {
-    try {
-      const account = await this.accountRepository.findById(accountId);
+      const account = await this.accountRepository.findById(accountId, tx);
       this.assertExists(account, `Account with ID ${accountId} not found`);
 
+      if (account.userId !== userId) {
+        throw new Error('Access denied to this account');
+      }
       return account;
     } catch (error) {
       throw this.handleError(error, 'getAccountById');
@@ -102,26 +87,55 @@ export class AccountService extends BaseService {
     }
   }
 
-  async getAccountsByInstitution(institutionId: string, userId: string): Promise<Account[]> {
-    try {
-      // Verify institution ownership
-      const institution = await this.institutionRepository.findById(institutionId);
-      this.assertExists(institution, `Institution with ID ${institutionId} not found`);
+  async getAccountsByUserIdWithSummary(userId: string): Promise<AccountWihSumaryDTO[]> {
+    // Get user's accounts
+    const accounts = await this.getAccountsByUserId(userId);
 
-      return await this.accountRepository.findByInstitution(institutionId, userId);
-    } catch (error) {
-      throw this.handleError(error, 'getAccountsByInstitution');
+    if (accounts.length === 0) {
+      return [];
     }
-  }
 
-  async getAccountWithHoldings(accountId: string, userId: string) {
-    try {
-      const account = await this.accountRepository.findWithHoldings(accountId, userId);
+    const holdings = await this.holdingRepository.findByUser(userId);
+    const portfolioValue = await this.portfolioService.getUserPortfolioValue(userId);
 
-      return account;
-    } catch (error) {
-      throw this.handleError(error, 'getAccountWithHoldings');
+    const holdingsByAccount = new Map<string, typeof holdings>();
+    for (const holding of holdings) {
+      if (!holdingsByAccount.has(holding.accountId)) {
+        holdingsByAccount.set(holding.accountId, []);
+      }
+      holdingsByAccount.get(holding.accountId)!.push(holding);
     }
+
+    const valueMap = new Map(portfolioValue.holdings.map((h) => [h.tokenSymbol, h.value || '0']));
+
+    const tokenIds = [...new Set(holdings.map((h) => h.tokenId))];
+    const tokens = await this.tokenRepository.findByIds(tokenIds);
+    const tokenMap = new Map(tokens.map((t) => [t.id, t]));
+
+    const accountsWithSummary = accounts.map((account) => {
+      const accountHoldings = holdingsByAccount.get(account.id) || [];
+      const holdingsCount = accountHoldings.length;
+
+      // Calculate total value across all holdings in this account
+      let totalValue = new Decimal(0);
+      for (const holding of accountHoldings) {
+        const token = tokenMap.get(holding.tokenId);
+        if (token) {
+          const holdingValue = valueMap.get(token.symbol) || '0';
+          totalValue = totalValue.add(new Decimal(holdingValue));
+        }
+      }
+
+      return {
+        ...account,
+        summary: {
+          holdingsCount,
+          totalValue: totalValue.toString(),
+        },
+      };
+    });
+
+    return accountsWithSummary;
   }
 
   async deleteAccount(accountId: string, _userId: string): Promise<boolean> {

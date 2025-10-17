@@ -7,17 +7,17 @@
  * It also creates a multi-resolution favicon.ico file.
  */
 
-import { existsSync, mkdirSync, readFileSync } from "node:fs";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
-import sharp from "sharp";
+import { existsSync, mkdirSync, readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import sharp from 'sharp';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
-const PUBLIC_DIR = join(__dirname, "../public");
-const ICONS_DIR = join(PUBLIC_DIR, "icons");
-const PNG_SOURCE = join(ICONS_DIR, "icon.png");
+const PUBLIC_DIR = join(__dirname, '../public');
+const ICONS_DIR = join(PUBLIC_DIR, 'icons');
+const PNG_SOURCE = join(ICONS_DIR, 'icon.png');
 
 // Ensure icons directory exists
 if (!existsSync(ICONS_DIR)) {
@@ -28,14 +28,14 @@ if (!existsSync(ICONS_DIR)) {
 const ICON_SIZES = [72, 96, 128, 144, 152, 180, 192, 384, 512];
 const FAVICON_SIZES = [16, 32, 48];
 
-console.log("🎨 Generating PWA icons from PNG...\n");
+console.log('🎨 Generating PWA icons from PNG...\n');
 
 async function generateIcons() {
   try {
     // Read the PNG source
     const pngBuffer = readFileSync(PNG_SOURCE);
 
-    console.log("📦 Generating PNG icons:");
+    console.log('📦 Generating PNG icons:');
 
     // Generate PNG icons
     for (const size of ICON_SIZES) {
@@ -43,7 +43,7 @@ async function generateIcons() {
 
       await sharp(pngBuffer)
         .resize(size, size, {
-          fit: "contain",
+          fit: 'contain',
           background: { r: 0, g: 0, b: 0, alpha: 0 },
         })
         .png()
@@ -52,14 +52,14 @@ async function generateIcons() {
       console.log(`  ✓ Generated ${size}x${size} icon`);
     }
 
-    console.log("\n🖼️  Generating favicon.ico:");
+    console.log('\n🖼️  Generating favicon.ico:');
 
     // Generate favicon sizes as PNGs first
     const faviconBuffers = [];
     for (const size of FAVICON_SIZES) {
       const buffer = await sharp(pngBuffer)
         .resize(size, size, {
-          fit: "contain",
+          fit: 'contain',
           background: { r: 26, g: 31, b: 46, alpha: 1 }, // #1a1f2e background
         })
         .png()
@@ -72,24 +72,24 @@ async function generateIcons() {
     // For favicon.ico, we'll create the largest size (48x48) as a standalone
     // True multi-resolution .ico creation requires additional libraries,
     // so we'll create a simple 32x32 PNG-based favicon
-    const faviconPath = join(PUBLIC_DIR, "favicon.ico");
+    const faviconPath = join(PUBLIC_DIR, 'favicon.ico');
     await sharp(pngBuffer)
       .resize(32, 32, {
-        fit: "contain",
+        fit: 'contain',
         background: { r: 26, g: 31, b: 46, alpha: 1 },
       })
       .png()
       .toFile(faviconPath);
 
-    console.log("  ✓ Generated favicon.ico (32x32 PNG format)\n");
+    console.log('  ✓ Generated favicon.ico (32x32 PNG format)\n');
 
     // Also create explicit favicon PNGs
-    console.log("🔖 Generating explicit favicon PNGs:");
+    console.log('🔖 Generating explicit favicon PNGs:');
     for (const size of [16, 32]) {
       const outputPath = join(PUBLIC_DIR, `favicon-${size}x${size}.png`);
       await sharp(pngBuffer)
         .resize(size, size, {
-          fit: "contain",
+          fit: 'contain',
           background: { r: 26, g: 31, b: 46, alpha: 1 },
         })
         .png()
@@ -98,11 +98,11 @@ async function generateIcons() {
       console.log(`  ✓ Generated favicon-${size}x${size}.png`);
     }
 
-    console.log("\n✨ Icon generation complete!");
+    console.log('\n✨ Icon generation complete!');
     console.log(`\n📁 Icons saved to: ${ICONS_DIR}`);
     console.log(`📁 Favicon saved to: ${PUBLIC_DIR}\n`);
   } catch (error) {
-    console.error("❌ Error generating icons:", error);
+    console.error('❌ Error generating icons:', error);
     process.exit(1);
   }
 }

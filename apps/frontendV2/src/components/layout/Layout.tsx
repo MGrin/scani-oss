@@ -1,21 +1,9 @@
-import {
-  CreditCard,
-  FileText,
-  Home,
-  LogOut,
-  Menu,
-  Settings,
-  TrendingUp,
-  X,
-} from "lucide-react";
-import React, { useEffect, useId, useState } from "react";
-import { Link, useLocation } from "react-router-dom";
-import {
-  AccountBreadcrumb,
-  InstitutionBreadcrumb,
-} from "@/components/features/Breadcrumb";
-import { PullToRefresh } from "@/components/PullToRefresh";
-import { CurrencySelector } from "@/components/selectors/CurrencySelector";
+import { CreditCard, FileText, Home, LogOut, Menu, Settings, TrendingUp, X } from 'lucide-react';
+import React, { useEffect, useId, useState } from 'react';
+import { Link, useLocation } from 'react-router-dom';
+import { AccountBreadcrumb, InstitutionBreadcrumb } from '@/components/features/Breadcrumb';
+import { PullToRefresh } from '@/components/PullToRefresh';
+import { CurrencySelector } from '@/components/selectors/CurrencySelector';
 import {
   Breadcrumb,
   BreadcrumbItem,
@@ -23,8 +11,8 @@ import {
   BreadcrumbList,
   BreadcrumbPage,
   BreadcrumbSeparator,
-} from "@/components/ui/breadcrumb";
-import { Button } from "@/components/ui/button";
+} from '@/components/ui/breadcrumb';
+import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -32,61 +20,60 @@ import {
   DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
-import { EnhancedThemeToggle } from "@/components/ui/enhanced-theme-toggle";
-import { QueryLoadingIndicator } from "@/components/ui/query-loading-indicator";
-import { Skeleton } from "@/components/ui/skeleton";
-import { SkipLinks } from "@/components/ui/skip-links";
+} from '@/components/ui/dropdown-menu';
+import { EnhancedThemeToggle } from '@/components/ui/enhanced-theme-toggle';
+import { QueryLoadingIndicator } from '@/components/ui/query-loading-indicator';
+import { Skeleton } from '@/components/ui/skeleton';
+import { SkipLinks } from '@/components/ui/skip-links';
 
-import { useAuth } from "@/contexts/AuthContext";
-import { RealtimeProvider } from "@/contexts/RealtimeContext";
-import { useToast } from "@/hooks/use-toast";
-import { MOBILE_SPACING } from "@/lib/mobile-utils";
-import { trpc } from "@/lib/trpc";
-import { cn } from "@/lib/utils";
+import { useAuth } from '@/contexts/AuthContext';
+import { RealtimeProvider } from '@/contexts/RealtimeContext';
+import { useToast } from '@/hooks/use-toast';
+import { MOBILE_SPACING } from '@/lib/mobile-utils';
+import { trpc } from '@/lib/trpc';
+import { cn } from '@/lib/utils';
 
 interface LayoutProps {
   children: React.ReactNode;
 }
 
 const navigation = [
-  { name: "Dashboard", href: "/", icon: Home },
-  { name: "Accounts", href: "/accounts", icon: CreditCard },
-  { name: "Holdings", href: "/holdings", icon: TrendingUp },
-  { name: "Settings", href: "/settings", icon: Settings },
+  { name: 'Dashboard', href: '/', icon: Home },
+  { name: 'Accounts', href: '/accounts', icon: CreditCard },
+  { name: 'Holdings', href: '/holdings', icon: TrendingUp },
+  { name: 'Settings', href: '/settings', icon: Settings },
 ];
 
 const comingSoonNavigation = [
-  { name: "Reports", href: "/reports", icon: FileText },
-  { name: "Schedules", href: "/schedules", icon: Settings },
+  { name: 'Reports', href: '/reports', icon: FileText },
+  { name: 'Schedules', href: '/schedules', icon: Settings },
 ];
 
 // Helper function to determine which navigation item should be active
 function getActiveNavItem(pathname: string): string {
-  if (pathname === "/") return "/";
-  if (pathname.startsWith("/accounts")) return "/accounts";
-  if (pathname.startsWith("/holdings")) return "/holdings";
-  if (pathname.startsWith("/settings")) return "/settings";
-  return "";
+  if (pathname === '/') return '/';
+  if (pathname.startsWith('/accounts')) return '/accounts';
+  if (pathname.startsWith('/holdings')) return '/holdings';
+  if (pathname.startsWith('/settings')) return '/settings';
+  return '';
 }
 
 // Helper hook to generate breadcrumbs based on the current path
 function useBreadcrumbs(pathname: string) {
-  const pathSegments = pathname.split("/").filter(Boolean);
+  const pathSegments = pathname.split('/').filter(Boolean);
 
-  const breadcrumbs = [{ name: "Dashboard", href: "/", isHome: true }];
+  const breadcrumbs = [{ name: 'Dashboard', href: '/', isHome: true }];
 
   const routeMap: Record<string, string> = {
-    accounts: "Accounts",
-    holdings: "Holdings",
-    settings: "Settings",
+    accounts: 'Accounts',
+    holdings: 'Holdings',
+    settings: 'Settings',
   };
 
-  let currentPath = "";
+  let currentPath = '';
   pathSegments.forEach((segment) => {
     currentPath += `/${segment}`;
-    const name =
-      routeMap[segment] || segment.charAt(0).toUpperCase() + segment.slice(1);
+    const name = routeMap[segment] || segment.charAt(0).toUpperCase() + segment.slice(1);
 
     breadcrumbs.push({
       name,
@@ -113,8 +100,8 @@ export function Layout({ children }: LayoutProps) {
     };
 
     checkMobile();
-    window.addEventListener("resize", checkMobile);
-    return () => window.removeEventListener("resize", checkMobile);
+    window.addEventListener('resize', checkMobile);
+    return () => window.removeEventListener('resize', checkMobile);
   }, []);
 
   // Query for user preferences to get avatar and name
@@ -123,38 +110,39 @@ export function Layout({ children }: LayoutProps) {
   });
 
   // Query for supported currencies for currency selector
-  const { data: supportedCurrencies } =
-    trpc.users.getSupportedCurrencies.useQuery(undefined, {
-      enabled: Boolean(user),
-    });
+  const { data: supportedCurrencies } = trpc.users.getSupportedCurrencies.useQuery(undefined, {
+    enabled: Boolean(user),
+  });
 
   // Query for base currency
-  const { data: baseCurrency } = trpc.users.getBaseCurrency.useQuery(
-    undefined,
-    {
-      enabled: Boolean(user),
-    }
-  );
+  const { data: baseCurrency } = trpc.users.getBaseCurrency.useQuery(undefined, {
+    enabled: Boolean(user),
+  });
 
   const { toast } = useToast();
   const utils = trpc.useUtils();
   const updateUser = trpc.users.updateCurrent.useMutation({
     onSuccess: () => {
+      // Invalidate all queries that depend on base currency
       utils.users.getBaseCurrency.invalidate();
-      utils.users.getPortfolioValue.invalidate();
+      utils.users.getCurrent.invalidate();
       utils.dashboard.getOverview.invalidate();
+      utils.holdings.getWithDetails.invalidate();
+      utils.accounts.getByUserIdWithSummary.invalidate();
+      utils.institutions.getByUserIdWithSummary.invalidate();
+
       toast({
-        title: "Success",
+        title: 'Success',
         description:
-          "Currency updated successfully. All values will now be displayed in the new currency.",
-        variant: "default",
+          'Currency updated successfully. All values will now be displayed in the new currency.',
+        variant: 'default',
       });
     },
     onError: (err) => {
       toast({
-        title: "Error",
-        description: err.message || "Failed to update currency",
-        variant: "destructive",
+        title: 'Error',
+        description: err.message || 'Failed to update currency',
+        variant: 'destructive',
       });
     },
   });
@@ -265,7 +253,7 @@ function LayoutContent({
           className="fixed inset-0 z-40 bg-background/80 backdrop-blur-sm md:hidden border-0 p-0 cursor-default"
           onClick={() => setSidebarOpen(false)}
           onKeyDown={(e) => {
-            if (e.key === "Escape" || e.key === "Enter") {
+            if (e.key === 'Escape' || e.key === 'Enter') {
               setSidebarOpen(false);
             }
           }}
@@ -276,12 +264,12 @@ function LayoutContent({
       {/* Sidebar */}
       <aside
         className={cn(
-          "fixed inset-y-0 left-0 z-50 w-64 bg-card border-r transform transition-transform duration-200 ease-in-out md:translate-x-0 md:static md:inset-0 flex flex-col",
-          sidebarOpen ? "translate-x-0" : "-translate-x-full"
+          'fixed inset-y-0 left-0 z-50 w-64 bg-card border-r transform transition-transform duration-200 ease-in-out md:translate-x-0 md:static md:inset-0 flex flex-col',
+          sidebarOpen ? 'translate-x-0' : '-translate-x-full'
         )}
         style={{
-          paddingTop: "env(safe-area-inset-top)",
-          paddingLeft: "env(safe-area-inset-left)",
+          paddingTop: 'env(safe-area-inset-top)',
+          paddingLeft: 'env(safe-area-inset-left)',
         }}
         aria-label="Main navigation"
       >
@@ -311,10 +299,7 @@ function LayoutContent({
         {/* Navigation */}
         <nav
           id={navigationId}
-          className={cn(
-            "flex-1 px-3 py-3 mt-2 overflow-y-auto",
-            MOBILE_SPACING.listGap
-          )}
+          className={cn('flex-1 px-3 py-3 mt-2 overflow-y-auto', MOBILE_SPACING.listGap)}
           aria-label="Main menu"
         >
           {navigation.map((item) => {
@@ -327,12 +312,12 @@ function LayoutContent({
                 key={item.name}
                 to={item.href}
                 className={cn(
-                  "flex items-center space-x-2.5 px-2.5 py-2 sm:py-1.5 rounded-md font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 touch-manipulation min-h-[36px]",
+                  'flex items-center space-x-2.5 px-2.5 py-2 sm:py-1.5 rounded-md font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 touch-manipulation min-h-[36px]',
                   isActive
-                    ? "bg-primary text-primary-foreground"
-                    : "text-muted-foreground hover:text-foreground hover:bg-accent"
+                    ? 'bg-primary text-primary-foreground'
+                    : 'text-muted-foreground hover:text-foreground hover:bg-accent'
                 )}
-                aria-current={isActive ? "page" : undefined}
+                aria-current={isActive ? 'page' : undefined}
                 onClick={() => setSidebarOpen(false)}
               >
                 <Icon className="h-4 w-4 flex-shrink-0" />
@@ -369,12 +354,10 @@ function LayoutContent({
         <div className="border-t p-3 space-y-3 flex-shrink-0">
           {/* Base Currency - Always visible */}
           <div className="space-y-1.5">
-            <div className="text-xs font-medium text-muted-foreground px-1">
-              Base Currency
-            </div>
+            <div className="text-xs font-medium text-muted-foreground px-1">Base Currency</div>
             {supportedCurrencies && supportedCurrencies.length > 0 ? (
               <CurrencySelector
-                value={baseCurrency?.id || ""}
+                value={baseCurrency?.id || ''}
                 onValueChange={handleCurrencyChange}
                 currencies={supportedCurrencies}
                 placeholder="Select currency"
@@ -382,7 +365,7 @@ function LayoutContent({
                 compact={false}
                 buttonSize="sm"
                 className="w-full"
-                side={isMobile ? "bottom" : "right"}
+                side={isMobile ? 'bottom' : 'right'}
               />
             ) : (
               <Skeleton className="h-9 w-full" />
@@ -393,56 +376,47 @@ function LayoutContent({
           {user && (
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button
-                  variant="ghost"
-                  className="w-full justify-start h-auto p-2"
-                >
+                <Button variant="ghost" className="w-full justify-start h-auto p-2">
                   <div className="flex items-center space-x-2 w-full">
                     <div className="h-8 w-8 bg-muted rounded-full flex items-center justify-center overflow-hidden flex-shrink-0">
                       {userPrefs?.avatar ? (
                         <img
                           src={userPrefs.avatar}
-                          alt={userPrefs.name || user.email || "User"}
+                          alt={userPrefs.name || user.email || 'User'}
                           className="h-full w-full object-cover"
                           onError={(e) => {
-                            e.currentTarget.style.display = "none";
+                            e.currentTarget.style.display = 'none';
                           }}
                         />
                       ) : null}
                       {!userPrefs?.avatar && (
                         <span className="text-sm font-medium">
-                          {(
-                            userPrefs?.name?.[0] || user.email?.[0]
-                          )?.toUpperCase() || "?"}
+                          {(userPrefs?.name?.[0] || user.email?.[0])?.toUpperCase() || '?'}
                         </span>
                       )}
                     </div>
                     <div className="flex-1 text-left overflow-hidden">
                       <p className="text-sm font-medium truncate">
-                        {userPrefs?.name || user.email?.split("@")[0] || "User"}
+                        {userPrefs?.name || user.email?.split('@')[0] || 'User'}
                       </p>
-                      <p className="text-xs text-muted-foreground truncate">
-                        {user.email}
-                      </p>
+                      <p className="text-xs text-muted-foreground truncate">{user.email}</p>
                     </div>
                   </div>
                 </Button>
               </DropdownMenuTrigger>
               {/* Mobile: full width above trigger, Desktop: to the right */}
               <DropdownMenuContent
-                align={isMobile ? "center" : "start"}
-                side={isMobile ? "top" : "right"}
+                align={isMobile ? 'center' : 'start'}
+                side={isMobile ? 'top' : 'right'}
                 sideOffset={isMobile ? 4 : 8}
-                className={cn(isMobile ? "w-[calc(16rem-2rem)]" : "w-56")}
+                className={cn(isMobile ? 'w-[calc(16rem-2rem)]' : 'w-56')}
               >
                 <DropdownMenuLabel className="font-normal">
                   <div className="flex flex-col space-y-1">
                     <p className="text-sm font-medium leading-none">
-                      {userPrefs?.name || user.email?.split("@")[0] || "User"}
+                      {userPrefs?.name || user.email?.split('@')[0] || 'User'}
                     </p>
-                    <p className="text-sm leading-none text-muted-foreground">
-                      {user.email}
-                    </p>
+                    <p className="text-sm leading-none text-muted-foreground">{user.email}</p>
                   </div>
                 </DropdownMenuLabel>
                 <DropdownMenuSeparator />
@@ -475,7 +449,7 @@ function LayoutContent({
         <header
           className="flex-shrink-0 bg-card border-b"
           style={{
-            paddingTop: "max(env(safe-area-inset-top), 0px)",
+            paddingTop: 'max(env(safe-area-inset-top), 0px)',
           }}
         >
           <div className="h-14 flex items-center justify-between px-3 md:px-4">
@@ -492,9 +466,9 @@ function LayoutContent({
               </Button>
 
               {/* Breadcrumbs - hide on mobile */}
-              {location.pathname.startsWith("/accounts/") ? (
+              {location.pathname.startsWith('/accounts/') ? (
                 <AccountBreadcrumb />
-              ) : location.pathname.startsWith("/institutions/") ? (
+              ) : location.pathname.startsWith('/institutions/') ? (
                 <InstitutionBreadcrumb />
               ) : (
                 <Breadcrumb className="hidden md:flex min-w-0 flex-1">
@@ -503,25 +477,14 @@ function LayoutContent({
                       <React.Fragment key={`${crumb.href}-${index}`}>
                         <BreadcrumbItem className="max-w-[200px]">
                           {index === breadcrumbs.length - 1 ? (
-                            <BreadcrumbPage className="truncate">
-                              {crumb.name}
-                            </BreadcrumbPage>
+                            <BreadcrumbPage className="truncate">{crumb.name}</BreadcrumbPage>
                           ) : (
-                            <BreadcrumbLink
-                              to={crumb.href}
-                              className="truncate block"
-                            >
-                              {crumb.isHome ? (
-                                <Home className="h-3.5 w-3.5" />
-                              ) : (
-                                crumb.name
-                              )}
+                            <BreadcrumbLink to={crumb.href} className="truncate block">
+                              {crumb.isHome ? <Home className="h-3.5 w-3.5" /> : crumb.name}
                             </BreadcrumbLink>
                           )}
                         </BreadcrumbItem>
-                        {index < breadcrumbs.length - 1 && (
-                          <BreadcrumbSeparator />
-                        )}
+                        {index < breadcrumbs.length - 1 && <BreadcrumbSeparator />}
                       </React.Fragment>
                     ))}
                   </BreadcrumbList>
@@ -544,14 +507,11 @@ function LayoutContent({
           <div className="h-full overflow-auto" data-scrollable="true">
             <main
               id={mainContentId}
-              className={cn("px-4 pt-4 pb-6 sm:px-6 sm:pt-5 sm:pb-6")}
+              className={cn('px-4 pt-4 pb-6 sm:px-6 sm:pt-5 sm:pb-6')}
               style={{
-                paddingBottom:
-                  "max(1.5rem, calc(1.5rem + env(safe-area-inset-bottom)))",
-                paddingLeft:
-                  "max(1rem, calc(1rem + env(safe-area-inset-left)))",
-                paddingRight:
-                  "max(1rem, calc(1rem + env(safe-area-inset-right)))",
+                paddingBottom: 'max(1.5rem, calc(1.5rem + env(safe-area-inset-bottom)))',
+                paddingLeft: 'max(1rem, calc(1rem + env(safe-area-inset-left)))',
+                paddingRight: 'max(1rem, calc(1rem + env(safe-area-inset-right)))',
               }}
               tabIndex={-1}
             >

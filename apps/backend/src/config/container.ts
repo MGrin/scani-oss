@@ -15,14 +15,12 @@ import '../infrastructure/repositories/BaseRepository';
 // Import all services to ensure they're registered
 import '../application/services/UserService';
 import '../application/services/TokenService';
-import '../application/services/TokenPriceService';
 import '../application/services/InstitutionService';
 import '../application/services/AccountService';
 import '../application/services/HoldingService';
 import '../application/services/PricingService';
 import '../application/services/PortfolioValuationService';
 import '../application/services/TokenValidationService';
-import '../application/services/BatchOperationsService';
 import '../application/services/EnumServices';
 import '../application/services/BaseService';
 

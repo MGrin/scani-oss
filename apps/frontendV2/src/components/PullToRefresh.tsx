@@ -1,7 +1,7 @@
-import { RefreshCw } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
-import { isPWA } from "@/lib/pwa-utils";
-import { cn } from "@/lib/utils";
+import { RefreshCw } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
+import { isPWA } from '@/lib/pwa-utils';
+import { cn } from '@/lib/utils';
 
 interface PullToRefreshProps {
   onRefresh: () => Promise<void>;
@@ -9,11 +9,7 @@ interface PullToRefreshProps {
   disabled?: boolean;
 }
 
-export function PullToRefresh({
-  onRefresh,
-  children,
-  disabled = false,
-}: PullToRefreshProps) {
+export function PullToRefresh({ onRefresh, children, disabled = false }: PullToRefreshProps) {
   const [pullDistance, setPullDistance] = useState(0);
   const [isPulling, setIsPulling] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -111,7 +107,7 @@ export function PullToRefresh({
         try {
           await onRefresh();
         } catch (error) {
-          console.error("Pull-to-refresh error:", error);
+          console.error('Pull-to-refresh error:', error);
         } finally {
           setIsRefreshing(false);
           setPullDistance(0);
@@ -126,14 +122,14 @@ export function PullToRefresh({
     };
 
     // Add touch event listeners
-    container.addEventListener("touchstart", handleTouchStart, {
+    container.addEventListener('touchstart', handleTouchStart, {
       passive: true,
     });
-    container.addEventListener("touchmove", handleTouchMove, {
+    container.addEventListener('touchmove', handleTouchMove, {
       passive: false,
     });
-    container.addEventListener("touchend", handleTouchEnd, { passive: true });
-    container.addEventListener("touchcancel", handleTouchEnd, {
+    container.addEventListener('touchend', handleTouchEnd, { passive: true });
+    container.addEventListener('touchcancel', handleTouchEnd, {
       passive: true,
     });
 
@@ -141,10 +137,10 @@ export function PullToRefresh({
       if (rafId) {
         cancelAnimationFrame(rafId);
       }
-      container.removeEventListener("touchstart", handleTouchStart);
-      container.removeEventListener("touchmove", handleTouchMove);
-      container.removeEventListener("touchend", handleTouchEnd);
-      container.removeEventListener("touchcancel", handleTouchEnd);
+      container.removeEventListener('touchstart', handleTouchStart);
+      container.removeEventListener('touchmove', handleTouchMove);
+      container.removeEventListener('touchend', handleTouchEnd);
+      container.removeEventListener('touchcancel', handleTouchEnd);
     };
   }, [isEnabled, isPulling, isRefreshing, pullDistance, onRefresh]);
 
@@ -156,44 +152,39 @@ export function PullToRefresh({
     <div
       ref={containerRef}
       className={cn(
-        "relative h-full overflow-x-hidden touch-pan-y",
-        isPWA() ? "overflow-y-auto" : "overflow-y-hidden"
+        'relative h-full overflow-x-hidden touch-pan-y',
+        isPWA() ? 'overflow-y-auto' : 'overflow-y-hidden'
       )}
     >
       {/* Pull-to-refresh indicator */}
       {isEnabled && (
         <div
           className={cn(
-            "absolute left-1/2 -translate-x-1/2 z-50 transition-all duration-200 ease-out pointer-events-none",
-            isPulling || isRefreshing ? "opacity-100" : "opacity-0"
+            'absolute left-1/2 -translate-x-1/2 z-50 transition-all duration-200 ease-out pointer-events-none',
+            isPulling || isRefreshing ? 'opacity-100' : 'opacity-0'
           )}
           style={{
             top: Math.max(pullDistance - 40, 0),
-            transform: `translateX(-50%) scale(${Math.min(
-              pullDistance / PULL_THRESHOLD,
-              1
-            )})`,
+            transform: `translateX(-50%) scale(${Math.min(pullDistance / PULL_THRESHOLD, 1)})`,
           }}
         >
           <div
             className={cn(
-              "flex items-center justify-center w-12 h-12 rounded-full shadow-lg transition-all duration-200",
+              'flex items-center justify-center w-12 h-12 rounded-full shadow-lg transition-all duration-200',
               isTriggered
-                ? "bg-primary text-primary-foreground"
-                : "bg-card border-2 border-border text-muted-foreground"
+                ? 'bg-primary text-primary-foreground'
+                : 'bg-card border-2 border-border text-muted-foreground'
             )}
           >
             <RefreshCw
               className={cn(
-                "w-5 h-5 transition-transform duration-200",
-                isRefreshing ? "animate-spin" : "",
-                isTriggered && !isRefreshing ? "rotate-180" : ""
+                'w-5 h-5 transition-transform duration-200',
+                isRefreshing ? 'animate-spin' : '',
+                isTriggered && !isRefreshing ? 'rotate-180' : ''
               )}
               style={{
                 transform:
-                  !isRefreshing && !isTriggered
-                    ? `rotate(${progress * 3.6}deg)`
-                    : undefined,
+                  !isRefreshing && !isTriggered ? `rotate(${progress * 3.6}deg)` : undefined,
               }}
             />
           </div>
@@ -207,7 +198,7 @@ export function PullToRefresh({
           transform:
             isEnabled && (isPulling || isRefreshing)
               ? `translateY(${isRefreshing ? PULL_THRESHOLD : pullDistance}px)`
-              : "translateY(0)",
+              : 'translateY(0)',
         }}
       >
         {children}
