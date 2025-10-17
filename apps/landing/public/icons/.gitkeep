@@ -1,0 +1,15 @@
+# Icons Placeholder
+
+PWA icons will be generated here by the `generate-icons.js` script.
+
+Required sizes:
+
+- 72x72
+- 96x96
+- 128x128
+- 144x144
+- 152x152
+- 180x180 (Apple Touch Icon)
+- 192x192
+- 384x384
+- 512x512
