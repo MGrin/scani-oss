@@ -73,7 +73,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
 
     // For browser: Send magic LINK with redirect
-    const redirectUrl = `${window.location.origin}/auth/callback?mode=magic-link`;
+    const redirectUrl = `${window.location.origin}/auth/callback`;
     console.log(
       `[Auth] Browser detected: Sending magic link with redirect to: ${redirectUrl}`
     );
