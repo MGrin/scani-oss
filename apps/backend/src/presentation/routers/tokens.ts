@@ -1,27 +1,27 @@
-import { manualPriceMinimum, privateTokenUpdateSchema } from '@scani/shared';
-import Decimal from 'decimal.js';
-import { and, eq, inArray, sql } from 'drizzle-orm';
-import { Container } from 'typedi';
-import { z } from 'zod';
-import type { PricingService } from '../../application/services/PricingService';
-import type { TokenValidationService } from '../../application/services/TokenValidationService';
-import { CreateTokenUseCase } from '../../application/use-cases/CreateTokenUseCase';
-import { UpdateTokenUseCase } from '../../application/use-cases/UpdateTokenUseCase';
-import { ValidateTokenUseCase } from '../../application/use-cases/ValidateTokenUseCase';
-import type { DbType } from '../../infrastructure/database/connection';
-import type * as schema from '../../infrastructure/database/schema';
-import type { AccountRepository } from '../../infrastructure/repositories/AccountRepository';
-import type { TokenTypeRepository } from '../../infrastructure/repositories/EnumRepositories';
-import type { HoldingRepository } from '../../infrastructure/repositories/HoldingRepository';
-import type { TokenPriceRepository } from '../../infrastructure/repositories/TokenPriceRepository';
-import type { TokenRepository } from '../../infrastructure/repositories/TokenRepository';
-import type { UserRepository } from '../../infrastructure/repositories/UserRepository';
-import { emitEntityChange } from '../../infrastructure/websocket/RealTimeUpdatesService';
-import { getUserId } from '../../middleware/auth';
-import { createComponentLogger } from '../../utils/logger';
-import { protectedProcedure, router } from '../trpc';
+import { manualPriceMinimum, privateTokenUpdateSchema } from "@scani/shared";
+import Decimal from "decimal.js";
+import { and, eq, inArray, sql } from "drizzle-orm";
+import { Container } from "typedi";
+import { z } from "zod";
+import type { PricingService } from "../../application/services/PricingService";
+import type { TokenValidationService } from "../../application/services/TokenValidationService";
+import { CreateTokenUseCase } from "../../application/use-cases/CreateTokenUseCase";
+import { UpdateTokenUseCase } from "../../application/use-cases/UpdateTokenUseCase";
+import { ValidateTokenUseCase } from "../../application/use-cases/ValidateTokenUseCase";
+import type { DbType } from "../../infrastructure/database/connection";
+import type * as schema from "../../infrastructure/database/schema";
+import type { AccountRepository } from "../../infrastructure/repositories/AccountRepository";
+import type { TokenTypeRepository } from "../../infrastructure/repositories/EnumRepositories";
+import type { HoldingRepository } from "../../infrastructure/repositories/HoldingRepository";
+import type { TokenPriceRepository } from "../../infrastructure/repositories/TokenPriceRepository";
+import type { TokenRepository } from "../../infrastructure/repositories/TokenRepository";
+import type { UserRepository } from "../../infrastructure/repositories/UserRepository";
+import { emitEntityChange } from "../../infrastructure/websocket/RealTimeUpdatesService";
+import { getUserId } from "../middleware/auth";
+import { createComponentLogger } from "../../utils/logger";
+import { protectedProcedure, router } from "../trpc";
 
-const tokensLogger = createComponentLogger('router:tokens');
+const tokensLogger = createComponentLogger("router:tokens");
 
 // Local schemas for token operations (will be moved to shared later)
 const CreateTokenSchema = z.object({
@@ -60,18 +60,18 @@ const ValidateTokenByCoinGeckoIdSchema = z.object({
 // Note: 'stock' type covers Stock/ETF/Equity/Commodity as per seed data
 function mapProviderTypeToDbType(providerType: string): string {
   switch (providerType) {
-    case 'Equity':
-    case 'ETF':
-    case 'Mutual Fund':
-    case 'Bond':
-    case 'Commodity':
+    case "Equity":
+    case "ETF":
+    case "Mutual Fund":
+    case "Bond":
+    case "Commodity":
       // All equity-like instruments map to 'stock' type
-      return 'stock';
-    case 'Crypto':
-    case 'Cryptocurrency':
-      return 'crypto';
+      return "stock";
+    case "Crypto":
+    case "Cryptocurrency":
+      return "crypto";
     default:
-      return 'stock'; // Default fallback for unknown types
+      return "stock"; // Default fallback for unknown types
   }
 }
 
@@ -108,7 +108,10 @@ export function createTokensRouter(
           updatedAt: schemaObj.tokens.updatedAt,
         })
         .from(schemaObj.tokens)
-        .leftJoin(schemaObj.tokenTypes, eq(schemaObj.tokens.typeId, schemaObj.tokenTypes.id))
+        .leftJoin(
+          schemaObj.tokenTypes,
+          eq(schemaObj.tokens.typeId, schemaObj.tokenTypes.id)
+        )
         .where(eq(schemaObj.tokens.isActive, true))
         .orderBy(schemaObj.tokens.symbol);
       return tokens;
@@ -133,8 +136,14 @@ export function createTokensRouter(
           updatedAt: schemaObj.tokens.updatedAt,
         })
         .from(schemaObj.tokens)
-        .leftJoin(schemaObj.tokenTypes, eq(schemaObj.tokens.typeId, schemaObj.tokenTypes.id))
-        .innerJoin(schemaObj.holdings, eq(schemaObj.tokens.id, schemaObj.holdings.tokenId))
+        .leftJoin(
+          schemaObj.tokenTypes,
+          eq(schemaObj.tokens.typeId, schemaObj.tokenTypes.id)
+        )
+        .innerJoin(
+          schemaObj.holdings,
+          eq(schemaObj.tokens.id, schemaObj.holdings.tokenId)
+        )
         .innerJoin(
           schemaObj.accounts,
           and(
@@ -158,7 +167,10 @@ export function createTokensRouter(
           type: schemaObj.tokenTypes.code,
         })
         .from(schemaObj.tokens)
-        .leftJoin(schemaObj.tokenTypes, eq(schemaObj.tokens.typeId, schemaObj.tokenTypes.id))
+        .leftJoin(
+          schemaObj.tokenTypes,
+          eq(schemaObj.tokens.typeId, schemaObj.tokenTypes.id)
+        )
         .where(eq(schemaObj.tokens.isActive, true))
         .orderBy(schemaObj.tokens.symbol);
       return tokens;
@@ -175,8 +187,16 @@ export function createTokensRouter(
           iconUrl: schemaObj.tokens.iconUrl,
         })
         .from(schemaObj.tokens)
-        .leftJoin(schemaObj.tokenTypes, eq(schemaObj.tokens.typeId, schemaObj.tokenTypes.id))
-        .where(and(eq(schemaObj.tokens.isActive, true), eq(schemaObj.tokenTypes.code, 'fiat')))
+        .leftJoin(
+          schemaObj.tokenTypes,
+          eq(schemaObj.tokens.typeId, schemaObj.tokenTypes.id)
+        )
+        .where(
+          and(
+            eq(schemaObj.tokens.isActive, true),
+            eq(schemaObj.tokenTypes.code, "fiat")
+          )
+        )
         .orderBy(schemaObj.tokens.symbol);
       return currencies;
     }),
@@ -200,40 +220,51 @@ export function createTokensRouter(
             updatedAt: schemaObj.tokens.updatedAt,
           })
           .from(schemaObj.tokens)
-          .leftJoin(schemaObj.tokenTypes, eq(schemaObj.tokens.typeId, schemaObj.tokenTypes.id))
+          .leftJoin(
+            schemaObj.tokenTypes,
+            eq(schemaObj.tokens.typeId, schemaObj.tokenTypes.id)
+          )
           .where(
-            and(eq(schemaObj.tokenTypes.code, input.typeCode), eq(schemaObj.tokens.isActive, true))
+            and(
+              eq(schemaObj.tokenTypes.code, input.typeCode),
+              eq(schemaObj.tokens.isActive, true)
+            )
           )
           .orderBy(schemaObj.tokens.symbol);
         return tokens;
       }),
 
     // Get token by ID
-    getById: protectedProcedure.input(z.object({ id: z.string() })).query(async ({ input }) => {
-      const [token] = await db
-        .select({
-          id: schemaObj.tokens.id,
-          symbol: schemaObj.tokens.symbol,
-          name: schemaObj.tokens.name,
-          typeId: schemaObj.tokens.typeId,
-          type: schemaObj.tokenTypes.code,
-          typeName: schemaObj.tokenTypes.name,
-          decimals: schemaObj.tokens.decimals,
-          iconUrl: schemaObj.tokens.iconUrl,
-          isActive: schemaObj.tokens.isActive,
-          createdAt: schemaObj.tokens.createdAt,
-          updatedAt: schemaObj.tokens.updatedAt,
-        })
-        .from(schemaObj.tokens)
-        .leftJoin(schemaObj.tokenTypes, eq(schemaObj.tokens.typeId, schemaObj.tokenTypes.id))
-        .where(eq(schemaObj.tokens.id, input.id))
-        .limit(1);
+    getById: protectedProcedure
+      .input(z.object({ id: z.string() }))
+      .query(async ({ input }) => {
+        const [token] = await db
+          .select({
+            id: schemaObj.tokens.id,
+            symbol: schemaObj.tokens.symbol,
+            name: schemaObj.tokens.name,
+            typeId: schemaObj.tokens.typeId,
+            type: schemaObj.tokenTypes.code,
+            typeName: schemaObj.tokenTypes.name,
+            decimals: schemaObj.tokens.decimals,
+            iconUrl: schemaObj.tokens.iconUrl,
+            isActive: schemaObj.tokens.isActive,
+            createdAt: schemaObj.tokens.createdAt,
+            updatedAt: schemaObj.tokens.updatedAt,
+          })
+          .from(schemaObj.tokens)
+          .leftJoin(
+            schemaObj.tokenTypes,
+            eq(schemaObj.tokens.typeId, schemaObj.tokenTypes.id)
+          )
+          .where(eq(schemaObj.tokens.id, input.id))
+          .limit(1);
 
-      if (!token) {
-        throw new Error('Token not found');
-      }
-      return token;
-    }),
+        if (!token) {
+          throw new Error("Token not found");
+        }
+        return token;
+      }),
 
     // Get token by symbol
     getBySymbol: protectedProcedure
@@ -254,30 +285,35 @@ export function createTokensRouter(
             updatedAt: schemaObj.tokens.updatedAt,
           })
           .from(schemaObj.tokens)
-          .leftJoin(schemaObj.tokenTypes, eq(schemaObj.tokens.typeId, schemaObj.tokenTypes.id))
+          .leftJoin(
+            schemaObj.tokenTypes,
+            eq(schemaObj.tokens.typeId, schemaObj.tokenTypes.id)
+          )
           .where(eq(schemaObj.tokens.symbol, input.symbol.toUpperCase()))
           .limit(1);
 
         if (!token) {
-          throw new Error('Token not found');
+          throw new Error("Token not found");
         }
         return token;
       }),
 
     // Validate token against appropriate provider (Finnhub or CoinGecko)
-    validate: protectedProcedure.input(ValidateTokenSchema).query(async ({ input }) => {
-      const validateUseCase = Container.get(ValidateTokenUseCase);
-      const result = await validateUseCase.execute({
-        symbol: input.symbol,
-        typeCode: input.typeCode,
-      });
+    validate: protectedProcedure
+      .input(ValidateTokenSchema)
+      .query(async ({ input }) => {
+        const validateUseCase = Container.get(ValidateTokenUseCase);
+        const result = await validateUseCase.execute({
+          symbol: input.symbol,
+          typeCode: input.typeCode,
+        });
 
-      if (!result.isValid) {
-        throw new Error(result.error || 'Token validation failed');
-      }
+        if (!result.isValid) {
+          throw new Error(result.error || "Token validation failed");
+        }
 
-      return result;
-    }),
+        return result;
+      }),
 
     // Validate a specific token by CoinGecko ID (for user-selected tokens)
     validateByCoinGeckoId: protectedProcedure
@@ -285,12 +321,12 @@ export function createTokensRouter(
       .query(async ({ input }) => {
         const validateUseCase = Container.get(ValidateTokenUseCase);
         const result = await validateUseCase.execute({
-          symbol: '', // Will be ignored when coinGeckoId is provided
+          symbol: "", // Will be ignored when coinGeckoId is provided
           coinGeckoId: input.coinGeckoId,
         });
 
         if (!result.isValid) {
-          throw new Error(result.error || 'Token validation failed');
+          throw new Error(result.error || "Token validation failed");
         }
 
         return result;
@@ -319,14 +355,19 @@ export function createTokensRouter(
             decimals: schemaObj.tokens.decimals,
             iconUrl: schemaObj.tokens.iconUrl,
             isActive: schemaObj.tokens.isActive,
-            source: sql<'database'>`'database'`.as('source'),
+            source: sql<"database">`'database'`.as("source"),
           })
           .from(schemaObj.tokens)
-          .leftJoin(schemaObj.tokenTypes, eq(schemaObj.tokens.typeId, schemaObj.tokenTypes.id))
+          .leftJoin(
+            schemaObj.tokenTypes,
+            eq(schemaObj.tokens.typeId, schemaObj.tokenTypes.id)
+          )
           .where(
             and(
               eq(schemaObj.tokens.isActive, true),
-              sql`(UPPER(${schemaObj.tokens.symbol}) LIKE ${`%${query}%`} OR UPPER(${
+              sql`(UPPER(${
+                schemaObj.tokens.symbol
+              }) LIKE ${`%${query}%`} OR UPPER(${
                 schemaObj.tokens.name
               }) LIKE ${`%${query}%`})`
             )
@@ -344,8 +385,8 @@ export function createTokensRouter(
           decimals?: number;
           iconUrl?: string | null;
           isActive?: boolean;
-          source: 'database' | 'external';
-          provider?: 'finnhub' | 'coingecko';
+          source: "database" | "external";
+          provider?: "finnhub" | "coingecko";
           metadata?: Record<string, unknown>;
         }> = [...dbTokens];
 
@@ -362,11 +403,17 @@ export function createTokensRouter(
             const allProviderResults = [
               ...coinGeckoResults.map((r) => ({
                 ...r,
-                priority: r.metadata?.symbol.toLowerCase() === query.toLowerCase() ? 1 : 2,
+                priority:
+                  r.metadata?.symbol.toLowerCase() === query.toLowerCase()
+                    ? 1
+                    : 2,
               })),
               ...finnhubResults.map((r) => ({
                 ...r,
-                priority: r.metadata?.symbol.toLowerCase() === query.toLowerCase() ? 1 : 3,
+                priority:
+                  r.metadata?.symbol.toLowerCase() === query.toLowerCase()
+                    ? 1
+                    : 3,
               })),
             ];
 
@@ -383,12 +430,14 @@ export function createTokensRouter(
                 // Check if this external token is already in our database or results
                 const alreadyExistsInDb = dbTokens.some(
                   (token) =>
-                    token.symbol.toUpperCase() === providerResult.metadata!.symbol.toUpperCase()
+                    token.symbol.toUpperCase() ===
+                    providerResult.metadata!.symbol.toUpperCase()
                 );
 
                 const alreadyExistsInResults = results.some(
                   (token) =>
-                    token.symbol.toUpperCase() === providerResult.metadata!.symbol.toUpperCase()
+                    token.symbol.toUpperCase() ===
+                    providerResult.metadata!.symbol.toUpperCase()
                 );
 
                 if (!alreadyExistsInDb && !alreadyExistsInResults) {
@@ -396,8 +445,9 @@ export function createTokensRouter(
                     symbol: providerResult.metadata.symbol,
                     name: providerResult.metadata.name,
                     type: mapProviderTypeToDbType(providerResult.metadata.type),
-                    decimals: providerResult.metadata.type === 'Crypto' ? 18 : 2,
-                    source: 'external' as const,
+                    decimals:
+                      providerResult.metadata.type === "Crypto" ? 18 : 2,
+                    source: "external" as const,
                     provider: providerResult.metadata.provider,
                     metadata: { ...providerResult.metadata },
                   });
@@ -411,11 +461,14 @@ export function createTokensRouter(
               finnhubResults.length === 0 &&
               coinGeckoResults.length === 0
             ) {
-              const fallbackResult = await tokenValidationService.validateToken(query);
+              const fallbackResult = await tokenValidationService.validateToken(
+                query
+              );
               if (fallbackResult.isValid && fallbackResult.metadata) {
                 const alreadyExists = results.some(
                   (token) =>
-                    token.symbol.toUpperCase() === fallbackResult.metadata!.symbol.toUpperCase()
+                    token.symbol.toUpperCase() ===
+                    fallbackResult.metadata!.symbol.toUpperCase()
                 );
 
                 if (!alreadyExists) {
@@ -423,8 +476,9 @@ export function createTokensRouter(
                     symbol: fallbackResult.metadata.symbol,
                     name: fallbackResult.metadata.name,
                     type: mapProviderTypeToDbType(fallbackResult.metadata.type),
-                    decimals: fallbackResult.metadata.type === 'Crypto' ? 18 : 2,
-                    source: 'external' as const,
+                    decimals:
+                      fallbackResult.metadata.type === "Crypto" ? 18 : 2,
+                    source: "external" as const,
                     provider: fallbackResult.metadata.provider,
                     metadata: { ...fallbackResult.metadata },
                   });
@@ -437,9 +491,11 @@ export function createTokensRouter(
               {
                 query,
                 error:
-                  error instanceof Error ? { name: error.name, message: error.message } : error,
+                  error instanceof Error
+                    ? { name: error.name, message: error.message }
+                    : error,
               },
-              'External provider search failed'
+              "External provider search failed"
             );
           }
         }
@@ -465,41 +521,43 @@ export function createTokensRouter(
       }),
 
     // Create new token with validation
-    create: protectedProcedure.input(CreateTokenSchema).mutation(async ({ input, ctx }) => {
-      const userId = getUserId(ctx);
+    create: protectedProcedure
+      .input(CreateTokenSchema)
+      .mutation(async ({ input, ctx }) => {
+        const userId = getUserId(ctx);
 
-      // Use CreateTokenUseCase for business logic
-      const createTokenUseCase = Container.get(CreateTokenUseCase);
-      const result = await createTokenUseCase.execute({
-        symbol: input.symbol,
-        name: input.name,
-        typeId: input.typeId,
-        decimals: input.decimals,
-        iconUrl: input.iconUrl,
-        isActive: input.isActive,
-        manualPrice: input.manualPrice,
-        priceDescription: input.priceDescription,
-        description: input.description,
-        coinGeckoId: input.coinGeckoId,
-      });
+        // Use CreateTokenUseCase for business logic
+        const createTokenUseCase = Container.get(CreateTokenUseCase);
+        const result = await createTokenUseCase.execute({
+          symbol: input.symbol,
+          name: input.name,
+          typeId: input.typeId,
+          decimals: input.decimals,
+          iconUrl: input.iconUrl,
+          isActive: input.isActive,
+          manualPrice: input.manualPrice,
+          priceDescription: input.priceDescription,
+          description: input.description,
+          coinGeckoId: input.coinGeckoId,
+        });
 
-      // Emit real-time update
-      emitEntityChange({
-        type: 'entity_changed',
-        entityType: 'token',
-        operationType: 'create',
-        entityId: result.token.id,
-        userId,
-        data: {
-          symbol: result.token.symbol,
-          typeId: result.token.typeId,
-          isPrivate: result.isPrivate,
-          provider: result.provider,
-        },
-      });
+        // Emit real-time update
+        emitEntityChange({
+          type: "entity_changed",
+          entityType: "token",
+          operationType: "create",
+          entityId: result.token.id,
+          userId,
+          data: {
+            symbol: result.token.symbol,
+            typeId: result.token.typeId,
+            isPrivate: result.isPrivate,
+            provider: result.provider,
+          },
+        });
 
-      return result.token;
-    }),
+        return result.token;
+      }),
 
     // Create token from external provider metadata (for holding creation)
     createFromExternal: protectedProcedure
@@ -511,7 +569,7 @@ export function createTokensRouter(
             .max(20)
             .transform((val) => val.toUpperCase()),
           metadata: z.record(z.unknown()),
-          provider: z.enum(['finnhub', 'coingecko']),
+          provider: z.enum(["finnhub", "coingecko"]),
         })
       )
       .mutation(async ({ input, ctx }) => {
@@ -524,16 +582,16 @@ export function createTokensRouter(
             provider,
             metadata,
           },
-          'Creating token from external provider'
+          "Creating token from external provider"
         );
 
         // Validate the metadata has the required fields
-        if (!metadata.name || typeof metadata.name !== 'string') {
-          throw new Error('External token metadata must include a name');
+        if (!metadata.name || typeof metadata.name !== "string") {
+          throw new Error("External token metadata must include a name");
         }
 
-        if (!metadata.type || typeof metadata.type !== 'string') {
-          throw new Error('External token metadata must include a type');
+        if (!metadata.type || typeof metadata.type !== "string") {
+          throw new Error("External token metadata must include a type");
         }
 
         // Map provider type to our token type
@@ -547,7 +605,9 @@ export function createTokensRouter(
           .limit(1);
 
         if (!tokenType) {
-          throw new Error(`Token type '${mappedTypeCode}' not found in database`);
+          throw new Error(
+            `Token type '${mappedTypeCode}' not found in database`
+          );
         }
 
         // Check if token already exists with this symbol and type
@@ -555,14 +615,17 @@ export function createTokensRouter(
           .select()
           .from(schemaObj.tokens)
           .where(
-            and(eq(schemaObj.tokens.symbol, symbol), eq(schemaObj.tokens.typeId, tokenType.id))
+            and(
+              eq(schemaObj.tokens.symbol, symbol),
+              eq(schemaObj.tokens.typeId, tokenType.id)
+            )
           )
           .limit(1);
 
         if (existingToken) {
           tokensLogger.info(
             { tokenId: existingToken.id, symbol, typeCode: mappedTypeCode },
-            'Token already exists, returning existing token'
+            "Token already exists, returning existing token"
           );
           // Return existing token instead of creating duplicate
           return existingToken;
@@ -572,14 +635,14 @@ export function createTokensRouter(
         // The pricing service expects nested provider-specific data with proper identifiers
         let providerSpecificData: Record<string, unknown> = {};
 
-        if (provider === 'coingecko') {
+        if (provider === "coingecko") {
           // CoinGecko needs the 'id' field for pricing lookups
           const coinGeckoId =
             (metadata.providerMetadata as Record<string, unknown>)?.id ||
             (metadata as Record<string, unknown>).coinGeckoId ||
             (metadata as Record<string, unknown>).id;
 
-          if (coinGeckoId && typeof coinGeckoId === 'string') {
+          if (coinGeckoId && typeof coinGeckoId === "string") {
             providerSpecificData = {
               id: coinGeckoId,
               symbol: symbol,
@@ -587,7 +650,7 @@ export function createTokensRouter(
             };
             tokensLogger.info(
               { symbol, coinGeckoId },
-              'Structured CoinGecko metadata with ID for pricing'
+              "Structured CoinGecko metadata with ID for pricing"
             );
           } else {
             // Fallback: use symbol as lowercase ID (CoinGecko convention)
@@ -598,10 +661,10 @@ export function createTokensRouter(
             };
             tokensLogger.warn(
               { symbol },
-              'CoinGecko ID not found in metadata, using lowercase symbol as fallback'
+              "CoinGecko ID not found in metadata, using lowercase symbol as fallback"
             );
           }
-        } else if (provider === 'finnhub') {
+        } else if (provider === "finnhub") {
           // Finnhub needs the 'symbol' field for pricing lookups
           const finnhubSymbol =
             (metadata.providerMetadata as Record<string, unknown>)?.symbol ||
@@ -613,7 +676,10 @@ export function createTokensRouter(
             name: metadata.name,
             type: metadata.type,
           };
-          tokensLogger.info({ symbol, finnhubSymbol }, 'Structured Finnhub metadata for pricing');
+          tokensLogger.info(
+            { symbol, finnhubSymbol },
+            "Structured Finnhub metadata for pricing"
+          );
         }
 
         // Create the complete provider metadata structure
@@ -629,7 +695,7 @@ export function createTokensRouter(
           symbol,
           name: metadata.name as string,
           typeId: tokenType.id,
-          decimals: mappedTypeCode === 'crypto' ? 18 : 2, // Crypto tokens typically use 18 decimals
+          decimals: mappedTypeCode === "crypto" ? 18 : 2, // Crypto tokens typically use 18 decimals
           iconUrl: null,
           providerMetadata,
           isActive: true,
@@ -643,22 +709,32 @@ export function createTokensRouter(
             typeCode: mappedTypeCode,
             providerMetadata,
           },
-          'Creating token with structured metadata'
+          "Creating token with structured metadata"
         );
 
-        const [createdToken] = await db.insert(schemaObj.tokens).values(tokenData).returning();
+        const [createdToken] = await db
+          .insert(schemaObj.tokens)
+          .values(tokenData)
+          .returning();
 
         if (!createdToken) {
-          tokensLogger.error({ symbol, provider, typeId: tokenType.id }, 'Database insert failed');
-          throw new Error('Failed to create external token - database insert returned no data');
+          tokensLogger.error(
+            { symbol, provider, typeId: tokenType.id },
+            "Database insert failed"
+          );
+          throw new Error(
+            "Failed to create external token - database insert returned no data"
+          );
         }
 
         if (!createdToken.id) {
           tokensLogger.error(
             { symbol, provider, createdToken },
-            'Token created but has no ID - critical database error'
+            "Token created but has no ID - critical database error"
           );
-          throw new Error('Failed to create external token - no ID assigned by database');
+          throw new Error(
+            "Failed to create external token - no ID assigned by database"
+          );
         }
 
         tokensLogger.info(
@@ -669,13 +745,13 @@ export function createTokensRouter(
             provider,
             typeId: tokenType.id,
           },
-          'External token created successfully with valid ID'
+          "External token created successfully with valid ID"
         );
 
         emitEntityChange({
-          type: 'entity_changed',
-          entityType: 'token',
-          operationType: 'create',
+          type: "entity_changed",
+          entityType: "token",
+          operationType: "create",
           entityId: createdToken.id,
           userId,
           data: {
@@ -710,9 +786,9 @@ export function createTokensRouter(
 
         // Emit real-time update
         emitEntityChange({
-          type: 'entity_changed',
-          entityType: 'token',
-          operationType: 'update',
+          type: "entity_changed",
+          entityType: "token",
+          operationType: "update",
           entityId: updatedToken.id,
           userId,
           data: {
@@ -723,7 +799,7 @@ export function createTokensRouter(
 
         return {
           ...updatedToken,
-          message: 'Token updated successfully',
+          message: "Token updated successfully",
         };
       }),
 
@@ -741,7 +817,7 @@ export function createTokensRouter(
         .limit(1);
 
       if (!user.length || !user[0]?.baseCurrencyId) {
-        throw new Error('User or base currency not found');
+        throw new Error("User or base currency not found");
       }
 
       const baseCurrency = await db
@@ -753,7 +829,7 @@ export function createTokensRouter(
         .limit(1);
 
       if (!baseCurrency.length || !baseCurrency[0]?.symbol) {
-        throw new Error('Base currency not found');
+        throw new Error("Base currency not found");
       }
 
       const baseCurrencySymbol = baseCurrency[0].symbol;
@@ -776,8 +852,14 @@ export function createTokensRouter(
           accountId: schemaObj.holdings.accountId,
         })
         .from(schemaObj.tokens)
-        .leftJoin(schemaObj.tokenTypes, eq(schemaObj.tokens.typeId, schemaObj.tokenTypes.id))
-        .innerJoin(schemaObj.holdings, eq(schemaObj.tokens.id, schemaObj.holdings.tokenId))
+        .leftJoin(
+          schemaObj.tokenTypes,
+          eq(schemaObj.tokens.typeId, schemaObj.tokenTypes.id)
+        )
+        .innerJoin(
+          schemaObj.holdings,
+          eq(schemaObj.tokens.id, schemaObj.holdings.tokenId)
+        )
         .innerJoin(
           schemaObj.accounts,
           and(
@@ -836,7 +918,7 @@ export function createTokensRouter(
         }
 
         const summary = tokenSummaries.get(tokenId)!;
-        const balance = new Decimal(row.holdingBalance || '0');
+        const balance = new Decimal(row.holdingBalance || "0");
         summary.totalBalance = summary.totalBalance.add(balance);
       }
 
@@ -852,7 +934,9 @@ export function createTokensRouter(
         )
       );
 
-      const tokensToPrice = uniqueSymbols.filter((symbol) => symbol !== baseCurrencySymbol);
+      const tokensToPrice = uniqueSymbols.filter(
+        (symbol) => symbol !== baseCurrencySymbol
+      );
 
       // Get full token objects for pricing service
       const tokens =
@@ -866,14 +950,18 @@ export function createTokensRouter(
       let prices = new Map<string, string>();
       if (tokens.length > 0) {
         const now = new Date();
-        prices = await pricingService.getTokenPrices(tokens, baseCurrencySymbol, now);
+        prices = await pricingService.getTokenPrices(
+          tokens,
+          baseCurrencySymbol,
+          now
+        );
       }
 
       // Now calculate values using the batch-fetched prices
       for (const row of tokensWithHoldings) {
         const tokenId = row.id;
         const summary = tokenSummaries.get(tokenId)!;
-        const balance = new Decimal(row.holdingBalance || '0');
+        const balance = new Decimal(row.holdingBalance || "0");
 
         // Convert to base currency value
         let convertedValue: Decimal;
@@ -883,7 +971,7 @@ export function createTokensRouter(
         } else {
           // Use batch-fetched price - find token ID first
           const token = tokens.find((t) => t.symbol === row.symbol);
-          const price = token ? prices.get(token.id) || '0' : '0';
+          const price = token ? prices.get(token.id) || "0" : "0";
           convertedValue = balance.mul(new Decimal(price));
         }
         summary.totalValue = summary.totalValue.add(convertedValue);

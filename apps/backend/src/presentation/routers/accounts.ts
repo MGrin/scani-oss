@@ -1,20 +1,20 @@
-import Decimal from 'decimal.js';
-import { and, eq, inArray } from 'drizzle-orm';
-import { Container } from 'typedi';
-import { z } from 'zod';
-import type { AccountService } from '../../application/services/AccountService';
-import { PortfolioValuationService } from '../../application/services/PortfolioValuationService';
-import { PricingService } from '../../application/services/PricingService';
-import { GetHoldingsWithDetailsUseCase } from '../../application/use-cases';
-import { db } from '../../infrastructure/database/connection';
-import * as schema from '../../infrastructure/database/schema';
-import type { AccountRepository } from '../../infrastructure/repositories/AccountRepository';
-import { emitEntityChange } from '../../infrastructure/websocket/RealTimeUpdatesService';
-import { getUserId, requireAuth } from '../../middleware/auth';
-import { createComponentLogger } from '../../utils/logger';
-import { protectedProcedure, router } from '../trpc';
+import Decimal from "decimal.js";
+import { and, eq, inArray } from "drizzle-orm";
+import { Container } from "typedi";
+import { z } from "zod";
+import type { AccountService } from "../../application/services/AccountService";
+import { PortfolioValuationService } from "../../application/services/PortfolioValuationService";
+import { PricingService } from "../../application/services/PricingService";
+import { GetHoldingsWithDetailsUseCase } from "../../application/use-cases";
+import { db } from "../../infrastructure/database/connection";
+import * as schema from "../../infrastructure/database/schema";
+import type { AccountRepository } from "../../infrastructure/repositories/AccountRepository";
+import { emitEntityChange } from "../../infrastructure/websocket/RealTimeUpdatesService";
+import { getUserId, requireAuth } from "../middleware/auth";
+import { createComponentLogger } from "../../utils/logger";
+import { protectedProcedure, router } from "../trpc";
 
-const accountsLogger = createComponentLogger('router:accounts');
+const accountsLogger = createComponentLogger("router:accounts");
 
 /**
  * Factory function to create the accounts router with injected dependencies
@@ -44,17 +44,19 @@ export function createAccountsRouter(
 
       // Get all holdings for this user
       const { HoldingRepository } = await import(
-        '../../infrastructure/repositories/HoldingRepository'
+        "../../infrastructure/repositories/HoldingRepository"
       );
       const holdingRepository = Container.get(HoldingRepository);
       const holdings = await holdingRepository.findByUser(userId);
 
       // Get portfolio valuation for value calculations
       const { PortfolioValuationService } = await import(
-        '../../application/services/PortfolioValuationService'
+        "../../application/services/PortfolioValuationService"
       );
       const portfolioService = Container.get(PortfolioValuationService);
-      const portfolioValue = await portfolioService.getUserPortfolioValue(userId);
+      const portfolioValue = await portfolioService.getUserPortfolioValue(
+        userId
+      );
 
       // Create maps for efficient lookups
       const holdingsByAccount = new Map<string, typeof holdings>();
@@ -66,10 +68,14 @@ export function createAccountsRouter(
       }
 
       // Create value map from portfolio data (token symbol -> total value for that token)
-      const valueMap = new Map(portfolioValue.holdings.map((h) => [h.tokenSymbol, h.value || '0']));
+      const valueMap = new Map(
+        portfolioValue.holdings.map((h) => [h.tokenSymbol, h.value || "0"])
+      );
 
       // Get token repository to map holding tokenIds to symbols
-      const { TokenRepository } = await import('../../infrastructure/repositories/TokenRepository');
+      const { TokenRepository } = await import(
+        "../../infrastructure/repositories/TokenRepository"
+      );
       const tokenRepository = Container.get(TokenRepository);
       const tokenIds = [...new Set(holdings.map((h) => h.tokenId))];
       const tokens = await tokenRepository.findByIds(tokenIds);
@@ -85,7 +91,7 @@ export function createAccountsRouter(
         for (const holding of accountHoldings) {
           const token = tokenMap.get(holding.tokenId);
           if (token) {
-            const holdingValue = valueMap.get(token.symbol) || '0';
+            const holdingValue = valueMap.get(token.symbol) || "0";
             totalValue = totalValue.add(new Decimal(holdingValue));
           }
         }
@@ -115,7 +121,9 @@ export function createAccountsRouter(
       .input(z.object({ id: z.string() }))
       .query(async ({ input, ctx }) => {
         const { dbUser } = requireAuth(ctx);
-        const getHoldingsWithDetailsUseCase = Container.get(GetHoldingsWithDetailsUseCase);
+        const getHoldingsWithDetailsUseCase = Container.get(
+          GetHoldingsWithDetailsUseCase
+        );
 
         // Pass accountId directly to use case for optimized query
         return await getHoldingsWithDetailsUseCase.execute(
@@ -129,13 +137,16 @@ export function createAccountsRouter(
     create: protectedProcedure
       .input(
         z.object({
-          institutionId: z.string().min(1, 'Institution ID cannot be empty'),
+          institutionId: z.string().min(1, "Institution ID cannot be empty"),
           name: z
             .string()
-            .min(1, 'Account name cannot be empty')
-            .max(100, 'Account name must be 100 characters or less'),
-          type: z.string().min(1, 'Account type cannot be empty'),
-          description: z.string().max(500, 'Description must be 500 characters or less').optional(),
+            .min(1, "Account name cannot be empty")
+            .max(100, "Account name must be 100 characters or less"),
+          type: z.string().min(1, "Account type cannot be empty"),
+          description: z
+            .string()
+            .max(500, "Description must be 500 characters or less")
+            .optional(),
         })
       )
       .mutation(async ({ input, ctx }) => {
@@ -147,7 +158,7 @@ export function createAccountsRouter(
             institutionId: input.institutionId,
             accountType: input.type,
           },
-          'Creating account'
+          "Creating account"
         );
 
         const account = await accountService.createAccount(
@@ -161,9 +172,9 @@ export function createAccountsRouter(
         );
 
         emitEntityChange({
-          type: 'entity_changed',
-          entityType: 'account',
-          operationType: 'create',
+          type: "entity_changed",
+          entityType: "account",
+          operationType: "create",
           entityId: account.id,
           userId,
           data: {
@@ -183,13 +194,13 @@ export function createAccountsRouter(
         const result = await accountService.deleteAccount(input.id, userId);
 
         if (!result) {
-          throw new Error('Account not found or could not be deleted');
+          throw new Error("Account not found or could not be deleted");
         }
 
         emitEntityChange({
-          type: 'entity_changed',
-          entityType: 'account',
-          operationType: 'delete',
+          type: "entity_changed",
+          entityType: "account",
+          operationType: "delete",
           entityId: input.id,
           userId,
           data: {},
@@ -206,8 +217,11 @@ export function createAccountsRouter(
 
       try {
         // Use portfolio valuation service to get properly converted values
-        const portfolioValuationService = Container.get(PortfolioValuationService);
-        const portfolioValue = await portfolioValuationService.getUserPortfolioValue(userId);
+        const portfolioValuationService = Container.get(
+          PortfolioValuationService
+        );
+        const portfolioValue =
+          await portfolioValuationService.getUserPortfolioValue(userId);
 
         // Get all user accounts with their institutions and account types
         const accounts = await db
@@ -220,9 +234,20 @@ export function createAccountsRouter(
             institutionName: schema.institutions.name,
           })
           .from(schema.accounts)
-          .innerJoin(schema.institutions, eq(schema.accounts.institutionId, schema.institutions.id))
-          .innerJoin(schema.accountTypes, eq(schema.accounts.typeId, schema.accountTypes.id))
-          .where(and(eq(schema.accounts.userId, userId), eq(schema.accounts.isActive, true)));
+          .innerJoin(
+            schema.institutions,
+            eq(schema.accounts.institutionId, schema.institutions.id)
+          )
+          .innerJoin(
+            schema.accountTypes,
+            eq(schema.accounts.typeId, schema.accountTypes.id)
+          )
+          .where(
+            and(
+              eq(schema.accounts.userId, userId),
+              eq(schema.accounts.isActive, true)
+            )
+          );
 
         // Get user holdings with account information to calculate account balances
         const userHoldings = await db
@@ -234,7 +259,10 @@ export function createAccountsRouter(
             tokenId: schema.holdings.tokenId,
           })
           .from(schema.holdings)
-          .innerJoin(schema.tokens, eq(schema.holdings.tokenId, schema.tokens.id))
+          .innerJoin(
+            schema.tokens,
+            eq(schema.holdings.tokenId, schema.tokens.id)
+          )
           .where(eq(schema.holdings.userId, userId));
 
         // Get user's base currency for direct price calculations
@@ -244,7 +272,7 @@ export function createAccountsRouter(
           .where(eq(schema.users.id, userId))
           .limit(1);
         if (!user?.baseCurrencyId) {
-          throw new Error('User has no base currency set');
+          throw new Error("User has no base currency set");
         }
 
         const [baseCurrency] = await db
@@ -254,17 +282,21 @@ export function createAccountsRouter(
           .limit(1);
 
         if (!baseCurrency) {
-          throw new Error('Base currency token not found');
+          throw new Error("Base currency token not found");
         }
 
         // Get current token prices for all unique tokens using batch processing
-        const uniqueTokens = [...new Set(userHoldings.map((h) => h.tokenSymbol))];
+        const uniqueTokens = [
+          ...new Set(userHoldings.map((h) => h.tokenSymbol)),
+        ];
         const priceResults: Record<string, string> = {};
 
         // Use singleton pricing service
 
         // Use batch price fetching for better performance
-        const tokensToPrice = uniqueTokens.filter((symbol) => symbol !== baseCurrency.symbol);
+        const tokensToPrice = uniqueTokens.filter(
+          (symbol) => symbol !== baseCurrency.symbol
+        );
 
         if (tokensToPrice.length > 0) {
           try {
@@ -295,9 +327,11 @@ export function createAccountsRouter(
                 userId,
                 tokenCount: tokensToPrice.length,
                 error:
-                  error instanceof Error ? { name: error.name, message: error.message } : error,
+                  error instanceof Error
+                    ? { name: error.name, message: error.message }
+                    : error,
               },
-              'Batch price fetch failed, falling back to individual calls'
+              "Batch price fetch failed, falling back to individual calls"
             );
 
             // Fallback to individual calls if batch fails
@@ -332,7 +366,7 @@ export function createAccountsRouter(
                         ? { name: priceError.name, message: priceError.message }
                         : priceError,
                   },
-                  'Failed to fetch token price for account summary'
+                  "Failed to fetch token price for account summary"
                 );
               }
             }
@@ -340,16 +374,18 @@ export function createAccountsRouter(
         }
 
         // Base currency price is always 1
-        priceResults[baseCurrency.symbol] = '1';
+        priceResults[baseCurrency.symbol] = "1";
 
         // Calculate account balances by summing individual holding values
         const accountSummaries = accounts.map((account) => {
-          const accountHoldings = userHoldings.filter((h) => h.accountId === account.id);
+          const accountHoldings = userHoldings.filter(
+            (h) => h.accountId === account.id
+          );
 
           // Sum up the base currency values for this account
           const totalBalance = accountHoldings.reduce((sum, holding) => {
-            const balance = parseFloat(holding.balance || '0');
-            const price = parseFloat(priceResults[holding.tokenSymbol] || '0');
+            const balance = parseFloat(holding.balance || "0");
+            const price = parseFloat(priceResults[holding.tokenSymbol] || "0");
             return sum + balance * price;
           }, 0);
 
@@ -404,9 +440,12 @@ export function createAccountsRouter(
         accountsLogger.warn(
           {
             userId,
-            error: error instanceof Error ? { name: error.name, message: error.message } : error,
+            error:
+              error instanceof Error
+                ? { name: error.name, message: error.message }
+                : error,
           },
-          'Failed to get portfolio value for account summaries'
+          "Failed to get portfolio value for account summaries"
         );
 
         // Fallback to raw balance calculation if portfolio service fails
@@ -420,9 +459,20 @@ export function createAccountsRouter(
             institutionName: schema.institutions.name,
           })
           .from(schema.accounts)
-          .innerJoin(schema.institutions, eq(schema.accounts.institutionId, schema.institutions.id))
-          .innerJoin(schema.accountTypes, eq(schema.accounts.typeId, schema.accountTypes.id))
-          .where(and(eq(schema.accounts.userId, userId), eq(schema.accounts.isActive, true)));
+          .innerJoin(
+            schema.institutions,
+            eq(schema.accounts.institutionId, schema.institutions.id)
+          )
+          .innerJoin(
+            schema.accountTypes,
+            eq(schema.accounts.typeId, schema.accountTypes.id)
+          )
+          .where(
+            and(
+              eq(schema.accounts.userId, userId),
+              eq(schema.accounts.isActive, true)
+            )
+          );
 
         const holdings = await db
           .select({
@@ -435,9 +485,11 @@ export function createAccountsRouter(
           .where(eq(schema.holdings.userId, userId));
 
         const accountSummaries = accounts.map((account) => {
-          const accountHoldings = holdings.filter((h) => h.accountId === account.id);
+          const accountHoldings = holdings.filter(
+            (h) => h.accountId === account.id
+          );
           const totalBalance = accountHoldings.reduce((sum, holding) => {
-            return sum + parseFloat(holding.balance || '0');
+            return sum + parseFloat(holding.balance || "0");
           }, 0);
 
           return {
@@ -483,7 +535,10 @@ export function createAccountsRouter(
         return {
           accounts: accountSummaries,
           typesSummary: Object.values(typeSummaries),
-          totalBalance: accountSummaries.reduce((sum, acc) => sum + acc.totalBalance, 0),
+          totalBalance: accountSummaries.reduce(
+            (sum, acc) => sum + acc.totalBalance,
+            0
+          ),
           totalAccounts: accountSummaries.length,
         };
       }

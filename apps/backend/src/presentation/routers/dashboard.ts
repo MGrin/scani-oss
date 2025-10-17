@@ -1,7 +1,7 @@
-import { Container } from 'typedi';
-import { DashboardService } from '../../application/services/DashboardService';
-import { getUserId } from '../../middleware/auth';
-import { protectedProcedure, router } from '../trpc';
+import { Container } from "typedi";
+import { DashboardService } from "../../application/services/DashboardService";
+import { getUserId } from "../middleware/auth";
+import { protectedProcedure, router } from "../trpc";
 
 export const dashboardRouter = router({
   /**

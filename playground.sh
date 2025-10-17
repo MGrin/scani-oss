@@ -1,0 +1,1 @@
+rm apps/backend/src/infrastructure/external-services/blockchain/RateLimiterFactory.ts apps/backend/src/presentation/middleware/ docs/implementation/BACKEND_CLEANUP_FINAL_REPORT.md docs/implementation/BACKEND_CLEANUP_ROADMAP.md docs/implementation/BACKEND_CLEANUP_SUMMARY.md docs/implementation/UNUSED_CODE_REMOVAL_PLAN.md docs/implementation/UNUSED_CODE_REMOVAL_PROGRESS.md

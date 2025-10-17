@@ -5,11 +5,11 @@
  * Refactored to use WalletService with dependency injection.
  */
 
-import { TRPCError } from '@trpc/server';
-import { z } from 'zod';
-import type { WalletService } from '../../application/services';
-import { getUserId } from '../../middleware/auth';
-import { protectedProcedure, router } from '../trpc';
+import { TRPCError } from "@trpc/server";
+import { z } from "zod";
+import type { WalletService } from "../../application/services";
+import { getUserId } from "../middleware/auth";
+import { protectedProcedure, router } from "../trpc";
 
 /**
  * Factory function to create wallet router with injected dependencies
@@ -24,7 +24,7 @@ export function createWalletRouter(walletService: WalletService) {
     importWalletAddress: protectedProcedure
       .input(
         z.object({
-          walletAddress: z.string().min(1, 'Wallet address is required'),
+          walletAddress: z.string().min(1, "Wallet address is required"),
           accountName: z.string().optional(), // Optional custom name
         })
       )
@@ -43,7 +43,7 @@ export function createWalletRouter(walletService: WalletService) {
           // Map service errors to tRPC errors
           if (error instanceof Error) {
             throw new TRPCError({
-              code: 'INTERNAL_SERVER_ERROR',
+              code: "INTERNAL_SERVER_ERROR",
               message: error.message,
             });
           }

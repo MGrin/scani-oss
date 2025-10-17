@@ -1,13 +1,13 @@
-import { UpdateUserSchema } from '@scani/shared/types';
-import { Container } from 'typedi';
-import { PortfolioValuationService } from '../../application/services/PortfolioValuationService';
-import { TokenService } from '../../application/services/TokenService';
-import { UserService } from '../../application/services/UserService';
-import { getUserId, requireAuth } from '../../middleware/auth';
-import { createComponentLogger } from '../../utils/logger';
-import { protectedProcedure, router } from '../trpc';
+import { UpdateUserSchema } from "@scani/shared/types";
+import { Container } from "typedi";
+import { PortfolioValuationService } from "../../application/services/PortfolioValuationService";
+import { TokenService } from "../../application/services/TokenService";
+import { UserService } from "../../application/services/UserService";
+import { getUserId, requireAuth } from "../middleware/auth";
+import { createComponentLogger } from "../../utils/logger";
+import { protectedProcedure, router } from "../trpc";
 
-const usersLogger = createComponentLogger('router:users');
+const usersLogger = createComponentLogger("router:users");
 
 export const usersRouter = router({
   // Get current authenticated user
@@ -18,26 +18,28 @@ export const usersRouter = router({
   }),
 
   // Update current user
-  updateCurrent: protectedProcedure.input(UpdateUserSchema).mutation(async ({ input, ctx }) => {
-    const userId = getUserId(ctx);
-    const userService = Container.get(UserService);
+  updateCurrent: protectedProcedure
+    .input(UpdateUserSchema)
+    .mutation(async ({ input, ctx }) => {
+      const userId = getUserId(ctx);
+      const userService = Container.get(UserService);
 
-    const updatedUser = await userService.updateUser(userId, input);
+      const updatedUser = await userService.updateUser(userId, input);
 
-    if (!updatedUser) {
-      throw new Error('User not found');
-    }
+      if (!updatedUser) {
+        throw new Error("User not found");
+      }
 
-    return updatedUser;
-  }),
+      return updatedUser;
+    }),
 
   // Get supported fiat currencies (tokens) for base currency selection
   getSupportedCurrencies: protectedProcedure.query(async () => {
     const tokenService = Container.get(TokenService);
 
-    usersLogger.debug('Fetching supported fiat currencies');
-    const fiatTokens = await tokenService.getTokensByType('fiat');
-    usersLogger.debug({ count: fiatTokens.length }, 'Fetched fiat tokens');
+    usersLogger.debug("Fetching supported fiat currencies");
+    const fiatTokens = await tokenService.getTokensByType("fiat");
+    usersLogger.debug({ count: fiatTokens.length }, "Fetched fiat tokens");
 
     return fiatTokens.map((token) => ({
       id: token.id,
@@ -84,13 +86,16 @@ export const usersRouter = router({
       usersLogger.warn(
         {
           userId: dbUser.id,
-          error: error instanceof Error ? { name: error.name, message: error.message } : error,
+          error:
+            error instanceof Error
+              ? { name: error.name, message: error.message }
+              : error,
         },
-        'Failed to get portfolio value for user'
+        "Failed to get portfolio value for user"
       );
       return {
-        totalValue: '0',
-        baseCurrency: 'USD',
+        totalValue: "0",
+        baseCurrency: "USD",
         holdings: [],
       };
     }

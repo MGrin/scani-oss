@@ -1,11 +1,17 @@
-import { normalizeSymbol, normText, ProviderValidationInputSchema } from '@scani/shared';
-import { z } from 'zod';
-import type { ScreenshotParsingService } from '../../application/services/ScreenshotParsingService';
-import { getUserId } from '../../middleware/auth';
-import { createComponentLogger } from '../../utils/logger';
-import { protectedProcedure, router } from '../trpc';
+import {
+  normalizeSymbol,
+  normText,
+  ProviderValidationInputSchema,
+} from "@scani/shared";
+import { z } from "zod";
+import type { ScreenshotParsingService } from "../../application/services/ScreenshotParsingService";
+import { getUserId } from "../middleware/auth";
+import { createComponentLogger } from "../../utils/logger";
+import { protectedProcedure, router } from "../trpc";
 
-const screenshotParsingLogger = createComponentLogger('router:screenshot-parsing');
+const screenshotParsingLogger = createComponentLogger(
+  "router:screenshot-parsing"
+);
 
 // Normalization and provider validation schemas are imported from shared
 
@@ -13,13 +19,13 @@ const screenshotParsingLogger = createComponentLogger('router:screenshot-parsing
 const ParseScreenshotSchema = z.object({
   // Base64 image (no data: prefix); cap at ~10MB
   imageBase64: z.string().min(1).max(10_000_000),
-  accountId: z.string().uuid('Invalid account ID'),
+  accountId: z.string().uuid("Invalid account ID"),
   expectedCurrency: z.string().max(10).optional(),
   context: z.string().max(2000).optional(),
 });
 
 const ProcessHoldingsFromParsingSchema = z.object({
-  accountId: z.string().uuid('Invalid account ID'),
+  accountId: z.string().uuid("Invalid account ID"),
   holdings: z
     .array(
       z.object({
@@ -49,7 +55,9 @@ const ProcessHoldingsFromParsingSchema = z.object({
 /**
  * Factory function to create screenshot parsing router with injected dependencies
  */
-export function createScreenshotParsingRouter(screenshotParsingService: ScreenshotParsingService) {
+export function createScreenshotParsingRouter(
+  screenshotParsingService: ScreenshotParsingService
+) {
   return router({
     // Parse screenshot to structured holdings using configured AI provider(s)
     parseScreenshot: protectedProcedure
@@ -58,7 +66,9 @@ export function createScreenshotParsingRouter(screenshotParsingService: Screensh
         const userId = getUserId(ctx);
 
         if (!screenshotParsingService.isAvailable()) {
-          throw new Error('Screenshot parsing is not available - no AI providers configured');
+          throw new Error(
+            "Screenshot parsing is not available - no AI providers configured"
+          );
         }
 
         // Light normalization of context fields
@@ -66,24 +76,32 @@ export function createScreenshotParsingRouter(screenshotParsingService: Screensh
         const expectedCurrency = normText(input.expectedCurrency, 10);
 
         try {
-          const result = await screenshotParsingService.parseScreenshot(input.imageBase64, userId, {
-            accountId: input.accountId,
-            expectedCurrency: expectedCurrency,
-            context: normalizedContext,
-          });
+          const result = await screenshotParsingService.parseScreenshot(
+            input.imageBase64,
+            userId,
+            {
+              accountId: input.accountId,
+              expectedCurrency: expectedCurrency,
+              context: normalizedContext,
+            }
+          );
           return { success: true, data: result };
         } catch (error) {
           screenshotParsingLogger.error(
             {
               userId,
               accountId: input.accountId,
-              error: error instanceof Error ? { name: error.name, message: error.message } : error,
+              error:
+                error instanceof Error
+                  ? { name: error.name, message: error.message }
+                  : error,
             },
-            'Screenshot parsing failed'
+            "Screenshot parsing failed"
           );
           return {
             success: false,
-            error: error instanceof Error ? error.message : 'Unknown error occurred',
+            error:
+              error instanceof Error ? error.message : "Unknown error occurred",
           };
         }
       }),
@@ -95,7 +113,7 @@ export function createScreenshotParsingRouter(screenshotParsingService: Screensh
         const userId = getUserId(ctx);
 
         // Debug: Check what frontend is sending
-        console.log('=== PROCESS HOLDINGS INPUT DEBUG ===');
+        console.log("=== PROCESS HOLDINGS INPUT DEBUG ===");
         const holdingsWithProviderData = input.holdings.filter(
           (h) => h.providerValidation?.exactMatch
         );
@@ -107,13 +125,17 @@ export function createScreenshotParsingRouter(screenshotParsingService: Screensh
             console.log(`\nHolding: ${h.symbol}`);
             if (h.providerValidation?.exactMatch?.metadata) {
               console.log(
-                '  Exact match metadata:',
-                JSON.stringify(h.providerValidation.exactMatch.metadata, null, 2)
+                "  Exact match metadata:",
+                JSON.stringify(
+                  h.providerValidation.exactMatch.metadata,
+                  null,
+                  2
+                )
               );
             }
           });
         }
-        console.log('=== END PROCESS HOLDINGS INPUT DEBUG ===');
+        console.log("=== END PROCESS HOLDINGS INPUT DEBUG ===");
 
         try {
           // Normalize holdings defensively to reduce variance upstream
@@ -123,8 +145,12 @@ export function createScreenshotParsingRouter(screenshotParsingService: Screensh
             name: normText(h.name, 100),
             balance: h.balance.trim(),
             notes: normText(h.notes, 1000),
-            errors: h.errors?.map((e) => normText(e, 200) || '').filter(Boolean) ?? [],
-            warnings: h.warnings?.map((w) => normText(w, 200) || '').filter(Boolean) ?? [],
+            errors:
+              h.errors?.map((e) => normText(e, 200) || "").filter(Boolean) ??
+              [],
+            warnings:
+              h.warnings?.map((w) => normText(w, 200) || "").filter(Boolean) ??
+              [],
             requiresUserSelection: Boolean(h.requiresUserSelection),
             providerValidation: h.providerValidation
               ? {
@@ -137,59 +163,74 @@ export function createScreenshotParsingRouter(screenshotParsingService: Screensh
                                 h.providerValidation.exactMatch.metadata.symbol
                               ),
                               name:
-                                normText(h.providerValidation.exactMatch.metadata.name, 100) || '',
-                              type: h.providerValidation.exactMatch.metadata.type,
+                                normText(
+                                  h.providerValidation.exactMatch.metadata.name,
+                                  100
+                                ) || "",
+                              type: h.providerValidation.exactMatch.metadata
+                                .type,
                               currency:
-                                normText(h.providerValidation.exactMatch.metadata.currency, 10) ||
-                                'USD',
+                                normText(
+                                  h.providerValidation.exactMatch.metadata
+                                    .currency,
+                                  10
+                                ) || "USD",
                               exchange: normText(
-                                h.providerValidation.exactMatch.metadata.exchange,
+                                h.providerValidation.exactMatch.metadata
+                                  .exchange,
                                 40
                               ),
                               description: normText(
-                                h.providerValidation.exactMatch.metadata.description,
+                                h.providerValidation.exactMatch.metadata
+                                  .description,
                                 200
                               ),
-                              provider: (h.providerValidation.exactMatch.metadata.provider ===
-                              'coingecko'
-                                ? 'coingecko'
-                                : 'finnhub') as 'finnhub' | 'coingecko',
+                              provider: (h.providerValidation.exactMatch
+                                .metadata.provider === "coingecko"
+                                ? "coingecko"
+                                : "finnhub") as "finnhub" | "coingecko",
                               providerMetadata:
-                                h.providerValidation.exactMatch.metadata.providerMetadata || {},
+                                h.providerValidation.exactMatch.metadata
+                                  .providerMetadata || {},
                             }
                           : undefined,
                         error: h.providerValidation.exactMatch.error,
                       }
                     : undefined,
-                  similarMatches: h.providerValidation.similarMatches?.slice(0, 50).map((sm) => ({
-                    isValid: sm.isValid,
-                    metadata: sm.metadata
-                      ? {
-                          symbol: normalizeSymbol(sm.metadata.symbol),
-                          name: normText(sm.metadata.name, 100) || '',
-                          type: sm.metadata.type,
-                          currency: normText(sm.metadata.currency, 10) || 'USD',
-                          exchange: normText(sm.metadata.exchange, 40),
-                          description: normText(sm.metadata.description, 200),
-                          provider: (sm.metadata.provider === 'coingecko'
-                            ? 'coingecko'
-                            : 'finnhub') as 'finnhub' | 'coingecko',
-                          providerMetadata: sm.metadata.providerMetadata || {},
-                        }
-                      : undefined,
-                    error: sm.error,
-                  })),
+                  similarMatches: h.providerValidation.similarMatches
+                    ?.slice(0, 50)
+                    .map((sm) => ({
+                      isValid: sm.isValid,
+                      metadata: sm.metadata
+                        ? {
+                            symbol: normalizeSymbol(sm.metadata.symbol),
+                            name: normText(sm.metadata.name, 100) || "",
+                            type: sm.metadata.type,
+                            currency:
+                              normText(sm.metadata.currency, 10) || "USD",
+                            exchange: normText(sm.metadata.exchange, 40),
+                            description: normText(sm.metadata.description, 200),
+                            provider: (sm.metadata.provider === "coingecko"
+                              ? "coingecko"
+                              : "finnhub") as "finnhub" | "coingecko",
+                            providerMetadata:
+                              sm.metadata.providerMetadata || {},
+                          }
+                        : undefined,
+                      error: sm.error,
+                    })),
                   noMatches: Boolean(h.providerValidation.noMatches),
                 }
               : undefined,
           }));
 
-          const result = await screenshotParsingService.processHoldingsFromParsing(
-            userId,
-            input.accountId,
-            mappedHoldings,
-            input.options
-          );
+          const result =
+            await screenshotParsingService.processHoldingsFromParsing(
+              userId,
+              input.accountId,
+              mappedHoldings,
+              input.options
+            );
 
           // Provide a compact summary for the client
           const summary = {
@@ -205,13 +246,17 @@ export function createScreenshotParsingRouter(screenshotParsingService: Screensh
             {
               userId,
               accountId: input.accountId,
-              error: error instanceof Error ? { name: error.name, message: error.message } : error,
+              error:
+                error instanceof Error
+                  ? { name: error.name, message: error.message }
+                  : error,
             },
-            'Holdings processing failed'
+            "Holdings processing failed"
           );
           return {
             success: false,
-            error: error instanceof Error ? error.message : 'Unknown error occurred',
+            error:
+              error instanceof Error ? error.message : "Unknown error occurred",
           };
         }
       }),

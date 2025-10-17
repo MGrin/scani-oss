@@ -1,13 +1,13 @@
-import { CreateInstitutionSchema } from '@scani/shared/types';
-import Decimal from 'decimal.js';
-import ogs from 'open-graph-scraper';
-import { Container } from 'typedi';
-import { z } from 'zod';
-import type { InstitutionService } from '../../application/services/InstitutionService';
-import type { InstitutionRepository } from '../../infrastructure/repositories/InstitutionRepository';
-import { emitEntityChange } from '../../infrastructure/websocket/RealTimeUpdatesService';
-import { getUserId } from '../../middleware/auth';
-import { protectedProcedure, router } from '../trpc';
+import { CreateInstitutionSchema } from "@scani/shared/types";
+import Decimal from "decimal.js";
+import ogs from "open-graph-scraper";
+import { Container } from "typedi";
+import { z } from "zod";
+import type { InstitutionService } from "../../application/services/InstitutionService";
+import type { InstitutionRepository } from "../../infrastructure/repositories/InstitutionRepository";
+import { emitEntityChange } from "../../infrastructure/websocket/RealTimeUpdatesService";
+import { getUserId } from "../middleware/auth";
+import { protectedProcedure, router } from "../trpc";
 
 /**
  * Factory function to create the institutions router with injected dependencies
@@ -23,10 +23,12 @@ export function createInstitutionsRouter(
       return institutions;
     }),
 
-    getById: protectedProcedure.input(z.object({ id: z.string() })).query(async ({ input }) => {
-      const institution = await institutionRepository.findById(input.id);
-      return institution ?? null;
-    }),
+    getById: protectedProcedure
+      .input(z.object({ id: z.string() }))
+      .query(async ({ input }) => {
+        const institution = await institutionRepository.findById(input.id);
+        return institution ?? null;
+      }),
 
     // Get institutions where the current user has accounts
     getByUserId: protectedProcedure.query(async ({ ctx }) => {
@@ -48,24 +50,26 @@ export function createInstitutionsRouter(
 
       // Get all accounts for this user
       const { AccountRepository } = await import(
-        '../../infrastructure/repositories/AccountRepository'
+        "../../infrastructure/repositories/AccountRepository"
       );
       const accountRepository = Container.get(AccountRepository);
       const accounts = await accountRepository.findByUser(userId);
 
       // Get all holdings for this user
       const { HoldingRepository } = await import(
-        '../../infrastructure/repositories/HoldingRepository'
+        "../../infrastructure/repositories/HoldingRepository"
       );
       const holdingRepository = Container.get(HoldingRepository);
       const holdings = await holdingRepository.findByUser(userId);
 
       // Get portfolio valuation for value calculations
       const { PortfolioValuationService } = await import(
-        '../../application/services/PortfolioValuationService'
+        "../../application/services/PortfolioValuationService"
       );
       const portfolioService = Container.get(PortfolioValuationService);
-      const portfolioValue = await portfolioService.getUserPortfolioValue(userId);
+      const portfolioValue = await portfolioService.getUserPortfolioValue(
+        userId
+      );
 
       // Create maps for efficient lookups
       const holdingsByAccount = new Map<string, typeof holdings>();
@@ -85,10 +89,14 @@ export function createInstitutionsRouter(
       }
 
       // Create value map from portfolio data (token symbol -> total value for that token)
-      const valueMap = new Map(portfolioValue.holdings.map((h) => [h.tokenSymbol, h.value || '0']));
+      const valueMap = new Map(
+        portfolioValue.holdings.map((h) => [h.tokenSymbol, h.value || "0"])
+      );
 
       // Get token repository to map holding tokenIds to symbols
-      const { TokenRepository } = await import('../../infrastructure/repositories/TokenRepository');
+      const { TokenRepository } = await import(
+        "../../infrastructure/repositories/TokenRepository"
+      );
       const tokenRepository = Container.get(TokenRepository);
       const tokenIds = [...new Set(holdings.map((h) => h.tokenId))];
       const tokens = await tokenRepository.findByIds(tokenIds);
@@ -96,7 +104,8 @@ export function createInstitutionsRouter(
 
       // Build summary for each institution
       const institutionsWithSummary = institutions.map((institution) => {
-        const institutionAccounts = accountsByInstitution.get(institution.id) || [];
+        const institutionAccounts =
+          accountsByInstitution.get(institution.id) || [];
         const accountCount = institutionAccounts.length;
 
         // Calculate total value across all accounts in this institution
@@ -106,7 +115,7 @@ export function createInstitutionsRouter(
           for (const holding of accountHoldings) {
             const token = tokenMap.get(holding.tokenId);
             if (token) {
-              const holdingValue = valueMap.get(token.symbol) || '0';
+              const holdingValue = valueMap.get(token.symbol) || "0";
               totalValue = totalValue.add(new Decimal(holdingValue));
             }
           }
@@ -138,9 +147,9 @@ export function createInstitutionsRouter(
         );
 
         emitEntityChange({
-          type: 'entity_changed',
-          entityType: 'institution',
-          operationType: 'create',
+          type: "entity_changed",
+          entityType: "institution",
+          operationType: "create",
           entityId: institution.id,
           userId,
           data: {
@@ -158,16 +167,19 @@ export function createInstitutionsRouter(
         const userId = getUserId(ctx);
 
         // Use service to handle deletion logic
-        const result = await institutionService.deleteInstitution(input.id, userId);
+        const result = await institutionService.deleteInstitution(
+          input.id,
+          userId
+        );
 
         if (!result) {
-          throw new Error('Failed to delete institution or no accounts found');
+          throw new Error("Failed to delete institution or no accounts found");
         }
 
         emitEntityChange({
-          type: 'entity_changed',
-          entityType: 'institution',
-          operationType: 'delete',
+          type: "entity_changed",
+          entityType: "institution",
+          operationType: "delete",
           entityId: input.id,
           userId,
           data: {},
@@ -186,22 +198,27 @@ export function createInstitutionsRouter(
           const { result } = await ogs({ url: input.url });
 
           return {
-            title: result.ogTitle || result.twitterTitle || result.dcTitle || '',
+            title:
+              result.ogTitle || result.twitterTitle || result.dcTitle || "",
             description:
-              result.ogDescription || result.twitterDescription || result.dcDescription || '',
-            siteName: result.ogSiteName || '',
-            image: result.ogImage?.[0]?.url || result.twitterImage?.[0]?.url || '',
-            type: result.ogType || '',
+              result.ogDescription ||
+              result.twitterDescription ||
+              result.dcDescription ||
+              "",
+            siteName: result.ogSiteName || "",
+            image:
+              result.ogImage?.[0]?.url || result.twitterImage?.[0]?.url || "",
+            type: result.ogType || "",
           };
         } catch (error) {
-          console.error('Failed to fetch Open Graph metadata:', error);
+          console.error("Failed to fetch Open Graph metadata:", error);
           // Return empty metadata instead of throwing
           return {
-            title: '',
-            description: '',
-            siteName: '',
-            image: '',
-            type: '',
+            title: "",
+            description: "",
+            siteName: "",
+            image: "",
+            type: "",
           };
         }
       }),
