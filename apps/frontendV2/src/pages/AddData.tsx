@@ -1,41 +1,38 @@
-import { useCallback, useEffect, useId, useMemo, useState } from "react";
-import { createPortal } from "react-dom";
-import { useNavigate, useSearchParams } from "react-router-dom";
+import { useCallback, useEffect, useId, useMemo, useState } from 'react';
+import { createPortal } from 'react-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
   AccountTypeSelector,
   InstitutionSelector,
   InstitutionTypeSelector,
-} from "@/components/selectors/SearchableSelectors";
-import { TokenSearchableSelector } from "@/components/selectors/TokenSearchableSelector";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { PageHeader } from "@/components/ui/page-header";
-import { Progress } from "@/components/ui/progress";
-import { Skeleton } from "@/components/ui/skeleton";
-import {
-  isExternalTokenValue,
-  parseExternalTokenValue,
-} from "@/lib/external-token";
-import { trpc } from "@/lib/trpc";
+} from '@/components/selectors/SearchableSelectors';
+import { TokenSearchableSelector } from '@/components/selectors/TokenSearchableSelector';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { PageHeader } from '@/components/ui/page-header';
+import { Progress } from '@/components/ui/progress';
+import { Skeleton } from '@/components/ui/skeleton';
+import { isExternalTokenValue, parseExternalTokenValue } from '@/lib/external-token';
+import { trpc } from '@/lib/trpc';
 
-type Step = "method" | "account" | "data";
+type Step = 'method' | 'account' | 'data';
 
 type CompleteImportData = {
   // Method selection data
-  method?: "manual" | "screenshots" | "wallet";
+  method?: 'manual' | 'screenshots' | 'wallet';
 
   // Account selection data
   accountSelection?: {
-    mode: "select" | "create";
+    mode: 'select' | 'create';
     selectedAccountId?: string;
     newAccountData?: {
       name: string;
       typeId: string;
       institutionSelection?: {
-        mode: "select" | "create";
+        mode: 'select' | 'create';
         selectedInstitutionId?: string;
         newInstitutionData?: {
           name: string;
@@ -62,75 +59,62 @@ type CompleteImportData = {
 export function AddData() {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
-  const [currentStep, setCurrentStep] = useState<Step>("method");
+  const [currentStep, setCurrentStep] = useState<Step>('method');
   const [navContainer, setNavContainer] = useState<Element | null>(null);
   const [isAccountStepValid, setIsAccountStepValid] = useState(false);
-  const [accountDisplayText, setAccountDisplayText] =
-    useState<string>("Choose Account");
+  const [accountDisplayText, setAccountDisplayText] = useState<string>('Choose Account');
   const [hasDataChanges, setHasDataChanges] = useState(false);
 
-  const createTokensFromExternalMutation =
-    trpc.tokens.createManyfromExternal.useMutation();
+  const createTokensFromExternalMutation = trpc.tokens.createManyfromExternal.useMutation();
 
-  const createTokenFromExternalMutation =
-    trpc.tokens.createFromExternal.useMutation();
+  const createTokenFromExternalMutation = trpc.tokens.createFromExternal.useMutation();
   const createHoldingsWithDependenciesMutation =
     trpc.batchOperations.createHoldingsWithDependencies.useMutation();
-  const updateHoldingsBatchMutation =
-    trpc.batchOperations.updateHoldingsBatch.useMutation();
+  const updateHoldingsBatchMutation = trpc.batchOperations.updateHoldingsBatch.useMutation();
   const updateHoldingMutation = trpc.holdings.update.useMutation({
     onSuccess: () => {
       // Invalidate all related queries using utility function
     },
   });
-  const [completeImportData, setCompleteImportData] =
-    useState<CompleteImportData>({});
+  const [completeImportData, setCompleteImportData] = useState<CompleteImportData>({});
 
-  const selectedAccountId =
-    completeImportData.accountSelection?.selectedAccountId;
+  const selectedAccountId = completeImportData.accountSelection?.selectedAccountId;
 
   useEffect(() => {
-    const container = document.getElementById("mobile-bottom-nav");
+    const container = document.getElementById('mobile-bottom-nav');
     setNavContainer(container);
   }, []);
 
   // Load form data from URL params on mount
   useEffect(() => {
-    const method = searchParams.get("method") as CompleteImportData["method"];
-    const accountId = searchParams.get("accountId");
+    const method = searchParams.get('method') as CompleteImportData['method'];
+    const accountId = searchParams.get('accountId');
 
     if (method) {
       setCompleteImportData((prev) => ({ ...prev, method }));
-      setCurrentStep("account");
+      setCurrentStep('account');
     }
 
     if (accountId) {
       setCompleteImportData((prev) => ({
         ...prev,
-        accountSelection: { mode: "select", selectedAccountId: accountId },
+        accountSelection: { mode: 'select', selectedAccountId: accountId },
       }));
-      setCurrentStep("data");
+      setCurrentStep('data');
     }
   }, [searchParams]);
 
   // Update URL params when form data changes
-  const updateCompleteImportData = useCallback(
-    (updates: Partial<CompleteImportData>) => {
-      setCompleteImportData((prev) => ({ ...prev, ...updates }));
-    },
-    []
-  );
+  const updateCompleteImportData = useCallback((updates: Partial<CompleteImportData>) => {
+    setCompleteImportData((prev) => ({ ...prev, ...updates }));
+  }, []);
 
   // Sync URL params with complete import data
   useEffect(() => {
     const params = new URLSearchParams();
-    if (completeImportData.method)
-      params.set("method", completeImportData.method);
+    if (completeImportData.method) params.set('method', completeImportData.method);
     if (completeImportData.accountSelection?.selectedAccountId)
-      params.set(
-        "accountId",
-        completeImportData.accountSelection.selectedAccountId
-      );
+      params.set('accountId', completeImportData.accountSelection.selectedAccountId);
 
     setSearchParams(params);
   }, [
@@ -143,12 +127,12 @@ export function AddData() {
   // Note: Account and institution data is handled by AccountSelectionStep
 
   const nextStep = useCallback(() => {
-    if (currentStep === "method") setCurrentStep("account");
-    else if (currentStep === "account") setCurrentStep("data");
+    if (currentStep === 'method') setCurrentStep('account');
+    else if (currentStep === 'account') setCurrentStep('data');
   }, [currentStep]);
 
   const prevStep = useCallback(() => {
-    if (currentStep === "data") {
+    if (currentStep === 'data') {
       // Going back from data entry to account selection
       // Clear account selection from complete import data and URL
       setCompleteImportData((prev) => {
@@ -157,21 +141,21 @@ export function AddData() {
         return newData;
       });
 
-      setCurrentStep("account");
-    } else if (currentStep === "account") {
+      setCurrentStep('account');
+    } else if (currentStep === 'account') {
       // Going back from account selection to method selection
       // Clear method and account selection from complete import data and URL
       setCompleteImportData({});
-      setCurrentStep("method");
+      setCurrentStep('method');
     }
   }, [currentStep]);
   const getStepNumber = (step: Step): number => {
     switch (step) {
-      case "method":
+      case 'method':
         return 1;
-      case "account":
+      case 'account':
         return 2;
-      case "data":
+      case 'data':
         return 3;
     }
   };
@@ -192,13 +176,9 @@ export function AddData() {
 
     // For existing accounts, also check if there are changes to existing holdings
     const hasExistingChanges =
-      selectedAccountId &&
-      completeImportData.accountSelection?.mode === "select"
+      selectedAccountId && completeImportData.accountSelection?.mode === 'select'
         ? holdings.some(
-            (h) =>
-              h.isExisting &&
-              h.amount !== h.originalAmount &&
-              h.amount.trim() !== ""
+            (h) => h.isExisting && h.amount !== h.originalAmount && h.amount.trim() !== ''
           )
         : false;
 
@@ -211,18 +191,16 @@ export function AddData() {
 
   // Helper functions for progress bar display text
   const getMethodDisplayText = (): string => {
-    if (!completeImportData.method) return "Select Method";
+    if (!completeImportData.method) return 'Select Method';
 
     const methods = [
-      { id: "manual", title: "Manual Entry" },
-      { id: "screenshots", title: "Screenshots Upload" },
-      { id: "wallet", title: "Cryptocurrency Wallet" },
+      { id: 'manual', title: 'Manual Entry' },
+      { id: 'screenshots', title: 'Screenshots Upload' },
+      { id: 'wallet', title: 'Cryptocurrency Wallet' },
     ];
 
-    const selectedMethod = methods.find(
-      (m) => m.id === completeImportData.method
-    );
-    return selectedMethod ? selectedMethod.title : "Select Method";
+    const selectedMethod = methods.find((m) => m.id === completeImportData.method);
+    return selectedMethod ? selectedMethod.title : 'Select Method';
   };
 
   const getAccountDisplayText = (): string => {
@@ -236,8 +214,8 @@ export function AddData() {
   const completeWithNewAccount = useCallback(async () => {
     const accountSelection = completeImportData.accountSelection;
 
-    if (!accountSelection || accountSelection.mode !== "create") {
-      console.error("Account selection is not set to create mode");
+    if (!accountSelection || accountSelection.mode !== 'create') {
+      console.error('Account selection is not set to create mode');
       return;
     }
 
@@ -245,7 +223,7 @@ export function AddData() {
 
     const newAccountData = accountSelection.newAccountData;
     if (!newAccountData) {
-      console.error("No new account data provided");
+      console.error('No new account data provided');
       return;
     }
 
@@ -254,7 +232,7 @@ export function AddData() {
     );
 
     if (newHoldingsToCreate.length === 0) {
-      console.error("No holdings to create");
+      console.error('No holdings to create');
       return;
     }
 
@@ -269,9 +247,9 @@ export function AddData() {
           externalId: holding.tokenValue,
           symbol: externalTokenData.symbol,
           provider:
-            externalTokenData.provider === "coingecko"
-              ? ("coingecko" as const)
-              : ("finnhub" as const),
+            externalTokenData.provider === 'coingecko'
+              ? ('coingecko' as const)
+              : ('finnhub' as const),
           metadata: {
             ...externalTokenData.metadata,
             name: externalTokenData.name,
@@ -283,21 +261,23 @@ export function AddData() {
     // Create all external tokens in batch if any exist
     let createdTokensMap: Record<string, string> = {};
     if (externalTokensToCreate.length > 0) {
-      const createdTokens = await createTokensFromExternalMutation.mutateAsync(
-        externalTokensToCreate
-      );
+      const createdTokens =
+        await createTokensFromExternalMutation.mutateAsync(externalTokensToCreate);
 
       // Map external token values to created token IDs
-      createdTokensMap = createdTokens.reduce((acc, token) => {
-        const externalValue = newHoldingsToCreate.find((h) => {
-          const data = parseExternalTokenValue(h.tokenValue);
-          return data?.symbol === token.symbol;
-        })?.tokenValue;
-        if (externalValue) {
-          acc[externalValue] = token.id;
-        }
-        return acc;
-      }, {} as Record<string, string>);
+      createdTokensMap = createdTokens.reduce(
+        (acc, token) => {
+          const externalValue = newHoldingsToCreate.find((h) => {
+            const data = parseExternalTokenValue(h.tokenValue);
+            return data?.symbol === token.symbol;
+          })?.tokenValue;
+          if (externalValue) {
+            acc[externalValue] = token.id;
+          }
+          return acc;
+        },
+        {} as Record<string, string>
+      );
     }
 
     // Build processed holdings with created token IDs
@@ -309,32 +289,23 @@ export function AddData() {
     // Use unified batch operation to create institution (if needed), account, and ALL holdings atomically
     const result = await createHoldingsWithDependenciesMutation.mutateAsync({
       institution:
-        newAccountData.institutionSelection?.mode === "create"
+        newAccountData.institutionSelection?.mode === 'create'
           ? {
-              name:
-                newAccountData.institutionSelection.newInstitutionData?.name ||
-                "",
-              typeId:
-                newAccountData.institutionSelection.newInstitutionData
-                  ?.typeId || "",
-              description:
-                newAccountData.institutionSelection.newInstitutionData
-                  ?.description,
-              website:
-                newAccountData.institutionSelection.newInstitutionData?.website,
+              name: newAccountData.institutionSelection.newInstitutionData?.name || '',
+              typeId: newAccountData.institutionSelection.newInstitutionData?.typeId || '',
+              description: newAccountData.institutionSelection.newInstitutionData?.description,
+              website: newAccountData.institutionSelection.newInstitutionData?.website,
             }
           : undefined,
       account: {
-        institutionId:
-          newAccountData.institutionSelection?.selectedInstitutionId ||
-          undefined,
+        institutionId: newAccountData.institutionSelection?.selectedInstitutionId || undefined,
         name: newAccountData.name,
         typeId: newAccountData.typeId,
       },
       holdings: processedHoldings,
     });
 
-    console.log("Successfully created account and holdings");
+    console.log('Successfully created account and holdings');
     navigate(`/accounts/${result.accountId}`);
     return;
   }, [
@@ -350,15 +321,14 @@ export function AddData() {
 
     const accountId = accountSelection?.selectedAccountId;
     if (!accountId) {
-      console.error("No account selected");
+      console.error('No account selected');
       return;
     }
     const holdings = completeImportData.dataEntry?.holdings || [];
 
     // Separate existing holdings that have changed from new holdings
     const existingHoldingsToUpdate = holdings.filter(
-      (h) =>
-        h.isExisting && h.amount !== h.originalAmount && h.amount.trim() !== ""
+      (h) => h.isExisting && h.amount !== h.originalAmount && h.amount.trim() !== ''
     );
     const newHoldingsToCreate = holdings.filter(
       (h) => !h.isExisting && h.tokenValue.trim() && h.amount.trim()
@@ -367,9 +337,9 @@ export function AddData() {
     // Update existing holdings in batch
     if (existingHoldingsToUpdate.length > 0) {
       const holdingsToUpdate = existingHoldingsToUpdate
-        .filter((h) => h.id.startsWith("existing-"))
+        .filter((h) => h.id.startsWith('existing-'))
         .map((holding) => ({
-          id: holding.id.replace("existing-", ""),
+          id: holding.id.replace('existing-', ''),
           balance: holding.amount,
         }));
 
@@ -391,9 +361,9 @@ export function AddData() {
             externalId: holding.tokenValue,
             symbol: externalTokenData.symbol,
             provider:
-              externalTokenData.provider === "coingecko"
-                ? ("coingecko" as const)
-                : ("finnhub" as const),
+              externalTokenData.provider === 'coingecko'
+                ? ('coingecko' as const)
+                : ('finnhub' as const),
             metadata: {
               ...externalTokenData.metadata,
               name: externalTokenData.name,
@@ -406,21 +376,22 @@ export function AddData() {
       let createdTokensMap: Record<string, string> = {};
       if (externalTokensToCreate.length > 0) {
         const createdTokens =
-          await createTokensFromExternalMutation.mutateAsync(
-            externalTokensToCreate
-          );
+          await createTokensFromExternalMutation.mutateAsync(externalTokensToCreate);
 
         // Map external token values to created token IDs
-        createdTokensMap = createdTokens.reduce((acc, token) => {
-          const externalValue = newHoldingsToCreate.find((h) => {
-            const data = parseExternalTokenValue(h.tokenValue);
-            return data?.symbol === token.symbol;
-          })?.tokenValue;
-          if (externalValue) {
-            acc[externalValue] = token.id;
-          }
-          return acc;
-        }, {} as Record<string, string>);
+        createdTokensMap = createdTokens.reduce(
+          (acc, token) => {
+            const externalValue = newHoldingsToCreate.find((h) => {
+              const data = parseExternalTokenValue(h.tokenValue);
+              return data?.symbol === token.symbol;
+            })?.tokenValue;
+            if (externalValue) {
+              acc[externalValue] = token.id;
+            }
+            return acc;
+          },
+          {} as Record<string, string>
+        );
       }
 
       // Build processed holdings with created token IDs
@@ -450,19 +421,19 @@ export function AddData() {
 
     try {
       // Case 1: Creating a new account with holdings
-      if (accountSelection?.mode === "create") {
+      if (accountSelection?.mode === 'create') {
         await completeWithNewAccount();
         return;
       }
 
       // Case 2: Using existing account - update existing holdings and/or create new ones
       await completeWithExistingAccount();
-      console.log("Successfully updated and created holdings");
+      console.log('Successfully updated and created holdings');
 
       // Redirect to account details page
       navigate(`/accounts/${accountId}`);
     } catch (error) {
-      console.error("Failed to update/create holdings:", error);
+      console.error('Failed to update/create holdings:', error);
     }
   }, [
     completeWithNewAccount,
@@ -486,10 +457,7 @@ export function AddData() {
         </div>
       )}
 
-      <PageHeader
-        title="Add Data"
-        subtitle="Import your financial data into Scani"
-      />
+      <PageHeader title="Add Data" subtitle="Import your financial data into Scani" />
 
       {/* Progress Indicator - Sticky on mobile */}
       <Card className="md:static sticky top-0 z-10 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
@@ -506,25 +474,13 @@ export function AddData() {
             <Progress value={getProgress()} className="w-full h-1 md:h-2" />
 
             <div className="hidden md:flex justify-between text-sm text-muted-foreground">
-              <span
-                className={
-                  currentStep === "method" ? "font-medium text-foreground" : ""
-                }
-              >
+              <span className={currentStep === 'method' ? 'font-medium text-foreground' : ''}>
                 1. {getMethodDisplayText()}
               </span>
-              <span
-                className={
-                  currentStep === "account" ? "font-medium text-foreground" : ""
-                }
-              >
+              <span className={currentStep === 'account' ? 'font-medium text-foreground' : ''}>
                 2. {getAccountDisplayText()}
               </span>
-              <span
-                className={
-                  currentStep === "data" ? "font-medium text-foreground" : ""
-                }
-              >
+              <span className={currentStep === 'data' ? 'font-medium text-foreground' : ''}>
                 3. Enter Data
               </span>
             </div>
@@ -533,20 +489,20 @@ export function AddData() {
       </Card>
 
       {/* Step Content */}
-      {currentStep === "method" && (
+      {currentStep === 'method' && (
         <MethodSelectionStep
           completeImportData={completeImportData}
           onCompleteDataUpdate={updateCompleteImportData}
         />
       )}
-      {currentStep === "account" && (
+      {currentStep === 'account' && (
         <AccountSelectionStep
           onValidationChange={setIsAccountStepValid}
           onAccountDisplayChange={handleAccountDisplayChange}
           onCompleteDataUpdate={updateCompleteImportData}
         />
       )}
-      {currentStep === "data" && (
+      {currentStep === 'data' && (
         <DataEntryStep
           completeImportData={completeImportData}
           onCompleteDataUpdate={updateCompleteImportData}
@@ -566,40 +522,35 @@ export function AddData() {
           <div
             className="fixed bottom-0 left-0 right-0 md:left-64 bg-background border-t p-4"
             style={{
-              paddingBottom: "max(1rem, env(safe-area-inset-bottom))",
+              paddingBottom: 'max(1rem, env(safe-area-inset-bottom))',
             }}
           >
             <div className="flex justify-between max-w-screen-sm mx-auto">
-              <Button
-                variant="outline"
-                onClick={prevStep}
-                disabled={currentStep === "method"}
-              >
+              <Button variant="outline" onClick={prevStep} disabled={currentStep === 'method'}>
                 Back
               </Button>
               <Button
                 onClick={async () => {
-                  if (currentStep === "method" && completeImportData.method) {
+                  if (currentStep === 'method' && completeImportData.method) {
                     nextStep();
-                  } else if (currentStep === "account") {
+                  } else if (currentStep === 'account') {
                     // For account step, we can always proceed since account selection is optional
                     nextStep();
-                  } else if (currentStep === "data") {
+                  } else if (currentStep === 'data') {
                     await complete();
                   }
                 }}
                 disabled={
-                  (currentStep === "method" && !completeImportData.method) ||
-                  (currentStep === "account" && !isAccountStepValid) ||
-                  (currentStep === "data" &&
-                    !getValidHoldingsInfo().hasChanges) ||
+                  (currentStep === 'method' && !completeImportData.method) ||
+                  (currentStep === 'account' && !isAccountStepValid) ||
+                  (currentStep === 'data' && !getValidHoldingsInfo().hasChanges) ||
                   createTokenFromExternalMutation.isPending ||
                   createHoldingsWithDependenciesMutation.isPending ||
                   updateHoldingsBatchMutation.isPending ||
                   updateHoldingMutation.isPending
                 }
               >
-                {currentStep === "data" ? "Submit" : "Continue"}
+                {currentStep === 'data' ? 'Submit' : 'Continue'}
               </Button>
             </div>
           </div>,
@@ -618,27 +569,24 @@ function MethodSelectionStep({
 }) {
   const methods = [
     {
-      id: "manual" as const,
-      title: "Manual Entry",
-      description:
-        "Manually enter your holdings, transactions, and account information",
-      icon: "📝",
+      id: 'manual' as const,
+      title: 'Manual Entry',
+      description: 'Manually enter your holdings, transactions, and account information',
+      icon: '📝',
       disabled: false,
     },
     {
-      id: "screenshots" as const,
-      title: "Screenshots Upload",
-      description:
-        "Upload screenshots of your statements and let AI extract the data",
-      icon: "📸",
+      id: 'screenshots' as const,
+      title: 'Screenshots Upload',
+      description: 'Upload screenshots of your statements and let AI extract the data',
+      icon: '📸',
       disabled: true,
     },
     {
-      id: "wallet" as const,
-      title: "Cryptocurrency Wallet",
-      description:
-        "Connect your crypto wallet to automatically import holdings",
-      icon: "🔐",
+      id: 'wallet' as const,
+      title: 'Cryptocurrency Wallet',
+      description: 'Connect your crypto wallet to automatically import holdings',
+      icon: '🔐',
       disabled: true,
     },
   ];
@@ -654,13 +602,9 @@ function MethodSelectionStep({
             <Card
               key={method.id}
               className={`transition-all hover:shadow-md ${
-                completeImportData.method === method.id
-                  ? "ring-2 ring-primary"
-                  : ""
+                completeImportData.method === method.id ? 'ring-2 ring-primary' : ''
               } ${
-                method.disabled
-                  ? "opacity-60 cursor-not-allowed"
-                  : "cursor-pointer hover:shadow-md"
+                method.disabled ? 'opacity-60 cursor-not-allowed' : 'cursor-pointer hover:shadow-md'
               }`}
               onClick={() => {
                 if (!method.disabled) {
@@ -677,15 +621,9 @@ function MethodSelectionStep({
                     Coming Soon
                   </Badge>
                 )}
-                <div className="text-3xl md:text-4xl mb-2 md:mb-4">
-                  {method.icon}
-                </div>
-                <h3 className="font-semibold mb-1 md:mb-2 text-sm md:text-base">
-                  {method.title}
-                </h3>
-                <p className="text-xs md:text-sm text-muted-foreground">
-                  {method.description}
-                </p>
+                <div className="text-3xl md:text-4xl mb-2 md:mb-4">{method.icon}</div>
+                <h3 className="font-semibold mb-1 md:mb-2 text-sm md:text-base">{method.title}</h3>
+                <p className="text-xs md:text-sm text-muted-foreground">{method.description}</p>
               </CardContent>
             </Card>
           ))}
@@ -704,23 +642,23 @@ function AccountSelectionStep({
   onAccountDisplayChange?: (displayText: string) => void;
   onCompleteDataUpdate: (updates: Partial<CompleteImportData>) => void;
 }) {
-  const [mode, setMode] = useState<"select" | "create">("select");
+  const [mode, setMode] = useState<'select' | 'create'>('select');
   const accountNameId = useId();
   const institutionNameId = useId();
   const institutionWebsiteId = useId();
   const institutionDescriptionId = useId();
-  const [selectedAccountId, setSelectedAccountId] = useState<string>("");
+  const [selectedAccountId, setSelectedAccountId] = useState<string>('');
   const [newAccountData, setNewAccountData] = useState({
-    name: "",
-    typeId: "",
+    name: '',
+    typeId: '',
     institutionSelection: {
-      mode: "select" as "select" | "create",
-      selectedInstitutionId: "",
+      mode: 'select' as 'select' | 'create',
+      selectedInstitutionId: '',
       newInstitutionData: {
-        name: "",
-        typeId: "",
-        website: "",
-        description: "",
+        name: '',
+        typeId: '',
+        website: '',
+        description: '',
       },
     },
   });
@@ -730,11 +668,10 @@ function AccountSelectionStep({
     siteName: string;
   } | null>(null);
   const [hasFetchedMetadata, setHasFetchedMetadata] = useState(false);
-  const [searchTerm, setSearchTerm] = useState("");
+  const [searchTerm, setSearchTerm] = useState('');
 
   // Fetch data
-  const { data: accounts, isLoading: accountsLoading } =
-    trpc.accounts.getAll.useQuery();
+  const { data: accounts, isLoading: accountsLoading } = trpc.accounts.getAll.useQuery();
   const { data: institutions } = trpc.institutions.getAll.useQuery();
   const { data: accountTypes } = trpc.accountTypes.getAll.useQuery();
   const { data: institutionTypes } = trpc.institutionTypes.getAll.useQuery();
@@ -742,7 +679,7 @@ function AccountSelectionStep({
   // Automatically switch to create mode if no accounts exist
   useEffect(() => {
     if (!accountsLoading && accounts && accounts.length === 0) {
-      setMode("create");
+      setMode('create');
     }
   }, [accountsLoading, accounts]);
 
@@ -755,10 +692,7 @@ function AccountSelectionStep({
         setInstitutionMetadata(data);
         setHasFetchedMetadata(true);
         // Auto-populate fields with metadata if available
-        if (
-          data.title &&
-          !newAccountData.institutionSelection.newInstitutionData.name
-        ) {
+        if (data.title && !newAccountData.institutionSelection.newInstitutionData.name) {
           setNewAccountData((prev) => ({
             ...prev,
             institutionSelection: {
@@ -791,17 +725,15 @@ function AccountSelectionStep({
 
   // Handler for fetching metadata from website
   const handleFetchMetadata = async () => {
-    if (
-      !newAccountData.institutionSelection.newInstitutionData.website.trim()
-    ) {
-      alert("Please enter a website URL first");
+    if (!newAccountData.institutionSelection.newInstitutionData.website.trim()) {
+      alert('Please enter a website URL first');
       return;
     }
 
     try {
       await metadataQuery.refetch();
     } catch (error) {
-      console.error("Failed to fetch metadata:", error);
+      console.error('Failed to fetch metadata:', error);
       // Even on error, show the form fields
       setHasFetchedMetadata(true);
     }
@@ -810,17 +742,12 @@ function AccountSelectionStep({
   // Memoize validation values to prevent infinite re-renders
   const validationValues = useMemo(
     () => ({
-      hasAccountDetails:
-        newAccountData.name.trim() !== "" &&
-        newAccountData.typeId.trim() !== "",
+      hasAccountDetails: newAccountData.name.trim() !== '' && newAccountData.typeId.trim() !== '',
       hasInstitutionDetails:
-        newAccountData.institutionSelection.mode === "select"
-          ? newAccountData.institutionSelection.selectedInstitutionId.trim() !==
-            ""
-          : newAccountData.institutionSelection.newInstitutionData.name.trim() !==
-              "" &&
-            newAccountData.institutionSelection.newInstitutionData.typeId.trim() !==
-              "",
+        newAccountData.institutionSelection.mode === 'select'
+          ? newAccountData.institutionSelection.selectedInstitutionId.trim() !== ''
+          : newAccountData.institutionSelection.newInstitutionData.name.trim() !== '' &&
+            newAccountData.institutionSelection.newInstitutionData.typeId.trim() !== '',
     }),
     [
       newAccountData.name,
@@ -834,9 +761,9 @@ function AccountSelectionStep({
 
   // Validation function
   const isValidForContinue = useCallback(() => {
-    if (mode === "select") {
-      return selectedAccountId.trim() !== "";
-    } else if (mode === "create") {
+    if (mode === 'select') {
+      return selectedAccountId.trim() !== '';
+    } else if (mode === 'create') {
       if (!validationValues.hasAccountDetails) return false;
       return validationValues.hasInstitutionDetails;
     }
@@ -854,9 +781,9 @@ function AccountSelectionStep({
 
     return {
       mode,
-      selectedAccountId: mode === "select" ? selectedAccountId : undefined,
-      newAccountData: mode === "create" ? newAccountData : undefined,
-    } as NonNullable<CompleteImportData["accountSelection"]>;
+      selectedAccountId: mode === 'select' ? selectedAccountId : undefined,
+      newAccountData: mode === 'create' ? newAccountData : undefined,
+    } as NonNullable<CompleteImportData['accountSelection']>;
   }, [mode, selectedAccountId, newAccountData, isValidForContinue]);
 
   // Store complete account data when valid
@@ -868,42 +795,35 @@ function AccountSelectionStep({
 
   // Update account display text for progress bar
   useEffect(() => {
-    let displayText = "Choose Account";
+    let displayText = 'Choose Account';
 
-    if (mode === "select" && selectedAccountId) {
+    if (mode === 'select' && selectedAccountId) {
       // Existing account selected
-      const selectedAccount = accounts?.find(
-        (acc) => acc.id === selectedAccountId
-      );
+      const selectedAccount = accounts?.find((acc) => acc.id === selectedAccountId);
       if (selectedAccount) {
-        const institution = institutions?.find(
-          (inst) => inst.id === selectedAccount.institutionId
-        );
-        const institutionName = institution?.name || "Unknown Institution";
+        const institution = institutions?.find((inst) => inst.id === selectedAccount.institutionId);
+        const institutionName = institution?.name || 'Unknown Institution';
         displayText = `${selectedAccount.name} (${institutionName})`;
       }
-    } else if (mode === "create" && newAccountData.name.trim()) {
+    } else if (mode === 'create' && newAccountData.name.trim()) {
       // New account being created
-      let institutionName = "New Institution";
+      let institutionName = 'New Institution';
 
       if (
-        newAccountData.institutionSelection.mode === "select" &&
+        newAccountData.institutionSelection.mode === 'select' &&
         newAccountData.institutionSelection.selectedInstitutionId
       ) {
         // Existing institution selected for new account
         const institution = institutions?.find(
-          (inst) =>
-            inst.id ===
-            newAccountData.institutionSelection.selectedInstitutionId
+          (inst) => inst.id === newAccountData.institutionSelection.selectedInstitutionId
         );
-        institutionName = institution?.name || "Unknown Institution";
+        institutionName = institution?.name || 'Unknown Institution';
       } else if (
-        newAccountData.institutionSelection.mode === "create" &&
+        newAccountData.institutionSelection.mode === 'create' &&
         newAccountData.institutionSelection.newInstitutionData.name.trim()
       ) {
         // New institution being created
-        institutionName =
-          newAccountData.institutionSelection.newInstitutionData.name;
+        institutionName = newAccountData.institutionSelection.newInstitutionData.name;
       }
 
       displayText = `${newAccountData.name} (${institutionName})`;
@@ -928,7 +848,7 @@ function AccountSelectionStep({
     // Store complete account selection data
     onCompleteDataUpdate({
       accountSelection: {
-        mode: "select",
+        mode: 'select',
         selectedAccountId: accountId,
       },
     });
@@ -939,16 +859,12 @@ function AccountSelectionStep({
     if (!searchTerm.trim()) return true;
 
     const accountName = account.name.toLowerCase();
-    const institution = institutions?.find(
-      (inst) => inst.id === account.institutionId
-    );
-    const institutionName = institution?.name.toLowerCase() || "";
+    const institution = institutions?.find((inst) => inst.id === account.institutionId);
+    const institutionName = institution?.name.toLowerCase() || '';
 
     const searchLower = searchTerm.toLowerCase();
 
-    return (
-      accountName.includes(searchLower) || institutionName.includes(searchLower)
-    );
+    return accountName.includes(searchLower) || institutionName.includes(searchLower);
   });
 
   return (
@@ -962,9 +878,9 @@ function AccountSelectionStep({
           <div className="grid gap-4 md:grid-cols-2">
             <Card
               className={`cursor-pointer transition-all hover:shadow-md ${
-                mode === "select" ? "ring-2 ring-primary" : ""
+                mode === 'select' ? 'ring-2 ring-primary' : ''
               }`}
-              onClick={() => setMode("select")}
+              onClick={() => setMode('select')}
             >
               <CardContent className="p-4 md:p-6 text-center">
                 <div className="text-2xl md:text-3xl mb-2 md:mb-4">📋</div>
@@ -979,9 +895,9 @@ function AccountSelectionStep({
 
             <Card
               className={`cursor-pointer transition-all hover:shadow-md ${
-                mode === "create" ? "ring-2 ring-primary" : ""
+                mode === 'create' ? 'ring-2 ring-primary' : ''
               }`}
-              onClick={() => setMode("create")}
+              onClick={() => setMode('create')}
             >
               <CardContent className="p-4 md:p-6 text-center">
                 <div className="text-2xl md:text-3xl mb-2 md:mb-4">➕</div>
@@ -998,7 +914,7 @@ function AccountSelectionStep({
       </Card>
 
       {/* Account Selection */}
-      {mode === "select" && (
+      {mode === 'select' && (
         <Card>
           <CardHeader>
             <CardTitle>Select Account</CardTitle>
@@ -1021,17 +937,15 @@ function AccountSelectionStep({
             {/* Account Grid - Show skeletons when loading */}
             {accountsLoading ? (
               <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-                {["skeleton-1", "skeleton-2", "skeleton-3", "skeleton-4"].map(
-                  (key) => (
-                    <Card key={key}>
-                      <CardContent className="p-4">
-                        <Skeleton className="h-4 w-3/4 mb-2" />
-                        <Skeleton className="h-3 w-1/2 mb-2" />
-                        <Skeleton className="h-3 w-2/3" />
-                      </CardContent>
-                    </Card>
-                  )
-                )}
+                {['skeleton-1', 'skeleton-2', 'skeleton-3', 'skeleton-4'].map((key) => (
+                  <Card key={key}>
+                    <CardContent className="p-4">
+                      <Skeleton className="h-4 w-3/4 mb-2" />
+                      <Skeleton className="h-3 w-1/2 mb-2" />
+                      <Skeleton className="h-3 w-2/3" />
+                    </CardContent>
+                  </Card>
+                ))}
               </div>
             ) : (
               <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
@@ -1039,27 +953,23 @@ function AccountSelectionStep({
                   const institution = institutions?.find(
                     (inst) => inst.id === account.institutionId
                   );
-                  const accountType = accountTypes?.find(
-                    (type) => type.id === account.typeId
-                  );
+                  const accountType = accountTypes?.find((type) => type.id === account.typeId);
 
                   return (
                     <Card
                       key={account.id}
                       className={`cursor-pointer transition-all hover:shadow-md ${
-                        selectedAccountId === account.id
-                          ? "ring-2 ring-primary"
-                          : ""
+                        selectedAccountId === account.id ? 'ring-2 ring-primary' : ''
                       }`}
                       onClick={() => handleAccountSelect(account.id)}
                     >
                       <CardContent className="p-4">
                         <h4 className="font-medium mb-1">{account.name}</h4>
                         <p className="text-sm text-muted-foreground mb-2">
-                          {accountType?.name || "Unknown Type"}
+                          {accountType?.name || 'Unknown Type'}
                         </p>
                         <p className="text-xs text-muted-foreground">
-                          {institution?.name || "Unknown Institution"}
+                          {institution?.name || 'Unknown Institution'}
                         </p>
                       </CardContent>
                     </Card>
@@ -1069,32 +979,27 @@ function AccountSelectionStep({
             )}
 
             {/* Empty state - Only show when not loading and no accounts */}
-            {!accountsLoading &&
-              (!filteredAccounts || filteredAccounts.length === 0) && (
-                <div className="text-center py-8 text-muted-foreground">
-                  {searchTerm.trim() ? (
-                    <p>No accounts found matching "{searchTerm}".</p>
-                  ) : (
-                    <p>
-                      No accounts found. Try creating a new account instead.
-                    </p>
-                  )}
-                </div>
-              )}
+            {!accountsLoading && (!filteredAccounts || filteredAccounts.length === 0) && (
+              <div className="text-center py-8 text-muted-foreground">
+                {searchTerm.trim() ? (
+                  <p>No accounts found matching "{searchTerm}".</p>
+                ) : (
+                  <p>No accounts found. Try creating a new account instead.</p>
+                )}
+              </div>
+            )}
           </CardContent>
         </Card>
       )}
 
       {/* Account Creation */}
-      {mode === "create" && (
+      {mode === 'create' && (
         <div className="space-y-6">
           {/* Account Details */}
           <Card>
             <CardHeader>
               <CardTitle>Account Information</CardTitle>
-              <p className="text-sm text-muted-foreground">
-                Provide details for your new account
-              </p>
+              <p className="text-sm text-muted-foreground">Provide details for your new account</p>
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="grid gap-4 md:grid-cols-2">
@@ -1127,9 +1032,7 @@ function AccountSelectionStep({
                     placeholder="Select account type"
                     allowCreate={false}
                   />
-                  <p className="text-xs text-muted-foreground">
-                    What kind of account is this?
-                  </p>
+                  <p className="text-xs text-muted-foreground">What kind of account is this?</p>
                 </div>
               </div>
             </CardContent>
@@ -1139,31 +1042,29 @@ function AccountSelectionStep({
           <Card>
             <CardHeader>
               <CardTitle>Institution</CardTitle>
-              <p className="text-sm text-muted-foreground">
-                Where is this account held?
-              </p>
+              <p className="text-sm text-muted-foreground">Where is this account held?</p>
             </CardHeader>
             <CardContent className="space-y-6">
               {/* Institution Mode Selection */}
               <div className="grid gap-4 md:grid-cols-2">
                 <Card
                   className={`cursor-pointer transition-all hover:shadow-md ${
-                    newAccountData.institutionSelection.mode === "select"
-                      ? "ring-2 ring-primary"
-                      : ""
+                    newAccountData.institutionSelection.mode === 'select'
+                      ? 'ring-2 ring-primary'
+                      : ''
                   }`}
                   onClick={() => {
                     setNewAccountData((prev) => ({
                       ...prev,
                       institutionSelection: {
                         ...prev.institutionSelection,
-                        mode: "select",
-                        selectedInstitutionId: "",
+                        mode: 'select',
+                        selectedInstitutionId: '',
                         newInstitutionData: {
-                          name: "",
-                          typeId: "",
-                          website: "",
-                          description: "",
+                          name: '',
+                          typeId: '',
+                          website: '',
+                          description: '',
                         },
                       },
                     }));
@@ -1182,22 +1083,22 @@ function AccountSelectionStep({
 
                 <Card
                   className={`cursor-pointer transition-all hover:shadow-md ${
-                    newAccountData.institutionSelection.mode === "create"
-                      ? "ring-2 ring-primary"
-                      : ""
+                    newAccountData.institutionSelection.mode === 'create'
+                      ? 'ring-2 ring-primary'
+                      : ''
                   }`}
                   onClick={() => {
                     setNewAccountData((prev) => ({
                       ...prev,
                       institutionSelection: {
                         ...prev.institutionSelection,
-                        mode: "create",
-                        selectedInstitutionId: "",
+                        mode: 'create',
+                        selectedInstitutionId: '',
                         newInstitutionData: {
-                          name: "",
-                          typeId: "",
-                          website: "",
-                          description: "",
+                          name: '',
+                          typeId: '',
+                          website: '',
+                          description: '',
                         },
                       },
                     }));
@@ -1216,15 +1117,11 @@ function AccountSelectionStep({
               </div>
 
               {/* Institution Selection Form */}
-              {newAccountData.institutionSelection.mode === "select" && (
+              {newAccountData.institutionSelection.mode === 'select' && (
                 <div className="space-y-3">
-                  <Label className="text-base font-medium">
-                    Choose Institution
-                  </Label>
+                  <Label className="text-base font-medium">Choose Institution</Label>
                   <InstitutionSelector
-                    value={
-                      newAccountData.institutionSelection.selectedInstitutionId
-                    }
+                    value={newAccountData.institutionSelection.selectedInstitutionId}
                     onValueChange={(value) =>
                       setNewAccountData((prev) => ({
                         ...prev,
@@ -1240,20 +1137,17 @@ function AccountSelectionStep({
                   />
                   {(!institutions || institutions.length === 0) && (
                     <p className="text-sm text-muted-foreground">
-                      No institutions found. Try creating a new institution
-                      instead.
+                      No institutions found. Try creating a new institution instead.
                     </p>
                   )}
                 </div>
               )}
 
               {/* New Institution Creation Form */}
-              {newAccountData.institutionSelection.mode === "create" && (
+              {newAccountData.institutionSelection.mode === 'create' && (
                 <div className="space-y-4 p-4 border rounded-lg bg-muted/30">
                   <div className="space-y-2">
-                    <Label className="text-base font-medium">
-                      Institution Details
-                    </Label>
+                    <Label className="text-base font-medium">Institution Details</Label>
                     <p className="text-xs text-muted-foreground">
                       Provide information about the new institution
                     </p>
@@ -1261,18 +1155,13 @@ function AccountSelectionStep({
 
                   {/* Website Field - Always visible */}
                   <div className="space-y-2">
-                    <Label htmlFor={institutionWebsiteId}>
-                      Institution Website
-                    </Label>
+                    <Label htmlFor={institutionWebsiteId}>Institution Website</Label>
                     <div className="flex gap-2">
                       <Input
                         id={institutionWebsiteId}
                         type="url"
                         placeholder="https://www.example.com"
-                        value={
-                          newAccountData.institutionSelection.newInstitutionData
-                            .website
-                        }
+                        value={newAccountData.institutionSelection.newInstitutionData.website}
                         onChange={(e) =>
                           setNewAccountData((prev) => ({
                             ...prev,
@@ -1298,14 +1187,11 @@ function AccountSelectionStep({
                         }
                         className="h-10"
                       >
-                        {metadataQuery.isFetching
-                          ? "Fetching..."
-                          : "Fetch Info"}
+                        {metadataQuery.isFetching ? 'Fetching...' : 'Fetch Info'}
                       </Button>
                     </div>
                     <p className="text-xs text-muted-foreground">
-                      Enter the institution's website to automatically fetch
-                      information
+                      Enter the institution's website to automatically fetch information
                     </p>
                   </div>
 
@@ -1314,24 +1200,18 @@ function AccountSelectionStep({
                     <>
                       <div className="grid gap-4 md:grid-cols-2">
                         <div className="space-y-2">
-                          <Label htmlFor={institutionNameId}>
-                            Institution Name *
-                          </Label>
+                          <Label htmlFor={institutionNameId}>Institution Name *</Label>
                           <Input
                             id={institutionNameId}
                             placeholder="e.g., Chase Bank, Fidelity Investments"
-                            value={
-                              newAccountData.institutionSelection
-                                .newInstitutionData.name
-                            }
+                            value={newAccountData.institutionSelection.newInstitutionData.name}
                             onChange={(e) =>
                               setNewAccountData((prev) => ({
                                 ...prev,
                                 institutionSelection: {
                                   ...prev.institutionSelection,
                                   newInstitutionData: {
-                                    ...prev.institutionSelection
-                                      .newInstitutionData,
+                                    ...prev.institutionSelection.newInstitutionData,
                                     name: e.target.value,
                                   },
                                 },
@@ -1345,22 +1225,16 @@ function AccountSelectionStep({
                         </div>
 
                         <div className="space-y-2">
-                          <Label htmlFor="new-institution-type">
-                            Institution Type *
-                          </Label>
+                          <Label htmlFor="new-institution-type">Institution Type *</Label>
                           <InstitutionTypeSelector
-                            value={
-                              newAccountData.institutionSelection
-                                .newInstitutionData.typeId
-                            }
+                            value={newAccountData.institutionSelection.newInstitutionData.typeId}
                             onValueChange={(value) =>
                               setNewAccountData((prev) => ({
                                 ...prev,
                                 institutionSelection: {
                                   ...prev.institutionSelection,
                                   newInstitutionData: {
-                                    ...prev.institutionSelection
-                                      .newInstitutionData,
+                                    ...prev.institutionSelection.newInstitutionData,
                                     typeId: value,
                                   },
                                 },
@@ -1378,24 +1252,18 @@ function AccountSelectionStep({
                       </div>
 
                       <div className="space-y-2">
-                        <Label htmlFor={institutionDescriptionId}>
-                          Description
-                        </Label>
+                        <Label htmlFor={institutionDescriptionId}>Description</Label>
                         <Input
                           id={institutionDescriptionId}
                           placeholder="Brief description of the institution"
-                          value={
-                            newAccountData.institutionSelection
-                              .newInstitutionData.description
-                          }
+                          value={newAccountData.institutionSelection.newInstitutionData.description}
                           onChange={(e) =>
                             setNewAccountData((prev) => ({
                               ...prev,
                               institutionSelection: {
                                 ...prev.institutionSelection,
                                 newInstitutionData: {
-                                  ...prev.institutionSelection
-                                    .newInstitutionData,
+                                  ...prev.institutionSelection.newInstitutionData,
                                   description: e.target.value,
                                 },
                               },
@@ -1431,20 +1299,17 @@ function DataEntryStep({
   onChangesDetected?: (hasChanges: boolean) => void;
 }) {
   // Fetch existing holdings for the selected account
-  const selectedAccountId =
-    completeImportData.accountSelection?.selectedAccountId;
-  const { data: allHoldings, isLoading: isLoadingHoldings } =
-    trpc.holdings.getWithDetails.useQuery(undefined, {
-      enabled:
-        !!selectedAccountId &&
-        completeImportData.accountSelection?.mode === "select",
-    });
+  const selectedAccountId = completeImportData.accountSelection?.selectedAccountId;
+  const { data: allHoldings, isLoading: isLoadingHoldings } = trpc.holdings.getWithDetails.useQuery(
+    undefined,
+    {
+      enabled: !!selectedAccountId && completeImportData.accountSelection?.mode === 'select',
+    }
+  );
 
   // Filter holdings for the selected account
   const existingHoldings =
-    allHoldings?.filter(
-      (holding) => holding.account.id === selectedAccountId
-    ) || [];
+    allHoldings?.filter((holding) => holding.account.id === selectedAccountId) || [];
 
   // Initialize holdings data when account changes
   const holdings = useMemo(() => {
@@ -1453,7 +1318,7 @@ function DataEntryStep({
     // If we have an existing account selected and no holdings initialized yet, and query has completed
     if (
       selectedAccountId &&
-      completeImportData.accountSelection?.mode === "select" &&
+      completeImportData.accountSelection?.mode === 'select' &&
       currentHoldings.length < 2 &&
       !isLoadingHoldings
     ) {
@@ -1469,10 +1334,10 @@ function DataEntryStep({
       // Add one empty new holding
       initializedHoldings.push({
         id: `new-${Date.now()}-initial`,
-        tokenValue: "",
-        amount: "",
+        tokenValue: '',
+        amount: '',
         isExisting: false,
-        originalAmount: "",
+        originalAmount: '',
       });
 
       return initializedHoldings;
@@ -1483,10 +1348,10 @@ function DataEntryStep({
       return [
         {
           id: `new-${Date.now()}-initial`,
-          tokenValue: "",
-          amount: "",
+          tokenValue: '',
+          amount: '',
           isExisting: false,
-          originalAmount: "",
+          originalAmount: '',
         },
       ];
     }
@@ -1518,13 +1383,11 @@ function DataEntryStep({
     const existingHoldings = holdings.filter((h) => h.isExisting);
 
     // Check if any new holdings have data
-    const hasNewHoldings = newHoldings.some(
-      (h) => h.tokenValue.trim() && h.amount.trim()
-    );
+    const hasNewHoldings = newHoldings.some((h) => h.tokenValue.trim() && h.amount.trim());
 
     // Check if any existing holdings have changed
     const hasExistingChanges = existingHoldings.some(
-      (h) => h.amount !== h.originalAmount && h.amount.trim() !== ""
+      (h) => h.amount !== h.originalAmount && h.amount.trim() !== ''
     );
 
     return hasNewHoldings || hasExistingChanges;
@@ -1540,8 +1403,8 @@ function DataEntryStep({
       ...holdings,
       {
         id: `new-${Date.now()}-${Math.random()}`,
-        tokenValue: "",
-        amount: "",
+        tokenValue: '',
+        amount: '',
         isExisting: false,
       },
     ];
@@ -1567,10 +1430,8 @@ function DataEntryStep({
   );
 
   const updateHolding = useCallback(
-    (id: string, field: "tokenValue" | "amount", value: string) => {
-      const newHoldings = holdings.map((h) =>
-        h.id === id ? { ...h, [field]: value } : h
-      );
+    (id: string, field: 'tokenValue' | 'amount', value: string) => {
+      const newHoldings = holdings.map((h) => (h.id === id ? { ...h, [field]: value } : h));
       onCompleteDataUpdate({
         dataEntry: {
           ...completeImportData.dataEntry,
@@ -1586,16 +1447,15 @@ function DataEntryStep({
     const newHoldingsList = holdings.filter((h) => !h.isExisting);
 
     switch (completeImportData.method) {
-      case "manual":
+      case 'manual':
         return (
           <div className="space-y-6">
             <div className="text-center">
               <h3 className="text-lg font-semibold mb-2">Manual Data Entry</h3>
               <p className="text-muted-foreground">
-                {selectedAccountId &&
-                completeImportData.accountSelection?.mode === "select"
-                  ? "Edit existing holdings or add new ones to your account."
-                  : "Add holdings to your account by selecting tokens and entering amounts."}
+                {selectedAccountId && completeImportData.accountSelection?.mode === 'select'
+                  ? 'Edit existing holdings or add new ones to your account.'
+                  : 'Add holdings to your account by selecting tokens and entering amounts.'}
               </p>
             </div>
 
@@ -1605,9 +1465,7 @@ function DataEntryStep({
                 <CardHeader>
                   <CardTitle className="flex items-center gap-2">
                     <span>Existing Holdings</span>
-                    <Badge variant="secondary">
-                      {existingHoldingsList.length}
-                    </Badge>
+                    <Badge variant="secondary">{existingHoldingsList.length}</Badge>
                   </CardTitle>
                   <p className="text-sm text-muted-foreground">
                     Edit the amounts of your existing holdings
@@ -1616,8 +1474,7 @@ function DataEntryStep({
                 <CardContent className="space-y-4">
                   {existingHoldingsList.map((holding) => {
                     const hasChanged =
-                      holding.amount !== holding.originalAmount &&
-                      holding.amount.trim() !== "";
+                      holding.amount !== holding.originalAmount && holding.amount.trim() !== '';
                     return (
                       <div
                         key={holding.id}
@@ -1628,7 +1485,7 @@ function DataEntryStep({
                           <TokenSearchableSelector
                             value={holding.tokenValue}
                             onValueChange={(value) =>
-                              updateHolding(holding.id, "tokenValue", value)
+                              updateHolding(holding.id, 'tokenValue', value)
                             }
                             // className="max-w-[calc(100%-8rem)]"
                             placeholder="Search tokens..."
@@ -1643,23 +1500,14 @@ function DataEntryStep({
                             type="number"
                             step="any"
                             value={holding.amount}
-                            onChange={(e) =>
-                              updateHolding(
-                                holding.id,
-                                "amount",
-                                e.target.value
-                              )
-                            }
+                            onChange={(e) => updateHolding(holding.id, 'amount', e.target.value)}
                             placeholder="0.00"
                             disabled={isCreatingHoldings}
-                            className={hasChanged ? "border-blue-500" : ""}
+                            className={hasChanged ? 'border-blue-500' : ''}
                           />
                         </div>
                         {hasChanged && (
-                          <Badge
-                            variant="outline"
-                            className="text-blue-600 border-blue-500"
-                          >
+                          <Badge variant="outline" className="text-blue-600 border-blue-500">
                             Modified
                           </Badge>
                         )}
@@ -1685,17 +1533,12 @@ function DataEntryStep({
               </CardHeader>
               <CardContent className="space-y-4">
                 {newHoldingsList.map((holding) => (
-                  <div
-                    key={holding.id}
-                    className="flex flex-col md:flex-row gap-4 md:items-end"
-                  >
+                  <div key={holding.id} className="flex flex-col md:flex-row gap-4 md:items-end">
                     <div className="flex-1">
                       <Label htmlFor={`token-${holding.id}`}>Token</Label>
                       <TokenSearchableSelector
                         value={holding.tokenValue}
-                        onValueChange={(value) =>
-                          updateHolding(holding.id, "tokenValue", value)
-                        }
+                        onValueChange={(value) => updateHolding(holding.id, 'tokenValue', value)}
                         // className="max-w-[calc(100%-8rem)]"
                         placeholder="Search tokens..."
                         disabled={isCreatingHoldings}
@@ -1709,9 +1552,7 @@ function DataEntryStep({
                         type="number"
                         step="any"
                         value={holding.amount}
-                        onChange={(e) =>
-                          updateHolding(holding.id, "amount", e.target.value)
-                        }
+                        onChange={(e) => updateHolding(holding.id, 'amount', e.target.value)}
                         placeholder="0.00"
                         disabled={isCreatingHoldings}
                       />
@@ -1745,14 +1586,14 @@ function DataEntryStep({
           </div>
         );
 
-      case "screenshots":
+      case 'screenshots':
         return (
           <div className="space-y-6">
             <div className="text-center">
               <h3 className="text-lg font-semibold mb-2">Screenshot Upload</h3>
               <p className="text-muted-foreground">
-                Upload screenshots of your financial statements and we'll
-                extract the data automatically.
+                Upload screenshots of your financial statements and we'll extract the data
+                automatically.
               </p>
             </div>
 
@@ -1760,24 +1601,20 @@ function DataEntryStep({
             <Card>
               <CardContent className="p-8 text-center text-muted-foreground">
                 <p>Screenshot upload and parsing coming soon...</p>
-                <p className="text-sm mt-2">
-                  This will use AI to extract data from images.
-                </p>
+                <p className="text-sm mt-2">This will use AI to extract data from images.</p>
               </CardContent>
             </Card>
           </div>
         );
 
-      case "wallet":
+      case 'wallet':
         return (
           <div className="space-y-6">
             <div className="text-center">
-              <h3 className="text-lg font-semibold mb-2">
-                Cryptocurrency Wallet Import
-              </h3>
+              <h3 className="text-lg font-semibold mb-2">Cryptocurrency Wallet Import</h3>
               <p className="text-muted-foreground">
-                Connect your cryptocurrency wallet to automatically import your
-                holdings and transaction history.
+                Connect your cryptocurrency wallet to automatically import your holdings and
+                transaction history.
               </p>
             </div>
 
