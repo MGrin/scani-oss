@@ -23,7 +23,7 @@ dist-ssr
 *.sw?
 
 # Generated files
-public/icons/*.png
+# public/icons/*.png
 !public/icons/.gitkeep
 
 # Test coverage
