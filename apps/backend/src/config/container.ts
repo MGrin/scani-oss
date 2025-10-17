@@ -9,7 +9,6 @@ import '../infrastructure/repositories/TokenPriceRepository';
 import '../infrastructure/repositories/InstitutionRepository';
 import '../infrastructure/repositories/AccountRepository';
 import '../infrastructure/repositories/HoldingRepository';
-import '../infrastructure/repositories/TransactionRepository';
 import '../infrastructure/repositories/EnumRepositories';
 import '../infrastructure/repositories/BaseRepository';
 
@@ -20,7 +19,6 @@ import '../application/services/TokenPriceService';
 import '../application/services/InstitutionService';
 import '../application/services/AccountService';
 import '../application/services/HoldingService';
-import '../application/services/TransactionService';
 import '../application/services/PricingService';
 import '../application/services/PortfolioValuationService';
 import '../application/services/TokenValidationService';
@@ -43,11 +41,11 @@ export function initializeContainer(): void {
   containerLogger.info({}, '✓ DI Container initialized with all services and repositories');
   containerLogger.debug(
     {},
-    'Registered services: User, Token, TokenPrice, Institution, Account, Holding, Transaction, Pricing, PortfolioValuation, TokenValidation, Enums'
+    'Registered services: User, Token, TokenPrice, Institution, Account, Holding, Pricing, PortfolioValuation, TokenValidation, Enums'
   );
   containerLogger.debug(
     {},
-    'Registered repositories: User, Token, TokenPrice, Institution, Account, Holding, Transaction, Enums'
+    'Registered repositories: User, Token, TokenPrice, Institution, Account, Holding, Enums'
   );
 }
 

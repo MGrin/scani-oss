@@ -1,22 +1,16 @@
-import { Plus } from "lucide-react";
-import { Link } from "react-router-dom";
-import { Button } from "@/components/ui/button";
+import { Plus } from 'lucide-react';
+import { Link } from 'react-router-dom';
+import { Button } from '@/components/ui/button';
 
 interface AddDataButtonProps {
-  variant?:
-    | "default"
-    | "outline"
-    | "secondary"
-    | "ghost"
-    | "link"
-    | "destructive";
-  size?: "default" | "sm" | "lg" | "icon";
+  variant?: 'default' | 'outline' | 'secondary' | 'ghost' | 'link' | 'destructive';
+  size?: 'default' | 'sm' | 'lg' | 'icon';
   className?: string;
 }
 
 export function AddDataButton({
-  variant = "default",
-  size = "default",
+  variant = 'default',
+  size = 'default',
   className,
 }: AddDataButtonProps) {
   return (
@@ -32,9 +26,9 @@ export function AddDataButton({
 // Helper function to get AddDataButton config for PageHeader
 export function getAddDataAction() {
   return {
-    label: "Add Data",
+    label: 'Add Data',
     onClick: () => {
-      window.location.href = "/add-data";
+      window.location.href = '/add-data';
     },
     icon: <Plus className="h-4 w-4" />,
   };

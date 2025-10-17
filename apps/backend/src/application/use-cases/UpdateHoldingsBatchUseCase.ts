@@ -1,8 +1,8 @@
-import Container, { Service } from "typedi";
-import { createComponentLogger } from "../../utils/logger";
-import { UpdateHoldingUseCase } from "./UpdateHoldingUseCase";
+import Container, { Service } from 'typedi';
+import { createComponentLogger } from '../../utils/logger';
+import { UpdateHoldingUseCase } from './UpdateHoldingUseCase';
 
-const logger = createComponentLogger("use-case:update-holdings-batch");
+const logger = createComponentLogger('use-case:update-holdings-batch');
 
 export interface HoldingUpdate {
   id: string;
@@ -31,7 +31,6 @@ export interface UpdateHoldingsBatchResult {
  * - Updates balance and lastUpdated for multiple holdings
  * - Uses "continue on error" strategy - one failure doesn't block others
  * - Returns detailed results per holding plus summary statistics
- * - Does NOT use database transactions (intentional for resilience)
  */
 @Service()
 export class UpdateHoldingsBatchUseCase {
@@ -46,7 +45,7 @@ export class UpdateHoldingsBatchUseCase {
         userId,
         holdingsCount: input.holdings.length,
       },
-      "Updating holdings in batch"
+      'Updating holdings in batch'
     );
 
     const results = [];
@@ -75,12 +74,12 @@ export class UpdateHoldingsBatchUseCase {
             error,
             holdingId: holdingUpdate.id,
           },
-          "Failed to update holding"
+          'Failed to update holding'
         );
         results.push({
           id: holdingUpdate.id,
           success: false,
-          error: error instanceof Error ? error.message : "Unknown error",
+          error: error instanceof Error ? error.message : 'Unknown error',
         });
         failureCount++;
       }
@@ -92,7 +91,7 @@ export class UpdateHoldingsBatchUseCase {
         totalUpdated: successCount,
         totalFailed: failureCount,
       },
-      "Batch update completed"
+      'Batch update completed'
     );
 
     return {

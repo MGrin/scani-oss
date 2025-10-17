@@ -1,4 +1,4 @@
-import { z } from "zod";
+import { z } from 'zod';
 
 // =============================================================================
 // ENUMS & CONSTANTS
@@ -7,30 +7,15 @@ import { z } from "zod";
 // Institution types - Now dynamic, fetched from database
 // Note: For UI-specific features like icons/colors, use the institution type code
 // but keep these as minimal as possible and fetch types from the API
-export const InstitutionTypeSchema = z
-  .string()
-  .min(1, "Institution type is required");
+export const InstitutionTypeSchema = z.string().min(1, 'Institution type is required');
 
 // Account types - Now dynamic, fetched from database
 // Note: For UI-specific features like icons/colors, use the account type code
 // but keep these as minimal as possible and fetch types from the API
-export const AccountTypeSchema = z.string().min(1, "Account type is required");
-
-// Transaction types
-export const TransactionType = z.enum([
-  "deposit", // Money in
-  "withdrawal", // Money out
-  "transfer", // Between accounts
-  "buy", // Purchase asset
-  "sell", // Sell asset
-  "dividend", // Dividend payment
-  "interest", // Interest earned
-  "fee", // Fee payment
-  "other",
-]);
+export const AccountTypeSchema = z.string().min(1, 'Account type is required');
 
 // Token types - now dynamic, fetched from database
-export const TokenTypeSchema = z.string().min(1, "Token type is required");
+export const TokenTypeSchema = z.string().min(1, 'Token type is required');
 
 // =============================================================================
 // CORE SCHEMAS
@@ -40,7 +25,7 @@ export const TokenTypeSchema = z.string().min(1, "Token type is required");
 export const UserSchema = z.object({
   id: z.string(),
   email: z.string().email(),
-  name: z.string().min(1, "Name cannot be empty"),
+  name: z.string().min(1, 'Name cannot be empty'),
   avatar: z.string().optional(),
   baseCurrencyId: z.string().uuid().nullable(),
   baseCurrency: z
@@ -57,8 +42,8 @@ export const UserSchema = z.object({
 // Token schema - represents any tradeable asset
 export const TokenSchema = z.object({
   id: z.string(),
-  symbol: z.string().min(1, "Symbol cannot be empty"), // BTC, EUR, AAPL, etc.
-  name: z.string().min(1, "Name cannot be empty"), // Bitcoin, US Dollar, Apple Inc., etc.
+  symbol: z.string().min(1, 'Symbol cannot be empty'), // BTC, EUR, AAPL, etc.
+  name: z.string().min(1, 'Name cannot be empty'), // Bitcoin, US Dollar, Apple Inc., etc.
   type: TokenTypeSchema,
   decimals: z.number().int().min(0).max(18).default(2), // Precision
   iconUrl: z.string().optional(),
@@ -68,32 +53,17 @@ export const TokenSchema = z.object({
 });
 
 // Enhanced name validation helper with comprehensive checks
-const createNameValidation = (
-  entityType: string,
-  maxLength = 50,
-  allowSpecialChars = false
-) =>
+const createNameValidation = (entityType: string, maxLength = 50, allowSpecialChars = false) =>
   z
     .string()
     .trim()
     .min(1, `${entityType} name cannot be empty`)
-    .max(
-      maxLength,
-      `${entityType} name must be at most ${maxLength} characters`
-    )
-    .refine(
-      (val) => val.trim().length > 0,
-      `${entityType} name cannot contain only whitespace`
-    )
-    .refine(
-      (val) => !/^\s*$/.test(val),
-      `${entityType} name cannot be blank or whitespace only`
-    )
+    .max(maxLength, `${entityType} name must be at most ${maxLength} characters`)
+    .refine((val) => val.trim().length > 0, `${entityType} name cannot contain only whitespace`)
+    .refine((val) => !/^\s*$/.test(val), `${entityType} name cannot be blank or whitespace only`)
     .refine(
       (val) =>
-        allowSpecialChars
-          ? /^[\x20-\x7E]+$/.test(val)
-          : /^[a-zA-Z0-9\s\-_.,()&']+$/.test(val),
+        allowSpecialChars ? /^[\x20-\x7E]+$/.test(val) : /^[a-zA-Z0-9\s\-_.,()&']+$/.test(val),
       allowSpecialChars
         ? `${entityType} name must contain only printable characters`
         : `${entityType} name can only contain letters, numbers, spaces, and common punctuation`
@@ -108,27 +78,24 @@ const createNameValidation = (
       }
       return true;
     }, `${entityType} name cannot contain control characters`)
-    .refine(
-      (val) => val.trim() === val,
-      `${entityType} name cannot start or end with whitespace`
-    )
+    .refine((val) => val.trim() === val, `${entityType} name cannot start or end with whitespace`)
     .transform((val) => val.trim());
 
 // Institution name validation helper
-const trimmedNonEmptyString = createNameValidation("Institution", 50, true);
+const trimmedNonEmptyString = createNameValidation('Institution', 50, true);
 
 // Enhanced website validation helper with comprehensive URL checking
 const websiteValidation = z
   .string()
   .trim()
-  .max(500, "Website URL must be at most 500 characters")
+  .max(500, 'Website URL must be at most 500 characters')
   .refine((val) => {
-    if (!val || val === "") return true;
+    if (!val || val === '') return true;
     // Must start with http:// or https://
     return /^https?:\/\/.+/i.test(val);
-  }, "Website URL must start with http:// or https://")
+  }, 'Website URL must start with http:// or https://')
   .refine((val) => {
-    if (!val || val === "") return true;
+    if (!val || val === '') return true;
     try {
       const url = new URL(val);
       // Check for valid domain structure
@@ -138,9 +105,9 @@ const websiteValidation = z
     } catch {
       return false;
     }
-  }, "Please enter a valid website URL")
+  }, 'Please enter a valid website URL')
   .refine((val) => {
-    if (!val || val === "") return true;
+    if (!val || val === '') return true;
     // Prevent localhost, private IPs, and suspicious domains
     const suspiciousPatterns = [
       /localhost/i,
@@ -153,20 +120,20 @@ const websiteValidation = z
       /data:/i,
     ];
     return !suspiciousPatterns.some((pattern) => pattern.test(val));
-  }, "Website URL appears to be invalid or suspicious")
+  }, 'Website URL appears to be invalid or suspicious')
   .optional()
-  .or(z.literal(""));
+  .or(z.literal(''));
 
 // Description validation helper
 const descriptionValidation = z
   .string()
-  .max(300, "Description must be at most 300 characters")
+  .max(300, 'Description must be at most 300 characters')
   .optional();
 
 // Institution schema
 export const InstitutionSchema = z.object({
   id: z.string(),
-  userId: z.string().min(1, "User ID cannot be empty"),
+  userId: z.string().min(1, 'User ID cannot be empty'),
   name: trimmedNonEmptyString,
   type: InstitutionTypeSchema,
   description: descriptionValidation,
@@ -178,19 +145,19 @@ export const InstitutionSchema = z.object({
 });
 
 // Account name validation helper
-const accountNameValidation = createNameValidation("Account", 100, false);
+const accountNameValidation = createNameValidation('Account', 100, false);
 
 // Account description validation helper
 const accountDescriptionValidation = z
   .string()
-  .max(500, "Description must be at most 500 characters")
+  .max(500, 'Description must be at most 500 characters')
   .optional()
-  .or(z.literal(""));
+  .or(z.literal(''));
 
 // Account schema
 export const AccountSchema = z.object({
   id: z.string(),
-  institutionId: z.string().min(1, "Institution ID cannot be empty"),
+  institutionId: z.string().min(1, 'Institution ID cannot be empty'),
   name: accountNameValidation,
   type: AccountTypeSchema,
   description: accountDescriptionValidation,
@@ -205,8 +172,8 @@ const createMonetaryValidation = (
   fieldName: string,
   {
     allowNegative = false,
-    minValue = "-1000000000000000", // 1e15 as string
-    maxValue = "1000000000000000", // 1e15 as string
+    minValue = '-1000000000000000', // 1e15 as string
+    maxValue = '1000000000000000', // 1e15 as string
     maxDecimals = 18,
     required = true,
   } = {}
@@ -231,7 +198,7 @@ const createMonetaryValidation = (
     }, `${fieldName} cannot exceed ${maxValue}`)
     .refine((val) => {
       // Check decimal places
-      const decimalPlaces = (val.split(".")[1] || "").length;
+      const decimalPlaces = (val.split('.')[1] || '').length;
       return decimalPlaces <= maxDecimals;
     }, `${fieldName} cannot have more than ${maxDecimals} decimal places`);
 
@@ -250,7 +217,7 @@ export const TokenPriceSchema = z.object({
   id: z.string(),
   tokenId: z.string(),
   baseTokenId: z.string(), // Usually a fiat currency
-  price: createMonetaryValidation("Price", { allowNegative: false }),
+  price: createMonetaryValidation('Price', { allowNegative: false }),
   timestamp: z.date(),
   source: z.string().optional(), // 'coinbase', 'yahoo', etc.
   createdAt: z.date(),
@@ -259,34 +226,11 @@ export const TokenPriceSchema = z.object({
 // Holding schema - represents a specific token balance in an account
 export const HoldingSchema = z.object({
   id: z.string(),
-  accountId: z.string().min(1, "Account ID cannot be empty"),
-  tokenId: z.string().min(1, "Token ID cannot be empty"),
-  balance: createMonetaryValidation("Balance", { allowNegative: true }), // Can be negative for short positions
+  accountId: z.string().min(1, 'Account ID cannot be empty'),
+  tokenId: z.string().min(1, 'Token ID cannot be empty'),
+  balance: createMonetaryValidation('Balance', { allowNegative: true }), // Can be negative for short positions
   lastUpdated: z.date(),
   createdAt: z.date(),
-});
-
-// Transaction schema with enhanced monetary validation
-export const TransactionSchema = z.object({
-  id: z.string(),
-  holdingId: z.string(),
-  type: TransactionType,
-  amount: createMonetaryValidation("Amount", { allowNegative: true }), // Positive or negative based on type
-  fee: createMonetaryValidation("Fee", { allowNegative: false }).default("0"),
-  feeTokenId: z.string().optional(), // Currency of the fee
-  description: z
-    .string()
-    .trim()
-    .max(500, "Description must be at most 500 characters")
-    .optional(),
-  reference: z
-    .string()
-    .trim()
-    .max(100, "Reference must be at most 100 characters")
-    .optional(), // External transaction ID
-  timestamp: z.date(),
-  createdAt: z.date(),
-  updatedAt: z.date(),
 });
 
 // =============================================================================
@@ -327,19 +271,13 @@ export const CreateHoldingSchema = HoldingSchema.omit({
   createdAt: true,
 });
 
-export const CreateTransactionSchema = TransactionSchema.omit({
-  id: true,
-  createdAt: true,
-  updatedAt: true,
-});
-
 // =============================================================================
 // UPDATE SCHEMAS
 // =============================================================================
 
 // UpdateUserSchema allows updating only specific fields: name, avatar, baseCurrencyId
 export const UpdateUserSchema = z.object({
-  name: z.string().min(1, "Name cannot be empty").optional(),
+  name: z.string().min(1, 'Name cannot be empty').optional(),
   avatar: z.string().optional(),
   baseCurrencyId: z.string().uuid().optional(),
 });
@@ -347,7 +285,6 @@ export const UpdateTokenSchema = CreateTokenSchema.partial();
 export const UpdateInstitutionSchema = CreateInstitutionSchema.partial();
 export const UpdateAccountSchema = CreateAccountSchema.partial();
 export const UpdateHoldingSchema = CreateHoldingSchema.partial();
-export const UpdateTransactionSchema = CreateTransactionSchema.partial();
 
 // =============================================================================
 // TYPESCRIPT TYPES
@@ -359,7 +296,6 @@ export type TokenPrice = z.infer<typeof TokenPriceSchema>;
 export type Institution = z.infer<typeof InstitutionSchema>;
 export type Account = z.infer<typeof AccountSchema>;
 export type Holding = z.infer<typeof HoldingSchema>;
-export type Transaction = z.infer<typeof TransactionSchema>;
 
 export type CreateUser = z.infer<typeof CreateUserSchema>;
 export type CreateToken = z.infer<typeof CreateTokenSchema>;
@@ -367,14 +303,12 @@ export type CreateTokenPrice = z.infer<typeof CreateTokenPriceSchema>;
 export type CreateInstitution = z.infer<typeof CreateInstitutionSchema>;
 export type CreateAccount = z.infer<typeof CreateAccountSchema>;
 export type CreateHolding = z.infer<typeof CreateHoldingSchema>;
-export type CreateTransaction = z.infer<typeof CreateTransactionSchema>;
 
 export type UpdateUser = z.infer<typeof UpdateUserSchema>;
 export type UpdateToken = z.infer<typeof UpdateTokenSchema>;
 export type UpdateInstitution = z.infer<typeof UpdateInstitutionSchema>;
 export type UpdateAccount = z.infer<typeof UpdateAccountSchema>;
 export type UpdateHolding = z.infer<typeof UpdateHoldingSchema>;
-export type UpdateTransaction = z.infer<typeof UpdateTransactionSchema>;
 
 // Holding with full details (used for displaying holdings with token/account/institution info)
 export interface HoldingWithDetails {
@@ -414,26 +348,6 @@ export interface HoldingWithDetails {
 }
 
 // =============================================================================
-// LEGACY TYPES (for backward compatibility)
-// =============================================================================
-
-// Keep the old TransactionCategory for backward compatibility if needed
-export const TransactionCategory = z.enum([
-  "food",
-  "transportation",
-  "housing",
-  "healthcare",
-  "entertainment",
-  "shopping",
-  "utilities",
-  "income",
-  "investment",
-  "other",
-]);
-
-export type TransactionCategoryType = z.infer<typeof TransactionCategory>;
-
-// =============================================================================
 // WALLET & BLOCKCHAIN TYPES
 // =============================================================================
 
@@ -443,7 +357,7 @@ export type TransactionCategoryType = z.infer<typeof TransactionCategory>;
 export const WalletMetadataSchema = z.object({
   walletAddress: z
     .string()
-    .min(1, "Wallet address is required")
+    .min(1, 'Wallet address is required')
     .refine((addr) => {
       // EVM addresses (0x + 40 hex chars)
       if (/^0x[a-fA-F0-9]{40}$/.test(addr)) return true;
@@ -455,25 +369,25 @@ export const WalletMetadataSchema = z.object({
       if (/^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(addr)) return true;
       // Add more formats as needed
       return false;
-    }, "Invalid wallet address format"),
+    }, 'Invalid wallet address format'),
   addressType: z
     .enum([
-      "evm",
-      "bitcoin",
-      "bitcoin-cash",
-      "litecoin",
-      "tron",
-      "solana",
-      "algorand",
-      "aptos",
-      "cardano",
-      "cosmos",
-      "hedera",
-      "near",
-      "polkadot",
-      "ripple",
-      "stellar",
-      "sui",
+      'evm',
+      'bitcoin',
+      'bitcoin-cash',
+      'litecoin',
+      'tron',
+      'solana',
+      'algorand',
+      'aptos',
+      'cardano',
+      'cosmos',
+      'hedera',
+      'near',
+      'polkadot',
+      'ripple',
+      'stellar',
+      'sui',
     ])
     .optional(), // Detected address type (all supported chains)
   chainIds: z.array(z.number().int()).optional(), // Chains to track (can include negative IDs for non-EVM)
@@ -487,7 +401,7 @@ export type WalletMetadata = z.infer<typeof WalletMetadataSchema>;
  * Schema for creating/updating wallet accounts
  */
 export const CreateWalletAccountSchema = z.object({
-  institutionId: z.string().uuid("Invalid institution ID"),
+  institutionId: z.string().uuid('Invalid institution ID'),
   name: accountNameValidation,
   description: accountDescriptionValidation,
   walletAddress: WalletMetadataSchema.shape.walletAddress,

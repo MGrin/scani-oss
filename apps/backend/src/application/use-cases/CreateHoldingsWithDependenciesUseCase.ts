@@ -1,11 +1,12 @@
 import Container, { Service } from "typedi";
-import { createComponentLogger } from "../../utils/logger";
-import { BatchOperationsService } from "../services";
-import { CreateHoldingUseCase } from "./CreateHoldingUseCase";
 import {
   AccountTypeRepository,
   InstitutionTypeRepository,
 } from "../../infrastructure/repositories/EnumRepositories";
+import { createComponentLogger } from "../../utils/logger";
+import { BatchOperationsService } from "../services";
+import { CreateHoldingUseCase } from "./CreateHoldingUseCase";
+import type { schema } from "../../infrastructure/database/connection";
 
 const logger = createComponentLogger(
   "use-case:create-holdings-with-dependencies"
@@ -118,8 +119,9 @@ export class CreateHoldingsWithDependenciesUseCase {
 
   async execute(
     input: CreateHoldingsWithDependenciesInput,
-    userId: string
+    user: typeof schema.users.$inferSelect
   ): Promise<CreateHoldingsWithDependenciesResult> {
+    const userId = user.id;
     logger.debug(
       {
         userId,
@@ -307,7 +309,7 @@ export class CreateHoldingsWithDependenciesUseCase {
             balance: holdingInput.balance,
             lastUpdated: holdingInput.lastUpdated,
           },
-          userId
+          user
         );
 
         logger.info(

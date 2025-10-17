@@ -17,7 +17,7 @@ export interface ConfirmationModalOptions {
   title: string;
   description: string;
   entityName?: string;
-  entityType: 'institution' | 'account' | 'holding' | 'transaction';
+  entityType: 'institution' | 'account' | 'holding';
   variant?: 'danger' | 'warning' | 'info';
   confirmText?: string;
   cancelText?: string;

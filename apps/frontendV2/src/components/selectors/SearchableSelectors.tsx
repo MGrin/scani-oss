@@ -1,11 +1,11 @@
-import { Coins, CreditCard, Plus } from "lucide-react";
-import { Combobox } from "@/components/ui/combobox";
+import { Coins, CreditCard, Plus } from 'lucide-react';
+import { Combobox } from '@/components/ui/combobox';
 import {
   getAccountTypeIcon,
   getFaviconUrl,
   getInstitutionTypeIcon,
   getTokenTypeIcon,
-} from "@/lib/icons";
+} from '@/lib/icons';
 
 // Base Searchable Select Component using Combobox
 interface SearchableSelectProps {
@@ -29,7 +29,7 @@ interface SearchableSelectProps {
   isActive?: boolean; // Whether the filter has a non-default value
   popoverWidth?: string;
   compact?: boolean;
-  buttonSize?: "default" | "sm";
+  buttonSize?: 'default' | 'sm';
   displayLabel?: string;
   disabled?: boolean;
 }
@@ -39,7 +39,7 @@ export function SearchableSelect({
   onValueChange,
   placeholder,
   items,
-  emptyMessage = "No items found",
+  emptyMessage = 'No items found',
   newItemLabel,
   newItemValue,
   id,
@@ -47,7 +47,7 @@ export function SearchableSelect({
   isActive = false,
   popoverWidth,
   compact = false,
-  buttonSize = "default",
+  buttonSize = 'default',
   displayLabel,
   disabled = false,
 }: SearchableSelectProps) {
@@ -76,8 +76,8 @@ export function SearchableSelect({
           /* debounced in Combobox; consumers can pass-through later */
         }}
         className={`w-full ${
-          isActive ? "border-black border-2" : "border border-input"
-        } ${className || ""}`}
+          isActive ? 'border-black border-2' : 'border border-input'
+        } ${className || ''}`}
         popoverWidth={popoverWidth}
         compact={compact}
         buttonSize={buttonSize}
@@ -105,7 +105,7 @@ export function TokenTypeSelector({
   value,
   onValueChange,
   tokenTypes,
-  placeholder = "Choose token type...",
+  placeholder = 'Choose token type...',
 }: TokenTypeSelectorProps) {
   const tokenTypeOptions =
     tokenTypes?.map((type) => ({
@@ -115,7 +115,7 @@ export function TokenTypeSelector({
       subtitle: type.description || undefined,
     })) || [];
 
-  const isActive = value !== "" && value !== "all";
+  const isActive = value !== '' && value !== 'all';
   return (
     <SearchableSelect
       value={value}
@@ -151,7 +151,7 @@ export function AccountFilterSelector({
   onValueChange,
   accounts,
   institutions,
-  placeholder = "Filter by account...",
+  placeholder = 'Filter by account...',
   includeAllOption = false,
 }: AccountFilterSelectorProps) {
   // Create institution lookup map
@@ -178,8 +178,8 @@ export function AccountFilterSelector({
   const allOptions = includeAllOption
     ? [
         {
-          value: "all",
-          label: "All Accounts",
+          value: 'all',
+          label: 'All Accounts',
           icon: CreditCard,
         },
         ...accountOptions,
@@ -193,7 +193,7 @@ export function AccountFilterSelector({
       placeholder={placeholder}
       items={allOptions}
       emptyMessage="No accounts found."
-      isActive={value !== ""}
+      isActive={value !== ''}
     />
   );
 }
@@ -218,7 +218,7 @@ export function TokenFilterSelector({
   value,
   onValueChange,
   tokens,
-  placeholder = "Filter by token...",
+  placeholder = 'Filter by token...',
   includeAllOption = false,
 }: TokenFilterSelectorProps) {
   const tokenOptions =
@@ -226,22 +226,16 @@ export function TokenFilterSelector({
       value: token.id,
       label: token.symbol,
       icon: token.iconUrl
-        ? () => (
-            <img
-              src={token.iconUrl!}
-              alt={token.symbol}
-              className="w-4 h-4 rounded-full"
-            />
-          )
-        : getTokenTypeIcon(token.type || "unknown"),
+        ? () => <img src={token.iconUrl!} alt={token.symbol} className="w-4 h-4 rounded-full" />
+        : getTokenTypeIcon(token.type || 'unknown'),
       subtitle: token.name,
     })) || [];
 
   const allOptions = includeAllOption
-    ? [{ value: "all", label: "All Tokens", icon: Coins }, ...tokenOptions]
+    ? [{ value: 'all', label: 'All Tokens', icon: Coins }, ...tokenOptions]
     : tokenOptions;
 
-  const isActive = value !== "";
+  const isActive = value !== '';
   return (
     <SearchableSelect
       value={value}
@@ -273,7 +267,7 @@ export function AccountTypeSelector({
   value,
   onValueChange,
   accountTypes,
-  placeholder = "Choose account type...",
+  placeholder = 'Choose account type...',
   allowCreate = true,
   onCreateNew,
 }: AccountTypeSelectorProps) {
@@ -286,9 +280,9 @@ export function AccountTypeSelector({
     })) || [];
 
   const handleValueChange = (newValue: string) => {
-    if (newValue === "__create_new__" && onCreateNew) {
+    if (newValue === '__create_new__' && onCreateNew) {
       // Prompt user for new account type name
-      const name = prompt("Enter the name for the new account type:");
+      const name = prompt('Enter the name for the new account type:');
       if (name?.trim()) {
         onCreateNew(name.trim());
       }
@@ -304,8 +298,8 @@ export function AccountTypeSelector({
       placeholder={placeholder}
       items={accountTypeOptions}
       emptyMessage="No account types found."
-      newItemLabel={allowCreate ? "Create new account type" : undefined}
-      newItemValue={allowCreate ? "__create_new__" : undefined}
+      newItemLabel={allowCreate ? 'Create new account type' : undefined}
+      newItemValue={allowCreate ? '__create_new__' : undefined}
     />
   );
 }
@@ -330,7 +324,7 @@ export function InstitutionSelector({
   value,
   onValueChange,
   institutions,
-  placeholder = "Choose institution...",
+  placeholder = 'Choose institution...',
   allowCreate = true,
   onCreateNew,
 }: InstitutionSelectorProps) {
@@ -342,23 +336,17 @@ export function InstitutionSelector({
         value: inst.id,
         label: inst.name,
         icon: faviconUrl
-          ? () => (
-              <img
-                src={faviconUrl}
-                alt={inst.name}
-                className="w-4 h-4 rounded-sm"
-              />
-            )
-          : getInstitutionTypeIcon(inst.typeCode || "other"),
+          ? () => <img src={faviconUrl} alt={inst.name} className="w-4 h-4 rounded-sm" />
+          : getInstitutionTypeIcon(inst.typeCode || 'other'),
         subtitle: inst.typeName || undefined,
         isInstitution: true,
       };
     }) || [];
 
   const handleValueChange = (newValue: string) => {
-    if (newValue === "__create_new__" && onCreateNew) {
+    if (newValue === '__create_new__' && onCreateNew) {
       // Prompt user for new institution name
-      const name = prompt("Enter the name for the new institution:");
+      const name = prompt('Enter the name for the new institution:');
       if (name?.trim()) {
         onCreateNew(name.trim());
       }
@@ -374,8 +362,8 @@ export function InstitutionSelector({
       placeholder={placeholder}
       items={institutionOptions}
       emptyMessage="No institutions found."
-      newItemLabel={allowCreate ? "Create new institution" : undefined}
-      newItemValue={allowCreate ? "__create_new__" : undefined}
+      newItemLabel={allowCreate ? 'Create new institution' : undefined}
+      newItemValue={allowCreate ? '__create_new__' : undefined}
     />
   );
 }
@@ -400,7 +388,7 @@ export function InstitutionTypeSelector({
   value,
   onValueChange,
   institutionTypes,
-  placeholder = "Choose institution type...",
+  placeholder = 'Choose institution type...',
   allowCreate = true,
   onCreateNew,
   disabled = false,
@@ -414,9 +402,9 @@ export function InstitutionTypeSelector({
     })) || [];
 
   const handleValueChange = (newValue: string) => {
-    if (newValue === "__create_new__" && onCreateNew) {
+    if (newValue === '__create_new__' && onCreateNew) {
       // Prompt user for new institution type name
-      const name = prompt("Enter the name for the new institution type:");
+      const name = prompt('Enter the name for the new institution type:');
       if (name?.trim()) {
         onCreateNew(name.trim());
       }
@@ -432,8 +420,8 @@ export function InstitutionTypeSelector({
       placeholder={placeholder}
       items={institutionTypeOptions}
       emptyMessage="No institution types found."
-      newItemLabel={allowCreate ? "Create new institution type" : undefined}
-      newItemValue={allowCreate ? "__create_new__" : undefined}
+      newItemLabel={allowCreate ? 'Create new institution type' : undefined}
+      newItemValue={allowCreate ? '__create_new__' : undefined}
       disabled={disabled}
     />
   );

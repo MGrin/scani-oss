@@ -1,18 +1,18 @@
-import { Link, useParams } from "react-router-dom";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { MoneyDisplay } from "@/components/ui/money-display";
-import { PageHeader } from "@/components/ui/page-header";
-import { Skeleton } from "@/components/ui/skeleton";
-import { SummaryCard } from "@/components/ui/summary-card";
-import { trpc } from "@/lib/trpc";
-import { createCurrencyToken } from "@/lib/utils";
+import { Link, useParams } from 'react-router-dom';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { MoneyDisplay } from '@/components/ui/money-display';
+import { PageHeader } from '@/components/ui/page-header';
+import { Skeleton } from '@/components/ui/skeleton';
+import { SummaryCard } from '@/components/ui/summary-card';
+import { trpc } from '@/lib/trpc';
+import { createCurrencyToken } from '@/lib/utils';
 
 export function InstitutionDetail() {
   const { id } = useParams<{ id: string }>();
 
   // Fetch base currency
   const { data: baseCurrency } = trpc.users.getBaseCurrency.useQuery();
-  const currency = baseCurrency?.symbol || "USD";
+  const currency = baseCurrency?.symbol || 'USD';
   const baseCurrencyToken = createCurrencyToken(currency);
 
   // Fetch institution data
@@ -24,8 +24,7 @@ export function InstitutionDetail() {
 
   // Fetch accounts for this institution
   const { data: allAccounts } = trpc.accounts.getAll.useQuery();
-  const institutionAccounts =
-    allAccounts?.filter((account) => account.institutionId === id) || [];
+  const institutionAccounts = allAccounts?.filter((account) => account.institutionId === id) || [];
 
   // Fetch holdings for all accounts in this institution
   const { data: allHoldings } = trpc.holdings.getWithDetails.useQuery();
@@ -82,10 +81,7 @@ export function InstitutionDetail() {
           <CardContent>
             <div className="space-y-4">
               {[1, 2, 3, 4].map((num) => (
-                <div
-                  key={num}
-                  className="flex items-center justify-between p-4 border rounded-lg"
-                >
+                <div key={num} className="flex items-center justify-between p-4 border rounded-lg">
                   <div className="flex items-center gap-3">
                     <Skeleton className="h-8 w-8 rounded-full" />
                     <div>
@@ -121,31 +117,21 @@ export function InstitutionDetail() {
     const accountHoldings = institutionHoldings.filter(
       (holding) => holding.account.id === account.id
     );
-    return (
-      sum +
-      accountHoldings.reduce((accSum, holding) => accSum + holding.value, 0)
-    );
+    return sum + accountHoldings.reduce((accSum, holding) => accSum + holding.value, 0);
   }, 0);
 
-  const institutionType = institutionTypes?.find(
-    (type) => type.id === institution.typeId
-  );
+  const institutionType = institutionTypes?.find((type) => type.id === institution.typeId);
 
   return (
     <div className="space-y-6">
       <PageHeader
         title={institution.name}
-        subtitle={`Institution • ${institutionType?.name || "Unknown Type"}`}
+        subtitle={`Institution • ${institutionType?.name || 'Unknown Type'}`}
       />
 
       {/* Institution Summary */}
       <div className="grid gap-4 grid-cols-1 md:grid-cols-3">
-        <SummaryCard
-          type="currency"
-          title="Total Value"
-          value={totalValue}
-          currency={currency}
-        />
+        <SummaryCard type="currency" title="Total Value" value={totalValue} currency={currency} />
 
         <SummaryCard
           type="count"
@@ -166,22 +152,15 @@ export function InstitutionDetail() {
       <div className="space-y-4">
         <h2 className="text-xl font-semibold">Accounts</h2>
         {institutionAccounts.length === 0 ? (
-          <p className="text-muted-foreground">
-            No accounts in this institution yet.
-          </p>
+          <p className="text-muted-foreground">No accounts in this institution yet.</p>
         ) : (
           <div className="grid gap-4 grid-cols-1 md:grid-cols-2">
             {institutionAccounts.map((account) => {
               const accountHoldings = institutionHoldings.filter(
                 (holding) => holding.account.id === account.id
               );
-              const accountValue = accountHoldings.reduce(
-                (sum, holding) => sum + holding.value,
-                0
-              );
-              const accountType = accountTypes?.find(
-                (type) => type.id === account.typeId
-              );
+              const accountValue = accountHoldings.reduce((sum, holding) => sum + holding.value, 0);
+              const accountType = accountTypes?.find((type) => type.id === account.typeId);
 
               return (
                 <Link key={account.id} to={`/accounts/${account.id}`}>
@@ -190,16 +169,13 @@ export function InstitutionDetail() {
                       <CardTitle className="flex items-center justify-between">
                         <span>{account.name}</span>
                         <div className="text-sm text-muted-foreground">
-                          {accountType?.name || "Unknown Type"}
+                          {accountType?.name || 'Unknown Type'}
                         </div>
                       </CardTitle>
                     </CardHeader>
                     <CardContent>
                       <div className="text-lg font-semibold">
-                        <MoneyDisplay
-                          value={accountValue}
-                          token={baseCurrencyToken}
-                        />
+                        <MoneyDisplay value={accountValue} token={baseCurrencyToken} />
                       </div>
                       <p className="text-sm text-muted-foreground">
                         {accountHoldings.length} holdings

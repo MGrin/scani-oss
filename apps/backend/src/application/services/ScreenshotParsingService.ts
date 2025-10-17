@@ -17,7 +17,6 @@ import { HoldingService } from './HoldingService';
 import { PricingService } from './PricingService';
 import { TokenService } from './TokenService';
 import { TokenValidationService } from './TokenValidationService';
-import { TransactionService } from './TransactionService';
 
 // Configuration constants to replace hardcoded values
 const PARSING_CONFIG = {
@@ -25,7 +24,7 @@ const PARSING_CONFIG = {
   MIN_CONFIDENCE_THRESHOLD: 0.4, // Configurable minimum confidence instead of hardcoded 0.5
   SIMILARITY_THRESHOLD: 0.3, // For database similarity queries
 
-  // Transaction amount thresholds
+  // Balance change thresholds
   SIGNIFICANT_CHANGE_THRESHOLD: '0.000001', // For detecting significant balance changes
   UPDATE_CHANGE_THRESHOLD: '0.001', // For update operations
 
@@ -113,7 +112,6 @@ export class ScreenshotParsingService extends BaseService {
   private readonly holdingService = Container.get(HoldingService);
   readonly _accountService = Container.get(AccountService);
   private readonly accountRepository = Container.get(AccountRepository);
-  readonly _transactionService = Container.get(TransactionService);
   private readonly tokenValidationService = Container.get(TokenValidationService);
   readonly _pricingService = Container.get(PricingService);
 
@@ -204,12 +202,10 @@ export class ScreenshotParsingService extends BaseService {
   ): Promise<{
     created: Array<{
       holdingId: string;
-      transactionId: string;
       tokenSymbol: string;
     }>;
     updated: Array<{
       holdingId: string;
-      transactionId?: string;
       tokenSymbol: string;
       change: string;
     }>;
@@ -218,12 +214,10 @@ export class ScreenshotParsingService extends BaseService {
     try {
       const created: Array<{
         holdingId: string;
-        transactionId: string;
         tokenSymbol: string;
       }> = [];
       const updated: Array<{
         holdingId: string;
-        transactionId?: string;
         tokenSymbol: string;
         change: string;
       }> = [];
@@ -293,7 +287,9 @@ export class ScreenshotParsingService extends BaseService {
                       // biome-ignore lint/suspicious/noExplicitAny: TokenValidationResponseDto metadata doesn't include id property for coingecko
                       id: (metadata as any).id || metadata.symbol,
                     }),
-                    ...(metadata.provider === 'finnhub' && { type: metadata.type }),
+                    ...(metadata.provider === 'finnhub' && {
+                      type: metadata.type,
+                    }),
                   },
                   validatedAt: new Date().toISOString(),
                 }
@@ -306,7 +302,9 @@ export class ScreenshotParsingService extends BaseService {
         } catch (error) {
           errors.push({
             symbol: holding.symbol,
-            error: `Failed to create token: ${error instanceof Error ? error.message : 'Unknown error'}`,
+            error: `Failed to create token: ${
+              error instanceof Error ? error.message : 'Unknown error'
+            }`,
           });
         }
       }
@@ -360,7 +358,9 @@ export class ScreenshotParsingService extends BaseService {
           } catch (error) {
             errors.push({
               symbol: holding.symbol,
-              error: `Failed to update holding: ${error instanceof Error ? error.message : 'Unknown error'}`,
+              error: `Failed to update holding: ${
+                error instanceof Error ? error.message : 'Unknown error'
+              }`,
             });
           }
         } else {
@@ -386,7 +386,9 @@ export class ScreenshotParsingService extends BaseService {
             } catch (error) {
               errors.push({
                 symbol: holding.symbol,
-                error: `Failed to update holding: ${error instanceof Error ? error.message : 'Unknown error'}`,
+                error: `Failed to update holding: ${
+                  error instanceof Error ? error.message : 'Unknown error'
+                }`,
               });
             }
           } else {
@@ -404,13 +406,14 @@ export class ScreenshotParsingService extends BaseService {
 
               created.push({
                 holdingId: createdHolding.id,
-                transactionId: '', // Service handles transaction creation
                 tokenSymbol: holding.symbol,
               });
             } catch (error) {
               errors.push({
                 symbol: holding.symbol,
-                error: `Failed to create holding: ${error instanceof Error ? error.message : 'Unknown error'}`,
+                error: `Failed to create holding: ${
+                  error instanceof Error ? error.message : 'Unknown error'
+                }`,
               });
             }
           }

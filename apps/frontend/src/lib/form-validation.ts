@@ -95,42 +95,6 @@ export const HoldingFormSchema = z.object({
     .refine((val) => !Number.isNaN(val), 'Balance must be a valid number'),
 });
 
-export const TransactionFormSchema = z
-  .object({
-    holdingId: validateRequired('Please select a holding/account'),
-    type: z.enum(
-      ['buy', 'sell', 'deposit', 'withdrawal', 'dividend', 'interest', 'fee', 'transfer', 'other'],
-      {
-        errorMap: () => ({ message: 'Please select a valid transaction type' }),
-      }
-    ),
-    amount: z.coerce
-      .number({ invalid_type_error: 'Amount must be a valid number' })
-      .refine((val) => !Number.isNaN(val), 'Amount must be a valid number')
-      .refine((val) => val !== 0, 'Amount cannot be zero')
-      .refine((val) => Math.abs(val) >= 0.01, 'Amount is too small (minimum: 0.01)')
-      .refine((val) => Math.abs(val) <= 1_000_000_000, 'Amount is too large (maximum: 1 billion)'),
-    price: validatePositiveNumber('Price', 1_000_000).optional(),
-    fee: validateNonNegativeNumber('Fee', 10_000).default(0),
-    description: validateDescription(),
-    reference: z
-      .string()
-      .max(100, 'Reference must not exceed 100 characters')
-      .transform((str) => str.trim())
-      .optional(),
-    timestamp: validateDateTimeDefault(),
-  })
-  .refine(
-    (data) => {
-      const requiresPrice = ['buy', 'sell'].includes(data.type);
-      return !requiresPrice || (data.price !== undefined && data.price > 0);
-    },
-    {
-      message: 'Price is required for buy/sell transactions',
-      path: ['price'],
-    }
-  );
-
 // Form field helpers
 export interface FormFieldConfig {
   label: string;
@@ -177,16 +141,6 @@ export const formFieldConfigs: Record<string, FormFieldConfig> = {
     required: true,
     helperText: 'Current balance or position size',
   },
-  transactionAmount: {
-    label: 'Amount',
-    placeholder: '0.00',
-    required: true,
-  },
-  transactionPrice: {
-    label: 'Price per Unit',
-    placeholder: '0.00',
-    helperText: 'Required for buy/sell transactions',
-  },
   timestamp: {
     label: 'Date & Time',
     helperText: 'When this transaction occurred',
@@ -214,17 +168,6 @@ export const getDefaultFormValues = {
     accountId: accountId || '',
     tokenId: '',
     balance: 0,
-  }),
-
-  transaction: (holdingId?: string) => ({
-    holdingId: holdingId || '',
-    type: 'deposit' as const,
-    amount: 0,
-    price: undefined,
-    fee: 0,
-    description: '',
-    reference: '',
-    timestamp: new Date(),
   }),
 };
 

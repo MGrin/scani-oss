@@ -1,6 +1,6 @@
-import { useNavigate } from "react-router-dom";
-import { Badge } from "@/components/ui/badge";
-import { getFaviconUrl } from "@/lib/icons";
+import { useNavigate } from 'react-router-dom';
+import { Badge } from '@/components/ui/badge';
+import { getFaviconUrl } from '@/lib/icons';
 
 interface InstitutionBadgeProps {
   institutionId: string;
@@ -28,7 +28,7 @@ export function InstitutionBadge({
     <Badge
       variant="outline"
       className={`px-4 py-2 cursor-pointer hover:bg-accent hover:text-accent-foreground transition-colors flex items-center ${
-        className || ""
+        className || ''
       }`}
       onClick={handleClick}
     >
@@ -38,7 +38,7 @@ export function InstitutionBadge({
           alt={`${institutionName} logo`}
           className="w-4 h-4 mr-2 rounded-sm object-contain flex-shrink-0"
           onError={(e) => {
-            (e.target as HTMLImageElement).style.display = "none";
+            (e.target as HTMLImageElement).style.display = 'none';
           }}
         />
       )}

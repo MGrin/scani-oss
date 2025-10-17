@@ -1,10 +1,10 @@
-import Decimal from "decimal.js";
-import { Container, Service } from "typedi";
-import { HoldingRepository } from "../../infrastructure/repositories/HoldingRepository";
-import { createComponentLogger } from "../../utils/logger";
-import { PortfolioValuationService } from "../services/PortfolioValuationService";
+import Decimal from 'decimal.js';
+import { Container, Service } from 'typedi';
+import { HoldingRepository } from '../../infrastructure/repositories/HoldingRepository';
+import { createComponentLogger } from '../../utils/logger';
+import { PortfolioValuationService } from '../services/PortfolioValuationService';
 
-const logger = createComponentLogger("use-case:get-holdings-with-details");
+const logger = createComponentLogger('use-case:get-holdings-with-details');
 
 export interface HoldingWithDetails {
   id: string;
@@ -58,25 +58,19 @@ export interface HoldingWithDetails {
 @Service()
 export class GetHoldingsWithDetailsUseCase {
   private readonly holdingRepository = Container.get(HoldingRepository);
-  private readonly portfolioValuationService = Container.get(
-    PortfolioValuationService
-  );
+  private readonly portfolioValuationService = Container.get(PortfolioValuationService);
 
   async execute(
     userId: string,
     baseCurrencyId?: string,
     accountId?: string
   ): Promise<HoldingWithDetails[]> {
-    logger.debug({ userId, accountId }, "Getting holdings with details");
+    logger.debug({ userId, accountId }, 'Getting holdings with details');
 
     // Parallel fetch: optimized holdings query + portfolio valuation
     const [holdingsWithFullDetails, portfolioValue] = await Promise.all([
       this.holdingRepository.findByUserWithFullDetails(userId, accountId),
-      this.portfolioValuationService.getUserPortfolioValue(
-        userId,
-        baseCurrencyId,
-        accountId
-      ),
+      this.portfolioValuationService.getUserPortfolioValue(userId, baseCurrencyId, accountId),
     ]);
 
     if (holdingsWithFullDetails.length === 0) {
@@ -85,7 +79,7 @@ export class GetHoldingsWithDetailsUseCase {
 
     // Create maps for efficient lookups - get individual token prices
     const portfolioPriceMap = new Map(
-      portfolioValue.holdings.map((h) => [h.tokenSymbol, h.currentPrice || "0"])
+      portfolioValue.holdings.map((h) => [h.tokenSymbol, h.currentPrice || '0'])
     );
 
     // Create price metadata map keyed by token symbol
@@ -95,7 +89,7 @@ export class GetHoldingsWithDetailsUseCase {
         .map((h) => [
           h.tokenSymbol,
           {
-            value: h.currentPrice || "0",
+            value: h.currentPrice || '0',
             timestamp: h.priceTimestamp!.toISOString(),
             source: h.priceSource,
           },
@@ -106,10 +100,8 @@ export class GetHoldingsWithDetailsUseCase {
     const detailedHoldings: HoldingWithDetails[] = holdingsWithFullDetails.map(
       ({ holding, token, account, institution }) => {
         // Get current price and calculate individual holding value
-        const currentPrice = portfolioPriceMap.get(token.symbol) || "0";
-        const currentValue = new Decimal(holding.balance)
-          .mul(new Decimal(currentPrice))
-          .toNumber();
+        const currentPrice = portfolioPriceMap.get(token.symbol) || '0';
+        const currentValue = new Decimal(holding.balance).mul(new Decimal(currentPrice)).toNumber();
 
         // For now, cost basis is the same as current value (simplified)
         const costBasis = currentValue;
@@ -153,9 +145,7 @@ export class GetHoldingsWithDetailsUseCase {
 
     logger.debug(
       { userId, accountId, count: detailedHoldings.length },
-      accountId
-        ? "Account holdings with details retrieved"
-        : "Holdings with details retrieved"
+      accountId ? 'Account holdings with details retrieved' : 'Holdings with details retrieved'
     );
 
     return detailedHoldings;

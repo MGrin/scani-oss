@@ -1,15 +1,9 @@
 import { Container, Service } from 'typedi';
-import type {
-  AccountType,
-  InstitutionType,
-  TokenType,
-  TransactionType,
-} from '../../domain/entities';
+import type { AccountType, InstitutionType, TokenType } from '../../domain/entities';
 import {
   AccountTypeRepository,
   InstitutionTypeRepository,
   TokenTypeRepository,
-  TransactionTypeRepository,
 } from '../../infrastructure/repositories/EnumRepositories';
 import { BaseService } from './BaseService';
 
@@ -108,61 +102,6 @@ export class AccountTypeService extends BaseService {
   async getTypeById(id: string): Promise<AccountType | null> {
     try {
       return await this.accountTypeRepository.findById(id);
-    } catch (error) {
-      throw this.handleError(error, 'getTypeById');
-    }
-  }
-
-  async validateType(code: string): Promise<boolean> {
-    try {
-      const type = await this.getTypeByCode(code);
-      return type?.isActive ?? false;
-    } catch (error) {
-      throw this.handleError(error, 'validateType');
-    }
-  }
-}
-
-// =============================================================================
-// TransactionTypeService
-// =============================================================================
-
-@Service()
-export class TransactionTypeService extends BaseService {
-  private readonly transactionTypeRepository = Container.get(TransactionTypeRepository);
-
-  constructor() {
-    super('TransactionTypeService');
-  }
-
-  async getAllTypes(): Promise<TransactionType[]> {
-    try {
-      return await this.transactionTypeRepository.findAll();
-    } catch (error) {
-      throw this.handleError(error, 'getAllTypes');
-    }
-  }
-
-  async getActiveTypes(): Promise<TransactionType[]> {
-    try {
-      return await this.transactionTypeRepository.findActive();
-    } catch (error) {
-      throw this.handleError(error, 'getActiveTypes');
-    }
-  }
-
-  async getTypeByCode(code: string): Promise<TransactionType | null> {
-    try {
-      this.validateNonEmptyString(code, 'code');
-      return await this.transactionTypeRepository.findByCode(code);
-    } catch (error) {
-      throw this.handleError(error, 'getTypeByCode');
-    }
-  }
-
-  async getTypeById(id: string): Promise<TransactionType | null> {
-    try {
-      return await this.transactionTypeRepository.findById(id);
     } catch (error) {
       throw this.handleError(error, 'getTypeById');
     }

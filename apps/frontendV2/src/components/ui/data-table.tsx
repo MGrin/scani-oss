@@ -1,7 +1,7 @@
-import { ArrowUpDown } from "lucide-react";
-import type { ReactNode } from "react";
-import { Card, CardContent } from "./card";
-import { Skeleton } from "./skeleton";
+import { ArrowUpDown } from 'lucide-react';
+import type { ReactNode } from 'react';
+import { Card, CardContent } from './card';
+import { Skeleton } from './skeleton';
 
 export interface Column<T> {
   header: string;
@@ -17,7 +17,7 @@ export interface DataTableProps<T> {
   isLoading?: boolean;
   onSort?: (field: string) => void;
   sortField?: string;
-  sortDirection?: "asc" | "desc";
+  sortDirection?: 'asc' | 'desc';
   emptyMessage?: string;
   loadingRowCount?: number;
   getRowKey: (row: T) => string;
@@ -30,7 +30,7 @@ export function DataTable<T>({
   columns,
   isLoading = false,
   onSort,
-  emptyMessage = "No data available",
+  emptyMessage = 'No data available',
   loadingRowCount = 4,
   getRowKey,
   onRowClick,
@@ -41,15 +41,15 @@ export function DataTable<T>({
 
     // Convert accessor to string for sorting
     const field =
-      typeof column.accessor === "function"
-        ? column.header.toLowerCase().replace(/\s+/g, "_")
+      typeof column.accessor === 'function'
+        ? column.header.toLowerCase().replace(/\s+/g, '_')
         : String(column.accessor);
 
     onSort(field);
   };
 
   const getCellValue = (row: T, column: Column<T>): ReactNode => {
-    if (typeof column.accessor === "function") {
+    if (typeof column.accessor === 'function') {
       return column.accessor(row);
     }
     return row[column.accessor] as ReactNode;
@@ -67,7 +67,7 @@ export function DataTable<T>({
                     <th
                       key={column.header}
                       className={`p-4 font-medium whitespace-nowrap ${
-                        column.headerClassName || ""
+                        column.headerClassName || ''
                       }`}
                     >
                       <Skeleton className="h-4 w-20" />
@@ -133,8 +133,8 @@ export function DataTable<T>({
                   <th
                     key={column.header}
                     className={`p-4 font-medium whitespace-nowrap ${
-                      column.sortable ? "cursor-pointer hover:bg-muted/70" : ""
-                    } ${column.headerClassName || ""}`}
+                      column.sortable ? 'cursor-pointer hover:bg-muted/70' : ''
+                    } ${column.headerClassName || ''}`}
                     onClick={() => handleSort(column)}
                   >
                     <div className="flex items-center gap-2">
@@ -155,23 +155,19 @@ export function DataTable<T>({
                 <tr
                   key={getRowKey(row)}
                   className={`border-b hover:bg-muted/50 transition-colors ${
-                    onRowClick ? "cursor-pointer" : ""
+                    onRowClick ? 'cursor-pointer' : ''
                   }`}
                   onClick={() => onRowClick?.(row)}
                 >
                   {columns.map((column) => (
                     <td
                       key={`${getRowKey(row)}-${column.header}`}
-                      className={`p-4 whitespace-nowrap ${
-                        column.className || ""
-                      }`}
+                      className={`p-4 whitespace-nowrap ${column.className || ''}`}
                     >
                       {getCellValue(row, column)}
                     </td>
                   ))}
-                  {actions && (
-                    <td className="p-4 whitespace-nowrap">{actions(row)}</td>
-                  )}
+                  {actions && <td className="p-4 whitespace-nowrap">{actions(row)}</td>}
                 </tr>
               ))}
             </tbody>

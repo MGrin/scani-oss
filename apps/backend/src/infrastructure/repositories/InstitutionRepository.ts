@@ -1,16 +1,12 @@
-import { and, eq, sql } from "drizzle-orm";
-import { Service } from "typedi";
-import type {
-  Account,
-  Institution,
-  NewInstitution,
-} from "../../domain/entities";
+import { and, eq, sql } from 'drizzle-orm';
+import { Service } from 'typedi';
+import type { Account, Institution, NewInstitution } from '../../domain/entities';
 import type {
   DatabaseTransaction,
   IInstitutionRepository,
-} from "../../domain/interfaces/repositories";
-import * as schema from "../database/schema";
-import { BaseRepository } from "./BaseRepository";
+} from '../../domain/interfaces/repositories';
+import * as schema from '../database/schema';
+import { BaseRepository } from './BaseRepository';
 
 @Service()
 export class InstitutionRepository
@@ -18,7 +14,7 @@ export class InstitutionRepository
   implements IInstitutionRepository
 {
   protected readonly table = schema.institutions;
-  protected readonly tableName = "institutions";
+  protected readonly tableName = 'institutions';
 
   async findAll(
     filters?: Record<string, unknown>,
@@ -46,15 +42,12 @@ export class InstitutionRepository
         typeName: result.typeName,
       }));
     } catch (error) {
-      this.logger.error({ filters, error }, "Failed to find all institutions");
+      this.logger.error({ filters, error }, 'Failed to find all institutions');
       throw error;
     }
   }
 
-  async findByName(
-    name: string,
-    transaction?: DatabaseTransaction
-  ): Promise<Institution | null> {
+  async findByName(name: string, transaction?: DatabaseTransaction): Promise<Institution | null> {
     try {
       const database = this.getDb(transaction);
       const results = await database
@@ -65,15 +58,12 @@ export class InstitutionRepository
 
       return results[0] || null;
     } catch (error) {
-      this.logger.error({ name, error }, "Failed to find institution by name");
+      this.logger.error({ name, error }, 'Failed to find institution by name');
       throw error;
     }
   }
 
-  async findByUserId(
-    userId: string,
-    transaction?: DatabaseTransaction
-  ): Promise<Institution[]> {
+  async findByUserId(userId: string, transaction?: DatabaseTransaction): Promise<Institution[]> {
     try {
       const database = this.getDb(transaction);
       const results = await database
@@ -87,10 +77,7 @@ export class InstitutionRepository
           schema.institutionTypes,
           eq(schema.institutions.typeId, schema.institutionTypes.id)
         )
-        .innerJoin(
-          schema.accounts,
-          eq(schema.accounts.institutionId, schema.institutions.id)
-        )
+        .innerJoin(schema.accounts, eq(schema.accounts.institutionId, schema.institutions.id))
         .where(
           and(
             eq(schema.accounts.userId, userId),
@@ -106,10 +93,7 @@ export class InstitutionRepository
         typeName: r.typeName,
       }));
     } catch (error) {
-      this.logger.error(
-        { userId, error },
-        "Failed to find institutions by user"
-      );
+      this.logger.error({ userId, error }, 'Failed to find institutions by user');
       throw error;
     }
   }
@@ -143,10 +127,7 @@ export class InstitutionRepository
 
       return (results[0] as Institution & { typeCode: string | null }) || null;
     } catch (error) {
-      this.logger.error(
-        { institutionId, error },
-        "Failed to find institution with type"
-      );
+      this.logger.error({ institutionId, error }, 'Failed to find institution with type');
       throw error;
     }
   }
@@ -182,7 +163,7 @@ export class InstitutionRepository
     } catch (error) {
       this.logger.error(
         { institutionId, userId, error },
-        "Failed to find institution with accounts"
+        'Failed to find institution with accounts'
       );
       throw error;
     }
@@ -208,10 +189,7 @@ export class InstitutionRepository
 
       return results[0] || null;
     } catch (error) {
-      this.logger.error(
-        { name, typeId, error },
-        "Failed to find institution by name and type"
-      );
+      this.logger.error({ name, typeId, error }, 'Failed to find institution by name and type');
       throw error;
     }
   }

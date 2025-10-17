@@ -1,6 +1,6 @@
-import { useNavigate } from "react-router-dom";
-import { Badge } from "@/components/ui/badge";
-import { getAccountTypeIcon } from "@/lib/icons";
+import { useNavigate } from 'react-router-dom';
+import { Badge } from '@/components/ui/badge';
+import { getAccountTypeIcon } from '@/lib/icons';
 
 interface AccountBadgeProps {
   accountId: string;
@@ -27,7 +27,7 @@ export function AccountBadge({
     <Badge
       variant="outline"
       className={`px-4 py-2 cursor-pointer hover:bg-accent hover:text-accent-foreground transition-colors inline-flex items-center ${
-        className || ""
+        className || ''
       }`}
       onClick={handleClick}
     >

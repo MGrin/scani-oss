@@ -255,7 +255,7 @@ const app = new Elysia()
         JSON.stringify({
           type: 'connected',
           connectionId,
-          subscriptions: ['institution', 'account', 'holding', 'transaction', 'token'],
+          subscriptions: ['institution', 'account', 'holding', 'token'],
           timestamp: new Date().toISOString(),
         })
       );
@@ -264,7 +264,9 @@ const app = new Elysia()
     message: (ws: any, message: any) => {
       // Forward message to realTimeUpdatesService for handling
       if (ws.data.connectionId) {
-        const connectionLogger = wsLogger.child({ connectionId: ws.data.connectionId });
+        const connectionLogger = wsLogger.child({
+          connectionId: ws.data.connectionId,
+        });
         connectionLogger.debug({ message }, '📨 WebSocket message received');
 
         // Handle subscription messages, pings, etc.
@@ -276,7 +278,9 @@ const app = new Elysia()
     close: (ws: any, code: any, reason: any) => {
       // Notify realTimeUpdatesService about disconnection
       if (ws.data?.connectionId) {
-        const connectionLogger = wsLogger.child({ connectionId: ws.data.connectionId });
+        const connectionLogger = wsLogger.child({
+          connectionId: ws.data.connectionId,
+        });
         connectionLogger.info(
           {
             code,

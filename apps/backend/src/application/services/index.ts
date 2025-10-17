@@ -9,7 +9,6 @@ export {
   AccountTypeService,
   InstitutionTypeService,
   TokenTypeService,
-  TransactionTypeService,
 } from './EnumServices';
 export { HoldingService } from './HoldingService';
 export { InstitutionService } from './InstitutionService';
@@ -19,7 +18,6 @@ export { ScreenshotParsingService } from './ScreenshotParsingService';
 export { TokenPriceService } from './TokenPriceService';
 export { TokenService } from './TokenService';
 export { TokenValidationService } from './TokenValidationService';
-export { TransactionService } from './TransactionService';
 // Core Services
 export { UserService } from './UserService';
 export { WalletService } from './WalletService';

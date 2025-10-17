@@ -1,17 +1,11 @@
 import { eq, inArray } from 'drizzle-orm';
 import { Service } from 'typedi';
-import type {
-  AccountType,
-  InstitutionType,
-  TokenType,
-  TransactionType,
-} from '../../domain/entities';
+import type { AccountType, InstitutionType, TokenType } from '../../domain/entities';
 import type {
   DatabaseTransaction,
   IAccountTypeRepository,
   IInstitutionTypeRepository,
   ITokenTypeRepository,
-  ITransactionTypeRepository,
 } from '../../domain/interfaces/repositories';
 import * as schema from '../database/schema';
 import { BaseRepository } from './BaseRepository';
@@ -104,54 +98,6 @@ export class AccountTypeRepository
       return results;
     } catch (error) {
       this.logger.error({ error }, 'Failed to find active account types');
-      throw error;
-    }
-  }
-}
-
-// =============================================================================
-// TransactionTypeRepository
-// =============================================================================
-
-@Service()
-export class TransactionTypeRepository
-  extends BaseRepository<TransactionType, Partial<TransactionType>>
-  implements ITransactionTypeRepository
-{
-  protected readonly table = schema.transactionTypes;
-  protected readonly tableName = 'transaction_types';
-
-  async findByCode(
-    code: string,
-    transaction?: DatabaseTransaction
-  ): Promise<TransactionType | null> {
-    try {
-      const database = this.getDb(transaction);
-      const results = await database
-        .select()
-        .from(schema.transactionTypes)
-        .where(eq(schema.transactionTypes.code, code))
-        .limit(1);
-
-      return results[0] || null;
-    } catch (error) {
-      this.logger.error({ code, error }, 'Failed to find transaction type by code');
-      throw error;
-    }
-  }
-
-  async findActive(transaction?: DatabaseTransaction): Promise<TransactionType[]> {
-    try {
-      const database = this.getDb(transaction);
-      const results = await database
-        .select()
-        .from(schema.transactionTypes)
-        .where(eq(schema.transactionTypes.isActive, true))
-        .orderBy(schema.transactionTypes.displayOrder, schema.transactionTypes.name);
-
-      return results;
-    } catch (error) {
-      this.logger.error({ error }, 'Failed to find active transaction types');
       throw error;
     }
   }

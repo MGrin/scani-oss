@@ -9,10 +9,8 @@ The following repositories need to be created:
 4. InstitutionRepository.ts
 5. AccountRepository.ts
 6. HoldingRepository.ts
-7. TransactionRepository.ts
-8. InstitutionTypeRepository.ts
-9. AccountTypeRepository.ts
-10. TransactionTypeRepository.ts
-11. TokenTypeRepository.ts
+7. InstitutionTypeRepository.ts
+8. AccountTypeRepository.ts
+9. TokenTypeRepository.ts
 
 All will extend BaseRepository and implement their respective interfaces.

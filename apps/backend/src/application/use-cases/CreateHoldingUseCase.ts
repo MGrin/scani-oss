@@ -21,16 +21,12 @@ export interface CreateHoldingResult {
 }
 
 /**
- * Use case for creating a new holding with validation, transaction handling, and pricing
+ * Use case for creating a new holding with validation and pricing
  *
  * This use case encapsulates the complex logic of:
  * - Validating account ownership and token existence
- * - Creating the holding within a database transaction
- * - Creating an opening balance transaction if balance > 0
- * - Fetching current token price (non-blocking, after transaction commits)
- *
- * The pricing logic is intentionally outside the transaction to ensure
- * the holding is created even if pricing fails.
+ * - Creating the holding
+ * - Fetching current token price (non-blocking)
  */
 @Service()
 export class CreateHoldingUseCase {
@@ -38,10 +34,10 @@ export class CreateHoldingUseCase {
 
   async execute(
     input: CreateHoldingInput,
-    userId: string
+    user: typeof schema.users.$inferSelect
   ): Promise<CreateHoldingResult> {
     const now = new Date();
-
+    const userId = user.id;
     logger.debug(
       {
         userId,
@@ -79,105 +75,57 @@ export class CreateHoldingUseCase {
       throw new Error("Token does not exist for the specified tokenId");
     }
 
-    const user = await db
-      .select()
-      .from(schema.users)
-      .where(eq(schema.users.id, userId))
-      .limit(1)
-      .then((rows) => rows[0]);
-
     const baseCurrencyId = user?.baseCurrencyId;
 
-    // CRITICAL: Create holding in transaction, pricing happens AFTER
-    const holding = await db.transaction(async (trx) => {
-      const holdingData = {
-        ...input,
-        userId,
-        balance: input.balance || "0",
-        createdAt: now,
-        lastUpdated: input.lastUpdated || now,
-      };
+    // Create the holding
+    const holdingData = {
+      ...input,
+      userId,
+      balance: input.balance || "0",
+      createdAt: now,
+      lastUpdated: input.lastUpdated || now,
+    };
 
-      logger.debug(
+    logger.debug(
+      {
+        userId,
+        accountId: holdingData.accountId,
+        tokenId: holdingData.tokenId,
+        balance: holdingData.balance,
+      },
+      "Inserting holding data"
+    );
+
+    const [holding] = await db
+      .insert(schema.holdings)
+      .values(holdingData)
+      .returning();
+
+    if (!holding) {
+      logger.error(
         {
           userId,
           accountId: holdingData.accountId,
           tokenId: holdingData.tokenId,
-          balance: holdingData.balance,
         },
-        "Inserting holding data"
+        "Failed to create holding - database insert returned no data"
       );
-
-      const [holding] = await trx
-        .insert(schema.holdings)
-        .values(holdingData)
-        .returning();
-
-      if (!holding) {
-        logger.error(
-          {
-            userId,
-            accountId: holdingData.accountId,
-            tokenId: holdingData.tokenId,
-          },
-          "Failed to create holding - database insert returned no data"
-        );
-        throw new Error(
-          "Failed to create holding - no data returned from database"
-        );
-      }
-
-      logger.info(
-        {
-          holdingId: holding.id,
-          accountId: holding.accountId,
-          tokenId: holding.tokenId,
-          balance: holding.balance,
-        },
-        "Holding created successfully in database"
+      throw new Error(
+        "Failed to create holding - no data returned from database"
       );
+    }
 
-      // Create opening balance transaction if balance > 0
-      if (parseFloat(holding.balance) > 0) {
-        // Get the deposit transaction type
-        const [depositType] = await trx
-          .select()
-          .from(schema.transactionTypes)
-          .where(
-            and(
-              eq(schema.transactionTypes.code, "deposit"),
-              eq(schema.transactionTypes.isActive, true)
-            )
-          )
-          .limit(1);
+    logger.info(
+      {
+        holdingId: holding.id,
+        accountId: holding.accountId,
+        tokenId: holding.tokenId,
+        balance: holding.balance,
+      },
+      "Holding created successfully in database"
+    );
 
-        if (!depositType) {
-          logger.error("Deposit transaction type not found in database");
-          throw new Error("Deposit transaction type not found");
-        }
-
-        await trx.insert(schema.transactions).values({
-          userId,
-          holdingId: holding.id,
-          typeId: depositType.id,
-          amount: holding.balance,
-          fee: "0",
-          description: "Opening balance - initial holding position",
-          timestamp: now,
-          createdAt: now,
-          updatedAt: now,
-        });
-
-        logger.debug(
-          { holdingId: holding.id, amount: holding.balance },
-          "Created opening balance transaction"
-        );
-      }
-
-      return holding;
-    });
-
-    // CRITICAL FIX: Fetch price AFTER transaction commits
+    // CRITICAL FIX: Fetch price after holding is created
     let priceFetchSuccessful = false;
     let priceFetchError: string | null = null;
 

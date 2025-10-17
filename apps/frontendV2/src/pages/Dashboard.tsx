@@ -1,24 +1,19 @@
-import { Link } from "react-router-dom";
-import {
-  AccountBadge,
-  InstitutionBadge,
-  TokenTypeBadge,
-} from "@/components/features";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { MoneyDisplay } from "@/components/ui/money-display";
-import { PageHeader } from "@/components/ui/page-header";
-import { Skeleton } from "@/components/ui/skeleton";
-import { SummaryCard } from "@/components/ui/summary-card";
-import { trpc } from "@/lib/trpc";
-import { createCurrencyToken } from "@/lib/utils";
+import { Link } from 'react-router-dom';
+import { AccountBadge, InstitutionBadge, TokenTypeBadge } from '@/components/features';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { MoneyDisplay } from '@/components/ui/money-display';
+import { PageHeader } from '@/components/ui/page-header';
+import { Skeleton } from '@/components/ui/skeleton';
+import { SummaryCard } from '@/components/ui/summary-card';
+import { trpc } from '@/lib/trpc';
+import { createCurrencyToken } from '@/lib/utils';
 
 export function Dashboard() {
   // Fetch dashboard data
-  const { data: overview, isLoading: overviewLoading } =
-    trpc.dashboard.getOverview.useQuery();
+  const { data: overview, isLoading: overviewLoading } = trpc.dashboard.getOverview.useQuery();
   const { data: baseCurrency } = trpc.users.getBaseCurrency.useQuery();
 
-  const currency = baseCurrency?.symbol || "USD";
+  const currency = baseCurrency?.symbol || 'USD';
   const baseCurrencyToken = createCurrencyToken(currency);
 
   return (
@@ -72,7 +67,7 @@ export function Dashboard() {
             <SummaryCard
               type="currency"
               title="Total Portfolio Value"
-              value={parseFloat(overview?.portfolioValue.totalValue || "0")}
+              value={parseFloat(overview?.portfolioValue.totalValue || '0')}
               currency={currency}
             />
 
@@ -122,28 +117,18 @@ export function Dashboard() {
                   </div>
                 ))}
               </div>
-            ) : overview?.assetAllocation &&
-              overview.assetAllocation.length > 0 ? (
+            ) : overview?.assetAllocation && overview.assetAllocation.length > 0 ? (
               <div className="space-y-4">
                 {overview.assetAllocation.map((allocation) => (
-                  <div
-                    key={allocation.code}
-                    className="flex items-center justify-between"
-                  >
+                  <div key={allocation.code} className="flex items-center justify-between">
                     <div className="flex items-center gap-2">
                       <div
-                        className={`w-3 h-3 rounded-full ${getColorForAssetType(
-                          allocation.code
-                        )}`}
+                        className={`w-3 h-3 rounded-full ${getColorForAssetType(allocation.code)}`}
                       />
-                      <span className="text-sm font-medium">
-                        {allocation.type}
-                      </span>
+                      <span className="text-sm font-medium">{allocation.type}</span>
                     </div>
                     <div className="text-right">
-                      <div className="text-sm font-medium">
-                        {allocation.percentage}%
-                      </div>
+                      <div className="text-sm font-medium">{allocation.percentage}%</div>
                       <div className="text-xs text-muted-foreground">
                         <MoneyDisplay
                           value={allocation.value}
@@ -190,9 +175,7 @@ export function Dashboard() {
                         <div className="font-medium">{holding.symbol}</div>
                         <TokenTypeBadge tokenTypeCode={holding.tokenTypeCode} />
                       </div>
-                      <div className="text-sm text-muted-foreground mt-1">
-                        {holding.name}
-                      </div>
+                      <div className="text-sm text-muted-foreground mt-1">{holding.name}</div>
                       <div className="flex flex-col md:flex-row items-start md:items-center gap-2 mt-1">
                         <AccountBadge
                           accountId={holding.accountId}
@@ -202,27 +185,20 @@ export function Dashboard() {
                         <InstitutionBadge
                           institutionId={holding.institutionId}
                           institutionName={holding.institutionName}
-                          institutionWebsite={
-                            holding.institutionWebsite ?? undefined
-                          }
+                          institutionWebsite={holding.institutionWebsite ?? undefined}
                         />
                       </div>
                     </div>
                     <div className="text-right">
                       <div className="font-medium">
-                        <MoneyDisplay
-                          value={holding.value}
-                          token={baseCurrencyToken}
-                        />
+                        <MoneyDisplay value={holding.value} token={baseCurrencyToken} />
                       </div>
                     </div>
                   </div>
                 ))}
               </div>
             ) : (
-              <div className="text-sm text-muted-foreground">
-                No holdings yet
-              </div>
+              <div className="text-sm text-muted-foreground">No holdings yet</div>
             )}
           </CardContent>
         </Card>
@@ -234,17 +210,17 @@ export function Dashboard() {
 // Helper function to assign colors to asset types
 function getColorForAssetType(code: string): string {
   const colorMap: Record<string, string> = {
-    stock: "bg-blue-500",
-    equity: "bg-blue-500",
-    bond: "bg-green-500",
-    crypto: "bg-orange-500",
-    cryptocurrency: "bg-orange-500",
-    fiat: "bg-gray-500",
-    cash: "bg-gray-500",
-    commodity: "bg-yellow-500",
-    real_estate: "bg-purple-500",
-    etf: "bg-cyan-500",
+    stock: 'bg-blue-500',
+    equity: 'bg-blue-500',
+    bond: 'bg-green-500',
+    crypto: 'bg-orange-500',
+    cryptocurrency: 'bg-orange-500',
+    fiat: 'bg-gray-500',
+    cash: 'bg-gray-500',
+    commodity: 'bg-yellow-500',
+    real_estate: 'bg-purple-500',
+    etf: 'bg-cyan-500',
   };
 
-  return colorMap[code.toLowerCase()] || "bg-slate-500";
+  return colorMap[code.toLowerCase()] || 'bg-slate-500';
 }

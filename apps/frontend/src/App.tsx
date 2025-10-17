@@ -18,8 +18,6 @@ import { Institutions } from '@/pages/Institutions';
 import { Settings } from '@/pages/Settings';
 import { Tokens } from '@/pages/Tokens';
 
-// import { Transactions } from '@/pages/Transactions'; // HIDDEN: Transaction UI temporarily hidden
-
 function App() {
   return (
     <ErrorBoundary>
@@ -63,17 +61,6 @@ function App() {
                         </ProtectedRoute>
                       }
                     />
-                    {/* HIDDEN: Transaction UI temporarily hidden */}
-                    {/* <Route
-                  path="/transactions"
-                  element={
-                    <ProtectedRoute>
-                      <Layout>
-                        <Transactions />
-                      </Layout>
-                    </ProtectedRoute>
-                  }
-                /> */}
                     <Route
                       path="/accounts"
                       element={
@@ -114,17 +101,6 @@ function App() {
                         </ProtectedRoute>
                       }
                     />
-                    {/* HIDDEN: Transaction UI temporarily hidden */}
-                    {/* <Route
-                  path="/institutions/:institutionId/accounts/:accountId/holdings/:holdingId"
-                  element={
-                    <ProtectedRoute>
-                      <Layout>
-                        <Transactions />
-                      </Layout>
-                    </ProtectedRoute>
-                  }
-                /> */}
                     <Route
                       path="/tokens"
                       element={

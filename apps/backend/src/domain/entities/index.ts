@@ -19,13 +19,9 @@ export type {
   NewToken,
   NewTokenPrice,
   NewTokenType,
-  NewTransaction,
-  NewTransactionType,
   NewUser,
   Token,
   TokenPrice,
   TokenType,
-  Transaction,
-  TransactionType,
   User,
 } from '../../infrastructure/database/schema';

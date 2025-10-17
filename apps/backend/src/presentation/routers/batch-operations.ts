@@ -1,10 +1,10 @@
+import { Container } from "typedi";
 import { z } from "zod";
 import {
   CreateHoldingsWithDependenciesUseCase,
   UpdateHoldingsBatchUseCase,
 } from "../../application/use-cases";
-import { Container } from "typedi";
-import { getUserId } from "../../middleware/auth";
+import { getUserId, requireAuth } from "../../middleware/auth";
 import { protectedProcedure, router } from "../trpc";
 
 /**
@@ -118,7 +118,7 @@ export function createBatchOperationsRouter() {
           input,
           ctx,
         }): Promise<CreateHoldingsWithDependenciesResult> => {
-          const userId = getUserId(ctx);
+          const { dbUser } = requireAuth(ctx);
           const useCase = Container.get(CreateHoldingsWithDependenciesUseCase);
 
           // Convert string dates to Date objects
@@ -134,7 +134,7 @@ export function createBatchOperationsRouter() {
               account: input.account,
               holdings,
             },
-            userId
+            dbUser
           );
         }
       ),

@@ -1,4 +1,4 @@
-import { Combobox } from "@/components/ui/combobox";
+import { Combobox } from '@/components/ui/combobox';
 
 interface CurrencySelectorProps {
   value: string;
@@ -12,9 +12,9 @@ interface CurrencySelectorProps {
   placeholder?: string;
   popoverWidth?: string;
   compact?: boolean;
-  buttonSize?: "default" | "sm";
+  buttonSize?: 'default' | 'sm';
   className?: string;
-  side?: "top" | "right" | "bottom" | "left";
+  side?: 'top' | 'right' | 'bottom' | 'left';
 }
 
 export function CurrencySelector({
@@ -22,10 +22,10 @@ export function CurrencySelector({
   onValueChange,
   currencies,
   id,
-  placeholder = "Select currency...",
+  placeholder = 'Select currency...',
   popoverWidth,
   compact = false,
-  buttonSize = "default",
+  buttonSize = 'default',
   className,
   side,
 }: CurrencySelectorProps) {
@@ -38,8 +38,7 @@ export function CurrencySelector({
 
   // Find selected currency to display only its symbol in compact mode
   const selectedCurrency = currencies?.find((c) => c.id === value);
-  const displayLabel =
-    compact && selectedCurrency ? selectedCurrency.symbol : undefined;
+  const displayLabel = compact && selectedCurrency ? selectedCurrency.symbol : undefined;
 
   return (
     <div id={id} className="w-full">

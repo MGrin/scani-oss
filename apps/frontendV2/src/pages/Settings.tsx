@@ -1,30 +1,23 @@
-import { User } from "lucide-react";
-import { useCallback, useEffect, useId, useMemo, useState } from "react";
+import { User } from 'lucide-react';
+import { useCallback, useEffect, useId, useMemo, useState } from 'react';
 
-import { CurrencySelector } from "@/components/selectors/CurrencySelector";
-import { Alert, AlertDescription } from "@/components/ui/alert";
-import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { PageHeader } from "@/components/ui/page-header";
-import { Skeleton } from "@/components/ui/skeleton";
-import { useToast } from "@/hooks/use-toast";
-import { trpc } from "@/lib/trpc";
+import { CurrencySelector } from '@/components/selectors/CurrencySelector';
+import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { PageHeader } from '@/components/ui/page-header';
+import { Skeleton } from '@/components/ui/skeleton';
+import { useToast } from '@/hooks/use-toast';
+import { trpc } from '@/lib/trpc';
 
 export function Settings() {
   const { toast } = useToast();
 
   // Data fetching
   const { data: userPrefs, isLoading } = trpc.users.getCurrent.useQuery();
-  const { data: supportedCurrencies } =
-    trpc.users.getSupportedCurrencies.useQuery();
+  const { data: supportedCurrencies } = trpc.users.getSupportedCurrencies.useQuery();
   const utils = trpc.useUtils();
   const updateUserPrefs = trpc.users.updateCurrent.useMutation({
     onSuccess: () => {
@@ -38,7 +31,7 @@ export function Settings() {
     name: string;
     email: string; // Keep for display purposes but won't be in updates
     avatar: string;
-    baseCurrencyId: string | "";
+    baseCurrencyId: string | '';
   };
 
   const [formData, setFormData] = useState<FormData | null>(null);
@@ -55,10 +48,10 @@ export function Settings() {
     if (isSaving) return;
 
     const initial: FormData = {
-      name: userPrefs.name || "",
-      email: userPrefs.email || "",
-      avatar: userPrefs.avatar || "",
-      baseCurrencyId: userPrefs.baseCurrencyId || "",
+      name: userPrefs.name || '',
+      email: userPrefs.email || '',
+      avatar: userPrefs.avatar || '',
+      baseCurrencyId: userPrefs.baseCurrencyId || '',
     };
     setFormData(initial);
     setOriginalData(initial);
@@ -67,32 +60,23 @@ export function Settings() {
   const isDirty = useMemo(() => {
     if (!formData || !originalData) return false;
     // Exclude email from dirty checking since it's read-only
-    const editableFields: (keyof FormData)[] = [
-      "name",
-      "avatar",
-      "baseCurrencyId",
-    ];
+    const editableFields: (keyof FormData)[] = ['name', 'avatar', 'baseCurrencyId'];
     return editableFields.some((key) => formData[key] !== originalData[key]);
   }, [formData, originalData]);
 
-  const setField = useCallback(
-    <K extends keyof FormData>(key: K, value: FormData[K]) => {
-      setFormData((prev) => (prev ? { ...prev, [key]: value } : prev));
-    },
-    []
-  );
+  const setField = useCallback(<K extends keyof FormData>(key: K, value: FormData[K]) => {
+    setFormData((prev) => (prev ? { ...prev, [key]: value } : prev));
+  }, []);
 
   // Validation (basic inline) - email is read-only so no validation needed
   const validate = useCallback((data: FormData) => {
     const errors: Record<string, string> = {};
     const trimmedName = data.name.trim();
-    if (trimmedName.length === 0) errors.name = "Name cannot be empty";
-    else if (trimmedName.length < 2)
-      errors.name = "Name must be at least 2 characters";
-    else if (trimmedName.length > 100)
-      errors.name = "Name must not exceed 100 characters";
+    if (trimmedName.length === 0) errors.name = 'Name cannot be empty';
+    else if (trimmedName.length < 2) errors.name = 'Name must be at least 2 characters';
+    else if (trimmedName.length > 100) errors.name = 'Name must not exceed 100 characters';
     else if (!/^[a-zA-Z0-9\s\-_'.&()]+$/.test(trimmedName))
-      errors.name = "Name contains invalid characters";
+      errors.name = 'Name contains invalid characters';
 
     return errors;
   }, []);
@@ -105,11 +89,7 @@ export function Settings() {
 
     const changed: Partial<FormData> = {};
     // Only check editable fields for changes (exclude email)
-    const editableFields: (keyof FormData)[] = [
-      "name",
-      "avatar",
-      "baseCurrencyId",
-    ];
+    const editableFields: (keyof FormData)[] = ['name', 'avatar', 'baseCurrencyId'];
     editableFields.forEach((k) => {
       if (formData[k] !== originalData[k]) {
         (changed as Record<string, unknown>)[k] = formData[k];
@@ -129,14 +109,14 @@ export function Settings() {
       // Update the original data so isDirty becomes false
       setOriginalData({ ...formData });
       toast({
-        title: "Settings Updated",
-        description: "Your preferences have been saved successfully.",
+        title: 'Settings Updated',
+        description: 'Your preferences have been saved successfully.',
       });
     } catch (error: unknown) {
       toast({
-        title: "Update Failed",
-        description: (error as Error)?.message ?? "Unknown error",
-        variant: "destructive",
+        title: 'Update Failed',
+        description: (error as Error)?.message ?? 'Unknown error',
+        variant: 'destructive',
       });
     } finally {
       // Allow reinitialization again after a short delay
@@ -156,34 +136,30 @@ export function Settings() {
     const handler = (e: BeforeUnloadEvent) => {
       if (isDirty) {
         e.preventDefault();
-        e.returnValue = "";
+        e.returnValue = '';
       }
     };
-    window.addEventListener("beforeunload", handler);
-    return () => window.removeEventListener("beforeunload", handler);
+    window.addEventListener('beforeunload', handler);
+    return () => window.removeEventListener('beforeunload', handler);
   }, [isDirty]);
 
   // Cmd/Ctrl+S to save
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      const isCmdS =
-        (e.metaKey || e.ctrlKey) && (e.key === "s" || e.key === "S");
+      const isCmdS = (e.metaKey || e.ctrlKey) && (e.key === 's' || e.key === 'S');
       if (isCmdS) {
         e.preventDefault();
         if (isDirty) void handleSave();
       }
     };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
   }, [isDirty, handleSave]);
 
   if (isLoading || !formData) {
     return (
       <div className="space-y-6">
-        <PageHeader
-          title="Settings"
-          subtitle="Manage your account preferences"
-        />
+        <PageHeader title="Settings" subtitle="Manage your account preferences" />
         <Card>
           <CardHeader>
             <Skeleton className="h-6 w-48" />
@@ -220,20 +196,13 @@ export function Settings() {
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <PageHeader
-          title="Settings"
-          subtitle="Manage your account preferences"
-        />
+        <PageHeader title="Settings" subtitle="Manage your account preferences" />
         <div className="flex items-center gap-2">
-          <Button
-            variant="outline"
-            onClick={handleDiscard}
-            disabled={!isDirty || isSaving}
-          >
+          <Button variant="outline" onClick={handleDiscard} disabled={!isDirty || isSaving}>
             Discard Changes
           </Button>
           <Button onClick={handleSave} disabled={!isDirty || isSaving}>
-            {isSaving ? "Saving…" : "Save Changes"}
+            {isSaving ? 'Saving…' : 'Save Changes'}
           </Button>
         </div>
       </div>
@@ -265,13 +234,10 @@ function GeneralSettings({
     name: string;
     email: string;
     avatar: string;
-    baseCurrencyId: string | "";
+    baseCurrencyId: string | '';
   };
   errors: Record<string, string>;
-  onChange: (
-    field: "name" | "avatar" | "baseCurrencyId",
-    value: string
-  ) => void;
+  onChange: (field: 'name' | 'avatar' | 'baseCurrencyId', value: string) => void;
   supportedCurrencies: Array<{ id: string; name: string; symbol: string }>;
 }) {
   const displayNameId = useId();
@@ -280,22 +246,17 @@ function GeneralSettings({
   const currencyId = useId();
   const [localErrors, setLocalErrors] = useState<Record<string, string>>({});
 
-  const handleFieldChange = (
-    field: "name" | "avatar" | "baseCurrencyId",
-    value: string
-  ) => {
+  const handleFieldChange = (field: 'name' | 'avatar' | 'baseCurrencyId', value: string) => {
     onChange(field, value);
     // simple inline validation feedback for name only
     const errors: Record<string, string> = {};
-    if (field === "name") {
+    if (field === 'name') {
       const trimmed = value.trim();
-      if (trimmed.length === 0) errors.name = "Name cannot be empty";
-      else if (trimmed.length < 2)
-        errors.name = "Name must be at least 2 characters";
-      else if (trimmed.length > 100)
-        errors.name = "Name must not exceed 100 characters";
+      if (trimmed.length === 0) errors.name = 'Name cannot be empty';
+      else if (trimmed.length < 2) errors.name = 'Name must be at least 2 characters';
+      else if (trimmed.length > 100) errors.name = 'Name must not exceed 100 characters';
       else if (!/^[a-zA-Z0-9\s\-_'.&()]+$/.test(trimmed))
-        errors.name = "Name contains invalid characters";
+        errors.name = 'Name contains invalid characters';
     }
     setLocalErrors((prev) => ({ ...prev, ...errors }));
   };
@@ -308,9 +269,7 @@ function GeneralSettings({
             <User className="h-5 w-5" />
             <span>Profile Information</span>
           </CardTitle>
-          <CardDescription>
-            Manage your account profile and display preferences.
-          </CardDescription>
+          <CardDescription>Manage your account profile and display preferences.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           {errors.general && (
@@ -325,17 +284,13 @@ function GeneralSettings({
                 <Input
                   id={displayNameId}
                   value={values.name}
-                  onChange={(e) => handleFieldChange("name", e.target.value)}
+                  onChange={(e) => handleFieldChange('name', e.target.value)}
                   placeholder="Your display name"
-                  className={
-                    errors.name || localErrors.name ? "border-destructive" : ""
-                  }
+                  className={errors.name || localErrors.name ? 'border-destructive' : ''}
                 />
               </div>
               {(errors.name || localErrors.name) && (
-                <p className="text-sm text-destructive">
-                  {errors.name || localErrors.name}
-                </p>
+                <p className="text-sm text-destructive">{errors.name || localErrors.name}</p>
               )}
             </div>
             <div className="space-y-2">
@@ -362,7 +317,7 @@ function GeneralSettings({
               <Input
                 id={avatarId}
                 value={values.avatar}
-                onChange={(e) => handleFieldChange("avatar", e.target.value)}
+                onChange={(e) => handleFieldChange('avatar', e.target.value)}
                 placeholder="https://example.com/avatar.jpg"
               />
             </div>
@@ -371,9 +326,7 @@ function GeneralSettings({
               <CurrencySelector
                 id={currencyId}
                 value={values.baseCurrencyId}
-                onValueChange={(value) =>
-                  handleFieldChange("baseCurrencyId", value)
-                }
+                onValueChange={(value) => handleFieldChange('baseCurrencyId', value)}
                 currencies={supportedCurrencies}
                 placeholder="Select currency..."
               />

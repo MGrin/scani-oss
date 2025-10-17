@@ -18,36 +18,30 @@ export const BUTTON_TEXT = {
   CREATE_INSTITUTION: 'Add Institution',
   CREATE_ACCOUNT: 'Add Account',
   CREATE_HOLDING: 'Add Holding',
-  CREATE_TRANSACTION: 'Add Transaction',
 
   // Entity-specific edit actions
   EDIT_INSTITUTION: 'Edit Institution',
   EDIT_ACCOUNT: 'Edit Account',
   EDIT_HOLDING: 'Edit Holding',
-  EDIT_TRANSACTION: 'Edit Transaction',
 
   // Entity-specific delete actions
   DELETE_INSTITUTION: 'Remove My Accounts',
   DELETE_ACCOUNT: 'Delete Account',
   DELETE_HOLDING: 'Delete Holding',
-  DELETE_TRANSACTION: 'Delete Transaction',
 
   // Form submit actions
   SAVE_CHANGES: 'Save Changes',
   CREATE_INSTITUTION_SUBMIT: 'Create Institution',
   CREATE_ACCOUNT_SUBMIT: 'Create Account',
   CREATE_HOLDING_SUBMIT: 'Create Holding',
-  CREATE_TRANSACTION_SUBMIT: 'Create Transaction',
   UPDATE_INSTITUTION_SUBMIT: 'Update Institution',
   UPDATE_ACCOUNT_SUBMIT: 'Update Account',
   UPDATE_HOLDING_SUBMIT: 'Update Holding',
-  UPDATE_TRANSACTION_SUBMIT: 'Update Transaction',
 
   // Empty state actions
   ADD_FIRST_INSTITUTION: 'Add Your First Institution',
   ADD_FIRST_ACCOUNT: 'Add Your First Account',
   ADD_FIRST_HOLDING: 'Add Your First Holding',
-  ADD_FIRST_TRANSACTION: 'Add Your First Transaction',
 
   // Settings actions
   EXPORT_DATA: 'Export Data',
@@ -59,7 +53,6 @@ export const BUTTON_TEXT = {
   GO_TO_INSTITUTIONS: 'View Institutions',
   GO_TO_ACCOUNTS: 'View Accounts',
   GO_TO_HOLDINGS: 'View Holdings',
-  GO_TO_TRANSACTIONS: 'View Transactions',
 
   // Other common actions
   VIEW_DETAILS: 'View Details',
@@ -81,7 +74,6 @@ export const getCreateButtonText = (entityType: string): string => {
     institution: BUTTON_TEXT.CREATE_INSTITUTION,
     account: BUTTON_TEXT.CREATE_ACCOUNT,
     holding: BUTTON_TEXT.CREATE_HOLDING,
-    transaction: BUTTON_TEXT.CREATE_TRANSACTION,
   };
   return entityMap[entityType as keyof typeof entityMap] || `${BUTTON_TEXT.CREATE} ${entityType}`;
 };
@@ -91,7 +83,6 @@ export const getEditButtonText = (entityType: string): string => {
     institution: BUTTON_TEXT.EDIT_INSTITUTION,
     account: BUTTON_TEXT.EDIT_ACCOUNT,
     holding: BUTTON_TEXT.EDIT_HOLDING,
-    transaction: BUTTON_TEXT.EDIT_TRANSACTION,
   };
   return entityMap[entityType as keyof typeof entityMap] || `${BUTTON_TEXT.EDIT} ${entityType}`;
 };
@@ -101,7 +92,6 @@ export const getDeleteButtonText = (entityType: string): string => {
     institution: BUTTON_TEXT.DELETE_INSTITUTION,
     account: BUTTON_TEXT.DELETE_ACCOUNT,
     holding: BUTTON_TEXT.DELETE_HOLDING,
-    transaction: BUTTON_TEXT.DELETE_TRANSACTION,
   };
   return entityMap[entityType as keyof typeof entityMap] || `${BUTTON_TEXT.DELETE} ${entityType}`;
 };
@@ -111,7 +101,6 @@ export const getEmptyStateButtonText = (entityType: string): string => {
     institution: BUTTON_TEXT.ADD_FIRST_INSTITUTION,
     account: BUTTON_TEXT.ADD_FIRST_ACCOUNT,
     holding: BUTTON_TEXT.ADD_FIRST_HOLDING,
-    transaction: BUTTON_TEXT.ADD_FIRST_TRANSACTION,
   };
   return entityMap[entityType as keyof typeof entityMap] || `Add Your First ${entityType}`;
 };
@@ -122,7 +111,6 @@ export const getFormSubmitButtonText = (mode: 'create' | 'edit', entityType: str
       institution: BUTTON_TEXT.CREATE_INSTITUTION_SUBMIT,
       account: BUTTON_TEXT.CREATE_ACCOUNT_SUBMIT,
       holding: BUTTON_TEXT.CREATE_HOLDING_SUBMIT,
-      transaction: BUTTON_TEXT.CREATE_TRANSACTION_SUBMIT,
     };
     return entityMap[entityType as keyof typeof entityMap] || `${BUTTON_TEXT.CREATE} ${entityType}`;
   } else {
@@ -130,7 +118,6 @@ export const getFormSubmitButtonText = (mode: 'create' | 'edit', entityType: str
       institution: BUTTON_TEXT.UPDATE_INSTITUTION_SUBMIT,
       account: BUTTON_TEXT.UPDATE_ACCOUNT_SUBMIT,
       holding: BUTTON_TEXT.UPDATE_HOLDING_SUBMIT,
-      transaction: BUTTON_TEXT.UPDATE_TRANSACTION_SUBMIT,
     };
     return entityMap[entityType as keyof typeof entityMap] || `${BUTTON_TEXT.UPDATE} ${entityType}`;
   }

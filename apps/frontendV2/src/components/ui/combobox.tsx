@@ -1,8 +1,8 @@
-"use client";
+'use client';
 
-import { Check, ChevronsUpDown } from "lucide-react";
-import * as React from "react";
-import { Button } from "@/components/ui/button";
+import { Check, ChevronsUpDown } from 'lucide-react';
+import * as React from 'react';
+import { Button } from '@/components/ui/button';
 import {
   Command,
   CommandEmpty,
@@ -10,13 +10,9 @@ import {
   CommandInput,
   CommandItem,
   CommandList,
-} from "@/components/ui/command";
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "@/components/ui/popover";
-import { cn } from "@/lib/utils";
+} from '@/components/ui/command';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { cn } from '@/lib/utils';
 
 interface ComboboxProps {
   value: string;
@@ -38,29 +34,29 @@ interface ComboboxProps {
   onSearchChange?: (value: string) => void;
   popoverWidth?: string;
   compact?: boolean;
-  buttonSize?: "default" | "sm";
+  buttonSize?: 'default' | 'sm';
   displayLabel?: string;
-  side?: "top" | "right" | "bottom" | "left";
+  side?: 'top' | 'right' | 'bottom' | 'left';
 }
 
 export function Combobox({
   value,
   onValueChange,
   placeholder,
-  searchPlaceholder = "Search...",
-  emptyMessage = "No items found.",
+  searchPlaceholder = 'Search...',
+  emptyMessage = 'No items found.',
   items,
   className,
   disabled = false,
   onSearchChange,
   popoverWidth,
   compact = false,
-  buttonSize = "default",
+  buttonSize = 'default',
   displayLabel,
   side,
 }: ComboboxProps) {
   const [open, setOpen] = React.useState(false);
-  const [search, setSearch] = React.useState("");
+  const [search, setSearch] = React.useState('');
 
   // Simplified version - no debouncing for now
   React.useEffect(() => {
@@ -77,8 +73,7 @@ export function Combobox({
     return [...selected, ...others];
   }, [items, value]);
 
-  const heightClass =
-    buttonSize === "sm" ? "h-9 min-h-[36px]" : "h-11 min-h-[44px]";
+  const heightClass = buttonSize === 'sm' ? 'h-9 min-h-[36px]' : 'h-11 min-h-[44px]';
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
@@ -87,14 +82,12 @@ export function Combobox({
           variant="outline"
           role="combobox"
           aria-expanded={open}
-          className={cn("w-full justify-between", heightClass, className)}
+          className={cn('w-full justify-between', heightClass, className)}
           disabled={disabled}
         >
           {selectedItem ? (
             <div className="flex items-center space-x-2 truncate">
-              {selectedItem.icon && (
-                <selectedItem.icon className="h-4 w-4 shrink-0" />
-              )}
+              {selectedItem.icon && <selectedItem.icon className="h-4 w-4 shrink-0" />}
               <span className="truncate">
                 {compact && displayLabel ? displayLabel : selectedItem.label}
               </span>
@@ -106,19 +99,12 @@ export function Combobox({
         </Button>
       </PopoverTrigger>
       <PopoverContent
-        className={cn(
-          "p-0",
-          popoverWidth || "w-[--radix-popover-trigger-width]"
-        )}
+        className={cn('p-0', popoverWidth || 'w-[--radix-popover-trigger-width]')}
         align="start"
         side={side}
       >
         <Command>
-          <CommandInput
-            placeholder={searchPlaceholder}
-            value={search}
-            onValueChange={setSearch}
-          />
+          <CommandInput placeholder={searchPlaceholder} value={search} onValueChange={setSearch} />
           <CommandList>
             <CommandEmpty>{emptyMessage}</CommandEmpty>
             <CommandGroup>
@@ -127,15 +113,13 @@ export function Combobox({
                   key={item.value}
                   value={item.label}
                   onSelect={() => {
-                    onValueChange(item.value === value ? "" : item.value);
+                    onValueChange(item.value === value ? '' : item.value);
                     setOpen(false);
                   }}
                   className="p-2"
                 >
                   <div className="flex items-start space-x-2 flex-1">
-                    {item.icon && (
-                      <item.icon className="h-4 w-4 mt-0.5 shrink-0" />
-                    )}
+                    {item.icon && <item.icon className="h-4 w-4 mt-0.5 shrink-0" />}
                     <div className="flex-1 min-w-0">
                       <div className="font-medium">{item.label}</div>
                       {item.subtitle && (
@@ -150,15 +134,13 @@ export function Combobox({
                       )}
                     </div>
                     {item.type && (
-                      <div className="text-xs text-muted-foreground shrink-0 ml-2">
-                        {item.type}
-                      </div>
+                      <div className="text-xs text-muted-foreground shrink-0 ml-2">{item.type}</div>
                     )}
                   </div>
                   <Check
                     className={cn(
-                      "ml-2 h-4 w-4 shrink-0",
-                      value === item.value ? "opacity-100" : "opacity-0"
+                      'ml-2 h-4 w-4 shrink-0',
+                      value === item.value ? 'opacity-100' : 'opacity-0'
                     )}
                   />
                 </CommandItem>

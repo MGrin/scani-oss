@@ -3,24 +3,17 @@ import { Container, Service } from 'typedi';
 import type { CreateHoldingInput, UpdateHoldingInput } from '../../domain/dtos/holding';
 import type { Holding } from '../../domain/entities';
 import { AccountRepository } from '../../infrastructure/repositories/AccountRepository';
-import { TransactionTypeRepository } from '../../infrastructure/repositories/EnumRepositories';
 import { HoldingRepository } from '../../infrastructure/repositories/HoldingRepository';
-import { TransactionRepository } from '../../infrastructure/repositories/TransactionRepository';
 import { BaseService } from './BaseService';
 
 /**
  * HoldingService
  *
- * **CRITICAL BUG FIXES:**
- * - Creates holding and opening balance transaction atomically
- * - Handles price fetching failures gracefully (non-blocking)
- * - Properly looks up "opening_balance" transaction type
+ * Handles holding operations.
  */
 @Service()
 export class HoldingService extends BaseService {
   private readonly holdingRepository = Container.get(HoldingRepository);
-  private readonly transactionRepository = Container.get(TransactionRepository);
-  private readonly transactionTypeRepository = Container.get(TransactionTypeRepository);
   private readonly accountRepository = Container.get(AccountRepository);
 
   constructor() {
@@ -28,9 +21,7 @@ export class HoldingService extends BaseService {
   }
 
   /**
-   * Create a new holding with opening balance transaction
-   *
-   * **BUG FIX**: Creates holding and opening balance transaction atomically
+   * Create a new holding
    */
   async createHolding(data: CreateHoldingInput, userId: string): Promise<Holding> {
     try {
@@ -67,60 +58,19 @@ export class HoldingService extends BaseService {
         throw new Error('Holding already exists for this token in this account');
       }
 
-      // **BUG FIX**: Create holding and opening balance transaction atomically
-      return await this.withTransaction(async (tx) => {
-        // Create the holding
-        const holding = await this.holdingRepository.create(
-          {
-            accountId: data.accountId,
-            tokenId: data.tokenId,
-            balance: data.balance,
-            userId,
-            lastUpdated: data.lastUpdated || new Date(),
-          },
-          tx
-        );
-
-        this.assertExists(holding, 'Failed to create holding');
-
-        // **BUG FIX**: Properly lookup "opening_balance" transaction type
-        const openingBalanceType = await this.transactionTypeRepository.findByCode(
-          'opening_balance',
-          tx
-        );
-
-        if (openingBalanceType && !balance.isZero()) {
-          // Create opening balance transaction
-          try {
-            await this.transactionRepository.create(
-              {
-                holdingId: holding.id,
-                typeId: openingBalanceType.id,
-                userId,
-                amount: data.balance,
-                timestamp: data.lastUpdated || new Date(),
-                description: 'Opening balance',
-              },
-              tx
-            );
-
-            this.logInfo('Opening balance transaction created', {
-              holdingId: holding.id,
-              quantity: data.balance,
-            });
-          } catch (error) {
-            // **BUG FIX**: Handle transaction creation failure gracefully
-            this.logWarning('Failed to create opening balance transaction', {
-              holdingId: holding.id,
-              error,
-            });
-            // Don't fail the holding creation if transaction fails
-          }
-        }
-
-        this.logInfo('Holding created successfully', { holdingId: holding.id });
-        return holding;
+      // Create the holding
+      const holding = await this.holdingRepository.create({
+        accountId: data.accountId,
+        tokenId: data.tokenId,
+        balance: data.balance,
+        userId,
+        lastUpdated: data.lastUpdated || new Date(),
       });
+
+      this.assertExists(holding, 'Failed to create holding');
+
+      this.logInfo('Holding created successfully', { holdingId: holding.id });
+      return holding;
     } catch (error) {
       throw this.handleError(error, 'createHolding');
     }
@@ -230,7 +180,7 @@ export class HoldingService extends BaseService {
   }
 
   /**
-   * Get holding with details (token, account, transactions)
+   * Get holding with details (token, account)
    */
   async getHoldingWithDetails(holdingId: string, userId: string) {
     try {
@@ -290,7 +240,10 @@ export class HoldingService extends BaseService {
       // 2. Multiply by balance
       // 3. Convert to user's base currency
 
-      this.logDebug('Calculating holding value', { holdingId, balance: holding.balance });
+      this.logDebug('Calculating holding value', {
+        holdingId,
+        balance: holding.balance,
+      });
       return holding.balance; // Simplified for now
     } catch (error) {
       throw this.handleError(error, 'calculateHoldingValue');

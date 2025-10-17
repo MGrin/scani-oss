@@ -169,23 +169,6 @@ export async function invalidateTokensRelated(
   await runInvalidations(tasks);
 }
 
-export interface TransactionsInvalidationOptions {
-  includeList?: boolean;
-}
-
-export async function invalidateTransactionsRelated(
-  utils: TrpcUtils,
-  { includeList = true }: TransactionsInvalidationOptions = {}
-): Promise<void> {
-  const tasks: InvalidationTask[] = [];
-
-  if (includeList && utils.transactions?.getAll) {
-    tasks.push(utils.transactions.getAll.invalidate());
-  }
-
-  await runInvalidations(tasks);
-}
-
 export async function invalidatePortfolioValue(utils: TrpcUtils): Promise<void> {
   await utils.users.getPortfolioValue.invalidate();
 }

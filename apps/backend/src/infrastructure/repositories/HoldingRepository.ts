@@ -1,12 +1,9 @@
-import { and, eq, ne } from "drizzle-orm";
-import { Service } from "typedi";
-import type { Holding, NewHolding, Token } from "../../domain/entities";
-import type {
-  DatabaseTransaction,
-  IHoldingRepository,
-} from "../../domain/interfaces/repositories";
-import * as schema from "../database/schema";
-import { BaseRepository } from "./BaseRepository";
+import { and, eq, ne } from 'drizzle-orm';
+import { Service } from 'typedi';
+import type { Holding, NewHolding, Token } from '../../domain/entities';
+import type { DatabaseTransaction, IHoldingRepository } from '../../domain/interfaces/repositories';
+import * as schema from '../database/schema';
+import { BaseRepository } from './BaseRepository';
 
 @Service()
 export class HoldingRepository
@@ -14,12 +11,9 @@ export class HoldingRepository
   implements IHoldingRepository
 {
   protected readonly table = schema.holdings;
-  protected readonly tableName = "holdings";
+  protected readonly tableName = 'holdings';
 
-  async findByUser(
-    userId: string,
-    transaction?: DatabaseTransaction
-  ): Promise<Holding[]> {
+  async findByUser(userId: string, transaction?: DatabaseTransaction): Promise<Holding[]> {
     try {
       const database = this.getDb(transaction);
       const results = await database
@@ -30,7 +24,7 @@ export class HoldingRepository
 
       return results;
     } catch (error) {
-      this.logger.error({ userId, error }, "Failed to find holdings by user");
+      this.logger.error({ userId, error }, 'Failed to find holdings by user');
       throw error;
     }
   }
@@ -45,20 +39,12 @@ export class HoldingRepository
       const results = await database
         .select()
         .from(schema.holdings)
-        .where(
-          and(
-            eq(schema.holdings.accountId, accountId),
-            eq(schema.holdings.userId, userId)
-          )
-        )
+        .where(and(eq(schema.holdings.accountId, accountId), eq(schema.holdings.userId, userId)))
         .orderBy(schema.holdings.lastUpdated);
 
       return results;
     } catch (error) {
-      this.logger.error(
-        { accountId, userId, error },
-        "Failed to find holdings by account"
-      );
+      this.logger.error({ accountId, userId, error }, 'Failed to find holdings by account');
       throw error;
     }
   }
@@ -73,20 +59,12 @@ export class HoldingRepository
       const results = await database
         .select()
         .from(schema.holdings)
-        .where(
-          and(
-            eq(schema.holdings.tokenId, tokenId),
-            eq(schema.holdings.userId, userId)
-          )
-        )
+        .where(and(eq(schema.holdings.tokenId, tokenId), eq(schema.holdings.userId, userId)))
         .orderBy(schema.holdings.lastUpdated);
 
       return results;
     } catch (error) {
-      this.logger.error(
-        { tokenId, userId, error },
-        "Failed to find holdings by token"
-      );
+      this.logger.error({ tokenId, userId, error }, 'Failed to find holdings by token');
       throw error;
     }
   }
@@ -121,7 +99,7 @@ export class HoldingRepository
     } catch (error) {
       this.logger.error(
         { accountId, tokenId, userId, excludeId, error },
-        "Failed to find holding by account and token"
+        'Failed to find holding by account and token'
       );
       throw error;
     }
@@ -150,16 +128,8 @@ export class HoldingRepository
         })
         .from(schema.holdings)
         .innerJoin(schema.tokens, eq(schema.holdings.tokenId, schema.tokens.id))
-        .innerJoin(
-          schema.accounts,
-          eq(schema.holdings.accountId, schema.accounts.id)
-        )
-        .where(
-          and(
-            eq(schema.holdings.id, holdingId),
-            eq(schema.holdings.userId, userId)
-          )
-        )
+        .innerJoin(schema.accounts, eq(schema.holdings.accountId, schema.accounts.id))
+        .where(and(eq(schema.holdings.id, holdingId), eq(schema.holdings.userId, userId)))
         .limit(1);
 
       if (!results[0]) return null;
@@ -171,10 +141,7 @@ export class HoldingRepository
         accountName: results[0].accountName,
       };
     } catch (error) {
-      this.logger.error(
-        { holdingId, userId, error },
-        "Failed to find holding with details"
-      );
+      this.logger.error({ holdingId, userId, error }, 'Failed to find holding with details');
       throw error;
     }
   }
@@ -193,12 +160,7 @@ export class HoldingRepository
         })
         .from(schema.holdings)
         .innerJoin(schema.tokens, eq(schema.holdings.tokenId, schema.tokens.id))
-        .where(
-          and(
-            eq(schema.holdings.id, holdingId),
-            eq(schema.holdings.userId, userId)
-          )
-        )
+        .where(and(eq(schema.holdings.id, holdingId), eq(schema.holdings.userId, userId)))
         .limit(1);
 
       if (!results[0]) return null;
@@ -208,10 +170,7 @@ export class HoldingRepository
         token: results[0].token,
       };
     } catch (error) {
-      this.logger.error(
-        { holdingId, userId, error },
-        "Failed to find holding with token"
-      );
+      this.logger.error({ holdingId, userId, error }, 'Failed to find holding with token');
       throw error;
     }
   }
@@ -236,10 +195,7 @@ export class HoldingRepository
         token: r.token,
       }));
     } catch (error) {
-      this.logger.error(
-        { userId, error },
-        "Failed to find user holdings with tokens"
-      );
+      this.logger.error({ userId, error }, 'Failed to find user holdings with tokens');
       throw error;
     }
   }
@@ -300,22 +256,10 @@ export class HoldingRepository
         })
         .from(schema.holdings)
         .innerJoin(schema.tokens, eq(schema.holdings.tokenId, schema.tokens.id))
-        .innerJoin(
-          schema.tokenTypes,
-          eq(schema.tokens.typeId, schema.tokenTypes.id)
-        )
-        .innerJoin(
-          schema.accounts,
-          eq(schema.holdings.accountId, schema.accounts.id)
-        )
-        .innerJoin(
-          schema.institutions,
-          eq(schema.accounts.institutionId, schema.institutions.id)
-        )
-        .innerJoin(
-          schema.accountTypes,
-          eq(schema.accounts.typeId, schema.accountTypes.id)
-        )
+        .innerJoin(schema.tokenTypes, eq(schema.tokens.typeId, schema.tokenTypes.id))
+        .innerJoin(schema.accounts, eq(schema.holdings.accountId, schema.accounts.id))
+        .innerJoin(schema.institutions, eq(schema.accounts.institutionId, schema.institutions.id))
+        .innerJoin(schema.accountTypes, eq(schema.accounts.typeId, schema.accountTypes.id))
         .where(eq(schema.holdings.userId, userId));
 
       return results.map((r) => ({
@@ -346,10 +290,7 @@ export class HoldingRepository
         },
       }));
     } catch (error) {
-      this.logger.error(
-        { userId, error },
-        "Failed to find holdings with complete details"
-      );
+      this.logger.error({ userId, error }, 'Failed to find holdings with complete details');
       throw error;
     }
   }
@@ -388,10 +329,7 @@ export class HoldingRepository
 
       // Build where conditions
       const whereConditions = accountId
-        ? and(
-            eq(schema.holdings.userId, userId),
-            eq(schema.holdings.accountId, accountId)
-          )
+        ? and(eq(schema.holdings.userId, userId), eq(schema.holdings.accountId, accountId))
         : eq(schema.holdings.userId, userId);
 
       const results = await database
@@ -423,22 +361,10 @@ export class HoldingRepository
         })
         .from(schema.holdings)
         .innerJoin(schema.tokens, eq(schema.holdings.tokenId, schema.tokens.id))
-        .innerJoin(
-          schema.tokenTypes,
-          eq(schema.tokens.typeId, schema.tokenTypes.id)
-        )
-        .innerJoin(
-          schema.accounts,
-          eq(schema.holdings.accountId, schema.accounts.id)
-        )
-        .innerJoin(
-          schema.accountTypes,
-          eq(schema.accounts.typeId, schema.accountTypes.id)
-        )
-        .innerJoin(
-          schema.institutions,
-          eq(schema.accounts.institutionId, schema.institutions.id)
-        )
+        .innerJoin(schema.tokenTypes, eq(schema.tokens.typeId, schema.tokenTypes.id))
+        .innerJoin(schema.accounts, eq(schema.holdings.accountId, schema.accounts.id))
+        .innerJoin(schema.accountTypes, eq(schema.accounts.typeId, schema.accountTypes.id))
+        .innerJoin(schema.institutions, eq(schema.accounts.institutionId, schema.institutions.id))
         .innerJoin(
           schema.institutionTypes,
           eq(schema.institutions.typeId, schema.institutionTypes.id)
@@ -476,10 +402,7 @@ export class HoldingRepository
         },
       }));
     } catch (error) {
-      this.logger.error(
-        { userId, accountId, error },
-        "Failed to find holdings with full details"
-      );
+      this.logger.error({ userId, accountId, error }, 'Failed to find holdings with full details');
       throw error;
     }
   }

@@ -16,13 +16,10 @@ import type {
   NewInstitution,
   NewToken,
   NewTokenPrice,
-  NewTransaction,
   NewUser,
   Token,
   TokenPrice,
   TokenType,
-  Transaction,
-  TransactionType,
   User,
 } from '../../entities';
 import type { DatabaseTransaction, IBaseRepository } from './IBaseRepository';
@@ -193,36 +190,6 @@ export interface IHoldingRepository extends IBaseRepository<Holding, NewHolding>
 }
 
 // ============================================================================
-// Transaction Repository Interface
-// ============================================================================
-
-export interface ITransactionRepository extends IBaseRepository<Transaction, NewTransaction> {
-  findByUser(userId: string, transaction?: DatabaseTransaction): Promise<Transaction[]>;
-  findByHolding(holdingId: string, transaction?: DatabaseTransaction): Promise<Transaction[]>;
-  findByAccount(
-    accountId: string,
-    userId: string,
-    transaction?: DatabaseTransaction
-  ): Promise<Transaction[]>;
-  findByDateRange(
-    userId: string,
-    startDate: Date,
-    endDate: Date,
-    transaction?: DatabaseTransaction
-  ): Promise<Transaction[]>;
-  findByType(
-    typeCode: string,
-    userId: string,
-    transaction?: DatabaseTransaction
-  ): Promise<Transaction[]>;
-  findWithDetails(
-    transactionId: string,
-    userId: string,
-    transaction?: DatabaseTransaction
-  ): Promise<(Transaction & { tokenSymbol: string; typeName: string }) | null>;
-}
-
-// ============================================================================
 // Enum Repository Interfaces
 // ============================================================================
 
@@ -235,12 +202,6 @@ export interface IInstitutionTypeRepository
 export interface IAccountTypeRepository extends IBaseRepository<AccountType, Partial<AccountType>> {
   findByCode(code: string, transaction?: DatabaseTransaction): Promise<AccountType | null>;
   findActive(transaction?: DatabaseTransaction): Promise<AccountType[]>;
-}
-
-export interface ITransactionTypeRepository
-  extends IBaseRepository<TransactionType, Partial<TransactionType>> {
-  findByCode(code: string, transaction?: DatabaseTransaction): Promise<TransactionType | null>;
-  findActive(transaction?: DatabaseTransaction): Promise<TransactionType[]>;
 }
 
 export interface ITokenTypeRepository extends IBaseRepository<TokenType, Partial<TokenType>> {

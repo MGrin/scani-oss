@@ -41,24 +41,6 @@ export class UserContextService {
   }
 
   /**
-   * Get transaction type by code
-   * Eliminates repeated transaction type lookups across services
-   */
-  async getTransactionType(code: string): Promise<TransactionType> {
-    const [transactionType] = await db
-      .select()
-      .from(schema.transactionTypes)
-      .where(eq(schema.transactionTypes.code, code))
-      .limit(1);
-
-    if (!transactionType) {
-      throw new Error(`Transaction type '${code}' not found`);
-    }
-
-    return transactionType;
-  }
-
-  /**
    * Batch get base currencies for multiple users
    * Optimizes portfolio operations across multiple users
    */
@@ -114,25 +96,6 @@ export class UserContextService {
 
     return new Map(tokens.map((token) => [token.id, token]));
   }
-
-  /**
-   * Batch get transaction types for multiple codes
-   * Optimizes operations that need multiple transaction types
-   */
-  async batchGetTransactionTypes(codes: string[]): Promise<Map<string, TransactionType>> {
-    if (codes.length === 0) return new Map();
-
-    const transactionTypes = await db
-      .select()
-      .from(schema.transactionTypes)
-      .where(
-        codes.length === 1
-          ? eq(schema.transactionTypes.code, codes[0]!)
-          : inArray(schema.transactionTypes.code, codes)
-      );
-
-    return new Map(transactionTypes.map((type) => [type.code, type]));
-  }
 }
 
 // Types for better type safety
@@ -140,11 +103,4 @@ export interface Token {
   id: string;
   symbol: string;
   name: string;
-}
-
-export interface TransactionType {
-  id: string;
-  code: string;
-  name: string;
-  isActive: boolean;
 }

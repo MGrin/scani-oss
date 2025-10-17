@@ -1,9 +1,9 @@
-import { ArrowLeft, Plus } from "lucide-react";
-import type React from "react";
-import { useLocation, useNavigate, useParams } from "react-router-dom";
-import { Button } from "@/components/ui/button";
-import { Skeleton } from "@/components/ui/skeleton";
-import { cn } from "@/lib/utils";
+import { ArrowLeft, Plus } from 'lucide-react';
+import type React from 'react';
+import { useLocation, useNavigate, useParams } from 'react-router-dom';
+import { Button } from '@/components/ui/button';
+import { Skeleton } from '@/components/ui/skeleton';
+import { cn } from '@/lib/utils';
 
 interface PageHeaderProps {
   /**
@@ -64,8 +64,7 @@ export function PageHeader({
 
   // Don't show Add Data button on the Add Data page itself, dashboard, or settings
   const showAddHoldingButton =
-    !location.pathname.includes("/add-data") &&
-    !location.pathname.includes("/settings");
+    !location.pathname.includes('/add-data') && !location.pathname.includes('/settings');
 
   // Check if we're in hierarchical mode (has accountId in URL)
   const isHierarchicalMode = Boolean(params.accountId);
@@ -76,13 +75,13 @@ export function PageHeader({
       navigate(`/add-data?accountId=${params.accountId}`);
     } else {
       // Navigate normally
-      navigate("/add-data");
+      navigate('/add-data');
     }
   };
 
   if (loading) {
     return (
-      <div className={cn("space-y-2", className)}>
+      <div className={cn('space-y-2', className)}>
         {breadcrumb && <div className="mb-2">{breadcrumb}</div>}
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
@@ -99,32 +98,19 @@ export function PageHeader({
   }
 
   return (
-    <div className={cn("space-y-3 -mt-1", className)}>
+    <div className={cn('space-y-3 -mt-1', className)}>
       {breadcrumb && <div className="mb-2">{breadcrumb}</div>}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex items-center gap-3">
           {backButton && (
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={backButton.onClick}
-              className="p-2 h-auto"
-            >
+            <Button variant="ghost" size="sm" onClick={backButton.onClick} className="p-2 h-auto">
               <ArrowLeft className="h-4 w-4" />
-              {backButton.label && (
-                <span className="ml-2">{backButton.label}</span>
-              )}
+              {backButton.label && <span className="ml-2">{backButton.label}</span>}
             </Button>
           )}
           <div className="space-y-1">
-            <h1 className="text-2xl sm:text-3xl font-bold tracking-tight leading-tight">
-              {title}
-            </h1>
-            {subtitle && (
-              <p className="text-muted-foreground text-sm sm:text-lg">
-                {subtitle}
-              </p>
-            )}
+            <h1 className="text-2xl sm:text-3xl font-bold tracking-tight leading-tight">{title}</h1>
+            {subtitle && <p className="text-muted-foreground text-sm sm:text-lg">{subtitle}</p>}
           </div>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
@@ -170,14 +156,14 @@ export function SimplePageHeader({
 }) {
   if (loading) {
     return (
-      <div className={cn("mb-6", className)}>
+      <div className={cn('mb-6', className)}>
         <Skeleton className="h-8 w-48" />
       </div>
     );
   }
 
   return (
-    <div className={cn("mb-6", className)}>
+    <div className={cn('mb-6', className)}>
       <h1 className="text-2xl sm:text-3xl font-bold tracking-tight">{title}</h1>
     </div>
   );

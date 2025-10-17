@@ -111,8 +111,7 @@ export function createHoldingsRouter(holdingRepository: HoldingRepository) {
             balance: input.balance || "0",
             lastUpdated: input.lastUpdated,
           },
-          userId,
-          dbUser.baseCurrencyId || undefined
+          dbUser
         );
 
         // Emit entity change for real-time updates
@@ -190,9 +189,6 @@ export function createHoldingsRouter(holdingRepository: HoldingRepository) {
                 id: result.deleted.accountId,
               },
             ],
-          },
-          data: {
-            cascadeInfo: result.cascadeInfo,
           },
         });
 
