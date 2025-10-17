@@ -730,6 +730,13 @@ function AccountSelectionStep({
   const { data: accountTypes } = trpc.accountTypes.getAll.useQuery();
   const { data: institutionTypes } = trpc.institutionTypes.getAll.useQuery();
 
+  // Automatically switch to create mode if no accounts exist
+  useEffect(() => {
+    if (!accountsLoading && accounts && accounts.length === 0) {
+      setMode("create");
+    }
+  }, [accountsLoading, accounts]);
+
   // Mutations for creating new items
 
   const createInstitution = trpc.institutions.create.useMutation();
