@@ -1,16 +1,14 @@
-import Container, { Service } from "typedi";
+import Container, { Service } from 'typedi';
+import type { schema } from '../../infrastructure/database/connection';
 import {
   AccountTypeRepository,
   InstitutionTypeRepository,
-} from "../../infrastructure/repositories/EnumRepositories";
-import { createComponentLogger } from "../../utils/logger";
-import { BatchOperationsService } from "../services";
-import { CreateHoldingUseCase } from "./CreateHoldingUseCase";
-import type { schema } from "../../infrastructure/database/connection";
+} from '../../infrastructure/repositories/EnumRepositories';
+import { createComponentLogger } from '../../utils/logger';
+import { BatchOperationsService } from '../services';
+import { CreateHoldingUseCase } from './CreateHoldingUseCase';
 
-const logger = createComponentLogger(
-  "use-case:create-holdings-with-dependencies"
-);
+const logger = createComponentLogger('use-case:create-holdings-with-dependencies');
 
 export interface Institution {
   name: string;
@@ -74,21 +72,17 @@ export interface CreateHoldingsWithDependenciesResult {
  */
 @Service()
 export class CreateHoldingsWithDependenciesUseCase {
-  private readonly batchOperationsService = Container.get(
-    BatchOperationsService
-  );
+  private readonly batchOperationsService = Container.get(BatchOperationsService);
   private readonly createHoldingUseCase = Container.get(CreateHoldingUseCase);
   private readonly accountTypeRepository = Container.get(AccountTypeRepository);
-  private readonly institutionTypeRepository = Container.get(
-    InstitutionTypeRepository
-  );
+  private readonly institutionTypeRepository = Container.get(InstitutionTypeRepository);
 
   /**
    * Helper method to resolve account type code from UUID or code
    */
   private async resolveAccountTypeCode(typeInput: string): Promise<string> {
     // Check if it's a UUID (contains dashes)
-    if (typeInput.includes("-")) {
+    if (typeInput.includes('-')) {
       const accountType = await this.accountTypeRepository.findById(typeInput);
       if (!accountType) {
         throw new Error(`Account type with ID ${typeInput} not found`);
@@ -104,10 +98,8 @@ export class CreateHoldingsWithDependenciesUseCase {
    */
   private async resolveInstitutionTypeCode(typeInput: string): Promise<string> {
     // Check if it's a UUID (contains dashes)
-    if (typeInput.includes("-")) {
-      const institutionType = await this.institutionTypeRepository.findById(
-        typeInput
-      );
+    if (typeInput.includes('-')) {
+      const institutionType = await this.institutionTypeRepository.findById(typeInput);
       if (!institutionType) {
         throw new Error(`Institution type with ID ${typeInput} not found`);
       }
@@ -134,7 +126,7 @@ export class CreateHoldingsWithDependenciesUseCase {
           balance: h.balance,
         })),
       },
-      "Creating holdings with dependencies"
+      'Creating holdings with dependencies'
     );
 
     let accountId: string;
@@ -142,40 +134,36 @@ export class CreateHoldingsWithDependenciesUseCase {
     let createdAccount = false;
     let createdInstitution = false;
     let firstHoldingCreated = false; // Track if first holding was created by BatchOperationsService
-    let firstHoldingId = ""; // Store the ID of the first holding created by BatchOperationsService
+    let firstHoldingId = ''; // Store the ID of the first holding created by BatchOperationsService
 
     // Step 1: Ensure we have an accountId
     if (input.accountId) {
       // Use existing account
       accountId = input.accountId;
-      logger.debug({ userId, accountId }, "Using existing account");
+      logger.debug({ userId, accountId }, 'Using existing account');
     } else {
       // Need to create account
       if (!input.account) {
-        throw new Error("Either accountId or account details must be provided");
+        throw new Error('Either accountId or account details must be provided');
       }
 
       // Step 1a: Ensure we have an institutionId
-      if (!input.account.institutionId || input.account.institutionId === "") {
+      if (!input.account.institutionId || input.account.institutionId === '') {
         // Need to create institution
         if (!input.institution) {
           throw new Error(
-            "Institution details are required when creating new account without institutionId"
+            'Institution details are required when creating new account without institutionId'
           );
         }
 
         logger.debug(
           { userId, institutionName: input.institution.name },
-          "Creating new institution"
+          'Creating new institution'
         );
 
         // Resolve type codes (convert UUID to code if needed)
-        const institutionTypeCode = await this.resolveInstitutionTypeCode(
-          input.institution.type
-        );
-        const accountTypeCode = await this.resolveAccountTypeCode(
-          input.account.type
-        );
+        const institutionTypeCode = await this.resolveInstitutionTypeCode(input.institution.type);
+        const accountTypeCode = await this.resolveAccountTypeCode(input.account.type);
 
         // Create institution + account + first holding atomically
         const serviceInput = {
@@ -190,16 +178,15 @@ export class CreateHoldingsWithDependenciesUseCase {
             description: input.account.description,
           },
           holding: {
-            tokenId: input.holdings[0]?.tokenId || "",
-            balance: input.holdings[0]?.balance || "0",
+            tokenId: input.holdings[0]?.tokenId || '',
+            balance: input.holdings[0]?.balance || '0',
           },
         };
 
-        const result =
-          await this.batchOperationsService.createHoldingWithDependencies(
-            serviceInput,
-            userId
-          );
+        const result = await this.batchOperationsService.createHoldingWithDependencies(
+          serviceInput,
+          userId
+        );
 
         institutionId = result.institutionId;
         accountId = result.accountId;
@@ -208,23 +195,15 @@ export class CreateHoldingsWithDependenciesUseCase {
         firstHoldingCreated = true; // BatchOperationsService created the first holding
         firstHoldingId = result.holdingId; // Store the ID
 
-        logger.info(
-          { userId, institutionId, accountId },
-          "Created institution and account"
-        );
+        logger.info({ userId, institutionId, accountId }, 'Created institution and account');
       } else {
         // Use existing institution, create account only
         institutionId = input.account.institutionId;
 
-        logger.debug(
-          { userId, institutionId },
-          "Creating account with existing institution"
-        );
+        logger.debug({ userId, institutionId }, 'Creating account with existing institution');
 
         // Resolve account type code (convert UUID to code if needed)
-        const accountTypeCode = await this.resolveAccountTypeCode(
-          input.account.type
-        );
+        const accountTypeCode = await this.resolveAccountTypeCode(input.account.type);
 
         const serviceInput = {
           account: {
@@ -234,31 +213,28 @@ export class CreateHoldingsWithDependenciesUseCase {
             description: input.account.description,
           },
           holding: {
-            tokenId: input.holdings[0]?.tokenId || "",
-            balance: input.holdings[0]?.balance || "0",
+            tokenId: input.holdings[0]?.tokenId || '',
+            balance: input.holdings[0]?.balance || '0',
           },
         };
 
-        const result =
-          await this.batchOperationsService.createHoldingWithDependencies(
-            serviceInput,
-            userId
-          );
+        const result = await this.batchOperationsService.createHoldingWithDependencies(
+          serviceInput,
+          userId
+        );
 
         accountId = result.accountId;
         createdAccount = result.createdAccount;
         firstHoldingCreated = true; // BatchOperationsService created the first holding
         firstHoldingId = result.holdingId; // Store the ID
 
-        logger.info({ userId, institutionId, accountId }, "Created account");
+        logger.info({ userId, institutionId, accountId }, 'Created account');
       }
     }
 
     // Step 2: Now we have accountId - create holdings
     // If we created a new account, the first holding was already created by BatchOperationsService
-    const holdingsToCreate = firstHoldingCreated
-      ? input.holdings.slice(1)
-      : input.holdings;
+    const holdingsToCreate = firstHoldingCreated ? input.holdings.slice(1) : input.holdings;
 
     logger.info(
       {
@@ -272,7 +248,7 @@ export class CreateHoldingsWithDependenciesUseCase {
           balance: h.balance,
         })),
       },
-      "Creating holdings for account"
+      'Creating holdings for account'
     );
 
     const holdingsResults = [];
@@ -281,7 +257,7 @@ export class CreateHoldingsWithDependenciesUseCase {
     if (firstHoldingCreated && input.holdings[0]) {
       holdingsResults.push({
         holdingId: firstHoldingId, // Use the actual ID from BatchOperationsService
-        tokenId: input.holdings[0].tokenId || "",
+        tokenId: input.holdings[0].tokenId || '',
         createdToken: false,
         createdHolding: true,
       });
@@ -290,7 +266,7 @@ export class CreateHoldingsWithDependenciesUseCase {
     for (const holdingInput of holdingsToCreate) {
       try {
         if (!holdingInput.tokenId) {
-          throw new Error("tokenId is required for creating holding");
+          throw new Error('tokenId is required for creating holding');
         }
 
         logger.info(
@@ -299,7 +275,7 @@ export class CreateHoldingsWithDependenciesUseCase {
             tokenId: holdingInput.tokenId,
             balance: holdingInput.balance,
           },
-          "Creating holding"
+          'Creating holding'
         );
 
         const holdingResult = await this.createHoldingUseCase.execute(
@@ -317,7 +293,7 @@ export class CreateHoldingsWithDependenciesUseCase {
             holdingId: holdingResult.holding.id,
             tokenId: holdingInput.tokenId,
           },
-          "Holding created successfully"
+          'Holding created successfully'
         );
 
         holdingsResults.push({
@@ -327,13 +303,10 @@ export class CreateHoldingsWithDependenciesUseCase {
           createdHolding: true,
         });
       } catch (error) {
-        logger.error(
-          { error, tokenId: holdingInput.tokenId },
-          "Failed to create holding"
-        );
+        logger.error({ error, tokenId: holdingInput.tokenId }, 'Failed to create holding');
         holdingsResults.push({
-          holdingId: "",
-          tokenId: holdingInput.tokenId || "",
+          holdingId: '',
+          tokenId: holdingInput.tokenId || '',
           createdToken: false,
           createdHolding: false,
         });
@@ -349,7 +322,7 @@ export class CreateHoldingsWithDependenciesUseCase {
         createdInstitution,
         holdingsCreated: holdingsResults.length,
       },
-      "Completed creating holdings with dependencies"
+      'Completed creating holdings with dependencies'
     );
 
     return {

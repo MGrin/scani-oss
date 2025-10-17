@@ -125,6 +125,7 @@ export function Layout({ children }: LayoutProps) {
     onSuccess: () => {
       utils.users.getBaseCurrency.invalidate();
       utils.users.getPortfolioValue.invalidate();
+      utils.dashboard.getOverview.invalidate();
       toast({
         title: 'Success',
         description:
