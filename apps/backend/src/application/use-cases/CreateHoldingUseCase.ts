@@ -1,11 +1,11 @@
-import { and, eq } from 'drizzle-orm';
-import { Service } from 'typedi';
-import { db } from '../../infrastructure/database/connection';
-import * as schema from '../../infrastructure/database/schema';
-import { createComponentLogger } from '../../utils/logger';
-import type { PricingService } from '../services/PricingService';
+import { and, eq } from "drizzle-orm";
+import Container, { Service } from "typedi";
+import { db } from "../../infrastructure/database/connection";
+import * as schema from "../../infrastructure/database/schema";
+import { createComponentLogger } from "../../utils/logger";
+import { PricingService } from "../services/PricingService";
 
-const logger = createComponentLogger('use-case:create-holding');
+const logger = createComponentLogger("use-case:create-holding");
 
 export interface CreateHoldingInput {
   accountId: string;
@@ -30,7 +30,7 @@ export interface CreateHoldingResult {
  */
 @Service()
 export class CreateHoldingUseCase {
-  constructor(private readonly pricingService: PricingService) {}
+  private readonly pricingService = Container.get(PricingService);
 
   async execute(
     input: CreateHoldingInput,
@@ -43,18 +43,25 @@ export class CreateHoldingUseCase {
         userId,
         input,
       },
-      'Creating holding'
+      "Creating holding"
     );
 
     // Validate account existence and ownership
     const [account] = await db
       .select()
       .from(schema.accounts)
-      .where(and(eq(schema.accounts.id, input.accountId), eq(schema.accounts.userId, userId)))
+      .where(
+        and(
+          eq(schema.accounts.id, input.accountId),
+          eq(schema.accounts.userId, userId)
+        )
+      )
       .limit(1);
 
     if (!account) {
-      throw new Error('Account does not exist or does not belong to the current user');
+      throw new Error(
+        "Account does not exist or does not belong to the current user"
+      );
     }
 
     // Validate token existence
@@ -65,7 +72,7 @@ export class CreateHoldingUseCase {
       .limit(1);
 
     if (!token) {
-      throw new Error('Token does not exist for the specified tokenId');
+      throw new Error("Token does not exist for the specified tokenId");
     }
 
     const baseCurrencyId = user?.baseCurrencyId;
@@ -74,7 +81,7 @@ export class CreateHoldingUseCase {
     const holdingData = {
       ...input,
       userId,
-      balance: input.balance || '0',
+      balance: input.balance || "0",
       createdAt: now,
       lastUpdated: input.lastUpdated || now,
     };
@@ -86,10 +93,13 @@ export class CreateHoldingUseCase {
         tokenId: holdingData.tokenId,
         balance: holdingData.balance,
       },
-      'Inserting holding data'
+      "Inserting holding data"
     );
 
-    const [holding] = await db.insert(schema.holdings).values(holdingData).returning();
+    const [holding] = await db
+      .insert(schema.holdings)
+      .values(holdingData)
+      .returning();
 
     if (!holding) {
       logger.error(
@@ -98,9 +108,11 @@ export class CreateHoldingUseCase {
           accountId: holdingData.accountId,
           tokenId: holdingData.tokenId,
         },
-        'Failed to create holding - database insert returned no data'
+        "Failed to create holding - database insert returned no data"
       );
-      throw new Error('Failed to create holding - no data returned from database');
+      throw new Error(
+        "Failed to create holding - no data returned from database"
+      );
     }
 
     logger.info(
@@ -110,7 +122,7 @@ export class CreateHoldingUseCase {
         tokenId: holding.tokenId,
         balance: holding.balance,
       },
-      'Holding created successfully in database'
+      "Holding created successfully in database"
     );
 
     // CRITICAL FIX: Fetch price after holding is created
@@ -132,10 +144,14 @@ export class CreateHoldingUseCase {
               symbol: token.symbol,
               baseCurrency: baseCurrency.symbol,
             },
-            'Fetching current price for newly created holding'
+            "Fetching current price for newly created holding"
           );
 
-          const price = await this.pricingService.getTokenPrice(token, baseCurrency.symbol, now);
+          const price = await this.pricingService.getTokenPrice(
+            token,
+            baseCurrency.symbol,
+            now
+          );
 
           if (price && parseFloat(price) > 0) {
             priceFetchSuccessful = true;
@@ -147,10 +163,10 @@ export class CreateHoldingUseCase {
                 price,
                 baseCurrency: baseCurrency.symbol,
               },
-              'Successfully fetched price for newly created holding'
+              "Successfully fetched price for newly created holding"
             );
           } else {
-            priceFetchError = 'Price returned as zero or invalid';
+            priceFetchError = "Price returned as zero or invalid";
             logger.warn(
               {
                 holdingId: holding.id,
@@ -158,7 +174,7 @@ export class CreateHoldingUseCase {
                 symbol: token.symbol,
                 price,
               },
-              'Token price returned as zero or invalid'
+              "Token price returned as zero or invalid"
             );
           }
         } else if (token.symbol === baseCurrency?.symbol) {
@@ -166,18 +182,19 @@ export class CreateHoldingUseCase {
           priceFetchSuccessful = true;
           logger.debug(
             { tokenId: token.id, symbol: token.symbol },
-            'Token is base currency, no pricing needed'
+            "Token is base currency, no pricing needed"
           );
         }
       } else {
-        priceFetchError = 'User has no base currency configured';
+        priceFetchError = "User has no base currency configured";
         logger.warn(
           { userId, tokenId: token.id },
-          'Cannot fetch price - user has no base currency'
+          "Cannot fetch price - user has no base currency"
         );
       }
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      const errorMessage =
+        error instanceof Error ? error.message : "Unknown error";
       priceFetchError = errorMessage;
 
       logger.warn(
@@ -186,9 +203,12 @@ export class CreateHoldingUseCase {
           tokenId: token.id,
           symbol: token.symbol,
           baseCurrencyId,
-          error: error instanceof Error ? { name: error.name, message: error.message } : error,
+          error:
+            error instanceof Error
+              ? { name: error.name, message: error.message }
+              : error,
         },
-        'Failed to fetch token price after holding creation - holding still created successfully'
+        "Failed to fetch token price after holding creation - holding still created successfully"
       );
       // Holding was already created successfully, pricing failure is non-blocking
     }
