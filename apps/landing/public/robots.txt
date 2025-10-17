@@ -1,0 +1,11 @@
+User-agent: *
+Allow: /
+
+# Sitemap
+Sitemap: https://scani.xyz/sitemap.xml
+
+# Disallow development/staging paths if they exist
+Disallow: /admin/
+Disallow: /api/
+Disallow: /_next/
+Disallow: /.well-known/
