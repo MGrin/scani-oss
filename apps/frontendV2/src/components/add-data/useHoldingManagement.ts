@@ -1,5 +1,5 @@
-import { useCallback } from "react";
-import type { CompleteImportData } from "@/types/addData";
+import { useCallback } from 'react';
+import type { CompleteImportData } from '@/types/addData';
 
 interface Holding {
   id: string;
@@ -23,8 +23,8 @@ export function useHoldingManagement({
   const addHolding = useCallback(() => {
     const newHolding: Holding = {
       id: `new-${Date.now()}-${Math.random()}`,
-      tokenValue: "",
-      amount: "",
+      tokenValue: '',
+      amount: '',
       isExisting: false,
     };
     const newHoldings = [...holdings, newHolding];
@@ -50,10 +50,8 @@ export function useHoldingManagement({
   );
 
   const updateHolding = useCallback(
-    (id: string, field: "tokenValue" | "amount", value: string) => {
-      const newHoldings = holdings.map((h) =>
-        h.id === id ? { ...h, [field]: value } : h
-      );
+    (id: string, field: 'tokenValue' | 'amount', value: string) => {
+      const newHoldings = holdings.map((h) => (h.id === id ? { ...h, [field]: value } : h));
       onCompleteDataUpdate({
         dataEntry: {
           ...completeImportData.dataEntry,

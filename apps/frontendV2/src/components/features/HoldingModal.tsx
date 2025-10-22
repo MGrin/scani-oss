@@ -1,10 +1,10 @@
-import type { HoldingWithDetails } from "@scani/shared";
-import { Save, Trash2 } from "lucide-react";
-import { useEffect, useState } from "react";
-import { NumericFormat } from "react-number-format";
-import TimeAgo from "react-timeago";
-import { TokenSearchableSelector } from "@/components/selectors/TokenSearchableSelector";
-import { Button } from "@/components/ui/button";
+import type { HoldingWithDetails } from '@scani/shared';
+import { Save, Trash2 } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { NumericFormat } from 'react-number-format';
+import TimeAgo from 'react-timeago';
+import { TokenSearchableSelector } from '@/components/selectors/TokenSearchableSelector';
+import { Button } from '@/components/ui/button';
 import {
   Dialog,
   DialogContent,
@@ -12,16 +12,16 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { MoneyDisplay } from "@/components/ui/money-display";
-import { useToast } from "@/hooks/use-toast";
-import { trpc } from "@/lib/trpc";
-import { createCurrencyToken } from "@/lib/utils";
-import { AccountBadge } from "./AccountBadge";
-import { InstitutionBadge } from "./InstitutionBadge";
-import { TokenTypeBadge } from "./TokenTypeBadge";
+} from '@/components/ui/dialog';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { MoneyDisplay } from '@/components/ui/money-display';
+import { useToast } from '@/hooks/use-toast';
+import { trpc } from '@/lib/trpc';
+import { createCurrencyToken } from '@/lib/utils';
+import { AccountBadge } from './AccountBadge';
+import { InstitutionBadge } from './InstitutionBadge';
+import { TokenTypeBadge } from './TokenTypeBadge';
 
 interface HoldingModalProps {
   holding: HoldingWithDetails | null;
@@ -40,12 +40,12 @@ export function HoldingModal({
 }: HoldingModalProps) {
   const { toast } = useToast();
   const utils = trpc.useUtils();
-  const [editTokenId, setEditTokenId] = useState("");
-  const [editBalance, setEditBalance] = useState("");
+  const [editTokenId, setEditTokenId] = useState('');
+  const [editBalance, setEditBalance] = useState('');
 
   // Fetch base currency
   const { data: baseCurrency } = trpc.users.getBaseCurrency.useQuery();
-  const currency = baseCurrency?.symbol || "USD";
+  const currency = baseCurrency?.symbol || 'USD';
   const baseCurrencyToken = createCurrencyToken(currency);
 
   // Update holding mutation
@@ -58,17 +58,17 @@ export function HoldingModal({
       utils.dashboard.getOverview.invalidate();
 
       toast({
-        title: "Holding updated",
-        description: "The holding has been successfully updated.",
+        title: 'Holding updated',
+        description: 'The holding has been successfully updated.',
       });
 
       onHoldingUpdated?.();
     },
     onError: (error) => {
       toast({
-        title: "Update failed",
-        description: error.message || "Failed to update holding.",
-        variant: "destructive",
+        title: 'Update failed',
+        description: error.message || 'Failed to update holding.',
+        variant: 'destructive',
       });
     },
   });
@@ -83,8 +83,8 @@ export function HoldingModal({
       utils.dashboard.getOverview.invalidate();
 
       toast({
-        title: "Holding deleted",
-        description: "The holding has been successfully deleted.",
+        title: 'Holding deleted',
+        description: 'The holding has been successfully deleted.',
       });
 
       onClose();
@@ -92,9 +92,9 @@ export function HoldingModal({
     },
     onError: (error) => {
       toast({
-        title: "Delete failed",
-        description: error.message || "Failed to delete holding.",
-        variant: "destructive",
+        title: 'Delete failed',
+        description: error.message || 'Failed to delete holding.',
+        variant: 'destructive',
       });
     },
   });
@@ -102,7 +102,7 @@ export function HoldingModal({
   // Reset edit state when holding changes
   useEffect(() => {
     if (holding) {
-      setEditTokenId(holding.token?.id || "");
+      setEditTokenId(holding.token?.id || '');
       setEditBalance(holding.amount.toString());
     }
   }, [holding]);
@@ -110,10 +110,7 @@ export function HoldingModal({
   // Check if there are any changes
   const hasChanges = () => {
     if (!holding) return false;
-    return (
-      editTokenId !== (holding.token?.id || "") ||
-      editBalance !== holding.amount.toString()
-    );
+    return editTokenId !== (holding.token?.id || '') || editBalance !== holding.amount.toString();
   };
 
   const handleSave = () => {
@@ -124,7 +121,7 @@ export function HoldingModal({
     };
 
     // Only include tokenId if it changed
-    if (editTokenId !== (holding.token?.id || "")) {
+    if (editTokenId !== (holding.token?.id || '')) {
       updateData.tokenId = editTokenId;
     }
 
@@ -147,15 +144,11 @@ export function HoldingModal({
       <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            {holding?.token?.symbol || holding?.token?.name || "Holding"}
-            {holding?.token?.typeCode && (
-              <TokenTypeBadge tokenTypeCode={holding.token.typeCode} />
-            )}
+            {holding?.token?.symbol || holding?.token?.name || 'Holding'}
+            {holding?.token?.typeCode && <TokenTypeBadge tokenTypeCode={holding.token.typeCode} />}
           </DialogTitle>
           <DialogDescription>
-            {holding?.token?.name
-              ? `${holding.token.name} holding details`
-              : "Holding details"}
+            {holding?.token?.name ? `${holding.token.name} holding details` : 'Holding details'}
           </DialogDescription>
         </DialogHeader>
 
@@ -163,9 +156,7 @@ export function HoldingModal({
           {/* Token Information */}
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <Label className="text-sm font-medium text-muted-foreground">
-                Token
-              </Label>
+              <Label className="text-sm font-medium text-muted-foreground">Token</Label>
               <div className="mt-1">
                 <TokenSearchableSelector
                   value={editTokenId}
@@ -176,9 +167,7 @@ export function HoldingModal({
               </div>
             </div>
             <div>
-              <Label className="text-sm font-medium text-muted-foreground">
-                Type
-              </Label>
+              <Label className="text-sm font-medium text-muted-foreground">Type</Label>
               <div className="mt-1">
                 {holding.token?.typeCode && (
                   <TokenTypeBadge tokenTypeCode={holding.token.typeCode} />
@@ -190,9 +179,7 @@ export function HoldingModal({
           {/* Account & Institution */}
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <Label className="text-sm font-medium text-muted-foreground">
-                Account
-              </Label>
+              <Label className="text-sm font-medium text-muted-foreground">Account</Label>
               <div className="mt-1">
                 {holding.account ? (
                   <AccountBadge
@@ -201,29 +188,21 @@ export function HoldingModal({
                     accountTypeCode={holding.account.typeCode}
                   />
                 ) : (
-                  <span className="text-sm text-muted-foreground">
-                    Unknown Account
-                  </span>
+                  <span className="text-sm text-muted-foreground">Unknown Account</span>
                 )}
               </div>
             </div>
             <div>
-              <Label className="text-sm font-medium text-muted-foreground">
-                Institution
-              </Label>
+              <Label className="text-sm font-medium text-muted-foreground">Institution</Label>
               <div className="mt-1">
                 {holding.institution ? (
                   <InstitutionBadge
                     institutionId={holding.institution.id}
                     institutionName={holding.institution.name}
-                    institutionWebsite={
-                      holding.institution.website ?? undefined
-                    }
+                    institutionWebsite={holding.institution.website ?? undefined}
                   />
                 ) : (
-                  <span className="text-sm text-muted-foreground">
-                    Unknown Institution
-                  </span>
+                  <span className="text-sm text-muted-foreground">Unknown Institution</span>
                 )}
               </div>
             </div>
@@ -232,12 +211,10 @@ export function HoldingModal({
           {/* Balance & Value */}
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <Label className="text-sm font-medium text-muted-foreground">
-                Balance
-              </Label>
+              <Label className="text-sm font-medium text-muted-foreground">Balance</Label>
               <div className="mt-1">
                 <NumericFormat
-                  value={editBalance || ""}
+                  value={editBalance || ''}
                   onValueChange={(values) => setEditBalance(values.value)}
                   placeholder="0.00"
                   customInput={Input}
@@ -249,9 +226,7 @@ export function HoldingModal({
               </div>
             </div>
             <div>
-              <Label className="text-sm font-medium text-muted-foreground">
-                Value
-              </Label>
+              <Label className="text-sm font-medium text-muted-foreground">Value</Label>
               <div className="mt-1">
                 <MoneyDisplay
                   value={holding.value}
@@ -265,26 +240,18 @@ export function HoldingModal({
           {/* Price Information */}
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <Label className="text-sm font-medium text-muted-foreground">
-                Price
-              </Label>
+              <Label className="text-sm font-medium text-muted-foreground">Price</Label>
               <div className="mt-1">
                 <MoneyDisplay
-                  value={
-                    holding.price?.value ? parseFloat(holding.price.value) : 0
-                  }
+                  value={holding.price?.value ? parseFloat(holding.price.value) : 0}
                   token={baseCurrencyToken}
                 />
               </div>
             </div>
             <div>
-              <Label className="text-sm font-medium text-muted-foreground">
-                Price Source
-              </Label>
+              <Label className="text-sm font-medium text-muted-foreground">Price Source</Label>
               <div className="mt-1 flex items-center gap-2">
-                <span className="text-sm">
-                  {holding.price?.source || "No price available"}
-                </span>
+                <span className="text-sm">{holding.price?.source || 'No price available'}</span>
                 {holding.price?.timestamp && (
                   <>
                     <span className="text-sm text-muted-foreground">•</span>
@@ -300,29 +267,15 @@ export function HoldingModal({
           {/* Timestamps */}
           <div className="grid grid-cols-2 gap-4 pt-4 border-t">
             <div>
-              <Label className="text-sm font-medium text-muted-foreground">
-                Last Updated
-              </Label>
+              <Label className="text-sm font-medium text-muted-foreground">Last Updated</Label>
               <div className="mt-1">
-                <TimeAgo
-                  date={
-                    holding.lastUpdated
-                      ? new Date(holding.lastUpdated)
-                      : new Date()
-                  }
-                />
+                <TimeAgo date={holding.lastUpdated ? new Date(holding.lastUpdated) : new Date()} />
               </div>
             </div>
             <div>
-              <Label className="text-sm font-medium text-muted-foreground">
-                Created
-              </Label>
+              <Label className="text-sm font-medium text-muted-foreground">Created</Label>
               <div className="mt-1">
-                <TimeAgo
-                  date={
-                    holding.createdAt ? new Date(holding.createdAt) : new Date()
-                  }
-                />
+                <TimeAgo date={holding.createdAt ? new Date(holding.createdAt) : new Date()} />
               </div>
             </div>
           </div>
@@ -345,11 +298,7 @@ export function HoldingModal({
             <Button
               size="sm"
               onClick={handleSave}
-              disabled={
-                updateHoldingMutation.isPending ||
-                !editBalance?.trim() ||
-                !hasChanges()
-              }
+              disabled={updateHoldingMutation.isPending || !editBalance?.trim() || !hasChanges()}
             >
               <Save className="h-4 w-4 mr-2" />
               Save Changes

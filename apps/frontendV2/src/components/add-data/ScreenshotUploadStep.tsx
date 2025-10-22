@@ -1,24 +1,16 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import {
-  HoldingInputRow,
-  HoldingInputRowWithIcon,
-} from "@/components/add-data/HoldingInputRow";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
-import { trpc } from "@/lib/trpc";
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { HoldingInputRow, HoldingInputRowWithIcon } from '@/components/add-data/HoldingInputRow';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { trpc } from '@/lib/trpc';
 import type {
   CompleteImportData,
   EnrichedParsedHolding,
   ScreenshotParseResult,
   ScreenshotParseSummary,
-} from "@/types/addData";
+} from '@/types/addData';
 
 interface ScreenshotUploadStepProps {
   completeImportData: CompleteImportData;
@@ -36,15 +28,13 @@ export function ScreenshotUploadStep({
   const [uploadedFiles, setUploadedFiles] = useState<File[]>([]);
   const [isDragOver, setIsDragOver] = useState(false);
   const [isParsing, setIsParsing] = useState(false);
-  const [parsedResults, setParsedResults] = useState<ScreenshotParseResult[]>(
-    []
-  );
+  const [parsedResults, setParsedResults] = useState<ScreenshotParseResult[]>([]);
   const [filePreviews, setFilePreviews] = useState<{
     [filename: string]: string;
   }>({});
   const [imageModalOpen, setImageModalOpen] = useState(false);
-  const [selectedImageSrc, setSelectedImageSrc] = useState<string>("");
-  const [selectedImageAlt, setSelectedImageAlt] = useState<string>("");
+  const [selectedImageSrc, setSelectedImageSrc] = useState<string>('');
+  const [selectedImageAlt, setSelectedImageAlt] = useState<string>('');
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Get current holdings from completeImportData
@@ -71,10 +61,8 @@ export function ScreenshotUploadStep({
 
   // Holding management functions
   const updateHolding = useCallback(
-    (id: string, field: "tokenValue" | "amount", value: string) => {
-      const newHoldings = holdings.map((h) =>
-        h.id === id ? { ...h, [field]: value } : h
-      );
+    (id: string, field: 'tokenValue' | 'amount', value: string) => {
+      const newHoldings = holdings.map((h) => (h.id === id ? { ...h, [field]: value } : h));
       onCompleteDataUpdate({
         dataEntry: {
           holdings: newHoldings,
@@ -99,8 +87,8 @@ export function ScreenshotUploadStep({
   const addAdditionalHolding = useCallback(() => {
     const newHolding = {
       id: `additional-${Date.now()}-${Math.random()}`,
-      tokenValue: "",
-      amount: "",
+      tokenValue: '',
+      amount: '',
       isExisting: false,
     };
     const newHoldings = [...holdings, newHolding];
@@ -112,74 +100,65 @@ export function ScreenshotUploadStep({
   }, [holdings, onCompleteDataUpdate]);
 
   // Convert parsed results to holdings format
-  const convertParsedResultsToHoldings = useCallback(
-    (results: ScreenshotParseResult[]) => {
-      const newHoldings: Array<{
-        id: string;
-        tokenValue: string;
-        amount: string;
-        isExisting: boolean;
-        originalAmount?: string;
-        holdingId?: string;
-      }> = [];
+  const convertParsedResultsToHoldings = useCallback((results: ScreenshotParseResult[]) => {
+    const newHoldings: Array<{
+      id: string;
+      tokenValue: string;
+      amount: string;
+      isExisting: boolean;
+      originalAmount?: string;
+      holdingId?: string;
+    }> = [];
 
-      results.forEach((result, resultIndex) => {
-        if (result.success && result.data?.holdings) {
-          result.data.holdings.forEach((holding, holdingIndex) => {
-            newHoldings.push({
-              id: `parsed-${resultIndex}-${holdingIndex}`,
-              tokenValue: holding.tokenId ?? "",
-              amount: holding.balance ?? "",
-              isExisting: !!holding.holdingId,
-              originalAmount: holding.existingBalance,
-              holdingId: holding.holdingId,
-            });
+    results.forEach((result, resultIndex) => {
+      if (result.success && result.data?.holdings) {
+        result.data.holdings.forEach((holding, holdingIndex) => {
+          newHoldings.push({
+            id: `parsed-${resultIndex}-${holdingIndex}`,
+            tokenValue: holding.tokenId ?? '',
+            amount: holding.balance ?? '',
+            isExisting: !!holding.holdingId,
+            originalAmount: holding.existingBalance,
+            holdingId: holding.holdingId,
           });
-        }
-      });
-
-      return newHoldings;
-    },
-    []
-  );
-
-  // tRPC mutation for parsing screenshots
-  const parseScreenshotsMutation =
-    trpc.screenshots.parseScreenshots.useMutation({
-      onSuccess: (data: {
-        results: ScreenshotParseResult[];
-        summary: ScreenshotParseSummary;
-      }) => {
-        setParsedResults(data.results);
-
-        // Convert parsed results to holdings and update data
-        const parsedHoldings = convertParsedResultsToHoldings(data.results);
-        onCompleteDataUpdate({
-          dataEntry: {
-            holdings: parsedHoldings,
-          },
         });
-
-        setIsParsing(false);
-        onChangesDetected?.(true);
-      },
-      onError: (error: unknown) => {
-        console.error("Screenshot parsing failed:", error);
-        setIsParsing(false);
-        // TODO: Show error toast
-      },
+      }
     });
 
-  const supportedExtensions = ["png", "jpg", "jpeg", "gif", "webp"];
+    return newHoldings;
+  }, []);
+
+  // tRPC mutation for parsing screenshots
+  const parseScreenshotsMutation = trpc.screenshots.parseScreenshots.useMutation({
+    onSuccess: (data: { results: ScreenshotParseResult[]; summary: ScreenshotParseSummary }) => {
+      setParsedResults(data.results);
+
+      // Convert parsed results to holdings and update data
+      const parsedHoldings = convertParsedResultsToHoldings(data.results);
+      onCompleteDataUpdate({
+        dataEntry: {
+          holdings: parsedHoldings,
+        },
+      });
+
+      setIsParsing(false);
+      onChangesDetected?.(true);
+    },
+    onError: (error: unknown) => {
+      console.error('Screenshot parsing failed:', error);
+      setIsParsing(false);
+      // TODO: Show error toast
+    },
+  });
+
+  const supportedExtensions = ['png', 'jpg', 'jpeg', 'gif', 'webp'];
   const maxFileSize = 10 * 1024 * 1024; // 10MB
   const maxFiles = 10;
 
   const validateFile = (file: File): string | null => {
-    const extension = file.name.split(".").pop()?.toLowerCase();
+    const extension = file.name.split('.').pop()?.toLowerCase();
     if (!extension || !supportedExtensions.includes(extension)) {
-      return `Unsupported file type. Supported: ${supportedExtensions.join(
-        ", "
-      )}`;
+      return `Unsupported file type. Supported: ${supportedExtensions.join(', ')}`;
     }
     if (file.size > maxFileSize) {
       return `File too large. Maximum size: ${maxFileSize / 1024 / 1024}MB`;
@@ -204,10 +183,7 @@ export function ScreenshotUploadStep({
     if (uploadedFiles.length + validFiles.length > maxFiles) {
       errors.push(`Too many files. Maximum ${maxFiles} files allowed.`);
     } else {
-      setUploadedFiles((prev) => [
-        ...prev,
-        ...validFiles.slice(0, maxFiles - prev.length),
-      ]);
+      setUploadedFiles((prev) => [...prev, ...validFiles.slice(0, maxFiles - prev.length)]);
 
       // Auto-parse screenshots when files are added
       if (validFiles.length > 0) {
@@ -233,7 +209,7 @@ export function ScreenshotUploadStep({
 
     if (errors.length > 0) {
       // TODO: Show error toast with errors
-      console.error("File validation errors:", errors);
+      console.error('File validation errors:', errors);
     }
   };
 
@@ -275,9 +251,9 @@ export function ScreenshotUploadStep({
         const reader = new FileReader();
         reader.onload = () => {
           const readerResult = reader.result as string;
-          const base64Data = readerResult.split(",")[1]; // Remove data:image/...;base64, prefix
+          const base64Data = readerResult.split(',')[1]; // Remove data:image/...;base64, prefix
           if (!base64Data) {
-            throw new Error("Invalid base64 data");
+            throw new Error('Invalid base64 data');
           }
           resolve({
             filename: file.name,
@@ -298,7 +274,7 @@ export function ScreenshotUploadStep({
         accountId: completeImportData.accountSelection?.selectedAccountId,
       });
     } catch (error) {
-      console.error("Error converting files:", error);
+      console.error('Error converting files:', error);
       setIsParsing(false);
     }
   };
@@ -309,16 +285,11 @@ export function ScreenshotUploadStep({
     const existingHoldings = holdings.filter((h) => h.isExisting);
 
     // Check if any new holdings have data (parsed or additional)
-    const hasNewHoldings = newHoldings.some(
-      (h) => h.tokenValue.trim() && h.amount.trim()
-    );
+    const hasNewHoldings = newHoldings.some((h) => h.tokenValue.trim() && h.amount.trim());
 
     // Check if any existing holdings have changed
     const hasExistingChanges = existingHoldings.some(
-      (h) =>
-        "originalAmount" in h &&
-        h.amount !== h.originalAmount &&
-        h.amount.trim() !== ""
+      (h) => 'originalAmount' in h && h.amount !== h.originalAmount && h.amount.trim() !== ''
     );
 
     return hasNewHoldings || hasExistingChanges;
@@ -333,8 +304,8 @@ export function ScreenshotUploadStep({
       <div className="text-center">
         <h3 className="text-lg font-semibold mb-2">Screenshot Upload</h3>
         <p className="text-muted-foreground">
-          Upload screenshots of your financial statements and we'll extract the
-          data automatically using AI.
+          Upload screenshots of your financial statements and we'll extract the data automatically
+          using AI.
         </p>
       </div>
 
@@ -346,15 +317,15 @@ export function ScreenshotUploadStep({
               type="button"
               className={`border-2 border-dashed rounded-lg p-8 text-center transition-colors w-full ${
                 isDragOver
-                  ? "border-primary bg-primary/5"
-                  : "border-muted-foreground/25 hover:border-muted-foreground/50"
+                  ? 'border-primary bg-primary/5'
+                  : 'border-muted-foreground/25 hover:border-muted-foreground/50'
               }`}
               onDrop={handleDrop}
               onDragOver={handleDragOver}
               onDragLeave={handleDragLeave}
               onClick={() => fileInputRef.current?.click()}
               onKeyDown={(e) => {
-                if (e.key === "Enter" || e.key === " ") {
+                if (e.key === 'Enter' || e.key === ' ') {
                   e.preventDefault();
                   fileInputRef.current?.click();
                 }
@@ -364,15 +335,10 @@ export function ScreenshotUploadStep({
                 <div className="text-4xl">📸</div>
                 <div>
                   <p className="text-lg font-medium">
-                    {isDragOver
-                      ? "Drop your screenshots here"
-                      : "Drag & drop screenshots here"}
+                    {isDragOver ? 'Drop your screenshots here' : 'Drag & drop screenshots here'}
                   </p>
                   <p className="text-sm text-muted-foreground mt-1">
-                    or{" "}
-                    <span className="text-primary hover:underline">
-                      browse files
-                    </span>
+                    or <span className="text-primary hover:underline">browse files</span>
                   </p>
                 </div>
                 <div className="text-xs text-muted-foreground">
@@ -387,9 +353,7 @@ export function ScreenshotUploadStep({
                 ref={fileInputRef}
                 type="file"
                 multiple
-                accept={supportedExtensions
-                  .map((ext) => `image/${ext}`)
-                  .join(",")}
+                accept={supportedExtensions.map((ext) => `image/${ext}`).join(',')}
                 onChange={handleFileInput}
                 className="hidden"
               />
@@ -424,10 +388,7 @@ export function ScreenshotUploadStep({
                       type="button"
                       className="p-0 border-0 bg-transparent"
                       onClick={() =>
-                        openImageModal(
-                          filePreviews[file.name] || "",
-                          `Screenshot: ${file.name}`
-                        )
+                        openImageModal(filePreviews[file.name] || '', `Screenshot: ${file.name}`)
                       }
                       aria-label={`View full size screenshot: ${file.name}`}
                     >
@@ -464,9 +425,7 @@ export function ScreenshotUploadStep({
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <span>Parsed Results</span>
-              <Badge variant="secondary">
-                {parsedResults.length} files processed
-              </Badge>
+              <Badge variant="secondary">{parsedResults.length} files processed</Badge>
             </CardTitle>
             <p className="text-sm text-muted-foreground">
               Review and edit the extracted data before submitting
@@ -474,10 +433,7 @@ export function ScreenshotUploadStep({
           </CardHeader>
           <CardContent className="space-y-6">
             {parsedResults.map((result, index) => (
-              <div
-                key={`${result.filename}-${index}`}
-                className="border rounded-lg p-4"
-              >
+              <div key={`${result.filename}-${index}`} className="border rounded-lg p-4">
                 <div className="flex items-start gap-4 mb-4 flex-wrap">
                   {/* Screenshot Preview */}
                   {filePreviews[result.filename] && (
@@ -487,7 +443,7 @@ export function ScreenshotUploadStep({
                         className="p-0 border-0 bg-transparent"
                         onClick={() =>
                           openImageModal(
-                            filePreviews[result.filename] || "",
+                            filePreviews[result.filename] || '',
                             `Screenshot: ${result.filename}`
                           )
                         }
@@ -506,10 +462,7 @@ export function ScreenshotUploadStep({
                     <div className="flex items-center gap-2 mb-2">
                       <h4 className="font-medium">{result.filename}</h4>
                       {result.success ? (
-                        <Badge
-                          variant="default"
-                          className="bg-green-100 text-green-800"
-                        >
+                        <Badge variant="default" className="bg-green-100 text-green-800">
                           ✓ Parsed
                         </Badge>
                       ) : (
@@ -522,8 +475,7 @@ export function ScreenshotUploadStep({
                       <span>Processing time: {result.processingTime}ms</span>
                       {result.data?.overallConfidence && (
                         <span>
-                          Overall confidence:{" "}
-                          {Math.round(result.data.overallConfidence * 100)}%
+                          Overall confidence: {Math.round(result.data.overallConfidence * 100)}%
                         </span>
                       )}
                       {result.data?.detectedCurrency && (
@@ -533,24 +485,17 @@ export function ScreenshotUploadStep({
                   </div>
                 </div>
 
-                {result.success &&
-                result.data?.holdings &&
-                result.data.holdings.length > 0 ? (
+                {result.success && result.data?.holdings && result.data.holdings.length > 0 ? (
                   <div className="space-y-3">
                     <p className="text-sm font-medium">
                       Found {result.data.holdings.length} holding
-                      {result.data.holdings.length !== 1 ? "s" : ""}:
+                      {result.data.holdings.length !== 1 ? 's' : ''}:
                     </p>
                     {result.data.holdings.map(
-                      (
-                        parsedHolding: EnrichedParsedHolding,
-                        hIndex: number
-                      ) => {
+                      (parsedHolding: EnrichedParsedHolding, hIndex: number) => {
                         // Find the corresponding holding in our data structure
                         const holdingId = `parsed-${index}-${hIndex}`;
-                        const holding = holdings.find(
-                          (h) => h.id === holdingId
-                        );
+                        const holding = holdings.find((h) => h.id === holdingId);
 
                         // If holding was removed, don't render it
                         if (!holding) return null;
@@ -562,31 +507,23 @@ export function ScreenshotUploadStep({
                             tokenValue={holding.tokenValue}
                             amount={holding.amount}
                             originalAmount={holding.originalAmount}
-                            onTokenChange={(value) =>
-                              updateHolding(holdingId, "tokenValue", value)
-                            }
-                            onAmountChange={(value) =>
-                              updateHolding(holdingId, "amount", value)
-                            }
+                            onTokenChange={(value) => updateHolding(holdingId, 'tokenValue', value)}
+                            onAmountChange={(value) => updateHolding(holdingId, 'amount', value)}
                             onRemove={() => removeHolding(holdingId)}
                             disabled={isCreatingHoldings}
                             allowCreateNewToken={false}
                             placeholder={
                               !holding.tokenValue
                                 ? `${parsedHolding.symbol} - Please select the correct one`
-                                : "Select token..."
+                                : 'Select token...'
                             }
                             initialSearchTerm={
-                              !holding.tokenValue
-                                ? parsedHolding.symbol
-                                : undefined
+                              !holding.tokenValue ? parsedHolding.symbol : undefined
                             }
                             confidence={parsedHolding.confidence}
                             notes={parsedHolding.notes}
                             hasError={isHoldingInvalid(holding)}
-                            highlightBackground={
-                              !holding.tokenValue || holding.isExisting
-                            }
+                            highlightBackground={!holding.tokenValue || holding.isExisting}
                             removeButtonText="Remove Holding"
                             showTrashIcon={true}
                             buttonSize="sm"
@@ -601,7 +538,7 @@ export function ScreenshotUploadStep({
                   </p>
                 ) : (
                   <p className="text-sm text-red-600">
-                    {result.error || "Failed to parse screenshot"}
+                    {result.error || 'Failed to parse screenshot'}
                   </p>
                 )}
               </div>
@@ -616,13 +553,9 @@ export function ScreenshotUploadStep({
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <span>Add Additional Holdings</span>
-              {holdings.filter((h) => h.id.startsWith("additional-")).length >
-                0 && (
+              {holdings.filter((h) => h.id.startsWith('additional-')).length > 0 && (
                 <Badge variant="secondary">
-                  {
-                    holdings.filter((h) => h.id.startsWith("additional-"))
-                      .length
-                  }
+                  {holdings.filter((h) => h.id.startsWith('additional-')).length}
                 </Badge>
               )}
             </CardTitle>
@@ -632,26 +565,20 @@ export function ScreenshotUploadStep({
           </CardHeader>
           <CardContent className="space-y-4">
             {holdings
-              .filter((h) => h.id.startsWith("additional-"))
+              .filter((h) => h.id.startsWith('additional-'))
               .map((holding) => {
                 const additionalHoldingsList = holdings.filter((h) =>
-                  h.id.startsWith("additional-")
+                  h.id.startsWith('additional-')
                 );
-                const parsedHoldingsList = holdings.filter((h) =>
-                  h.id.startsWith("parsed-")
-                );
+                const parsedHoldingsList = holdings.filter((h) => h.id.startsWith('parsed-'));
                 return (
                   <HoldingInputRowWithIcon
                     key={holding.id}
                     id={holding.id}
                     tokenValue={holding.tokenValue}
                     amount={holding.amount}
-                    onTokenChange={(value) =>
-                      updateHolding(holding.id, "tokenValue", value)
-                    }
-                    onAmountChange={(value) =>
-                      updateHolding(holding.id, "amount", value)
-                    }
+                    onTokenChange={(value) => updateHolding(holding.id, 'tokenValue', value)}
+                    onAmountChange={(value) => updateHolding(holding.id, 'amount', value)}
                     onRemove={() => removeHolding(holding.id)}
                     disabled={isCreatingHoldings}
                     allowCreateNewToken={false}
@@ -659,10 +586,7 @@ export function ScreenshotUploadStep({
                     buttonSize="sm"
                     placeholder="Search tokens..."
                     hasError={isHoldingInvalid(holding)}
-                    canRemove={
-                      parsedHoldingsList.length > 0 ||
-                      additionalHoldingsList.length > 1
-                    }
+                    canRemove={parsedHoldingsList.length > 0 || additionalHoldingsList.length > 1}
                   />
                 );
               })}

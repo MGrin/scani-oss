@@ -1,16 +1,16 @@
-import { useCallback, useEffect, useId, useMemo, useState } from "react";
+import { useCallback, useEffect, useId, useMemo, useState } from 'react';
 import {
   AccountTypeSelector,
   InstitutionSelector,
   InstitutionTypeSelector,
-} from "@/components/selectors/SearchableSelectors";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Skeleton } from "@/components/ui/skeleton";
-import { trpc } from "@/lib/trpc";
-import type { CompleteImportData } from "@/types/addData";
+} from '@/components/selectors/SearchableSelectors';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Skeleton } from '@/components/ui/skeleton';
+import { trpc } from '@/lib/trpc';
+import type { CompleteImportData } from '@/types/addData';
 
 interface AccountSelectionStepProps {
   onValidationChange?: (isValid: boolean) => void;
@@ -23,23 +23,23 @@ export function AccountSelectionStep({
   onAccountDisplayChange,
   onCompleteDataUpdate,
 }: AccountSelectionStepProps) {
-  const [mode, setMode] = useState<"select" | "create">("select");
+  const [mode, setMode] = useState<'select' | 'create'>('select');
   const accountNameId = useId();
   const institutionNameId = useId();
   const institutionWebsiteId = useId();
   const institutionDescriptionId = useId();
-  const [selectedAccountId, setSelectedAccountId] = useState<string>("");
+  const [selectedAccountId, setSelectedAccountId] = useState<string>('');
   const [newAccountData, setNewAccountData] = useState({
-    name: "",
-    typeId: "",
+    name: '',
+    typeId: '',
     institutionSelection: {
-      mode: "select" as "select" | "create",
-      selectedInstitutionId: "",
+      mode: 'select' as 'select' | 'create',
+      selectedInstitutionId: '',
       newInstitutionData: {
-        name: "",
-        typeId: "",
-        website: "",
-        description: "",
+        name: '',
+        typeId: '',
+        website: '',
+        description: '',
       },
     },
   });
@@ -49,11 +49,10 @@ export function AccountSelectionStep({
     siteName: string;
   } | null>(null);
   const [hasFetchedMetadata, setHasFetchedMetadata] = useState(false);
-  const [searchTerm, setSearchTerm] = useState("");
+  const [searchTerm, setSearchTerm] = useState('');
 
   // Fetch data
-  const { data: accounts, isLoading: accountsLoading } =
-    trpc.accounts.getAll.useQuery();
+  const { data: accounts, isLoading: accountsLoading } = trpc.accounts.getAll.useQuery();
   const { data: institutions } = trpc.institutions.getAll.useQuery();
   const { data: accountTypes } = trpc.accountTypes.getAll.useQuery();
   const { data: institutionTypes } = trpc.institutionTypes.getAll.useQuery();
@@ -61,7 +60,7 @@ export function AccountSelectionStep({
   // Automatically switch to create mode if no accounts exist
   useEffect(() => {
     if (!accountsLoading && accounts && accounts.length === 0) {
-      setMode("create");
+      setMode('create');
     }
   }, [accountsLoading, accounts]);
 
@@ -74,10 +73,7 @@ export function AccountSelectionStep({
         setInstitutionMetadata(data);
         setHasFetchedMetadata(true);
         // Auto-populate fields with metadata if available
-        if (
-          data.title &&
-          !newAccountData.institutionSelection.newInstitutionData.name
-        ) {
+        if (data.title && !newAccountData.institutionSelection.newInstitutionData.name) {
           setNewAccountData((prev) => ({
             ...prev,
             institutionSelection: {
@@ -110,17 +106,15 @@ export function AccountSelectionStep({
 
   // Handler for fetching metadata from website
   const handleFetchMetadata = async () => {
-    if (
-      !newAccountData.institutionSelection.newInstitutionData.website.trim()
-    ) {
-      alert("Please enter a website URL first");
+    if (!newAccountData.institutionSelection.newInstitutionData.website.trim()) {
+      alert('Please enter a website URL first');
       return;
     }
 
     try {
       await metadataQuery.refetch();
     } catch (error) {
-      console.error("Failed to fetch metadata:", error);
+      console.error('Failed to fetch metadata:', error);
       // Even on error, show the form fields
       setHasFetchedMetadata(true);
     }
@@ -129,17 +123,12 @@ export function AccountSelectionStep({
   // Memoize validation values to prevent infinite re-renders
   const validationValues = useMemo(
     () => ({
-      hasAccountDetails:
-        newAccountData.name.trim() !== "" &&
-        newAccountData.typeId.trim() !== "",
+      hasAccountDetails: newAccountData.name.trim() !== '' && newAccountData.typeId.trim() !== '',
       hasInstitutionDetails:
-        newAccountData.institutionSelection.mode === "select"
-          ? newAccountData.institutionSelection.selectedInstitutionId.trim() !==
-            ""
-          : newAccountData.institutionSelection.newInstitutionData.name.trim() !==
-              "" &&
-            newAccountData.institutionSelection.newInstitutionData.typeId.trim() !==
-              "",
+        newAccountData.institutionSelection.mode === 'select'
+          ? newAccountData.institutionSelection.selectedInstitutionId.trim() !== ''
+          : newAccountData.institutionSelection.newInstitutionData.name.trim() !== '' &&
+            newAccountData.institutionSelection.newInstitutionData.typeId.trim() !== '',
     }),
     [
       newAccountData.name,
@@ -153,13 +142,10 @@ export function AccountSelectionStep({
 
   // Validation function
   const isValidForContinue = useCallback(() => {
-    if (mode === "select") {
-      return selectedAccountId.trim() !== "";
-    } else if (mode === "create") {
-      return (
-        validationValues.hasAccountDetails &&
-        validationValues.hasInstitutionDetails
-      );
+    if (mode === 'select') {
+      return selectedAccountId.trim() !== '';
+    } else if (mode === 'create') {
+      return validationValues.hasAccountDetails && validationValues.hasInstitutionDetails;
     }
     return false;
   }, [mode, selectedAccountId, validationValues]);
@@ -175,9 +161,9 @@ export function AccountSelectionStep({
 
     return {
       mode,
-      selectedAccountId: mode === "select" ? selectedAccountId : undefined,
-      newAccountData: mode === "create" ? newAccountData : undefined,
-    } as NonNullable<CompleteImportData["accountSelection"]>;
+      selectedAccountId: mode === 'select' ? selectedAccountId : undefined,
+      newAccountData: mode === 'create' ? newAccountData : undefined,
+    } as NonNullable<CompleteImportData['accountSelection']>;
   }, [mode, selectedAccountId, newAccountData, isValidForContinue]);
 
   // Store complete account data when valid
@@ -189,31 +175,26 @@ export function AccountSelectionStep({
 
   // Update account display text for progress bar
   useEffect(() => {
-    let displayText = "Choose Account";
+    let displayText = 'Choose Account';
 
-    if (mode === "select" && selectedAccountId) {
+    if (mode === 'select' && selectedAccountId) {
       const selectedAccount = accounts?.find((a) => a.id === selectedAccountId);
       if (selectedAccount) {
-        const institution = institutions?.find(
-          (inst) => inst.id === selectedAccount.institutionId
-        );
+        const institution = institutions?.find((inst) => inst.id === selectedAccount.institutionId);
         displayText = institution
           ? `${institution.name} - ${selectedAccount.name}`
           : selectedAccount.name;
       }
-    } else if (mode === "create" && newAccountData.name.trim()) {
-      if (newAccountData.institutionSelection.mode === "select") {
+    } else if (mode === 'create' && newAccountData.name.trim()) {
+      if (newAccountData.institutionSelection.mode === 'select') {
         const selectedInstitution = institutions?.find(
-          (inst) =>
-            inst.id ===
-            newAccountData.institutionSelection.selectedInstitutionId
+          (inst) => inst.id === newAccountData.institutionSelection.selectedInstitutionId
         );
         displayText = selectedInstitution
           ? `${selectedInstitution.name} - ${newAccountData.name}`
           : newAccountData.name;
       } else {
-        displayText = newAccountData.institutionSelection.newInstitutionData
-          .name
+        displayText = newAccountData.institutionSelection.newInstitutionData.name
           ? `${newAccountData.institutionSelection.newInstitutionData.name} - ${newAccountData.name}`
           : newAccountData.name;
       }
@@ -238,7 +219,7 @@ export function AccountSelectionStep({
     // Store complete account selection data
     onCompleteDataUpdate({
       accountSelection: {
-        mode: "select",
+        mode: 'select',
         selectedAccountId: accountId,
       },
     });
@@ -249,16 +230,12 @@ export function AccountSelectionStep({
     if (!searchTerm.trim()) return true;
 
     const accountName = account.name.toLowerCase();
-    const institution = institutions?.find(
-      (inst) => inst.id === account.institutionId
-    );
-    const institutionName = institution?.name.toLowerCase() || "";
+    const institution = institutions?.find((inst) => inst.id === account.institutionId);
+    const institutionName = institution?.name.toLowerCase() || '';
 
     const searchLower = searchTerm.toLowerCase();
 
-    return (
-      accountName.includes(searchLower) || institutionName.includes(searchLower)
-    );
+    return accountName.includes(searchLower) || institutionName.includes(searchLower);
   });
 
   return (
@@ -272,9 +249,9 @@ export function AccountSelectionStep({
           <div className="grid gap-4 md:grid-cols-2">
             <Card
               className={`cursor-pointer transition-all hover:shadow-md ${
-                mode === "select" ? "ring-2 ring-primary" : ""
+                mode === 'select' ? 'ring-2 ring-primary' : ''
               }`}
-              onClick={() => setMode("select")}
+              onClick={() => setMode('select')}
             >
               <CardContent className="p-4 md:p-6 text-center">
                 <div className="text-2xl md:text-3xl mb-2 md:mb-4">📋</div>
@@ -289,9 +266,9 @@ export function AccountSelectionStep({
 
             <Card
               className={`cursor-pointer transition-all hover:shadow-md ${
-                mode === "create" ? "ring-2 ring-primary" : ""
+                mode === 'create' ? 'ring-2 ring-primary' : ''
               }`}
-              onClick={() => setMode("create")}
+              onClick={() => setMode('create')}
             >
               <CardContent className="p-4 md:p-6 text-center">
                 <div className="text-2xl md:text-3xl mb-2 md:mb-4">➕</div>
@@ -308,7 +285,7 @@ export function AccountSelectionStep({
       </Card>
 
       {/* Account Selection */}
-      {mode === "select" && (
+      {mode === 'select' && (
         <Card>
           <CardHeader>
             <CardTitle>Select Account</CardTitle>
@@ -331,17 +308,15 @@ export function AccountSelectionStep({
             {/* Account Grid - Show skeletons when loading */}
             {accountsLoading ? (
               <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-                {["skeleton-1", "skeleton-2", "skeleton-3", "skeleton-4"].map(
-                  (key) => (
-                    <Card key={key}>
-                      <CardContent className="p-4">
-                        <Skeleton className="h-4 w-3/4 mb-2" />
-                        <Skeleton className="h-3 w-1/2 mb-2" />
-                        <Skeleton className="h-3 w-2/3" />
-                      </CardContent>
-                    </Card>
-                  )
-                )}
+                {['skeleton-1', 'skeleton-2', 'skeleton-3', 'skeleton-4'].map((key) => (
+                  <Card key={key}>
+                    <CardContent className="p-4">
+                      <Skeleton className="h-4 w-3/4 mb-2" />
+                      <Skeleton className="h-3 w-1/2 mb-2" />
+                      <Skeleton className="h-3 w-2/3" />
+                    </CardContent>
+                  </Card>
+                ))}
               </div>
             ) : (
               <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
@@ -349,27 +324,23 @@ export function AccountSelectionStep({
                   const institution = institutions?.find(
                     (inst) => inst.id === account.institutionId
                   );
-                  const accountType = accountTypes?.find(
-                    (type) => type.id === account.typeId
-                  );
+                  const accountType = accountTypes?.find((type) => type.id === account.typeId);
 
                   return (
                     <Card
                       key={account.id}
                       className={`cursor-pointer transition-all hover:shadow-md ${
-                        selectedAccountId === account.id
-                          ? "ring-2 ring-primary"
-                          : ""
+                        selectedAccountId === account.id ? 'ring-2 ring-primary' : ''
                       }`}
                       onClick={() => handleAccountSelect(account.id)}
                     >
                       <CardContent className="p-4">
                         <h4 className="font-medium mb-1">{account.name}</h4>
                         <p className="text-sm text-muted-foreground mb-2">
-                          {accountType?.name || "Unknown Type"}
+                          {accountType?.name || 'Unknown Type'}
                         </p>
                         <p className="text-xs text-muted-foreground">
-                          {institution?.name || "Unknown Institution"}
+                          {institution?.name || 'Unknown Institution'}
                         </p>
                       </CardContent>
                     </Card>
@@ -379,32 +350,27 @@ export function AccountSelectionStep({
             )}
 
             {/* Empty state - Only show when not loading and no accounts */}
-            {!accountsLoading &&
-              (!filteredAccounts || filteredAccounts.length === 0) && (
-                <div className="text-center py-8 text-muted-foreground">
-                  {searchTerm.trim() ? (
-                    <p>No accounts found matching "{searchTerm}".</p>
-                  ) : (
-                    <p>
-                      No accounts found. Try creating a new account instead.
-                    </p>
-                  )}
-                </div>
-              )}
+            {!accountsLoading && (!filteredAccounts || filteredAccounts.length === 0) && (
+              <div className="text-center py-8 text-muted-foreground">
+                {searchTerm.trim() ? (
+                  <p>No accounts found matching "{searchTerm}".</p>
+                ) : (
+                  <p>No accounts found. Try creating a new account instead.</p>
+                )}
+              </div>
+            )}
           </CardContent>
         </Card>
       )}
 
       {/* Account Creation */}
-      {mode === "create" && (
+      {mode === 'create' && (
         <div className="space-y-6">
           {/* Account Details */}
           <Card>
             <CardHeader>
               <CardTitle>Account Information</CardTitle>
-              <p className="text-sm text-muted-foreground">
-                Provide details for your new account
-              </p>
+              <p className="text-sm text-muted-foreground">Provide details for your new account</p>
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="grid gap-4 md:grid-cols-2">
@@ -437,9 +403,7 @@ export function AccountSelectionStep({
                     placeholder="Select account type"
                     allowCreate={false}
                   />
-                  <p className="text-xs text-muted-foreground">
-                    What kind of account is this?
-                  </p>
+                  <p className="text-xs text-muted-foreground">What kind of account is this?</p>
                 </div>
               </div>
             </CardContent>
@@ -449,31 +413,29 @@ export function AccountSelectionStep({
           <Card>
             <CardHeader>
               <CardTitle>Institution</CardTitle>
-              <p className="text-sm text-muted-foreground">
-                Where is this account held?
-              </p>
+              <p className="text-sm text-muted-foreground">Where is this account held?</p>
             </CardHeader>
             <CardContent className="space-y-6">
               {/* Institution Mode Selection */}
               <div className="grid gap-4 md:grid-cols-2">
                 <Card
                   className={`cursor-pointer transition-all hover:shadow-md ${
-                    newAccountData.institutionSelection.mode === "select"
-                      ? "ring-2 ring-primary"
-                      : ""
+                    newAccountData.institutionSelection.mode === 'select'
+                      ? 'ring-2 ring-primary'
+                      : ''
                   }`}
                   onClick={() => {
                     setNewAccountData((prev) => ({
                       ...prev,
                       institutionSelection: {
                         ...prev.institutionSelection,
-                        mode: "select",
-                        selectedInstitutionId: "",
+                        mode: 'select',
+                        selectedInstitutionId: '',
                         newInstitutionData: {
-                          name: "",
-                          typeId: "",
-                          website: "",
-                          description: "",
+                          name: '',
+                          typeId: '',
+                          website: '',
+                          description: '',
                         },
                       },
                     }));
@@ -492,22 +454,22 @@ export function AccountSelectionStep({
 
                 <Card
                   className={`cursor-pointer transition-all hover:shadow-md ${
-                    newAccountData.institutionSelection.mode === "create"
-                      ? "ring-2 ring-primary"
-                      : ""
+                    newAccountData.institutionSelection.mode === 'create'
+                      ? 'ring-2 ring-primary'
+                      : ''
                   }`}
                   onClick={() => {
                     setNewAccountData((prev) => ({
                       ...prev,
                       institutionSelection: {
                         ...prev.institutionSelection,
-                        mode: "create",
-                        selectedInstitutionId: "",
+                        mode: 'create',
+                        selectedInstitutionId: '',
                         newInstitutionData: {
-                          name: "",
-                          typeId: "",
-                          website: "",
-                          description: "",
+                          name: '',
+                          typeId: '',
+                          website: '',
+                          description: '',
                         },
                       },
                     }));
@@ -526,15 +488,11 @@ export function AccountSelectionStep({
               </div>
 
               {/* Institution Selection Form */}
-              {newAccountData.institutionSelection.mode === "select" && (
+              {newAccountData.institutionSelection.mode === 'select' && (
                 <div className="space-y-3">
-                  <Label className="text-base font-medium">
-                    Choose Institution
-                  </Label>
+                  <Label className="text-base font-medium">Choose Institution</Label>
                   <InstitutionSelector
-                    value={
-                      newAccountData.institutionSelection.selectedInstitutionId
-                    }
+                    value={newAccountData.institutionSelection.selectedInstitutionId}
                     onValueChange={(value) =>
                       setNewAccountData((prev) => ({
                         ...prev,
@@ -550,20 +508,17 @@ export function AccountSelectionStep({
                   />
                   {(!institutions || institutions.length === 0) && (
                     <p className="text-sm text-muted-foreground">
-                      No institutions found. Try creating a new institution
-                      instead.
+                      No institutions found. Try creating a new institution instead.
                     </p>
                   )}
                 </div>
               )}
 
               {/* New Institution Creation Form */}
-              {newAccountData.institutionSelection.mode === "create" && (
+              {newAccountData.institutionSelection.mode === 'create' && (
                 <div className="space-y-4 p-4 border rounded-lg bg-muted/30">
                   <div className="space-y-2">
-                    <Label className="text-base font-medium">
-                      Institution Details
-                    </Label>
+                    <Label className="text-base font-medium">Institution Details</Label>
                     <p className="text-xs text-muted-foreground">
                       Provide information about the new institution
                     </p>
@@ -571,18 +526,13 @@ export function AccountSelectionStep({
 
                   {/* Website Field - Always visible */}
                   <div className="space-y-2">
-                    <Label htmlFor={institutionWebsiteId}>
-                      Institution Website
-                    </Label>
+                    <Label htmlFor={institutionWebsiteId}>Institution Website</Label>
                     <div className="flex gap-2">
                       <Input
                         id={institutionWebsiteId}
                         type="url"
                         placeholder="https://www.example.com"
-                        value={
-                          newAccountData.institutionSelection.newInstitutionData
-                            .website
-                        }
+                        value={newAccountData.institutionSelection.newInstitutionData.website}
                         onChange={(e) =>
                           setNewAccountData((prev) => ({
                             ...prev,
@@ -608,14 +558,11 @@ export function AccountSelectionStep({
                         }
                         className="h-10"
                       >
-                        {metadataQuery.isFetching
-                          ? "Fetching..."
-                          : "Fetch Info"}
+                        {metadataQuery.isFetching ? 'Fetching...' : 'Fetch Info'}
                       </Button>
                     </div>
                     <p className="text-xs text-muted-foreground">
-                      Enter the institution's website to automatically fetch
-                      information
+                      Enter the institution's website to automatically fetch information
                     </p>
                   </div>
 
@@ -624,24 +571,18 @@ export function AccountSelectionStep({
                     <>
                       <div className="grid gap-4 md:grid-cols-2">
                         <div className="space-y-2">
-                          <Label htmlFor={institutionNameId}>
-                            Institution Name *
-                          </Label>
+                          <Label htmlFor={institutionNameId}>Institution Name *</Label>
                           <Input
                             id={institutionNameId}
                             placeholder="e.g., Chase Bank, Fidelity Investments"
-                            value={
-                              newAccountData.institutionSelection
-                                .newInstitutionData.name
-                            }
+                            value={newAccountData.institutionSelection.newInstitutionData.name}
                             onChange={(e) =>
                               setNewAccountData((prev) => ({
                                 ...prev,
                                 institutionSelection: {
                                   ...prev.institutionSelection,
                                   newInstitutionData: {
-                                    ...prev.institutionSelection
-                                      .newInstitutionData,
+                                    ...prev.institutionSelection.newInstitutionData,
                                     name: e.target.value,
                                   },
                                 },
@@ -655,22 +596,16 @@ export function AccountSelectionStep({
                         </div>
 
                         <div className="space-y-2">
-                          <Label htmlFor="new-institution-type">
-                            Institution Type *
-                          </Label>
+                          <Label htmlFor="new-institution-type">Institution Type *</Label>
                           <InstitutionTypeSelector
-                            value={
-                              newAccountData.institutionSelection
-                                .newInstitutionData.typeId
-                            }
+                            value={newAccountData.institutionSelection.newInstitutionData.typeId}
                             onValueChange={(value) =>
                               setNewAccountData((prev) => ({
                                 ...prev,
                                 institutionSelection: {
                                   ...prev.institutionSelection,
                                   newInstitutionData: {
-                                    ...prev.institutionSelection
-                                      .newInstitutionData,
+                                    ...prev.institutionSelection.newInstitutionData,
                                     typeId: value,
                                   },
                                 },
@@ -688,24 +623,18 @@ export function AccountSelectionStep({
                       </div>
 
                       <div className="space-y-2">
-                        <Label htmlFor={institutionDescriptionId}>
-                          Description
-                        </Label>
+                        <Label htmlFor={institutionDescriptionId}>Description</Label>
                         <Input
                           id={institutionDescriptionId}
                           placeholder="Brief description of the institution"
-                          value={
-                            newAccountData.institutionSelection
-                              .newInstitutionData.description
-                          }
+                          value={newAccountData.institutionSelection.newInstitutionData.description}
                           onChange={(e) =>
                             setNewAccountData((prev) => ({
                               ...prev,
                               institutionSelection: {
                                 ...prev.institutionSelection,
                                 newInstitutionData: {
-                                  ...prev.institutionSelection
-                                    .newInstitutionData,
+                                  ...prev.institutionSelection.newInstitutionData,
                                   description: e.target.value,
                                 },
                               },

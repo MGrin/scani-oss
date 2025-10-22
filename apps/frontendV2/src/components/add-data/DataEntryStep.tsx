@@ -1,9 +1,9 @@
-import { useEffect, useMemo } from "react";
-import { ManualEntryStep } from "@/components/add-data/ManualEntryStep";
-import { ScreenshotUploadStep } from "@/components/add-data/ScreenshotUploadStep";
-import { Card, CardContent } from "@/components/ui/card";
-import { trpc } from "@/lib/trpc";
-import type { CompleteImportData } from "@/types/addData";
+import { useEffect, useMemo } from 'react';
+import { ManualEntryStep } from '@/components/add-data/ManualEntryStep';
+import { ScreenshotUploadStep } from '@/components/add-data/ScreenshotUploadStep';
+import { Card, CardContent } from '@/components/ui/card';
+import { trpc } from '@/lib/trpc';
+import type { CompleteImportData } from '@/types/addData';
 
 interface DataEntryStepProps {
   completeImportData: CompleteImportData;
@@ -19,20 +19,17 @@ export function DataEntryStep({
   onChangesDetected,
 }: DataEntryStepProps) {
   // Fetch existing holdings for the selected account
-  const selectedAccountId =
-    completeImportData.accountSelection?.selectedAccountId;
-  const { data: allHoldings, isLoading: isLoadingHoldings } =
-    trpc.holdings.getWithDetails.useQuery(undefined, {
-      enabled:
-        !!selectedAccountId &&
-        completeImportData.accountSelection?.mode === "select",
-    });
+  const selectedAccountId = completeImportData.accountSelection?.selectedAccountId;
+  const { data: allHoldings, isLoading: isLoadingHoldings } = trpc.holdings.getWithDetails.useQuery(
+    undefined,
+    {
+      enabled: !!selectedAccountId && completeImportData.accountSelection?.mode === 'select',
+    }
+  );
 
   // Filter holdings for the selected account
   const existingHoldings =
-    allHoldings?.filter(
-      (holding) => holding.account.id === selectedAccountId
-    ) || [];
+    allHoldings?.filter((holding) => holding.account.id === selectedAccountId) || [];
 
   // Initialize holdings data when account changes
   const holdings = useMemo(() => {
@@ -41,7 +38,7 @@ export function DataEntryStep({
     // If we have an existing account selected and no holdings initialized yet, and query has completed
     if (
       selectedAccountId &&
-      completeImportData.accountSelection?.mode === "select" &&
+      completeImportData.accountSelection?.mode === 'select' &&
       currentHoldings.length < 2 &&
       !isLoadingHoldings
     ) {
@@ -56,8 +53,8 @@ export function DataEntryStep({
         })),
         {
           id: `new-${Date.now()}`,
-          tokenValue: "",
-          amount: "",
+          tokenValue: '',
+          amount: '',
           isExisting: false,
         },
       ];
@@ -68,8 +65,8 @@ export function DataEntryStep({
       return [
         {
           id: `new-${Date.now()}`,
-          tokenValue: "",
-          amount: "",
+          tokenValue: '',
+          amount: '',
           isExisting: false,
         },
       ];
@@ -102,16 +99,11 @@ export function DataEntryStep({
     const existingHoldings = holdings.filter((h) => h.isExisting);
 
     // Check if any new holdings have data
-    const hasNewHoldings = newHoldings.some(
-      (h) => h.tokenValue.trim() && h.amount.trim()
-    );
+    const hasNewHoldings = newHoldings.some((h) => h.tokenValue.trim() && h.amount.trim());
 
     // Check if any existing holdings have changed
     const hasExistingChanges = existingHoldings.some(
-      (h) =>
-        "originalAmount" in h &&
-        h.amount !== h.originalAmount &&
-        h.amount.trim() !== ""
+      (h) => 'originalAmount' in h && h.amount !== h.originalAmount && h.amount.trim() !== ''
     );
 
     return hasNewHoldings || hasExistingChanges;
@@ -124,7 +116,7 @@ export function DataEntryStep({
 
   const renderDataEntryForm = () => {
     switch (completeImportData.method) {
-      case "manual":
+      case 'manual':
         return (
           <ManualEntryStep
             completeImportData={completeImportData}
@@ -133,7 +125,7 @@ export function DataEntryStep({
           />
         );
 
-      case "screenshots":
+      case 'screenshots':
         return (
           <ScreenshotUploadStep
             completeImportData={completeImportData}
@@ -143,16 +135,14 @@ export function DataEntryStep({
           />
         );
 
-      case "wallet":
+      case 'wallet':
         return (
           <div className="space-y-6">
             <div className="text-center">
-              <h3 className="text-lg font-semibold mb-2">
-                Cryptocurrency Wallet Import
-              </h3>
+              <h3 className="text-lg font-semibold mb-2">Cryptocurrency Wallet Import</h3>
               <p className="text-muted-foreground">
-                Connect your cryptocurrency wallet to automatically import your
-                holdings and transaction history.
+                Connect your cryptocurrency wallet to automatically import your holdings and
+                transaction history.
               </p>
             </div>
 

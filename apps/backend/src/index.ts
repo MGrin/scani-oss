@@ -7,12 +7,22 @@ import { Container } from 'typedi';
 // This must happen before any module that calls Container.get()
 import { initializeContainer } from './config/container';
 import { RealTimeUpdatesService } from './infrastructure/websocket/RealTimeUpdatesService';
+import {
+  captureException,
+  close,
+  flush,
+  initializeSentry,
+  startHttpTransaction,
+} from './lib/sentry';
 import { supabase } from './lib/supabase';
 import { createStandardLimiter, createStrictLimiter } from './presentation/middleware/rate-limit';
 import { createContext } from './presentation/trpc';
 import { createTimer, logger, wsLogger } from './utils/logger';
 
 initializeContainer();
+
+// Initialize Sentry for error tracking
+initializeSentry();
 
 // Import router AFTER container is initialized
 import { appRouter } from './presentation/router';
@@ -45,28 +55,38 @@ const strictLimiter = createStrictLimiter(60, 90); // use for heavy/AI routes
 const app = new Elysia()
   // Add request logging middleware
   .onBeforeHandle(({ request, set }) => {
-    const timer = createTimer();
+    const url = new URL(request.url);
+    const method = request.method;
     const requestId = Math.random().toString(36).substring(2, 15);
 
-    // Add request ID to headers for tracing
-    set.headers = set.headers || {};
-    set.headers['x-request-id'] = requestId;
+    return startHttpTransaction(method, url.pathname, requestId, () => {
+      const timer = createTimer();
 
-    logger.info(
-      {
-        requestId,
-        method: request.method,
-        url: request.url,
-        userAgent: request.headers.get('user-agent'),
-        contentType: request.headers.get('content-type'),
-        origin: request.headers.get('origin'),
-      },
-      '📨 HTTP Request received'
-    );
+      // Add request ID to headers for tracing
+      set.headers = set.headers || {};
+      set.headers['x-request-id'] = requestId;
 
-    // Store timer and request ID for response logging
-    (request as RequestWithTracking)._timer = timer;
-    (request as RequestWithTracking)._requestId = requestId;
+      // Skip logging for health check endpoints to reduce noise
+      const isHealthCheck = url.pathname === '/health';
+
+      if (!isHealthCheck) {
+        logger.info(
+          {
+            requestId,
+            method: request.method,
+            url: request.url,
+            userAgent: request.headers.get('user-agent'),
+            contentType: request.headers.get('content-type'),
+            origin: request.headers.get('origin'),
+          },
+          '📨 HTTP Request received'
+        );
+      }
+
+      // Store timer and request ID for response logging
+      (request as RequestWithTracking)._timer = timer;
+      (request as RequestWithTracking)._requestId = requestId;
+    });
   })
   // Global rate limiting (lightweight)
   .onBeforeHandle(({ request, set }) => {
@@ -88,27 +108,33 @@ const app = new Elysia()
     const requestId = trackedRequest._requestId;
     const duration = timer ? timer.end() : undefined;
 
-    const statusCode =
-      typeof set.status === 'number'
-        ? set.status
-        : set.status
-          ? parseInt(set.status.toString(), 10)
-          : 200;
-    const isError = statusCode >= 400;
+    // Skip logging for health check endpoints to reduce noise
+    const url = new URL(request.url);
+    const isHealthCheck = url.pathname === '/health';
 
-    const logData = {
-      requestId,
-      method: request.method,
-      url: request.url,
-      statusCode,
-      duration: duration ? `${duration}ms` : undefined,
-      contentType: set.headers?.['content-type'],
-    };
+    if (!isHealthCheck) {
+      const statusCode =
+        typeof set.status === 'number'
+          ? set.status
+          : set.status
+            ? parseInt(set.status.toString(), 10)
+            : 200;
+      const isError = statusCode >= 400;
 
-    if (isError) {
-      logger.warn(logData, `⚠️ HTTP Response sent with error status: ${statusCode}`);
-    } else {
-      logger.info(logData, '✅ HTTP Response sent successfully');
+      const logData = {
+        requestId,
+        method: request.method,
+        url: request.url,
+        statusCode,
+        duration: duration ? `${duration}ms` : undefined,
+        contentType: set.headers?.['content-type'],
+      };
+
+      if (isError) {
+        logger.warn(logData, `⚠️ HTTP Response sent with error status: ${statusCode}`);
+      } else {
+        logger.info(logData, '✅ HTTP Response sent successfully');
+      }
     }
 
     return response;
@@ -124,6 +150,15 @@ const app = new Elysia()
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
     const errorName = error instanceof Error ? error.name : 'UnknownError';
     const errorStack = error instanceof Error ? error.stack : undefined;
+
+    // Capture error in Sentry
+    captureException(error instanceof Error ? error : new Error(errorMessage), {
+      requestId,
+      method: request.method,
+      url: request.url,
+      duration: duration ? `${duration}ms` : undefined,
+      userAgent: request.headers.get('user-agent'),
+    });
 
     logger.error(
       {
@@ -343,11 +378,17 @@ realTimeUpdatesService.setElysiaApp(app);
 realTimeUpdatesService.initialize();
 
 // Graceful shutdown with logging
-const gracefulShutdown = (signal: string) => {
+const gracefulShutdown = async (signal: string) => {
   logger.info({ signal }, '🛑 Graceful shutdown initiated');
+
+  logger.info({}, 'Flushing Sentry events...');
+  await flush(2000);
 
   logger.info({}, 'Closing HTTP server...');
   server.stop();
+
+  logger.info({}, 'Closing Sentry connection...');
+  await close(2000);
 
   logger.info({}, '🏁 Graceful shutdown completed');
   process.exit(0);
@@ -357,7 +398,13 @@ process.on('SIGINT', () => gracefulShutdown('SIGINT'));
 process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
 
 // Handle uncaught exceptions and unhandled rejections
-process.on('uncaughtException', (error) => {
+process.on('uncaughtException', async (error) => {
+  // Capture in Sentry before logging
+  captureException(error, {
+    type: 'uncaughtException',
+    fatal: true,
+  });
+
   logger.fatal(
     {
       error: {
@@ -368,10 +415,22 @@ process.on('uncaughtException', (error) => {
     },
     '💀 Uncaught Exception - shutting down'
   );
+
+  // Give Sentry time to send the error
+  await flush(2000);
   process.exit(1);
 });
 
-process.on('unhandledRejection', (reason, promise) => {
+process.on('unhandledRejection', async (reason, promise) => {
+  const error = reason instanceof Error ? reason : new Error(String(reason));
+
+  // Capture in Sentry before logging
+  captureException(error, {
+    type: 'unhandledRejection',
+    promise: promise.toString(),
+    fatal: true,
+  });
+
   logger.fatal(
     {
       reason,
@@ -379,6 +438,9 @@ process.on('unhandledRejection', (reason, promise) => {
     },
     '💀 Unhandled Promise Rejection - shutting down'
   );
+
+  // Give Sentry time to send the error
+  await flush(2000);
   process.exit(1);
 });
 

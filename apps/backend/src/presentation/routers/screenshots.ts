@@ -1,14 +1,14 @@
-import { Container } from "typedi";
-import { z } from "zod";
-import type { ParseScreenshotResult } from "../../application/use-cases/ParseScreenshotUseCase";
-import { ParseScreenshotUseCase } from "../../application/use-cases/ParseScreenshotUseCase";
-import { createComponentLogger } from "../../utils/logger";
-import { protectedProcedure, router } from "../trpc";
+import { Container } from 'typedi';
+import { z } from 'zod';
+import type { ParseScreenshotResult } from '../../application/use-cases/ParseScreenshotUseCase';
+import { ParseScreenshotUseCase } from '../../application/use-cases/ParseScreenshotUseCase';
+import { createComponentLogger } from '../../utils/logger';
+import { protectedProcedure, router } from '../trpc';
 
-const screenshotsLogger = createComponentLogger("router:screenshots");
+const screenshotsLogger = createComponentLogger('router:screenshots');
 
 // Supported image file extensions
-const SUPPORTED_EXTENSIONS = ["png", "jpg", "jpeg", "gif", "webp"] as const;
+const SUPPORTED_EXTENSIONS = ['png', 'jpg', 'jpeg', 'gif', 'webp'] as const;
 type SupportedExtension = (typeof SUPPORTED_EXTENSIONS)[number];
 
 const parseScreenshotUseCase = Container.get(ParseScreenshotUseCase);
@@ -21,14 +21,14 @@ export const screenshotsRouter = router({
         files: z
           .array(
             z.object({
-              filename: z.string().min(1, "Filename is required"),
-              data: z.string().min(1, "File data is required"), // base64 encoded
+              filename: z.string().min(1, 'Filename is required'),
+              data: z.string().min(1, 'File data is required'), // base64 encoded
               contentType: z.string().optional(),
             })
           )
-          .min(1, "At least one file is required")
-          .max(10, "Maximum 10 files allowed"),
-        provider: z.enum(["openai", "perplexity", "deepseek"]).optional(),
+          .min(1, 'At least one file is required')
+          .max(10, 'Maximum 10 files allowed'),
+        provider: z.enum(['openai', 'perplexity', 'deepseek']).optional(),
         accountType: z.string().optional(),
         expectedCurrency: z.string().optional(),
         context: z.string().optional(),
@@ -43,7 +43,7 @@ export const screenshotsRouter = router({
           provider: input.provider,
           minConfidence: input.minConfidence,
         },
-        "Starting batch screenshot parsing"
+        'Starting batch screenshot parsing'
       );
 
       // Process all screenshots in parallel
@@ -66,22 +66,19 @@ export const screenshotsRouter = router({
           const extension = getFileExtension(file.filename);
           if (!isSupportedExtension(extension)) {
             result.error = `Unsupported file extension: ${extension}. Supported: ${SUPPORTED_EXTENSIONS.join(
-              ", "
+              ', '
             )}`;
             screenshotsLogger.warn(
               { filename: file.filename, extension },
-              "Unsupported file extension"
+              'Unsupported file extension'
             );
             return result;
           }
 
           // Validate base64 data
           if (!isValidBase64(file.data)) {
-            result.error = "Invalid base64 data";
-            screenshotsLogger.warn(
-              { filename: file.filename },
-              "Invalid base64 data"
-            );
+            result.error = 'Invalid base64 data';
+            screenshotsLogger.warn({ filename: file.filename }, 'Invalid base64 data');
             return result;
           }
 
@@ -108,13 +105,12 @@ export const screenshotsRouter = router({
               overallConfidence: portfolio.overallConfidence,
               processingTime: result.processingTime,
             },
-            "Screenshot parsed successfully"
+            'Screenshot parsed successfully'
           );
 
           return result;
         } catch (error) {
-          result.error =
-            error instanceof Error ? error.message : "Unknown error";
+          result.error = error instanceof Error ? error.message : 'Unknown error';
           result.processingTime = Date.now() - startTime;
 
           screenshotsLogger.error(
@@ -123,7 +119,7 @@ export const screenshotsRouter = router({
               error: result.error,
               processingTime: result.processingTime,
             },
-            "Screenshot parsing failed"
+            'Screenshot parsing failed'
           );
 
           return result;
@@ -134,10 +130,7 @@ export const screenshotsRouter = router({
       const results = await Promise.all(filePromises);
 
       const successCount = results.filter((r) => r.success).length;
-      const totalProcessingTime = results.reduce(
-        (sum, r) => sum + (r.processingTime || 0),
-        0
-      );
+      const totalProcessingTime = results.reduce((sum, r) => sum + (r.processingTime || 0), 0);
 
       screenshotsLogger.info(
         {
@@ -147,7 +140,7 @@ export const screenshotsRouter = router({
           totalProcessingTime,
           averageProcessingTime: totalProcessingTime / input.files.length,
         },
-        "Batch screenshot parsing completed"
+        'Batch screenshot parsing completed'
       );
 
       return {
@@ -157,9 +150,7 @@ export const screenshotsRouter = router({
           successCount,
           failureCount: input.files.length - successCount,
           totalProcessingTime,
-          averageProcessingTime: Math.round(
-            totalProcessingTime / input.files.length
-          ),
+          averageProcessingTime: Math.round(totalProcessingTime / input.files.length),
         },
       };
     }),
@@ -167,13 +158,11 @@ export const screenshotsRouter = router({
 
 // Helper functions
 function getFileExtension(filename: string): string {
-  const parts = filename.toLowerCase().split(".");
-  return parts.length > 1 ? parts[parts.length - 1] || "" : "";
+  const parts = filename.toLowerCase().split('.');
+  return parts.length > 1 ? parts[parts.length - 1] || '' : '';
 }
 
-function isSupportedExtension(
-  extension: string
-): extension is SupportedExtension {
+function isSupportedExtension(extension: string): extension is SupportedExtension {
   return SUPPORTED_EXTENSIONS.includes(extension as SupportedExtension);
 }
 

@@ -1,18 +1,18 @@
-export type Step = "method" | "account" | "data";
+export type Step = 'method' | 'account' | 'data';
 
 export type CompleteImportData = {
   // Method selection data
-  method?: "manual" | "screenshots" | "wallet";
+  method?: 'manual' | 'screenshots' | 'wallet';
 
   // Account selection data
   accountSelection?: {
-    mode: "select" | "create";
+    mode: 'select' | 'create';
     selectedAccountId?: string;
     newAccountData?: {
       name: string;
       typeId: string;
       institutionSelection?: {
-        mode: "select" | "create";
+        mode: 'select' | 'create';
         selectedInstitutionId?: string;
         newInstitutionData?: {
           name: string;

@@ -1,11 +1,11 @@
-import { Container, Service } from "typedi";
-import { AIProviderManager } from "../../infrastructure/external-services/ai/provider-manager";
+import { Container, Service } from 'typedi';
+import { AIProviderManager } from '../../infrastructure/external-services/ai/provider-manager';
 import type {
   ParsedHolding,
   ParsedPortfolio,
-} from "../../infrastructure/external-services/ai/types";
-import { BaseService } from "./BaseService";
-import { TokenValidationService } from "./TokenValidationService";
+} from '../../infrastructure/external-services/ai/types';
+import { BaseService } from './BaseService';
+import { TokenValidationService } from './TokenValidationService';
 
 /**
  * Service for AI-powered screenshot parsing and portfolio extraction
@@ -16,39 +16,32 @@ import { TokenValidationService } from "./TokenValidationService";
 @Service()
 export class AIService extends BaseService {
   private readonly aiProviderManager: AIProviderManager;
-  private readonly tokenValidationService = Container.get(
-    TokenValidationService
-  );
+  private readonly tokenValidationService = Container.get(TokenValidationService);
 
   constructor() {
-    super("AIService");
+    super('AIService');
 
     // Initialize AI provider manager with configuration from environment
     this.aiProviderManager = new AIProviderManager({
       defaultProvider:
-        (process.env.AI_DEFAULT_PROVIDER as
-          | "openai"
-          | "perplexity"
-          | "deepseek") || "openai",
+        (process.env.AI_DEFAULT_PROVIDER as 'openai' | 'perplexity' | 'deepseek') || 'openai',
       providers: {
         openai: process.env.OPENAI_API_KEY
           ? {
               apiKey: process.env.OPENAI_API_KEY,
-              model: process.env.OPENAI_VISION_MODEL || "gpt-4o",
+              model: process.env.OPENAI_VISION_MODEL || 'gpt-4o',
             }
           : undefined,
         perplexity: process.env.PERPLEXITY_API_KEY
           ? {
               apiKey: process.env.PERPLEXITY_API_KEY,
-              model:
-                process.env.PERPLEXITY_VISION_MODEL ||
-                "llama-3.2-90b-vision-instruct",
+              model: process.env.PERPLEXITY_VISION_MODEL || 'llama-3.2-90b-vision-instruct',
             }
           : undefined,
         deepseek: process.env.DEEPSEEK_API_KEY
           ? {
               apiKey: process.env.DEEPSEEK_API_KEY,
-              model: process.env.DEEPSEEK_VISION_MODEL || "deepseek-vl",
+              model: process.env.DEEPSEEK_VISION_MODEL || 'deepseek-vl',
             }
           : undefined,
       },
@@ -65,7 +58,7 @@ export class AIService extends BaseService {
   async parseScreenshot(
     imageBase64: string,
     options?: {
-      provider?: "openai" | "perplexity" | "deepseek";
+      provider?: 'openai' | 'perplexity' | 'deepseek';
       accountType?: string;
       expectedCurrency?: string;
       context?: string;
@@ -73,8 +66,8 @@ export class AIService extends BaseService {
     }
   ): Promise<ParsedPortfolio> {
     try {
-      this.logInfo("Starting screenshot parsing", {
-        provider: options?.provider || "default",
+      this.logInfo('Starting screenshot parsing', {
+        provider: options?.provider || 'default',
         accountType: options?.accountType,
         expectedCurrency: options?.expectedCurrency,
       });
@@ -82,23 +75,20 @@ export class AIService extends BaseService {
       // Check if any AI provider is available
       if (!this.aiProviderManager.hasAvailableProvider()) {
         throw new Error(
-          "No AI providers are configured. Please set up API keys for OpenAI, Perplexity, or DeepSeek."
+          'No AI providers are configured. Please set up API keys for OpenAI, Perplexity, or DeepSeek.'
         );
       }
 
       // Parse screenshot using AI provider manager
-      const aiResponse = await this.aiProviderManager.parseScreenshot(
-        imageBase64,
-        {
-          provider: options?.provider,
-          accountType: options?.accountType,
-          expectedCurrency: options?.expectedCurrency,
-          context: options?.context,
-          fallbackProviders: true, // Always try fallbacks
-        }
-      );
+      const aiResponse = await this.aiProviderManager.parseScreenshot(imageBase64, {
+        provider: options?.provider,
+        accountType: options?.accountType,
+        expectedCurrency: options?.expectedCurrency,
+        context: options?.context,
+        fallbackProviders: true, // Always try fallbacks
+      });
 
-      this.logInfo("AI parsing completed", {
+      this.logInfo('AI parsing completed', {
         holdingsCount: aiResponse.portfolio.holdings.length,
         overallConfidence: aiResponse.portfolio.overallConfidence,
         provider: aiResponse.metadata?.provider,
@@ -111,17 +101,15 @@ export class AIService extends BaseService {
         options?.minConfidence ?? 0.5
       );
 
-      this.logInfo("Portfolio validation completed", {
+      this.logInfo('Portfolio validation completed', {
         originalHoldings: aiResponse.portfolio.holdings.length,
         validatedHoldings: validatedPortfolio.holdings.length,
-        filteredCount:
-          aiResponse.portfolio.holdings.length -
-          validatedPortfolio.holdings.length,
+        filteredCount: aiResponse.portfolio.holdings.length - validatedPortfolio.holdings.length,
       });
 
       return validatedPortfolio;
     } catch (error) {
-      throw this.handleError(error, "parseScreenshot");
+      throw this.handleError(error, 'parseScreenshot');
     }
   }
 
@@ -150,7 +138,7 @@ export class AIService extends BaseService {
       portfolio.holdings.map(async (holding: ParsedHolding) => {
         // Filter by confidence
         if (holding.confidence < minConfidence) {
-          this.logDebug("Filtering low confidence holding", {
+          this.logDebug('Filtering low confidence holding', {
             symbol: holding.symbol,
             confidence: holding.confidence,
             minConfidence,
@@ -160,17 +148,13 @@ export class AIService extends BaseService {
 
         // Validate token exists in our system
         try {
-          const validationResult =
-            await this.tokenValidationService.validateToken(holding.symbol);
+          const validationResult = await this.tokenValidationService.validateToken(holding.symbol);
 
           if (!validationResult.isValid) {
-            this.logInfo(
-              "Token validation failed - returning holding for user decision",
-              {
-                symbol: holding.symbol,
-                error: validationResult.error,
-              }
-            );
+            this.logInfo('Token validation failed - returning holding for user decision', {
+              symbol: holding.symbol,
+              error: validationResult.error,
+            });
             // Return the holding with original parsed data even if validation fails
             // This allows users to manually select the correct token from the frontend
             return holding;
@@ -183,13 +167,10 @@ export class AIService extends BaseService {
             symbol: validationResult.metadata?.symbol || holding.symbol,
           };
         } catch (error) {
-          this.logWarning(
-            "Token validation error - returning holding for user decision",
-            {
-              symbol: holding.symbol,
-              error: error instanceof Error ? error.message : "Unknown error",
-            }
-          );
+          this.logWarning('Token validation error - returning holding for user decision', {
+            symbol: holding.symbol,
+            error: error instanceof Error ? error.message : 'Unknown error',
+          });
           // Return the holding with original parsed data even if validation throws
           // This allows users to manually select the correct token from the frontend
           return holding;
@@ -205,8 +186,7 @@ export class AIService extends BaseService {
     return {
       ...portfolio,
       holdings: filteredHoldings,
-      overallConfidence:
-        filteredHoldings.length > 0 ? portfolio.overallConfidence : 0,
+      overallConfidence: filteredHoldings.length > 0 ? portfolio.overallConfidence : 0,
     };
   }
 }

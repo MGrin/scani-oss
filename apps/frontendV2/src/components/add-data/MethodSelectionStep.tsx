@@ -1,6 +1,6 @@
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
-import type { CompleteImportData } from "@/types/addData";
+import { Badge } from '@/components/ui/badge';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import type { CompleteImportData } from '@/types/addData';
 
 interface MethodSelectionStepProps {
   completeImportData: CompleteImportData;
@@ -13,27 +13,24 @@ export function MethodSelectionStep({
 }: MethodSelectionStepProps) {
   const methods = [
     {
-      id: "manual" as const,
-      title: "Manual Entry",
-      description:
-        "Manually enter your holdings, transactions, and account information",
-      icon: "📝",
+      id: 'manual' as const,
+      title: 'Manual Entry',
+      description: 'Manually enter your holdings, transactions, and account information',
+      icon: '📝',
       disabled: false,
     },
     {
-      id: "screenshots" as const,
-      title: "Screenshots Upload",
-      description:
-        "Upload screenshots of your statements and let AI extract the data",
-      icon: "📸",
+      id: 'screenshots' as const,
+      title: 'Screenshots Upload',
+      description: 'Upload screenshots of your statements and let AI extract the data',
+      icon: '📸',
       disabled: false,
     },
     {
-      id: "wallet" as const,
-      title: "Cryptocurrency Wallet",
-      description:
-        "Connect your crypto wallet to automatically import holdings",
-      icon: "🔐",
+      id: 'wallet' as const,
+      title: 'Cryptocurrency Wallet',
+      description: 'Connect your crypto wallet to automatically import holdings',
+      icon: '🔐',
       disabled: true,
     },
   ];
@@ -49,13 +46,9 @@ export function MethodSelectionStep({
             <Card
               key={method.id}
               className={`transition-all hover:shadow-md ${
-                completeImportData.method === method.id
-                  ? "ring-2 ring-primary"
-                  : ""
+                completeImportData.method === method.id ? 'ring-2 ring-primary' : ''
               } ${
-                method.disabled
-                  ? "opacity-60 cursor-not-allowed"
-                  : "cursor-pointer hover:shadow-md"
+                method.disabled ? 'opacity-60 cursor-not-allowed' : 'cursor-pointer hover:shadow-md'
               }`}
               onClick={() => {
                 if (!method.disabled) {
@@ -72,15 +65,9 @@ export function MethodSelectionStep({
                     Coming Soon
                   </Badge>
                 )}
-                <div className="text-3xl md:text-4xl mb-2 md:mb-4">
-                  {method.icon}
-                </div>
-                <h3 className="font-semibold mb-1 md:mb-2 text-sm md:text-base">
-                  {method.title}
-                </h3>
-                <p className="text-xs md:text-sm text-muted-foreground">
-                  {method.description}
-                </p>
+                <div className="text-3xl md:text-4xl mb-2 md:mb-4">{method.icon}</div>
+                <h3 className="font-semibold mb-1 md:mb-2 text-sm md:text-base">{method.title}</h3>
+                <p className="text-xs md:text-sm text-muted-foreground">{method.description}</p>
               </CardContent>
             </Card>
           ))}

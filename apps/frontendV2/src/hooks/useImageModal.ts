@@ -1,9 +1,9 @@
-import { useCallback, useState } from "react";
+import { useCallback, useState } from 'react';
 
 export function useImageModal() {
   const [imageModalOpen, setImageModalOpen] = useState(false);
-  const [selectedImageSrc, setSelectedImageSrc] = useState<string>("");
-  const [selectedImageAlt, setSelectedImageAlt] = useState<string>("");
+  const [selectedImageSrc, setSelectedImageSrc] = useState<string>('');
+  const [selectedImageAlt, setSelectedImageAlt] = useState<string>('');
 
   const openImageModal = useCallback((src: string, alt: string) => {
     setSelectedImageSrc(src);
@@ -13,8 +13,8 @@ export function useImageModal() {
 
   const closeImageModal = useCallback(() => {
     setImageModalOpen(false);
-    setSelectedImageSrc("");
-    setSelectedImageAlt("");
+    setSelectedImageSrc('');
+    setSelectedImageAlt('');
   }, []);
 
   return {

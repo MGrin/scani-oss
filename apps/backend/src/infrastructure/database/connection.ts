@@ -1,5 +1,6 @@
 import { drizzle as drizzlePostgres } from 'drizzle-orm/postgres-js';
 import postgres from 'postgres';
+import { startDbSpan } from '../../lib/sentry';
 import { createTimer, dbLogger, logConfig } from '../../utils/logger';
 import * as schema from './schema';
 
@@ -22,9 +23,12 @@ const client = postgres(DATABASE_URL, {
   onnotice: (notice) => {
     dbLogger.info({ notice }, '📢 PostgreSQL Notice');
   },
-  debug: logConfig.logSqlQueries
-    ? (connection, query, parameters) => {
-        const timer = createTimer();
+  debug: (connection, query, parameters) => {
+    const timer = createTimer();
+    const operation = query.trim().split(' ')[0]?.toUpperCase() || 'QUERY';
+
+    return startDbSpan(operation, undefined, query, parameters, () => {
+      if (logConfig.logSqlQueries) {
         dbLogger.debug(
           {
             connection,
@@ -33,19 +37,22 @@ const client = postgres(DATABASE_URL, {
           },
           '🔍 PostgreSQL Query'
         );
+      }
 
-        // Return a function to log the completion
-        return () => {
-          const duration = timer.end();
+      // Return a function to log the completion
+      return () => {
+        const duration = timer.end();
+        if (logConfig.logSqlQueries) {
           dbLogger.debug(
             {
               duration: `${duration}ms`,
             },
             '✅ PostgreSQL Query completed'
           );
-        };
-      }
-    : undefined,
+        }
+      };
+    });
+  },
 });
 
 db = drizzlePostgres(client, {

@@ -1,9 +1,9 @@
-import { HoldingInputRow } from "@/components/add-data/HoldingInputRow";
-import { useHoldingManagement } from "@/components/add-data/useHoldingManagement";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import type { CompleteImportData } from "@/types/addData";
+import { HoldingInputRow } from '@/components/add-data/HoldingInputRow';
+import { useHoldingManagement } from '@/components/add-data/useHoldingManagement';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import type { CompleteImportData } from '@/types/addData';
 
 interface ManualEntryStepProps {
   completeImportData: CompleteImportData;
@@ -16,20 +16,16 @@ export function ManualEntryStep({
   onCompleteDataUpdate,
   isCreatingHoldings,
 }: ManualEntryStepProps) {
-  const { holdings, addHolding, removeHolding, updateHolding } =
-    useHoldingManagement({
-      completeImportData,
-      onCompleteDataUpdate,
-    });
+  const { holdings, addHolding, removeHolding, updateHolding } = useHoldingManagement({
+    completeImportData,
+    onCompleteDataUpdate,
+  });
 
   const existingHoldingsList = holdings.filter((h) => h.isExisting);
   const newHoldingsList = holdings.filter((h) => !h.isExisting);
 
   // Helper to check if a holding is invalid
-  const isHoldingInvalid = (holding: {
-    tokenValue: string;
-    amount: string;
-  }): boolean => {
+  const isHoldingInvalid = (holding: { tokenValue: string; amount: string }): boolean => {
     if (!holding.tokenValue.trim()) return true;
     const amount = holding.amount.trim();
     if (!amount) return true;
@@ -65,17 +61,9 @@ export function ManualEntryStep({
                 id={holding.id}
                 tokenValue={holding.tokenValue}
                 amount={holding.amount}
-                originalAmount={
-                  "originalAmount" in holding
-                    ? holding.originalAmount
-                    : undefined
-                }
-                onTokenChange={(value) =>
-                  updateHolding(holding.id, "tokenValue", value)
-                }
-                onAmountChange={(value) =>
-                  updateHolding(holding.id, "amount", value)
-                }
+                originalAmount={'originalAmount' in holding ? holding.originalAmount : undefined}
+                onTokenChange={(value) => updateHolding(holding.id, 'tokenValue', value)}
+                onAmountChange={(value) => updateHolding(holding.id, 'amount', value)}
                 onRemove={() => removeHolding(holding.id)}
                 disabled={isCreatingHoldings}
                 tokenDisabled={true}
@@ -93,19 +81,15 @@ export function ManualEntryStep({
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
-            <span>
-              {existingHoldingsList.length > 0
-                ? "Add New Holdings"
-                : "Holdings"}
-            </span>
+            <span>{existingHoldingsList.length > 0 ? 'Add New Holdings' : 'Holdings'}</span>
             {newHoldingsList.length > 0 && (
               <Badge variant="secondary">{newHoldingsList.length}</Badge>
             )}
           </CardTitle>
           <p className="text-sm text-muted-foreground">
             {existingHoldingsList.length > 0
-              ? "Add additional holdings to this account"
-              : "Add holdings to your new account"}
+              ? 'Add additional holdings to this account'
+              : 'Add holdings to your new account'}
           </p>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -115,17 +99,11 @@ export function ManualEntryStep({
               id={holding.id}
               tokenValue={holding.tokenValue}
               amount={holding.amount}
-              onTokenChange={(value) =>
-                updateHolding(holding.id, "tokenValue", value)
-              }
-              onAmountChange={(value) =>
-                updateHolding(holding.id, "amount", value)
-              }
+              onTokenChange={(value) => updateHolding(holding.id, 'tokenValue', value)}
+              onAmountChange={(value) => updateHolding(holding.id, 'amount', value)}
               onRemove={() => removeHolding(holding.id)}
               disabled={isCreatingHoldings}
-              canRemove={
-                existingHoldingsList.length > 0 || newHoldingsList.length > 1
-              }
+              canRemove={existingHoldingsList.length > 0 || newHoldingsList.length > 1}
               allowCreateNewToken={true}
               placeholder="Search tokens..."
               hasError={isHoldingInvalid(holding)}

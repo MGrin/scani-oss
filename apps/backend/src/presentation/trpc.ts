@@ -1,5 +1,6 @@
 import { initTRPC, TRPCError } from '@trpc/server';
 import type { FetchCreateContextFnOptions } from '@trpc/server/adapters/fetch';
+import { setUser } from '../lib/sentry';
 import { createTimer, generateRequestId, logConfig, trpcLogger } from '../utils/logger';
 import { type AuthContext, createAuthContext } from './middleware/auth';
 
@@ -34,6 +35,14 @@ export const createContext = async (opts?: FetchCreateContextFnOptions): Promise
         user: null,
         isAuthenticated: false,
       };
+
+  // Set user context in Sentry for tracing
+  if (authContext.user) {
+    setUser({
+      id: authContext.user.id,
+      email: authContext.user.email,
+    });
+  }
 
   return {
     requestId,

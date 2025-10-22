@@ -1,5 +1,5 @@
-import { useCallback, useMemo } from "react";
-import type { CompleteImportData } from "@/types/addData";
+import { useCallback, useMemo } from 'react';
+import type { CompleteImportData } from '@/types/addData';
 
 export function useHoldingsManagement(
   completeImportData: CompleteImportData,
@@ -11,8 +11,8 @@ export function useHoldingsManagement(
       ...holdings,
       {
         id: `new-${Date.now()}-${Math.random()}`,
-        tokenValue: "",
-        amount: "",
+        tokenValue: '',
+        amount: '',
         isExisting: false,
       },
     ];
@@ -39,11 +39,9 @@ export function useHoldingsManagement(
   );
 
   const updateHolding = useCallback(
-    (id: string, field: "tokenValue" | "amount", value: string) => {
+    (id: string, field: 'tokenValue' | 'amount', value: string) => {
       const holdings = completeImportData.dataEntry?.holdings || [];
-      const newHoldings = holdings.map((h) =>
-        h.id === id ? { ...h, [field]: value } : h
-      );
+      const newHoldings = holdings.map((h) => (h.id === id ? { ...h, [field]: value } : h));
       onCompleteDataUpdate({
         dataEntry: {
           ...completeImportData.dataEntry,
@@ -60,13 +58,11 @@ export function useHoldingsManagement(
     const existingHoldings = holdings.filter((h) => h.isExisting);
 
     // Check if any new holdings have data
-    const hasNewHoldings = newHoldings.some(
-      (h) => h.tokenValue.trim() && h.amount.trim()
-    );
+    const hasNewHoldings = newHoldings.some((h) => h.tokenValue.trim() && h.amount.trim());
 
     // Check if any existing holdings have changed
     const hasExistingChanges = existingHoldings.some(
-      (h) => h.amount !== h.originalAmount && h.amount.trim() !== ""
+      (h) => h.amount !== h.originalAmount && h.amount.trim() !== ''
     );
 
     return hasNewHoldings || hasExistingChanges;

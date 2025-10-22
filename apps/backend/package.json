@@ -29,6 +29,7 @@
     "@elysiajs/cors": "^1.3.3",
     "@elysiajs/trpc": "^1.1.0",
     "@scani/shared": "workspace:*",
+    "@sentry/bun": "^10.21.0",
     "@supabase/supabase-js": "^2.57.4",
     "@trpc/server": "^10.45.2",
     "@types/jsonwebtoken": "^9.0.10",
