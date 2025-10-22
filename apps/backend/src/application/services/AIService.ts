@@ -164,11 +164,16 @@ export class AIService extends BaseService {
             await this.tokenValidationService.validateToken(holding.symbol);
 
           if (!validationResult.isValid) {
-            this.logWarning("Token validation failed", {
-              symbol: holding.symbol,
-              error: validationResult.error,
-            });
-            return null;
+            this.logInfo(
+              "Token validation failed - returning holding for user decision",
+              {
+                symbol: holding.symbol,
+                error: validationResult.error,
+              }
+            );
+            // Return the holding with original parsed data even if validation fails
+            // This allows users to manually select the correct token from the frontend
+            return holding;
           }
 
           // Update holding with validated token info
@@ -178,16 +183,21 @@ export class AIService extends BaseService {
             symbol: validationResult.metadata?.symbol || holding.symbol,
           };
         } catch (error) {
-          this.logWarning("Token validation error", {
-            symbol: holding.symbol,
-            error: error instanceof Error ? error.message : "Unknown error",
-          });
-          return null;
+          this.logWarning(
+            "Token validation error - returning holding for user decision",
+            {
+              symbol: holding.symbol,
+              error: error instanceof Error ? error.message : "Unknown error",
+            }
+          );
+          // Return the holding with original parsed data even if validation throws
+          // This allows users to manually select the correct token from the frontend
+          return holding;
         }
       })
     );
 
-    // Filter out null holdings and return cleaned portfolio
+    // Filter out null holdings (only low confidence ones) and return portfolio
     const filteredHoldings = validatedHoldings.filter(
       (holding): holding is NonNullable<typeof holding> => holding !== null
     );
