@@ -1,6 +1,6 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { httpBatchLink } from "@trpc/client";
-import { useState } from "react";
+import { TRPCClientError, httpBatchLink } from "@trpc/client";
+import { useState, useEffect } from "react";
 import { supabase } from "./supabase";
 import { trpc } from "./trpc";
 
@@ -18,14 +18,69 @@ export function TRPCProvider({ children }: TRPCProviderProps) {
             refetchOnWindowFocus: true,
             refetchOnReconnect: true,
             networkMode: "online",
+            retry: (failureCount, error) => {
+              // Don't retry on 401 errors
+              if (
+                error instanceof TRPCClientError &&
+                error.data?.code === "UNAUTHORIZED"
+              ) {
+                return false;
+              }
+              return failureCount < 3;
+            },
           },
           mutations: {
-            // retry: 1, // Retry once for transient failures
             networkMode: "online",
+            retry: (failureCount, error) => {
+              // Don't retry on 401 errors
+              if (
+                error instanceof TRPCClientError &&
+                error.data?.code === "UNAUTHORIZED"
+              ) {
+                return false;
+              }
+              return failureCount < 1;
+            },
           },
         },
       })
   );
+
+  // Global error handler for authentication issues
+  useEffect(() => {
+    const handleQueryError = (error: unknown) => {
+      if (error instanceof TRPCClientError) {
+        // Check if it's an UNAUTHORIZED error
+        if (error.data?.code === "UNAUTHORIZED") {
+          console.warn(
+            "[Auth] Unauthorized request detected, redirecting to auth page"
+          );
+
+          // Sign out from Supabase to clear any stale session
+          supabase.auth.signOut().catch(console.error);
+
+          // Redirect to auth page with return URL
+          const currentPath = window.location.pathname + window.location.search;
+          const returnUrl =
+            currentPath !== "/auth"
+              ? `?returnTo=${encodeURIComponent(currentPath)}`
+              : "";
+          window.location.href = `/auth${returnUrl}`;
+        }
+      }
+    };
+
+    // Set up error handler on the query cache
+    const unsubscribe = queryClient.getQueryCache().subscribe((event) => {
+      if (event.type === "observerResultsUpdated" && event.query.state.error) {
+        handleQueryError(event.query.state.error);
+      }
+    });
+
+    return () => {
+      unsubscribe();
+    };
+  }, [queryClient]);
 
   const [trpcClient] = useState(() =>
     trpc.createClient({
