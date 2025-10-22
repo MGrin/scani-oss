@@ -44,7 +44,10 @@ Sentry.init({
     : import.meta.env.VITE_SENTRY_ENABLED === "true",
 });
 
-console.log("✅ Sentry initialized successfully (frontend)");
+console.log(
+  "✅ Sentry initialized successfully (frontend)",
+  import.meta.env.PROD ? true : import.meta.env.VITE_SENTRY_ENABLED === "true"
+);
 
 const rootElement = document.getElementById("root");
 if (!rootElement) {
