@@ -143,6 +143,7 @@ function App() {
       </section>
 
       {/* Features Section */}
+      {/** biome-ignore lint/correctness/useUniqueElementIds: types */}
       <section
         id="features"
         className="py-20 pb-8 px-4 sm:px-6 lg:px-8 bg-gray-50"
@@ -201,8 +202,8 @@ function App() {
                 title: "AI Screenshot Intelligence",
                 description:
                   "Upload portfolio screenshots and let AI extract your financial data automatically. No more manual entry.",
-                available: false,
-                highlight: "Coming Soon",
+                available: true,
+                highlight: "Available Now",
               },
               {
                 icon: Wallet,
@@ -378,6 +379,7 @@ function App() {
       </section>
 
       {/* How It Works */}
+      {/** biome-ignore lint/correctness/useUniqueElementIds: types */}
       <section id="how-it-works" className="py-20 px-4 sm:px-6 lg:px-8">
         <div className="max-w-7xl mx-auto">
           <motion.div

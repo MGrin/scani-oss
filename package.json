@@ -8,9 +8,10 @@
   ],
   "scripts": {
     "check-env": "bun run scripts/check-env.ts",
-    "dev": "concurrently \"cd apps/backend && bun dev\" \"cd apps/frontendV2 && bun dev\"",
+    "dev": "concurrently \"cd apps/backend && bun dev\" \"cd apps/frontendV2 && bun dev\" \"cd apps/landing && bun dev\"",
     "dev:backend": "cd apps/backend && bun dev",
     "dev:frontend": "cd apps/frontendV2 && bun dev",
+    "dev:landing": "cd apps/landing && bun dev",
     "build": "bun run build:backend && bun run build:frontendV2",
     "build:backend": "cd apps/backend && bun run build",
     "build:frontend": "cd apps/frontendV2 && bun run build",
@@ -36,6 +37,7 @@
     "typescript": "^5"
   },
   "dependencies": {
-    "decimal.js": "^10.6.0"
+    "decimal.js": "^10.6.0",
+    "react-number-format": "^5.4.4"
   }
 }

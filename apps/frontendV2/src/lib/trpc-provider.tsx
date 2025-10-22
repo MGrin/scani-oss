@@ -1,8 +1,8 @@
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { httpBatchLink } from '@trpc/client';
-import { useState } from 'react';
-import { supabase } from './supabase';
-import { trpc } from './trpc';
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { httpBatchLink } from "@trpc/client";
+import { useState } from "react";
+import { supabase } from "./supabase";
+import { trpc } from "./trpc";
 
 interface TRPCProviderProps {
   children: React.ReactNode;
@@ -17,11 +17,11 @@ export function TRPCProvider({ children }: TRPCProviderProps) {
             refetchOnMount: true,
             refetchOnWindowFocus: true,
             refetchOnReconnect: true,
-            networkMode: 'online',
+            networkMode: "online",
           },
           mutations: {
             // retry: 1, // Retry once for transient failures
-            networkMode: 'online',
+            networkMode: "online",
           },
         },
       })
@@ -31,7 +31,9 @@ export function TRPCProvider({ children }: TRPCProviderProps) {
     trpc.createClient({
       links: [
         httpBatchLink({
-          url: `${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/trpc`,
+          url: `${
+            import.meta.env.VITE_API_URL || "http://localhost:3001"
+          }/trpc`,
           // Include auth token in headers
           async headers() {
             const {
@@ -39,7 +41,9 @@ export function TRPCProvider({ children }: TRPCProviderProps) {
             } = await supabase.auth.getSession();
 
             return {
-              authorization: session?.access_token ? `Bearer ${session.access_token}` : '',
+              authorization: session?.access_token
+                ? `Bearer ${session.access_token}`
+                : "",
             };
           },
         }),
