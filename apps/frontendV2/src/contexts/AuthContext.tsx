@@ -1,9 +1,9 @@
-import type { Session, User } from "@supabase/supabase-js";
-import type React from "react";
-import { createContext, useContext, useEffect, useState } from "react";
-import * as Sentry from "@sentry/react";
-import { isPWA, logPWAInfo } from "@/lib/pwa-utils";
-import { supabase } from "@/lib/supabase";
+import * as Sentry from '@sentry/react';
+import type { Session, User } from '@supabase/supabase-js';
+import type React from 'react';
+import { createContext, useContext, useEffect, useState } from 'react';
+import { isPWA, logPWAInfo } from '@/lib/pwa-utils';
+import { supabase } from '@/lib/supabase';
 
 interface AuthContextType {
   user: User | null;
@@ -74,14 +74,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     if (runningAsPWA) {
       // For PWA: Send magic CODE (no redirect needed)
-      console.log("[Auth] PWA detected: Sending magic code");
+      console.log('[Auth] PWA detected: Sending magic code');
       const { error } = await supabase.auth.signInWithOtp({
         email,
         options: {
           shouldCreateUser: true,
           data: {
-            email_type: "otp",
-            EMailType: "otp",
+            email_type: 'otp',
+            EMailType: 'otp',
           },
         },
       });
@@ -95,17 +95,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     // For browser: Send magic LINK with redirect
     const redirectUrl = `${window.location.origin}/auth/callback`;
-    console.log(
-      `[Auth] Browser detected: Sending magic link with redirect to: ${redirectUrl}`
-    );
+    console.log(`[Auth] Browser detected: Sending magic link with redirect to: ${redirectUrl}`);
 
     const { error } = await supabase.auth.signInWithOtp({
       email,
       options: {
         emailRedirectTo: redirectUrl,
         data: {
-          email_type: "magic_link",
-          EMailType: "magic_link",
+          email_type: 'magic_link',
+          EMailType: 'magic_link',
         },
       },
     });
@@ -121,7 +119,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const { error } = await supabase.auth.verifyOtp({
       email,
       token,
-      type: "email",
+      type: 'email',
     });
 
     if (error) {
@@ -163,7 +161,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 export function useAuth() {
   const context = useContext(AuthContext);
   if (context === undefined) {
-    throw new Error("useAuth must be used within an AuthProvider");
+    throw new Error('useAuth must be used within an AuthProvider');
   }
   return context;
 }

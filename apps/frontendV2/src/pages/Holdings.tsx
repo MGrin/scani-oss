@@ -43,7 +43,7 @@ import {
 import { Skeleton } from '@/components/ui/skeleton';
 import { Tabs, TabsContent } from '@/components/ui/tabs';
 import { useFilters, useViewMode } from '@/hooks';
-import { useToast } from '@/hooks/use-toast';
+import { showError, useToast } from '@/hooks/use-toast';
 import { trpc } from '@/lib/trpc';
 import { createCurrencyToken } from '@/lib/utils';
 
@@ -75,13 +75,7 @@ export function Holdings() {
         description: 'The holding has been successfully deleted.',
       });
     },
-    onError: (error) => {
-      toast({
-        title: 'Delete failed',
-        description: error.message || 'Failed to delete holding.',
-        variant: 'destructive',
-      });
-    },
+    onError: (error) => showError(error, 'Deleting holding'),
   });
 
   // Transform backend data to match frontend expectations

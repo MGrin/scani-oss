@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { PageHeader } from '@/components/ui/page-header';
 import { Progress } from '@/components/ui/progress';
+import { showError } from '@/hooks/use-toast';
 import { isExternalTokenValue, parseExternalTokenValue } from '@/lib/external-token';
 import { trpc } from '@/lib/trpc';
 import type { CompleteImportData, Step } from '@/types/addData';
@@ -406,6 +407,7 @@ export function AddData() {
       navigate(`/accounts/${accountId}`);
     } catch (error) {
       console.error('Failed to update/create holdings:', error);
+      showError(error, 'Updating holdings');
     }
   }, [
     completeWithNewAccount,

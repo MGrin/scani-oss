@@ -25,7 +25,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
-import { useToast } from '@/hooks/use-toast';
+import { showError, useToast } from '@/hooks/use-toast';
 import { useViewMode } from '@/hooks/use-view-mode';
 import { trpc } from '@/lib/trpc';
 import { createCurrencyToken } from '@/lib/utils';
@@ -71,13 +71,7 @@ export function AccountDetail() {
         description: 'The holding has been successfully deleted.',
       });
     },
-    onError: (error) => {
-      toast({
-        title: 'Delete failed',
-        description: error.message || 'Failed to delete holding.',
-        variant: 'destructive',
-      });
-    },
+    onError: (error) => showError(error, 'Deleting holding'),
   });
 
   // Fetch account data

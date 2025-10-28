@@ -1,9 +1,9 @@
 import * as React from 'react';
-
+import { Button } from '@/components/ui/button';
 import type { ToastActionElement, ToastProps } from '@/components/ui/toast';
 
 const TOAST_LIMIT = 1;
-const TOAST_REMOVE_DELAY = 1000000;
+const TOAST_REMOVE_DELAY = 1000 * 5; // 5 seconds
 
 type ToasterToast = ToastProps & {
   id: string;
@@ -183,4 +183,18 @@ function useToast() {
   };
 }
 
-export { useToast, toast };
+function showError(error: unknown, context?: string) {
+  const message = error instanceof Error ? error.message : 'Unknown error';
+  toast({
+    title: 'Something went wrong',
+    description: `${context ? `${context}: ` : ''}${message}`,
+    variant: 'destructive',
+    action: (
+      <Button variant="outline" size="sm" onClick={() => console.error('Error details:', error)}>
+        View Details
+      </Button>
+    ),
+  });
+}
+
+export { useToast, toast, showError };

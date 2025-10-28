@@ -36,7 +36,7 @@ import {
 import { Skeleton } from '@/components/ui/skeleton';
 import { Tabs, TabsContent } from '@/components/ui/tabs';
 import { useFilters, useViewMode } from '@/hooks';
-import { useToast } from '@/hooks/use-toast';
+import { showError, useToast } from '@/hooks/use-toast';
 import { trpc } from '@/lib/trpc';
 import { createCurrencyToken } from '@/lib/utils';
 
@@ -104,11 +104,7 @@ export function Accounts() {
         utils.accounts.getByUserIdWithSummary.setData(undefined, context.previousAccounts);
       }
 
-      toast({
-        title: 'Delete failed',
-        description: err.message || 'Failed to delete account.',
-        variant: 'destructive',
-      });
+      showError(err, 'Deleting account');
     },
     onSettled: () => {
       // Always refetch after error or success

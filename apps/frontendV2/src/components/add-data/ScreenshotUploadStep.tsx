@@ -4,6 +4,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { showError } from '@/hooks/use-toast';
 import { trpc } from '@/lib/trpc';
 import type {
   CompleteImportData,
@@ -147,7 +148,7 @@ export function ScreenshotUploadStep({
     onError: (error: unknown) => {
       console.error('Screenshot parsing failed:', error);
       setIsParsing(false);
-      // TODO: Show error toast
+      showError(error, 'Parsing screenshots');
     },
   });
 

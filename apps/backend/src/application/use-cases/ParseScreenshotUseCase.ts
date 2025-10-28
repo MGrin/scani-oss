@@ -1,19 +1,16 @@
-import Container, { Service } from "typedi";
-import { HoldingRepository } from "../../infrastructure/repositories/HoldingRepository";
-import { TokenRepository } from "../../infrastructure/repositories/TokenRepository";
-import { createComponentLogger } from "../../utils/logger";
-import { AIService } from "../services/AIService";
+import Container, { Service } from 'typedi';
+import { HoldingRepository } from '../../infrastructure/repositories/HoldingRepository';
+import { TokenRepository } from '../../infrastructure/repositories/TokenRepository';
+import { createComponentLogger } from '../../utils/logger';
+import { AIService } from '../services/AIService';
 
-const logger = createComponentLogger("use-case:parse-screenshot");
+const logger = createComponentLogger('use-case:parse-screenshot');
 
 /**
  * Check if two symbols are similar (for fuzzy matching)
  * Uses simple heuristics: substring matching, common variations
  */
-function areSymbolsSimilar(
-  screenshotSymbol: string,
-  dbSymbol: string
-): boolean {
+function areSymbolsSimilar(screenshotSymbol: string, dbSymbol: string): boolean {
   const screenshot = screenshotSymbol.toLowerCase().trim();
   const db = dbSymbol.toLowerCase().trim();
 
@@ -30,15 +27,15 @@ function areSymbolsSimilar(
   // Handle common variations
   const variations: Array<[RegExp, string]> = [
     // Remove common suffixes/prefixes
-    [/\.eth$/, ""], // Remove .eth suffix
-    [/^eth\./, ""], // Remove eth. prefix
-    [/-eth$/, ""], // Remove -eth suffix
-    [/^eth-/, ""], // Remove eth- prefix
-    [/\.com$/, ""], // Remove .com suffix
-    [/\.org$/, ""], // Remove .org suffix
-    [/\.io$/, ""], // Remove .io suffix
-    [/\.ai$/, ""], // Remove .ai suffix
-    [/\.fi$/, ""], // Remove .fi suffix
+    [/\.eth$/, ''], // Remove .eth suffix
+    [/^eth\./, ''], // Remove eth. prefix
+    [/-eth$/, ''], // Remove -eth suffix
+    [/^eth-/, ''], // Remove eth- prefix
+    [/\.com$/, ''], // Remove .com suffix
+    [/\.org$/, ''], // Remove .org suffix
+    [/\.io$/, ''], // Remove .io suffix
+    [/\.ai$/, ''], // Remove .ai suffix
+    [/\.fi$/, ''], // Remove .fi suffix
   ];
 
   for (const [pattern, replacement] of variations) {
@@ -63,7 +60,7 @@ function areSymbolsSimilar(
 
 export interface ParseScreenshotInput {
   imageBase64: string;
-  provider?: "openai" | "perplexity" | "deepseek";
+  provider?: 'openai' | 'perplexity' | 'deepseek';
   accountType?: string;
   expectedCurrency?: string;
   context?: string;
@@ -125,7 +122,7 @@ export class ParseScreenshotUseCase {
         accountId: input.accountId,
         userId: input.userId,
       },
-      "Starting screenshot parsing and token enrichment"
+      'Starting screenshot parsing and token enrichment'
     );
 
     // Parse screenshot using AI service
@@ -142,7 +139,7 @@ export class ParseScreenshotUseCase {
         holdingsCount: portfolio.holdings.length,
         overallConfidence: portfolio.overallConfidence,
       },
-      "AI parsing completed, enriching with token and holding data"
+      'AI parsing completed, enriching with token and holding data'
     );
 
     // Enrich holdings with token IDs and existing holding IDs
@@ -163,10 +160,9 @@ export class ParseScreenshotUseCase {
       {
         enrichedHoldingsCount: enrichedHoldings.length,
         holdingsWithTokenId: enrichedHoldings.filter((h) => h.tokenId).length,
-        holdingsWithHoldingId: enrichedHoldings.filter((h) => h.holdingId)
-          .length,
+        holdingsWithHoldingId: enrichedHoldings.filter((h) => h.holdingId).length,
       },
-      "Screenshot parsing and enrichment completed"
+      'Screenshot parsing and enrichment completed'
     );
 
     return result;
@@ -194,23 +190,22 @@ export class ParseScreenshotUseCase {
 
     if (accountId && userId) {
       try {
-        existingHoldings =
-          await this.holdingRepository.findByUserWithFullDetails(
-            userId,
-            accountId
-          );
+        existingHoldings = await this.holdingRepository.findByUserWithFullDetails(
+          userId,
+          accountId
+        );
         logger.debug(
           { accountId, userId, existingHoldingsCount: existingHoldings.length },
-          "Retrieved existing holdings for account"
+          'Retrieved existing holdings for account'
         );
       } catch (error) {
         logger.warn(
           {
             accountId,
             userId,
-            error: error instanceof Error ? error.message : "Unknown error",
+            error: error instanceof Error ? error.message : 'Unknown error',
           },
-          "Failed to retrieve existing holdings"
+          'Failed to retrieve existing holdings'
         );
       }
     }
@@ -253,24 +248,17 @@ export class ParseScreenshotUseCase {
               tokenId: token.id,
               tokenName: token.name,
             },
-            "Token found for holding"
+            'Token found for holding'
           );
 
           // If we have existing holdings for this account, try to match by token ID
           if (accountId && holdingsByTokenId.has(token.id)) {
             const matchingHoldings = holdingsByTokenId.get(token.id)!;
             // Map first parsed holding to first existing holding, second to second, etc.
-            const holdingIndex = enrichedHoldings.filter(
-              (h) => h.tokenId === token.id
-            ).length;
-            if (
-              holdingIndex < matchingHoldings.length &&
-              matchingHoldings[holdingIndex]
-            ) {
-              enrichedHolding.holdingId =
-                matchingHoldings[holdingIndex].holding.id;
-              enrichedHolding.existingBalance =
-                matchingHoldings[holdingIndex].holding.balance;
+            const holdingIndex = enrichedHoldings.filter((h) => h.tokenId === token.id).length;
+            if (holdingIndex < matchingHoldings.length && matchingHoldings[holdingIndex]) {
+              enrichedHolding.holdingId = matchingHoldings[holdingIndex].holding.id;
+              enrichedHolding.existingBalance = matchingHoldings[holdingIndex].holding.balance;
               logger.debug(
                 {
                   symbol: holding.symbol,
@@ -279,7 +267,7 @@ export class ParseScreenshotUseCase {
                   existingBalance: enrichedHolding.existingBalance,
                   holdingIndex,
                 },
-                "Matched existing holding by token ID"
+                'Matched existing holding by token ID'
               );
             }
           }
@@ -296,10 +284,7 @@ export class ParseScreenshotUseCase {
             const holdingIndex = enrichedHoldings.filter(
               (h) => h.symbol.toLowerCase() === symbolLower && h.holdingId
             ).length;
-            if (
-              holdingIndex < matchingHoldings.length &&
-              matchingHoldings[holdingIndex]
-            ) {
+            if (holdingIndex < matchingHoldings.length && matchingHoldings[holdingIndex]) {
               const matchingHolding = matchingHoldings[holdingIndex];
               enrichedHolding.tokenId = matchingHolding.token.id;
               enrichedHolding.holdingId = matchingHolding.holding.id;
@@ -313,15 +298,12 @@ export class ParseScreenshotUseCase {
                   existingBalance: enrichedHolding.existingBalance,
                   holdingIndex,
                 },
-                "Matched existing holding by exact symbol match"
+                'Matched existing holding by exact symbol match'
               );
             }
           } else {
             // Try fuzzy symbol matching
-            for (const [
-              existingSymbol,
-              matchingHoldings,
-            ] of holdingsBySymbol.entries()) {
+            for (const [existingSymbol, matchingHoldings] of holdingsBySymbol.entries()) {
               if (
                 areSymbolsSimilar(holding.symbol, existingSymbol) &&
                 matchingHoldings.length > 0
@@ -331,8 +313,7 @@ export class ParseScreenshotUseCase {
                 if (matchingHolding) {
                   enrichedHolding.tokenId = matchingHolding.token.id;
                   enrichedHolding.holdingId = matchingHolding.holding.id;
-                  enrichedHolding.existingBalance =
-                    matchingHolding.holding.balance;
+                  enrichedHolding.existingBalance = matchingHolding.holding.balance;
                   logger.debug(
                     {
                       symbol: holding.symbol,
@@ -341,7 +322,7 @@ export class ParseScreenshotUseCase {
                       holdingId: enrichedHolding.holdingId,
                       existingBalance: enrichedHolding.existingBalance,
                     },
-                    "Matched existing holding by fuzzy symbol similarity"
+                    'Matched existing holding by fuzzy symbol similarity'
                   );
                   break; // Stop after first match
                 }
@@ -353,9 +334,9 @@ export class ParseScreenshotUseCase {
         logger.warn(
           {
             symbol: holding.symbol,
-            error: error instanceof Error ? error.message : "Unknown error",
+            error: error instanceof Error ? error.message : 'Unknown error',
           },
-          "Error enriching holding with token and holding data"
+          'Error enriching holding with token and holding data'
         );
         // Continue without tokenId/holdingId if enrichment fails
       }

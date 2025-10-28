@@ -16,7 +16,7 @@ import {
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { MoneyDisplay } from '@/components/ui/money-display';
-import { useToast } from '@/hooks/use-toast';
+import { showError, useToast } from '@/hooks/use-toast';
 import { trpc } from '@/lib/trpc';
 import { createCurrencyToken } from '@/lib/utils';
 import { AccountBadge } from './AccountBadge';
@@ -64,13 +64,7 @@ export function HoldingModal({
 
       onHoldingUpdated?.();
     },
-    onError: (error) => {
-      toast({
-        title: 'Update failed',
-        description: error.message || 'Failed to update holding.',
-        variant: 'destructive',
-      });
-    },
+    onError: (error) => showError(error, 'Updating holding'),
   });
 
   // Delete holding mutation
@@ -90,13 +84,7 @@ export function HoldingModal({
       onClose();
       onHoldingDeleted?.();
     },
-    onError: (error) => {
-      toast({
-        title: 'Delete failed',
-        description: error.message || 'Failed to delete holding.',
-        variant: 'destructive',
-      });
-    },
+    onError: (error) => showError(error, 'Deleting holding'),
   });
 
   // Reset edit state when holding changes

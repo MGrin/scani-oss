@@ -28,7 +28,7 @@ import { SkipLinks } from '@/components/ui/skip-links';
 
 import { useAuth } from '@/contexts/AuthContext';
 import { RealtimeProvider } from '@/contexts/RealtimeContext';
-import { useToast } from '@/hooks/use-toast';
+import { showError, useToast } from '@/hooks/use-toast';
 import { MOBILE_SPACING } from '@/lib/mobile-utils';
 import { trpc } from '@/lib/trpc';
 import { cn } from '@/lib/utils';
@@ -138,13 +138,7 @@ export function Layout({ children }: LayoutProps) {
         variant: 'default',
       });
     },
-    onError: (err) => {
-      toast({
-        title: 'Error',
-        description: err.message || 'Failed to update currency',
-        variant: 'destructive',
-      });
-    },
+    onError: (err) => showError(err, 'Updating currency'),
   });
 
   const handleCurrencyChange = (currencyId: string) => {
