@@ -12,7 +12,7 @@ export {
   type ParseScreenshotResult,
   ParseScreenshotUseCase,
 } from './ParseScreenshotUseCase';
-
+export { UpdateHoldingPriceUseCase } from './UpdateHoldingPriceUseCase';
 export {
   type UpdateHoldingsBatchInput,
   type UpdateHoldingsBatchResult,
