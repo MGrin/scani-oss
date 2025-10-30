@@ -1,5 +1,5 @@
 import type { HoldingWithDetails } from '@scani/shared';
-import { Save, Trash2 } from 'lucide-react';
+import { RefreshCw, Save, Trash2 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { NumericFormat } from 'react-number-format';
 import TimeAgo from 'react-timeago';
@@ -87,6 +87,25 @@ export function HoldingModal({
     onError: (error) => showError(error, 'Deleting holding'),
   });
 
+  // Update price mutation
+  const updatePriceMutation = trpc.holdings.updatePrice.useMutation({
+    onSuccess: (data) => {
+      // Invalidate all holding-related queries to refresh the data
+      utils.holdings.getWithDetails.invalidate();
+      utils.accounts.getHoldings.invalidate();
+      utils.accounts.getByUserIdWithSummary.invalidate();
+      utils.dashboard.getOverview.invalidate();
+
+      toast({
+        title: 'Price updated',
+        description: `Price refreshed successfully from ${data.source}.`,
+      });
+
+      onHoldingUpdated?.();
+    },
+    onError: (error) => showError(error, 'Updating price'),
+  });
+
   // Reset edit state when holding changes
   useEffect(() => {
     if (holding) {
@@ -123,6 +142,12 @@ export function HoldingModal({
     if (!holding) return;
 
     deleteHoldingMutation.mutate({ id: holding.id });
+  };
+
+  const handleUpdatePrice = () => {
+    if (!holding) return;
+
+    updatePriceMutation.mutate({ id: holding.id });
   };
 
   if (!holding) return null;
@@ -250,6 +275,19 @@ export function HoldingModal({
                 )}
               </div>
             </div>
+          </div>
+
+          {/* Update Price Button */}
+          <div className="flex justify-start">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleUpdatePrice}
+              disabled={updatePriceMutation.isPending}
+            >
+              <RefreshCw className={`h-4 w-4 mr-2 ${updatePriceMutation.isPending ? 'animate-spin' : ''}`} />
+              {updatePriceMutation.isPending ? 'Updating Price...' : 'Update Price'}
+            </Button>
           </div>
 
           {/* Timestamps */}

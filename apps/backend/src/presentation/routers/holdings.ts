@@ -2,12 +2,14 @@ import { UpdateHoldingDto } from '@scani/shared';
 import { Container } from 'typedi';
 import { z } from 'zod';
 import { HoldingService } from '../../application/services/HoldingService';
-import { DeleteHoldingUseCase, UpdateHoldingUseCase } from '../../application/use-cases';
+import { DeleteHoldingUseCase, UpdateHoldingUseCase, UpdateHoldingPriceUseCase } from '../../application/use-cases';
 import { emitEntityChange } from '../../infrastructure/websocket/RealTimeUpdatesService';
+import { TokenRepository } from '../../infrastructure/repositories/TokenRepository';
 import { requireAuth } from '../middleware/auth';
 import { protectedProcedure, router } from '../trpc';
 
 const holdingService = Container.get(HoldingService);
+const tokenRepository = Container.get(TokenRepository);
 
 export const holdingsRouter = router({
   // Get all holdings with full details (for Holdings page)
@@ -72,6 +74,34 @@ export const holdingsRouter = router({
             },
           ],
         },
+      });
+
+      return result;
+    }),
+
+  // Update holding price by forcing fresh fetch from pricing providers
+  updatePrice: protectedProcedure
+    .input(z.object({ id: z.string() }))
+    .mutation(async ({ input, ctx }) => {
+      const { dbUser } = requireAuth(ctx);
+
+      // Use UpdateHoldingPriceUseCase for business logic
+      const updateHoldingPriceUseCase = Container.get(UpdateHoldingPriceUseCase);
+      
+      // Get user's base currency
+      const baseCurrency = dbUser.baseCurrencyId 
+        ? (await tokenRepository.findById(dbUser.baseCurrencyId))?.symbol || 'USD'
+        : 'USD';
+
+      const result = await updateHoldingPriceUseCase.execute(input.id, dbUser.id, baseCurrency);
+
+      // Emit entity change event to trigger real-time updates
+      emitEntityChange({
+        type: 'entity_changed',
+        entityType: 'holding',
+        operationType: 'update',
+        entityId: input.id,
+        userId: dbUser.id,
       });
 
       return result;
