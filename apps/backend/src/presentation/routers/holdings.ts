@@ -2,9 +2,13 @@ import { UpdateHoldingDto } from '@scani/shared';
 import { Container } from 'typedi';
 import { z } from 'zod';
 import { HoldingService } from '../../application/services/HoldingService';
-import { DeleteHoldingUseCase, UpdateHoldingUseCase, UpdateHoldingPriceUseCase } from '../../application/use-cases';
-import { emitEntityChange } from '../../infrastructure/websocket/RealTimeUpdatesService';
+import {
+  DeleteHoldingUseCase,
+  UpdateHoldingPriceUseCase,
+  UpdateHoldingUseCase,
+} from '../../application/use-cases';
 import { TokenRepository } from '../../infrastructure/repositories/TokenRepository';
+import { emitEntityChange } from '../../infrastructure/websocket/RealTimeUpdatesService';
 import { requireAuth } from '../middleware/auth';
 import { protectedProcedure, router } from '../trpc';
 
@@ -87,9 +91,9 @@ export const holdingsRouter = router({
 
       // Use UpdateHoldingPriceUseCase for business logic
       const updateHoldingPriceUseCase = Container.get(UpdateHoldingPriceUseCase);
-      
+
       // Get user's base currency
-      const baseCurrency = dbUser.baseCurrencyId 
+      const baseCurrency = dbUser.baseCurrencyId
         ? (await tokenRepository.findById(dbUser.baseCurrencyId))?.symbol || 'USD'
         : 'USD';
 

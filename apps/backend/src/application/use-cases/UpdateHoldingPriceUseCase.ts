@@ -1,8 +1,9 @@
 import { Container, Service } from 'typedi';
-import { PricingService } from '../services/PricingService';
 import { HoldingRepository } from '../../infrastructure/repositories/HoldingRepository';
+import { TokenPriceRepository } from '../../infrastructure/repositories/TokenPriceRepository';
 import { TokenRepository } from '../../infrastructure/repositories/TokenRepository';
 import { createComponentLogger } from '../../utils/logger';
+import { PricingService } from '../services/PricingService';
 
 const logger = createComponentLogger('use-case:update-holding-price');
 
@@ -19,6 +20,7 @@ const logger = createComponentLogger('use-case:update-holding-price');
 export class UpdateHoldingPriceUseCase {
   private readonly holdingRepository = Container.get(HoldingRepository);
   private readonly tokenRepository = Container.get(TokenRepository);
+  private readonly tokenPriceRepository = Container.get(TokenPriceRepository);
   private readonly pricingService = Container.get(PricingService);
 
   async execute(
@@ -94,7 +96,7 @@ export class UpdateHoldingPriceUseCase {
     // Force fresh price fetch by using current timestamp
     // This bypasses the cache as it will be considered "live" data
     const now = new Date();
-    
+
     try {
       // Fetch fresh price - this will respect rate limiting internally
       const price = await this.pricingService.getTokenPrice(token, baseCurrencySymbol, now);
@@ -105,7 +107,7 @@ export class UpdateHoldingPriceUseCase {
         throw new Error('Base currency token not found');
       }
 
-      const priceMetadata = await this.pricingService['tokenPriceRepository'].findLatestPrice(
+      const priceMetadata = await this.tokenPriceRepository.findLatestPrice(
         token.id,
         baseCurrencyToken.id
       );
@@ -130,7 +132,7 @@ export class UpdateHoldingPriceUseCase {
       };
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
-      
+
       logger.error(
         {
           holdingId,
@@ -148,7 +150,9 @@ export class UpdateHoldingPriceUseCase {
 
       // Check if it's a provider unavailability error
       if (errorMessage.includes('unavailable') || errorMessage.includes('tier_limitation')) {
-        throw new Error('Price provider is currently unavailable for this token. Please try again later.');
+        throw new Error(
+          'Price provider is currently unavailable for this token. Please try again later.'
+        );
       }
 
       // Generic error

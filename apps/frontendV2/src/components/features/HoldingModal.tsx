@@ -285,7 +285,9 @@ export function HoldingModal({
               onClick={handleUpdatePrice}
               disabled={updatePriceMutation.isPending}
             >
-              <RefreshCw className={`h-4 w-4 mr-2 ${updatePriceMutation.isPending ? 'animate-spin' : ''}`} />
+              <RefreshCw
+                className={`h-4 w-4 mr-2 ${updatePriceMutation.isPending ? 'animate-spin' : ''}`}
+              />
               {updatePriceMutation.isPending ? 'Updating Price...' : 'Update Price'}
             </Button>
           </div>
