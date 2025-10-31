@@ -112,7 +112,7 @@ export function createTokensRouter(
           iconUrl?: string | null;
           isActive?: boolean;
           source: 'database' | 'external';
-          provider?: 'finnhub' | 'coingecko';
+          provider?: 'finnhub' | 'coingecko' | 'defillama';
           metadata?: Record<string, unknown>;
         }> = [...dbTokens];
 
@@ -225,7 +225,7 @@ export function createTokensRouter(
               .max(20)
               .transform((val) => val.toUpperCase()),
             metadata: z.record(z.unknown()),
-            provider: z.enum(['finnhub', 'coingecko']),
+            provider: z.enum(['finnhub', 'coingecko', 'defillama']),
           })
         )
       )

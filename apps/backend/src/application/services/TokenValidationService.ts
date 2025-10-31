@@ -1,12 +1,33 @@
 import type { TokenMetadata, TokenValidationResult as ValidationResult } from '@scani/shared';
 import { Container, Service } from 'typedi';
 import { config } from '../../config/pricing';
+import { PROVIDER_CONFIGS } from '../../infrastructure/external-services/pricing/provider-config';
+import { fetchWithTimeout } from '../../infrastructure/external-services/pricing/utils';
 import { TokenRepository } from '../../infrastructure/repositories/TokenRepository';
 import { createComponentLogger } from '../../utils/logger';
 import { PricingService } from './PricingService';
 
 /**
- * Service for validating tokens from external providers (CoinGecko, Finnhub)
+ * Mapping of chainId to DeFiLlama chain names
+ * See: https://defillama.com/docs/api
+ */
+const CHAIN_ID_TO_DEFILLAMA: Record<number, string> = {
+  1: 'ethereum',
+  10: 'optimism',
+  56: 'bsc',
+  100: 'xdai', // Gnosis Chain (formerly xDai)
+  137: 'polygon',
+  250: 'fantom',
+  324: 'era', // zkSync Era
+  8453: 'base',
+  42161: 'arbitrum',
+  43114: 'avax',
+  59144: 'linea',
+  534352: 'scroll',
+};
+
+/**
+ * Service for validating tokens from external providers (CoinGecko, Finnhub, DeFiLlama)
  * Uses PricingService for rate-limited API access
  */
 @Service()
@@ -103,7 +124,7 @@ export class TokenValidationService {
 
     return {
       isValid: false,
-      error: `Token ${symbol} not found in any supported provider (Finnhub, CoinGecko)`,
+      error: `Token ${symbol} not found in any supported provider (Finnhub, CoinGecko, DeFiLlama)`,
     };
   }
 
@@ -487,6 +508,102 @@ export class TokenValidationService {
         'CoinGecko search error'
       );
       return [];
+    }
+  }
+
+  /**
+   * Validate a token by contract address using DeFiLlama
+   * This is used as a fallback when CoinGecko is not available or doesn't have the token
+   */
+  async validateTokenByContractAddress(
+    contractAddress: string,
+    chainId: number
+  ): Promise<ValidationResult> {
+    try {
+      const chainName = CHAIN_ID_TO_DEFILLAMA[chainId];
+
+      if (!chainName) {
+        return {
+          isValid: false,
+          error: `Chain ${chainId} not supported by DeFiLlama`,
+        };
+      }
+
+      const key = `${chainName}:${contractAddress.toLowerCase()}`;
+      const url = `${PROVIDER_CONFIGS.defiLlama.baseUrl}/prices/current/${key}`;
+
+      const response = await fetchWithTimeout(url, {
+        headers: { 'Content-Type': 'application/json' },
+      });
+
+      if (!response.ok) {
+        return {
+          isValid: false,
+          error: `DeFiLlama API responded with ${response.status}: ${response.statusText}`,
+        };
+      }
+
+      const data = (await response.json()) as {
+        coins: {
+          [key: string]: {
+            decimals: number;
+            symbol: string;
+            price: number;
+            timestamp: number;
+            confidence: number;
+          };
+        };
+      };
+
+      const tokenData = data.coins?.[key];
+
+      if (!tokenData) {
+        return {
+          isValid: false,
+          error: 'Token not found on DeFiLlama',
+        };
+      }
+
+      // Check confidence score
+      if (tokenData.confidence < 0.8) {
+        return {
+          isValid: false,
+          error: `Low confidence score from DeFiLlama: ${tokenData.confidence}`,
+        };
+      }
+
+      // Check for valid price
+      if (tokenData.price == null || tokenData.price <= 0) {
+        return {
+          isValid: false,
+          error: 'No valid price data from DeFiLlama',
+        };
+      }
+
+      const metadata: TokenMetadata = {
+        symbol: tokenData.symbol.toUpperCase(),
+        name: tokenData.symbol, // DeFiLlama doesn't provide full name in this endpoint
+        type: 'Crypto',
+        currency: 'USD',
+        provider: 'defillama',
+        providerMetadata: {
+          contractAddress,
+          chainId,
+          chainName,
+          defiLlamaData: tokenData,
+          validatedAt: new Date().toISOString(),
+        },
+      };
+
+      return {
+        isValid: true,
+        metadata,
+      };
+    } catch (error) {
+      return {
+        isValid: false,
+        error: error instanceof Error ? error.message : 'Unknown DeFiLlama validation error',
+      };
     }
   }
 }
