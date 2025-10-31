@@ -9,6 +9,7 @@ export const DEFAULT_MAX_RETRIES = 2;
  * - Exponential backoff retry for transient failures
  * - Respects 429 (rate limit) and 5xx (server error) responses
  * - Does not retry 4xx client errors (except 429)
+ * - Enhanced error messages with URL and attempt context
  */
 export async function fetchWithTimeout(
   url: string,
@@ -18,13 +19,25 @@ export async function fetchWithTimeout(
 ): Promise<Response> {
   let lastError: Error | null = null;
 
+  // Validate URL format to catch typos early
+  try {
+    new URL(url);
+  } catch (_urlError) {
+    throw new Error(`Invalid URL format: ${url}. Check for typos in the URL or port number.`);
+  }
+
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
     try {
       // Setup timeout
       let timer: ReturnType<typeof setTimeout> | undefined;
       const timeoutPromise = new Promise<Response>((_, reject) => {
         timer = setTimeout(
-          () => reject(new Error(`Fetch timeout after ${timeoutMs}ms`)),
+          () =>
+            reject(
+              new Error(
+                `Request timeout after ${timeoutMs}ms (attempt ${attempt + 1}/${maxRetries + 1})`
+              )
+            ),
           timeoutMs
         );
       });
@@ -39,7 +52,9 @@ export async function fetchWithTimeout(
 
       // Check if response indicates we should retry
       if (attempt < maxRetries && shouldRetry(response)) {
-        lastError = new Error(`HTTP ${response.status}: ${response.statusText}`);
+        lastError = new Error(
+          `HTTP ${response.status}: ${response.statusText} (attempt ${attempt + 1}/${maxRetries + 1})`
+        );
 
         // Exponential backoff: 1s, 2s, 4s...
         const backoffMs = 2 ** attempt * 1000;
@@ -50,6 +65,14 @@ export async function fetchWithTimeout(
       return response;
     } catch (error) {
       lastError = error instanceof Error ? error : new Error(String(error));
+
+      // Enhance error message with URL context for debugging
+      const enhancedError = new Error(
+        `${lastError.message} - URL: ${url} (attempt ${attempt + 1}/${maxRetries + 1})`
+      );
+      enhancedError.name = lastError.name;
+      enhancedError.stack = lastError.stack;
+      lastError = enhancedError;
 
       // Network errors and timeouts are retryable
       if (attempt < maxRetries && isRetryableError(lastError)) {
@@ -64,7 +87,7 @@ export async function fetchWithTimeout(
     }
   }
 
-  throw lastError || new Error('Max retries exceeded');
+  throw lastError || new Error(`Max retries (${maxRetries}) exceeded for URL: ${url}`);
 }
 
 /**
@@ -90,11 +113,21 @@ function isRetryableError(error: Error): boolean {
   // Timeout errors
   if (message.includes('timeout')) return true;
 
-  // Network errors
+  // Network connectivity errors
   if (message.includes('network')) return true;
   if (message.includes('econnreset')) return true;
   if (message.includes('enotfound')) return true;
   if (message.includes('connection')) return true;
+  if (message.includes('unable to connect')) return true;
+  if (message.includes('could not connect')) return true;
+
+  // DNS and host resolution errors
+  if (message.includes('getaddrinfo')) return true;
+  if (message.includes('etimedout')) return true;
+
+  // Socket errors
+  if (message.includes('socket')) return true;
+  if (message.includes('econnrefused')) return true;
 
   return false;
 }

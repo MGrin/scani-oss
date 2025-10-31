@@ -41,6 +41,26 @@ logger.info(
   '🚀 Starting Scani Backend Server'
 );
 
+// Validate JWT configuration at startup
+const jwtSecret = process.env.SUPABASE_JWT_SECRET || process.env.SUPABASE_SERVICE_ROLE_KEY;
+if (!jwtSecret) {
+  logger.warn(
+    {
+      recommendation: 'Set SUPABASE_JWT_SECRET or SUPABASE_SERVICE_ROLE_KEY environment variable',
+      impact: 'All JWT verifications will require remote Supabase API calls, increasing latency',
+    },
+    '⚠️ JWT Secret not configured - local JWT verification disabled'
+  );
+} else {
+  logger.info(
+    {
+      jwtSecretLength: jwtSecret.length,
+      source: process.env.SUPABASE_JWT_SECRET ? 'SUPABASE_JWT_SECRET' : 'SUPABASE_SERVICE_ROLE_KEY',
+    },
+    '✅ JWT Secret configured - local verification enabled'
+  );
+}
+
 // Extended request interface for tracking
 interface RequestWithTracking extends Request {
   _timer?: { end: () => number };

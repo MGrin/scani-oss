@@ -103,10 +103,11 @@ export class EvmChainService implements IBlockchainService {
       logger.debug(
         {
           chainId: this.chainConfig.chainId,
+          chainName: this.chainConfig.name,
           address,
           totalTokens: balances.length,
         },
-        'Fetched token balances'
+        `Fetched token balances on ${this.chainConfig.name}`
       );
 
       return balances;
@@ -114,13 +115,15 @@ export class EvmChainService implements IBlockchainService {
       logger.error(
         {
           chainId: this.chainConfig.chainId,
+          chainName: this.chainConfig.name,
           address,
+          explorerUrl: this.chainConfig.explorerApiUrl,
           error:
             error instanceof Error
               ? { name: error.name, message: error.message }
               : { name: 'Error', message: String(error) },
         },
-        'Failed to fetch token balances'
+        `Failed to fetch token balances on ${this.chainConfig.name}: ${error instanceof Error ? error.message : String(error)}`
       );
       throw error;
     }
@@ -347,13 +350,15 @@ export class EvmChainService implements IBlockchainService {
       logger.debug(
         {
           chainId: this.chainConfig.chainId,
+          chainName: this.chainConfig.name,
           address: `${address.substring(0, 10)}...`,
+          url: this.chainConfig.explorerApiUrl,
           error:
             error instanceof Error
               ? { name: error.name, message: error.message }
               : { name: 'Error', message: String(error) },
         },
-        'Error checking wallet activity'
+        `Error checking wallet activity on ${this.chainConfig.name}: ${error instanceof Error ? error.message : String(error)}`
       );
       return false;
     }
@@ -397,11 +402,13 @@ export class EvmChainService implements IBlockchainService {
           logger.debug(
             {
               chainId: this.chainConfig.chainId,
+              chainName: this.chainConfig.name,
               action,
               status: response.status,
               statusText: response.statusText,
+              url: this.chainConfig.explorerApiUrl,
             },
-            'HTTP error while checking transactions'
+            `HTTP error while checking transactions on ${this.chainConfig.name}`
           );
           return false;
         }
@@ -418,13 +425,15 @@ export class EvmChainService implements IBlockchainService {
         logger.debug(
           {
             chainId: this.chainConfig.chainId,
+            chainName: this.chainConfig.name,
             action,
+            url: this.chainConfig.explorerApiUrl,
             error:
               error instanceof Error
                 ? { name: error.name, message: error.message }
                 : { name: 'Error', message: String(error) },
           },
-          'Error checking transactions'
+          `Error checking transactions on ${this.chainConfig.name}: ${error instanceof Error ? error.message : String(error)}`
         );
         return false;
       }

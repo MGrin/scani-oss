@@ -108,12 +108,14 @@ export class TronChainService implements IBlockchainService {
       logger.error(
         {
           address,
+          chainName: 'Tron',
+          url: this.apiUrl,
           error:
             error instanceof Error
               ? { name: error.name, message: error.message }
               : { name: 'Error', message: String(error) },
         },
-        'Failed to fetch Tron balances'
+        `Failed to fetch Tron balances: ${error instanceof Error ? error.message : String(error)}`
       );
       throw error;
     }
