@@ -183,13 +183,48 @@ export class PricingService {
     );
 
     const priceResult = freshPrices.find((p) => p.tokenId === token.id);
-    const finalPrice = priceResult?.price || '0';
+    let finalPrice = priceResult?.price || '0';
 
-    if (hasFinnhubMetadata && finalPrice === '0') {
-      logger.warn(
-        { tokenId: token.id, symbol: token.symbol },
-        'Token with Finnhub metadata still has no price after fresh fetch - check Google Sheets configuration'
-      );
+    // If fresh fetch failed (price is '0'), try to use the last successful cached price as fallback
+    if (finalPrice === '0') {
+      const lastSuccessfulPrice = await this.getLastSuccessfulPrice(token.id, baseCurrencyToken.id);
+
+      if (lastSuccessfulPrice) {
+        // Check if currency conversion is needed
+        if (lastSuccessfulPrice.baseTokenId !== baseCurrencyToken.id) {
+          const cachedBaseCurrencyToken = await this.tokenRepository.findById(
+            lastSuccessfulPrice.baseTokenId
+          );
+
+          if (cachedBaseCurrencyToken) {
+            finalPrice = await this.convertPrice(
+              lastSuccessfulPrice.price,
+              cachedBaseCurrencyToken.symbol,
+              baseCurrencyToken.symbol,
+              timestamp
+            );
+          } else {
+            finalPrice = lastSuccessfulPrice.price;
+          }
+        } else {
+          finalPrice = lastSuccessfulPrice.price;
+        }
+
+        pricingLogger.info(
+          {
+            tokenId: token.id,
+            symbol: token.symbol,
+            fallbackPrice: finalPrice,
+            fallbackSource: lastSuccessfulPrice.source,
+          },
+          'Using last successful price as fallback after all providers failed'
+        );
+      } else if (hasFinnhubMetadata) {
+        logger.warn(
+          { tokenId: token.id, symbol: token.symbol },
+          'Token with Finnhub metadata still has no price after fresh fetch - check Google Sheets configuration'
+        );
+      }
     }
 
     return finalPrice;
@@ -351,9 +386,45 @@ export class PricingService {
           // If we still have an error after all retries, it will be thrown above
           // If successful, continue with setting default prices for missing tokens
 
+          // For tokens that still don't have a price, try to use last successful cached price as fallback
           for (const token of tokensNeedingPrices) {
-            if (!results.has(token.id)) {
-              results.set(token.id, '0');
+            if (!results.has(token.id) || results.get(token.id) === '0') {
+              const lastSuccessfulPrice = await this.getLastSuccessfulPrice(
+                token.id,
+                baseCurrencyToken.id
+              );
+
+              if (lastSuccessfulPrice) {
+                // Check if currency conversion is needed
+                let fallbackPrice = lastSuccessfulPrice.price;
+                if (lastSuccessfulPrice.baseTokenId !== baseCurrencyToken.id) {
+                  const cachedBaseCurrencyToken = await this.tokenRepository.findById(
+                    lastSuccessfulPrice.baseTokenId
+                  );
+
+                  if (cachedBaseCurrencyToken) {
+                    fallbackPrice = await this.convertPrice(
+                      lastSuccessfulPrice.price,
+                      cachedBaseCurrencyToken.symbol,
+                      baseCurrencyToken.symbol,
+                      timestamp
+                    );
+                  }
+                }
+
+                results.set(token.id, fallbackPrice);
+                pricingLogger.info(
+                  {
+                    tokenId: token.id,
+                    symbol: token.symbol,
+                    fallbackPrice,
+                    fallbackSource: lastSuccessfulPrice.source,
+                  },
+                  'Using last successful price as fallback in batch operation after all providers failed'
+                );
+              } else {
+                results.set(token.id, '0');
+              }
             }
           }
         }
@@ -415,6 +486,46 @@ export class PricingService {
         source: latestPrice.source,
         baseTokenId: latestPrice.baseTokenId,
       };
+    }
+
+    return null;
+  }
+
+  /**
+   * Get the last successful (non-zero) cached price for a token, ignoring time windows.
+   * This is used as a fallback when all pricing providers fail to return a valid price.
+   *
+   * @param tokenId - The token ID to get the last successful price for
+   * @param baseCurrencyId - The base currency ID
+   * @returns The last successful cached price, or null if none exists
+   */
+  private async getLastSuccessfulPrice(
+    tokenId: string,
+    baseCurrencyId: string
+  ): Promise<CachedPrice | null> {
+    const latestPrice = await this.tokenPriceRepository.findLatestPrice(tokenId, baseCurrencyId);
+
+    // Only return non-zero prices from external providers (not manual prices, which are handled separately)
+    if (latestPrice && latestPrice.price !== '0' && !latestPrice.source?.startsWith('manual')) {
+      const price = parseFloat(latestPrice.price);
+      if (!Number.isNaN(price) && price > 0) {
+        pricingLogger.info(
+          {
+            tokenId,
+            baseCurrencyId,
+            price: latestPrice.price,
+            source: latestPrice.source,
+            timestamp: latestPrice.timestamp,
+          },
+          'Using last successful cached price as fallback after provider failures'
+        );
+        return {
+          price: latestPrice.price,
+          timestamp: latestPrice.timestamp,
+          source: `${latestPrice.source}_stale_fallback`,
+          baseTokenId: latestPrice.baseTokenId,
+        };
+      }
     }
 
     return null;
