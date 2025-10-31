@@ -162,6 +162,24 @@ export class DeFiLlamaProvider implements PricingProvider {
           continue;
         }
 
+        // Check for zero or invalid prices
+        if (!tokenData.price || tokenData.price <= 0) {
+          results.push(
+            createFailureResult(
+              token.id,
+              timestamp,
+              PROVIDER_CONFIGS.defiLlama.name,
+              new Error(
+                tokenData.price === 0
+                  ? 'DeFiLlama returned zero price - token may not be supported'
+                  : 'No valid price data from DeFiLlama'
+              ),
+              { response, dataEmpty: true }
+            )
+          );
+          continue;
+        }
+
         let finalPrice = tokenData.price.toString();
 
         // Convert from USD to target currency if needed
