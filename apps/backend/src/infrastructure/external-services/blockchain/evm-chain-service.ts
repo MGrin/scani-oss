@@ -17,6 +17,16 @@ interface EtherscanResponse<T> {
   result: T;
 }
 
+interface EtherscanTransaction {
+  blockNumber: string;
+  timeStamp: string;
+  hash: string;
+  from: string;
+  to: string;
+  value: string;
+  [key: string]: unknown;
+}
+
 /**
  * EVM Chain Service using Etherscan V2 API
  */
@@ -278,6 +288,140 @@ export class EvmChainService implements IBlockchainService {
       return this.rateLimiter.execute(fetchBalance);
     }
     return fetchBalance();
+  }
+
+  /**
+   * Check if wallet has any activity on this chain
+   * Checks normal transactions, internal transactions, and token transactions in parallel
+   * Returns true if any transaction history exists
+   */
+  async hasActivity(address: string): Promise<boolean> {
+    if (!this.isValidAddress(address)) {
+      return false;
+    }
+
+    if (!this.chainConfig.explorerApiUrl) {
+      logger.debug(
+        { chainId: this.chainConfig.chainId, address },
+        'Cannot check activity: no explorer API URL configured'
+      );
+      return false;
+    }
+
+    try {
+      // Check all transaction types in parallel for better performance
+      const [hasNormalTx, hasInternalTx, hasTokenTx] = await Promise.all([
+        this.hasNormalTransactions(address),
+        this.hasInternalTransactions(address),
+        this.hasTokenTransactions(address),
+      ]);
+
+      const hasActivity = hasNormalTx || hasInternalTx || hasTokenTx;
+
+      if (hasActivity) {
+        logger.debug(
+          {
+            chainId: this.chainConfig.chainId,
+            address: `${address.substring(0, 10)}...`,
+            hasNormalTx,
+            hasInternalTx,
+            hasTokenTx,
+          },
+          'Wallet has activity on chain'
+        );
+      } else {
+        logger.debug(
+          { chainId: this.chainConfig.chainId, address: `${address.substring(0, 10)}...` },
+          'Wallet has no activity on this chain'
+        );
+      }
+
+      return hasActivity;
+    } catch (error) {
+      logger.debug(
+        {
+          chainId: this.chainConfig.chainId,
+          address: `${address.substring(0, 10)}...`,
+          error: error instanceof Error ? error.message : String(error),
+        },
+        'Error checking wallet activity'
+      );
+      return false;
+    }
+  }
+
+  /**
+   * Check if address has normal transactions
+   */
+  private async hasNormalTransactions(address: string): Promise<boolean> {
+    return this.hasTransactionsByAction(address, 'txlist');
+  }
+
+  /**
+   * Check if address has internal transactions
+   */
+  private async hasInternalTransactions(address: string): Promise<boolean> {
+    return this.hasTransactionsByAction(address, 'txlistinternal');
+  }
+
+  /**
+   * Check if address has token transactions (ERC-20)
+   */
+  private async hasTokenTransactions(address: string): Promise<boolean> {
+    return this.hasTransactionsByAction(address, 'tokentx');
+  }
+
+  /**
+   * Generic method to check if address has transactions for a specific action
+   */
+  private async hasTransactionsByAction(
+    address: string,
+    action: 'txlist' | 'txlistinternal' | 'tokentx'
+  ): Promise<boolean> {
+    const url = `${this.chainConfig.explorerApiUrl}?module=account&action=${action}&address=${address}&page=1&offset=1&sort=desc&apikey=${this.apiKey}`;
+
+    const checkTransactions = async () => {
+      try {
+        const response = await fetchWithTimeout(url);
+
+        if (!response.ok) {
+          logger.debug(
+            {
+              chainId: this.chainConfig.chainId,
+              action,
+              status: response.status,
+              statusText: response.statusText,
+            },
+            'HTTP error while checking transactions'
+          );
+          return false;
+        }
+
+        const data = (await response.json()) as EtherscanResponse<EtherscanTransaction[]>;
+
+        // Status '1' means success and transactions found
+        if (data.status === '1' && Array.isArray(data.result) && data.result.length > 0) {
+          return true;
+        }
+
+        return false;
+      } catch (error) {
+        logger.debug(
+          {
+            chainId: this.chainConfig.chainId,
+            action,
+            error: error instanceof Error ? error.message : String(error),
+          },
+          'Error checking transactions'
+        );
+        return false;
+      }
+    };
+
+    if (this.rateLimiter) {
+      return this.rateLimiter.execute(checkTransactions);
+    }
+    return checkTransactions();
   }
 
   /**
