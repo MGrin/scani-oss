@@ -1,5 +1,27 @@
 # Copilot Instructions - Scani Finance SaaS
 
+> **For GitHub Copilot Agents**: These instructions guide automated code changes. Always follow the workflow patterns and security considerations outlined below.
+
+## Quick Reference for Agents
+
+**Essential Commands:**
+- `bun dev` - Start development servers (frontend + backend)
+- `bun test` - Run all tests (maintain 93%+ coverage)
+- `bun run lint` - Run Biome linter
+- `bun run db:migrate` - Apply database migrations (user only)
+- `bun run db:generate` - Generate new migrations
+
+**Critical Rules:**
+- ✅ Always use `bun` and `bunx` (never npm/yarn/npx)
+- ✅ Use Drizzle ORM for database operations (never raw SQL)
+- ✅ Use `Decimal.js` for all financial calculations
+- ✅ All user data must be scoped via `protectedProcedure`
+- ✅ Run linter, build, and tests before finalizing changes
+- ❌ Never auto-apply database migrations
+- ❌ Never use TypeScript enums for dynamic data
+- ❌ Never bypass authentication for user-scoped data
+- ❌ Never commit secrets or sensitive data
+
 ## Architecture Overview
 
 **Scani** is a TypeScript monorepo personal finance SaaS built with tRPC, Drizzle ORM, and Bun. The architecture follows a strict separation between frontend (React + Vite) and backend (Elysia + tRPC) with shared type definitions.
@@ -178,3 +200,219 @@ const createAccount = trpc.accounts.create.useMutation();
 - Never create .md files in nested source directories
 - All AI-generated reports must go into appropriate `/docs` subfolder
 - Keep the 3 core docs files updated with current project state
+
+## Security Considerations
+
+### Authentication & Authorization
+
+- **Never bypass authentication**: All user data access MUST use `protectedProcedure`
+- **Automatic user scoping**: Use `getUserId(ctx)` helper to filter queries by authenticated user
+- **Token validation**: Supabase JWT tokens validated on every request
+- **User sync**: User data automatically synced from Supabase to local `users` table
+
+### Data Protection
+
+- **Financial precision**: ALWAYS use `Decimal.js` for monetary calculations (never floats)
+- **Input validation**: All inputs validated with Zod schemas before processing
+- **SQL injection prevention**: Use Drizzle ORM parameterized queries only
+- **Sensitive data**: Never log or expose user credentials, API keys, or tokens
+
+### Code Safety
+
+- **Dependency scanning**: Check dependencies before adding new packages
+- **Environment variables**: Use `.env` for secrets, never hardcode
+- **Error handling**: Catch and sanitize errors before returning to client
+- **Rate limiting**: External API calls (Finnhub, CoinGecko) are rate-limited
+
+## Agent Workflow Patterns
+
+### Before Making Changes
+
+1. **Understand the codebase**: Explore relevant files and understand existing patterns
+2. **Check current state**: Run `bun test` and `bun run lint` to see baseline
+3. **Identify minimal changes**: Plan the smallest possible modifications
+4. **Review architecture**: Check if changes align with clean architecture (use cases → services → repositories)
+
+### During Development
+
+1. **Make incremental changes**: One feature or fix at a time
+2. **Follow existing patterns**: Match code style and structure of similar files
+3. **Use proper layers**:
+   - Business logic → Use Cases (`apps/backend/src/application/use-cases/`)
+   - External APIs → Services (`apps/backend/src/application/services/`)
+   - Database → Repositories (`apps/backend/src/infrastructure/repositories/`)
+   - HTTP/WebSocket → Routers (`apps/backend/src/presentation/routers/`)
+4. **Test as you go**: Run relevant tests after each change
+
+### Before Finalizing
+
+1. **Run full test suite**: `bun test` (maintain 93%+ coverage)
+2. **Run linter**: `bun run lint` (fix all issues with `bun run lint:fix`)
+3. **Build check**: Verify TypeScript compilation succeeds
+4. **Manual verification**: Test the actual functionality (run servers, test endpoints)
+5. **Review changes**: Ensure only relevant files are modified
+6. **Security check**: Verify no secrets committed, all auth checks in place
+
+### Code Review Checklist
+
+Before committing, verify:
+
+- [ ] All tests pass (`bun test`)
+- [ ] Linter passes (`bun run lint`)
+- [ ] TypeScript compiles without errors
+- [ ] No hardcoded secrets or sensitive data
+- [ ] User data properly scoped with authentication
+- [ ] Financial calculations use `Decimal.js`
+- [ ] Database operations use Drizzle ORM
+- [ ] Following clean architecture patterns
+- [ ] Only minimal, necessary changes made
+- [ ] Documentation updated if public APIs changed
+
+## Troubleshooting & Debugging
+
+### Common Issues
+
+**Build Errors:**
+```bash
+# Clear build cache and reinstall
+bun clean
+rm -rf node_modules
+bun install
+
+# Check TypeScript compilation
+cd apps/backend && bun run type-check
+cd apps/frontendV2 && bun run type-check
+```
+
+**Database Issues:**
+```bash
+# Reset local database (CAUTION: destroys data)
+bun run db:push
+
+# View database schema
+bun run db:studio
+
+# Check migration status
+cd apps/backend && bun run db:migrate
+```
+
+**Test Failures:**
+```bash
+# Run specific test file
+bun test path/to/test.test.ts
+
+# Run tests with verbose output
+bun test --verbose
+
+# Update test snapshots if needed
+bun test --update-snapshots
+```
+
+**Authentication Errors:**
+- Verify `.env` has correct Supabase keys
+- Check token expiration (tokens expire after 1 hour)
+- Ensure user exists in both Supabase and local `users` table
+- Verify JWT signature validation is working
+
+### Debugging Patterns
+
+**Backend Debugging:**
+```bash
+# Enable verbose logging
+cd apps/backend && bun dev:verbose
+
+# Watch SQL queries
+# Drizzle logs all queries when verbose mode enabled
+
+# Test specific router
+cd apps/backend && bun test src/presentation/routers/your-router.test.ts
+```
+
+**Frontend Debugging:**
+- Check browser console for tRPC errors
+- Verify API endpoint URLs in network tab
+- Check React Query dev tools for cache state
+- Enable React strict mode warnings
+
+## CI/CD Integration
+
+### GitHub Actions
+
+**Automated Checks:**
+- Linting with Biome
+- TypeScript compilation
+- Test suite execution
+- Build verification
+
+**When Changes Trigger CI:**
+- All PRs must pass CI checks
+- Push to main branch runs full test suite
+- Failed CI requires fixes before merge
+
+### Local Pre-commit Validation
+
+```bash
+# Run before committing
+bun run lint:fix        # Auto-fix linting issues
+bun test                # Verify tests pass
+bun run type-check      # Check TypeScript
+bun run build           # Verify build succeeds
+```
+
+## Tool Usage Patterns
+
+### Preferred Tool Order
+
+1. **Custom Agents**: Delegate to specialized agents when available
+2. **Ecosystem Tools**: Use npm scripts, CLI tools (e.g., `bun`, `bunx`)
+3. **Manual Edits**: Only when tools aren't available
+
+### Example Workflows
+
+**Adding New Feature:**
+```bash
+# 1. Create use case
+# Edit: apps/backend/src/application/use-cases/your-feature.use-case.ts
+
+# 2. Add router endpoint
+# Edit: apps/backend/src/presentation/routers/your-feature.router.ts
+
+# 3. Add to main router
+# Edit: apps/backend/src/presentation/router.ts
+
+# 4. Test
+bun test apps/backend/src/presentation/routers/your-feature.test.ts
+
+# 5. Frontend integration
+# Edit: apps/frontendV2/src/components/YourFeature.tsx
+```
+
+**Database Schema Change:**
+```bash
+# 1. Edit schema
+# Edit: apps/backend/src/infrastructure/database/schema.ts
+
+# 2. Generate migration
+cd apps/backend && bun run db:generate
+
+# 3. User applies migration (not automated)
+# User runs: bun run db:migrate
+
+# 4. Update repositories if needed
+# Edit: apps/backend/src/infrastructure/repositories/
+```
+
+**Bug Fix:**
+```bash
+# 1. Write failing test first
+# Create: apps/backend/src/path/to/bug.test.ts
+
+# 2. Fix the bug
+# Edit: apps/backend/src/path/to/fix.ts
+
+# 3. Verify test passes
+bun test apps/backend/src/path/to/bug.test.ts
+
+# 4. Run full suite
+bun test
+```
