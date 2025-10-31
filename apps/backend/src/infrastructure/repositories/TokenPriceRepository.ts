@@ -122,6 +122,9 @@ export class TokenPriceRepository extends BaseRepository<TokenPrice, NewTokenPri
       const startWindow = new Date(timestamp.getTime() - windowMs);
       const endWindow = new Date(timestamp.getTime() + windowMs);
 
+      // Convert timestamp to ISO string for proper SQL binding
+      const timestampIso = timestamp.toISOString();
+
       const results = await database
         .select()
         .from(schema.tokenPrices)
@@ -133,7 +136,9 @@ export class TokenPriceRepository extends BaseRepository<TokenPrice, NewTokenPri
             lte(schema.tokenPrices.timestamp, endWindow)
           )
         )
-        .orderBy(sql`ABS(EXTRACT(EPOCH FROM (${schema.tokenPrices.timestamp} - ${timestamp})))`)
+        .orderBy(
+          sql`ABS(EXTRACT(EPOCH FROM (${schema.tokenPrices.timestamp} - ${timestampIso}::timestamptz)))`
+        )
         .limit(1);
 
       return results[0] || null;
