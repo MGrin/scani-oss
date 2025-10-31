@@ -113,14 +113,18 @@ export class CoinGeckoProvider implements PricingProvider {
       const priceData = data[coinId];
       const priceValue = priceData?.[apiCurrency];
 
-      if (priceValue === undefined || priceValue === null) {
+      if (priceValue === undefined || priceValue === null || priceValue <= 0) {
         try {
           results.push(
             createFailureResult(
               token.id,
               timestamp,
               PROVIDER_CONFIGS.coinGecko.name,
-              new Error('No price data available for token'),
+              new Error(
+                priceValue != null && priceValue <= 0
+                  ? `CoinGecko returned invalid price (${priceValue}) - token may not be supported`
+                  : 'No price data available for token'
+              ),
               { response, dataEmpty: true }
             )
           );
