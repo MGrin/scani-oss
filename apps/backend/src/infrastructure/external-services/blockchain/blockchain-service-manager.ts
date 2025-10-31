@@ -278,11 +278,11 @@ export class BlockchainServiceManager {
       const service = this.services.get(chainId);
       if (!service) return null;
 
+      const chainConfig = getChainConfig(chainId);
+      if (!chainConfig) return null;
+
       try {
         const balances = await service.getTokenBalances(address);
-        const chainConfig = getChainConfig(chainId);
-
-        if (!chainConfig) return null;
 
         // Try to resolve address name (e.g., ENS) for EVM chains
         let displayName: string | undefined;
@@ -309,14 +309,14 @@ export class BlockchainServiceManager {
         logger.error(
           {
             chainId,
-            chainName: chainConfig?.name,
+            chainName: chainConfig.name,
             address,
             error:
               error instanceof Error
                 ? { name: error.name, message: error.message }
                 : { name: 'Error', message: String(error) },
           },
-          `Failed to fetch wallet balances on ${chainConfig?.name || chainId}: ${error instanceof Error ? error.message : String(error)}`
+          `Failed to fetch wallet balances on ${chainConfig.name}: ${error instanceof Error ? error.message : String(error)}`
         );
         return null;
       }
