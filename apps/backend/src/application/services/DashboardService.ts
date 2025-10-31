@@ -77,19 +77,19 @@ export class DashboardService extends BaseService {
    * Extract token prices from portfolio value data
    * Calculates price by dividing value by balance for each holding
    * Returns a map of token symbol to price
+   * Note: All holdings of the same token should have the same price.
+   * We use the first price found for each token symbol.
+   * Note: This method is duplicated in AccountService - this is intentional
+   * to keep services independent and avoid cross-service dependencies.
    */
   private extractPriceMap(portfolioValue: PortfolioValueResult): Map<string, string> {
     const priceMap = new Map<string, string>();
     for (const portfolioHolding of portfolioValue.holdings) {
       const balance = new Decimal(portfolioHolding.balance);
       const value = new Decimal(portfolioHolding.value || '0');
-      if (balance.greaterThan(0)) {
+      if (balance.greaterThan(0) && !priceMap.has(portfolioHolding.tokenSymbol)) {
         const price = value.div(balance);
-        // All holdings of the same token should have the same price
-        // Store first price found for each token symbol
-        if (!priceMap.has(portfolioHolding.tokenSymbol)) {
-          priceMap.set(portfolioHolding.tokenSymbol, price.toString());
-        }
+        priceMap.set(portfolioHolding.tokenSymbol, price.toString());
       }
     }
     return priceMap;
