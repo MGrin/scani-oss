@@ -115,7 +115,10 @@ export class EvmChainService implements IBlockchainService {
         {
           chainId: this.chainConfig.chainId,
           address,
-          error: error instanceof Error ? error.message : String(error),
+          error:
+            error instanceof Error
+              ? { name: error.name, message: error.message }
+              : { name: 'Error', message: String(error) },
         },
         'Failed to fetch token balances'
       );
@@ -238,7 +241,10 @@ export class EvmChainService implements IBlockchainService {
             logger.warn(
               {
                 contractAddress,
-                error: error instanceof Error ? error.message : String(error),
+                error:
+                  error instanceof Error
+                    ? { name: error.name, message: error.message }
+                    : { name: 'Error', message: String(error) },
               },
               'Failed to fetch token balance'
             );
@@ -342,7 +348,10 @@ export class EvmChainService implements IBlockchainService {
         {
           chainId: this.chainConfig.chainId,
           address: `${address.substring(0, 10)}...`,
-          error: error instanceof Error ? error.message : String(error),
+          error:
+            error instanceof Error
+              ? { name: error.name, message: error.message }
+              : { name: 'Error', message: String(error) },
         },
         'Error checking wallet activity'
       );
@@ -410,7 +419,10 @@ export class EvmChainService implements IBlockchainService {
           {
             chainId: this.chainConfig.chainId,
             action,
-            error: error instanceof Error ? error.message : String(error),
+            error:
+              error instanceof Error
+                ? { name: error.name, message: error.message }
+                : { name: 'Error', message: String(error) },
           },
           'Error checking transactions'
         );

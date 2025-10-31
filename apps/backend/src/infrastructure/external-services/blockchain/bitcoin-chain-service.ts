@@ -106,7 +106,10 @@ export class BitcoinChainService implements IBlockchainService {
         logger.error(
           {
             address,
-            error: error instanceof Error ? error.message : String(error),
+            error:
+              error instanceof Error
+                ? { name: error.name, message: error.message }
+                : { name: 'Error', message: String(error) },
           },
           'Failed to fetch Bitcoin balance'
         );
