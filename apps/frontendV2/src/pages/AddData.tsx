@@ -84,42 +84,62 @@ export function AddData() {
   // Fetch data needed for progress bar display
   // Note: Account and institution data is handled by AccountSelectionStep
 
+  // Helper to check if current import is wallet import
+  const isWalletImport = completeImportData.method === 'wallet';
+
   const nextStep = useCallback(() => {
-    if (currentStep === 'method') setCurrentStep('account');
-    else if (currentStep === 'account') setCurrentStep('data');
-  }, [currentStep]);
+    if (currentStep === 'method') {
+      // Skip account selection for wallet imports
+      if (isWalletImport) {
+        setCurrentStep('data');
+      } else {
+        setCurrentStep('account');
+      }
+    } else if (currentStep === 'account') {
+      setCurrentStep('data');
+    }
+  }, [currentStep, isWalletImport]);
 
   const prevStep = useCallback(() => {
     if (currentStep === 'data') {
-      // Going back from data entry to account selection
-      // Clear account selection from complete import data and URL
-      setCompleteImportData((prev) => {
-        const newData = { ...prev };
-        delete newData.accountSelection;
-        return newData;
-      });
-
-      setCurrentStep('account');
+      // For wallet imports, go back directly to method selection
+      if (isWalletImport) {
+        // Clear method from complete import data and URL
+        setCompleteImportData({});
+        setCurrentStep('method');
+      } else {
+        // For other methods, go back to account selection
+        // Clear account selection from complete import data and URL
+        setCompleteImportData((prev) => {
+          const newData = { ...prev };
+          delete newData.accountSelection;
+          return newData;
+        });
+        setCurrentStep('account');
+      }
     } else if (currentStep === 'account') {
       // Going back from account selection to method selection
       // Clear method and account selection from complete import data and URL
       setCompleteImportData({});
       setCurrentStep('method');
     }
-  }, [currentStep]);
+  }, [currentStep, isWalletImport]);
   const getStepNumber = (step: Step): number => {
+    // Wallet imports have 2 steps (method + data), others have 3 steps (method + account + data)
+
     switch (step) {
       case 'method':
         return 1;
       case 'account':
         return 2;
       case 'data':
-        return 3;
+        return isWalletImport ? 2 : 3;
     }
   };
 
   const getProgress = (): number => {
-    return (getStepNumber(currentStep) / 3) * 100;
+    const totalSteps = isWalletImport ? 2 : 3;
+    return (getStepNumber(currentStep) / totalSteps) * 100;
   };
 
   // Helper to validate if a holding is valid
@@ -393,6 +413,14 @@ export function AddData() {
     const accountId = accountSelection?.selectedAccountId;
 
     try {
+      // Case 0: Wallet import - already completed, just redirect
+      if (isWalletImport) {
+        // Wallet import is handled by WalletImportStep component
+        // Just redirect to holdings page
+        navigate('/holdings');
+        return;
+      }
+
       // Case 1: Creating a new account with holdings
       if (accountSelection?.mode === 'create') {
         await completeWithNewAccount();
@@ -414,6 +442,7 @@ export function AddData() {
     completeWithExistingAccount,
     navigate,
     completeImportData.accountSelection,
+    isWalletImport,
   ]);
 
   return (
@@ -439,7 +468,7 @@ export function AddData() {
           <div className="space-y-2 md:space-y-4">
             <div className="flex items-center justify-between">
               <h2 className="text-base md:text-lg font-semibold">
-                Step {getStepNumber(currentStep)} of 3
+                Step {getStepNumber(currentStep)} of {isWalletImport ? '2' : '3'}
               </h2>
               <Badge variant="outline" className="text-xs">
                 {Math.round(getProgress())}% Complete
@@ -451,11 +480,13 @@ export function AddData() {
               <span className={currentStep === 'method' ? 'font-medium text-foreground' : ''}>
                 1. {getMethodDisplayText()}
               </span>
-              <span className={currentStep === 'account' ? 'font-medium text-foreground' : ''}>
-                2. {getAccountDisplayText()}
-              </span>
+              {!isWalletImport && (
+                <span className={currentStep === 'account' ? 'font-medium text-foreground' : ''}>
+                  2. {getAccountDisplayText()}
+                </span>
+              )}
               <span className={currentStep === 'data' ? 'font-medium text-foreground' : ''}>
-                3. Enter Data
+                {isWalletImport ? '2' : '3'}. {isWalletImport ? 'Import Wallet' : 'Enter Data'}
               </span>
             </div>
           </div>
@@ -518,14 +549,20 @@ export function AddData() {
                   (currentStep === 'method' && !completeImportData.method) ||
                   (currentStep === 'account' && !isAccountStepValid) ||
                   (currentStep === 'data' &&
+                    !isWalletImport &&
                     (!getValidHoldingsInfo().hasChanges || getValidHoldingsInfo().hasInvalid)) ||
+                  (currentStep === 'data' && isWalletImport && !hasDataChanges) ||
                   createTokenFromExternalMutation.isPending ||
                   createHoldingsWithDependenciesMutation.isPending ||
                   updateHoldingsBatchMutation.isPending ||
                   updateHoldingMutation.isPending
                 }
               >
-                {currentStep === 'data' ? 'Submit' : 'Continue'}
+                {currentStep === 'data'
+                  ? isWalletImport
+                    ? 'View Holdings'
+                    : 'Submit'
+                  : 'Continue'}
               </Button>
             </div>
           </div>,
