@@ -157,7 +157,8 @@ export class BlockchainServiceManager {
 
   /**
    * Detect which chains a wallet address exists on
-   * Tries to validate and fetch balances on all supported chains
+   * Checks for any transaction activity (normal, internal, or token transactions)
+   * Returns ALL chains where the wallet has activity, regardless of current balance
    */
   async detectWalletChains(address: string): Promise<Array<string | number>> {
     const detectedChains: Array<string | number> = [];
@@ -170,14 +171,21 @@ export class BlockchainServiceManager {
           return null;
         }
 
-        // Try to fetch balances (this confirms the wallet exists on this chain)
-        const balances = await service.getTokenBalances(address);
-
-        // Only detect chain if there are actual balances
-        // Empty balances means the wallet has no activity on this chain
-        if (balances.length > 0) {
-          return chainId;
+        // Check if wallet has any activity on this chain
+        // Use hasActivity method if available (for EVM chains), otherwise fall back to balance check
+        if (service.hasActivity) {
+          const hasActivity = await service.hasActivity(address);
+          if (hasActivity) {
+            return chainId;
+          }
+        } else {
+          // Fallback: check for balances (for non-EVM chains)
+          const balances = await service.getTokenBalances(address);
+          if (balances.length > 0) {
+            return chainId;
+          }
         }
+
         return null;
       } catch (error) {
         // If there's an error, the wallet likely doesn't exist on this chain
@@ -253,6 +261,8 @@ export class BlockchainServiceManager {
           }
         }
 
+        // Always return wallet info for detected chains, even if balances are empty
+        // This ensures accounts are created for all chains with activity
         return {
           address,
           displayName,

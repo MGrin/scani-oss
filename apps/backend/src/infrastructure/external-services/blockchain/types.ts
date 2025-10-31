@@ -70,6 +70,9 @@ export interface IBlockchainService {
   /** Get all token balances for a wallet address */
   getTokenBalances(address: string): Promise<TokenBalance[]>;
 
+  /** Check if wallet has any activity on this chain (optional, defaults to checking balances) */
+  hasActivity?(address: string): Promise<boolean>;
+
   /** Get human-readable name for address (e.g., ENS) */
   resolveAddressName?(address: string): Promise<string | null>;
 }

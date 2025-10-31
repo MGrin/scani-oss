@@ -281,6 +281,159 @@ export class EvmChainService implements IBlockchainService {
   }
 
   /**
+   * Check if wallet has any activity on this chain
+   * Checks normal transactions, internal transactions, and token transactions
+   * Returns true if any transaction history exists
+   */
+  async hasActivity(address: string): Promise<boolean> {
+    if (!this.isValidAddress(address)) {
+      return false;
+    }
+
+    if (!this.chainConfig.explorerApiUrl) {
+      logger.debug(
+        { chainId: this.chainConfig.chainId, address },
+        'Cannot check activity: no explorer API URL configured'
+      );
+      return false;
+    }
+
+    try {
+      // Check in sequence: normal tx -> internal tx -> token tx
+      // Stop as soon as we find any activity
+      const hasNormalTx = await this.hasNormalTransactions(address);
+      if (hasNormalTx) {
+        logger.debug(
+          { chainId: this.chainConfig.chainId, address: `${address.substring(0, 10)}...` },
+          'Wallet has normal transaction activity'
+        );
+        return true;
+      }
+
+      const hasInternalTx = await this.hasInternalTransactions(address);
+      if (hasInternalTx) {
+        logger.debug(
+          { chainId: this.chainConfig.chainId, address: `${address.substring(0, 10)}...` },
+          'Wallet has internal transaction activity'
+        );
+        return true;
+      }
+
+      const hasTokenTx = await this.hasTokenTransactions(address);
+      if (hasTokenTx) {
+        logger.debug(
+          { chainId: this.chainConfig.chainId, address: `${address.substring(0, 10)}...` },
+          'Wallet has token transaction activity'
+        );
+        return true;
+      }
+
+      logger.debug(
+        { chainId: this.chainConfig.chainId, address: `${address.substring(0, 10)}...` },
+        'Wallet has no activity on this chain'
+      );
+      return false;
+    } catch (error) {
+      logger.debug(
+        {
+          chainId: this.chainConfig.chainId,
+          address: `${address.substring(0, 10)}...`,
+          error: error instanceof Error ? error.message : String(error),
+        },
+        'Error checking wallet activity'
+      );
+      return false;
+    }
+  }
+
+  /**
+   * Check if address has normal transactions
+   */
+  private async hasNormalTransactions(address: string): Promise<boolean> {
+    const url = `${this.chainConfig.explorerApiUrl}?module=account&action=txlist&address=${address}&page=1&offset=1&sort=desc&apikey=${this.apiKey}`;
+
+    const checkTransactions = async () => {
+      const response = await fetchWithTimeout(url);
+
+      if (!response.ok) {
+        return false;
+      }
+
+      const data = (await response.json()) as EtherscanResponse<Array<unknown>>;
+
+      // Status '1' means success and transactions found
+      if (data.status === '1' && Array.isArray(data.result) && data.result.length > 0) {
+        return true;
+      }
+
+      return false;
+    };
+
+    if (this.rateLimiter) {
+      return this.rateLimiter.execute(checkTransactions);
+    }
+    return checkTransactions();
+  }
+
+  /**
+   * Check if address has internal transactions
+   */
+  private async hasInternalTransactions(address: string): Promise<boolean> {
+    const url = `${this.chainConfig.explorerApiUrl}?module=account&action=txlistinternal&address=${address}&page=1&offset=1&sort=desc&apikey=${this.apiKey}`;
+
+    const checkTransactions = async () => {
+      const response = await fetchWithTimeout(url);
+
+      if (!response.ok) {
+        return false;
+      }
+
+      const data = (await response.json()) as EtherscanResponse<Array<unknown>>;
+
+      // Status '1' means success and transactions found
+      if (data.status === '1' && Array.isArray(data.result) && data.result.length > 0) {
+        return true;
+      }
+
+      return false;
+    };
+
+    if (this.rateLimiter) {
+      return this.rateLimiter.execute(checkTransactions);
+    }
+    return checkTransactions();
+  }
+
+  /**
+   * Check if address has token transactions (ERC-20)
+   */
+  private async hasTokenTransactions(address: string): Promise<boolean> {
+    const url = `${this.chainConfig.explorerApiUrl}?module=account&action=tokentx&address=${address}&page=1&offset=1&sort=desc&apikey=${this.apiKey}`;
+
+    const checkTransactions = async () => {
+      const response = await fetchWithTimeout(url);
+
+      if (!response.ok) {
+        return false;
+      }
+
+      const data = (await response.json()) as EtherscanResponse<Array<unknown>>;
+
+      // Status '1' means success and transactions found
+      if (data.status === '1' && Array.isArray(data.result) && data.result.length > 0) {
+        return true;
+      }
+
+      return false;
+    };
+
+    if (this.rateLimiter) {
+      return this.rateLimiter.execute(checkTransactions);
+    }
+    return checkTransactions();
+  }
+
+  /**
    * Resolve ENS name for Ethereum mainnet
    */
   async resolveAddressName(address: string): Promise<string | null> {
