@@ -163,15 +163,15 @@ export class DeFiLlamaProvider implements PricingProvider {
         }
 
         // Check for zero or invalid prices
-        if (!tokenData.price || tokenData.price <= 0) {
+        if (tokenData.price == null || tokenData.price <= 0) {
           results.push(
             createFailureResult(
               token.id,
               timestamp,
               PROVIDER_CONFIGS.defiLlama.name,
               new Error(
-                tokenData.price === 0
-                  ? 'DeFiLlama returned zero price - token may not be supported'
+                tokenData.price != null && tokenData.price <= 0
+                  ? `DeFiLlama returned invalid price (${tokenData.price}) - token may not be supported`
                   : 'No valid price data from DeFiLlama'
               ),
               { response, dataEmpty: true }

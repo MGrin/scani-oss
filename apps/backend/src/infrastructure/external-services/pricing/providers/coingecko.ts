@@ -121,8 +121,8 @@ export class CoinGeckoProvider implements PricingProvider {
               timestamp,
               PROVIDER_CONFIGS.coinGecko.name,
               new Error(
-                priceValue === 0
-                  ? 'CoinGecko returned zero price - token may not be supported'
+                priceValue != null && priceValue <= 0
+                  ? `CoinGecko returned invalid price (${priceValue}) - token may not be supported`
                   : 'No price data available for token'
               ),
               { response, dataEmpty: true }
