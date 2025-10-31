@@ -106,7 +106,7 @@ export const walletRouter = router({
           .max(200, 'Wallet address is too long'),
       })
     )
-    .query(async ({ input }) => {
+    .mutation(async ({ input }) => {
       const detectedChains = await blockchainService.detectWalletChains(input.address);
 
       // Get chain details for detected chains

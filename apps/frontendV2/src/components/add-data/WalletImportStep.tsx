@@ -76,7 +76,7 @@ export function WalletImportStep({ onChangesDetected }: WalletImportStepProps) {
         });
       }
     },
-    onError: (error: Error) => {
+    onError: (error) => {
       setIsDetecting(false);
       showError(error.message, 'Detection failed');
     },
@@ -99,7 +99,7 @@ export function WalletImportStep({ onChangesDetected }: WalletImportStepProps) {
         showError('No tokens found', 'Wallet detected but no tokens with balance found');
       }
     },
-    onError: (error: Error) => {
+    onError: (error) => {
       setIsImporting(false);
       setImportProgress(0);
       setCurrentStep('');

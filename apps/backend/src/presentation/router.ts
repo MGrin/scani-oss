@@ -12,6 +12,7 @@ import { institutionsRouter } from './routers/institutions';
 import { screenshotsRouter } from './routers/screenshots';
 import { createTokensRouter } from './routers/tokens';
 import { usersRouter } from './routers/users';
+import { walletRouter } from './routers/wallet';
 import { publicProcedure, router } from './trpc';
 
 // Create routers with DI
@@ -41,6 +42,9 @@ export const appRouter = router({
 
   // Screenshots (protected) - AI-powered screenshot parsing
   screenshots: screenshotsRouter,
+
+  // Wallet (protected) - Cryptocurrency wallet import
+  wallet: walletRouter,
 
   // Health check (public)
   health: router({
