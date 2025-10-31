@@ -78,7 +78,7 @@ export function WalletImportStep({ onChangesDetected }: WalletImportStepProps) {
     },
     onError: (error) => {
       setIsDetecting(false);
-      showError(error.message, 'Detection failed');
+      showError(error, 'Detection failed');
     },
   });
 
@@ -103,7 +103,7 @@ export function WalletImportStep({ onChangesDetected }: WalletImportStepProps) {
       setIsImporting(false);
       setImportProgress(0);
       setCurrentStep('');
-      showError(error.message, 'Import failed');
+      showError(error, 'Import failed');
     },
   });
 
