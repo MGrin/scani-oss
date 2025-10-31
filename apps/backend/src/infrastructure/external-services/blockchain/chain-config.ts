@@ -1,6 +1,9 @@
 /**
  * Configuration for all supported blockchain chains
- * Based on Etherscan V2 API supported chains: https://docs.etherscan.io/supported-chains
+ * Based on Etherscan V2 API supported chains: https://docs.etherscan.io/introduction
+ *
+ * NOTE: All EVM chains use the unified Etherscan V2 API endpoint:
+ * https://api.etherscan.io/v2/api with chainid parameter
  */
 
 /**
@@ -17,7 +20,7 @@ export interface ChainConfig {
   nativeSymbol: string;
   /** Native token name */
   nativeName: string;
-  /** Etherscan API base URL (for EVM chains) */
+  /** Etherscan V2 API base URL (unified endpoint for all EVM chains) */
   explorerApiUrl?: string;
   /** DeFiLlama chain name for pricing */
   defiLlamaId?: string;
@@ -32,6 +35,9 @@ export interface ChainConfig {
 /**
  * All supported EVM chains from Etherscan V2 API
  * No testnets included (production only)
+ *
+ * NOTE: All chains now use the unified Etherscan V2 endpoint.
+ * The chainId parameter is appended in evm-chain-service.ts
  */
 export const EVM_CHAINS: Record<string, ChainConfig> = {
   // Tier 1 - Major chains
@@ -41,7 +47,7 @@ export const EVM_CHAINS: Record<string, ChainConfig> = {
     type: 'evm',
     nativeSymbol: 'ETH',
     nativeName: 'Ethereum',
-    explorerApiUrl: 'https://api.etherscan.io/api',
+    explorerApiUrl: 'https://api.etherscan.io/v2/api',
     defiLlamaId: 'ethereum',
     coinGeckoPlatformId: 'ethereum',
     isActive: true,
@@ -52,7 +58,7 @@ export const EVM_CHAINS: Record<string, ChainConfig> = {
     type: 'evm',
     nativeSymbol: 'BNB',
     nativeName: 'Binance Coin',
-    explorerApiUrl: 'https://api.bscscan.com/api',
+    explorerApiUrl: 'https://api.etherscan.io/v2/api',
     defiLlamaId: 'bsc',
     coinGeckoPlatformId: 'binance-smart-chain',
     isActive: true,
@@ -63,7 +69,7 @@ export const EVM_CHAINS: Record<string, ChainConfig> = {
     type: 'evm',
     nativeSymbol: 'MATIC',
     nativeName: 'Polygon',
-    explorerApiUrl: 'https://api.polygonscan.com/api',
+    explorerApiUrl: 'https://api.etherscan.io/v2/api',
     defiLlamaId: 'polygon',
     coinGeckoPlatformId: 'polygon-pos',
     isActive: true,
@@ -74,7 +80,7 @@ export const EVM_CHAINS: Record<string, ChainConfig> = {
     type: 'evm',
     nativeSymbol: 'AVAX',
     nativeName: 'Avalanche',
-    explorerApiUrl: 'https://api.snowtrace.io/api',
+    explorerApiUrl: 'https://api.etherscan.io/v2/api',
     defiLlamaId: 'avax',
     coinGeckoPlatformId: 'avalanche',
     isActive: true,
@@ -85,7 +91,7 @@ export const EVM_CHAINS: Record<string, ChainConfig> = {
     type: 'evm',
     nativeSymbol: 'ETH',
     nativeName: 'Ethereum',
-    explorerApiUrl: 'https://api.arbiscan.io/api',
+    explorerApiUrl: 'https://api.etherscan.io/v2/api',
     defiLlamaId: 'arbitrum',
     coinGeckoPlatformId: 'arbitrum-one',
     isActive: true,
@@ -96,7 +102,7 @@ export const EVM_CHAINS: Record<string, ChainConfig> = {
     type: 'evm',
     nativeSymbol: 'ETH',
     nativeName: 'Ethereum',
-    explorerApiUrl: 'https://api-optimistic.etherscan.io/api',
+    explorerApiUrl: 'https://api.etherscan.io/v2/api',
     defiLlamaId: 'optimism',
     coinGeckoPlatformId: 'optimistic-ethereum',
     isActive: true,
@@ -107,7 +113,7 @@ export const EVM_CHAINS: Record<string, ChainConfig> = {
     type: 'evm',
     nativeSymbol: 'ETH',
     nativeName: 'Ethereum',
-    explorerApiUrl: 'https://api.basescan.org/api',
+    explorerApiUrl: 'https://api.etherscan.io/v2/api',
     defiLlamaId: 'base',
     coinGeckoPlatformId: 'base',
     isActive: true,
@@ -118,7 +124,7 @@ export const EVM_CHAINS: Record<string, ChainConfig> = {
     type: 'evm',
     nativeSymbol: 'FTM',
     nativeName: 'Fantom',
-    explorerApiUrl: 'https://api.ftmscan.com/api',
+    explorerApiUrl: 'https://api.etherscan.io/v2/api',
     defiLlamaId: 'fantom',
     coinGeckoPlatformId: 'fantom',
     isActive: true,
@@ -129,7 +135,7 @@ export const EVM_CHAINS: Record<string, ChainConfig> = {
     type: 'evm',
     nativeSymbol: 'CRO',
     nativeName: 'Cronos',
-    explorerApiUrl: 'https://api.cronoscan.com/api',
+    explorerApiUrl: 'https://api.etherscan.io/v2/api',
     defiLlamaId: 'cronos',
     coinGeckoPlatformId: 'cronos',
     isActive: true,
@@ -142,7 +148,7 @@ export const EVM_CHAINS: Record<string, ChainConfig> = {
     type: 'evm',
     nativeSymbol: 'ETH',
     nativeName: 'Ethereum',
-    explorerApiUrl: 'https://api-nova.arbiscan.io/api',
+    explorerApiUrl: 'https://api.etherscan.io/v2/api',
     defiLlamaId: 'arbitrum_nova',
     isActive: true,
   },
@@ -152,7 +158,7 @@ export const EVM_CHAINS: Record<string, ChainConfig> = {
     type: 'evm',
     nativeSymbol: 'ETH',
     nativeName: 'Ethereum',
-    explorerApiUrl: 'https://api-era.zksync.network/api',
+    explorerApiUrl: 'https://api.etherscan.io/v2/api',
     defiLlamaId: 'era',
     coinGeckoPlatformId: 'zksync',
     isActive: true,
@@ -163,7 +169,7 @@ export const EVM_CHAINS: Record<string, ChainConfig> = {
     type: 'evm',
     nativeSymbol: 'ETH',
     nativeName: 'Ethereum',
-    explorerApiUrl: 'https://api.scrollscan.com/api',
+    explorerApiUrl: 'https://api.etherscan.io/v2/api',
     defiLlamaId: 'scroll',
     isActive: true,
   },
@@ -173,7 +179,7 @@ export const EVM_CHAINS: Record<string, ChainConfig> = {
     type: 'evm',
     nativeSymbol: 'ETH',
     nativeName: 'Ethereum',
-    explorerApiUrl: 'https://api.lineascan.build/api',
+    explorerApiUrl: 'https://api.etherscan.io/v2/api',
     defiLlamaId: 'linea',
     isActive: true,
   },
@@ -183,7 +189,7 @@ export const EVM_CHAINS: Record<string, ChainConfig> = {
     type: 'evm',
     nativeSymbol: 'ETH',
     nativeName: 'Ethereum',
-    explorerApiUrl: 'https://api.blastscan.io/api',
+    explorerApiUrl: 'https://api.etherscan.io/v2/api',
     defiLlamaId: 'blast',
     isActive: true,
   },
@@ -193,7 +199,7 @@ export const EVM_CHAINS: Record<string, ChainConfig> = {
     type: 'evm',
     nativeSymbol: 'MNT',
     nativeName: 'Mantle',
-    explorerApiUrl: 'https://api.mantlescan.xyz/api',
+    explorerApiUrl: 'https://api.etherscan.io/v2/api',
     defiLlamaId: 'mantle',
     isActive: true,
   },
@@ -203,7 +209,7 @@ export const EVM_CHAINS: Record<string, ChainConfig> = {
     type: 'evm',
     nativeSymbol: 'BNB',
     nativeName: 'Binance Coin',
-    explorerApiUrl: 'https://api-opbnb.bscscan.com/api',
+    explorerApiUrl: 'https://api.etherscan.io/v2/api',
     defiLlamaId: 'opbnb',
     isActive: true,
   },
@@ -215,7 +221,7 @@ export const EVM_CHAINS: Record<string, ChainConfig> = {
     type: 'evm',
     nativeSymbol: 'xDAI',
     nativeName: 'xDAI',
-    explorerApiUrl: 'https://api.gnosisscan.io/api',
+    explorerApiUrl: 'https://api.etherscan.io/v2/api',
     defiLlamaId: 'xdai',
     coinGeckoPlatformId: 'xdai',
     isActive: true,
@@ -226,7 +232,7 @@ export const EVM_CHAINS: Record<string, ChainConfig> = {
     type: 'evm',
     nativeSymbol: 'CELO',
     nativeName: 'Celo',
-    explorerApiUrl: 'https://api.celoscan.io/api',
+    explorerApiUrl: 'https://api.etherscan.io/v2/api',
     defiLlamaId: 'celo',
     coinGeckoPlatformId: 'celo',
     isActive: true,
@@ -237,7 +243,7 @@ export const EVM_CHAINS: Record<string, ChainConfig> = {
     type: 'evm',
     nativeSymbol: 'GLMR',
     nativeName: 'Glimmer',
-    explorerApiUrl: 'https://api-moonbeam.moonscan.io/api',
+    explorerApiUrl: 'https://api.etherscan.io/v2/api',
     defiLlamaId: 'moonbeam',
     coinGeckoPlatformId: 'moonbeam',
     isActive: true,
@@ -248,7 +254,7 @@ export const EVM_CHAINS: Record<string, ChainConfig> = {
     type: 'evm',
     nativeSymbol: 'MOVR',
     nativeName: 'Moonriver',
-    explorerApiUrl: 'https://api-moonriver.moonscan.io/api',
+    explorerApiUrl: 'https://api.etherscan.io/v2/api',
     defiLlamaId: 'moonriver',
     coinGeckoPlatformId: 'moonriver',
     isActive: true,
@@ -259,7 +265,7 @@ export const EVM_CHAINS: Record<string, ChainConfig> = {
     type: 'evm',
     nativeSymbol: 'frxETH',
     nativeName: 'Frax Ether',
-    explorerApiUrl: 'https://api.fraxscan.com/api',
+    explorerApiUrl: 'https://api.etherscan.io/v2/api',
     defiLlamaId: 'fraxtal',
     isActive: true,
   },
@@ -269,7 +275,7 @@ export const EVM_CHAINS: Record<string, ChainConfig> = {
     type: 'evm',
     nativeSymbol: 'RON',
     nativeName: 'Ronin',
-    explorerApiUrl: 'https://api.roninchain.com/api',
+    explorerApiUrl: 'https://api.etherscan.io/v2/api',
     defiLlamaId: 'ronin',
     isActive: true,
   },
@@ -279,7 +285,7 @@ export const EVM_CHAINS: Record<string, ChainConfig> = {
     type: 'evm',
     nativeSymbol: 'XDC',
     nativeName: 'XDC',
-    explorerApiUrl: 'https://api.xdcscan.io/api',
+    explorerApiUrl: 'https://api.etherscan.io/v2/api',
     isActive: true,
   },
   bittorrent: {
@@ -288,7 +294,7 @@ export const EVM_CHAINS: Record<string, ChainConfig> = {
     type: 'evm',
     nativeSymbol: 'BTT',
     nativeName: 'BitTorrent',
-    explorerApiUrl: 'https://api.bttcscan.com/api',
+    explorerApiUrl: 'https://api.etherscan.io/v2/api',
     isActive: true,
   },
 
@@ -299,7 +305,7 @@ export const EVM_CHAINS: Record<string, ChainConfig> = {
     type: 'evm',
     nativeSymbol: 'BERA',
     nativeName: 'Berachain',
-    explorerApiUrl: 'https://api.beratrail.io/api',
+    explorerApiUrl: 'https://api.etherscan.io/v2/api',
     isActive: true,
   },
   sei: {
@@ -308,7 +314,7 @@ export const EVM_CHAINS: Record<string, ChainConfig> = {
     type: 'evm',
     nativeSymbol: 'SEI',
     nativeName: 'Sei',
-    explorerApiUrl: 'https://api.seitrace.com/api',
+    explorerApiUrl: 'https://api.etherscan.io/v2/api',
     isActive: true,
   },
   sonic: {
@@ -317,6 +323,7 @@ export const EVM_CHAINS: Record<string, ChainConfig> = {
     type: 'evm',
     nativeSymbol: 'S',
     nativeName: 'Sonic',
+    explorerApiUrl: 'https://api.etherscan.io/v2/api',
     isActive: true,
   },
   sophon: {
@@ -325,6 +332,7 @@ export const EVM_CHAINS: Record<string, ChainConfig> = {
     type: 'evm',
     nativeSymbol: 'SOPH',
     nativeName: 'Sophon',
+    explorerApiUrl: 'https://api.etherscan.io/v2/api',
     isActive: true,
   },
   swellchain: {
@@ -333,6 +341,7 @@ export const EVM_CHAINS: Record<string, ChainConfig> = {
     type: 'evm',
     nativeSymbol: 'swETH',
     nativeName: 'Swell Ether',
+    explorerApiUrl: 'https://api.etherscan.io/v2/api',
     isActive: true,
   },
   taiko: {
@@ -341,7 +350,7 @@ export const EVM_CHAINS: Record<string, ChainConfig> = {
     type: 'evm',
     nativeSymbol: 'ETH',
     nativeName: 'Ethereum',
-    explorerApiUrl: 'https://api.taikoscan.io/api',
+    explorerApiUrl: 'https://api.etherscan.io/v2/api',
     isActive: true,
   },
   unichain: {
@@ -350,6 +359,7 @@ export const EVM_CHAINS: Record<string, ChainConfig> = {
     type: 'evm',
     nativeSymbol: 'ETH',
     nativeName: 'Ethereum',
+    explorerApiUrl: 'https://api.etherscan.io/v2/api',
     isActive: true,
   },
   'world-chain': {
@@ -358,6 +368,7 @@ export const EVM_CHAINS: Record<string, ChainConfig> = {
     type: 'evm',
     nativeSymbol: 'WLD',
     nativeName: 'Worldcoin',
+    explorerApiUrl: 'https://api.etherscan.io/v2/api',
     isActive: true,
   },
   abstract: {
@@ -366,6 +377,7 @@ export const EVM_CHAINS: Record<string, ChainConfig> = {
     type: 'evm',
     nativeSymbol: 'ETH',
     nativeName: 'Ethereum',
+    explorerApiUrl: 'https://api.etherscan.io/v2/api',
     isActive: true,
   },
   apechain: {
@@ -374,6 +386,7 @@ export const EVM_CHAINS: Record<string, ChainConfig> = {
     type: 'evm',
     nativeSymbol: 'APE',
     nativeName: 'ApeCoin',
+    explorerApiUrl: 'https://api.etherscan.io/v2/api',
     isActive: true,
   },
 };

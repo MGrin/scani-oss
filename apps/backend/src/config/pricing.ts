@@ -14,15 +14,8 @@ export const config = {
     baseUrl: 'https://api.exchangerate-api.com/v4',
   },
   etherscan: {
-    // Etherscan API keys for different chains (you can use same key for all)
-    ethereum: process.env.ETHERSCAN_API_KEY || '',
-    polygon: process.env.POLYGONSCAN_API_KEY || process.env.ETHERSCAN_API_KEY || '',
-    bsc: process.env.BSCSCAN_API_KEY || process.env.ETHERSCAN_API_KEY || '',
-    arbitrum: process.env.ARBISCAN_API_KEY || process.env.ETHERSCAN_API_KEY || '',
-    optimism: process.env.OPTIMISTIC_ETHERSCAN_API_KEY || process.env.ETHERSCAN_API_KEY || '',
-    base: process.env.BASESCAN_API_KEY || process.env.ETHERSCAN_API_KEY || '',
-    avalanche: process.env.SNOWTRACE_API_KEY || process.env.ETHERSCAN_API_KEY || '',
-    // Fallback for other chains
-    default: process.env.ETHERSCAN_API_KEY || '',
+    // Single API key for Etherscan V2 unified endpoint
+    // Works for all EVM chains via chainid parameter
+    apiKey: process.env.ETHERSCAN_API_KEY || '',
   },
 } as const;
