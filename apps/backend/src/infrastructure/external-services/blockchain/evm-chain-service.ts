@@ -354,81 +354,68 @@ export class EvmChainService implements IBlockchainService {
    * Check if address has normal transactions
    */
   private async hasNormalTransactions(address: string): Promise<boolean> {
-    const url = `${this.chainConfig.explorerApiUrl}?module=account&action=txlist&address=${address}&page=1&offset=1&sort=desc&apikey=${this.apiKey}`;
-
-    const checkTransactions = async () => {
-      const response = await fetchWithTimeout(url);
-
-      if (!response.ok) {
-        return false;
-      }
-
-      const data = (await response.json()) as EtherscanResponse<EtherscanTransaction[]>;
-
-      // Status '1' means success and transactions found
-      if (data.status === '1' && Array.isArray(data.result) && data.result.length > 0) {
-        return true;
-      }
-
-      return false;
-    };
-
-    if (this.rateLimiter) {
-      return this.rateLimiter.execute(checkTransactions);
-    }
-    return checkTransactions();
+    return this.hasTransactionsByAction(address, 'txlist');
   }
 
   /**
    * Check if address has internal transactions
    */
   private async hasInternalTransactions(address: string): Promise<boolean> {
-    const url = `${this.chainConfig.explorerApiUrl}?module=account&action=txlistinternal&address=${address}&page=1&offset=1&sort=desc&apikey=${this.apiKey}`;
-
-    const checkTransactions = async () => {
-      const response = await fetchWithTimeout(url);
-
-      if (!response.ok) {
-        return false;
-      }
-
-      const data = (await response.json()) as EtherscanResponse<EtherscanTransaction[]>;
-
-      // Status '1' means success and transactions found
-      if (data.status === '1' && Array.isArray(data.result) && data.result.length > 0) {
-        return true;
-      }
-
-      return false;
-    };
-
-    if (this.rateLimiter) {
-      return this.rateLimiter.execute(checkTransactions);
-    }
-    return checkTransactions();
+    return this.hasTransactionsByAction(address, 'txlistinternal');
   }
 
   /**
    * Check if address has token transactions (ERC-20)
    */
   private async hasTokenTransactions(address: string): Promise<boolean> {
-    const url = `${this.chainConfig.explorerApiUrl}?module=account&action=tokentx&address=${address}&page=1&offset=1&sort=desc&apikey=${this.apiKey}`;
+    return this.hasTransactionsByAction(address, 'tokentx');
+  }
+
+  /**
+   * Generic method to check if address has transactions for a specific action
+   */
+  private async hasTransactionsByAction(
+    address: string,
+    action: 'txlist' | 'txlistinternal' | 'tokentx'
+  ): Promise<boolean> {
+    const url = `${this.chainConfig.explorerApiUrl}?module=account&action=${action}&address=${address}&page=1&offset=1&sort=desc&apikey=${this.apiKey}`;
 
     const checkTransactions = async () => {
-      const response = await fetchWithTimeout(url);
+      try {
+        const response = await fetchWithTimeout(url);
 
-      if (!response.ok) {
+        if (!response.ok) {
+          logger.debug(
+            {
+              chainId: this.chainConfig.chainId,
+              action,
+              status: response.status,
+              statusText: response.statusText,
+            },
+            'HTTP error while checking transactions'
+          );
+          return false;
+        }
+
+        const data = (await response.json()) as EtherscanResponse<EtherscanTransaction[]>;
+
+        // Status '1' means success and transactions found
+        if (data.status === '1' && Array.isArray(data.result) && data.result.length > 0) {
+          return true;
+        }
+
+        return false;
+      } catch (error) {
+        logger.debug(
+          {
+            chainId: this.chainConfig.chainId,
+            action,
+            error: error instanceof Error ? error.message : String(error),
+          },
+          'Error checking transactions'
+        );
         return false;
       }
-
-      const data = (await response.json()) as EtherscanResponse<EtherscanTransaction[]>;
-
-      // Status '1' means success and transactions found
-      if (data.status === '1' && Array.isArray(data.result) && data.result.length > 0) {
-        return true;
-      }
-
-      return false;
     };
 
     if (this.rateLimiter) {
