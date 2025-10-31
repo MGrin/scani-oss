@@ -1,12 +1,18 @@
 import type { TokenMetadata, TokenValidationResult as ValidationResult } from '@scani/shared';
 import { Container, Service } from 'typedi';
 import { config } from '../../config/pricing';
+import {
+  CHAIN_ID_TO_DEFILLAMA,
+  DEFILLAMA_MIN_CONFIDENCE,
+} from '../../infrastructure/external-services/pricing/defillama-constants';
+import { PROVIDER_CONFIGS } from '../../infrastructure/external-services/pricing/provider-config';
+import { fetchWithTimeout } from '../../infrastructure/external-services/pricing/utils';
 import { TokenRepository } from '../../infrastructure/repositories/TokenRepository';
 import { createComponentLogger } from '../../utils/logger';
 import { PricingService } from './PricingService';
 
 /**
- * Service for validating tokens from external providers (CoinGecko, Finnhub)
+ * Service for validating tokens from external providers (CoinGecko, Finnhub, DeFiLlama)
  * Uses PricingService for rate-limited API access
  */
 @Service()
@@ -103,7 +109,7 @@ export class TokenValidationService {
 
     return {
       isValid: false,
-      error: `Token ${symbol} not found in any supported provider (Finnhub, CoinGecko)`,
+      error: `Token ${symbol} not found in any supported provider (Finnhub, CoinGecko, DeFiLlama)`,
     };
   }
 
@@ -213,6 +219,7 @@ export class TokenValidationService {
 
   /**
    * Validate a cryptocurrency token using CoinGecko
+   * Note: DeFiLlama fallback requires contract address, which is not available in symbol-only searches
    */
   private async validateCryptoToken(symbol: string): Promise<ValidationResult> {
     try {
@@ -231,6 +238,10 @@ export class TokenValidationService {
       );
 
       if (!response.ok) {
+        this.logger.warn(
+          { symbol, status: response.status, statusText: response.statusText },
+          'CoinGecko search failed - DeFiLlama fallback requires contract address'
+        );
         return {
           isValid: false,
           error: `CoinGecko API error: ${response.statusText}`,
@@ -282,6 +293,10 @@ export class TokenValidationService {
       );
 
       if (!coinResponse.ok) {
+        this.logger.warn(
+          { symbol, coinId: match.id, status: coinResponse.status },
+          'Failed to fetch CoinGecko coin details'
+        );
         return {
           isValid: false,
           error: `Failed to fetch coin details from CoinGecko: ${coinResponse.statusText}`,
@@ -316,6 +331,10 @@ export class TokenValidationService {
         metadata,
       };
     } catch (error) {
+      this.logger.error(
+        { symbol, error: error instanceof Error ? error.message : String(error) },
+        'CoinGecko validation error - consider using validateTokenByContractAddress if contract address is available'
+      );
       return {
         isValid: false,
         error: error instanceof Error ? error.message : 'Unknown validation error',
@@ -487,6 +506,105 @@ export class TokenValidationService {
         'CoinGecko search error'
       );
       return [];
+    }
+  }
+
+  /**
+   * Validate a token by contract address using DeFiLlama
+   * This is used as a fallback when CoinGecko is not available or doesn't have the token
+   */
+  async validateTokenByContractAddress(
+    contractAddress: string,
+    chainId: number
+  ): Promise<ValidationResult> {
+    try {
+      const chainName = CHAIN_ID_TO_DEFILLAMA[chainId];
+
+      if (!chainName) {
+        return {
+          isValid: false,
+          error: `Chain ${chainId} not supported by DeFiLlama`,
+        };
+      }
+
+      const key = `${chainName}:${contractAddress.toLowerCase()}`;
+      const url = `${PROVIDER_CONFIGS.defiLlama.baseUrl}/prices/current/${key}`;
+
+      const response = await fetchWithTimeout(url, {
+        headers: { 'Content-Type': 'application/json' },
+      });
+
+      if (!response.ok) {
+        return {
+          isValid: false,
+          error: `DeFiLlama API responded with ${response.status}: ${response.statusText}`,
+        };
+      }
+
+      const data = (await response.json()) as {
+        coins: {
+          [key: string]: {
+            decimals: number;
+            symbol: string;
+            price: number;
+            timestamp: number;
+            confidence: number;
+          };
+        };
+      };
+
+      const tokenData = data.coins?.[key];
+
+      if (!tokenData) {
+        return {
+          isValid: false,
+          error: 'Token not found on DeFiLlama',
+        };
+      }
+
+      // Check confidence score
+      if (tokenData.confidence < DEFILLAMA_MIN_CONFIDENCE) {
+        return {
+          isValid: false,
+          error: `Low confidence score from DeFiLlama: ${tokenData.confidence}`,
+        };
+      }
+
+      // Check for valid price
+      if (tokenData.price == null || tokenData.price <= 0) {
+        return {
+          isValid: false,
+          error: 'No valid price data from DeFiLlama',
+        };
+      }
+
+      const metadata: TokenMetadata = {
+        symbol: tokenData.symbol.toUpperCase(),
+        // DeFiLlama's current price endpoint doesn't provide full token names
+        // This is a known limitation - the symbol is used as name for now
+        // Future enhancement: Could make additional API call to get full name if needed
+        name: tokenData.symbol,
+        type: 'Crypto',
+        currency: 'USD',
+        provider: 'defillama',
+        providerMetadata: {
+          contractAddress,
+          chainId,
+          chainName,
+          defiLlamaData: tokenData,
+          validatedAt: new Date().toISOString(),
+        },
+      };
+
+      return {
+        isValid: true,
+        metadata,
+      };
+    } catch (error) {
+      return {
+        isValid: false,
+        error: error instanceof Error ? error.message : 'Unknown DeFiLlama validation error',
+      };
     }
   }
 }

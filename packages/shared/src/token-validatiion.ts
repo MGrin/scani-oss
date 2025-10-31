@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-export const TokenProviderSchema = z.enum(['finnhub', 'coingecko']);
+export const TokenProviderSchema = z.enum(['finnhub', 'coingecko', 'defillama']);
 export type TokenProvider = z.infer<typeof TokenProviderSchema>;
 
 export const TokenMetadataSchema = z.object({

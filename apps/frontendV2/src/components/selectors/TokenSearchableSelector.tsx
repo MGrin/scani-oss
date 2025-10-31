@@ -33,7 +33,7 @@ interface TokenOption {
   decimals?: number;
   isActive?: boolean;
   source: 'database' | 'external' | 'create-new';
-  provider?: 'finnhub' | 'coingecko';
+  provider?: 'finnhub' | 'coingecko' | 'defillama';
   metadata?: Record<string, unknown>;
 }
 
