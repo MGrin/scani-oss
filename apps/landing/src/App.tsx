@@ -203,8 +203,8 @@ function App() {
                 title: 'Crypto Wallet Integration',
                 description:
                   'Import holdings from cryptocurrency wallets and exchanges. Support for major blockchains and token types.',
-                available: false,
-                highlight: 'Coming Soon',
+                available: true,
+                highlight: 'Available Now',
               },
             ].map((feature) => (
               <motion.div
