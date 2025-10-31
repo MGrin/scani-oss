@@ -1,7 +1,7 @@
 import { useEffect, useMemo } from 'react';
 import { ManualEntryStep } from '@/components/add-data/ManualEntryStep';
 import { ScreenshotUploadStep } from '@/components/add-data/ScreenshotUploadStep';
-import { Card, CardContent } from '@/components/ui/card';
+import { WalletImportStep } from '@/components/add-data/WalletImportStep';
 import { trpc } from '@/lib/trpc';
 import type { CompleteImportData } from '@/types/addData';
 
@@ -137,25 +137,12 @@ export function DataEntryStep({
 
       case 'wallet':
         return (
-          <div className="space-y-6">
-            <div className="text-center">
-              <h3 className="text-lg font-semibold mb-2">Cryptocurrency Wallet Import</h3>
-              <p className="text-muted-foreground">
-                Connect your cryptocurrency wallet to automatically import your holdings and
-                transaction history.
-              </p>
-            </div>
-
-            {/* TODO: Implement wallet import */}
-            <Card>
-              <CardContent className="p-8 text-center text-muted-foreground">
-                <p>Wallet import functionality coming soon...</p>
-                <p className="text-sm mt-2">
-                  This will support ERC20 tokens, wallet addresses, etc.
-                </p>
-              </CardContent>
-            </Card>
-          </div>
+          <WalletImportStep
+            completeImportData={completeImportData}
+            onCompleteDataUpdate={onCompleteDataUpdate}
+            isCreatingHoldings={isCreatingHoldings}
+            onChangesDetected={onChangesDetected}
+          />
         );
 
       default:
