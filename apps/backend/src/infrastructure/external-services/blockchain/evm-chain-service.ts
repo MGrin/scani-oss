@@ -11,17 +11,6 @@ import type { BlockchainServiceConfig, IBlockchainService, TokenBalance } from '
 
 const logger = createComponentLogger('evm-chain-service');
 
-/**
- * Etherscan API response types
- */
-interface EtherscanTokenBalance {
-  contractAddress: string;
-  tokenName: string;
-  tokenSymbol: string;
-  tokenDecimal: string;
-  balance: string;
-}
-
 interface EtherscanResponse<T> {
   status: string;
   message: string;
@@ -249,7 +238,7 @@ export class EvmChainService implements IBlockchainService {
       );
 
       const results = await Promise.all(balancePromises);
-      return results.filter((b): b is TokenBalance => b !== null);
+      return results.filter((b) => b !== null) as TokenBalance[];
     };
 
     if (this.rateLimiter) {

@@ -130,7 +130,7 @@ export class TronChainService implements IBlockchainService {
 
       const data = (await response.json()) as { data: TronAccountInfo[] };
 
-      if (!data.data || data.data.length === 0 || !data.data[0].balance) {
+      if (!data.data || data.data.length === 0 || data.data[0]?.balance === undefined) {
         return null;
       }
 

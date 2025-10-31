@@ -13,6 +13,7 @@ import { institutionsRouter } from './institutions';
 import { screenshotsRouter } from './screenshots';
 import { createTokensRouter } from './tokens';
 import { usersRouter } from './users';
+import { walletRouter } from './wallet';
 
 // Create routers with DI
 const tokensRouter = createTokensRouter(db, schema, Container.get(TokenValidationService));
@@ -41,6 +42,9 @@ export const appRouter = router({
 
   // Batch operations (protected) - Atomic multi-entity operations
   batchOperations: batchOperationsRouter,
+
+  // Wallet import (protected) - Multi-chain crypto wallet import
+  wallet: walletRouter,
 
   // Health check (public)
   health: router({

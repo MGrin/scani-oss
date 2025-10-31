@@ -6,7 +6,12 @@ export {
   type DeleteHoldingResult,
   DeleteHoldingUseCase,
 } from './DeleteHoldingUseCase';
-
+// Wallet Import Use Cases
+export {
+  ImportWalletAddressUseCase,
+  type ImportWalletInput,
+  type ImportWalletResult,
+} from './ImportWalletAddressUseCase';
 export {
   type ParseScreenshotInput,
   type ParseScreenshotResult,

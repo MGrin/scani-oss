@@ -19,13 +19,7 @@ import { EvmChainService } from './evm-chain-service';
 import { SolanaChainService } from './solana-chain-service';
 import { TonChainService } from './ton-chain-service';
 import { TronChainService } from './tron-chain-service';
-import type {
-  BlockchainServiceConfig,
-  IBlockchainService,
-  TokenBalance,
-  WalletImportResult,
-  WalletInfo,
-} from './types';
+import type { IBlockchainService, WalletImportResult, WalletInfo } from './types';
 
 const logger = createComponentLogger('blockchain-service-manager');
 
@@ -74,45 +68,47 @@ export class BlockchainServiceManager {
     }
 
     // Initialize non-EVM chain services
-    const nonEvmConfigs: [string, ChainConfig, IBlockchainService][] = [
-      [
-        'bitcoin',
-        NON_EVM_CHAINS.bitcoin,
-        new BitcoinChainService(NON_EVM_CHAINS.bitcoin, {
-          rateLimiter: GLOBAL_BLOCKCHAIN_RATE_LIMITERS.bitcoin,
-        }),
-      ],
-      [
-        'solana',
-        NON_EVM_CHAINS.solana,
-        new SolanaChainService(NON_EVM_CHAINS.solana, {
-          rateLimiter: GLOBAL_BLOCKCHAIN_RATE_LIMITERS.solana,
-        }),
-      ],
-      [
-        'tron',
-        NON_EVM_CHAINS.tron,
-        new TronChainService(NON_EVM_CHAINS.tron, {
-          rateLimiter: GLOBAL_BLOCKCHAIN_RATE_LIMITERS.tron,
-        }),
-      ],
-      [
-        'ton',
-        NON_EVM_CHAINS.ton,
-        new TonChainService(NON_EVM_CHAINS.ton, {
-          rateLimiter: GLOBAL_BLOCKCHAIN_RATE_LIMITERS.ton,
-        }),
-      ],
-    ];
+    const bitcoinChain = NON_EVM_CHAINS.bitcoin;
+    const solanaChain = NON_EVM_CHAINS.solana;
+    const tronChain = NON_EVM_CHAINS.tron;
+    const tonChain = NON_EVM_CHAINS.ton;
 
-    for (const [key, chainConfig, service] of nonEvmConfigs) {
-      if (chainConfig.isActive) {
-        this.services.set(chainConfig.chainId, service);
-        logger.debug(
-          { chain: key, chainId: chainConfig.chainId },
-          'Initialized non-EVM chain service'
-        );
-      }
+    if (bitcoinChain?.isActive) {
+      const service = new BitcoinChainService(bitcoinChain, {
+        rateLimiter: GLOBAL_BLOCKCHAIN_RATE_LIMITERS.bitcoin,
+      });
+      this.services.set(bitcoinChain.chainId, service);
+      logger.debug(
+        { chain: 'bitcoin', chainId: bitcoinChain.chainId },
+        'Initialized Bitcoin chain service'
+      );
+    }
+
+    if (solanaChain?.isActive) {
+      const service = new SolanaChainService(solanaChain, {
+        rateLimiter: GLOBAL_BLOCKCHAIN_RATE_LIMITERS.solana,
+      });
+      this.services.set(solanaChain.chainId, service);
+      logger.debug(
+        { chain: 'solana', chainId: solanaChain.chainId },
+        'Initialized Solana chain service'
+      );
+    }
+
+    if (tronChain?.isActive) {
+      const service = new TronChainService(tronChain, {
+        rateLimiter: GLOBAL_BLOCKCHAIN_RATE_LIMITERS.tron,
+      });
+      this.services.set(tronChain.chainId, service);
+      logger.debug({ chain: 'tron', chainId: tronChain.chainId }, 'Initialized Tron chain service');
+    }
+
+    if (tonChain?.isActive) {
+      const service = new TonChainService(tonChain, {
+        rateLimiter: GLOBAL_BLOCKCHAIN_RATE_LIMITERS.ton,
+      });
+      this.services.set(tonChain.chainId, service);
+      logger.debug({ chain: 'ton', chainId: tonChain.chainId }, 'Initialized TON chain service');
     }
 
     logger.info({ totalChains: this.services.size }, 'Blockchain services initialized');
@@ -188,7 +184,7 @@ export class BlockchainServiceManager {
         logger.debug(
           {
             chainId,
-            address: address.substring(0, 10) + '...',
+            address: `${address.substring(0, 10)}...`,
             error: error instanceof Error ? error.message : String(error),
           },
           'Wallet not detected on chain'
@@ -207,7 +203,7 @@ export class BlockchainServiceManager {
 
     logger.info(
       {
-        address: address.substring(0, 10) + '...',
+        address: `${address.substring(0, 10)}...`,
         detectedChains: detectedChains.length,
       },
       'Detected wallet chains'
@@ -220,7 +216,7 @@ export class BlockchainServiceManager {
    * Import wallet address across all detected chains
    */
   async importWalletAddress(address: string): Promise<WalletImportResult> {
-    logger.info({ address: address.substring(0, 10) + '...' }, 'Starting wallet import');
+    logger.info({ address: `${address.substring(0, 10)}...` }, 'Starting wallet import');
 
     // Detect which chains this wallet exists on
     const detectedChainIds = await this.detectWalletChains(address);
@@ -251,7 +247,7 @@ export class BlockchainServiceManager {
           try {
             const name = await service.resolveAddressName(address);
             if (name) displayName = name;
-          } catch (error) {
+          } catch (_error) {
             // Ignore ENS resolution errors
             logger.debug({ address, chainId }, 'Failed to resolve address name');
           }
@@ -278,14 +274,14 @@ export class BlockchainServiceManager {
     });
 
     const walletResults = await Promise.all(walletPromises);
-    const wallets = walletResults.filter((w): w is WalletInfo => w !== null);
+    const wallets = walletResults.filter((w) => w !== null) as WalletInfo[];
 
     const totalTokens = wallets.reduce((sum, wallet) => sum + wallet.balances.length, 0);
     const chainsDetected = wallets.map((w) => w.chainName);
 
     logger.info(
       {
-        address: address.substring(0, 10) + '...',
+        address: `${address.substring(0, 10)}...`,
         chains: chainsDetected.length,
         tokens: totalTokens,
       },
