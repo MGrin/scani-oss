@@ -193,7 +193,10 @@ export class BlockchainServiceManager {
           {
             chainId,
             address: `${address.substring(0, 10)}...`,
-            error: error instanceof Error ? error.message : String(error),
+            error:
+              error instanceof Error
+                ? { name: error.name, message: error.message }
+                : { name: 'Error', message: String(error) },
           },
           'Wallet not detected on chain'
         );
@@ -275,7 +278,10 @@ export class BlockchainServiceManager {
           {
             chainId,
             address,
-            error: error instanceof Error ? error.message : String(error),
+            error:
+              error instanceof Error
+                ? { name: error.name, message: error.message }
+                : { name: 'Error', message: String(error) },
           },
           'Failed to fetch wallet balances'
         );
