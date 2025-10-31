@@ -122,6 +122,11 @@ export class TokenPriceRepository extends BaseRepository<TokenPrice, NewTokenPri
       const startWindow = new Date(timestamp.getTime() - windowMs);
       const endWindow = new Date(timestamp.getTime() + windowMs);
 
+      // Convert timestamp to ISO string for raw SQL template
+      // Note: Drizzle ORM's gte/lte functions handle Date objects correctly,
+      // but raw SQL templates need explicit conversion to avoid Date.toString() serialization
+      const timestampIso = timestamp.toISOString();
+
       const results = await database
         .select()
         .from(schema.tokenPrices)
@@ -129,11 +134,15 @@ export class TokenPriceRepository extends BaseRepository<TokenPrice, NewTokenPri
           and(
             eq(schema.tokenPrices.tokenId, tokenId),
             eq(schema.tokenPrices.baseTokenId, baseTokenId),
+            // Date objects work correctly in Drizzle's comparison functions
             gte(schema.tokenPrices.timestamp, startWindow),
             lte(schema.tokenPrices.timestamp, endWindow)
           )
         )
-        .orderBy(sql`ABS(EXTRACT(EPOCH FROM (${schema.tokenPrices.timestamp} - ${timestamp})))`)
+        .orderBy(
+          // Raw SQL requires explicit ISO string and timestamptz cast
+          sql`ABS(EXTRACT(EPOCH FROM (${schema.tokenPrices.timestamp} - ${timestampIso}::timestamptz)))`
+        )
         .limit(1);
 
       return results[0] || null;
