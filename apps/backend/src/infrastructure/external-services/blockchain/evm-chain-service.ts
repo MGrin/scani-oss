@@ -7,12 +7,35 @@
  */
 
 import Decimal from 'decimal.js';
+import { ethers } from 'ethers';
 import { createComponentLogger } from '../../../utils/logger';
 import { fetchWithTimeout } from '../pricing/utils';
 import type { ChainConfig } from './chain-config';
 import type { BlockchainServiceConfig, IBlockchainService, TokenBalance } from './types';
 
 const logger = createComponentLogger('evm-chain-service');
+
+/**
+ * Check if token is likely spam based on name/symbol patterns
+ * Common spam token indicators include URLs, scam keywords, etc.
+ */
+function isLikelySpamToken(token: { name: string; symbol: string }): boolean {
+  const suspiciousPatterns = [
+    /https?:\/\//i, // Contains URL
+    /www\./i, // Contains www.
+    /\.com|\.xyz|\.cc|\.io|\.app|\.eu|\.org/i, // Domain extensions
+    /claim|visit|reward|bonus|airdrop/i, // Scam keywords
+    /^\$/, // Starts with $
+    /t\.me|telegram/i, // Telegram references
+    /swap.*on|claim.*on/i, // "Swap on" or "Claim on" patterns
+    /<|>|\{|\}|\[|\]/i, // HTML/code injection attempts
+  ];
+
+  const nameMatch = suspiciousPatterns.some((pattern) => pattern.test(token.name));
+  const symbolMatch = suspiciousPatterns.some((pattern) => pattern.test(token.symbol));
+
+  return nameMatch || symbolMatch;
+}
 
 interface EtherscanResponse<T> {
   status: string;
@@ -253,11 +276,26 @@ export class EvmChainService implements IBlockchainService {
       for (const tx of data.result) {
         const contractAddress = tx.contractAddress.toLowerCase();
         if (!uniqueTokens.has(contractAddress)) {
-          uniqueTokens.set(contractAddress, {
+          const tokenInfo = {
             name: tx.tokenName,
             symbol: tx.tokenSymbol,
             decimals: Number.parseInt(tx.tokenDecimal, 10),
-          });
+          };
+
+          // Filter out likely spam tokens
+          if (isLikelySpamToken(tokenInfo)) {
+            logger.debug(
+              {
+                contractAddress,
+                name: tokenInfo.name,
+                symbol: tokenInfo.symbol,
+              },
+              'Filtered out likely spam token'
+            );
+            continue;
+          }
+
+          uniqueTokens.set(contractAddress, tokenInfo);
         }
       }
 
@@ -512,10 +550,44 @@ export class EvmChainService implements IBlockchainService {
       return null;
     }
 
-    try {
-      // We'll implement ENS resolution in a future iteration
-      // For now, return null
+    if (!this.isValidAddress(address)) {
       return null;
+    }
+
+    try {
+      // Use ethers.js with a public Ethereum RPC endpoint
+      const provider = new ethers.JsonRpcProvider('https://eth.llamarpc.com');
+
+      const resolveEns = async () => {
+        try {
+          // Lookup ENS name for address (reverse resolution)
+          const ensName = await provider.lookupAddress(address);
+
+          if (ensName) {
+            logger.debug(
+              { address: `${address.substring(0, 10)}...`, ensName },
+              'ENS name resolved'
+            );
+            return ensName;
+          }
+
+          return null;
+        } catch (error) {
+          logger.debug(
+            {
+              address: `${address.substring(0, 10)}...`,
+              error: error instanceof Error ? error.message : String(error),
+            },
+            'ENS lookup failed'
+          );
+          return null;
+        }
+      };
+
+      if (this.rateLimiter) {
+        return this.rateLimiter.execute(resolveEns);
+      }
+      return resolveEns();
     } catch (error) {
       logger.debug({ address, error }, 'Failed to resolve ENS name');
       return null;

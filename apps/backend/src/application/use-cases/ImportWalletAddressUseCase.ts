@@ -477,12 +477,16 @@ export class ImportWalletAddressUseCase {
    * Generate account name from chain and display name
    */
   private generateAccountName(chainName: string, displayName: string): string {
-    // If display name is a hex address (0x...), Bitcoin address, or Tron address (T...), shorten it
-    const isAddress =
-      /^0x[0-9a-fA-F]{40}$/.test(displayName) || // Ethereum-like address
-      /^T[1-9A-HJ-NP-Za-km-z]{33}$/.test(displayName) || // Tron address
+    // If display name is a hex address (0x...), Bitcoin address, Tron address (T...),
+    // or Solana address, shorten it
+    const isEthereumAddress = /^0x[0-9a-fA-F]{40}$/.test(displayName);
+    const isTronAddress = /^T[1-9A-HJ-NP-Za-km-z]{33}$/.test(displayName);
+    const isBitcoinAddress =
       /^[13][a-km-zA-HJ-NP-Z1-9]{25,34}$/.test(displayName) || // Bitcoin P2PKH/P2SH
       /^bc1[a-z0-9]{39,59}$/.test(displayName); // Bitcoin Bech32
+    const isSolanaAddress = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(displayName);
+
+    const isAddress = isEthereumAddress || isTronAddress || isBitcoinAddress || isSolanaAddress;
 
     if (isAddress && displayName.length > 20) {
       const shortened = `${displayName.substring(0, 6)}...${displayName.substring(displayName.length - 4)}`;

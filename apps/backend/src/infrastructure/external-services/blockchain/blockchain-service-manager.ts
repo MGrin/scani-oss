@@ -247,6 +247,26 @@ export class BlockchainServiceManager {
       };
     }
 
+    // Try to resolve ENS name on Ethereum mainnet first
+    // This will be reused for all chains if found
+    let ensName: string | undefined;
+    const ethereumService = this.services.get(1); // Ethereum mainnet chainId
+    if (ethereumService?.resolveAddressName) {
+      try {
+        const name = await ethereumService.resolveAddressName(address);
+        if (name) {
+          ensName = name;
+          logger.info(
+            { address: `${address.substring(0, 10)}...`, ensName },
+            'ENS name resolved - will be used for all chains'
+          );
+        }
+      } catch (_error) {
+        // Ignore ENS resolution errors
+        logger.debug({ address }, 'Failed to resolve ENS name');
+      }
+    }
+
     // Fetch balances from all detected chains in parallel
     const walletPromises = detectedChainIds.map(async (chainId) => {
       const service = this.services.get(chainId);
@@ -258,23 +278,12 @@ export class BlockchainServiceManager {
       try {
         const balances = await service.getTokenBalances(address);
 
-        // Try to resolve address name (e.g., ENS) for EVM chains
-        let displayName: string | undefined;
-        if (service.resolveAddressName) {
-          try {
-            const name = await service.resolveAddressName(address);
-            if (name) displayName = name;
-          } catch (_error) {
-            // Ignore ENS resolution errors
-            logger.debug({ address, chainId }, 'Failed to resolve address name');
-          }
-        }
-
         // Always return wallet info for detected chains, even if balances are empty
         // This ensures accounts are created for all chains with activity
+        // Use the ENS name resolved earlier if available
         return {
           address,
-          displayName,
+          displayName: ensName,
           chainId,
           chainName: chainConfig.name,
           balances,
@@ -307,6 +316,7 @@ export class BlockchainServiceManager {
         address: `${address.substring(0, 10)}...`,
         chains: chainsDetected.length,
         tokens: totalTokens,
+        ensName: ensName || 'none',
       },
       'Wallet import completed'
     );
