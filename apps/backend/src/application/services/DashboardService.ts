@@ -74,6 +74,28 @@ export class DashboardService extends BaseService {
   }
 
   /**
+   * Extract token prices from portfolio value data
+   * Calculates price by dividing value by balance for each holding
+   * Returns a map of token symbol to price
+   * Note: All holdings of the same token should have the same price.
+   * We use the first price found for each token symbol.
+   * Note: This method is duplicated in AccountService - this is intentional
+   * to keep services independent and avoid cross-service dependencies.
+   */
+  private extractPriceMap(portfolioValue: PortfolioValueResult): Map<string, string> {
+    const priceMap = new Map<string, string>();
+    for (const portfolioHolding of portfolioValue.holdings) {
+      const balance = new Decimal(portfolioHolding.balance);
+      const value = new Decimal(portfolioHolding.value || '0');
+      if (balance.greaterThan(0) && !priceMap.has(portfolioHolding.tokenSymbol)) {
+        const price = value.div(balance);
+        priceMap.set(portfolioHolding.tokenSymbol, price.toString());
+      }
+    }
+    return priceMap;
+  }
+
+  /**
    * Get comprehensive dashboard overview for a user
    * Optimized with parallel queries and single joined query for holdings
    */
@@ -138,19 +160,15 @@ export class DashboardService extends BaseService {
     holdingsWithDetails: Array<HoldingWithDetails>,
     portfolioValue: PortfolioValueResult
   ): Promise<DashboardOverview['topHoldings']> {
-    // Create maps from portfolio value data
-    const portfolioValueMap = new Map(
-      portfolioValue.holdings.map((h) => [h.tokenSymbol, h.value || '0'])
-    );
-    const portfolioPriceMap = new Map(
-      portfolioValue.holdings.map((h) => [h.tokenSymbol, h.currentPrice || '0'])
-    );
+    // Extract token prices using helper method
+    const priceMap = this.extractPriceMap(portfolioValue);
 
-    // Build holdings with values
+    // Build holdings with values calculated individually
     const holdingsWithValues = holdingsWithDetails
       .map(({ holding, token, account, institution }) => {
-        const value = portfolioValueMap.get(token.symbol) || '0';
-        const currentPrice = portfolioPriceMap.get(token.symbol) || '0';
+        const currentPrice = priceMap.get(token.symbol) || '0';
+        const balance = new Decimal(holding.balance);
+        const value = balance.mul(new Decimal(currentPrice)).toString();
 
         return {
           holding,
@@ -194,16 +212,15 @@ export class DashboardService extends BaseService {
     holdingsWithDetails: Array<HoldingWithDetails>,
     portfolioValue: PortfolioValueResult
   ): Promise<DashboardOverview['assetAllocation']> {
-    // Create value map from portfolio data
-    const holdingValueMap = new Map(
-      portfolioValue.holdings.map((h) => [h.tokenSymbol, h.value || '0'])
-    );
+    // Extract token prices using helper method
+    const priceMap = this.extractPriceMap(portfolioValue);
 
     // Group by token type and calculate totals
     const typeAggregation = holdingsWithDetails.reduce(
-      (acc, { token }) => {
-        const value = holdingValueMap.get(token.symbol) || '0';
-        const decimalValue = new Decimal(value);
+      (acc, { holding, token }) => {
+        const price = priceMap.get(token.symbol) || '0';
+        const balance = new Decimal(holding.balance);
+        const value = balance.mul(new Decimal(price));
 
         if (!acc[token.typeCode]) {
           acc[token.typeCode] = {
@@ -213,7 +230,7 @@ export class DashboardService extends BaseService {
           };
         }
 
-        acc[token.typeCode]!.value = acc[token.typeCode]!.value.add(decimalValue);
+        acc[token.typeCode]!.value = acc[token.typeCode]!.value.add(value);
         return acc;
       },
       {} as Record<string, { typeCode: string; typeName: string; value: Decimal }>

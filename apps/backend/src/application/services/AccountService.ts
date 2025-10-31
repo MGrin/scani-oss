@@ -23,6 +23,32 @@ export class AccountService extends BaseService {
     super('AccountService');
   }
 
+  /**
+   * Extract token prices from portfolio value data
+   * Calculates price by dividing value by balance for each holding
+   * Returns a map of token symbol to price
+   * Note: All holdings of the same token should have the same price.
+   * We use the first price found for each token symbol.
+   */
+  private extractPriceMap(portfolioValue: {
+    holdings: Array<{
+      tokenSymbol: string;
+      balance: string;
+      value?: string;
+    }>;
+  }): Map<string, string> {
+    const priceMap = new Map<string, string>();
+    for (const portfolioHolding of portfolioValue.holdings) {
+      const balance = new Decimal(portfolioHolding.balance);
+      const value = new Decimal(portfolioHolding.value || '0');
+      if (balance.greaterThan(0) && !priceMap.has(portfolioHolding.tokenSymbol)) {
+        const price = value.div(balance);
+        priceMap.set(portfolioHolding.tokenSymbol, price.toString());
+      }
+    }
+    return priceMap;
+  }
+
   async createAccount(
     data: CreateAccountInput,
     userId: string,
@@ -96,6 +122,8 @@ export class AccountService extends BaseService {
     }
 
     const holdings = await this.holdingRepository.findByUser(userId);
+
+    // Get portfolio value for ALL holdings to get prices
     const portfolioValue = await this.portfolioService.getUserPortfolioValue(userId);
 
     const holdingsByAccount = new Map<string, typeof holdings>();
@@ -106,11 +134,12 @@ export class AccountService extends BaseService {
       holdingsByAccount.get(holding.accountId)!.push(holding);
     }
 
-    const valueMap = new Map(portfolioValue.holdings.map((h) => [h.tokenSymbol, h.value || '0']));
-
+    // Extract token prices using helper method
     const tokenIds = [...new Set(holdings.map((h) => h.tokenId))];
     const tokens = await this.tokenRepository.findByIds(tokenIds);
     const tokenMap = new Map(tokens.map((t) => [t.id, t]));
+
+    const priceMap = this.extractPriceMap(portfolioValue);
 
     const accountsWithSummary = accounts.map((account) => {
       const accountHoldings = holdingsByAccount.get(account.id) || [];
@@ -121,8 +150,10 @@ export class AccountService extends BaseService {
       for (const holding of accountHoldings) {
         const token = tokenMap.get(holding.tokenId);
         if (token) {
-          const holdingValue = valueMap.get(token.symbol) || '0';
-          totalValue = totalValue.add(new Decimal(holdingValue));
+          const price = priceMap.get(token.symbol) || '0';
+          const balance = new Decimal(holding.balance);
+          const holdingValue = balance.mul(new Decimal(price));
+          totalValue = totalValue.add(holdingValue);
         }
       }
 
