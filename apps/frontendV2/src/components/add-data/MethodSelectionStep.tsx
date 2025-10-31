@@ -29,9 +29,9 @@ export function MethodSelectionStep({
     {
       id: 'wallet' as const,
       title: 'Cryptocurrency Wallet',
-      description: 'Connect your crypto wallet to automatically import holdings',
+      description: 'Import your crypto holdings from any blockchain wallet address',
       icon: '🔐',
-      disabled: true,
+      disabled: false,
     },
   ];
 
