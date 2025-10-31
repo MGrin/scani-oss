@@ -50,7 +50,8 @@ export function AddData() {
 
     if (method) {
       setCompleteImportData((prev) => ({ ...prev, method }));
-      setCurrentStep('account');
+      // Skip account selection for wallet imports
+      setCurrentStep(method === 'wallet' ? 'data' : 'account');
     }
 
     if (accountId) {
