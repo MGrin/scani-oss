@@ -27,6 +27,22 @@ A modern personal finance management application built with TypeScript, React, a
 - **WebSocket** - Real-time updates
 - **CORS** - Cross-origin resource sharing
 
+### Mobile
+
+- **React Native** - core technology
+- **Ignite** - battle-prover template for theming and internationalization
+- **tRPC** - End-to-end type safety
+- **WebSocket** - Real-time updates
+
+### Landing
+
+- **React 18** - UI framework
+- **Vite** - Build tool and dev server
+- **TypeScript** - Type safety
+- **Tailwind CSS** - Styling
+- **Shadcn UI** - UI components
+- **React Router** - Routing
+
 ### Development
 
 - **Bun Workspaces** - Monorepo management
@@ -40,7 +56,10 @@ A modern personal finance management application built with TypeScript, React, a
 scani/
 ├── apps/
 │   ├── backend/          # tRPC API server
-│   └── frontend/         # React web application
+│   ├── frontend/         # React web application
+│   ├── landing/          # React static landing
+│   └── mobile/           # React Native mobile application
+|
 ├── packages/
 │   └── shared/          # Shared types and utilities
 └── package.json         # Workspace configuration
