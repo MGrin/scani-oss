@@ -1,6 +1,9 @@
 /**
  * EVM Chain Service
- * Handles balance fetching for EVM-compatible chains using Etherscan V2 API
+ * Handles balance fetching for EVM-compatible chains using Etherscan V2 unified API
+ *
+ * Uses the unified Etherscan V2 endpoint: https://api.etherscan.io/v2/api
+ * with chainid parameter to specify which chain to query
  */
 
 import Decimal from 'decimal.js';
@@ -28,7 +31,7 @@ interface EtherscanTransaction {
 }
 
 /**
- * EVM Chain Service using Etherscan V2 API
+ * EVM Chain Service using Etherscan V2 unified API
  */
 export class EvmChainService implements IBlockchainService {
   private readonly chainConfig: ChainConfig;
@@ -54,6 +57,31 @@ export class EvmChainService implements IBlockchainService {
 
   getChainName(): string {
     return this.chainConfig.name;
+  }
+
+  /**
+   * Build Etherscan V2 API URL with chainid parameter
+   * The unified endpoint requires chainid for all requests
+   */
+  private buildApiUrl(params: Record<string, string | number>): string {
+    if (!this.chainConfig.explorerApiUrl) {
+      throw new Error(`No explorerApiUrl configured for chain ${this.chainConfig.name}`);
+    }
+
+    const urlParams = new URLSearchParams();
+
+    // Add chainid parameter for Etherscan V2 unified API
+    urlParams.append('chainid', this.chainConfig.chainId.toString());
+
+    // Add all other parameters
+    for (const [key, value] of Object.entries(params)) {
+      urlParams.append(key, value.toString());
+    }
+
+    // Add API key
+    urlParams.append('apikey', this.apiKey);
+
+    return `${this.chainConfig.explorerApiUrl}?${urlParams.toString()}`;
   }
 
   /**
@@ -133,7 +161,12 @@ export class EvmChainService implements IBlockchainService {
    * Get native token (ETH, BNB, etc.) balance
    */
   private async getNativeBalance(address: string): Promise<TokenBalance | null> {
-    const url = `${this.chainConfig.explorerApiUrl}?module=account&action=balance&address=${address}&tag=latest&apikey=${this.apiKey}`;
+    const url = this.buildApiUrl({
+      module: 'account',
+      action: 'balance',
+      address: address,
+      tag: 'latest',
+    });
 
     const fetchBalance = async () => {
       const response = await fetchWithTimeout(url);
@@ -181,7 +214,14 @@ export class EvmChainService implements IBlockchainService {
    * Get all ERC-20 token balances
    */
   private async getERC20Balances(address: string): Promise<TokenBalance[]> {
-    const url = `${this.chainConfig.explorerApiUrl}?module=account&action=tokentx&address=${address}&page=1&offset=10000&sort=desc&apikey=${this.apiKey}`;
+    const url = this.buildApiUrl({
+      module: 'account',
+      action: 'tokentx',
+      address: address,
+      page: '1',
+      offset: '10000',
+      sort: 'desc',
+    });
 
     const fetchBalances = async () => {
       const response = await fetchWithTimeout(url);
@@ -270,7 +310,13 @@ export class EvmChainService implements IBlockchainService {
    * Get balance for a specific ERC-20 token
    */
   private async getTokenBalance(address: string, contractAddress: string): Promise<string | null> {
-    const url = `${this.chainConfig.explorerApiUrl}?module=account&action=tokenbalance&contractaddress=${contractAddress}&address=${address}&tag=latest&apikey=${this.apiKey}`;
+    const url = this.buildApiUrl({
+      module: 'account',
+      action: 'tokenbalance',
+      contractaddress: contractAddress,
+      address: address,
+      tag: 'latest',
+    });
 
     const fetchBalance = async () => {
       const response = await fetchWithTimeout(url);
@@ -392,7 +438,14 @@ export class EvmChainService implements IBlockchainService {
     address: string,
     action: 'txlist' | 'txlistinternal' | 'tokentx'
   ): Promise<boolean> {
-    const url = `${this.chainConfig.explorerApiUrl}?module=account&action=${action}&address=${address}&page=1&offset=1&sort=desc&apikey=${this.apiKey}`;
+    const url = this.buildApiUrl({
+      module: 'account',
+      action: action,
+      address: address,
+      page: '1',
+      offset: '1',
+      sort: 'desc',
+    });
 
     const checkTransactions = async () => {
       try {

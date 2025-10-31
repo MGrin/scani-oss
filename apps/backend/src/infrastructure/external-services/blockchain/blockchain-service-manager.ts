@@ -56,10 +56,11 @@ export class BlockchainServiceManager {
    */
   private initializeServices(): void {
     // Initialize EVM chain services
+    // All EVM chains use the same unified Etherscan V2 API with a single key
     for (const [key, chainConfig] of Object.entries(EVM_CHAINS)) {
       if (chainConfig.isActive && chainConfig.explorerApiUrl) {
         const service = new EvmChainService(chainConfig, {
-          apiKey: this.getEtherscanApiKey(chainConfig),
+          apiKey: config.etherscan.apiKey,
           rateLimiter: GLOBAL_BLOCKCHAIN_RATE_LIMITERS.etherscan,
         });
         this.services.set(chainConfig.chainId, service);
@@ -112,33 +113,6 @@ export class BlockchainServiceManager {
     }
 
     logger.info({ totalChains: this.services.size }, 'Blockchain services initialized');
-  }
-
-  /**
-   * Get Etherscan API key for a specific chain
-   */
-  private getEtherscanApiKey(chainConfig: ChainConfig): string {
-    const chainId = chainConfig.chainId as number;
-
-    switch (chainId) {
-      case 1: // Ethereum
-        return config.etherscan.ethereum;
-      case 137: // Polygon
-        return config.etherscan.polygon;
-      case 56: // BSC
-        return config.etherscan.bsc;
-      case 42161: // Arbitrum
-        return config.etherscan.arbitrum;
-      case 10: // Optimism
-        return config.etherscan.optimism;
-      case 8453: // Base
-        return config.etherscan.base;
-      case 43114: // Avalanche
-        return config.etherscan.avalanche;
-      default:
-        // Use default Etherscan key for other chains
-        return config.etherscan.default;
-    }
   }
 
   /**
