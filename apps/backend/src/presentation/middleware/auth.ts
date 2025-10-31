@@ -115,26 +115,41 @@ export async function createAuthContext(opts: CreateContextOptions): Promise<Aut
   try {
     let user: User | null = null;
     let verificationSource: 'local' | 'remote' | 'none' = 'none';
+    let localVerificationError: Error | null = null;
 
     if (SUPABASE_JWT_SECRET) {
-      user = verifyTokenLocally(token);
-      if (user) {
+      const localResult = verifyTokenLocally(token);
+      if (localResult.user) {
+        user = localResult.user;
         verificationSource = 'local';
         authLogger.debug({ userId: user.id }, 'Authenticated via local JWT verification');
+      } else {
+        localVerificationError = localResult.error;
       }
+    } else {
+      authLogger.warn(
+        'SUPABASE_JWT_SECRET not configured - local JWT verification disabled. Set SUPABASE_JWT_SECRET or SUPABASE_SERVICE_ROLE_KEY environment variable.'
+      );
     }
 
     // Verify the JWT token with Supabase
     if (!user) {
+      const remoteStartTime = Date.now();
       const {
         data: { user: remoteUser },
         error,
       } = await supabase.auth.getUser(token);
+      const remoteDuration = Date.now() - remoteStartTime;
 
       if (error || !remoteUser) {
         authLogger.warn(
           {
             error: error?.message,
+            remoteDuration: `${remoteDuration}ms`,
+            localVerificationFailed: localVerificationError !== null,
+            localError: localVerificationError
+              ? { name: localVerificationError.name, message: localVerificationError.message }
+              : undefined,
           },
           'Supabase token verification failed'
         );
@@ -147,6 +162,20 @@ export async function createAuthContext(opts: CreateContextOptions): Promise<Aut
 
       user = remoteUser;
       verificationSource = 'remote';
+
+      if (localVerificationError) {
+        authLogger.info(
+          {
+            userId: user.id,
+            remoteDuration: `${remoteDuration}ms`,
+            localError: {
+              name: localVerificationError.name,
+              message: localVerificationError.message,
+            },
+          },
+          `Local JWT verification failed but remote verification succeeded (${remoteDuration}ms). Consider checking JWT secret configuration.`
+        );
+      }
     }
 
     if (!user) {
@@ -188,9 +217,9 @@ export async function createAuthContext(opts: CreateContextOptions): Promise<Aut
   }
 }
 
-function verifyTokenLocally(token: string): User | null {
+function verifyTokenLocally(token: string): { user: User | null; error: Error | null } {
   if (!SUPABASE_JWT_SECRET) {
-    return null;
+    return { user: null, error: null };
   }
 
   try {
@@ -208,18 +237,26 @@ function verifyTokenLocally(token: string): User | null {
     };
 
     if (!payload.sub) {
-      return null;
+      return {
+        user: null,
+        error: new Error('JWT payload missing subject (sub) claim'),
+      };
     }
 
-    return buildUserFromPayload(payload);
+    return { user: buildUserFromPayload(payload), error: null };
   } catch (error) {
+    const verificationError = error instanceof Error ? error : new Error(String(error));
+
     authLogger.debug(
       {
-        error: error instanceof Error ? { name: error.name, message: error.message } : error,
+        error: { name: verificationError.name, message: verificationError.message },
+        jwtSecretConfigured: !!SUPABASE_JWT_SECRET,
+        jwtSecretLength: SUPABASE_JWT_SECRET ? SUPABASE_JWT_SECRET.length : 0,
       },
-      'Local JWT verification failed, falling back to Supabase'
+      'Local JWT verification failed - will fallback to remote Supabase verification'
     );
-    return null;
+
+    return { user: null, error: verificationError };
   }
 }
 

@@ -106,12 +106,14 @@ export class BitcoinChainService implements IBlockchainService {
         logger.error(
           {
             address,
+            chainName: 'Bitcoin',
+            url: 'https://blockchain.info/rawaddr/',
             error:
               error instanceof Error
                 ? { name: error.name, message: error.message }
                 : { name: 'Error', message: String(error) },
           },
-          'Failed to fetch Bitcoin balance'
+          `Failed to fetch Bitcoin balance: ${error instanceof Error ? error.message : String(error)}`
         );
         throw error;
       }

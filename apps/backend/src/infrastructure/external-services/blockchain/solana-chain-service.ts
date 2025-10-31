@@ -114,12 +114,14 @@ export class SolanaChainService implements IBlockchainService {
       logger.error(
         {
           address,
+          chainName: 'Solana',
+          url: this.rpcUrl,
           error:
             error instanceof Error
               ? { name: error.name, message: error.message }
               : { name: 'Error', message: String(error) },
         },
-        'Failed to fetch Solana balances'
+        `Failed to fetch Solana balances: ${error instanceof Error ? error.message : String(error)}`
       );
       throw error;
     }

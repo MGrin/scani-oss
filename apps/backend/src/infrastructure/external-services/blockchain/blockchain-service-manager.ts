@@ -162,9 +162,16 @@ export class BlockchainServiceManager {
    */
   async detectWalletChains(address: string): Promise<Array<string | number>> {
     const detectedChains: Array<string | number> = [];
+    const startTime = Date.now();
+
+    logger.info(
+      { address: `${address.substring(0, 10)}...`, totalChainsToCheck: this.services.size },
+      'Starting wallet chain detection'
+    );
 
     // Try all services in parallel
     const checks = Array.from(this.services.entries()).map(async ([chainId, service]) => {
+      const chainStartTime = Date.now();
       try {
         // First check if address format is valid for this chain
         if (!service.isValidAddress(address)) {
@@ -176,12 +183,30 @@ export class BlockchainServiceManager {
         if (service.hasActivity) {
           const hasActivity = await service.hasActivity(address);
           if (hasActivity) {
+            const chainDuration = Date.now() - chainStartTime;
+            logger.debug(
+              {
+                chainId,
+                chainName: service.getChainName(),
+                duration: `${chainDuration}ms`,
+              },
+              `Wallet detected on ${service.getChainName()} (${chainDuration}ms)`
+            );
             return chainId;
           }
         } else {
           // Fallback: check for balances (for non-EVM chains)
           const balances = await service.getTokenBalances(address);
           if (balances.length > 0) {
+            const chainDuration = Date.now() - chainStartTime;
+            logger.debug(
+              {
+                chainId,
+                chainName: service.getChainName(),
+                duration: `${chainDuration}ms`,
+              },
+              `Wallet detected on ${service.getChainName()} (${chainDuration}ms)`
+            );
             return chainId;
           }
         }
@@ -189,16 +214,19 @@ export class BlockchainServiceManager {
         return null;
       } catch (error) {
         // If there's an error, the wallet likely doesn't exist on this chain
+        const chainDuration = Date.now() - chainStartTime;
         logger.debug(
           {
             chainId,
+            chainName: service.getChainName(),
             address: `${address.substring(0, 10)}...`,
+            duration: `${chainDuration}ms`,
             error:
               error instanceof Error
                 ? { name: error.name, message: error.message }
                 : { name: 'Error', message: String(error) },
           },
-          'Wallet not detected on chain'
+          `Wallet not detected on ${service.getChainName()} (${chainDuration}ms): ${error instanceof Error ? error.message : String(error)}`
         );
         return null;
       }
@@ -212,12 +240,16 @@ export class BlockchainServiceManager {
       }
     }
 
+    const totalDuration = Date.now() - startTime;
     logger.info(
       {
         address: `${address.substring(0, 10)}...`,
         detectedChains: detectedChains.length,
+        totalChainsChecked: this.services.size,
+        totalDuration: `${totalDuration}ms`,
+        avgDurationPerChain: `${Math.round(totalDuration / this.services.size)}ms`,
       },
-      'Detected wallet chains'
+      `Wallet chain detection completed in ${totalDuration}ms (found on ${detectedChains.length} chains)`
     );
 
     return detectedChains;
@@ -246,11 +278,11 @@ export class BlockchainServiceManager {
       const service = this.services.get(chainId);
       if (!service) return null;
 
+      const chainConfig = getChainConfig(chainId);
+      if (!chainConfig) return null;
+
       try {
         const balances = await service.getTokenBalances(address);
-        const chainConfig = getChainConfig(chainId);
-
-        if (!chainConfig) return null;
 
         // Try to resolve address name (e.g., ENS) for EVM chains
         let displayName: string | undefined;
@@ -277,13 +309,14 @@ export class BlockchainServiceManager {
         logger.error(
           {
             chainId,
+            chainName: chainConfig.name,
             address,
             error:
               error instanceof Error
                 ? { name: error.name, message: error.message }
                 : { name: 'Error', message: String(error) },
           },
-          'Failed to fetch wallet balances'
+          `Failed to fetch wallet balances on ${chainConfig.name}: ${error instanceof Error ? error.message : String(error)}`
         );
         return null;
       }

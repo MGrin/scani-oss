@@ -105,12 +105,14 @@ export class TonChainService implements IBlockchainService {
         logger.error(
           {
             address,
+            chainName: 'TON',
+            url: this.apiUrl,
             error:
               error instanceof Error
                 ? { name: error.name, message: error.message }
                 : { name: 'Error', message: String(error) },
           },
-          'Failed to fetch TON balance'
+          `Failed to fetch TON balance: ${error instanceof Error ? error.message : String(error)}`
         );
         throw error;
       }
