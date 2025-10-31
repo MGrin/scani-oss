@@ -190,25 +190,11 @@ export class PricingService {
       const lastSuccessfulPrice = await this.getLastSuccessfulPrice(token.id, baseCurrencyToken.id);
 
       if (lastSuccessfulPrice) {
-        // Check if currency conversion is needed
-        if (lastSuccessfulPrice.baseTokenId !== baseCurrencyToken.id) {
-          const cachedBaseCurrencyToken = await this.tokenRepository.findById(
-            lastSuccessfulPrice.baseTokenId
-          );
-
-          if (cachedBaseCurrencyToken) {
-            finalPrice = await this.convertPrice(
-              lastSuccessfulPrice.price,
-              cachedBaseCurrencyToken.symbol,
-              baseCurrencyToken.symbol,
-              timestamp
-            );
-          } else {
-            finalPrice = lastSuccessfulPrice.price;
-          }
-        } else {
-          finalPrice = lastSuccessfulPrice.price;
-        }
+        finalPrice = await this.convertCachedPriceIfNeeded(
+          lastSuccessfulPrice,
+          baseCurrencyToken.id,
+          timestamp
+        );
 
         pricingLogger.info(
           {
@@ -216,6 +202,7 @@ export class PricingService {
             symbol: token.symbol,
             fallbackPrice: finalPrice,
             fallbackSource: lastSuccessfulPrice.source,
+            originalTimestamp: lastSuccessfulPrice.timestamp,
           },
           'Using last successful price as fallback after all providers failed'
         );
@@ -395,22 +382,11 @@ export class PricingService {
               );
 
               if (lastSuccessfulPrice) {
-                // Check if currency conversion is needed
-                let fallbackPrice = lastSuccessfulPrice.price;
-                if (lastSuccessfulPrice.baseTokenId !== baseCurrencyToken.id) {
-                  const cachedBaseCurrencyToken = await this.tokenRepository.findById(
-                    lastSuccessfulPrice.baseTokenId
-                  );
-
-                  if (cachedBaseCurrencyToken) {
-                    fallbackPrice = await this.convertPrice(
-                      lastSuccessfulPrice.price,
-                      cachedBaseCurrencyToken.symbol,
-                      baseCurrencyToken.symbol,
-                      timestamp
-                    );
-                  }
-                }
+                const fallbackPrice = await this.convertCachedPriceIfNeeded(
+                  lastSuccessfulPrice,
+                  baseCurrencyToken.id,
+                  timestamp
+                );
 
                 results.set(token.id, fallbackPrice);
                 pricingLogger.info(
@@ -419,6 +395,7 @@ export class PricingService {
                     symbol: token.symbol,
                     fallbackPrice,
                     fallbackSource: lastSuccessfulPrice.source,
+                    originalTimestamp: lastSuccessfulPrice.timestamp,
                   },
                   'Using last successful price as fallback in batch operation after all providers failed'
                 );
@@ -509,16 +486,6 @@ export class PricingService {
     if (latestPrice && latestPrice.price !== '0' && !latestPrice.source?.startsWith('manual')) {
       const price = parseFloat(latestPrice.price);
       if (!Number.isNaN(price) && price > 0) {
-        pricingLogger.info(
-          {
-            tokenId,
-            baseCurrencyId,
-            price: latestPrice.price,
-            source: latestPrice.source,
-            timestamp: latestPrice.timestamp,
-          },
-          'Using last successful cached price as fallback after provider failures'
-        );
         return {
           price: latestPrice.price,
           timestamp: latestPrice.timestamp,
@@ -529,6 +496,41 @@ export class PricingService {
     }
 
     return null;
+  }
+
+  /**
+   * Convert a cached price to the target base currency if needed.
+   * Used when applying fallback prices from cache.
+   *
+   * @param cachedPrice - The cached price to convert
+   * @param targetBaseCurrencyId - The target base currency ID
+   * @param timestamp - The timestamp for the conversion
+   * @returns The converted price string
+   */
+  private async convertCachedPriceIfNeeded(
+    cachedPrice: CachedPrice,
+    targetBaseCurrencyId: string,
+    timestamp: Date
+  ): Promise<string> {
+    if (cachedPrice.baseTokenId === targetBaseCurrencyId) {
+      return cachedPrice.price;
+    }
+
+    const cachedBaseCurrencyToken = await this.tokenRepository.findById(cachedPrice.baseTokenId);
+
+    if (cachedBaseCurrencyToken) {
+      const targetBaseCurrencyToken = await this.tokenRepository.findById(targetBaseCurrencyId);
+      if (targetBaseCurrencyToken) {
+        return await this.convertPrice(
+          cachedPrice.price,
+          cachedBaseCurrencyToken.symbol,
+          targetBaseCurrencyToken.symbol,
+          timestamp
+        );
+      }
+    }
+
+    return cachedPrice.price;
   }
 
   private async getBatchCachedPrices(
