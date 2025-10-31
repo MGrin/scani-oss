@@ -114,11 +114,11 @@ export class ImportWalletAddressUseCase {
     const [walletAccountType] = await db
       .select()
       .from(schema.accountTypes)
-      .where(eq(schema.accountTypes.code, 'crypto_wallet'))
+      .where(eq(schema.accountTypes.code, 'crypto'))
       .limit(1);
 
     if (!walletAccountType) {
-      throw new Error('Account type "crypto_wallet" not found');
+      throw new Error('Account type "crypto" not found');
     }
 
     // Get crypto token type
