@@ -265,13 +265,18 @@ export class EvmChainService implements IBlockchainService {
       const balancePromises = Array.from(uniqueTokens.entries()).map(
         async ([contractAddress, tokenInfo]) => {
           try {
-            const balance = await this.getTokenBalance(address, contractAddress);
-            if (balance && new Decimal(balance).greaterThan(0)) {
+            const balanceRaw = await this.getTokenBalance(address, contractAddress);
+            if (balanceRaw && new Decimal(balanceRaw).greaterThan(0)) {
+              // Convert from raw balance to token units using decimals
+              const balance = new Decimal(balanceRaw).dividedBy(
+                new Decimal(10).pow(tokenInfo.decimals)
+              );
+
               return {
                 tokenAddress: contractAddress,
                 symbol: tokenInfo.symbol,
                 name: tokenInfo.name,
-                balance: balance,
+                balance: balance.toString(),
                 decimals: tokenInfo.decimals,
                 isNative: false,
                 metadata: {
