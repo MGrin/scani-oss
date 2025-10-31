@@ -215,8 +215,8 @@ export class SolanaChainService implements IBlockchainService {
         if (balance.greaterThan(0)) {
           balances.push({
             tokenAddress: tokenInfo.mint,
-            symbol: tokenInfo.mint.substring(0, 8), // Use first 8 chars as symbol placeholder
-            name: tokenInfo.mint.substring(0, 16), // Use first 16 chars as name placeholder
+            symbol: `TOKEN_${tokenInfo.mint.substring(0, 8)}`, // Placeholder until metadata lookup
+            name: `Solana Token ${tokenInfo.mint.substring(0, 16)}`, // Placeholder until metadata lookup
             balance: balance.toString(),
             decimals: tokenInfo.tokenAmount.decimals,
             isNative: false,

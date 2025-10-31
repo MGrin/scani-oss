@@ -171,14 +171,11 @@ export class BlockchainServiceManager {
         }
 
         // Try to fetch balances (this confirms the wallet exists on this chain)
-        const balances = await service.getTokenBalances(address);
+        await service.getTokenBalances(address);
 
-        // If we got balances (even if empty), the wallet exists on this chain
-        if (balances.length > 0) {
-          return chainId;
-        }
-
-        return null;
+        // Return chainId if API call succeeded, even if balances are empty
+        // (wallet exists on chain but may have zero balance)
+        return chainId;
       } catch (error) {
         // If there's an error, the wallet likely doesn't exist on this chain
         logger.debug(
