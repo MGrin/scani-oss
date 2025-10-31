@@ -17,6 +17,16 @@ interface EtherscanResponse<T> {
   result: T;
 }
 
+interface EtherscanTransaction {
+  blockNumber: string;
+  timeStamp: string;
+  hash: string;
+  from: string;
+  to: string;
+  value: string;
+  [key: string]: unknown;
+}
+
 /**
  * EVM Chain Service using Etherscan V2 API
  */
@@ -282,7 +292,7 @@ export class EvmChainService implements IBlockchainService {
 
   /**
    * Check if wallet has any activity on this chain
-   * Checks normal transactions, internal transactions, and token transactions
+   * Checks normal transactions, internal transactions, and token transactions in parallel
    * Returns true if any transaction history exists
    */
   async hasActivity(address: string): Promise<boolean> {
@@ -299,40 +309,34 @@ export class EvmChainService implements IBlockchainService {
     }
 
     try {
-      // Check in sequence: normal tx -> internal tx -> token tx
-      // Stop as soon as we find any activity
-      const hasNormalTx = await this.hasNormalTransactions(address);
-      if (hasNormalTx) {
+      // Check all transaction types in parallel for better performance
+      const [hasNormalTx, hasInternalTx, hasTokenTx] = await Promise.all([
+        this.hasNormalTransactions(address),
+        this.hasInternalTransactions(address),
+        this.hasTokenTransactions(address),
+      ]);
+
+      const hasActivity = hasNormalTx || hasInternalTx || hasTokenTx;
+
+      if (hasActivity) {
+        logger.debug(
+          {
+            chainId: this.chainConfig.chainId,
+            address: `${address.substring(0, 10)}...`,
+            hasNormalTx,
+            hasInternalTx,
+            hasTokenTx,
+          },
+          'Wallet has activity on chain'
+        );
+      } else {
         logger.debug(
           { chainId: this.chainConfig.chainId, address: `${address.substring(0, 10)}...` },
-          'Wallet has normal transaction activity'
+          'Wallet has no activity on this chain'
         );
-        return true;
       }
 
-      const hasInternalTx = await this.hasInternalTransactions(address);
-      if (hasInternalTx) {
-        logger.debug(
-          { chainId: this.chainConfig.chainId, address: `${address.substring(0, 10)}...` },
-          'Wallet has internal transaction activity'
-        );
-        return true;
-      }
-
-      const hasTokenTx = await this.hasTokenTransactions(address);
-      if (hasTokenTx) {
-        logger.debug(
-          { chainId: this.chainConfig.chainId, address: `${address.substring(0, 10)}...` },
-          'Wallet has token transaction activity'
-        );
-        return true;
-      }
-
-      logger.debug(
-        { chainId: this.chainConfig.chainId, address: `${address.substring(0, 10)}...` },
-        'Wallet has no activity on this chain'
-      );
-      return false;
+      return hasActivity;
     } catch (error) {
       logger.debug(
         {
@@ -359,7 +363,7 @@ export class EvmChainService implements IBlockchainService {
         return false;
       }
 
-      const data = (await response.json()) as EtherscanResponse<Array<unknown>>;
+      const data = (await response.json()) as EtherscanResponse<EtherscanTransaction[]>;
 
       // Status '1' means success and transactions found
       if (data.status === '1' && Array.isArray(data.result) && data.result.length > 0) {
@@ -388,7 +392,7 @@ export class EvmChainService implements IBlockchainService {
         return false;
       }
 
-      const data = (await response.json()) as EtherscanResponse<Array<unknown>>;
+      const data = (await response.json()) as EtherscanResponse<EtherscanTransaction[]>;
 
       // Status '1' means success and transactions found
       if (data.status === '1' && Array.isArray(data.result) && data.result.length > 0) {
@@ -417,7 +421,7 @@ export class EvmChainService implements IBlockchainService {
         return false;
       }
 
-      const data = (await response.json()) as EtherscanResponse<Array<unknown>>;
+      const data = (await response.json()) as EtherscanResponse<EtherscanTransaction[]>;
 
       // Status '1' means success and transactions found
       if (data.status === '1' && Array.isArray(data.result) && data.result.length > 0) {
