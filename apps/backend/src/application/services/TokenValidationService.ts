@@ -1,30 +1,15 @@
 import type { TokenMetadata, TokenValidationResult as ValidationResult } from '@scani/shared';
 import { Container, Service } from 'typedi';
 import { config } from '../../config/pricing';
+import {
+  CHAIN_ID_TO_DEFILLAMA,
+  DEFILLAMA_MIN_CONFIDENCE,
+} from '../../infrastructure/external-services/pricing/defillama-constants';
 import { PROVIDER_CONFIGS } from '../../infrastructure/external-services/pricing/provider-config';
 import { fetchWithTimeout } from '../../infrastructure/external-services/pricing/utils';
 import { TokenRepository } from '../../infrastructure/repositories/TokenRepository';
 import { createComponentLogger } from '../../utils/logger';
 import { PricingService } from './PricingService';
-
-/**
- * Mapping of chainId to DeFiLlama chain names
- * See: https://defillama.com/docs/api
- */
-const CHAIN_ID_TO_DEFILLAMA: Record<number, string> = {
-  1: 'ethereum',
-  10: 'optimism',
-  56: 'bsc',
-  100: 'xdai', // Gnosis Chain (formerly xDai)
-  137: 'polygon',
-  250: 'fantom',
-  324: 'era', // zkSync Era
-  8453: 'base',
-  42161: 'arbitrum',
-  43114: 'avax',
-  59144: 'linea',
-  534352: 'scroll',
-};
 
 /**
  * Service for validating tokens from external providers (CoinGecko, Finnhub, DeFiLlama)
@@ -578,7 +563,7 @@ export class TokenValidationService {
       }
 
       // Check confidence score
-      if (tokenData.confidence < 0.8) {
+      if (tokenData.confidence < DEFILLAMA_MIN_CONFIDENCE) {
         return {
           isValid: false,
           error: `Low confidence score from DeFiLlama: ${tokenData.confidence}`,
@@ -595,7 +580,10 @@ export class TokenValidationService {
 
       const metadata: TokenMetadata = {
         symbol: tokenData.symbol.toUpperCase(),
-        name: tokenData.symbol, // DeFiLlama doesn't provide full name in this endpoint
+        // DeFiLlama's current price endpoint doesn't provide full token names
+        // This is a known limitation - the symbol is used as name for now
+        // Future enhancement: Could make additional API call to get full name if needed
+        name: tokenData.symbol,
         type: 'Crypto',
         currency: 'USD',
         provider: 'defillama',
