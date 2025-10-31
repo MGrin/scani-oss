@@ -96,6 +96,8 @@ export class AccountService extends BaseService {
     }
 
     const holdings = await this.holdingRepository.findByUser(userId);
+
+    // Get portfolio value for ALL holdings to get prices
     const portfolioValue = await this.portfolioService.getUserPortfolioValue(userId);
 
     const holdingsByAccount = new Map<string, typeof holdings>();
@@ -106,11 +108,24 @@ export class AccountService extends BaseService {
       holdingsByAccount.get(holding.accountId)!.push(holding);
     }
 
-    const valueMap = new Map(portfolioValue.holdings.map((h) => [h.tokenSymbol, h.value || '0']));
-
+    // Create a proper map that accounts for individual holdings
+    // The portfolioValue.holdings array has one entry per holding (not per token symbol)
+    // We need to match holdings by their balance and token to get the correct value
     const tokenIds = [...new Set(holdings.map((h) => h.tokenId))];
     const tokens = await this.tokenRepository.findByIds(tokenIds);
     const tokenMap = new Map(tokens.map((t) => [t.id, t]));
+
+    // Create a map of token symbol to price
+    const priceMap = new Map<string, string>();
+    for (const portfolioHolding of portfolioValue.holdings) {
+      // Extract price from the portfolio value calculation: price = value / balance
+      const balance = new Decimal(portfolioHolding.balance);
+      const value = new Decimal(portfolioHolding.value || '0');
+      if (balance.greaterThan(0)) {
+        const price = value.div(balance);
+        priceMap.set(portfolioHolding.tokenSymbol, price.toString());
+      }
+    }
 
     const accountsWithSummary = accounts.map((account) => {
       const accountHoldings = holdingsByAccount.get(account.id) || [];
@@ -121,8 +136,10 @@ export class AccountService extends BaseService {
       for (const holding of accountHoldings) {
         const token = tokenMap.get(holding.tokenId);
         if (token) {
-          const holdingValue = valueMap.get(token.symbol) || '0';
-          totalValue = totalValue.add(new Decimal(holdingValue));
+          const price = priceMap.get(token.symbol) || '0';
+          const balance = new Decimal(holding.balance);
+          const holdingValue = balance.mul(new Decimal(price));
+          totalValue = totalValue.add(holdingValue);
         }
       }
 
