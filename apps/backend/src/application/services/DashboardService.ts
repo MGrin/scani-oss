@@ -74,6 +74,28 @@ export class DashboardService extends BaseService {
   }
 
   /**
+   * Extract token prices from portfolio value data
+   * Calculates price by dividing value by balance for each holding
+   * Returns a map of token symbol to price
+   */
+  private extractPriceMap(portfolioValue: PortfolioValueResult): Map<string, string> {
+    const priceMap = new Map<string, string>();
+    for (const portfolioHolding of portfolioValue.holdings) {
+      const balance = new Decimal(portfolioHolding.balance);
+      const value = new Decimal(portfolioHolding.value || '0');
+      if (balance.greaterThan(0)) {
+        const price = value.div(balance);
+        // All holdings of the same token should have the same price
+        // Store first price found for each token symbol
+        if (!priceMap.has(portfolioHolding.tokenSymbol)) {
+          priceMap.set(portfolioHolding.tokenSymbol, price.toString());
+        }
+      }
+    }
+    return priceMap;
+  }
+
+  /**
    * Get comprehensive dashboard overview for a user
    * Optimized with parallel queries and single joined query for holdings
    */
@@ -138,20 +160,8 @@ export class DashboardService extends BaseService {
     holdingsWithDetails: Array<HoldingWithDetails>,
     portfolioValue: PortfolioValueResult
   ): Promise<DashboardOverview['topHoldings']> {
-    // Create a map of token symbol to price
-    // Extract price from portfolio value by dividing value by balance
-    const priceMap = new Map<string, string>();
-    for (const portfolioHolding of portfolioValue.holdings) {
-      const balance = new Decimal(portfolioHolding.balance);
-      const value = new Decimal(portfolioHolding.value || '0');
-      if (balance.greaterThan(0)) {
-        const price = value.div(balance);
-        // Store the price for this token symbol
-        if (!priceMap.has(portfolioHolding.tokenSymbol)) {
-          priceMap.set(portfolioHolding.tokenSymbol, price.toString());
-        }
-      }
-    }
+    // Extract token prices using helper method
+    const priceMap = this.extractPriceMap(portfolioValue);
 
     // Build holdings with values calculated individually
     const holdingsWithValues = holdingsWithDetails
@@ -202,18 +212,8 @@ export class DashboardService extends BaseService {
     holdingsWithDetails: Array<HoldingWithDetails>,
     portfolioValue: PortfolioValueResult
   ): Promise<DashboardOverview['assetAllocation']> {
-    // Create a map of token symbol to price
-    const priceMap = new Map<string, string>();
-    for (const portfolioHolding of portfolioValue.holdings) {
-      const balance = new Decimal(portfolioHolding.balance);
-      const value = new Decimal(portfolioHolding.value || '0');
-      if (balance.greaterThan(0)) {
-        const price = value.div(balance);
-        if (!priceMap.has(portfolioHolding.tokenSymbol)) {
-          priceMap.set(portfolioHolding.tokenSymbol, price.toString());
-        }
-      }
-    }
+    // Extract token prices using helper method
+    const priceMap = this.extractPriceMap(portfolioValue);
 
     // Group by token type and calculate totals
     const typeAggregation = holdingsWithDetails.reduce(
