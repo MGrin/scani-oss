@@ -234,6 +234,7 @@ export class TokenValidationService {
 
   /**
    * Validate a cryptocurrency token using CoinGecko
+   * Note: DeFiLlama fallback requires contract address, which is not available in symbol-only searches
    */
   private async validateCryptoToken(symbol: string): Promise<ValidationResult> {
     try {
@@ -252,6 +253,10 @@ export class TokenValidationService {
       );
 
       if (!response.ok) {
+        this.logger.warn(
+          { symbol, status: response.status, statusText: response.statusText },
+          'CoinGecko search failed - DeFiLlama fallback requires contract address'
+        );
         return {
           isValid: false,
           error: `CoinGecko API error: ${response.statusText}`,
@@ -303,6 +308,10 @@ export class TokenValidationService {
       );
 
       if (!coinResponse.ok) {
+        this.logger.warn(
+          { symbol, coinId: match.id, status: coinResponse.status },
+          'Failed to fetch CoinGecko coin details'
+        );
         return {
           isValid: false,
           error: `Failed to fetch coin details from CoinGecko: ${coinResponse.statusText}`,
@@ -337,6 +346,10 @@ export class TokenValidationService {
         metadata,
       };
     } catch (error) {
+      this.logger.error(
+        { symbol, error: error instanceof Error ? error.message : String(error) },
+        'CoinGecko validation error - consider using validateTokenByContractAddress if contract address is available'
+      );
       return {
         isValid: false,
         error: error instanceof Error ? error.message : 'Unknown validation error',
