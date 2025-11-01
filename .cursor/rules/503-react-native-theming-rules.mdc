@@ -1,0 +1,169 @@
+---
+globs: apps/mobile/**/*.*,apps/mobile/*.*
+alwaysApply: false
+---
+
+# React Native Theming Rules
+
+## Theme Hook Usage
+
+Always use the `useAppTheme` hook to access theme values and the `themed()` function:
+
+```typescript
+import { useAppTheme } from "@/theme/context";
+
+export const MyComponent: FC = () => {
+  const { themed, theme } = useAppTheme();
+
+  // Use themed() to apply ThemedStyle functions
+  // Use theme directly for specific values
+};
+```
+
+## Style Definitions
+
+### ThemedStyle Type
+
+Import and use `ThemedStyle<T>` for theme-aware styles:
+
+```typescript
+import type { ThemedStyle } from "@/theme/types";
+
+const $container: ThemedStyle<ViewStyle> = ({ spacing, colors }) => ({
+  padding: spacing.md,
+  backgroundColor: colors.palette.neutral100,
+});
+
+const $text: ThemedStyle<TextStyle> = ({ spacing }) => ({
+  marginBottom: spacing.md,
+});
+```
+
+### Static Styles
+
+Use regular React Native style types for static styles that don't need theme access:
+
+```typescript
+const $welcomeFace: ImageStyle = {
+  height: 169,
+  width: 269,
+  position: "absolute",
+};
+```
+
+## Applying Styles
+
+### Using themed() Function
+
+Apply ThemedStyle functions using the `themed()` helper:
+
+```typescript
+<View style={themed($container)}>
+  <Text style={themed($heading)} />
+</View>
+```
+
+### Combining Multiple Styles
+
+Pass an array to `themed()` to combine multiple styles:
+
+```typescript
+<View style={themed([$bottomContainer, $bottomContainerInsets])} />
+```
+
+### Direct Theme Access
+
+Access theme values directly for component props that accept specific values:
+
+```typescript
+<Image
+  source={welcomeFace}
+  tintColor={theme.colors.palette.neutral900}
+/>
+```
+
+## Style Naming Convention
+
+- Prefix all style constants with `$`
+- Use camelCase for style names
+- Be descriptive: `$topContainer`, `$welcomeHeading`, `$bottomContainer`
+
+## Theme Object Properties
+
+ThemedStyle functions receive a theme object with the following properties that can be destructured:
+
+- `spacing`: Spacing scale (xs, sm, md, lg, xl, xxl, etc.)
+- `colors`: Color palette and semantic colors
+  - `colors.palette.neutral100`, `colors.palette.neutral900`, etc.
+  - Other palette colors as defined in theme
+- `typography`: Typography definitions (fonts, sizes, line heights, etc.)
+- `timing`: Animation timing values
+- `isDark`: Boolean indicating if dark theme is currently active
+
+**Example with all properties:**
+
+```typescript
+const $container: ThemedStyle<ViewStyle> = ({
+  spacing,
+  colors,
+  typography,
+  timing,
+  isDark,
+}) => ({
+  padding: spacing.md,
+  backgroundColor: isDark
+    ? colors.palette.neutral900
+    : colors.palette.neutral100,
+});
+```
+
+## Common Patterns
+
+### Container Styles
+
+```typescript
+const $container: ThemedStyle<ViewStyle> = ({ spacing, colors }) => ({
+  flexShrink: 1,
+  flexGrow: 1,
+  justifyContent: "center",
+  paddingHorizontal: spacing.lg,
+  backgroundColor: colors.palette.neutral100,
+});
+```
+
+### Typography Styles
+
+```typescript
+const $heading: ThemedStyle<TextStyle> = ({ spacing }) => ({
+  marginBottom: spacing.md,
+});
+```
+
+### Image Styles
+
+Can be static or themed depending on needs:
+
+```typescript
+// Themed
+const $logo: ThemedStyle<ImageStyle> = ({ spacing }) => ({
+  height: 88,
+  width: "100%",
+  marginBottom: spacing.xxl,
+});
+
+// Static
+const $icon: ImageStyle = {
+  height: 24,
+  width: 24,
+};
+```
+
+## Shared Styles
+
+Import common reusable styles from `@/theme/styles`:
+
+```typescript
+import { $styles } from "@/theme/styles"
+
+<Screen preset="fixed" contentContainerStyle={$styles.flex1} />
+```

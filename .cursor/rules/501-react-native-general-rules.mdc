@@ -1,4 +1,5 @@
 ---
+globs: apps/mobile/**/*.*,apps/mobile/*.*
 alwaysApply: false
 ---
 
