@@ -1,0 +1,303 @@
+---
+description: Planning internationalization of mobile app's
+alwaysApply: false
+---
+
+# Internationalization (i18n) Implementation Rules
+
+## Overview
+
+All user-facing text in the application must be properly internationalized to support multiple languages (English, Russian).
+
+## Translation Key Naming Convention
+
+- Translation keys MUST use colon (`:`) as separator between namespace and key
+- Format: `screenName:keyName` or `componentName:keyName`
+- Examples: `ownerBookingScreen:title`, `loginScreen:emailLabel`, `common:cancel`
+- Keys should be descriptive and self-explanatory
+
+## Language Support
+
+- ALWAYS translate for all two languages:
+  - English (`en.ts`)
+  - Russian (`ru.ts`)
+- Add translations in the same commit as the feature implementation
+- Keep translation structure consistent across all language files
+
+## Using Translation Properties (tx)
+
+- ALWAYS use native `tx` (or `txOptions`) props when available on components
+- DO NOT use `translate()` function if component supports `tx` prop
+- Common components with `tx` support:
+  - `<Button tx="..." />` - instead of `text="..."`
+  - `<Text tx="..." />` - instead of children
+  - `<Header titleTx="..." />` - instead of `title="..."`
+  - `<TextField placeholderTx="..." labelTx="..." helperTx="..." />` - instead of `placeholder`, `label`, `helper`
+
+## Good vs Bad Examples
+
+### ❌ BAD - Using translate() function when tx prop is available
+
+```tsx
+import { translate } from "@/i18n/translate"
+
+<Button text={translate("common:cancel")} onPress={handleCancel} />
+<Text>{translate("loginScreen:title")}</Text>
+<Header title={translate("profileScreen:title")} />
+```
+
+### ✅ GOOD - Using tx props directly
+
+```tsx
+// No need to import translate function
+<Button tx="common:cancel" onPress={handleCancel} />
+<Text tx="loginScreen:title" />
+<Header titleTx="profileScreen:title" />
+```
+
+### ✅ ACCEPTABLE - Using translate() for dynamic content or logic
+
+```tsx
+import { translate } from "@/i18n/translate";
+
+// When you need the translated string in logic
+const errorMessage = translate("errors:invalidEmail");
+Alert.alert(translate("common:error"), errorMessage);
+
+// When building dynamic strings
+const dateText = `${formatDate(date)} - ${translate("common:today")}`;
+```
+
+## Translation File Structure
+
+- First look for translation in common section. If translation is really comon (simple 1-word - then should put it in common)
+- Organize translations by screen or component or feature
+- Each screen/component/feature should have its own namespace
+- Common translations go in `common` namespace
+- Type safety is enforced through TypeScript
+
+Example structure in `en.ts`:
+
+```typescript
+const en = {
+  common: {
+    ok: "OK",
+    cancel: "Cancel",
+    back: "Back",
+  },
+  loginScreen: {
+    title: "Let's get started",
+    emailLabel: "Email address",
+    passwordLabel: "Password",
+  },
+  ownerBookingComponent: {
+    title: "Owner Booking",
+    nextButton: "Next",
+    confirmButton: "Confirm booking",
+  },
+};
+```
+
+## What NOT to Translate
+
+- DO NOT translate:
+  - Error messages from API responses
+  - Technical error codes
+  - Log messages
+  - Debug information
+  - Variable names or code
+  - Configuration values
+
+## Interpolation
+
+- Use `{{variable}}` syntax for interpolation in translation strings
+- Pass values using `txOptions` prop:
+
+```tsx
+// In translation file
+withdrawFundsScreen: {
+  amountExceedsError: "Amount cannot exceed {{amount}}";
+}
+
+// In component
+<Text
+  tx="withdrawFundsScreen:amountExceedsError"
+  txOptions={{ amount: maxAmount }}
+/>;
+```
+
+## Pluralization
+
+- Use standard i18next pluralization rules
+- Keys should include `_one`, `_other`, etc. suffixes where needed
+
+## Checklist for Adding New Translations
+
+1. ✅ Add translation keys to all two language files (en, ru)
+2. ✅ Use `tx` props instead of `translate()` function when available
+3. ✅ Follow the `namespace:key` naming convention with colons
+4. ✅ Ensure translations are contextually appropriate for each language
+5. ✅ Run linter and fix any issues
+6. ✅ Test with different language settings if possible
+
+## Testing Translations
+
+- Verify translations appear correctly in all supported languages
+- Check for missing translation keys (will display key instead of text)
+- Ensure proper text wrapping and UI layout with longer translations (especially Russian)
+- Test RTL support if applicable
+
+## Import Guidelines
+
+- Import `translate` function ONLY when needed for logic: `import { translate } from "@/i18n/translate"`
+- Import type for type safety: `import type { TxKeyPath } from "@/i18n"`
+- Do NOT import translate function if only using `tx` props on components
+
+# Internationalization (i18n) Implementation Rules
+
+## Overview
+
+All user-facing text in the application must be properly internationalized to support multiple languages (English, Russian).
+
+## Translation Key Naming Convention
+
+- Translation keys MUST use colon (`:`) as separator between namespace and key
+- Format: `screenName:keyName` or `componentName:keyName`
+- Examples: `ownerBookingComponent:title`, `loginScreen:emailLabel`, `common:cancel`
+- Keys should be descriptive and self-explanatory
+
+## Language Support
+
+- ALWAYS translate for all two languages:
+  - English (`en.ts`)
+  - Russian (`ru.ts`)
+- Add translations in the same commit as the feature implementation
+- Keep translation structure consistent across all language files
+
+## Using Translation Properties (tx)
+
+- ALWAYS use native `tx` (or `txOptions`) props when available on components
+- DO NOT use `translate()` function if component supports `tx` prop
+- Common components with `tx` support:
+  - `<Button tx="..." />` - instead of `text="..."`
+  - `<Text tx="..." />` - instead of children
+  - `<Header titleTx="..." />` - instead of `title="..."`
+  - `<TextField placeholderTx="..." labelTx="..." helperTx="..." />` - instead of `placeholder`, `label`, `helper`
+
+## Good vs Bad Examples
+
+### ❌ BAD - Using translate() function when tx prop is available
+
+```tsx
+import { translate } from "@/i18n/translate"
+
+<Button text={translate("common:cancel")} onPress={handleCancel} />
+<Text>{translate("loginScreen:title")}</Text>
+<Header title={translate("profileScreen:title")} />
+```
+
+### ✅ GOOD - Using tx props directly
+
+```tsx
+// No need to import translate function
+<Button tx="common:cancel" onPress={handleCancel} />
+<Text tx="loginScreen:title" />
+<Header titleTx="profileScreen:title" />
+```
+
+### ✅ ACCEPTABLE - Using translate() for dynamic content or logic
+
+```tsx
+import { translate } from "@/i18n/translate";
+
+// When you need the translated string in logic
+const errorMessage = translate("errors:invalidEmail");
+Alert.alert(translate("common:error"), errorMessage);
+
+// When building dynamic strings
+const dateText = `${formatDate(date)} - ${translate("common:today")}`;
+```
+
+## Translation File Structure
+
+- Organize translations by screen or feature
+- Each screen/feature should have its own namespace
+- Common translations go in `common` namespace
+- Type safety is enforced through TypeScript
+
+Example structure in `en.ts`:
+
+```typescript
+const en = {
+  common: {
+    ok: "OK",
+    cancel: "Cancel",
+    back: "Back",
+  },
+  loginScreen: {
+    title: "Let's get started",
+    emailLabel: "Email address",
+    passwordLabel: "Password",
+  },
+  ownerBookingScreen: {
+    title: "Owner Booking",
+    nextButton: "Next",
+    confirmButton: "Confirm booking",
+  },
+};
+```
+
+## What NOT to Translate
+
+- DO NOT translate:
+  - Error messages from API responses
+  - Technical error codes
+  - Log messages
+  - Debug information
+  - Variable names or code
+  - Configuration values
+
+## Interpolation
+
+- Use `{{variable}}` syntax for interpolation in translation strings
+- Pass values using `txOptions` prop:
+
+```tsx
+// In translation file
+withdrawFundsScreen: {
+  amountExceedsError: "Amount cannot exceed {{amount}}";
+}
+
+// In component
+<Text
+  tx="withdrawFundsScreen:amountExceedsError"
+  txOptions={{ amount: maxAmount }}
+/>;
+```
+
+## Pluralization
+
+- Use standard i18next pluralization rules
+- Keys should include `_one`, `_other`, etc. suffixes where needed
+
+## Checklist for Adding New Translations
+
+1. ✅ Add translation keys to all two language files (en, ru)
+2. ✅ Use `tx` props instead of `translate()` function when available
+3. ✅ Follow the `namespace:key` naming convention with colons
+4. ✅ Ensure translations are contextually appropriate for each language
+5. ✅ Run linter and fix any issues
+6. ✅ Test with different language settings if possible
+
+## Testing Translations
+
+- Verify translations appear correctly in all supported languages
+- Check for missing translation keys (will display key instead of text)
+- Ensure proper text wrapping and UI layout with longer translations (especially Russian)
+- Test RTL support if applicable
+
+## Import Guidelines
+
+- Import `translate` function ONLY when needed for logic: `import { translate } from "@/i18n/translate"`
+- Import type for type safety: `import type { TxKeyPath } from "@/i18n"`
+- Do NOT import translate function if only using `tx` props on components
