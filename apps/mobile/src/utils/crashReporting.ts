@@ -1,31 +1,47 @@
-/**
- * If you're using Sentry
- *   Expo https://docs.expo.dev/guides/using-sentry/
- */
-// import * as Sentry from "@sentry/react-native"
+import * as Sentry from "@sentry/react-native"
+import Constants from "expo-constants"
 
 /**
- * If you're using Crashlytics: https://rnfirebase.io/crashlytics/usage
- */
-// import crashlytics from "@react-native-firebase/crashlytics"
-
-/**
- * If you're using Bugsnag:
- *   RN   https://docs.bugsnag.com/platforms/react-native/)
- *   Expo https://docs.bugsnag.com/platforms/react-native/expo/
- */
-// import Bugsnag from "@bugsnag/react-native"
-// import Bugsnag from "@bugsnag/expo"
-
-/**
- *  This is where you put your crash reporting service initialization code to call in `./app/app.tsx`
+ * Initialize Sentry crash reporting for production
+ * Expo https://docs.expo.dev/guides/using-sentry/
  */
 export const initCrashReporting = () => {
-  // Sentry.init({
-  //   dsn: "YOUR DSN HERE",
-  //   debug: true, // If `true`, Sentry will try to print out useful debugging information if something goes wrong with sending the event. Set it to `false` in production
-  // })
-  // Bugsnag.start("YOUR API KEY")
+  const sentryDsn = process.env.EXPO_PUBLIC_SENTRY_DSN
+
+  if (!sentryDsn) {
+    if (!__DEV__) {
+      console.warn("Sentry DSN not configured. Error tracking disabled.")
+    }
+    return
+  }
+
+  Sentry.init({
+    dsn: sentryDsn,
+    debug: __DEV__,
+    environment: __DEV__ ? "development" : "production",
+    enableAutoSessionTracking: true,
+    sessionTrackingIntervalMillis: 30000,
+    enableNative: true,
+    enableNativeCrashHandling: true,
+    tracesSampleRate: __DEV__ ? 1.0 : 0.2,
+    attachStacktrace: true,
+    normalizeDepth: 10,
+    maxBreadcrumbs: 50,
+    dist: Constants.expoConfig?.version,
+    release: `${Constants.expoConfig?.slug}@${Constants.expoConfig?.version}`,
+    integrations: [
+      Sentry.reactNativeTracingIntegration({
+        enableUserInteractionTracing: true,
+        enableNativeFramesTracking: true,
+      }),
+    ],
+    beforeSend(event) {
+      if (__DEV__) {
+        console.log("Sentry Event:", event)
+      }
+      return event
+    },
+  })
 }
 
 /**

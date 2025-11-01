@@ -23,6 +23,32 @@ const en = {
       button: "Let's try this again",
     },
   },
+  auth: {
+    welcome: "Welcome to Scani",
+    signIn: "Sign In",
+    enterEmail: "Enter your email to sign in or create an account",
+    emailLabel: "Email",
+    emailPlaceholder: "Enter your email address",
+    continueWithEmail: "Continue with Email",
+    checkYourEmail: "Check your email",
+    codeSent: "We've sent a 6-digit code to",
+    enterCode: "Enter verification code",
+    enterCodeDescription: "Enter the 6-digit code from your email",
+    verifyCode: "Verify Code",
+    resendCode: "Resend Code",
+    useDifferentEmail: "Use a different email",
+    codeExpires: "The code expires in 10 minutes",
+    newAccount: "New to Scani? Your account will be created automatically.",
+  },
+  home: {
+    title: "Welcome to Scani",
+    signedInAs: "Signed in as",
+    userId: "User ID",
+    memberSince: "Member since",
+    signOut: "Sign Out",
+    confirmSignOut: "Are you sure you want to sign out?",
+    signingOut: "Signing out...",
+  },
 }
 
 export default en

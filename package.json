@@ -38,5 +38,7 @@
     "concurrently": "^8.2.2",
     "typescript": "^5"
   },
-  "dependencies": {}
+  "dependencies": {
+    "expo-linear-gradient": "^15.0.7"
+  }
 }

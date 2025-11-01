@@ -12,12 +12,13 @@ import fr from "./fr"
 import hi from "./hi"
 import ja from "./ja"
 import ko from "./ko"
+import ru from "./ru"
 
 const fallbackLocale = "en-US"
 
 const systemLocales = Localization.getLocales()
 
-const resources = { ar, en, ko, es, fr, ja, hi }
+const resources = { ar, en, ko, es, fr, ja, hi, ru }
 const supportedTags = Object.keys(resources)
 
 // Checks to see if the device locale matches any of the supported locales
@@ -57,6 +58,8 @@ export const initI18n = async () => {
 
   return i18n
 }
+
+export { translate } from "./translate"
 
 /**
  * Builds up valid keypaths for translations.
