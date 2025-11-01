@@ -12,6 +12,8 @@
     "dev:backend": "cd apps/backend && bun dev",
     "dev:frontend": "cd apps/frontendV2 && bun dev",
     "dev:landing": "cd apps/landing && bun dev",
+    "dev:mobile:ios": "cd apps/mobile && bun ios",
+    "dev:mobile:android": "cd apps/mobile && bun ios",
     "build": "bun run build:backend && bun run build:frontendV2",
     "build:backend": "cd apps/backend && bun run build",
     "build:frontend": "cd apps/frontendV2 && bun run build",
@@ -36,8 +38,5 @@
     "concurrently": "^8.2.2",
     "typescript": "^5"
   },
-  "dependencies": {
-    "decimal.js": "^10.6.0",
-    "react-number-format": "^5.4.4"
-  }
+  "dependencies": {}
 }
