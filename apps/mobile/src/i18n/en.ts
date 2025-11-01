@@ -6,7 +6,7 @@ const en = {
   },
   welcomeScreen: {
     postscript:
-      "psst  — This probably isn't what your app looks like. (Unless your designer handed you these screens, and in that case, ship it!)",
+      "Почему у человека грустное ебало? Он не болен, не калека — просто заебало. Заебало не по-детски как порой бывало, а серьёзно, блядь, пиздецки, нахуй — заебало. Головой об стену бъётся человек в печали... Не смеётся, не ебётся... О как заебали...",
     readyForLaunch: "Your app, almost ready for launch!",
     exciting: "(ohh, this is exciting!)",
   },

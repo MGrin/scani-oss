@@ -1,8 +1,8 @@
 {
-  "name": "mobile",
-  "slug": "mobile",
-  "scheme": "mobile",
-  "version": "1.0.0",
+  "name": "Scani",
+  "slug": "scani",
+  "scheme": "scaniapp",
+  "version": "0.0.1",
   "orientation": "portrait",
   "userInterfaceStyle": "automatic",
   "icon": "./assets/images/app-icon-all.png",
