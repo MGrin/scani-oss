@@ -1,0 +1,76 @@
+---
+alwaysApply: false
+---
+
+## General
+
+This is production mobile cross-platform (Expo - React Native - Ignite boilerplate) application, for home owners, that communicates with our backend (betterplace_api_django) that is available at our workspace.
+
+## Goal
+
+We are aiming to create clean internationalized production application
+
+## Solution planning
+
+Always include neat UI animations where appropriate into solution planning
+If you need to use any plain text string - you should use it from the translation, if it not there probably should create one
+
+## Tech Stack
+
+Nothing makes it into Ignite unless it's been proven on projects that Infinite Red works on. Ignite apps include the following rock-solid technical decisions out of the box:
+
+| Library                          | Category             | Version  | Description                                    |
+| -------------------------------- | -------------------- | -------- | ---------------------------------------------- |
+| React Native                     | Mobile Framework     | v0.81.5  | The best cross-platform mobile framework       |
+| React                            | UI Framework         | v19.1.0  | The most popular UI framework in the world     |
+| TypeScript                       | Language             | v5.9.2   | Static typechecking                            |
+| React Navigation                 | Navigation           | v7       | Performant and consistent navigation framework |
+| Expo                             | SDK                  | v54.0.20 | Allows (optional) Expo modules                 |
+| Expo Font                        | Custom Fonts         | v14      | Import custom fonts                            |
+| Expo Localization                | Internationalization | v17      | i18n support (including RTL!)                  |
+| Expo System UI                   | Status Bar Library   | v6       | Status bar and system UI support               |
+| RN Reanimated                    | Animations           | v4       | Beautiful and performant animations            |
+| MMKV                             | Persistence          | v3.3.3   | State persistence                              |
+| apisauce                         | REST client          | v3.1.1   | Communicate with back-end                      |
+| Jest                             | Test Runner          | v29.7.0  | Standard test runner for JS apps               |
+| date-fns                         | Date library         | v4.1.0   | Excellent date library                         |
+| react-native-keyboard-controller | Keyboard library     | v1.18.5  | Great keyboard manager library                 |
+| react-native-edge-to-edge        | UI library           | v1.6.1   | Enables edge-to-edge in Android                |
+| Reactotron RN                    | Inspector/Debugger   | v5       | JS debugging                                   |
+| Maestro                          | Testing Framework    |          | Automate end-to-end UI testing                 |
+| Hermes                           | JS engine            |          | Fine-tuned JS engine for RN                    |
+
+Ignite also comes with a [component library](./boilerplate/app/components/Components.md) that is tuned for custom designs, theming support, testing, custom fonts, generators, and much, much more.
+
+## Ignite
+
+We are using Ignite team and must follow documentation and everytime search the web or Ignite Cookbook to understand how to implement one or another feature
+
+## Do's and DONT's
+
+- DO NOT write documentation or tests unless explicitly asked
+- Do not create any examples of usage
+- Do not ever try to run the project, it's user's duty
+- Do not use default or fallback values, instead use guards to throw exception
+- NEVER USE EMOJI
+- Use web search and docs to understand which is the most proprietary modern implementation option
+- Avoid any new file creations if possible only if asked or if it's really necessary
+
+## Component styling
+
+- You should never inline styles, but used Ignite themed() pattern
+
+## Important to remember
+
+- We are using yarn as our package manager
+- Always look into ignite docs on the web https://github.com/infinitered/ignite/blob/master/docs/README.md to understand what is perfect implementation looking alike
+- Use Ignite generators for components or screens
+- We should always run lint fix for current file anf fix lint and type errors
+- Always examine component of unnecessary effects usage and try to streamline it to avoid any unnecessary re-rendering
+
+## Translating
+
+- Remember that translation keys should be written using `:`
+- We should not translate error text
+- We should use native or custom tx property for components where it's presented
+- We always should translate for en \ ru translations using internationalization rules
