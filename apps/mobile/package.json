@@ -48,6 +48,7 @@
     "expo-dev-client": "~6.0.12",
     "expo-font": "~14.0.8",
     "expo-linking": "~8.0.8",
+    "expo-liquid-glass-view": "^0.1.9",
     "expo-localization": "~17.0.7",
     "expo-router": "~6.0.10",
     "expo-splash-screen": "~31.0.10",
