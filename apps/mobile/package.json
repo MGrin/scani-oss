@@ -7,7 +7,7 @@
     "start": "expo start --dev-client",
     "android": "expo run:android",
     "ios": "expo run:ios",
-    "ios:clean": "rm -rf node_modules &&rm -rf ios && rm -rf .expo && rm -rf android && bun install && bun ios",
+    "ios:clean": "rm -rf node_modules && rm -rf ios && rm -rf .expo && rm -rf android && bun install && rm -rf \"${HOME}/Library/Caches/CocoaPods\" && bun ios",
     "web": "expo start --web",
     "bundle:web": "npx expo export --platform web",
     "serve:web": "npx serve dist",
