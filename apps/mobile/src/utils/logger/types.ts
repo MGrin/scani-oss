@@ -14,6 +14,7 @@ export interface ILogger {
   info(message: string, context?: LogContext): void
   warn(message: string, context?: LogContext): void
   error(message: string, error?: Error, context?: LogContext): void
+  console(value: unknown, label?: string): void
   setUser(userId: string, email?: string): void
   clearUser(): void
 }

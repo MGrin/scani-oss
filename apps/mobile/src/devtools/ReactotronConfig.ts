@@ -4,11 +4,12 @@
  * @see https://github.com/infinitered/reactotron
  */
 import { Platform, NativeModules } from "react-native"
+import { router } from "expo-router"
 import { ArgType } from "reactotron-core-client"
 import { ReactotronReactNative } from "reactotron-react-native"
 import mmkvPlugin from "reactotron-react-native-mmkv"
 
-import { router } from "expo-router"
+import { trpcCacheStorage } from "@/services/trpc/mmkvPersister"
 import { storage } from "@/utils/storage"
 
 import { Reactotron } from "./ReactotronClient"
@@ -21,7 +22,18 @@ const reactotron = Reactotron.configure({
   },
 })
 
-reactotron.use(mmkvPlugin<ReactotronReactNative>({ storage }))
+reactotron.use(
+  mmkvPlugin<ReactotronReactNative>({
+    storage,
+    ignore: ["queryCache"],
+  }),
+)
+
+reactotron.use(
+  mmkvPlugin<ReactotronReactNative>({
+    storage: trpcCacheStorage,
+  }),
+)
 
 if (Platform.OS !== "web") {
   reactotron.useReactNative({
