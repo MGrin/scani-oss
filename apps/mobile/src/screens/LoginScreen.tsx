@@ -8,8 +8,6 @@ import type { TextStyle, ViewStyle } from 'react-native';
 import { Alert, Pressable, TextInput as RNTextInput, StatusBar, View } from 'react-native';
 import Animated, {
   Easing,
-  FadeIn,
-  FadeOut,
   interpolateColor,
   useAnimatedStyle,
   useSharedValue,
@@ -22,9 +20,11 @@ import { Screen } from '@/components/Screen';
 import { SvgIcon } from '@/components/SvgIcon';
 import { Text } from '@/components/Text';
 import { useAuth } from '@/contexts/AuthContext';
+import { useScreenAnimation } from '@/hooks/useScreenAnimation';
 import { translate } from '@/i18n';
 import { useAppTheme } from '@/theme/context';
 import type { ThemedStyle } from '@/theme/types';
+import { useAppLoader } from '@/utils/appLoaderContext';
 import { logger } from '@/utils/logger';
 
 interface EmailInputFormProps {
@@ -158,6 +158,8 @@ LoadingSpinner.displayName = 'LoadingSpinner';
 export const LoginScreen: FC = () => {
   const { themed } = useAppTheme();
   const { authenticate, verifyCode } = useAuth();
+  const { dismissLoader, isLoaderDismissed } = useAppLoader();
+  const { animatedStyle } = useScreenAnimation({ skipInitialAnimation: isLoaderDismissed });
   const [email, setEmail] = useState('');
   const [isEmailValid, setIsEmailValid] = useState(false);
   const [isEmailSent, setIsEmailSent] = useState(false);
@@ -166,11 +168,28 @@ export const LoginScreen: FC = () => {
   const [error, setError] = useState<string | null>(null);
   const emailInputRef = useRef<RNTextInput>(null);
 
+  const videoOpacity = useSharedValue(0);
+
   const player = useVideoPlayer(require('../../assets/video/login_bg.mp4'), (videoPlayer: VideoPlayer) => {
     videoPlayer.loop = true;
     videoPlayer.muted = true;
     videoPlayer.play();
   });
+
+  useEffect(() => {
+    dismissLoader();
+  }, [dismissLoader]);
+
+  useEffect(() => {
+    videoOpacity.value = withTiming(1, {
+      duration: 1200,
+      easing: Easing.out(Easing.cubic),
+    });
+  }, [videoOpacity]);
+
+  const animatedVideoStyle = useAnimatedStyle(() => ({
+    opacity: videoOpacity.value,
+  }));
 
   const handleEmailSubmit = useCallback(async () => {
     if (!email.trim()) {
@@ -253,12 +272,15 @@ export const LoginScreen: FC = () => {
     return (
       <View style={themed($container)}>
         <StatusBar barStyle="light-content" />
-        <VideoView
-          player={player}
-          style={$videoBackground}
-          contentFit="cover"
-          nativeControls={false}
-        />
+        <View style={$splashBackground} />
+        <Animated.View style={[animatedVideoStyle, $videoBackground]}>
+          <VideoView
+            player={player}
+            style={$videoBackground}
+            contentFit="cover"
+            nativeControls={false}
+          />
+        </Animated.View>
         <View style={$videoOverlay} />
         <Screen
           preset="fixed"
@@ -266,11 +288,7 @@ export const LoginScreen: FC = () => {
           safeAreaEdges={['top', 'bottom']}
           backgroundColor="transparent"
         >
-          <Animated.View
-            entering={FadeIn.duration(600)}
-            exiting={FadeOut}
-            style={themed($centeredContent)}
-          >
+          <Animated.View style={[themed($centeredContent), animatedStyle]}>
             <GlassView glassEffectStyle="clear" isInteractive={false} style={themed($cardGlass)}>
               <View style={themed($cardContent)}>
                 {isSendingCode ? (
@@ -310,12 +328,15 @@ export const LoginScreen: FC = () => {
   return (
     <View style={$staticContainer}>
       <StatusBar barStyle="light-content" />
-      <VideoView
-        player={player}
-        style={$videoBackground}
-        contentFit="cover"
-        nativeControls={false}
-      />
+      <View style={$splashBackground} />
+      <Animated.View style={[animatedVideoStyle, $videoBackground]}>
+        <VideoView
+          player={player}
+          style={$videoBackground}
+          contentFit="cover"
+          nativeControls={false}
+        />
+      </Animated.View>
       <View style={$videoOverlay} />
       <Screen
         preset="fixed"
@@ -323,11 +344,7 @@ export const LoginScreen: FC = () => {
         safeAreaEdges={['top', 'bottom']}
         backgroundColor="transparent"
       >
-        <Animated.View
-          entering={FadeIn.duration(600)}
-          exiting={FadeOut}
-          style={$staticCenteredContent}
-        >
+        <Animated.View style={[$staticCenteredContent, animatedStyle]}>
           <View style={$logoContainer}>
             <SvgIcon name="scani-logo" width={120} height={34} />
           </View>
@@ -397,6 +414,15 @@ const $description: ThemedStyle<TextStyle> = ({ spacing, typography }) => ({
 
 const $staticContainer: ViewStyle = {
   flex: 1,
+};
+
+const $splashBackground: ViewStyle = {
+  position: 'absolute',
+  left: 0,
+  right: 0,
+  top: 0,
+  bottom: 0,
+  backgroundColor: '#0A1B35',
 };
 
 const $videoBackground: ViewStyle = {

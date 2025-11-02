@@ -4,12 +4,14 @@ import { useEffect, useState } from 'react';
 import { KeyboardProvider } from 'react-native-keyboard-controller';
 import { initialWindowMetrics, SafeAreaProvider } from 'react-native-safe-area-context';
 
+import { AppLoader } from '@/components/AppLoader';
 import { AuthProvider } from '@/contexts/AuthContext';
 import { initI18n } from '@/i18n';
 import { setupOnlineManager, useAppFocusManager } from '@/services/trpc/platformSetup';
 import { TRPCProvider } from '@/services/trpc/trpcProvider';
 import { ThemeProvider } from '@/theme/context';
 import { customFontsToLoad } from '@/theme/typography';
+import { AppLoaderProvider } from '@/utils/appLoaderContext';
 import { initCrashReporting } from '@/utils/crashReporting';
 import { loadDateFnsLocale } from '@/utils/formatDate';
 import { logger } from '@/utils/logger';
@@ -75,7 +77,10 @@ export default function Root() {
         <AuthProvider>
           <TRPCProvider>
             <KeyboardProvider>
-              <Slot />
+              <AppLoaderProvider>
+                <Slot />
+                <AppLoader />
+              </AppLoaderProvider>
             </KeyboardProvider>
           </TRPCProvider>
         </AuthProvider>

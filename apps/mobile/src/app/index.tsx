@@ -1,20 +1,21 @@
-import { Redirect } from 'expo-router';
-import type { ViewStyle } from 'react-native';
-import { ActivityIndicator, View } from 'react-native';
-import { useAuth } from '@/contexts/AuthContext';
-import { useAppTheme } from '@/theme/context';
-import type { ThemedStyle } from '@/theme/types';
+import { Redirect } from "expo-router";
+import { useEffect } from "react";
+
+import { useAuth } from "@/contexts/AuthContext";
+import { useAppLoader } from "@/utils/appLoaderContext";
 
 export default function Index() {
   const { session, loading } = useAuth();
-  const { themed, theme } = useAppTheme();
+  const { dismissLoader } = useAppLoader();
+
+  useEffect(() => {
+    if (!loading) {
+      dismissLoader();
+    }
+  }, [loading, dismissLoader]);
 
   if (loading) {
-    return (
-      <View style={themed($loadingContainer)}>
-        <ActivityIndicator size="large" color={theme.colors.tint} />
-      </View>
-    );
+    return null;
   }
 
   if (session) {
@@ -23,10 +24,3 @@ export default function Index() {
 
   return <Redirect href="/(auth)" />;
 }
-
-const $loadingContainer: ThemedStyle<ViewStyle> = ({ colors }) => ({
-  flex: 1,
-  justifyContent: 'center',
-  alignItems: 'center',
-  backgroundColor: colors.background,
-});
