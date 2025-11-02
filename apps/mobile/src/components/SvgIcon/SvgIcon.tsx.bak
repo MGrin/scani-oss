@@ -12,6 +12,9 @@ export interface SvgIconProps {
   width?: number;
   height?: number;
   color?: string;
+  gradientColors?: string[];
+  gradientStart?: { x: number; y: number };
+  gradientEnd?: { x: number; y: number };
   style?: StyleProp<ViewStyle>;
   containerStyle?: StyleProp<ViewStyle>;
 }
@@ -22,6 +25,9 @@ export const SvgIcon: FC<SvgIconProps> = ({
   width,
   height,
   color,
+  gradientColors,
+  gradientStart = { x: 0, y: 0 },
+  gradientEnd = { x: 1, y: 1 },
   style,
   containerStyle,
 }) => {

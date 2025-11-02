@@ -70,7 +70,7 @@ export const MagicCodeInput: FC<MagicCodeInputProps> = ({
   resendCooldown = 30,
   hideHelperText = false,
 }) => {
-  const { themed, theme } = useAppTheme();
+  const { themed } = useAppTheme();
   const [code, setCode] = useState<string[]>(['', '', '', '', '', '']);
   const [isResending, setIsResending] = useState(false);
   const [resendCooldownRemaining, setResendCooldownRemaining] = useState(resendCooldown);
@@ -133,6 +133,7 @@ export const MagicCodeInput: FC<MagicCodeInputProps> = ({
         <View style={themed($inputsRow)}>
           {code.map((digit, index) => (
             <TextInput
+              // biome-ignore lint/suspicious/noArrayIndexKey: Fixed-length 6-digit code array, index is stable
               key={`code-${index}`}
               ref={(el) => {
                 inputRefs.current[index] = el;

@@ -25,27 +25,6 @@ class Logger implements ILogger {
     }
   }
 
-  private logToConsole(level: LogLevel, message: string, data: unknown, error?: Error) {
-    const prefix = `[${level.toUpperCase()}]`;
-
-    switch (level) {
-      case 'debug':
-        console.debug(prefix, message, data);
-        break;
-      case 'info':
-        console.info(prefix, message, data);
-        break;
-      case 'warn':
-        console.warn(prefix, message, data);
-        if (error) console.warn(error);
-        break;
-      case 'error':
-        console.error(prefix, message, data);
-        if (error) console.error(error);
-        break;
-    }
-  }
-
   private logToReactotron(level: LogLevel, message: string, context?: LogContext, error?: Error) {
     if (!__DEV__ || typeof console.tron === 'undefined') return;
 
@@ -122,7 +101,7 @@ class Logger implements ILogger {
     const timestamp = new Date().toISOString();
     const prefix = label ? `[CONSOLE] ${label}:` : '[CONSOLE]';
 
-    console.log('\n' + '='.repeat(80));
+    console.log(`\n${'='.repeat(80)}`);
     console.log(`${prefix} ${timestamp}`);
     console.log('='.repeat(80));
 
@@ -144,7 +123,7 @@ class Logger implements ILogger {
       console.log(value);
     }
 
-    console.log('='.repeat(80) + '\n');
+    console.log(`${'='.repeat(80)}\n`);
   }
 
   setUser(userId: string, email?: string): void {

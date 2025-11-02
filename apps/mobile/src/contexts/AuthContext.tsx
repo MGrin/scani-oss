@@ -103,7 +103,7 @@ export const AuthProvider: FC<AuthProviderProps> = ({ children }) => {
       logger.info('Redirecting to app (authenticated)');
       router.replace('/(app)');
     }
-  }, [session, loading, segments]);
+  }, [session, loading, segments, router.replace, user?.id]);
 
   const authenticate = useCallback(async (email: string): Promise<{ error?: string }> => {
     logger.info('Attempting authentication', { email });

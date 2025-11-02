@@ -13,9 +13,10 @@ jest.doMock('react-native', () => {
         resolveAssetSource: jest.fn((_source) => mockFile),
         getSize: jest.fn(
           (
-            uri: string,
+            _uri: string,
             success: (width: number, height: number) => void,
-            failure?: (_error: any) => void
+            // biome-ignore lint/suspicious/noExplicitAny: Test mock, error type is not important
+            _failure?: (_error: any) => void
           ) => success(100, 100)
         ),
       },

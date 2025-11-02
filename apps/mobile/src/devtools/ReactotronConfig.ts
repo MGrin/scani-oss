@@ -37,6 +37,7 @@ reactotron.use(
 );
 
 if (Platform.OS !== 'web') {
+  // biome-ignore lint/correctness/useHookAtTopLevel: useReactNative is not a React hook, it's a Reactotron method
   reactotron.useReactNative({
     networking: {
       ignoreUrls: /symbolicate/,

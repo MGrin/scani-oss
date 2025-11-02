@@ -1,4 +1,4 @@
-import { QueryClient } from '@tanstack/react-query';
+import { type Query, QueryClient } from '@tanstack/react-query';
 import { PersistQueryClientProvider } from '@tanstack/react-query-persist-client';
 import { httpBatchLink, TRPCClientError } from '@trpc/client';
 import { useRouter } from 'expo-router';
@@ -108,7 +108,7 @@ export const TRPCProvider: FC<TRPCProviderProps> = ({ children }) => {
     persister: mmkvPersister,
     maxAge: 1000 * 60 * 60 * 24,
     dehydrateOptions: {
-      shouldDehydrateQuery: (query: any) => {
+      shouldDehydrateQuery: (query: Query) => {
         return query.state.status === 'success';
       },
     },

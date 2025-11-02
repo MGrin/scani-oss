@@ -269,14 +269,12 @@ export const LoginScreen: FC = () => {
             <GlassView glassEffectStyle="clear" isInteractive={false} style={themed($cardGlass)}>
               <View style={themed($cardContent)}>
                 {isSendingCode ? (
-                  <>
-                    <View style={$loadingContainer}>
-                      <View style={$spinnerWrapper}>
-                        <LoadingSpinner size={32} color="rgba(255, 255, 255, 0.2)" />
-                      </View>
-                      <Text tx="auth:sendingCode" style={themed($sendingText)} />
+                  <View style={$loadingContainer}>
+                    <View style={$spinnerWrapper}>
+                      <LoadingSpinner size={32} color="rgba(255, 255, 255, 0.2)" />
                     </View>
-                  </>
+                    <Text tx="auth:sendingCode" style={themed($sendingText)} />
+                  </View>
                 ) : (
                   <>
                     <Text preset="heading" tx="auth:checkYourEmail" style={themed($title)} />

@@ -142,7 +142,7 @@ function useAutoPreset(props: AutoScreenProps): {
    * @param {number} w - The width of the content.
    * @param {number} h - The height of the content.
    */
-  function onContentSizeChange(w: number, h: number) {
+  function onContentSizeChange(_w: number, h: number) {
     // update scroll-view content height
     scrollViewContentHeight.current = h;
     updateScrollState();

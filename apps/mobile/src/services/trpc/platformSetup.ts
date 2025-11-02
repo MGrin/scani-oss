@@ -3,16 +3,20 @@ import { useEffect } from 'react';
 import type { AppStateStatus } from 'react-native';
 import { AppState, Platform } from 'react-native';
 
+interface NetworkState {
+  isConnected?: boolean;
+}
+
 export function setupOnlineManager() {
   try {
     const Network = require('expo-network');
     onlineManager.setEventListener((setOnline) => {
-      const subscription = Network.addNetworkStateListener((state: any) => {
+      const subscription = Network.addNetworkStateListener((state: NetworkState) => {
         setOnline(!!state.isConnected);
       });
       return subscription.remove;
     });
-  } catch (error) {
+  } catch (_error) {
     console.log('expo-network not available, skipping online manager setup');
     onlineManager.setOnline(true);
   }

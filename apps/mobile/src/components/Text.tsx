@@ -93,9 +93,13 @@ const $sizeStyles = {
   xxs: { fontSize: 12, lineHeight: 18 } satisfies TextStyle,
 };
 
-const $fontWeightStyles = Object.entries(typography.primary).reduce((acc, [weight, fontFamily]) => {
-  return { ...acc, [weight]: { fontFamily } };
-}, {}) as Record<Weights, TextStyle>;
+const $fontWeightStyles = Object.entries(typography.primary).reduce(
+  (acc, [weight, fontFamily]) => {
+    acc[weight as Weights] = { fontFamily };
+    return acc;
+  },
+  {} as Record<Weights, TextStyle>
+);
 
 const $baseStyle: ThemedStyle<TextStyle> = (theme) => ({
   ...$sizeStyles.sm,

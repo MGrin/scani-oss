@@ -17,7 +17,7 @@ import { Text, type TextProps } from './Text';
 type Presets = 'default' | 'filled' | 'reversed';
 
 export interface ButtonAccessoryProps {
-  style: StyleProp<any>;
+  style: StyleProp<ViewStyle>;
   pressableState: PressableStateCallbackType;
   disabled?: boolean;
 }
