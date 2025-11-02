@@ -1,26 +1,20 @@
-import { Loader2 } from 'lucide-react-native';
-import { type FC, memo, useEffect, useRef, useState } from 'react';
-import {
-  type NativeSyntheticEvent,
-  TextInput,
-  type TextInputKeyPressEventData,
-  type TextStyle,
-  View,
-  type ViewStyle,
-} from 'react-native';
+import { Loader2 } from "lucide-react-native";
+import { type FC, memo, useEffect, useState } from "react";
+import { type TextStyle, View, type ViewStyle } from "react-native";
 import Animated, {
   Easing,
   useAnimatedStyle,
   useSharedValue,
   withRepeat,
   withTiming,
-} from 'react-native-reanimated';
+} from "react-native-reanimated";
+import { OtpInput } from "react-native-otp-entry";
 
-import { useAppTheme } from '@/theme/context';
-import type { ThemedStyle } from '@/theme/types';
+import { useAppTheme } from "@/theme/context";
+import type { ThemedStyle } from "@/theme/types";
 
-import { Button } from './Button';
-import { Text } from './Text';
+import { Button } from "./Button";
+import { Text } from "./Text";
 
 interface MagicCodeInputProps {
   onSubmit: (code: string) => Promise<void>;
@@ -36,31 +30,33 @@ interface LoadingSpinnerProps {
   color?: string;
 }
 
-const LoadingSpinner: FC<LoadingSpinnerProps> = memo(({ size = 16, color = 'white' }) => {
-  const rotation = useSharedValue(0);
+const LoadingSpinner: FC<LoadingSpinnerProps> = memo(
+  ({ size = 16, color = "white" }) => {
+    const rotation = useSharedValue(0);
 
-  useEffect(() => {
-    rotation.value = withRepeat(
-      withTiming(360, {
-        duration: 1000,
-        easing: Easing.linear,
-      }),
-      -1,
-      false
+    useEffect(() => {
+      rotation.value = withRepeat(
+        withTiming(360, {
+          duration: 1000,
+          easing: Easing.linear,
+        }),
+        -1,
+        false
+      );
+    }, [rotation]);
+
+    const animatedStyle = useAnimatedStyle(() => ({
+      transform: [{ rotate: `${rotation.value}deg` }],
+    }));
+
+    return (
+      <Animated.View style={animatedStyle}>
+        <Loader2 size={size} color={color} strokeWidth={2} />
+      </Animated.View>
     );
-  }, [rotation]);
-
-  const animatedStyle = useAnimatedStyle(() => ({
-    transform: [{ rotate: `${rotation.value}deg` }],
-  }));
-
-  return (
-    <Animated.View style={animatedStyle}>
-      <Loader2 size={size} color={color} strokeWidth={2} />
-    </Animated.View>
-  );
-});
-LoadingSpinner.displayName = 'LoadingSpinner';
+  }
+);
+LoadingSpinner.displayName = "LoadingSpinner";
 
 export const MagicCodeInput: FC<MagicCodeInputProps> = ({
   onSubmit,
@@ -71,14 +67,10 @@ export const MagicCodeInput: FC<MagicCodeInputProps> = ({
   hideHelperText = false,
 }) => {
   const { themed } = useAppTheme();
-  const [code, setCode] = useState<string[]>(['', '', '', '', '', '']);
+  const [code, setCode] = useState("");
   const [isResending, setIsResending] = useState(false);
-  const [resendCooldownRemaining, setResendCooldownRemaining] = useState(resendCooldown);
-  const inputRefs = useRef<(TextInput | null)[]>([]);
-
-  useEffect(() => {
-    inputRefs.current[0]?.focus();
-  }, []);
+  const [resendCooldownRemaining, setResendCooldownRemaining] =
+    useState(resendCooldown);
 
   useEffect(() => {
     if (resendCooldownRemaining > 0) {
@@ -89,72 +81,46 @@ export const MagicCodeInput: FC<MagicCodeInputProps> = ({
     }
   }, [resendCooldownRemaining]);
 
-  const handleChange = (index: number, value: string) => {
-    if (value && !/^\d$/.test(value)) return;
-
-    const newCode = [...code];
-    newCode[index] = value;
-    setCode(newCode);
-
-    if (value && index < 5) {
-      inputRefs.current[index + 1]?.focus();
-    }
-
-    if (newCode.every((digit) => digit !== '') && !isLoading) {
-      onSubmit(newCode.join(''));
-    }
-  };
-
-  const handleKeyPress = (index: number, e: NativeSyntheticEvent<TextInputKeyPressEventData>) => {
-    if (e.nativeEvent.key === 'Backspace') {
-      if (!code[index] && index > 0) {
-        inputRefs.current[index - 1]?.focus();
-      } else {
-        const newCode = [...code];
-        newCode[index] = '';
-        setCode(newCode);
-      }
+  const handleFilled = async (text: string) => {
+    if (!isLoading && !isResending) {
+      await onSubmit(text);
     }
   };
 
   const handleResend = async () => {
     setIsResending(true);
-    setCode(['', '', '', '', '', '']);
+    setCode("");
     await onResend();
     setIsResending(false);
     setResendCooldownRemaining(resendCooldown);
-    inputRefs.current[0]?.focus();
   };
 
   return (
     <View style={themed($container)}>
       <View style={themed($inputsWrapper)}>
-        <Text preset="formLabel" tx="auth:enterCodeDescription" style={themed($label)} />
-        <View style={themed($inputsRow)}>
-          {code.map((digit, index) => (
-            <TextInput
-              // biome-ignore lint/suspicious/noArrayIndexKey: Fixed-length 6-digit code array, index is stable
-              key={`code-${index}`}
-              ref={(el) => {
-                inputRefs.current[index] = el;
-              }}
-              style={themed([
-                $input,
-                error ? $inputError : null,
-                (isLoading || isResending) && $inputDisabled,
-              ])}
-              value={digit}
-              onChangeText={(value) => handleChange(index, value)}
-              onKeyPress={(e) => handleKeyPress(index, e)}
-              keyboardType="number-pad"
-              maxLength={1}
-              editable={!isLoading && !isResending}
-              selectTextOnFocus
-              autoFocus={index === 0}
-              placeholderTextColor="rgba(255, 255, 255, 0.5)"
-            />
-          ))}
-        </View>
+        <Text
+          preset="formLabel"
+          tx="auth:enterCodeDescription"
+          style={themed($label)}
+        />
+        <OtpInput
+          numberOfDigits={6}
+          onTextChange={setCode}
+          onFilled={handleFilled}
+          autoFocus
+          disabled={isLoading || isResending}
+          type="numeric"
+          focusColor="rgba(255, 255, 255, 0.9)"
+          theme={{
+            containerStyle: themed($otpContainer),
+            pinCodeContainerStyle: themed($input),
+            pinCodeTextStyle: themed($inputText),
+            focusedPinCodeContainerStyle: themed($inputFocused),
+            filledPinCodeContainerStyle: themed($inputFilled),
+            disabledPinCodeContainerStyle: themed($inputDisabled),
+            focusStickStyle: themed($focusStick),
+          }}
+        />
         {error && <Text style={themed($errorText)}>{error}</Text>}
       </View>
 
@@ -162,16 +128,30 @@ export const MagicCodeInput: FC<MagicCodeInputProps> = ({
         preset="default"
         onPress={handleResend}
         disabled={isResending || isLoading || resendCooldownRemaining > 0}
-        tx={resendCooldownRemaining > 0 ? 'auth:resendCodeIn' : 'auth:resendCode'}
-        txOptions={resendCooldownRemaining > 0 ? { seconds: resendCooldownRemaining } : undefined}
+        tx={
+          resendCooldownRemaining > 0 ? "auth:resendCodeIn" : "auth:resendCode"
+        }
+        txOptions={
+          resendCooldownRemaining > 0
+            ? { seconds: resendCooldownRemaining }
+            : undefined
+        }
         style={$secondaryButton}
         textStyle={$secondaryButtonText}
         disabledStyle={$disabledButton}
-        RightAccessory={isResending ? () => <LoadingSpinner size={16} color="white" /> : undefined}
+        RightAccessory={
+          isResending
+            ? () => <LoadingSpinner size={16} color="white" />
+            : undefined
+        }
       />
 
       {!hideHelperText && (
-        <Text preset="formHelper" tx="auth:codeExpires" style={themed($helperText)} />
+        <Text
+          preset="formHelper"
+          tx="auth:codeExpires"
+          style={themed($helperText)}
+        />
       )}
     </View>
   );
@@ -186,42 +166,53 @@ const $inputsWrapper: ThemedStyle<ViewStyle> = ({ spacing }) => ({
 });
 
 const $label: ThemedStyle<TextStyle> = () => ({
-  textAlign: 'center',
-  color: 'rgba(255, 255, 255, 0.9)',
+  textAlign: "center",
+  color: "rgba(255, 255, 255, 0.9)",
   fontSize: 15,
   lineHeight: 22,
 });
 
-const $inputsRow: ThemedStyle<ViewStyle> = ({ spacing }) => ({
-  flexDirection: 'row',
-  justifyContent: 'center',
+const $otpContainer: ThemedStyle<ViewStyle> = ({ spacing }) => ({
+  flexDirection: "row",
+  justifyContent: "center",
   gap: spacing.xs,
 });
 
-const $input: ThemedStyle<TextStyle> = ({ typography }) => ({
+const $input: ThemedStyle<ViewStyle> = () => ({
   width: 48,
   height: 56,
-  textAlign: 'center',
-  fontSize: 24,
-  fontFamily: typography.primary.bold,
   borderWidth: 1,
   borderRadius: 12,
-  borderColor: 'rgba(255, 255, 255, 0.3)',
-  backgroundColor: 'rgba(255, 255, 255, 0.2)',
-  color: 'white',
+  borderColor: "rgba(255, 255, 255, 0.3)",
+  backgroundColor: "rgba(255, 255, 255, 0.2)",
 });
 
-const $inputError: ThemedStyle<TextStyle> = () => ({
-  borderColor: '#ff6b6b',
+const $inputText: ThemedStyle<TextStyle> = ({ typography }) => ({
+  fontSize: 24,
+  fontFamily: typography.primary.bold,
+  color: "white",
 });
 
-const $inputDisabled: ThemedStyle<TextStyle> = () => ({
+const $inputFocused: ThemedStyle<ViewStyle> = () => ({
+  borderColor: "rgba(255, 255, 255, 0.6)",
+  backgroundColor: "rgba(255, 255, 255, 0.25)",
+});
+
+const $inputFilled: ThemedStyle<ViewStyle> = () => ({
+  borderColor: "rgba(255, 255, 255, 0.5)",
+});
+
+const $inputDisabled: ThemedStyle<ViewStyle> = () => ({
   opacity: 0.5,
 });
 
+const $focusStick: ThemedStyle<ViewStyle> = () => ({
+  backgroundColor: "rgba(255, 255, 255, 0.9)",
+});
+
 const $errorText: ThemedStyle<TextStyle> = ({ spacing }) => ({
-  color: '#ff6b6b',
-  textAlign: 'center',
+  color: "#ff6b6b",
+  textAlign: "center",
   marginTop: spacing.xs,
   fontSize: 14,
 });
@@ -230,14 +221,14 @@ const $secondaryButton: ViewStyle = {
   height: 56,
   borderRadius: 16,
   borderWidth: 1,
-  borderColor: 'rgba(255, 255, 255, 0.3)',
-  backgroundColor: 'rgba(255, 255, 255, 0.1)',
+  borderColor: "rgba(255, 255, 255, 0.3)",
+  backgroundColor: "rgba(255, 255, 255, 0.1)",
 };
 
 const $secondaryButtonText: TextStyle = {
-  color: 'white',
+  color: "white",
   fontSize: 16,
-  fontWeight: '500',
+  fontWeight: "500",
 };
 
 const $disabledButton: ViewStyle = {
@@ -245,7 +236,7 @@ const $disabledButton: ViewStyle = {
 };
 
 const $helperText: ThemedStyle<TextStyle> = () => ({
-  textAlign: 'center',
-  color: 'rgba(255, 255, 255, 0.8)',
+  textAlign: "center",
+  color: "rgba(255, 255, 255, 0.8)",
   fontSize: 14,
 });
