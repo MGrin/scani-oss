@@ -1,5 +1,5 @@
 import { Loader2 } from "lucide-react-native";
-import { type FC, memo, useEffect, useState } from "react";
+import { type FC, forwardRef, memo, useEffect, useImperativeHandle, useRef, useState } from "react";
 import { type TextStyle, View, type ViewStyle } from "react-native";
 import Animated, {
   Easing,
@@ -8,13 +8,18 @@ import Animated, {
   withRepeat,
   withTiming,
 } from "react-native-reanimated";
-import { OtpInput } from "react-native-otp-entry";
+import { OtpInput, type OtpInputRef } from "react-native-otp-entry";
 
 import { useAppTheme } from "@/theme/context";
 import type { ThemedStyle } from "@/theme/types";
 
 import { Button } from "./Button";
 import { Text } from "./Text";
+
+export interface MagicCodeInputRef {
+  focus: () => void;
+  clear: () => void;
+}
 
 interface MagicCodeInputProps {
   onSubmit: (code: string) => Promise<void>;
@@ -58,19 +63,30 @@ const LoadingSpinner: FC<LoadingSpinnerProps> = memo(
 );
 LoadingSpinner.displayName = "LoadingSpinner";
 
-export const MagicCodeInput: FC<MagicCodeInputProps> = ({
+export const MagicCodeInput = forwardRef<MagicCodeInputRef, MagicCodeInputProps>(({
   onSubmit,
   onResend,
   isLoading = false,
   error,
   resendCooldown = 30,
   hideHelperText = false,
-}) => {
+}, ref) => {
   const { themed } = useAppTheme();
+  const otpRef = useRef<OtpInputRef>(null);
   const [code, setCode] = useState("");
   const [isResending, setIsResending] = useState(false);
   const [resendCooldownRemaining, setResendCooldownRemaining] =
     useState(resendCooldown);
+
+  useImperativeHandle(ref, () => ({
+    focus: () => {
+      otpRef.current?.focus();
+    },
+    clear: () => {
+      otpRef.current?.clear();
+      setCode("");
+    },
+  }));
 
   useEffect(() => {
     if (resendCooldownRemaining > 0) {
@@ -104,10 +120,11 @@ export const MagicCodeInput: FC<MagicCodeInputProps> = ({
           style={themed($label)}
         />
         <OtpInput
+          ref={otpRef}
           numberOfDigits={6}
           onTextChange={setCode}
           onFilled={handleFilled}
-          autoFocus
+          autoFocus={false}
           disabled={isLoading || isResending}
           type="numeric"
           focusColor="rgba(255, 255, 255, 0.9)"
@@ -155,7 +172,9 @@ export const MagicCodeInput: FC<MagicCodeInputProps> = ({
       )}
     </View>
   );
-};
+});
+
+MagicCodeInput.displayName = "MagicCodeInput";
 
 const $container: ThemedStyle<ViewStyle> = ({ spacing }) => ({
   gap: spacing.lg,

@@ -15,7 +15,7 @@ import Animated, {
   withTiming,
 } from 'react-native-reanimated';
 
-import { MagicCodeInput } from '@/components/MagicCodeInput';
+import { MagicCodeInput, type MagicCodeInputRef } from '@/components/MagicCodeInput';
 import { Screen } from '@/components/Screen';
 import { SvgIcon } from '@/components/SvgIcon';
 import { Text } from '@/components/Text';
@@ -167,6 +167,7 @@ export const LoginScreen: FC = () => {
   const [isVerifyingCode, setIsVerifyingCode] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const emailInputRef = useRef<RNTextInput>(null);
+  const magicCodeInputRef = useRef<MagicCodeInputRef>(null);
 
   const videoOpacity = useSharedValue(0);
   
@@ -259,6 +260,16 @@ export const LoginScreen: FC = () => {
   const animatedStepsContainerStyle = useAnimatedStyle(() => ({
     transform: [{ translateY: stepsContainerTranslateY.value }],
   }));
+
+  useEffect(() => {
+    if (!isEmailSent || isSendingCode) return;
+    
+    const timer = setTimeout(() => {
+      magicCodeInputRef.current?.focus();
+    }, 350);
+    
+    return () => clearTimeout(timer);
+  }, [isEmailSent, isSendingCode]);
 
   const handleEmailSubmit = useCallback(async () => {
     if (!email.trim()) {
@@ -398,6 +409,7 @@ export const LoginScreen: FC = () => {
                   <Text tx="auth:codeSent" txOptions={{ email }} style={themed($description)} />
 
                   <MagicCodeInput
+                    ref={magicCodeInputRef}
                     onSubmit={handleCodeSubmit}
                     onResend={handleResendCode}
                     isLoading={isVerifyingCode}
