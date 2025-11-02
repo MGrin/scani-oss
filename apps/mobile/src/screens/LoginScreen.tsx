@@ -71,13 +71,13 @@ const EmailInputForm: FC<EmailInputFormProps> = memo(
         {/* <Text preset="heading" tx="auth:welcomeToScani" style={$staticTitle} /> */}
 
         <View>
-          <Text tx="auth:emailLabel" style={$staticInputLabel} />
           <View style={$staticInputWrapper}>
             <RNTextInput
               key="email-input-stable"
               ref={inputRef}
               placeholder={translate('auth:emailPlaceholder')}
               placeholderTextColor="rgba(255, 255, 255, 0.5)"
+              cursorColor="white"
               value={email}
               onChangeText={onChangeText}
               keyboardType="email-address"
@@ -441,13 +441,6 @@ const $logoContainer: ViewStyle = {
   alignItems: 'center',
   justifyContent: 'center',
   marginBottom: 24,
-};
-
-const $staticInputLabel: TextStyle = {
-  color: 'white',
-  fontSize: 14,
-  fontFamily: 'System',
-  marginBottom: 8,
 };
 
 const $staticInputWrapper: ViewStyle = {
