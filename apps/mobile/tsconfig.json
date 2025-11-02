@@ -20,7 +20,8 @@
     "baseUrl": ".",
     "paths": {
       "@/*": ["./src/*"],
-      "@assets/*": ["./assets/*"]
+      "@assets/*": ["./assets/*"],
+      "@scani/backend/types": ["../backend/src/types.ts"]
     },
     "typeRoots": ["./node_modules/@types", "./types"]
   },

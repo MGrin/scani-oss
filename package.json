@@ -3,7 +3,9 @@
   "private": true,
   "type": "module",
   "workspaces": [
-    "apps/*",
+    "apps/backend",
+    "apps/frontendV2",
+    "apps/landing",
     "packages/*"
   ],
   "scripts": {
@@ -39,6 +41,5 @@
     "typescript": "^5"
   },
   "dependencies": {
-    "expo-linear-gradient": "^15.0.7"
   }
 }

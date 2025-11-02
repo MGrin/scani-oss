@@ -1,9 +1,13 @@
 /* eslint-env node */
 // Learn more https://docs.expo.io/guides/customizing-metro
 const { getDefaultConfig } = require("expo/metro-config")
+const path = require("path")
 
 /** @type {import('expo/metro-config').MetroConfig} */
 const config = getDefaultConfig(__dirname)
+
+// Add support for importing backend types
+config.watchFolders = [path.resolve(__dirname, "../backend/src")]
 
 config.transformer.getTransformOptions = async () => ({
   transform: {
