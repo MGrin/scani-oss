@@ -1,5 +1,6 @@
-import { ResizeMode, Video } from 'expo-av';
 import { GlassView } from 'expo-glass-effect';
+import type { VideoPlayer } from 'expo-video';
+import { useVideoPlayer, VideoView } from 'expo-video';
 import { Loader2 } from 'lucide-react-native';
 import type { FC } from 'react';
 import { memo, useCallback, useEffect, useRef, useState } from 'react';
@@ -165,6 +166,12 @@ export const LoginScreen: FC = () => {
   const [error, setError] = useState<string | null>(null);
   const emailInputRef = useRef<RNTextInput>(null);
 
+  const player = useVideoPlayer(require('../../assets/video/login_bg.mp4'), (videoPlayer: VideoPlayer) => {
+    videoPlayer.loop = true;
+    videoPlayer.muted = true;
+    videoPlayer.play();
+  });
+
   const handleEmailSubmit = useCallback(async () => {
     if (!email.trim()) {
       logger.warn('Email submission attempted with empty email');
@@ -246,13 +253,11 @@ export const LoginScreen: FC = () => {
     return (
       <View style={themed($container)}>
         <StatusBar barStyle="light-content" />
-        <Video
-          source={require('../../assets/video/login_bg.mp4')}
+        <VideoView
+          player={player}
           style={$videoBackground}
-          resizeMode={ResizeMode.COVER}
-          shouldPlay
-          isLooping
-          isMuted
+          contentFit="cover"
+          nativeControls={false}
         />
         <View style={$videoOverlay} />
         <Screen
@@ -305,13 +310,11 @@ export const LoginScreen: FC = () => {
   return (
     <View style={$staticContainer}>
       <StatusBar barStyle="light-content" />
-      <Video
-        source={require('../../assets/video/login_bg.mp4')}
+      <VideoView
+        player={player}
         style={$videoBackground}
-        resizeMode={ResizeMode.COVER}
-        shouldPlay
-        isLooping
-        isMuted
+        contentFit="cover"
+        nativeControls={false}
       />
       <View style={$videoOverlay} />
       <Screen
