@@ -1,43 +1,43 @@
-import { FC, useEffect, useRef, useState, memo } from "react"
+import { Loader2 } from 'lucide-react-native';
+import { type FC, memo, useEffect, useRef, useState } from 'react';
 import {
-  View,
+  type NativeSyntheticEvent,
   TextInput,
-  NativeSyntheticEvent,
-  TextInputKeyPressEventData,
-  ViewStyle,
-  TextStyle,
-} from "react-native"
+  type TextInputKeyPressEventData,
+  type TextStyle,
+  View,
+  type ViewStyle,
+} from 'react-native';
 import Animated, {
-  useSharedValue,
+  Easing,
   useAnimatedStyle,
+  useSharedValue,
   withRepeat,
   withTiming,
-  Easing,
-} from "react-native-reanimated"
-import { Loader2 } from "lucide-react-native"
+} from 'react-native-reanimated';
 
-import { useAppTheme } from "@/theme/context"
-import type { ThemedStyle } from "@/theme/types"
+import { useAppTheme } from '@/theme/context';
+import type { ThemedStyle } from '@/theme/types';
 
-import { Button } from "./Button"
-import { Text } from "./Text"
+import { Button } from './Button';
+import { Text } from './Text';
 
 interface MagicCodeInputProps {
-  onSubmit: (code: string) => Promise<void>
-  onResend: () => Promise<void>
-  isLoading?: boolean
-  error?: string | null
-  resendCooldown?: number
-  hideHelperText?: boolean
+  onSubmit: (code: string) => Promise<void>;
+  onResend: () => Promise<void>;
+  isLoading?: boolean;
+  error?: string | null;
+  resendCooldown?: number;
+  hideHelperText?: boolean;
 }
 
 interface LoadingSpinnerProps {
-  size?: number
-  color?: string
+  size?: number;
+  color?: string;
 }
 
-const LoadingSpinner: FC<LoadingSpinnerProps> = memo(({ size = 16, color = "white" }) => {
-  const rotation = useSharedValue(0)
+const LoadingSpinner: FC<LoadingSpinnerProps> = memo(({ size = 16, color = 'white' }) => {
+  const rotation = useSharedValue(0);
 
   useEffect(() => {
     rotation.value = withRepeat(
@@ -46,21 +46,21 @@ const LoadingSpinner: FC<LoadingSpinnerProps> = memo(({ size = 16, color = "whit
         easing: Easing.linear,
       }),
       -1,
-      false,
-    )
-  }, [rotation])
+      false
+    );
+  }, [rotation]);
 
   const animatedStyle = useAnimatedStyle(() => ({
     transform: [{ rotate: `${rotation.value}deg` }],
-  }))
+  }));
 
   return (
     <Animated.View style={animatedStyle}>
       <Loader2 size={size} color={color} strokeWidth={2} />
     </Animated.View>
-  )
-})
-LoadingSpinner.displayName = "LoadingSpinner"
+  );
+});
+LoadingSpinner.displayName = 'LoadingSpinner';
 
 export const MagicCodeInput: FC<MagicCodeInputProps> = ({
   onSubmit,
@@ -70,61 +70,61 @@ export const MagicCodeInput: FC<MagicCodeInputProps> = ({
   resendCooldown = 30,
   hideHelperText = false,
 }) => {
-  const { themed, theme } = useAppTheme()
-  const [code, setCode] = useState<string[]>(["", "", "", "", "", ""])
-  const [isResending, setIsResending] = useState(false)
-  const [resendCooldownRemaining, setResendCooldownRemaining] = useState(resendCooldown)
-  const inputRefs = useRef<(TextInput | null)[]>([])
+  const { themed, theme } = useAppTheme();
+  const [code, setCode] = useState<string[]>(['', '', '', '', '', '']);
+  const [isResending, setIsResending] = useState(false);
+  const [resendCooldownRemaining, setResendCooldownRemaining] = useState(resendCooldown);
+  const inputRefs = useRef<(TextInput | null)[]>([]);
 
   useEffect(() => {
-    inputRefs.current[0]?.focus()
-  }, [])
+    inputRefs.current[0]?.focus();
+  }, []);
 
   useEffect(() => {
     if (resendCooldownRemaining > 0) {
       const timer = setTimeout(() => {
-        setResendCooldownRemaining((prev) => prev - 1)
-      }, 1000)
-      return () => clearTimeout(timer)
+        setResendCooldownRemaining((prev) => prev - 1);
+      }, 1000);
+      return () => clearTimeout(timer);
     }
-  }, [resendCooldownRemaining])
+  }, [resendCooldownRemaining]);
 
   const handleChange = (index: number, value: string) => {
-    if (value && !/^\d$/.test(value)) return
+    if (value && !/^\d$/.test(value)) return;
 
-    const newCode = [...code]
-    newCode[index] = value
-    setCode(newCode)
+    const newCode = [...code];
+    newCode[index] = value;
+    setCode(newCode);
 
     if (value && index < 5) {
-      inputRefs.current[index + 1]?.focus()
+      inputRefs.current[index + 1]?.focus();
     }
 
-    if (newCode.every((digit) => digit !== "") && !isLoading) {
-      onSubmit(newCode.join(""))
+    if (newCode.every((digit) => digit !== '') && !isLoading) {
+      onSubmit(newCode.join(''));
     }
-  }
+  };
 
   const handleKeyPress = (index: number, e: NativeSyntheticEvent<TextInputKeyPressEventData>) => {
-    if (e.nativeEvent.key === "Backspace") {
+    if (e.nativeEvent.key === 'Backspace') {
       if (!code[index] && index > 0) {
-        inputRefs.current[index - 1]?.focus()
+        inputRefs.current[index - 1]?.focus();
       } else {
-        const newCode = [...code]
-        newCode[index] = ""
-        setCode(newCode)
+        const newCode = [...code];
+        newCode[index] = '';
+        setCode(newCode);
       }
     }
-  }
+  };
 
   const handleResend = async () => {
-    setIsResending(true)
-    setCode(["", "", "", "", "", ""])
-    await onResend()
-    setIsResending(false)
-    setResendCooldownRemaining(resendCooldown)
-    inputRefs.current[0]?.focus()
-  }
+    setIsResending(true);
+    setCode(['', '', '', '', '', '']);
+    await onResend();
+    setIsResending(false);
+    setResendCooldownRemaining(resendCooldown);
+    inputRefs.current[0]?.focus();
+  };
 
   return (
     <View style={themed($container)}>
@@ -135,7 +135,7 @@ export const MagicCodeInput: FC<MagicCodeInputProps> = ({
             <TextInput
               key={`code-${index}`}
               ref={(el) => {
-                inputRefs.current[index] = el
+                inputRefs.current[index] = el;
               }}
               style={themed([
                 $input,
@@ -161,10 +161,8 @@ export const MagicCodeInput: FC<MagicCodeInputProps> = ({
         preset="default"
         onPress={handleResend}
         disabled={isResending || isLoading || resendCooldownRemaining > 0}
-        tx={resendCooldownRemaining > 0 ? "auth:resendCodeIn" : "auth:resendCode"}
-        txOptions={
-          resendCooldownRemaining > 0 ? { seconds: resendCooldownRemaining } : undefined
-        }
+        tx={resendCooldownRemaining > 0 ? 'auth:resendCodeIn' : 'auth:resendCode'}
+        txOptions={resendCooldownRemaining > 0 ? { seconds: resendCooldownRemaining } : undefined}
         style={$secondaryButton}
         textStyle={$secondaryButtonText}
         disabledStyle={$disabledButton}
@@ -175,78 +173,78 @@ export const MagicCodeInput: FC<MagicCodeInputProps> = ({
         <Text preset="formHelper" tx="auth:codeExpires" style={themed($helperText)} />
       )}
     </View>
-  )
-}
+  );
+};
 
 const $container: ThemedStyle<ViewStyle> = ({ spacing }) => ({
   gap: spacing.lg,
-})
+});
 
 const $inputsWrapper: ThemedStyle<ViewStyle> = ({ spacing }) => ({
   gap: spacing.sm,
-})
+});
 
 const $label: ThemedStyle<TextStyle> = () => ({
-  textAlign: "center",
-  color: "rgba(255, 255, 255, 0.9)",
+  textAlign: 'center',
+  color: 'rgba(255, 255, 255, 0.9)',
   fontSize: 15,
   lineHeight: 22,
-})
+});
 
 const $inputsRow: ThemedStyle<ViewStyle> = ({ spacing }) => ({
-  flexDirection: "row",
-  justifyContent: "center",
+  flexDirection: 'row',
+  justifyContent: 'center',
   gap: spacing.xs,
-})
+});
 
 const $input: ThemedStyle<TextStyle> = ({ typography }) => ({
   width: 48,
   height: 56,
-  textAlign: "center",
+  textAlign: 'center',
   fontSize: 24,
   fontFamily: typography.primary.bold,
   borderWidth: 1,
   borderRadius: 12,
-  borderColor: "rgba(255, 255, 255, 0.3)",
-  backgroundColor: "rgba(255, 255, 255, 0.2)",
-  color: "white",
-})
+  borderColor: 'rgba(255, 255, 255, 0.3)',
+  backgroundColor: 'rgba(255, 255, 255, 0.2)',
+  color: 'white',
+});
 
 const $inputError: ThemedStyle<TextStyle> = () => ({
-  borderColor: "#ff6b6b",
-})
+  borderColor: '#ff6b6b',
+});
 
 const $inputDisabled: ThemedStyle<TextStyle> = () => ({
   opacity: 0.5,
-})
+});
 
 const $errorText: ThemedStyle<TextStyle> = ({ spacing }) => ({
-  color: "#ff6b6b",
-  textAlign: "center",
+  color: '#ff6b6b',
+  textAlign: 'center',
   marginTop: spacing.xs,
   fontSize: 14,
-})
+});
 
 const $secondaryButton: ViewStyle = {
   height: 56,
   borderRadius: 16,
   borderWidth: 1,
-  borderColor: "rgba(255, 255, 255, 0.3)",
-  backgroundColor: "rgba(255, 255, 255, 0.1)",
-}
+  borderColor: 'rgba(255, 255, 255, 0.3)',
+  backgroundColor: 'rgba(255, 255, 255, 0.1)',
+};
 
 const $secondaryButtonText: TextStyle = {
-  color: "white",
+  color: 'white',
   fontSize: 16,
-  fontWeight: "500",
-}
+  fontWeight: '500',
+};
 
 const $disabledButton: ViewStyle = {
   opacity: 0.5,
-}
+};
 
 const $helperText: ThemedStyle<TextStyle> = () => ({
-  textAlign: "center",
-  color: "rgba(255, 255, 255, 0.8)",
+  textAlign: 'center',
+  color: 'rgba(255, 255, 255, 0.8)',
   fontSize: 14,
-})
+});

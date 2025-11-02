@@ -1,25 +1,34 @@
-import { forwardRef, Ref } from "react"
-import { View, ViewStyle, TextStyle, Platform, TextInput } from "react-native"
-import { GlassView } from "expo-glass-effect"
+import { GlassView } from 'expo-glass-effect';
+import { forwardRef, type Ref } from 'react';
+import { Platform, type TextInput, type TextStyle, View, type ViewStyle } from 'react-native';
 
-import { useAppTheme } from "@/theme/context"
-import type { ThemedStyle } from "@/theme/types"
+import { useAppTheme } from '@/theme/context';
+import type { ThemedStyle } from '@/theme/types';
 
-import { TextField, TextFieldProps } from "./TextField"
+import { TextField, type TextFieldProps } from './TextField';
 
 export interface LiquidGlassInputProps extends TextFieldProps {
-  glassStyle?: ViewStyle
+  glassStyle?: ViewStyle;
 }
 
 export const LiquidGlassInput = forwardRef(function LiquidGlassInput(
   props: LiquidGlassInputProps,
-  ref: Ref<TextInput>,
+  ref: Ref<TextInput>
 ) {
-  const { glassStyle, inputWrapperStyle, style, LabelTextProps, HelperTextProps, label, labelTx, labelTxOptions, ...textFieldProps } =
-    props
-  const { themed } = useAppTheme()
+  const {
+    glassStyle,
+    inputWrapperStyle,
+    style,
+    LabelTextProps,
+    HelperTextProps,
+    label,
+    labelTx,
+    labelTxOptions,
+    ...textFieldProps
+  } = props;
+  const { themed } = useAppTheme();
 
-  if (Platform.OS !== "ios") {
+  if (Platform.OS !== 'ios') {
     return (
       <TextField
         {...textFieldProps}
@@ -35,7 +44,7 @@ export const LiquidGlassInput = forwardRef(function LiquidGlassInput(
           style: [themed($whiteText), HelperTextProps?.style],
         }}
       />
-    )
+    );
   }
 
   return (
@@ -71,56 +80,55 @@ export const LiquidGlassInput = forwardRef(function LiquidGlassInput(
         </View>
       </GlassView>
     </View>
-  )
-})
+  );
+});
 
 const $wrapper: ThemedStyle<ViewStyle> = () => ({
-  width: "100%",
-})
+  width: '100%',
+});
 
 const $labelContainer: ThemedStyle<ViewStyle> = ({ spacing }) => ({
   marginBottom: spacing.xs,
-})
+});
 
 const $labelStyle: ThemedStyle<TextStyle> = ({ spacing }) => ({
   marginBottom: spacing.xxs,
-})
+});
 
 const $hidden: ThemedStyle<ViewStyle> = () => ({
-  display: "none",
-})
+  display: 'none',
+});
 
 const $glassContainer: ThemedStyle<ViewStyle> = () => ({
-  width: "100%",
+  width: '100%',
   height: 56,
   borderRadius: 12,
-  backgroundColor: "rgba(255, 255, 255, 0.1)",
-})
+  backgroundColor: 'rgba(255, 255, 255, 0.1)',
+});
 
 const $innerContent: ThemedStyle<ViewStyle> = ({ spacing }) => ({
   flex: 1,
-  justifyContent: "center",
-  alignItems: "stretch",
+  justifyContent: 'center',
+  alignItems: 'stretch',
   paddingHorizontal: spacing.md,
-  width: "100%",
-})
+  width: '100%',
+});
 
 const $transparentWrapper: ThemedStyle<ViewStyle> = () => ({
-  backgroundColor: "transparent",
+  backgroundColor: 'transparent',
   borderWidth: 0,
   minHeight: 0,
   paddingVertical: 0,
   paddingHorizontal: 0,
-})
+});
 
 const $whiteText: ThemedStyle<TextStyle> = ({ typography }) => ({
-  color: "white",
+  color: 'white',
   fontSize: 16,
   fontFamily: typography.primary.normal,
-})
+});
 
 const $androidInputWrapper: ThemedStyle<ViewStyle> = ({ isDark }) => ({
-  backgroundColor: isDark ? "rgba(255, 255, 255, 0.1)" : "rgba(255, 255, 255, 0.3)",
-  borderColor: isDark ? "rgba(255, 255, 255, 0.2)" : "rgba(0, 0, 0, 0.15)",
-})
-
+  backgroundColor: isDark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(255, 255, 255, 0.3)',
+  borderColor: isDark ? 'rgba(255, 255, 255, 0.2)' : 'rgba(0, 0, 0, 0.15)',
+});

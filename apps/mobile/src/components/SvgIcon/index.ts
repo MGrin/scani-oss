@@ -1,2 +1,2 @@
-export * from "./SvgIcon"
-export * from "./registry"
+export * from './registry';
+export * from './SvgIcon';

@@ -1,10 +1,10 @@
 // we always make sure 'react-native' gets included first
-import * as ReactNative from "react-native"
+import * as ReactNative from 'react-native';
 
-import mockFile from "./mockFile"
+import mockFile from './mockFile';
 
 // libraries to mock
-jest.doMock("react-native", () => {
+jest.doMock('react-native', () => {
   // Extend ReactNative
   return Object.setPrototypeOf(
     {
@@ -15,43 +15,43 @@ jest.doMock("react-native", () => {
           (
             uri: string,
             success: (width: number, height: number) => void,
-            failure?: (_error: any) => void,
-          ) => success(100, 100),
+            failure?: (_error: any) => void
+          ) => success(100, 100)
         ),
       },
     },
-    ReactNative,
-  )
-})
+    ReactNative
+  );
+});
 
-jest.mock("i18next", () => ({
-  currentLocale: "en",
+jest.mock('i18next', () => ({
+  currentLocale: 'en',
   t: (key: string, params: Record<string, string>) => {
-    return `${key} ${JSON.stringify(params)}`
+    return `${key} ${JSON.stringify(params)}`;
   },
   translate: (key: string, params: Record<string, string>) => {
-    return `${key} ${JSON.stringify(params)}`
+    return `${key} ${JSON.stringify(params)}`;
   },
-}))
+}));
 
-jest.mock("expo-localization", () => ({
-  ...jest.requireActual("expo-localization"),
-  getLocales: () => [{ languageTag: "en-US", textDirection: "ltr" }],
-}))
+jest.mock('expo-localization', () => ({
+  ...jest.requireActual('expo-localization'),
+  getLocales: () => [{ languageTag: 'en-US', textDirection: 'ltr' }],
+}));
 
-jest.mock("../src/i18n/index.ts", () => ({
+jest.mock('../src/i18n/index.ts', () => ({
   i18n: {
     isInitialized: true,
-    language: "en",
+    language: 'en',
     t: (key: string, params: Record<string, string>) => {
-      return `${key} ${JSON.stringify(params)}`
+      return `${key} ${JSON.stringify(params)}`;
     },
     numberToCurrency: jest.fn(),
   },
-}))
+}));
 
-declare const tron
+declare const tron;
 
 declare global {
-  let __TEST__: boolean
+  let __TEST__: boolean;
 }

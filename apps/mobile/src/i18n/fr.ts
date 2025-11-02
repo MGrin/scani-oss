@@ -1,15 +1,15 @@
-import { Translations } from "./en"
+import type { Translations } from './en';
 
 const fr: Translations = {
   common: {
-    ok: "OK !",
-    cancel: "Annuler",
-    back: "Retour",
+    ok: 'OK !',
+    cancel: 'Annuler',
+    back: 'Retour',
   },
   welcomeScreen: {
     postscript:
       "psst  — Ce n'est probablement pas à quoi ressemble votre application. (À moins que votre designer ne vous ait donné ces écrans, dans ce cas, mettez la en prod !)",
-    readyForLaunch: "Votre application, presque prête pour le lancement !",
+    readyForLaunch: 'Votre application, presque prête pour le lancement !',
     exciting: "(ohh, c'est excitant !)",
   },
   errorScreen: {
@@ -20,12 +20,12 @@ const fr: Translations = {
   },
   emptyStateComponent: {
     generic: {
-      heading: "Si vide... si triste",
+      heading: 'Si vide... si triste',
       content:
         "Aucune donnée trouvée pour le moment. Essayez de cliquer sur le bouton pour rafraîchir ou recharger l'application.",
-      button: "Essayons à nouveau",
+      button: 'Essayons à nouveau',
     },
   },
-}
+};
 
-export default fr
+export default fr;

@@ -1,4 +1,4 @@
-const SPACING_MULTIPLIER = 1.0
+const SPACING_MULTIPLIER = 1.0;
 
 // This is an example of how you can have different spacing values for different themes.
 export const spacing = {
@@ -11,4 +11,4 @@ export const spacing = {
   xl: 32 * SPACING_MULTIPLIER,
   xxl: 48 * SPACING_MULTIPLIER,
   xxxl: 64 * SPACING_MULTIPLIER,
-} as const
+} as const;

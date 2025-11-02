@@ -1,4 +1,4 @@
-import { ExpoConfig, ConfigContext } from "@expo/config"
+import type { ConfigContext, ExpoConfig } from '@expo/config';
 
 /**
  * Use tsx/cjs here so we can use TypeScript for our Config Plugins
@@ -6,7 +6,7 @@ import { ExpoConfig, ConfigContext } from "@expo/config"
  *
  * See https://docs.expo.dev/config-plugins/plugins/#add-typescript-support-and-convert-to-dynamic-app-config
  */
-import "tsx/cjs"
+import 'tsx/cjs';
 
 /**
  * @param config ExpoConfig coming from the static config app.json if it exists
@@ -15,7 +15,7 @@ import "tsx/cjs"
  * https://docs.expo.dev/workflow/configuration/#configuration-resolution-rules
  */
 module.exports = ({ config }: ConfigContext): Partial<ExpoConfig> => {
-  const existingPlugins = config.plugins ?? []
+  const existingPlugins = config.plugins ?? [];
 
   return {
     ...config,
@@ -30,12 +30,12 @@ module.exports = ({ config }: ConfigContext): Partial<ExpoConfig> => {
       privacyManifests: {
         NSPrivacyAccessedAPITypes: [
           {
-            NSPrivacyAccessedAPIType: "NSPrivacyAccessedAPICategoryUserDefaults",
-            NSPrivacyAccessedAPITypeReasons: ["CA92.1"], // CA92.1 = "Access info from same app, per documentation"
+            NSPrivacyAccessedAPIType: 'NSPrivacyAccessedAPICategoryUserDefaults',
+            NSPrivacyAccessedAPITypeReasons: ['CA92.1'], // CA92.1 = "Access info from same app, per documentation"
           },
         ],
       },
     },
     plugins: [...existingPlugins],
-  }
-}
+  };
+};

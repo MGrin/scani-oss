@@ -1,13 +1,13 @@
 /* eslint-env node */
 // Learn more https://docs.expo.io/guides/customizing-metro
-const { getDefaultConfig } = require("expo/metro-config")
-const path = require("path")
+const { getDefaultConfig } = require('expo/metro-config');
+const path = require('path');
 
 /** @type {import('expo/metro-config').MetroConfig} */
-const config = getDefaultConfig(__dirname)
+const config = getDefaultConfig(__dirname);
 
 // Add support for importing backend types
-config.watchFolders = [path.resolve(__dirname, "../backend/src")]
+config.watchFolders = [path.resolve(__dirname, '../backend/src')];
 
 config.transformer.getTransformOptions = async () => ({
   transform: {
@@ -18,7 +18,7 @@ config.transformer.getTransformOptions = async () => ({
     // And here: https://github.com/expo/expo/issues/27279#issuecomment-1971610698
     inlineRequires: true,
   },
-})
+});
 
 // This is a temporary fix that helps fixing an issue with axios/apisauce.
 // See the following issues in Github for more details:
@@ -26,22 +26,22 @@ config.transformer.getTransformOptions = async () => ({
 // https://github.com/axios/axios/issues/6899
 // The solution was taken from the following issue:
 // https://github.com/facebook/metro/issues/1272
-config.resolver.unstable_conditionNames = ["require", "default", "browser"]
+config.resolver.unstable_conditionNames = ['require', 'default', 'browser'];
 
 // This helps support certain popular third-party libraries
 // such as Firebase that use the extension cjs.
-config.resolver.sourceExts.push("cjs")
+config.resolver.sourceExts.push('cjs');
 
 // SVG transformer configuration
 config.transformer = {
   ...config.transformer,
-  babelTransformerPath: require.resolve("react-native-svg-transformer"),
-}
+  babelTransformerPath: require.resolve('react-native-svg-transformer'),
+};
 
 config.resolver = {
   ...config.resolver,
-  assetExts: config.resolver.assetExts.filter((ext) => ext !== "svg"),
-  sourceExts: [...config.resolver.sourceExts, "svg"],
-}
+  assetExts: config.resolver.assetExts.filter((ext) => ext !== 'svg'),
+  sourceExts: [...config.resolver.sourceExts, 'svg'],
+};
 
-module.exports = config
+module.exports = config;
