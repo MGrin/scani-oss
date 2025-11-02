@@ -1,12 +1,16 @@
 import type { FC } from "react"
 import { View } from "react-native"
 import type { StyleProp, ViewStyle } from "react-native"
+
 import { useAppTheme } from "@/theme/context"
+
 import { svgIconRegistry, type SvgIconTypes } from "./registry"
 
 export interface SvgIconProps {
   name: SvgIconTypes
   size?: number
+  width?: number
+  height?: number
   color?: string
   gradientColors?: string[]
   gradientStart?: { x: number; y: number }
@@ -18,6 +22,8 @@ export interface SvgIconProps {
 export const SvgIcon: FC<SvgIconProps> = ({
   name,
   size = 24,
+  width,
+  height,
   color,
   gradientColors,
   gradientStart = { x: 0, y: 0 },
@@ -27,16 +33,29 @@ export const SvgIcon: FC<SvgIconProps> = ({
 }) => {
   const { theme } = useAppTheme()
   const IconComponent = svgIconRegistry[name]
-  
+
   if (!IconComponent) {
     return null
   }
-  
+
   const iconColor = color ?? theme.colors.text
-  
+
+  const svgProps: { width?: number; height?: number } = {}
+  if (width !== undefined) {
+    svgProps.width = width
+    if (height !== undefined) {
+      svgProps.height = height
+    }
+  } else if (height !== undefined) {
+    svgProps.height = height
+  } else {
+    svgProps.width = size
+    svgProps.height = size
+  }
+
   return (
     <View style={containerStyle}>
-      <IconComponent width={size} height={size} color={iconColor} style={style} />
+      <IconComponent {...svgProps} color={iconColor} style={style} />
     </View>
   )
 }

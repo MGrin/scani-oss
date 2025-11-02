@@ -1,8 +1,10 @@
 import type { FC } from "react"
 import { useState, useCallback, useRef, memo, useEffect } from "react"
-import { View, Alert, StatusBar, TextInput, Pressable } from "react-native"
+import { View, Alert, StatusBar, Pressable, TextInput as RNTextInput } from "react-native"
 import type { ViewStyle, TextStyle } from "react-native"
+import { Video, ResizeMode } from "expo-av"
 import { GlassView } from "expo-glass-effect"
+import { Loader2 } from "lucide-react-native"
 import Animated, {
   FadeIn,
   FadeOut,
@@ -10,6 +12,8 @@ import Animated, {
   useAnimatedStyle,
   withTiming,
   interpolateColor,
+  withRepeat,
+  Easing,
 } from "react-native-reanimated"
 
 import { MagicCodeInput } from "@/components/MagicCodeInput"
@@ -29,7 +33,7 @@ interface EmailInputFormProps {
   isLoading: boolean
   isEmailValid: boolean
   error: string | null
-  inputRef: React.RefObject<TextInput | null>
+  inputRef: React.RefObject<RNTextInput | null>
 }
 
 const EmailInputForm: FC<EmailInputFormProps> = memo(
@@ -64,17 +68,12 @@ const EmailInputForm: FC<EmailInputFormProps> = memo(
 
     return (
       <>
-        <View style={$staticLogoContainer}>
-          <SvgIcon name="scani-logo" size={96} />
-        </View>
-
-        <Text preset="heading" tx="auth:welcome" style={$staticTitle} />
-        <Text tx="auth:enterEmail" style={$staticDescription} />
+        {/* <Text preset="heading" tx="auth:welcomeToScani" style={$staticTitle} /> */}
 
         <View>
           <Text tx="auth:emailLabel" style={$staticInputLabel} />
           <View style={$staticInputWrapper}>
-            <TextInput
+            <RNTextInput
               key="email-input-stable"
               ref={inputRef}
               placeholder={translate("auth:emailPlaceholder")}
@@ -124,15 +123,47 @@ const EmailInputForm: FC<EmailInputFormProps> = memo(
 )
 EmailInputForm.displayName = "EmailInputForm"
 
+interface LoadingSpinnerProps {
+  size?: number
+  color?: string
+}
+
+const LoadingSpinner: FC<LoadingSpinnerProps> = memo(({ size = 48, color = "white" }) => {
+  const rotation = useSharedValue(0)
+
+  useEffect(() => {
+    rotation.value = withRepeat(
+      withTiming(360, {
+        duration: 1000,
+        easing: Easing.linear,
+      }),
+      -1,
+      false,
+    )
+  }, [rotation])
+
+  const animatedStyle = useAnimatedStyle(() => ({
+    transform: [{ rotate: `${rotation.value}deg` }],
+  }))
+
+  return (
+    <Animated.View style={animatedStyle}>
+      <Loader2 size={size} color={color} strokeWidth={2} />
+    </Animated.View>
+  )
+})
+LoadingSpinner.displayName = "LoadingSpinner"
+
 export const LoginScreen: FC = () => {
   const { themed } = useAppTheme()
   const { authenticate, verifyCode } = useAuth()
   const [email, setEmail] = useState("")
   const [isEmailValid, setIsEmailValid] = useState(false)
-  const [isLoading, setIsLoading] = useState(false)
   const [isEmailSent, setIsEmailSent] = useState(false)
+  const [isSendingCode, setIsSendingCode] = useState(false)
+  const [isVerifyingCode, setIsVerifyingCode] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const emailInputRef = useRef<TextInput>(null)
+  const emailInputRef = useRef<RNTextInput>(null)
 
   const handleEmailSubmit = useCallback(async () => {
     if (!email.trim()) {
@@ -148,30 +179,34 @@ export const LoginScreen: FC = () => {
       return
     }
 
-    setIsLoading(true)
     setError(null)
+    setIsEmailSent(true)
+    setIsSendingCode(true)
 
     logger.info("Submitting email for authentication", { email })
 
     const result = await authenticate(email)
 
-    setIsLoading(false)
+    setIsSendingCode(false)
 
     if (result.error) {
       logger.error("Email authentication failed", undefined, { email, error: result.error })
       setError(result.error)
+      setIsEmailSent(false)
     } else {
-      logger.info("OTP sent, transitioning to code input", { email })
-      setIsEmailSent(true)
+      logger.info("OTP sent successfully", { email })
     }
   }, [email, authenticate])
 
   const handleCodeSubmit = useCallback(
     async (code: string) => {
       setError(null)
+      setIsVerifyingCode(true)
       logger.info("Submitting verification code", { email })
 
       const result = await verifyCode(email, code)
+
+      setIsVerifyingCode(false)
 
       if (result.error) {
         logger.error("Code verification failed", undefined, { email, error: result.error })
@@ -193,8 +228,10 @@ export const LoginScreen: FC = () => {
   const handleUseDifferentEmail = useCallback(() => {
     logger.info("User switching to different email")
     setIsEmailSent(false)
+    setIsSendingCode(false)
     setError(null)
     setEmail("")
+    setIsEmailValid(false)
   }, [])
 
   const handleEmailChange = useCallback((text: string) => {
@@ -209,11 +246,15 @@ export const LoginScreen: FC = () => {
     return (
       <View style={themed($container)}>
         <StatusBar barStyle="light-content" />
-        <View style={themed($backgroundPattern)}>
-          <View style={themed($decorativeCircle1)} />
-          <View style={themed($decorativeCircle2)} />
-          <View style={themed($decorativeCircle3)} />
-        </View>
+        <Video
+          source={require("../../assets/video/login_bg.mp4")}
+          style={$videoBackground}
+          resizeMode={ResizeMode.COVER}
+          shouldPlay
+          isLooping
+          isMuted
+        />
+        <View style={$videoOverlay} />
         <Screen
           preset="fixed"
           contentContainerStyle={themed($screenContainer)}
@@ -227,26 +268,34 @@ export const LoginScreen: FC = () => {
           >
             <GlassView glassEffectStyle="clear" isInteractive={false} style={themed($cardGlass)}>
               <View style={themed($cardContent)}>
-                <Text preset="heading" tx="auth:checkYourEmail" style={themed($title)} />
-                <Text tx="auth:codeSent" style={themed($description)} />
-                <Text style={themed($emailDisplay)}>{email}</Text>
+                {isSendingCode ? (
+                  <>
+                    <View style={$loadingContainer}>
+                      <View style={$spinnerWrapper}>
+                        <LoadingSpinner size={32} color="rgba(255, 255, 255, 0.2)" />
+                      </View>
+                      <Text tx="auth:sendingCode" style={themed($sendingText)} />
+                    </View>
+                  </>
+                ) : (
+                  <>
+                    <Text preset="heading" tx="auth:checkYourEmail" style={themed($title)} />
+                    <Text tx="auth:codeSent" txOptions={{ email }} style={themed($description)} />
 
-                <MagicCodeInput
-                  onSubmit={handleCodeSubmit}
-                  onResend={handleResendCode}
-                  isLoading={isLoading}
-                  error={error}
-                />
+                    <MagicCodeInput
+                      onSubmit={handleCodeSubmit}
+                      onResend={handleResendCode}
+                      isLoading={isVerifyingCode}
+                      error={error}
+                      resendCooldown={30}
+                      hideHelperText
+                    />
 
-                <GlassView
-                  glassEffectStyle="clear"
-                  isInteractive={false}
-                  style={themed($buttonGlass)}
-                >
-                  <Pressable onPress={handleUseDifferentEmail} style={themed($buttonPressable)}>
-                    <Text tx="auth:useDifferentEmail" style={themed($buttonText)} />
-                  </Pressable>
-                </GlassView>
+                    <Pressable onPress={handleUseDifferentEmail} style={$linkContainer}>
+                      <Text tx="auth:useDifferentEmail" style={$linkText} />
+                    </Pressable>
+                  </>
+                )}
               </View>
             </GlassView>
           </Animated.View>
@@ -258,11 +307,15 @@ export const LoginScreen: FC = () => {
   return (
     <View style={$staticContainer}>
       <StatusBar barStyle="light-content" />
-      <View style={$staticBackgroundPattern}>
-        <View style={$staticDecorativeCircle1} />
-        <View style={$staticDecorativeCircle2} />
-        <View style={$staticDecorativeCircle3} />
-      </View>
+      <Video
+        source={require("../../assets/video/login_bg.mp4")}
+        style={$videoBackground}
+        resizeMode={ResizeMode.COVER}
+        shouldPlay
+        isLooping
+        isMuted
+      />
+      <View style={$videoOverlay} />
       <Screen
         preset="fixed"
         contentContainerStyle={$staticScreenContainer}
@@ -274,13 +327,16 @@ export const LoginScreen: FC = () => {
           exiting={FadeOut}
           style={$staticCenteredContent}
         >
+          <View style={$logoContainer}>
+            <SvgIcon name="scani-logo" width={120} height={34} />
+          </View>
           <GlassView glassEffectStyle="clear" isInteractive={false} style={$staticCardGlass}>
             <View style={$staticCardContent}>
               <EmailInputForm
                 email={email}
                 onChangeText={handleEmailChange}
                 onSubmit={handleEmailSubmit}
-                isLoading={isLoading}
+                isLoading={false}
                 isEmailValid={isEmailValid}
                 error={error}
                 inputRef={emailInputRef}
@@ -295,46 +351,6 @@ export const LoginScreen: FC = () => {
 
 const $container: ThemedStyle<ViewStyle> = () => ({
   flex: 1,
-})
-
-const $backgroundPattern: ThemedStyle<ViewStyle> = ({ isDark }) => ({
-  position: "absolute",
-  left: 0,
-  right: 0,
-  top: 0,
-  bottom: 0,
-  backgroundColor: isDark ? "#1a1a2e" : "#667eea",
-})
-
-const $decorativeCircle1: ThemedStyle<ViewStyle> = ({ isDark }) => ({
-  position: "absolute",
-  width: 400,
-  height: 400,
-  borderRadius: 200,
-  backgroundColor: isDark ? "rgba(118, 75, 162, 0.3)" : "rgba(118, 75, 162, 0.6)",
-  top: -150,
-  right: -150,
-})
-
-const $decorativeCircle2: ThemedStyle<ViewStyle> = ({ isDark }) => ({
-  position: "absolute",
-  width: 350,
-  height: 350,
-  borderRadius: 175,
-  backgroundColor: isDark ? "rgba(240, 147, 251, 0.25)" : "rgba(240, 147, 251, 0.5)",
-  bottom: -120,
-  left: -120,
-})
-
-const $decorativeCircle3: ThemedStyle<ViewStyle> = ({ isDark }) => ({
-  position: "absolute",
-  width: 200,
-  height: 200,
-  borderRadius: 100,
-  backgroundColor: isDark ? "rgba(102, 126, 234, 0.4)" : "rgba(102, 200, 234, 0.7)",
-  top: "50%",
-  left: "50%",
-  transform: [{ translateX: -100 }, { translateY: -100 }],
 })
 
 const $screenContainer: ThemedStyle<ViewStyle> = () => ({
@@ -352,16 +368,13 @@ const $centeredContent: ThemedStyle<ViewStyle> = ({ spacing }) => ({
 
 const $cardGlass: ThemedStyle<ViewStyle> = () => ({
   width: "100%",
-  height: 500,
   borderRadius: 25,
   backgroundColor: "rgba(255, 255, 255, 0.1)",
 })
 
 const $cardContent: ThemedStyle<ViewStyle> = ({ spacing }) => ({
-  padding: spacing.xl,
-  paddingTop: spacing.xxl,
-  paddingBottom: spacing.xl,
-  gap: spacing.md,
+  padding: spacing.sm,
+  gap: spacing.sm,
 })
 
 const $title: ThemedStyle<TextStyle> = ({ typography, spacing }) => ({
@@ -381,56 +394,25 @@ const $description: ThemedStyle<TextStyle> = ({ spacing, typography }) => ({
   fontFamily: typography.primary.normal,
 })
 
-const $emailDisplay: ThemedStyle<TextStyle> = ({ typography, spacing }) => ({
-  textAlign: "center",
-  color: "white",
-  fontFamily: typography.primary.semiBold,
-  fontSize: 16,
-  marginBottom: spacing.sm,
-})
-
 const $staticContainer: ViewStyle = {
   flex: 1,
 }
 
-const $staticBackgroundPattern: ViewStyle = {
+const $videoBackground: ViewStyle = {
   position: "absolute",
   left: 0,
   right: 0,
   top: 0,
   bottom: 0,
-  backgroundColor: "#667eea",
 }
 
-const $staticDecorativeCircle1: ViewStyle = {
+const $videoOverlay: ViewStyle = {
   position: "absolute",
-  width: 400,
-  height: 400,
-  borderRadius: 200,
-  backgroundColor: "rgba(118, 75, 162, 0.6)",
-  top: -150,
-  right: -150,
-}
-
-const $staticDecorativeCircle2: ViewStyle = {
-  position: "absolute",
-  width: 350,
-  height: 350,
-  borderRadius: 175,
-  backgroundColor: "rgba(240, 147, 251, 0.5)",
-  bottom: -120,
-  left: -120,
-}
-
-const $staticDecorativeCircle3: ViewStyle = {
-  position: "absolute",
-  width: 200,
-  height: 200,
-  borderRadius: 100,
-  backgroundColor: "rgba(102, 200, 234, 0.7)",
-  top: "50%",
-  left: "50%",
-  transform: [{ translateX: -100 }, { translateY: -100 }],
+  left: 0,
+  right: 0,
+  top: 0,
+  bottom: 0,
+  backgroundColor: "rgba(0, 0, 0, 0.6)",
 }
 
 const $staticScreenContainer: ViewStyle = {
@@ -448,39 +430,19 @@ const $staticCenteredContent: ViewStyle = {
 
 const $staticCardGlass: ViewStyle = {
   width: "100%",
-  height: 500,
   borderRadius: 25,
   backgroundColor: "rgba(255, 255, 255, 0.1)",
 }
 
 const $staticCardContent: ViewStyle = {
-  padding: 32,
-  paddingTop: 40,
-  paddingBottom: 32,
-  gap: 16,
+  padding: 16,
+  gap: 8,
 }
 
-const $staticLogoContainer: ViewStyle = {
+const $logoContainer: ViewStyle = {
   alignItems: "center",
+  justifyContent: "center",
   marginBottom: 24,
-}
-
-const $staticTitle: TextStyle = {
-  textAlign: "center",
-  color: "white",
-  fontFamily: "System",
-  fontWeight: "600",
-  fontSize: 28,
-  marginBottom: 4,
-}
-
-const $staticDescription: TextStyle = {
-  textAlign: "center",
-  color: "rgba(255, 255, 255, 0.9)",
-  fontSize: 15,
-  lineHeight: 22,
-  marginBottom: 16,
-  fontFamily: "System",
 }
 
 const $staticInputLabel: TextStyle = {
@@ -499,6 +461,7 @@ const $staticInputWrapper: ViewStyle = {
   borderColor: "rgba(255, 255, 255, 0.3)",
   paddingHorizontal: 16,
   justifyContent: "center",
+  marginBottom: 16,
 }
 
 const $staticInput: TextStyle = {
@@ -553,25 +516,33 @@ const $staticHelperText: TextStyle = {
   fontFamily: "System",
 }
 
-const $buttonGlass: ThemedStyle<ViewStyle> = () => ({
-  width: "100%",
-  height: 56,
-  borderRadius: 16,
-  backgroundColor: "rgba(255, 255, 255, 0.1)",
-})
-
-const $buttonPressable: ThemedStyle<ViewStyle> = ({ spacing }) => ({
-  flex: 1,
-  justifyContent: "center",
+const $linkContainer: ViewStyle = {
   alignItems: "center",
-  paddingHorizontal: spacing.md,
-})
+  paddingVertical: 12,
+}
 
-const $buttonText: ThemedStyle<TextStyle> = ({ typography }) => ({
-  color: "white",
-  fontSize: 16,
-  fontFamily: typography.primary.medium,
+const $linkText: TextStyle = {
+  color: "rgba(255, 255, 255, 0.9)",
+  fontSize: 15,
   textAlign: "center",
+}
+
+const $loadingContainer: ViewStyle = {
+  alignItems: "center",
+  justifyContent: "center",
+  paddingVertical: 40,
+  gap: 24,
+}
+
+const $spinnerWrapper: ViewStyle = {
+  marginBottom: 8,
+}
+
+const $sendingText: ThemedStyle<TextStyle> = ({ typography }) => ({
+  textAlign: "center",
+  color: "white",
+  fontFamily: typography.primary.normal,
+  fontSize: 18,
 })
 
 export default LoginScreen

@@ -1,4 +1,4 @@
-import { FC, useEffect, useRef, useState } from "react"
+import { FC, useEffect, useRef, useState, memo } from "react"
 import {
   View,
   // eslint-disable-next-line no-restricted-imports
@@ -7,8 +7,15 @@ import {
   TextInputKeyPressEventData,
   ViewStyle,
   TextStyle,
-  ActivityIndicator,
 } from "react-native"
+import Animated, {
+  useSharedValue,
+  useAnimatedStyle,
+  withRepeat,
+  withTiming,
+  Easing,
+} from "react-native-reanimated"
+import { Loader2 } from "lucide-react-native"
 
 import { useAppTheme } from "@/theme/context"
 import type { ThemedStyle } from "@/theme/types"
@@ -21,22 +28,67 @@ interface MagicCodeInputProps {
   onResend: () => Promise<void>
   isLoading?: boolean
   error?: string | null
+  resendCooldown?: number
+  hideHelperText?: boolean
 }
+
+interface LoadingSpinnerProps {
+  size?: number
+  color?: string
+}
+
+const LoadingSpinner: FC<LoadingSpinnerProps> = memo(({ size = 16, color = "white" }) => {
+  const rotation = useSharedValue(0)
+
+  useEffect(() => {
+    rotation.value = withRepeat(
+      withTiming(360, {
+        duration: 1000,
+        easing: Easing.linear,
+      }),
+      -1,
+      false,
+    )
+  }, [rotation])
+
+  const animatedStyle = useAnimatedStyle(() => ({
+    transform: [{ rotate: `${rotation.value}deg` }],
+  }))
+
+  return (
+    <Animated.View style={animatedStyle}>
+      <Loader2 size={size} color={color} strokeWidth={2} />
+    </Animated.View>
+  )
+})
+LoadingSpinner.displayName = "LoadingSpinner"
 
 export const MagicCodeInput: FC<MagicCodeInputProps> = ({
   onSubmit,
   onResend,
   isLoading = false,
   error,
+  resendCooldown = 30,
+  hideHelperText = false,
 }) => {
   const { themed, theme } = useAppTheme()
   const [code, setCode] = useState<string[]>(["", "", "", "", "", ""])
   const [isResending, setIsResending] = useState(false)
+  const [resendCooldownRemaining, setResendCooldownRemaining] = useState(resendCooldown)
   const inputRefs = useRef<(TextInput | null)[]>([])
 
   useEffect(() => {
     inputRefs.current[0]?.focus()
   }, [])
+
+  useEffect(() => {
+    if (resendCooldownRemaining > 0) {
+      const timer = setTimeout(() => {
+        setResendCooldownRemaining((prev) => prev - 1)
+      }, 1000)
+      return () => clearTimeout(timer)
+    }
+  }, [resendCooldownRemaining])
 
   const handleChange = (index: number, value: string) => {
     if (value && !/^\d$/.test(value)) return
@@ -71,14 +123,8 @@ export const MagicCodeInput: FC<MagicCodeInputProps> = ({
     setCode(["", "", "", "", "", ""])
     await onResend()
     setIsResending(false)
+    setResendCooldownRemaining(resendCooldown)
     inputRefs.current[0]?.focus()
-  }
-
-  const handleManualSubmit = () => {
-    const codeString = code.join("")
-    if (codeString.length === 6) {
-      onSubmit(codeString)
-    }
   }
 
   return (
@@ -105,40 +151,30 @@ export const MagicCodeInput: FC<MagicCodeInputProps> = ({
               editable={!isLoading && !isResending}
               selectTextOnFocus
               autoFocus={index === 0}
-              placeholderTextColor={theme.colors.textDim}
+              placeholderTextColor="rgba(255, 255, 255, 0.5)"
             />
           ))}
         </View>
         {error && <Text style={themed($errorText)}>{error}</Text>}
       </View>
 
-      <View style={themed($buttonsWrapper)}>
-        <Button
-          preset="filled"
-          onPress={handleManualSubmit}
-          disabled={code.join("").length !== 6 || isLoading}
-          tx="auth:verifyCode"
-          RightAccessory={
-            isLoading
-              ? () => <ActivityIndicator size="small" color={theme.colors.palette.neutral100} />
-              : undefined
-          }
-        />
+      <Button
+        preset="default"
+        onPress={handleResend}
+        disabled={isResending || isLoading || resendCooldownRemaining > 0}
+        tx={resendCooldownRemaining > 0 ? "auth:resendCodeIn" : "auth:resendCode"}
+        txOptions={
+          resendCooldownRemaining > 0 ? { seconds: resendCooldownRemaining } : undefined
+        }
+        style={$secondaryButton}
+        textStyle={$secondaryButtonText}
+        disabledStyle={$disabledButton}
+        RightAccessory={isResending ? () => <LoadingSpinner size={16} color="white" /> : undefined}
+      />
 
-        <Button
-          preset="default"
-          onPress={handleResend}
-          disabled={isResending || isLoading}
-          tx="auth:resendCode"
-          RightAccessory={
-            isResending
-              ? () => <ActivityIndicator size="small" color={theme.colors.text} />
-              : undefined
-          }
-        />
-      </View>
-
-      <Text preset="formHelper" tx="auth:codeExpires" style={themed($helperText)} />
+      {!hideHelperText && (
+        <Text preset="formHelper" tx="auth:codeExpires" style={themed($helperText)} />
+      )}
     </View>
   )
 }
@@ -151,9 +187,11 @@ const $inputsWrapper: ThemedStyle<ViewStyle> = ({ spacing }) => ({
   gap: spacing.sm,
 })
 
-const $label: ThemedStyle<TextStyle> = ({ colors }) => ({
+const $label: ThemedStyle<TextStyle> = () => ({
   textAlign: "center",
-  color: colors.textDim,
+  color: "rgba(255, 255, 255, 0.9)",
+  fontSize: 15,
+  lineHeight: 22,
 })
 
 const $inputsRow: ThemedStyle<ViewStyle> = ({ spacing }) => ({
@@ -162,39 +200,54 @@ const $inputsRow: ThemedStyle<ViewStyle> = ({ spacing }) => ({
   gap: spacing.xs,
 })
 
-const $input: ThemedStyle<TextStyle> = ({ colors, typography }) => ({
+const $input: ThemedStyle<TextStyle> = ({ typography }) => ({
   width: 48,
   height: 56,
   textAlign: "center",
   fontSize: 24,
   fontFamily: typography.primary.bold,
-  borderWidth: 2,
-  borderRadius: 8,
-  borderColor: colors.palette.neutral400,
-  backgroundColor: colors.palette.neutral200,
-  color: colors.text,
+  borderWidth: 1,
+  borderRadius: 12,
+  borderColor: "rgba(255, 255, 255, 0.3)",
+  backgroundColor: "rgba(255, 255, 255, 0.2)",
+  color: "white",
 })
 
-const $inputError: ThemedStyle<TextStyle> = ({ colors }) => ({
-  borderColor: colors.error,
+const $inputError: ThemedStyle<TextStyle> = () => ({
+  borderColor: "#ff6b6b",
 })
 
 const $inputDisabled: ThemedStyle<TextStyle> = () => ({
   opacity: 0.5,
 })
 
-const $errorText: ThemedStyle<TextStyle> = ({ colors, spacing }) => ({
-  color: colors.error,
+const $errorText: ThemedStyle<TextStyle> = ({ spacing }) => ({
+  color: "#ff6b6b",
   textAlign: "center",
   marginTop: spacing.xs,
   fontSize: 14,
 })
 
-const $buttonsWrapper: ThemedStyle<ViewStyle> = ({ spacing }) => ({
-  gap: spacing.sm,
-})
+const $secondaryButton: ViewStyle = {
+  height: 56,
+  borderRadius: 16,
+  borderWidth: 1,
+  borderColor: "rgba(255, 255, 255, 0.3)",
+  backgroundColor: "rgba(255, 255, 255, 0.1)",
+}
 
-const $helperText: ThemedStyle<TextStyle> = ({ colors }) => ({
+const $secondaryButtonText: TextStyle = {
+  color: "white",
+  fontSize: 16,
+  fontWeight: "500",
+}
+
+const $disabledButton: ViewStyle = {
+  opacity: 0.5,
+}
+
+const $helperText: ThemedStyle<TextStyle> = () => ({
   textAlign: "center",
-  color: colors.textDim,
+  color: "rgba(255, 255, 255, 0.8)",
+  fontSize: 14,
 })
