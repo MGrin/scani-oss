@@ -2,6 +2,7 @@ import type { FC } from 'react';
 import { Image, type ImageStyle, type TextStyle, View, type ViewStyle } from 'react-native';
 
 import { Screen } from '@/components/Screen';
+
 import { Text } from '@/components/Text';
 import { isRTL } from '@/i18n';
 import { useAppTheme } from '@/theme/context';

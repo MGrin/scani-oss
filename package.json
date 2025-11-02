@@ -40,6 +40,5 @@
     "concurrently": "^8.2.2",
     "typescript": "^5"
   },
-  "dependencies": {
-  }
+  "dependencies": {}
 }
