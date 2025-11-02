@@ -169,6 +169,15 @@ export const LoginScreen: FC = () => {
   const emailInputRef = useRef<RNTextInput>(null);
 
   const videoOpacity = useSharedValue(0);
+  
+  const emailStepOpacity = useSharedValue(1);
+  const emailStepTranslateY = useSharedValue(0);
+  const loaderStepOpacity = useSharedValue(0);
+  const loaderStepTranslateY = useSharedValue(15);
+  const codeStepOpacity = useSharedValue(0);
+  const codeStepTranslateY = useSharedValue(15);
+  const logoTranslateY = useSharedValue(0);
+  const stepsContainerTranslateY = useSharedValue(0);
 
   const player = useVideoPlayer(require('../../assets/video/login_bg.mp4'), (videoPlayer: VideoPlayer) => {
     videoPlayer.loop = true;
@@ -187,8 +196,68 @@ export const LoginScreen: FC = () => {
     });
   }, [videoOpacity]);
 
+  useEffect(() => {
+    const animationConfig = { duration: 300, easing: Easing.out(Easing.ease) };
+    const verticalAdjustment = -80;
+    
+    if (!isEmailSent) {
+      // Show email step - baseline
+      emailStepOpacity.value = withTiming(1, animationConfig);
+      emailStepTranslateY.value = withTiming(0, animationConfig);
+      loaderStepOpacity.value = withTiming(0, animationConfig);
+      loaderStepTranslateY.value = withTiming(15, animationConfig);
+      codeStepOpacity.value = withTiming(0, animationConfig);
+      codeStepTranslateY.value = withTiming(15, animationConfig);
+      logoTranslateY.value = withTiming(0, animationConfig);
+      stepsContainerTranslateY.value = withTiming(0, animationConfig);
+    } else if (isSendingCode) {
+      // Show loader step - stays at baseline, no vertical adjustment
+      emailStepOpacity.value = withTiming(0, animationConfig);
+      emailStepTranslateY.value = withTiming(-15, animationConfig);
+      loaderStepOpacity.value = withTiming(1, animationConfig);
+      loaderStepTranslateY.value = withTiming(0, animationConfig);
+      codeStepOpacity.value = withTiming(0, animationConfig);
+      codeStepTranslateY.value = withTiming(15, animationConfig);
+      logoTranslateY.value = withTiming(0, animationConfig);
+      stepsContainerTranslateY.value = withTiming(0, animationConfig);
+    } else {
+      // Show magic code step - move UP to stay centered (taller content)
+      emailStepOpacity.value = withTiming(0, animationConfig);
+      emailStepTranslateY.value = withTiming(-15, animationConfig);
+      loaderStepOpacity.value = withTiming(0, animationConfig);
+      loaderStepTranslateY.value = withTiming(-15, animationConfig);
+      codeStepOpacity.value = withTiming(1, animationConfig);
+      codeStepTranslateY.value = withTiming(0, animationConfig);
+      logoTranslateY.value = withTiming(verticalAdjustment, animationConfig);
+      stepsContainerTranslateY.value = withTiming(verticalAdjustment, animationConfig);
+    }
+  }, [isEmailSent, isSendingCode, emailStepOpacity, emailStepTranslateY, loaderStepOpacity, loaderStepTranslateY, codeStepOpacity, codeStepTranslateY, logoTranslateY, stepsContainerTranslateY]);
+
   const animatedVideoStyle = useAnimatedStyle(() => ({
     opacity: videoOpacity.value,
+  }));
+
+  const animatedEmailStepStyle = useAnimatedStyle(() => ({
+    opacity: emailStepOpacity.value,
+    transform: [{ translateY: emailStepTranslateY.value }],
+  }));
+
+  const animatedLoaderStepStyle = useAnimatedStyle(() => ({
+    opacity: loaderStepOpacity.value,
+    transform: [{ translateY: loaderStepTranslateY.value }],
+  }));
+
+  const animatedCodeStepStyle = useAnimatedStyle(() => ({
+    opacity: codeStepOpacity.value,
+    transform: [{ translateY: codeStepTranslateY.value }],
+  }));
+
+  const animatedLogoStyle = useAnimatedStyle(() => ({
+    transform: [{ translateY: logoTranslateY.value }],
+  }));
+
+  const animatedStepsContainerStyle = useAnimatedStyle(() => ({
+    transform: [{ translateY: stepsContainerTranslateY.value }],
   }));
 
   const handleEmailSubmit = useCallback(async () => {
@@ -268,63 +337,6 @@ export const LoginScreen: FC = () => {
     setIsEmailValid(emailRegex.test(text));
   }, []);
 
-  if (isEmailSent) {
-    return (
-      <View style={themed($container)}>
-        <StatusBar barStyle="light-content" />
-        <View style={$splashBackground} />
-        <Animated.View style={[animatedVideoStyle, $videoBackground]}>
-          <VideoView
-            player={player}
-            style={$videoBackground}
-            contentFit="cover"
-            nativeControls={false}
-          />
-        </Animated.View>
-        <View style={$videoOverlay} />
-        <Screen
-          preset="fixed"
-          contentContainerStyle={themed($screenContainer)}
-          safeAreaEdges={['top', 'bottom']}
-          backgroundColor="transparent"
-        >
-          <Animated.View style={[themed($centeredContent), animatedStyle]}>
-            <GlassView glassEffectStyle="clear" isInteractive={false} style={themed($cardGlass)}>
-              <View style={themed($cardContent)}>
-                {isSendingCode ? (
-                  <View style={$loadingContainer}>
-                    <View style={$spinnerWrapper}>
-                      <LoadingSpinner size={32} color="rgba(255, 255, 255, 0.2)" />
-                    </View>
-                    <Text tx="auth:sendingCode" style={themed($sendingText)} />
-                  </View>
-                ) : (
-                  <>
-                    <Text preset="heading" tx="auth:checkYourEmail" style={themed($title)} />
-                    <Text tx="auth:codeSent" txOptions={{ email }} style={themed($description)} />
-
-                    <MagicCodeInput
-                      onSubmit={handleCodeSubmit}
-                      onResend={handleResendCode}
-                      isLoading={isVerifyingCode}
-                      error={error}
-                      resendCooldown={30}
-                      hideHelperText
-                    />
-
-                    <Pressable onPress={handleUseDifferentEmail} style={$linkContainer}>
-                      <Text tx="auth:useDifferentEmail" style={$linkText} />
-                    </Pressable>
-                  </>
-                )}
-              </View>
-            </GlassView>
-          </Animated.View>
-        </Screen>
-      </View>
-    );
-  }
-
   return (
     <View style={$staticContainer}>
       <StatusBar barStyle="light-content" />
@@ -345,44 +357,67 @@ export const LoginScreen: FC = () => {
         backgroundColor="transparent"
       >
         <Animated.View style={[$staticCenteredContent, animatedStyle]}>
-          <View style={$logoContainer}>
+          <Animated.View style={[animatedLogoStyle, $logoContainer]}>
             <SvgIcon name="scani-logo" width={120} height={34} />
-          </View>
-          <GlassView glassEffectStyle="clear" isInteractive={false} style={$staticCardGlass}>
-            <View style={$staticCardContent}>
-              <EmailInputForm
-                email={email}
-                onChangeText={handleEmailChange}
-                onSubmit={handleEmailSubmit}
-                isLoading={false}
-                isEmailValid={isEmailValid}
-                error={error}
-                inputRef={emailInputRef}
-              />
-            </View>
-          </GlassView>
+          </Animated.View>
+
+          <Animated.View style={[animatedStepsContainerStyle, $stepsContainer]}>
+            <Animated.View style={[animatedEmailStepStyle, $stepWrapperBase]} pointerEvents={!isEmailSent ? 'auto' : 'none'}>
+              <GlassView glassEffectStyle="clear" isInteractive={false} style={$staticCardGlass}>
+                <View style={$staticCardContent}>
+                  <EmailInputForm
+                    email={email}
+                    onChangeText={handleEmailChange}
+                    onSubmit={handleEmailSubmit}
+                    isLoading={false}
+                    isEmailValid={isEmailValid}
+                    error={error}
+                    inputRef={emailInputRef}
+                  />
+                </View>
+              </GlassView>
+            </Animated.View>
+
+            <Animated.View style={[animatedLoaderStepStyle, $stepWrapperAbsolute]} pointerEvents={isEmailSent && isSendingCode ? 'auto' : 'none'}>
+              <GlassView glassEffectStyle="clear" isInteractive={false} style={themed($cardGlass)}>
+                <View style={themed($cardContent)}>
+                  <View style={$loadingContainer}>
+                    <View style={$spinnerWrapper}>
+                      <LoadingSpinner size={32} color="rgba(255, 255, 255, 0.2)" />
+                    </View>
+                    <Text tx="auth:sendingCode" style={themed($sendingText)} />
+                  </View>
+                </View>
+              </GlassView>
+            </Animated.View>
+
+            <Animated.View style={[animatedCodeStepStyle, $stepWrapperAbsolute]} pointerEvents={isEmailSent && !isSendingCode ? 'auto' : 'none'}>
+              <GlassView glassEffectStyle="clear" isInteractive={false} style={themed($cardGlass)}>
+                <View style={themed($cardContent)}>
+                  <Text preset="heading" tx="auth:checkYourEmail" style={themed($title)} />
+                  <Text tx="auth:codeSent" txOptions={{ email }} style={themed($description)} />
+
+                  <MagicCodeInput
+                    onSubmit={handleCodeSubmit}
+                    onResend={handleResendCode}
+                    isLoading={isVerifyingCode}
+                    error={error}
+                    resendCooldown={30}
+                    hideHelperText
+                  />
+
+                  <Pressable onPress={handleUseDifferentEmail} style={$linkContainer}>
+                    <Text tx="auth:useDifferentEmail" style={$linkText} />
+                  </Pressable>
+                </View>
+              </GlassView>
+            </Animated.View>
+          </Animated.View>
         </Animated.View>
       </Screen>
     </View>
   );
 };
-
-const $container: ThemedStyle<ViewStyle> = () => ({
-  flex: 1,
-});
-
-const $screenContainer: ThemedStyle<ViewStyle> = () => ({
-  flex: 1,
-  justifyContent: 'center',
-  alignItems: 'center',
-  paddingVertical: 24,
-});
-
-const $centeredContent: ThemedStyle<ViewStyle> = ({ spacing }) => ({
-  paddingHorizontal: spacing.lg,
-  width: '100%',
-  maxWidth: 440,
-});
 
 const $cardGlass: ThemedStyle<ViewStyle> = () => ({
   width: '100%',
@@ -464,6 +499,23 @@ const $staticCardGlass: ViewStyle = {
 const $staticCardContent: ViewStyle = {
   padding: 16,
   gap: 8,
+};
+
+const $stepsContainer: ViewStyle = {
+  position: 'relative',
+  width: '100%',
+};
+
+const $stepWrapperBase: ViewStyle = {
+  position: 'relative',
+  width: '100%',
+};
+
+const $stepWrapperAbsolute: ViewStyle = {
+  position: 'absolute',
+  width: '100%',
+  top: 0,
+  left: 0,
 };
 
 const $logoContainer: ViewStyle = {
