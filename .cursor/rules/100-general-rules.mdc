@@ -857,8 +857,9 @@ utils.accounts.invalidate(); // Invalidate all account queries
 5. Write failing tests (TDD)
 6. Implement feature
 7. Add logging and error handling
-8. Run linter and typecheck
-9. Verify test coverage
+8. **Run linter and fix all errors** - `bun lint` (backend/web) or `yarn lint:fix` (mobile)
+9. Run typecheck and fix all type errors
+10. Verify test coverage
 
 ### Database Changes
 
@@ -1009,11 +1010,12 @@ createAccount.mutate({ name: "My Account" });
 
 ### Code Changes
 
-- **Run linters** - Always run lint/format after changes
-- **Fix all errors** - Resolve all TypeScript and linter errors
+- **ALWAYS run linters after ANY code change** - Run `bun lint` (backend/web) or `yarn lint:fix` (mobile) immediately after making changes
+- **Fix all errors** - Resolve all TypeScript and linter errors before considering task complete
 - **Type safety** - Never use `any` without justification
 - **Check imports** - Verify all imports are correct
 - **Use patterns** - Follow established patterns in codebase
+- **Verify linting passes** - Ensure zero warnings and zero errors from linter before moving to next task
 
 ### Mobile Development
 
@@ -1038,8 +1040,8 @@ When uncertain:
 
 Before completing any task:
 
+- ✅ **Linter MUST pass with zero warnings and zero errors** - Run `bun lint` or `yarn lint:fix`
 - ✅ TypeScript compilation succeeds
-- ✅ Linter passes with zero warnings
 - ✅ All tests pass (if tests exist)
 - ✅ No console errors
 - ✅ Mobile: Dark mode works
