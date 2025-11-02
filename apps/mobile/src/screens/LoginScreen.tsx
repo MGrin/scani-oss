@@ -14,6 +14,7 @@ import Animated, {
 
 import { MagicCodeInput } from "@/components/MagicCodeInput"
 import { Screen } from "@/components/Screen"
+import { SvgIcon } from "@/components/SvgIcon"
 import { Text } from "@/components/Text"
 import { useAuth } from "@/contexts/AuthContext"
 import { translate } from "@/i18n"
@@ -63,6 +64,10 @@ const EmailInputForm: FC<EmailInputFormProps> = memo(
 
     return (
       <>
+        <View style={$staticLogoContainer}>
+          <SvgIcon name="scani-logo" size={96} />
+        </View>
+
         <Text preset="heading" tx="auth:welcome" style={$staticTitle} />
         <Text tx="auth:enterEmail" style={$staticDescription} />
 
@@ -453,6 +458,11 @@ const $staticCardContent: ViewStyle = {
   paddingTop: 40,
   paddingBottom: 32,
   gap: 16,
+}
+
+const $staticLogoContainer: ViewStyle = {
+  alignItems: "center",
+  marginBottom: 24,
 }
 
 const $staticTitle: TextStyle = {

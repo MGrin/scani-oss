@@ -32,4 +32,16 @@ config.resolver.unstable_conditionNames = ["require", "default", "browser"]
 // such as Firebase that use the extension cjs.
 config.resolver.sourceExts.push("cjs")
 
+// SVG transformer configuration
+config.transformer = {
+  ...config.transformer,
+  babelTransformerPath: require.resolve("react-native-svg-transformer"),
+}
+
+config.resolver = {
+  ...config.resolver,
+  assetExts: config.resolver.assetExts.filter((ext) => ext !== "svg"),
+  sourceExts: [...config.resolver.sourceExts, "svg"],
+}
+
 module.exports = config
