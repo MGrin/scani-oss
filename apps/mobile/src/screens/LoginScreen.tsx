@@ -170,7 +170,7 @@ export const LoginScreen: FC = () => {
   const magicCodeInputRef = useRef<MagicCodeInputRef>(null);
 
   const videoOpacity = useSharedValue(0);
-  
+
   const emailStepOpacity = useSharedValue(1);
   const emailStepTranslateY = useSharedValue(0);
   const loaderStepOpacity = useSharedValue(0);
@@ -180,11 +180,14 @@ export const LoginScreen: FC = () => {
   const logoTranslateY = useSharedValue(0);
   const stepsContainerTranslateY = useSharedValue(0);
 
-  const player = useVideoPlayer(require('../../assets/video/login_bg.mp4'), (videoPlayer: VideoPlayer) => {
-    videoPlayer.loop = true;
-    videoPlayer.muted = true;
-    videoPlayer.play();
-  });
+  const player = useVideoPlayer(
+    require('../../assets/video/login_bg.mp4'),
+    (videoPlayer: VideoPlayer) => {
+      videoPlayer.loop = true;
+      videoPlayer.muted = true;
+      videoPlayer.play();
+    }
+  );
 
   useEffect(() => {
     dismissLoader();
@@ -200,7 +203,7 @@ export const LoginScreen: FC = () => {
   useEffect(() => {
     const animationConfig = { duration: 300, easing: Easing.out(Easing.ease) };
     const verticalAdjustment = -80;
-    
+
     if (!isEmailSent) {
       // Show email step - baseline
       emailStepOpacity.value = withTiming(1, animationConfig);
@@ -232,7 +235,18 @@ export const LoginScreen: FC = () => {
       logoTranslateY.value = withTiming(verticalAdjustment, animationConfig);
       stepsContainerTranslateY.value = withTiming(verticalAdjustment, animationConfig);
     }
-  }, [isEmailSent, isSendingCode, emailStepOpacity, emailStepTranslateY, loaderStepOpacity, loaderStepTranslateY, codeStepOpacity, codeStepTranslateY, logoTranslateY, stepsContainerTranslateY]);
+  }, [
+    isEmailSent,
+    isSendingCode,
+    emailStepOpacity,
+    emailStepTranslateY,
+    loaderStepOpacity,
+    loaderStepTranslateY,
+    codeStepOpacity,
+    codeStepTranslateY,
+    logoTranslateY,
+    stepsContainerTranslateY,
+  ]);
 
   const animatedVideoStyle = useAnimatedStyle(() => ({
     opacity: videoOpacity.value,
@@ -263,11 +277,11 @@ export const LoginScreen: FC = () => {
 
   useEffect(() => {
     if (!isEmailSent || isSendingCode) return;
-    
+
     const timer = setTimeout(() => {
       magicCodeInputRef.current?.focus();
     }, 350);
-    
+
     return () => clearTimeout(timer);
   }, [isEmailSent, isSendingCode]);
 
@@ -373,7 +387,10 @@ export const LoginScreen: FC = () => {
           </Animated.View>
 
           <Animated.View style={[animatedStepsContainerStyle, $stepsContainer]}>
-            <Animated.View style={[animatedEmailStepStyle, $stepWrapperBase]} pointerEvents={!isEmailSent ? 'auto' : 'none'}>
+            <Animated.View
+              style={[animatedEmailStepStyle, $stepWrapperBase]}
+              pointerEvents={!isEmailSent ? 'auto' : 'none'}
+            >
               <GlassView glassEffectStyle="clear" isInteractive={false} style={$staticCardGlass}>
                 <View style={$staticCardContent}>
                   <EmailInputForm
@@ -389,7 +406,10 @@ export const LoginScreen: FC = () => {
               </GlassView>
             </Animated.View>
 
-            <Animated.View style={[animatedLoaderStepStyle, $stepWrapperAbsolute]} pointerEvents={isEmailSent && isSendingCode ? 'auto' : 'none'}>
+            <Animated.View
+              style={[animatedLoaderStepStyle, $stepWrapperAbsolute]}
+              pointerEvents={isEmailSent && isSendingCode ? 'auto' : 'none'}
+            >
               <GlassView glassEffectStyle="clear" isInteractive={false} style={themed($cardGlass)}>
                 <View style={themed($cardContent)}>
                   <View style={$loadingContainer}>
@@ -402,7 +422,10 @@ export const LoginScreen: FC = () => {
               </GlassView>
             </Animated.View>
 
-            <Animated.View style={[animatedCodeStepStyle, $stepWrapperAbsolute]} pointerEvents={isEmailSent && !isSendingCode ? 'auto' : 'none'}>
+            <Animated.View
+              style={[animatedCodeStepStyle, $stepWrapperAbsolute]}
+              pointerEvents={isEmailSent && !isSendingCode ? 'auto' : 'none'}
+            >
               <GlassView glassEffectStyle="clear" isInteractive={false} style={themed($cardGlass)}>
                 <View style={themed($cardContent)}>
                   <Text preset="heading" tx="auth:checkYourEmail" style={themed($title)} />

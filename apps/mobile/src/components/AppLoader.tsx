@@ -1,15 +1,15 @@
-import type { ViewStyle } from "react-native";
-import { useEffect, useState } from "react";
+import { useEffect, useState } from 'react';
+import type { ViewStyle } from 'react-native';
 import Animated, {
   runOnJS,
   useAnimatedReaction,
   useAnimatedStyle,
   useSharedValue,
   withTiming,
-} from "react-native-reanimated";
+} from 'react-native-reanimated';
 
-import { SvgIcon } from "@/components/SvgIcon";
-import { useAppLoader } from "@/utils/appLoaderContext";
+import { SvgIcon } from '@/components/SvgIcon';
+import { useAppLoader } from '@/utils/appLoaderContext';
 
 export function AppLoader() {
   const { isLoaderDismissed } = useAppLoader();
@@ -48,7 +48,7 @@ export function AppLoader() {
   return (
     <Animated.View
       style={[$container, animatedContainerStyle]}
-      pointerEvents={isLoaderDismissed ? "none" : "auto"}
+      pointerEvents={isLoaderDismissed ? 'none' : 'auto'}
     >
       {/* FIXME: Fix magic number (probably by updating splash logo to predictable even number) */}
       <SvgIcon name="scani-icon" size={158} color="#FFFFFF" />
@@ -57,13 +57,13 @@ export function AppLoader() {
 }
 
 const $container: ViewStyle = {
-  position: "absolute",
+  position: 'absolute',
   top: 0,
   left: 0,
   right: 0,
   bottom: 0,
-  justifyContent: "center",
-  alignItems: "center",
-  backgroundColor: "#0A1B35",
+  justifyContent: 'center',
+  alignItems: 'center',
+  backgroundColor: '#0A1B35',
   zIndex: 9999,
 };

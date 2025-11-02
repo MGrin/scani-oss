@@ -1,8 +1,8 @@
-import { Redirect } from "expo-router";
-import { useEffect } from "react";
+import { Redirect } from 'expo-router';
+import { useEffect } from 'react';
 
-import { useAuth } from "@/contexts/AuthContext";
-import { useAppLoader } from "@/utils/appLoaderContext";
+import { useAuth } from '@/contexts/AuthContext';
+import { useAppLoader } from '@/utils/appLoaderContext';
 
 export default function Index() {
   const { session, loading } = useAuth();

@@ -1,6 +1,15 @@
 import { Loader2 } from "lucide-react-native";
-import { type FC, forwardRef, memo, useEffect, useImperativeHandle, useRef, useState } from "react";
+import {
+  type FC,
+  forwardRef,
+  memo,
+  useEffect,
+  useImperativeHandle,
+  useRef,
+  useState,
+} from "react";
 import { type TextStyle, View, type ViewStyle } from "react-native";
+import { OtpInput, type OtpInputRef } from "react-native-otp-entry";
 import Animated, {
   Easing,
   useAnimatedStyle,
@@ -8,7 +17,6 @@ import Animated, {
   withRepeat,
   withTiming,
 } from "react-native-reanimated";
-import { OtpInput, type OtpInputRef } from "react-native-otp-entry";
 
 import { useAppTheme } from "@/theme/context";
 import type { ThemedStyle } from "@/theme/types";
@@ -63,116 +71,126 @@ const LoadingSpinner: FC<LoadingSpinnerProps> = memo(
 );
 LoadingSpinner.displayName = "LoadingSpinner";
 
-export const MagicCodeInput = forwardRef<MagicCodeInputRef, MagicCodeInputProps>(({
-  onSubmit,
-  onResend,
-  isLoading = false,
-  error,
-  resendCooldown = 30,
-  hideHelperText = false,
-}, ref) => {
-  const { themed } = useAppTheme();
-  const otpRef = useRef<OtpInputRef>(null);
-  const [code, setCode] = useState("");
-  const [isResending, setIsResending] = useState(false);
-  const [resendCooldownRemaining, setResendCooldownRemaining] =
-    useState(resendCooldown);
-
-  useImperativeHandle(ref, () => ({
-    focus: () => {
-      otpRef.current?.focus();
+export const MagicCodeInput = forwardRef<
+  MagicCodeInputRef,
+  MagicCodeInputProps
+>(
+  (
+    {
+      onSubmit,
+      onResend,
+      isLoading = false,
+      error,
+      resendCooldown = 30,
+      hideHelperText = false,
     },
-    clear: () => {
-      otpRef.current?.clear();
+    ref
+  ) => {
+    const { themed } = useAppTheme();
+    const otpRef = useRef<OtpInputRef>(null);
+    const [_code, setCode] = useState("");
+    const [isResending, setIsResending] = useState(false);
+    const [resendCooldownRemaining, setResendCooldownRemaining] =
+      useState(resendCooldown);
+
+    useImperativeHandle(ref, () => ({
+      focus: () => {
+        otpRef.current?.focus();
+      },
+      clear: () => {
+        otpRef.current?.clear();
+        setCode("");
+      },
+    }));
+
+    useEffect(() => {
+      if (resendCooldownRemaining > 0) {
+        const timer = setTimeout(() => {
+          setResendCooldownRemaining((prev) => prev - 1);
+        }, 1000);
+        return () => clearTimeout(timer);
+      }
+    }, [resendCooldownRemaining]);
+
+    const handleFilled = async (text: string) => {
+      if (!isLoading && !isResending) {
+        await onSubmit(text);
+      }
+    };
+
+    const handleResend = async () => {
+      setIsResending(true);
       setCode("");
-    },
-  }));
+      await onResend();
+      setIsResending(false);
+      setResendCooldownRemaining(resendCooldown);
+    };
 
-  useEffect(() => {
-    if (resendCooldownRemaining > 0) {
-      const timer = setTimeout(() => {
-        setResendCooldownRemaining((prev) => prev - 1);
-      }, 1000);
-      return () => clearTimeout(timer);
-    }
-  }, [resendCooldownRemaining]);
+    return (
+      <View style={themed($container)}>
+        <View style={themed($inputsWrapper)}>
+          <Text
+            preset="formLabel"
+            tx="auth:enterCodeDescription"
+            style={themed($label)}
+          />
+          <OtpInput
+            ref={otpRef}
+            numberOfDigits={6}
+            onTextChange={setCode}
+            onFilled={handleFilled}
+            autoFocus={false}
+            disabled={isLoading || isResending}
+            type="numeric"
+            focusColor="rgba(255, 255, 255, 0.9)"
+            theme={{
+              containerStyle: themed($otpContainer),
+              pinCodeContainerStyle: themed($input),
+              pinCodeTextStyle: themed($inputText),
+              focusedPinCodeContainerStyle: themed($inputFocused),
+              filledPinCodeContainerStyle: themed($inputFilled),
+              disabledPinCodeContainerStyle: themed($inputDisabled),
+              focusStickStyle: themed($focusStick),
+            }}
+          />
+          {error && <Text style={themed($errorText)}>{error}</Text>}
+        </View>
 
-  const handleFilled = async (text: string) => {
-    if (!isLoading && !isResending) {
-      await onSubmit(text);
-    }
-  };
-
-  const handleResend = async () => {
-    setIsResending(true);
-    setCode("");
-    await onResend();
-    setIsResending(false);
-    setResendCooldownRemaining(resendCooldown);
-  };
-
-  return (
-    <View style={themed($container)}>
-      <View style={themed($inputsWrapper)}>
-        <Text
-          preset="formLabel"
-          tx="auth:enterCodeDescription"
-          style={themed($label)}
+        <Button
+          preset="default"
+          onPress={handleResend}
+          disabled={isResending || isLoading || resendCooldownRemaining > 0}
+          tx={
+            resendCooldownRemaining > 0
+              ? "auth:resendCodeIn"
+              : "auth:resendCode"
+          }
+          txOptions={
+            resendCooldownRemaining > 0
+              ? { seconds: resendCooldownRemaining }
+              : undefined
+          }
+          style={$secondaryButton}
+          textStyle={$secondaryButtonText}
+          disabledStyle={$disabledButton}
+          RightAccessory={
+            isResending
+              ? () => <LoadingSpinner size={16} color="white" />
+              : undefined
+          }
         />
-        <OtpInput
-          ref={otpRef}
-          numberOfDigits={6}
-          onTextChange={setCode}
-          onFilled={handleFilled}
-          autoFocus={false}
-          disabled={isLoading || isResending}
-          type="numeric"
-          focusColor="rgba(255, 255, 255, 0.9)"
-          theme={{
-            containerStyle: themed($otpContainer),
-            pinCodeContainerStyle: themed($input),
-            pinCodeTextStyle: themed($inputText),
-            focusedPinCodeContainerStyle: themed($inputFocused),
-            filledPinCodeContainerStyle: themed($inputFilled),
-            disabledPinCodeContainerStyle: themed($inputDisabled),
-            focusStickStyle: themed($focusStick),
-          }}
-        />
-        {error && <Text style={themed($errorText)}>{error}</Text>}
+
+        {!hideHelperText && (
+          <Text
+            preset="formHelper"
+            tx="auth:codeExpires"
+            style={themed($helperText)}
+          />
+        )}
       </View>
-
-      <Button
-        preset="default"
-        onPress={handleResend}
-        disabled={isResending || isLoading || resendCooldownRemaining > 0}
-        tx={
-          resendCooldownRemaining > 0 ? "auth:resendCodeIn" : "auth:resendCode"
-        }
-        txOptions={
-          resendCooldownRemaining > 0
-            ? { seconds: resendCooldownRemaining }
-            : undefined
-        }
-        style={$secondaryButton}
-        textStyle={$secondaryButtonText}
-        disabledStyle={$disabledButton}
-        RightAccessory={
-          isResending
-            ? () => <LoadingSpinner size={16} color="white" />
-            : undefined
-        }
-      />
-
-      {!hideHelperText && (
-        <Text
-          preset="formHelper"
-          tx="auth:codeExpires"
-          style={themed($helperText)}
-        />
-      )}
-    </View>
-  );
-});
+    );
+  }
+);
 
 MagicCodeInput.displayName = "MagicCodeInput";
 
