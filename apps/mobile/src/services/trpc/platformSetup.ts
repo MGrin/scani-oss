@@ -5,7 +5,6 @@ import { onlineManager, focusManager } from "@tanstack/react-query"
 
 export function setupOnlineManager() {
   try {
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
     const Network = require("expo-network")
     onlineManager.setEventListener((setOnline) => {
       const subscription = Network.addNetworkStateListener((state: any) => {

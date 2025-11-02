@@ -1,5 +1,4 @@
 import { ReactNode, forwardRef, ForwardedRef } from "react"
-// eslint-disable-next-line no-restricted-imports
 import { StyleProp, Text as RNText, TextProps as RNTextProps, TextStyle } from "react-native"
 import { TOptions } from "i18next"
 

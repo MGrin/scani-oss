@@ -1,7 +1,6 @@
 import { FC, useEffect, useRef, useState, memo } from "react"
 import {
   View,
-  // eslint-disable-next-line no-restricted-imports
   TextInput,
   NativeSyntheticEvent,
   TextInputKeyPressEventData,

@@ -49,7 +49,6 @@ class Logger implements ILogger {
   private logToReactotron(level: LogLevel, message: string, context?: LogContext, error?: Error) {
     if (!__DEV__ || typeof console.tron === "undefined") return
 
-    /* eslint-disable reactotron/no-tron-in-production */
     try {
       if (level === "error") {
         console.tron.error(error || new Error(message), message)
@@ -74,7 +73,6 @@ class Logger implements ILogger {
     } catch (e) {
       console.warn("Failed to log to Reactotron", e)
     }
-    /* eslint-enable reactotron/no-tron-in-production */
   }
 
   private logToSentry(level: LogLevel, message: string, data: unknown, error?: Error) {

@@ -32,6 +32,5 @@ export function useHeader(
       header: () => <Header {...headerProps} />,
     })
     // intentionally created API to have user set when they want to update the header via `deps`
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [...deps, navigation])
 }

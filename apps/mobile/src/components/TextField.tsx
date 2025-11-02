@@ -2,7 +2,6 @@ import { ComponentType, forwardRef, Ref, useImperativeHandle, useRef } from "rea
 import {
   ImageStyle,
   StyleProp,
-  // eslint-disable-next-line no-restricted-imports
   TextInput,
   TextInputProps,
   TextStyle,
