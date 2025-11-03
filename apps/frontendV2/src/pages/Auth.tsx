@@ -1,27 +1,21 @@
-import { zodResolver } from "@hookform/resolvers/zod";
-import { Loader2, Mail } from "lucide-react";
-import { useId, useState } from "react";
-import { useForm } from "react-hook-form";
-import { useNavigate, useSearchParams } from "react-router-dom";
-import { z } from "zod";
-import { MagicCodeInput } from "@/components/MagicCodeInput";
-import { Alert, AlertDescription } from "@/components/ui/alert";
-import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { SvgIcon } from "@/components/ui/SvgIcon";
-import { useAuth } from "@/contexts/AuthContext";
-import { isPWA } from "@/lib/pwa-utils";
+import { zodResolver } from '@hookform/resolvers/zod';
+import { Loader2, Mail } from 'lucide-react';
+import { useId, useState } from 'react';
+import { useForm } from 'react-hook-form';
+import { useNavigate, useSearchParams } from 'react-router-dom';
+import { z } from 'zod';
+import { MagicCodeInput } from '@/components/MagicCodeInput';
+import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { SvgIcon } from '@/components/ui/SvgIcon';
+import { useAuth } from '@/contexts/AuthContext';
+import { isPWA } from '@/lib/pwa-utils';
 
 const authSchema = z.object({
-  email: z.string().email("Please enter a valid email address"),
+  email: z.string().email('Please enter a valid email address'),
 });
 
 type AuthFormData = z.infer<typeof authSchema>;
@@ -33,16 +27,16 @@ export function Auth() {
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [isEmailSent, setIsEmailSent] = useState(false);
-  const [userEmail, setUserEmail] = useState<string>("");
+  const [userEmail, setUserEmail] = useState<string>('');
 
   // Get return URL from query params
-  const returnTo = searchParams.get("returnTo") || "/";
+  const returnTo = searchParams.get('returnTo') || '/';
 
   // Detect if running in PWA
   const runningAsPWA = isPWA();
 
   // Log for debugging
-  console.log("[Auth Page] Running as PWA:", runningAsPWA);
+  console.log('[Auth Page] Running as PWA:', runningAsPWA);
 
   const emailId = useId();
 
@@ -99,24 +93,17 @@ export function Auth() {
         <div
           className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-950 py-12 px-4 sm:px-6 lg:px-8"
           style={{
-            paddingTop: "max(3rem, calc(3rem + env(safe-area-inset-top)))",
-            paddingBottom:
-              "max(3rem, calc(3rem + env(safe-area-inset-bottom)))",
-            paddingLeft: "max(1rem, calc(1rem + env(safe-area-inset-left)))",
-            paddingRight: "max(1rem, calc(1rem + env(safe-area-inset-right)))",
+            paddingTop: 'max(3rem, calc(3rem + env(safe-area-inset-top)))',
+            paddingBottom: 'max(3rem, calc(3rem + env(safe-area-inset-bottom)))',
+            paddingLeft: 'max(1rem, calc(1rem + env(safe-area-inset-left)))',
+            paddingRight: 'max(1rem, calc(1rem + env(safe-area-inset-right)))',
           }}
         >
           <div className="w-full max-w-md space-y-8 flex flex-col items-center">
-            <SvgIcon
-              name="scani-logo"
-              className="h-12 w-auto"
-              aria-label="Scani"
-            />
+            <SvgIcon name="scani-logo" className="h-12 w-auto" aria-label="Scani" />
             <Card className="w-full">
               <CardHeader className="space-y-1">
-                <CardTitle className="text-2xl text-center">
-                  Enter verification code
-                </CardTitle>
+                <CardTitle className="text-2xl text-center">Enter verification code</CardTitle>
                 <CardDescription className="text-center">
                   We've sent a 6-digit code to {userEmail}
                 </CardDescription>
@@ -151,23 +138,17 @@ export function Auth() {
       <div
         className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-950 py-12 px-4 sm:px-6 lg:px-8"
         style={{
-          paddingTop: "max(3rem, calc(3rem + env(safe-area-inset-top)))",
-          paddingBottom: "max(3rem, calc(3rem + env(safe-area-inset-bottom)))",
-          paddingLeft: "max(1rem, calc(1rem + env(safe-area-inset-left)))",
-          paddingRight: "max(1rem, calc(1rem + env(safe-area-inset-right)))",
+          paddingTop: 'max(3rem, calc(3rem + env(safe-area-inset-top)))',
+          paddingBottom: 'max(3rem, calc(3rem + env(safe-area-inset-bottom)))',
+          paddingLeft: 'max(1rem, calc(1rem + env(safe-area-inset-left)))',
+          paddingRight: 'max(1rem, calc(1rem + env(safe-area-inset-right)))',
         }}
       >
         <div className="w-full max-w-md space-y-8 flex flex-col items-center">
-          <SvgIcon
-            name="scani-logo"
-            className="h-12 w-auto"
-            aria-label="Scani"
-          />
+          <SvgIcon name="scani-logo" className="h-12 w-auto" aria-label="Scani" />
           <Card className="w-full">
             <CardHeader className="space-y-1">
-              <CardTitle className="text-2xl text-center">
-                Check your email
-              </CardTitle>
+              <CardTitle className="text-2xl text-center">Check your email</CardTitle>
               <CardDescription className="text-center">
                 We've sent you a magic link to sign in
               </CardDescription>
@@ -175,8 +156,8 @@ export function Auth() {
             <CardContent className="text-center space-y-4">
               <Mail className="mx-auto h-12 w-12 text-blue-600" />
               <p className="text-sm text-muted-foreground">
-                Click the link in your email to access your account. If this is
-                your first time, we'll create an account for you automatically.
+                Click the link in your email to access your account. If this is your first time,
+                we'll create an account for you automatically.
               </p>
               <Button
                 type="button"
@@ -200,10 +181,10 @@ export function Auth() {
     <div
       className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-950 py-12 px-4 sm:px-6 lg:px-8"
       style={{
-        paddingTop: "max(3rem, calc(3rem + env(safe-area-inset-top)))",
-        paddingBottom: "max(3rem, calc(3rem + env(safe-area-inset-bottom)))",
-        paddingLeft: "max(1rem, calc(1rem + env(safe-area-inset-left)))",
-        paddingRight: "max(1rem, calc(1rem + env(safe-area-inset-right)))",
+        paddingTop: 'max(3rem, calc(3rem + env(safe-area-inset-top)))',
+        paddingBottom: 'max(3rem, calc(3rem + env(safe-area-inset-bottom)))',
+        paddingLeft: 'max(1rem, calc(1rem + env(safe-area-inset-left)))',
+        paddingRight: 'max(1rem, calc(1rem + env(safe-area-inset-right)))',
       }}
     >
       <div className="w-full max-w-md space-y-8 flex flex-col items-center">
@@ -229,12 +210,10 @@ export function Auth() {
                   id={emailId}
                   type="email"
                   placeholder="Enter your email address"
-                  {...register("email")}
+                  {...register('email')}
                   disabled={isLoading}
                 />
-                {errors.email && (
-                  <p className="text-sm text-red-600">{errors.email.message}</p>
-                )}
+                {errors.email && <p className="text-sm text-red-600">{errors.email.message}</p>}
               </div>
 
               <Button type="submit" className="w-full" disabled={isLoading}>
@@ -246,14 +225,14 @@ export function Auth() {
                 <p>
                   {runningAsPWA
                     ? "We'll send you a 6-digit code to sign in."
-                    : "We'll send you a secure magic link to sign in."}{" "}
+                    : "We'll send you a secure magic link to sign in."}{' '}
                   <br />
                   New to Scani? Your account will be created automatically.
                 </p>
               </div>
               {import.meta.env.DEV && (
                 <div className="text-center text-xs text-muted-foreground mt-2">
-                  Mode: {runningAsPWA ? "PWA (Code)" : "Browser (Link)"}
+                  Mode: {runningAsPWA ? 'PWA (Code)' : 'Browser (Link)'}
                 </div>
               )}
             </form>

@@ -1,5 +1,5 @@
 import type { CSSProperties, FC } from 'react';
-import { svgIconRegistry, type SvgIconTypes } from './registry';
+import { type SvgIconTypes, svgIconRegistry } from './registry';
 
 export interface SvgIconProps {
   name: SvgIconTypes;
@@ -9,13 +9,7 @@ export interface SvgIconProps {
   style?: CSSProperties;
 }
 
-export const SvgIcon: FC<SvgIconProps> = ({
-  name,
-  size = 24,
-  color,
-  className = '',
-  style,
-}) => {
+export const SvgIcon: FC<SvgIconProps> = ({ name, size = 24, color, className = '', style }) => {
   const IconComponent = svgIconRegistry[name];
 
   if (!IconComponent) {
@@ -38,4 +32,3 @@ export const SvgIcon: FC<SvgIconProps> = ({
     />
   );
 };
-
