@@ -1,5 +1,7 @@
 import { and, eq, sql } from 'drizzle-orm';
+import Container from 'typedi';
 import { z } from 'zod';
+import { TokenService } from '../../application/services/TokenService';
 import type { TokenValidationService } from '../../application/services/TokenValidationService';
 import type { DbType } from '../../infrastructure/database/connection';
 import type * as schema from '../../infrastructure/database/schema';
@@ -9,6 +11,7 @@ import { requireAuth } from '../middleware/auth';
 import { protectedProcedure, router } from '../trpc';
 
 const tokensLogger = createComponentLogger('router:tokens');
+const tokenService = Container.get(TokenService);
 
 // Helper function to map provider token types to database token types
 // Note: 'stock' type covers Stock/ETF/Equity/Commodity as per seed data
@@ -232,190 +235,27 @@ export function createTokensRouter(
       .mutation(async ({ input, ctx }) => {
         const { dbUser } = requireAuth(ctx);
 
-        tokensLogger.info(
-          {
-            count: input.length,
-            symbols: input.map((t) => t.symbol),
-          },
-          'Creating tokens from external providers (batch)'
+        // Delegate to service for business logic
+        const allTokens = await tokenService.createManyFromExternal(input, dbUser.id);
+
+        // Emit events for created tokens (filter out existing ones)
+        const createdTokens = allTokens.filter((t) =>
+          input.some((i) => i.symbol === t.symbol && !t.externalId)
         );
 
-        // Validate all metadata upfront
-        for (const token of input) {
-          if (!token.metadata.name || typeof token.metadata.name !== 'string') {
-            throw new Error(`External token metadata for ${token.symbol} must include a name`);
-          }
-          if (!token.metadata.type || typeof token.metadata.type !== 'string') {
-            throw new Error(`External token metadata for ${token.symbol} must include a type`);
-          }
-        }
-
-        // Get all unique token type codes needed
-        const uniqueTypeCodes = [
-          ...new Set(input.map((t) => mapProviderTypeToDbType(t.metadata.type as string))),
-        ];
-
-        // Fetch all token types in one query
-        const tokenTypes = await db
-          .select()
-          .from(schemaObj.tokenTypes)
-          .where(
-            sql`${schemaObj.tokenTypes.code} IN (${sql.join(
-              uniqueTypeCodes.map((code) => sql`${code}`),
-              sql`, `
-            )})`
-          );
-
-        const tokenTypeMap = new Map(tokenTypes.map((tt) => [tt.code, tt]));
-
-        // Verify all types exist
-        for (const code of uniqueTypeCodes) {
-          if (!tokenTypeMap.has(code)) {
-            throw new Error(`Token type '${code}' not found in database`);
-          }
-        }
-
-        // Check existing tokens in one query
-        const symbolTypeIdPairs = input.map((t) => {
-          const typeCode = mapProviderTypeToDbType(t.metadata.type as string);
-          const typeId = tokenTypeMap.get(typeCode)!.id;
-          return { symbol: t.symbol, typeId };
-        });
-
-        const existingTokens = await db
-          .select()
-          .from(schemaObj.tokens)
-          .where(
-            sql`(${sql.join(
-              symbolTypeIdPairs.map(
-                (pair) =>
-                  sql`(${schemaObj.tokens.symbol} = ${pair.symbol} AND ${schemaObj.tokens.typeId} = ${pair.typeId})`
-              ),
-              sql` OR `
-            )})`
-          );
-
-        const existingTokenMap = new Map(existingTokens.map((t) => [`${t.symbol}-${t.typeId}`, t]));
-
-        // Create externalId mapping for input tokens
-        const externalIdMap = new Map(
-          input.map((t) => {
-            const typeCode = mapProviderTypeToDbType(t.metadata.type as string);
-            const typeId = tokenTypeMap.get(typeCode)!.id;
-            return [`${t.symbol}-${typeId}`, t.externalId];
-          })
-        );
-
-        // Prepare tokens to create
-        const now = new Date();
-        const tokensToCreate = input
-          .map((token) => {
-            const typeCode = mapProviderTypeToDbType(token.metadata.type as string);
-            const tokenType = tokenTypeMap.get(typeCode)!;
-            const key = `${token.symbol}-${tokenType.id}`;
-
-            if (existingTokenMap.has(key)) {
-              return null;
-            }
-
-            let providerSpecificData: Record<string, unknown> = {};
-
-            if (token.provider === 'coingecko') {
-              const coinGeckoId =
-                (token.metadata.providerMetadata as Record<string, unknown>)?.id ||
-                (token.metadata as Record<string, unknown>).coinGeckoId ||
-                (token.metadata as Record<string, unknown>).id ||
-                token.symbol.toLowerCase();
-
-              providerSpecificData = {
-                id: coinGeckoId as string,
-                symbol: token.symbol,
-                name: token.metadata.name,
-              };
-            } else if (token.provider === 'finnhub') {
-              const finnhubSymbol =
-                (token.metadata.providerMetadata as Record<string, unknown>)?.symbol ||
-                (token.metadata as Record<string, unknown>).finnhubSymbol ||
-                token.symbol;
-
-              providerSpecificData = {
-                symbol: finnhubSymbol as string,
-                name: token.metadata.name,
-                type: token.metadata.type,
-              };
-            }
-
-            const providerMetadata = JSON.stringify({
-              provider: token.provider,
-              [token.provider]: providerSpecificData,
-              validatedAt: new Date().toISOString(),
-            });
-
-            return {
+        for (const token of createdTokens) {
+          emitEntityChange({
+            type: 'entity_changed',
+            entityType: 'token',
+            operationType: 'create',
+            entityId: token.id,
+            userId: dbUser.id,
+            data: {
               symbol: token.symbol,
-              name: token.metadata.name as string,
-              typeId: tokenType.id,
-              decimals: typeCode === 'crypto' ? 18 : 2,
-              iconUrl: null,
-              providerMetadata,
-              isActive: true,
-              createdAt: now,
-              updatedAt: now,
-            };
-          })
-          .filter((t): t is NonNullable<typeof t> => t !== null);
-
-        let createdTokens: (typeof schemaObj.tokens.$inferSelect)[] = [];
-
-        // Batch insert if there are tokens to create
-        if (tokensToCreate.length > 0) {
-          createdTokens = await db.insert(schemaObj.tokens).values(tokensToCreate).returning();
-
-          tokensLogger.info(
-            {
-              created: createdTokens.length,
-              symbols: createdTokens.map((t) => t.symbol),
+              typeId: token.typeId,
             },
-            'Batch created external tokens'
-          );
-
-          // Emit events for created tokens
-          for (const token of createdTokens) {
-            emitEntityChange({
-              type: 'entity_changed',
-              entityType: 'token',
-              operationType: 'create',
-              entityId: token.id,
-              userId: dbUser.id,
-              data: {
-                symbol: token.symbol,
-                typeId: token.typeId,
-              },
-            });
-          }
+          });
         }
-
-        // Combine existing and created tokens with externalId
-        const allTokens = [
-          ...Array.from(existingTokenMap.values()).map((token) => ({
-            ...token,
-            externalId: externalIdMap.get(`${token.symbol}-${token.typeId}`),
-          })),
-          ...createdTokens.map((token) => ({
-            ...token,
-            externalId: externalIdMap.get(`${token.symbol}-${token.typeId}`),
-          })),
-        ];
-
-        tokensLogger.info(
-          {
-            requested: input.length,
-            existing: existingTokenMap.size,
-            created: createdTokens.length,
-            total: allTokens.length,
-          },
-          'Batch token creation complete'
-        );
 
         return allTokens;
       }),
@@ -437,160 +277,15 @@ export function createTokensRouter(
         const { dbUser } = requireAuth(ctx);
         const { symbol, metadata, provider } = input;
 
-        tokensLogger.info(
-          {
-            symbol,
-            provider,
-            metadata,
-          },
-          'Creating token from external provider'
-        );
-
-        // Validate the metadata has the required fields
-        if (!metadata.name || typeof metadata.name !== 'string') {
-          throw new Error('External token metadata must include a name');
-        }
-
-        if (!metadata.type || typeof metadata.type !== 'string') {
-          throw new Error('External token metadata must include a type');
-        }
-
-        // Map provider type to our token type
-        const mappedTypeCode = mapProviderTypeToDbType(metadata.type as string);
-
-        // Get token type ID
-        const [tokenType] = await db
-          .select()
-          .from(schemaObj.tokenTypes)
-          .where(eq(schemaObj.tokenTypes.code, mappedTypeCode))
-          .limit(1);
-
-        if (!tokenType) {
-          throw new Error(`Token type '${mappedTypeCode}' not found in database`);
-        }
-
-        // Check if token already exists with this symbol and type
-        const [existingToken] = await db
-          .select()
-          .from(schemaObj.tokens)
-          .where(
-            and(eq(schemaObj.tokens.symbol, symbol), eq(schemaObj.tokens.typeId, tokenType.id))
-          )
-          .limit(1);
-
-        if (existingToken) {
-          tokensLogger.info(
-            { tokenId: existingToken.id, symbol, typeCode: mappedTypeCode },
-            'Token already exists, returning existing token'
-          );
-          // Return existing token instead of creating duplicate
-          return existingToken;
-        }
-
-        // CRITICAL FIX: Create proper provider metadata structure for pricing service
-        // The pricing service expects nested provider-specific data with proper identifiers
-        let providerSpecificData: Record<string, unknown> = {};
-
-        if (provider === 'coingecko') {
-          // CoinGecko needs the 'id' field for pricing lookups
-          const coinGeckoId =
-            (metadata.providerMetadata as Record<string, unknown>)?.id ||
-            (metadata as Record<string, unknown>).coinGeckoId ||
-            (metadata as Record<string, unknown>).id;
-
-          if (coinGeckoId && typeof coinGeckoId === 'string') {
-            providerSpecificData = {
-              id: coinGeckoId,
-              symbol: symbol,
-              name: metadata.name,
-            };
-            tokensLogger.info(
-              { symbol, coinGeckoId },
-              'Structured CoinGecko metadata with ID for pricing'
-            );
-          } else {
-            // Fallback: use symbol as lowercase ID (CoinGecko convention)
-            providerSpecificData = {
-              id: symbol.toLowerCase(),
-              symbol: symbol,
-              name: metadata.name,
-            };
-            tokensLogger.warn(
-              { symbol },
-              'CoinGecko ID not found in metadata, using lowercase symbol as fallback'
-            );
-          }
-        } else if (provider === 'finnhub') {
-          // Finnhub needs the 'symbol' field for pricing lookups
-          const finnhubSymbol =
-            (metadata.providerMetadata as Record<string, unknown>)?.symbol ||
-            (metadata as Record<string, unknown>).finnhubSymbol ||
-            symbol;
-
-          providerSpecificData = {
-            symbol: finnhubSymbol,
-            name: metadata.name,
-            type: metadata.type,
-          };
-          tokensLogger.info({ symbol, finnhubSymbol }, 'Structured Finnhub metadata for pricing');
-        }
-
-        // Create the complete provider metadata structure
-        // This structure is what the pricing service expects to read
-        const providerMetadata = JSON.stringify({
-          provider,
-          [provider]: providerSpecificData,
-          validatedAt: new Date().toISOString(),
-        });
-
-        const now = new Date();
-        const tokenData = {
+        // Delegate to service for business logic
+        const createdToken = await tokenService.createFromExternal(
           symbol,
-          name: metadata.name as string,
-          typeId: tokenType.id,
-          decimals: mappedTypeCode === 'crypto' ? 18 : 2, // Crypto tokens typically use 18 decimals
-          iconUrl: null,
-          providerMetadata,
-          isActive: true,
-          createdAt: now,
-          updatedAt: now,
-        };
-
-        tokensLogger.debug(
-          {
-            symbol,
-            typeCode: mappedTypeCode,
-            providerMetadata,
-          },
-          'Creating token with structured metadata'
+          metadata,
+          provider,
+          dbUser.id
         );
 
-        const [createdToken] = await db.insert(schemaObj.tokens).values(tokenData).returning();
-
-        if (!createdToken) {
-          tokensLogger.error({ symbol, provider, typeId: tokenType.id }, 'Database insert failed');
-          throw new Error('Failed to create external token - database insert returned no data');
-        }
-
-        if (!createdToken.id) {
-          tokensLogger.error(
-            { symbol, provider, createdToken },
-            'Token created but has no ID - critical database error'
-          );
-          throw new Error('Failed to create external token - no ID assigned by database');
-        }
-
-        tokensLogger.info(
-          {
-            tokenId: createdToken.id,
-            symbol: createdToken.symbol,
-            name: createdToken.name,
-            provider,
-            typeId: tokenType.id,
-          },
-          'External token created successfully with valid ID'
-        );
-
+        // Emit entity change event
         emitEntityChange({
           type: 'entity_changed',
           entityType: 'token',
@@ -599,7 +294,7 @@ export function createTokensRouter(
           userId: dbUser.id,
           data: {
             symbol: createdToken.symbol,
-            typeId: tokenType.id,
+            typeId: createdToken.typeId,
             provider,
           },
         });

@@ -357,4 +357,294 @@ export class TokenService extends BaseService {
       throw this.handleError(error, 'findOrCreateTokenFromBlockchain');
     }
   }
+
+  /**
+   * Create multiple tokens from external providers in a batch operation
+   */
+  async createManyFromExternal(
+    tokensData: Array<{
+      externalId: string;
+      symbol: string;
+      metadata: Record<string, unknown>;
+      provider: 'finnhub' | 'coingecko' | 'defillama';
+    }>,
+    _userId: string
+  ): Promise<Array<Token & { externalId?: string }>> {
+    try {
+      this.logInfo('Creating tokens from external providers (batch)', {
+        count: tokensData.length,
+        symbols: tokensData.map((t) => t.symbol),
+      });
+
+      // Validate all metadata upfront
+      for (const token of tokensData) {
+        if (!token.metadata.name || typeof token.metadata.name !== 'string') {
+          throw new Error(`External token metadata for ${token.symbol} must include a name`);
+        }
+        if (!token.metadata.type || typeof token.metadata.type !== 'string') {
+          throw new Error(`External token metadata for ${token.symbol} must include a type`);
+        }
+      }
+
+      // Get all unique token type codes needed
+      const uniqueTypeCodes = [
+        ...new Set(tokensData.map((t) => this.mapProviderTypeToDbType(t.metadata.type as string))),
+      ];
+
+      // Fetch all token types
+      const tokenTypes = await this.tokenTypeRepository.findByCodes(uniqueTypeCodes);
+      const tokenTypeMap = new Map(tokenTypes.map((tt) => [tt.code, tt]));
+
+      // Verify all types exist
+      for (const code of uniqueTypeCodes) {
+        if (!tokenTypeMap.has(code)) {
+          throw new Error(`Token type '${code}' not found in database`);
+        }
+      }
+
+      // Check existing tokens
+      const symbolTypeIdPairs = tokensData.map((t) => {
+        const typeCode = this.mapProviderTypeToDbType(t.metadata.type as string);
+        const typeId = tokenTypeMap.get(typeCode)!.id;
+        return { symbol: t.symbol, typeId };
+      });
+
+      const existingTokens = await this.tokenRepository.findBySymbolTypePairs(symbolTypeIdPairs);
+      const existingTokenMap = new Map(existingTokens.map((t) => [`${t.symbol}-${t.typeId}`, t]));
+
+      // Create externalId mapping for input tokens
+      const externalIdMap = new Map(
+        tokensData.map((t) => {
+          const typeCode = this.mapProviderTypeToDbType(t.metadata.type as string);
+          const typeId = tokenTypeMap.get(typeCode)!.id;
+          return [`${t.symbol}-${typeId}`, t.externalId];
+        })
+      );
+
+      // Prepare tokens to create
+      const tokensToCreate = tokensData
+        .map((token) => {
+          const typeCode = this.mapProviderTypeToDbType(token.metadata.type as string);
+          const tokenType = tokenTypeMap.get(typeCode)!;
+          const key = `${token.symbol}-${tokenType.id}`;
+
+          if (existingTokenMap.has(key)) {
+            return null;
+          }
+
+          let providerSpecificData: Record<string, unknown> = {};
+
+          if (token.provider === 'coingecko') {
+            const coinGeckoId =
+              (token.metadata.providerMetadata as Record<string, unknown>)?.id ||
+              (token.metadata as Record<string, unknown>).coinGeckoId ||
+              (token.metadata as Record<string, unknown>).id ||
+              token.symbol.toLowerCase();
+
+            providerSpecificData = {
+              id: coinGeckoId as string,
+              symbol: token.symbol,
+              name: token.metadata.name,
+            };
+          } else if (token.provider === 'finnhub') {
+            const finnhubSymbol =
+              (token.metadata.providerMetadata as Record<string, unknown>)?.symbol ||
+              (token.metadata as Record<string, unknown>).finnhubSymbol ||
+              token.symbol;
+
+            providerSpecificData = {
+              symbol: finnhubSymbol as string,
+              name: token.metadata.name,
+              type: token.metadata.type,
+            };
+          }
+
+          const providerMetadata = JSON.stringify({
+            provider: token.provider,
+            [token.provider]: providerSpecificData,
+            validatedAt: new Date().toISOString(),
+          });
+
+          return {
+            symbol: token.symbol,
+            name: token.metadata.name as string,
+            typeId: tokenType.id,
+            decimals: typeCode === 'crypto' ? 18 : 2,
+            iconUrl: null,
+            providerMetadata,
+            isActive: true,
+          };
+        })
+        .filter((t): t is NonNullable<typeof t> => t !== null);
+
+      let createdTokens: Token[] = [];
+
+      // Batch insert if there are tokens to create
+      if (tokensToCreate.length > 0) {
+        createdTokens = await this.tokenRepository.createMany(tokensToCreate);
+
+        this.logInfo('Batch created external tokens', {
+          created: createdTokens.length,
+          symbols: createdTokens.map((t) => t.symbol),
+        });
+      }
+
+      // Combine existing and created tokens with externalId
+      const allTokens = [
+        ...Array.from(existingTokenMap.values()).map((token) => ({
+          ...token,
+          externalId: externalIdMap.get(`${token.symbol}-${token.typeId}`),
+        })),
+        ...createdTokens.map((token) => ({
+          ...token,
+          externalId: externalIdMap.get(`${token.symbol}-${token.typeId}`),
+        })),
+      ];
+
+      this.logInfo('Batch token creation complete', {
+        requested: tokensData.length,
+        existing: existingTokenMap.size,
+        created: createdTokens.length,
+        total: allTokens.length,
+      });
+
+      return allTokens;
+    } catch (error) {
+      throw this.handleError(error, 'createManyFromExternal');
+    }
+  }
+
+  /**
+   * Create a single token from external provider metadata
+   */
+  async createFromExternal(
+    symbol: string,
+    metadata: Record<string, unknown>,
+    provider: 'finnhub' | 'coingecko',
+    _userId: string
+  ): Promise<Token> {
+    try {
+      this.logInfo('Creating token from external provider', {
+        symbol,
+        provider,
+        metadata,
+      });
+
+      // Validate the metadata has the required fields
+      if (!metadata.name || typeof metadata.name !== 'string') {
+        throw new Error('External token metadata must include a name');
+      }
+
+      if (!metadata.type || typeof metadata.type !== 'string') {
+        throw new Error('External token metadata must include a type');
+      }
+
+      // Map provider type to our token type
+      const mappedTypeCode = this.mapProviderTypeToDbType(metadata.type as string);
+
+      // Get token type
+      const tokenType = await this.tokenTypeRepository.findByCode(mappedTypeCode);
+      this.assertExists(tokenType, `Token type '${mappedTypeCode}' not found in database`);
+
+      // Check if token already exists with this symbol and type
+      const existingToken = await this.tokenRepository.findBySymbolAndType(symbol, tokenType.id);
+
+      if (existingToken) {
+        this.logInfo('Token already exists, returning existing token', {
+          tokenId: existingToken.id,
+          symbol,
+          typeCode: mappedTypeCode,
+        });
+        return existingToken;
+      }
+
+      // Create proper provider metadata structure for pricing service
+      let providerSpecificData: Record<string, unknown> = {};
+
+      if (provider === 'coingecko') {
+        const coinGeckoId =
+          (metadata.providerMetadata as Record<string, unknown>)?.id ||
+          (metadata as Record<string, unknown>).coinGeckoId ||
+          (metadata as Record<string, unknown>).id;
+
+        if (coinGeckoId && typeof coinGeckoId === 'string') {
+          providerSpecificData = {
+            id: coinGeckoId,
+            symbol: symbol,
+            name: metadata.name,
+          };
+          this.logInfo('Structured CoinGecko metadata with ID for pricing', {
+            symbol,
+            coinGeckoId,
+          });
+        } else {
+          providerSpecificData = {
+            id: symbol.toLowerCase(),
+            symbol: symbol,
+            name: metadata.name,
+          };
+          this.logWarning(
+            'CoinGecko ID not found in metadata, using lowercase symbol as fallback',
+            {
+              symbol,
+            }
+          );
+        }
+      } else if (provider === 'finnhub') {
+        const finnhubSymbol =
+          (metadata.providerMetadata as Record<string, unknown>)?.symbol ||
+          (metadata as Record<string, unknown>).finnhubSymbol ||
+          symbol;
+
+        providerSpecificData = {
+          symbol: finnhubSymbol,
+          name: metadata.name,
+          type: metadata.type,
+        };
+        this.logInfo('Structured Finnhub metadata for pricing', { symbol, finnhubSymbol });
+      }
+
+      // Create the complete provider metadata structure
+      const providerMetadataStr = JSON.stringify({
+        provider,
+        [provider]: providerSpecificData,
+        validatedAt: new Date().toISOString(),
+      });
+
+      const tokenData = {
+        symbol,
+        name: metadata.name as string,
+        typeId: tokenType.id,
+        decimals: mappedTypeCode === 'crypto' ? 18 : 2,
+        iconUrl: null,
+        providerMetadata: providerMetadataStr,
+        isActive: true,
+      };
+
+      this.logDebug('Creating token with structured metadata', {
+        symbol,
+        typeCode: mappedTypeCode,
+        providerMetadata: providerMetadataStr,
+      });
+
+      const createdToken = await this.tokenRepository.create(tokenData);
+      this.assertExists(createdToken, 'Failed to create external token - database insert failed');
+      this.assertExists(
+        createdToken.id,
+        'Failed to create external token - no ID assigned by database'
+      );
+
+      this.logInfo('External token created successfully with valid ID', {
+        tokenId: createdToken.id,
+        symbol: createdToken.symbol,
+        name: createdToken.name,
+        provider,
+        typeId: tokenType.id,
+      });
+
+      return createdToken;
+    } catch (error) {
+      throw this.handleError(error, 'createFromExternal');
+    }
+  }
 }

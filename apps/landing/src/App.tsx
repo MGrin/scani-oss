@@ -8,9 +8,11 @@ import {
   Clock,
   DollarSign,
   Globe,
+  Menu,
   Sparkles,
   Target,
   Wallet,
+  X,
   Zap,
 } from 'lucide-react';
 import { useEffect, useState } from 'react';
@@ -31,10 +33,25 @@ const staggerContainer = {
 
 function App() {
   const [isVisible, setIsVisible] = useState(false);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   useEffect(() => {
     setIsVisible(true);
   }, []);
+
+  // Close mobile menu on Escape key press
+  useEffect(() => {
+    const handleEscape = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && mobileMenuOpen) {
+        setMobileMenuOpen(false);
+      }
+    };
+
+    if (mobileMenuOpen) {
+      document.addEventListener('keydown', handleEscape);
+      return () => document.removeEventListener('keydown', handleEscape);
+    }
+  }, [mobileMenuOpen]);
 
   return (
     <div className="min-h-screen bg-white" style={{ scrollBehavior: 'smooth' }}>
@@ -56,6 +73,7 @@ function App() {
                 </div>
               </div>
             </div>
+            {/* Desktop Navigation */}
             <div className="hidden md:flex items-center space-x-8">
               <a href="#features" className="text-gray-600 hover:text-gray-900 transition-colors">
                 Features
@@ -75,8 +93,53 @@ function App() {
                 <ArrowRight className="w-4 h-4" />
               </button>
             </div>
+            {/* Mobile menu button */}
+            <div className="md:hidden">
+              <button
+                type="button"
+                onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+                className="text-gray-600 hover:text-gray-900 transition-colors p-2"
+                aria-label="Toggle menu"
+              >
+                {mobileMenuOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
+              </button>
+            </div>
           </div>
         </div>
+        {/* Mobile Navigation Menu */}
+        {mobileMenuOpen && (
+          <div className="md:hidden bg-white border-t border-gray-100">
+            <div className="px-4 py-4 space-y-3">
+              {/* biome-ignore lint/a11y/useValidAnchor: Hash navigation for same-page sections */}
+              <a
+                href="#features"
+                className="block text-gray-600 hover:text-gray-900 transition-colors py-2"
+                onClick={() => setMobileMenuOpen(false)}
+              >
+                Features
+              </a>
+              {/* biome-ignore lint/a11y/useValidAnchor: Hash navigation for same-page sections */}
+              <a
+                href="#how-it-works"
+                className="block text-gray-600 hover:text-gray-900 transition-colors py-2"
+                onClick={() => setMobileMenuOpen(false)}
+              >
+                How It Works
+              </a>
+              <button
+                type="button"
+                className="w-full bg-black text-white px-6 py-2 rounded-lg hover:bg-gray-800 transition-colors flex items-center justify-center gap-2"
+                onClick={() => {
+                  setMobileMenuOpen(false);
+                  window.open('https://app.scani.xyz', '_blank');
+                }}
+              >
+                Get Started
+                <ArrowRight className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
+        )}
       </nav>
 
       {/* Hero Section */}

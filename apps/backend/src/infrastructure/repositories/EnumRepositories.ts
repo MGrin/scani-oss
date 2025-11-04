@@ -1,4 +1,4 @@
-import { eq } from 'drizzle-orm';
+import { eq, inArray } from 'drizzle-orm';
 import { Service } from 'typedi';
 import type { AccountType, InstitutionType, TokenType } from '../../domain/entities';
 import * as schema from '../database/schema';
@@ -71,6 +71,28 @@ export class TokenTypeRepository extends BaseRepository<TokenType, Partial<Token
       return results[0] || null;
     } catch (error) {
       this.logger.error({ code, error }, 'Failed to find token type by code');
+      throw error;
+    }
+  }
+
+  /**
+   * Find multiple token types by their codes
+   */
+  async findByCodes(codes: string[], transaction?: DatabaseTransaction): Promise<TokenType[]> {
+    try {
+      if (codes.length === 0) {
+        return [];
+      }
+
+      const database = this.getDb(transaction);
+      const results = await database
+        .select()
+        .from(schema.tokenTypes)
+        .where(inArray(schema.tokenTypes.code, codes));
+
+      return results;
+    } catch (error) {
+      this.logger.error({ codes, error }, 'Failed to find token types by codes');
       throw error;
     }
   }
