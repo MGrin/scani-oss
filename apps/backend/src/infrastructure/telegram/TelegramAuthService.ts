@@ -1,9 +1,9 @@
 import { TRPCError } from '@trpc/server';
 import { Container, Service } from 'typedi';
+import { UserContextService } from '../../application/services/UserContextService';
 import { supabase } from '../../lib/supabase';
 import type { TelegramUser } from '../database/schema';
 import { TelegramUserRepository } from '../repositories/TelegramUserRepository';
-import { UserContextService } from '../../application/services/UserContextService';
 
 @Service()
 export class TelegramAuthService {

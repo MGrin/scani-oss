@@ -425,6 +425,7 @@ realTimeUpdatesService.setElysiaApp(app);
 realTimeUpdatesService.initialize();
 
 // Initialize Telegram bot if configured
+// biome-ignore lint/suspicious/noExplicitAny: TelegramBotService type not available at runtime due to dynamic import
 let telegramBot: any = null;
 const initTelegramBot = async () => {
   const botToken = process.env.TELEGRAM_BOT_TOKEN;
@@ -442,9 +443,23 @@ const initTelegramBot = async () => {
 
   try {
     const { TelegramBotService } = await import('@scani/telegram-bot');
+    const { TelegramAuthService } = await import('./infrastructure/telegram/TelegramAuthService');
+
+    const telegramAuthService = Container.get(TelegramAuthService);
+
     telegramBot = new TelegramBotService({
       botToken,
       openAIApiKey,
+      getAuthenticatedUser: async (telegramId: string) => {
+        return await telegramAuthService.getAuthenticatedUser(telegramId);
+      },
+      linkTelegramUser: async (
+        telegramId: string,
+        telegramUsername: string | undefined,
+        authToken: string
+      ) => {
+        await telegramAuthService.linkTelegramUser(telegramId, telegramUsername, authToken);
+      },
     });
 
     await telegramBot.start();

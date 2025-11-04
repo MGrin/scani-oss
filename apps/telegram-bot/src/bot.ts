@@ -1,9 +1,17 @@
 import type { Context as TelegrafContext } from 'telegraf';
 import { Telegraf } from 'telegraf';
+import type { ConversationContext } from './ai-agent';
+import { AIAgent } from './ai-agent';
 
 export interface TelegramBotConfig {
   botToken: string;
   openAIApiKey: string;
+  getAuthenticatedUser: (telegramId: string) => Promise<{ userId: string } | null>;
+  linkTelegramUser: (
+    telegramId: string,
+    telegramUsername: string | undefined,
+    authToken: string
+  ) => Promise<void>;
 }
 
 export interface BotContext extends TelegrafContext {
@@ -14,18 +22,33 @@ export interface BotContext extends TelegrafContext {
 export class TelegramBotService {
   private bot: Telegraf<BotContext>;
   private isRunning = false;
+  private aiAgent: AIAgent;
+  private conversationContexts: Map<string, ConversationContext> = new Map();
 
   constructor(private config: TelegramBotConfig) {
     this.bot = new Telegraf<BotContext>(config.botToken);
+    this.aiAgent = new AIAgent({
+      openAIApiKey: config.openAIApiKey,
+    });
     this.setupHandlers();
   }
 
   private setupHandlers() {
+    // Middleware to check authentication
+    this.bot.use(async (ctx, next) => {
+      const telegramUserId = ctx.from?.id.toString();
+      if (telegramUserId) {
+        ctx.telegramUserId = telegramUserId;
+        const authResult = await this.config.getAuthenticatedUser(telegramUserId);
+        if (authResult) {
+          ctx.userId = authResult.userId;
+        }
+      }
+      return next();
+    });
+
     // Start command
     this.bot.command('start', async (ctx) => {
-      const telegramUserId = ctx.from?.id.toString();
-      ctx.telegramUserId = telegramUserId;
-
       await ctx.reply(
         '👋 Welcome to Scani Finance Bot!\n\n' +
           'I can help you manage your portfolio through natural conversation.\n\n' +
@@ -40,8 +63,9 @@ export class TelegramBotService {
         '📚 *Available Commands:*\n\n' +
           '/start - Start the bot\n' +
           '/help - Show this help message\n' +
-          '/auth - Link your Scani account\n' +
-          '/status - Check authentication status\n\n' +
+          '/auth <token> - Link your Scani account with auth token\n' +
+          '/status - Check authentication status\n' +
+          '/reset - Reset conversation context\n\n' +
           '*Natural Language:*\n' +
           'You can also chat with me naturally! Ask me to:\n' +
           '• Show your portfolio overview\n' +
@@ -53,57 +77,124 @@ export class TelegramBotService {
       );
     });
 
-    // Auth command
+    // Auth command with token
     this.bot.command('auth', async (ctx) => {
       const telegramUserId = ctx.from?.id.toString();
+      const telegramUsername = ctx.from?.username;
+
       if (!telegramUserId) {
         await ctx.reply('❌ Unable to identify your Telegram account.');
         return;
       }
 
-      await ctx.reply(
-        '🔐 *Authentication Required*\n\n' +
-          'To link your Scani account:\n\n' +
-          '1. Open the Scani web app\n' +
-          '2. Go to Settings → Integrations\n' +
-          '3. Click "Connect Telegram"\n' +
-          '4. Use this code: `' +
-          telegramUserId +
-          '`\n\n' +
-          'This will securely link your Telegram account to your Scani profile.',
-        { parse_mode: 'Markdown' }
-      );
+      // Extract token from command
+      const args = ctx.message.text.split(' ').slice(1);
+      const authToken = args[0];
+
+      if (!authToken) {
+        await ctx.reply(
+          '🔐 *Authentication Required*\n\n' +
+            'To link your Scani account, please provide an authentication token:\n' +
+            '`/auth YOUR_TOKEN_HERE`\n\n' +
+            'You can generate a token in the Scani web app:\n' +
+            '1. Go to Settings → Integrations\n' +
+            '2. Click "Connect Telegram"\n' +
+            '3. Copy the generated token\n' +
+            '4. Send it here: `/auth <token>`',
+          { parse_mode: 'Markdown' }
+        );
+        return;
+      }
+
+      try {
+        await this.config.linkTelegramUser(telegramUserId, telegramUsername, authToken);
+        await ctx.reply(
+          '✅ *Authentication Successful!*\n\n' +
+            'Your Telegram account is now linked to your Scani profile.\n' +
+            'You can start chatting with me to manage your portfolio!',
+          { parse_mode: 'Markdown' }
+        );
+      } catch (error) {
+        console.error('Auth error:', error);
+        await ctx.reply(
+          '❌ Authentication failed. Please make sure you have a valid token from the Scani web app.'
+        );
+      }
     });
 
     // Status command
     this.bot.command('status', async (ctx) => {
-      // TODO: Check if user is authenticated
-      const isAuthenticated = false; // Placeholder
-
-      if (isAuthenticated) {
+      if (ctx.userId) {
         await ctx.reply('✅ You are authenticated and ready to use the bot!');
       } else {
-        await ctx.reply('❌ You are not authenticated. Use /auth to link your account.');
+        await ctx.reply('❌ You are not authenticated. Use /auth <token> to link your account.');
+      }
+    });
+
+    // Reset conversation
+    this.bot.command('reset', async (ctx) => {
+      const telegramUserId = ctx.telegramUserId;
+      if (telegramUserId) {
+        this.conversationContexts.delete(telegramUserId);
+        await ctx.reply('🔄 Conversation context has been reset.');
       }
     });
 
     // Handle all other text messages
     this.bot.on('text', async (ctx) => {
-      const telegramUserId = ctx.from?.id.toString();
-      ctx.telegramUserId = telegramUserId;
+      const telegramUserId = ctx.telegramUserId;
 
-      // TODO: Check authentication
-      const isAuthenticated = false; // Placeholder
-
-      if (!isAuthenticated) {
+      if (!ctx.userId || !telegramUserId) {
         await ctx.reply(
-          '⚠️ Please authenticate first using the /auth command before chatting with me.'
+          '⚠️ Please authenticate first using /auth <token> before chatting with me.\n\n' +
+            'Get your auth token from the Scani web app (Settings → Integrations).'
         );
         return;
       }
 
-      // TODO: Handle with AI agent
-      await ctx.reply('🤖 AI agent functionality coming soon! Your message: ' + ctx.message.text);
+      // Get or create conversation context
+      let conversationContext = this.conversationContexts.get(telegramUserId);
+      if (!conversationContext) {
+        conversationContext = {
+          userId: ctx.userId,
+          conversationHistory: [],
+        };
+        this.conversationContexts.set(telegramUserId, conversationContext);
+      }
+
+      // Update user ID in case it changed
+      conversationContext.userId = ctx.userId;
+
+      // Show typing indicator
+      await ctx.sendChatAction('typing');
+
+      try {
+        // Get AI response
+        const response = await this.aiAgent.chat(ctx.message.text, conversationContext);
+
+        // Update conversation history
+        conversationContext.conversationHistory.push({
+          role: 'user',
+          content: ctx.message.text,
+        });
+        conversationContext.conversationHistory.push({
+          role: 'assistant',
+          content: response,
+        });
+
+        // Keep only last 10 messages to avoid context getting too large
+        if (conversationContext.conversationHistory.length > 20) {
+          conversationContext.conversationHistory =
+            conversationContext.conversationHistory.slice(-20);
+        }
+
+        await ctx.reply(response, { parse_mode: 'Markdown' });
+      } catch (error) {
+        console.error('Error processing message:', error);
+        await ctx.reply(
+          '❌ Sorry, I encountered an error processing your request. Please try again or use /reset to start over.'
+        );
+      }
     });
 
     // Error handling

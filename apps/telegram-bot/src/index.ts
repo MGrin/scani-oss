@@ -1,4 +1,4 @@
 import { TelegramBotService } from './bot';
 
 export { TelegramBotService };
-export type { TelegramBotConfig, BotContext } from './bot';
+export type { BotContext, TelegramBotConfig } from './bot';
