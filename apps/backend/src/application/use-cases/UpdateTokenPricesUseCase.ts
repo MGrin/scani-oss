@@ -77,15 +77,10 @@ export class UpdateTokenPricesUseCase {
         'Found tokens with holdings'
       );
 
-      // Fetch token details
-      const tokens = await Promise.all(
-        uniqueTokenIds.map((tokenId) => this.tokenRepository.findById(tokenId))
-      );
+      // Fetch token details using batch query
+      const tokens = await this.tokenRepository.findByIds(uniqueTokenIds);
 
-      // Filter out null tokens
-      const validTokens = tokens.filter((token) => token !== null);
-
-      if (validTokens.length === 0) {
+      if (tokens.length === 0) {
         logger.warn('No valid tokens found');
         return {
           tokensFound: uniqueTokenIds.length,
@@ -104,7 +99,7 @@ export class UpdateTokenPricesUseCase {
 
       logger.info(
         {
-          validTokenCount: validTokens.length,
+          validTokenCount: tokens.length,
         },
         'Fetching prices for tokens'
       );
@@ -112,7 +107,7 @@ export class UpdateTokenPricesUseCase {
       // Fetch prices for all tokens (batched internally by PricingService)
       const timestamp = new Date();
       const prices = await this.pricingService.getTokenPrices(
-        validTokens,
+        tokens,
         baseCurrencySymbol,
         timestamp
       );
@@ -121,7 +116,7 @@ export class UpdateTokenPricesUseCase {
       let tokensUpdated = 0;
       let tokensFailed = 0;
 
-      for (const token of validTokens) {
+      for (const token of tokens) {
         const price = prices.get(token.id);
         if (price && price !== '0') {
           tokensUpdated++;

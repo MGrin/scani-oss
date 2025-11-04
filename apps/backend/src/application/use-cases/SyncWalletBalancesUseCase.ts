@@ -203,10 +203,15 @@ export class SyncWalletBalancesUseCase {
             .from(schema.holdings)
             .where(eq(schema.holdings.accountId, account.id));
 
+          // Batch fetch all tokens for existing holdings
+          const existingTokenIds = existingHoldings.map((h) => h.tokenId);
+          const existingTokens = await this.tokenRepository.findByIds(existingTokenIds);
+          const tokensMap = new Map(existingTokens.map((t) => [t.id, t]));
+
           // Create a map of existing holdings by token symbol
           const existingHoldingsMap = new Map<string, (typeof existingHoldings)[0]>();
           for (const holding of existingHoldings) {
-            const token = await this.tokenRepository.findById(holding.tokenId);
+            const token = tokensMap.get(holding.tokenId);
             if (token) {
               existingHoldingsMap.set(token.symbol.toUpperCase(), holding);
             }
