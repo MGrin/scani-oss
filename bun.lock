@@ -133,6 +133,7 @@
     "packages/shared": {
       "name": "@scani/shared",
       "dependencies": {
+        "decimal.js": "^10.6.0",
         "zod": "^3.22.4",
       },
       "devDependencies": {
