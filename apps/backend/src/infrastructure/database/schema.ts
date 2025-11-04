@@ -334,3 +334,29 @@ export type NewHolding = typeof holdings.$inferInsert;
 
 export type TokenPrice = typeof tokenPrices.$inferSelect;
 export type NewTokenPrice = typeof tokenPrices.$inferInsert;
+
+// Telegram users table - Maps Telegram user IDs to Scani user accounts
+export const telegramUsers = pgTable(
+  'telegram_users',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    telegramId: text('telegram_id').notNull().unique(), // Telegram user ID (numeric string)
+    telegramUsername: text('telegram_username'), // Telegram username (optional)
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }), // Reference to Scani user
+    isActive: boolean('is_active').notNull().default(true),
+    lastInteractionAt: timestamp('last_interaction_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => ({
+    // Index for fast lookups by telegram ID
+    telegramIdIdx: index('idx_telegram_users_telegram_id').on(table.telegramId),
+    // Index for user lookups
+    userIdIdx: index('idx_telegram_users_user_id').on(table.userId),
+  })
+);
+
+export type TelegramUser = typeof telegramUsers.$inferSelect;
+export type NewTelegramUser = typeof telegramUsers.$inferInsert;

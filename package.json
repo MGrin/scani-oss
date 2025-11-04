@@ -6,6 +6,7 @@
     "apps/backend",
     "apps/frontendV2",
     "apps/landing",
+    "apps/telegram-bot",
     "packages/*"
   ],
   "scripts": {

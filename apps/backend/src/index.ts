@@ -424,9 +424,70 @@ const realTimeUpdatesService = Container.get(RealTimeUpdatesService);
 realTimeUpdatesService.setElysiaApp(app);
 realTimeUpdatesService.initialize();
 
+// Initialize Telegram bot if configured
+// biome-ignore lint/suspicious/noExplicitAny: TelegramBotService type not available at runtime due to dynamic import
+let telegramBot: any = null;
+const initTelegramBot = async () => {
+  const botToken = process.env.TELEGRAM_BOT_TOKEN;
+  const openAIApiKey = process.env.OPENAI_API_KEY;
+
+  if (!botToken) {
+    logger.info({}, '⚠️ Telegram bot not configured (TELEGRAM_BOT_TOKEN not set)');
+    return;
+  }
+
+  if (!openAIApiKey) {
+    logger.warn({}, '⚠️ Telegram bot disabled: OpenAI API key not configured');
+    return;
+  }
+
+  try {
+    const { TelegramBotService } = await import('@scani/telegram-bot');
+    const { TelegramAuthService } = await import('./infrastructure/telegram/TelegramAuthService');
+
+    const telegramAuthService = Container.get(TelegramAuthService);
+
+    telegramBot = new TelegramBotService({
+      botToken,
+      openAIApiKey,
+      getAuthenticatedUser: async (telegramId: string) => {
+        return await telegramAuthService.getAuthenticatedUser(telegramId);
+      },
+      linkTelegramUser: async (
+        telegramId: string,
+        telegramUsername: string | undefined,
+        authToken: string
+      ) => {
+        await telegramAuthService.linkTelegramUser(telegramId, telegramUsername, authToken);
+      },
+    });
+
+    await telegramBot.start();
+    logger.info({}, '🤖 Telegram bot started successfully');
+  } catch (error) {
+    logger.error({ error }, '❌ Failed to start Telegram bot');
+    captureException(error instanceof Error ? error : new Error(String(error)), {
+      context: 'telegram-bot-initialization',
+    });
+  }
+};
+
+// Start telegram bot asynchronously (don't block server startup)
+initTelegramBot();
+
 // Graceful shutdown with logging
 const gracefulShutdown = async (signal: string) => {
   logger.info({ signal }, '🛑 Graceful shutdown initiated');
+
+  // Stop Telegram bot if running
+  if (telegramBot) {
+    logger.info({}, 'Stopping Telegram bot...');
+    try {
+      await telegramBot.stop();
+    } catch (error) {
+      logger.error({ error }, 'Error stopping Telegram bot');
+    }
+  }
 
   logger.info({}, 'Flushing Sentry events...');
   await flush(2000);

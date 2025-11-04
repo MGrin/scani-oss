@@ -304,18 +304,19 @@ Scani implements secure authentication using **Supabase Auth** with the followin
 
 ## Features
 
-- � **Authentication** - Secure user accounts with Supabase Auth (email/password, password reset)
-- �📊 **Dashboard** - Overview of financial status with real-time calculations
+- 🔐 **Authentication** - Secure user accounts with Supabase Auth (email/password, password reset)
+- 📊 **Dashboard** - Overview of financial status with real-time calculations
 - 💳 **Account Management** - Track multiple accounts with full CRUD operations
 - 🏦 **Institution Management** - Organize accounts by financial institutions
 - 💰 **Holdings Tracking** - Monitor investment positions and balances
 - 📝 **Transaction History** - Comprehensive transaction recording
 - 🗃️ **Database Persistence** - Reliable SQLite/PostgreSQL data storage
-- 📈 **Real-time Updates** - Live data synchronization
+- 📈 **Real-time Updates** - Live data synchronization via WebSocket
 - 🎨 **Modern UI** - Clean, responsive design with Shadcn UI
 - 🔒 **Type Safety** - Full TypeScript coverage with Drizzle ORM
 - ✅ **High Test Coverage** - 93%+ test coverage with comprehensive test suite
 - 🛡️ **Data Privacy** - User-scoped data access with secure JWT authentication
+- 🤖 **Telegram Bot** - AI-powered chatbot for managing your portfolio via Telegram ([Documentation](./docs/features/TELEGRAM_BOT.md))
 
 ## Future Enhancements
 
