@@ -36,3 +36,6 @@ report.[0-9]_.[0-9]_.[0-9]_.[0-9]_.json
 .vscode
 
 **/*.api-key.json
+
+# Keep mobile lockfile since mobile app is excluded from workspaces
+!apps/mobile/bun.lock

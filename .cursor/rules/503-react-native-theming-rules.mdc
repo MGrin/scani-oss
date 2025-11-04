@@ -5,92 +5,318 @@ alwaysApply: false
 
 # React Native Theming Rules
 
-## Theme Hook Usage
+## CRITICAL PERFORMANCE RULE
 
-Always use the `useAppTheme` hook to access theme values and the `themed()` function:
+The `themed()` function creates NEW style objects on every call (`Object.assign({}, ...stylesArray)` in theme context). Using it inline in JSX can cause unnecessary re-renders and component remounting issues like TextInput losing focus.
+
+**Default approach: Use static styles. Only use themed() when you need dynamic theme values.**
+
+## Style Definitions Priority
+
+### 1. Static Styles (PREFERRED)
+
+Use plain React Native style objects for styles that don't need theme-aware values:
 
 ```typescript
-import { useAppTheme } from "@/theme/context";
+// ✅ GOOD - Static, stable references
+const $container: ViewStyle = {
+  flex: 1,
+  padding: 16,
+  backgroundColor: "#667eea",
+}
 
-export const MyComponent: FC = () => {
-  const { themed, theme } = useAppTheme();
+const $title: TextStyle = {
+  fontSize: 24,
+  fontWeight: "600",
+  color: "white",
+}
 
-  // Use themed() to apply ThemedStyle functions
-  // Use theme directly for specific values
-};
+const $input: TextStyle = {
+  color: "white",
+  fontSize: 16,
+  fontFamily: "System",
+  flex: 1,
+}
 ```
 
-## Style Definitions
+**When to use static styles:**
+- Styles with fixed values (colors, sizes, spacing)
+- Components with TextInput or other focus-sensitive elements
+- Any component that re-renders frequently
+- Animated components where style stability matters
+- Forms and interactive elements
 
-### ThemedStyle Type
+### 2. ThemedStyle Functions (USE SPARINGLY)
 
-Import and use `ThemedStyle<T>` for theme-aware styles:
+Only use when you ACTUALLY need:
+- Dynamic colors based on light/dark mode
+- Theme spacing tokens that change
+- Typography that varies by theme
 
 ```typescript
 import type { ThemedStyle } from "@/theme/types";
 
-const $container: ThemedStyle<ViewStyle> = ({ spacing, colors }) => ({
+const $container: ThemedStyle<ViewStyle> = ({ spacing, colors, isDark }) => ({
   padding: spacing.md,
-  backgroundColor: colors.palette.neutral100,
+  backgroundColor: isDark ? colors.palette.neutral900 : colors.palette.neutral100,
 });
 
-const $text: ThemedStyle<TextStyle> = ({ spacing }) => ({
-  marginBottom: spacing.md,
+const $text: ThemedStyle<TextStyle> = ({ typography, colors }) => ({
+  fontFamily: typography.primary.normal,
+  color: colors.text,
 });
 ```
 
-### Static Styles
+### 3. Memoize themed() Calls When Required
 
-Use regular React Native style types for static styles that don't need theme access:
+If you must use themed() for specific elements, memoize the result to prevent recreating objects:
 
 ```typescript
-const $welcomeFace: ImageStyle = {
-  height: 169,
-  width: 269,
-  position: "absolute",
-};
+import { useMemo } from "react";
+
+const containerStyle = useMemo(() => themed($container), [themed])
+const textStyle = useMemo(() => themed($text), [themed])
+
+<View style={containerStyle}>
+  <Text style={textStyle}>Content</Text>
+</View>
 ```
 
 ## Applying Styles
 
-### Using themed() Function
-
-Apply ThemedStyle functions using the `themed()` helper:
+### Static Styles (Preferred)
 
 ```typescript
+// ✅ GOOD - Direct reference, no re-renders
+<View style={$container}>
+  <Text style={$title}>Title</Text>
+  <TextInput style={$input} value={text} onChangeText={setText} />
+</View>
+```
+
+### Themed Styles (Only When Needed)
+
+```typescript
+// ⚠️ USE SPARINGLY - Creates new objects on every render
 <View style={themed($container)}>
   <Text style={themed($heading)} />
 </View>
+
+// ✅ BETTER - Memoize to prevent recreation
+const containerStyle = useMemo(() => themed($dynamicContainer), [themed])
+<View style={containerStyle}>
 ```
 
 ### Combining Multiple Styles
 
-Pass an array to `themed()` to combine multiple styles:
-
 ```typescript
-<View style={themed([$bottomContainer, $bottomContainerInsets])} />
+// Static styles
+<View style={[$container, $centered]} />
+
+// Mixed static and themed (memoize the themed part)
+const themedStyle = useMemo(() => themed($dynamicContainer), [themed])
+<View style={[$staticBase, themedStyle]} />
 ```
 
 ### Direct Theme Access
 
-Access theme values directly for component props that accept specific values:
+For single values, access theme directly instead of using themed():
 
 ```typescript
+const { theme } = useAppTheme();
+
 <Image
-  source={welcomeFace}
+  source={logo}
   tintColor={theme.colors.palette.neutral900}
 />
 ```
+
+## Migration Pattern
+
+When converting from themed() to static:
+
+```typescript
+// ❌ Before (causes re-renders, TextInput loses focus)
+const $input: ThemedStyle<TextStyle> = ({ typography }) => ({
+  fontSize: 16,
+  fontFamily: typography.primary.normal,
+  color: "white",
+})
+<TextInput style={themed($input)} />
+
+// ✅ After (stable reference)
+const $input: TextStyle = {
+  fontSize: 16,
+  fontFamily: "System",
+  color: "white",
+}
+<TextInput style={$input} />
+```
+
+## When themed() is Actually Needed
+
+Use themed() ONLY for:
+
+1. **Dark mode color switching** - Background/text colors that change with theme
+2. **Dynamic spacing** - When using theme spacing tokens (spacing.md, spacing.lg)
+3. **Typography variants** - When using theme typography definitions
+4. **Components that don't re-render frequently** - Static screens, headers
+
+**Do NOT use themed() for:**
+- TextInput components or their containers
+- Form elements that update frequently
+- Animated components
+- Any component with fixed colors/sizes
 
 ## Style Naming Convention
 
 - Prefix all style constants with `$`
 - Use camelCase for style names
-- Be descriptive: `$topContainer`, `$welcomeHeading`, `$bottomContainer`
+- Be descriptive: `$container`, `$title`, `$submitButton`
+- Add `Static` prefix when mixing approaches: `$staticInput`, `$staticWrapper`
+
+## Common Patterns
+
+### TextInput Components (Always Static)
+
+```typescript
+// Always use static styles for inputs and their containers
+const $inputWrapper: ViewStyle = {
+  width: "100%",
+  height: 56,
+  backgroundColor: "rgba(255, 255, 255, 0.2)",
+  borderRadius: 12,
+  paddingHorizontal: 16,
+  justifyContent: "center",
+}
+
+const $input: TextStyle = {
+  color: "white",
+  fontSize: 16,
+  fontFamily: "System",
+  flex: 1,
+}
+
+<View style={$inputWrapper}>
+  <TextInput
+    style={$input}
+    value={email}
+    onChangeText={setEmail}
+  />
+</View>
+```
+
+### Theme-Aware Containers (Memoized)
+
+```typescript
+// Only if colors MUST change with theme
+const { themed } = useAppTheme();
+
+const containerStyle = useMemo(() => themed($container), [themed])
+
+<View style={containerStyle}>
+  <Text>Content</Text>
+</View>
+```
+
+### Mixed Approach (Static Base + Dynamic Colors)
+
+```typescript
+// Static structure
+const $button: ViewStyle = {
+  height: 56,
+  borderRadius: 12,
+  justifyContent: "center",
+  alignItems: "center",
+  paddingHorizontal: 16,
+}
+
+// Add theme-aware background (memoized)
+const { theme } = useAppTheme();
+const buttonStyle = useMemo(() => ({
+  ...$button,
+  backgroundColor: theme.colors.primary,
+}), [theme.colors.primary])
+
+<Pressable style={buttonStyle}>
+  <Text>Submit</Text>
+</Pressable>
+```
+
+### Entire Screen with Static Styles
+
+```typescript
+export const LoginScreen: FC = () => {
+  const [email, setEmail] = useState("")
+  
+  return (
+    <View style={$container}>
+      <View style={$cardContent}>
+        <Text style={$title}>Welcome</Text>
+        <View style={$inputWrapper}>
+          <TextInput
+            style={$input}
+            value={email}
+            onChangeText={setEmail}
+          />
+        </View>
+        <Pressable style={$button}>
+          <Text style={$buttonText}>Continue</Text>
+        </Pressable>
+      </View>
+    </View>
+  )
+}
+
+// All styles are static - stable references
+const $container: ViewStyle = {
+  flex: 1,
+  backgroundColor: "#667eea",
+}
+
+const $cardContent: ViewStyle = {
+  padding: 32,
+  gap: 16,
+}
+
+const $title: TextStyle = {
+  fontSize: 28,
+  fontWeight: "600",
+  color: "white",
+  textAlign: "center",
+}
+
+const $inputWrapper: ViewStyle = {
+  height: 56,
+  backgroundColor: "rgba(255, 255, 255, 0.2)",
+  borderRadius: 12,
+  paddingHorizontal: 16,
+}
+
+const $input: TextStyle = {
+  fontSize: 16,
+  color: "white",
+  flex: 1,
+}
+
+const $button: ViewStyle = {
+  height: 56,
+  backgroundColor: "rgba(255, 255, 255, 0.3)",
+  borderRadius: 16,
+  justifyContent: "center",
+  alignItems: "center",
+}
+
+const $buttonText: TextStyle = {
+  fontSize: 16,
+  fontWeight: "500",
+  color: "white",
+}
+```
 
 ## Theme Object Properties
 
-ThemedStyle functions receive a theme object with the following properties that can be destructured:
+When you do need ThemedStyle functions, they receive:
 
 - `spacing`: Spacing scale (xs, sm, md, lg, xl, xxl, etc.)
 - `colors`: Color palette and semantic colors
@@ -117,47 +343,6 @@ const $container: ThemedStyle<ViewStyle> = ({
 });
 ```
 
-## Common Patterns
-
-### Container Styles
-
-```typescript
-const $container: ThemedStyle<ViewStyle> = ({ spacing, colors }) => ({
-  flexShrink: 1,
-  flexGrow: 1,
-  justifyContent: "center",
-  paddingHorizontal: spacing.lg,
-  backgroundColor: colors.palette.neutral100,
-});
-```
-
-### Typography Styles
-
-```typescript
-const $heading: ThemedStyle<TextStyle> = ({ spacing }) => ({
-  marginBottom: spacing.md,
-});
-```
-
-### Image Styles
-
-Can be static or themed depending on needs:
-
-```typescript
-// Themed
-const $logo: ThemedStyle<ImageStyle> = ({ spacing }) => ({
-  height: 88,
-  width: "100%",
-  marginBottom: spacing.xxl,
-});
-
-// Static
-const $icon: ImageStyle = {
-  height: 24,
-  width: 24,
-};
-```
-
 ## Shared Styles
 
 Import common reusable styles from `@/theme/styles`:
@@ -167,3 +352,15 @@ import { $styles } from "@/theme/styles"
 
 <Screen preset="fixed" contentContainerStyle={$styles.flex1} />
 ```
+
+## Performance Checklist
+
+Before using themed():
+
+- [ ] Does this style actually need theme values?
+- [ ] Can I use fixed colors/sizes instead?
+- [ ] Is this a TextInput or form component? (use static)
+- [ ] Does this component re-render frequently? (use static)
+- [ ] If I must use themed(), am I memoizing it?
+
+**Remember: Static styles are faster, simpler, and prevent bugs. Use themed() only when absolutely necessary.**
