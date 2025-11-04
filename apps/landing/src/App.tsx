@@ -39,6 +39,20 @@ function App() {
     setIsVisible(true);
   }, []);
 
+  // Close mobile menu on Escape key press
+  useEffect(() => {
+    const handleEscape = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && mobileMenuOpen) {
+        setMobileMenuOpen(false);
+      }
+    };
+
+    if (mobileMenuOpen) {
+      document.addEventListener('keydown', handleEscape);
+      return () => document.removeEventListener('keydown', handleEscape);
+    }
+  }, [mobileMenuOpen]);
+
   return (
     <div className="min-h-screen bg-white" style={{ scrollBehavior: 'smooth' }}>
       {/* Navigation */}
