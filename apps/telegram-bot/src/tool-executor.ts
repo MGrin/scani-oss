@@ -145,7 +145,9 @@ export class ToolExecutor {
       '../../../backend/src/infrastructure/repositories/TokenRepository'
     );
     const tokenRepository = Container.get(TokenRepository);
-    // Note: TokenRepository may not have a search method yet, we'll implement a simple one
+    // TODO: Implement efficient search in TokenRepository instead of loading all tokens
+    // Current implementation loads all tokens into memory which is inefficient for large datasets
+    // Recommended: Add a searchTokens(query, limit) method to TokenRepository with database-level filtering
     const allTokens = await tokenRepository.getAllTokens();
     const searchLower = query.toLowerCase();
     return allTokens

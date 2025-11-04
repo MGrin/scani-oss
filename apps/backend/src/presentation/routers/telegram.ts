@@ -1,10 +1,12 @@
 import { Container } from 'typedi';
 import { z } from 'zod';
+import { TelegramUserRepository } from '../../infrastructure/repositories/TelegramUserRepository';
 import { TelegramAuthService } from '../../infrastructure/telegram/TelegramAuthService';
 import { requireAuth } from '../middleware/auth';
-import { protectedProcedure, publicProcedure, router } from '../trpc';
+import { protectedProcedure, router } from '../trpc';
 
 const telegramAuthService = Container.get(TelegramAuthService);
+const telegramUserRepo = Container.get(TelegramUserRepository);
 
 export const telegramRouter = router({
   /**
@@ -44,8 +46,19 @@ export const telegramRouter = router({
    */
   getLinkedAccount: protectedProcedure.query(async ({ ctx }) => {
     const { dbUser } = requireAuth(ctx);
-    // TODO: Implement getting linked telegram account
-    return null;
+    const telegramUser = await telegramUserRepo.findByUserId(dbUser.id);
+
+    if (!telegramUser || !telegramUser.isActive) {
+      return null;
+    }
+
+    return {
+      id: telegramUser.id,
+      telegramId: telegramUser.telegramId,
+      telegramUsername: telegramUser.telegramUsername,
+      lastInteractionAt: telegramUser.lastInteractionAt,
+      createdAt: telegramUser.createdAt,
+    };
   }),
 
   /**
@@ -53,7 +66,14 @@ export const telegramRouter = router({
    */
   unlinkAccount: protectedProcedure.mutation(async ({ ctx }) => {
     const { dbUser } = requireAuth(ctx);
-    // TODO: Implement unlinking telegram account
-    return { success: true };
+    const telegramUser = await telegramUserRepo.findByUserId(dbUser.id);
+
+    if (!telegramUser) {
+      return { success: false, message: 'No Telegram account linked' };
+    }
+
+    await telegramAuthService.unlinkTelegramUser(telegramUser.telegramId);
+
+    return { success: true, message: 'Telegram account unlinked successfully' };
   }),
 });
