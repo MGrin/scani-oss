@@ -68,9 +68,12 @@ export class PortfolioValuationService {
 
     // Get user holdings with token information
     // Optionally filter by account ID if provided
-    const whereConditions = accountId
-      ? and(eq(schema.holdings.userId, userId), eq(schema.holdings.accountId, accountId))
-      : eq(schema.holdings.userId, userId);
+    // Exclude hidden holdings
+    const conditions = [eq(schema.holdings.userId, userId), eq(schema.holdings.isHidden, false)];
+    if (accountId) {
+      conditions.push(eq(schema.holdings.accountId, accountId));
+    }
+    const whereConditions = and(...conditions);
 
     const holdings = await db
       .select({

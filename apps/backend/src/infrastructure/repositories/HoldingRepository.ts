@@ -9,13 +9,21 @@ export class HoldingRepository extends BaseRepository<Holding, NewHolding> {
   protected readonly table = schema.holdings;
   protected readonly tableName = 'holdings';
 
-  async findByUser(userId: string, transaction?: DatabaseTransaction): Promise<Holding[]> {
+  async findByUser(
+    userId: string,
+    transaction?: DatabaseTransaction,
+    includeHidden = false
+  ): Promise<Holding[]> {
     try {
       const database = this.getDb(transaction);
+      const whereConditions = includeHidden
+        ? eq(schema.holdings.userId, userId)
+        : and(eq(schema.holdings.userId, userId), eq(schema.holdings.isHidden, false));
+
       const results = await database
         .select()
         .from(schema.holdings)
-        .where(eq(schema.holdings.userId, userId))
+        .where(whereConditions)
         .orderBy(schema.holdings.lastUpdated);
 
       return results;
@@ -30,7 +38,8 @@ export class HoldingRepository extends BaseRepository<Holding, NewHolding> {
     tokenId: string,
     userId: string,
     excludeId?: string,
-    transaction?: DatabaseTransaction
+    transaction?: DatabaseTransaction,
+    includeHidden = false
   ): Promise<Holding | null> {
     try {
       const database = this.getDb(transaction);
@@ -40,6 +49,10 @@ export class HoldingRepository extends BaseRepository<Holding, NewHolding> {
         eq(schema.holdings.tokenId, tokenId),
         eq(schema.holdings.userId, userId),
       ];
+
+      if (!includeHidden) {
+        conditions.push(eq(schema.holdings.isHidden, false));
+      }
 
       if (excludeId) {
         conditions.push(ne(schema.holdings.id, excludeId));
@@ -63,7 +76,8 @@ export class HoldingRepository extends BaseRepository<Holding, NewHolding> {
 
   async findByUserWithCompleteDetails(
     userId: string,
-    transaction?: DatabaseTransaction
+    transaction?: DatabaseTransaction,
+    includeHidden = false
   ): Promise<
     Array<{
       holding: Holding;
@@ -79,6 +93,10 @@ export class HoldingRepository extends BaseRepository<Holding, NewHolding> {
   > {
     try {
       const database = this.getDb(transaction);
+      const whereConditions = includeHidden
+        ? eq(schema.holdings.userId, userId)
+        : and(eq(schema.holdings.userId, userId), eq(schema.holdings.isHidden, false));
+
       const results = await database
         .select({
           // Holdings data
@@ -87,6 +105,8 @@ export class HoldingRepository extends BaseRepository<Holding, NewHolding> {
           holdingAccountId: schema.holdings.accountId,
           holdingTokenId: schema.holdings.tokenId,
           holdingBalance: schema.holdings.balance,
+          holdingSource: schema.holdings.source,
+          holdingIsHidden: schema.holdings.isHidden,
           holdingLastUpdated: schema.holdings.lastUpdated,
           holdingCreatedAt: schema.holdings.createdAt,
           // Token data
@@ -109,7 +129,7 @@ export class HoldingRepository extends BaseRepository<Holding, NewHolding> {
         .innerJoin(schema.accounts, eq(schema.holdings.accountId, schema.accounts.id))
         .innerJoin(schema.institutions, eq(schema.accounts.institutionId, schema.institutions.id))
         .innerJoin(schema.accountTypes, eq(schema.accounts.typeId, schema.accountTypes.id))
-        .where(eq(schema.holdings.userId, userId));
+        .where(whereConditions);
 
       return results.map((r) => ({
         holding: {
@@ -118,6 +138,8 @@ export class HoldingRepository extends BaseRepository<Holding, NewHolding> {
           accountId: r.holdingAccountId,
           tokenId: r.holdingTokenId,
           balance: r.holdingBalance,
+          source: r.holdingSource,
+          isHidden: r.holdingIsHidden,
           lastUpdated: r.holdingLastUpdated,
           createdAt: r.holdingCreatedAt,
         },
@@ -147,7 +169,8 @@ export class HoldingRepository extends BaseRepository<Holding, NewHolding> {
   async findByUserWithFullDetails(
     userId: string,
     accountId?: string,
-    transaction?: DatabaseTransaction
+    transaction?: DatabaseTransaction,
+    includeHidden = false
   ): Promise<
     Array<{
       holding: Holding;
@@ -172,9 +195,14 @@ export class HoldingRepository extends BaseRepository<Holding, NewHolding> {
       const database = this.getDb(transaction);
 
       // Build where conditions
-      const whereConditions = accountId
-        ? and(eq(schema.holdings.userId, userId), eq(schema.holdings.accountId, accountId))
-        : eq(schema.holdings.userId, userId);
+      const conditions = [eq(schema.holdings.userId, userId)];
+      if (accountId) {
+        conditions.push(eq(schema.holdings.accountId, accountId));
+      }
+      if (!includeHidden) {
+        conditions.push(eq(schema.holdings.isHidden, false));
+      }
+      const whereConditions = and(...conditions);
 
       const results = await database
         .select({
@@ -184,6 +212,8 @@ export class HoldingRepository extends BaseRepository<Holding, NewHolding> {
           holdingAccountId: schema.holdings.accountId,
           holdingTokenId: schema.holdings.tokenId,
           holdingBalance: schema.holdings.balance,
+          holdingSource: schema.holdings.source,
+          holdingIsHidden: schema.holdings.isHidden,
           holdingLastUpdated: schema.holdings.lastUpdated,
           holdingCreatedAt: schema.holdings.createdAt,
           // Token data with type
@@ -222,6 +252,8 @@ export class HoldingRepository extends BaseRepository<Holding, NewHolding> {
           accountId: r.holdingAccountId,
           tokenId: r.holdingTokenId,
           balance: r.holdingBalance,
+          source: r.holdingSource,
+          isHidden: r.holdingIsHidden,
           lastUpdated: r.holdingLastUpdated,
           createdAt: r.holdingCreatedAt,
         },
@@ -254,17 +286,81 @@ export class HoldingRepository extends BaseRepository<Holding, NewHolding> {
   /**
    * Find all holdings for a specific account
    */
-  async findByAccount(accountId: string, transaction?: DatabaseTransaction): Promise<Holding[]> {
+  async findByAccount(
+    accountId: string,
+    transaction?: DatabaseTransaction,
+    includeHidden = false
+  ): Promise<Holding[]> {
     try {
       const database = this.getDb(transaction);
-      const results = await database
-        .select()
-        .from(schema.holdings)
-        .where(eq(schema.holdings.accountId, accountId));
+      const whereConditions = includeHidden
+        ? eq(schema.holdings.accountId, accountId)
+        : and(eq(schema.holdings.accountId, accountId), eq(schema.holdings.isHidden, false));
+
+      const results = await database.select().from(schema.holdings).where(whereConditions);
 
       return results;
     } catch (error) {
       this.logger.error({ accountId, error }, 'Failed to find holdings by account');
+      throw error;
+    }
+  }
+
+  /**
+   * Mark a holding as hidden (soft delete for blockchain holdings)
+   */
+  async markAsHidden(holdingId: string, transaction?: DatabaseTransaction): Promise<void> {
+    try {
+      const database = this.getDb(transaction);
+      await database
+        .update(schema.holdings)
+        .set({
+          isHidden: true,
+        })
+        .where(eq(schema.holdings.id, holdingId));
+    } catch (error) {
+      this.logger.error({ holdingId, error }, 'Failed to mark holding as hidden');
+      throw error;
+    }
+  }
+
+  /**
+   * Unhide a holding (restore from hidden state)
+   */
+  async unhideHolding(holdingId: string, transaction?: DatabaseTransaction): Promise<void> {
+    try {
+      const database = this.getDb(transaction);
+      await database
+        .update(schema.holdings)
+        .set({
+          isHidden: false,
+        })
+        .where(eq(schema.holdings.id, holdingId));
+    } catch (error) {
+      this.logger.error({ holdingId, error }, 'Failed to unhide holding');
+      throw error;
+    }
+  }
+
+  /**
+   * Get a holding by ID with option to include hidden
+   */
+  async findById(
+    holdingId: string,
+    transaction?: DatabaseTransaction,
+    includeHidden = false
+  ): Promise<Holding | null> {
+    try {
+      const database = this.getDb(transaction);
+      const conditions = includeHidden
+        ? eq(schema.holdings.id, holdingId)
+        : and(eq(schema.holdings.id, holdingId), eq(schema.holdings.isHidden, false));
+
+      const results = await database.select().from(schema.holdings).where(conditions).limit(1);
+
+      return results[0] || null;
+    } catch (error) {
+      this.logger.error({ holdingId, error }, 'Failed to find holding by ID');
       throw error;
     }
   }

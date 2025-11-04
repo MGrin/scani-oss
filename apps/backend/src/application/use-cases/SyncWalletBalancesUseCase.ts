@@ -182,8 +182,12 @@ export class SyncWalletBalancesUseCase {
             continue;
           }
 
-          // Get existing holdings for this account using service
-          const existingHoldings = await this.holdingService.findByAccount(account.id);
+          // Get existing holdings for this account using service (include hidden ones)
+          const existingHoldings = await this.holdingService.findByAccount(
+            account.id,
+            undefined,
+            true
+          );
 
           // Batch fetch all tokens for existing holdings
           const existingTokenIds = existingHoldings.map((h) => h.tokenId);
@@ -222,24 +226,54 @@ export class SyncWalletBalancesUseCase {
               const existingHolding = existingHoldingsMap.get(tokenSymbol);
 
               if (balance === '0' || parseFloat(balance) === 0) {
-                // Remove holding if balance is zero
+                // For blockchain holdings with zero balance:
+                // - If hidden, keep it hidden and update balance
+                // - If not hidden, mark as hidden (user may have intentionally hidden it)
                 if (existingHolding) {
-                  await this.holdingService.deleteHolding(existingHolding.id);
-                  holdingsRemoved++;
+                  await this.holdingService.updateHoldingBalance(existingHolding.id, balance);
+                  // Only count as removed if it wasn't already hidden
+                  if (!existingHolding.isHidden) {
+                    holdingsRemoved++;
+                  }
                   logger.debug(
                     {
                       accountId: account.id,
                       tokenSymbol,
                       holdingId: existingHolding.id,
+                      wasHidden: existingHolding.isHidden,
                     },
-                    'Removed holding with zero balance'
+                    'Updated holding with zero balance (keeping for future sync)'
                   );
                 }
               } else {
-                // Update or create holding
+                // Update or create holding with non-zero balance
                 if (existingHolding) {
                   // Update existing holding using service
+                  // If it was hidden, unhide it since balance is non-zero now
                   await this.holdingService.updateHoldingBalance(existingHolding.id, balance);
+
+                  // Unhide the holding if it was hidden (user may have gotten more of this token)
+                  if (existingHolding.isHidden) {
+                    // Use direct DB update to unhide - we need to add this to HoldingRepository
+                    const { db } = await import('../../infrastructure/database/connection');
+                    const schema = await import('../../infrastructure/database/schema');
+                    const { eq } = await import('drizzle-orm');
+
+                    await db
+                      .update(schema.holdings)
+                      .set({ isHidden: false })
+                      .where(eq(schema.holdings.id, existingHolding.id));
+
+                    logger.debug(
+                      {
+                        accountId: account.id,
+                        tokenSymbol,
+                        holdingId: existingHolding.id,
+                      },
+                      'Unhidden holding with new balance'
+                    );
+                  }
+
                   holdingsUpdated++;
                   logger.debug(
                     {
@@ -247,19 +281,32 @@ export class SyncWalletBalancesUseCase {
                       tokenSymbol,
                       holdingId: existingHolding.id,
                       balance,
+                      wasHidden: existingHolding.isHidden,
                     },
                     'Updated holding balance'
                   );
                 } else {
-                  // Create new holding using service
-                  const newHolding = await this.holdingService.createHolding(
-                    {
+                  // Create new holding with blockchain source
+                  // Use direct DB insert to set source='blockchain'
+                  const { db } = await import('../../infrastructure/database/connection');
+                  const schema = await import('../../infrastructure/database/schema');
+
+                  const [newHolding] = await db
+                    .insert(schema.holdings)
+                    .values({
+                      userId: account.userId,
                       accountId: account.id,
                       tokenId: token.id,
                       balance,
-                    },
-                    account.userId
-                  );
+                      source: 'blockchain',
+                      isHidden: false,
+                      lastUpdated: new Date(),
+                    })
+                    .returning();
+
+                  if (!newHolding) {
+                    throw new Error('Failed to create holding');
+                  }
 
                   holdingsCreated++;
                   logger.debug(

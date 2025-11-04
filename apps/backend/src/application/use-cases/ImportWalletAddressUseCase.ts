@@ -274,19 +274,23 @@ export class ImportWalletAddressUseCase {
           wallet.chainName
         );
 
-        // Check if holding already exists
+        // Check if holding already exists (including hidden ones)
         const existingHolding = await this.holdingRepository.findByAccountAndToken(
           accountId,
           token.id,
-          userId
+          userId,
+          undefined,
+          undefined,
+          true // Include hidden holdings
         );
 
         if (existingHolding) {
-          // Update existing holding
+          // Update existing holding and unhide if it was hidden
           await db
             .update(schema.holdings)
             .set({
               balance: tokenBalance.balance,
+              isHidden: false, // Unhide if balance is non-zero
               lastUpdated: new Date(),
             })
             .where(eq(schema.holdings.id, existingHolding.id));
@@ -299,7 +303,7 @@ export class ImportWalletAddressUseCase {
             balance: tokenBalance.balance,
           });
         } else {
-          // Create new holding
+          // Create new holding with blockchain source
           const [newHolding] = await db
             .insert(schema.holdings)
             .values({
@@ -307,6 +311,8 @@ export class ImportWalletAddressUseCase {
               accountId,
               tokenId: token.id,
               balance: tokenBalance.balance,
+              source: 'blockchain', // Mark as blockchain-sourced
+              isHidden: false,
               lastUpdated: new Date(),
             })
             .returning();

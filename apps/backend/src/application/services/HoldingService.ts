@@ -198,9 +198,13 @@ export class HoldingService extends BaseService {
   /**
    * Find holdings by account
    */
-  async findByAccount(accountId: string, transaction?: DatabaseTransaction): Promise<Holding[]> {
+  async findByAccount(
+    accountId: string,
+    transaction?: DatabaseTransaction,
+    includeHidden = false
+  ): Promise<Holding[]> {
     try {
-      return await this.holdingRepository.findByAccount(accountId, transaction);
+      return await this.holdingRepository.findByAccount(accountId, transaction, includeHidden);
     } catch (error) {
       throw this.handleError(error, 'findByAccount');
     }

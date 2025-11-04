@@ -71,6 +71,13 @@
       "when": 1760515391710,
       "tag": "0009_fat_kulan_gath",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1762260444881,
+      "tag": "0010_chunky_winter_soldier",
+      "breakpoints": true
     }
   ]
 }
