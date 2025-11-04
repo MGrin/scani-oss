@@ -194,4 +194,54 @@ export class HoldingService extends BaseService {
 
     return detailedHoldings;
   }
+
+  /**
+   * Find holdings by account
+   */
+  async findByAccount(accountId: string, transaction?: DatabaseTransaction): Promise<Holding[]> {
+    try {
+      return await this.holdingRepository.findByAccount(accountId, transaction);
+    } catch (error) {
+      throw this.handleError(error, 'findByAccount');
+    }
+  }
+
+  /**
+   * Update holding balance
+   */
+  async updateHoldingBalance(
+    holdingId: string,
+    balance: string,
+    transaction?: DatabaseTransaction
+  ): Promise<void> {
+    try {
+      this.logInfo('Updating holding balance', { holdingId, balance });
+      await this.holdingRepository.updateBalance(holdingId, balance, transaction);
+    } catch (error) {
+      throw this.handleError(error, 'updateHoldingBalance');
+    }
+  }
+
+  /**
+   * Delete holding
+   */
+  async deleteHolding(holdingId: string, transaction?: DatabaseTransaction): Promise<void> {
+    try {
+      this.logInfo('Deleting holding', { holdingId });
+      await this.holdingRepository.deleteById(holdingId, transaction);
+    } catch (error) {
+      throw this.handleError(error, 'deleteHolding');
+    }
+  }
+
+  /**
+   * Get distinct token IDs from all holdings
+   */
+  async getDistinctTokenIds(transaction?: DatabaseTransaction): Promise<string[]> {
+    try {
+      return await this.holdingRepository.getDistinctTokenIds(transaction);
+    } catch (error) {
+      throw this.handleError(error, 'getDistinctTokenIds');
+    }
+  }
 }

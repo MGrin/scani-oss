@@ -278,6 +278,17 @@ export class TokenService extends BaseService {
   }
 
   /**
+   * Get multiple tokens by IDs
+   */
+  async getTokensByIds(tokenIds: string[]): Promise<Token[]> {
+    try {
+      return await this.tokenRepository.findByIds(tokenIds);
+    } catch (error) {
+      throw this.handleError(error, 'getTokensByIds');
+    }
+  }
+
+  /**
    * Get tokens by type code
    */
   async getTokensByType(typeCode: string, _limit?: number, _offset?: number): Promise<Token[]> {
@@ -291,6 +302,59 @@ export class TokenService extends BaseService {
       return await this.tokenRepository.findByType(typeCode, undefined);
     } catch (error) {
       throw this.handleError(error, 'getTokensByType');
+    }
+  }
+
+  /**
+   * Find or create token from blockchain data
+   */
+  async findOrCreateTokenFromBlockchain(tokenData: {
+    symbol: string;
+    name: string;
+    decimals: number;
+    typeId: string;
+    iconUrl?: string | null;
+    isNative?: boolean;
+    tokenAddress?: string;
+    chainName: string;
+    coinGeckoId?: string;
+    metadata?: Record<string, unknown>;
+  }): Promise<Token> {
+    try {
+      // Try to find existing token
+      let token = await this.tokenRepository.findBySymbolAndType(
+        tokenData.symbol.toUpperCase(),
+        tokenData.typeId
+      );
+
+      if (!token) {
+        // Create new token
+        token = await this.tokenRepository.create({
+          symbol: tokenData.symbol.toUpperCase(),
+          name: tokenData.name,
+          typeId: tokenData.typeId,
+          decimals: tokenData.decimals,
+          iconUrl: tokenData.iconUrl || null,
+          providerMetadata: JSON.stringify({
+            isNative: tokenData.isNative,
+            tokenAddress: tokenData.tokenAddress,
+            chain: tokenData.chainName,
+            ...(tokenData.coinGeckoId && { coinGeckoId: tokenData.coinGeckoId }),
+            ...(tokenData.metadata && { chainMetadata: tokenData.metadata }),
+          }),
+          isActive: true,
+        });
+
+        this.assertExists(token, 'Failed to create token');
+        this.logInfo('Token created from blockchain data', {
+          tokenId: token.id,
+          symbol: token.symbol,
+        });
+      }
+
+      return token;
+    } catch (error) {
+      throw this.handleError(error, 'findOrCreateTokenFromBlockchain');
     }
   }
 }

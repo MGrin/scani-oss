@@ -34,4 +34,60 @@ export class AccountRepository extends BaseRepository<Account, NewAccount> {
       throw error;
     }
   }
+
+  /**
+   * Find all wallet accounts (accounts with walletAddress in metadata)
+   */
+  async findWalletAccounts(transaction?: DatabaseTransaction): Promise<Account[]> {
+    try {
+      const database = this.getDb(transaction);
+      const accounts = await database
+        .select({
+          id: schema.accounts.id,
+          userId: schema.accounts.userId,
+          name: schema.accounts.name,
+          metadata: schema.accounts.metadata,
+          institutionId: schema.accounts.institutionId,
+          typeId: schema.accounts.typeId,
+          description: schema.accounts.description,
+          isActive: schema.accounts.isActive,
+          createdAt: schema.accounts.createdAt,
+          updatedAt: schema.accounts.updatedAt,
+        })
+        .from(schema.accounts)
+        .where(eq(schema.accounts.isActive, true));
+
+      // Filter accounts that have walletAddress in metadata
+      return accounts.filter((account) => {
+        const metadata = account.metadata as Record<string, unknown> | null;
+        return metadata && typeof metadata === 'object' && 'walletAddress' in metadata;
+      });
+    } catch (error) {
+      this.logger.error({ error }, 'Failed to find wallet accounts');
+      throw error;
+    }
+  }
+
+  /**
+   * Update account metadata
+   */
+  async updateMetadata(
+    accountId: string,
+    metadata: Record<string, unknown>,
+    transaction?: DatabaseTransaction
+  ): Promise<void> {
+    try {
+      const database = this.getDb(transaction);
+      await database
+        .update(schema.accounts)
+        .set({
+          metadata,
+          updatedAt: new Date(),
+        })
+        .where(eq(schema.accounts.id, accountId));
+    } catch (error) {
+      this.logger.error({ accountId, error }, 'Failed to update account metadata');
+      throw error;
+    }
+  }
 }

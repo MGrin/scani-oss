@@ -13,15 +13,16 @@
  * - Respect rate limits of blockchain APIs
  */
 
-import { eq } from 'drizzle-orm';
 import { Container, Service } from 'typedi';
-import { db } from '../../infrastructure/database/connection';
-import * as schema from '../../infrastructure/database/schema';
 import { BlockchainServiceManager } from '../../infrastructure/external-services/blockchain';
 import type { WalletInfo } from '../../infrastructure/external-services/blockchain/types';
-import { TokenRepository } from '../../infrastructure/repositories/TokenRepository';
+import { TokenTypeRepository } from '../../infrastructure/repositories/EnumRepositories';
 import { createComponentLogger } from '../../utils/logger';
+import { AccountService } from '../services/AccountService';
+import { HoldingService } from '../services/HoldingService';
 import { PricingService } from '../services/PricingService';
+import { TokenService } from '../services/TokenService';
+import { UserService } from '../services/UserService';
 
 const logger = createComponentLogger('use-case:sync-wallet-balances');
 
@@ -56,7 +57,11 @@ export interface SyncWalletBalancesResult {
 export class SyncWalletBalancesUseCase {
   private readonly blockchainService = Container.get(BlockchainServiceManager);
   private readonly pricingService = Container.get(PricingService);
-  private readonly tokenRepository = Container.get(TokenRepository);
+  private readonly accountService = Container.get(AccountService);
+  private readonly holdingService = Container.get(HoldingService);
+  private readonly tokenService = Container.get(TokenService);
+  private readonly userService = Container.get(UserService);
+  private readonly tokenTypeRepository = Container.get(TokenTypeRepository);
 
   async execute(): Promise<SyncWalletBalancesResult> {
     const startTime = Date.now();
@@ -70,23 +75,8 @@ export class SyncWalletBalancesUseCase {
     let holdingsRemoved = 0;
 
     try {
-      // Find all accounts with wallet addresses in metadata
-      const accounts = await db
-        .select({
-          id: schema.accounts.id,
-          userId: schema.accounts.userId,
-          name: schema.accounts.name,
-          metadata: schema.accounts.metadata,
-          institutionId: schema.accounts.institutionId,
-        })
-        .from(schema.accounts)
-        .where(eq(schema.accounts.isActive, true));
-
-      // Filter accounts that have walletAddress in metadata
-      const walletAccounts = accounts.filter((account) => {
-        const metadata = account.metadata as Record<string, unknown> | null;
-        return metadata && typeof metadata === 'object' && 'walletAddress' in metadata;
-      });
+      // Find all wallet accounts using service
+      const walletAccounts = await this.accountService.findWalletAccounts();
 
       if (walletAccounts.length === 0) {
         logger.info('No wallet accounts found');
@@ -110,11 +100,7 @@ export class SyncWalletBalancesUseCase {
       );
 
       // Get crypto token type
-      const [cryptoTokenType] = await db
-        .select()
-        .from(schema.tokenTypes)
-        .where(eq(schema.tokenTypes.code, 'crypto'))
-        .limit(1);
+      const cryptoTokenType = await this.tokenTypeRepository.findByCode('crypto');
 
       if (!cryptoTokenType) {
         throw new Error('Token type "crypto" not found');
@@ -169,12 +155,11 @@ export class SyncWalletBalancesUseCase {
             continue;
           }
 
-          // Find the wallet for this specific chain (if chainName is available)
+          // Find the wallet for this specific chain
           let walletInfo: WalletInfo | undefined;
           if (chainName) {
             walletInfo = walletResult.wallets.find((w) => w.chainName === chainName);
           } else {
-            // If no chainName, use the first wallet
             walletInfo = walletResult.wallets[0];
           }
 
@@ -197,15 +182,12 @@ export class SyncWalletBalancesUseCase {
             continue;
           }
 
-          // Get existing holdings for this account
-          const existingHoldings = await db
-            .select()
-            .from(schema.holdings)
-            .where(eq(schema.holdings.accountId, account.id));
+          // Get existing holdings for this account using service
+          const existingHoldings = await this.holdingService.findByAccount(account.id);
 
           // Batch fetch all tokens for existing holdings
           const existingTokenIds = existingHoldings.map((h) => h.tokenId);
-          const existingTokens = await this.tokenRepository.findByIds(existingTokenIds);
+          const existingTokens = await this.tokenService.getTokensByIds(existingTokenIds);
           const tokensMap = new Map(existingTokens.map((t) => [t.id, t]));
 
           // Create a map of existing holdings by token symbol
@@ -223,48 +205,26 @@ export class SyncWalletBalancesUseCase {
               const tokenSymbol = tokenBalance.symbol.toUpperCase();
               const balance = tokenBalance.balance;
 
-              // Find or create token
-              let token = await this.tokenRepository.findBySymbolAndType(
-                tokenSymbol,
-                cryptoTokenType.id
-              );
-
-              if (!token) {
-                // Create new token
-                const [newToken] = await db
-                  .insert(schema.tokens)
-                  .values({
-                    symbol: tokenSymbol,
-                    name: tokenBalance.name,
-                    typeId: cryptoTokenType.id,
-                    decimals: tokenBalance.decimals,
-                    iconUrl: tokenBalance.iconUrl || null,
-                    providerMetadata: JSON.stringify({
-                      isNative: tokenBalance.isNative,
-                      tokenAddress: tokenBalance.tokenAddress,
-                      chain: walletInfo.chainName,
-                      ...(tokenBalance.coinGeckoId && { coinGeckoId: tokenBalance.coinGeckoId }),
-                      ...(tokenBalance.metadata && { chainMetadata: tokenBalance.metadata }),
-                    }),
-                    isActive: true,
-                  })
-                  .returning();
-
-                if (!newToken) {
-                  throw new Error('Failed to create token');
-                }
-
-                token = newToken;
-              }
+              // Find or create token using service
+              const token = await this.tokenService.findOrCreateTokenFromBlockchain({
+                symbol: tokenSymbol,
+                name: tokenBalance.name,
+                decimals: tokenBalance.decimals,
+                typeId: cryptoTokenType.id,
+                iconUrl: tokenBalance.iconUrl,
+                isNative: tokenBalance.isNative,
+                tokenAddress: tokenBalance.tokenAddress,
+                chainName: walletInfo.chainName,
+                coinGeckoId: tokenBalance.coinGeckoId,
+                metadata: tokenBalance.metadata,
+              });
 
               const existingHolding = existingHoldingsMap.get(tokenSymbol);
 
               if (balance === '0' || parseFloat(balance) === 0) {
                 // Remove holding if balance is zero
                 if (existingHolding) {
-                  await db
-                    .delete(schema.holdings)
-                    .where(eq(schema.holdings.id, existingHolding.id));
+                  await this.holdingService.deleteHolding(existingHolding.id);
                   holdingsRemoved++;
                   logger.debug(
                     {
@@ -278,14 +238,8 @@ export class SyncWalletBalancesUseCase {
               } else {
                 // Update or create holding
                 if (existingHolding) {
-                  // Update existing holding
-                  await db
-                    .update(schema.holdings)
-                    .set({
-                      balance,
-                      lastUpdated: new Date(),
-                    })
-                    .where(eq(schema.holdings.id, existingHolding.id));
+                  // Update existing holding using service
+                  await this.holdingService.updateHoldingBalance(existingHolding.id, balance);
                   holdingsUpdated++;
                   logger.debug(
                     {
@@ -297,42 +251,33 @@ export class SyncWalletBalancesUseCase {
                     'Updated holding balance'
                   );
                 } else {
-                  // Create new holding
-                  const [newHolding] = await db
-                    .insert(schema.holdings)
-                    .values({
-                      userId: account.userId,
+                  // Create new holding using service
+                  const newHolding = await this.holdingService.createHolding(
+                    {
                       accountId: account.id,
                       tokenId: token.id,
                       balance,
-                      lastUpdated: new Date(),
-                    })
-                    .returning();
+                    },
+                    account.userId
+                  );
 
-                  if (newHolding) {
-                    holdingsCreated++;
-                    logger.debug(
-                      {
-                        accountId: account.id,
-                        tokenSymbol,
-                        holdingId: newHolding.id,
-                        balance,
-                      },
-                      'Created new holding'
-                    );
-                  }
+                  holdingsCreated++;
+                  logger.debug(
+                    {
+                      accountId: account.id,
+                      tokenSymbol,
+                      holdingId: newHolding.id,
+                      balance,
+                    },
+                    'Created new holding'
+                  );
                 }
 
                 // Try to fetch current price (non-blocking)
                 try {
-                  const [user] = await db
-                    .select()
-                    .from(schema.users)
-                    .where(eq(schema.users.id, account.userId))
-                    .limit(1);
-
+                  const user = await this.userService.getUserById(account.userId);
                   if (user?.baseCurrencyId) {
-                    const baseCurrencyToken = await this.tokenRepository.findById(
+                    const baseCurrencyToken = await this.tokenService.getTokenById(
                       user.baseCurrencyId
                     );
                     if (baseCurrencyToken) {
@@ -366,17 +311,12 @@ export class SyncWalletBalancesUseCase {
             }
           }
 
-          // Update account metadata with last sync time
-          await db
-            .update(schema.accounts)
-            .set({
-              metadata: {
-                ...metadata,
-                lastSync: new Date().toISOString(),
-              },
-              updatedAt: new Date(),
-            })
-            .where(eq(schema.accounts.id, account.id));
+          // Update account metadata with last sync time using service
+          const updatedMetadata = {
+            ...metadata,
+            lastSync: new Date().toISOString(),
+          };
+          await this.accountService.updateAccountMetadata(account.id, updatedMetadata);
 
           accountsSynced++;
         } catch (error) {

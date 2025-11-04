@@ -12,10 +12,9 @@
  */
 
 import { Container, Service } from 'typedi';
-import { db } from '../../infrastructure/database/connection';
-import * as schema from '../../infrastructure/database/schema';
 import { TokenRepository } from '../../infrastructure/repositories/TokenRepository';
 import { createComponentLogger } from '../../utils/logger';
+import { HoldingService } from '../services/HoldingService';
 import { PricingService } from '../services/PricingService';
 
 const logger = createComponentLogger('use-case:update-token-prices');
@@ -44,6 +43,7 @@ export interface UpdateTokenPricesResult {
 export class UpdateTokenPricesUseCase {
   private readonly pricingService = Container.get(PricingService);
   private readonly tokenRepository = Container.get(TokenRepository);
+  private readonly holdingService = Container.get(HoldingService);
 
   async execute(baseCurrencySymbol = 'USD'): Promise<UpdateTokenPricesResult> {
     const startTime = Date.now();
@@ -52,12 +52,8 @@ export class UpdateTokenPricesUseCase {
     const errors: UpdateTokenPricesResult['errors'] = [];
 
     try {
-      // Find all unique token IDs from holdings
-      const tokenIdsResult = await db
-        .selectDistinct({ tokenId: schema.holdings.tokenId })
-        .from(schema.holdings);
-
-      const uniqueTokenIds = tokenIdsResult.map((row) => row.tokenId);
+      // Find all unique token IDs from holdings using service
+      const uniqueTokenIds = await this.holdingService.getDistinctTokenIds();
 
       if (uniqueTokenIds.length === 0) {
         logger.info('No tokens with holdings found');

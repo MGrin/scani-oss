@@ -250,4 +250,75 @@ export class HoldingRepository extends BaseRepository<Holding, NewHolding> {
       throw error;
     }
   }
+
+  /**
+   * Find all holdings for a specific account
+   */
+  async findByAccount(accountId: string, transaction?: DatabaseTransaction): Promise<Holding[]> {
+    try {
+      const database = this.getDb(transaction);
+      const results = await database
+        .select()
+        .from(schema.holdings)
+        .where(eq(schema.holdings.accountId, accountId));
+
+      return results;
+    } catch (error) {
+      this.logger.error({ accountId, error }, 'Failed to find holdings by account');
+      throw error;
+    }
+  }
+
+  /**
+   * Update holding balance
+   */
+  async updateBalance(
+    holdingId: string,
+    balance: string,
+    transaction?: DatabaseTransaction
+  ): Promise<void> {
+    try {
+      const database = this.getDb(transaction);
+      await database
+        .update(schema.holdings)
+        .set({
+          balance,
+          lastUpdated: new Date(),
+        })
+        .where(eq(schema.holdings.id, holdingId));
+    } catch (error) {
+      this.logger.error({ holdingId, balance, error }, 'Failed to update holding balance');
+      throw error;
+    }
+  }
+
+  /**
+   * Delete a holding by ID
+   */
+  async deleteById(holdingId: string, transaction?: DatabaseTransaction): Promise<void> {
+    try {
+      const database = this.getDb(transaction);
+      await database.delete(schema.holdings).where(eq(schema.holdings.id, holdingId));
+    } catch (error) {
+      this.logger.error({ holdingId, error }, 'Failed to delete holding');
+      throw error;
+    }
+  }
+
+  /**
+   * Get distinct token IDs from all holdings
+   */
+  async getDistinctTokenIds(transaction?: DatabaseTransaction): Promise<string[]> {
+    try {
+      const database = this.getDb(transaction);
+      const results = await database
+        .selectDistinct({ tokenId: schema.holdings.tokenId })
+        .from(schema.holdings);
+
+      return results.map((row) => row.tokenId);
+    } catch (error) {
+      this.logger.error({ error }, 'Failed to get distinct token IDs');
+      throw error;
+    }
+  }
 }
