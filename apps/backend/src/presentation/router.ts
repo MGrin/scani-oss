@@ -10,6 +10,7 @@ import { holdingsRouter } from './routers/holdings';
 import { institutionTypesRouter } from './routers/institution-types';
 import { institutionsRouter } from './routers/institutions';
 import { screenshotsRouter } from './routers/screenshots';
+import { telegramRouter } from './routers/telegram';
 import { createTokensRouter } from './routers/tokens';
 import { usersRouter } from './routers/users';
 import { walletRouter } from './routers/wallet';
@@ -45,6 +46,9 @@ export const appRouter = router({
 
   // Wallet (protected) - Cryptocurrency wallet import
   wallet: walletRouter,
+
+  // Telegram (protected) - Telegram bot integration
+  telegram: telegramRouter,
 
   // Health check (public)
   health: router({
