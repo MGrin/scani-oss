@@ -30,4 +30,12 @@ export class UserService extends BaseService {
       throw this.handleError(error, 'updateUser');
     }
   }
+
+  async getUserById(userId: string): Promise<User | null> {
+    try {
+      return await this.userRepository.findById(userId);
+    } catch (error) {
+      throw this.handleError(error, 'getUserById');
+    }
+  }
 }

@@ -17,6 +17,11 @@ export {
   type ParseScreenshotResult,
   ParseScreenshotUseCase,
 } from './ParseScreenshotUseCase';
+// Cron Job Use Cases
+export {
+  type SyncWalletBalancesResult,
+  SyncWalletBalancesUseCase,
+} from './SyncWalletBalancesUseCase';
 export { UpdateHoldingPriceUseCase } from './UpdateHoldingPriceUseCase';
 export {
   type UpdateHoldingsBatchInput,
@@ -27,3 +32,7 @@ export {
   type UpdateHoldingInput,
   UpdateHoldingUseCase,
 } from './UpdateHoldingUseCase';
+export {
+  type UpdateTokenPricesResult,
+  UpdateTokenPricesUseCase,
+} from './UpdateTokenPricesUseCase';

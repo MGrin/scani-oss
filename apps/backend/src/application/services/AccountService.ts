@@ -183,4 +183,30 @@ export class AccountService extends BaseService {
       throw this.handleError(error, 'deleteAccount');
     }
   }
+
+  /**
+   * Find all wallet accounts (accounts with walletAddress in metadata)
+   */
+  async findWalletAccounts(transaction?: DatabaseTransaction): Promise<Account[]> {
+    try {
+      return await this.accountRepository.findWalletAccounts(transaction);
+    } catch (error) {
+      throw this.handleError(error, 'findWalletAccounts');
+    }
+  }
+
+  /**
+   * Update account metadata
+   */
+  async updateAccountMetadata(
+    accountId: string,
+    metadata: Record<string, unknown>,
+    transaction?: DatabaseTransaction
+  ): Promise<void> {
+    try {
+      await this.accountRepository.updateMetadata(accountId, metadata, transaction);
+    } catch (error) {
+      throw this.handleError(error, 'updateAccountMetadata');
+    }
+  }
 }
