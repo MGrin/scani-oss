@@ -3,7 +3,7 @@ export { AccountService } from './AccountService';
 export { AIService } from './AIService';
 export { BaseService } from './BaseService';
 export { DashboardService } from './DashboardService';
-export { EnumServices } from './EnumServices';
+export { AccountTypeService, InstitutionTypeService } from './EnumServices';
 export { HoldingService } from './HoldingService';
 export { InstitutionService } from './InstitutionService';
 export { PortfolioValuationService } from './PortfolioValuationService';
