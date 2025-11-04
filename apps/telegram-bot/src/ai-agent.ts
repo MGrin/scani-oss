@@ -1,5 +1,5 @@
-import { generateText, tool } from 'ai';
 import { openai } from '@ai-sdk/openai';
+import { generateText, tool } from 'ai';
 import { ToolExecutor } from './tool-executor';
 import { tools } from './tools';
 
