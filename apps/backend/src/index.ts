@@ -1,11 +1,13 @@
 import 'reflect-metadata';
 import { cors } from '@elysiajs/cors';
+import { cron } from '@elysiajs/cron';
 import { trpc } from '@elysiajs/trpc';
 import { Elysia } from 'elysia';
 import { Container } from 'typedi';
 // CRITICAL: Initialize container BEFORE importing any routers
 // This must happen before any module that calls Container.get()
 import { initializeContainer } from './config/container';
+import { executePricingCronJob, executeWalletBalancesCronJob } from './infrastructure/cron';
 import { RealTimeUpdatesService } from './infrastructure/websocket/RealTimeUpdatesService';
 import {
   captureException,
@@ -73,6 +75,21 @@ const globalLimiter = createStandardLimiter(300, 500);
 const strictLimiter = createStrictLimiter(60, 90); // use for heavy/AI routes
 
 const app = new Elysia()
+  // Add cron jobs
+  .use(
+    cron({
+      name: 'pricing-cron',
+      pattern: '0,30 * * * *', // Every 30 minutes at :00 and :30
+      run: executePricingCronJob,
+    })
+  )
+  .use(
+    cron({
+      name: 'wallet-balances-cron',
+      pattern: '*/15 * * * *', // Every 15 minutes
+      run: executeWalletBalancesCronJob,
+    })
+  )
   // Add request logging middleware
   .onBeforeHandle(({ request, set }) => {
     const url = new URL(request.url);
@@ -378,6 +395,16 @@ wsLogger.info(
     host: HOST,
   },
   '🔌 WebSocket endpoint configured (using Elysia native WebSocket)'
+);
+
+logger.info(
+  {
+    pricingCronPattern: '0,30 * * * *',
+    pricingCronDescription: 'Every 30 minutes at :00 and :30',
+    walletBalancesCronPattern: '*/15 * * * *',
+    walletBalancesCronDescription: 'Every 15 minutes',
+  },
+  '⏰ Cron jobs configured and scheduled'
 );
 
 // Start HTTP server with enhanced logging
