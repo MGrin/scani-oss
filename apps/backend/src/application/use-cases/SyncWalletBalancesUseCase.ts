@@ -7,10 +7,13 @@
  * Responsibilities:
  * - Find all accounts with wallet addresses (blockchain imports)
  * - Fetch current balances from blockchain for each wallet
- * - Update existing holdings with new balances
- * - Remove holdings when balance goes to zero
+ * - Update existing holdings with new balances (preserving hidden state)
+ * - Update holdings when balance goes to zero (keeping them for future syncs)
  * - Create new holdings when wallet owns new tokens
  * - Respect rate limits of blockchain APIs
+ *
+ * Note: Hidden holdings are updated with new balances but remain hidden.
+ * This preserves user intent when they explicitly hide a holding.
  */
 
 import { Container, Service } from 'typedi';
@@ -227,8 +230,9 @@ export class SyncWalletBalancesUseCase {
 
               if (balance === '0' || parseFloat(balance) === 0) {
                 // For blockchain holdings with zero balance:
-                // - If hidden, keep it hidden and update balance
-                // - If not hidden, mark as hidden (user may have intentionally hidden it)
+                // - Keep the holding for future syncs (balance may increase later)
+                // - Preserve hidden state (if user hid it, keep it hidden)
+                // - Update the balance to reflect current state
                 if (existingHolding) {
                   await this.holdingService.updateHoldingBalance(existingHolding.id, balance);
                   // Only count as removed if it wasn't already hidden
@@ -240,39 +244,17 @@ export class SyncWalletBalancesUseCase {
                       accountId: account.id,
                       tokenSymbol,
                       holdingId: existingHolding.id,
-                      wasHidden: existingHolding.isHidden,
+                      isHidden: existingHolding.isHidden,
                     },
-                    'Updated holding with zero balance (keeping for future sync)'
+                    'Updated holding with zero balance (preserving hidden state)'
                   );
                 }
               } else {
                 // Update or create holding with non-zero balance
                 if (existingHolding) {
                   // Update existing holding using service
-                  // If it was hidden, unhide it since balance is non-zero now
+                  // Keep the hidden state as-is (user may have intentionally hidden it)
                   await this.holdingService.updateHoldingBalance(existingHolding.id, balance);
-
-                  // Unhide the holding if it was hidden (user may have gotten more of this token)
-                  if (existingHolding.isHidden) {
-                    // Use direct DB update to unhide - we need to add this to HoldingRepository
-                    const { db } = await import('../../infrastructure/database/connection');
-                    const schema = await import('../../infrastructure/database/schema');
-                    const { eq } = await import('drizzle-orm');
-
-                    await db
-                      .update(schema.holdings)
-                      .set({ isHidden: false })
-                      .where(eq(schema.holdings.id, existingHolding.id));
-
-                    logger.debug(
-                      {
-                        accountId: account.id,
-                        tokenSymbol,
-                        holdingId: existingHolding.id,
-                      },
-                      'Unhidden holding with new balance'
-                    );
-                  }
 
                   holdingsUpdated++;
                   logger.debug(
@@ -281,9 +263,9 @@ export class SyncWalletBalancesUseCase {
                       tokenSymbol,
                       holdingId: existingHolding.id,
                       balance,
-                      wasHidden: existingHolding.isHidden,
+                      isHidden: existingHolding.isHidden,
                     },
-                    'Updated holding balance'
+                    'Updated holding balance (preserving hidden state)'
                   );
                 } else {
                   // Create new holding with blockchain source
