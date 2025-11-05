@@ -10,8 +10,10 @@ import {
 import {
   CreateHoldingsWithDependenciesUseCase,
   DeleteHoldingUseCase,
+  ImportWalletAddressUseCase,
   UpdateHoldingUseCase,
 } from '../../backend/src/application/use-cases';
+import { BlockchainServiceManager } from '../../backend/src/infrastructure/external-services/blockchain';
 import {
   AccountTypeRepository,
   InstitutionRepository,
@@ -78,6 +80,12 @@ export class ToolExecutor {
 
         case 'listAccountTypes':
           return await this.listAccountTypes();
+
+        case 'importWallet':
+          return await this.importWallet(parameters.address, parameters.displayName);
+
+        case 'listSupportedChains':
+          return await this.listSupportedChains();
 
         default:
           throw new Error(`Unknown tool: ${toolName}`);
@@ -197,5 +205,30 @@ export class ToolExecutor {
   private async listAccountTypes() {
     const accountTypeRepository = Container.get(AccountTypeRepository);
     return await accountTypeRepository.getAllAccountTypes();
+  }
+
+  private async importWallet(address: string, displayName?: string) {
+    const importWalletUseCase = Container.get(ImportWalletAddressUseCase);
+    return await importWalletUseCase.execute(
+      {
+        address,
+        displayName,
+      },
+      this.context.userId
+    );
+  }
+
+  private async listSupportedChains() {
+    const blockchainService = Container.get(BlockchainServiceManager);
+    const chains = blockchainService.getAllSupportedChains();
+
+    return chains.map((chain) => ({
+      chainId: chain.chainId,
+      name: chain.name,
+      type: chain.type,
+      nativeSymbol: chain.nativeSymbol,
+      nativeName: chain.nativeName,
+      isActive: chain.isActive,
+    }));
   }
 }

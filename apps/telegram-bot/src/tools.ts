@@ -128,6 +128,25 @@ export const tools = {
       'List all available account types (checking, savings, brokerage, crypto, etc.). Use when user wants to know what types of accounts are supported.',
     parameters: z.object({}),
   },
+
+  // Wallet operations
+  importWallet: {
+    description:
+      'Import a crypto wallet address. Automatically detects chains, fetches balances, and creates accounts with holdings. Use when user provides a wallet address to import.',
+    parameters: z.object({
+      address: z.string().describe('Wallet address to import (Ethereum, Bitcoin, Solana, etc.)'),
+      displayName: z
+        .string()
+        .optional()
+        .describe('Optional display name for the wallet (defaults to shortened address)'),
+    }),
+  },
+
+  listSupportedChains: {
+    description:
+      'List all supported blockchain chains for wallet import. Use when user asks what blockchains are supported.',
+    parameters: z.object({}),
+  },
 };
 
 export type ToolName = keyof typeof tools;
