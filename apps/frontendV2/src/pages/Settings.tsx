@@ -1,4 +1,4 @@
-import { Check, Copy, MessageSquare, User } from 'lucide-react';
+import { Check, Copy, Eye, EyeOff, MessageSquare, User } from 'lucide-react';
 import { useCallback, useEffect, useId, useMemo, useState } from 'react';
 import { CurrencySelector } from '@/components/selectors/CurrencySelector';
 import { Alert, AlertDescription } from '@/components/ui/alert';
@@ -344,6 +344,7 @@ function TelegramIntegration() {
   const utils = trpc.useUtils();
   const [authToken, setAuthToken] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  const [showToken, setShowToken] = useState(false);
 
   // Fetch linked Telegram account
   const { data: linkedAccount, isLoading: isLoadingLinkedAccount } =
@@ -380,15 +381,23 @@ function TelegramIntegration() {
     getToken();
   }, []);
 
-  const handleCopyToken = useCallback(() => {
+  const handleCopyToken = useCallback(async () => {
     if (authToken) {
-      navigator.clipboard.writeText(authToken);
-      setCopied(true);
-      toast({
-        title: 'Token Copied',
-        description: 'Auth token copied to clipboard. Use it with the Telegram bot.',
-      });
-      setTimeout(() => setCopied(false), 2000);
+      try {
+        await navigator.clipboard.writeText(authToken);
+        setCopied(true);
+        toast({
+          title: 'Token Copied',
+          description: 'Auth token copied to clipboard. Use it with the Telegram bot.',
+        });
+        setTimeout(() => setCopied(false), 2000);
+      } catch (error) {
+        toast({
+          title: 'Copy Failed',
+          description: 'Failed to copy token to clipboard. Please try again.',
+          variant: 'destructive',
+        });
+      }
     }
   }, [authToken, toast]);
 
@@ -478,8 +487,17 @@ function TelegramIntegration() {
                   value={authToken || 'Loading...'}
                   readOnly
                   className="font-mono text-xs"
-                  type="password"
+                  type={showToken ? 'text' : 'password'}
                 />
+                <Button
+                  variant="outline"
+                  size="icon"
+                  onClick={() => setShowToken(!showToken)}
+                  disabled={!authToken}
+                  title={showToken ? 'Hide token' : 'Show token'}
+                >
+                  {showToken ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                </Button>
                 <Button
                   variant="outline"
                   size="icon"
