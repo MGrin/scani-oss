@@ -461,7 +461,7 @@ const initTelegramBot = async () => {
       ) => {
         await telegramAuthService.linkTelegramUser(telegramId, telegramUsername, authToken);
       },
-      logger: logger, // Pass the backend logger
+      logger, // Pass the backend logger
     });
 
     await telegramBot.start();

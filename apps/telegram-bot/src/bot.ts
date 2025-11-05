@@ -43,30 +43,27 @@ export class TelegramBotService {
       openAIApiKey: config.openAIApiKey,
     });
     // Use provided logger or fallback to console
-    this.logger = config.logger || {
-      info: (arg1: object | string, arg2?: string) => {
-        if (typeof arg1 === 'string') {
-          console.log(arg1);
-        } else {
-          console.log(arg2, arg1);
-        }
-      },
-      warn: (arg1: object | string, arg2?: string) => {
-        if (typeof arg1 === 'string') {
-          console.warn(arg1);
-        } else {
-          console.warn(arg2, arg1);
-        }
-      },
-      error: (arg1: object | string, arg2?: string) => {
-        if (typeof arg1 === 'string') {
-          console.error(arg1);
-        } else {
-          console.error(arg2, arg1);
-        }
-      },
-    };
+    this.logger = config.logger || this.createConsoleLogger();
     this.setupHandlers();
+  }
+
+  // Helper to create a console-based logger fallback
+  private createConsoleLogger(): Logger {
+    const logMethod = (method: 'log' | 'warn' | 'error') => {
+      return (arg1: object | string, arg2?: string) => {
+        if (typeof arg1 === 'string') {
+          console[method](arg1);
+        } else {
+          console[method](arg2, arg1);
+        }
+      };
+    };
+
+    return {
+      info: logMethod('log'),
+      warn: logMethod('warn'),
+      error: logMethod('error'),
+    };
   }
 
   private setupHandlers() {
