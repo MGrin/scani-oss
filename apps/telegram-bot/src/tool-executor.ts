@@ -149,7 +149,7 @@ export class ToolExecutor {
     // biome-ignore lint/suspicious/noExplicitAny: UpdateHoldingInput fields are optional and dynamically built
     const data: any = {};
     if (quantity !== undefined) data.balance = new Decimal(quantity).toString();
-    if (costBasis !== undefined) data.costBasis = new Decimal(costBasis);
+    if (costBasis !== undefined) data.costBasis = new Decimal(costBasis).toString();
 
     return await updateHoldingUseCase.execute(holdingId, data, this.context.userId);
   }
@@ -255,6 +255,14 @@ export class ToolExecutor {
       this.context.userId
     );
 
+    // Collect unique token IDs and batch fetch prices
+    const uniqueTokenIds = [...new Set(holdingsWithDetails.map(({ token }) => token.id))];
+    const pricePromises = uniqueTokenIds.map((tokenId) => pricingService.getPrice(tokenId));
+    const prices = await Promise.all(pricePromises);
+    const priceMap = new Map(
+      uniqueTokenIds.map((tokenId, index) => [tokenId, prices[index] || new Decimal(0)])
+    );
+
     // Group by token
     const tokenMap = new Map<
       string,
@@ -271,8 +279,8 @@ export class ToolExecutor {
       const balance = new Decimal(holding.balance);
       if (balance.lte(0)) continue;
 
-      const price = await pricingService.getPrice(token.id);
-      const value = balance.mul(price || new Decimal(0));
+      const price = priceMap.get(token.id) || new Decimal(0);
+      const value = balance.mul(price);
 
       const existing = tokenMap.get(token.symbol);
       if (existing) {
@@ -318,6 +326,14 @@ export class ToolExecutor {
       this.context.userId
     );
 
+    // Collect unique token IDs and batch fetch prices
+    const uniqueTokenIds = [...new Set(holdingsWithDetails.map(({ token }) => token.id))];
+    const pricePromises = uniqueTokenIds.map((tokenId) => pricingService.getPrice(tokenId));
+    const prices = await Promise.all(pricePromises);
+    const priceMap = new Map(
+      uniqueTokenIds.map((tokenId, index) => [tokenId, prices[index] || new Decimal(0)])
+    );
+
     // Group by account
     const accountMap = new Map<
       string,
@@ -333,8 +349,8 @@ export class ToolExecutor {
       const balance = new Decimal(holding.balance);
       if (balance.lte(0)) continue;
 
-      const price = await pricingService.getPrice(token.id);
-      const value = balance.mul(price || new Decimal(0));
+      const price = priceMap.get(token.id) || new Decimal(0);
+      const value = balance.mul(price);
 
       const existing = accountMap.get(account.id);
       if (existing) {
@@ -378,6 +394,14 @@ export class ToolExecutor {
       this.context.userId
     );
 
+    // Collect unique token IDs and batch fetch prices
+    const uniqueTokenIds = [...new Set(holdingsWithDetails.map(({ token }) => token.id))];
+    const pricePromises = uniqueTokenIds.map((tokenId) => pricingService.getPrice(tokenId));
+    const prices = await Promise.all(pricePromises);
+    const priceMap = new Map(
+      uniqueTokenIds.map((tokenId, index) => [tokenId, prices[index] || new Decimal(0)])
+    );
+
     // Group by institution
     const institutionMap = new Map<
       string,
@@ -392,8 +416,8 @@ export class ToolExecutor {
       const balance = new Decimal(holding.balance);
       if (balance.lte(0)) continue;
 
-      const price = await pricingService.getPrice(token.id);
-      const value = balance.mul(price || new Decimal(0));
+      const price = priceMap.get(token.id) || new Decimal(0);
+      const value = balance.mul(price);
 
       const existing = institutionMap.get(institution.id);
       if (existing) {
