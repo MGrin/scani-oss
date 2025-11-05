@@ -391,7 +391,7 @@ function TelegramIntegration() {
           description: 'Auth token copied to clipboard. Use it with the Telegram bot.',
         });
         setTimeout(() => setCopied(false), 2000);
-      } catch (error) {
+      } catch (_error) {
         toast({
           title: 'Copy Failed',
           description: 'Failed to copy token to clipboard. Please try again.',
