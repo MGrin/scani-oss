@@ -328,7 +328,6 @@ export class ToolExecutor {
 
   private async getPortfolioByAccounts() {
     const holdingRepository = Container.get(HoldingRepository);
-    const pricingService = Container.get(PricingService);
 
     // Get all holdings with complete details
     const holdingsWithDetails = await holdingRepository.findByUserWithCompleteDetails(
@@ -450,6 +449,13 @@ export class ToolExecutor {
 
   private async getPortfolioByTokenTypes() {
     const holdingRepository = Container.get(HoldingRepository);
+    const userContextService = Container.get(UserContextService);
+
+    // Get user to retrieve base currency
+    const dbUser = await userContextService.getUserById(this.context.userId);
+    if (!dbUser) {
+      throw new Error('User not found');
+    }
 
     // Get all holdings with complete details
     const holdingsWithDetails = await holdingRepository.findByUserWithCompleteDetails(
@@ -492,9 +498,21 @@ export class ToolExecutor {
     const tokenTypes = Array.from(typeMap.values());
     const totalValue = tokenTypes.reduce((sum, t) => sum.add(t.value), new Decimal(0));
 
+    // Get base currency symbol (default to USD if not set)
+    let baseCurrencySymbol = 'USD';
+    if (dbUser.baseCurrencyId && holdingsWithDetails.length > 0) {
+      // Find the base currency token from holdings if available
+      const baseCurrencyToken = holdingsWithDetails.find(
+        ({ token }) => token.id === dbUser.baseCurrencyId
+      );
+      if (baseCurrencyToken) {
+        baseCurrencySymbol = baseCurrencyToken.token.symbol;
+      }
+    }
+
     return {
       totalValue: totalValue.toString(),
-      baseCurrency: 'USD', // Default base currency
+      baseCurrency: baseCurrencySymbol,
       tokenTypes: tokenTypes
         .map((t) => ({
           type: t.type,
