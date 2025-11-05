@@ -55,11 +55,7 @@ export class ToolExecutor {
           return await this.listHoldings(parameters.accountId);
 
         case 'updateHolding':
-          return await this.updateHolding(
-            parameters.holdingId,
-            parameters.quantity,
-            parameters.costBasis
-          );
+          return await this.updateHolding(parameters.holdingId, parameters.quantity);
 
         case 'deleteHolding':
           return await this.deleteHolding(parameters.holdingId);
@@ -143,13 +139,12 @@ export class ToolExecutor {
     return await holdingService.getHoldingsByAccountIdWithDetails(dbUser, accountId);
   }
 
-  private async updateHolding(holdingId: string, quantity?: number, costBasis?: number) {
+  private async updateHolding(holdingId: string, quantity?: number) {
     const updateHoldingUseCase = Container.get(UpdateHoldingUseCase);
 
     // biome-ignore lint/suspicious/noExplicitAny: UpdateHoldingInput fields are optional and dynamically built
     const data: any = {};
     if (quantity !== undefined) data.balance = new Decimal(quantity).toString();
-    if (costBasis !== undefined) data.costBasis = new Decimal(costBasis).toString();
 
     return await updateHoldingUseCase.execute(holdingId, data, this.context.userId);
   }

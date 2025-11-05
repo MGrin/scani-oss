@@ -47,11 +47,10 @@ export const tools = {
 
   updateHolding: {
     description:
-      'Update a holding (change quantity, cost basis, etc.). Use when user wants to modify an existing holding.',
+      'Update a holding quantity. Use when user wants to modify the amount of a holding they own.',
     parameters: z.object({
       holdingId: z.string().describe('The ID of the holding to update'),
-      quantity: z.number().optional().describe('New quantity'),
-      costBasis: z.number().optional().describe('New cost basis in base currency'),
+      quantity: z.number().optional().describe('New quantity/balance'),
     }),
   },
 
