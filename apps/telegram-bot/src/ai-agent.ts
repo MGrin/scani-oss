@@ -64,6 +64,7 @@ Your role is to help users:
 - Search for investment information
 - Add or update financial data
 - Get insights about their investments
+- Create visualizations and breakdowns of their portfolio data
 
 Guidelines:
 - Be friendly, concise, and helpful
@@ -72,6 +73,7 @@ Guidelines:
 - If you need to use a tool, explain what you're doing
 - Provide context and explanations for financial information
 - If user asks about something you can't help with, politely explain the limitation
+- When showing portfolio breakdowns, create text-based visualizations (bar charts, donut charts) using ASCII art or emojis
 
 Available capabilities:
 - View portfolio overview and dashboard
@@ -79,7 +81,9 @@ Available capabilities:
 - List and manage holdings (stocks, crypto, etc.)
 - Search for tokens and get prices
 - Import multiple holdings at once
-- List available institutions and account types`;
+- List available institutions and account types
+- Create portfolio breakdowns by tokens, accounts, institutions, or asset types
+- Generate visual representations (donut charts, bar charts) showing portfolio distribution`;
   }
 
   // biome-ignore lint/suspicious/noExplicitAny: AI SDK tool executor parameters are dynamically typed
@@ -92,8 +96,8 @@ Available capabilities:
         description: toolDef.description,
         parameters: toolDef.parameters,
         // biome-ignore lint/suspicious/noExplicitAny: Tool parameters are dynamically typed based on tool definition
-        // biome-ignore lint/suspicious/noExplicitAny: Tool name cast needed for type safety
         execute: async (params: any) => {
+          // biome-ignore lint/suspicious/noExplicitAny: Tool name cast needed for type safety
           return await toolExecutor.executeTool(toolName as any, params);
         },
       });

@@ -16,6 +16,7 @@ import {
 import { BlockchainServiceManager } from '../../backend/src/infrastructure/external-services/blockchain';
 import {
   AccountTypeRepository,
+  HoldingRepository,
   InstitutionRepository,
   InstitutionTypeRepository,
   TokenRepository,
@@ -87,6 +88,18 @@ export class ToolExecutor {
         case 'listSupportedChains':
           return await this.listSupportedChains();
 
+        case 'getPortfolioByTokens':
+          return await this.getPortfolioByTokens();
+
+        case 'getPortfolioByAccounts':
+          return await this.getPortfolioByAccounts();
+
+        case 'getPortfolioByInstitutions':
+          return await this.getPortfolioByInstitutions();
+
+        case 'getPortfolioByTokenTypes':
+          return await this.getPortfolioByTokenTypes();
+
         default:
           throw new Error(`Unknown tool: ${toolName}`);
       }
@@ -133,8 +146,9 @@ export class ToolExecutor {
   private async updateHolding(holdingId: string, quantity?: number, costBasis?: number) {
     const updateHoldingUseCase = Container.get(UpdateHoldingUseCase);
 
+    // biome-ignore lint/suspicious/noExplicitAny: UpdateHoldingInput fields are optional and dynamically built
     const data: any = {};
-    if (quantity !== undefined) data.quantity = new Decimal(quantity);
+    if (quantity !== undefined) data.balance = new Decimal(quantity).toString();
     if (costBasis !== undefined) data.costBasis = new Decimal(costBasis);
 
     return await updateHoldingUseCase.execute(holdingId, data, this.context.userId);
@@ -230,5 +244,203 @@ export class ToolExecutor {
       nativeName: chain.nativeName,
       isActive: chain.isActive,
     }));
+  }
+
+  private async getPortfolioByTokens() {
+    const holdingRepository = Container.get(HoldingRepository);
+    const pricingService = Container.get(PricingService);
+
+    // Get all holdings with complete details
+    const holdingsWithDetails = await holdingRepository.findByUserWithCompleteDetails(
+      this.context.userId
+    );
+
+    // Group by token
+    const tokenMap = new Map<
+      string,
+      {
+        symbol: string;
+        name: string;
+        balance: Decimal;
+        value: Decimal;
+        tokenId: string;
+      }
+    >();
+
+    for (const { holding, token } of holdingsWithDetails) {
+      const balance = new Decimal(holding.balance);
+      if (balance.lte(0)) continue;
+
+      const price = await pricingService.getPrice(token.id);
+      const value = balance.mul(price || new Decimal(0));
+
+      const existing = tokenMap.get(token.symbol);
+      if (existing) {
+        existing.balance = existing.balance.add(balance);
+        existing.value = existing.value.add(value);
+      } else {
+        tokenMap.set(token.symbol, {
+          symbol: token.symbol,
+          name: token.name,
+          balance,
+          value,
+          tokenId: token.id,
+        });
+      }
+    }
+
+    // Calculate total value and percentages
+    const tokens = Array.from(tokenMap.values());
+    const totalValue = tokens.reduce((sum, t) => sum.add(t.value), new Decimal(0));
+
+    return {
+      totalValue: totalValue.toString(),
+      tokens: tokens
+        .map((t) => ({
+          symbol: t.symbol,
+          name: t.name,
+          balance: t.balance.toString(),
+          value: t.value.toString(),
+          percentage: totalValue.greaterThan(0)
+            ? t.value.div(totalValue).mul(100).toFixed(2)
+            : '0.00',
+        }))
+        .sort((a, b) => new Decimal(b.value).comparedTo(new Decimal(a.value))),
+    };
+  }
+
+  private async getPortfolioByAccounts() {
+    const holdingRepository = Container.get(HoldingRepository);
+    const pricingService = Container.get(PricingService);
+
+    // Get all holdings with complete details
+    const holdingsWithDetails = await holdingRepository.findByUserWithCompleteDetails(
+      this.context.userId
+    );
+
+    // Group by account
+    const accountMap = new Map<
+      string,
+      {
+        accountId: string;
+        accountName: string;
+        institutionName: string;
+        value: Decimal;
+      }
+    >();
+
+    for (const { holding, token, account, institution } of holdingsWithDetails) {
+      const balance = new Decimal(holding.balance);
+      if (balance.lte(0)) continue;
+
+      const price = await pricingService.getPrice(token.id);
+      const value = balance.mul(price || new Decimal(0));
+
+      const existing = accountMap.get(account.id);
+      if (existing) {
+        existing.value = existing.value.add(value);
+      } else {
+        accountMap.set(account.id, {
+          accountId: account.id,
+          accountName: account.name,
+          institutionName: institution.name,
+          value,
+        });
+      }
+    }
+
+    // Calculate total value and percentages
+    const accounts = Array.from(accountMap.values());
+    const totalValue = accounts.reduce((sum, a) => sum.add(a.value), new Decimal(0));
+
+    return {
+      totalValue: totalValue.toString(),
+      accounts: accounts
+        .map((a) => ({
+          accountId: a.accountId,
+          accountName: a.accountName,
+          institutionName: a.institutionName,
+          value: a.value.toString(),
+          percentage: totalValue.greaterThan(0)
+            ? a.value.div(totalValue).mul(100).toFixed(2)
+            : '0.00',
+        }))
+        .sort((a, b) => new Decimal(b.value).comparedTo(new Decimal(a.value))),
+    };
+  }
+
+  private async getPortfolioByInstitutions() {
+    const holdingRepository = Container.get(HoldingRepository);
+    const pricingService = Container.get(PricingService);
+
+    // Get all holdings with complete details
+    const holdingsWithDetails = await holdingRepository.findByUserWithCompleteDetails(
+      this.context.userId
+    );
+
+    // Group by institution
+    const institutionMap = new Map<
+      string,
+      {
+        institutionId: string;
+        institutionName: string;
+        value: Decimal;
+      }
+    >();
+
+    for (const { holding, token, institution } of holdingsWithDetails) {
+      const balance = new Decimal(holding.balance);
+      if (balance.lte(0)) continue;
+
+      const price = await pricingService.getPrice(token.id);
+      const value = balance.mul(price || new Decimal(0));
+
+      const existing = institutionMap.get(institution.id);
+      if (existing) {
+        existing.value = existing.value.add(value);
+      } else {
+        institutionMap.set(institution.id, {
+          institutionId: institution.id,
+          institutionName: institution.name,
+          value,
+        });
+      }
+    }
+
+    // Calculate total value and percentages
+    const institutions = Array.from(institutionMap.values());
+    const totalValue = institutions.reduce((sum, i) => sum.add(i.value), new Decimal(0));
+
+    return {
+      totalValue: totalValue.toString(),
+      institutions: institutions
+        .map((i) => ({
+          institutionId: i.institutionId,
+          institutionName: i.institutionName,
+          value: i.value.toString(),
+          percentage: totalValue.greaterThan(0)
+            ? i.value.div(totalValue).mul(100).toFixed(2)
+            : '0.00',
+        }))
+        .sort((a, b) => new Decimal(b.value).comparedTo(new Decimal(a.value))),
+    };
+  }
+
+  private async getPortfolioByTokenTypes() {
+    const dashboardService = Container.get(DashboardService);
+
+    // Reuse existing dashboard service which already has asset allocation by token type
+    const overview = await dashboardService.getDashboardOverview(this.context.userId);
+
+    return {
+      totalValue: overview.portfolioValue.totalValue,
+      baseCurrency: overview.portfolioValue.baseCurrency,
+      tokenTypes: overview.assetAllocation.map((allocation) => ({
+        type: allocation.type,
+        code: allocation.code,
+        value: allocation.value,
+        percentage: allocation.percentage,
+      })),
+    };
   }
 }
