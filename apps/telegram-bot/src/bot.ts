@@ -3,6 +3,16 @@ import { Telegraf } from 'telegraf';
 import type { ConversationContext } from './ai-agent';
 import { AIAgent } from './ai-agent';
 
+// Minimal logger interface compatible with pino
+export interface Logger {
+  info(obj: object, msg: string): void;
+  info(msg: string): void;
+  warn(obj: object, msg: string): void;
+  warn(msg: string): void;
+  error(obj: object, msg: string): void;
+  error(msg: string): void;
+}
+
 export interface TelegramBotConfig {
   botToken: string;
   openAIApiKey: string;
@@ -12,6 +22,7 @@ export interface TelegramBotConfig {
     telegramUsername: string | undefined,
     authToken: string
   ) => Promise<void>;
+  logger?: Logger; // Optional logger, falls back to console if not provided
 }
 
 export interface BotContext extends TelegrafContext {
@@ -24,12 +35,37 @@ export class TelegramBotService {
   private isRunning = false;
   private aiAgent: AIAgent;
   private conversationContexts: Map<string, ConversationContext> = new Map();
+  private logger: Logger;
 
   constructor(private config: TelegramBotConfig) {
     this.bot = new Telegraf<BotContext>(config.botToken);
     this.aiAgent = new AIAgent({
       openAIApiKey: config.openAIApiKey,
     });
+    // Use provided logger or fallback to console
+    this.logger = config.logger || {
+      info: (arg1: object | string, arg2?: string) => {
+        if (typeof arg1 === 'string') {
+          console.log(arg1);
+        } else {
+          console.log(arg2, arg1);
+        }
+      },
+      warn: (arg1: object | string, arg2?: string) => {
+        if (typeof arg1 === 'string') {
+          console.warn(arg1);
+        } else {
+          console.warn(arg2, arg1);
+        }
+      },
+      error: (arg1: object | string, arg2?: string) => {
+        if (typeof arg1 === 'string') {
+          console.error(arg1);
+        } else {
+          console.error(arg2, arg1);
+        }
+      },
+    };
     this.setupHandlers();
   }
 
@@ -115,7 +151,7 @@ export class TelegramBotService {
           { parse_mode: 'Markdown' }
         );
       } catch (error) {
-        console.error('Auth error:', error);
+        this.logger.error({ error }, 'Auth error during Telegram authentication');
         await ctx.reply(
           '❌ Authentication failed. Please make sure you have a valid token from the Scani web app.'
         );
@@ -190,7 +226,7 @@ export class TelegramBotService {
 
         await ctx.reply(response, { parse_mode: 'Markdown' });
       } catch (error) {
-        console.error('Error processing message:', error);
+        this.logger.error({ error }, 'Error processing Telegram message');
         await ctx.reply(
           '❌ Sorry, I encountered an error processing your request. Please try again or use /reset to start over.'
         );
@@ -199,23 +235,23 @@ export class TelegramBotService {
 
     // Error handling
     this.bot.catch((err, ctx) => {
-      console.error('Bot error:', err);
+      this.logger.error({ error: err }, 'Telegram bot error');
       ctx.reply('❌ An error occurred. Please try again later.');
     });
   }
 
   async start(): Promise<void> {
     if (this.isRunning) {
-      console.log('⚠️ Telegram bot is already running');
+      this.logger.warn('⚠️ Telegram bot is already running');
       return;
     }
 
     try {
       await this.bot.launch();
       this.isRunning = true;
-      console.log('✅ Telegram bot started successfully');
+      this.logger.info('✅ Telegram bot started successfully');
     } catch (error) {
-      console.error('❌ Failed to start Telegram bot:', error);
+      this.logger.error({ error }, '❌ Failed to start Telegram bot');
       throw error;
     }
   }
@@ -228,9 +264,9 @@ export class TelegramBotService {
     try {
       this.bot.stop();
       this.isRunning = false;
-      console.log('✅ Telegram bot stopped successfully');
+      this.logger.info('✅ Telegram bot stopped successfully');
     } catch (error) {
-      console.error('❌ Failed to stop Telegram bot:', error);
+      this.logger.error({ error }, '❌ Failed to stop Telegram bot');
       throw error;
     }
   }

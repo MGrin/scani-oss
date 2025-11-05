@@ -445,6 +445,7 @@ const initTelegramBot = async () => {
   }
 
   try {
+    logger.info({}, '🤖 Initializing Telegram bot...');
     const telegramAuthService = Container.get(TelegramAuthService);
 
     telegramBot = new TelegramBotService({
@@ -460,10 +461,11 @@ const initTelegramBot = async () => {
       ) => {
         await telegramAuthService.linkTelegramUser(telegramId, telegramUsername, authToken);
       },
+      logger: logger, // Pass the backend logger
     });
 
     await telegramBot.start();
-    logger.info({}, '🤖 Telegram bot started successfully');
+    logger.info({}, '✅ Telegram bot started successfully');
   } catch (error) {
     logger.error({ error }, '❌ Failed to start Telegram bot');
     captureException(error instanceof Error ? error : new Error(String(error)), {
@@ -473,7 +475,12 @@ const initTelegramBot = async () => {
 };
 
 // Start telegram bot asynchronously (don't block server startup)
-initTelegramBot();
+initTelegramBot().catch((error) => {
+  logger.error({ error }, '💥 Unhandled error in Telegram bot initialization');
+  captureException(error instanceof Error ? error : new Error(String(error)), {
+    context: 'telegram-bot-initialization-unhandled',
+  });
+});
 
 // Graceful shutdown with logging
 const gracefulShutdown = async (signal: string) => {
