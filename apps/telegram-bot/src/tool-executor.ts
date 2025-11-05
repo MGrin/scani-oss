@@ -13,6 +13,7 @@ import {
   ImportWalletAddressUseCase,
   UpdateHoldingUseCase,
 } from '../../backend/src/application/use-cases';
+import type { UpdateHoldingInput } from '../../backend/src/application/use-cases/UpdateHoldingUseCase';
 import { BlockchainServiceManager } from '../../backend/src/infrastructure/external-services/blockchain';
 import {
   AccountTypeRepository,
@@ -142,8 +143,7 @@ export class ToolExecutor {
   private async updateHolding(holdingId: string, quantity?: number) {
     const updateHoldingUseCase = Container.get(UpdateHoldingUseCase);
 
-    // biome-ignore lint/suspicious/noExplicitAny: UpdateHoldingInput fields are optional and dynamically built
-    const data: any = {};
+    const data: UpdateHoldingInput = {};
     if (quantity !== undefined) data.balance = new Decimal(quantity).toString();
 
     return await updateHoldingUseCase.execute(holdingId, data, this.context.userId);
