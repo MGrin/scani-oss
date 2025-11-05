@@ -17,6 +17,8 @@
  */
 
 import { Container, Service } from 'typedi';
+import { db } from '../../infrastructure/database/connection';
+import * as schema from '../../infrastructure/database/schema';
 import { BlockchainServiceManager } from '../../infrastructure/external-services/blockchain';
 import type { WalletInfo } from '../../infrastructure/external-services/blockchain/types';
 import { TokenTypeRepository } from '../../infrastructure/repositories/EnumRepositories';
@@ -270,9 +272,6 @@ export class SyncWalletBalancesUseCase {
                 } else {
                   // Create new holding with blockchain source
                   // Use direct DB insert to set source='blockchain'
-                  const { db } = await import('../../infrastructure/database/connection');
-                  const schema = await import('../../infrastructure/database/schema');
-
                   const [newHolding] = await db
                     .insert(schema.holdings)
                     .values({

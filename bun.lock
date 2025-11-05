@@ -17,6 +17,7 @@
         "@elysiajs/cron": "^1.4.1",
         "@elysiajs/trpc": "^1.1.0",
         "@scani/shared": "workspace:*",
+        "@scani/telegram-bot": "workspace:*",
         "@sentry/bun": "^10.21.0",
         "@supabase/supabase-js": "^2.57.4",
         "@trpc/server": "^10.45.2",
