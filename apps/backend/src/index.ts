@@ -26,6 +26,9 @@ initializeContainer();
 // Initialize Sentry for error tracking
 initializeSentry();
 
+// Import Telegram bot services (conditionally initialized later)
+import { TelegramBotService } from '@scani/telegram-bot';
+import { TelegramAuthService } from './infrastructure/telegram/TelegramAuthService';
 // Import router AFTER container is initialized
 import { appRouter } from './presentation/router';
 
@@ -442,9 +445,6 @@ const initTelegramBot = async () => {
   }
 
   try {
-    const { TelegramBotService } = await import('@scani/telegram-bot');
-    const { TelegramAuthService } = await import('./infrastructure/telegram/TelegramAuthService');
-
     const telegramAuthService = Container.get(TelegramAuthService);
 
     telegramBot = new TelegramBotService({

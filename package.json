@@ -17,7 +17,7 @@
     "dev:landing": "cd apps/landing && bun dev",
     "dev:mobile:ios": "cd apps/mobile && bun ios",
     "dev:mobile:android": "cd apps/mobile && bun ios",
-    "build": "bun run build:backend && bun run build:frontendV2",
+    "build": "bun run build:backend && bun run build:frontend",
     "build:backend": "cd apps/backend && bun run build",
     "build:frontend": "cd apps/frontendV2 && bun run build",
     "clean": "cd apps/backend && bun clean && cd ../frontendV2 && bun clean",
