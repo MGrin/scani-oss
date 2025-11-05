@@ -244,7 +244,17 @@ export class TelegramBotService {
     }
 
     try {
-      await this.bot.launch();
+      // Delete any existing webhook to prevent conflicts
+      // This ensures we're using polling (getUpdates) and not webhook mode
+      this.logger.info('🔄 Deleting existing webhook (if any)...');
+      await this.bot.telegram.deleteWebhook({ drop_pending_updates: true });
+
+      // Launch with dropPendingUpdates to force kill any existing bot instances
+      // This resolves 409 Conflict errors from multiple getUpdates requests
+      this.logger.info('🚀 Launching bot with dropPendingUpdates...');
+      await this.bot.launch({
+        dropPendingUpdates: true,
+      });
       this.isRunning = true;
       this.logger.info('✅ Telegram bot started successfully');
     } catch (error) {
