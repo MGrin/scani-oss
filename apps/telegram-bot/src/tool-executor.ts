@@ -241,22 +241,36 @@ export class ToolExecutor {
     }));
   }
 
+  /**
+   * Helper method to batch fetch prices for multiple tokens
+   * @param holdingsWithDetails Holdings data with complete token information
+   * @returns Map of token ID to price (Decimal)
+   */
+  private async batchFetchPrices(
+    holdingsWithDetails: Awaited<ReturnType<HoldingRepository['findByUserWithCompleteDetails']>>
+  ): Promise<Map<string, Decimal>> {
+    const pricingService = Container.get(PricingService);
+
+    // Collect unique token IDs and batch fetch prices
+    const uniqueTokenIds = [...new Set(holdingsWithDetails.map(({ token }) => token.id))];
+    const pricePromises = uniqueTokenIds.map((tokenId) => pricingService.getPrice(tokenId));
+    const prices = await Promise.all(pricePromises);
+
+    return new Map(
+      uniqueTokenIds.map((tokenId, index) => [tokenId, prices[index] || new Decimal(0)])
+    );
+  }
+
   private async getPortfolioByTokens() {
     const holdingRepository = Container.get(HoldingRepository);
-    const pricingService = Container.get(PricingService);
 
     // Get all holdings with complete details
     const holdingsWithDetails = await holdingRepository.findByUserWithCompleteDetails(
       this.context.userId
     );
 
-    // Collect unique token IDs and batch fetch prices
-    const uniqueTokenIds = [...new Set(holdingsWithDetails.map(({ token }) => token.id))];
-    const pricePromises = uniqueTokenIds.map((tokenId) => pricingService.getPrice(tokenId));
-    const prices = await Promise.all(pricePromises);
-    const priceMap = new Map(
-      uniqueTokenIds.map((tokenId, index) => [tokenId, prices[index] || new Decimal(0)])
-    );
+    // Batch fetch prices for all tokens
+    const priceMap = await this.batchFetchPrices(holdingsWithDetails);
 
     // Group by token
     const tokenMap = new Map<
@@ -321,13 +335,8 @@ export class ToolExecutor {
       this.context.userId
     );
 
-    // Collect unique token IDs and batch fetch prices
-    const uniqueTokenIds = [...new Set(holdingsWithDetails.map(({ token }) => token.id))];
-    const pricePromises = uniqueTokenIds.map((tokenId) => pricingService.getPrice(tokenId));
-    const prices = await Promise.all(pricePromises);
-    const priceMap = new Map(
-      uniqueTokenIds.map((tokenId, index) => [tokenId, prices[index] || new Decimal(0)])
-    );
+    // Batch fetch prices for all tokens
+    const priceMap = await this.batchFetchPrices(holdingsWithDetails);
 
     // Group by account
     const accountMap = new Map<
@@ -382,20 +391,14 @@ export class ToolExecutor {
 
   private async getPortfolioByInstitutions() {
     const holdingRepository = Container.get(HoldingRepository);
-    const pricingService = Container.get(PricingService);
 
     // Get all holdings with complete details
     const holdingsWithDetails = await holdingRepository.findByUserWithCompleteDetails(
       this.context.userId
     );
 
-    // Collect unique token IDs and batch fetch prices
-    const uniqueTokenIds = [...new Set(holdingsWithDetails.map(({ token }) => token.id))];
-    const pricePromises = uniqueTokenIds.map((tokenId) => pricingService.getPrice(tokenId));
-    const prices = await Promise.all(pricePromises);
-    const priceMap = new Map(
-      uniqueTokenIds.map((tokenId, index) => [tokenId, prices[index] || new Decimal(0)])
-    );
+    // Batch fetch prices for all tokens
+    const priceMap = await this.batchFetchPrices(holdingsWithDetails);
 
     // Group by institution
     const institutionMap = new Map<
@@ -446,20 +449,62 @@ export class ToolExecutor {
   }
 
   private async getPortfolioByTokenTypes() {
-    const dashboardService = Container.get(DashboardService);
+    const holdingRepository = Container.get(HoldingRepository);
 
-    // Reuse existing dashboard service which already has asset allocation by token type
-    const overview = await dashboardService.getDashboardOverview(this.context.userId);
+    // Get all holdings with complete details
+    const holdingsWithDetails = await holdingRepository.findByUserWithCompleteDetails(
+      this.context.userId
+    );
+
+    // Batch fetch prices for all tokens
+    const priceMap = await this.batchFetchPrices(holdingsWithDetails);
+
+    // Group by token type
+    const typeMap = new Map<
+      string,
+      {
+        type: string;
+        code: string;
+        value: Decimal;
+      }
+    >();
+
+    for (const { holding, token } of holdingsWithDetails) {
+      const balance = new Decimal(holding.balance);
+      if (balance.lte(0)) continue;
+
+      const price = priceMap.get(token.id) || new Decimal(0);
+      const value = balance.mul(price);
+
+      const existing = typeMap.get(token.typeCode);
+      if (existing) {
+        existing.value = existing.value.add(value);
+      } else {
+        typeMap.set(token.typeCode, {
+          type: token.typeName,
+          code: token.typeCode,
+          value,
+        });
+      }
+    }
+
+    // Calculate total value and percentages
+    const tokenTypes = Array.from(typeMap.values());
+    const totalValue = tokenTypes.reduce((sum, t) => sum.add(t.value), new Decimal(0));
 
     return {
-      totalValue: overview.portfolioValue.totalValue,
-      baseCurrency: overview.portfolioValue.baseCurrency,
-      tokenTypes: overview.assetAllocation.map((allocation) => ({
-        type: allocation.type,
-        code: allocation.code,
-        value: allocation.value,
-        percentage: allocation.percentage,
-      })),
+      totalValue: totalValue.toString(),
+      baseCurrency: 'USD', // Default base currency
+      tokenTypes: tokenTypes
+        .map((t) => ({
+          type: t.type,
+          code: t.code,
+          value: t.value.toString(),
+          percentage: totalValue.greaterThan(0)
+            ? t.value.div(totalValue).mul(100).toFixed(2)
+            : '0.00',
+        }))
+        .sort((a, b) => new Decimal(b.value).comparedTo(new Decimal(a.value))),
     };
   }
 }
