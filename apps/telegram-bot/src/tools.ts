@@ -47,11 +47,10 @@ export const tools = {
 
   updateHolding: {
     description:
-      'Update a holding (change quantity, cost basis, etc.). Use when user wants to modify an existing holding.',
+      'Update a holding quantity. Use when user wants to modify the amount of a holding they own.',
     parameters: z.object({
       holdingId: z.string().describe('The ID of the holding to update'),
-      quantity: z.number().optional().describe('New quantity'),
-      costBasis: z.number().optional().describe('New cost basis in base currency'),
+      quantity: z.number().optional().describe('New quantity/balance'),
     }),
   },
 
@@ -145,6 +144,31 @@ export const tools = {
   listSupportedChains: {
     description:
       'List all supported blockchain chains for wallet import. Use when user asks what blockchains are supported.',
+    parameters: z.object({}),
+  },
+
+  // Chart/Visualization operations
+  getPortfolioByTokens: {
+    description:
+      'Get portfolio breakdown grouped by individual tokens (e.g., BTC, ETH, AAPL). Shows each token with total balance across all accounts, current value, and percentage. Use for creating donut or bar charts by token, or when user asks about their holdings by token.',
+    parameters: z.object({}),
+  },
+
+  getPortfolioByAccounts: {
+    description:
+      'Get portfolio breakdown grouped by accounts (e.g., "Coinbase", "Robinhood", "Checking Account"). Shows each account with total value and percentage. Use for creating donut or bar charts by account, or when user asks about distribution across accounts.',
+    parameters: z.object({}),
+  },
+
+  getPortfolioByInstitutions: {
+    description:
+      'Get portfolio breakdown grouped by institutions (e.g., "Coinbase", "Chase", "Vanguard"). Shows each institution with total value and percentage. Use for creating donut or bar charts by institution, or when user asks about distribution across institutions.',
+    parameters: z.object({}),
+  },
+
+  getPortfolioByTokenTypes: {
+    description:
+      'Get portfolio breakdown grouped by token types (e.g., "Cryptocurrency", "Stock", "Fiat"). Shows asset allocation with value and percentage for each type. Use for creating donut or bar charts by asset type, or when user asks about asset allocation.',
     parameters: z.object({}),
   },
 };

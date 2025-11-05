@@ -13,9 +13,11 @@ import {
   ImportWalletAddressUseCase,
   UpdateHoldingUseCase,
 } from '../../backend/src/application/use-cases';
+import type { UpdateHoldingInput } from '../../backend/src/application/use-cases/UpdateHoldingUseCase';
 import { BlockchainServiceManager } from '../../backend/src/infrastructure/external-services/blockchain';
 import {
   AccountTypeRepository,
+  HoldingRepository,
   InstitutionRepository,
   InstitutionTypeRepository,
   TokenRepository,
@@ -54,11 +56,7 @@ export class ToolExecutor {
           return await this.listHoldings(parameters.accountId);
 
         case 'updateHolding':
-          return await this.updateHolding(
-            parameters.holdingId,
-            parameters.quantity,
-            parameters.costBasis
-          );
+          return await this.updateHolding(parameters.holdingId, parameters.quantity);
 
         case 'deleteHolding':
           return await this.deleteHolding(parameters.holdingId);
@@ -86,6 +84,18 @@ export class ToolExecutor {
 
         case 'listSupportedChains':
           return await this.listSupportedChains();
+
+        case 'getPortfolioByTokens':
+          return await this.getPortfolioByTokens();
+
+        case 'getPortfolioByAccounts':
+          return await this.getPortfolioByAccounts();
+
+        case 'getPortfolioByInstitutions':
+          return await this.getPortfolioByInstitutions();
+
+        case 'getPortfolioByTokenTypes':
+          return await this.getPortfolioByTokenTypes();
 
         default:
           throw new Error(`Unknown tool: ${toolName}`);
@@ -130,12 +140,11 @@ export class ToolExecutor {
     return await holdingService.getHoldingsByAccountIdWithDetails(dbUser, accountId);
   }
 
-  private async updateHolding(holdingId: string, quantity?: number, costBasis?: number) {
+  private async updateHolding(holdingId: string, quantity?: number) {
     const updateHoldingUseCase = Container.get(UpdateHoldingUseCase);
 
-    const data: any = {};
-    if (quantity !== undefined) data.quantity = new Decimal(quantity);
-    if (costBasis !== undefined) data.costBasis = new Decimal(costBasis);
+    const data: UpdateHoldingInput = {};
+    if (quantity !== undefined) data.balance = new Decimal(quantity).toString();
 
     return await updateHoldingUseCase.execute(holdingId, data, this.context.userId);
   }
@@ -230,5 +239,290 @@ export class ToolExecutor {
       nativeName: chain.nativeName,
       isActive: chain.isActive,
     }));
+  }
+
+  /**
+   * Helper method to batch fetch prices for multiple tokens
+   * @param holdingsWithDetails Holdings data with complete token information
+   * @returns Map of token ID to price (Decimal)
+   */
+  private async batchFetchPrices(
+    holdingsWithDetails: Awaited<ReturnType<HoldingRepository['findByUserWithCompleteDetails']>>
+  ): Promise<Map<string, Decimal>> {
+    const pricingService = Container.get(PricingService);
+
+    // Collect unique token IDs and batch fetch prices
+    const uniqueTokenIds = [...new Set(holdingsWithDetails.map(({ token }) => token.id))];
+    const pricePromises = uniqueTokenIds.map((tokenId) => pricingService.getPrice(tokenId));
+    const prices = await Promise.all(pricePromises);
+
+    return new Map(
+      uniqueTokenIds.map((tokenId, index) => [tokenId, prices[index] || new Decimal(0)])
+    );
+  }
+
+  private async getPortfolioByTokens() {
+    const holdingRepository = Container.get(HoldingRepository);
+
+    // Get all holdings with complete details
+    const holdingsWithDetails = await holdingRepository.findByUserWithCompleteDetails(
+      this.context.userId
+    );
+
+    // Batch fetch prices for all tokens
+    const priceMap = await this.batchFetchPrices(holdingsWithDetails);
+
+    // Group by token
+    const tokenMap = new Map<
+      string,
+      {
+        symbol: string;
+        name: string;
+        balance: Decimal;
+        value: Decimal;
+        tokenId: string;
+      }
+    >();
+
+    for (const { holding, token } of holdingsWithDetails) {
+      const balance = new Decimal(holding.balance);
+      if (balance.lte(0)) continue;
+
+      const price = priceMap.get(token.id) || new Decimal(0);
+      const value = balance.mul(price);
+
+      const existing = tokenMap.get(token.symbol);
+      if (existing) {
+        existing.balance = existing.balance.add(balance);
+        existing.value = existing.value.add(value);
+      } else {
+        tokenMap.set(token.symbol, {
+          symbol: token.symbol,
+          name: token.name,
+          balance,
+          value,
+          tokenId: token.id,
+        });
+      }
+    }
+
+    // Calculate total value and percentages
+    const tokens = Array.from(tokenMap.values());
+    const totalValue = tokens.reduce((sum, t) => sum.add(t.value), new Decimal(0));
+
+    return {
+      totalValue: totalValue.toString(),
+      tokens: tokens
+        .map((t) => ({
+          symbol: t.symbol,
+          name: t.name,
+          balance: t.balance.toString(),
+          value: t.value.toString(),
+          percentage: totalValue.greaterThan(0)
+            ? t.value.div(totalValue).mul(100).toFixed(2)
+            : '0.00',
+        }))
+        .sort((a, b) => new Decimal(b.value).comparedTo(new Decimal(a.value))),
+    };
+  }
+
+  private async getPortfolioByAccounts() {
+    const holdingRepository = Container.get(HoldingRepository);
+
+    // Get all holdings with complete details
+    const holdingsWithDetails = await holdingRepository.findByUserWithCompleteDetails(
+      this.context.userId
+    );
+
+    // Batch fetch prices for all tokens
+    const priceMap = await this.batchFetchPrices(holdingsWithDetails);
+
+    // Group by account
+    const accountMap = new Map<
+      string,
+      {
+        accountId: string;
+        accountName: string;
+        institutionName: string;
+        value: Decimal;
+      }
+    >();
+
+    for (const { holding, token, account, institution } of holdingsWithDetails) {
+      const balance = new Decimal(holding.balance);
+      if (balance.lte(0)) continue;
+
+      const price = priceMap.get(token.id) || new Decimal(0);
+      const value = balance.mul(price);
+
+      const existing = accountMap.get(account.id);
+      if (existing) {
+        existing.value = existing.value.add(value);
+      } else {
+        accountMap.set(account.id, {
+          accountId: account.id,
+          accountName: account.name,
+          institutionName: institution.name,
+          value,
+        });
+      }
+    }
+
+    // Calculate total value and percentages
+    const accounts = Array.from(accountMap.values());
+    const totalValue = accounts.reduce((sum, a) => sum.add(a.value), new Decimal(0));
+
+    return {
+      totalValue: totalValue.toString(),
+      accounts: accounts
+        .map((a) => ({
+          accountId: a.accountId,
+          accountName: a.accountName,
+          institutionName: a.institutionName,
+          value: a.value.toString(),
+          percentage: totalValue.greaterThan(0)
+            ? a.value.div(totalValue).mul(100).toFixed(2)
+            : '0.00',
+        }))
+        .sort((a, b) => new Decimal(b.value).comparedTo(new Decimal(a.value))),
+    };
+  }
+
+  private async getPortfolioByInstitutions() {
+    const holdingRepository = Container.get(HoldingRepository);
+
+    // Get all holdings with complete details
+    const holdingsWithDetails = await holdingRepository.findByUserWithCompleteDetails(
+      this.context.userId
+    );
+
+    // Batch fetch prices for all tokens
+    const priceMap = await this.batchFetchPrices(holdingsWithDetails);
+
+    // Group by institution
+    const institutionMap = new Map<
+      string,
+      {
+        institutionId: string;
+        institutionName: string;
+        value: Decimal;
+      }
+    >();
+
+    for (const { holding, token, institution } of holdingsWithDetails) {
+      const balance = new Decimal(holding.balance);
+      if (balance.lte(0)) continue;
+
+      const price = priceMap.get(token.id) || new Decimal(0);
+      const value = balance.mul(price);
+
+      const existing = institutionMap.get(institution.id);
+      if (existing) {
+        existing.value = existing.value.add(value);
+      } else {
+        institutionMap.set(institution.id, {
+          institutionId: institution.id,
+          institutionName: institution.name,
+          value,
+        });
+      }
+    }
+
+    // Calculate total value and percentages
+    const institutions = Array.from(institutionMap.values());
+    const totalValue = institutions.reduce((sum, i) => sum.add(i.value), new Decimal(0));
+
+    return {
+      totalValue: totalValue.toString(),
+      institutions: institutions
+        .map((i) => ({
+          institutionId: i.institutionId,
+          institutionName: i.institutionName,
+          value: i.value.toString(),
+          percentage: totalValue.greaterThan(0)
+            ? i.value.div(totalValue).mul(100).toFixed(2)
+            : '0.00',
+        }))
+        .sort((a, b) => new Decimal(b.value).comparedTo(new Decimal(a.value))),
+    };
+  }
+
+  private async getPortfolioByTokenTypes() {
+    const holdingRepository = Container.get(HoldingRepository);
+    const userContextService = Container.get(UserContextService);
+
+    // Get user to retrieve base currency
+    const dbUser = await userContextService.getUserById(this.context.userId);
+    if (!dbUser) {
+      throw new Error('User not found');
+    }
+
+    // Get all holdings with complete details
+    const holdingsWithDetails = await holdingRepository.findByUserWithCompleteDetails(
+      this.context.userId
+    );
+
+    // Batch fetch prices for all tokens
+    const priceMap = await this.batchFetchPrices(holdingsWithDetails);
+
+    // Group by token type
+    const typeMap = new Map<
+      string,
+      {
+        type: string;
+        code: string;
+        value: Decimal;
+      }
+    >();
+
+    for (const { holding, token } of holdingsWithDetails) {
+      const balance = new Decimal(holding.balance);
+      if (balance.lte(0)) continue;
+
+      const price = priceMap.get(token.id) || new Decimal(0);
+      const value = balance.mul(price);
+
+      const existing = typeMap.get(token.typeCode);
+      if (existing) {
+        existing.value = existing.value.add(value);
+      } else {
+        typeMap.set(token.typeCode, {
+          type: token.typeName,
+          code: token.typeCode,
+          value,
+        });
+      }
+    }
+
+    // Calculate total value and percentages
+    const tokenTypes = Array.from(typeMap.values());
+    const totalValue = tokenTypes.reduce((sum, t) => sum.add(t.value), new Decimal(0));
+
+    // Get base currency symbol (default to USD if not set)
+    let baseCurrencySymbol = 'USD';
+    if (dbUser.baseCurrencyId && holdingsWithDetails.length > 0) {
+      // Find the base currency token from holdings if available
+      const baseCurrencyToken = holdingsWithDetails.find(
+        ({ token }) => token.id === dbUser.baseCurrencyId
+      );
+      if (baseCurrencyToken) {
+        baseCurrencySymbol = baseCurrencyToken.token.symbol;
+      }
+    }
+
+    return {
+      totalValue: totalValue.toString(),
+      baseCurrency: baseCurrencySymbol,
+      tokenTypes: tokenTypes
+        .map((t) => ({
+          type: t.type,
+          code: t.code,
+          value: t.value.toString(),
+          percentage: totalValue.greaterThan(0)
+            ? t.value.div(totalValue).mul(100).toFixed(2)
+            : '0.00',
+        }))
+        .sort((a, b) => new Decimal(b.value).comparedTo(new Decimal(a.value))),
+    };
   }
 }
