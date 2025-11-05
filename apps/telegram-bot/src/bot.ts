@@ -1,5 +1,7 @@
 import type { Context as TelegrafContext } from 'telegraf';
 import { Telegraf } from 'telegraf';
+import { Container } from 'typedi';
+import { ParseScreenshotUseCase } from '../../backend/src/application/use-cases/ParseScreenshotUseCase';
 import type { ConversationContext } from './ai-agent';
 import { AIAgent } from './ai-agent';
 
@@ -93,20 +95,22 @@ export class TelegramBotService {
     // Help command
     this.bot.command('help', async (ctx) => {
       await ctx.reply(
-        '📚 *Available Commands:*\n\n' +
+        '📚 Available Commands:\n\n' +
           '/start - Start the bot\n' +
           '/help - Show this help message\n' +
           '/auth <token> - Link your Scani account with auth token\n' +
           '/status - Check authentication status\n' +
           '/reset - Reset conversation context\n\n' +
-          '*Natural Language:*\n' +
+          'Natural Language:\n' +
           'You can also chat with me naturally! Ask me to:\n' +
           '• Show your portfolio overview\n' +
           '• List your accounts or holdings\n' +
           '• Add new holdings\n' +
           '• Check token prices\n' +
-          '• And much more!',
-        { parse_mode: 'Markdown' }
+          '• Import a crypto wallet\n' +
+          '• And much more!\n\n' +
+          'Screenshot Upload:\n' +
+          'You can also send me screenshots of your portfolio or holdings, and I will analyze them for you!'
       );
     });
 
@@ -126,15 +130,14 @@ export class TelegramBotService {
 
       if (!authToken) {
         await ctx.reply(
-          '🔐 *Authentication Required*\n\n' +
+          '🔐 Authentication Required\n\n' +
             'To link your Scani account, please provide an authentication token:\n' +
-            '`/auth YOUR_TOKEN_HERE`\n\n' +
+            '/auth YOUR_TOKEN_HERE\n\n' +
             'You can generate a token in the Scani web app:\n' +
             '1. Go to Settings → Integrations\n' +
             '2. Click "Connect Telegram"\n' +
             '3. Copy the generated token\n' +
-            '4. Send it here: `/auth <token>`',
-          { parse_mode: 'Markdown' }
+            '4. Send it here: /auth <token>'
         );
         return;
       }
@@ -142,10 +145,9 @@ export class TelegramBotService {
       try {
         await this.config.linkTelegramUser(telegramUserId, telegramUsername, authToken);
         await ctx.reply(
-          '✅ *Authentication Successful!*\n\n' +
+          '✅ Authentication Successful!\n\n' +
             'Your Telegram account is now linked to your Scani profile.\n' +
-            'You can start chatting with me to manage your portfolio!',
-          { parse_mode: 'Markdown' }
+            'You can start chatting with me to manage your portfolio!'
         );
       } catch (error) {
         this.logger.error({ error }, 'Auth error during Telegram authentication');
@@ -170,6 +172,133 @@ export class TelegramBotService {
       if (telegramUserId) {
         this.conversationContexts.delete(telegramUserId);
         await ctx.reply('🔄 Conversation context has been reset.');
+      }
+    });
+
+    // Handle photo messages (screenshot upload)
+    this.bot.on('photo', async (ctx) => {
+      const telegramUserId = ctx.telegramUserId;
+
+      if (!ctx.userId || !telegramUserId) {
+        await ctx.reply(
+          '⚠️ Please authenticate first using /auth <token> before uploading photos.\n\n' +
+            'Get your auth token from the Scani web app (Settings → Integrations).'
+        );
+        return;
+      }
+
+      try {
+        // Show processing indicator
+        await ctx.sendChatAction('typing');
+
+        // Get the largest photo (best quality)
+        const photo = ctx.message.photo[ctx.message.photo.length - 1];
+        if (!photo) {
+          await ctx.reply('❌ Failed to get photo data. Please try again.');
+          return;
+        }
+
+        // Get file from Telegram
+        const file = await ctx.telegram.getFile(photo.file_id);
+        if (!file.file_path) {
+          await ctx.reply('❌ Failed to get photo file path. Please try again.');
+          return;
+        }
+
+        // Download the file as base64
+        const fileUrl = `https://api.telegram.org/file/bot${this.config.botToken}/${file.file_path}`;
+        const response = await fetch(fileUrl);
+        const buffer = await response.arrayBuffer();
+        const base64 = Buffer.from(buffer).toString('base64');
+
+        // Get caption as context if provided
+        const caption = ctx.message.caption || undefined;
+
+        await ctx.reply('🔍 Analyzing your screenshot... This may take a moment.');
+
+        // Parse screenshot using ParseScreenshotUseCase
+        const parseScreenshotUseCase = Container.get(ParseScreenshotUseCase);
+        const parseResult = await parseScreenshotUseCase.execute({
+          imageBase64: base64,
+          context: caption,
+          userId: ctx.userId,
+        });
+
+        // Format the results for the user
+        if (parseResult.holdings.length === 0) {
+          await ctx.reply(
+            '❌ I could not detect any holdings in this screenshot.\n\n' +
+              'Please make sure the screenshot clearly shows:\n' +
+              '• Token symbols or names\n' +
+              '• Quantities/amounts\n\n' +
+              'Try uploading a clearer screenshot or ask me to help you add holdings manually.'
+          );
+          return;
+        }
+
+        // Format holdings list
+        let responseMessage = `✅ Found ${parseResult.holdings.length} holding(s) in your screenshot:\n\n`;
+
+        for (const holding of parseResult.holdings) {
+          const confidenceEmoji =
+            holding.confidence >= 0.8 ? '✓' : holding.confidence >= 0.5 ? '?' : '⚠';
+          responseMessage += `${confidenceEmoji} ${holding.symbol}: ${holding.balance}`;
+          if (holding.name) {
+            responseMessage += ` (${holding.name})`;
+          }
+          if (holding.existingBalance) {
+            responseMessage += ` - Existing: ${holding.existingBalance}`;
+          }
+          responseMessage += '\n';
+        }
+
+        responseMessage += `\nOverall confidence: ${Math.round(parseResult.overallConfidence * 100)}%\n\n`;
+
+        if (parseResult.detectedCurrency) {
+          responseMessage += `Detected currency: ${parseResult.detectedCurrency}\n`;
+        }
+
+        if (parseResult.context) {
+          responseMessage += `\nNote: ${parseResult.context}\n`;
+        }
+
+        responseMessage +=
+          '\nTo import these holdings, you can:\n' +
+          '1. Ask me to "add these holdings to [account name]"\n' +
+          '2. Or provide more details about which account to add them to';
+
+        await ctx.reply(responseMessage);
+
+        // Update conversation context
+        let conversationContext = this.conversationContexts.get(telegramUserId);
+        if (!conversationContext) {
+          conversationContext = {
+            userId: ctx.userId,
+            conversationHistory: [],
+          };
+          this.conversationContexts.set(telegramUserId, conversationContext);
+        }
+
+        conversationContext.userId = ctx.userId;
+        conversationContext.conversationHistory.push({
+          role: 'user',
+          content: `User uploaded a screenshot with ${parseResult.holdings.length} holdings detected`,
+        });
+        conversationContext.conversationHistory.push({
+          role: 'assistant',
+          content: responseMessage,
+        });
+
+        // Keep only last 20 messages
+        if (conversationContext.conversationHistory.length > 20) {
+          conversationContext.conversationHistory =
+            conversationContext.conversationHistory.slice(-20);
+        }
+      } catch (error) {
+        this.logger.error({ error }, 'Error processing photo');
+        await ctx.reply(
+          '❌ Sorry, I encountered an error processing your photo. Please try again or use /reset to start over.'
+        );
       }
     });
 
@@ -221,7 +350,9 @@ export class TelegramBotService {
             conversationContext.conversationHistory.slice(-20);
         }
 
-        await ctx.reply(response, { parse_mode: 'Markdown' });
+        // Send response without markdown formatting to avoid issues
+        // The AI response might contain special characters that break Markdown
+        await ctx.reply(response);
       } catch (error) {
         this.logger.error({ error }, 'Error processing Telegram message');
         await ctx.reply(
