@@ -22,19 +22,19 @@ jobs:
       checks: read
       contents: read
     steps:
-      - name: Wait for other workflows
+      - name: Wait for lint workflow
         uses: lewagon/wait-on-check-action@v1.3.1
         with:
           ref: ${{ github.ref }}
-          check-name: 'lint'
+          check-name: 'Run Biome Linter'
           repo-token: ${{ secrets.GITHUB_TOKEN }}
           wait-interval: 10
       
-      - name: Wait for type-check
+      - name: Wait for type-check workflow
         uses: lewagon/wait-on-check-action@v1.3.1
         with:
           ref: ${{ github.ref }}
-          check-name: 'type-check'
+          check-name: 'Run TypeScript Type Checking'
           repo-token: ${{ secrets.GITHUB_TOKEN }}
           wait-interval: 10
 
