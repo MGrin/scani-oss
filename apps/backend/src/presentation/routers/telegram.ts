@@ -21,9 +21,7 @@ export const telegramRouter = router({
         authToken: z.string(),
       })
     )
-    .mutation(async ({ input, ctx }) => {
-      const { dbUser } = requireAuth(ctx);
-
+    .mutation(async ({ input }) => {
       const telegramUser = await telegramAuthService.linkTelegramUser(
         input.telegramId,
         input.telegramUsername,

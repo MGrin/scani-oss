@@ -6,6 +6,7 @@ import {
   HoldingService,
   PricingService,
   UserContextService,
+  UserService,
 } from '../../backend/src/application/services';
 import {
   CreateHoldingsWithDependenciesUseCase,
@@ -159,7 +160,7 @@ export class ToolExecutor {
     // TODO: Implement efficient search in TokenRepository instead of loading all tokens
     // Current implementation loads all tokens into memory which is inefficient for large datasets
     // Recommended: Add a searchTokens(query, limit) method to TokenRepository with database-level filtering
-    const allTokens = await tokenRepository.getAllTokens();
+    const allTokens = await tokenRepository.findAll();
     const searchLower = query.toLowerCase();
     return allTokens
       .filter(
@@ -173,47 +174,62 @@ export class ToolExecutor {
     const pricingService = Container.get(PricingService);
     // Find token by symbol first
     const tokenRepository = Container.get(TokenRepository);
-    const token = await tokenRepository.getTokenBySymbol(symbol);
+    const token = await tokenRepository.findBySymbol(symbol);
     if (!token) {
       throw new Error(`Token not found: ${symbol}`);
     }
-    const price = await pricingService.getPrice(token.id);
+    const price = await pricingService.getTokenPrice(token, 'USD', new Date());
     return { symbol, price: price?.toString() };
   }
 
   private async listInstitutions(_type?: string) {
     const institutionRepository = Container.get(InstitutionRepository);
-    return await institutionRepository.getAllInstitutions();
+    return await institutionRepository.findAll();
   }
 
   // biome-ignore lint/suspicious/noExplicitAny: Holdings array type is dynamic
   private async importHoldings(accountId: string, holdings: any[]) {
     const createHoldingsUseCase = Container.get(CreateHoldingsWithDependenciesUseCase);
+    const tokenRepository = Container.get(TokenRepository);
+    const userService = Container.get(UserService);
 
-    // Convert holdings to proper format
-    const formattedHoldings = holdings.map((h) => ({
-      tokenSymbol: h.tokenSymbol,
-      quantity: new Decimal(h.quantity),
-      costBasis: h.costBasis ? new Decimal(h.costBasis) : undefined,
-    }));
+    // Get the full user object
+    const user = await userService.getUserById(this.context.userId);
+    if (!user) {
+      throw new Error('User not found');
+    }
+
+    // Convert holdings to proper format - resolve token symbols to IDs
+    const formattedHoldings = await Promise.all(
+      holdings.map(async (h) => {
+        const token = await tokenRepository.findBySymbol(h.tokenSymbol);
+        if (!token) {
+          throw new Error(`Token not found: ${h.tokenSymbol}`);
+        }
+        return {
+          tokenId: token.id,
+          balance: new Decimal(h.quantity).toString(),
+        };
+      })
+    );
 
     return await createHoldingsUseCase.execute(
       {
         accountId,
         holdings: formattedHoldings,
       },
-      this.context.userId
+      user
     );
   }
 
   private async listInstitutionTypes() {
     const institutionTypeRepository = Container.get(InstitutionTypeRepository);
-    return await institutionTypeRepository.getAllInstitutionTypes();
+    return await institutionTypeRepository.findAll();
   }
 
   private async listAccountTypes() {
     const accountTypeRepository = Container.get(AccountTypeRepository);
-    return await accountTypeRepository.getAllAccountTypes();
+    return await accountTypeRepository.findAll();
   }
 
   private async importWallet(address: string, displayName?: string) {
@@ -251,13 +267,15 @@ export class ToolExecutor {
   ): Promise<Map<string, Decimal>> {
     const pricingService = Container.get(PricingService);
 
-    // Collect unique token IDs and batch fetch prices
-    const uniqueTokenIds = [...new Set(holdingsWithDetails.map(({ token }) => token.id))];
-    const pricePromises = uniqueTokenIds.map((tokenId) => pricingService.getPrice(tokenId));
+    // Collect unique tokens and batch fetch prices
+    const uniqueTokens = [...new Set(holdingsWithDetails.map(({ token }) => token))];
+    const pricePromises = uniqueTokens.map((token) =>
+      pricingService.getTokenPrice(token, 'USD', new Date())
+    );
     const prices = await Promise.all(pricePromises);
 
     return new Map(
-      uniqueTokenIds.map((tokenId, index) => [tokenId, prices[index] || new Decimal(0)])
+      uniqueTokens.map((token, index) => [token.id, new Decimal(prices[index] || '0')])
     );
   }
 

@@ -1355,6 +1355,86 @@ export class PricingService {
     }
   }
 
+  /**
+   * Get cached token prices only - does not fetch from external providers
+   * Returns prices from database or '0' if not found
+   */
+  async getCachedTokenPrices(
+    tokensToPrice: Token[],
+    baseCurrencySymbol: string,
+    timestamp: Date
+  ): Promise<Map<string, string>> {
+    const results = new Map<string, string>();
+
+    if (tokensToPrice.length === 0) return results;
+
+    const baseCurrencyToken = await this.tokenRepository.findBySymbol(baseCurrencySymbol);
+    if (!baseCurrencyToken) {
+      logger.warn({ baseCurrencySymbol }, 'Base currency token not found in getCachedTokenPrices');
+      for (const token of tokensToPrice) {
+        results.set(token.id, '0');
+      }
+      return results;
+    }
+
+    const tokensToProcess = tokensToPrice.filter((token) => {
+      if (token.id === baseCurrencyToken.id) {
+        results.set(token.id, '1');
+        return false;
+      }
+      return true;
+    });
+
+    if (tokensToProcess.length === 0) return results;
+
+    const cachedPrices = await this.getBatchCachedPrices(
+      tokensToProcess.map((t) => t.id),
+      baseCurrencyToken.id,
+      timestamp
+    );
+
+    for (const token of tokensToProcess) {
+      const cached = cachedPrices.get(token.id);
+      if (cached) {
+        // Check if currency conversion is needed
+        if (cached.baseTokenId !== baseCurrencyToken.id) {
+          // Get the token for the cached price's base currency
+          const cachedBaseCurrencyToken = await this.tokenRepository.findById(cached.baseTokenId);
+
+          if (cachedBaseCurrencyToken) {
+            pricingLogger.debug(
+              {
+                tokenId: token.id,
+                symbol: token.symbol,
+                fromCurrency: cachedBaseCurrencyToken.symbol,
+                toCurrency: baseCurrencyToken.symbol,
+                originalPrice: cached.price,
+              },
+              'Converting cached price to requested base currency in cached-only batch'
+            );
+
+            const convertedPrice = await this.convertPrice(
+              cached.price,
+              cachedBaseCurrencyToken.symbol,
+              baseCurrencyToken.symbol,
+              timestamp
+            );
+
+            results.set(token.id, convertedPrice);
+            continue;
+          }
+        }
+
+        results.set(token.id, cached.price);
+      } else {
+        // No cached price found - return '0'
+        results.set(token.id, '0');
+      }
+    }
+
+    return results;
+  }
+
   async canTokenBePriced(
     tokenData: {
       symbol: string;

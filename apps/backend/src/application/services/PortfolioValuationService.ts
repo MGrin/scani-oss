@@ -109,10 +109,10 @@ export class PortfolioValuationService {
         : `Processing portfolio value: ${tokensToPrice.length} tokens need pricing`
     );
 
-    // Fetch all prices at once using the correct API
+    // Fetch all prices at once using cached-only pricing (no external API calls)
     const priceResults =
       tokensToPrice.length > 0
-        ? await this.pricingService.getTokenPrices(tokensToPrice, baseCurrency.symbol, now)
+        ? await this.pricingService.getCachedTokenPrices(tokensToPrice, baseCurrency.symbol, now)
         : new Map<string, string>();
 
     this.logger.info(

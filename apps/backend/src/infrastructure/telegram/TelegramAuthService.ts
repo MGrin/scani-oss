@@ -28,8 +28,6 @@ export class TelegramAuthService {
       });
     }
 
-    const supabaseUserId = data.user.id;
-
     // Ensure user exists in local database
     const dbUser = await this.userContextService.getOrCreateUser(data.user);
 
