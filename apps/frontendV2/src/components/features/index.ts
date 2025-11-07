@@ -4,6 +4,7 @@
  */
 
 export { AccountBadge } from './AccountBadge';
+export { AssetAllocationCard } from './AssetAllocationCard';
 export { HoldingModal } from './HoldingModal';
 export { InstitutionBadge } from './InstitutionBadge';
 export { TokenTypeBadge } from './TokenTypeBadge';

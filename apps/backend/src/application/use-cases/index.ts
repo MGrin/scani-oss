@@ -1,3 +1,6 @@
+// Dashboard Use Cases
+export { GetAssetAllocationUseCase } from './GetAssetAllocationUseCase';
+
 // Holding Use Cases
 
 export { CreateHoldingsWithDependenciesUseCase } from './CreateHoldingsWithDependenciesUseCase';

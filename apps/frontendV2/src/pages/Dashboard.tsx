@@ -1,5 +1,10 @@
 import { Link } from 'react-router-dom';
-import { AccountBadge, InstitutionBadge, TokenTypeBadge } from '@/components/features';
+import {
+  AccountBadge,
+  AssetAllocationCard,
+  InstitutionBadge,
+  TokenTypeBadge,
+} from '@/components/features';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { MoneyDisplay } from '@/components/ui/money-display';
 import { PageHeader } from '@/components/ui/page-header';
@@ -103,48 +108,7 @@ export function Dashboard() {
 
       {/* Asset Allocation & Top Holdings */}
       <div className="flex flex-col gap-4 md:flex-row md:align-center md:justify-stretch">
-        <Card className="w-full h-fit">
-          <CardHeader>
-            <CardTitle>Asset Allocation</CardTitle>
-          </CardHeader>
-          <CardContent>
-            {overviewLoading ? (
-              <div className="space-y-4">
-                {[1, 2, 3, 4].map((i) => (
-                  <div key={i} className="flex items-center justify-between">
-                    <Skeleton className="h-4 w-24" />
-                    <Skeleton className="h-4 w-12" />
-                  </div>
-                ))}
-              </div>
-            ) : overview?.assetAllocation && overview.assetAllocation.length > 0 ? (
-              <div className="space-y-4">
-                {overview.assetAllocation.map((allocation) => (
-                  <div key={allocation.code} className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <div
-                        className={`w-3 h-3 rounded-full ${getColorForAssetType(allocation.code)}`}
-                      />
-                      <span className="text-sm font-medium">{allocation.type}</span>
-                    </div>
-                    <div className="text-right">
-                      <div className="text-sm font-medium">{allocation.percentage}%</div>
-                      <div className="text-xs text-muted-foreground">
-                        <MoneyDisplay
-                          value={allocation.value}
-                          token={baseCurrencyToken}
-                          showSymbol={false}
-                        />
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <div className="text-sm text-muted-foreground">No assets yet</div>
-            )}
-          </CardContent>
-        </Card>
+        <AssetAllocationCard className="w-full h-fit" />
 
         <Card className="w-full">
           <CardHeader>
@@ -205,22 +169,4 @@ export function Dashboard() {
       </div>
     </div>
   );
-}
-
-// Helper function to assign colors to asset types
-function getColorForAssetType(code: string): string {
-  const colorMap: Record<string, string> = {
-    stock: 'bg-blue-500',
-    equity: 'bg-blue-500',
-    bond: 'bg-green-500',
-    crypto: 'bg-orange-500',
-    cryptocurrency: 'bg-orange-500',
-    fiat: 'bg-gray-500',
-    cash: 'bg-gray-500',
-    commodity: 'bg-yellow-500',
-    real_estate: 'bg-purple-500',
-    etf: 'bg-cyan-500',
-  };
-
-  return colorMap[code.toLowerCase()] || 'bg-slate-500';
 }

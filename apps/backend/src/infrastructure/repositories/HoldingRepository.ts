@@ -87,8 +87,15 @@ export class HoldingRepository extends BaseRepository<Holding, NewHolding> {
         name: string;
         institutionId: string;
         typeCode: string;
+        typeName: string;
       };
-      institution: { id: string; name: string; website?: string };
+      institution: {
+        id: string;
+        name: string;
+        website?: string;
+        typeCode: string;
+        typeName: string;
+      };
     }>
   > {
     try {
@@ -118,10 +125,13 @@ export class HoldingRepository extends BaseRepository<Holding, NewHolding> {
           accountName: schema.accounts.name,
           accountInstitutionId: schema.accounts.institutionId,
           accountTypeCode: schema.accountTypes.code,
+          accountTypeName: schema.accountTypes.name,
           // Institution data
           institutionId: schema.institutions.id,
           institutionName: schema.institutions.name,
           institutionWebsite: schema.institutions.website,
+          institutionTypeCode: schema.institutionTypes.code,
+          institutionTypeName: schema.institutionTypes.name,
         })
         .from(schema.holdings)
         .innerJoin(schema.tokens, eq(schema.holdings.tokenId, schema.tokens.id))
@@ -129,6 +139,10 @@ export class HoldingRepository extends BaseRepository<Holding, NewHolding> {
         .innerJoin(schema.accounts, eq(schema.holdings.accountId, schema.accounts.id))
         .innerJoin(schema.institutions, eq(schema.accounts.institutionId, schema.institutions.id))
         .innerJoin(schema.accountTypes, eq(schema.accounts.typeId, schema.accountTypes.id))
+        .innerJoin(
+          schema.institutionTypes,
+          eq(schema.institutions.typeId, schema.institutionTypes.id)
+        )
         .where(whereConditions);
 
       return results.map((r) => ({
@@ -153,11 +167,14 @@ export class HoldingRepository extends BaseRepository<Holding, NewHolding> {
           name: r.accountName,
           institutionId: r.accountInstitutionId,
           typeCode: r.accountTypeCode,
+          typeName: r.accountTypeName,
         },
         institution: {
           id: r.institutionId,
           name: r.institutionName,
           website: r.institutionWebsite ?? undefined,
+          typeCode: r.institutionTypeCode,
+          typeName: r.institutionTypeName,
         },
       }));
     } catch (error) {

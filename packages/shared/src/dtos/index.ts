@@ -1,6 +1,7 @@
 export * from './account';
 export * from './batch';
 export * from './common';
+export * from './dashboard';
 export * from './enums';
 export * from './holding';
 export * from './institution';

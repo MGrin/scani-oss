@@ -26,8 +26,15 @@ type HoldingWithDetails = {
     name: string;
     institutionId: string;
     typeCode: string;
+    typeName: string;
   };
-  institution: { id: string; name: string; website?: string };
+  institution: {
+    id: string;
+    name: string;
+    website?: string;
+    typeCode: string;
+    typeName: string;
+  };
 };
 
 export interface DashboardOverview {
