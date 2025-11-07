@@ -10,11 +10,37 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+
+permissions:
+  checks: read
+  contents: read
+
 jobs:
+  check-status:
+    runs-on: ubuntu-latest
+    permissions:
+      checks: read
+      contents: read
+    steps:
+      - name: Wait for other workflows
+        uses: lewagon/wait-on-check-action@v1.3.1
+        with:
+          ref: ${{ github.ref }}
+          check-name: 'lint'
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+          wait-interval: 10
+      
+      - name: Wait for type-check
+        uses: lewagon/wait-on-check-action@v1.3.1
+        with:
+          ref: ${{ github.ref }}
+          check-name: 'type-check'
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+          wait-interval: 10
+
   check-changes:
     runs-on: ubuntu-latest
-    # Wait for other workflows to complete
-    needs: [lint, type-check]  # Ensure both lint and type-check pass before deploying
+    needs: [check-status]  # Now depends on our own job instead of external workflows
     permissions:
       contents: read
     outputs:
@@ -44,9 +70,6 @@ jobs:
     needs: [check-changes]
     if: ${{ needs.check-changes.outputs.backend == 'true' }}
     runs-on: ubuntu-latest
-    environment:
-      name: production
-      url: https://scani-backend-217c.onrender.com
     steps:
       - name: Trigger backend deployment
         run: |
@@ -56,9 +79,6 @@ jobs:
     needs: [check-changes]
     if: ${{ needs.check-changes.outputs.frontend == 'true' }}
     runs-on: ubuntu-latest
-    environment:
-      name: production
-      url: https://scani-frontend.onrender.com
     steps:
       - name: Trigger frontend deployment
         run: |
@@ -68,9 +88,6 @@ jobs:
     needs: [check-changes]
     if: ${{ needs.check-changes.outputs.landing == 'true' }}
     runs-on: ubuntu-latest
-    environment:
-      name: production
-      url: https://scani-landing.onrender.com
     steps:
       - name: Trigger landing deployment
         run: |
