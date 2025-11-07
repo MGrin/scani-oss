@@ -171,6 +171,22 @@ export const tools = {
       'Get portfolio breakdown grouped by token types (e.g., "Cryptocurrency", "Stock", "Fiat"). Shows asset allocation with value and percentage for each type. Use for creating donut or bar charts by asset type, or when user asks about asset allocation.',
     parameters: z.object({}),
   },
+
+  // Chart generation operations
+  generatePortfolioChart: {
+    description:
+      'Generate a visual chart image for portfolio data. Creates donut charts for distribution (tokens, accounts, institutions, asset types) or bar charts for comparisons. Returns an image that can be sent to the user. Use when user asks for a chart, graph, or visual representation of their portfolio.',
+    parameters: z.object({
+      chartType: z
+        .enum(['donut', 'bar'])
+        .describe('Type of chart: donut for distribution, bar for comparisons'),
+      dataType: z
+        .enum(['tokens', 'accounts', 'institutions', 'tokenTypes'])
+        .describe(
+          'What to chart: tokens (individual holdings), accounts, institutions, or tokenTypes (asset allocation)'
+        ),
+    }),
+  },
 };
 
 export type ToolName = keyof typeof tools;

@@ -13,6 +13,8 @@ export interface Logger {
   warn(msg: string): void;
   error(obj: object, msg: string): void;
   error(msg: string): void;
+  debug(obj: object, msg: string): void;
+  debug(msg: string): void;
 }
 
 export interface TelegramBotConfig {
@@ -65,7 +67,81 @@ export class TelegramBotService {
       info: logMethod('log'),
       warn: logMethod('warn'),
       error: logMethod('error'),
+      debug: logMethod('log'), // Use console.log for debug
     };
+  }
+
+  /**
+   * Escape HTML special characters
+   */
+  private escapeHTML(text: string): string {
+    return text
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+  }
+
+  /**
+   * Convert markdown to HTML for Telegram
+   * Telegram's HTML mode is more reliable than Markdown for complex formatting
+   */
+  private convertMarkdownToHTML(markdown: string): string {
+    let html = markdown;
+
+    // Convert markdown tables to HTML with proper escaping
+    // Match table rows (lines with | separators)
+    const tableRegex = /(\|.+\|[\r\n]+)+/g;
+    html = html.replace(tableRegex, (table) => {
+      const lines = table.trim().split('\n');
+      if (lines.length < 2) return table;
+
+      let htmlTable = '<pre>\n';
+      for (let i = 0; i < lines.length; i++) {
+        const line = lines[i];
+        if (!line) continue; // Skip empty lines
+
+        // Skip separator lines (e.g., |----|----|)
+        if (line.match(/^\|[\s\-:]+\|$/)) continue;
+
+        // Clean up the line and escape HTML entities in each cell
+        const cells = line
+          .split('|')
+          .slice(1, -1) // Remove empty first and last elements
+          .map((cell) => this.escapeHTML(cell.trim()));
+
+        htmlTable += `${cells.join(' | ')}\n`;
+      }
+      htmlTable += '</pre>\n';
+
+      return htmlTable;
+    });
+
+    // Convert bold: **text** or __text__ to <b>text</b> with escaping
+    html = html.replace(/\*\*(.+?)\*\*/g, (match, content) => `<b>${this.escapeHTML(content)}</b>`);
+    html = html.replace(/__(.+?)__/g, (match, content) => `<b>${this.escapeHTML(content)}</b>`);
+
+    // Convert italic: *text* or _text_ to <i>text</i> (avoid ** and __) with escaping
+    html = html.replace(
+      /(?<!\*)\*(?!\*)(.+?)(?<!\*)\*(?!\*)/g,
+      (match, content) => `<i>${this.escapeHTML(content)}</i>`
+    );
+    html = html.replace(
+      /(?<!_)_(?!_)(.+?)(?<!_)_(?!_)/g,
+      (match, content) => `<i>${this.escapeHTML(content)}</i>`
+    );
+
+    // Convert code: `text` to <code>text</code> with escaping
+    html = html.replace(/`(.+?)`/g, (match, content) => `<code>${this.escapeHTML(content)}</code>`);
+
+    // Convert links: [text](url) to <a href="url">text</a> with escaping
+    html = html.replace(
+      /\[(.+?)\]\((.+?)\)/g,
+      (match, text, url) => `<a href="${this.escapeHTML(url)}">${this.escapeHTML(text)}</a>`
+    );
+
+    return html;
   }
 
   private setupHandlers() {
@@ -336,6 +412,28 @@ export class TelegramBotService {
         // Get AI response
         const response = await this.aiAgent.chat(ctx.message.text, conversationContext);
 
+        // Check if response contains a chart (base64 encoded image)
+        const chartMatch = response.match(/\[CHART:([A-Za-z0-9+/=]+)\]/);
+        if (chartMatch?.[1]) {
+          const chartBase64 = chartMatch[1];
+          const chartBuffer = Buffer.from(chartBase64, 'base64');
+
+          // Extract caption (everything after the chart marker)
+          const caption = response.replace(/\[CHART:[A-Za-z0-9+/=]+\]\s*/, '').trim();
+
+          // Send chart as photo with escaped caption
+          await ctx.replyWithPhoto(
+            { source: chartBuffer },
+            {
+              caption: caption ? this.escapeHTML(caption) : 'Your portfolio chart',
+            }
+          );
+        } else {
+          // Convert markdown to HTML and send as text
+          const htmlResponse = this.convertMarkdownToHTML(response);
+          await ctx.reply(htmlResponse, { parse_mode: 'HTML' });
+        }
+
         // Update conversation history
         conversationContext.conversationHistory.push({
           role: 'user',
@@ -351,10 +449,6 @@ export class TelegramBotService {
           conversationContext.conversationHistory =
             conversationContext.conversationHistory.slice(-20);
         }
-
-        // Send response without markdown formatting to avoid issues
-        // The AI response might contain special characters that break Markdown
-        await ctx.reply(response);
       } catch (error) {
         this.logger.error({ error }, 'Error processing Telegram message');
         await ctx.reply(
@@ -413,5 +507,103 @@ export class TelegramBotService {
 
   getBot(): Telegraf<BotContext> {
     return this.bot;
+  }
+
+  /**
+   * Send daily portfolio digest to all active Telegram users
+   * This method is called by the backend cron job
+   * Uses AI to generate personalized, engaging digest messages
+   */
+  async sendDailyDigestToAllUsers(params: {
+    getActiveTelegramUsers: () => Promise<
+      Array<{ id: string; telegramId: string; userId: string }>
+    >;
+    updateLastInteraction: (telegramUserId: string) => Promise<void>;
+  }): Promise<{
+    successCount: number;
+    errorCount: number;
+    errors: Array<{ telegramId: string; error: string }>;
+  }> {
+    const startTime = Date.now();
+    this.logger.info('📊 Starting daily digest broadcast');
+
+    // Get all active telegram users
+    const activeTelegramUsers = await params.getActiveTelegramUsers();
+
+    this.logger.info(
+      { userCount: activeTelegramUsers.length },
+      `Found ${activeTelegramUsers.length} active Telegram users`
+    );
+
+    // Track results
+    let successCount = 0;
+    let errorCount = 0;
+    const errors: Array<{ telegramId: string; error: string }> = [];
+
+    // Send digest to each user with rate limiting
+    for (const telegramUser of activeTelegramUsers) {
+      try {
+        // Generate AI-powered portfolio digest for this user
+        const digest = await this.aiAgent.generateDailyDigest(telegramUser.userId);
+
+        // Send to Telegram
+        await this.bot.telegram.sendMessage(telegramUser.telegramId, digest, {
+          parse_mode: 'HTML',
+        });
+
+        successCount++;
+        this.logger.debug(
+          { telegramId: telegramUser.telegramId, userId: telegramUser.userId },
+          'Sent daily digest to user'
+        );
+
+        // Update last interaction timestamp
+        await params.updateLastInteraction(telegramUser.id);
+
+        // Rate limiting: Wait 100ms between messages to avoid hitting Telegram's 30 msg/sec limit
+        // This allows ~10 messages per second, well within limits
+        await new Promise((resolve) => setTimeout(resolve, 100));
+      } catch (error) {
+        errorCount++;
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        errors.push({
+          telegramId: telegramUser.telegramId,
+          error: errorMessage,
+        });
+        this.logger.error(
+          {
+            telegramId: telegramUser.telegramId,
+            userId: telegramUser.userId,
+            error: errorMessage,
+          },
+          'Failed to send digest to user'
+        );
+      }
+    }
+
+    const durationMs = Date.now() - startTime;
+
+    this.logger.info(
+      {
+        totalUsers: activeTelegramUsers.length,
+        successCount,
+        errorCount,
+        durationMs,
+      },
+      '✅ Daily digest broadcast completed'
+    );
+
+    // Log errors if any
+    if (errors.length > 0) {
+      this.logger.warn(
+        {
+          errors: errors.slice(0, 10), // Log first 10 errors only
+          totalErrors: errors.length,
+        },
+        'Some users did not receive the daily digest'
+      );
+    }
+
+    return { successCount, errorCount, errors };
   }
 }

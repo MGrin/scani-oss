@@ -23,6 +23,7 @@ import {
 } from '@scani/backend/src/infrastructure/repositories';
 import Decimal from 'decimal.js';
 import { Container } from 'typedi';
+import { ChartGenerator } from './chart-generator';
 import type { ToolName } from './tools';
 
 /**
@@ -34,8 +35,24 @@ export interface ToolExecutionContext {
   userId: string; // Scani user ID
 }
 
+// Singleton ChartGenerator instance shared across all ToolExecutor instances
+// This avoids creating a new ChartJSNodeCanvas for each tool execution
+let sharedChartGenerator: ChartGenerator | null = null;
+
+function getChartGenerator(): ChartGenerator {
+  if (!sharedChartGenerator) {
+    sharedChartGenerator = new ChartGenerator();
+  }
+  return sharedChartGenerator;
+}
+
 export class ToolExecutor {
-  constructor(private context: ToolExecutionContext) {}
+  private chartGenerator: ChartGenerator;
+
+  constructor(private context: ToolExecutionContext) {
+    // Reuse shared ChartGenerator instance across all tool executors
+    this.chartGenerator = getChartGenerator();
+  }
 
   // biome-ignore lint/suspicious/noExplicitAny: Tool parameters are dynamic based on tool definition
   async executeTool(toolName: ToolName, parameters: any): Promise<any> {
@@ -97,6 +114,9 @@ export class ToolExecutor {
 
         case 'getPortfolioByTokenTypes':
           return await this.getPortfolioByTokenTypes();
+
+        case 'generatePortfolioChart':
+          return await this.generatePortfolioChart(parameters.chartType, parameters.dataType);
 
         default:
           throw new Error(`Unknown tool: ${toolName}`);
@@ -542,5 +562,94 @@ export class ToolExecutor {
         }))
         .sort((a, b) => new Decimal(b.value).comparedTo(new Decimal(a.value))),
     };
+  }
+
+  /**
+   * Generate a portfolio chart image
+   */
+  private async generatePortfolioChart(
+    chartType: 'donut' | 'bar',
+    dataType: 'tokens' | 'accounts' | 'institutions' | 'tokenTypes'
+  ): Promise<string> {
+    // Get the data based on dataType
+    // biome-ignore lint/suspicious/noExplicitAny: Portfolio data structure varies by dataType
+    let data: any;
+    let title: string;
+    let labels: string[];
+    let values: number[];
+
+    switch (dataType) {
+      case 'tokens': {
+        data = await this.getPortfolioByTokens();
+        title = 'Portfolio by Tokens';
+        // biome-ignore lint/suspicious/noExplicitAny: Portfolio token data from getPortfolioByTokens is dynamically typed
+        labels = data.tokens.slice(0, 10).map((t: any) => `${t.symbol} (${t.percentage}%)`);
+        // biome-ignore lint/suspicious/noExplicitAny: Portfolio token data from getPortfolioByTokens is dynamically typed
+        values = data.tokens.slice(0, 10).map((t: any) => parseFloat(t.value));
+        break;
+      }
+      case 'accounts': {
+        data = await this.getPortfolioByAccounts();
+        title = 'Portfolio by Accounts';
+        // biome-ignore lint/suspicious/noExplicitAny: Portfolio account data from getPortfolioByAccounts is dynamically typed
+        labels = data.accounts.map((a: any) => `${a.accountName} (${a.percentage}%)`);
+        // biome-ignore lint/suspicious/noExplicitAny: Portfolio account data from getPortfolioByAccounts is dynamically typed
+        values = data.accounts.map((a: any) => parseFloat(a.value));
+        break;
+      }
+      case 'institutions': {
+        data = await this.getPortfolioByInstitutions();
+        title = 'Portfolio by Institutions';
+        // biome-ignore lint/suspicious/noExplicitAny: Portfolio institution data from getPortfolioByInstitutions is dynamically typed
+        labels = data.institutions.map((i: any) => `${i.institutionName} (${i.percentage}%)`);
+        // biome-ignore lint/suspicious/noExplicitAny: Portfolio institution data from getPortfolioByInstitutions is dynamically typed
+        values = data.institutions.map((i: any) => parseFloat(i.value));
+        break;
+      }
+      case 'tokenTypes': {
+        data = await this.getPortfolioByTokenTypes();
+        title = 'Asset Allocation';
+        // biome-ignore lint/suspicious/noExplicitAny: Portfolio token type data from getPortfolioByTokenTypes is dynamically typed
+        labels = data.tokenTypes.map((t: any) => `${t.type} (${t.percentage}%)`);
+        // biome-ignore lint/suspicious/noExplicitAny: Portfolio token type data from getPortfolioByTokenTypes is dynamically typed
+        values = data.tokenTypes.map((t: any) => parseFloat(t.value));
+        break;
+      }
+      default:
+        throw new Error(`Unknown data type: ${dataType}`);
+    }
+
+    // Generate the chart
+    let chartBuffer: Buffer;
+    if (chartType === 'donut') {
+      chartBuffer = await this.chartGenerator.generateDonutChart({
+        labels,
+        values,
+        title,
+      });
+    } else {
+      chartBuffer = await this.chartGenerator.generateBarChart({
+        labels,
+        values,
+        title,
+        valueLabel: `Value (${data.baseCurrency})`,
+      });
+    }
+
+    // Return special marker format that the bot will recognize
+    const base64 = chartBuffer.toString('base64');
+
+    // Format currency symbol based on base currency
+    const currencySymbols: Record<string, string> = {
+      USD: '$',
+      EUR: '€',
+      GBP: '£',
+      JPY: '¥',
+      CNY: '¥',
+    };
+    const currencySymbol = currencySymbols[data.baseCurrency] || data.baseCurrency;
+
+    const caption = `${title}\nTotal Value: ${currencySymbol}${parseFloat(data.totalValue).toFixed(2)}`;
+    return `[CHART:${base64}]\n${caption}`;
   }
 }

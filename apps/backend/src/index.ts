@@ -7,7 +7,11 @@ import { Container } from 'typedi';
 // CRITICAL: Initialize container BEFORE importing any routers
 // This must happen before any module that calls Container.get()
 import { initializeContainer } from './config/container';
-import { executePricingCronJob, executeWalletBalancesCronJob } from './infrastructure/cron';
+import {
+  executeDailyPortfolioDigestCronJob,
+  executePricingCronJob,
+  executeWalletBalancesCronJob,
+} from './infrastructure/cron';
 import { RealTimeUpdatesService } from './infrastructure/websocket/RealTimeUpdatesService';
 import {
   captureException,
@@ -91,6 +95,21 @@ const app = new Elysia()
       name: 'wallet-balances-cron',
       pattern: '*/15 * * * *', // Every 15 minutes
       run: executeWalletBalancesCronJob,
+    })
+  )
+  .use(
+    cron({
+      name: 'daily-portfolio-digest-cron',
+      pattern: '0 0 * * *', // Daily at midnight UTC
+      run: async () => {
+        // Check if telegram bot is available before executing
+        // The bot is initialized asynchronously, so this check ensures it's ready
+        if (telegramBot) {
+          await executeDailyPortfolioDigestCronJob(telegramBot);
+        } else {
+          logger.warn('⚠️ Daily digest cron skipped: Telegram bot not initialized');
+        }
+      },
     })
   )
   // Add request logging middleware
@@ -406,6 +425,8 @@ logger.info(
     pricingCronDescription: 'Every 30 minutes at :00 and :30',
     walletBalancesCronPattern: '*/15 * * * *',
     walletBalancesCronDescription: 'Every 15 minutes',
+    dailyDigestCronPattern: '0 0 * * *',
+    dailyDigestCronDescription: 'Daily at midnight UTC (requires telegram bot initialization)',
   },
   '⏰ Cron jobs configured and scheduled'
 );
