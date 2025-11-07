@@ -1,0 +1,77 @@
+name: Deploy to Render
+
+on:
+  push:
+    branches:
+      - main
+
+# Ensure we wait for other workflows to complete
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check-changes:
+    runs-on: ubuntu-latest
+    # Wait for other workflows to complete
+    needs: [lint, type-check]  # Ensure both lint and type-check pass before deploying
+    permissions:
+      contents: read
+    outputs:
+      backend: ${{ steps.filter.outputs.backend }}
+      frontend: ${{ steps.filter.outputs.frontend }}
+      landing: ${{ steps.filter.outputs.landing }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      
+      - uses: dorny/paths-filter@v2
+        id: filter
+        with:
+          filters: |
+            backend:
+              - 'apps/backend/**'
+              - 'apps/telegram-bot/**'
+              - 'packages/shared/**'
+            frontend:
+              - 'apps/frontendV2/**'
+              - 'packages/shared/**'
+            landing:
+              - 'apps/landing/**'
+
+  deploy-backend:
+    needs: [check-changes]
+    if: ${{ needs.check-changes.outputs.backend == 'true' }}
+    runs-on: ubuntu-latest
+    environment:
+      name: production
+      url: https://scani-backend-217c.onrender.com
+    steps:
+      - name: Trigger backend deployment
+        run: |
+          curl -X POST https://api.render.com/deploy/srv-d3j88295pdvs739osbig?key=dPrNCQrxecI
+
+  deploy-frontend:
+    needs: [check-changes]
+    if: ${{ needs.check-changes.outputs.frontend == 'true' }}
+    runs-on: ubuntu-latest
+    environment:
+      name: production
+      url: https://scani-frontend.onrender.com
+    steps:
+      - name: Trigger frontend deployment
+        run: |
+          curl -X POST https://api.render.com/deploy/srv-d3j8p37diees73fl6q30?key=UP2oMJ6B9Vo
+
+  deploy-landing:
+    needs: [check-changes]
+    if: ${{ needs.check-changes.outputs.landing == 'true' }}
+    runs-on: ubuntu-latest
+    environment:
+      name: production
+      url: https://scani-landing.onrender.com
+    steps:
+      - name: Trigger landing deployment
+        run: |
+          curl -X POST https://api.render.com/deploy/srv-d3p8703uibrs738etau0?key=csrOYoHg-LE

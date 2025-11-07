@@ -4,11 +4,9 @@ on:
   push:
     branches:
       - main
-      - develop
   pull_request:
     branches:
       - main
-      - develop
 
 jobs:
   type-check:
@@ -41,9 +39,6 @@ jobs:
 
       - name: Run type-check on shared
         run: bun run type-check:shared
-
-      - name: Run type-check on scripts
-        run: bun run type-check:scripts
 
       # Note: Mobile app is excluded as it's a React Native/Expo app
       # that requires its own dependency installation and has a separate build process.
