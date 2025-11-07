@@ -40,6 +40,12 @@ export class TelegramBotService {
   private aiAgent: AIAgent;
   private conversationContexts: Map<string, ConversationContext> = new Map();
   private logger: Logger;
+  /**
+   * Regex pattern for detecting chart markers in AI responses
+   * Matches format: [CHART:base64EncodedImageData]
+   * Example: [CHART:iVBORw0KGgoAAAANSUhEUg...]
+   */
+  private readonly chartPattern = /\[CHART:([A-Za-z0-9+/=]+)\]/;
 
   constructor(private config: TelegramBotConfig) {
     this.bot = new Telegraf<BotContext>(config.botToken);
@@ -119,29 +125,64 @@ export class TelegramBotService {
     });
 
     // Convert bold: **text** or __text__ to <b>text</b> with escaping
-    html = html.replace(/\*\*(.+?)\*\*/g, (match, content) => `<b>${this.escapeHTML(content)}</b>`);
-    html = html.replace(/__(.+?)__/g, (match, content) => `<b>${this.escapeHTML(content)}</b>`);
+    html = html.replace(
+      /\*\*(.+?)\*\*/g,
+      (_match, content) => `<b>${this.escapeHTML(content)}</b>`
+    );
+    html = html.replace(/__(.+?)__/g, (_match, content) => `<b>${this.escapeHTML(content)}</b>`);
 
     // Convert italic: *text* or _text_ to <i>text</i> (avoid ** and __) with escaping
     html = html.replace(
       /(?<!\*)\*(?!\*)(.+?)(?<!\*)\*(?!\*)/g,
-      (match, content) => `<i>${this.escapeHTML(content)}</i>`
+      (_match, content) => `<i>${this.escapeHTML(content)}</i>`
     );
     html = html.replace(
       /(?<!_)_(?!_)(.+?)(?<!_)_(?!_)/g,
-      (match, content) => `<i>${this.escapeHTML(content)}</i>`
+      (_match, content) => `<i>${this.escapeHTML(content)}</i>`
     );
 
     // Convert code: `text` to <code>text</code> with escaping
-    html = html.replace(/`(.+?)`/g, (match, content) => `<code>${this.escapeHTML(content)}</code>`);
+    html = html.replace(
+      /`(.+?)`/g,
+      (_match, content) => `<code>${this.escapeHTML(content)}</code>`
+    );
 
     // Convert links: [text](url) to <a href="url">text</a> with escaping
     html = html.replace(
       /\[(.+?)\]\((.+?)\)/g,
-      (match, text, url) => `<a href="${this.escapeHTML(url)}">${this.escapeHTML(text)}</a>`
+      (_match, text, url) => `<a href="${this.escapeHTML(url)}">${this.escapeHTML(text)}</a>`
     );
 
     return html;
+  }
+
+  /**
+   * Generate inline keyboard for chart options
+   */
+  private getChartInlineKeyboard() {
+    return {
+      inline_keyboard: [
+        [
+          { text: '📊 Donut Chart', callback_data: 'chart_donut' },
+          { text: '📈 Bar Chart', callback_data: 'chart_bar' },
+        ],
+        [
+          { text: '💼 By Accounts', callback_data: 'chart_accounts' },
+          { text: '🏦 By Institutions', callback_data: 'chart_institutions' },
+        ],
+        [
+          { text: '🪙 By Tokens', callback_data: 'chart_tokens' },
+          { text: '📑 By Asset Type', callback_data: 'chart_types' },
+        ],
+      ],
+    };
+  }
+
+  /**
+   * Extract caption text from a chart response by removing the chart marker
+   */
+  private extractChartCaption(response: string): string {
+    return response.replace(this.chartPattern, '').trim();
   }
 
   private setupHandlers() {
@@ -380,6 +421,124 @@ export class TelegramBotService {
       }
     });
 
+    // Handle inline keyboard callbacks for charts
+    this.bot.on('callback_query', async (ctx) => {
+      const telegramUserId = ctx.from?.id.toString();
+
+      if (!ctx.userId || !telegramUserId) {
+        await ctx.answerCbQuery('⚠️ Please authenticate first using /auth');
+        return;
+      }
+
+      // Get callback data
+      const callbackData = 'data' in ctx.callbackQuery ? ctx.callbackQuery.data : undefined;
+
+      if (!callbackData) {
+        await ctx.answerCbQuery('❌ Invalid callback data');
+        return;
+      }
+
+      // Answer the callback query to remove loading state
+      await ctx.answerCbQuery();
+
+      // Parse chart request from callback data
+      if (callbackData.startsWith('chart_')) {
+        const chartRequest = callbackData.replace('chart_', '');
+        let message = '';
+
+        // Map callback data to natural language request
+        // Buttons either specify chart type (donut/bar) or data grouping (accounts/institutions/tokens/types)
+        switch (chartRequest) {
+          case 'donut':
+            message = 'Show me a donut chart of my portfolio';
+            break;
+          case 'bar':
+            message = 'Show me a bar chart of my portfolio';
+            break;
+          case 'accounts':
+            message = 'Show me a chart of my portfolio grouped by accounts';
+            break;
+          case 'institutions':
+            message = 'Show me a chart of my portfolio grouped by institutions';
+            break;
+          case 'tokens':
+            message = 'Show me a chart of my top holdings grouped by token';
+            break;
+          case 'types':
+            message = 'Show me a chart of my asset allocation grouped by type';
+            break;
+          default:
+            await ctx.reply('❌ Unknown chart type');
+            return;
+        }
+
+        // Get or create conversation context
+        let conversationContext = this.conversationContexts.get(telegramUserId);
+        if (!conversationContext) {
+          conversationContext = {
+            userId: ctx.userId,
+            conversationHistory: [],
+          };
+          this.conversationContexts.set(telegramUserId, conversationContext);
+        }
+
+        // Show typing indicator
+        await ctx.sendChatAction('typing');
+
+        try {
+          // Get AI response for the chart request
+          const response = await this.aiAgent.chat(message, conversationContext);
+
+          // Check if response contains a chart
+          const chartMatch = response.match(this.chartPattern);
+          if (chartMatch?.[1]) {
+            const chartBase64 = chartMatch[1];
+            const chartBuffer = Buffer.from(chartBase64, 'base64');
+
+            // Extract caption
+            const caption = this.extractChartCaption(response);
+
+            // Show upload photo indicator
+            await ctx.sendChatAction('upload_photo');
+
+            // Send chart as photo
+            await ctx.replyWithPhoto(
+              { source: chartBuffer },
+              {
+                caption: caption || 'Your portfolio chart',
+                reply_markup: this.getChartInlineKeyboard(),
+              }
+            );
+          } else {
+            // If no chart in response, send text
+            const htmlResponse = this.convertMarkdownToHTML(response);
+            await ctx.reply(htmlResponse, { parse_mode: 'HTML' });
+          }
+
+          // Update conversation history
+          conversationContext.conversationHistory.push({
+            role: 'user',
+            content: message,
+          });
+          conversationContext.conversationHistory.push({
+            role: 'assistant',
+            content: response,
+          });
+
+          // Keep only last 20 messages
+          if (conversationContext.conversationHistory.length > 20) {
+            conversationContext.conversationHistory =
+              conversationContext.conversationHistory.slice(-20);
+          }
+        } catch (error) {
+          this.logger.error({ error }, 'Error processing chart callback');
+          await ctx.reply(
+            '❌ Sorry, I encountered an error generating the chart. Please try again or use /reset to start over.'
+          );
+        }
+      }
+    });
+
     // Handle all other text messages
     this.bot.on('text', async (ctx) => {
       const telegramUserId = ctx.telegramUserId;
@@ -413,19 +572,23 @@ export class TelegramBotService {
         const response = await this.aiAgent.chat(ctx.message.text, conversationContext);
 
         // Check if response contains a chart (base64 encoded image)
-        const chartMatch = response.match(/\[CHART:([A-Za-z0-9+/=]+)\]/);
+        const chartMatch = response.match(this.chartPattern);
         if (chartMatch?.[1]) {
           const chartBase64 = chartMatch[1];
           const chartBuffer = Buffer.from(chartBase64, 'base64');
 
           // Extract caption (everything after the chart marker)
-          const caption = response.replace(/\[CHART:[A-Za-z0-9+/=]+\]\s*/, '').trim();
+          const caption = this.extractChartCaption(response);
 
-          // Send chart as photo with escaped caption
+          // Show upload photo indicator before sending
+          await ctx.sendChatAction('upload_photo');
+
+          // Send chart as photo with caption (plain text, no HTML parsing needed for chart captions)
           await ctx.replyWithPhoto(
             { source: chartBuffer },
             {
-              caption: caption ? this.escapeHTML(caption) : 'Your portfolio chart',
+              caption: caption || 'Your portfolio chart',
+              reply_markup: this.getChartInlineKeyboard(),
             }
           );
         } else {
