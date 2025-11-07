@@ -4,7 +4,10 @@
   "version": "1.0.0",
   "description": "Utility scripts for the Scani project",
   "scripts": {
-    "update-institutions": "node update-institutions-metadata.js"
+    "update-institutions": "node update-institutions-metadata.js",
+    "lint": "biome check .",
+    "lint:fix": "biome check --write .",
+    "type-check": "echo 'No TypeScript files to check in scripts package'"
   },
   "dependencies": {},
   "devDependencies": {},

@@ -1,0 +1,50 @@
+name: Type Check
+
+on:
+  push:
+    branches:
+      - main
+      - develop
+  pull_request:
+    branches:
+      - main
+      - develop
+
+jobs:
+  type-check:
+    name: Run TypeScript Type Checking
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Run type-check on backend
+        run: bun run type-check:backend
+
+      - name: Run type-check on frontend
+        run: bun run type-check:frontend
+
+      - name: Run type-check on landing
+        run: bun run type-check:landing
+
+      - name: Run type-check on telegram-bot
+        run: bun run type-check:telegram-bot
+
+      - name: Run type-check on shared
+        run: bun run type-check:shared
+
+      - name: Run type-check on scripts
+        run: bun run type-check:scripts
+
+      # Note: Mobile app is excluded as it's a React Native/Expo app
+      # that requires its own dependency installation and has a separate build process.
+      # To type-check mobile, run: cd apps/mobile && bun install && bun run type-check

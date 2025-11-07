@@ -507,8 +507,7 @@ function LayoutContent({
         </PullToRefresh>
       </div>
 
-      {/** biome-ignore lint/correctness/useUniqueElementIds: portal */}
-      <div id="mobile-bottom-nav" className="relative" />
+      <div id={`mobile-bottom-nav-${useId()}`} className="relative" />
     </div>
   );
 }

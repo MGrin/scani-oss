@@ -3,11 +3,15 @@
   "private": true,
   "type": "module",
   "exports": {
-    "./types": "./src/types.ts",
-    "./router": "./src/router.ts",
-    "./services": "./src/application/services/index.ts",
-    "./use-cases": "./src/application/use-cases/index.ts",
-    "./repositories": "./src/infrastructure/repositories/index.ts"
+    "./src/types": "./src/types.ts",
+    "./src/router": "./src/router.ts",
+    "./src/application/services": "./src/application/services/index.ts",
+    "./src/application/services/*": "./src/application/services/*.ts",
+    "./src/application/use-cases": "./src/application/use-cases/index.ts",
+    "./src/application/use-cases/*": "./src/application/use-cases/*.ts",
+    "./src/infrastructure/repositories": "./src/infrastructure/repositories/index.ts",
+    "./src/infrastructure/external-services/*": "./src/infrastructure/external-services/*.ts",
+    "./src/infrastructure/external-services/blockchain": "./src/infrastructure/external-services/blockchain/index.ts"
   },
   "scripts": {
     "dev": "LOG_LEVEL=debug LOG_PRETTY=true bun run --watch src/index.ts",
@@ -17,6 +21,8 @@
     "start": "bun run dist/index.js",
     "start:prod": "NODE_ENV=production LOG_LEVEL=info LOG_PRETTY=false bun run dist/index.js",
     "clean": "rm -rf dist",
+    "lint": "biome check .",
+    "lint:fix": "biome check --write .",
     "type-check": "tsc --noEmit",
     "test": "bun test",
     "test:watch": "bun test --watch",

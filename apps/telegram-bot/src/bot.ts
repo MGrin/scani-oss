@@ -1,7 +1,7 @@
+import { ParseScreenshotUseCase } from '@scani/backend/src/application/use-cases/ParseScreenshotUseCase';
 import type { Context as TelegrafContext } from 'telegraf';
 import { Telegraf } from 'telegraf';
 import { Container } from 'typedi';
-import { ParseScreenshotUseCase } from '../../backend/src/application/use-cases/ParseScreenshotUseCase';
 import type { ConversationContext } from './ai-agent';
 import { AIAgent } from './ai-agent';
 
@@ -252,7 +252,9 @@ export class TelegramBotService {
           responseMessage += '\n';
         }
 
-        responseMessage += `\nOverall confidence: ${Math.round(parseResult.overallConfidence * 100)}%\n\n`;
+        responseMessage += `\nOverall confidence: ${Math.round(
+          parseResult.overallConfidence * 100
+        )}%\n\n`;
 
         if (parseResult.detectedCurrency) {
           responseMessage += `Detected currency: ${parseResult.detectedCurrency}\n`;

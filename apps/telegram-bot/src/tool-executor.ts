@@ -1,5 +1,3 @@
-import Decimal from 'decimal.js';
-import { Container } from 'typedi';
 import {
   AccountService,
   DashboardService,
@@ -7,22 +5,24 @@ import {
   PricingService,
   UserContextService,
   UserService,
-} from '../../backend/src/application/services';
+} from '@scani/backend/src/application/services';
 import {
   CreateHoldingsWithDependenciesUseCase,
   DeleteHoldingUseCase,
   ImportWalletAddressUseCase,
   UpdateHoldingUseCase,
-} from '../../backend/src/application/use-cases';
-import type { UpdateHoldingInput } from '../../backend/src/application/use-cases/UpdateHoldingUseCase';
-import { BlockchainServiceManager } from '../../backend/src/infrastructure/external-services/blockchain';
+} from '@scani/backend/src/application/use-cases';
+import type { UpdateHoldingInput } from '@scani/backend/src/application/use-cases/UpdateHoldingUseCase';
+import { BlockchainServiceManager } from '@scani/backend/src/infrastructure/external-services/blockchain';
 import {
   AccountTypeRepository,
   HoldingRepository,
   InstitutionRepository,
   InstitutionTypeRepository,
   TokenRepository,
-} from '../../backend/src/infrastructure/repositories';
+} from '@scani/backend/src/infrastructure/repositories';
+import Decimal from 'decimal.js';
+import { Container } from 'typedi';
 import type { ToolName } from './tools';
 
 /**

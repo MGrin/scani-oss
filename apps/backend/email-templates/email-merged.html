@@ -1,15 +1,14 @@
 <!DOCTYPE html>
 <html lang="en">
-
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Sign in to Scani</title>
-  <style>
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sign in to Scani</title>
+    <style>
     body {
       background: #f8f9fb;
       color: #16181c;
-      font-family: 'Inter', sans-serif;
+      font-family: "Inter", sans-serif;
       margin: 0;
       padding: 0;
       font-size: 16px;
@@ -106,7 +105,7 @@
 
     .verification-code {
       font-size: 32px;
-      font-family: 'Menlo', 'Monaco', 'Consolas', monospace;
+      font-family: "Menlo", "Monaco", "Consolas", monospace;
       background: #fff;
       border-radius: 6px;
       border: 1px solid #e6e8ec;
@@ -139,7 +138,9 @@
       font-weight: 500;
       text-decoration: none;
       border: 1px solid #16181c;
-      transition: background 0.2s, color 0.2s;
+      transition:
+        background 0.2s,
+        color 0.2s;
     }
 
     .cta-button:hover {
@@ -154,7 +155,7 @@
       border: 1px solid #e6e8ec;
       font-size: 13px;
       word-break: break-all;
-      font-family: 'Menlo', 'Monaco', 'Consolas', monospace;
+      font-family: "Menlo", "Monaco", "Consolas", monospace;
       color: #27282c;
     }
 
@@ -203,94 +204,104 @@
     }
 
     @media only screen and (max-width: 520px) {
-
       .email-container,
       .email-header,
       .email-content,
       .email-footer {
-        padding-left: 16px !important;
-        padding-right: 16px !important;
+        padding-left: 16px;
+        padding-right: 16px;
       }
     }
-  </style>
-</head>
+    </style>
+  </head>
 
-<body>
-  <div class="email-wrapper">
-    <div class="email-container">
-      <!-- Header -->
-      <div class="email-header">
-        <div class="logo-container">
-          <img src="https://app.scani.xyz/icons/icon-152x152.png" alt="Scani Logo" class="logo-image">
-          <div class="logo-text">Scani</div>
-        </div>
-        <div class="header-subtitle">Personal Finance Management</div>
-      </div>
-
-      <!-- Main Content -->
-      <div class="email-content">
-        <div class="greeting">Sign in to your account</div>
-        <div class="message-text">
-          Choose your preferred way to sign in. Your sign-in method is secure and temporary.
+  <body>
+    <div class="email-wrapper">
+      <div class="email-container">
+        <!-- Header -->
+        <div class="email-header">
+          <div class="logo-container">
+            <img
+              src="https://app.scani.xyz/icons/icon-152x152.png"
+              alt="Scani Logo"
+              class="logo-image"
+            >
+            <div class="logo-text">Scani</div>
+          </div>
+          <div class="header-subtitle">Personal Finance Management</div>
         </div>
 
-        <div class="instructions">
-          <strong>📱 Using Scani as a PWA (installed app)?</strong><br>
-          Please copy the verification code below and paste it into the app. Magic links will open in your default
-          browser instead of the PWA.
+        <!-- Main Content -->
+        <div class="email-content">
+          <div class="greeting">Sign in to your account</div>
+          <div class="message-text">
+            Choose your preferred way to sign in. Your sign-in method is secure and temporary.
+          </div>
+
+          <div class="instructions">
+            <strong>📱 Using Scani as a PWA (installed app)?</strong>
+            <br>
+            Please copy the verification code below and paste it into the app. Magic links will open
+            in your default browser instead of the PWA.
+          </div>
+
+          <!-- Logic: Check custom variable from .Data -->
+          {{ if .ConfirmationURL }}
+          <!-- Magic Link Section -->
+          <div class="cta-container">
+            <a
+              href="{{ .ConfirmationURL }}"
+              class="cta-button"
+              style="color:#fff !important;text-decoration:none;"
+            >
+              Sign in to Scani
+            </a>
+          </div>
+          <div class="alternative-link">
+            Copy and paste this link:
+            <br>
+            {{ .ConfirmationURL }}
+          </div>
+          <div class="expiry-info">
+            <strong>⏰ This magic link expires in 1 hour</strong>
+          </div>
+          {{ end }}
+          {{ if .Token }}
+          <!-- OTP Section -->
+          <div class="code-container">
+            <div class="code-label">Verification Code</div>
+            <div class="verification-code">{{ .Token }}</div>
+            <div class="code-hint">Tap to copy • Valid for 10 minutes</div>
+          </div>
+          <div class="expiry-info">
+            <strong>⏰ This code expires in 10 minutes</strong>
+          </div>
+          <div class="instructions">
+            <strong>How to use this code:</strong>
+            <ul>
+              <li>Open the Scani app on your device</li>
+              <li>Enter this code when prompted</li>
+              <li>Complete your sign-in process</li>
+            </ul>
+          </div>
+          {{ end }}
+
+          <div class="security-notice">
+            <strong>Security Notice:</strong>
+            If you didn't request this {{ if eq .Data.email_type "magic_link" }}link{{ else }}code
+            {{ end }}, please ignore this email. Never share
+            {{ if eq .Data.email_type "magic_link" }}this link{{ else }}this code{{ end }}with
+            anyone.
+          </div>
         </div>
 
-        <!-- Logic: Check custom variable from .Data -->
-        {{ if .ConfirmationURL }}
-        <!-- Magic Link Section -->
-        <div class="cta-container">
-          <a href="{{ .ConfirmationURL }}" class="cta-button" style="color:#fff !important;text-decoration:none;">
-            Sign in to Scani
-          </a>
+        <!-- Footer -->
+        <div class="email-footer">
+          Scani • Personal Finance Management
+          <br>
+          This is an automated email, please do not reply.
         </div>
-        <div class="alternative-link">
-          Copy and paste this link:<br>
-          {{ .ConfirmationURL }}
-        </div>
-        <div class="expiry-info">
-          <strong>⏰ This magic link expires in 1 hour</strong>
-        </div>
-        {{ end }}
-        {{ if .Token }}
-        <!-- OTP Section -->
-        <div class="code-container">
-          <div class="code-label">Verification Code</div>
-          <div class="verification-code">{{ .Token }}</div>
-          <div class="code-hint">Tap to copy • Valid for 10 minutes</div>
-        </div>
-        <div class="expiry-info">
-          <strong>⏰ This code expires in 10 minutes</strong>
-        </div>
-        <div class="instructions">
-          <strong>How to use this code:</strong>
-          <ul>
-            <li>Open the Scani app on your device</li>
-            <li>Enter this code when prompted</li>
-            <li>Complete your sign-in process</li>
-          </ul>
-        </div>
-        {{ end }}
-
-        <div class="security-notice">
-          <strong>Security Notice:</strong>
-          If you didn't request this {{ if eq .Data.email_type "magic_link" }}link{{ else }}code{{ end }}, please ignore
-          this email. Never share {{ if eq .Data.email_type "magic_link" }}this link{{ else }}this code{{ end }} with
-          anyone.
-        </div>
-      </div>
-
-      <!-- Footer -->
-      <div class="email-footer">
-        Scani • Personal Finance Management<br>
-        This is an automated email, please do not reply.
       </div>
     </div>
-  </div>
-</body>
-
+  </body>
 </html>

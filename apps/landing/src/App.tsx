@@ -15,7 +15,7 @@ import {
   X,
   Zap,
 } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { useEffect, useId, useState } from 'react';
 
 const fadeInUp = {
   initial: { opacity: 0, y: 60 },
@@ -202,8 +202,7 @@ function App() {
       </section>
 
       {/* Features Section */}
-      {/** biome-ignore lint/correctness/useUniqueElementIds: types */}
-      <section id="features" className="py-20 pb-8 px-4 sm:px-6 lg:px-8 bg-gray-50">
+      <section id={`features-${useId()}`} className="py-20 pb-8 px-4 sm:px-6 lg:px-8 bg-gray-50">
         <div className="max-w-7xl mx-auto">
           <motion.div
             initial={{ opacity: 0, y: 30 }}
@@ -418,8 +417,7 @@ function App() {
       </section>
 
       {/* How It Works */}
-      {/** biome-ignore lint/correctness/useUniqueElementIds: types */}
-      <section id="how-it-works" className="py-20 px-4 sm:px-6 lg:px-8">
+      <section id={`how-it-works-${useId()}`} className="py-20 px-4 sm:px-6 lg:px-8">
         <div className="max-w-7xl mx-auto">
           <motion.div
             initial={{ opacity: 0, y: 30 }}
