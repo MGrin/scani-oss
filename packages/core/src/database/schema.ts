@@ -81,6 +81,7 @@ export const institutions = pgTable(
     description: text('description'),
     website: text('website'),
     logoUrl: text('logo_url'),
+    hasIntegration: boolean('has_integration').notNull().default(false), // Indicates if institution has API integration support
     isActive: boolean('is_active').notNull().default(true),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
@@ -221,6 +222,90 @@ export const tokenPrices = pgTable(
   })
 );
 
+// Telegram users table - Maps Telegram user IDs to Scani user accounts
+export const telegramUsers = pgTable(
+  'telegram_users',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    telegramId: text('telegram_id').notNull().unique(), // Telegram user ID (numeric string)
+    telegramUsername: text('telegram_username'), // Telegram username (optional)
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }), // Reference to Scani user
+    isActive: boolean('is_active').notNull().default(true),
+    lastInteractionAt: timestamp('last_interaction_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => ({
+    // Index for fast lookups by telegram ID
+    telegramIdIdx: index('idx_telegram_users_telegram_id').on(table.telegramId),
+    // Index for user lookups
+    userIdIdx: index('idx_telegram_users_user_id').on(table.userId),
+  })
+);
+
+// User wallets table - Maps user wallets to multiple networks/institutions
+export const userWallets = pgTable(
+  'user_wallets',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }), // Reference to Scani user
+    walletAddress: text('wallet_address').notNull(), // Blockchain wallet address
+    institutionIds: jsonb('institution_ids').notNull().default('[]'), // Array of institution IDs (networks) this wallet exists on
+    label: text('label'), // Optional user-friendly label
+    isActive: boolean('is_active').notNull().default(true),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => ({
+    // Unique constraint for wallet address per user
+    uniqueUserWalletAddress: unique().on(table.userId, table.walletAddress),
+    // Index for fast lookups by user ID
+    userIdIdx: index('idx_user_wallets_user_id').on(table.userId),
+    // Index for wallet address lookups
+    walletAddressIdx: index('idx_user_wallets_wallet_address').on(table.walletAddress),
+  })
+);
+
+// User integration credentials table - Stores encrypted OAuth tokens, API keys, etc.
+export const userIntegrationCredentials = pgTable(
+  'user_integration_credentials',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }), // Reference to Scani user
+    institutionId: uuid('institution_id')
+      .notNull()
+      .references(() => institutions.id, { onDelete: 'cascade' }), // Reference to institution
+    encryptedCredentials: jsonb('encrypted_credentials').notNull(), // Encrypted OAuth tokens, API keys, etc.
+    credentialsType: text('credentials_type').notNull(), // 'oauth', 'api_key', 'rpc', etc.
+    isActive: boolean('is_active').notNull().default(true),
+    lastUsedAt: timestamp('last_used_at', { withTimezone: true }),
+    expiresAt: timestamp('expires_at', { withTimezone: true }), // For OAuth tokens with expiration
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => ({
+    // Unique constraint for one credential set per user per institution
+    uniqueUserInstitution: unique().on(table.userId, table.institutionId),
+    // Index for fast lookups by user ID
+    userIdIdx: index('idx_user_integration_credentials_user_id').on(table.userId),
+    // Index for institution lookups
+    institutionIdIdx: index('idx_user_integration_credentials_institution_id').on(
+      table.institutionId
+    ),
+    // Composite index for user+institution queries
+    userInstitutionIdx: index('idx_user_integration_credentials_user_institution').on(
+      table.userId,
+      table.institutionId
+    ),
+  })
+);
+
 // =============================================================================
 // MAIN TABLES
 // =============================================================================
@@ -241,6 +326,8 @@ export const tokenTypesRelations = relations(tokenTypes, ({ many }) => ({
 export const usersRelations = relations(users, ({ one, many }) => ({
   accounts: many(accounts),
   holdings: many(holdings),
+  userWallets: many(userWallets),
+  userIntegrationCredentials: many(userIntegrationCredentials),
   baseCurrency: one(tokens, {
     fields: [users.baseCurrencyId],
     references: [tokens.id],
@@ -310,6 +397,27 @@ export const tokenPricesRelations = relations(tokenPrices, ({ one }) => ({
   }),
 }));
 
+export const userWalletsRelations = relations(userWallets, ({ one }) => ({
+  user: one(users, {
+    fields: [userWallets.userId],
+    references: [users.id],
+  }),
+}));
+
+export const userIntegrationCredentialsRelations = relations(
+  userIntegrationCredentials,
+  ({ one }) => ({
+    user: one(users, {
+      fields: [userIntegrationCredentials.userId],
+      references: [users.id],
+    }),
+    institution: one(institutions, {
+      fields: [userIntegrationCredentials.institutionId],
+      references: [institutions.id],
+    }),
+  })
+);
+
 // Export types for use in application
 export type User = typeof users.$inferSelect;
 export type NewUser = typeof users.$inferInsert;
@@ -335,28 +443,11 @@ export type NewHolding = typeof holdings.$inferInsert;
 export type TokenPrice = typeof tokenPrices.$inferSelect;
 export type NewTokenPrice = typeof tokenPrices.$inferInsert;
 
-// Telegram users table - Maps Telegram user IDs to Scani user accounts
-export const telegramUsers = pgTable(
-  'telegram_users',
-  {
-    id: uuid('id').defaultRandom().primaryKey(),
-    telegramId: text('telegram_id').notNull().unique(), // Telegram user ID (numeric string)
-    telegramUsername: text('telegram_username'), // Telegram username (optional)
-    userId: uuid('user_id')
-      .notNull()
-      .references(() => users.id, { onDelete: 'cascade' }), // Reference to Scani user
-    isActive: boolean('is_active').notNull().default(true),
-    lastInteractionAt: timestamp('last_interaction_at', { withTimezone: true }),
-    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
-  },
-  (table) => ({
-    // Index for fast lookups by telegram ID
-    telegramIdIdx: index('idx_telegram_users_telegram_id').on(table.telegramId),
-    // Index for user lookups
-    userIdIdx: index('idx_telegram_users_user_id').on(table.userId),
-  })
-);
-
 export type TelegramUser = typeof telegramUsers.$inferSelect;
 export type NewTelegramUser = typeof telegramUsers.$inferInsert;
+
+export type UserWallet = typeof userWallets.$inferSelect;
+export type NewUserWallet = typeof userWallets.$inferInsert;
+
+export type UserIntegrationCredentials = typeof userIntegrationCredentials.$inferSelect;
+export type NewUserIntegrationCredentials = typeof userIntegrationCredentials.$inferInsert;

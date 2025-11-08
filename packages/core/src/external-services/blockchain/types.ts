@@ -2,6 +2,8 @@
  * Common types for blockchain integration services
  */
 
+import type { IRateLimiter } from '@scani/rate-limiter';
+
 /**
  * Represents a token balance on a blockchain
  */
@@ -84,9 +86,7 @@ export interface BlockchainServiceConfig {
   /** API key for the blockchain provider */
   apiKey?: string;
   /** Rate limiter for API calls */
-  rateLimiter?: {
-    execute: <T>(fn: () => Promise<T>) => Promise<T>;
-  };
+  rateLimiter?: IRateLimiter;
   /** Base URL for API endpoints */
   baseUrl?: string;
 }

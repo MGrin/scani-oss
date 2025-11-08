@@ -1,0 +1,27 @@
+{
+  "name": "@scani/integrations",
+  "private": true,
+  "type": "module",
+  "version": "1.0.0",
+  "description": "Institution integration framework for Scani Finance",
+  "exports": {
+    ".": "./src/index.ts",
+    "./base": "./src/base.ts",
+    "./types": "./src/types.ts"
+  },
+  "scripts": {
+    "lint": "biome check .",
+    "lint:fix": "biome check --write .",
+    "type-check": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@scani/core": "workspace:*",
+    "@scani/rate-limiter": "workspace:*",
+    "@scani/shared": "workspace:*",
+    "decimal.js": "^10.6.0",
+    "zod": "^3.22.4"
+  },
+  "devDependencies": {
+    "typescript": "^5"
+  }
+}

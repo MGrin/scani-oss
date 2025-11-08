@@ -1,5 +1,6 @@
 {
   "lockfileVersion": 1,
+  "configVersion": 0,
   "workspaces": {
     "": {
       "name": "scani",
@@ -153,6 +154,7 @@
       "name": "@scani/core",
       "version": "1.0.0",
       "dependencies": {
+        "@scani/rate-limiter": "workspace:*",
         "@scani/shared": "workspace:*",
         "@sentry/bun": "^10.21.0",
         "@supabase/supabase-js": "^2.57.4",
@@ -168,6 +170,27 @@
       },
       "devDependencies": {
         "drizzle-kit": "^0.31.4",
+        "typescript": "^5",
+      },
+    },
+    "packages/integrations": {
+      "name": "@scani/integrations",
+      "version": "1.0.0",
+      "dependencies": {
+        "@scani/core": "workspace:*",
+        "@scani/rate-limiter": "workspace:*",
+        "@scani/shared": "workspace:*",
+        "decimal.js": "^10.6.0",
+        "zod": "^3.22.4",
+      },
+      "devDependencies": {
+        "typescript": "^5",
+      },
+    },
+    "packages/rate-limiter": {
+      "name": "@scani/rate-limiter",
+      "version": "1.0.0",
+      "devDependencies": {
         "typescript": "^5",
       },
     },
@@ -619,7 +642,11 @@
 
     "@scani/frontend-v2": ["@scani/frontend-v2@workspace:apps/frontendV2"],
 
+    "@scani/integrations": ["@scani/integrations@workspace:packages/integrations"],
+
     "@scani/landing": ["@scani/landing@workspace:apps/landing"],
+
+    "@scani/rate-limiter": ["@scani/rate-limiter@workspace:packages/rate-limiter"],
 
     "@scani/shared": ["@scani/shared@workspace:packages/shared"],
 

@@ -10,8 +10,12 @@ export type {
   NewToken,
   NewTokenPrice,
   NewUser,
+  NewUserIntegrationCredentials,
+  NewUserWallet,
   Token,
   TokenPrice,
   TokenType,
   User,
+  UserIntegrationCredentials,
+  UserWallet,
 } from '../../database/schema';

@@ -1,0 +1,18 @@
+{
+  "name": "@scani/rate-limiter",
+  "private": true,
+  "type": "module",
+  "version": "1.0.0",
+  "description": "Rate limiter utility for Scani Finance",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "lint": "biome check .",
+    "lint:fix": "biome check --write .",
+    "type-check": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "typescript": "^5"
+  }
+}

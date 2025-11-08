@@ -35,6 +35,7 @@
     "db:studio": "bun drizzle-kit studio"
   },
   "dependencies": {
+    "@scani/rate-limiter": "workspace:*",
     "@scani/shared": "workspace:*",
     "@sentry/bun": "^10.21.0",
     "@supabase/supabase-js": "^2.57.4",

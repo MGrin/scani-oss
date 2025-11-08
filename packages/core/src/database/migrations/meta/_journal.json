@@ -85,6 +85,20 @@
       "when": 1762267374030,
       "tag": "0011_narrow_skrulls",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1762587492028,
+      "tag": "0012_lovely_lilandra",
+      "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1762591561995,
+      "tag": "0013_foamy_vapor",
+      "breakpoints": true
     }
   ]
 }
