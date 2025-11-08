@@ -69,41 +69,51 @@ export class ToolExecutor {
       switch (toolName) {
         // Dashboard features
         case 'getDashboardOverview':
+        case 'dashboardGetOverview':
           return await this.getDashboardOverview();
 
         case 'getDashboardAssetAllocation':
+        case 'dashboardGetAssetAllocation':
           return await this.getDashboardAssetAllocation(parameters.dimension);
 
         // Account features
         case 'getAccountsAll':
         case 'listAccounts':
+        case 'accountsGetAll':
           return await this.listAccounts();
 
         case 'getAccountsByUserIdWithSummary':
+        case 'accountsGetByUserIdWithSummary':
           return await this.getAccountsByUserIdWithSummary();
 
         case 'getAccountsById':
         case 'getAccountDetails':
+        case 'accountsGetById':
           return await this.getAccountDetails(parameters.id || parameters.accountId);
 
         case 'getAccountsHoldings':
+        case 'accountsGetHoldings':
           return await this.getAccountHoldings(parameters.id);
 
         case 'deleteAccountsDelete':
         case 'deleteAccount':
+        case 'accountsDelete':
           return await this.deleteAccount(parameters.id || parameters.accountId);
 
         case 'getAccountTypesAll':
         case 'listAccountTypes':
+        case 'accountTypesGetAll':
           return await this.listAccountTypes();
 
         // Holdings features
         case 'getHoldingsWithDetails':
         case 'listHoldings':
+        case 'holdingsGetWithDetails':
           return await this.listHoldings(parameters.accountId);
 
         case 'updateHoldingsUpdate':
         case 'updateHolding':
+        case 'holdingsUpdate':
           return await this.updateHolding(
             parameters.id || parameters.holdingId,
             parameters.data || { balance: parameters.quantity?.toString() }
@@ -111,67 +121,87 @@ export class ToolExecutor {
 
         case 'deleteHoldingsDelete':
         case 'deleteHolding':
+        case 'holdingsDelete':
           return await this.deleteHolding(parameters.id || parameters.holdingId);
 
         case 'updateHoldingsUpdatePrice':
+        case 'holdingsUpdatePrice':
+        case 'updateHoldingsPrice':
           return await this.updateHoldingPrice(parameters.id);
 
         // Institution features
         case 'getInstitutionsAll':
         case 'listInstitutions':
+        case 'institutionsGetAll':
           return await this.listInstitutions(parameters.type);
 
         case 'getInstitutionsByUserId':
+        case 'institutionsGetByUserId':
           return await this.getInstitutionsByUserId();
 
         case 'getInstitutionsByUserIdWithSummary':
+        case 'institutionsGetByUserIdWithSummary':
           return await this.getInstitutionsByUserIdWithSummary();
 
         case 'getInstitutionsById':
+        case 'institutionsGetById':
           return await this.getInstitutionDetails(parameters.id);
 
         case 'getInstitutionTypesAll':
         case 'listInstitutionTypes':
+        case 'institutionTypesGetAll':
           return await this.listInstitutionTypes();
 
         // Token features
         case 'getTokensAll':
+        case 'tokensGetAll':
           return await this.getAllTokens();
 
         case 'searchTokens':
+        case 'tokensSearch':
+        case 'searchTokensSearch':
           return await this.searchTokens(parameters.query, parameters.limit);
 
         // Wallet features
         case 'getWalletSupportedChains':
         case 'listSupportedChains':
+        case 'walletGetSupportedChains':
           return await this.listSupportedChains();
 
         case 'importWalletAddress':
         case 'importWallet':
+        case 'walletImportAddress':
           return await this.importWallet(parameters.address, parameters.displayName);
 
         case 'detectWalletChains':
+        case 'walletDetectChains':
           return await this.detectWalletChains(parameters.address);
 
         // Batch operations
         case 'createBatchOperationsHoldingsWithDependencies':
         case 'importHoldings':
+        case 'batchOperationsCreateHoldingsWithDependencies':
           return await this.importHoldings(parameters.accountId, parameters.holdings);
 
         case 'updateBatchOperationsHoldingsBatch':
+        case 'batchOperationsUpdateHoldingsBatch':
           return await this.updateHoldingsBatch(parameters.holdings);
 
         // Settings features
         case 'getUsersCurrent':
+        case 'usersGetCurrent':
           return await this.getCurrentUser();
 
         case 'updateUsersCurrent':
+        case 'usersUpdateCurrent':
           return await this.updateCurrentUser(parameters);
 
         case 'getUsersSupportedCurrencies':
+        case 'usersGetSupportedCurrencies':
           return await this.getSupportedCurrencies();
 
         case 'getUsersBaseCurrency':
+        case 'usersGetBaseCurrency':
           return await this.getBaseCurrency();
 
         // Portfolio analysis (special tools)

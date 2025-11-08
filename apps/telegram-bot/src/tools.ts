@@ -85,19 +85,49 @@ function generateToolsFromFeatures() {
 /**
  * Convert feature ID to tool name
  * E.g., "dashboard.getOverview" -> "getDashboardOverview"
+ * E.g., "accounts.delete" -> "deleteAccountsDelete"
+ * E.g., "wallet.detectChains" -> "detectWalletChains"
  */
 function featureIdToToolName(featureId: string): string {
   const parts = featureId.split('.');
   if (parts.length === 1) return featureId;
 
-  // Capitalize first letter of each part except the first
-  return (
-    parts[0] +
-    parts
-      .slice(1)
-      .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-      .join('')
-  );
+  const category = parts[0] as string; // parts[0] is guaranteed to exist after length check
+  const action = parts.slice(1).join('');
+
+  // Capitalize the category
+  const capitalizedCategory = category.charAt(0).toUpperCase() + category.slice(1);
+
+  // Capitalize the action
+  const capitalizedAction = action.charAt(0).toUpperCase() + action.slice(1);
+
+  // Extract verb from action (get, update, delete, create, import, detect, search, list)
+  const verbs = ['get', 'update', 'delete', 'create', 'import', 'detect', 'search', 'list'];
+  let verb = '';
+  let restOfAction = '';
+
+  for (const v of verbs) {
+    if (action.toLowerCase().startsWith(v)) {
+      verb = v;
+      restOfAction = capitalizedAction.substring(v.length);
+      break;
+    }
+  }
+
+  // If no verb found, default to 'get' and use full action
+  if (!verb) {
+    verb = 'get';
+    restOfAction = capitalizedAction;
+  }
+
+  // Build tool name: verb + Category + RestOfAction
+  // Special case: if action is JUST the verb (e.g., "delete", "update"), keep it
+  // This creates patterns like deleteAccountsDelete, updateHoldingsUpdate
+  if (restOfAction === '') {
+    restOfAction = capitalizedAction;
+  }
+
+  return verb + capitalizedCategory + restOfAction;
 }
 
 /**
