@@ -42,4 +42,7 @@
  */
 
 export { ScaniIntegration } from './base';
+export { IntegrationManager } from './IntegrationManager';
+// Export blockchain integration implementations
+export * from './implementations';
 export * from './types';

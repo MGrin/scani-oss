@@ -7,6 +7,7 @@ export {
   TokenTypeRepository,
 } from './EnumRepositories';
 export { HoldingRepository } from './HoldingRepository';
+export { InstitutionBlockchainMappingRepository } from './InstitutionBlockchainMappingRepository';
 export { InstitutionRepository } from './InstitutionRepository';
 export { TelegramUserRepository } from './TelegramUserRepository';
 export { TokenPriceRepository } from './TokenPriceRepository';

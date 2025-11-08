@@ -306,6 +306,31 @@ export const userIntegrationCredentials = pgTable(
   })
 );
 
+// Institution blockchain chain mappings table - Maps institutions to blockchain chain IDs
+export const institutionBlockchainMappings = pgTable(
+  'institution_blockchain_mappings',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    institutionId: uuid('institution_id')
+      .notNull()
+      .references(() => institutions.id, { onDelete: 'cascade' })
+      .unique(), // Each institution can only map to one chain
+    chainId: text('chain_id').notNull(), // Blockchain chain ID (e.g., '1' for Ethereum, 'bitcoin', 'solana')
+    chainType: text('chain_type').notNull(), // 'evm', 'bitcoin', 'solana', 'tron', 'ton'
+    isActive: boolean('is_active').notNull().default(true),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => ({
+    // Index for fast lookups by institution ID
+    institutionIdIdx: index('idx_institution_blockchain_mappings_institution_id').on(
+      table.institutionId
+    ),
+    // Index for chain ID lookups
+    chainIdIdx: index('idx_institution_blockchain_mappings_chain_id').on(table.chainId),
+  })
+);
+
 // =============================================================================
 // MAIN TABLES
 // =============================================================================
@@ -340,6 +365,10 @@ export const institutionsRelations = relations(institutions, ({ one, many }) => 
     references: [institutionTypes.id],
   }),
   accounts: many(accounts),
+  blockchainMapping: one(institutionBlockchainMappings, {
+    fields: [institutions.id],
+    references: [institutionBlockchainMappings.institutionId],
+  }),
 }));
 
 export const accountsRelations = relations(accounts, ({ one, many }) => ({
@@ -418,6 +447,16 @@ export const userIntegrationCredentialsRelations = relations(
   })
 );
 
+export const institutionBlockchainMappingsRelations = relations(
+  institutionBlockchainMappings,
+  ({ one }) => ({
+    institution: one(institutions, {
+      fields: [institutionBlockchainMappings.institutionId],
+      references: [institutions.id],
+    }),
+  })
+);
+
 // Export types for use in application
 export type User = typeof users.$inferSelect;
 export type NewUser = typeof users.$inferInsert;
@@ -451,3 +490,6 @@ export type NewUserWallet = typeof userWallets.$inferInsert;
 
 export type UserIntegrationCredentials = typeof userIntegrationCredentials.$inferSelect;
 export type NewUserIntegrationCredentials = typeof userIntegrationCredentials.$inferInsert;
+
+export type InstitutionBlockchainMapping = typeof institutionBlockchainMappings.$inferSelect;
+export type NewInstitutionBlockchainMapping = typeof institutionBlockchainMappings.$inferInsert;
