@@ -1,8 +1,8 @@
+import { TokenService } from '@scani/core/services/TokenService';
+import { UserService } from '@scani/core/services/UserService';
+import { createComponentLogger } from '@scani/core/utils/logger';
 import { UpdateUserDto } from '@scani/shared';
 import { Container } from 'typedi';
-import { TokenService } from '../../application/services/TokenService';
-import { UserService } from '../../application/services/UserService';
-import { createComponentLogger } from '../../utils/logger';
 import { requireAuth } from '../middleware/auth';
 import { protectedProcedure, router } from '../trpc';
 

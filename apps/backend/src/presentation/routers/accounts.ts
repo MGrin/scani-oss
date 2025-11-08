@@ -1,7 +1,7 @@
+import { AccountService } from '@scani/core/services/AccountService';
+import { HoldingService } from '@scani/core/services/HoldingService';
 import { IdInputDto } from '@scani/shared';
 import { Container } from 'typedi';
-import { AccountService } from '../../application/services/AccountService';
-import { HoldingService } from '../../application/services/HoldingService';
 import { emitEntityChange } from '../../infrastructure/websocket/RealTimeUpdatesService';
 import { requireAuth } from '../middleware/auth';
 import { protectedProcedure, router } from '../trpc';

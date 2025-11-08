@@ -1,13 +1,13 @@
 import {
+  CreateHoldingsWithDependenciesUseCase,
+  UpdateHoldingsBatchUseCase,
+} from '@scani/core/use-cases';
+import {
   CreateHoldingsWithDependenciesDto,
   type CreateHoldingsWithDependenciesResponseDto,
 } from '@scani/shared';
 import { Container } from 'typedi';
 import { z } from 'zod';
-import {
-  CreateHoldingsWithDependenciesUseCase,
-  UpdateHoldingsBatchUseCase,
-} from '../../application/use-cases';
 import { requireAuth } from '../middleware/auth';
 import { protectedProcedure, router } from '../trpc';
 

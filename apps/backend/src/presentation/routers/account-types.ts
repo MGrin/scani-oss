@@ -1,5 +1,5 @@
+import { AccountTypeService } from '@scani/core/services/EnumServices';
 import { Container } from 'typedi';
-import { AccountTypeService } from '../../application/services/EnumServices';
 import { protectedProcedure, router } from '../trpc';
 
 const accountTypeService = Container.get(AccountTypeService);

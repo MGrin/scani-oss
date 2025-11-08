@@ -1,9 +1,9 @@
+import type { TelegramUser } from '@scani/core/database/schema';
+import { supabase } from '@scani/core/lib/supabase';
+import { TelegramUserRepository } from '@scani/core/repositories/TelegramUserRepository';
+import { UserContextService } from '@scani/core/services/UserContextService';
 import { TRPCError } from '@trpc/server';
 import { Container, Service } from 'typedi';
-import { UserContextService } from '../../application/services/UserContextService';
-import { supabase } from '../../lib/supabase';
-import type { TelegramUser } from '../database/schema';
-import { TelegramUserRepository } from '../repositories/TelegramUserRepository';
 
 @Service()
 export class TelegramAuthService {

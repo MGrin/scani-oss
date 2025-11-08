@@ -1,49 +1,63 @@
 import 'reflect-metadata';
+import { createComponentLogger } from '@scani/core';
 import { Container } from 'typedi';
-import { createComponentLogger } from '../utils/logger';
 
-// Import all repositories to ensure they're registered
-import '../infrastructure/repositories/UserRepository';
-import '../infrastructure/repositories/TokenRepository';
-import '../infrastructure/repositories/TokenPriceRepository';
-import '../infrastructure/repositories/InstitutionRepository';
-import '../infrastructure/repositories/AccountRepository';
-import '../infrastructure/repositories/HoldingRepository';
-import '../infrastructure/repositories/EnumRepositories';
-import '../infrastructure/repositories/BaseRepository';
+// Import all repositories to ensure they're registered with TypeDI
+// This loads all @Service() decorated classes from the core package
+import '@scani/core/repositories';
 
-// Import all services to ensure they're registered
-import '../application/services/UserService';
-import '../application/services/TokenService';
-import '../application/services/InstitutionService';
-import '../application/services/AccountService';
-import '../application/services/HoldingService';
-import '../application/services/PricingService';
-import '../application/services/PortfolioValuationService';
-import '../application/services/TokenValidationService';
-import '../application/services/EnumServices';
-import '../application/services/BaseService';
+// Import all services to ensure they're registered with TypeDI
+// This loads all @Service() decorated classes from the core package
+import '@scani/core/services';
+
+// Import backend-specific services
+import '../infrastructure/telegram/TelegramAuthService';
 
 const containerLogger = createComponentLogger('container');
 
 /**
  * Initialize the Dependency Injection Container
  * This must be called before any service instantiation
+ *
+ * How TypeDI Registration Works:
+ * - All classes decorated with @Service() are automatically registered
+ * - Importing the index files (repositories, services) ensures all classes are loaded
+ * - Once loaded, TypeDI can inject them via Container.get()
+ * - The @Service() decorator makes classes singleton by default
+ *
+ * Registered Services (from @scani/core/services):
+ * - AccountService, AIService, BaseService, DashboardService
+ * - HoldingService, InstitutionService, PortfolioValuationService
+ * - PricingService, TokenService, TokenValidationService
+ * - UserContextService, UserService
+ * - AccountTypeService, InstitutionTypeService (EnumServices)
+ *
+ * Backend-Specific Services:
+ * - TelegramAuthService (uses TRPCError, backend-only)
+ *
+ * Registered Repositories (from @scani/core/repositories):
+ * - AccountRepository, BaseRepository, HoldingRepository
+ * - InstitutionRepository, TelegramUserRepository, TokenRepository
+ * - TokenPriceRepository, UserRepository
+ * - AccountTypeRepository, InstitutionTypeRepository, TokenTypeRepository (Enums)
+ *
+ * Registered Use Cases (from @scani/core/use-cases):
+ * - All use cases are also @Service() decorated and auto-registered
  */
 export function initializeContainer(): void {
   containerLogger.info({}, 'Initializing Dependency Injection Container');
 
   // TypeDI auto-registers all classes with @Service() decorator
   // Imports above ensure all our services and repositories are loaded
+  // from the core package and backend-specific services
 
-  containerLogger.info({}, '✓ DI Container initialized with all services and repositories');
-  containerLogger.debug(
+  containerLogger.info(
     {},
-    'Registered services: User, Token, TokenPrice, Institution, Account, Holding, Pricing, PortfolioValuation, TokenValidation, Enums'
+    '✓ DI Container initialized with all services and repositories from @scani/core'
   );
   containerLogger.debug(
     {},
-    'Registered repositories: User, Token, TokenPrice, Institution, Account, Holding, Enums'
+    'All @Service() decorated classes from core package and backend-specific services are now available via Container.get()'
   );
 }
 

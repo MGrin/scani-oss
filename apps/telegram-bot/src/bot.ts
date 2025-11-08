@@ -1,4 +1,4 @@
-import { ParseScreenshotUseCase } from '@scani/backend/src/application/use-cases/ParseScreenshotUseCase';
+import { ParseScreenshotUseCase } from '@scani/core/use-cases/ParseScreenshotUseCase';
 import type { Context as TelegrafContext } from 'telegraf';
 import { Telegraf } from 'telegraf';
 import { Container } from 'typedi';

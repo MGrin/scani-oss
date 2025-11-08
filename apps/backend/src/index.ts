@@ -2,6 +2,15 @@ import 'reflect-metadata';
 import { cors } from '@elysiajs/cors';
 import { cron } from '@elysiajs/cron';
 import { trpc } from '@elysiajs/trpc';
+import {
+  captureException,
+  close,
+  flush,
+  initializeSentry,
+  startHttpTransaction,
+} from '@scani/core/lib/sentry';
+import { supabase } from '@scani/core/lib/supabase';
+import { createTimer, logger, wsLogger } from '@scani/core/utils/logger';
 import { Elysia } from 'elysia';
 import { Container } from 'typedi';
 // CRITICAL: Initialize container BEFORE importing any routers
@@ -13,17 +22,8 @@ import {
   executeWalletBalancesCronJob,
 } from './infrastructure/cron';
 import { RealTimeUpdatesService } from './infrastructure/websocket/RealTimeUpdatesService';
-import {
-  captureException,
-  close,
-  flush,
-  initializeSentry,
-  startHttpTransaction,
-} from './lib/sentry';
-import { supabase } from './lib/supabase';
 import { createStandardLimiter, createStrictLimiter } from './presentation/middleware/rate-limit';
 import { createContext } from './presentation/trpc';
-import { createTimer, logger, wsLogger } from './utils/logger';
 
 initializeContainer();
 

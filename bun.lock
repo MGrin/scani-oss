@@ -16,6 +16,7 @@
         "@elysiajs/cors": "^1.3.3",
         "@elysiajs/cron": "^1.4.1",
         "@elysiajs/trpc": "^1.1.0",
+        "@scani/core": "workspace:*",
         "@scani/shared": "workspace:*",
         "@scani/telegram-bot": "workspace:*",
         "@sentry/bun": "^10.21.0",
@@ -132,7 +133,7 @@
       "version": "1.0.0",
       "dependencies": {
         "@ai-sdk/openai": "^1.0.12",
-        "@scani/backend": "workspace:*",
+        "@scani/core": "workspace:*",
         "@scani/shared": "workspace:*",
         "ai": "^4.0.28",
         "chart.js": "^4.5.1",
@@ -145,6 +146,28 @@
       },
       "devDependencies": {
         "@types/bun": "latest",
+        "typescript": "^5",
+      },
+    },
+    "packages/core": {
+      "name": "@scani/core",
+      "version": "1.0.0",
+      "dependencies": {
+        "@scani/shared": "workspace:*",
+        "@sentry/bun": "^10.21.0",
+        "@supabase/supabase-js": "^2.57.4",
+        "decimal.js": "^10.6.0",
+        "drizzle-orm": "^0.44.5",
+        "ethers": "^6.15.0",
+        "googleapis": "^160.0.0",
+        "pino": "^9.9.4",
+        "postgres": "^3.4.4",
+        "reflect-metadata": "^0.2.2",
+        "typedi": "^0.10.0",
+        "zod": "^3.22.4",
+      },
+      "devDependencies": {
+        "drizzle-kit": "^0.31.4",
         "typescript": "^5",
       },
     },
@@ -591,6 +614,8 @@
     "@rollup/rollup-win32-x64-msvc": ["@rollup/rollup-win32-x64-msvc@4.52.5", "", { "os": "win32", "cpu": "x64" }, "sha512-TAcgQh2sSkykPRWLrdyy2AiceMckNf5loITqXxFI5VuQjS5tSuw3WlwdN8qv8vzjLAUTvYaH/mVjSFpbkFbpTg=="],
 
     "@scani/backend": ["@scani/backend@workspace:apps/backend"],
+
+    "@scani/core": ["@scani/core@workspace:packages/core"],
 
     "@scani/frontend-v2": ["@scani/frontend-v2@workspace:apps/frontendV2"],
 

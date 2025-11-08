@@ -1,0 +1,53 @@
+{
+  "name": "@scani/core",
+  "private": true,
+  "type": "module",
+  "version": "1.0.0",
+  "description": "Core business logic, database, and services for Scani Finance",
+  "exports": {
+    ".": "./src/index.ts",
+    "./database": "./src/database/index.ts",
+    "./database/schema": "./src/database/schema.ts",
+    "./database/connection": "./src/database/connection.ts",
+    "./repositories": "./src/repositories/index.ts",
+    "./repositories/*": "./src/repositories/*.ts",
+    "./services": "./src/services/index.ts",
+    "./services/*": "./src/services/*.ts",
+    "./use-cases": "./src/use-cases/index.ts",
+    "./use-cases/*": "./src/use-cases/*.ts",
+    "./entities": "./src/entities/index.ts",
+    "./external-services/ai": "./src/external-services/ai/index.ts",
+    "./external-services/blockchain": "./src/external-services/blockchain/index.ts",
+    "./external-services/pricing": "./src/external-services/pricing/index.ts",
+    "./utils/logger": "./src/utils/logger.ts",
+    "./lib/sentry": "./src/lib/sentry.ts",
+    "./lib/supabase": "./src/lib/supabase.ts"
+  },
+  "scripts": {
+    "lint": "biome check .",
+    "lint:fix": "biome check --write .",
+    "type-check": "tsc --noEmit",
+    "db:generate": "bun drizzle-kit generate",
+    "db:drop": "bun drizzle-kit drop",
+    "db:migrate": "bun drizzle-kit migrate",
+    "db:studio": "bun drizzle-kit studio"
+  },
+  "dependencies": {
+    "@scani/shared": "workspace:*",
+    "@sentry/bun": "^10.21.0",
+    "@supabase/supabase-js": "^2.57.4",
+    "decimal.js": "^10.6.0",
+    "drizzle-orm": "^0.44.5",
+    "ethers": "^6.15.0",
+    "googleapis": "^160.0.0",
+    "pino": "^9.9.4",
+    "postgres": "^3.4.4",
+    "reflect-metadata": "^0.2.2",
+    "typedi": "^0.10.0",
+    "zod": "^3.22.4"
+  },
+  "devDependencies": {
+    "drizzle-kit": "^0.31.4",
+    "typescript": "^5"
+  }
+}

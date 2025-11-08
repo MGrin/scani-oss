@@ -7,9 +7,9 @@
  * Schedule: Every 30 minutes at :00 and :30
  */
 
+import { UpdateTokenPricesUseCase } from '@scani/core/use-cases';
+import { createComponentLogger } from '@scani/core/utils/logger';
 import { Container } from 'typedi';
-import { UpdateTokenPricesUseCase } from '../../application/use-cases';
-import { createComponentLogger } from '../../utils/logger';
 
 const logger = createComponentLogger('cron:pricing');
 

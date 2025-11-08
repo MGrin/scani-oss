@@ -1,11 +1,11 @@
+import { db } from '@scani/core/database/connection';
+import * as schema from '@scani/core/database/schema';
+import { supabase } from '@scani/core/lib/supabase';
+import { authLogger } from '@scani/core/utils/logger';
 import type { User } from '@supabase/supabase-js';
 import { TRPCError } from '@trpc/server';
 import { eq } from 'drizzle-orm';
 import jwt, { type JwtPayload } from 'jsonwebtoken';
-import { db } from '../../infrastructure/database/connection';
-import * as schema from '../../infrastructure/database/schema';
-import { supabase } from '../../lib/supabase';
-import { authLogger } from '../../utils/logger';
 
 export interface AuthContext {
   user: User | null;

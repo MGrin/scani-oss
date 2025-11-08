@@ -1,19 +1,4 @@
-import {
-  AccountService,
-  DashboardService,
-  HoldingService,
-  PricingService,
-  UserContextService,
-  UserService,
-} from '@scani/backend/src/application/services';
-import {
-  CreateHoldingsWithDependenciesUseCase,
-  DeleteHoldingUseCase,
-  ImportWalletAddressUseCase,
-  UpdateHoldingUseCase,
-} from '@scani/backend/src/application/use-cases';
-import type { UpdateHoldingInput } from '@scani/backend/src/application/use-cases/UpdateHoldingUseCase';
-import { BlockchainServiceManager } from '@scani/backend/src/infrastructure/external-services/blockchain';
+import { BlockchainServiceManager } from '@scani/core/external-services/blockchain';
 import {
   AccountTypeRepository,
   HoldingRepository,
@@ -21,7 +6,22 @@ import {
   InstitutionTypeRepository,
   TokenPriceRepository,
   TokenRepository,
-} from '@scani/backend/src/infrastructure/repositories';
+} from '@scani/core/repositories';
+import {
+  AccountService,
+  DashboardService,
+  HoldingService,
+  PricingService,
+  UserContextService,
+  UserService,
+} from '@scani/core/services';
+import {
+  CreateHoldingsWithDependenciesUseCase,
+  DeleteHoldingUseCase,
+  ImportWalletAddressUseCase,
+  UpdateHoldingUseCase,
+} from '@scani/core/use-cases';
+import type { UpdateHoldingInput } from '@scani/core/use-cases/UpdateHoldingUseCase';
 import Decimal from 'decimal.js';
 import { Container } from 'typedi';
 import { ChartGenerator } from './chart-generator';

@@ -1,8 +1,8 @@
+import { InstitutionRepository } from '@scani/core/repositories/InstitutionRepository';
+import { InstitutionService } from '@scani/core/services/InstitutionService';
 import ogs from 'open-graph-scraper';
 import Container from 'typedi';
 import { z } from 'zod';
-import { InstitutionService } from '../../application/services/InstitutionService';
-import { InstitutionRepository } from '../../infrastructure/repositories/InstitutionRepository';
 import { protectedProcedure, router } from '../trpc';
 
 const institutionRepository = Container.get(InstitutionRepository);

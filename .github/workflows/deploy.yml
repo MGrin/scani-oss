@@ -60,6 +60,7 @@ jobs:
               - 'apps/backend/**'
               - 'apps/telegram-bot/**'
               - 'packages/shared/**'
+              - 'packages/core/**'
             frontend:
               - 'apps/frontendV2/**'
               - 'packages/shared/**'

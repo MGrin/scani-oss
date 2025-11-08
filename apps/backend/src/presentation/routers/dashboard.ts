@@ -1,7 +1,7 @@
+import { DashboardService } from '@scani/core/services/DashboardService';
+import { GetAssetAllocationUseCase } from '@scani/core/use-cases';
 import { GetAssetAllocationInputDto } from '@scani/shared';
 import { Container } from 'typedi';
-import { DashboardService } from '../../application/services/DashboardService';
-import { GetAssetAllocationUseCase } from '../../application/use-cases';
 import { requireAuth } from '../middleware/auth';
 import { protectedProcedure, router } from '../trpc';
 

@@ -3,10 +3,10 @@
  * Handles crypto wallet import operations
  */
 
+import { BlockchainServiceManager } from '@scani/core/external-services/blockchain';
+import { ImportWalletAddressUseCase } from '@scani/core/use-cases';
 import { Container } from 'typedi';
 import { z } from 'zod';
-import { ImportWalletAddressUseCase } from '../../application/use-cases';
-import { BlockchainServiceManager } from '../../infrastructure/external-services/blockchain';
 import { emitEntityChange } from '../../infrastructure/websocket/RealTimeUpdatesService';
 import { requireAuth } from '../middleware/auth';
 import { protectedProcedure, router } from '../trpc';

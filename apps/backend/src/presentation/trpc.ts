@@ -1,7 +1,7 @@
+import { setUser } from '@scani/core/lib/sentry';
+import { createTimer, generateRequestId, logConfig, trpcLogger } from '@scani/core/utils/logger';
 import { initTRPC, TRPCError } from '@trpc/server';
 import type { FetchCreateContextFnOptions } from '@trpc/server/adapters/fetch';
-import { setUser } from '../lib/sentry';
-import { createTimer, generateRequestId, logConfig, trpcLogger } from '../utils/logger';
 import { type AuthContext, createAuthContext } from './middleware/auth';
 
 // Create context type with request tracking and auth

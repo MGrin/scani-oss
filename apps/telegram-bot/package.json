@@ -17,7 +17,7 @@
   },
   "dependencies": {
     "@ai-sdk/openai": "^1.0.12",
-    "@scani/backend": "workspace:*",
+    "@scani/core": "workspace:*",
     "@scani/shared": "workspace:*",
     "ai": "^4.0.28",
     "chart.js": "^4.5.1",

@@ -4,14 +4,7 @@
   "type": "module",
   "exports": {
     "./src/types": "./src/types.ts",
-    "./src/router": "./src/router.ts",
-    "./src/application/services": "./src/application/services/index.ts",
-    "./src/application/services/*": "./src/application/services/*.ts",
-    "./src/application/use-cases": "./src/application/use-cases/index.ts",
-    "./src/application/use-cases/*": "./src/application/use-cases/*.ts",
-    "./src/infrastructure/repositories": "./src/infrastructure/repositories/index.ts",
-    "./src/infrastructure/external-services/*": "./src/infrastructure/external-services/*.ts",
-    "./src/infrastructure/external-services/blockchain": "./src/infrastructure/external-services/blockchain/index.ts"
+    "./src/router": "./src/router.ts"
   },
   "scripts": {
     "dev": "LOG_LEVEL=debug LOG_PRETTY=true bun run --watch src/index.ts",
@@ -27,17 +20,13 @@
     "test": "bun test",
     "test:watch": "bun test --watch",
     "test:coverage": "bun test --coverage",
-    "test:coverage:html": "bun test --coverage --coverage-reporter=html",
-    "db:generate": "bun drizzle-kit generate",
-    "db:drop": "bun drizzle-kit drop",
-    "db:migrate": "bun drizzle-kit migrate",
-    "db:setup": "bun run db:migrate",
-    "db:studio": "bun drizzle-kit studio"
+    "test:coverage:html": "bun test --coverage --coverage-reporter=html"
   },
   "dependencies": {
     "@elysiajs/cors": "^1.3.3",
     "@elysiajs/cron": "^1.4.1",
     "@elysiajs/trpc": "^1.1.0",
+    "@scani/core": "workspace:*",
     "@scani/shared": "workspace:*",
     "@scani/telegram-bot": "workspace:*",
     "@sentry/bun": "^10.21.0",

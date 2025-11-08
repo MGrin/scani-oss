@@ -1,7 +1,7 @@
+import { db } from '@scani/core/database/connection';
+import * as schema from '@scani/core/database/schema';
+import { TokenValidationService } from '@scani/core/services/TokenValidationService';
 import { Container } from 'typedi';
-import { TokenValidationService } from '../../application/services/TokenValidationService';
-import { db } from '../../infrastructure/database/connection';
-import * as schema from '../../infrastructure/database/schema';
 import { publicProcedure, router } from '../trpc';
 import { accountTypesRouter } from './account-types';
 import { accountsRouter } from './accounts';

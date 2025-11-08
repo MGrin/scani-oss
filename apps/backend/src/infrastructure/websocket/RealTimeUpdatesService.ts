@@ -1,6 +1,6 @@
 import { EventEmitter } from 'node:events';
+import { logConfig, wsLogger } from '@scani/core/utils/logger';
 import { Container, Service } from 'typedi';
-import { logConfig, wsLogger } from '../../utils/logger';
 
 export type EntityType = 'institution' | 'account' | 'holding' | 'transaction' | 'user' | 'token';
 export type OperationType = 'create' | 'update' | 'delete' | 'sync';

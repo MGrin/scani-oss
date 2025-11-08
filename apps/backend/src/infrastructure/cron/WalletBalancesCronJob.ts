@@ -13,9 +13,9 @@
  * Schedule: Every 15 minutes
  */
 
+import { SyncWalletBalancesUseCase } from '@scani/core/use-cases';
+import { createComponentLogger } from '@scani/core/utils/logger';
 import { Container } from 'typedi';
-import { SyncWalletBalancesUseCase } from '../../application/use-cases';
-import { createComponentLogger } from '../../utils/logger';
 
 const logger = createComponentLogger('cron:wallet-balances');
 

@@ -1,13 +1,13 @@
-import { UpdateHoldingDto } from '@scani/shared';
-import { Container } from 'typedi';
-import { z } from 'zod';
-import { HoldingService } from '../../application/services/HoldingService';
+import { TokenRepository } from '@scani/core/repositories/TokenRepository';
+import { HoldingService } from '@scani/core/services/HoldingService';
 import {
   DeleteHoldingUseCase,
   UpdateHoldingPriceUseCase,
   UpdateHoldingUseCase,
-} from '../../application/use-cases';
-import { TokenRepository } from '../../infrastructure/repositories/TokenRepository';
+} from '@scani/core/use-cases';
+import { UpdateHoldingDto } from '@scani/shared';
+import { Container } from 'typedi';
+import { z } from 'zod';
 import { emitEntityChange } from '../../infrastructure/websocket/RealTimeUpdatesService';
 import { requireAuth } from '../middleware/auth';
 import { protectedProcedure, router } from '../trpc';

@@ -1,5 +1,5 @@
+import { InstitutionTypeService } from '@scani/core/services/EnumServices';
 import { Container } from 'typedi';
-import { InstitutionTypeService } from '../../application/services/EnumServices';
 import { publicProcedure, router } from '../trpc';
 
 const institutionTypeService = Container.get(InstitutionTypeService);

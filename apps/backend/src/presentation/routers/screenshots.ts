@@ -1,8 +1,8 @@
+import type { ParseScreenshotResult } from '@scani/core/use-cases/ParseScreenshotUseCase';
+import { ParseScreenshotUseCase } from '@scani/core/use-cases/ParseScreenshotUseCase';
+import { createComponentLogger } from '@scani/core/utils/logger';
 import { Container } from 'typedi';
 import { z } from 'zod';
-import type { ParseScreenshotResult } from '../../application/use-cases/ParseScreenshotUseCase';
-import { ParseScreenshotUseCase } from '../../application/use-cases/ParseScreenshotUseCase';
-import { createComponentLogger } from '../../utils/logger';
 import { protectedProcedure, router } from '../trpc';
 
 const screenshotsLogger = createComponentLogger('router:screenshots');

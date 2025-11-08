@@ -1,6 +1,6 @@
+import { TelegramUserRepository } from '@scani/core/repositories/TelegramUserRepository';
 import { Container } from 'typedi';
 import { z } from 'zod';
-import { TelegramUserRepository } from '../../infrastructure/repositories/TelegramUserRepository';
 import { TelegramAuthService } from '../../infrastructure/telegram/TelegramAuthService';
 import { requireAuth } from '../middleware/auth';
 import { protectedProcedure, router } from '../trpc';

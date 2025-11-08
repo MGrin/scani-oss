@@ -7,10 +7,10 @@
  * Schedule: Every day at 00:00 UTC (midnight)
  */
 
+import { db } from '@scani/core/database/connection';
+import { telegramUsers } from '@scani/core/database/schema';
+import { createComponentLogger } from '@scani/core/utils/logger';
 import { eq } from 'drizzle-orm';
-import { createComponentLogger } from '../../utils/logger';
-import { db } from '../database/connection';
-import { telegramUsers } from '../database/schema';
 
 const logger = createComponentLogger('cron:daily-portfolio-digest');
 
