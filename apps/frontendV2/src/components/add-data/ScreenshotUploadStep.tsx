@@ -293,7 +293,13 @@ export function ScreenshotUploadStep({
       (h) => 'originalAmount' in h && h.amount !== h.originalAmount && h.amount.trim() !== ''
     );
 
-    return hasNewHoldings || hasExistingChanges;
+    // For screenshot uploads: if we have existing holdings with valid data (even if unchanged),
+    // consider this as confirmation/verification of existing data
+    const hasExistingHoldingsToConfirm = existingHoldings.some(
+      (h) => h.tokenValue.trim() && h.amount.trim()
+    );
+
+    return hasNewHoldings || hasExistingChanges || hasExistingHoldingsToConfirm;
   }, [holdings]);
 
   useEffect(() => {

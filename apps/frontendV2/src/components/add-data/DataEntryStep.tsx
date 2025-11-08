@@ -36,11 +36,13 @@ export function DataEntryStep({
     const currentHoldings = completeImportData.dataEntry?.holdings || [];
 
     // If we have an existing account selected and no holdings initialized yet, and query has completed
+    // Only auto-initialize for manual entry method, not for screenshots or wallet imports
     if (
       selectedAccountId &&
       completeImportData.accountSelection?.mode === 'select' &&
       currentHoldings.length < 2 &&
-      !isLoadingHoldings
+      !isLoadingHoldings &&
+      completeImportData.method === 'manual'
     ) {
       // Initialize with existing holdings + one empty new holding
       return [
@@ -79,6 +81,7 @@ export function DataEntryStep({
     completeImportData.dataEntry?.holdings,
     existingHoldings,
     isLoadingHoldings,
+    completeImportData.method,
   ]);
 
   // Update holdings in state when they change
