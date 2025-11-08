@@ -268,11 +268,40 @@ export const HOLDINGS_FEATURES: Feature[] = [
     execute: HoldingImplementations.getWithDetails,
   },
   {
+    id: 'holdings.search',
+    category: FeatureCategory.HOLDINGS,
+    name: 'Search Holdings',
+    description:
+      'Search for holdings by account name and/or token symbol. Returns matching holdings with their IDs, which can be used for updates. Use this when you need to find a holding to update but only know the account name or token symbol, not the holding UUID.',
+    procedurePath: 'holdings.search',
+    inputSchema: z.object({
+      accountName: z
+        .string()
+        .optional()
+        .describe('Account name to search for (case-insensitive partial match)'),
+      tokenSymbol: z
+        .string()
+        .optional()
+        .describe(
+          'Token symbol to search for (case-insensitive exact match, e.g., "USD", "BTC", "GBP")'
+        ),
+    }),
+    isMutation: false,
+    requiresAuth: true,
+    tags: ['holdings', 'search', 'find', 'lookup'],
+    examples: [
+      'Find USD holdings in Main Waise account',
+      'Search for BTC holdings',
+      'Find holdings in Coinbase account',
+    ],
+    execute: HoldingImplementations.search,
+  },
+  {
     id: 'holdings.update',
     category: FeatureCategory.HOLDINGS,
     name: 'Update Holding',
     description:
-      'Update a holding quantity or other properties. Use when user wants to modify a holding.',
+      'Update a holding quantity or other properties. Requires the holding UUID. If you only know the account name or token symbol, use holdings.search first to find the holding ID.',
     procedurePath: 'holdings.update',
     inputSchema: z.object({
       id: z.string().uuid(),

@@ -9,6 +9,7 @@ import { Container } from 'typedi';
 import { BlockchainServiceManager } from '../external-services/blockchain';
 import {
   AccountTypeRepository,
+  HoldingRepository,
   InstitutionRepository,
   InstitutionTypeRepository,
   TokenRepository,
@@ -123,6 +124,48 @@ export const HoldingImplementations = {
     // Type assertion since the function expects a full user object
     // biome-ignore lint/suspicious/noExplicitAny: Type assertion needed for user object compatibility
     return await holdingService.getHoldingsByAccountIdWithDetails(dbUser as any);
+  },
+
+  /**
+   * Search for holdings by account name and/or token symbol
+   * This helps AI agents find holdings when they only know human-readable names, not UUIDs
+   */
+  async search(
+    context: FeatureExecutionContext,
+    input: {
+      accountName?: string;
+      tokenSymbol?: string;
+    }
+  ) {
+    const holdingRepository = Container.get(HoldingRepository);
+
+    // Get all holdings with full details for the user
+    const holdings = await holdingRepository.findByUserWithCompleteDetails(context.userId);
+
+    // Filter by account name if provided (case-insensitive partial match)
+    let filtered = holdings;
+    if (input.accountName) {
+      const accountNameLower = input.accountName.toLowerCase();
+      filtered = filtered.filter((h) => h.account.name.toLowerCase().includes(accountNameLower));
+    }
+
+    // Filter by token symbol if provided (case-insensitive exact match)
+    if (input.tokenSymbol) {
+      const tokenSymbolLower = input.tokenSymbol.toLowerCase();
+      filtered = filtered.filter((h) => h.token.symbol.toLowerCase() === tokenSymbolLower);
+    }
+
+    // Return holding IDs and key information
+    return filtered.map((h) => ({
+      id: h.holding.id,
+      balance: h.holding.balance,
+      tokenSymbol: h.token.symbol,
+      tokenName: h.token.name,
+      accountName: h.account.name,
+      accountId: h.account.id,
+      institutionName: h.institution.name,
+      lastUpdated: h.holding.lastUpdated,
+    }));
   },
 
   async update(context: FeatureExecutionContext, input: { id: string; data: UpdateHoldingInput }) {

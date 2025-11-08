@@ -111,6 +111,11 @@ export class ToolExecutor {
         case 'holdingsGetWithDetails':
           return await this.listHoldings(parameters.accountId);
 
+        case 'searchHoldingsSearch':
+        case 'searchHoldings':
+        case 'holdingsSearch':
+          return await this.searchHoldings(parameters.accountName, parameters.tokenSymbol);
+
         case 'updateHoldingsUpdate':
         case 'updateHolding':
         case 'holdingsUpdate':
@@ -260,6 +265,38 @@ export class ToolExecutor {
     }
 
     return await holdingService.getHoldingsByAccountIdWithDetails(dbUser, accountId);
+  }
+
+  private async searchHoldings(accountName?: string, tokenSymbol?: string) {
+    const holdingRepository = Container.get(HoldingRepository);
+
+    // Get all holdings with full details for the user
+    const holdings = await holdingRepository.findByUserWithCompleteDetails(this.context.userId);
+
+    // Filter by account name if provided (case-insensitive partial match)
+    let filtered = holdings;
+    if (accountName) {
+      const accountNameLower = accountName.toLowerCase();
+      filtered = filtered.filter((h) => h.account.name.toLowerCase().includes(accountNameLower));
+    }
+
+    // Filter by token symbol if provided (case-insensitive exact match)
+    if (tokenSymbol) {
+      const tokenSymbolLower = tokenSymbol.toLowerCase();
+      filtered = filtered.filter((h) => h.token.symbol.toLowerCase() === tokenSymbolLower);
+    }
+
+    // Return holding IDs and key information
+    return filtered.map((h) => ({
+      id: h.holding.id,
+      balance: h.holding.balance,
+      tokenSymbol: h.token.symbol,
+      tokenName: h.token.name,
+      accountName: h.account.name,
+      accountId: h.account.id,
+      institutionName: h.institution.name,
+      lastUpdated: h.holding.lastUpdated,
+    }));
   }
 
   // biome-ignore lint/suspicious/noExplicitAny: Holdings update data structure varies
