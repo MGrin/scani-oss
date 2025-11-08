@@ -507,7 +507,7 @@ function LayoutContent({
         </PullToRefresh>
       </div>
 
-      <div id={`mobile-bottom-nav-${useId()}`} className="relative" />
+      <div id="mobile-bottom-nav" className="relative" />
     </div>
   );
 }
