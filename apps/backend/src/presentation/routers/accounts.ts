@@ -1,51 +1,40 @@
-import { AccountService } from '@scani/core/services/AccountService';
-import { HoldingService } from '@scani/core/services/HoldingService';
+import { AccountImplementations } from '@scani/core/features/implementations';
 import { IdInputDto } from '@scani/shared';
-import { Container } from 'typedi';
 import { emitEntityChange } from '../../infrastructure/websocket/RealTimeUpdatesService';
 import { requireAuth } from '../middleware/auth';
 import { protectedProcedure, router } from '../trpc';
 
-const accountService = Container.get(AccountService);
-const holdingService = Container.get(HoldingService);
-
 export const accountsRouter = router({
   getAll: protectedProcedure.query(async ({ ctx }) => {
     const { dbUser } = requireAuth(ctx);
-    const accounts = await accountService.getAccountsByUserId(dbUser.id);
-    return accounts;
+    return await AccountImplementations.getAll({ userId: dbUser.id, dbUser }, {});
   }),
 
   getByUserIdWithSummary: protectedProcedure.query(async ({ ctx }) => {
     const { dbUser } = requireAuth(ctx);
-
-    const accountsWithSummary = await accountService.getAccountsByUserIdWithSummary(dbUser.id);
-    return accountsWithSummary;
+    return await AccountImplementations.getByUserIdWithSummary({ userId: dbUser.id, dbUser }, {});
   }),
 
   getById: protectedProcedure.input(IdInputDto).query(async ({ input, ctx }) => {
     const { dbUser } = requireAuth(ctx);
-    const account = await accountService.getAccountById(dbUser.id, input.id);
-    return account ?? null;
+    return await AccountImplementations.getById({ userId: dbUser.id, dbUser }, { id: input.id });
   }),
 
   getHoldings: protectedProcedure.input(IdInputDto).query(async ({ input, ctx }) => {
     const { dbUser } = requireAuth(ctx);
-    const holdingsWithDetails = await holdingService.getHoldingsByAccountIdWithDetails(
-      dbUser,
-      input.id
+    return await AccountImplementations.getHoldings(
+      { userId: dbUser.id, dbUser },
+      { id: input.id }
     );
-    return holdingsWithDetails;
   }),
 
   delete: protectedProcedure.input(IdInputDto).mutation(async ({ input, ctx }) => {
     const { dbUser } = requireAuth(ctx);
 
-    const result = await accountService.deleteAccount(input.id, dbUser.id);
-
-    if (!result) {
-      throw new Error('Account not found or could not be deleted');
-    }
+    const result = await AccountImplementations.delete(
+      { userId: dbUser.id, dbUser },
+      { id: input.id }
+    );
 
     emitEntityChange({
       type: 'entity_changed',
@@ -56,8 +45,6 @@ export const accountsRouter = router({
       data: {},
     });
 
-    return {
-      success: true,
-    };
+    return result;
   }),
 });

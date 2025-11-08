@@ -1,27 +1,15 @@
-import { TokenRepository } from '@scani/core/repositories/TokenRepository';
-import { HoldingService } from '@scani/core/services/HoldingService';
-import {
-  DeleteHoldingUseCase,
-  UpdateHoldingPriceUseCase,
-  UpdateHoldingUseCase,
-} from '@scani/core/use-cases';
+import { HoldingImplementations } from '@scani/core/features/implementations';
 import { UpdateHoldingDto } from '@scani/shared';
-import { Container } from 'typedi';
 import { z } from 'zod';
 import { emitEntityChange } from '../../infrastructure/websocket/RealTimeUpdatesService';
 import { requireAuth } from '../middleware/auth';
 import { protectedProcedure, router } from '../trpc';
 
-const holdingService = Container.get(HoldingService);
-const tokenRepository = Container.get(TokenRepository);
-
 export const holdingsRouter = router({
   // Get all holdings with full details (for Holdings page)
-  // Keep
   getWithDetails: protectedProcedure.query(async ({ ctx }) => {
     const { dbUser } = requireAuth(ctx);
-    const holdingsWithDetails = await holdingService.getHoldingsByAccountIdWithDetails(dbUser);
-    return holdingsWithDetails;
+    return await HoldingImplementations.getWithDetails({ userId: dbUser.id, dbUser }, {});
   }),
 
   update: protectedProcedure
@@ -34,9 +22,10 @@ export const holdingsRouter = router({
     .mutation(async ({ input, ctx }) => {
       const { dbUser } = requireAuth(ctx);
 
-      // Use UpdateHoldingUseCase for business logic
-      const updateHoldingUseCase = Container.get(UpdateHoldingUseCase);
-      const updatedHolding = await updateHoldingUseCase.execute(input.id, input.data, dbUser.id);
+      const updatedHolding = await HoldingImplementations.update(
+        { userId: dbUser.id, dbUser },
+        { id: input.id, data: input.data }
+      );
 
       emitEntityChange({
         type: 'entity_changed',
@@ -54,15 +43,15 @@ export const holdingsRouter = router({
     }),
 
   // Delete holding (with cascading to transactions)
-  // KEEP
   delete: protectedProcedure
     .input(z.object({ id: z.string() }))
     .mutation(async ({ input, ctx }) => {
       const { dbUser } = requireAuth(ctx);
 
-      // Use DeleteHoldingUseCase for business logic
-      const deleteHoldingUseCase = Container.get(DeleteHoldingUseCase);
-      const result = await deleteHoldingUseCase.execute(input.id, dbUser.id);
+      const result = await HoldingImplementations.delete(
+        { userId: dbUser.id, dbUser },
+        { id: input.id }
+      );
 
       emitEntityChange({
         type: 'entity_changed',
@@ -89,15 +78,10 @@ export const holdingsRouter = router({
     .mutation(async ({ input, ctx }) => {
       const { dbUser } = requireAuth(ctx);
 
-      // Use UpdateHoldingPriceUseCase for business logic
-      const updateHoldingPriceUseCase = Container.get(UpdateHoldingPriceUseCase);
-
-      // Get user's base currency
-      const baseCurrency = dbUser.baseCurrencyId
-        ? (await tokenRepository.findById(dbUser.baseCurrencyId))?.symbol || 'USD'
-        : 'USD';
-
-      const result = await updateHoldingPriceUseCase.execute(input.id, dbUser.id, baseCurrency);
+      const result = await HoldingImplementations.updatePrice(
+        { userId: dbUser.id, dbUser },
+        { id: input.id }
+      );
 
       // Emit entity change event to trigger real-time updates
       emitEntityChange({

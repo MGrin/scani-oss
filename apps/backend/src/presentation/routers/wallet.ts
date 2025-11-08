@@ -3,15 +3,11 @@
  * Handles crypto wallet import operations
  */
 
-import { BlockchainServiceManager } from '@scani/core/external-services/blockchain';
-import { ImportWalletAddressUseCase } from '@scani/core/use-cases';
-import { Container } from 'typedi';
+import { WalletImplementations } from '@scani/core/features/implementations';
 import { z } from 'zod';
 import { emitEntityChange } from '../../infrastructure/websocket/RealTimeUpdatesService';
 import { requireAuth } from '../middleware/auth';
 import { protectedProcedure, router } from '../trpc';
-
-const blockchainService = Container.get(BlockchainServiceManager);
 
 /**
  * Input validation schema for wallet import
@@ -25,17 +21,8 @@ export const walletRouter = router({
   /**
    * Get all supported blockchain chains
    */
-  getSupportedChains: protectedProcedure.query(async () => {
-    const chains = blockchainService.getAllSupportedChains();
-
-    return chains.map((chain) => ({
-      chainId: chain.chainId,
-      name: chain.name,
-      type: chain.type,
-      nativeSymbol: chain.nativeSymbol,
-      nativeName: chain.nativeName,
-      isActive: chain.isActive,
-    }));
+  getSupportedChains: protectedProcedure.query(async ({ ctx }) => {
+    return await WalletImplementations.getSupportedChains({ userId: ctx.user.id }, {});
   }),
 
   /**
@@ -45,9 +32,7 @@ export const walletRouter = router({
   importAddress: protectedProcedure.input(ImportWalletSchema).mutation(async ({ input, ctx }) => {
     const { dbUser } = requireAuth(ctx);
 
-    // Execute wallet import use case
-    const importUseCase = Container.get(ImportWalletAddressUseCase);
-    const result = await importUseCase.execute(input, dbUser.id);
+    const result = await WalletImplementations.importAddress({ userId: dbUser.id, dbUser }, input);
 
     // Emit WebSocket events for created entities
     for (const account of result.accounts) {
@@ -106,24 +91,7 @@ export const walletRouter = router({
           .max(200, 'Wallet address is too long'),
       })
     )
-    .mutation(async ({ input }) => {
-      const detectedChains = await blockchainService.detectWalletChains(input.address);
-
-      // Get chain details for detected chains
-      const chains = blockchainService.getAllSupportedChains();
-      const detectedChainDetails = chains
-        .filter((chain) => detectedChains.includes(chain.chainId))
-        .map((chain) => ({
-          chainId: chain.chainId,
-          name: chain.name,
-          type: chain.type,
-          nativeSymbol: chain.nativeSymbol,
-        }));
-
-      return {
-        address: input.address,
-        chainsDetected: detectedChainDetails,
-        totalChains: detectedChainDetails.length,
-      };
+    .mutation(async ({ input, ctx }) => {
+      return await WalletImplementations.detectChains({ userId: ctx.user.id }, input);
     }),
 });

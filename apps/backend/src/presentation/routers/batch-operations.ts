@@ -1,12 +1,8 @@
-import {
-  CreateHoldingsWithDependenciesUseCase,
-  UpdateHoldingsBatchUseCase,
-} from '@scani/core/use-cases';
+import { BatchOperationImplementations } from '@scani/core/features/implementations';
 import {
   CreateHoldingsWithDependenciesDto,
   type CreateHoldingsWithDependenciesResponseDto,
 } from '@scani/shared';
-import { Container } from 'typedi';
 import { z } from 'zod';
 import { requireAuth } from '../middleware/auth';
 import { protectedProcedure, router } from '../trpc';
@@ -39,23 +35,19 @@ export const batchOperationsRouter = router({
     .input(CreateHoldingsWithDependenciesDto)
     .mutation(async ({ input, ctx }): Promise<CreateHoldingsWithDependenciesResponseDto> => {
       const { dbUser } = requireAuth(ctx);
-      const useCase = Container.get(CreateHoldingsWithDependenciesUseCase);
-
-      return await useCase.execute(input, dbUser);
+      return await BatchOperationImplementations.createHoldingsWithDependencies(
+        { userId: dbUser.id, dbUser },
+        input
+      );
     }),
 
   updateHoldingsBatch: protectedProcedure
     .input(UpdateHoldingsBatchSchema)
     .mutation(async ({ input, ctx }): Promise<UpdateHoldingsBatchResult> => {
       const { dbUser } = requireAuth(ctx);
-      const useCase = Container.get(UpdateHoldingsBatchUseCase);
-
-      // Convert string dates to Date objects
-      const holdings = input.holdings.map((h) => ({
-        ...h,
-        lastUpdated: h.lastUpdated ? new Date(h.lastUpdated) : undefined,
-      }));
-
-      return await useCase.execute({ holdings }, dbUser.id);
+      return await BatchOperationImplementations.updateHoldingsBatch(
+        { userId: dbUser.id, dbUser },
+        input
+      );
     }),
 });

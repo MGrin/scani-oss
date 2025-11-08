@@ -16,6 +16,8 @@
     "./use-cases": "./src/use-cases/index.ts",
     "./use-cases/*": "./src/use-cases/*.ts",
     "./entities": "./src/entities/index.ts",
+    "./features": "./src/features/index.ts",
+    "./features/implementations": "./src/features/implementations.ts",
     "./external-services/ai": "./src/external-services/ai/index.ts",
     "./external-services/blockchain": "./src/external-services/blockchain/index.ts",
     "./external-services/pricing": "./src/external-services/pricing/index.ts",

@@ -1,12 +1,7 @@
-import { DashboardService } from '@scani/core/services/DashboardService';
-import { GetAssetAllocationUseCase } from '@scani/core/use-cases';
+import { DashboardImplementations } from '@scani/core/features/implementations';
 import { GetAssetAllocationInputDto } from '@scani/shared';
-import { Container } from 'typedi';
 import { requireAuth } from '../middleware/auth';
 import { protectedProcedure, router } from '../trpc';
-
-const dashboardService = Container.get(DashboardService);
-const getAssetAllocationUseCase = Container.get(GetAssetAllocationUseCase);
 
 export const dashboardRouter = router({
   /**
@@ -15,11 +10,7 @@ export const dashboardRouter = router({
    */
   getOverview: protectedProcedure.query(async ({ ctx }) => {
     const { dbUser } = requireAuth(ctx);
-
-    // Get user's base currency if available
-    const userBaseCurrencyId = dbUser.baseCurrencyId || undefined;
-
-    return dashboardService.getDashboardOverview(dbUser.id, userBaseCurrencyId);
+    return await DashboardImplementations.getOverview({ userId: dbUser.id, dbUser }, {});
   }),
 
   /**
@@ -30,19 +21,9 @@ export const dashboardRouter = router({
     .input(GetAssetAllocationInputDto)
     .query(async ({ ctx, input }) => {
       const { dbUser } = requireAuth(ctx);
-
-      // Get user's base currency if available
-      const userBaseCurrencyId = dbUser.baseCurrencyId || undefined;
-
-      const result = await getAssetAllocationUseCase.execute(
-        dbUser.id,
-        input.dimension,
-        userBaseCurrencyId
+      return await DashboardImplementations.getAssetAllocation(
+        { userId: dbUser.id, dbUser },
+        input
       );
-
-      return {
-        dimension: input.dimension,
-        ...result,
-      };
     }),
 });

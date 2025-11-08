@@ -1,46 +1,30 @@
-import { InstitutionRepository } from '@scani/core/repositories/InstitutionRepository';
-import { InstitutionService } from '@scani/core/services/InstitutionService';
+import { InstitutionImplementations } from '@scani/core/features/implementations';
 import ogs from 'open-graph-scraper';
-import Container from 'typedi';
 import { z } from 'zod';
 import { protectedProcedure, router } from '../trpc';
 
-const institutionRepository = Container.get(InstitutionRepository);
-const institutionService = Container.get(InstitutionService);
-
 export const institutionsRouter = router({
   // Get all institutions
-  // KEEP
-  getAll: protectedProcedure.query(async () => {
-    const institutions = await institutionRepository.findAll();
-    return institutions;
+  getAll: protectedProcedure.query(async ({ ctx }) => {
+    return await InstitutionImplementations.getAll({ userId: ctx.user.id }, {});
   }),
 
   getByUserId: protectedProcedure.query(async ({ ctx }) => {
     const userId = ctx.user.id;
-    const institutions = await institutionRepository.findByUserId(userId);
-    return institutions;
+    return await InstitutionImplementations.getByUserId({ userId }, {});
   }),
 
   getByUserIdWithSummary: protectedProcedure.query(async ({ ctx }) => {
     const { dbUser } = ctx;
     const userId = dbUser.id;
-
-    // Delegate to service for business logic
-    const institutionsWithSummary =
-      await institutionService.getInstitutionsByUserIdWithSummary(userId);
-
-    return institutionsWithSummary;
+    return await InstitutionImplementations.getByUserIdWithSummary({ userId, dbUser }, {});
   }),
 
-  // KEEP
-  getById: protectedProcedure.input(z.object({ id: z.string() })).query(async ({ input }) => {
-    const institution = await institutionRepository.findById(input.id);
-    return institution ?? null;
+  getById: protectedProcedure.input(z.object({ id: z.string() })).query(async ({ input, ctx }) => {
+    return await InstitutionImplementations.getById({ userId: ctx.user.id }, { id: input.id });
   }),
 
   // Get Open Graph metadata from a website URL
-  // KEEP
   getOpenGraphMetadata: protectedProcedure
     .input(z.object({ url: z.string().url() }))
     .query(async ({ input }) => {

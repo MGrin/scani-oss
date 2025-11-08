@@ -215,6 +215,7 @@ export class TelegramBotService {
         '📚 Available Commands:\n\n' +
           '/start - Start the bot\n' +
           '/help - Show this help message\n' +
+          '/tools - List all available tools and capabilities\n' +
           '/auth <token> - Link your Scani account with auth token\n' +
           '/status - Check authentication status\n' +
           '/reset - Reset conversation context\n' +
@@ -230,6 +231,35 @@ export class TelegramBotService {
           'Screenshot Upload:\n' +
           'You can also send me screenshots of your portfolio or holdings, and I will analyze them for you!'
       );
+    });
+
+    // Tools command - list available capabilities
+    this.bot.command('tools', async (ctx) => {
+      const { getToolsList } = await import('./tools');
+      const toolsList = getToolsList();
+
+      // Split into multiple messages if too long
+      const maxLength = 4000;
+      if (toolsList.length <= maxLength) {
+        await ctx.reply(toolsList, { parse_mode: 'Markdown' });
+      } else {
+        // Split by category
+        const lines = toolsList.split('\n\n');
+        let currentMessage = '';
+
+        for (const line of lines) {
+          if ((currentMessage + line).length > maxLength) {
+            await ctx.reply(currentMessage, { parse_mode: 'Markdown' });
+            currentMessage = `${line}\n\n`;
+          } else {
+            currentMessage += `${line}\n\n`;
+          }
+        }
+
+        if (currentMessage) {
+          await ctx.reply(currentMessage, { parse_mode: 'Markdown' });
+        }
+      }
     });
 
     // Auth command with token

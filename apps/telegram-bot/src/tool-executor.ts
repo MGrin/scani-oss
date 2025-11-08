@@ -1,5 +1,9 @@
 import { BlockchainServiceManager } from '@scani/core/external-services/blockchain';
 import {
+  AccountImplementations,
+  DashboardImplementations,
+} from '@scani/core/features/implementations';
+import {
   AccountTypeRepository,
   HoldingRepository,
   InstitutionRepository,
@@ -9,16 +13,20 @@ import {
 } from '@scani/core/repositories';
 import {
   AccountService,
-  DashboardService,
   HoldingService,
+  InstitutionService,
   PricingService,
+  TokenService,
   UserContextService,
   UserService,
 } from '@scani/core/services';
 import {
   CreateHoldingsWithDependenciesUseCase,
   DeleteHoldingUseCase,
+  GetAssetAllocationUseCase,
   ImportWalletAddressUseCase,
+  UpdateHoldingPriceUseCase,
+  UpdateHoldingsBatchUseCase,
   UpdateHoldingUseCase,
 } from '@scani/core/use-cases';
 import type { UpdateHoldingInput } from '@scani/core/use-cases/UpdateHoldingUseCase';
@@ -59,51 +67,114 @@ export class ToolExecutor {
   async executeTool(toolName: ToolName, parameters: any): Promise<any> {
     try {
       switch (toolName) {
+        // Dashboard features
         case 'getDashboardOverview':
           return await this.getDashboardOverview();
 
+        case 'getDashboardAssetAllocation':
+          return await this.getDashboardAssetAllocation(parameters.dimension);
+
+        // Account features
+        case 'getAccountsAll':
         case 'listAccounts':
           return await this.listAccounts();
 
+        case 'getAccountsByUserIdWithSummary':
+          return await this.getAccountsByUserIdWithSummary();
+
+        case 'getAccountsById':
         case 'getAccountDetails':
-          return await this.getAccountDetails(parameters.accountId);
+          return await this.getAccountDetails(parameters.id || parameters.accountId);
 
+        case 'getAccountsHoldings':
+          return await this.getAccountHoldings(parameters.id);
+
+        case 'deleteAccountsDelete':
         case 'deleteAccount':
-          return await this.deleteAccount(parameters.accountId);
+          return await this.deleteAccount(parameters.id || parameters.accountId);
 
+        case 'getAccountTypesAll':
+        case 'listAccountTypes':
+          return await this.listAccountTypes();
+
+        // Holdings features
+        case 'getHoldingsWithDetails':
         case 'listHoldings':
           return await this.listHoldings(parameters.accountId);
 
+        case 'updateHoldingsUpdate':
         case 'updateHolding':
-          return await this.updateHolding(parameters.holdingId, parameters.quantity);
+          return await this.updateHolding(
+            parameters.id || parameters.holdingId,
+            parameters.data || { balance: parameters.quantity?.toString() }
+          );
 
+        case 'deleteHoldingsDelete':
         case 'deleteHolding':
-          return await this.deleteHolding(parameters.holdingId);
+          return await this.deleteHolding(parameters.id || parameters.holdingId);
+
+        case 'updateHoldingsUpdatePrice':
+          return await this.updateHoldingPrice(parameters.id);
+
+        // Institution features
+        case 'getInstitutionsAll':
+        case 'listInstitutions':
+          return await this.listInstitutions(parameters.type);
+
+        case 'getInstitutionsByUserId':
+          return await this.getInstitutionsByUserId();
+
+        case 'getInstitutionsByUserIdWithSummary':
+          return await this.getInstitutionsByUserIdWithSummary();
+
+        case 'getInstitutionsById':
+          return await this.getInstitutionDetails(parameters.id);
+
+        case 'getInstitutionTypesAll':
+        case 'listInstitutionTypes':
+          return await this.listInstitutionTypes();
+
+        // Token features
+        case 'getTokensAll':
+          return await this.getAllTokens();
 
         case 'searchTokens':
           return await this.searchTokens(parameters.query, parameters.limit);
 
-        case 'getTokenPrice':
-          return await this.getTokenPrice(parameters.symbol);
-
-        case 'listInstitutions':
-          return await this.listInstitutions(parameters.type);
-
-        case 'importHoldings':
-          return await this.importHoldings(parameters.accountId, parameters.holdings);
-
-        case 'listInstitutionTypes':
-          return await this.listInstitutionTypes();
-
-        case 'listAccountTypes':
-          return await this.listAccountTypes();
-
-        case 'importWallet':
-          return await this.importWallet(parameters.address, parameters.displayName);
-
+        // Wallet features
+        case 'getWalletSupportedChains':
         case 'listSupportedChains':
           return await this.listSupportedChains();
 
+        case 'importWalletAddress':
+        case 'importWallet':
+          return await this.importWallet(parameters.address, parameters.displayName);
+
+        case 'detectWalletChains':
+          return await this.detectWalletChains(parameters.address);
+
+        // Batch operations
+        case 'createBatchOperationsHoldingsWithDependencies':
+        case 'importHoldings':
+          return await this.importHoldings(parameters.accountId, parameters.holdings);
+
+        case 'updateBatchOperationsHoldingsBatch':
+          return await this.updateHoldingsBatch(parameters.holdings);
+
+        // Settings features
+        case 'getUsersCurrent':
+          return await this.getCurrentUser();
+
+        case 'updateUsersCurrent':
+          return await this.updateCurrentUser(parameters);
+
+        case 'getUsersSupportedCurrencies':
+          return await this.getSupportedCurrencies();
+
+        case 'getUsersBaseCurrency':
+          return await this.getBaseCurrency();
+
+        // Portfolio analysis (special tools)
         case 'getPortfolioByTokens':
           return await this.getPortfolioByTokens();
 
@@ -132,23 +203,19 @@ export class ToolExecutor {
   }
 
   private async getDashboardOverview() {
-    const dashboardService = Container.get(DashboardService);
-    return await dashboardService.getDashboardOverview(this.context.userId);
+    return await DashboardImplementations.getOverview({ userId: this.context.userId }, {});
   }
 
   private async listAccounts() {
-    const accountService = Container.get(AccountService);
-    return await accountService.getAccountsByUserId(this.context.userId);
+    return await AccountImplementations.getAll({ userId: this.context.userId }, {});
   }
 
   private async getAccountDetails(accountId: string) {
-    const accountService = Container.get(AccountService);
-    return await accountService.getAccountById(this.context.userId, accountId);
+    return await AccountImplementations.getById({ userId: this.context.userId }, { id: accountId });
   }
 
   private async deleteAccount(accountId: string) {
-    const accountService = Container.get(AccountService);
-    return await accountService.deleteAccount(accountId, this.context.userId);
+    return await AccountImplementations.delete({ userId: this.context.userId }, { id: accountId });
   }
 
   private async listHoldings(accountId?: string) {
@@ -165,13 +232,23 @@ export class ToolExecutor {
     return await holdingService.getHoldingsByAccountIdWithDetails(dbUser, accountId);
   }
 
-  private async updateHolding(holdingId: string, quantity?: number) {
+  // biome-ignore lint/suspicious/noExplicitAny: Holdings update data structure varies
+  private async updateHolding(holdingId: string, data: any) {
     const updateHoldingUseCase = Container.get(UpdateHoldingUseCase);
 
-    const data: UpdateHoldingInput = {};
-    if (quantity !== undefined) data.balance = new Decimal(quantity).toString();
+    // Handle both old and new parameter formats
+    const updateData: UpdateHoldingInput = {};
+    if (data) {
+      if (data.balance) {
+        updateData.balance = data.balance;
+      }
+      if (data.lastUpdated) {
+        updateData.lastUpdated =
+          data.lastUpdated instanceof Date ? data.lastUpdated : new Date(data.lastUpdated);
+      }
+    }
 
-    return await updateHoldingUseCase.execute(holdingId, data, this.context.userId);
+    return await updateHoldingUseCase.execute(holdingId, updateData, this.context.userId);
   }
 
   private async deleteHolding(holdingId: string) {
@@ -279,6 +356,168 @@ export class ToolExecutor {
       nativeName: chain.nativeName,
       isActive: chain.isActive,
     }));
+  }
+
+  // New methods for additional features
+
+  private async getDashboardAssetAllocation(
+    dimension:
+      | 'token'
+      | 'token_type'
+      | 'account'
+      | 'account_type'
+      | 'institution'
+      | 'institution_type'
+  ) {
+    const userContextService = Container.get(UserContextService);
+    const dbUser = await userContextService.getUserById(this.context.userId);
+
+    if (!dbUser) {
+      throw new Error('User not found');
+    }
+
+    const userBaseCurrencyId = dbUser.baseCurrencyId || undefined;
+
+    // Use GetAssetAllocationUseCase
+    const useCase = Container.get(GetAssetAllocationUseCase);
+
+    const result = await useCase.execute(this.context.userId, dimension, userBaseCurrencyId);
+
+    return {
+      dimension,
+      ...result,
+    };
+  }
+
+  private async getAccountsByUserIdWithSummary() {
+    const accountService = Container.get(AccountService);
+    return await accountService.getAccountsByUserIdWithSummary(this.context.userId);
+  }
+
+  private async getAccountHoldings(accountId: string) {
+    const holdingService = Container.get(HoldingService);
+    const userContextService = Container.get(UserContextService);
+    const dbUser = await userContextService.getUserById(this.context.userId);
+
+    if (!dbUser) {
+      throw new Error('User not found');
+    }
+
+    return await holdingService.getHoldingsByAccountIdWithDetails(dbUser, accountId);
+  }
+
+  private async updateHoldingPrice(holdingId: string) {
+    const useCase = Container.get(UpdateHoldingPriceUseCase);
+    const tokenRepository = Container.get(TokenRepository);
+    const userContextService = Container.get(UserContextService);
+
+    const dbUser = await userContextService.getUserById(this.context.userId);
+    if (!dbUser) {
+      throw new Error('User not found');
+    }
+
+    const baseCurrency = dbUser.baseCurrencyId
+      ? (await tokenRepository.findById(dbUser.baseCurrencyId))?.symbol || 'USD'
+      : 'USD';
+
+    return await useCase.execute(holdingId, this.context.userId, baseCurrency);
+  }
+
+  private async getInstitutionsByUserId() {
+    const institutionRepository = Container.get(InstitutionRepository);
+    return await institutionRepository.findByUserId(this.context.userId);
+  }
+
+  private async getInstitutionsByUserIdWithSummary() {
+    const institutionService = Container.get(InstitutionService);
+    return await institutionService.getInstitutionsByUserIdWithSummary(this.context.userId);
+  }
+
+  private async getInstitutionDetails(institutionId: string) {
+    const institutionRepository = Container.get(InstitutionRepository);
+    return await institutionRepository.findById(institutionId);
+  }
+
+  private async getAllTokens() {
+    const tokenRepository = Container.get(TokenRepository);
+    return await tokenRepository.findAll();
+  }
+
+  private async detectWalletChains(address: string) {
+    const blockchainService = Container.get(BlockchainServiceManager);
+    const detectedChains = await blockchainService.detectWalletChains(address);
+
+    const chains = blockchainService.getAllSupportedChains();
+    const detectedChainDetails = chains
+      .filter((chain) => detectedChains.includes(chain.chainId))
+      .map((chain) => ({
+        chainId: chain.chainId,
+        name: chain.name,
+        type: chain.type,
+        nativeSymbol: chain.nativeSymbol,
+      }));
+
+    return {
+      address,
+      chainsDetected: detectedChainDetails,
+      totalChains: detectedChainDetails.length,
+    };
+  }
+
+  // biome-ignore lint/suspicious/noExplicitAny: Holdings update data is dynamic
+  private async updateHoldingsBatch(holdings: any[]) {
+    const useCase = Container.get(UpdateHoldingsBatchUseCase);
+
+    // Convert string dates to Date objects if provided
+    const formattedHoldings = holdings.map((h) => ({
+      ...h,
+      lastUpdated: h.lastUpdated ? new Date(h.lastUpdated) : undefined,
+    }));
+
+    return await useCase.execute({ holdings: formattedHoldings }, this.context.userId);
+  }
+
+  private async getCurrentUser() {
+    const userContextService = Container.get(UserContextService);
+    return await userContextService.getUserById(this.context.userId);
+  }
+
+  // biome-ignore lint/suspicious/noExplicitAny: User update data is dynamic
+  private async updateCurrentUser(data: any) {
+    const userService = Container.get(UserService);
+    return await userService.updateUser(this.context.userId, data);
+  }
+
+  private async getSupportedCurrencies() {
+    const tokenService = Container.get(TokenService);
+    const fiatTokens = await tokenService.getTokensByType('fiat');
+
+    return fiatTokens.map((token) => ({
+      id: token.id,
+      symbol: token.symbol,
+      name: token.name,
+    }));
+  }
+
+  private async getBaseCurrency() {
+    const userContextService = Container.get(UserContextService);
+    const tokenService = Container.get(TokenService);
+
+    const dbUser = await userContextService.getUserById(this.context.userId);
+    if (!dbUser || !dbUser.baseCurrencyId) {
+      return null;
+    }
+
+    const baseCurrency = await tokenService.getTokenById(dbUser.baseCurrencyId);
+    if (!baseCurrency) {
+      return null;
+    }
+
+    return {
+      id: baseCurrency.id,
+      symbol: baseCurrency.symbol,
+      name: baseCurrency.name,
+    };
   }
 
   /**
