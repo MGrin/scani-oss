@@ -187,6 +187,19 @@ export const tools = {
         ),
     }),
   },
+
+  // Price change operations
+  get24hPriceChanges: {
+    description:
+      'Get 24-hour price changes for all tokens in the user portfolio. Returns the top price changes (both gainers and losers) with percentage changes and absolute value changes. Use this for daily digest or when user asks about recent price movements.',
+    parameters: z.object({
+      limit: z
+        .number()
+        .optional()
+        .default(10)
+        .describe('Maximum number of top movers to return (default: 10)'),
+    }),
+  },
 };
 
 export type ToolName = keyof typeof tools;

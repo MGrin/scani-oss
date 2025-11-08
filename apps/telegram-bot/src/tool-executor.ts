@@ -19,6 +19,7 @@ import {
   HoldingRepository,
   InstitutionRepository,
   InstitutionTypeRepository,
+  TokenPriceRepository,
   TokenRepository,
 } from '@scani/backend/src/infrastructure/repositories';
 import Decimal from 'decimal.js';
@@ -117,6 +118,9 @@ export class ToolExecutor {
 
         case 'generatePortfolioChart':
           return await this.generatePortfolioChart(parameters.chartType, parameters.dataType);
+
+        case 'get24hPriceChanges':
+          return await this.get24hPriceChanges(parameters.limit);
 
         default:
           throw new Error(`Unknown tool: ${toolName}`);
@@ -651,5 +655,123 @@ export class ToolExecutor {
 
     const caption = `${title}\nTotal Value: ${currencySymbol}${parseFloat(data.totalValue).toFixed(2)}`;
     return `[CHART:${base64}]\n${caption}`;
+  }
+
+  /**
+   * Get 24-hour price changes for all tokens in the user's portfolio
+   * Returns top movers (both gainers and losers) with percentage and absolute value changes
+   */
+  private async get24hPriceChanges(limit = 10) {
+    const holdingRepository = Container.get(HoldingRepository);
+    const tokenRepository = Container.get(TokenRepository);
+    const tokenPriceRepository = Container.get(TokenPriceRepository);
+
+    // Get all user holdings with token details
+    const holdingsWithDetails = await holdingRepository.findByUserWithCompleteDetails(
+      this.context.userId
+    );
+
+    if (holdingsWithDetails.length === 0) {
+      return {
+        changes: [],
+        message: 'No holdings found in portfolio',
+      };
+    }
+
+    // Get unique tokens from holdings
+    const uniqueTokens = Array.from(
+      new Map(holdingsWithDetails.map((h) => [h.token.id, h.token])).values()
+    );
+
+    // Find USD base token
+    const usdToken = await tokenRepository.findBySymbol('USD');
+    if (!usdToken) {
+      throw new Error('USD base token not found');
+    }
+
+    // Calculate 24 hours ago
+    const now = new Date();
+    const yesterday = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+    const windowMs = 2 * 60 * 60 * 1000; // 2-hour window for finding historical price
+
+    // Fetch current and 24h-ago prices for all tokens
+    const priceChanges = await Promise.all(
+      uniqueTokens.map(async (token) => {
+        try {
+          // Get current price
+          const currentPrice = await tokenPriceRepository.findLatestPrice(token.id, usdToken.id);
+
+          // Get price from 24 hours ago
+          const historicalPrice = await tokenPriceRepository.findPriceAtTimestamp(
+            token.id,
+            usdToken.id,
+            yesterday,
+            windowMs
+          );
+
+          if (!currentPrice || !historicalPrice) {
+            return null;
+          }
+
+          const currentPriceDecimal = new Decimal(currentPrice.price);
+          const historicalPriceDecimal = new Decimal(historicalPrice.price);
+
+          // Calculate change
+          const priceChange = currentPriceDecimal.minus(historicalPriceDecimal);
+          const percentChange = priceChange.div(historicalPriceDecimal).mul(100).toDecimalPlaces(2);
+
+          // Calculate user's holding value and impact
+          const userHoldings = holdingsWithDetails.filter((h) => h.token.id === token.id);
+          const totalBalance = userHoldings.reduce(
+            (sum, h) => sum.add(new Decimal(h.holding.balance)),
+            new Decimal(0)
+          );
+          const valueChange = priceChange.mul(totalBalance);
+
+          return {
+            symbol: token.symbol,
+            name: token.name,
+            currentPrice: currentPriceDecimal.toString(),
+            historicalPrice: historicalPriceDecimal.toString(),
+            priceChange: priceChange.toString(),
+            percentChange: percentChange.toString(),
+            userBalance: totalBalance.toString(),
+            valueChange: valueChange.toString(),
+            currentValue: currentPriceDecimal.mul(totalBalance).toString(),
+          };
+        } catch (error) {
+          console.error(`Error calculating price change for ${token.symbol}:`, error);
+          return null;
+        }
+      })
+    );
+
+    // Filter out nulls and sort by absolute percent change
+    const validChanges = priceChanges
+      .filter((change) => change !== null)
+      .sort((a, b) => {
+        const absA = new Decimal(a.percentChange).abs();
+        const absB = new Decimal(b.percentChange).abs();
+        return absB.comparedTo(absA);
+      });
+
+    // Take top movers up to limit
+    const topMovers = validChanges.slice(0, limit);
+
+    // Separate into gainers and losers
+    const gainers = topMovers.filter((c) => new Decimal(c.percentChange).greaterThan(0));
+    const losers = topMovers.filter((c) => new Decimal(c.percentChange).lessThan(0));
+
+    return {
+      summary: {
+        totalTokensTracked: uniqueTokens.length,
+        tokensWithPriceData: validChanges.length,
+        gainersCount: gainers.length,
+        losersCount: losers.length,
+      },
+      topMovers,
+      gainers,
+      losers,
+    };
   }
 }

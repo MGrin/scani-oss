@@ -217,7 +217,8 @@ export class TelegramBotService {
           '/help - Show this help message\n' +
           '/auth <token> - Link your Scani account with auth token\n' +
           '/status - Check authentication status\n' +
-          '/reset - Reset conversation context\n\n' +
+          '/reset - Reset conversation context\n' +
+          '/daily - Generate daily portfolio update (for testing)\n\n' +
           'Natural Language:\n' +
           'You can also chat with me naturally! Ask me to:\n' +
           '• Show your portfolio overview\n' +
@@ -289,6 +290,30 @@ export class TelegramBotService {
       if (telegramUserId) {
         this.conversationContexts.delete(telegramUserId);
         await ctx.reply('🔄 Conversation context has been reset.');
+      }
+    });
+
+    // Daily digest command (for testing)
+    this.bot.command('daily', async (ctx) => {
+      if (!ctx.userId) {
+        await ctx.reply('❌ You are not authenticated. Use /auth <token> to link your account.');
+        return;
+      }
+
+      try {
+        await ctx.sendChatAction('typing');
+        await ctx.reply('📊 Generating your daily portfolio update...');
+
+        // Generate AI-powered daily digest
+        const digest = await this.aiAgent.generateDailyDigest(ctx.userId);
+
+        // Send the digest
+        await ctx.reply(digest, { parse_mode: 'HTML' });
+      } catch (error) {
+        this.logger.error({ error }, 'Error generating daily digest');
+        await ctx.reply(
+          '❌ Sorry, I encountered an error generating your daily digest. Please try again later.'
+        );
       }
     });
 
