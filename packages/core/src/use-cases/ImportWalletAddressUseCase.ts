@@ -136,6 +136,26 @@ export class ImportWalletAddressUseCase {
       'Starting wallet import with integrations'
     );
 
+    // Try to resolve ENS name on Ethereum mainnet first
+    // This will be reused for all chains if found
+    let ensName: string | undefined;
+    const ethereumService = this.blockchainService.getService(1); // Ethereum mainnet chainId
+    if (ethereumService?.resolveAddressName) {
+      try {
+        const name = await ethereumService.resolveAddressName(input.address);
+        if (name) {
+          ensName = name;
+          logger.info(
+            { address: `${input.address.substring(0, 10)}...`, ensName },
+            'ENS name resolved - will be used for all chains'
+          );
+        }
+      } catch (_error) {
+        // Ignore ENS resolution errors
+        logger.debug({ address: input.address }, 'Failed to resolve ENS name');
+      }
+    }
+
     // Detect which chains (institutions) this wallet exists on
     logger.debug(
       {
@@ -307,7 +327,7 @@ export class ImportWalletAddressUseCase {
           cryptoTokenType.id,
           institution,
           mapping.chainId,
-          input.displayName
+          input.displayName || ensName
         );
 
         accounts.push(result.account);
