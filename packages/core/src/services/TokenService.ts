@@ -334,8 +334,7 @@ export class TokenService extends BaseService {
       }
       if (tokenType.code !== 'crypto') {
         throw new Error(
-          'Blockchain tokens must be of type "crypto". ' +
-            `Provided type: ${tokenType.code}`
+          'Blockchain tokens must be of type "crypto". ' + `Provided type: ${tokenType.code}`
         );
       }
 
@@ -410,8 +409,7 @@ export class TokenService extends BaseService {
       }
       if (tokenType.code !== 'crypto') {
         throw new Error(
-          'Blockchain tokens must be of type "crypto". ' +
-            `Provided type: ${tokenType.code}`
+          'Blockchain tokens must be of type "crypto". ' + `Provided type: ${tokenType.code}`
         );
       }
 
