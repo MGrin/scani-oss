@@ -17,7 +17,18 @@ const logger = createComponentLogger('evm-chain-service');
 
 /**
  * Check if token is likely spam based on name/symbol patterns
- * Common spam token indicators include URLs, scam keywords, etc.
+ *
+ * IMPORTANT: EVM chain tokens are filtered for spam to prevent importing scam tokens.
+ * This function checks for common spam indicators including:
+ * - URLs and domain names in token name/symbol
+ * - Scam keywords (claim, visit, reward, airdrop, etc.)
+ * - Telegram references
+ * - HTML/code injection attempts
+ *
+ * Spam tokens are ignored and not imported into user portfolios.
+ *
+ * @param token - Token with name and symbol to check
+ * @returns true if token appears to be spam, false otherwise
  */
 function isLikelySpamToken(token: { name: string; symbol: string }): boolean {
   const suspiciousPatterns = [
@@ -282,7 +293,8 @@ export class EvmChainService implements IBlockchainService {
             decimals: Number.parseInt(tx.tokenDecimal, 10),
           };
 
-          // Filter out likely spam tokens
+          // IMPORTANT: Filter out likely spam tokens to prevent importing scam/malicious tokens
+          // This protects users from having spam tokens in their portfolios
           if (isLikelySpamToken(tokenInfo)) {
             logger.debug(
               {

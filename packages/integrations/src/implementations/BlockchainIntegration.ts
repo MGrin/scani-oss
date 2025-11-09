@@ -178,6 +178,9 @@ export abstract class BlockchainIntegration extends ScaniIntegration {
 
   /**
    * Convert TokenBalance from blockchain service to IntegrationHolding
+   *
+   * IMPORTANT: All tokens from blockchain services are ALWAYS of type 'crypto'.
+   * This is a fundamental requirement - blockchain tokens cannot be stocks, fiat, or other types.
    */
   protected convertTokenBalance(balance: TokenBalance): IntegrationHolding {
     return {
@@ -185,7 +188,7 @@ export abstract class BlockchainIntegration extends ScaniIntegration {
       name: balance.name,
       balance: balance.balance,
       decimals: balance.decimals,
-      tokenType: 'crypto',
+      tokenType: 'crypto', // ALWAYS 'crypto' for blockchain tokens
       externalTokenId: balance.tokenAddress,
       contractAddress: balance.isNative ? undefined : balance.tokenAddress,
       iconUrl: balance.iconUrl,

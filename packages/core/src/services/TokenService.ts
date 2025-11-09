@@ -307,6 +307,9 @@ export class TokenService extends BaseService {
 
   /**
    * Find or create token from blockchain data
+   *
+   * IMPORTANT: Tokens from blockchain services MUST always be of type 'crypto'.
+   * This method enforces this requirement by validating the provided typeId.
    */
   async findOrCreateTokenFromBlockchain(tokenData: {
     symbol: string;
@@ -321,6 +324,21 @@ export class TokenService extends BaseService {
     metadata?: Record<string, unknown>;
   }): Promise<Token> {
     try {
+      // Validate that we have a valid crypto token type ID
+      this.validateNonEmptyString(tokenData.typeId, 'typeId');
+
+      // Verify the provided token type exists
+      const tokenType = await this.tokenTypeRepository.findById(tokenData.typeId);
+      if (!tokenType) {
+        throw new Error(`Token type with ID '${tokenData.typeId}' not found`);
+      }
+      if (tokenType.code !== 'crypto') {
+        throw new Error(
+          'Blockchain tokens must be of type "crypto". ' +
+            `Provided type: ${tokenType.code}`
+        );
+      }
+
       // Try to find existing token
       let token = await this.tokenRepository.findBySymbolAndType(
         tokenData.symbol.toUpperCase(),
@@ -361,6 +379,9 @@ export class TokenService extends BaseService {
   /**
    * Find or create token from integration token mapping
    * Used by use cases that work with integration holdings
+   *
+   * IMPORTANT: Tokens from blockchain integrations MUST always be of type 'crypto'.
+   * This method enforces this requirement by using the provided cryptoTokenTypeId.
    */
   async findOrCreateTokenFromIntegration(
     tokenMapping: {
@@ -379,6 +400,21 @@ export class TokenService extends BaseService {
     defaultDecimals = 18
   ): Promise<Token> {
     try {
+      // Validate that we have a valid crypto token type ID
+      this.validateNonEmptyString(cryptoTokenTypeId, 'cryptoTokenTypeId');
+
+      // Verify the provided token type is 'crypto' to enforce blockchain token requirement
+      const tokenType = await this.tokenTypeRepository.findById(cryptoTokenTypeId);
+      if (!tokenType) {
+        throw new Error(`Token type with ID '${cryptoTokenTypeId}' not found`);
+      }
+      if (tokenType.code !== 'crypto') {
+        throw new Error(
+          'Blockchain tokens must be of type "crypto". ' +
+            `Provided type: ${tokenType.code}`
+        );
+      }
+
       // Try to find existing token by symbol and type
       let token = await this.tokenRepository.findBySymbolAndType(
         tokenMapping.token.symbol,
