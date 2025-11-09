@@ -17,7 +17,11 @@ const logger = createComponentLogger('solana-chain-service');
  */
 interface SolanaRpcResponse<T> {
   jsonrpc: string;
-  result: T;
+  result?: T;
+  error?: {
+    code: number;
+    message: string;
+  };
   id: number;
 }
 
@@ -151,6 +155,16 @@ export class SolanaChainService implements IBlockchainService {
 
       const data = (await response.json()) as SolanaRpcResponse<{ value: number }>;
 
+      // Check for RPC error response
+      if (data.error) {
+        throw new Error(`Solana RPC error: ${data.error.code} - ${data.error.message}`);
+      }
+
+      // Check for missing result
+      if (!data.result || data.result.value === undefined) {
+        throw new Error('Invalid Solana RPC response: missing result.value');
+      }
+
       // Convert from lamports to SOL (1 SOL = 1,000,000,000 lamports)
       const balanceLamports = new Decimal(data.result.value);
       const balanceSOL = balanceLamports.dividedBy(1000000000);
@@ -208,6 +222,16 @@ export class SolanaChainService implements IBlockchainService {
       const data = (await response.json()) as SolanaRpcResponse<{
         value: SolanaTokenAccount[];
       }>;
+
+      // Check for RPC error response
+      if (data.error) {
+        throw new Error(`Solana RPC error: ${data.error.code} - ${data.error.message}`);
+      }
+
+      // Check for missing result
+      if (!data.result || !data.result.value) {
+        throw new Error('Invalid Solana RPC response: missing result.value');
+      }
 
       const balances: TokenBalance[] = [];
 
