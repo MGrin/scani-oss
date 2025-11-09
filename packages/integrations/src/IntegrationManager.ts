@@ -15,6 +15,7 @@
 import type { ChainConfig } from '@scani/core/external-services/blockchain';
 import { getChainConfig } from '@scani/core/external-services/blockchain';
 import { InstitutionBlockchainMappingRepository } from '@scani/core/repositories';
+import { createComponentLogger } from '@scani/core/utils/logger';
 import { RateLimiter } from '@scani/rate-limiter';
 import { Container, Service } from 'typedi';
 import type { ScaniIntegration } from './base';
@@ -26,6 +27,8 @@ import {
   TonIntegration,
   TronIntegration,
 } from './implementations';
+
+const logger = createComponentLogger('integration-manager');
 
 // Import config - needs to be exported from core
 const ETHERSCAN_API_KEY = process.env.ETHERSCAN_API_KEY || '';
@@ -199,8 +202,17 @@ export class IntegrationManager {
     const mappings = await this.mappingRepository.findAllActive();
 
     if (mappings.length === 0) {
+      logger.warn('No active institution mappings found - wallet detection cannot proceed');
       return [];
     }
+
+    logger.debug(
+      {
+        address: `${address.substring(0, 10)}...`,
+        mappingsCount: mappings.length,
+      },
+      'Checking wallet activity across chains'
+    );
 
     // Check each integration in parallel
     const checks = mappings.map(async (mapping) => {
@@ -208,6 +220,10 @@ export class IntegrationManager {
         const integration = await this.getIntegration(mapping.institutionId);
 
         if (!integration) {
+          logger.debug(
+            { institutionId: mapping.institutionId, chainId: mapping.chainId },
+            'Integration not available for mapping'
+          );
           return null;
         }
 
@@ -215,13 +231,25 @@ export class IntegrationManager {
         if (isBlockchainIntegration(integration)) {
           const hasActivity = await integration.hasActivity(address);
           if (hasActivity) {
+            logger.debug(
+              { institutionId: mapping.institutionId, chainId: mapping.chainId },
+              'Wallet has activity on chain'
+            );
             return mapping.institutionId;
           }
         }
 
         return null;
-      } catch (_error) {
+      } catch (error) {
         // If there's an error, the wallet likely doesn't exist on this chain
+        logger.debug(
+          {
+            institutionId: mapping.institutionId,
+            chainId: mapping.chainId,
+            error: error instanceof Error ? error.message : String(error),
+          },
+          'Error checking wallet activity on chain'
+        );
         return null;
       }
     });
@@ -233,6 +261,15 @@ export class IntegrationManager {
         detectedInstitutionIds.push(institutionId);
       }
     }
+
+    logger.info(
+      {
+        address: `${address.substring(0, 10)}...`,
+        detectedCount: detectedInstitutionIds.length,
+        totalChecked: mappings.length,
+      },
+      'Wallet chain detection completed'
+    );
 
     return detectedInstitutionIds;
   }

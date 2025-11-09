@@ -86,7 +86,10 @@ export class RateLimiter {
       // Need to wait before processing more requests
       const oldestRequest = this.requestTimes[0];
       if (oldestRequest) {
-        const waitTime = this.windowMs - (now - oldestRequest) + 100;
+        // Calculate wait time and ensure it's never negative
+        const elapsed = now - oldestRequest;
+        const waitTime = Math.max(1, this.windowMs - elapsed + 100);
+
         this.isProcessing = false;
         setTimeout(() => this.processQueue(), waitTime);
       } else {

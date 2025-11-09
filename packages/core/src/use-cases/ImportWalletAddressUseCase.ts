@@ -131,10 +131,25 @@ export class ImportWalletAddressUseCase {
     user: typeof schema.users.$inferSelect
   ): Promise<ImportWalletResult> {
     // Detect which chains (institutions) this wallet exists on
+    logger.debug(
+      {
+        userId,
+        address: `${input.address.substring(0, 10)}...`,
+      },
+      'Detecting wallet chains with integrations'
+    );
+
     const detectedInstitutionIds = await this.integrationManager.detectWalletChains(input.address);
 
     if (detectedInstitutionIds.length === 0) {
-      logger.warn({ address: input.address }, 'No institutions detected for wallet');
+      logger.warn(
+        {
+          userId,
+          address: `${input.address.substring(0, 10)}...`,
+          addressLength: input.address.length,
+        },
+        'No institutions detected for wallet - wallet may not exist on any configured chains or has no activity'
+      );
       return {
         accounts: [],
         holdings: [],
