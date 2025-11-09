@@ -376,16 +376,6 @@ export function WalletImportStep({ onChangesDetected }: WalletImportStepProps) {
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-6">
-          {/* Info alert */}
-          <Alert>
-            <AlertCircle className="h-4 w-4" />
-            <AlertTitle>Alpha Feature</AlertTitle>
-            <AlertDescription>
-              This feature is in alpha. We support 44+ blockchains including Ethereum, Bitcoin,
-              Solana, and more. If you encounter any issues, full error details will be displayed.
-            </AlertDescription>
-          </Alert>
-
           {/* Wallet address input */}
           <div className="space-y-2">
             <Label htmlFor={walletAddressId}>
