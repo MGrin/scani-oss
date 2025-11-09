@@ -55,12 +55,13 @@ export function PullToRefresh({ onRefresh, children, disabled = false }: PullToR
       // Only start if we're at the top of the scrollable container
       const scrollTop = scrollableElement.scrollTop;
 
-      // Check if the touch target is within a table or other scrollable content
+      // Check if the touch target is within a horizontally scrollable element
       const target = e.target as HTMLElement;
-      const isInTable = target.closest('table, .overflow-x-auto');
+      // Only check for table and overflow-x-auto (horizontal scrolling), not overflow-auto
+      const isInHorizontalScroll = target.closest('table, .overflow-x-auto');
 
-      // Don't start pull-to-refresh if touching inside a table or scrollable content
-      if (isInTable) {
+      // Don't start pull-to-refresh if touching inside a horizontally scrollable element
+      if (isInHorizontalScroll) {
         return;
       }
 
@@ -73,15 +74,6 @@ export function PullToRefresh({ onRefresh, children, disabled = false }: PullToR
     const handleTouchMove = (e: TouchEvent) => {
       if (isRefreshing || !e.touches[0]) return;
 
-      // Check if the touch is happening within a table or scrollable content
-      const target = e.target as HTMLElement;
-      const isInTable = target.closest('table, .overflow-x-auto, .overflow-auto');
-
-      // Don't trigger pull-to-refresh if touching inside a table or scrollable content
-      if (isInTable) {
-        return;
-      }
-
       const scrollableElement = getScrollableElement();
       currentY.current = e.touches[0].clientY;
       const deltaY = currentY.current - startY.current;
@@ -89,6 +81,16 @@ export function PullToRefresh({ onRefresh, children, disabled = false }: PullToR
       // Only pull down (positive deltaY) and only if we're still at the top
       const scrollTop = scrollableElement.scrollTop;
       if (deltaY > MIN_PULL_DISTANCE && scrollTop <= 1) {
+        // Check if the touch is happening within a horizontally scrollable element
+        const target = e.target as HTMLElement;
+        // Only check for table and overflow-x-auto (horizontal scrolling), not overflow-auto
+        const isInHorizontalScroll = target.closest('table, .overflow-x-auto');
+
+        // Don't trigger pull-to-refresh if touching inside a horizontally scrollable element
+        if (isInHorizontalScroll) {
+          return;
+        }
+
         // Start pulling if we haven't already
         if (!isPulling) {
           setIsPulling(true);
