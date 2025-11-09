@@ -448,14 +448,26 @@ export function getAllChains(): ChainConfig[] {
 
 /**
  * Get chain configuration by chain ID
+ * Handles both string and numeric chainIds (e.g., "1" matches 1, "bitcoin" matches "bitcoin")
  */
 export function getChainConfig(chainId: string | number): ChainConfig | undefined {
-  // Check EVM chains
-  const evmChain = Object.values(EVM_CHAINS).find((chain) => chain.chainId === chainId);
+  // Normalize chainId for comparison
+  const normalizedChainId = typeof chainId === 'string' ? chainId : chainId.toString();
+
+  // Check EVM chains (numeric chainIds stored as numbers in config)
+  const evmChain = Object.values(EVM_CHAINS).find((chain) => {
+    const configChainId =
+      typeof chain.chainId === 'number' ? chain.chainId.toString() : chain.chainId;
+    return configChainId === normalizedChainId;
+  });
   if (evmChain) return evmChain;
 
-  // Check non-EVM chains
-  return Object.values(NON_EVM_CHAINS).find((chain) => chain.chainId === chainId);
+  // Check non-EVM chains (string chainIds)
+  return Object.values(NON_EVM_CHAINS).find((chain) => {
+    const configChainId =
+      typeof chain.chainId === 'number' ? chain.chainId.toString() : chain.chainId;
+    return configChainId === normalizedChainId;
+  });
 }
 
 /**
