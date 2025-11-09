@@ -359,6 +359,72 @@ export class TokenService extends BaseService {
   }
 
   /**
+   * Find or create token from integration token mapping
+   * Used by use cases that work with integration holdings
+   */
+  async findOrCreateTokenFromIntegration(
+    tokenMapping: {
+      token: {
+        symbol: string;
+        name: string;
+        typeId: string;
+        decimals?: number;
+        iconUrl?: string | null;
+        providerMetadata?: string;
+      };
+      isNew: boolean;
+      confidence: number;
+    },
+    cryptoTokenTypeId: string,
+    defaultDecimals = 18
+  ): Promise<Token> {
+    try {
+      // Try to find existing token by symbol and type
+      let token = await this.tokenRepository.findBySymbolAndType(
+        tokenMapping.token.symbol,
+        cryptoTokenTypeId
+      );
+
+      if (token) {
+        // Update metadata if we have new information
+        const existingMetadata = JSON.parse(token.providerMetadata || '{}');
+        const newMetadata = JSON.parse(tokenMapping.token.providerMetadata || '{}');
+        const updatedMetadata = {
+          ...existingMetadata,
+          ...newMetadata,
+        };
+
+        token = await this.tokenRepository.update(token.id, {
+          providerMetadata: JSON.stringify(updatedMetadata),
+        });
+
+        this.assertExists(token, 'Failed to update token');
+      } else {
+        // Create new token
+        token = await this.tokenRepository.create({
+          symbol: tokenMapping.token.symbol.toUpperCase(),
+          name: tokenMapping.token.name,
+          typeId: cryptoTokenTypeId,
+          decimals: tokenMapping.token.decimals ?? defaultDecimals,
+          iconUrl: tokenMapping.token.iconUrl || null,
+          providerMetadata: tokenMapping.token.providerMetadata || '{}',
+          isActive: true,
+        });
+
+        this.assertExists(token, 'Failed to create token');
+        this.logInfo('Token created from integration mapping', {
+          tokenId: token.id,
+          symbol: token.symbol,
+        });
+      }
+
+      return token;
+    } catch (error) {
+      throw this.handleError(error, 'findOrCreateTokenFromIntegration');
+    }
+  }
+
+  /**
    * Create multiple tokens from external providers in a batch operation
    */
   async createManyFromExternal(

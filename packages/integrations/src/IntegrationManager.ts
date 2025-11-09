@@ -20,6 +20,7 @@ import { Container, Service } from 'typedi';
 import type { ScaniIntegration } from './base';
 import {
   BitcoinIntegration,
+  BlockchainIntegration,
   EvmChainIntegration,
   SolanaIntegration,
   TonIntegration,
@@ -28,6 +29,16 @@ import {
 
 // Import config - needs to be exported from core
 const ETHERSCAN_API_KEY = process.env.ETHERSCAN_API_KEY || '';
+
+/**
+ * Type guard to check if an integration is a BlockchainIntegration
+ * This provides type-safe access to blockchain-specific methods like hasActivity
+ */
+function isBlockchainIntegration(
+  integration: ScaniIntegration
+): integration is BlockchainIntegration {
+  return integration instanceof BlockchainIntegration;
+}
 
 /**
  * Global rate limiters for blockchain APIs
@@ -172,6 +183,58 @@ export class IntegrationManager {
   async getChainIdForInstitution(institutionId: string): Promise<string | undefined> {
     const mapping = await this.mappingRepository.findByInstitutionId(institutionId);
     return mapping?.chainId;
+  }
+
+  /**
+   * Detect which chains (institutions) a wallet address exists on
+   * Returns institution IDs where the wallet has activity
+   *
+   * @param address - Wallet address to check
+   * @returns Array of institution IDs where the wallet has activity
+   */
+  async detectWalletChains(address: string): Promise<string[]> {
+    const detectedInstitutionIds: string[] = [];
+
+    // Get all active mappings
+    const mappings = await this.mappingRepository.findAllActive();
+
+    if (mappings.length === 0) {
+      return [];
+    }
+
+    // Check each integration in parallel
+    const checks = mappings.map(async (mapping) => {
+      try {
+        const integration = await this.getIntegration(mapping.institutionId);
+
+        if (!integration) {
+          return null;
+        }
+
+        // Use type guard to check if integration supports hasActivity
+        if (isBlockchainIntegration(integration)) {
+          const hasActivity = await integration.hasActivity(address);
+          if (hasActivity) {
+            return mapping.institutionId;
+          }
+        }
+
+        return null;
+      } catch (_error) {
+        // If there's an error, the wallet likely doesn't exist on this chain
+        return null;
+      }
+    });
+
+    const results = await Promise.all(checks);
+
+    for (const institutionId of results) {
+      if (institutionId !== null) {
+        detectedInstitutionIds.push(institutionId);
+      }
+    }
+
+    return detectedInstitutionIds;
   }
 
   /**

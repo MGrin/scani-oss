@@ -15,6 +15,8 @@
  * - Background sync operations
  */
 
+import type { ScaniIntegration } from '@scani/integrations';
+import { IntegrationManager } from '@scani/integrations';
 import { and, eq } from 'drizzle-orm';
 import { Container, Service } from 'typedi';
 import { db } from '../database/connection';
@@ -22,8 +24,12 @@ import * as schema from '../database/schema';
 import { BlockchainServiceManager } from '../external-services/blockchain';
 import type { WalletInfo } from '../external-services/blockchain/types';
 import { HoldingRepository } from '../repositories/HoldingRepository';
+import { InstitutionBlockchainMappingRepository } from '../repositories/InstitutionBlockchainMappingRepository';
 import { TokenRepository } from '../repositories/TokenRepository';
+import { IntegrationCredentialsService } from '../services/IntegrationCredentialsService';
 import { PricingService } from '../services/PricingService';
+import { TokenService } from '../services/TokenService';
+import { UserWalletService } from '../services/UserWalletService';
 import { createComponentLogger } from '../utils/logger';
 
 const logger = createComponentLogger('use-case:import-wallet');
@@ -71,7 +77,12 @@ export interface ImportWalletResult {
 @Service()
 export class ImportWalletAddressUseCase {
   private readonly blockchainService = Container.get(BlockchainServiceManager);
+  private readonly integrationManager = Container.get(IntegrationManager);
+  private readonly userWalletService = Container.get(UserWalletService);
+  private readonly integrationCredentialsService = Container.get(IntegrationCredentialsService);
+  private readonly mappingRepository = Container.get(InstitutionBlockchainMappingRepository);
   private readonly pricingService = Container.get(PricingService);
+  private readonly tokenService = Container.get(TokenService);
   private readonly tokenRepository = Container.get(TokenRepository);
   private readonly holdingRepository = Container.get(HoldingRepository);
 
@@ -91,6 +102,209 @@ export class ImportWalletAddressUseCase {
       throw new Error('User not found');
     }
 
+    // Try new integration-based approach first
+    try {
+      const hasAnyMappings = (await this.mappingRepository.findAllActive()).length > 0;
+
+      if (hasAnyMappings) {
+        logger.debug('Using new integration-based wallet import');
+        return await this.executeWithIntegrations(input, userId, user);
+      }
+    } catch (error) {
+      logger.warn(
+        { error: error instanceof Error ? error.message : String(error) },
+        'Integration-based import failed, falling back to legacy approach'
+      );
+    }
+
+    // Fall back to legacy BlockchainServiceManager approach
+    logger.debug('Using legacy blockchain service manager wallet import');
+    return await this.executeWithLegacyService(input, userId, user);
+  }
+
+  /**
+   * Execute wallet import using new integration-based approach
+   */
+  private async executeWithIntegrations(
+    input: ImportWalletInput,
+    userId: string,
+    user: typeof schema.users.$inferSelect
+  ): Promise<ImportWalletResult> {
+    // Detect which chains (institutions) this wallet exists on
+    const detectedInstitutionIds = await this.integrationManager.detectWalletChains(input.address);
+
+    if (detectedInstitutionIds.length === 0) {
+      logger.warn({ address: input.address }, 'No institutions detected for wallet');
+      return {
+        accounts: [],
+        holdings: [],
+        chainsDetected: 0,
+        tokensImported: 0,
+        errors: [],
+      };
+    }
+
+    // Check if user_wallet already exists
+    let userWallet = await this.userWalletService.getWalletByAddress(userId, input.address);
+
+    if (!userWallet) {
+      // Create new user_wallet entry
+      userWallet = await this.userWalletService.createWallet({
+        userId,
+        walletAddress: input.address,
+        institutionIds: detectedInstitutionIds,
+        label: input.displayName,
+        isActive: true,
+      });
+
+      logger.info(
+        { walletId: userWallet.id, institutionIds: detectedInstitutionIds },
+        'Created user wallet entry'
+      );
+    } else {
+      // Update existing wallet with new institution IDs
+      const existingIds = (userWallet.institutionIds as string[]) || [];
+      const mergedIds = Array.from(new Set([...existingIds, ...detectedInstitutionIds]));
+
+      if (mergedIds.length > existingIds.length) {
+        userWallet = await this.userWalletService.updateWallet(userWallet.id, {
+          institutionIds: mergedIds,
+        });
+
+        logger.info(
+          { walletId: userWallet.id, institutionIds: mergedIds },
+          'Updated user wallet with new institutions'
+        );
+      }
+    }
+
+    // Process each institution (chain)
+    const accounts: ImportWalletResult['accounts'] = [];
+    const holdings: ImportWalletResult['holdings'] = [];
+    const errors: ImportWalletResult['errors'] = [];
+
+    // Get account type for crypto wallets
+    const [walletAccountType] = await db
+      .select()
+      .from(schema.accountTypes)
+      .where(eq(schema.accountTypes.code, 'crypto'))
+      .limit(1);
+
+    if (!walletAccountType) {
+      throw new Error('Account type "crypto" not found');
+    }
+
+    // Get crypto token type
+    const [cryptoTokenType] = await db
+      .select()
+      .from(schema.tokenTypes)
+      .where(eq(schema.tokenTypes.code, 'crypto'))
+      .limit(1);
+
+    if (!cryptoTokenType) {
+      throw new Error('Token type "crypto" not found');
+    }
+
+    for (const institutionId of detectedInstitutionIds) {
+      try {
+        const integration = await this.integrationManager.getIntegration(institutionId);
+
+        if (!integration) {
+          errors.push({
+            chainId: institutionId,
+            chainName: 'Unknown',
+            error: 'Integration not found',
+          });
+          continue;
+        }
+
+        // Get institution details
+        const [institution] = await db
+          .select()
+          .from(schema.institutions)
+          .where(eq(schema.institutions.id, institutionId))
+          .limit(1);
+
+        if (!institution) {
+          errors.push({
+            chainId: institutionId,
+            chainName: 'Unknown',
+            error: 'Institution not found',
+          });
+          continue;
+        }
+
+        // Get mapping to find chain info
+        const mapping = await this.mappingRepository.findByInstitutionId(institutionId);
+
+        if (!mapping) {
+          errors.push({
+            chainId: institutionId,
+            chainName: institution.name,
+            error: 'Chain mapping not found',
+          });
+          continue;
+        }
+
+        const result = await this.processWalletWithIntegration(
+          integration,
+          input.address,
+          userWallet.id,
+          userId,
+          user.baseCurrencyId || '',
+          walletAccountType.id,
+          cryptoTokenType.id,
+          institution,
+          mapping.chainId,
+          input.displayName
+        );
+
+        accounts.push(result.account);
+        holdings.push(...result.holdings);
+      } catch (error) {
+        logger.error(
+          {
+            institutionId,
+            error: error instanceof Error ? error.message : String(error),
+          },
+          'Failed to process wallet on institution'
+        );
+        errors.push({
+          chainId: institutionId,
+          chainName: 'Unknown',
+          error: error instanceof Error ? error.message : 'Unknown error',
+        });
+      }
+    }
+
+    logger.info(
+      {
+        userId,
+        institutionsDetected: detectedInstitutionIds.length,
+        accountsCreated: accounts.length,
+        holdingsCreated: holdings.length,
+        errors: errors.length,
+      },
+      'Wallet import completed with integrations'
+    );
+
+    return {
+      accounts,
+      holdings,
+      chainsDetected: detectedInstitutionIds.length,
+      tokensImported: holdings.length,
+      errors,
+    };
+  }
+
+  /**
+   * Execute wallet import using legacy BlockchainServiceManager
+   */
+  private async executeWithLegacyService(
+    input: ImportWalletInput,
+    userId: string,
+    user: typeof schema.users.$inferSelect
+  ): Promise<ImportWalletResult> {
     // Import wallet address across all chains
     const walletResult = await this.blockchainService.importWalletAddress(input.address);
 
@@ -178,6 +392,247 @@ export class ImportWalletAddressUseCase {
       chainsDetected: walletResult.wallets.length,
       tokensImported: holdings.length,
       errors,
+    };
+  }
+
+  /**
+   * Process a wallet using integration-based approach
+   */
+  private async processWalletWithIntegration(
+    integration: ScaniIntegration,
+    walletAddress: string,
+    userWalletId: string,
+    userId: string,
+    baseCurrencyId: string,
+    walletAccountTypeId: string,
+    cryptoTokenTypeId: string,
+    institution: typeof schema.institutions.$inferSelect,
+    chainId: string,
+    displayNameOverride?: string
+  ): Promise<{
+    account: ImportWalletResult['accounts'][0];
+    holdings: ImportWalletResult['holdings'];
+  }> {
+    // Fetch holdings from the integration
+    const holdingsResult = await integration.fetchHoldings(walletAddress);
+
+    if (holdingsResult.errors && holdingsResult.errors.length > 0) {
+      logger.warn(
+        { institutionId: institution.id, errors: holdingsResult.errors },
+        'Errors fetching holdings from integration'
+      );
+    }
+
+    // Generate account name
+    const accountName = this.generateAccountName(
+      institution.name,
+      displayNameOverride || walletAddress
+    );
+
+    // Check if account already exists for this institution and address
+    const existingAccounts = await db
+      .select()
+      .from(schema.accounts)
+      .where(
+        and(
+          eq(schema.accounts.userId, userId),
+          eq(schema.accounts.institutionId, institution.id),
+          eq(schema.accounts.name, accountName)
+        )
+      )
+      .limit(1);
+
+    let accountId: string;
+    if (existingAccounts.length > 0 && existingAccounts[0]) {
+      // Update existing account metadata with user_wallet_id and migrated flag
+      accountId = existingAccounts[0].id;
+      await db
+        .update(schema.accounts)
+        .set({
+          metadata: {
+            walletAddress,
+            chainId,
+            chainName: institution.name,
+            displayName: displayNameOverride,
+            lastSync: new Date().toISOString(),
+            userWalletId, // NEW: Reference to user_wallet
+            migrated: true, // NEW: Mark as migrated
+          },
+          updatedAt: new Date(),
+        })
+        .where(eq(schema.accounts.id, accountId));
+
+      logger.debug({ accountId, userWalletId }, 'Updated existing account with user_wallet_id');
+    } else {
+      // Create new account with user_wallet_id in metadata
+      const [newAccount] = await db
+        .insert(schema.accounts)
+        .values({
+          userId,
+          institutionId: institution.id,
+          name: accountName,
+          typeId: walletAccountTypeId,
+          description: `Crypto wallet on ${institution.name}`,
+          metadata: {
+            walletAddress,
+            chainId,
+            chainName: institution.name,
+            displayName: displayNameOverride,
+            lastSync: new Date().toISOString(),
+            userWalletId, // NEW: Reference to user_wallet
+            migrated: true, // NEW: Mark as migrated
+          },
+          isActive: true,
+        })
+        .returning();
+
+      if (!newAccount) {
+        throw new Error('Failed to create account');
+      }
+
+      accountId = newAccount.id;
+      logger.debug({ accountId, userWalletId }, 'Created new account with user_wallet_id');
+    }
+
+    // Store/update credentials if needed (for now, just mark as stored for RPC-based chains)
+    // Most blockchain integrations don't need credentials, but we store a marker
+    try {
+      const existingCredentials = await this.integrationCredentialsService.getCredentials(
+        userId,
+        institution.id
+      );
+
+      if (!existingCredentials) {
+        await this.integrationCredentialsService.storeCredentials(
+          userId,
+          institution.id,
+          { type: 'public_rpc' }, // Empty credentials for public blockchain access
+          'rpc'
+        );
+
+        logger.debug({ institutionId: institution.id }, 'Stored public RPC credentials marker');
+      }
+    } catch (error) {
+      // Non-critical error - continue processing
+      logger.debug(
+        {
+          institutionId: institution.id,
+          error: error instanceof Error ? error.message : String(error),
+        },
+        'Failed to store credentials (non-critical)'
+      );
+    }
+
+    // Create holdings for each token
+    const holdings: ImportWalletResult['holdings'] = [];
+
+    for (const holding of holdingsResult.holdings) {
+      try {
+        // Map the integration holding to our token format
+        const tokenMapping = await integration.mapToken(holding);
+
+        // Find or create token using service method
+        const token = await this.tokenService.findOrCreateTokenFromIntegration(
+          tokenMapping,
+          cryptoTokenTypeId
+        );
+
+        // Check if holding already exists (including hidden ones)
+        const existingHolding = await this.holdingRepository.findByAccountAndToken(
+          accountId,
+          token.id,
+          userId,
+          undefined,
+          undefined,
+          true // Include hidden holdings
+        );
+
+        if (existingHolding) {
+          // Update existing holding and unhide if it was hidden
+          await db
+            .update(schema.holdings)
+            .set({
+              balance: holding.balance,
+              isHidden: false, // Unhide if balance is non-zero
+              lastUpdated: new Date(),
+            })
+            .where(eq(schema.holdings.id, existingHolding.id));
+
+          holdings.push({
+            id: existingHolding.id,
+            accountId,
+            tokenSymbol: token.symbol,
+            tokenName: token.name,
+            balance: holding.balance,
+          });
+        } else {
+          // Create new holding with blockchain source
+          const [newHolding] = await db
+            .insert(schema.holdings)
+            .values({
+              userId,
+              accountId,
+              tokenId: token.id,
+              balance: holding.balance,
+              source: 'blockchain', // Mark as blockchain-sourced
+              isHidden: false,
+              lastUpdated: new Date(),
+            })
+            .returning();
+
+          if (!newHolding) {
+            throw new Error('Failed to create holding');
+          }
+
+          holdings.push({
+            id: newHolding.id,
+            accountId,
+            tokenSymbol: token.symbol,
+            tokenName: token.name,
+            balance: holding.balance,
+          });
+        }
+
+        // Try to fetch current price (non-blocking)
+        if (baseCurrencyId) {
+          try {
+            const baseCurrencyToken = await this.tokenService.getTokenById(baseCurrencyId);
+            if (baseCurrencyToken) {
+              await this.pricingService.getTokenPrice(token, baseCurrencyToken.symbol, new Date());
+            }
+          } catch (error) {
+            logger.debug(
+              {
+                tokenSymbol: token.symbol,
+                error: error instanceof Error ? error.message : String(error),
+              },
+              'Failed to fetch token price (non-critical)'
+            );
+          }
+        }
+      } catch (error) {
+        logger.error(
+          {
+            tokenSymbol: holding.symbol,
+            institutionName: institution.name,
+            error: error instanceof Error ? error.message : String(error),
+          },
+          'Failed to create holding for token'
+        );
+        // Continue with other tokens even if one fails
+      }
+    }
+
+    return {
+      account: {
+        id: accountId,
+        name: accountName,
+        chainId,
+        chainName: institution.name,
+        institutionId: institution.id,
+        institutionName: institution.name,
+      },
+      holdings,
     };
   }
 
