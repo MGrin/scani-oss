@@ -36,6 +36,46 @@ import type { UpdateHoldingInput } from '../use-cases/UpdateHoldingUseCase';
 import type { FeatureExecutionContext } from './index';
 
 /**
+ * Shared utility for bulk operations with consistent error handling
+ */
+async function executeBulkOperation<T>(
+  ids: string[],
+  operation: (id: string) => Promise<T>
+): Promise<{
+  success: boolean;
+  deleted: number;
+  failed: number;
+  total: number;
+  deletedIds: string[];
+  failedIds: string[];
+}> {
+  const results = await Promise.allSettled(ids.map(operation));
+
+  const deletedIds: string[] = [];
+  const failedIds: string[] = [];
+
+  results.forEach((result, index) => {
+    const id = ids[index];
+    if (id) {
+      if (result.status === 'fulfilled') {
+        deletedIds.push(id);
+      } else {
+        failedIds.push(id);
+      }
+    }
+  });
+
+  return {
+    success: failedIds.length === 0,
+    deleted: deletedIds.length,
+    failed: failedIds.length,
+    total: ids.length,
+    deletedIds,
+    failedIds,
+  };
+}
+
+/**
  * Dashboard Implementations
  */
 export const DashboardImplementations = {
@@ -107,6 +147,13 @@ export const AccountImplementations = {
     }
     return { success: true };
   },
+
+  async bulkDelete(context: FeatureExecutionContext, input: { ids: string[] }) {
+    const accountService = Container.get(AccountService);
+    return executeBulkOperation(input.ids, (id) =>
+      accountService.deleteAccount(id, context.userId)
+    );
+  },
 };
 
 /**
@@ -176,6 +223,11 @@ export const HoldingImplementations = {
   async delete(context: FeatureExecutionContext, input: { id: string }) {
     const useCase = Container.get(DeleteHoldingUseCase);
     return await useCase.execute(input.id, context.userId);
+  },
+
+  async bulkDelete(context: FeatureExecutionContext, input: { ids: string[] }) {
+    const useCase = Container.get(DeleteHoldingUseCase);
+    return executeBulkOperation(input.ids, (id) => useCase.execute(id, context.userId));
   },
 
   async updatePrice(context: FeatureExecutionContext, input: { id: string }) {

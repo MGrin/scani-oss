@@ -112,6 +112,46 @@ export function Accounts() {
     },
   });
 
+  // Bulk delete accounts mutation
+  const bulkDeleteAccountsMutation = trpc.accounts.bulkDelete.useMutation({
+    onMutate: async (input) => {
+      // Snapshot previous value
+      const previousAccounts = utils.accounts.getByUserIdWithSummary.getData();
+
+      // Optimistically remove the accounts
+      utils.accounts.getByUserIdWithSummary.setData(undefined, (old) =>
+        old?.filter((account) => !input.ids.includes(account.id))
+      );
+
+      return { previousAccounts };
+    },
+    onSuccess: (result) => {
+      toast({
+        title: result.failed > 0 ? 'Accounts partially deleted' : 'Accounts deleted',
+        description:
+          result.failed > 0
+            ? `Successfully deleted ${result.deleted} of ${result.total} accounts. ${result.failed} failed.`
+            : `Successfully deleted ${result.deleted} of ${result.total} accounts.`,
+      });
+
+      // Only clear successfully deleted items from selection
+      if (result.failedIds && result.failedIds.length > 0) {
+        setSelectedRows(new Set(result.failedIds));
+      } else {
+        setSelectedRows(new Set());
+      }
+    },
+    onError: (err, _input, _context) => {
+      // Don't rollback - let onSettled refetch instead
+      // This ensures consistency with actual backend state
+      showError(err, 'Deleting accounts');
+    },
+    onSettled: () => {
+      // Always refetch after error or success
+      utils.accounts.getByUserIdWithSummary.invalidate();
+    },
+  });
+
   // Transform backend data to match frontend expectations
   const accounts = accountsData || [];
 
@@ -121,6 +161,7 @@ export function Accounts() {
   const [sortField, setSortField] = useState('value');
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc');
   const [valueRange, setValueRange] = useState('all');
+  const [selectedRows, setSelectedRows] = useState<Set<string>>(new Set());
 
   // Unified filter system
   const {
@@ -303,6 +344,39 @@ export function Accounts() {
 
   const handleDeleteAccount = (account: Account) => {
     deleteAccountMutation.mutate({ id: account.id });
+  };
+
+  const handleSelectRow = (rowKey: string) => {
+    setSelectedRows((prev) => {
+      const newSet = new Set(prev);
+      if (newSet.has(rowKey)) {
+        newSet.delete(rowKey);
+      } else {
+        newSet.add(rowKey);
+      }
+      return newSet;
+    });
+  };
+
+  const handleSelectAll = (selected: boolean) => {
+    if (selected) {
+      const allIds = filteredAndSortedAccounts.map((account) => account.id);
+      setSelectedRows(new Set(allIds));
+    } else {
+      setSelectedRows(new Set());
+    }
+  };
+
+  const handleBulkDelete = () => {
+    if (selectedRows.size === 0) return;
+
+    const confirmed = window.confirm(
+      `Are you sure you want to delete ${selectedRows.size} account${selectedRows.size !== 1 ? 's' : ''}?`
+    );
+
+    if (confirmed) {
+      bulkDeleteAccountsMutation.mutate({ ids: Array.from(selectedRows) });
+    }
   };
 
   const renderActions = (account: Account) => (
@@ -584,65 +658,92 @@ export function Accounts() {
                       })}
                     </div>
                   ) : (
-                    <DataTable
-                      // @ts-expect-error TS2322 - Account type mismatch
-                      data={accounts}
-                      columns={[
-                        {
-                          header: 'Account',
-                          accessor: (row) => (
-                            <div>
-                              <div className="font-medium">{row.name}</div>
-                              <div className="text-sm text-muted-foreground">
-                                {accountTypes?.find((type) => type.id === row.typeId)?.name ||
-                                  'Unknown Type'}
-                              </div>
+                    <>
+                      {selectedRows.size > 0 && (
+                        <Card className="mb-4">
+                          <CardContent className="py-3">
+                            <div className="flex items-center justify-between">
+                              <span className="text-sm font-medium">
+                                {selectedRows.size} account{selectedRows.size !== 1 ? 's' : ''}{' '}
+                                selected
+                              </span>
+                              <Button
+                                variant="destructive"
+                                size="sm"
+                                onClick={handleBulkDelete}
+                                disabled={bulkDeleteAccountsMutation.isPending}
+                              >
+                                <Trash2 className="h-4 w-4 mr-2" />
+                                Delete Selected
+                              </Button>
                             </div>
-                          ),
-                          sortable: true,
-                        },
-                        {
-                          header: 'Institution',
-                          accessor: (row) => (
-                            <InstitutionBadge
-                              institutionId={row.institutionId}
-                              institutionName={
-                                institutions?.find((inst) => inst.id === row.institutionId)?.name ||
-                                'Unknown'
-                              }
-                              institutionWebsite={
-                                institutions?.find((inst) => inst.id === row.institutionId)
-                                  ?.website || undefined
-                              }
-                            />
-                          ),
-                          sortable: true,
-                        },
-                        {
-                          header: 'Balance',
-                          accessor: (row) => (
-                            <MoneyDisplay
-                              value={parseFloat(row.summary.totalValue)}
-                              token={baseCurrencyToken}
-                            />
-                          ),
-                          className: 'font-mono font-medium',
-                          sortable: true,
-                        },
-                        {
-                          header: 'Holdings',
-                          accessor: (row) =>
-                            `${row.summary.holdingsCount} holding${
-                              row.summary.holdingsCount !== 1 ? 's' : ''
-                            }`,
-                          className: 'text-muted-foreground',
-                        },
-                      ]}
-                      getRowKey={(row) => row.id}
-                      onSort={handleSort}
-                      onRowClick={(row) => navigate(`/accounts/${row.id}`)}
-                      actions={renderActions}
-                    />
+                          </CardContent>
+                        </Card>
+                      )}
+                      <DataTable
+                        // @ts-expect-error TS2322 - Account type mismatch
+                        data={accounts}
+                        columns={[
+                          {
+                            header: 'Account',
+                            accessor: (row) => (
+                              <div>
+                                <div className="font-medium">{row.name}</div>
+                                <div className="text-sm text-muted-foreground">
+                                  {accountTypes?.find((type) => type.id === row.typeId)?.name ||
+                                    'Unknown Type'}
+                                </div>
+                              </div>
+                            ),
+                            sortable: true,
+                          },
+                          {
+                            header: 'Institution',
+                            accessor: (row) => (
+                              <InstitutionBadge
+                                institutionId={row.institutionId}
+                                institutionName={
+                                  institutions?.find((inst) => inst.id === row.institutionId)
+                                    ?.name || 'Unknown'
+                                }
+                                institutionWebsite={
+                                  institutions?.find((inst) => inst.id === row.institutionId)
+                                    ?.website || undefined
+                                }
+                              />
+                            ),
+                            sortable: true,
+                          },
+                          {
+                            header: 'Balance',
+                            accessor: (row) => (
+                              <MoneyDisplay
+                                value={parseFloat(row.summary.totalValue)}
+                                token={baseCurrencyToken}
+                              />
+                            ),
+                            className: 'font-mono font-medium',
+                            sortable: true,
+                          },
+                          {
+                            header: 'Holdings',
+                            accessor: (row) =>
+                              `${row.summary.holdingsCount} holding${
+                                row.summary.holdingsCount !== 1 ? 's' : ''
+                              }`,
+                            className: 'text-muted-foreground',
+                          },
+                        ]}
+                        getRowKey={(row) => row.id}
+                        onSort={handleSort}
+                        onRowClick={(row) => navigate(`/accounts/${row.id}`)}
+                        actions={renderActions}
+                        selectable={true}
+                        selectedRows={selectedRows}
+                        onSelectRow={handleSelectRow}
+                        onSelectAll={handleSelectAll}
+                      />
+                    </>
                   )}
                 </div>
               ))}

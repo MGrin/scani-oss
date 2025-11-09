@@ -1,5 +1,6 @@
 import { AccountImplementations } from '@scani/core/features/implementations';
 import { IdInputDto } from '@scani/shared';
+import { z } from 'zod';
 import { emitEntityChange } from '../../infrastructure/websocket/RealTimeUpdatesService';
 import { requireAuth } from '../middleware/auth';
 import { protectedProcedure, router } from '../trpc';
@@ -47,4 +48,29 @@ export const accountsRouter = router({
 
     return result;
   }),
+
+  bulkDelete: protectedProcedure
+    .input(z.object({ ids: z.array(z.string()).min(1) }))
+    .mutation(async ({ input, ctx }) => {
+      const { dbUser } = requireAuth(ctx);
+
+      const result = await AccountImplementations.bulkDelete(
+        { userId: dbUser.id, dbUser },
+        { ids: input.ids }
+      );
+
+      // Emit entity change events only for successfully deleted accounts
+      for (const id of result.deletedIds) {
+        emitEntityChange({
+          type: 'entity_changed',
+          entityType: 'account',
+          operationType: 'delete',
+          entityId: id,
+          userId: dbUser.id,
+          data: {},
+        });
+      }
+
+      return result;
+    }),
 });

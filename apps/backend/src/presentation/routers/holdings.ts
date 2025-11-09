@@ -72,6 +72,30 @@ export const holdingsRouter = router({
       return result;
     }),
 
+  bulkDelete: protectedProcedure
+    .input(z.object({ ids: z.array(z.string()).min(1) }))
+    .mutation(async ({ input, ctx }) => {
+      const { dbUser } = requireAuth(ctx);
+
+      const result = await HoldingImplementations.bulkDelete(
+        { userId: dbUser.id, dbUser },
+        { ids: input.ids }
+      );
+
+      // Emit entity change events only for successfully deleted holdings
+      for (const id of result.deletedIds) {
+        emitEntityChange({
+          type: 'entity_changed',
+          entityType: 'holding',
+          operationType: 'delete',
+          entityId: id,
+          userId: dbUser.id,
+        });
+      }
+
+      return result;
+    }),
+
   // Update holding price by forcing fresh fetch from pricing providers
   updatePrice: protectedProcedure
     .input(z.object({ id: z.string() }))

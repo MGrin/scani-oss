@@ -1,6 +1,7 @@
 import { ArrowUpDown } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { Card, CardContent } from './card';
+import { Checkbox } from './checkbox';
 import { Skeleton } from './skeleton';
 
 export interface Column<T> {
@@ -23,6 +24,11 @@ export interface DataTableProps<T> {
   getRowKey: (row: T) => string;
   onRowClick?: (row: T) => void;
   actions?: (row: T) => ReactNode;
+  // Selection props
+  selectable?: boolean;
+  selectedRows?: Set<string>;
+  onSelectRow?: (rowKey: string) => void;
+  onSelectAll?: (selected: boolean) => void;
 }
 
 export function DataTable<T>({
@@ -35,6 +41,10 @@ export function DataTable<T>({
   getRowKey,
   onRowClick,
   actions,
+  selectable = false,
+  selectedRows = new Set(),
+  onSelectRow,
+  onSelectAll,
 }: DataTableProps<T>) {
   const handleSort = (column: Column<T>) => {
     if (!column.sortable || !onSort) return;
@@ -55,6 +65,17 @@ export function DataTable<T>({
     return row[column.accessor] as ReactNode;
   };
 
+  const allSelected =
+    selectable && data.length > 0 && data.every((row) => selectedRows.has(getRowKey(row)));
+
+  const handleSelectAllChange = (checked: boolean) => {
+    onSelectAll?.(checked);
+  };
+
+  const handleSelectRowChange = (rowKey: string) => {
+    onSelectRow?.(rowKey);
+  };
+
   if (isLoading) {
     return (
       <Card>
@@ -63,6 +84,11 @@ export function DataTable<T>({
             <table className="w-full">
               <thead className="border-b bg-muted/50">
                 <tr className="text-left">
+                  {selectable && (
+                    <th className="p-4 font-medium whitespace-nowrap w-12">
+                      <Skeleton className="h-4 w-4" />
+                    </th>
+                  )}
                   {columns.map((column) => (
                     <th
                       key={column.header}
@@ -89,6 +115,11 @@ export function DataTable<T>({
                     }`}
                     className="border-b"
                   >
+                    {selectable && (
+                      <td className="p-4 whitespace-nowrap">
+                        <Skeleton className="h-4 w-4" />
+                      </td>
+                    )}
                     {columns.map((column) => (
                       <td
                         key={`skeleton-cell-${rowIndex}-${column.header}`}
@@ -129,6 +160,15 @@ export function DataTable<T>({
           <table className="w-full">
             <thead className="border-b bg-muted/50">
               <tr className="text-left">
+                {selectable && (
+                  <th className="p-4 font-medium whitespace-nowrap w-12">
+                    <Checkbox
+                      checked={allSelected}
+                      onCheckedChange={handleSelectAllChange}
+                      aria-label="Select all rows"
+                    />
+                  </th>
+                )}
                 {columns.map((column) => (
                   <th
                     key={column.header}
@@ -151,25 +191,47 @@ export function DataTable<T>({
               </tr>
             </thead>
             <tbody>
-              {data.map((row) => (
-                <tr
-                  key={getRowKey(row)}
-                  className={`border-b hover:bg-muted/50 transition-colors ${
-                    onRowClick ? 'cursor-pointer' : ''
-                  }`}
-                  onClick={() => onRowClick?.(row)}
-                >
-                  {columns.map((column) => (
-                    <td
-                      key={`${getRowKey(row)}-${column.header}`}
-                      className={`p-4 whitespace-nowrap ${column.className || ''}`}
-                    >
-                      {getCellValue(row, column)}
-                    </td>
-                  ))}
-                  {actions && <td className="p-4 whitespace-nowrap">{actions(row)}</td>}
-                </tr>
-              ))}
+              {data.map((row) => {
+                const rowKey = getRowKey(row);
+                const isSelected = selectedRows.has(rowKey);
+                return (
+                  <tr
+                    key={rowKey}
+                    className={`border-b hover:bg-muted/50 transition-colors ${
+                      onRowClick ? 'cursor-pointer' : ''
+                    } ${isSelected ? 'bg-muted/30' : ''}`}
+                    onClick={() => onRowClick?.(row)}
+                  >
+                    {selectable && (
+                      <td
+                        className="p-4 whitespace-nowrap"
+                        onClick={(e) => e.stopPropagation()}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' || e.key === ' ') {
+                            e.stopPropagation();
+                            e.preventDefault();
+                          }
+                        }}
+                      >
+                        <Checkbox
+                          checked={isSelected}
+                          onCheckedChange={() => handleSelectRowChange(rowKey)}
+                          aria-label={`Select row ${rowKey}`}
+                        />
+                      </td>
+                    )}
+                    {columns.map((column) => (
+                      <td
+                        key={`${rowKey}-${column.header}`}
+                        className={`p-4 whitespace-nowrap ${column.className || ''}`}
+                      >
+                        {getCellValue(row, column)}
+                      </td>
+                    ))}
+                    {actions && <td className="p-4 whitespace-nowrap">{actions(row)}</td>}
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
