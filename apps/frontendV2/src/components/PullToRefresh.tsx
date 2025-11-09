@@ -54,6 +54,16 @@ export function PullToRefresh({ onRefresh, children, disabled = false }: PullToR
       const scrollableElement = getScrollableElement();
       // Only start if we're at the top of the scrollable container
       const scrollTop = scrollableElement.scrollTop;
+
+      // Check if the touch target is within a table or other scrollable content
+      const target = e.target as HTMLElement;
+      const isInTable = target.closest('table, .overflow-x-auto');
+
+      // Don't start pull-to-refresh if touching inside a table or scrollable content
+      if (isInTable) {
+        return;
+      }
+
       if (scrollTop <= 1 && !isRefreshing && e.touches[0]) {
         startY.current = e.touches[0].clientY;
         startScrollTop.current = scrollTop;
@@ -62,6 +72,15 @@ export function PullToRefresh({ onRefresh, children, disabled = false }: PullToR
 
     const handleTouchMove = (e: TouchEvent) => {
       if (isRefreshing || !e.touches[0]) return;
+
+      // Check if the touch is happening within a table or scrollable content
+      const target = e.target as HTMLElement;
+      const isInTable = target.closest('table, .overflow-x-auto, .overflow-auto');
+
+      // Don't trigger pull-to-refresh if touching inside a table or scrollable content
+      if (isInTable) {
+        return;
+      }
 
       const scrollableElement = getScrollableElement();
       currentY.current = e.touches[0].clientY;
