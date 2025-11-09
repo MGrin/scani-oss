@@ -89,14 +89,37 @@ export function WalletImportStep({ onChangesDetected }: WalletImportStepProps) {
       setImportProgress(100);
       setCurrentStep('Import complete');
 
-      if (data.tokensImported > 0) {
-        toast({
-          title: 'Wallet imported successfully',
-          description: `Imported ${data.tokensImported} token${data.tokensImported > 1 ? 's' : ''} from ${data.chainsDetected} chain${data.chainsDetected > 1 ? 's' : ''}`,
-        });
+      const hasErrors = data.errors && data.errors.length > 0;
+      const hasSuccess = data.tokensImported > 0;
+
+      if (hasSuccess) {
+        if (hasErrors) {
+          // Partial success - some chains succeeded, some failed
+          toast({
+            title: 'Wallet partially imported',
+            description: `Imported ${data.tokensImported} token${data.tokensImported > 1 ? 's' : ''} from ${data.accounts.length} chain${data.accounts.length > 1 ? 's' : ''}. ${data.errors.length} chain${data.errors.length > 1 ? 's' : ''} failed. See details below.`,
+            variant: 'default',
+          });
+        } else {
+          // Complete success
+          toast({
+            title: 'Wallet imported successfully',
+            description: `Imported ${data.tokensImported} token${data.tokensImported > 1 ? 's' : ''} from ${data.chainsDetected} chain${data.chainsDetected > 1 ? 's' : ''}`,
+          });
+        }
         onChangesDetected?.(true);
       } else {
-        showError('No tokens found', 'Wallet detected but no tokens with balance found');
+        // No tokens imported
+        if (hasErrors) {
+          // Failed completely
+          showError(
+            'Import failed',
+            `Failed to import wallet from ${data.errors.length} chain${data.errors.length > 1 ? 's' : ''}. See error details below.`
+          );
+        } else {
+          // No tokens found but no errors either
+          showError('No tokens found', 'Wallet detected but no tokens with balance found');
+        }
       }
     },
     onError: (error) => {

@@ -130,6 +130,14 @@ export class ImportWalletAddressUseCase {
     userId: string,
     user: typeof schema.users.$inferSelect
   ): Promise<ImportWalletResult> {
+    logger.info(
+      {
+        userId,
+        address: `${input.address.substring(0, 10)}...${input.address.substring(input.address.length - 4)}`,
+      },
+      'Starting wallet import with integrations'
+    );
+
     // Detect which chains (institutions) this wallet exists on
     logger.debug(
       {
@@ -140,6 +148,15 @@ export class ImportWalletAddressUseCase {
     );
 
     const detectedInstitutionIds = await this.integrationManager.detectWalletChains(input.address);
+
+    logger.info(
+      {
+        userId,
+        detectedInstitutionsCount: detectedInstitutionIds.length,
+        institutionIds: detectedInstitutionIds,
+      },
+      'Wallet chain detection completed'
+    );
 
     if (detectedInstitutionIds.length === 0) {
       logger.warn(
@@ -220,16 +237,25 @@ export class ImportWalletAddressUseCase {
       throw new Error('Token type "crypto" not found');
     }
 
+    logger.info(
+      { userId, institutionCount: detectedInstitutionIds.length },
+      'Processing institutions for wallet import'
+    );
+
     for (const institutionId of detectedInstitutionIds) {
       try {
+        logger.debug({ userId, institutionId }, 'Starting to process institution');
+
         const integration = await this.integrationManager.getIntegration(institutionId);
 
         if (!integration) {
-          errors.push({
+          const error = {
             chainId: institutionId,
             chainName: 'Unknown',
             error: 'Integration not found',
-          });
+          };
+          errors.push(error);
+          logger.warn({ userId, institutionId }, 'Integration not found for institution');
           continue;
         }
 
@@ -241,11 +267,13 @@ export class ImportWalletAddressUseCase {
           .limit(1);
 
         if (!institution) {
-          errors.push({
+          const error = {
             chainId: institutionId,
             chainName: 'Unknown',
             error: 'Institution not found',
-          });
+          };
+          errors.push(error);
+          logger.warn({ userId, institutionId }, 'Institution not found in database');
           continue;
         }
 
@@ -253,13 +281,23 @@ export class ImportWalletAddressUseCase {
         const mapping = await this.mappingRepository.findByInstitutionId(institutionId);
 
         if (!mapping) {
-          errors.push({
+          const error = {
             chainId: institutionId,
             chainName: institution.name,
             error: 'Chain mapping not found',
-          });
+          };
+          errors.push(error);
+          logger.warn(
+            { userId, institutionId, institutionName: institution.name },
+            'Chain mapping not found for institution'
+          );
           continue;
         }
+
+        logger.info(
+          { userId, institutionId, institutionName: institution.name, chainId: mapping.chainId },
+          'Processing wallet on institution'
+        );
 
         const result = await this.processWalletWithIntegration(
           integration,
@@ -276,21 +314,45 @@ export class ImportWalletAddressUseCase {
 
         accounts.push(result.account);
         holdings.push(...result.holdings);
+
+        logger.info(
+          {
+            userId,
+            institutionId,
+            institutionName: institution.name,
+            accountId: result.account.id,
+            holdingsCount: result.holdings.length,
+          },
+          'Successfully processed institution'
+        );
       } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        const errorStack = error instanceof Error ? error.stack : undefined;
+
         logger.error(
           {
+            userId,
             institutionId,
-            error: error instanceof Error ? error.message : String(error),
+            error: errorMessage,
+            stack: errorStack,
           },
           'Failed to process wallet on institution'
         );
         errors.push({
           chainId: institutionId,
           chainName: 'Unknown',
-          error: error instanceof Error ? error.message : 'Unknown error',
+          error: errorMessage,
         });
       }
     }
+
+    const finalResult = {
+      accounts,
+      holdings,
+      chainsDetected: detectedInstitutionIds.length,
+      tokensImported: holdings.length,
+      errors,
+    };
 
     logger.info(
       {
@@ -298,18 +360,13 @@ export class ImportWalletAddressUseCase {
         institutionsDetected: detectedInstitutionIds.length,
         accountsCreated: accounts.length,
         holdingsCreated: holdings.length,
-        errors: errors.length,
+        errorsCount: errors.length,
+        success: accounts.length > 0 || holdings.length > 0,
       },
       'Wallet import completed with integrations'
     );
 
-    return {
-      accounts,
-      holdings,
-      chainsDetected: detectedInstitutionIds.length,
-      tokensImported: holdings.length,
-      errors,
-    };
+    return finalResult;
   }
 
   /**
@@ -428,12 +485,34 @@ export class ImportWalletAddressUseCase {
     account: ImportWalletResult['accounts'][0];
     holdings: ImportWalletResult['holdings'];
   }> {
+    logger.debug(
+      {
+        userId,
+        institutionId: institution.id,
+        institutionName: institution.name,
+        chainId,
+        walletAddress: `${walletAddress.substring(0, 10)}...`,
+      },
+      'Fetching holdings from integration'
+    );
+
     // Fetch holdings from the integration
     const holdingsResult = await integration.fetchHoldings(walletAddress);
 
+    logger.info(
+      {
+        userId,
+        institutionId: institution.id,
+        institutionName: institution.name,
+        holdingsCount: holdingsResult.holdings.length,
+        errorsCount: holdingsResult.errors?.length || 0,
+      },
+      'Holdings fetched from integration'
+    );
+
     if (holdingsResult.errors && holdingsResult.errors.length > 0) {
       logger.warn(
-        { institutionId: institution.id, errors: holdingsResult.errors },
+        { userId, institutionId: institution.id, errors: holdingsResult.errors },
         'Errors fetching holdings from integration'
       );
     }
@@ -442,6 +521,15 @@ export class ImportWalletAddressUseCase {
     const accountName = this.generateAccountName(
       institution.name,
       displayNameOverride || walletAddress
+    );
+
+    logger.debug(
+      {
+        userId,
+        institutionId: institution.id,
+        accountName,
+      },
+      'Checking for existing account'
     );
 
     // Check if account already exists for this institution and address
@@ -477,7 +565,10 @@ export class ImportWalletAddressUseCase {
         })
         .where(eq(schema.accounts.id, accountId));
 
-      logger.debug({ accountId, userWalletId }, 'Updated existing account with user_wallet_id');
+      logger.info(
+        { userId, accountId, userWalletId, institutionName: institution.name },
+        'Updated existing account with user_wallet_id'
+      );
     } else {
       // Create new account with user_wallet_id in metadata
       const [newAccount] = await db
@@ -506,7 +597,10 @@ export class ImportWalletAddressUseCase {
       }
 
       accountId = newAccount.id;
-      logger.debug({ accountId, userWalletId }, 'Created new account with user_wallet_id');
+      logger.info(
+        { userId, accountId, userWalletId, institutionName: institution.name },
+        'Created new account with user_wallet_id'
+      );
     }
 
     // Store/update credentials if needed (for now, just mark as stored for RPC-based chains)
@@ -541,12 +635,23 @@ export class ImportWalletAddressUseCase {
     // Create holdings for each token
     const holdings: ImportWalletResult['holdings'] = [];
 
+    logger.info(
+      {
+        userId,
+        institutionId: institution.id,
+        institutionName: institution.name,
+        holdingsToProcess: holdingsResult.holdings.length,
+      },
+      'Processing holdings for institution'
+    );
+
     for (const holding of holdingsResult.holdings) {
       try {
         // Skip tokens with missing required data
         if (!holding.symbol || !holding.balance) {
           logger.warn(
             {
+              userId,
               institutionName: institution.name,
               holding,
             },
@@ -555,6 +660,16 @@ export class ImportWalletAddressUseCase {
           continue;
         }
 
+        logger.debug(
+          {
+            userId,
+            institutionName: institution.name,
+            tokenSymbol: holding.symbol,
+            balance: holding.balance,
+          },
+          'Processing holding'
+        );
+
         // Map the integration holding to our token format
         const tokenMapping = await integration.mapToken(holding);
 
@@ -562,6 +677,16 @@ export class ImportWalletAddressUseCase {
         const token = await this.tokenService.findOrCreateTokenFromIntegration(
           tokenMapping,
           cryptoTokenTypeId
+        );
+
+        logger.debug(
+          {
+            userId,
+            tokenId: token.id,
+            tokenSymbol: token.symbol,
+            institutionName: institution.name,
+          },
+          'Token resolved'
         );
 
         // Check if holding already exists (including hidden ones)
@@ -584,6 +709,17 @@ export class ImportWalletAddressUseCase {
               lastUpdated: new Date(),
             })
             .where(eq(schema.holdings.id, existingHolding.id));
+
+          logger.info(
+            {
+              userId,
+              holdingId: existingHolding.id,
+              tokenSymbol: token.symbol,
+              balance: holding.balance,
+              institutionName: institution.name,
+            },
+            'Updated existing holding'
+          );
 
           holdings.push({
             id: existingHolding.id,
@@ -611,6 +747,17 @@ export class ImportWalletAddressUseCase {
             throw new Error('Failed to create holding');
           }
 
+          logger.info(
+            {
+              userId,
+              holdingId: newHolding.id,
+              tokenSymbol: token.symbol,
+              balance: holding.balance,
+              institutionName: institution.name,
+            },
+            'Created new holding'
+          );
+
           holdings.push({
             id: newHolding.id,
             accountId,
@@ -630,6 +777,7 @@ export class ImportWalletAddressUseCase {
           } catch (error) {
             logger.debug(
               {
+                userId,
                 tokenSymbol: token.symbol,
                 error: error instanceof Error ? error.message : String(error),
               },
@@ -640,17 +788,30 @@ export class ImportWalletAddressUseCase {
       } catch (error) {
         logger.error(
           {
+            userId,
             tokenSymbol: holding?.symbol || 'unknown',
             tokenName: holding?.name || 'unknown',
             balance: holding?.balance || 'unknown',
             institutionName: institution.name,
             error: error instanceof Error ? error.message : String(error),
+            stack: error instanceof Error ? error.stack : undefined,
           },
           'Failed to create holding for token'
         );
         // Continue with other tokens even if one fails
       }
     }
+
+    logger.info(
+      {
+        userId,
+        institutionId: institution.id,
+        institutionName: institution.name,
+        holdingsCreated: holdings.length,
+        holdingsProcessed: holdingsResult.holdings.length,
+      },
+      'Completed processing holdings for institution'
+    );
 
     return {
       account: {

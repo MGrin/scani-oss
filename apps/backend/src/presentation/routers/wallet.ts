@@ -4,10 +4,13 @@
  */
 
 import { WalletImplementations } from '@scani/core/features/implementations';
+import { createComponentLogger } from '@scani/core/utils/logger';
 import { z } from 'zod';
 import { emitEntityChange } from '../../infrastructure/websocket/RealTimeUpdatesService';
 import { requireAuth } from '../middleware/auth';
 import { protectedProcedure, router } from '../trpc';
+
+const logger = createComponentLogger('router:wallet');
 
 /**
  * Input validation schema for wallet import
@@ -33,6 +36,20 @@ export const walletRouter = router({
     const { dbUser } = requireAuth(ctx);
 
     const result = await WalletImplementations.importAddress({ userId: dbUser.id, dbUser }, input);
+
+    // Log the final result for debugging
+    logger.info(
+      {
+        userId: dbUser.id,
+        accountsCreated: result.accounts.length,
+        holdingsCreated: result.holdings.length,
+        chainsDetected: result.chainsDetected,
+        errorsCount: result.errors.length,
+        hasErrors: result.errors.length > 0,
+        hasSuccess: result.accounts.length > 0 || result.holdings.length > 0,
+      },
+      'Wallet import completed - returning result to client'
+    );
 
     // Emit WebSocket events for created entities
     for (const account of result.accounts) {
