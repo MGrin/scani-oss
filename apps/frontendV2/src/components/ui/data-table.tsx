@@ -162,11 +162,13 @@ export function DataTable<T>({
               <tr className="text-left">
                 {selectable && (
                   <th className="p-4 font-medium whitespace-nowrap w-12">
-                    <Checkbox
-                      checked={allSelected}
-                      onCheckedChange={handleSelectAllChange}
-                      aria-label="Select all rows"
-                    />
+                    <div className="flex items-center justify-center">
+                      <Checkbox
+                        checked={allSelected}
+                        onCheckedChange={handleSelectAllChange}
+                        aria-label="Select all rows"
+                      />
+                    </div>
                   </th>
                 )}
                 {columns.map((column) => (
@@ -213,11 +215,13 @@ export function DataTable<T>({
                           }
                         }}
                       >
-                        <Checkbox
-                          checked={isSelected}
-                          onCheckedChange={() => handleSelectRowChange(rowKey)}
-                          aria-label={`Select row ${rowKey}`}
-                        />
+                        <div className="flex items-center justify-center">
+                          <Checkbox
+                            checked={isSelected}
+                            onCheckedChange={() => handleSelectRowChange(rowKey)}
+                            aria-label={`Select row ${rowKey}`}
+                          />
+                        </div>
                       </td>
                     )}
                     {columns.map((column) => (

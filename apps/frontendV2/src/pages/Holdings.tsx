@@ -23,6 +23,7 @@ import {
 } from '@/components/selectors/SearchableSelectors';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Checkbox } from '@/components/ui/checkbox';
 import { DataTable } from '@/components/ui/data-table';
 import {
   DropdownMenu,
@@ -701,46 +702,90 @@ export function Holdings() {
                   )}
 
                   {viewMode === 'cards' ? (
-                    <div className="grid gap-4 grid-cols-1 md:grid-cols-2 lg:grid-cols-3">
-                      {holdings.map((holding) => (
-                        <Card
-                          key={holding.id}
-                          className="hover:shadow-md transition-shadow cursor-pointer"
-                          onClick={() => handleHoldingClick(holding)}
-                        >
-                          <CardHeader>
-                            <CardTitle className="flex items-center justify-between">
-                              <span className="flex items-center gap-2">
-                                {holding.token.symbol || holding.token.name}
+                    <>
+                      {selectedRows.size > 0 && (
+                        <Card className="mb-4">
+                          <CardContent className="py-3">
+                            <div className="flex items-center justify-between">
+                              <span className="text-sm font-medium">
+                                {selectedRows.size} holding{selectedRows.size !== 1 ? 's' : ''}{' '}
+                                selected
                               </span>
-                              <TokenTypeBadge tokenTypeCode={holding.token.typeCode} />
-                            </CardTitle>
-                            <div className="flex items-center gap-2">
-                              <AccountBadge
-                                accountId={holding.account.id}
-                                accountName={holding.account.name}
-                                accountTypeCode={holding.account.typeCode}
-                              />
-                              <InstitutionBadge
-                                institutionId={holding.institution.id}
-                                institutionName={holding.institution.name}
-                                institutionWebsite={holding.institution.website ?? undefined}
-                              />
-                            </div>
-                          </CardHeader>
-                          <CardContent>
-                            <div className="space-y-2">
-                              <div className="text-2xl font-bold">
-                                {holding.amount.toString()} {holding.token.symbol}
-                              </div>
-                              <div className="text-lg font-semibold">
-                                <MoneyDisplay value={holding.value} token={baseCurrencyToken} />
-                              </div>
+                              <Button
+                                variant="destructive"
+                                size="sm"
+                                onClick={handleBulkDelete}
+                                disabled={bulkDeleteHoldingsMutation.isPending}
+                              >
+                                <Trash2 className="h-4 w-4 mr-2" />
+                                Delete Selected
+                              </Button>
                             </div>
                           </CardContent>
                         </Card>
-                      ))}
-                    </div>
+                      )}
+                      <div className="grid gap-4 grid-cols-1 md:grid-cols-2 lg:grid-cols-3">
+                        {holdings.map((holding) => {
+                          const isSelected = selectedRows.has(holding.id);
+                          return (
+                            <Card
+                              key={holding.id}
+                              className={`hover:shadow-md transition-shadow ${
+                                isSelected ? 'ring-2 ring-primary' : ''
+                              }`}
+                            >
+                              <CardHeader>
+                                <CardTitle className="flex items-center justify-between">
+                                  <span className="flex items-center gap-2">
+                                    <div className="min-w-[44px] min-h-[44px] flex items-center justify-center">
+                                      <Checkbox
+                                        checked={isSelected}
+                                        onCheckedChange={() => handleSelectRow(holding.id)}
+                                        onClick={(e) => e.stopPropagation()}
+                                        aria-label={`Select ${holding.token.symbol}`}
+                                      />
+                                    </div>
+                                    <button
+                                      type="button"
+                                      className="cursor-pointer text-left font-semibold hover:underline"
+                                      onClick={() => handleHoldingClick(holding)}
+                                    >
+                                      {holding.token.symbol || holding.token.name}
+                                    </button>
+                                  </span>
+                                  <TokenTypeBadge tokenTypeCode={holding.token.typeCode} />
+                                </CardTitle>
+                                <div className="flex items-center gap-2">
+                                  <AccountBadge
+                                    accountId={holding.account.id}
+                                    accountName={holding.account.name}
+                                    accountTypeCode={holding.account.typeCode}
+                                  />
+                                  <InstitutionBadge
+                                    institutionId={holding.institution.id}
+                                    institutionName={holding.institution.name}
+                                    institutionWebsite={holding.institution.website ?? undefined}
+                                  />
+                                </div>
+                              </CardHeader>
+                              <CardContent
+                                className="cursor-pointer"
+                                onClick={() => handleHoldingClick(holding)}
+                              >
+                                <div className="space-y-2">
+                                  <div className="text-2xl font-bold">
+                                    {holding.amount.toString()} {holding.token.symbol}
+                                  </div>
+                                  <div className="text-lg font-semibold">
+                                    <MoneyDisplay value={holding.value} token={baseCurrencyToken} />
+                                  </div>
+                                </div>
+                              </CardContent>
+                            </Card>
+                          );
+                        })}
+                      </div>
+                    </>
                   ) : (
                     <>
                       {selectedRows.size > 0 && (

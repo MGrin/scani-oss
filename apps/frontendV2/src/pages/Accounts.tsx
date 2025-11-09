@@ -16,6 +16,7 @@ import {
 } from '@/components/selectors/SearchableSelectors';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Checkbox } from '@/components/ui/checkbox';
 import { DataTable } from '@/components/ui/data-table';
 import {
   DropdownMenu,
@@ -609,54 +610,98 @@ export function Accounts() {
                   )}
 
                   {viewMode === 'cards' ? (
-                    <div className="grid gap-4 grid-cols-1 md:grid-cols-2 lg:grid-cols-3">
-                      {accounts.map((account) => {
-                        const institution = institutions?.find(
-                          (inst) => inst.id === account.institutionId
-                        );
-                        const accountType = accountTypes?.find(
-                          (type) => type.id === account.typeId
-                        );
+                    <>
+                      {selectedRows.size > 0 && (
+                        <Card className="mb-4">
+                          <CardContent className="py-3">
+                            <div className="flex items-center justify-between">
+                              <span className="text-sm font-medium">
+                                {selectedRows.size} account{selectedRows.size !== 1 ? 's' : ''}{' '}
+                                selected
+                              </span>
+                              <Button
+                                variant="destructive"
+                                size="sm"
+                                onClick={handleBulkDelete}
+                                disabled={bulkDeleteAccountsMutation.isPending}
+                              >
+                                <Trash2 className="h-4 w-4 mr-2" />
+                                Delete Selected
+                              </Button>
+                            </div>
+                          </CardContent>
+                        </Card>
+                      )}
+                      <div className="grid gap-4 grid-cols-1 md:grid-cols-2 lg:grid-cols-3">
+                        {accounts.map((account) => {
+                          const institution = institutions?.find(
+                            (inst) => inst.id === account.institutionId
+                          );
+                          const accountType = accountTypes?.find(
+                            (type) => type.id === account.typeId
+                          );
+                          const isSelected = selectedRows.has(account.id);
 
-                        return (
-                          <Card
-                            key={account.id}
-                            className="hover:shadow-md transition-shadow cursor-pointer"
-                            onClick={() => navigate(`/accounts/${account.id}`)}
-                          >
-                            <CardHeader>
-                              <CardTitle className="flex items-center justify-between">
-                                <span className="flex items-center gap-2">{account.name}</span>
-                                <div className="text-sm text-muted-foreground">
-                                  {accountType?.name || 'Unknown'}
-                                </div>
-                              </CardTitle>
-                              <div className="flex items-center gap-2">
-                                <InstitutionBadge
-                                  institutionId={account.institutionId}
-                                  institutionName={institution?.name || 'Unknown Institution'}
-                                  institutionWebsite={institution?.website || undefined}
-                                />
-                              </div>
-                            </CardHeader>
-                            <CardContent>
-                              <div className="space-y-2">
-                                <div className="text-2xl font-bold">
-                                  <MoneyDisplay
-                                    value={parseFloat(account.summary.totalValue)}
-                                    token={baseCurrencyToken}
+                          return (
+                            <Card
+                              key={account.id}
+                              className={`hover:shadow-md transition-shadow ${
+                                isSelected ? 'ring-2 ring-primary' : ''
+                              }`}
+                            >
+                              <CardHeader>
+                                <CardTitle className="flex items-center justify-between">
+                                  <span className="flex items-center gap-2">
+                                    <div className="min-w-[44px] min-h-[44px] flex items-center justify-center">
+                                      <Checkbox
+                                        checked={isSelected}
+                                        onCheckedChange={() => handleSelectRow(account.id)}
+                                        onClick={(e) => e.stopPropagation()}
+                                        aria-label={`Select ${account.name}`}
+                                      />
+                                    </div>
+                                    <button
+                                      type="button"
+                                      className="cursor-pointer text-left font-semibold hover:underline"
+                                      onClick={() => navigate(`/accounts/${account.id}`)}
+                                    >
+                                      {account.name}
+                                    </button>
+                                  </span>
+                                  <div className="text-sm text-muted-foreground">
+                                    {accountType?.name || 'Unknown'}
+                                  </div>
+                                </CardTitle>
+                                <div className="flex items-center gap-2">
+                                  <InstitutionBadge
+                                    institutionId={account.institutionId}
+                                    institutionName={institution?.name || 'Unknown Institution'}
+                                    institutionWebsite={institution?.website || undefined}
                                   />
                                 </div>
-                                <div className="text-sm text-muted-foreground">
-                                  {account.summary.holdingsCount} holding
-                                  {account.summary.holdingsCount !== 1 ? 's' : ''}
+                              </CardHeader>
+                              <CardContent
+                                className="cursor-pointer"
+                                onClick={() => navigate(`/accounts/${account.id}`)}
+                              >
+                                <div className="space-y-2">
+                                  <div className="text-2xl font-bold">
+                                    <MoneyDisplay
+                                      value={parseFloat(account.summary.totalValue)}
+                                      token={baseCurrencyToken}
+                                    />
+                                  </div>
+                                  <div className="text-sm text-muted-foreground">
+                                    {account.summary.holdingsCount} holding
+                                    {account.summary.holdingsCount !== 1 ? 's' : ''}
+                                  </div>
                                 </div>
-                              </div>
-                            </CardContent>
-                          </Card>
-                        );
-                      })}
-                    </div>
+                              </CardContent>
+                            </Card>
+                          );
+                        })}
+                      </div>
+                    </>
                   ) : (
                     <>
                       {selectedRows.size > 0 && (

@@ -155,3 +155,10 @@ li a {
   min-height: auto;
   min-width: auto;
 }
+
+/* Exception for custom checkbox/radio components that handle touch targets via padding */
+[role="checkbox"],
+[role="radio"] {
+  min-height: auto;
+  min-width: auto;
+}

@@ -48,6 +48,9 @@ export function AccountDetail() {
   const [selectedHolding, setSelectedHolding] = useState<HoldingWithDetails | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
 
+  // Selection state for bulk operations
+  const [selectedRows, setSelectedRows] = useState<Set<string>>(new Set());
+
   // Fetch base currency
   const { data: baseCurrency } = trpc.users.getBaseCurrency.useQuery();
   const currency = baseCurrency?.symbol || 'USD';
@@ -72,6 +75,34 @@ export function AccountDetail() {
       });
     },
     onError: (error) => showError(error, 'Deleting holding'),
+  });
+
+  // Bulk delete holdings mutation
+  const bulkDeleteHoldingsMutation = trpc.holdings.bulkDelete.useMutation({
+    onSuccess: (result) => {
+      // Invalidate all holding-related queries
+      utils.holdings.getWithDetails.invalidate();
+      utils.accounts.getHoldings.invalidate();
+      utils.accounts.getById.invalidate();
+      utils.accounts.getByUserIdWithSummary.invalidate();
+      utils.dashboard.getOverview.invalidate();
+
+      toast({
+        title: result.failed > 0 ? 'Holdings partially deleted' : 'Holdings deleted',
+        description:
+          result.failed > 0
+            ? `Successfully deleted ${result.deleted} of ${result.total} holdings. ${result.failed} failed.`
+            : `Successfully deleted ${result.deleted} of ${result.total} holdings.`,
+      });
+
+      // Only clear successfully deleted items from selection
+      if (result.failedIds && result.failedIds.length > 0) {
+        setSelectedRows(new Set(result.failedIds));
+      } else {
+        setSelectedRows(new Set());
+      }
+    },
+    onError: (error) => showError(error, 'Deleting holdings'),
   });
 
   // Fetch account data
@@ -236,6 +267,39 @@ export function AccountDetail() {
 
   const handleDeleteHolding = (holding: HoldingWithDetails) => {
     deleteHoldingMutation.mutate({ id: holding.id });
+  };
+
+  const handleSelectRow = (rowKey: string) => {
+    setSelectedRows((prev) => {
+      const newSet = new Set(prev);
+      if (newSet.has(rowKey)) {
+        newSet.delete(rowKey);
+      } else {
+        newSet.add(rowKey);
+      }
+      return newSet;
+    });
+  };
+
+  const handleSelectAll = (selected: boolean) => {
+    if (selected) {
+      const allIds = filteredAndSortedHoldings.map((holding) => holding.id);
+      setSelectedRows(new Set(allIds));
+    } else {
+      setSelectedRows(new Set());
+    }
+  };
+
+  const handleBulkDelete = () => {
+    if (selectedRows.size === 0) return;
+
+    const confirmed = window.confirm(
+      `Are you sure you want to delete ${selectedRows.size} holding${selectedRows.size !== 1 ? 's' : ''}?`
+    );
+
+    if (confirmed) {
+      bulkDeleteHoldingsMutation.mutate({ ids: Array.from(selectedRows) });
+    }
   };
 
   const renderActions = (holding: HoldingWithDetails) => (
@@ -463,62 +527,88 @@ export function AccountDetail() {
 
       {/* Holdings Display */}
       {viewMode === 'table' ? (
-        <DataTable
-          data={filteredAndSortedHoldings}
-          columns={[
-            {
-              header: 'Token',
-              accessor: (row: HoldingWithDetails) => (
-                <div>
-                  <div className="font-medium flex items-center gap-2">{row.token.symbol}</div>
-                  <div className="text-sm text-muted-foreground">{row.token.name}</div>
-                  <TokenTypeBadge tokenTypeCode={row.token.typeCode} />
+        <>
+          {selectedRows.size > 0 && (
+            <Card className="mb-4">
+              <CardContent className="py-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-sm font-medium">
+                    {selectedRows.size} holding{selectedRows.size !== 1 ? 's' : ''} selected
+                  </span>
+                  <Button
+                    variant="destructive"
+                    size="sm"
+                    onClick={handleBulkDelete}
+                    disabled={bulkDeleteHoldingsMutation.isPending}
+                  >
+                    <Trash2 className="h-4 w-4 mr-2" />
+                    Delete Selected
+                  </Button>
                 </div>
-              ),
-              sortable: true,
-            },
-            {
-              header: 'Amount',
-              accessor: (row: HoldingWithDetails) => (
-                <span className="font-mono">{row.amount.toString()}</span>
-              ),
-              className: 'font-mono',
-              sortable: true,
-            },
-            {
-              header: 'Price',
-              accessor: (row: HoldingWithDetails) =>
-                row.price ? (
+              </CardContent>
+            </Card>
+          )}
+          <DataTable
+            data={filteredAndSortedHoldings}
+            columns={[
+              {
+                header: 'Token',
+                accessor: (row: HoldingWithDetails) => (
                   <div>
-                    <MoneyDisplay value={parseFloat(row.price.value)} token={baseCurrencyToken} />
-                    <div className="text-xs text-muted-foreground">
-                      <TimeAgo date={new Date(row.price.timestamp)} />
-                      {row.price.source && ` • ${row.price.source}`}
-                    </div>
+                    <div className="font-medium flex items-center gap-2">{row.token.symbol}</div>
+                    <div className="text-sm text-muted-foreground">{row.token.name}</div>
+                    <TokenTypeBadge tokenTypeCode={row.token.typeCode} />
                   </div>
-                ) : (
-                  <span className="text-muted-foreground">-</span>
                 ),
-              className: 'font-mono',
-              sortable: true,
-            },
-            {
-              header: 'Value',
-              accessor: (row: HoldingWithDetails) => (
-                <MoneyDisplay value={row.value} token={baseCurrencyToken} />
-              ),
-              className: 'font-mono font-medium',
-              sortable: true,
-            },
-          ]}
-          getRowKey={(row: HoldingWithDetails) => row.id}
-          emptyMessage="No holdings match your filters."
-          onSort={handleSort}
-          sortField={sortField}
-          sortDirection={sortDirection}
-          onRowClick={(row) => handleHoldingClick(row)}
-          actions={renderActions}
-        />
+                sortable: true,
+              },
+              {
+                header: 'Amount',
+                accessor: (row: HoldingWithDetails) => (
+                  <span className="font-mono">{row.amount.toString()}</span>
+                ),
+                className: 'font-mono',
+                sortable: true,
+              },
+              {
+                header: 'Price',
+                accessor: (row: HoldingWithDetails) =>
+                  row.price ? (
+                    <div>
+                      <MoneyDisplay value={parseFloat(row.price.value)} token={baseCurrencyToken} />
+                      <div className="text-xs text-muted-foreground">
+                        <TimeAgo date={new Date(row.price.timestamp)} />
+                        {row.price.source && ` • ${row.price.source}`}
+                      </div>
+                    </div>
+                  ) : (
+                    <span className="text-muted-foreground">-</span>
+                  ),
+                className: 'font-mono',
+                sortable: true,
+              },
+              {
+                header: 'Value',
+                accessor: (row: HoldingWithDetails) => (
+                  <MoneyDisplay value={row.value} token={baseCurrencyToken} />
+                ),
+                className: 'font-mono font-medium',
+                sortable: true,
+              },
+            ]}
+            getRowKey={(row: HoldingWithDetails) => row.id}
+            emptyMessage="No holdings match your filters."
+            onSort={handleSort}
+            sortField={sortField}
+            sortDirection={sortDirection}
+            onRowClick={(row) => handleHoldingClick(row)}
+            actions={renderActions}
+            selectable={true}
+            selectedRows={selectedRows}
+            onSelectRow={handleSelectRow}
+            onSelectAll={handleSelectAll}
+          />
+        </>
       ) : (
         <div className="grid gap-4 grid-cols-1 md:grid-cols-2 lg:grid-cols-3">
           {filteredAndSortedHoldings.map((holding) => (
