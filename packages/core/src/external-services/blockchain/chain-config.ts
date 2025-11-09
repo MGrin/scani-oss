@@ -393,10 +393,18 @@ export const EVM_CHAINS: Record<string, ChainConfig> = {
 
 /**
  * Non-EVM chains configuration
+ * Chain IDs use numeric values to match database schema:
+ * - Bitcoin: 0
+ * - Tron: -1
+ * - Solana: -2
+ * - Bitcoin Cash: -3
+ * - Litecoin: -4
+ * - Cardano: -5
+ * - (Other chains use negative IDs to avoid conflicts with EVM chains)
  */
 export const NON_EVM_CHAINS: Record<string, ChainConfig> = {
   bitcoin: {
-    chainId: 'bitcoin',
+    chainId: 0,
     name: 'Bitcoin',
     type: 'bitcoin',
     nativeSymbol: 'BTC',
@@ -406,7 +414,7 @@ export const NON_EVM_CHAINS: Record<string, ChainConfig> = {
     isActive: true,
   },
   solana: {
-    chainId: 'solana',
+    chainId: -2,
     name: 'Solana',
     type: 'solana',
     nativeSymbol: 'SOL',
@@ -416,7 +424,7 @@ export const NON_EVM_CHAINS: Record<string, ChainConfig> = {
     isActive: true,
   },
   tron: {
-    chainId: 'tron',
+    chainId: -1,
     name: 'Tron',
     type: 'tron',
     nativeSymbol: 'TRX',
@@ -426,7 +434,7 @@ export const NON_EVM_CHAINS: Record<string, ChainConfig> = {
     isActive: true,
   },
   ton: {
-    chainId: 'ton',
+    chainId: -15,
     name: 'TON',
     type: 'ton',
     nativeSymbol: 'TON',
