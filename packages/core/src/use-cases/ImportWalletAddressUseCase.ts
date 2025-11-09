@@ -528,6 +528,18 @@ export class ImportWalletAddressUseCase {
 
     for (const holding of holdingsResult.holdings) {
       try {
+        // Skip tokens with missing required data
+        if (!holding.symbol || !holding.balance) {
+          logger.warn(
+            {
+              institutionName: institution.name,
+              holding,
+            },
+            'Skipping holding with missing symbol or balance'
+          );
+          continue;
+        }
+
         // Map the integration holding to our token format
         const tokenMapping = await integration.mapToken(holding);
 
@@ -613,7 +625,9 @@ export class ImportWalletAddressUseCase {
       } catch (error) {
         logger.error(
           {
-            tokenSymbol: holding.symbol,
+            tokenSymbol: holding?.symbol || 'unknown',
+            tokenName: holding?.name || 'unknown',
+            balance: holding?.balance || 'unknown',
             institutionName: institution.name,
             error: error instanceof Error ? error.message : String(error),
           },
@@ -722,6 +736,18 @@ export class ImportWalletAddressUseCase {
 
     for (const tokenBalance of wallet.balances) {
       try {
+        // Skip tokens with missing required data
+        if (!tokenBalance.symbol || !tokenBalance.balance || !tokenBalance.name) {
+          logger.warn(
+            {
+              chainName: wallet.chainName,
+              tokenBalance,
+            },
+            'Skipping token balance with missing required fields (symbol, name, or balance)'
+          );
+          continue;
+        }
+
         // Find or create token
         const token = await this.findOrCreateToken(
           tokenBalance,
@@ -802,7 +828,10 @@ export class ImportWalletAddressUseCase {
       } catch (error) {
         logger.error(
           {
-            tokenSymbol: tokenBalance.symbol,
+            tokenSymbol: tokenBalance?.symbol || 'unknown',
+            tokenName: tokenBalance?.name || 'unknown',
+            balance: tokenBalance?.balance || 'unknown',
+            tokenAddress: tokenBalance?.tokenAddress || 'unknown',
             chainName: wallet.chainName,
             error: error instanceof Error ? error.message : String(error),
           },
@@ -879,6 +908,11 @@ export class ImportWalletAddressUseCase {
     cryptoTokenTypeId: string,
     chainName: string
   ): Promise<typeof schema.tokens.$inferSelect> {
+    // Validate required fields
+    if (!tokenBalance.symbol || !tokenBalance.name) {
+      throw new Error('Token balance missing required fields: symbol or name');
+    }
+
     // Try to find existing token by symbol and type
     const existing = await this.tokenRepository.findBySymbolAndType(
       tokenBalance.symbol,

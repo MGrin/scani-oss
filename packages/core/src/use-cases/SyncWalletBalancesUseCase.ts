@@ -290,6 +290,18 @@ export class SyncWalletBalancesUseCase {
             // Process each integration holding
             for (const integrationHolding of holdingsResult.holdings) {
               try {
+                // Skip tokens with missing required data
+                if (!integrationHolding.symbol || !integrationHolding.balance) {
+                  logger.warn(
+                    {
+                      accountId: account.id,
+                      holding: integrationHolding,
+                    },
+                    'Skipping integration holding with missing symbol or balance'
+                  );
+                  continue;
+                }
+
                 const tokenSymbol = integrationHolding.symbol.toUpperCase();
                 const balance = integrationHolding.balance;
 
@@ -394,7 +406,9 @@ export class SyncWalletBalancesUseCase {
                 logger.error(
                   {
                     accountId: account.id,
-                    tokenSymbol: integrationHolding.symbol,
+                    tokenSymbol: integrationHolding?.symbol || 'unknown',
+                    tokenName: integrationHolding?.name || 'unknown',
+                    balance: integrationHolding?.balance || 'unknown',
                     error: error instanceof Error ? error.message : String(error),
                   },
                   'Failed to process integration holding'
@@ -588,6 +602,18 @@ export class SyncWalletBalancesUseCase {
         // Process each token balance from blockchain
         for (const tokenBalance of walletInfo.balances) {
           try {
+            // Skip tokens with missing required data
+            if (!tokenBalance.symbol || !tokenBalance.balance || !tokenBalance.name) {
+              logger.warn(
+                {
+                  accountId: account.id,
+                  tokenBalance,
+                },
+                'Skipping token balance with missing required fields (symbol, name, or balance)'
+              );
+              continue;
+            }
+
             const tokenSymbol = tokenBalance.symbol.toUpperCase();
             const balance = tokenBalance.balance;
 
@@ -710,7 +736,10 @@ export class SyncWalletBalancesUseCase {
             logger.error(
               {
                 accountId: account.id,
-                tokenSymbol: tokenBalance.symbol,
+                tokenSymbol: tokenBalance?.symbol || 'unknown',
+                tokenName: tokenBalance?.name || 'unknown',
+                balance: tokenBalance?.balance || 'unknown',
+                tokenAddress: tokenBalance?.tokenAddress || 'unknown',
                 error: error instanceof Error ? error.message : String(error),
               },
               'Failed to process token balance'
