@@ -9,6 +9,7 @@ import { InstitutionRepository } from '../repositories/InstitutionRepository';
 import { TokenRepository } from '../repositories/TokenRepository';
 import { BaseService } from './BaseService';
 import { PortfolioValuationService } from './PortfolioValuationService';
+import { UserWalletService } from './UserWalletService';
 
 @Service()
 export class AccountService extends BaseService {
@@ -16,6 +17,7 @@ export class AccountService extends BaseService {
   private readonly accountRepository = Container.get(AccountRepository);
   private readonly tokenRepository = Container.get(TokenRepository);
   private readonly institutionRepository = Container.get(InstitutionRepository);
+  private readonly userWalletService = Container.get(UserWalletService);
 
   private readonly portfolioService = Container.get(PortfolioValuationService);
 
@@ -175,6 +177,34 @@ export class AccountService extends BaseService {
 
       const existing = await this.accountRepository.findById(accountId);
       this.assertExists(existing, `Account with ID ${accountId} not found`);
+
+      // Check if this is a wallet account with user_wallet association
+      const metadata = existing.metadata as Record<string, unknown>;
+      const userWalletId = metadata?.userWalletId as string | undefined;
+      const migrated = metadata?.migrated as boolean | undefined;
+
+      // If account is associated with a user_wallet, remove the institution from the wallet
+      if (userWalletId && migrated && existing.institutionId) {
+        try {
+          await this.userWalletService.removeInstitutionFromWallet(
+            userWalletId,
+            existing.institutionId
+          );
+          this.logInfo('Removed institution from user wallet', {
+            accountId,
+            userWalletId,
+            institutionId: existing.institutionId,
+          });
+        } catch (walletError) {
+          // Log error but don't fail the account deletion
+          this.logWarning('Failed to update user wallet during account deletion (non-critical)', {
+            accountId,
+            userWalletId,
+            institutionId: existing.institutionId,
+            error: walletError instanceof Error ? walletError.message : String(walletError),
+          });
+        }
+      }
 
       const deleted = await this.accountRepository.delete(accountId);
       this.logInfo('Account deleted', { accountId, deleted });

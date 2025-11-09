@@ -7,7 +7,7 @@
  * - Creates institution for each chain (if not exists)
  * - Creates account for each chain with wallet metadata
  * - Creates holdings for each token with non-zero balance
- * - Fetches current token prices
+ * - NOTE: Token prices are NOT fetched during import to improve performance
  *
  * Reusable for:
  * - Manual wallet import by users
@@ -27,7 +27,6 @@ import { HoldingRepository } from '../repositories/HoldingRepository';
 import { InstitutionBlockchainMappingRepository } from '../repositories/InstitutionBlockchainMappingRepository';
 import { TokenRepository } from '../repositories/TokenRepository';
 import { IntegrationCredentialsService } from '../services/IntegrationCredentialsService';
-import { PricingService } from '../services/PricingService';
 import { TokenService } from '../services/TokenService';
 import { UserWalletService } from '../services/UserWalletService';
 import { createComponentLogger } from '../utils/logger';
@@ -81,7 +80,6 @@ export class ImportWalletAddressUseCase {
   private readonly userWalletService = Container.get(UserWalletService);
   private readonly integrationCredentialsService = Container.get(IntegrationCredentialsService);
   private readonly mappingRepository = Container.get(InstitutionBlockchainMappingRepository);
-  private readonly pricingService = Container.get(PricingService);
   private readonly tokenService = Container.get(TokenService);
   private readonly tokenRepository = Container.get(TokenRepository);
   private readonly holdingRepository = Container.get(HoldingRepository);
@@ -475,7 +473,7 @@ export class ImportWalletAddressUseCase {
     walletAddress: string,
     userWalletId: string,
     userId: string,
-    baseCurrencyId: string,
+    _baseCurrencyId: string,
     walletAccountTypeId: string,
     cryptoTokenTypeId: string,
     institution: typeof schema.institutions.$inferSelect,
@@ -767,24 +765,8 @@ export class ImportWalletAddressUseCase {
           });
         }
 
-        // Try to fetch current price (non-blocking)
-        if (baseCurrencyId) {
-          try {
-            const baseCurrencyToken = await this.tokenService.getTokenById(baseCurrencyId);
-            if (baseCurrencyToken) {
-              await this.pricingService.getTokenPrice(token, baseCurrencyToken.symbol, new Date());
-            }
-          } catch (error) {
-            logger.debug(
-              {
-                userId,
-                tokenSymbol: token.symbol,
-                error: error instanceof Error ? error.message : String(error),
-              },
-              'Failed to fetch token price (non-critical)'
-            );
-          }
-        }
+        // NOTE: Removed price fetching during import to speed up the process
+        // Prices will be fetched on-demand when user views their portfolio
       } catch (error) {
         logger.error(
           {
@@ -832,7 +814,7 @@ export class ImportWalletAddressUseCase {
   private async processWallet(
     wallet: WalletInfo,
     userId: string,
-    baseCurrencyId: string,
+    _baseCurrencyId: string,
     walletAccountTypeId: string,
     cryptoTokenTypeId: string,
     displayNameOverride?: string
@@ -987,20 +969,8 @@ export class ImportWalletAddressUseCase {
           });
         }
 
-        // Try to fetch current price (non-blocking)
-        if (baseCurrencyId) {
-          try {
-            await this.pricingService.getTokenPrice(token, baseCurrencyId, new Date());
-          } catch (error) {
-            logger.debug(
-              {
-                tokenSymbol: token.symbol,
-                error: error instanceof Error ? error.message : String(error),
-              },
-              'Failed to fetch token price (non-critical)'
-            );
-          }
-        }
+        // NOTE: Removed price fetching during import to speed up the process
+        // Prices will be fetched on-demand when user views their portfolio
       } catch (error) {
         logger.error(
           {

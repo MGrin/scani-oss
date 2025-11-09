@@ -11,6 +11,7 @@
  * - Update holdings when balance goes to zero (keeping them for future syncs)
  * - Create new holdings when wallet owns new tokens
  * - Respect rate limits of blockchain APIs
+ * - NOTE: Token prices are NOT fetched during sync to improve performance
  *
  * Note: Hidden holdings are updated with new balances but remain hidden.
  * This preserves user intent when they explicitly hide a holding.
@@ -27,9 +28,7 @@ import { TokenTypeRepository } from '../repositories/EnumRepositories';
 import { InstitutionBlockchainMappingRepository } from '../repositories/InstitutionBlockchainMappingRepository';
 import { AccountService } from '../services/AccountService';
 import { HoldingService } from '../services/HoldingService';
-import { PricingService } from '../services/PricingService';
 import { TokenService } from '../services/TokenService';
-import { UserService } from '../services/UserService';
 import { UserWalletService } from '../services/UserWalletService';
 import { createComponentLogger } from '../utils/logger';
 
@@ -68,11 +67,9 @@ export class SyncWalletBalancesUseCase {
   private readonly integrationManager = Container.get(IntegrationManager);
   private readonly userWalletService = Container.get(UserWalletService);
   private readonly mappingRepository = Container.get(InstitutionBlockchainMappingRepository);
-  private readonly pricingService = Container.get(PricingService);
   private readonly accountService = Container.get(AccountService);
   private readonly holdingService = Container.get(HoldingService);
   private readonly tokenService = Container.get(TokenService);
-  private readonly userService = Container.get(UserService);
   private readonly tokenTypeRepository = Container.get(TokenTypeRepository);
 
   async execute(): Promise<SyncWalletBalancesResult> {
@@ -378,29 +375,8 @@ export class SyncWalletBalancesUseCase {
                     }
                   }
 
-                  // Try to fetch current price (non-blocking)
-                  try {
-                    if (user.baseCurrencyId) {
-                      const baseCurrencyToken = await this.tokenService.getTokenById(
-                        user.baseCurrencyId
-                      );
-                      if (baseCurrencyToken) {
-                        await this.pricingService.getTokenPrice(
-                          token,
-                          baseCurrencyToken.symbol,
-                          new Date()
-                        );
-                      }
-                    }
-                  } catch (error) {
-                    logger.debug(
-                      {
-                        tokenSymbol,
-                        error: error instanceof Error ? error.message : String(error),
-                      },
-                      'Failed to fetch token price (non-critical)'
-                    );
-                  }
+                  // NOTE: Removed price fetching during sync to speed up the process
+                  // Prices will be fetched on-demand when user views their portfolio
                 }
               } catch (error) {
                 logger.error(
@@ -707,30 +683,8 @@ export class SyncWalletBalancesUseCase {
                 );
               }
 
-              // Try to fetch current price (non-blocking)
-              try {
-                const user = await this.userService.getUserById(account.userId);
-                if (user?.baseCurrencyId) {
-                  const baseCurrencyToken = await this.tokenService.getTokenById(
-                    user.baseCurrencyId
-                  );
-                  if (baseCurrencyToken) {
-                    await this.pricingService.getTokenPrice(
-                      token,
-                      baseCurrencyToken.symbol,
-                      new Date()
-                    );
-                  }
-                }
-              } catch (error) {
-                logger.debug(
-                  {
-                    tokenSymbol,
-                    error: error instanceof Error ? error.message : String(error),
-                  },
-                  'Failed to fetch token price (non-critical)'
-                );
-              }
+              // NOTE: Removed price fetching during sync to speed up the process
+              // Prices will be fetched on-demand when user views their portfolio
             }
           } catch (error) {
             logger.error(
