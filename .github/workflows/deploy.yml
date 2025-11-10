@@ -10,7 +10,6 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
-
 permissions:
   checks: read
   contents: read
@@ -47,9 +46,10 @@ jobs:
         uses: ruby/setup-ruby@v1
         with:
           ruby-version: 3.2
-          
+
   check-status:
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
+    needs: [build]
     permissions:
       checks: read
       contents: read
@@ -71,7 +71,7 @@ jobs:
           wait-interval: 10
 
   check-changes:
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     needs: [check-status]  # Now depends on our own job instead of external workflows
     permissions:
       contents: read
@@ -102,7 +102,7 @@ jobs:
   deploy-backend:
     needs: [check-changes]
     if: ${{ needs.check-changes.outputs.backend == 'true' }}
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     steps:
       - name: Trigger backend deployment
         run: |
@@ -111,7 +111,7 @@ jobs:
   deploy-frontend:
     needs: [check-changes]
     if: ${{ needs.check-changes.outputs.frontend == 'true' }}
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     steps:
       - name: Trigger frontend deployment
         run: |
@@ -120,7 +120,7 @@ jobs:
   deploy-landing:
     needs: [check-changes]
     if: ${{ needs.check-changes.outputs.landing == 'true' }}
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     steps:
       - name: Trigger landing deployment
         run: |
