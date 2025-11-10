@@ -87,7 +87,22 @@ const app = new Elysia()
     cron({
       name: 'pricing-cron',
       pattern: '0,30 * * * *', // Every 30 minutes at :00 and :30
-      run: executePricingCronJob,
+      run: async () => {
+        try {
+          await executePricingCronJob();
+        } catch (error) {
+          logger.error(
+            {
+              error: error instanceof Error ? error.message : String(error),
+              stack: error instanceof Error ? error.stack : undefined,
+            },
+            '❌ Fatal error in pricing cron job - this should not happen as errors are caught internally'
+          );
+          captureException(error instanceof Error ? error : new Error(String(error)), {
+            context: 'pricing-cron-wrapper',
+          });
+        }
+      },
     })
   )
   .use(
@@ -288,6 +303,77 @@ const app = new Elysia()
     set.headers['Content-Type'] = 'application/json';
     return;
   })
+  // Cron health check endpoint - returns status of cron jobs
+  .get('/health/cron', ({ set }: { set: { status: number } }) => {
+    try {
+      // biome-ignore lint/suspicious/noExplicitAny: Elysia internal types not exposed
+      const cronStore = (app as any).singleton?.store?.cron;
+      if (!cronStore) {
+        set.status = 503;
+        return {
+          status: 'error',
+          message: 'Cron store not initialized',
+          timestamp: new Date().toISOString(),
+        };
+      }
+
+      const pricingCron = cronStore['pricing-cron'];
+      const walletBalancesCron = cronStore['wallet-balances-cron'];
+      const dailyDigestCron = cronStore['daily-portfolio-digest-cron'];
+
+      return {
+        status: 'ok',
+        timestamp: new Date().toISOString(),
+        crons: {
+          'pricing-cron': {
+            exists: !!pricingCron,
+            nextRun: pricingCron?.nextRun()?.toISOString() || null,
+            isRunning: pricingCron?.isBusy() || false,
+            pattern: '0,30 * * * *',
+          },
+          'wallet-balances-cron': {
+            exists: !!walletBalancesCron,
+            nextRun: walletBalancesCron?.nextRun()?.toISOString() || null,
+            isRunning: walletBalancesCron?.isBusy() || false,
+            pattern: '*/15 * * * *',
+          },
+          'daily-portfolio-digest-cron': {
+            exists: !!dailyDigestCron,
+            nextRun: dailyDigestCron?.nextRun()?.toISOString() || null,
+            isRunning: dailyDigestCron?.isBusy() || false,
+            pattern: '0 0 * * *',
+          },
+        },
+      };
+    } catch (error) {
+      set.status = 500;
+      return {
+        status: 'error',
+        message: error instanceof Error ? error.message : 'Unknown error',
+        timestamp: new Date().toISOString(),
+      };
+    }
+  })
+  // Manual trigger endpoint for pricing cron (for debugging)
+  .post('/cron/trigger/pricing', async ({ set }: { set: { status: number } }) => {
+    try {
+      logger.info('🔧 Manual trigger of pricing cron job requested');
+      await executePricingCronJob();
+      return {
+        status: 'ok',
+        message: 'Pricing cron job triggered successfully',
+        timestamp: new Date().toISOString(),
+      };
+    } catch (error) {
+      set.status = 500;
+      logger.error({ error }, '❌ Manual trigger of pricing cron job failed');
+      return {
+        status: 'error',
+        message: error instanceof Error ? error.message : 'Unknown error',
+        timestamp: new Date().toISOString(),
+      };
+    }
+  })
   // WebSocket endpoint using Elysia's native WebSocket support
   .ws('/', {
     // biome-ignore lint/suspicious/noExplicitAny: Elysia WebSocket types not well documented
@@ -423,6 +509,7 @@ logger.info(
   {
     pricingCronPattern: '0,30 * * * *',
     pricingCronDescription: 'Every 30 minutes at :00 and :30',
+    pricingCronNextRun: 'Check logs for actual schedule',
     walletBalancesCronPattern: '*/15 * * * *',
     walletBalancesCronDescription: 'Every 15 minutes',
     dailyDigestCronPattern: '0 0 * * *',
@@ -430,6 +517,40 @@ logger.info(
   },
   '⏰ Cron jobs configured and scheduled'
 );
+
+// Log next run times for debugging
+try {
+  // Access the cron jobs from the app state to log next run times
+  // biome-ignore lint/suspicious/noExplicitAny: Elysia internal types not exposed
+  const cronStore = (app as any).singleton?.store?.cron;
+  if (cronStore) {
+    const pricingCron = cronStore['pricing-cron'];
+    if (pricingCron) {
+      const nextRun = pricingCron.nextRun();
+      logger.info(
+        {
+          cronName: 'pricing-cron',
+          nextRunTime: nextRun ? nextRun.toISOString() : 'unknown',
+          isRunning: pricingCron.isBusy(),
+        },
+        '📅 Pricing cron next run time'
+      );
+    } else {
+      logger.warn(
+        '⚠️ Pricing cron not found in cron store - this may indicate an initialization issue'
+      );
+    }
+  } else {
+    logger.warn('⚠️ Cron store not found - cron jobs may not be properly initialized');
+  }
+} catch (error) {
+  logger.warn(
+    {
+      error: error instanceof Error ? error.message : String(error),
+    },
+    '⚠️ Could not access cron state for debugging - cron jobs should still work'
+  );
+}
 
 // Start HTTP server with enhanced logging
 const server = app.listen(PORT, () => {
