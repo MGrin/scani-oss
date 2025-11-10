@@ -11,7 +11,7 @@ on:
 jobs:
   type-check:
     name: Run TypeScript Type Checking
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
 
     steps:
       - name: Checkout code

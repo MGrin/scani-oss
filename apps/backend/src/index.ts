@@ -1,29 +1,32 @@
-import 'reflect-metadata';
-import { cors } from '@elysiajs/cors';
-import { cron } from '@elysiajs/cron';
-import { trpc } from '@elysiajs/trpc';
+import "reflect-metadata";
+import { cors } from "@elysiajs/cors";
+import { cron } from "@elysiajs/cron";
+import { trpc } from "@elysiajs/trpc";
 import {
   captureException,
   close,
   flush,
   initializeSentry,
   startHttpTransaction,
-} from '@scani/core/lib/sentry';
-import { supabase } from '@scani/core/lib/supabase';
-import { createTimer, logger, wsLogger } from '@scani/core/utils/logger';
-import { Elysia } from 'elysia';
-import { Container } from 'typedi';
+} from "@scani/core/lib/sentry";
+import { supabase } from "@scani/core/lib/supabase";
+import { createTimer, logger, wsLogger } from "@scani/core/utils/logger";
+import { Elysia } from "elysia";
+import { Container } from "typedi";
 // CRITICAL: Initialize container BEFORE importing any routers
 // This must happen before any module that calls Container.get()
-import { initializeContainer } from './config/container';
+import { initializeContainer } from "./config/container";
 import {
   executeDailyPortfolioDigestCronJob,
   executePricingCronJob,
   executeWalletBalancesCronJob,
-} from './infrastructure/cron';
-import { RealTimeUpdatesService } from './infrastructure/websocket/RealTimeUpdatesService';
-import { createStandardLimiter, createStrictLimiter } from './presentation/middleware/rate-limit';
-import { createContext } from './presentation/trpc';
+} from "./infrastructure/cron";
+import { RealTimeUpdatesService } from "./infrastructure/websocket/RealTimeUpdatesService";
+import {
+  createStandardLimiter,
+  createStrictLimiter,
+} from "./presentation/middleware/rate-limit";
+import { createContext } from "./presentation/trpc";
 
 initializeContainer();
 
@@ -31,42 +34,47 @@ initializeContainer();
 initializeSentry();
 
 // Import Telegram bot services (conditionally initialized later)
-import { TelegramBotService } from '@scani/telegram-bot';
-import { TelegramAuthService } from './infrastructure/telegram/TelegramAuthService';
+import { TelegramBotService } from "@scani/telegram-bot";
+import { TelegramAuthService } from "./infrastructure/telegram/TelegramAuthService";
 // Import router AFTER container is initialized
-import { appRouter } from './presentation/router';
+import { appRouter } from "./presentation/router";
 
 const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3001;
-const HOST = process.env.HOST ?? 'localhost';
+const HOST = process.env.HOST ?? "localhost";
 
 // Log startup information
 logger.info(
   {
     port: PORT,
     host: HOST,
-    nodeEnv: process.env.NODE_ENV || 'development',
-    frontendUrl: process.env.FRONTEND_URL ?? 'http://localhost:5173',
+    nodeEnv: process.env.NODE_ENV || "development",
+    frontendUrl: process.env.FRONTEND_URL ?? "http://localhost:5173",
   },
-  '🚀 Starting Scani Backend Server'
+  "🚀 Starting Scani Backend Server"
 );
 
 // Validate JWT configuration at startup
-const jwtSecret = process.env.SUPABASE_JWT_SECRET || process.env.SUPABASE_SERVICE_ROLE_KEY;
+const jwtSecret =
+  process.env.SUPABASE_JWT_SECRET || process.env.SUPABASE_SERVICE_ROLE_KEY;
 if (!jwtSecret) {
   logger.warn(
     {
-      recommendation: 'Set SUPABASE_JWT_SECRET or SUPABASE_SERVICE_ROLE_KEY environment variable',
-      impact: 'All JWT verifications will require remote Supabase API calls, increasing latency',
+      recommendation:
+        "Set SUPABASE_JWT_SECRET or SUPABASE_SERVICE_ROLE_KEY environment variable",
+      impact:
+        "All JWT verifications will require remote Supabase API calls, increasing latency",
     },
-    '⚠️ JWT Secret not configured - local JWT verification disabled'
+    "⚠️ JWT Secret not configured - local JWT verification disabled"
   );
 } else {
   logger.info(
     {
       jwtSecretLength: jwtSecret.length,
-      source: process.env.SUPABASE_JWT_SECRET ? 'SUPABASE_JWT_SECRET' : 'SUPABASE_SERVICE_ROLE_KEY',
+      source: process.env.SUPABASE_JWT_SECRET
+        ? "SUPABASE_JWT_SECRET"
+        : "SUPABASE_SERVICE_ROLE_KEY",
     },
-    '✅ JWT Secret configured - local verification enabled'
+    "✅ JWT Secret configured - local verification enabled"
   );
 }
 
@@ -85,8 +93,8 @@ const app = new Elysia()
   // Add cron jobs
   .use(
     cron({
-      name: 'pricing-cron',
-      pattern: '0,30 * * * *', // Every 30 minutes at :00 and :30
+      name: "pricing-cron",
+      pattern: "0,30 * * * *", // Every 30 minutes at :00 and :30
       run: async () => {
         try {
           await executePricingCronJob();
@@ -96,33 +104,38 @@ const app = new Elysia()
               error: error instanceof Error ? error.message : String(error),
               stack: error instanceof Error ? error.stack : undefined,
             },
-            '❌ Fatal error in pricing cron job - this should not happen as errors are caught internally'
+            "❌ Fatal error in pricing cron job - this should not happen as errors are caught internally"
           );
-          captureException(error instanceof Error ? error : new Error(String(error)), {
-            context: 'pricing-cron-wrapper',
-          });
+          captureException(
+            error instanceof Error ? error : new Error(String(error)),
+            {
+              context: "pricing-cron-wrapper",
+            }
+          );
         }
       },
     })
   )
   .use(
     cron({
-      name: 'wallet-balances-cron',
-      pattern: '*/15 * * * *', // Every 15 minutes
+      name: "wallet-balances-cron",
+      pattern: "*/15 * * * *", // Every 15 minutes
       run: executeWalletBalancesCronJob,
     })
   )
   .use(
     cron({
-      name: 'daily-portfolio-digest-cron',
-      pattern: '0 0 * * *', // Daily at midnight UTC
+      name: "daily-portfolio-digest-cron",
+      pattern: "0 0 * * *", // Daily at midnight UTC
       run: async () => {
         // Check if telegram bot is available before executing
         // The bot is initialized asynchronously, so this check ensures it's ready
         if (telegramBot) {
           await executeDailyPortfolioDigestCronJob(telegramBot);
         } else {
-          logger.warn('⚠️ Daily digest cron skipped: Telegram bot not initialized');
+          logger.warn(
+            "⚠️ Daily digest cron skipped: Telegram bot not initialized"
+          );
         }
       },
     })
@@ -138,10 +151,10 @@ const app = new Elysia()
 
       // Add request ID to headers for tracing
       set.headers = set.headers || {};
-      set.headers['x-request-id'] = requestId;
+      set.headers["x-request-id"] = requestId;
 
       // Skip logging for health check endpoints to reduce noise
-      const isHealthCheck = url.pathname === '/health';
+      const isHealthCheck = url.pathname === "/health";
 
       if (!isHealthCheck) {
         logger.info(
@@ -149,11 +162,11 @@ const app = new Elysia()
             requestId,
             method: request.method,
             url: request.url,
-            userAgent: request.headers.get('user-agent'),
-            contentType: request.headers.get('content-type'),
-            origin: request.headers.get('origin'),
+            userAgent: request.headers.get("user-agent"),
+            contentType: request.headers.get("content-type"),
+            origin: request.headers.get("origin"),
           },
-          '📨 HTTP Request received'
+          "📨 HTTP Request received"
         );
       }
 
@@ -165,13 +178,13 @@ const app = new Elysia()
   // Global rate limiting (lightweight)
   .onBeforeHandle(({ request, set }) => {
     const res = globalLimiter.tryConsume(request);
-    if ('ok' in res && res.ok) return;
+    if ("ok" in res && res.ok) return;
     set.status = 429;
     set.headers = set.headers || {};
-    set.headers['Retry-After'] = String(res.retryAfterSec);
+    set.headers["Retry-After"] = String(res.retryAfterSec);
     return {
-      error: 'Too Many Requests',
-      message: 'Global rate limit exceeded',
+      error: "Too Many Requests",
+      message: "Global rate limit exceeded",
       retryAfterSec: res.retryAfterSec,
     };
   })
@@ -184,15 +197,15 @@ const app = new Elysia()
 
     // Skip logging for health check endpoints to reduce noise
     const url = new URL(request.url);
-    const isHealthCheck = url.pathname === '/health';
+    const isHealthCheck = url.pathname === "/health";
 
     if (!isHealthCheck) {
       const statusCode =
-        typeof set.status === 'number'
+        typeof set.status === "number"
           ? set.status
           : set.status
-            ? parseInt(set.status.toString(), 10)
-            : 200;
+          ? parseInt(set.status.toString(), 10)
+          : 200;
       const isError = statusCode >= 400;
 
       const logData = {
@@ -201,13 +214,16 @@ const app = new Elysia()
         url: request.url,
         statusCode,
         duration: duration ? `${duration}ms` : undefined,
-        contentType: set.headers?.['content-type'],
+        contentType: set.headers?.["content-type"],
       };
 
       if (isError) {
-        logger.warn(logData, `⚠️ HTTP Response sent with error status: ${statusCode}`);
+        logger.warn(
+          logData,
+          `⚠️ HTTP Response sent with error status: ${statusCode}`
+        );
       } else {
-        logger.info(logData, '✅ HTTP Response sent successfully');
+        logger.info(logData, "✅ HTTP Response sent successfully");
       }
     }
 
@@ -221,8 +237,9 @@ const app = new Elysia()
     const duration = timer ? timer.end() : undefined;
 
     // Handle different error types
-    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-    const errorName = error instanceof Error ? error.name : 'UnknownError';
+    const errorMessage =
+      error instanceof Error ? error.message : "Unknown error";
+    const errorName = error instanceof Error ? error.name : "UnknownError";
     const errorStack = error instanceof Error ? error.stack : undefined;
 
     // Capture error in Sentry
@@ -231,7 +248,7 @@ const app = new Elysia()
       method: request.method,
       url: request.url,
       duration: duration ? `${duration}ms` : undefined,
-      userAgent: request.headers.get('user-agent'),
+      userAgent: request.headers.get("user-agent"),
     });
 
     logger.error(
@@ -253,129 +270,133 @@ const app = new Elysia()
     set.status = 500;
 
     return {
-      error: 'Internal Server Error',
+      error: "Internal Server Error",
       message: errorMessage,
       requestId,
     };
   })
   .use(
     cors({
-      origin: process.env.FRONTEND_URL ?? 'http://localhost:5173',
+      origin: process.env.FRONTEND_URL ?? "http://localhost:5173",
       credentials: true,
-      allowedHeaders: ['Authorization', 'Content-Type'],
+      allowedHeaders: ["Authorization", "Content-Type"],
     })
   )
   // Add security headers middleware (after CORS to avoid conflicts)
   .onAfterHandle(({ set }) => {
     // Prevent MIME type sniffing
     set.headers = set.headers || {};
-    set.headers['X-Content-Type-Options'] = 'nosniff';
+    set.headers["X-Content-Type-Options"] = "nosniff";
     // Prevent clickjacking
-    set.headers['X-Frame-Options'] = 'DENY';
+    set.headers["X-Frame-Options"] = "DENY";
     // Enable XSS protection
-    set.headers['X-XSS-Protection'] = '1; mode=block';
+    set.headers["X-XSS-Protection"] = "1; mode=block";
     // Referrer policy
-    set.headers['Referrer-Policy'] = 'strict-origin-when-cross-origin';
+    set.headers["Referrer-Policy"] = "strict-origin-when-cross-origin";
     // Content Security Policy for API responses
-    set.headers['Content-Security-Policy'] = "default-src 'none'";
+    set.headers["Content-Security-Policy"] = "default-src 'none'";
     // HSTS - Force HTTPS for 1 year (only in production)
-    if (process.env.NODE_ENV === 'production') {
-      set.headers['Strict-Transport-Security'] = 'max-age=31536000; includeSubDomains; preload';
+    if (process.env.NODE_ENV === "production") {
+      set.headers["Strict-Transport-Security"] =
+        "max-age=31536000; includeSubDomains; preload";
     }
     // Note: Vary header is set by CORS middleware
   })
   .use(
     trpc(appRouter, {
       createContext,
-      endpoint: '/trpc',
+      endpoint: "/trpc",
     })
   )
   // Health check endpoint (GET and HEAD)
-  .get('/health', () => {
+  .get("/health", () => {
     return {
-      status: 'ok',
+      status: "ok",
       timestamp: new Date().toISOString(),
-      version: '1.0.0',
+      version: "1.0.0",
     };
   })
-  .head('/health', ({ set }: { set: { status: number; headers: Record<string, string> } }) => {
-    set.status = 200;
-    set.headers['Content-Type'] = 'application/json';
-    return;
-  })
+  .head(
+    "/health",
+    ({ set }: { set: { status: number; headers: Record<string, string> } }) => {
+      set.status = 200;
+      set.headers["Content-Type"] = "application/json";
+      return;
+    }
+  )
   // Cron health check endpoint - returns status of cron jobs
-  .get('/health/cron', ({ set }: { set: { status: number } }) => {
+  .get("/health/cron", ({ set }: { set: { status: number } }) => {
     try {
       // biome-ignore lint/suspicious/noExplicitAny: Elysia internal types not exposed
       const cronStore = (app as any).singleton?.store?.cron;
       if (!cronStore) {
         set.status = 503;
         return {
-          status: 'error',
-          message: 'Cron store not initialized',
+          status: "error",
+          message: "Cron store not initialized",
           timestamp: new Date().toISOString(),
         };
       }
 
-      const pricingCron = cronStore['pricing-cron'];
-      const walletBalancesCron = cronStore['wallet-balances-cron'];
-      const dailyDigestCron = cronStore['daily-portfolio-digest-cron'];
+      const pricingCron = cronStore["pricing-cron"];
+      const walletBalancesCron = cronStore["wallet-balances-cron"];
+      const dailyDigestCron = cronStore["daily-portfolio-digest-cron"];
 
       return {
-        status: 'ok',
+        status: "ok",
         timestamp: new Date().toISOString(),
         crons: {
-          'pricing-cron': {
+          "pricing-cron": {
             exists: !!pricingCron,
             nextRun: pricingCron?.nextRun()?.toISOString() || null,
             isRunning: pricingCron?.isBusy() || false,
-            pattern: '0,30 * * * *',
+            pattern: "0,30 * * * *",
           },
-          'wallet-balances-cron': {
+          "wallet-balances-cron": {
             exists: !!walletBalancesCron,
             nextRun: walletBalancesCron?.nextRun()?.toISOString() || null,
             isRunning: walletBalancesCron?.isBusy() || false,
-            pattern: '*/15 * * * *',
+            pattern: "*/15 * * * *",
           },
-          'daily-portfolio-digest-cron': {
+          "daily-portfolio-digest-cron": {
             exists: !!dailyDigestCron,
             nextRun: dailyDigestCron?.nextRun()?.toISOString() || null,
             isRunning: dailyDigestCron?.isBusy() || false,
-            pattern: '0 0 * * *',
+            pattern: "0 0 * * *",
           },
         },
       };
     } catch (error) {
       set.status = 500;
       return {
-        status: 'error',
-        message: error instanceof Error ? error.message : 'Unknown error',
+        status: "error",
+        message: error instanceof Error ? error.message : "Unknown error",
         timestamp: new Date().toISOString(),
       };
     }
   })
   // Manual trigger endpoint for pricing cron (for debugging)
-  .post('/cron/trigger/pricing', async ({ set }: { set: { status: number } }) => {
-    try {
-      logger.info('🔧 Manual trigger of pricing cron job requested');
-      await executePricingCronJob();
-      return {
-        status: 'ok',
-        message: 'Pricing cron job triggered successfully',
-        timestamp: new Date().toISOString(),
-      };
-    } catch (error) {
-      set.status = 500;
-      logger.error({ error }, '❌ Manual trigger of pricing cron job failed');
-      return {
-        status: 'error',
-        message: error instanceof Error ? error.message : 'Unknown error',
-        timestamp: new Date().toISOString(),
-      };
-    }
-  })
+  // .post('/cron/trigger/pricing', async ({ set }: { set: { status: number } }) => {
+  //   try {
+  //     logger.info('🔧 Manual trigger of pricing cron job requested');
+  //     await executePricingCronJob();
+  //     return {
+  //       status: 'ok',
+  //       message: 'Pricing cron job triggered successfully',
+  //       timestamp: new Date().toISOString(),
+  //     };
+  //   } catch (error) {
+  //     set.status = 500;
+  //     logger.error({ error }, '❌ Manual trigger of pricing cron job failed');
+  //     return {
+  //       status: 'error',
+  //       message: error instanceof Error ? error.message : 'Unknown error',
+  //       timestamp: new Date().toISOString(),
+  //     };
+  //   }
+  // })
   // WebSocket endpoint using Elysia's native WebSocket support
-  .ws('/', {
+  .ws("/", {
     // biome-ignore lint/suspicious/noExplicitAny: Elysia WebSocket types not well documented
     open: async (ws: any) => {
       const connectionId = Math.random().toString(36).substring(2, 15);
@@ -389,22 +410,22 @@ const app = new Elysia()
         const token = query?.token;
 
         if (!token) {
-          connectionLogger.warn('No auth token provided');
-          ws.close(4401, 'Unauthorized');
+          connectionLogger.warn("No auth token provided");
+          ws.close(4401, "Unauthorized");
           return;
         }
 
         const { data, error } = await supabase.auth.getUser(token);
         if (error || !data?.user) {
-          connectionLogger.warn({ error }, 'Invalid auth token');
-          ws.close(4401, 'Unauthorized');
+          connectionLogger.warn({ error }, "Invalid auth token");
+          ws.close(4401, "Unauthorized");
           return;
         }
 
         authenticatedUserId = data.user.id;
       } catch (err) {
-        connectionLogger.error({ error: err }, 'Auth failure');
-        ws.close(1011, 'Auth failure');
+        connectionLogger.error({ error: err }, "Auth failure");
+        ws.close(1011, "Auth failure");
         return;
       }
 
@@ -412,7 +433,7 @@ const app = new Elysia()
         {
           userId: authenticatedUserId,
         },
-        '🔗 WebSocket client connected'
+        "🔗 WebSocket client connected"
       );
 
       // Store connection metadata
@@ -433,9 +454,9 @@ const app = new Elysia()
       // Send connection confirmation
       ws.send(
         JSON.stringify({
-          type: 'connected',
+          type: "connected",
           connectionId,
-          subscriptions: ['institution', 'account', 'holding', 'token'],
+          subscriptions: ["institution", "account", "holding", "token"],
           timestamp: new Date().toISOString(),
         })
       );
@@ -447,7 +468,7 @@ const app = new Elysia()
         const connectionLogger = wsLogger.child({
           connectionId: ws.data.connectionId,
         });
-        connectionLogger.debug({ message }, '📨 WebSocket message received');
+        connectionLogger.debug({ message }, "📨 WebSocket message received");
 
         // Handle subscription messages, pings, etc.
         const realTimeUpdatesService = Container.get(RealTimeUpdatesService);
@@ -466,7 +487,7 @@ const app = new Elysia()
             code,
             reason,
           },
-          '🔚 WebSocket client disconnected'
+          "🔚 WebSocket client disconnected"
         );
 
         // Clean up connection tracking
@@ -480,15 +501,15 @@ const app = new Elysia()
     // Apply only to the tRPC endpoint with potential heavy procedures
     try {
       const url = new URL(request.url);
-      if (url.pathname === '/trpc' && request.method === 'POST') {
+      if (url.pathname === "/trpc" && request.method === "POST") {
         const res = strictLimiter.tryConsume(request);
-        if ('ok' in res && res.ok) return;
+        if ("ok" in res && res.ok) return;
         set.status = 429;
         set.headers = set.headers || {};
-        set.headers['Retry-After'] = String(res.retryAfterSec);
+        set.headers["Retry-After"] = String(res.retryAfterSec);
         return {
-          error: 'Too Many Requests',
-          message: 'tRPC route rate limit exceeded',
+          error: "Too Many Requests",
+          message: "tRPC route rate limit exceeded",
           retryAfterSec: res.retryAfterSec,
         };
       }
@@ -502,20 +523,21 @@ wsLogger.info(
     port: PORT,
     host: HOST,
   },
-  '🔌 WebSocket endpoint configured (using Elysia native WebSocket)'
+  "🔌 WebSocket endpoint configured (using Elysia native WebSocket)"
 );
 
 logger.info(
   {
-    pricingCronPattern: '0,30 * * * *',
-    pricingCronDescription: 'Every 30 minutes at :00 and :30',
-    pricingCronNextRun: 'Check logs for actual schedule',
-    walletBalancesCronPattern: '*/15 * * * *',
-    walletBalancesCronDescription: 'Every 15 minutes',
-    dailyDigestCronPattern: '0 0 * * *',
-    dailyDigestCronDescription: 'Daily at midnight UTC (requires telegram bot initialization)',
+    pricingCronPattern: "0,30 * * * *",
+    pricingCronDescription: "Every 30 minutes at :00 and :30",
+    pricingCronNextRun: "Check logs for actual schedule",
+    walletBalancesCronPattern: "*/15 * * * *",
+    walletBalancesCronDescription: "Every 15 minutes",
+    dailyDigestCronPattern: "0 0 * * *",
+    dailyDigestCronDescription:
+      "Daily at midnight UTC (requires telegram bot initialization)",
   },
-  '⏰ Cron jobs configured and scheduled'
+  "⏰ Cron jobs configured and scheduled"
 );
 
 // Log next run times for debugging
@@ -524,31 +546,33 @@ try {
   // biome-ignore lint/suspicious/noExplicitAny: Elysia internal types not exposed
   const cronStore = (app as any).singleton?.store?.cron;
   if (cronStore) {
-    const pricingCron = cronStore['pricing-cron'];
+    const pricingCron = cronStore["pricing-cron"];
     if (pricingCron) {
       const nextRun = pricingCron.nextRun();
       logger.info(
         {
-          cronName: 'pricing-cron',
-          nextRunTime: nextRun ? nextRun.toISOString() : 'unknown',
+          cronName: "pricing-cron",
+          nextRunTime: nextRun ? nextRun.toISOString() : "unknown",
           isRunning: pricingCron.isBusy(),
         },
-        '📅 Pricing cron next run time'
+        "📅 Pricing cron next run time"
       );
     } else {
       logger.warn(
-        '⚠️ Pricing cron not found in cron store - this may indicate an initialization issue'
+        "⚠️ Pricing cron not found in cron store - this may indicate an initialization issue"
       );
     }
   } else {
-    logger.warn('⚠️ Cron store not found - cron jobs may not be properly initialized');
+    logger.warn(
+      "⚠️ Cron store not found - cron jobs may not be properly initialized"
+    );
   }
 } catch (error) {
   logger.warn(
     {
       error: error instanceof Error ? error.message : String(error),
     },
-    '⚠️ Could not access cron state for debugging - cron jobs should still work'
+    "⚠️ Could not access cron state for debugging - cron jobs should still work"
   );
 }
 
@@ -558,9 +582,9 @@ const server = app.listen(PORT, () => {
     {
       httpUrl: `http://${HOST}:${PORT}`,
       wsUrl: `ws://${HOST}:${PORT}`,
-      environment: process.env.NODE_ENV || 'development',
+      environment: process.env.NODE_ENV || "development",
     },
-    '🎉 Scani Backend Server started successfully'
+    "🎉 Scani Backend Server started successfully"
   );
 });
 
@@ -577,17 +601,20 @@ const initTelegramBot = async () => {
   const openAIApiKey = process.env.OPENAI_API_KEY;
 
   if (!botToken) {
-    logger.info({}, '⚠️ Telegram bot not configured (TELEGRAM_BOT_TOKEN not set)');
+    logger.info(
+      {},
+      "⚠️ Telegram bot not configured (TELEGRAM_BOT_TOKEN not set)"
+    );
     return;
   }
 
   if (!openAIApiKey) {
-    logger.warn({}, '⚠️ Telegram bot disabled: OpenAI API key not configured');
+    logger.warn({}, "⚠️ Telegram bot disabled: OpenAI API key not configured");
     return;
   }
 
   try {
-    logger.info({}, '🤖 Initializing Telegram bot...');
+    logger.info({}, "🤖 Initializing Telegram bot...");
     const telegramAuthService = Container.get(TelegramAuthService);
 
     telegramBot = new TelegramBotService({
@@ -601,64 +628,71 @@ const initTelegramBot = async () => {
         telegramUsername: string | undefined,
         authToken: string
       ) => {
-        await telegramAuthService.linkTelegramUser(telegramId, telegramUsername, authToken);
+        await telegramAuthService.linkTelegramUser(
+          telegramId,
+          telegramUsername,
+          authToken
+        );
       },
       logger, // Pass the backend logger
     });
 
     await telegramBot.start();
-    logger.info({}, '✅ Telegram bot started successfully');
+    logger.info({}, "✅ Telegram bot started successfully");
   } catch (error) {
-    logger.error({ error }, '❌ Failed to start Telegram bot');
-    captureException(error instanceof Error ? error : new Error(String(error)), {
-      context: 'telegram-bot-initialization',
-    });
+    logger.error({ error }, "❌ Failed to start Telegram bot");
+    captureException(
+      error instanceof Error ? error : new Error(String(error)),
+      {
+        context: "telegram-bot-initialization",
+      }
+    );
   }
 };
 
 // Start telegram bot asynchronously (don't block server startup)
 initTelegramBot().catch((error) => {
-  logger.error({ error }, '💥 Unhandled error in Telegram bot initialization');
+  logger.error({ error }, "💥 Unhandled error in Telegram bot initialization");
   captureException(error instanceof Error ? error : new Error(String(error)), {
-    context: 'telegram-bot-initialization-unhandled',
+    context: "telegram-bot-initialization-unhandled",
   });
 });
 
 // Graceful shutdown with logging
 const gracefulShutdown = async (signal: string) => {
-  logger.info({ signal }, '🛑 Graceful shutdown initiated');
+  logger.info({ signal }, "🛑 Graceful shutdown initiated");
 
   // Stop Telegram bot if running
   if (telegramBot) {
-    logger.info({}, 'Stopping Telegram bot...');
+    logger.info({}, "Stopping Telegram bot...");
     try {
       await telegramBot.stop();
     } catch (error) {
-      logger.error({ error }, 'Error stopping Telegram bot');
+      logger.error({ error }, "Error stopping Telegram bot");
     }
   }
 
-  logger.info({}, 'Flushing Sentry events...');
+  logger.info({}, "Flushing Sentry events...");
   await flush(2000);
 
-  logger.info({}, 'Closing HTTP server...');
+  logger.info({}, "Closing HTTP server...");
   server.stop();
 
-  logger.info({}, 'Closing Sentry connection...');
+  logger.info({}, "Closing Sentry connection...");
   await close(2000);
 
-  logger.info({}, '🏁 Graceful shutdown completed');
+  logger.info({}, "🏁 Graceful shutdown completed");
   process.exit(0);
 };
 
-process.on('SIGINT', () => gracefulShutdown('SIGINT'));
-process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+process.on("SIGINT", () => gracefulShutdown("SIGINT"));
+process.on("SIGTERM", () => gracefulShutdown("SIGTERM"));
 
 // Handle uncaught exceptions and unhandled rejections
-process.on('uncaughtException', async (error) => {
+process.on("uncaughtException", async (error) => {
   // Capture in Sentry before logging
   captureException(error, {
-    type: 'uncaughtException',
+    type: "uncaughtException",
     fatal: true,
   });
 
@@ -670,7 +704,7 @@ process.on('uncaughtException', async (error) => {
         stack: error.stack,
       },
     },
-    '💀 Uncaught Exception - shutting down'
+    "💀 Uncaught Exception - shutting down"
   );
 
   // Give Sentry time to send the error
@@ -678,12 +712,12 @@ process.on('uncaughtException', async (error) => {
   process.exit(1);
 });
 
-process.on('unhandledRejection', async (reason, promise) => {
+process.on("unhandledRejection", async (reason, promise) => {
   const error = reason instanceof Error ? reason : new Error(String(reason));
 
   // Capture in Sentry before logging
   captureException(error, {
-    type: 'unhandledRejection',
+    type: "unhandledRejection",
     promise: promise.toString(),
     fatal: true,
   });
@@ -693,7 +727,7 @@ process.on('unhandledRejection', async (reason, promise) => {
       reason,
       promise: promise.toString(),
     },
-    '💀 Unhandled Promise Rejection - shutting down'
+    "💀 Unhandled Promise Rejection - shutting down"
   );
 
   // Give Sentry time to send the error
@@ -701,4 +735,4 @@ process.on('unhandledRejection', async (reason, promise) => {
   process.exit(1);
 });
 
-export type { AppRouter } from './presentation/router';
+export type { AppRouter } from "./presentation/router";
