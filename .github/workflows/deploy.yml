@@ -16,8 +16,40 @@ permissions:
   contents: read
 
 jobs:
-  check-status:
+  build:
     runs-on: self-hosted
+    steps:
+      - name: Install dependencies for ruby-build
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential libssl-dev libreadline-dev zlib1g-dev curl git
+
+      - name: Install ruby-build
+        run: |
+          git clone https://github.com/rbenv/ruby-build.git
+          ./ruby-build/install.sh
+
+      - name: Build and install Ruby 3.2 to RUNNER_TOOL_CACHE
+        env:
+          RUNNER_TOOL_CACHE: /opt/hostedtoolcache
+        run: |
+          sudo ./ruby-build/bin/ruby-build 3.2 $RUNNER_TOOL_CACHE/Ruby/3.2/x64
+          sudo touch $RUNNER_TOOL_CACHE/Ruby/3.2/x64.complete
+
+      - name: Add Ruby to PATH
+        run: |
+          echo "/opt/hostedtoolcache/Ruby/3.2/x64/bin" >> $GITHUB_PATH
+
+      - name: Confirm ruby version
+        run: ruby --version
+
+      - name: Run ruby/setup-ruby action
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: 3.2
+          
+  check-status:
+    runs-on: ubuntu-latest
     permissions:
       checks: read
       contents: read
@@ -39,7 +71,7 @@ jobs:
           wait-interval: 10
 
   check-changes:
-    runs-on: self-hosted
+    runs-on: ubuntu-latest
     needs: [check-status]  # Now depends on our own job instead of external workflows
     permissions:
       contents: read
@@ -70,7 +102,7 @@ jobs:
   deploy-backend:
     needs: [check-changes]
     if: ${{ needs.check-changes.outputs.backend == 'true' }}
-    runs-on: self-hosted
+    runs-on: ubuntu-latest
     steps:
       - name: Trigger backend deployment
         run: |
@@ -79,7 +111,7 @@ jobs:
   deploy-frontend:
     needs: [check-changes]
     if: ${{ needs.check-changes.outputs.frontend == 'true' }}
-    runs-on: self-hosted
+    runs-on: ubuntu-latest
     steps:
       - name: Trigger frontend deployment
         run: |
@@ -88,7 +120,7 @@ jobs:
   deploy-landing:
     needs: [check-changes]
     if: ${{ needs.check-changes.outputs.landing == 'true' }}
-    runs-on: self-hosted
+    runs-on: ubuntu-latest
     steps:
       - name: Trigger landing deployment
         run: |
