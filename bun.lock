@@ -1,6 +1,5 @@
 {
   "lockfileVersion": 1,
-  "configVersion": 0,
   "workspaces": {
     "": {
       "name": "scani",
@@ -155,6 +154,7 @@
       "name": "@scani/core",
       "version": "1.0.0",
       "dependencies": {
+        "@scani/integrations": "workspace:*",
         "@scani/rate-limiter": "workspace:*",
         "@scani/shared": "workspace:*",
         "@sentry/bun": "^10.21.0",
