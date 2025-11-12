@@ -11,18 +11,11 @@ on:
 jobs:
   type-check:
     name: Run TypeScript Type Checking
-    runs-on: self-hosted
+    runs-on: ubuntu-latest
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-
-      - uses: actions/setup-node@v6
-        with:
-          node-version: 24
-          
-      - run: sudo apt-get update && sudo apt-get install -y python3 make g++ build-essential
-      - run: npm install -g node-gyp
         
       - name: Setup Bun
         uses: oven-sh/setup-bun@v2
