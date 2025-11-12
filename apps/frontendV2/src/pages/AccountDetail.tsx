@@ -1,9 +1,9 @@
 import type { HoldingWithDetails } from '@scani/shared';
-import { Grid3X3, List, MoreHorizontal, Trash2 } from 'lucide-react';
+import { Edit, Grid3X3, List, MoreHorizontal, Trash2 } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import TimeAgo from 'react-timeago';
-import { HoldingModal, TokenTypeBadge } from '@/components/features';
+import { EditAccountModal, HoldingModal, TokenTypeBadge } from '@/components/features';
 import { TokenFilterSelector, TokenTypeSelector } from '@/components/selectors/SearchableSelectors';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
@@ -47,6 +47,7 @@ export function AccountDetail() {
   // Modal state
   const [selectedHolding, setSelectedHolding] = useState<HoldingWithDetails | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isEditAccountModalOpen, setIsEditAccountModalOpen] = useState(false);
 
   // Selection state for bulk operations
   const [selectedRows, setSelectedRows] = useState<Set<string>>(new Set());
@@ -255,6 +256,15 @@ export function AccountDetail() {
     setSelectedHolding(null);
   };
 
+  const handleEditAccountModalClose = () => {
+    setIsEditAccountModalOpen(false);
+  };
+
+  const handleAccountUpdated = () => {
+    // Refetch account data
+    // The TRPC query will automatically refetch when the modal updates
+  };
+
   const handleHoldingUpdated = () => {
     // Refetch account holdings data
     // The TRPC query will automatically refetch when the modal updates
@@ -436,6 +446,12 @@ export function AccountDetail() {
       <PageHeader
         title={account.name}
         subtitle={`Account • ${accountType?.name || 'Unknown Type'}`}
+        secondaryActions={
+          <Button onClick={() => setIsEditAccountModalOpen(true)} variant="outline">
+            <Edit className="h-4 w-4 mr-2" />
+            Edit Account
+          </Button>
+        }
       />
 
       {/* Holdings */}
@@ -669,6 +685,14 @@ export function AccountDetail() {
         onClose={handleModalClose}
         onHoldingUpdated={handleHoldingUpdated}
         onHoldingDeleted={handleHoldingDeleted}
+      />
+
+      {/* Edit Account Modal */}
+      <EditAccountModal
+        account={account}
+        isOpen={isEditAccountModalOpen}
+        onClose={handleEditAccountModalClose}
+        onAccountUpdated={handleAccountUpdated}
       />
     </div>
   );

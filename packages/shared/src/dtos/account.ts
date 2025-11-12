@@ -26,3 +26,12 @@ export type AccountWihSumaryDTO = Account & {
   };
 };
 export type CreateAccountInput = z.infer<typeof CreateAccountDto>;
+
+export const UpdateAccountDto = z.object({
+  name: z.string().min(1).max(100).optional(),
+  typeId: z.string().uuid().optional(),
+  institutionId: z.string().uuid().optional(),
+  description: z.string().max(500).optional().nullable(),
+});
+
+export type UpdateAccountInput = z.infer<typeof UpdateAccountDto>;

@@ -148,6 +148,22 @@ export const AccountImplementations = {
     return { success: true };
   },
 
+  async update(
+    context: FeatureExecutionContext,
+    input: {
+      id: string;
+      data: {
+        name?: string;
+        typeId?: string;
+        institutionId?: string;
+        description?: string | null;
+      };
+    }
+  ) {
+    const accountService = Container.get(AccountService);
+    return await accountService.updateAccount(input.id, input.data, context.userId);
+  },
+
   async bulkDelete(context: FeatureExecutionContext, input: { ids: string[] }) {
     const accountService = Container.get(AccountService);
     return executeBulkOperation(input.ids, (id) =>

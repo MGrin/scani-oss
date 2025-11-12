@@ -1,5 +1,5 @@
 import { AccountImplementations } from '@scani/core/features/implementations';
-import { IdInputDto } from '@scani/shared';
+import { IdInputDto, UpdateAccountDto } from '@scani/shared';
 import { z } from 'zod';
 import { emitEntityChange } from '../../infrastructure/websocket/RealTimeUpdatesService';
 import { requireAuth } from '../middleware/auth';
@@ -28,6 +28,33 @@ export const accountsRouter = router({
       { id: input.id }
     );
   }),
+
+  update: protectedProcedure
+    .input(
+      z.object({
+        id: z.string().uuid(),
+        data: UpdateAccountDto,
+      })
+    )
+    .mutation(async ({ input, ctx }) => {
+      const { dbUser } = requireAuth(ctx);
+
+      const result = await AccountImplementations.update(
+        { userId: dbUser.id, dbUser },
+        { id: input.id, data: input.data }
+      );
+
+      emitEntityChange({
+        type: 'entity_changed',
+        entityType: 'account',
+        operationType: 'update',
+        entityId: input.id,
+        userId: dbUser.id,
+        data: result,
+      });
+
+      return result;
+    }),
 
   delete: protectedProcedure.input(IdInputDto).mutation(async ({ input, ctx }) => {
     const { dbUser } = requireAuth(ctx);

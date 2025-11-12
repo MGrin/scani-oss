@@ -4,6 +4,7 @@ import { Container, Service } from 'typedi';
 import type { Account } from '../domain/entities';
 import { AccountRepository } from '../repositories/AccountRepository';
 import type { DatabaseTransaction } from '../repositories/BaseRepository';
+import { AccountTypeRepository } from '../repositories/EnumRepositories';
 import { HoldingRepository } from '../repositories/HoldingRepository';
 import { InstitutionRepository } from '../repositories/InstitutionRepository';
 import { TokenRepository } from '../repositories/TokenRepository';
@@ -15,6 +16,7 @@ import { UserWalletService } from './UserWalletService';
 export class AccountService extends BaseService {
   private readonly holdingRepository = Container.get(HoldingRepository);
   private readonly accountRepository = Container.get(AccountRepository);
+  private readonly accountTypeRepository = Container.get(AccountTypeRepository);
   private readonly tokenRepository = Container.get(TokenRepository);
   private readonly institutionRepository = Container.get(InstitutionRepository);
   private readonly userWalletService = Container.get(UserWalletService);
@@ -211,6 +213,62 @@ export class AccountService extends BaseService {
       return deleted;
     } catch (error) {
       throw this.handleError(error, 'deleteAccount');
+    }
+  }
+
+  async updateAccount(
+    accountId: string,
+    data: {
+      name?: string;
+      typeId?: string;
+      institutionId?: string;
+      description?: string | null;
+    },
+    userId: string,
+    tx?: DatabaseTransaction
+  ): Promise<Account> {
+    try {
+      this.logInfo('Updating account', { accountId, data });
+
+      // Verify account exists and belongs to user
+      const existing = await this.accountRepository.findById(accountId, tx);
+      this.assertExists(existing, `Account with ID ${accountId} not found`);
+
+      if (existing.userId !== userId) {
+        throw new Error('Access denied to this account');
+      }
+
+      // Check if this is a synced account (has walletAddress in metadata)
+      const metadata = existing.metadata as Record<string, unknown> | null | undefined;
+      const isSynced = metadata && typeof metadata === 'object' && 'walletAddress' in metadata;
+
+      // Prevent updating institutionId and typeId for synced accounts
+      if (isSynced) {
+        if (data.institutionId !== undefined && data.institutionId !== existing.institutionId) {
+          throw new Error('Cannot change institution for automatically synced accounts');
+        }
+        if (data.typeId !== undefined && data.typeId !== existing.typeId) {
+          throw new Error('Cannot change account type for automatically synced accounts');
+        }
+      }
+
+      // Validate institution exists if being updated
+      if (data.institutionId !== undefined && data.institutionId !== existing.institutionId) {
+        const institution = await this.institutionRepository.findById(data.institutionId, tx);
+        this.assertExists(institution, `Institution with ID ${data.institutionId} not found`);
+      }
+
+      // Validate account type exists if being updated
+      if (data.typeId !== undefined && data.typeId !== existing.typeId) {
+        const accountType = await this.accountTypeRepository.findById(data.typeId, tx);
+        this.assertExists(accountType, `Account type with ID ${data.typeId} not found`);
+      }
+
+      const updated = await this.accountRepository.updateAccount(accountId, data, tx);
+      this.logInfo('Account updated', { accountId });
+      return updated;
+    } catch (error) {
+      throw this.handleError(error, 'updateAccount');
     }
   }
 

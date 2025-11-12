@@ -89,4 +89,45 @@ export class AccountRepository extends BaseRepository<Account, NewAccount> {
       throw error;
     }
   }
+
+  /**
+   * Update account fields
+   */
+  async updateAccount(
+    accountId: string,
+    data: {
+      name?: string;
+      typeId?: string;
+      institutionId?: string;
+      description?: string | null;
+    },
+    transaction?: DatabaseTransaction
+  ): Promise<Account> {
+    try {
+      const database = this.getDb(transaction);
+      const updateData: Record<string, unknown> = {
+        updatedAt: new Date(),
+      };
+
+      if (data.name !== undefined) updateData.name = data.name;
+      if (data.typeId !== undefined) updateData.typeId = data.typeId;
+      if (data.institutionId !== undefined) updateData.institutionId = data.institutionId;
+      if (data.description !== undefined) updateData.description = data.description;
+
+      const [updated] = await database
+        .update(schema.accounts)
+        .set(updateData)
+        .where(eq(schema.accounts.id, accountId))
+        .returning();
+
+      if (!updated) {
+        throw new Error(`Account with ID ${accountId} not found`);
+      }
+
+      return updated;
+    } catch (error) {
+      this.logger.error({ accountId, data, error }, 'Failed to update account');
+      throw error;
+    }
+  }
 }
