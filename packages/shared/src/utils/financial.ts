@@ -15,6 +15,21 @@ Decimal.set({
 export { Decimal };
 
 /**
+ * Validates if a string can be parsed by Decimal.js and is a valid finite number
+ * @param value - The string to validate
+ * @returns true if the string is a valid finite decimal number, false otherwise
+ */
+export function isValidDecimalString(value: string): boolean {
+  try {
+    const decimal = new Decimal(value);
+    // Reject NaN and Infinity values
+    return decimal.isFinite();
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Financial calculation utilities using Decimal.js for precision
  */
 export namespace FinancialMath {

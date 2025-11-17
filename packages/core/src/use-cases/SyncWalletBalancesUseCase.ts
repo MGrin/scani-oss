@@ -18,6 +18,7 @@
  */
 
 import { IntegrationManager } from '@scani/integrations';
+import { isValidDecimalString } from '@scani/shared';
 import { and, eq } from 'drizzle-orm';
 import { Container, Service } from 'typedi';
 import { db } from '../database/connection';
@@ -301,6 +302,19 @@ export class SyncWalletBalancesUseCase {
 
                 const tokenSymbol = integrationHolding.symbol.toUpperCase();
                 const balance = integrationHolding.balance;
+
+                // Validate balance is a valid decimal string
+                if (!isValidDecimalString(balance)) {
+                  logger.warn(
+                    {
+                      accountId: account.id,
+                      tokenSymbol,
+                      balance,
+                    },
+                    'Skipping integration holding with invalid balance format'
+                  );
+                  continue;
+                }
 
                 // Map the integration holding to our token format
                 const tokenMapping = await integration.mapToken(integrationHolding);
@@ -592,6 +606,19 @@ export class SyncWalletBalancesUseCase {
 
             const tokenSymbol = tokenBalance.symbol.toUpperCase();
             const balance = tokenBalance.balance;
+
+            // Validate balance is a valid decimal string
+            if (!isValidDecimalString(balance)) {
+              logger.warn(
+                {
+                  accountId: account.id,
+                  tokenSymbol,
+                  balance,
+                },
+                'Skipping token balance with invalid balance format'
+              );
+              continue;
+            }
 
             // Find or create token using service
             const token = await this.tokenService.findOrCreateTokenFromBlockchain({

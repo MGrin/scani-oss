@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { Decimal, isValidDecimalString } from '../utils/financial';
 
 export type Holding = {
   id: string;
@@ -13,16 +14,28 @@ export type Holding = {
 export const CreateHoldingDto = z.object({
   accountId: z.string().uuid(),
   tokenId: z.string().uuid(),
-  balance: z.string().refine((val) => !Number.isNaN(parseFloat(val)) && parseFloat(val) >= 0, {
-    message: 'Balance must be a valid non-negative number string',
-  }),
+  balance: z.string().refine(
+    (val) => {
+      if (!isValidDecimalString(val)) return false;
+      return new Decimal(val).greaterThanOrEqualTo(0);
+    },
+    {
+      message: 'Balance must be a valid decimal number string that is non-negative',
+    }
+  ),
   lastUpdated: z.date().optional(),
 });
 
 export const UpdateHoldingDto = z.object({
-  balance: z.string().refine((val) => !Number.isNaN(parseFloat(val)) && parseFloat(val) >= 0, {
-    message: 'Balance must be a valid non-negative number string',
-  }),
+  balance: z.string().refine(
+    (val) => {
+      if (!isValidDecimalString(val)) return false;
+      return new Decimal(val).greaterThanOrEqualTo(0);
+    },
+    {
+      message: 'Balance must be a valid decimal number string that is non-negative',
+    }
+  ),
 });
 
 export type HoldingWithDetails = {

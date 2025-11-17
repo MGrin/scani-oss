@@ -1,4 +1,5 @@
 import z from 'zod';
+import { Decimal, isValidDecimalString } from '../utils/financial';
 import { CreateAccountDto } from './account';
 import type { Holding } from './holding';
 import { CreateInstitutionDto } from './institution';
@@ -13,7 +14,15 @@ export const CreateHoldingsWithDependenciesDto = z.object({
     .array(
       z.object({
         tokenId: z.string().uuid(),
-        balance: z.string().regex(/^-?\d+\.?\d*$/, 'Balance must be a valid decimal string'),
+        balance: z.string().refine(
+          (val) => {
+            if (!isValidDecimalString(val)) return false;
+            return new Decimal(val).greaterThanOrEqualTo(0);
+          },
+          {
+            message: 'Balance must be a valid decimal number string that is non-negative',
+          }
+        ),
       })
     )
     .min(1, 'At least one holding is required'),

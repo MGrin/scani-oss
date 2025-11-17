@@ -17,6 +17,7 @@
 
 import type { ScaniIntegration } from '@scani/integrations';
 import { IntegrationManager } from '@scani/integrations';
+import { isValidDecimalString } from '@scani/shared';
 import { and, eq } from 'drizzle-orm';
 import { Container, Service } from 'typedi';
 import { db } from '../database/connection';
@@ -678,6 +679,20 @@ export class ImportWalletAddressUseCase {
           continue;
         }
 
+        // Validate balance is a valid decimal string
+        if (!isValidDecimalString(holding.balance)) {
+          logger.warn(
+            {
+              userId,
+              institutionName: institution.name,
+              tokenSymbol: holding.symbol,
+              balance: holding.balance,
+            },
+            'Skipping holding with invalid balance format'
+          );
+          continue;
+        }
+
         logger.debug(
           {
             userId,
@@ -922,6 +937,19 @@ export class ImportWalletAddressUseCase {
               tokenBalance,
             },
             'Skipping token balance with missing required fields (symbol, name, or balance)'
+          );
+          continue;
+        }
+
+        // Validate balance is a valid decimal string
+        if (!isValidDecimalString(tokenBalance.balance)) {
+          logger.warn(
+            {
+              chainName: wallet.chainName,
+              tokenSymbol: tokenBalance.symbol,
+              balance: tokenBalance.balance,
+            },
+            'Skipping token balance with invalid balance format'
           );
           continue;
         }
