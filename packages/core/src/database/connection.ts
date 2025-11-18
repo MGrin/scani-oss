@@ -8,6 +8,20 @@ import * as schema from './schema';
 const DATABASE_URL = process.env.DATABASE_URL;
 const NODE_ENV = process.env.NODE_ENV || 'development';
 
+// Database connection pool configuration with validation
+const MAX_CONNECTIONS = process.env.DB_MAX_CONNECTIONS
+  ? Math.max(1, parseInt(process.env.DB_MAX_CONNECTIONS, 10) || 20)
+  : 20; // Increased from default 10
+const IDLE_TIMEOUT = process.env.DB_IDLE_TIMEOUT
+  ? Math.max(0, parseInt(process.env.DB_IDLE_TIMEOUT, 10) || 30)
+  : 30; // 30 seconds
+const CONNECT_TIMEOUT = process.env.DB_CONNECT_TIMEOUT
+  ? Math.max(1, parseInt(process.env.DB_CONNECT_TIMEOUT, 10) || 10)
+  : 10; // 10 seconds
+const MAX_LIFETIME = process.env.DB_MAX_LIFETIME
+  ? Math.max(0, parseInt(process.env.DB_MAX_LIFETIME, 10) || 1800)
+  : 60 * 30; // 30 minutes
+
 // Database connection
 let db: ReturnType<typeof drizzlePostgres>;
 
@@ -20,6 +34,10 @@ if (!DATABASE_URL) {
 }
 
 const client = postgres(DATABASE_URL, {
+  max: MAX_CONNECTIONS, // Maximum number of connections in the pool
+  idle_timeout: IDLE_TIMEOUT, // Close idle connections after this many seconds
+  connect_timeout: CONNECT_TIMEOUT, // Fail connection after this many seconds
+  max_lifetime: MAX_LIFETIME, // Close connections after this many seconds (prevents connection leaks)
   onnotice: (notice) => {
     dbLogger.info({ notice }, '📢 PostgreSQL Notice');
   },
@@ -76,10 +94,16 @@ dbLogger.info(
   {
     url: DATABASE_URL.replace(/:[^:@]*@/, ':***@'), // Hide password in logs
     environment: NODE_ENV,
+    poolConfig: {
+      max: MAX_CONNECTIONS,
+      idleTimeout: `${IDLE_TIMEOUT}s`,
+      connectTimeout: `${CONNECT_TIMEOUT}s`,
+      maxLifetime: `${MAX_LIFETIME}s`,
+    },
   },
   '🐘 Connected to PostgreSQL database'
 );
-export { db };
+export { db, client };
 
 // Type-safe database instance
 export type DbType = typeof db;
@@ -96,3 +120,19 @@ export function getDb() {
 
 // Export schema for convenience
 export { schema };
+
+/**
+ * Get database connection pool statistics
+ * Useful for monitoring and debugging connection issues
+ */
+export function getConnectionStats() {
+  // postgres.js doesn't expose pool stats directly, but we can provide config info
+  return {
+    maxConnections: MAX_CONNECTIONS,
+    idleTimeout: IDLE_TIMEOUT,
+    connectTimeout: CONNECT_TIMEOUT,
+    maxLifetime: MAX_LIFETIME,
+    // Note: postgres.js doesn't expose active/idle connection counts
+    // For that, you'd need to query pg_stat_activity
+  };
+}

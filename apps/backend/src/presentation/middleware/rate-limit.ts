@@ -5,6 +5,7 @@ interface RateLimiterOptions {
   max: number; // tokens per window
   burst?: number; // optional burst capacity (defaults to max)
   key?: KeyFunc; // how to key buckets (default by IP)
+  maxBuckets?: number; // optional max number of buckets to track (for memory safety)
 }
 
 interface Bucket {
@@ -17,6 +18,7 @@ export class RateLimiter {
   private max: number;
   private burst: number;
   private keyFn: KeyFunc;
+  private maxBuckets: number;
   private buckets = new Map<string, Bucket>();
   private cleanupInterval: ReturnType<typeof setInterval> | null = null;
 
@@ -24,6 +26,7 @@ export class RateLimiter {
     this.windowMs = Math.max(1000, opts.windowMs);
     this.max = Math.max(1, opts.max);
     this.burst = Math.max(this.max, opts.burst ?? opts.max);
+    this.maxBuckets = opts.maxBuckets ?? 10000; // Default max 10k buckets
     this.keyFn =
       opts.key ||
       ((req: Request) => {
@@ -59,6 +62,21 @@ export class RateLimiter {
     const key = this.keyFn(req);
     let bucket = this.buckets.get(key);
     if (!bucket) {
+      // Enforce max buckets limit to prevent unbounded memory growth
+      if (this.buckets.size >= this.maxBuckets) {
+        // Remove least recently used bucket (oldest lastRefill)
+        let oldestKey: string | undefined;
+        let oldestTime = Infinity;
+        for (const [candidateKey, candidateBucket] of this.buckets) {
+          if (candidateBucket.lastRefill < oldestTime) {
+            oldestTime = candidateBucket.lastRefill;
+            oldestKey = candidateKey;
+          }
+        }
+        if (oldestKey) {
+          this.buckets.delete(oldestKey);
+        }
+      }
       bucket = { tokens: this.burst, lastRefill: Date.now() };
       this.buckets.set(key, bucket);
     }
@@ -87,8 +105,8 @@ export class RateLimiter {
 }
 
 // Utility factory for common limiters
-export const createStandardLimiter = (perMinute = 120, burst = 200) =>
-  new RateLimiter({ windowMs: 60_000, max: perMinute, burst });
+export const createStandardLimiter = (perMinute = 120, burst = 200, maxBuckets = 10000) =>
+  new RateLimiter({ windowMs: 60_000, max: perMinute, burst, maxBuckets });
 
-export const createStrictLimiter = (perMinute = 20, burst = 30) =>
-  new RateLimiter({ windowMs: 60_000, max: perMinute, burst });
+export const createStrictLimiter = (perMinute = 20, burst = 30, maxBuckets = 10000) =>
+  new RateLimiter({ windowMs: 60_000, max: perMinute, burst, maxBuckets });

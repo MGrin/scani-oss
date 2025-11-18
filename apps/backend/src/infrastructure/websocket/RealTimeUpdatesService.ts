@@ -64,6 +64,14 @@ export class RealTimeUpdatesService extends EventEmitter {
    * Note: WebSocket connections are managed by Elysia, not this service
    */
   initialize() {
+    // Prevent multiple initializations
+    if (this.heartbeatInterval) {
+      wsLogger.warn(
+        'Real-time updates service already initialized, skipping duplicate initialization'
+      );
+      return;
+    }
+
     // Setup heartbeat to remove stale connections
     this.heartbeatInterval = setInterval(() => {
       this.cleanupStaleConnections();

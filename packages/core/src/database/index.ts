@@ -1,2 +1,2 @@
-export { type DbType, db, getDb, getTypedDb } from './connection';
+export { client, type DbType, db, getConnectionStats, getDb, getTypedDb } from './connection';
 export * from './schema';

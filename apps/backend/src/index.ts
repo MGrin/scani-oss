@@ -11,6 +11,7 @@ import {
 } from '@scani/core/lib/sentry';
 import { supabase } from '@scani/core/lib/supabase';
 import { createTimer, logger, wsLogger } from '@scani/core/utils/logger';
+import { sql } from 'drizzle-orm';
 import { Elysia } from 'elysia';
 import { Container } from 'typedi';
 // CRITICAL: Initialize container BEFORE importing any routers
@@ -29,6 +30,9 @@ initializeContainer();
 
 // Initialize Sentry for error tracking
 initializeSentry();
+
+// Import database for health checks
+import { db, getConnectionStats } from '@scani/core/database';
 
 // Import Telegram bot services (conditionally initialized later)
 import { TelegramBotService } from '@scani/telegram-bot';
@@ -354,26 +358,55 @@ const app = new Elysia()
       };
     }
   })
-  // Manual trigger endpoint for pricing cron (for debugging)
-  // .post('/cron/trigger/pricing', async ({ set }: { set: { status: number } }) => {
-  //   try {
-  //     logger.info('🔧 Manual trigger of pricing cron job requested');
-  //     await executePricingCronJob();
-  //     return {
-  //       status: 'ok',
-  //       message: 'Pricing cron job triggered successfully',
-  //       timestamp: new Date().toISOString(),
-  //     };
-  //   } catch (error) {
-  //     set.status = 500;
-  //     logger.error({ error }, '❌ Manual trigger of pricing cron job failed');
-  //     return {
-  //       status: 'error',
-  //       message: error instanceof Error ? error.message : 'Unknown error',
-  //       timestamp: new Date().toISOString(),
-  //     };
-  //   }
-  // })
+  // Database health check endpoint - returns database connection status
+  .get('/health/db', async ({ set }: { set: { status: number } }) => {
+    try {
+      // Test database connection with a simple query
+      const startTime = Date.now();
+      await db.execute(sql`SELECT 1 as health_check`);
+      const queryTime = Date.now() - startTime;
+
+      const connectionStats = getConnectionStats();
+
+      return {
+        status: 'ok',
+        timestamp: new Date().toISOString(),
+        database: {
+          connected: true,
+          queryTime: `${queryTime}ms`,
+          poolConfig: connectionStats,
+        },
+      };
+    } catch (error) {
+      set.status = 503;
+      logger.error({ error }, '❌ Database health check failed');
+      return {
+        status: 'error',
+        message: error instanceof Error ? error.message : 'Database connection failed',
+        timestamp: new Date().toISOString(),
+      };
+    }
+  })
+  // WebSocket health check endpoint - returns WebSocket connection stats
+  .get('/health/ws', ({ set }: { set: { status: number } }) => {
+    try {
+      const realTimeUpdatesService = Container.get(RealTimeUpdatesService);
+      const stats = realTimeUpdatesService.getStats();
+
+      return {
+        status: 'ok',
+        timestamp: new Date().toISOString(),
+        websocket: stats,
+      };
+    } catch (error) {
+      set.status = 503;
+      return {
+        status: 'error',
+        message: error instanceof Error ? error.message : 'Unknown error',
+        timestamp: new Date().toISOString(),
+      };
+    }
+  })
   // WebSocket endpoint using Elysia's native WebSocket support
   .ws('/', {
     // biome-ignore lint/suspicious/noExplicitAny: Elysia WebSocket types not well documented
