@@ -395,7 +395,7 @@ export class PricingService {
           if (tokensStillNeedingPrice.length > 0) {
             // PERFORMANCE FIX: Deduplicate token IDs before querying
             const uniqueTokenIds = Array.from(new Set(tokensStillNeedingPrice.map((t) => t.id)));
-            
+
             const fallbackPrices = await this.tokenPriceRepository.findLatestPricesForTokens(
               uniqueTokenIds,
               baseCurrencyToken.id
@@ -579,13 +579,14 @@ export class PricingService {
     }
 
     // Try to use pre-fetched token first, fall back to DB if needed
-    const cachedBaseCurrencyToken = baseCurrencyTokensMap?.get(cachedPrice.baseTokenId) ||
-      await this.tokenRepository.findById(cachedPrice.baseTokenId);
+    const cachedBaseCurrencyToken =
+      baseCurrencyTokensMap?.get(cachedPrice.baseTokenId) ||
+      (await this.tokenRepository.findById(cachedPrice.baseTokenId));
 
     if (cachedBaseCurrencyToken) {
       // Try to use pre-fetched target token first, fall back to DB if needed
-      const targetToken = targetBaseCurrencyToken ||
-        await this.tokenRepository.findById(targetBaseCurrencyId);
+      const targetToken =
+        targetBaseCurrencyToken || (await this.tokenRepository.findById(targetBaseCurrencyId));
       if (targetToken) {
         return await this.convertPrice(
           cachedPrice.price,
@@ -1487,7 +1488,7 @@ export class PricingService {
     if (tokensNeedingFallback.length > 0) {
       // PERFORMANCE FIX: Deduplicate token IDs before querying
       const uniqueTokenIds = Array.from(new Set(tokensNeedingFallback.map((t) => t.id)));
-      
+
       const latestPrices = await this.tokenPriceRepository.findLatestPricesForTokens(
         uniqueTokenIds,
         baseCurrencyToken.id
