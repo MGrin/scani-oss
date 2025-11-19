@@ -23,10 +23,7 @@ import { and, eq } from 'drizzle-orm';
 import { Container, Service } from 'typedi';
 import { db } from '../database/connection';
 import * as schema from '../database/schema';
-import { BlockchainServiceManager } from '../external-services/blockchain';
-import type { WalletInfo } from '../external-services/blockchain/types';
 import { TokenTypeRepository } from '../repositories/EnumRepositories';
-import { InstitutionBlockchainMappingRepository } from '../repositories/InstitutionBlockchainMappingRepository';
 import { AccountService } from '../services/AccountService';
 import { HoldingService } from '../services/HoldingService';
 import { TokenService } from '../services/TokenService';
@@ -64,10 +61,8 @@ export interface SyncWalletBalancesResult {
  */
 @Service()
 export class SyncWalletBalancesUseCase {
-  private readonly blockchainService = Container.get(BlockchainServiceManager);
   private readonly integrationManager = Container.get(IntegrationManager);
   private readonly userWalletService = Container.get(UserWalletService);
-  private readonly mappingRepository = Container.get(InstitutionBlockchainMappingRepository);
   private readonly accountService = Container.get(AccountService);
   private readonly holdingService = Container.get(HoldingService);
   private readonly tokenService = Container.get(TokenService);
@@ -92,33 +87,16 @@ export class SyncWalletBalancesUseCase {
         throw new Error('Token type "crypto" not found');
       }
 
-      // Check if we have any mappings (new system)
-      const hasAnyMappings = (await this.mappingRepository.findAllActive()).length > 0;
+      // Sync wallets from user_wallets table
+      logger.debug('Syncing wallets from user_wallets table');
+      const result = await this.syncUserWallets(cryptoTokenType.id);
 
-      if (hasAnyMappings) {
-        // Sync new user_wallets format
-        logger.debug('Syncing wallets from user_wallets table');
-        const newResult = await this.syncUserWallets(cryptoTokenType.id);
-
-        accountsSynced += newResult.accountsSynced;
-        accountsFailed += newResult.accountsFailed;
-        holdingsUpdated += newResult.holdingsUpdated;
-        holdingsCreated += newResult.holdingsCreated;
-        holdingsRemoved += newResult.holdingsRemoved;
-        errors.push(...newResult.errors);
-      }
-
-      // Sync old accounts format (backward compatibility)
-      // Find accounts that are NOT migrated (don't have metadata.migrated flag)
-      logger.debug('Syncing legacy wallet accounts');
-      const legacyResult = await this.syncLegacyAccounts(cryptoTokenType.id);
-
-      accountsSynced += legacyResult.accountsSynced;
-      accountsFailed += legacyResult.accountsFailed;
-      holdingsUpdated += legacyResult.holdingsUpdated;
-      holdingsCreated += legacyResult.holdingsCreated;
-      holdingsRemoved += legacyResult.holdingsRemoved;
-      errors.push(...legacyResult.errors);
+      accountsSynced += result.accountsSynced;
+      accountsFailed += result.accountsFailed;
+      holdingsUpdated += result.holdingsUpdated;
+      holdingsCreated += result.holdingsCreated;
+      holdingsRemoved += result.holdingsRemoved;
+      errors.push(...result.errors);
 
       const totalAccountsFound = accountsSynced + accountsFailed;
       const durationMs = Date.now() - startTime;
@@ -433,328 +411,6 @@ export class SyncWalletBalancesUseCase {
             );
           }
         }
-      }
-    }
-
-    return {
-      accountsSynced,
-      accountsFailed,
-      holdingsUpdated,
-      holdingsCreated,
-      holdingsRemoved,
-      errors,
-    };
-  }
-
-  /**
-   * Sync legacy accounts (old format without migration flag)
-   */
-  private async syncLegacyAccounts(cryptoTokenTypeId: string): Promise<{
-    accountsSynced: number;
-    accountsFailed: number;
-    holdingsUpdated: number;
-    holdingsCreated: number;
-    holdingsRemoved: number;
-    errors: SyncWalletBalancesResult['errors'];
-  }> {
-    const errors: SyncWalletBalancesResult['errors'] = [];
-    let accountsSynced = 0;
-    let accountsFailed = 0;
-    let holdingsUpdated = 0;
-    let holdingsCreated = 0;
-    let holdingsRemoved = 0;
-
-    // Find all wallet accounts that are NOT migrated
-    const walletAccounts = await this.accountService.findWalletAccounts();
-
-    // Filter to only non-migrated accounts
-    const nonMigratedAccounts = walletAccounts.filter((account) => {
-      const metadata = account.metadata as Record<string, unknown>;
-      return !metadata?.migrated;
-    });
-
-    if (nonMigratedAccounts.length === 0) {
-      logger.info('No legacy wallet accounts found');
-      return {
-        accountsSynced: 0,
-        accountsFailed: 0,
-        holdingsUpdated: 0,
-        holdingsCreated: 0,
-        holdingsRemoved: 0,
-        errors: [],
-      };
-    }
-
-    logger.info(
-      {
-        accountCount: nonMigratedAccounts.length,
-      },
-      'Found legacy wallet accounts to sync'
-    );
-
-    // Process each legacy wallet account
-    for (const account of nonMigratedAccounts) {
-      const metadata = account.metadata as Record<string, unknown>;
-      const walletAddress = metadata.walletAddress as string;
-      const chainName = metadata.chainName as string | undefined;
-
-      if (!walletAddress) {
-        logger.warn(
-          {
-            accountId: account.id,
-            accountName: account.name,
-          },
-          'Account has no wallet address in metadata'
-        );
-        continue;
-      }
-
-      try {
-        logger.debug(
-          {
-            accountId: account.id,
-            accountName: account.name,
-            walletAddress: `${walletAddress.substring(0, 10)}...`,
-            chainName,
-          },
-          'Syncing legacy wallet balances'
-        );
-
-        // Fetch wallet balances from blockchain using legacy service
-        const walletResult = await this.blockchainService.importWalletAddress(walletAddress);
-
-        if (walletResult.wallets.length === 0) {
-          logger.warn(
-            {
-              accountId: account.id,
-              walletAddress: `${walletAddress.substring(0, 10)}...`,
-            },
-            'No wallet data returned from blockchain'
-          );
-          accountsFailed++;
-          errors.push({
-            accountId: account.id,
-            accountName: account.name,
-            walletAddress,
-            error: 'No wallet data returned from blockchain',
-          });
-          continue;
-        }
-
-        // Find the wallet for this specific chain
-        let walletInfo: WalletInfo | undefined;
-        if (chainName) {
-          walletInfo = walletResult.wallets.find((w) => w.chainName === chainName);
-        } else {
-          walletInfo = walletResult.wallets[0];
-        }
-
-        if (!walletInfo) {
-          logger.warn(
-            {
-              accountId: account.id,
-              walletAddress: `${walletAddress.substring(0, 10)}...`,
-              chainName,
-            },
-            'Wallet not found for specified chain'
-          );
-          accountsFailed++;
-          errors.push({
-            accountId: account.id,
-            accountName: account.name,
-            walletAddress,
-            error: `Wallet not found for chain: ${chainName}`,
-          });
-          continue;
-        }
-
-        // Get existing holdings for this account using service (include hidden ones)
-        const existingHoldings = await this.holdingService.findByAccount(
-          account.id,
-          undefined,
-          true
-        );
-
-        // Batch fetch all tokens for existing holdings
-        const existingTokenIds = existingHoldings.map((h) => h.tokenId);
-        const existingTokens = await this.tokenService.getTokensByIds(existingTokenIds);
-        const tokensMap = new Map(existingTokens.map((t) => [t.id, t]));
-
-        // Create a map of existing holdings by token symbol
-        const existingHoldingsMap = new Map<string, (typeof existingHoldings)[0]>();
-        for (const holding of existingHoldings) {
-          const token = tokensMap.get(holding.tokenId);
-          if (token) {
-            existingHoldingsMap.set(token.symbol.toUpperCase(), holding);
-          }
-        }
-
-        // Process each token balance from blockchain
-        for (const tokenBalance of walletInfo.balances) {
-          try {
-            // Skip tokens with missing required data
-            if (!tokenBalance.symbol || !tokenBalance.balance || !tokenBalance.name) {
-              logger.warn(
-                {
-                  accountId: account.id,
-                  tokenBalance,
-                },
-                'Skipping token balance with missing required fields (symbol, name, or balance)'
-              );
-              continue;
-            }
-
-            const tokenSymbol = tokenBalance.symbol.toUpperCase();
-            const balance = tokenBalance.balance;
-
-            // Validate balance is a valid decimal string
-            if (!isValidDecimalString(balance)) {
-              logger.warn(
-                {
-                  accountId: account.id,
-                  tokenSymbol,
-                  balance,
-                },
-                'Skipping token balance with invalid balance format'
-              );
-              continue;
-            }
-
-            // Find or create token using service
-            const token = await this.tokenService.findOrCreateTokenFromBlockchain({
-              symbol: tokenSymbol,
-              name: tokenBalance.name,
-              decimals: tokenBalance.decimals,
-              typeId: cryptoTokenTypeId,
-              iconUrl: tokenBalance.iconUrl,
-              isNative: tokenBalance.isNative,
-              tokenAddress: tokenBalance.tokenAddress,
-              chainName: walletInfo.chainName,
-              coinGeckoId: tokenBalance.coinGeckoId,
-              metadata: tokenBalance.metadata,
-            });
-
-            const existingHolding = existingHoldingsMap.get(tokenSymbol);
-            const wasHidden = existingHolding?.isHidden ?? false;
-
-            if (balance === '0' || parseFloat(balance) === 0) {
-              // For blockchain holdings with zero balance:
-              // - Keep the holding for future syncs (balance may increase later)
-              // - Preserve hidden state (if user hid it, keep it hidden)
-              // - Update the balance to reflect current state
-              if (existingHolding) {
-                await this.holdingService.updateHoldingBalance(existingHolding.id, balance);
-                // Only count as removed if it wasn't already hidden
-                if (!wasHidden) {
-                  holdingsRemoved++;
-                }
-                logger.debug(
-                  {
-                    accountId: account.id,
-                    tokenSymbol,
-                    holdingId: existingHolding.id,
-                    isHidden: wasHidden,
-                  },
-                  'Updated holding with zero balance (preserving hidden state)'
-                );
-              }
-            } else {
-              // Update or create holding with non-zero balance
-              if (existingHolding) {
-                // Update existing holding using service
-                // Keep the hidden state as-is (user may have intentionally hidden it)
-                await this.holdingService.updateHoldingBalance(existingHolding.id, balance);
-
-                // Only count as updated if it wasn't hidden
-                if (!wasHidden) {
-                  holdingsUpdated++;
-                }
-                logger.debug(
-                  {
-                    accountId: account.id,
-                    tokenSymbol,
-                    holdingId: existingHolding.id,
-                    balance,
-                    isHidden: wasHidden,
-                  },
-                  'Updated holding balance (preserving hidden state)'
-                );
-              } else {
-                // Create new holding with blockchain source
-                const [newHolding] = await db
-                  .insert(schema.holdings)
-                  .values({
-                    userId: account.userId,
-                    accountId: account.id,
-                    tokenId: token.id,
-                    balance,
-                    source: 'blockchain',
-                    isHidden: wasHidden, // Preserve any previous hidden state
-                    lastUpdated: new Date(),
-                  })
-                  .returning();
-
-                if (!newHolding) {
-                  throw new Error('Failed to create holding');
-                }
-
-                holdingsCreated++;
-                logger.debug(
-                  {
-                    accountId: account.id,
-                    tokenSymbol,
-                    holdingId: newHolding.id,
-                    balance,
-                  },
-                  'Created new holding'
-                );
-              }
-
-              // NOTE: Removed price fetching during sync to speed up the process
-              // Prices will be fetched on-demand when user views their portfolio
-            }
-          } catch (error) {
-            logger.error(
-              {
-                accountId: account.id,
-                tokenSymbol: tokenBalance?.symbol || 'unknown',
-                tokenName: tokenBalance?.name || 'unknown',
-                balance: tokenBalance?.balance || 'unknown',
-                tokenAddress: tokenBalance?.tokenAddress || 'unknown',
-                error: error instanceof Error ? error.message : String(error),
-              },
-              'Failed to process token balance'
-            );
-            // Continue with other tokens even if one fails
-          }
-        }
-
-        // Update account metadata with last sync time using service
-        const updatedMetadata = {
-          ...metadata,
-          lastSync: new Date().toISOString(),
-        };
-        await this.accountService.updateAccountMetadata(account.id, updatedMetadata);
-
-        accountsSynced++;
-      } catch (error) {
-        accountsFailed++;
-        const errorMessage = error instanceof Error ? error.message : String(error);
-        errors.push({
-          accountId: account.id,
-          accountName: account.name,
-          walletAddress,
-          error: errorMessage,
-        });
-        logger.error(
-          {
-            accountId: account.id,
-            accountName: account.name,
-            walletAddress: `${walletAddress.substring(0, 10)}...`,
-            error: errorMessage,
-          },
-          'Failed to sync legacy wallet balances'
-        );
       }
     }
 

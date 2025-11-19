@@ -221,11 +221,6 @@
         <!-- Header -->
         <div class="email-header">
           <div class="logo-container">
-            <img
-              src="https://app.scani.xyz/icons/icon-152x152.png"
-              alt="Scani Logo"
-              class="logo-image"
-            >
             <div class="logo-text">Scani</div>
           </div>
           <div class="header-subtitle">Personal Finance Management</div>
@@ -238,32 +233,14 @@
             Choose your preferred way to sign in. Your sign-in method is secure and temporary.
           </div>
 
-          <div class="instructions">
-            <strong>📱 Using Scani as a PWA (installed app)?</strong>
-            <br>
-            Please copy the verification code below and paste it into the app. Magic links will open
-            in your default browser instead of the PWA.
-          </div>
-
           <!-- Logic: Check custom variable from .Data -->
           {{ if .ConfirmationURL }}
           <!-- Magic Link Section -->
           <div class="cta-container">
-            <a
-              href="{{ .ConfirmationURL }}"
-              class="cta-button"
-              style="color:#fff !important;text-decoration:none;"
-            >
-              Sign in to Scani
-            </a>
-          </div>
-          <div class="alternative-link">
-            Copy and paste this link:
-            <br>
-            {{ .ConfirmationURL }}
+            <a href="{{ .ConfirmationURL }}" class="cta-button"> Sign in to Scani </a>
           </div>
           <div class="expiry-info">
-            <strong>⏰ This magic link expires in 1 hour</strong>
+            <strong>This magic link expires in 1 hour</strong>
           </div>
           {{ end }}
           {{ if .Token }}
@@ -274,7 +251,7 @@
             <div class="code-hint">Tap to copy • Valid for 10 minutes</div>
           </div>
           <div class="expiry-info">
-            <strong>⏰ This code expires in 10 minutes</strong>
+            <strong>This code expires in 10 minutes</strong>
           </div>
           <div class="instructions">
             <strong>How to use this code:</strong>
@@ -288,10 +265,8 @@
 
           <div class="security-notice">
             <strong>Security Notice:</strong>
-            If you didn't request this {{ if eq .Data.email_type "magic_link" }}link{{ else }}code
-            {{ end }}, please ignore this email. Never share
-            {{ if eq .Data.email_type "magic_link" }}this link{{ else }}this code{{ end }}with
-            anyone.
+            If you didn't request this sign-in, please ignore this email. Never share this
+            information with anyone.
           </div>
         </div>
 
@@ -300,6 +275,8 @@
           Scani • Personal Finance Management
           <br>
           This is an automated email, please do not reply.
+          <br>
+          Need help? Visit app.scani.xyz
         </div>
       </div>
     </div>

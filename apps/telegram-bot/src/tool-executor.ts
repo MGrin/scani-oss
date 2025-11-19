@@ -1,4 +1,3 @@
-import { BlockchainServiceManager } from '@scani/core/external-services/blockchain';
 import {
   AccountImplementations,
   DashboardImplementations,
@@ -412,17 +411,9 @@ export class ToolExecutor {
   }
 
   private async listSupportedChains() {
-    const blockchainService = Container.get(BlockchainServiceManager);
-    const chains = blockchainService.getAllSupportedChains();
-
-    return chains.map((chain) => ({
-      chainId: chain.chainId,
-      name: chain.name,
-      type: chain.type,
-      nativeSymbol: chain.nativeSymbol,
-      nativeName: chain.nativeName,
-      isActive: chain.isActive,
-    }));
+    // Note: This feature needs to be reimplemented with IntegrationManager
+    // For now, return empty array as chains are now managed via institution_blockchain_mappings
+    return [];
   }
 
   // New methods for additional features
@@ -511,23 +502,13 @@ export class ToolExecutor {
   }
 
   private async detectWalletChains(address: string) {
-    const blockchainService = Container.get(BlockchainServiceManager);
-    const detectedChains = await blockchainService.detectWalletChains(address);
-
-    const chains = blockchainService.getAllSupportedChains();
-    const detectedChainDetails = chains
-      .filter((chain) => detectedChains.includes(chain.chainId))
-      .map((chain) => ({
-        chainId: chain.chainId,
-        name: chain.name,
-        type: chain.type,
-        nativeSymbol: chain.nativeSymbol,
-      }));
-
+    // Note: This feature needs to be reimplemented with IntegrationManager
+    // Wallet chain detection is now handled by IntegrationManager during import
     return {
       address,
-      chainsDetected: detectedChainDetails,
-      totalChains: detectedChainDetails.length,
+      chainsDetected: [],
+      totalChains: 0,
+      note: 'Wallet chain detection is now automatic during wallet import',
     };
   }
 

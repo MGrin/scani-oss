@@ -45,7 +45,8 @@ export class TokenPriceRepository extends BaseRepository<TokenPrice, NewTokenPri
 
       const database = this.getDb(transaction);
 
-      // Use a lateral join to get the latest price for each token
+      // Fetch all matching prices and group by tokenId in memory
+      // While not as optimal as DISTINCT ON, this works reliably with Drizzle's type mapping
       const results = await database
         .select()
         .from(schema.tokenPrices)
@@ -57,7 +58,7 @@ export class TokenPriceRepository extends BaseRepository<TokenPrice, NewTokenPri
         )
         .orderBy(desc(schema.tokenPrices.timestamp));
 
-      // Group by tokenId and keep only the latest
+      // Group by tokenId and keep only the latest (first occurrence due to DESC order)
       const priceMap = new Map<string, TokenPrice>();
       for (const price of results) {
         if (!priceMap.has(price.tokenId)) {
