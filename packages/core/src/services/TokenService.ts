@@ -5,12 +5,14 @@ import { TokenTypeRepository } from '../repositories/EnumRepositories';
 import { TokenPriceRepository } from '../repositories/TokenPriceRepository';
 import { TokenRepository } from '../repositories/TokenRepository';
 import { BaseService } from './BaseService';
+import { ScamTokenDetectionService } from './ScamTokenDetectionService';
 
 @Service()
 export class TokenService extends BaseService {
   private readonly tokenRepository = Container.get(TokenRepository);
   private readonly tokenPriceRepository = Container.get(TokenPriceRepository);
   private readonly tokenTypeRepository = Container.get(TokenTypeRepository);
+  private readonly scamDetectionService = Container.get(ScamTokenDetectionService);
 
   constructor() {
     super('TokenService');
@@ -434,6 +436,14 @@ export class TokenService extends BaseService {
 
         this.assertExists(token, 'Failed to update token');
       } else {
+        // Calculate scam probability for crypto tokens
+        const scamProbability = this.scamDetectionService.calculateScamProbability(
+          tokenMapping.token.symbol,
+          tokenMapping.token.name,
+          new Date(), // Token is being created now
+          false // We don't have price data yet at creation time
+        );
+
         // Create new token
         token = await this.tokenRepository.create({
           symbol: tokenMapping.token.symbol.toUpperCase(),
@@ -442,6 +452,7 @@ export class TokenService extends BaseService {
           decimals: tokenMapping.token.decimals ?? defaultDecimals,
           iconUrl: tokenMapping.token.iconUrl || null,
           providerMetadata: tokenMapping.token.providerMetadata || '{}',
+          isScamProbability: scamProbability,
           isActive: true,
         });
 
@@ -449,6 +460,7 @@ export class TokenService extends BaseService {
         this.logInfo('Token created from integration mapping', {
           tokenId: token.id,
           symbol: token.symbol,
+          scamProbability: scamProbability.toFixed(2),
         });
       }
 

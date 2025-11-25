@@ -1,6 +1,6 @@
 {
-  "id": "2d6691a6-4681-42e0-beed-c1870e63e896",
-  "prevId": "34ce225d-95f6-4a2f-a7e3-8ddef0233d42",
+  "id": "ab46bfa4-9732-417f-ae75-b838ae211576",
+  "prevId": "2d6691a6-4681-42e0-beed-c1870e63e896",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -69,7 +69,9 @@
         "account_types_code_unique": {
           "name": "account_types_code_unique",
           "nullsNotDistinct": false,
-          "columns": ["code"]
+          "columns": [
+            "code"
+          ]
         }
       },
       "policies": {},
@@ -204,8 +206,12 @@
           "name": "accounts_user_id_users_id_fk",
           "tableFrom": "accounts",
           "tableTo": "users",
-          "columnsFrom": ["user_id"],
-          "columnsTo": ["id"],
+          "columnsFrom": [
+            "user_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
@@ -213,8 +219,12 @@
           "name": "accounts_institution_id_institutions_id_fk",
           "tableFrom": "accounts",
           "tableTo": "institutions",
-          "columnsFrom": ["institution_id"],
-          "columnsTo": ["id"],
+          "columnsFrom": [
+            "institution_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
@@ -222,8 +232,12 @@
           "name": "accounts_type_id_account_types_id_fk",
           "tableFrom": "accounts",
           "tableTo": "account_types",
-          "columnsFrom": ["type_id"],
-          "columnsTo": ["id"],
+          "columnsFrom": [
+            "type_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
           "onDelete": "restrict",
           "onUpdate": "no action"
         }
@@ -233,7 +247,11 @@
         "accounts_user_id_institution_id_name_unique": {
           "name": "accounts_user_id_institution_id_name_unique",
           "nullsNotDistinct": false,
-          "columns": ["user_id", "institution_id", "name"]
+          "columns": [
+            "user_id",
+            "institution_id",
+            "name"
+          ]
         }
       },
       "policies": {},
@@ -419,8 +437,12 @@
           "name": "holdings_user_id_users_id_fk",
           "tableFrom": "holdings",
           "tableTo": "users",
-          "columnsFrom": ["user_id"],
-          "columnsTo": ["id"],
+          "columnsFrom": [
+            "user_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
@@ -428,8 +450,12 @@
           "name": "holdings_account_id_accounts_id_fk",
           "tableFrom": "holdings",
           "tableTo": "accounts",
-          "columnsFrom": ["account_id"],
-          "columnsTo": ["id"],
+          "columnsFrom": [
+            "account_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
@@ -437,8 +463,12 @@
           "name": "holdings_token_id_tokens_id_fk",
           "tableFrom": "holdings",
           "tableTo": "tokens",
-          "columnsFrom": ["token_id"],
-          "columnsTo": ["id"],
+          "columnsFrom": [
+            "token_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
           "onDelete": "restrict",
           "onUpdate": "no action"
         }
@@ -537,8 +567,12 @@
           "name": "institution_blockchain_mappings_institution_id_institutions_id_fk",
           "tableFrom": "institution_blockchain_mappings",
           "tableTo": "institutions",
-          "columnsFrom": ["institution_id"],
-          "columnsTo": ["id"],
+          "columnsFrom": [
+            "institution_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -548,7 +582,9 @@
         "institution_blockchain_mappings_institution_id_unique": {
           "name": "institution_blockchain_mappings_institution_id_unique",
           "nullsNotDistinct": false,
-          "columns": ["institution_id"]
+          "columns": [
+            "institution_id"
+          ]
         }
       },
       "policies": {},
@@ -620,7 +656,9 @@
         "institution_types_code_unique": {
           "name": "institution_types_code_unique",
           "nullsNotDistinct": false,
-          "columns": ["code"]
+          "columns": [
+            "code"
+          ]
         }
       },
       "policies": {},
@@ -719,8 +757,12 @@
           "name": "institutions_type_id_institution_types_id_fk",
           "tableFrom": "institutions",
           "tableTo": "institution_types",
-          "columnsFrom": ["type_id"],
-          "columnsTo": ["id"],
+          "columnsFrom": [
+            "type_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
           "onDelete": "restrict",
           "onUpdate": "no action"
         }
@@ -730,7 +772,9 @@
         "institutions_website_unique": {
           "name": "institutions_website_unique",
           "nullsNotDistinct": false,
-          "columns": ["website"]
+          "columns": [
+            "website"
+          ]
         }
       },
       "policies": {},
@@ -831,8 +875,12 @@
           "name": "telegram_users_user_id_users_id_fk",
           "tableFrom": "telegram_users",
           "tableTo": "users",
-          "columnsFrom": ["user_id"],
-          "columnsTo": ["id"],
+          "columnsFrom": [
+            "user_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -842,7 +890,9 @@
         "telegram_users_telegram_id_unique": {
           "name": "telegram_users_telegram_id_unique",
           "nullsNotDistinct": false,
-          "columns": ["telegram_id"]
+          "columns": [
+            "telegram_id"
+          ]
         }
       },
       "policies": {},
@@ -947,8 +997,12 @@
           "name": "token_prices_token_id_tokens_id_fk",
           "tableFrom": "token_prices",
           "tableTo": "tokens",
-          "columnsFrom": ["token_id"],
-          "columnsTo": ["id"],
+          "columnsFrom": [
+            "token_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
@@ -956,8 +1010,12 @@
           "name": "token_prices_base_token_id_tokens_id_fk",
           "tableFrom": "token_prices",
           "tableTo": "tokens",
-          "columnsFrom": ["base_token_id"],
-          "columnsTo": ["id"],
+          "columnsFrom": [
+            "base_token_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
           "onDelete": "restrict",
           "onUpdate": "no action"
         }
@@ -967,7 +1025,11 @@
         "token_prices_token_id_base_token_id_timestamp_unique": {
           "name": "token_prices_token_id_base_token_id_timestamp_unique",
           "nullsNotDistinct": false,
-          "columns": ["token_id", "base_token_id", "timestamp"]
+          "columns": [
+            "token_id",
+            "base_token_id",
+            "timestamp"
+          ]
         }
       },
       "policies": {},
@@ -1039,7 +1101,9 @@
         "token_types_code_unique": {
           "name": "token_types_code_unique",
           "nullsNotDistinct": false,
-          "columns": ["code"]
+          "columns": [
+            "code"
+          ]
         }
       },
       "policies": {},
@@ -1094,6 +1158,13 @@
           "primaryKey": false,
           "notNull": true,
           "default": "'{}'"
+        },
+        "is_scam_probability": {
+          "name": "is_scam_probability",
+          "type": "real",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
         },
         "is_active": {
           "name": "is_active",
@@ -1154,8 +1225,12 @@
           "name": "tokens_type_id_token_types_id_fk",
           "tableFrom": "tokens",
           "tableTo": "token_types",
-          "columnsFrom": ["type_id"],
-          "columnsTo": ["id"],
+          "columnsFrom": [
+            "type_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
           "onDelete": "restrict",
           "onUpdate": "no action"
         }
@@ -1165,7 +1240,10 @@
         "tokens_symbol_type_id_unique": {
           "name": "tokens_symbol_type_id_unique",
           "nullsNotDistinct": false,
-          "columns": ["symbol", "type_id"]
+          "columns": [
+            "symbol",
+            "type_id"
+          ]
         }
       },
       "policies": {},
@@ -1299,8 +1377,12 @@
           "name": "user_integration_credentials_user_id_users_id_fk",
           "tableFrom": "user_integration_credentials",
           "tableTo": "users",
-          "columnsFrom": ["user_id"],
-          "columnsTo": ["id"],
+          "columnsFrom": [
+            "user_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
@@ -1308,8 +1390,12 @@
           "name": "user_integration_credentials_institution_id_institutions_id_fk",
           "tableFrom": "user_integration_credentials",
           "tableTo": "institutions",
-          "columnsFrom": ["institution_id"],
-          "columnsTo": ["id"],
+          "columnsFrom": [
+            "institution_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -1319,7 +1405,10 @@
         "user_integration_credentials_user_id_institution_id_unique": {
           "name": "user_integration_credentials_user_id_institution_id_unique",
           "nullsNotDistinct": false,
-          "columns": ["user_id", "institution_id"]
+          "columns": [
+            "user_id",
+            "institution_id"
+          ]
         }
       },
       "policies": {},
@@ -1421,8 +1510,12 @@
           "name": "user_wallets_user_id_users_id_fk",
           "tableFrom": "user_wallets",
           "tableTo": "users",
-          "columnsFrom": ["user_id"],
-          "columnsTo": ["id"],
+          "columnsFrom": [
+            "user_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -1432,7 +1525,10 @@
         "user_wallets_user_id_wallet_address_unique": {
           "name": "user_wallets_user_id_wallet_address_unique",
           "nullsNotDistinct": false,
-          "columns": ["user_id", "wallet_address"]
+          "columns": [
+            "user_id",
+            "wallet_address"
+          ]
         }
       },
       "policies": {},
@@ -1495,8 +1591,12 @@
           "name": "users_base_currency_id_tokens_id_fk",
           "tableFrom": "users",
           "tableTo": "tokens",
-          "columnsFrom": ["base_currency_id"],
-          "columnsTo": ["id"],
+          "columnsFrom": [
+            "base_currency_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
           "onDelete": "restrict",
           "onUpdate": "no action"
         }
@@ -1506,7 +1606,9 @@
         "users_email_unique": {
           "name": "users_email_unique",
           "nullsNotDistinct": false,
-          "columns": ["email"]
+          "columns": [
+            "email"
+          ]
         }
       },
       "policies": {},

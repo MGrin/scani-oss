@@ -110,29 +110,8 @@
     {
       "idx": 15,
       "version": "7",
-      "when": 1731085800000,
-      "tag": "0015_mark_blockchain_integrations",
-      "breakpoints": true
-    },
-    {
-      "idx": 16,
-      "version": "7",
-      "when": 1731085900000,
-      "tag": "0016_migrate_wallet_data",
-      "breakpoints": true
-    },
-    {
-      "idx": 17,
-      "version": "7",
-      "when": 1731086000000,
-      "tag": "0017_migrate_integration_credentials",
-      "breakpoints": true
-    },
-    {
-      "idx": 18,
-      "version": "7",
-      "when": 1731086100000,
-      "tag": "0018_add_ton_blockchain",
+      "when": 1764049684707,
+      "tag": "0015_fixed_outlaw_kid",
       "breakpoints": true
     }
   ]

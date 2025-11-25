@@ -3,7 +3,7 @@ import type * as schema from '@scani/core/database/schema';
 import { TokenService } from '@scani/core/services/TokenService';
 import type { TokenValidationService } from '@scani/core/services/TokenValidationService';
 import { createComponentLogger } from '@scani/core/utils/logger';
-import { and, eq, sql } from 'drizzle-orm';
+import { and, eq, lt, sql } from 'drizzle-orm';
 import Container from 'typedi';
 import { z } from 'zod';
 import { emitEntityChange } from '../../infrastructure/websocket/RealTimeUpdatesService';
@@ -12,6 +12,10 @@ import { protectedProcedure, router } from '../trpc';
 
 const tokensLogger = createComponentLogger('router:tokens');
 const tokenService = Container.get(TokenService);
+
+// Scam token probability threshold - tokens above this are filtered from UI
+// Set to 0.45 to catch tokens with URLs/suspicious words while avoiding false positives
+const SCAM_PROBABILITY_THRESHOLD = 0.45;
 
 // Helper function to map provider token types to database token types
 // Note: 'stock' type covers Stock/ETF/Equity/Commodity as per seed data
@@ -60,7 +64,12 @@ export function createTokensRouter(
         })
         .from(schemaObj.tokens)
         .leftJoin(schemaObj.tokenTypes, eq(schemaObj.tokens.typeId, schemaObj.tokenTypes.id))
-        .where(eq(schemaObj.tokens.isActive, true))
+        .where(
+          and(
+            eq(schemaObj.tokens.isActive, true),
+            lt(schemaObj.tokens.isScamProbability, SCAM_PROBABILITY_THRESHOLD)
+          )
+        )
         .orderBy(schemaObj.tokens.symbol);
       return tokens;
     }),
@@ -96,6 +105,7 @@ export function createTokensRouter(
           .where(
             and(
               eq(schemaObj.tokens.isActive, true),
+              lt(schemaObj.tokens.isScamProbability, SCAM_PROBABILITY_THRESHOLD),
               sql`(UPPER(${schemaObj.tokens.symbol}) LIKE ${`%${query}%`} OR UPPER(${
                 schemaObj.tokens.name
               }) LIKE ${`%${query}%`})`
