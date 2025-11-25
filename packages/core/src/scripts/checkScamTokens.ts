@@ -1,6 +1,6 @@
 #!/usr/bin/env bun
 import 'reflect-metadata';
-import { eq, desc } from 'drizzle-orm';
+import { desc, eq } from 'drizzle-orm';
 import { db } from '../database/connection';
 import * as schema from '../database/schema';
 
