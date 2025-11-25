@@ -63,7 +63,7 @@ export class ScamTokenDetectionService extends BaseService {
   // URL pattern regex - matches various URL patterns including special unicode dots
   private readonly URL_PATTERN =
     /(?:https?:\/\/|www\.|[\s˳.]com|[\s˳.]io|[\s˳.]net|[\s˳.]org|[\s˳.]xyz|[\s˳.]app|[\s˳.]gg|[\s˳.]me|[\s˳.]to|[\s˳.]pm|[\s˳.]fun)/i;
-  
+
   // TLD pattern - catches things like "GIVEAWAYSCOM" or "GIVEAWAYS˳COM"
   private readonly TLD_PATTERN = /(?:com|net|org|io|xyz|app|gg|me|to|pm|fun)$/i;
 
@@ -110,7 +110,7 @@ export class ScamTokenDetectionService extends BaseService {
       probability += 0.4;
       reasons.push('Contains suspicious words (visit, claim, etc.)');
     }
-    
+
     // Check 2.5: Compound scam pattern (suspicious word + URL/TLD)
     if (hasSuspicious && (hasUrl || hasTld)) {
       probability += 0.3; // Extra penalty for combining scam indicators
@@ -162,7 +162,7 @@ export class ScamTokenDetectionService extends BaseService {
   private hasUrl(text: string): boolean {
     return this.URL_PATTERN.test(text);
   }
-  
+
   /**
    * Check if text ends with or contains TLD-like patterns
    * Catches things like "GIVEAWAYSCOM" or "SOMETHING˳COM"
