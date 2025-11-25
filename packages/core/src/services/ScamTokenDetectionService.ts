@@ -60,9 +60,12 @@ export class ScamTokenDetectionService extends BaseService {
     'participate',
   ]);
 
-  // URL pattern regex
+  // URL pattern regex - matches various URL patterns including special unicode dots
   private readonly URL_PATTERN =
-    /(?:https?:\/\/|www\.|\.com|\.io|\.net|\.org|\.xyz|\.app|\.gg|\.me)/i;
+    /(?:https?:\/\/|www\.|[\s˳.]com|[\s˳.]io|[\s˳.]net|[\s˳.]org|[\s˳.]xyz|[\s˳.]app|[\s˳.]gg|[\s˳.]me|[\s˳.]to|[\s˳.]pm|[\s˳.]fun)/i;
+  
+  // TLD pattern - catches things like "GIVEAWAYSCOM" or "GIVEAWAYS˳COM"
+  private readonly TLD_PATTERN = /(?:com|net|org|io|xyz|app|gg|me|to|pm|fun)$/i;
 
   // Emoji pattern regex (simplified - matches common emoji ranges)
   private readonly EMOJI_PATTERN =
@@ -94,15 +97,24 @@ export class ScamTokenDetectionService extends BaseService {
     const reasons: string[] = [];
 
     // Check 1: URL in symbol or name (very strong indicator)
-    if (this.hasUrl(symbol) || this.hasUrl(name)) {
-      probability += 0.5; // Increased from 0.4
-      reasons.push('Contains URL');
+    const hasUrl = this.hasUrl(symbol) || this.hasUrl(name);
+    const hasTld = this.hasTldPattern(symbol) || this.hasTldPattern(name);
+    if (hasUrl || hasTld) {
+      probability += 0.5;
+      reasons.push('Contains URL or domain pattern');
     }
 
     // Check 2: Suspicious words in name or symbol
-    if (this.hasSuspiciousWords(symbol) || this.hasSuspiciousWords(name)) {
-      probability += 0.4; // Increased from 0.3
+    const hasSuspicious = this.hasSuspiciousWords(symbol) || this.hasSuspiciousWords(name);
+    if (hasSuspicious) {
+      probability += 0.4;
       reasons.push('Contains suspicious words (visit, claim, etc.)');
+    }
+    
+    // Check 2.5: Compound scam pattern (suspicious word + URL/TLD)
+    if (hasSuspicious && (hasUrl || hasTld)) {
+      probability += 0.3; // Extra penalty for combining scam indicators
+      reasons.push('Multiple scam indicators combined');
     }
 
     // Check 3: Too long name with multiple words
@@ -149,6 +161,16 @@ export class ScamTokenDetectionService extends BaseService {
    */
   private hasUrl(text: string): boolean {
     return this.URL_PATTERN.test(text);
+  }
+  
+  /**
+   * Check if text ends with or contains TLD-like patterns
+   * Catches things like "GIVEAWAYSCOM" or "SOMETHING˳COM"
+   */
+  private hasTldPattern(text: string): boolean {
+    // Remove spaces and special unicode characters, then check if ends with TLD
+    const normalized = text.replace(/[\s˳._-]/g, '').toLowerCase();
+    return this.TLD_PATTERN.test(normalized);
   }
 
   /**

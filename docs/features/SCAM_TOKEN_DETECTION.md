@@ -26,8 +26,9 @@ The scam token detection feature automatically identifies and filters out likely
 **Purpose**: Calculates scam probability based on heuristics
 
 **Detection Criteria**:
-- **URL in name/symbol** (+0.4 probability): e.g., "Visit-scam.com Token"
-- **Suspicious words** (+0.3 probability): visit, claim, airdrop, bonus, reward, free, etc.
+- **URL or TLD pattern** (+0.5 probability): Detects URLs, domain patterns, and TLDs like "GIVEAWAYSCOM" or "visit.me"
+- **Suspicious words** (+0.4 probability): visit, claim, airdrop, bonus, reward, free, voucher, swap, ponzi, fomo, giveaway, etc.
+- **Compound scam pattern** (+0.3 probability): Combination of suspicious words + URL/TLD (e.g., "USDTGIVEAWAYSCOM")
 - **Excessively long names** (+0.2 probability): More than 5 words or 50 characters
 - **Emoji in name/symbol** (+0.2 probability): 🎁, 🚀, etc.
 - **Common symbol with recent creation** (+0.3 probability): e.g., "USDT" created 6 months ago
