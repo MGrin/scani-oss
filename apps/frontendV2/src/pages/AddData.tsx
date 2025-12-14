@@ -48,7 +48,6 @@ export function AddData() {
   useEffect(() => {
     const method = searchParams.get('method') as CompleteImportData['method'];
     const accountId = searchParams.get('accountId');
-    const authSuccess = searchParams.get('auth') === 'success';
     const authError = searchParams.get('error');
 
     if (authError) {
@@ -60,12 +59,15 @@ export function AddData() {
 
     if (method) {
       setCompleteImportData((prev) => ({ ...prev, method }));
-      // For Binance OAuth after successful auth, go to account selection
-      if (method === 'binance' && authSuccess) {
-        setCurrentStep('account');
-      } else {
+      // For Binance, go to auth step first
+      if (method === 'binance') {
+        setCurrentStep('binanceAuth');
+      } else if (method === 'wallet') {
         // Skip account selection for wallet imports
-        setCurrentStep(method === 'wallet' ? 'data' : 'account');
+        setCurrentStep('data');
+      } else {
+        // Other methods go to account selection
+        setCurrentStep('account');
       }
     }
 
@@ -109,16 +111,22 @@ export function AddData() {
 
   const nextStep = useCallback(() => {
     if (currentStep === 'method') {
-      // Skip account selection for wallet imports
-      if (isWalletImport) {
+      // For Binance, go to auth step
+      if (isBinanceApiKey) {
+        setCurrentStep('binanceAuth');
+      } else if (isWalletImport) {
+        // Skip account selection for wallet imports
         setCurrentStep('data');
       } else {
         setCurrentStep('account');
       }
+    } else if (currentStep === 'binanceAuth') {
+      // After Binance auth, the component will handle navigation
+      // This case shouldn't normally be called
     } else if (currentStep === 'account') {
       setCurrentStep('data');
     }
-  }, [currentStep, isWalletImport]);
+  }, [currentStep, isWalletImport, isBinanceApiKey]);
 
   const prevStep = useCallback(() => {
     if (currentStep === 'data') {
@@ -138,27 +146,40 @@ export function AddData() {
         setCurrentStep('account');
       }
     } else if (currentStep === 'account') {
-      // Going back from account selection to method selection
-      // Clear method and account selection from complete import data and URL
+      // For Binance, go back to auth step
+      if (isBinanceApiKey) {
+        setCurrentStep('binanceAuth');
+      } else {
+        // Going back from account selection to method selection
+        // Clear method and account selection from complete import data and URL
+        setCompleteImportData({});
+        setCurrentStep('method');
+      }
+    } else if (currentStep === 'binanceAuth') {
+      // Going back from Binance auth to method selection
       setCompleteImportData({});
       setCurrentStep('method');
     }
-  }, [currentStep, isWalletImport]);
+  }, [currentStep, isWalletImport, isBinanceApiKey]);
   const getStepNumber = (step: Step): number => {
-    // Wallet imports have 2 steps (method + data), others have 3 steps (method + account + data)
+    // Wallet imports have 2 steps (method + data)
+    // Binance has 2 steps (method + auth, then auto-redirect to holdings)
+    // Others have 3 steps (method + account + data)
 
     switch (step) {
       case 'method':
         return 1;
+      case 'binanceAuth':
+        return 2;
       case 'account':
         return 2;
       case 'data':
-        return isWalletImport ? 2 : 3;
+        return isWalletImport || isBinanceApiKey ? 2 : 3;
     }
   };
 
   const getProgress = (): number => {
-    const totalSteps = isWalletImport ? 2 : 3;
+    const totalSteps = isWalletImport || isBinanceApiKey ? 2 : 3;
     return (getStepNumber(currentStep) / totalSteps) * 100;
   };
 
@@ -488,7 +509,7 @@ export function AddData() {
           <div className="space-y-2 md:space-y-4">
             <div className="flex items-center justify-between">
               <h2 className="text-base md:text-lg font-semibold">
-                Step {getStepNumber(currentStep)} of {isWalletImport ? '2' : '3'}
+                Step {getStepNumber(currentStep)} of {isWalletImport || isBinanceApiKey ? '2' : '3'}
               </h2>
               <Badge variant="outline" className="text-xs">
                 {Math.round(getProgress())}% Complete
@@ -500,14 +521,28 @@ export function AddData() {
               <span className={currentStep === 'method' ? 'font-medium text-foreground' : ''}>
                 1. {getMethodDisplayText()}
               </span>
-              {!isWalletImport && (
+              {!isWalletImport && !isBinanceApiKey && (
                 <span className={currentStep === 'account' ? 'font-medium text-foreground' : ''}>
                   2. {getAccountDisplayText()}
                 </span>
               )}
-              <span className={currentStep === 'data' ? 'font-medium text-foreground' : ''}>
-                {isWalletImport ? '2' : '3'}. {isWalletImport ? 'Import Wallet' : 'Enter Data'}
-              </span>
+              {isBinanceApiKey && (
+                <span
+                  className={currentStep === 'binanceAuth' ? 'font-medium text-foreground' : ''}
+                >
+                  2. Connect Binance
+                </span>
+              )}
+              {isWalletImport && (
+                <span className={currentStep === 'data' ? 'font-medium text-foreground' : ''}>
+                  2. Import Wallet
+                </span>
+              )}
+              {!isWalletImport && !isBinanceApiKey && (
+                <span className={currentStep === 'data' ? 'font-medium text-foreground' : ''}>
+                  3. Enter Data
+                </span>
+              )}
             </div>
           </div>
         </CardContent>
@@ -520,15 +555,15 @@ export function AddData() {
           onCompleteDataUpdate={updateCompleteImportData}
         />
       )}
+      {currentStep === 'binanceAuth' && (
+        <BinanceApiKeyStep onCompleteDataUpdate={updateCompleteImportData} onNext={nextStep} />
+      )}
       {currentStep === 'account' && (
         <AccountSelectionStep
           onValidationChange={setIsAccountStepValid}
           onAccountDisplayChange={handleAccountDisplayChange}
           onCompleteDataUpdate={updateCompleteImportData}
         />
-      )}
-      {isBinanceApiKey && currentStep === 'account' && (
-        <BinanceApiKeyStep onCompleteDataUpdate={updateCompleteImportData} onNext={nextStep} />
       )}
       {currentStep === 'data' && (
         <DataEntryStep
@@ -567,6 +602,8 @@ export function AddData() {
                   } else if (currentStep === 'data') {
                     await complete();
                   }
+                  // Note: binanceAuth step handles its own submission and navigation internally
+                  // The button is disabled for that step
                 }}
                 disabled={
                   (currentStep === 'method' && !completeImportData.method) ||
@@ -575,6 +612,8 @@ export function AddData() {
                     !isWalletImport &&
                     (!getValidHoldingsInfo().hasChanges || getValidHoldingsInfo().hasInvalid)) ||
                   (currentStep === 'data' && isWalletImport && !hasDataChanges) ||
+                  // BinanceApiKeyStep has its own "Validate & Import" button
+                  currentStep === 'binanceAuth' ||
                   createTokenFromExternalMutation.isPending ||
                   createHoldingsWithDependenciesMutation.isPending ||
                   updateHoldingsBatchMutation.isPending ||
@@ -585,7 +624,9 @@ export function AddData() {
                   ? isWalletImport
                     ? 'View Holdings'
                     : 'Submit'
-                  : 'Continue'}
+                  : currentStep === 'binanceAuth'
+                    ? 'Connect'
+                    : 'Continue'}
               </Button>
             </div>
           </div>,

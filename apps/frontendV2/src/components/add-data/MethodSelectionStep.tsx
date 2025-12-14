@@ -1,5 +1,6 @@
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { getFaviconUrl } from '@/lib/icons';
 import type { CompleteImportData } from '@/types/addData';
 
 interface MethodSelectionStepProps {
@@ -17,6 +18,7 @@ export function MethodSelectionStep({
       title: 'Manual Entry',
       description: 'Manually enter your holdings, transactions, and account information',
       icon: '📝',
+      iconType: 'emoji' as const,
       disabled: false,
     },
     {
@@ -24,6 +26,7 @@ export function MethodSelectionStep({
       title: 'Screenshots Upload',
       description: 'Upload screenshots of your statements and let AI extract the data',
       icon: '📸',
+      iconType: 'emoji' as const,
       disabled: false,
     },
     {
@@ -31,13 +34,15 @@ export function MethodSelectionStep({
       title: 'Cryptocurrency Wallet',
       description: 'Import your crypto holdings from any blockchain wallet address',
       icon: '🔐',
+      iconType: 'emoji' as const,
       disabled: false,
     },
     {
       id: 'binance' as const,
       title: 'Connect Binance',
       description: 'Connect your Binance account with API credentials',
-      icon: '📊',
+      icon: 'https://binance.com',
+      iconType: 'favicon' as const,
       disabled: false,
     },
   ];
@@ -72,7 +77,21 @@ export function MethodSelectionStep({
                     Coming Soon
                   </Badge>
                 )}
-                <div className="text-3xl md:text-4xl mb-2 md:mb-4">{method.icon}</div>
+                <div className="flex justify-center items-center mb-2 md:mb-4">
+                  {method.iconType === 'emoji' ? (
+                    <div className="text-3xl md:text-4xl">{method.icon}</div>
+                  ) : (
+                    <img
+                      src={getFaviconUrl(method.icon) || ''}
+                      alt={`${method.title} logo`}
+                      className="w-12 h-12 md:w-16 md:h-16 rounded-lg object-contain"
+                      onError={(e) => {
+                        // Fallback to a generic icon or emoji if favicon fails to load
+                        (e.target as HTMLImageElement).style.display = 'none';
+                      }}
+                    />
+                  )}
+                </div>
                 <h3 className="font-semibold mb-1 md:mb-2 text-sm md:text-base">{method.title}</h3>
                 <p className="text-xs md:text-sm text-muted-foreground">{method.description}</p>
               </CardContent>

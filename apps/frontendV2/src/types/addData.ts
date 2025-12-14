@@ -1,4 +1,4 @@
-export type Step = 'method' | 'account' | 'data';
+export type Step = 'method' | 'binanceAuth' | 'account' | 'data';
 
 export type CompleteImportData = {
   // Method selection data

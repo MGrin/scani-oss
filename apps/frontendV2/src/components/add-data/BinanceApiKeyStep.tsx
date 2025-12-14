@@ -1,4 +1,8 @@
+import { AlertCircle, CheckCircle2 } from 'lucide-react';
 import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -6,35 +10,74 @@ import { showError, showSuccess } from '@/hooks/use-toast';
 import { trpc } from '@/lib/trpc';
 import type { CompleteImportData } from '@/types/addData';
 
+// Props interface kept for consistency with other step components
+// Navigation is handled internally by redirecting to /holdings
 interface BinanceApiKeyStepProps {
   onCompleteDataUpdate: (updates: Partial<CompleteImportData>) => void;
   onNext: () => void;
 }
 
-export function BinanceApiKeyStep({ onCompleteDataUpdate, onNext }: BinanceApiKeyStepProps) {
+interface ImportResult {
+  success: boolean;
+  message: string;
+  accounts: Array<{
+    id: string;
+    name: string;
+    accountType: string;
+  }>;
+  holdings: Array<{
+    id: string;
+    accountId: string;
+    tokenSymbol: string;
+    balance: string;
+  }>;
+  accountsCreated: number;
+  tokensImported: number;
+  errors: Array<{
+    accountType: string;
+    error: string;
+  }>;
+}
+
+export function BinanceApiKeyStep(_props: BinanceApiKeyStepProps) {
+  const navigate = useNavigate();
   const [apiKey, setApiKey] = useState('');
   const [apiSecret, setApiSecret] = useState('');
-  const [isSubmitted, setIsSubmitted] = useState(false);
+  const [importResult, setImportResult] = useState<ImportResult | null>(null);
 
   // Use tRPC mutation for API key validation
   const validateKeysMutation = trpc.integrations.binance.validateKeys.useMutation({
-    onSuccess: () => {
+    onSuccess: (data: ImportResult) => {
       // Clear sensitive data from inputs to prevent lingering in the UI
       setApiKey('');
       setApiSecret('');
-      setIsSubmitted(true);
+      setImportResult(data);
 
-      showSuccess('Binance credentials validated and stored', 'Success');
+      const hasErrors = data.errors && data.errors.length > 0;
+      const hasSuccess = data.tokensImported > 0;
 
-      // Update form data and proceed
-      onCompleteDataUpdate({
-        accountSelection: { mode: 'select', selectedAccountId: undefined },
-      });
-
-      // Move to next step (account selection)
-      setTimeout(() => {
-        onNext();
-      }, 500);
+      if (hasSuccess) {
+        if (hasErrors) {
+          showSuccess(
+            `Imported ${data.tokensImported} tokens from ${data.accountsCreated} accounts. Some errors occurred.`,
+            'Binance Import'
+          );
+        } else {
+          showSuccess(
+            `Successfully imported ${data.tokensImported} tokens from ${data.accountsCreated} accounts`,
+            'Binance Import'
+          );
+        }
+      } else {
+        if (hasErrors) {
+          showError(
+            'Failed to import Binance accounts. See error details below.',
+            'Binance Import'
+          );
+        } else {
+          showError('No tokens found in your Binance accounts', 'Binance Import');
+        }
+      }
     },
     onError: (error) => {
       showError(new Error(error.message), 'Binance API Key Validation');
@@ -53,6 +96,139 @@ export function BinanceApiKeyStep({ onCompleteDataUpdate, onNext }: BinanceApiKe
     });
   };
 
+  const handleReset = () => {
+    setApiKey('');
+    setApiSecret('');
+    setImportResult(null);
+  };
+
+  // Render import results
+  if (importResult) {
+    return (
+      <div className="space-y-6">
+        <Card>
+          <CardHeader>
+            <div className="flex items-center gap-2">
+              <CheckCircle2 className="h-6 w-6 text-green-500" />
+              <CardTitle>Binance Import Complete</CardTitle>
+            </div>
+            <CardDescription>
+              Your Binance accounts have been successfully imported to Scani
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-6">
+            {/* Summary */}
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+              <Card>
+                <CardContent className="p-4 text-center">
+                  <div className="text-3xl font-bold text-primary">
+                    {importResult.accountsCreated}
+                  </div>
+                  <div className="text-sm text-muted-foreground">Accounts</div>
+                </CardContent>
+              </Card>
+              <Card>
+                <CardContent className="p-4 text-center">
+                  <div className="text-3xl font-bold text-primary">
+                    {importResult.tokensImported}
+                  </div>
+                  <div className="text-sm text-muted-foreground">Tokens</div>
+                </CardContent>
+              </Card>
+              <Card>
+                <CardContent className="p-4 text-center">
+                  <div className="text-3xl font-bold text-primary">
+                    {importResult.holdings.length}
+                  </div>
+                  <div className="text-sm text-muted-foreground">Holdings</div>
+                </CardContent>
+              </Card>
+            </div>
+
+            {/* Accounts created */}
+            {importResult.accounts.length > 0 && (
+              <div className="space-y-3">
+                <h4 className="font-semibold">Accounts Created</h4>
+                <div className="space-y-2">
+                  {importResult.accounts.map((account) => (
+                    <Card key={account.id}>
+                      <CardContent className="p-3 flex items-center justify-between">
+                        <div>
+                          <div className="font-medium">{account.name}</div>
+                          <div className="text-sm text-muted-foreground">{account.accountType}</div>
+                        </div>
+                        <Badge variant="secondary">Binance</Badge>
+                      </CardContent>
+                    </Card>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Errors */}
+            {importResult.errors && importResult.errors.length > 0 && (
+              <Alert variant="destructive">
+                <AlertCircle className="h-4 w-4" />
+                <AlertTitle>Partial Import - Some Accounts Failed</AlertTitle>
+                <AlertDescription>
+                  <div className="mt-2 space-y-2">
+                    {importResult.errors.map((error, index) => (
+                      <details key={`${error.accountType}-${index}`} className="text-sm">
+                        <summary className="cursor-pointer font-medium">
+                          {error.accountType} Account
+                        </summary>
+                        <div className="mt-1 pl-4 text-xs font-mono bg-destructive/10 p-2 rounded">
+                          {error.error}
+                        </div>
+                      </details>
+                    ))}
+                  </div>
+                </AlertDescription>
+              </Alert>
+            )}
+
+            {/* Action buttons */}
+            <div className="flex gap-2">
+              <Button onClick={handleReset} variant="outline" className="flex-1">
+                Connect Another Account
+              </Button>
+              <Button
+                onClick={() => {
+                  navigate('/holdings');
+                }}
+                className="flex-1"
+              >
+                View Holdings
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
+  // Render loading state during import
+  if (validateKeysMutation.isPending) {
+    return (
+      <Card>
+        <CardContent className="p-8">
+          <div className="space-y-6 text-center">
+            <div className="flex justify-center">
+              <div className="animate-spin rounded-full h-16 w-16 border-b-2 border-primary" />
+            </div>
+            <div>
+              <h3 className="text-xl font-semibold mb-2">Importing Your Binance Accounts</h3>
+              <p className="text-muted-foreground">
+                Validating credentials and fetching your holdings...
+              </p>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  // Main input form
   return (
     <Card>
       <CardHeader>
@@ -95,7 +271,7 @@ export function BinanceApiKeyStep({ onCompleteDataUpdate, onNext }: BinanceApiKe
               placeholder="Paste your Binance API Key"
               value={apiKey}
               onChange={(e) => setApiKey(e.target.value)}
-              disabled={validateKeysMutation.isPending || isSubmitted}
+              disabled={validateKeysMutation.isPending}
               className="font-mono text-xs"
             />
             <p className="text-xs text-muted-foreground">
@@ -113,7 +289,7 @@ export function BinanceApiKeyStep({ onCompleteDataUpdate, onNext }: BinanceApiKe
               placeholder="Paste your Binance API Secret"
               value={apiSecret}
               onChange={(e) => setApiSecret(e.target.value)}
-              disabled={validateKeysMutation.isPending || isSubmitted}
+              disabled={validateKeysMutation.isPending}
               className="font-mono text-xs"
             />
             <p className="text-xs text-muted-foreground">
@@ -130,22 +306,12 @@ export function BinanceApiKeyStep({ onCompleteDataUpdate, onNext }: BinanceApiKe
           </p>
         </div>
 
-        {isSubmitted && (
-          <div className="bg-green-50 dark:bg-green-950 border border-green-200 dark:border-green-800 rounded-lg p-3">
-            <p className="text-sm text-green-800 dark:text-green-200">
-              ✓ Your Binance credentials have been validated and stored securely
-            </p>
-          </div>
-        )}
-
         <Button
           onClick={handleValidate}
-          disabled={
-            validateKeysMutation.isPending || !apiKey.trim() || !apiSecret.trim() || isSubmitted
-          }
+          disabled={validateKeysMutation.isPending || !apiKey.trim() || !apiSecret.trim()}
           className="w-full"
         >
-          {validateKeysMutation.isPending ? 'Validating...' : 'Validate & Connect'}
+          {validateKeysMutation.isPending ? 'Validating & Importing...' : 'Validate & Import'}
         </Button>
       </CardContent>
     </Card>
