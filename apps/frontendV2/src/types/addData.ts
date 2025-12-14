@@ -2,7 +2,7 @@ export type Step = 'method' | 'account' | 'data';
 
 export type CompleteImportData = {
   // Method selection data
-  method?: 'manual' | 'screenshots' | 'wallet';
+  method?: 'manual' | 'screenshots' | 'wallet' | 'binance';
 
   // Account selection data
   accountSelection?: {

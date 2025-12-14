@@ -33,6 +33,13 @@ export function MethodSelectionStep({
       icon: '🔐',
       disabled: false,
     },
+    {
+      id: 'binance' as const,
+      title: 'Connect Binance',
+      description: 'Connect your Binance account with API credentials',
+      icon: '📊',
+      disabled: false,
+    },
   ];
 
   return (

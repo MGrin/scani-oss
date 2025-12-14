@@ -11,6 +11,7 @@ import {
 } from '@scani/core/lib/sentry';
 import { supabase } from '@scani/core/lib/supabase';
 import { createTimer, logger, wsLogger } from '@scani/core/utils/logger';
+import { IntegrationManager } from '@scani/integrations';
 import { sql } from 'drizzle-orm';
 import { Elysia } from 'elysia';
 import { Container } from 'typedi';
@@ -19,6 +20,7 @@ import { Container } from 'typedi';
 import { initializeContainer } from './config/container';
 import {
   executeDailyPortfolioDigestCronJob,
+  executeExchangeBalancesCronJob,
   executePricingCronJob,
   executeWalletBalancesCronJob,
 } from './infrastructure/cron';
@@ -27,6 +29,19 @@ import { createStandardLimiter, createStrictLimiter } from './presentation/middl
 import { createContext } from './presentation/trpc';
 
 initializeContainer();
+
+// Initialize integration registry
+try {
+  const integrationManager = Container.get(IntegrationManager);
+  integrationManager.initialize();
+  logger.info({}, '✅ Integration registry initialized');
+} catch (error) {
+  logger.error(
+    { error: error instanceof Error ? error.message : String(error) },
+    '⚠️ Failed to initialize integration registry - some integrations may not work'
+  );
+  throw error;
+}
 
 // Initialize Sentry for error tracking
 initializeSentry();
@@ -114,6 +129,13 @@ const app = new Elysia()
       name: 'wallet-balances-cron',
       pattern: '*/15 * * * *', // Every 15 minutes
       run: executeWalletBalancesCronJob,
+    })
+  )
+  .use(
+    cron({
+      name: 'exchange-balances-cron',
+      pattern: '*/15 * * * *', // Every 15 minutes
+      run: executeExchangeBalancesCronJob,
     })
   )
   .use(
@@ -293,7 +315,9 @@ const app = new Elysia()
       createContext,
       endpoint: '/trpc',
     })
-  )
+  );
+
+app
   // Health check endpoint (GET and HEAD)
   .get('/health', () => {
     return {
@@ -323,6 +347,7 @@ const app = new Elysia()
 
       const pricingCron = cronStore['pricing-cron'];
       const walletBalancesCron = cronStore['wallet-balances-cron'];
+      const exchangeBalancesCron = cronStore['exchange-balances-cron'];
       const dailyDigestCron = cronStore['daily-portfolio-digest-cron'];
 
       return {
@@ -339,6 +364,12 @@ const app = new Elysia()
             exists: !!walletBalancesCron,
             nextRun: walletBalancesCron?.nextRun()?.toISOString() || null,
             isRunning: walletBalancesCron?.isBusy() || false,
+            pattern: '*/15 * * * *',
+          },
+          'exchange-balances-cron': {
+            exists: !!exchangeBalancesCron,
+            nextRun: exchangeBalancesCron?.nextRun()?.toISOString() || null,
+            isRunning: exchangeBalancesCron?.isBusy() || false,
             pattern: '*/15 * * * *',
           },
           'daily-portfolio-digest-cron': {

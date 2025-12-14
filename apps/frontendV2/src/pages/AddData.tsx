@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { AccountSelectionStep } from '@/components/add-data/AccountSelectionStep';
+import { BinanceApiKeyStep } from '@/components/add-data/BinanceApiKeyStep';
 import { DataEntryStep } from '@/components/add-data/DataEntryStep';
 import { MethodSelectionStep } from '@/components/add-data/MethodSelectionStep';
 import { Badge } from '@/components/ui/badge';
@@ -47,11 +48,25 @@ export function AddData() {
   useEffect(() => {
     const method = searchParams.get('method') as CompleteImportData['method'];
     const accountId = searchParams.get('accountId');
+    const authSuccess = searchParams.get('auth') === 'success';
+    const authError = searchParams.get('error');
+
+    if (authError) {
+      showError(new Error(authError), 'Binance OAuth');
+      // Clear error from URL
+      setSearchParams({});
+      return;
+    }
 
     if (method) {
       setCompleteImportData((prev) => ({ ...prev, method }));
-      // Skip account selection for wallet imports
-      setCurrentStep(method === 'wallet' ? 'data' : 'account');
+      // For Binance OAuth after successful auth, go to account selection
+      if (method === 'binance' && authSuccess) {
+        setCurrentStep('account');
+      } else {
+        // Skip account selection for wallet imports
+        setCurrentStep(method === 'wallet' ? 'data' : 'account');
+      }
     }
 
     if (accountId) {
@@ -61,19 +76,20 @@ export function AddData() {
       }));
       setCurrentStep('data');
     }
-  }, [searchParams]);
+  }, [searchParams, setSearchParams]);
 
   // Update URL params when form data changes
   const updateCompleteImportData = useCallback((updates: Partial<CompleteImportData>) => {
     setCompleteImportData((prev) => ({ ...prev, ...updates }));
   }, []);
 
-  // Sync URL params with complete import data
+  // Sync URL params with complete import data (clean up OAuth params)
   useEffect(() => {
     const params = new URLSearchParams();
     if (completeImportData.method) params.set('method', completeImportData.method);
     if (completeImportData.accountSelection?.selectedAccountId)
       params.set('accountId', completeImportData.accountSelection.selectedAccountId);
+    // Note: OAuth params (auth, error) are intentionally not persisted to URL
 
     setSearchParams(params);
   }, [
@@ -87,6 +103,9 @@ export function AddData() {
 
   // Helper to check if current import is wallet import
   const isWalletImport = completeImportData.method === 'wallet';
+
+  // Helper to check if current import is Binance API Key
+  const isBinanceApiKey = completeImportData.method === 'binance';
 
   const nextStep = useCallback(() => {
     if (currentStep === 'method') {
@@ -507,6 +526,9 @@ export function AddData() {
           onAccountDisplayChange={handleAccountDisplayChange}
           onCompleteDataUpdate={updateCompleteImportData}
         />
+      )}
+      {isBinanceApiKey && currentStep === 'account' && (
+        <BinanceApiKeyStep onCompleteDataUpdate={updateCompleteImportData} onNext={nextStep} />
       )}
       {currentStep === 'data' && (
         <DataEntryStep

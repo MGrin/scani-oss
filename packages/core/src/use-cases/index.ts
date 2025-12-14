@@ -11,6 +11,11 @@ export {
 } from './DeleteHoldingUseCase';
 // Wallet Import Use Cases
 export {
+  type ImportBinanceAccountsInput,
+  type ImportBinanceAccountsResult,
+  ImportBinanceAccountsUseCase,
+} from './ImportBinanceAccountsUseCase';
+export {
   ImportWalletAddressUseCase,
   type ImportWalletInput,
   type ImportWalletResult,
@@ -21,6 +26,10 @@ export {
   ParseScreenshotUseCase,
 } from './ParseScreenshotUseCase';
 // Cron Job Use Cases
+export {
+  type SyncExchangeBalancesResult,
+  SyncExchangeBalancesUseCase,
+} from './SyncExchangeBalancesUseCase';
 export {
   type SyncWalletBalancesResult,
   SyncWalletBalancesUseCase,

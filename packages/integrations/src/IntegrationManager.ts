@@ -2,16 +2,19 @@
  * IntegrationManager
  *
  * Manages all institution integrations and provides unified access to them.
- * Uses database-backed chain-to-institution mappings for dynamic configuration.
+ * Uses a registry-based architecture to support all integration types:
+ * - Blockchains (Ethereum, Bitcoin, Solana, etc.)
+ * - Exchanges (Binance, Kraken, Coinbase, etc.)
+ * - Brokers, Banks, Payment providers, and more
  *
  * This manager:
- * - Creates integrations on-demand using database mappings
+ * - Creates integrations on-demand using the integration registry
  * - Provides lookup by institution ID
+ * - Maintains database-backed chain-to-institution mappings for backwards compatibility
  * - Manages global rate limiters
  * - Integrates with TypeDI for dependency injection
  */
 
-// Import chain configurations and services from core
 import type { ChainConfig } from '@scani/core/external-services/blockchain';
 import { getChainConfig } from '@scani/core/external-services/blockchain';
 import { InstitutionBlockchainMappingRepository } from '@scani/core/repositories';
@@ -19,6 +22,7 @@ import { createComponentLogger } from '@scani/core/utils/logger';
 import { RateLimiter } from '@scani/rate-limiter';
 import { Container, Service } from 'typedi';
 import type { ScaniIntegration } from './base';
+import { allIntegrationConfigs } from './config/integrationConfigs';
 import {
   BitcoinIntegration,
   BlockchainIntegration,
@@ -27,11 +31,9 @@ import {
   TonIntegration,
   TronIntegration,
 } from './implementations';
+import { integrationRegistry } from './registry/IntegrationRegistry';
 
 const logger = createComponentLogger('integration-manager');
-
-// Import config - needs to be exported from core
-const ETHERSCAN_API_KEY = process.env.ETHERSCAN_API_KEY || '';
 
 /**
  * Type guard to check if an integration is a BlockchainIntegration
@@ -44,7 +46,7 @@ function isBlockchainIntegration(
 }
 
 /**
- * Global rate limiters for blockchain APIs
+ * Global rate limiters for all APIs
  * Shared across all integrations to prevent exceeding provider limits
  */
 const GLOBAL_INTEGRATION_RATE_LIMITERS = {
@@ -58,28 +60,77 @@ const GLOBAL_INTEGRATION_RATE_LIMITERS = {
   tron: new RateLimiter(20, 1000),
   // TON toncenter: ~1 call/second free tier
   ton: new RateLimiter(1, 1000),
+  // Binance: ~10 calls/second (conservative)
+  binance: new RateLimiter(10, 1000),
 };
 
 /**
+ * Initialize the integration registry
+ * This happens once at startup and registers all available integrations
+ */
+function initializeIntegrationRegistry(): void {
+  if (integrationRegistry.size() > 0) {
+    logger.debug('Integration registry already initialized');
+    return;
+  }
+
+  logger.debug('Initializing integration registry with all configurations');
+  allIntegrationConfigs.forEach((config) => {
+    integrationRegistry.register(config);
+  });
+
+  logger.info(
+    { totalIntegrations: integrationRegistry.size() },
+    'Integration registry initialized'
+  );
+}
+
+/**
  * IntegrationManager Service
- * Manages all institution integrations using database-backed mappings
+ * Manages all institution integrations using a registry-based architecture
  */
 @Service()
 export class IntegrationManager {
   private readonly integrationCache = new Map<string, ScaniIntegration>();
   private readonly mappingRepository = Container.get(InstitutionBlockchainMappingRepository);
+  private initialized = false;
+
+  /**
+   * Initialize the manager (called once at startup)
+   */
+  initialize(): void {
+    if (this.initialized) {
+      return;
+    }
+
+    initializeIntegrationRegistry();
+    this.initialized = true;
+  }
 
   /**
    * Get integration by institution ID
-   * Creates integration on-demand using database mapping
+   * First tries the registry (supports all integration types),
+   * then falls back to database mappings for backwards compatibility with blockchains
    */
   async getIntegration(institutionId: string): Promise<ScaniIntegration | undefined> {
+    // Ensure registry is initialized
+    this.initialize();
+
     // Check cache first
     if (this.integrationCache.has(institutionId)) {
       return this.integrationCache.get(institutionId);
     }
 
-    // Fetch mapping from database
+    // Try to create from registry (supports all integration types)
+    const integration = integrationRegistry.createIntegration(institutionId);
+
+    if (integration) {
+      this.integrationCache.set(institutionId, integration);
+      return integration;
+    }
+
+    // Fall back to database mappings for backwards compatibility with blockchains
+    // This supports legacy chain-based integrations
     const mapping = await this.mappingRepository.findByInstitutionId(institutionId);
 
     if (!mapping || !mapping.isActive) {
@@ -92,25 +143,32 @@ export class IntegrationManager {
       return undefined;
     }
 
-    // Create integration based on chain type
-    const integration = this.createIntegration(institutionId, chainConfig, mapping.chainType);
+    // Create blockchain integration from chain config
+    const blockchainIntegration = this.createBlockchainIntegration(
+      institutionId,
+      chainConfig,
+      mapping.chainType
+    );
 
-    if (integration) {
-      // Cache the integration
-      this.integrationCache.set(institutionId, integration);
+    if (blockchainIntegration) {
+      this.integrationCache.set(institutionId, blockchainIntegration);
+      return blockchainIntegration;
     }
 
-    return integration;
+    return undefined;
   }
 
   /**
-   * Create integration instance based on chain type
+   * Create blockchain integration instance from chain config
+   * This is only used for backwards compatibility with legacy chain-based integrations
    */
-  private createIntegration(
+  private createBlockchainIntegration(
     institutionId: string,
     chainConfig: ChainConfig,
     chainType: string
   ): ScaniIntegration | undefined {
+    const ETHERSCAN_API_KEY = process.env.ETHERSCAN_API_KEY || '';
+
     switch (chainType) {
       case 'evm':
         return new EvmChainIntegration(
@@ -118,8 +176,8 @@ export class IntegrationManager {
           chainConfig,
           ETHERSCAN_API_KEY,
           GLOBAL_INTEGRATION_RATE_LIMITERS.etherscan,
-          undefined, // credentialManager - will be added in phase 2
-          undefined // walletManager - will be added in phase 2
+          undefined,
+          undefined
         );
 
       case 'bitcoin':

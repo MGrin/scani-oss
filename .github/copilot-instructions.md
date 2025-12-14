@@ -17,10 +17,15 @@
 - ✅ Use `Decimal.js` for all financial calculations
 - ✅ All user data must be scoped via `protectedProcedure`
 - ✅ Run linter, build, and tests before finalizing changes
+- ✅ **ALWAYS use proper ES6 imports at the top of files** (NEVER use `require()` or `await import()` or dynamic imports)
+- ✅ Follow clean architecture - use factory patterns from packages, never instantiate services directly
+- ✅ Follow DRY, OOP, SOLID, and Onion Architecture principles
+- ❌ **NEVER use `require()` or `await import()` or any dynamic imports** - always use static ES6 imports
 - ❌ Never auto-apply database migrations
 - ❌ Never use TypeScript enums for dynamic data
 - ❌ Never bypass authentication for user-scoped data
 - ❌ Never commit secrets or sensitive data
+- ❌ Never instantiate integration services directly - always use factory functions from packages
 
 ## Architecture Overview
 
@@ -32,6 +37,59 @@
 - **End-to-End Type Safety**: All API communication uses tRPC with shared TypeScript types from `@scani/backend/router`
 - **Database**: PostgreSQL with Drizzle ORM, dynamic enums stored in database tables (not TypeScript enums)
 - **Authentication**: Supabase Auth with JWT tokens, user sync to local PostgreSQL via `middleware/auth.ts`
+- **Clean Architecture**: Following DRY, OOP, SOLID, and Onion Architecture principles
+
+### Import and Module Guidelines
+
+**CRITICAL: Always use proper ES6 imports, NEVER use dynamic imports**
+
+```typescript
+// ✅ CORRECT - Proper ES6 imports at the top of the file
+import { IntegrationManager } from '@scani/integrations';
+import { IntegrationCredentialsService } from '@scani/core/services';
+import { validateBinanceCredentials } from '@scani/integrations';
+
+// ❌ WRONG - Dynamic require statements
+const { IntegrationManager } = require('@scani/integrations');
+
+// ❌ WRONG - Async/dynamic imports
+const { IntegrationManager } = await import('@scani/integrations');
+
+// ❌ WRONG - Lazy import functions
+const getService = () => require('@scani/integrations/services/SomeService');
+```
+
+### Integration Architecture and Factory Pattern
+
+**All integration implementations must be hidden behind factory functions**
+
+The `@scani/integrations` package provides factory functions to create and configure integrations. **Never instantiate integration services directly in application code.**
+
+```typescript
+// ✅ CORRECT - Use factory functions from integrations package
+import { validateBinanceCredentials } from '@scani/integrations';
+
+const isValid = await validateBinanceCredentials(apiKey, apiSecret);
+
+// ❌ WRONG - Direct instantiation of integration services
+import { BinanceApiService } from '@scani/integrations/services/BinanceApiService';
+const service = new BinanceApiService(baseUrl, rateLimiter);
+
+// ❌ WRONG - Creating rate limiters in application code
+const binanceRateLimiter = new RateLimiter(10, 1000);
+```
+
+**Factory Pattern Benefits:**
+- Encapsulates implementation details (rate limiters, API URLs, configuration)
+- Centralizes integration logic in the `@scani/integrations` package
+- Makes code more maintainable and testable
+- Prevents coupling between application code and integration implementations
+
+**When adding new integrations:**
+1. Create the integration implementation in `packages/integrations/src/implementations/`
+2. Add factory functions in `packages/integrations/src/factories/`
+3. Export factory functions from `packages/integrations/src/index.ts`
+4. Use only the exported factory functions in application code
 
 ## Development Workflows
 
@@ -169,12 +227,24 @@ const createAccount = trpc.accounts.create.useMutation();
 
 ## Anti-Patterns to Avoid
 
-- Never use TypeScript enums for dynamic data (use database tables instead)
-- Don't bypass `protectedProcedure` for user-scoped data
-- Avoid direct SQL queries (use Drizzle ORM)
-- Don't hardcode financial calculations (use `Decimal.js` and shared utilities)
-- Never expose sensitive data in frontend - all auth via backend tRPC procedures
-- Never use `npm` or `yarn` or `npx` or something else - always use `bun` and `bunx`
+### Code Organization and Imports
+- ❌ **NEVER use `require()` or `await import()` for dynamic imports** - ALWAYS use proper static ES6 imports at the top of files
+- ❌ **NEVER use dynamic imports even for circular dependencies** - restructure code instead
+- ❌ **NEVER use lazy loading imports** - use static imports only
+- ❌ Never instantiate integration services directly (use factory functions from packages)
+- ❌ Never create rate limiters in application code (encapsulate in packages)
+- ❌ Never bypass clean architecture principles (follow DRY, OOP, SOLID, Onion Architecture)
+- ❌ Never leak implementation details from packages (use factory pattern)
+
+### Data and Type Safety
+- ❌ Never use TypeScript enums for dynamic data (use database tables instead)
+- ❌ Don't bypass `protectedProcedure` for user-scoped data
+- ❌ Avoid direct SQL queries (use Drizzle ORM)
+- ❌ Don't hardcode financial calculations (use `Decimal.js` and shared utilities)
+- ❌ Never expose sensitive data in frontend - all auth via backend tRPC procedures
+
+### Tooling
+- ❌ Never use `npm` or `yarn` or `npx` or something else - always use `bun` and `bunx`
 
 ## Documentation Organization
 

@@ -197,4 +197,12 @@ function showError(error: unknown, context?: string) {
   });
 }
 
-export { useToast, toast, showError };
+function showSuccess(message: string, context?: string) {
+  toast({
+    title: context || 'Success',
+    description: message,
+    variant: 'default',
+  });
+}
+
+export { useToast, toast, showError, showSuccess };

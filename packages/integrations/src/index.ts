@@ -42,7 +42,20 @@
  */
 
 export { ScaniIntegration } from './base';
+export { allIntegrationConfigs, exchangeConfigs } from './config/integrationConfigs';
+// Export factory functions
+export {
+  createBinanceApiService,
+  detectBinanceAccountTypes,
+  validateBinanceCredentials,
+} from './factories/binanceFactory';
 export { IntegrationManager } from './IntegrationManager';
 // Export blockchain integration implementations
 export * from './implementations';
+// Export registry and configuration
+export {
+  type IntegrationConfig,
+  type IntegrationType,
+  integrationRegistry,
+} from './registry/IntegrationRegistry';
 export * from './types';

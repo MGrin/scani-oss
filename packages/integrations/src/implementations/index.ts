@@ -1,7 +1,8 @@
 /**
- * Blockchain integration implementations
+ * Integration implementations
  */
 
+export { BinanceIntegration } from './BinanceIntegration';
 export { BitcoinIntegration } from './BitcoinIntegration';
 export { BlockchainIntegration } from './BlockchainIntegration';
 export { EvmChainIntegration } from './EvmChainIntegration';

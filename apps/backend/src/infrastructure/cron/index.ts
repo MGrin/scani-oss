@@ -5,5 +5,6 @@
  */
 
 export { executeDailyPortfolioDigestCronJob } from './DailyPortfolioDigestCronJob';
+export { executeExchangeBalancesCronJob } from './ExchangeBalancesCronJob';
 export { executePricingCronJob } from './PricingCronJob';
 export { executeWalletBalancesCronJob } from './WalletBalancesCronJob';
