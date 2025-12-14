@@ -1,6 +1,7 @@
 import Decimal from 'decimal.js';
-import { and, eq } from 'drizzle-orm';
+import { and, eq, lt } from 'drizzle-orm';
 import { Container, Service } from 'typedi';
+import { SCAM_PROBABILITY_THRESHOLD } from '../config/tokens';
 import { db } from '../database/connection';
 import * as schema from '../database/schema';
 import { TokenPriceRepository } from '../repositories/TokenPriceRepository';
@@ -69,7 +70,12 @@ export class PortfolioValuationService {
     // Get user holdings with token information
     // Optionally filter by account ID if provided
     // Exclude hidden holdings
-    const conditions = [eq(schema.holdings.userId, userId), eq(schema.holdings.isHidden, false)];
+    // Filter out scam tokens to match HoldingRepository behavior
+    const conditions = [
+      eq(schema.holdings.userId, userId),
+      eq(schema.holdings.isHidden, false),
+      lt(schema.tokens.isScamProbability, SCAM_PROBABILITY_THRESHOLD),
+    ];
     if (accountId) {
       conditions.push(eq(schema.holdings.accountId, accountId));
     }

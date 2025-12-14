@@ -1,12 +1,9 @@
 import { and, eq, lt, ne } from 'drizzle-orm';
 import { Service } from 'typedi';
+import { SCAM_PROBABILITY_THRESHOLD } from '../config/tokens';
 import * as schema from '../database/schema';
 import type { Holding, NewHolding, Token } from '../domain/entities';
 import { BaseRepository, type DatabaseTransaction } from './BaseRepository';
-
-// Scam token probability threshold - tokens above this are filtered out
-// Set to 0.45 to catch tokens with URLs/suspicious words while avoiding false positives
-const SCAM_PROBABILITY_THRESHOLD = 0.45;
 
 @Service()
 export class HoldingRepository extends BaseRepository<Holding, NewHolding> {
@@ -20,7 +17,10 @@ export class HoldingRepository extends BaseRepository<Holding, NewHolding> {
   ): Promise<Holding[]> {
     try {
       const database = this.getDb(transaction);
-      const conditions = [eq(schema.holdings.userId, userId)];
+      const conditions = [
+        eq(schema.holdings.userId, userId),
+        lt(schema.tokens.isScamProbability, SCAM_PROBABILITY_THRESHOLD),
+      ];
       if (!includeHidden) {
         conditions.push(eq(schema.holdings.isHidden, false));
       }
@@ -29,17 +29,14 @@ export class HoldingRepository extends BaseRepository<Holding, NewHolding> {
       const results = await database
         .select({
           holding: schema.holdings,
-          tokenScamProbability: schema.tokens.isScamProbability,
         })
         .from(schema.holdings)
         .innerJoin(schema.tokens, eq(schema.holdings.tokenId, schema.tokens.id))
         .where(whereConditions)
         .orderBy(schema.holdings.lastUpdated);
 
-      // Filter out scam tokens
-      return results
-        .filter((r) => r.tokenScamProbability < SCAM_PROBABILITY_THRESHOLD)
-        .map((r) => r.holding);
+      // Return only the holding objects (scam tokens already filtered at database level)
+      return results.map((r) => r.holding);
     } catch (error) {
       this.logger.error({ userId, error }, 'Failed to find holdings by user');
       throw error;
@@ -264,7 +261,10 @@ export class HoldingRepository extends BaseRepository<Holding, NewHolding> {
   ): Promise<Holding[]> {
     try {
       const database = this.getDb(transaction);
-      const conditions = [eq(schema.holdings.accountId, accountId)];
+      const conditions = [
+        eq(schema.holdings.accountId, accountId),
+        lt(schema.tokens.isScamProbability, SCAM_PROBABILITY_THRESHOLD),
+      ];
       if (!includeHidden) {
         conditions.push(eq(schema.holdings.isHidden, false));
       }
@@ -273,16 +273,13 @@ export class HoldingRepository extends BaseRepository<Holding, NewHolding> {
       const results = await database
         .select({
           holding: schema.holdings,
-          tokenScamProbability: schema.tokens.isScamProbability,
         })
         .from(schema.holdings)
         .innerJoin(schema.tokens, eq(schema.holdings.tokenId, schema.tokens.id))
         .where(whereConditions);
 
-      // Filter out scam tokens
-      return results
-        .filter((r) => r.tokenScamProbability < SCAM_PROBABILITY_THRESHOLD)
-        .map((r) => r.holding);
+      // Return only the holding objects (scam tokens already filtered at database level)
+      return results.map((r) => r.holding);
     } catch (error) {
       this.logger.error({ accountId, error }, 'Failed to find holdings by account');
       throw error;
