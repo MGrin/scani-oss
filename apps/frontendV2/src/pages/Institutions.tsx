@@ -35,7 +35,7 @@ export function Institutions() {
 
   // State for filtering, sorting, and view mode
   const [searchTerm, setSearchTerm] = useState('');
-  const [filterByType, setFilterByType] = useState('');
+  const [filterByType, setFilterByType] = useState('all-types');
   const [valueRange, setValueRange] = useState('all');
   const [viewMode, setViewMode] = useViewMode('cards');
   const [sortField, setSortField] = useState('value');
@@ -53,7 +53,7 @@ export function Institutions() {
         institution.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
         institutionType?.name.toLowerCase().includes(searchTerm.toLowerCase());
 
-      const matchesType = filterByType === '' || institution.typeId === filterByType;
+      const matchesType = filterByType === 'all-types' || institution.typeId === filterByType;
 
       // Value range filter
       let matchesValueRange = true;
@@ -147,7 +147,7 @@ export function Institutions() {
 
   const clearFilters = () => {
     setSearchTerm('');
-    setFilterByType('');
+    setFilterByType('all-types');
     setValueRange('all');
     setSortField('value');
     setSortDirection('desc');
@@ -208,14 +208,14 @@ export function Institutions() {
             searchTerm={searchTerm}
             onSearchChange={setSearchTerm}
             searchPlaceholder="Search institutions by name or type..."
-            hasActiveFilters={filterByType !== '' || valueRange !== 'all'}
+            hasActiveFilters={filterByType !== 'all-types' || valueRange !== 'all'}
             filters={[
               <Select key="type" value={filterByType} onValueChange={setFilterByType}>
                 <SelectTrigger className="w-full md:w-[200px]">
                   <SelectValue placeholder="All Types" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">All Types</SelectItem>
+                  <SelectItem value="all-types">All Types</SelectItem>
                   {institutionTypes?.map((type) => (
                     <SelectItem key={type.id} value={type.id}>
                       {type.name}
@@ -264,7 +264,9 @@ export function Institutions() {
                     variant="outline"
                     size="sm"
                     onClick={clearFilters}
-                    disabled={searchTerm === '' && filterByType === '' && valueRange === 'all'}
+                    disabled={
+                      searchTerm === '' && filterByType === 'all-types' && valueRange === 'all'
+                    }
                   >
                     Clear Filters
                   </Button>
