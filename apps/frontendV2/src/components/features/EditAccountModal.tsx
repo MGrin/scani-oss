@@ -1,11 +1,10 @@
 import type { Account } from '@scani/shared';
-import { Info, Save } from 'lucide-react';
+import { Save } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import {
   AccountTypeSelector,
   InstitutionSelector,
 } from '@/components/selectors/SearchableSelectors';
-import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -51,10 +50,6 @@ export function EditAccountModal({
     account?.metadata &&
     typeof account.metadata === 'object' &&
     'walletAddress' in account.metadata;
-  const metadata = account?.metadata as Record<string, unknown> | undefined;
-  const walletAddress = metadata?.walletAddress as string | undefined;
-  const chainName = metadata?.chainName as string | undefined;
-  const lastSync = metadata?.lastSync as string | undefined;
 
   // Update account mutation
   const updateAccountMutation = trpc.accounts.update.useMutation({
@@ -147,28 +142,6 @@ export function EditAccountModal({
         </DialogHeader>
 
         <div className="space-y-6">
-          {/* Sync Status */}
-          {isSynced ? (
-            <Alert>
-              <Info className="h-4 w-4" />
-              <AlertDescription>
-                <div className="space-y-1">
-                  <p className="font-medium">This account is automatically synced</p>
-                  <div className="text-sm text-muted-foreground space-y-1">
-                    {chainName && <p>Source: {chainName}</p>}
-                    {walletAddress && (
-                      <p>
-                        Wallet: {walletAddress.substring(0, 6)}...
-                        {walletAddress.slice(-4)}
-                      </p>
-                    )}
-                    {lastSync && <p>Last synced: {new Date(lastSync).toLocaleString()}</p>}
-                  </div>
-                </div>
-              </AlertDescription>
-            </Alert>
-          ) : null}
-
           {/* Account Name */}
           <div>
             <Label htmlFor="name">Account Name</Label>

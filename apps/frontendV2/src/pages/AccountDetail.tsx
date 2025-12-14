@@ -1,10 +1,11 @@
 import type { HoldingWithDetails } from '@scani/shared';
-import { Edit, Grid3X3, List, MoreHorizontal, Trash2 } from 'lucide-react';
+import { Edit, Grid3X3, Info, List, MoreHorizontal, Trash2 } from 'lucide-react';
 import { useMemo, useState } from 'react';
-import { useParams } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom';
 import TimeAgo from 'react-timeago';
-import { EditAccountModal, HoldingModal, TokenTypeBadge } from '@/components/features';
+import { EditAccountModal, TokenTypeBadge } from '@/components/features';
 import { TokenFilterSelector, TokenTypeSelector } from '@/components/selectors/SearchableSelectors';
+import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { DataTable } from '@/components/ui/data-table';
@@ -32,6 +33,7 @@ import { createCurrencyToken } from '@/lib/utils';
 
 export function AccountDetail() {
   const { id } = useParams<{ id: string }>();
+  const navigate = useNavigate();
 
   // Sorting state
   const [sortField, setSortField] = useState('value');
@@ -45,8 +47,6 @@ export function AccountDetail() {
   const [viewMode, setViewMode] = useViewMode('table');
 
   // Modal state
-  const [selectedHolding, setSelectedHolding] = useState<HoldingWithDetails | null>(null);
-  const [isModalOpen, setIsModalOpen] = useState(false);
   const [isEditAccountModalOpen, setIsEditAccountModalOpen] = useState(false);
 
   // Selection state for bulk operations
@@ -245,15 +245,9 @@ export function AccountDetail() {
     setSortDirection('desc');
   };
 
-  // Modal handlers
+  // Navigation and modal handlers
   const handleHoldingClick = (holding: HoldingWithDetails) => {
-    setSelectedHolding(holding);
-    setIsModalOpen(true);
-  };
-
-  const handleModalClose = () => {
-    setIsModalOpen(false);
-    setSelectedHolding(null);
+    navigate(`/holdings/${holding.id}`);
   };
 
   const handleEditAccountModalClose = () => {
@@ -263,16 +257,6 @@ export function AccountDetail() {
   const handleAccountUpdated = () => {
     // Refetch account data
     // The TRPC query will automatically refetch when the modal updates
-  };
-
-  const handleHoldingUpdated = () => {
-    // Refetch account holdings data
-    // The TRPC query will automatically refetch when the modal updates
-  };
-
-  const handleHoldingDeleted = () => {
-    // Refetch account holdings data
-    // The TRPC query will automatically refetch when the modal deletes
   };
 
   const handleDeleteHolding = (holding: HoldingWithDetails) => {
@@ -441,6 +425,14 @@ export function AccountDetail() {
     0
   );
 
+  // Check if account is synced (has walletAddress in metadata)
+  const isSynced =
+    account.metadata && typeof account.metadata === 'object' && 'walletAddress' in account.metadata;
+  const metadata = account.metadata as Record<string, unknown> | undefined;
+  const walletAddress = metadata?.walletAddress as string | undefined;
+  const chainName = metadata?.chainName as string | undefined;
+  const lastSync = metadata?.lastSync as string | undefined;
+
   return (
     <div className="space-y-6">
       <PageHeader
@@ -453,6 +445,28 @@ export function AccountDetail() {
           </Button>
         }
       />
+
+      {/* Sync Status */}
+      {isSynced ? (
+        <Alert>
+          <Info className="h-4 w-4" />
+          <AlertDescription>
+            <div className="space-y-1">
+              <p className="font-medium">This account is automatically synced</p>
+              <div className="text-sm text-muted-foreground space-y-1">
+                {chainName && <p>Source: {chainName}</p>}
+                {walletAddress && (
+                  <p>
+                    Wallet: {walletAddress.substring(0, 6)}...
+                    {walletAddress.slice(-4)}
+                  </p>
+                )}
+                {lastSync && <p>Last synced: {new Date(lastSync).toLocaleString()}</p>}
+              </div>
+            </div>
+          </AlertDescription>
+        </Alert>
+      ) : null}
 
       {/* Holdings */}
       <PageAggregation
@@ -677,15 +691,6 @@ export function AccountDetail() {
           ))}
         </div>
       )}
-
-      {/* Holding Modal */}
-      <HoldingModal
-        holding={selectedHolding}
-        isOpen={isModalOpen}
-        onClose={handleModalClose}
-        onHoldingUpdated={handleHoldingUpdated}
-        onHoldingDeleted={handleHoldingDeleted}
-      />
 
       {/* Edit Account Modal */}
       <EditAccountModal

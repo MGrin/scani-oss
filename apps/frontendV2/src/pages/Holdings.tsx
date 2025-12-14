@@ -10,12 +10,8 @@ import {
   Trash2,
 } from 'lucide-react';
 import { useMemo, useState } from 'react';
-import {
-  AccountBadge,
-  HoldingModal,
-  InstitutionBadge,
-  TokenTypeBadge,
-} from '@/components/features';
+import { useNavigate } from 'react-router-dom';
+import { AccountBadge, InstitutionBadge, TokenTypeBadge } from '@/components/features';
 import {
   AccountFilterSelector,
   TokenFilterSelector,
@@ -60,6 +56,7 @@ export function Holdings() {
   const baseCurrencyToken = createCurrencyToken(currency);
 
   const { toast } = useToast();
+  const navigate = useNavigate();
   const utils = trpc.useUtils();
 
   // Delete holding mutation
@@ -116,10 +113,6 @@ export function Holdings() {
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc');
   const [valueRange, setValueRange] = useState('all');
   const [selectedRows, setSelectedRows] = useState<Set<string>>(new Set());
-
-  // Modal state
-  const [selectedHolding, setSelectedHolding] = useState<HoldingWithDetails | null>(null);
-  const [isModalOpen, setIsModalOpen] = useState(false);
 
   // Unified filter system
   const {
@@ -334,25 +327,9 @@ export function Holdings() {
     }
   };
 
-  // Modal handlers
+  // Navigation handler
   const handleHoldingClick = (holding: HoldingWithDetails) => {
-    setSelectedHolding(holding);
-    setIsModalOpen(true);
-  };
-
-  const handleModalClose = () => {
-    setIsModalOpen(false);
-    setSelectedHolding(null);
-  };
-
-  const handleHoldingUpdated = () => {
-    // Refetch holdings data
-    // The TRPC query will automatically refetch when the modal updates
-  };
-
-  const handleHoldingDeleted = () => {
-    // Refetch holdings data
-    // The TRPC query will automatically refetch when the modal deletes
+    navigate(`/holdings/${holding.id}`);
   };
 
   const handleDeleteHolding = (holding: HoldingWithDetails) => {
@@ -894,15 +871,6 @@ export function Holdings() {
           </Tabs>
         </>
       )}
-
-      {/* Holding Modal */}
-      <HoldingModal
-        holding={selectedHolding}
-        isOpen={isModalOpen}
-        onClose={handleModalClose}
-        onHoldingUpdated={handleHoldingUpdated}
-        onHoldingDeleted={handleHoldingDeleted}
-      />
     </div>
   );
 }

@@ -8,6 +8,7 @@ import { AddData } from '@/pages/AddData';
 import { Auth } from '@/pages/Auth';
 import { AuthCallback } from '@/pages/AuthCallback';
 import { Dashboard } from '@/pages/Dashboard';
+import { HoldingDetail } from '@/pages/HoldingDetail';
 import { Holdings } from '@/pages/Holdings';
 import { InstitutionDetail } from '@/pages/InstitutionDetail';
 import { Institutions } from '@/pages/Institutions';
@@ -116,6 +117,16 @@ function App() {
               <ProtectedRoute>
                 <Layout>
                   <InstitutionDetail />
+                </Layout>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/holdings/:id"
+            element={
+              <ProtectedRoute>
+                <Layout>
+                  <HoldingDetail />
                 </Layout>
               </ProtectedRoute>
             }
