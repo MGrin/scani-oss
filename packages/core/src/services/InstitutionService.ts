@@ -97,13 +97,33 @@ export class InstitutionService extends BaseService {
         accountsByInstitution.get(account.institutionId)!.push(account);
       }
 
-      // Create value map from portfolio data (token symbol -> total value for that token)
-      const valueMap = new Map(portfolioValue.holdings.map((h) => [h.tokenSymbol, h.value || '0']));
-
-      // Get token repository to map holding tokenIds to symbols
+      // Get token repository to map holding tokenIds to symbols and prices
       const tokenIds = [...new Set(holdings.map((h) => h.tokenId))];
       const tokens = await this.tokenRepository.findByIds(tokenIds);
       const tokenMap = new Map(tokens.map((t) => [t.id, t]));
+
+      // Create a map of token prices from the portfolio value holdings
+      // Use the price (calculated as value/balance) for each token
+      const tokenPriceMap = new Map<string, string>();
+      for (const portfolioHolding of portfolioValue.holdings) {
+        try {
+          const balance = new Decimal(portfolioHolding.balance || '0');
+          const value = new Decimal(portfolioHolding.value || '0');
+          // Calculate price = value / balance (avoid division by zero)
+          const price = balance.isZero() ? '0' : value.div(balance).toString();
+          // Store price by token symbol (we can safely overwrite since price is the same for the same token)
+          tokenPriceMap.set(portfolioHolding.tokenSymbol, price);
+        } catch (error) {
+          this.logWarning('Failed to calculate price for token', {
+            tokenSymbol: portfolioHolding.tokenSymbol,
+            balance: portfolioHolding.balance,
+            value: portfolioHolding.value,
+            error: error instanceof Error ? error.message : String(error),
+          });
+          // Set price to 0 for this token if calculation fails
+          tokenPriceMap.set(portfolioHolding.tokenSymbol, '0');
+        }
+      }
 
       // Build summary for each institution
       const institutionsWithSummary = institutions.map((institution) => {
@@ -117,8 +137,21 @@ export class InstitutionService extends BaseService {
           for (const holding of accountHoldings) {
             const token = tokenMap.get(holding.tokenId);
             if (token) {
-              const holdingValue = valueMap.get(token.symbol) || '0';
-              totalValue = totalValue.add(new Decimal(holdingValue));
+              try {
+                // Calculate value = balance * price for this specific holding
+                const price = new Decimal(tokenPriceMap.get(token.symbol) || '0');
+                const balance = new Decimal(holding.balance || '0');
+                const holdingValue = balance.mul(price);
+                totalValue = totalValue.add(holdingValue);
+              } catch (error) {
+                this.logWarning('Failed to calculate holding value', {
+                  holdingId: holding.id,
+                  tokenSymbol: token.symbol,
+                  balance: holding.balance,
+                  error: error instanceof Error ? error.message : String(error),
+                });
+                // Skip this holding if calculation fails
+              }
             }
           }
         }
