@@ -3,10 +3,13 @@
  * Handles credential validation and storage for integrations
  */
 
+import { db } from '@scani/core/database/connection';
+import * as schema from '@scani/core/database/schema';
 import { IntegrationCredentialsService } from '@scani/core/services';
 import { ImportBinanceAccountsUseCase } from '@scani/core/use-cases';
 import { validateBinanceCredentials } from '@scani/integrations';
 import { TRPCError } from '@trpc/server';
+import { eq } from 'drizzle-orm';
 import { Container } from 'typedi';
 import { z } from 'zod';
 import { protectedProcedure, router } from '../trpc';
@@ -54,7 +57,22 @@ export const integrationsRouter = router({
         // Store credentials
         try {
           const credentialsService = Container.get(IntegrationCredentialsService);
-          const binanceInstitutionId = process.env.BINANCE_INSTITUTION_ID || 'binance';
+
+          // Look up Binance institution from database
+          const binanceInstitution = await db
+            .select()
+            .from(schema.institutions)
+            .where(eq(schema.institutions.name, 'Binance'))
+            .limit(1);
+
+          if (binanceInstitution.length === 0) {
+            throw new TRPCError({
+              code: 'NOT_FOUND',
+              message: 'Binance institution not found in database. Please run migrations.',
+            });
+          }
+
+          const binanceInstitutionId = binanceInstitution[0]!.id;
 
           const credentials = {
             apiKey,
