@@ -28,6 +28,8 @@ function generateToolsFromFeatures() {
   }
 
   // Add special tools that don't map directly to features
+
+  // Portfolio Analysis Tools
   tools.getPortfolioByTokens = {
     description:
       'Get portfolio breakdown grouped by individual tokens (e.g., BTC, ETH, AAPL). Shows each token with total balance across all accounts, current value, and percentage. Use for creating donut or bar charts by token, or when user asks about their holdings by token.',
@@ -52,9 +54,10 @@ function generateToolsFromFeatures() {
     parameters: z.object({}),
   };
 
+  // Chart Generation Tool
   tools.generatePortfolioChart = {
     description:
-      'Generate a visual chart image for portfolio data. Creates donut charts for distribution (tokens, accounts, institutions, asset types) or bar charts for comparisons. Returns an image that can be sent to the user. Use when user asks for a chart, graph, or visual representation of their portfolio.',
+      'Generate a visual chart image for portfolio data. Creates donut charts for distribution (tokens, accounts, institutions, asset types) or bar charts for comparisons. Returns an image that can be sent to the user. Use when user asks for a chart, graph, or visual representation of their portfolio. ALWAYS use this when visualizations would help explain data.',
     parameters: z.object({
       chartType: z
         .enum(['donut', 'bar'])
@@ -67,15 +70,90 @@ function generateToolsFromFeatures() {
     }),
   };
 
+  // Price Movement Tool
   tools.get24hPriceChanges = {
     description:
-      'Get 24-hour price changes for all tokens in the user portfolio. Returns the top price changes (both gainers and losers) with percentage changes and absolute value changes. Use this for daily digest or when user asks about recent price movements.',
+      'Get 24-hour price changes for all tokens in the user portfolio. Returns the top price changes (both gainers and losers) with percentage changes and absolute value changes. Use this for daily digest or when user asks about recent price movements. CRITICAL for understanding portfolio volatility.',
     parameters: z.object({
       limit: z
         .number()
         .optional()
         .default(10)
         .describe('Maximum number of top movers to return (default: 10)'),
+    }),
+  };
+
+  // Analysis & Insights Tools (NEW)
+  tools.analyzePortfolioDiversification = {
+    description:
+      'Analyze portfolio diversification across token types, accounts, and institutions. Returns diversification score, concentration risks, and recommendations. Use when user asks about portfolio risk, diversification, or balance.',
+    parameters: z.object({}),
+  };
+
+  tools.compareHoldings = {
+    description:
+      'Compare two or more holdings side-by-side with their values, percentages of portfolio, and performance. Useful for "compare X vs Y" queries or when user wants to see relative positions.',
+    parameters: z.object({
+      tokenSymbols: z
+        .array(z.string())
+        .min(2)
+        .max(5)
+        .describe('Token symbols to compare (e.g., ["BTC", "ETH", "AAPL"])'),
+    }),
+  };
+
+  tools.suggestRebalancing = {
+    description:
+      'Analyze current portfolio allocation and suggest rebalancing opportunities based on concentration risks and diversification principles. Use when user asks "what should I do" or "how to improve portfolio".',
+    parameters: z.object({}),
+  };
+
+  tools.calculatePortfolioMetrics = {
+    description:
+      'Calculate key portfolio metrics: total value, total holdings count, number of accounts, asset type distribution, top 5 holdings concentration percentage. Use for comprehensive portfolio analysis.',
+    parameters: z.object({}),
+  };
+
+  tools.findLargestHoldings = {
+    description:
+      'Find the largest holdings by value with detailed information. Returns top N holdings sorted by value. Use when user asks about "biggest holdings", "largest positions", or "top investments".',
+    parameters: z.object({
+      limit: z.number().optional().default(10).describe('Number of top holdings to return'),
+    }),
+  };
+
+  tools.findSmallestHoldings = {
+    description:
+      'Find the smallest holdings by value. Useful for identifying dust holdings or positions to clean up. Use when user asks about "small holdings", "dust", or "cleanup".',
+    parameters: z.object({
+      limit: z.number().optional().default(10).describe('Number of smallest holdings to return'),
+    }),
+  };
+
+  tools.searchTokensByType = {
+    description:
+      'Search for tokens filtered by type (cryptocurrency, stock, fiat, etc.). Returns matching tokens with pricing data. Use when user wants to explore specific asset classes or add holdings of a certain type.',
+    parameters: z.object({
+      tokenType: z
+        .string()
+        .describe('Token type to filter by (e.g., "cryptocurrency", "stock", "fiat")'),
+      limit: z.number().optional().default(20).describe('Maximum results to return'),
+    }),
+  };
+
+  tools.getAccountSummary = {
+    description:
+      'Get detailed summary for a specific account including all holdings, total value, asset distribution, and recent changes. Use when user asks about a specific account in detail.',
+    parameters: z.object({
+      accountId: z.string().uuid().describe('UUID of the account to analyze'),
+    }),
+  };
+
+  tools.explainHolding = {
+    description:
+      'Get comprehensive explanation of a specific holding including: token information, current price, quantity held, total value, percentage of portfolio, which account it\'s in, and performance insights. Use when user asks "tell me about [symbol]" or wants detailed holding information.',
+    parameters: z.object({
+      tokenSymbol: z.string().describe('Token symbol (e.g., BTC, AAPL, USD)'),
     }),
   };
 
@@ -155,13 +233,24 @@ export function getToolsList(): string {
   }
 
   // Add special tools
-  output += '**Special Tools** (3 tools)\n';
+  output += '**Portfolio Analysis Tools** (6 tools)\n';
   output += '  • `getPortfolioByTokens` - Portfolio breakdown by tokens\n';
   output += '  • `getPortfolioByAccounts` - Portfolio breakdown by accounts\n';
   output += '  • `getPortfolioByInstitutions` - Portfolio breakdown by institutions\n';
   output += '  • `getPortfolioByTokenTypes` - Portfolio breakdown by token types\n';
-  output += '  • `generatePortfolioChart` - Generate visual chart\n';
-  output += '  • `get24hPriceChanges` - 24-hour price movements\n';
+  output += '  • `generatePortfolioChart` - Generate visual charts\n';
+  output += '  • `get24hPriceChanges` - 24-hour price movements\n\n';
+
+  output += '**AI Analysis & Insights** (9 tools)\n';
+  output += '  • `analyzePortfolioDiversification` - Analyze diversification and risks\n';
+  output += '  • `compareHoldings` - Compare holdings side-by-side\n';
+  output += '  • `suggestRebalancing` - Get rebalancing suggestions\n';
+  output += '  • `calculatePortfolioMetrics` - Calculate key metrics\n';
+  output += '  • `findLargestHoldings` - Find top holdings by value\n';
+  output += '  • `findSmallestHoldings` - Find smallest holdings\n';
+  output += '  • `searchTokensByType` - Search tokens by asset type\n';
+  output += '  • `getAccountSummary` - Get detailed account summary\n';
+  output += '  • `explainHolding` - Comprehensive holding explanation\n';
 
   return output;
 }

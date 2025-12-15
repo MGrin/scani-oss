@@ -227,6 +227,34 @@ export class ToolExecutor {
         case 'get24hPriceChanges':
           return await this.get24hPriceChanges(parameters.limit);
 
+        // New analysis tools
+        case 'analyzePortfolioDiversification':
+          return await this.analyzePortfolioDiversification();
+
+        case 'compareHoldings':
+          return await this.compareHoldings(parameters.tokenSymbols);
+
+        case 'suggestRebalancing':
+          return await this.suggestRebalancing();
+
+        case 'calculatePortfolioMetrics':
+          return await this.calculatePortfolioMetrics();
+
+        case 'findLargestHoldings':
+          return await this.findLargestHoldings(parameters.limit);
+
+        case 'findSmallestHoldings':
+          return await this.findSmallestHoldings(parameters.limit);
+
+        case 'searchTokensByType':
+          return await this.searchTokensByType(parameters.tokenType, parameters.limit);
+
+        case 'getAccountSummary':
+          return await this.getAccountSummary(parameters.accountId);
+
+        case 'explainHolding':
+          return await this.explainHolding(parameters.tokenSymbol);
+
         default:
           throw new Error(`Unknown tool: ${toolName}`);
       }
@@ -1059,6 +1087,539 @@ export class ToolExecutor {
       topMovers,
       gainers,
       losers,
+    };
+  }
+
+  /**
+   * NEW ANALYSIS TOOLS - Make the agent more intelligent and proactive
+   */
+
+  /**
+   * Analyze portfolio diversification
+   */
+  private async analyzePortfolioDiversification() {
+    const holdingRepository = Container.get(HoldingRepository);
+
+    // Get all holdings with complete details
+    const holdingsWithDetails = await holdingRepository.findByUserWithCompleteDetails(
+      this.context.userId
+    );
+
+    if (holdingsWithDetails.length === 0) {
+      return {
+        message: 'No holdings found in portfolio',
+        diversificationScore: 0,
+      };
+    }
+
+    // Batch fetch prices
+    const priceMap = await this.batchFetchPrices(holdingsWithDetails);
+
+    // Calculate values and distributions
+    const tokenTypeMap = new Map<string, Decimal>();
+    const institutionMap = new Map<string, Decimal>();
+    const accountMap = new Map<string, Decimal>();
+    let totalValue = new Decimal(0);
+
+    for (const { holding, token, account, institution } of holdingsWithDetails) {
+      const balance = new Decimal(holding.balance);
+      if (balance.lte(0)) continue;
+
+      const price = priceMap.get(token.id) || new Decimal(0);
+      const value = balance.mul(price);
+      totalValue = totalValue.add(value);
+
+      // Token type distribution
+      const existingType = tokenTypeMap.get(token.typeCode) || new Decimal(0);
+      tokenTypeMap.set(token.typeCode, existingType.add(value));
+
+      // Institution distribution
+      const existingInst = institutionMap.get(institution.id) || new Decimal(0);
+      institutionMap.set(institution.id, existingInst.add(value));
+
+      // Account distribution
+      const existingAcct = accountMap.get(account.id) || new Decimal(0);
+      accountMap.set(account.id, existingAcct.add(value));
+    }
+
+    // Calculate concentration metrics
+    const tokenTypes = Array.from(tokenTypeMap.entries()).map(([code, value]) => ({
+      code,
+      value: value.toString(),
+      percentage: totalValue.greaterThan(0) ? value.div(totalValue).mul(100).toFixed(2) : '0.00',
+    }));
+
+    const institutions = Array.from(institutionMap.entries())
+      .map(([id, value]) => ({
+        id,
+        value: value.toString(),
+        percentage: totalValue.greaterThan(0) ? value.div(totalValue).mul(100).toFixed(2) : '0.00',
+      }))
+      .sort((a, b) => new Decimal(b.value).comparedTo(new Decimal(a.value)));
+
+    const accounts = Array.from(accountMap.entries())
+      .map(([id, value]) => ({
+        id,
+        value: value.toString(),
+        percentage: totalValue.greaterThan(0) ? value.div(totalValue).mul(100).toFixed(2) : '0.00',
+      }))
+      .sort((a, b) => new Decimal(b.value).comparedTo(new Decimal(a.value)));
+
+    // Calculate diversification score (0-100)
+    // Higher score = better diversification
+    const tokenTypeCount = tokenTypes.length;
+    const institutionCount = institutions.length;
+    const accountCount = accounts.length;
+
+    // Check concentration (single asset > 50% is risky)
+    const topInstitutionPct = institutions[0] ? parseFloat(institutions[0].percentage) : 0;
+    const topAccountPct = accounts[0] ? parseFloat(accounts[0].percentage) : 0;
+
+    let score = 0;
+    // Token type diversity (max 30 points)
+    score += Math.min(tokenTypeCount * 10, 30);
+    // Institution diversity (max 25 points)
+    score += Math.min(institutionCount * 5, 25);
+    // Account diversity (max 25 points)
+    score += Math.min(accountCount * 5, 25);
+    // Deduct for concentration risk (max 20 points deduction)
+    if (topInstitutionPct > 80) score -= 20;
+    else if (topInstitutionPct > 60) score -= 15;
+    else if (topInstitutionPct > 40) score -= 10;
+    if (topAccountPct > 70) score -= 10;
+
+    // Add balance bonus (max 20 points)
+    if (tokenTypeCount >= 3 && topInstitutionPct < 50) score += 20;
+    else if (tokenTypeCount >= 2 && topInstitutionPct < 60) score += 10;
+
+    score = Math.max(0, Math.min(100, score));
+
+    // Generate risks and recommendations
+    const risks: string[] = [];
+    const recommendations: string[] = [];
+
+    if (topInstitutionPct > 70) {
+      risks.push(
+        `High concentration in one institution (${topInstitutionPct.toFixed(1)}%). Platform risk.`
+      );
+      recommendations.push('Consider spreading assets across multiple institutions');
+    }
+
+    if (tokenTypeCount === 1) {
+      risks.push('Portfolio contains only one asset type. Limited diversification.');
+      recommendations.push('Consider diversifying across different asset classes');
+    }
+
+    if (accountCount === 1) {
+      risks.push('All holdings in a single account');
+      recommendations.push('Consider organizing holdings across multiple accounts');
+    }
+
+    return {
+      diversificationScore: score,
+      totalValue: totalValue.toString(),
+      assetTypeCount: tokenTypeCount,
+      institutionCount,
+      accountCount,
+      tokenTypes,
+      topInstitution: institutions[0],
+      topAccount: accounts[0],
+      risks,
+      recommendations,
+      summary:
+        score >= 75
+          ? 'Well diversified portfolio'
+          : score >= 50
+            ? 'Moderately diversified'
+            : score >= 25
+              ? 'Limited diversification'
+              : 'Highly concentrated portfolio',
+    };
+  }
+
+  /**
+   * Compare multiple holdings side-by-side
+   */
+  private async compareHoldings(tokenSymbols: string[]) {
+    const holdingRepository = Container.get(HoldingRepository);
+    const _tokenRepository = Container.get(TokenRepository);
+
+    // Get all holdings
+    const allHoldings = await holdingRepository.findByUserWithCompleteDetails(this.context.userId);
+
+    // Batch fetch prices
+    const priceMap = await this.batchFetchPrices(allHoldings);
+
+    // Find holdings for each symbol
+    const comparisons = [];
+    let totalPortfolioValue = new Decimal(0);
+
+    // Calculate total portfolio value first
+    for (const { holding, token } of allHoldings) {
+      const balance = new Decimal(holding.balance);
+      const price = priceMap.get(token.id) || new Decimal(0);
+      totalPortfolioValue = totalPortfolioValue.add(balance.mul(price));
+    }
+
+    for (const symbol of tokenSymbols) {
+      const symbolUpper = symbol.toUpperCase();
+      const matchingHoldings = allHoldings.filter(
+        (h) => h.token.symbol.toUpperCase() === symbolUpper
+      );
+
+      if (matchingHoldings.length === 0) {
+        comparisons.push({
+          symbol: symbolUpper,
+          found: false,
+          message: 'Not held in portfolio',
+        });
+        continue;
+      }
+
+      // Aggregate across accounts
+      let totalBalance = new Decimal(0);
+      let totalValue = new Decimal(0);
+      const accountsList: string[] = [];
+
+      for (const { holding, token, account } of matchingHoldings) {
+        const balance = new Decimal(holding.balance);
+        const price = priceMap.get(token.id) || new Decimal(0);
+        totalBalance = totalBalance.add(balance);
+        totalValue = totalValue.add(balance.mul(price));
+        accountsList.push(account.name);
+      }
+
+      const currentPrice = matchingHoldings[0]
+        ? priceMap.get(matchingHoldings[0].token.id)
+        : new Decimal(0);
+
+      comparisons.push({
+        symbol: symbolUpper,
+        name: matchingHoldings[0]?.token.name,
+        found: true,
+        balance: totalBalance.toString(),
+        currentPrice: currentPrice?.toString(),
+        totalValue: totalValue.toString(),
+        portfolioPercentage: totalPortfolioValue.greaterThan(0)
+          ? totalValue.div(totalPortfolioValue).mul(100).toFixed(2)
+          : '0.00',
+        accountCount: matchingHoldings.length,
+        accounts: accountsList,
+      });
+    }
+
+    return {
+      comparisons,
+      totalPortfolioValue: totalPortfolioValue.toString(),
+      comparedCount: comparisons.filter((c) => c.found).length,
+      notFoundCount: comparisons.filter((c) => !c.found).length,
+    };
+  }
+
+  /**
+   * Suggest portfolio rebalancing based on concentration analysis
+   */
+  private async suggestRebalancing() {
+    // Reuse diversification analysis
+    const analysis = await this.analyzePortfolioDiversification();
+
+    const suggestions: Array<{
+      type: string;
+      current: string;
+      target: string;
+      action: string;
+    }> = [];
+
+    // Analyze token type concentration
+    if (analysis.tokenTypes && analysis.tokenTypes.length > 0) {
+      const sortedTypes = analysis.tokenTypes.sort(
+        (a, b) => parseFloat(b.percentage) - parseFloat(a.percentage)
+      );
+
+      const topType = sortedTypes[0];
+      if (topType && parseFloat(topType.percentage) > 70) {
+        suggestions.push({
+          type: 'Asset Type Concentration',
+          current: `${topType.code}: ${topType.percentage}%`,
+          target: 'Consider reducing to < 60%',
+          action: `Diversify into other asset types`,
+        });
+      }
+    }
+
+    // Analyze institution concentration
+    if (analysis.topInstitution && parseFloat(analysis.topInstitution.percentage) > 60) {
+      suggestions.push({
+        type: 'Institution Concentration',
+        current: `${analysis.topInstitution.percentage}% in one institution`,
+        target: 'Spread across 2-3 institutions',
+        action: 'Reduce platform/counterparty risk by diversifying',
+      });
+    }
+
+    // General recommendations based on diversification score
+    if (analysis.diversificationScore < 50) {
+      if (analysis.assetTypeCount === 1) {
+        suggestions.push({
+          type: 'Asset Class Diversity',
+          current: '1 asset class',
+          target: 'At least 2-3 asset classes',
+          action: 'Consider adding stocks, crypto, or other asset types',
+        });
+      }
+
+      if (analysis.institutionCount === 1) {
+        suggestions.push({
+          type: 'Platform Diversity',
+          current: '1 institution',
+          target: '2-3 institutions',
+          action: 'Distribute holdings across multiple platforms',
+        });
+      }
+    }
+
+    return {
+      diversificationScore: analysis.diversificationScore,
+      summary: analysis.summary,
+      suggestions,
+      risks: analysis.risks,
+      currentAllocation: {
+        assetTypes: analysis.tokenTypes,
+        topInstitution: analysis.topInstitution,
+      },
+    };
+  }
+
+  /**
+   * Calculate comprehensive portfolio metrics
+   */
+  private async calculatePortfolioMetrics() {
+    const dashboardOverview = await this.getDashboardOverview();
+    const diversification = await this.analyzePortfolioDiversification();
+    const priceChanges = await this.get24hPriceChanges(5);
+
+    return {
+      overview: dashboardOverview,
+      diversification: {
+        score: diversification.diversificationScore,
+        summary: diversification.summary,
+        assetTypeCount: diversification.assetTypeCount,
+        institutionCount: diversification.institutionCount,
+        accountCount: diversification.accountCount,
+      },
+      recentActivity: {
+        top24hMovers: priceChanges.topMovers,
+        gainersCount: priceChanges.gainers?.length || 0,
+        losersCount: priceChanges.losers?.length || 0,
+      },
+      risks: diversification.risks,
+    };
+  }
+
+  /**
+   * Find largest holdings by value
+   */
+  private async findLargestHoldings(limit = 10) {
+    const portfolioByTokens = await this.getPortfolioByTokens();
+
+    if (!portfolioByTokens.tokens || portfolioByTokens.tokens.length === 0) {
+      return {
+        holdings: [],
+        message: 'No holdings found',
+      };
+    }
+
+    const topHoldings = portfolioByTokens.tokens
+      .sort((a, b) => new Decimal(b.value).comparedTo(new Decimal(a.value)))
+      .slice(0, limit);
+
+    const totalValue = new Decimal(portfolioByTokens.totalValue);
+    const topHoldingsValue = topHoldings.reduce(
+      (sum, h) => sum.add(new Decimal(h.value)),
+      new Decimal(0)
+    );
+
+    const concentration = totalValue.greaterThan(0)
+      ? topHoldingsValue.div(totalValue).mul(100).toFixed(2)
+      : '0.00';
+
+    return {
+      holdings: topHoldings,
+      totalValue: totalValue.toString(),
+      topHoldingsValue: topHoldingsValue.toString(),
+      concentration: `${concentration}%`,
+      message: `Top ${topHoldings.length} holdings represent ${concentration}% of portfolio`,
+    };
+  }
+
+  /**
+   * Find smallest holdings (potential dust)
+   */
+  private async findSmallestHoldings(limit = 10) {
+    const portfolioByTokens = await this.getPortfolioByTokens();
+
+    if (!portfolioByTokens.tokens || portfolioByTokens.tokens.length === 0) {
+      return {
+        holdings: [],
+        message: 'No holdings found',
+      };
+    }
+
+    const smallestHoldings = portfolioByTokens.tokens
+      .filter((h) => new Decimal(h.value).greaterThan(0))
+      .sort((a, b) => new Decimal(a.value).comparedTo(new Decimal(b.value)))
+      .slice(0, limit);
+
+    return {
+      holdings: smallestHoldings,
+      count: smallestHoldings.length,
+      message:
+        smallestHoldings.length > 0
+          ? `Found ${smallestHoldings.length} smallest holdings`
+          : 'No small holdings found',
+    };
+  }
+
+  /**
+   * Search tokens by type
+   */
+  private async searchTokensByType(tokenType: string, limit = 20) {
+    const tokenRepository = Container.get(TokenRepository);
+    // Use findByType which searches by type code
+    const matchingTokens = await tokenRepository.findByType(tokenType);
+
+    // Limit results
+    const limitedTokens = matchingTokens.slice(0, limit);
+
+    return {
+      tokens: limitedTokens.map((t) => ({
+        id: t.id,
+        symbol: t.symbol,
+        name: t.name,
+        // Token type is passed in as parameter since findByType doesn't return it
+        type: tokenType,
+        typeCode: tokenType,
+      })),
+      count: limitedTokens.length,
+      searchTerm: tokenType,
+    };
+  }
+
+  /**
+   * Get detailed account summary
+   */
+  private async getAccountSummary(accountId: string) {
+    const accountDetails = await this.getAccountDetails(accountId);
+    const holdings = await this.getAccountHoldings(accountId);
+
+    // Calculate total value
+    const holdingRepository = Container.get(HoldingRepository);
+    const holdingsWithDetails = await holdingRepository.findByUserWithCompleteDetails(
+      this.context.userId
+    );
+
+    const accountHoldings = holdingsWithDetails.filter((h) => h.account.id === accountId);
+    const priceMap = await this.batchFetchPrices(accountHoldings);
+
+    let totalValue = new Decimal(0);
+    const tokenTypeMap = new Map<string, Decimal>();
+
+    for (const { holding, token } of accountHoldings) {
+      const balance = new Decimal(holding.balance);
+      const price = priceMap.get(token.id) || new Decimal(0);
+      const value = balance.mul(price);
+      totalValue = totalValue.add(value);
+
+      const existing = tokenTypeMap.get(token.typeCode) || new Decimal(0);
+      tokenTypeMap.set(token.typeCode, existing.add(value));
+    }
+
+    const assetDistribution = Array.from(tokenTypeMap.entries()).map(([code, value]) => ({
+      type: code,
+      value: value.toString(),
+      percentage: totalValue.greaterThan(0) ? value.div(totalValue).mul(100).toFixed(2) : '0.00',
+    }));
+
+    return {
+      account: accountDetails,
+      totalValue: totalValue.toString(),
+      holdingsCount: accountHoldings.length,
+      assetDistribution,
+      holdings: holdings,
+    };
+  }
+
+  /**
+   * Explain a specific holding in detail
+   */
+  private async explainHolding(tokenSymbol: string) {
+    const holdings = await this.searchHoldings(undefined, tokenSymbol);
+
+    if (holdings.length === 0) {
+      return {
+        found: false,
+        message: `No ${tokenSymbol} holdings found in your portfolio`,
+      };
+    }
+
+    // Get price data
+    const tokenRepository = Container.get(TokenRepository);
+    const pricingService = Container.get(PricingService);
+
+    const token = await tokenRepository.findBySymbol(tokenSymbol);
+    if (!token) {
+      return {
+        found: false,
+        message: `Token ${tokenSymbol} not found`,
+      };
+    }
+
+    // Get token with type information
+    const tokenWithType = await tokenRepository.findWithType(token.id);
+    const typeCode = tokenWithType?.typeCode || 'unknown';
+
+    const price = await pricingService.getTokenPrice(token, 'USD', new Date());
+
+    // Aggregate holdings
+    let totalBalance = new Decimal(0);
+    let totalValue = new Decimal(0);
+    const accountsList: Array<{ accountName: string; balance: string; value: string }> = [];
+
+    for (const holding of holdings) {
+      const balance = new Decimal(holding.balance);
+      const value = price ? balance.mul(new Decimal(price)) : new Decimal(0);
+
+      totalBalance = totalBalance.add(balance);
+      totalValue = totalValue.add(value);
+
+      accountsList.push({
+        accountName: holding.accountName,
+        balance: balance.toString(),
+        value: value.toString(),
+      });
+    }
+
+    // Get portfolio percentage
+    const portfolioByTokens = await this.getPortfolioByTokens();
+    const totalPortfolioValue = new Decimal(portfolioByTokens.totalValue);
+    const portfolioPercentage = totalPortfolioValue.greaterThan(0)
+      ? totalValue.div(totalPortfolioValue).mul(100).toFixed(2)
+      : '0.00';
+
+    return {
+      found: true,
+      token: {
+        symbol: token.symbol,
+        name: token.name,
+        type: typeCode,
+      },
+      currentPrice: price?.toString(),
+      totalBalance: totalBalance.toString(),
+      totalValue: totalValue.toString(),
+      portfolioPercentage: `${portfolioPercentage}%`,
+      accountCount: holdings.length,
+      accounts: accountsList,
+      summary: `You hold ${totalBalance.toString()} ${tokenSymbol} across ${holdings.length} account(s), worth ${totalValue.toFixed(2)} USD, representing ${portfolioPercentage}% of your portfolio`,
     };
   }
 }

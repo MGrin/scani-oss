@@ -4,6 +4,15 @@ import { Telegraf } from 'telegraf';
 import { Container } from 'typedi';
 import type { ConversationContext } from './ai-agent';
 import { AIAgent } from './ai-agent';
+import { CallbackHandler } from './callback-handlers';
+import {
+  COMMANDS,
+  handleHelpCommand,
+  handleMenuCommand,
+  handleResetCommand,
+  handleStartCommand,
+  handleStatusCommand,
+} from './commands';
 
 // Minimal logger interface compatible with pino
 export interface Logger {
@@ -40,6 +49,7 @@ export class TelegramBotService {
   private aiAgent: AIAgent;
   private conversationContexts: Map<string, ConversationContext> = new Map();
   private logger: Logger;
+  private callbackHandler: CallbackHandler;
   /**
    * Regex pattern for detecting chart markers in AI responses
    * Matches format: [CHART:base64EncodedImageData]
@@ -54,6 +64,12 @@ export class TelegramBotService {
     });
     // Use provided logger or fallback to console
     this.logger = config.logger || this.createConsoleLogger();
+    // Initialize callback handler
+    this.callbackHandler = new CallbackHandler(
+      this.aiAgent,
+      this.conversationContexts,
+      this.logger
+    );
     this.setupHandlers();
   }
 
@@ -200,38 +216,13 @@ export class TelegramBotService {
     });
 
     // Start command
-    this.bot.command('start', async (ctx) => {
-      await ctx.reply(
-        '👋 Welcome to Scani Finance Bot!\n\n' +
-          'I can help you manage your portfolio through natural conversation.\n\n' +
-          'To get started, you need to authenticate your account.\n' +
-          'Use the /auth command to link your Scani account.'
-      );
-    });
+    this.bot.command('start', (ctx) => handleStartCommand(ctx));
 
     // Help command
-    this.bot.command('help', async (ctx) => {
-      await ctx.reply(
-        '📚 Available Commands:\n\n' +
-          '/start - Start the bot\n' +
-          '/help - Show this help message\n' +
-          '/tools - List all available tools and capabilities\n' +
-          '/auth <token> - Link your Scani account with auth token\n' +
-          '/status - Check authentication status\n' +
-          '/reset - Reset conversation context\n' +
-          '/daily - Generate daily portfolio update (for testing)\n\n' +
-          'Natural Language:\n' +
-          'You can also chat with me naturally! Ask me to:\n' +
-          '• Show your portfolio overview\n' +
-          '• List your accounts or holdings\n' +
-          '• Add new holdings\n' +
-          '• Check token prices\n' +
-          '• Import a crypto wallet\n' +
-          '• And much more!\n\n' +
-          'Screenshot Upload:\n' +
-          'You can also send me screenshots of your portfolio or holdings, and I will analyze them for you!'
-      );
-    });
+    this.bot.command('help', (ctx) => handleHelpCommand(ctx));
+
+    // Menu command - NEW
+    this.bot.command('menu', (ctx) => handleMenuCommand(ctx));
 
     // Tools command - list available capabilities
     this.bot.command('tools', async (ctx) => {
@@ -306,22 +297,18 @@ export class TelegramBotService {
     });
 
     // Status command
-    this.bot.command('status', async (ctx) => {
-      if (ctx.userId) {
-        await ctx.reply('✅ You are authenticated and ready to use the bot!');
-      } else {
-        await ctx.reply('❌ You are not authenticated. Use /auth <token> to link your account.');
-      }
-    });
+    this.bot.command('status', (ctx) => handleStatusCommand(ctx));
 
     // Reset conversation
-    this.bot.command('reset', async (ctx) => {
-      const telegramUserId = ctx.telegramUserId;
-      if (telegramUserId) {
-        this.conversationContexts.delete(telegramUserId);
-        await ctx.reply('🔄 Conversation context has been reset.');
-      }
-    });
+    this.bot.command('reset', (ctx) => handleResetCommand(ctx, this.conversationContexts));
+
+    // Quick access commands - NEW
+    this.bot.command('dashboard', (ctx) => handleMenuCommand(ctx));
+    this.bot.command('holdings', (ctx) => handleMenuCommand(ctx));
+    this.bot.command('accounts', (ctx) => handleMenuCommand(ctx));
+    this.bot.command('institutions', (ctx) => handleMenuCommand(ctx));
+    this.bot.command('charts', (ctx) => handleMenuCommand(ctx));
+    this.bot.command('settings', (ctx) => handleMenuCommand(ctx));
 
     // Daily digest command (for testing)
     this.bot.command('daily', async (ctx) => {
@@ -476,123 +463,8 @@ export class TelegramBotService {
       }
     });
 
-    // Handle inline keyboard callbacks for charts
-    this.bot.on('callback_query', async (ctx) => {
-      const telegramUserId = ctx.from?.id.toString();
-
-      if (!ctx.userId || !telegramUserId) {
-        await ctx.answerCbQuery('⚠️ Please authenticate first using /auth');
-        return;
-      }
-
-      // Get callback data
-      const callbackData = 'data' in ctx.callbackQuery ? ctx.callbackQuery.data : undefined;
-
-      if (!callbackData) {
-        await ctx.answerCbQuery('❌ Invalid callback data');
-        return;
-      }
-
-      // Answer the callback query to remove loading state
-      await ctx.answerCbQuery();
-
-      // Parse chart request from callback data
-      if (callbackData.startsWith('chart_')) {
-        const chartRequest = callbackData.replace('chart_', '');
-        let message = '';
-
-        // Map callback data to natural language request
-        // Buttons either specify chart type (donut/bar) or data grouping (accounts/institutions/tokens/types)
-        switch (chartRequest) {
-          case 'donut':
-            message = 'Show me a donut chart of my portfolio';
-            break;
-          case 'bar':
-            message = 'Show me a bar chart of my portfolio';
-            break;
-          case 'accounts':
-            message = 'Show me a chart of my portfolio grouped by accounts';
-            break;
-          case 'institutions':
-            message = 'Show me a chart of my portfolio grouped by institutions';
-            break;
-          case 'tokens':
-            message = 'Show me a chart of my top holdings grouped by token';
-            break;
-          case 'types':
-            message = 'Show me a chart of my asset allocation grouped by type';
-            break;
-          default:
-            await ctx.reply('❌ Unknown chart type');
-            return;
-        }
-
-        // Get or create conversation context
-        let conversationContext = this.conversationContexts.get(telegramUserId);
-        if (!conversationContext) {
-          conversationContext = {
-            userId: ctx.userId,
-            conversationHistory: [],
-          };
-          this.conversationContexts.set(telegramUserId, conversationContext);
-        }
-
-        // Show typing indicator
-        await ctx.sendChatAction('typing');
-
-        try {
-          // Get AI response for the chart request
-          const response = await this.aiAgent.chat(message, conversationContext);
-
-          // Check if response contains a chart
-          const chartMatch = response.match(this.chartPattern);
-          if (chartMatch?.[1]) {
-            const chartBase64 = chartMatch[1];
-            const chartBuffer = Buffer.from(chartBase64, 'base64');
-
-            // Extract caption
-            const caption = this.extractChartCaption(response);
-
-            // Show upload photo indicator
-            await ctx.sendChatAction('upload_photo');
-
-            // Send chart as photo
-            await ctx.replyWithPhoto(
-              { source: chartBuffer },
-              {
-                caption: caption || 'Your portfolio chart',
-                reply_markup: this.getChartInlineKeyboard(),
-              }
-            );
-          } else {
-            // If no chart in response, send text
-            const htmlResponse = this.convertMarkdownToHTML(response);
-            await ctx.reply(htmlResponse, { parse_mode: 'HTML' });
-          }
-
-          // Update conversation history
-          conversationContext.conversationHistory.push({
-            role: 'user',
-            content: message,
-          });
-          conversationContext.conversationHistory.push({
-            role: 'assistant',
-            content: response,
-          });
-
-          // Keep only last 20 messages
-          if (conversationContext.conversationHistory.length > 20) {
-            conversationContext.conversationHistory =
-              conversationContext.conversationHistory.slice(-20);
-          }
-        } catch (error) {
-          this.logger.error({ error }, 'Error processing chart callback');
-          await ctx.reply(
-            '❌ Sorry, I encountered an error generating the chart. Please try again or use /reset to start over.'
-          );
-        }
-      }
-    });
+    // Handle inline keyboard callbacks - delegated to CallbackHandler
+    this.bot.on('callback_query', (ctx) => this.callbackHandler.handleCallback(ctx));
 
     // Handle all other text messages
     this.bot.on('text', async (ctx) => {
@@ -693,6 +565,10 @@ export class TelegramBotService {
       // This ensures we're using polling (getUpdates) and not webhook mode
       this.logger.info('🔄 Deleting existing webhook (if any)...');
       await this.bot.telegram.deleteWebhook({ drop_pending_updates: true });
+
+      // Set bot commands menu (visible in Telegram UI)
+      this.logger.info('📋 Setting bot commands menu...');
+      await this.bot.telegram.setMyCommands(COMMANDS);
 
       // Launch with dropPendingUpdates to force kill any existing bot instances
       // This resolves 409 Conflict errors from multiple getUpdates requests
