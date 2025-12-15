@@ -19,7 +19,7 @@
 
 import { IntegrationManager } from '@scani/integrations';
 import { isValidDecimalString } from '@scani/shared';
-import { and, eq } from 'drizzle-orm';
+import { and, eq, inArray } from 'drizzle-orm';
 import { Container, Service } from 'typedi';
 import { db } from '../database/connection';
 import * as schema from '../database/schema';
@@ -85,22 +85,67 @@ export class SyncExchangeBalancesUseCase {
         throw new Error('Token type "crypto" not found');
       }
 
-      // Find all accounts with exchange institution IDs (binance, coinbase, kraken, etc.)
-      // For now, we support binance
-      const exchangeInstitutionIds = ['binance'];
+      // Query database for exchange institutions (Binance, Coinbase, Kraken, etc.)
+      // This gets the actual UUID institution_id from the database
+      const exchangeNames = ['Binance']; // Can be expanded to support more exchanges
 
-      logger.debug({ exchangeInstitutionIds }, 'Looking for exchange accounts');
+      logger.debug({ exchangeNames }, 'Looking for exchange institutions');
 
-      for (const institutionId of exchangeInstitutionIds) {
+      const exchangeInstitutions = await db
+        .select()
+        .from(schema.institutions)
+        .where(inArray(schema.institutions.name, exchangeNames));
+
+      if (exchangeInstitutions.length === 0) {
+        logger.warn({ exchangeNames }, 'No exchange institutions found in database');
+        return {
+          accountsFound: 0,
+          accountsSynced: 0,
+          accountsFailed: 0,
+          holdingsUpdated: 0,
+          holdingsCreated: 0,
+          holdingsRemoved: 0,
+          errors: [],
+          durationMs: Date.now() - startTime,
+        };
+      }
+
+      logger.debug(
+        { institutionsFound: exchangeInstitutions.length },
+        'Found exchange institutions in database'
+      );
+
+      for (const institution of exchangeInstitutions) {
         try {
-          // Get integration
-          const integration = await this.integrationManager.getIntegration(institutionId);
+          const institutionId = institution.id;
+          const institutionName = institution.name;
+
+          logger.debug({ institutionId, institutionName }, 'Processing exchange institution');
+
+          // Get integration using the database UUID
+          // The IntegrationManager registers integrations with both static ID and database UUID
+          let integration = await this.integrationManager.getIntegration(institutionId);
+
+          // Fallback to static name if UUID registration failed
           if (!integration) {
-            logger.debug({ institutionId }, 'Integration not found, skipping');
+            logger.debug(
+              { institutionId, institutionName },
+              'Integration not found by UUID, trying static name'
+            );
+            integration = await this.integrationManager.getIntegration(
+              institutionName.toLowerCase()
+            );
+          }
+
+          if (!integration) {
+            logger.warn(
+              { institutionId, institutionName },
+              'Integration not found for institution, skipping'
+            );
             continue;
           }
 
-          // Find all users with credentials for this institution
+          // Find all users with credentials for this institution using the database UUID
           const credentials = await db
             .select()
             .from(schema.userIntegrationCredentials)
@@ -336,7 +381,8 @@ export class SyncExchangeBalancesUseCase {
         } catch (error) {
           logger.error(
             {
-              institutionId,
+              institutionId: institution.id,
+              institutionName: institution.name,
               error: error instanceof Error ? error.message : String(error),
             },
             'Failed to sync institution'
