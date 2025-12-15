@@ -49,6 +49,10 @@ export {
   detectBinanceAccountTypes,
   validateBinanceCredentials,
 } from './factories/binanceFactory';
+export {
+  createKrakenApiService,
+  validateKrakenCredentials,
+} from './factories/krakenFactory';
 export { IntegrationManager } from './IntegrationManager';
 // Export blockchain integration implementations
 export * from './implementations';

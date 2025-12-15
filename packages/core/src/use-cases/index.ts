@@ -16,6 +16,11 @@ export {
   ImportBinanceAccountsUseCase,
 } from './ImportBinanceAccountsUseCase';
 export {
+  type ImportKrakenAccountsInput,
+  type ImportKrakenAccountsResult,
+  ImportKrakenAccountsUseCase,
+} from './ImportKrakenAccountsUseCase';
+export {
   ImportWalletAddressUseCase,
   type ImportWalletInput,
   type ImportWalletResult,

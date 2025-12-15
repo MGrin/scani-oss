@@ -45,6 +45,14 @@ export function MethodSelectionStep({
       iconType: 'favicon' as const,
       disabled: false,
     },
+    {
+      id: 'kraken' as const,
+      title: 'Connect Kraken',
+      description: 'Connect your Kraken account with API credentials',
+      icon: 'https://kraken.com',
+      iconType: 'favicon' as const,
+      disabled: false,
+    },
   ];
 
   return (

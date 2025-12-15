@@ -4,6 +4,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { AccountSelectionStep } from '@/components/add-data/AccountSelectionStep';
 import { BinanceApiKeyStep } from '@/components/add-data/BinanceApiKeyStep';
 import { DataEntryStep } from '@/components/add-data/DataEntryStep';
+import { KrakenApiKeyStep } from '@/components/add-data/KrakenApiKeyStep';
 import { MethodSelectionStep } from '@/components/add-data/MethodSelectionStep';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -62,6 +63,8 @@ export function AddData() {
       // For Binance, go to auth step first
       if (method === 'binance') {
         setCurrentStep('binanceAuth');
+      } else if (method === 'kraken') {
+        setCurrentStep('krakenAuth');
       } else if (method === 'wallet') {
         // Skip account selection for wallet imports
         setCurrentStep('data');
@@ -106,27 +109,26 @@ export function AddData() {
   // Helper to check if current import is wallet import
   const isWalletImport = completeImportData.method === 'wallet';
 
-  // Helper to check if current import is Binance API Key
-  const isBinanceApiKey = completeImportData.method === 'binance';
+  // Helper to check if current import is using exchange API Key (Binance or Kraken)
+  const isExchangeApiKey =
+    completeImportData.method === 'binance' || completeImportData.method === 'kraken';
 
   const nextStep = useCallback(() => {
     if (currentStep === 'method') {
-      // For Binance, go to auth step
-      if (isBinanceApiKey) {
-        setCurrentStep('binanceAuth');
-      } else if (isWalletImport) {
-        // Skip account selection for wallet imports
+      // For Binance/Kraken, go to respective auth step (handled by useEffect)
+      // For wallet, skip account selection
+      if (isWalletImport) {
         setCurrentStep('data');
-      } else {
+      } else if (!isExchangeApiKey) {
         setCurrentStep('account');
       }
-    } else if (currentStep === 'binanceAuth') {
-      // After Binance auth, the component will handle navigation
+    } else if (currentStep === 'binanceAuth' || currentStep === 'krakenAuth') {
+      // After exchange auth, the component will handle navigation
       // This case shouldn't normally be called
     } else if (currentStep === 'account') {
       setCurrentStep('data');
     }
-  }, [currentStep, isWalletImport, isBinanceApiKey]);
+  }, [currentStep, isWalletImport, isExchangeApiKey]);
 
   const prevStep = useCallback(() => {
     if (currentStep === 'data') {
@@ -146,40 +148,46 @@ export function AddData() {
         setCurrentStep('account');
       }
     } else if (currentStep === 'account') {
-      // For Binance, go back to auth step
-      if (isBinanceApiKey) {
-        setCurrentStep('binanceAuth');
+      // For exchange API keys, go back to auth step
+      if (isExchangeApiKey) {
+        const method = completeImportData.method;
+        if (method === 'binance') {
+          setCurrentStep('binanceAuth');
+        } else if (method === 'kraken') {
+          setCurrentStep('krakenAuth');
+        }
       } else {
         // Going back from account selection to method selection
         // Clear method and account selection from complete import data and URL
         setCompleteImportData({});
         setCurrentStep('method');
       }
-    } else if (currentStep === 'binanceAuth') {
-      // Going back from Binance auth to method selection
+    } else if (currentStep === 'binanceAuth' || currentStep === 'krakenAuth') {
+      // Going back from exchange auth to method selection
       setCompleteImportData({});
       setCurrentStep('method');
     }
-  }, [currentStep, isWalletImport, isBinanceApiKey]);
+  }, [currentStep, isWalletImport, isExchangeApiKey, completeImportData.method]);
   const getStepNumber = (step: Step): number => {
     // Wallet imports have 2 steps (method + data)
-    // Binance has 2 steps (method + auth, then auto-redirect to holdings)
+    // Binance/Kraken have 2 steps (method + auth, then auto-redirect to holdings)
     // Others have 3 steps (method + account + data)
 
     switch (step) {
       case 'method':
         return 1;
       case 'binanceAuth':
+      case 'krakenAuth':
         return 2;
       case 'account':
         return 2;
       case 'data':
-        return isWalletImport || isBinanceApiKey ? 2 : 3;
+        return isWalletImport || isExchangeApiKey ? 2 : 3;
     }
   };
 
   const getProgress = (): number => {
-    const totalSteps = isWalletImport || isBinanceApiKey ? 2 : 3;
+    const totalSteps = isWalletImport || isExchangeApiKey ? 2 : 3;
     return (getStepNumber(currentStep) / totalSteps) * 100;
   };
 
@@ -509,7 +517,8 @@ export function AddData() {
           <div className="space-y-2 md:space-y-4">
             <div className="flex items-center justify-between">
               <h2 className="text-base md:text-lg font-semibold">
-                Step {getStepNumber(currentStep)} of {isWalletImport || isBinanceApiKey ? '2' : '3'}
+                Step {getStepNumber(currentStep)} of{' '}
+                {isWalletImport || isExchangeApiKey ? '2' : '3'}
               </h2>
               <Badge variant="outline" className="text-xs">
                 {Math.round(getProgress())}% Complete
@@ -521,16 +530,21 @@ export function AddData() {
               <span className={currentStep === 'method' ? 'font-medium text-foreground' : ''}>
                 1. {getMethodDisplayText()}
               </span>
-              {!isWalletImport && !isBinanceApiKey && (
+              {!isWalletImport && !isExchangeApiKey && (
                 <span className={currentStep === 'account' ? 'font-medium text-foreground' : ''}>
                   2. {getAccountDisplayText()}
                 </span>
               )}
-              {isBinanceApiKey && (
+              {completeImportData.method === 'binance' && (
                 <span
                   className={currentStep === 'binanceAuth' ? 'font-medium text-foreground' : ''}
                 >
                   2. Connect Binance
+                </span>
+              )}
+              {completeImportData.method === 'kraken' && (
+                <span className={currentStep === 'krakenAuth' ? 'font-medium text-foreground' : ''}>
+                  2. Connect Kraken
                 </span>
               )}
               {isWalletImport && (
@@ -538,7 +552,7 @@ export function AddData() {
                   2. Import Wallet
                 </span>
               )}
-              {!isWalletImport && !isBinanceApiKey && (
+              {!isWalletImport && !isExchangeApiKey && (
                 <span className={currentStep === 'data' ? 'font-medium text-foreground' : ''}>
                   3. Enter Data
                 </span>
@@ -557,6 +571,9 @@ export function AddData() {
       )}
       {currentStep === 'binanceAuth' && (
         <BinanceApiKeyStep onCompleteDataUpdate={updateCompleteImportData} onNext={nextStep} />
+      )}
+      {currentStep === 'krakenAuth' && (
+        <KrakenApiKeyStep onCompleteDataUpdate={updateCompleteImportData} onNext={nextStep} />
       )}
       {currentStep === 'account' && (
         <AccountSelectionStep
@@ -612,8 +629,9 @@ export function AddData() {
                     !isWalletImport &&
                     (!getValidHoldingsInfo().hasChanges || getValidHoldingsInfo().hasInvalid)) ||
                   (currentStep === 'data' && isWalletImport && !hasDataChanges) ||
-                  // BinanceApiKeyStep has its own "Validate & Import" button
+                  // BinanceApiKeyStep and KrakenApiKeyStep have their own "Validate & Import" buttons
                   currentStep === 'binanceAuth' ||
+                  currentStep === 'krakenAuth' ||
                   createTokenFromExternalMutation.isPending ||
                   createHoldingsWithDependenciesMutation.isPending ||
                   updateHoldingsBatchMutation.isPending ||
