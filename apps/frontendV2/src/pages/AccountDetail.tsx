@@ -425,13 +425,14 @@ export function AccountDetail() {
     0
   );
 
-  // Check if account is synced (has walletAddress in metadata)
-  const isSynced =
-    account.metadata && typeof account.metadata === 'object' && 'walletAddress' in account.metadata;
+  // Check if account is synced (has walletAddress or lastSync in metadata)
   const metadata = account.metadata as Record<string, unknown> | undefined;
   const walletAddress = metadata?.walletAddress as string | undefined;
   const chainName = metadata?.chainName as string | undefined;
   const lastSync = metadata?.lastSync as string | undefined;
+  const exchangeAccountType = metadata?.accountType as string | undefined;
+
+  const isSynced = !!(walletAddress || lastSync);
 
   return (
     <div className="space-y-6">
@@ -454,6 +455,7 @@ export function AccountDetail() {
             <div className="space-y-1">
               <p className="font-medium">This account is automatically synced</p>
               <div className="text-sm text-muted-foreground space-y-1">
+                {exchangeAccountType && <p>Type: {exchangeAccountType}</p>}
                 {chainName && <p>Source: {chainName}</p>}
                 {walletAddress && (
                   <p>

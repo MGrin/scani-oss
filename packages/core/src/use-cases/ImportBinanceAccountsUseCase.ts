@@ -173,7 +173,12 @@ export class ImportBinanceAccountsUseCase {
               throw new Error('Crypto account type not found');
             }
 
-            // Create new account
+            // Create new account with lastSync timestamp in metadata
+            const accountMetadata = {
+              ...(accountInfo.metadata || {}),
+              lastSync: new Date().toISOString(),
+            };
+
             const [newAccount] = await db
               .insert(schema.accounts)
               .values({
@@ -182,7 +187,7 @@ export class ImportBinanceAccountsUseCase {
                 typeId: cryptoAccountType.id,
                 name: accountInfo.name,
                 description: accountInfo.description,
-                metadata: accountInfo.metadata,
+                metadata: accountMetadata,
                 isActive: true,
               })
               .returning();
@@ -290,6 +295,27 @@ export class ImportBinanceAccountsUseCase {
                 error: `Failed to import ${holding.symbol}: ${error instanceof Error ? error.message : String(error)}`,
               });
             }
+          }
+
+          // Update account metadata with lastSync timestamp for existing accounts
+          // (New accounts already have lastSync set during creation)
+          if (existing) {
+            const updatedMetadata = {
+              ...(existing.metadata && typeof existing.metadata === 'object'
+                ? existing.metadata
+                : {}),
+              lastSync: new Date().toISOString(),
+            };
+
+            await db
+              .update(schema.accounts)
+              .set({
+                metadata: updatedMetadata,
+                updatedAt: new Date(),
+              })
+              .where(eq(schema.accounts.id, accountId));
+
+            logger.debug({ accountId }, 'Updated account lastSync timestamp');
           }
         } catch (error) {
           logger.error(

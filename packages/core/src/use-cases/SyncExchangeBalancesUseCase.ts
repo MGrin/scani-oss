@@ -297,6 +297,22 @@ export class SyncExchangeBalancesUseCase {
                   }
                 }
 
+                // Update account metadata with lastSync timestamp
+                const updatedMetadata = {
+                  ...(account.metadata && typeof account.metadata === 'object'
+                    ? account.metadata
+                    : {}),
+                  lastSync: new Date().toISOString(),
+                };
+
+                await db
+                  .update(schema.accounts)
+                  .set({
+                    metadata: updatedMetadata,
+                    updatedAt: new Date(),
+                  })
+                  .where(eq(schema.accounts.id, account.id));
+
                 accountsSynced++;
                 logger.debug({ accountId: account.id }, 'Successfully synced account');
               } catch (error) {
