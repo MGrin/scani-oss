@@ -34,9 +34,6 @@ jobs:
       - name: Run lint on landing
         run: bun run lint:landing
 
-      - name: Run lint on mobile
-        run: bun run lint:mobile
-
       - name: Run lint on telegram-bot
         run: bun run lint:telegram-bot
 
@@ -45,4 +42,17 @@ jobs:
 
       - name: Run lint on core
         run: bun run lint:core
+
+      - name: Run lint on integrations
+        run: bun run lint:integrations
+
+      - name: Run lint on rate-limiter
+        run: bun run lint:rate-limiter
+
+      - name: Run lint on scripts
+        run: bun run lint:scripts
+
+      # Note: Mobile app is excluded as it's a React Native/Expo app
+      # that requires its own dependency installation and has a separate build process.
+      # To lint mobile, run: cd apps/mobile && bun install && bun run lint
 

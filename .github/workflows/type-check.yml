@@ -43,6 +43,16 @@ jobs:
       - name: Run type-check on core
         run: bun run type-check:core
 
+      - name: Run type-check on integrations
+        run: bun run type-check:integrations
+
+      - name: Run type-check on rate-limiter
+        run: bun run type-check:rate-limiter
+
+      - name: Run type-check on scripts
+        run: bun run type-check:scripts
+
       # Note: Mobile app is excluded as it's a React Native/Expo app
       # that requires its own dependency installation and has a separate build process.
       # To type-check mobile, run: cd apps/mobile && bun install && bun run type-check
+
