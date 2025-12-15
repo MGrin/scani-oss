@@ -15,11 +15,14 @@
  * - Integrates with TypeDI for dependency injection
  */
 
+import { db } from '@scani/core/database/connection';
+import * as schema from '@scani/core/database/schema';
 import type { ChainConfig } from '@scani/core/external-services/blockchain';
 import { getChainConfig } from '@scani/core/external-services/blockchain';
 import { InstitutionBlockchainMappingRepository } from '@scani/core/repositories';
 import { createComponentLogger } from '@scani/core/utils/logger';
 import { RateLimiter } from '@scani/rate-limiter';
+import { eq } from 'drizzle-orm';
 import { Container, Service } from 'typedi';
 import type { ScaniIntegration } from './base';
 import { allIntegrationConfigs } from './config/integrationConfigs';
@@ -68,16 +71,54 @@ const GLOBAL_INTEGRATION_RATE_LIMITERS = {
  * Initialize the integration registry
  * This happens once at startup and registers all available integrations
  */
-function initializeIntegrationRegistry(): void {
+async function initializeIntegrationRegistry(): Promise<void> {
   if (integrationRegistry.size() > 0) {
     logger.debug('Integration registry already initialized');
     return;
   }
 
   logger.debug('Initializing integration registry with all configurations');
+
+  // First, register all integrations with their static IDs
   allIntegrationConfigs.forEach((config) => {
     integrationRegistry.register(config);
   });
+
+  // Then, dynamically register exchange integrations with their database UUIDs
+  try {
+    // Query the database for known exchange institutions
+    const knownExchanges = ['Binance']; // Can be expanded in the future
+
+    for (const exchangeName of knownExchanges) {
+      const [institution] = await db
+        .select()
+        .from(schema.institutions)
+        .where(eq(schema.institutions.name, exchangeName))
+        .limit(1);
+
+      if (institution) {
+        // Find the corresponding config by the static name
+        const staticConfig = allIntegrationConfigs.find((config) => config.name === exchangeName);
+
+        if (staticConfig) {
+          // Register the same integration with the database UUID
+          integrationRegistry.register({
+            ...staticConfig,
+            institutionId: institution.id, // Use the database UUID
+          });
+          logger.debug(
+            { exchangeName, staticId: staticConfig.institutionId, dbId: institution.id },
+            'Registered exchange with database UUID'
+          );
+        }
+      }
+    }
+  } catch (error) {
+    logger.warn(
+      { error: error instanceof Error ? error.message : String(error) },
+      'Failed to register exchanges with database UUIDs - will fall back to static IDs'
+    );
+  }
 
   logger.info(
     { totalIntegrations: integrationRegistry.size() },
@@ -98,12 +139,12 @@ export class IntegrationManager {
   /**
    * Initialize the manager (called once at startup)
    */
-  initialize(): void {
+  async initialize(): Promise<void> {
     if (this.initialized) {
       return;
     }
 
-    initializeIntegrationRegistry();
+    await initializeIntegrationRegistry();
     this.initialized = true;
   }
 
@@ -114,7 +155,7 @@ export class IntegrationManager {
    */
   async getIntegration(institutionId: string): Promise<ScaniIntegration | undefined> {
     // Ensure registry is initialized
-    this.initialize();
+    await this.initialize();
 
     // Check cache first
     if (this.integrationCache.has(institutionId)) {
