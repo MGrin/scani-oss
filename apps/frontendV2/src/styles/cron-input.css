@@ -1,0 +1,59 @@
+/* Custom styles for react-js-cron component */
+.cron-builder {
+  font-family: inherit;
+}
+
+.cron-builder select,
+.cron-builder input {
+  background-color: hsl(var(--background));
+  color: hsl(var(--foreground));
+  border: 1px solid hsl(var(--input));
+  border-radius: 0.375rem;
+  padding: 0.5rem 0.75rem;
+  font-size: 0.875rem;
+  transition: border-color 0.2s;
+}
+
+.cron-builder select:hover,
+.cron-builder input:hover {
+  border-color: hsl(var(--ring));
+}
+
+.cron-builder select:focus,
+.cron-builder input:focus {
+  outline: none;
+  border-color: hsl(var(--ring));
+  box-shadow: 0 0 0 2px hsl(var(--ring) / 0.2);
+}
+
+.cron-builder .cron-field-label {
+  color: hsl(var(--muted-foreground));
+  font-size: 0.875rem;
+  font-weight: 500;
+  margin-bottom: 0.25rem;
+  display: block;
+}
+
+.cron-builder .cron-period-select {
+  margin-bottom: 1rem;
+}
+
+.cron-builder .cron-field-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+}
+
+.cron-builder .cron-field-row:last-child {
+  margin-bottom: 0;
+}
+
+/* Dark mode support */
+@media (prefers-color-scheme: dark) {
+  .cron-builder select,
+  .cron-builder input {
+    background-color: hsl(var(--background));
+    color: hsl(var(--foreground));
+  }
+}

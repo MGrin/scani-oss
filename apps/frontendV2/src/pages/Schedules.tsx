@@ -12,6 +12,7 @@ import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { CronInput } from '@/components/ui/cron-input';
 import {
   Dialog,
   DialogContent,
@@ -62,6 +63,7 @@ export function Schedules() {
   const [scheduleToDelete, setScheduleToDelete] = useState<Schedule | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedType, setSelectedType] = useState<string>('all');
+  const [cronPattern, setCronPattern] = useState('0 0 1 * *'); // Default: Monthly on the 1st
 
   const { toast } = useToast();
   const utils = trpc.useUtils();
@@ -77,6 +79,7 @@ export function Schedules() {
     onSuccess: () => {
       utils.schedules.getAll.invalidate();
       setIsCreateDialogOpen(false);
+      setCronPattern('0 0 1 * *'); // Reset to default
       toast({
         title: 'Schedule created',
         description: 'Your schedule has been created successfully.',
@@ -151,7 +154,7 @@ export function Schedules() {
     createSchedule.mutate({
       name: formData.get('name') as string,
       description: formData.get('description') as string,
-      repetitiveCronPattern: formData.get('cronPattern') as string,
+      repetitiveCronPattern: cronPattern,
       typeId: formData.get('typeId') as string,
     });
   };
@@ -302,15 +305,10 @@ export function Schedules() {
                 </Select>
               </div>
               <div>
-                <Label htmlFor="cronPattern">Cron Pattern</Label>
-                <Input
-                  id="cronPattern"
-                  name="cronPattern"
-                  required
-                  placeholder="e.g., 0 0 1 * * (Monthly on 1st)"
-                />
-                <p className="text-xs text-muted-foreground mt-1">
-                  Format: minute hour day month weekday
+                <Label htmlFor="cronPattern">Schedule Frequency</Label>
+                <CronInput value={cronPattern} onChange={setCronPattern} className="mt-2" />
+                <p className="text-xs text-muted-foreground mt-2">
+                  Selected pattern: <code className="font-mono">{cronPattern}</code>
                 </p>
               </div>
             </div>
