@@ -10,6 +10,9 @@ import { holdingsRouter } from './routers/holdings';
 import { institutionTypesRouter } from './routers/institution-types';
 import { institutionsRouter } from './routers/institutions';
 import { integrationsRouter } from './routers/integrations';
+import { scheduleStepTypesRouter } from './routers/schedule-step-types';
+import { scheduleTypesRouter } from './routers/schedule-types';
+import { schedulesRouter } from './routers/schedules';
 import { screenshotsRouter } from './routers/screenshots';
 import { telegramRouter } from './routers/telegram';
 import { createTokensRouter } from './routers/tokens';
@@ -33,11 +36,16 @@ export const appRouter = router({
   // Enum tables (protected)
   institutionTypes: institutionTypesRouter,
   accountTypes: accountTypesRouter,
+  scheduleTypes: scheduleTypesRouter,
+  scheduleStepTypes: scheduleStepTypesRouter,
 
   // Business entities (protected)
   institutions: institutionsRouter,
   accounts: accountsRouter,
   holdings: holdingsRouter,
+
+  // Schedules (protected) - Recurring monetary movement patterns
+  schedules: schedulesRouter,
 
   // Batch operations (protected) - Atomic multi-entity operations
   batchOperations: batchOperationsRouter,

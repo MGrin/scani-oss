@@ -2,7 +2,15 @@ import { EventEmitter } from 'node:events';
 import { logConfig, wsLogger } from '@scani/core/utils/logger';
 import { Container, Service } from 'typedi';
 
-export type EntityType = 'institution' | 'account' | 'holding' | 'transaction' | 'user' | 'token';
+export type EntityType =
+  | 'institution'
+  | 'account'
+  | 'holding'
+  | 'transaction'
+  | 'user'
+  | 'token'
+  | 'schedule'
+  | 'schedule_step';
 export type OperationType = 'create' | 'update' | 'delete' | 'sync';
 
 export interface RealTimeEvent {

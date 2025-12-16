@@ -113,6 +113,20 @@
       "when": 1764049684707,
       "tag": "0015_fixed_outlaw_kid",
       "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "7",
+      "when": 1765847913452,
+      "tag": "0016_add_schedules_feature",
+      "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1765848000000,
+      "tag": "0017_seed_schedule_types",
+      "breakpoints": true
     }
   ]
 }

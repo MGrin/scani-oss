@@ -1,4 +1,14 @@
-import { CreditCard, FileText, Home, LogOut, Menu, Settings, TrendingUp, X } from 'lucide-react';
+import {
+  Calendar,
+  CreditCard,
+  FileText,
+  Home,
+  LogOut,
+  Menu,
+  Settings,
+  TrendingUp,
+  X,
+} from 'lucide-react';
 import React, { useEffect, useId, useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { AccountBreadcrumb, InstitutionBreadcrumb } from '@/components/features/Breadcrumb';
@@ -42,19 +52,18 @@ const navigation = [
   { name: 'Dashboard', href: '/', icon: Home },
   { name: 'Accounts', href: '/accounts', icon: CreditCard },
   { name: 'Holdings', href: '/holdings', icon: TrendingUp },
+  { name: 'Schedules', href: '/schedules', icon: Calendar },
   { name: 'Settings', href: '/settings', icon: Settings },
 ];
 
-const comingSoonNavigation = [
-  { name: 'Reports', href: '/reports', icon: FileText },
-  { name: 'Schedules', href: '/schedules', icon: Settings },
-];
+const comingSoonNavigation = [{ name: 'Reports', href: '/reports', icon: FileText }];
 
 // Helper function to determine which navigation item should be active
 function getActiveNavItem(pathname: string): string {
   if (pathname === '/') return '/';
   if (pathname.startsWith('/accounts')) return '/accounts';
   if (pathname.startsWith('/holdings')) return '/holdings';
+  if (pathname.startsWith('/schedules')) return '/schedules';
   if (pathname.startsWith('/settings')) return '/settings';
   return '';
 }
@@ -68,6 +77,7 @@ function useBreadcrumbs(pathname: string) {
   const routeMap: Record<string, string> = {
     accounts: 'Accounts',
     holdings: 'Holdings',
+    schedules: 'Schedules',
     settings: 'Settings',
   };
 

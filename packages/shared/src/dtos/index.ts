@@ -5,5 +5,6 @@ export * from './dashboard';
 export * from './enums';
 export * from './holding';
 export * from './institution';
+export * from './schedule';
 export * from './token';
 export * from './user';

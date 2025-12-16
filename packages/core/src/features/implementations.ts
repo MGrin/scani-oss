@@ -12,6 +12,8 @@ import {
   HoldingRepository,
   InstitutionRepository,
   InstitutionTypeRepository,
+  ScheduleStepTypeRepository,
+  ScheduleTypeRepository,
   TokenRepository,
 } from '../repositories';
 import {
@@ -475,5 +477,15 @@ export const TypeImplementations = {
   async getInstitutionTypes(_context: FeatureExecutionContext, _input: Record<string, never>) {
     const institutionTypeRepository = Container.get(InstitutionTypeRepository);
     return await institutionTypeRepository.findAll();
+  },
+
+  async getScheduleTypes(_context: FeatureExecutionContext, _input: Record<string, never>) {
+    const scheduleTypeRepository = Container.get(ScheduleTypeRepository);
+    return await scheduleTypeRepository.findAll();
+  },
+
+  async getScheduleStepTypes(_context: FeatureExecutionContext, _input: Record<string, never>) {
+    const scheduleStepTypeRepository = Container.get(ScheduleStepTypeRepository);
+    return await scheduleStepTypeRepository.findAll();
   },
 };

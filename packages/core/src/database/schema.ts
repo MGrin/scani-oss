@@ -51,6 +51,30 @@ export const tokenTypes = pgTable('token_types', {
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 });
 
+// Schedule types table - dynamic enum values
+export const scheduleTypes = pgTable('schedule_types', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  code: text('code').notNull().unique(), // 'income_allocation', 'subscription', 'payment', 'other'
+  name: text('name').notNull(), // 'Income Allocation', 'Subscription', 'Payment', 'Other'
+  description: text('description'),
+  displayOrder: real('display_order').notNull().default(0),
+  isActive: boolean('is_active').notNull().default(true),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
+// Schedule step types table - dynamic enum values
+export const scheduleStepTypes = pgTable('schedule_step_types', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  code: text('code').notNull().unique(), // 'inflow', 'outflow', 'transfer', 'conversion'
+  name: text('name').notNull(), // 'Inflow', 'Outflow', 'Transfer', 'Conversion'
+  description: text('description'),
+  displayOrder: real('display_order').notNull().default(0),
+  isActive: boolean('is_active').notNull().default(true),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
 // =============================================================================
 // MAIN TABLES
 // =============================================================================
@@ -332,6 +356,59 @@ export const institutionBlockchainMappings = pgTable(
   })
 );
 
+// Schedules table - User-specific patterns of monetary movements
+export const schedules = pgTable(
+  'schedules',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    name: text('name').notNull(),
+    description: text('description'),
+    repetitiveCronPattern: text('repetitive_cron_pattern').notNull(), // Cron format for schedule repetition
+    typeId: uuid('type_id')
+      .notNull()
+      .references(() => scheduleTypes.id, { onDelete: 'restrict' }), // Reference to schedule_types
+    isActive: boolean('is_active').notNull().default(true),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => ({
+    // Performance index for user queries
+    userIdIdx: index('idx_schedules_user_id').on(table.userId),
+    // Index for type-based filtering
+    typeIdIdx: index('idx_schedules_type_id').on(table.typeId),
+  })
+);
+
+// Schedule steps table - Steps within a schedule
+export const scheduleSteps = pgTable(
+  'schedule_steps',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    scheduleId: uuid('schedule_id')
+      .notNull()
+      .references(() => schedules.id, { onDelete: 'cascade' }),
+    typeId: uuid('type_id')
+      .notNull()
+      .references(() => scheduleStepTypes.id, { onDelete: 'restrict' }), // Reference to schedule_step_types
+    data: jsonb('data').notNull(), // Step-specific data (inflow, outflow, transfer, conversion)
+    stepOrder: real('step_order').notNull().default(0), // Order of execution within schedule
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => ({
+    // Performance index for schedule queries
+    scheduleIdIdx: index('idx_schedule_steps_schedule_id').on(table.scheduleId),
+    // Composite index for ordered step retrieval
+    scheduleOrderIdx: index('idx_schedule_steps_schedule_order').on(
+      table.scheduleId,
+      table.stepOrder
+    ),
+  })
+);
+
 // =============================================================================
 // MAIN TABLES
 // =============================================================================
@@ -349,11 +426,20 @@ export const tokenTypesRelations = relations(tokenTypes, ({ many }) => ({
   tokens: many(tokens),
 }));
 
+export const scheduleTypesRelations = relations(scheduleTypes, ({ many }) => ({
+  schedules: many(schedules),
+}));
+
+export const scheduleStepTypesRelations = relations(scheduleStepTypes, ({ many }) => ({
+  scheduleSteps: many(scheduleSteps),
+}));
+
 export const usersRelations = relations(users, ({ one, many }) => ({
   accounts: many(accounts),
   holdings: many(holdings),
   userWallets: many(userWallets),
   userIntegrationCredentials: many(userIntegrationCredentials),
+  schedules: many(schedules),
   baseCurrency: one(tokens, {
     fields: [users.baseCurrencyId],
     references: [tokens.id],
@@ -458,6 +544,29 @@ export const institutionBlockchainMappingsRelations = relations(
   })
 );
 
+export const schedulesRelations = relations(schedules, ({ one, many }) => ({
+  user: one(users, {
+    fields: [schedules.userId],
+    references: [users.id],
+  }),
+  type: one(scheduleTypes, {
+    fields: [schedules.typeId],
+    references: [scheduleTypes.id],
+  }),
+  steps: many(scheduleSteps),
+}));
+
+export const scheduleStepsRelations = relations(scheduleSteps, ({ one }) => ({
+  schedule: one(schedules, {
+    fields: [scheduleSteps.scheduleId],
+    references: [schedules.id],
+  }),
+  type: one(scheduleStepTypes, {
+    fields: [scheduleSteps.typeId],
+    references: [scheduleStepTypes.id],
+  }),
+}));
+
 // Export types for use in application
 export type User = typeof users.$inferSelect;
 export type NewUser = typeof users.$inferInsert;
@@ -494,3 +603,13 @@ export type NewUserIntegrationCredentials = typeof userIntegrationCredentials.$i
 
 export type InstitutionBlockchainMapping = typeof institutionBlockchainMappings.$inferSelect;
 export type NewInstitutionBlockchainMapping = typeof institutionBlockchainMappings.$inferInsert;
+
+export type ScheduleType = typeof scheduleTypes.$inferSelect;
+
+export type ScheduleStepType = typeof scheduleStepTypes.$inferSelect;
+
+export type Schedule = typeof schedules.$inferSelect;
+export type NewSchedule = typeof schedules.$inferInsert;
+
+export type ScheduleStep = typeof scheduleSteps.$inferSelect;
+export type NewScheduleStep = typeof scheduleSteps.$inferInsert;

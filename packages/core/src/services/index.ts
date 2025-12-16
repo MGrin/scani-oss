@@ -9,6 +9,7 @@ export { InstitutionService } from './InstitutionService';
 export { IntegrationCredentialsService } from './IntegrationCredentialsService';
 export { PortfolioValuationService } from './PortfolioValuationService';
 export { PricingService } from './PricingService';
+export { ScheduleService } from './ScheduleService';
 export { TokenService } from './TokenService';
 export { TokenValidationService } from './TokenValidationService';
 export { UserContextService } from './UserContextService';
