@@ -77,6 +77,9 @@ export function ScheduleDetail() {
   // Fetch schedule step types
   const { data: scheduleStepTypes } = trpc.scheduleStepTypes.getAll.useQuery();
 
+  // Get schedule type code for validation rules
+  const scheduleTypeCode = scheduleTypes?.find((t) => t.id === schedule?.typeId)?.code;
+
   // Fetch holdings for dropdowns
   const { data: holdings } = trpc.holdings.getWithDetails.useQuery();
 
@@ -358,6 +361,8 @@ export function ScheduleDetail() {
         holdings={holdings}
         onSubmit={handleCreateStep}
         isPending={createStep.isPending}
+        scheduleTypeCode={scheduleTypeCode}
+        existingSteps={steps || []}
       />
 
       {/* Delete Schedule Dialog */}
@@ -429,6 +434,8 @@ function CreateStepDialog({
   holdings,
   onSubmit,
   isPending,
+  scheduleTypeCode,
+  existingSteps,
 }: {
   isOpen: boolean;
   onClose: () => void;
@@ -449,11 +456,59 @@ function CreateStepDialog({
     | undefined;
   onSubmit: (e: React.FormEvent<HTMLFormElement>) => void;
   isPending: boolean;
+  scheduleTypeCode?: string;
+  existingSteps: Array<{ id: string; typeId: string; typeCode?: string }>;
 }) {
   const [selectedStepTypeId, setSelectedStepTypeId] = useState<string>('');
   const [amountType, setAmountType] = useState<'fixed' | 'percent'>('fixed');
 
   const selectedStepType = scheduleStepTypes?.find((t) => t.id === selectedStepTypeId);
+
+  // Check if step type is allowed based on schedule type
+  const isStepTypeAllowed = (stepTypeCode: string): boolean => {
+    // For subscription and payment schedules, inflow steps are not allowed
+    if (
+      (scheduleTypeCode === 'subscription' || scheduleTypeCode === 'payment') &&
+      stepTypeCode === 'inflow'
+    ) {
+      return false;
+    }
+
+    // For income_allocation schedules, only one inflow step is allowed
+    if (scheduleTypeCode === 'income_allocation' && stepTypeCode === 'inflow') {
+      const hasInflowStep = existingSteps.some((step) => step.typeCode === 'inflow');
+      if (hasInflowStep) {
+        return false;
+      }
+    }
+
+    return true;
+  };
+
+  // Get validation message for disabled step types
+  const getDisabledReason = (stepTypeCode: string): string | null => {
+    if (
+      (scheduleTypeCode === 'subscription' || scheduleTypeCode === 'payment') &&
+      stepTypeCode === 'inflow'
+    ) {
+      return `${scheduleTypeCode === 'subscription' ? 'Subscription' : 'Payment'} schedules cannot have inflow steps`;
+    }
+
+    if (scheduleTypeCode === 'income_allocation' && stepTypeCode === 'inflow') {
+      const hasInflowStep = existingSteps.some((step) => step.typeCode === 'inflow');
+      if (hasInflowStep) {
+        return 'Income allocation schedules can have only one inflow step';
+      }
+    }
+
+    return null;
+  };
+
+  // Check if we need to show a warning for income allocation without inflow
+  const showIncomeAllocationWarning =
+    scheduleTypeCode === 'income_allocation' &&
+    existingSteps.length === 0 &&
+    selectedStepType?.code !== 'inflow';
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
@@ -462,6 +517,29 @@ function CreateStepDialog({
           <DialogTitle>Add Schedule Step</DialogTitle>
           <DialogDescription>Define a new step in the schedule flow</DialogDescription>
         </DialogHeader>
+
+        {/* Schedule Type Rules Info */}
+        {scheduleTypeCode === 'income_allocation' && (
+          <div className="rounded-md bg-blue-50 p-3 text-sm text-blue-800 border border-blue-200">
+            <p className="font-semibold mb-1">ℹ️ Income Allocation Rules</p>
+            <ul className="list-disc list-inside space-y-1">
+              <li>Must start with exactly one inflow step</li>
+              <li>Can have multiple outflow, transfer, or conversion steps after the inflow</li>
+            </ul>
+          </div>
+        )}
+        {(scheduleTypeCode === 'subscription' || scheduleTypeCode === 'payment') && (
+          <div className="rounded-md bg-blue-50 p-3 text-sm text-blue-800 border border-blue-200">
+            <p className="font-semibold mb-1">
+              ℹ️ {scheduleTypeCode === 'subscription' ? 'Subscription' : 'Payment'} Rules
+            </p>
+            <ul className="list-disc list-inside space-y-1">
+              <li>Cannot have inflow steps (money only goes out)</li>
+              <li>Can have outflow, transfer, or conversion steps</li>
+            </ul>
+          </div>
+        )}
+
         <form onSubmit={onSubmit}>
           <div className="space-y-4">
             {/* Step Type Selector */}
@@ -477,19 +555,44 @@ function CreateStepDialog({
                   <SelectValue placeholder="Select step type" />
                 </SelectTrigger>
                 <SelectContent>
-                  {scheduleStepTypes?.map((type) => (
-                    <SelectItem key={type.id} value={type.id}>
-                      <div>
-                        <div className="font-medium">{type.name}</div>
-                        {type.description && (
-                          <div className="text-xs text-muted-foreground">{type.description}</div>
-                        )}
-                      </div>
-                    </SelectItem>
-                  ))}
+                  {scheduleStepTypes?.map((type) => {
+                    const isAllowed = isStepTypeAllowed(type.code);
+                    const disabledReason = getDisabledReason(type.code);
+
+                    return (
+                      <SelectItem key={type.id} value={type.id} disabled={!isAllowed}>
+                        <div>
+                          <div className="font-medium">{type.name}</div>
+                          {isAllowed && type.description && (
+                            <div className="text-xs text-muted-foreground">{type.description}</div>
+                          )}
+                          {!isAllowed && disabledReason && (
+                            <div className="text-xs text-red-500">{disabledReason}</div>
+                          )}
+                        </div>
+                      </SelectItem>
+                    );
+                  })}
                 </SelectContent>
               </Select>
+              {scheduleTypeCode === 'income_allocation' && existingSteps.length === 0 && (
+                <p className="text-xs text-amber-600 mt-1 flex items-start gap-1">
+                  <span className="font-bold">⚠️</span>
+                  <span>Income allocation schedules must start with an inflow step</span>
+                </p>
+              )}
             </div>
+
+            {/* Show warning if trying to add non-inflow step first in income allocation */}
+            {showIncomeAllocationWarning && (
+              <div className="rounded-md bg-amber-50 p-3 text-sm text-amber-800 border border-amber-200">
+                <p className="font-semibold mb-1">⚠️ Warning</p>
+                <p>
+                  Income allocation schedules must start with an inflow step. Please select "Inflow"
+                  as the first step type.
+                </p>
+              </div>
+            )}
 
             {/* Dynamic Fields Based on Step Type */}
             {selectedStepType?.code === 'inflow' && (

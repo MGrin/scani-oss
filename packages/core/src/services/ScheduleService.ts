@@ -240,6 +240,14 @@ export class ScheduleService extends BaseService {
       // Validate step data based on type
       await this.validateScheduleStepData(stepType?.code || '', data.data, userId, tx);
 
+      // Validate schedule type restrictions before creating the step
+      await this.validateScheduleTypeRestrictions(
+        schedule,
+        stepType?.code || '',
+        data.stepOrder || 0,
+        tx
+      );
+
       const step = await this.scheduleStepRepository.create(
         {
           scheduleId: data.scheduleId,
@@ -280,9 +288,11 @@ export class ScheduleService extends BaseService {
       this.assertExists(step, 'Schedule step not found');
 
       // Validate step type if being updated
+      let newStepTypeCode: string | undefined;
       if (data.typeId) {
         const stepType = await this.scheduleStepTypeRepository.findById(data.typeId, tx);
         this.assertExists(stepType, `Schedule step type with ID ${data.typeId} not found`);
+        newStepTypeCode = stepType?.code;
       }
 
       // Validate step data if being updated
@@ -291,6 +301,24 @@ export class ScheduleService extends BaseService {
           ? await this.scheduleStepTypeRepository.findById(data.typeId, tx)
           : await this.scheduleStepTypeRepository.findById(step.typeId, tx);
         await this.validateScheduleStepData(stepType?.code || '', data.data, userId, tx);
+      }
+
+      // Validate schedule type restrictions if step type or order is being changed
+      if (data.typeId || data.stepOrder !== undefined) {
+        // Get the effective step type code - either from the new typeId or fetch the current one
+        let effectiveStepTypeCode = newStepTypeCode;
+        if (!effectiveStepTypeCode) {
+          const currentStepType = await this.scheduleStepTypeRepository.findById(step.typeId, tx);
+          effectiveStepTypeCode = currentStepType?.code || '';
+        }
+        const effectiveStepOrder = data.stepOrder !== undefined ? data.stepOrder : step.stepOrder;
+        await this.validateScheduleTypeRestrictionsForUpdate(
+          schedule,
+          effectiveStepTypeCode,
+          effectiveStepOrder,
+          stepId,
+          tx
+        );
       }
 
       const updated = await this.scheduleStepRepository.update(stepId, data, tx);
@@ -430,5 +458,138 @@ export class ScheduleService extends BaseService {
       default:
         throw new Error(`Unknown schedule step type: ${stepTypeCode}`);
     }
+  }
+
+  /**
+   * Validate schedule type restrictions when creating a new step
+   * - Income allocation: can only start with inflow step (step_order 0 or lowest) and have only 1 inflow total
+   * - Subscription and payment: cannot have inflow steps
+   * - Other: no restrictions
+   */
+  private async validateScheduleTypeRestrictions(
+    schedule: Schedule,
+    stepTypeCode: string,
+    stepOrder: number,
+    tx?: DatabaseTransaction
+  ): Promise<void> {
+    // Get schedule type to check restrictions
+    const scheduleType = await this.scheduleTypeRepository.findById(schedule.typeId, tx);
+    if (!scheduleType) {
+      return; // If schedule type not found, skip validation
+    }
+
+    const scheduleTypeCode = scheduleType.code;
+
+    // Get existing steps for this schedule
+    const existingSteps = await this.scheduleStepRepository.findBySchedule(schedule.id, tx);
+
+    if (scheduleTypeCode === 'income_allocation') {
+      // Income allocation schedules must start with inflow and have only 1 inflow
+      if (stepTypeCode === 'inflow') {
+        // Check if there's already an inflow step
+        // Fetch step types for existing steps to check their codes
+        const stepTypeIds = existingSteps.map((step: ScheduleStep) => step.typeId);
+        const existingStepTypes = await Promise.all(
+          stepTypeIds.map((typeId) => this.scheduleStepTypeRepository.findById(typeId, tx))
+        );
+        const hasInflowStep = existingStepTypes.some((stepType) => stepType?.code === 'inflow');
+
+        if (hasInflowStep) {
+          throw new Error('Income allocation schedules can have only one inflow step');
+        }
+
+        // Check if this is the first step (lowest step_order)
+        if (existingSteps.length > 0) {
+          const lowestStepOrder = Math.min(...existingSteps.map((s: ScheduleStep) => s.stepOrder));
+          if (stepOrder > lowestStepOrder) {
+            throw new Error('Income allocation schedules must start with the inflow step');
+          }
+        }
+      } else {
+        // For non-inflow steps, verify there's already an inflow step if there are no steps yet
+        if (existingSteps.length === 0) {
+          throw new Error(
+            'Income allocation schedules must start with an inflow step before adding other steps'
+          );
+        }
+      }
+    } else if (scheduleTypeCode === 'subscription' || scheduleTypeCode === 'payment') {
+      // Subscription and payment schedules cannot have inflow steps
+      if (stepTypeCode === 'inflow') {
+        throw new Error(`${scheduleType.name} schedules cannot have inflow steps`);
+      }
+    }
+    // 'other' schedule type has no restrictions
+  }
+
+  /**
+   * Validate schedule type restrictions when updating an existing step
+   * Similar to validateScheduleTypeRestrictions but excludes the step being updated from existing steps
+   */
+  private async validateScheduleTypeRestrictionsForUpdate(
+    schedule: Schedule,
+    stepTypeCode: string,
+    stepOrder: number,
+    stepId: string,
+    tx?: DatabaseTransaction
+  ): Promise<void> {
+    // Get schedule type to check restrictions
+    const scheduleType = await this.scheduleTypeRepository.findById(schedule.typeId, tx);
+    if (!scheduleType) {
+      return; // If schedule type not found, skip validation
+    }
+
+    const scheduleTypeCode = scheduleType.code;
+
+    // Get existing steps for this schedule, excluding the one being updated
+    const allSteps = await this.scheduleStepRepository.findBySchedule(schedule.id, tx);
+    const existingSteps = allSteps.filter((step: ScheduleStep) => step.id !== stepId);
+
+    if (scheduleTypeCode === 'income_allocation') {
+      // Income allocation schedules must start with inflow and have only 1 inflow
+      if (stepTypeCode === 'inflow') {
+        // Check if there's already another inflow step
+        // Fetch step types for existing steps to check their codes
+        const stepTypeIds = existingSteps.map((step: ScheduleStep) => step.typeId);
+        const existingStepTypes = await Promise.all(
+          stepTypeIds.map((typeId) => this.scheduleStepTypeRepository.findById(typeId, tx))
+        );
+        const hasOtherInflowStep = existingStepTypes.some(
+          (stepType) => stepType?.code === 'inflow'
+        );
+
+        if (hasOtherInflowStep) {
+          throw new Error('Income allocation schedules can have only one inflow step');
+        }
+
+        // Check if this would be the first step (lowest step_order)
+        if (existingSteps.length > 0) {
+          const lowestStepOrder = Math.min(...existingSteps.map((s: ScheduleStep) => s.stepOrder));
+          if (stepOrder > lowestStepOrder) {
+            throw new Error('Income allocation schedules must start with the inflow step');
+          }
+        }
+      } else {
+        // For non-inflow steps, verify there's an inflow step
+        // Fetch step types for existing steps to check their codes
+        const stepTypeIds = existingSteps.map((step: ScheduleStep) => step.typeId);
+        const existingStepTypes = await Promise.all(
+          stepTypeIds.map((typeId) => this.scheduleStepTypeRepository.findById(typeId, tx))
+        );
+        const hasInflowStep = existingStepTypes.some((stepType) => stepType?.code === 'inflow');
+
+        if (!hasInflowStep && existingSteps.length >= 0) {
+          throw new Error(
+            'Income allocation schedules must have an inflow step. Cannot change the only inflow step to a different type.'
+          );
+        }
+      }
+    } else if (scheduleTypeCode === 'subscription' || scheduleTypeCode === 'payment') {
+      // Subscription and payment schedules cannot have inflow steps
+      if (stepTypeCode === 'inflow') {
+        throw new Error(`${scheduleType.name} schedules cannot have inflow steps`);
+      }
+    }
+    // 'other' schedule type has no restrictions
   }
 }
