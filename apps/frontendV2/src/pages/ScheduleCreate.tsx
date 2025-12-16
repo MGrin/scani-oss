@@ -22,6 +22,10 @@ export function ScheduleCreate() {
   const navigate = useNavigate();
   const [cronPattern, setCronPattern] = useState('0 0 1 * *'); // Default: Monthly on the 1st
   const [interval, setInterval] = useState<string | null>(null);
+  const [intervalStartDate, setIntervalStartDate] = useState<string>(() => {
+    const today = new Date().toISOString().split('T')[0];
+    return today || new Date().toISOString().substring(0, 10);
+  }); // Default to today in YYYY-MM-DD format
   const { toast } = useToast();
   const utils = trpc.useUtils();
 
@@ -51,7 +55,7 @@ export function ScheduleCreate() {
       description: formData.get('description') as string,
       repetitiveCronPattern: interval ? null : cronPattern,
       interval: interval,
-      intervalStartDate: interval ? new Date() : null,
+      intervalStartDate: interval ? new Date(intervalStartDate) : null,
       typeId: formData.get('typeId') as string,
     });
   };
@@ -118,6 +122,23 @@ export function ScheduleCreate() {
                   className="mt-2"
                 />
               </div>
+              {interval && (
+                <div>
+                  <Label htmlFor="intervalStartDate">Start Date</Label>
+                  <Input
+                    id="intervalStartDate"
+                    name="intervalStartDate"
+                    type="date"
+                    value={intervalStartDate}
+                    onChange={(e) => setIntervalStartDate(e.target.value)}
+                    required
+                    className="mt-2"
+                  />
+                  <p className="text-xs text-muted-foreground mt-1">
+                    The date when this schedule should start executing
+                  </p>
+                </div>
+              )}
             </div>
             <div className="flex justify-end gap-3">
               <Button type="button" variant="outline" onClick={() => navigate('/schedules')}>

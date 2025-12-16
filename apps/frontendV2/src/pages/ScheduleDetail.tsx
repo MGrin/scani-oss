@@ -1,6 +1,7 @@
 import {
   ArrowDown,
   Calendar,
+  CheckCircle,
   ChevronRight,
   Clock,
   Edit,
@@ -235,17 +236,56 @@ export function ScheduleDetail() {
                 <p className="text-sm text-muted-foreground">{typeName}</p>
               </div>
             </div>
-            <div className="flex items-start gap-3">
-              <Clock className="h-5 w-5 text-muted-foreground mt-0.5" />
-              <div>
-                <p className="text-sm font-medium">Cron Pattern</p>
-                <p className="text-sm text-muted-foreground font-mono">
-                  {schedule.repetitiveCronPattern}
-                </p>
+            {schedule.repetitiveCronPattern ? (
+              <div className="flex items-start gap-3">
+                <Clock className="h-5 w-5 text-muted-foreground mt-0.5" />
+                <div>
+                  <p className="text-sm font-medium">Cron Pattern</p>
+                  <p className="text-sm text-muted-foreground font-mono">
+                    {schedule.repetitiveCronPattern}
+                  </p>
+                </div>
               </div>
-            </div>
+            ) : schedule.interval ? (
+              <>
+                <div className="flex items-start gap-3">
+                  <Repeat className="h-5 w-5 text-muted-foreground mt-0.5" />
+                  <div>
+                    <p className="text-sm font-medium">Interval</p>
+                    <p className="text-sm text-muted-foreground">
+                      {(() => {
+                        const match = schedule.interval.match(/^(\d+)(d|w|M|y)$/);
+                        if (!match || !match[1] || !match[2]) return schedule.interval;
+                        const value = match[1];
+                        const unit = match[2];
+                        const unitNames: Record<string, string> = {
+                          d: 'day',
+                          w: 'week',
+                          M: 'month',
+                          y: 'year',
+                        };
+                        const unitName = unitNames[unit] || unit;
+                        const plural = Number.parseInt(value, 10) !== 1 ? 's' : '';
+                        return `Every ${value} ${unitName}${plural}`;
+                      })()}
+                    </p>
+                  </div>
+                </div>
+                <div className="flex items-start gap-3">
+                  <Calendar className="h-5 w-5 text-muted-foreground mt-0.5" />
+                  <div>
+                    <p className="text-sm font-medium">Start Date</p>
+                    <p className="text-sm text-muted-foreground">
+                      {schedule.intervalStartDate
+                        ? new Date(schedule.intervalStartDate).toLocaleDateString()
+                        : 'Not set'}
+                    </p>
+                  </div>
+                </div>
+              </>
+            ) : null}
             <div className="flex items-start gap-3">
-              <Repeat className="h-5 w-5 text-muted-foreground mt-0.5" />
+              <CheckCircle className="h-5 w-5 text-muted-foreground mt-0.5" />
               <div>
                 <p className="text-sm font-medium">Status</p>
                 <p className="text-sm text-muted-foreground">
