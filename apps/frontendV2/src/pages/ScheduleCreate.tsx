@@ -21,6 +21,7 @@ import { trpc } from '@/lib/trpc';
 export function ScheduleCreate() {
   const navigate = useNavigate();
   const [cronPattern, setCronPattern] = useState('0 0 1 * *'); // Default: Monthly on the 1st
+  const [interval, setInterval] = useState<string | null>(null);
   const { toast } = useToast();
   const utils = trpc.useUtils();
 
@@ -48,7 +49,9 @@ export function ScheduleCreate() {
     createSchedule.mutate({
       name: formData.get('name') as string,
       description: formData.get('description') as string,
-      repetitiveCronPattern: cronPattern,
+      repetitiveCronPattern: interval ? null : cronPattern,
+      interval: interval,
+      intervalStartDate: interval ? new Date() : null,
       typeId: formData.get('typeId') as string,
     });
   };
@@ -108,7 +111,12 @@ export function ScheduleCreate() {
               </div>
               <div>
                 <Label htmlFor="cronPattern">Schedule Frequency</Label>
-                <CronInput value={cronPattern} onChange={setCronPattern} className="mt-2" />
+                <CronInput
+                  value={cronPattern}
+                  onChange={setCronPattern}
+                  onIntervalChange={setInterval}
+                  className="mt-2"
+                />
               </div>
             </div>
             <div className="flex justify-end gap-3">

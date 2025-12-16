@@ -38,13 +38,17 @@ import {
 import { Skeleton } from '@/components/ui/skeleton';
 import { showError, useToast } from '@/hooks/use-toast';
 import { trpc } from '@/lib/trpc';
+import { formatInterval } from '@/lib/utils';
 
 type Schedule = {
   id: string;
   userId: string;
   name: string;
   description: string | null;
-  repetitiveCronPattern: string;
+  repetitiveCronPattern: string | null;
+  interval: string | null;
+  intervalStartDate: string | null;
+  lastExecuted: string | null;
   typeId: string;
   isActive: boolean;
   createdAt: string;
@@ -283,6 +287,10 @@ function ScheduleCard({
 }) {
   const typeName = scheduleTypes?.find((t) => t.id === schedule.typeId)?.name || 'Unknown';
 
+  const schedulePattern = schedule.interval
+    ? formatInterval(schedule.interval)
+    : schedule.repetitiveCronPattern;
+
   return (
     <Card className="hover:shadow-md transition-shadow cursor-pointer" onClick={onView}>
       <CardHeader>
@@ -342,7 +350,7 @@ function ScheduleCard({
           </div>
           <div className="flex items-center gap-2">
             <Clock className="h-4 w-4 text-muted-foreground" />
-            <span className="text-muted-foreground">{schedule.repetitiveCronPattern}</span>
+            <span className="text-muted-foreground">{schedulePattern}</span>
           </div>
         </div>
       </CardContent>

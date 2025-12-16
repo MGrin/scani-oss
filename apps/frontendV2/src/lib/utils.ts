@@ -52,3 +52,25 @@ export function createCurrencyToken(currencySymbol: string): Token {
 export function normalizeSymbol(symbol: string): string {
   return symbol.trim().toUpperCase();
 }
+
+/**
+ * Format an interval string (e.g., "2w", "3M") into a human-readable description
+ */
+export function formatInterval(interval: string): string {
+  const match = interval.match(/^(\d+)(d|w|M|y)$/);
+  if (!match || !match[1] || !match[2]) return interval;
+
+  const value = match[1];
+  const unit = match[2];
+  const unitNames: Record<string, string> = {
+    d: 'day',
+    w: 'week',
+    M: 'month',
+    y: 'year',
+  };
+
+  const unitName = unitNames[unit] || unit;
+  const plural = value !== '1' ? 's' : '';
+
+  return `Every ${value} ${unitName}${plural}`;
+}

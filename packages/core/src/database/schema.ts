@@ -366,7 +366,10 @@ export const schedules = pgTable(
       .references(() => users.id, { onDelete: 'cascade' }),
     name: text('name').notNull(),
     description: text('description'),
-    repetitiveCronPattern: text('repetitive_cron_pattern').notNull(), // Cron format for schedule repetition
+    repetitiveCronPattern: text('repetitive_cron_pattern'), // Cron format for schedule repetition (optional when interval is set)
+    interval: text('interval'), // Extended interval format: '2w' = every 2 weeks, '3M' = every 3 months, etc.
+    intervalStartDate: timestamp('interval_start_date', { withTimezone: true }), // When to start counting intervals from
+    lastExecuted: timestamp('last_executed', { withTimezone: true }), // Last time the schedule was executed
     typeId: uuid('type_id')
       .notNull()
       .references(() => scheduleTypes.id, { onDelete: 'restrict' }), // Reference to schedule_types

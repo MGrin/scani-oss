@@ -109,9 +109,27 @@ export class ScheduleService extends BaseService {
     try {
       this.logInfo('Creating schedule', { name: data.name, userId });
 
-      this.validateRequiredFields(data, ['name', 'repetitiveCronPattern', 'typeId']);
+      this.validateRequiredFields(data, ['name', 'typeId']);
       this.validateNonEmptyString(data.name, 'name');
-      this.validateNonEmptyString(data.repetitiveCronPattern, 'repetitiveCronPattern');
+
+      // Validate that either cron pattern or interval is provided
+      const hasCron =
+        data.repetitiveCronPattern !== undefined && data.repetitiveCronPattern !== null;
+      const hasInterval = data.interval !== undefined && data.interval !== null;
+
+      if (!hasCron && !hasInterval) {
+        throw new Error('Either repetitiveCronPattern or interval must be provided');
+      }
+      if (hasCron && hasInterval) {
+        throw new Error('Cannot provide both repetitiveCronPattern and interval');
+      }
+
+      if (hasCron) {
+        this.validateNonEmptyString(data.repetitiveCronPattern as string, 'repetitiveCronPattern');
+      }
+      if (hasInterval) {
+        this.validateNonEmptyString(data.interval as string, 'interval');
+      }
 
       // Validate schedule type exists
       const scheduleType = await this.scheduleTypeRepository.findById(data.typeId, tx);
@@ -121,7 +139,10 @@ export class ScheduleService extends BaseService {
         {
           name: data.name,
           description: data.description || null,
-          repetitiveCronPattern: data.repetitiveCronPattern,
+          repetitiveCronPattern: data.repetitiveCronPattern || null,
+          interval: data.interval || null,
+          intervalStartDate: data.intervalStartDate || (hasInterval ? new Date() : null),
+          lastExecuted: null,
           typeId: data.typeId,
           userId,
           isActive: true,

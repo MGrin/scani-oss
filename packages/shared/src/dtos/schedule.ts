@@ -6,7 +6,10 @@ export type Schedule = {
   userId: string;
   name: string;
   description: string | null;
-  repetitiveCronPattern: string;
+  repetitiveCronPattern: string | null; // Optional when interval is set
+  interval: string | null; // Extended interval format: '2w' = every 2 weeks, '3M' = every 3 months
+  intervalStartDate: Date | null; // When to start counting intervals from
+  lastExecuted: Date | null; // Last time the schedule was executed
   typeId: string;
   isActive: boolean;
   createdAt: Date;
@@ -115,19 +118,43 @@ const ScheduleStepConversionDataSchema = z
   );
 
 // Create schedule DTO
-export const CreateScheduleDto = z.object({
-  name: z.string().min(1).max(200),
-  description: z.string().max(1000).optional().nullable(),
-  repetitiveCronPattern: z
-    .string()
-    .min(1)
-    .max(100)
-    .regex(
-      /^(\*|([0-9]|1[0-9]|2[0-9]|3[0-9]|4[0-9]|5[0-9])|\*\/([0-9]|1[0-9]|2[0-9]|3[0-9]|4[0-9]|5[0-9])) (\*|([0-9]|1[0-9]|2[0-3])|\*\/([0-9]|1[0-9]|2[0-3])) (\*|([1-9]|1[0-9]|2[0-9]|3[0-1])|\*\/([1-9]|1[0-9]|2[0-9]|3[0-1])) (\*|([1-9]|1[0-2])|\*\/([1-9]|1[0-2])) (\*|([0-6])|\*\/([0-6]))$/,
-      'Invalid cron pattern format'
-    ),
-  typeId: z.string().uuid(),
-});
+export const CreateScheduleDto = z
+  .object({
+    name: z.string().min(1).max(200),
+    description: z.string().max(1000).optional().nullable(),
+    repetitiveCronPattern: z
+      .string()
+      .min(1)
+      .max(100)
+      .regex(
+        /^(\*|([0-9]|1[0-9]|2[0-9]|3[0-9]|4[0-9]|5[0-9])|\*\/([0-9]|1[0-9]|2[0-9]|3[0-9]|4[0-9]|5[0-9])) (\*|([0-9]|1[0-9]|2[0-3])|\*\/([0-9]|1[0-9]|2[0-3])) (\*|([1-9]|1[0-9]|2[0-9]|3[0-1])|\*\/([1-9]|1[0-9]|2[0-9]|3[0-1])) (\*|([1-9]|1[0-2])|\*\/([1-9]|1[0-2])) (\*|([0-6])|\*\/([0-6]))$/,
+        'Invalid cron pattern format'
+      )
+      .optional()
+      .nullable(),
+    interval: z
+      .string()
+      .regex(
+        /^(\d+)(d|w|M|y)$/,
+        'Invalid interval format. Use format like: 2w (2 weeks), 3M (3 months), 7d (7 days), 1y (1 year)'
+      )
+      .optional()
+      .nullable(),
+    intervalStartDate: z.coerce.date().optional().nullable(),
+    typeId: z.string().uuid(),
+  })
+  .refine(
+    (data) => {
+      // Either cron pattern or interval must be provided, but not both
+      const hasCron =
+        data.repetitiveCronPattern !== undefined && data.repetitiveCronPattern !== null;
+      const hasInterval = data.interval !== undefined && data.interval !== null;
+      return (hasCron && !hasInterval) || (!hasCron && hasInterval);
+    },
+    {
+      message: 'Exactly one of repetitiveCronPattern or interval must be provided',
+    }
+  );
 
 export type CreateScheduleInput = z.infer<typeof CreateScheduleDto>;
 
@@ -143,7 +170,17 @@ export const UpdateScheduleDto = z.object({
       /^(\*|([0-9]|1[0-9]|2[0-9]|3[0-9]|4[0-9]|5[0-9])|\*\/([0-9]|1[0-9]|2[0-9]|3[0-9]|4[0-9]|5[0-9])) (\*|([0-9]|1[0-9]|2[0-3])|\*\/([0-9]|1[0-9]|2[0-3])) (\*|([1-9]|1[0-9]|2[0-9]|3[0-1])|\*\/([1-9]|1[0-9]|2[0-9]|3[0-1])) (\*|([1-9]|1[0-2])|\*\/([1-9]|1[0-2])) (\*|([0-6])|\*\/([0-6]))$/,
       'Invalid cron pattern format'
     )
-    .optional(),
+    .optional()
+    .nullable(),
+  interval: z
+    .string()
+    .regex(
+      /^(\d+)(d|w|M|y)$/,
+      'Invalid interval format. Use format like: 2w (2 weeks), 3M (3 months), 7d (7 days), 1y (1 year)'
+    )
+    .optional()
+    .nullable(),
+  intervalStartDate: z.coerce.date().optional().nullable(),
   typeId: z.string().uuid().optional(),
   isActive: z.boolean().optional(),
 });
