@@ -1,11 +1,11 @@
 /**
  * SyncExchangeBalancesUseCase
  *
- * Synchronizes exchange account balances (Binance, etc.) for all users.
+ * Synchronizes exchange account balances (Binance, Kraken, etc.) for all users.
  * This use case is designed to be called by scheduled cron jobs.
  *
  * Responsibilities:
- * - Find all accounts with exchange credentials (Binance, etc.)
+ * - Find all accounts with exchange credentials (Binance, Kraken, etc.)
  * - Fetch current balances from exchanges for each account
  * - Update existing holdings with new balances (preserving hidden state)
  * - Create new holdings when account owns new tokens
@@ -87,7 +87,7 @@ export class SyncExchangeBalancesUseCase {
 
       // Query database for exchange institutions (Binance, Coinbase, Kraken, etc.)
       // This gets the actual UUID institution_id from the database
-      const exchangeNames = ['Binance']; // Can be expanded to support more exchanges
+      const exchangeNames = ['Binance', 'Kraken']; // Can be expanded to support more exchanges
 
       logger.debug({ exchangeNames }, 'Looking for exchange institutions');
 

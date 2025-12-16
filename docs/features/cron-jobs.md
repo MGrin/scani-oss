@@ -32,7 +32,34 @@ The backend uses [@elysiajs/cron](https://elysiajs.com/plugins/cron.html) to sch
 - Handles rate limiting gracefully
 - Falls back to last known good price if providers fail
 
-### 2. Wallet Balances Sync Cron Job
+### 2. Exchange Balances Sync Cron Job
+
+**Purpose**: Synchronizes exchange account balances for all accounts imported via exchange integrations (Binance, Kraken, etc.).
+
+**Schedule**: Every 15 minutes  
+**Cron Pattern**: `*/15 * * * *`
+
+**Implementation**:
+- Use Case: `SyncExchangeBalancesUseCase`
+- Cron Job: `apps/backend/src/infrastructure/cron/ExchangeBalancesCronJob.ts`
+
+**How it works**:
+1. Finds all accounts with exchange credentials (Binance, Kraken)
+2. For each exchange account, fetches current balances from the exchange API
+3. Updates existing holdings with new balances (preserving hidden state)
+4. Creates new holdings when account owns new tokens
+5. Updates holdings when balance goes to 0 (keeping them for future syncs)
+6. Updates account metadata with last sync timestamp
+7. Respects rate limits of exchange APIs
+
+**Key Features**:
+- Supports multiple exchanges (Binance, Kraken)
+- Automatically discovers new tokens in exchange accounts
+- Preserves hidden holdings state while updating balances
+- Respects exchange API rate limits
+- Non-blocking operation - individual account failures don't stop the entire sync
+
+### 3. Wallet Balances Sync Cron Job
 
 **Purpose**: Synchronizes blockchain wallet balances for all accounts imported via blockchain services.
 
@@ -63,9 +90,10 @@ The backend uses [@elysiajs/cron](https://elysiajs.com/plugins/cron.html) to sch
 
 ### Use Cases Layer
 
-Both cron jobs delegate to use cases in the application layer:
-- `apps/backend/src/application/use-cases/UpdateTokenPricesUseCase.ts`
-- `apps/backend/src/application/use-cases/SyncWalletBalancesUseCase.ts`
+All cron jobs delegate to use cases in the application layer:
+- `@scani/core/use-cases/UpdateTokenPricesUseCase.ts` - Price updates
+- `@scani/core/use-cases/SyncExchangeBalancesUseCase.ts` - Exchange balance sync
+- `@scani/core/use-cases/SyncWalletBalancesUseCase.ts` - Wallet balance sync
 
 This follows the clean architecture pattern, keeping business logic separate from infrastructure concerns.
 
@@ -73,9 +101,11 @@ This follows the clean architecture pattern, keeping business logic separate fro
 
 The use cases leverage existing services:
 - `PricingService` - Fetches prices from external APIs
+- `IntegrationManager` - Manages exchange integrations (Binance, Kraken)
 - `BlockchainServiceManager` - Fetches wallet balances from blockchain APIs
 - `TokenRepository` - Database access for tokens
 - `HoldingRepository` - Database access for holdings
+- `IntegrationCredentialsService` - Manages encrypted credentials for exchanges
 
 ## Monitoring and Logging
 
@@ -88,6 +118,14 @@ All cron jobs include comprehensive logging:
 - Execution duration
 - Individual token errors
 
+**Exchange Balances Cron Job logs**:
+- Start/end of execution
+- Number of accounts found/synced/failed
+- Holdings updated/created/removed
+- Execution duration
+- Individual account errors
+- Institution-specific errors
+
 **Wallet Balances Cron Job logs**:
 - Start/end of execution
 - Number of accounts processed
@@ -95,8 +133,9 @@ All cron jobs include comprehensive logging:
 - Execution duration
 - Individual wallet errors
 
-**Log Component**: Both jobs use component loggers with identifiers:
+**Log Component**: All jobs use component loggers with identifiers:
 - `cron:pricing` - Pricing cron job
+- `cron:exchange-balances` - Exchange balances cron job
 - `cron:wallet-balances` - Wallet balances cron job
 
 ## Configuration
@@ -105,20 +144,31 @@ Cron jobs are configured in `apps/backend/src/index.ts`:
 
 ```typescript
 import { cron } from '@elysiajs/cron';
-import { executePricingCronJob, executeWalletBalancesCronJob } from './infrastructure/cron';
+import {
+  executePricingCronJob,
+  executeExchangeBalancesCronJob,
+  executeWalletBalancesCronJob,
+} from './infrastructure/cron';
 
 const app = new Elysia()
   .use(
     cron({
       name: 'pricing-cron',
-      pattern: '0,30 * * * *',
+      pattern: '0,30 * * * *', // Every 30 minutes at :00 and :30
       run: executePricingCronJob,
     })
   )
   .use(
     cron({
+      name: 'exchange-balances-cron',
+      pattern: '*/15 * * * *', // Every 15 minutes
+      run: executeExchangeBalancesCronJob,
+    })
+  )
+  .use(
+    cron({
       name: 'wallet-balances-cron',
-      pattern: '*/15 * * * *',
+      pattern: '*/15 * * * *', // Every 15 minutes
       run: executeWalletBalancesCronJob,
     })
   )
@@ -126,12 +176,13 @@ const app = new Elysia()
 
 ## Error Handling
 
-Both cron jobs implement robust error handling:
+All cron jobs implement robust error handling:
 
-1. **Non-blocking errors**: Individual token/wallet failures don't stop the entire job
+1. **Non-blocking errors**: Individual token/wallet/account failures don't stop the entire job
 2. **Error logging**: All errors are logged with context for debugging
 3. **Graceful degradation**: Jobs continue on next schedule even if current execution fails
 4. **No crashes**: Exceptions are caught and logged, preventing server crashes
+5. **Rate limit handling**: Exchange and blockchain API rate limits are respected to avoid temporary bans
 
 ## Testing
 
@@ -145,9 +196,15 @@ To test cron jobs manually:
 
 2. Monitor logs for cron job execution:
    - Pricing cron runs at :00 and :30 minutes
+   - Exchange balances cron runs every 15 minutes
    - Wallet balances cron runs every 15 minutes
 
 3. Check logs for execution results and any errors
+
+4. Test exchange sync by:
+   - Adding Binance or Kraken API credentials through the frontend
+   - Wait for the next 15-minute cycle or restart the backend
+   - Check logs for `cron:exchange-balances` output
 
 ## Future Improvements
 

@@ -2,7 +2,7 @@
  * ExchangeBalancesCronJob
  *
  * Cron job that runs every 15 minutes to sync exchange balances.
- * Updates balances for accounts imported using exchange integrations (Binance, etc.).
+ * Updates balances for accounts imported using exchange integrations (Binance, Kraken, etc.).
  *
  * Responsibilities:
  * - Fetch current balances from exchanges for all exchange accounts
