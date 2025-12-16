@@ -12,6 +12,7 @@ import { HoldingDetail } from '@/pages/HoldingDetail';
 import { Holdings } from '@/pages/Holdings';
 import { InstitutionDetail } from '@/pages/InstitutionDetail';
 import { Institutions } from '@/pages/Institutions';
+import { ScheduleCreate } from '@/pages/ScheduleCreate';
 import { ScheduleDetail } from '@/pages/ScheduleDetail';
 import { Schedules } from '@/pages/Schedules';
 import { Settings } from '@/pages/Settings';
@@ -99,6 +100,16 @@ function App() {
               <ProtectedRoute>
                 <Layout>
                   <Schedules />
+                </Layout>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/schedules/new"
+            element={
+              <ProtectedRoute>
+                <Layout>
+                  <ScheduleCreate />
                 </Layout>
               </ProtectedRoute>
             }

@@ -12,7 +12,6 @@ import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { CronInput } from '@/components/ui/cron-input';
 import {
   Dialog,
   DialogContent,
@@ -28,7 +27,6 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
 import { PageHeader } from '@/components/ui/page-header';
 import {
   Select,
@@ -38,7 +36,6 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Textarea } from '@/components/ui/textarea';
 import { showError, useToast } from '@/hooks/use-toast';
 import { trpc } from '@/lib/trpc';
 
@@ -57,13 +54,11 @@ type Schedule = {
 export function Schedules() {
   const navigate = useNavigate();
   const [_selectedSchedule, setSelectedSchedule] = useState<Schedule | null>(null);
-  const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
   const [_isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [scheduleToDelete, setScheduleToDelete] = useState<Schedule | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedType, setSelectedType] = useState<string>('all');
-  const [cronPattern, setCronPattern] = useState('0 0 1 * *'); // Default: Monthly on the 1st
 
   const { toast } = useToast();
   const utils = trpc.useUtils();
@@ -73,20 +68,6 @@ export function Schedules() {
 
   // Fetch schedule types
   const { data: scheduleTypes } = trpc.scheduleTypes.getAll.useQuery();
-
-  // Create schedule mutation
-  const createSchedule = trpc.schedules.create.useMutation({
-    onSuccess: () => {
-      utils.schedules.getAll.invalidate();
-      setIsCreateDialogOpen(false);
-      setCronPattern('0 0 1 * *'); // Reset to default
-      toast({
-        title: 'Schedule created',
-        description: 'Your schedule has been created successfully.',
-      });
-    },
-    onError: (error) => showError(error, 'Creating schedule'),
-  });
 
   // Update schedule mutation (TODO: implement edit dialog)
   // const updateSchedule = trpc.schedules.update.useMutation({
@@ -147,18 +128,6 @@ export function Schedules() {
   //   return pattern;
   // };
 
-  const handleCreateSchedule = (e: React.FormEvent<HTMLFormElement>) => {
-    e.preventDefault();
-    const formData = new FormData(e.currentTarget);
-
-    createSchedule.mutate({
-      name: formData.get('name') as string,
-      description: formData.get('description') as string,
-      repetitiveCronPattern: cronPattern,
-      typeId: formData.get('typeId') as string,
-    });
-  };
-
   const handleDeleteSchedule = () => {
     if (scheduleToDelete) {
       deleteSchedule.mutate({ id: scheduleToDelete.id });
@@ -187,7 +156,7 @@ export function Schedules() {
         subtitle="Manage your recurring monetary movement patterns"
         primaryAction={{
           label: 'Create Schedule',
-          onClick: () => setIsCreateDialogOpen(true),
+          onClick: () => navigate('/schedules/new'),
           icon: <Plus className="h-4 w-4" />,
         }}
       />
@@ -234,7 +203,7 @@ export function Schedules() {
                 : 'Create your first recurring schedule to get started'}
             </p>
             {!searchQuery && selectedType === 'all' && (
-              <Button onClick={() => setIsCreateDialogOpen(true)}>
+              <Button onClick={() => navigate('/schedules/new')}>
                 <Plus className="mr-2 h-4 w-4" />
                 Create Schedule
               </Button>
@@ -261,68 +230,6 @@ export function Schedules() {
           ))}
         </div>
       )}
-
-      {/* Create Schedule Dialog */}
-      <Dialog open={isCreateDialogOpen} onOpenChange={setIsCreateDialogOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Create Schedule</DialogTitle>
-            <DialogDescription>Create a new recurring monetary movement pattern</DialogDescription>
-          </DialogHeader>
-          <form onSubmit={handleCreateSchedule}>
-            <div className="space-y-4">
-              <div>
-                <Label htmlFor="name">Name</Label>
-                <Input
-                  id="name"
-                  name="name"
-                  required
-                  placeholder="e.g., Monthly Paycheck Allocation"
-                />
-              </div>
-              <div>
-                <Label htmlFor="description">Description</Label>
-                <Textarea
-                  id="description"
-                  name="description"
-                  placeholder="Optional description"
-                  rows={3}
-                />
-              </div>
-              <div>
-                <Label htmlFor="typeId">Type</Label>
-                <Select name="typeId" required>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select type" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {scheduleTypes?.map((type) => (
-                      <SelectItem key={type.id} value={type.id}>
-                        {type.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div>
-                <Label htmlFor="cronPattern">Schedule Frequency</Label>
-                <CronInput value={cronPattern} onChange={setCronPattern} className="mt-2" />
-                <p className="text-xs text-muted-foreground mt-2">
-                  Selected pattern: <code className="font-mono">{cronPattern}</code>
-                </p>
-              </div>
-            </div>
-            <DialogFooter className="mt-6">
-              <Button type="button" variant="outline" onClick={() => setIsCreateDialogOpen(false)}>
-                Cancel
-              </Button>
-              <Button type="submit" disabled={createSchedule.isPending}>
-                {createSchedule.isPending ? 'Creating...' : 'Create'}
-              </Button>
-            </DialogFooter>
-          </form>
-        </DialogContent>
-      </Dialog>
 
       {/* Delete Confirmation Dialog */}
       <Dialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
