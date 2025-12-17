@@ -53,6 +53,14 @@ export function MethodSelectionStep({
       iconType: 'favicon' as const,
       disabled: false,
     },
+    {
+      id: 'plaid' as const,
+      title: 'Connect Bank Account',
+      description: 'Securely connect your bank account via Plaid',
+      icon: '🏦',
+      iconType: 'emoji' as const,
+      disabled: false,
+    },
   ];
 
   return (

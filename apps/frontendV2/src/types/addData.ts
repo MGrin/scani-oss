@@ -1,8 +1,8 @@
-export type Step = 'method' | 'binanceAuth' | 'krakenAuth' | 'account' | 'data';
+export type Step = 'method' | 'binanceAuth' | 'krakenAuth' | 'plaidLink' | 'account' | 'data';
 
 export type CompleteImportData = {
   // Method selection data
-  method?: 'manual' | 'screenshots' | 'wallet' | 'binance' | 'kraken';
+  method?: 'manual' | 'screenshots' | 'wallet' | 'binance' | 'kraken' | 'plaid';
 
   // Account selection data
   accountSelection?: {

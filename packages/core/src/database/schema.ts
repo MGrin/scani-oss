@@ -356,6 +356,110 @@ export const institutionBlockchainMappings = pgTable(
   })
 );
 
+// Institution Plaid mappings table - Maps institutions to Plaid institution IDs
+export const institutionPlaidMappings = pgTable(
+  'institution_plaid_mappings',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    institutionId: uuid('institution_id')
+      .notNull()
+      .references(() => institutions.id, { onDelete: 'cascade' })
+      .unique(), // Each institution can only map to one Plaid institution
+    plaidInstitutionId: text('plaid_institution_id').notNull().unique(), // Plaid's institution ID (e.g., 'ins_3')
+    isActive: boolean('is_active').notNull().default(true),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => ({
+    // Index for fast lookups by institution ID
+    institutionIdIdx: index('idx_institution_plaid_mappings_institution_id').on(
+      table.institutionId
+    ),
+    // Index for Plaid institution ID lookups
+    plaidInstitutionIdIdx: index('idx_institution_plaid_mappings_plaid_institution_id').on(
+      table.plaidInstitutionId
+    ),
+  })
+);
+
+// Plaid items table - Stores Plaid Item (connection) data per user
+export const plaidItems = pgTable(
+  'plaid_items',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    institutionId: uuid('institution_id')
+      .notNull()
+      .references(() => institutions.id, { onDelete: 'cascade' }),
+
+    // Plaid-specific fields
+    plaidItemId: text('plaid_item_id').notNull().unique(), // Plaid's item ID
+    plaidAccessToken: text('plaid_access_token').notNull(), // Encrypted access token
+    plaidInstitutionId: text('plaid_institution_id').notNull(), // Plaid's institution ID
+
+    // Status tracking
+    isActive: boolean('is_active').notNull().default(true),
+    consentExpirationTime: timestamp('consent_expiration_time', { withTimezone: true }),
+    error: jsonb('error'), // Store Plaid error if any
+
+    // Sync tracking
+    lastSuccessfulSync: timestamp('last_successful_sync', { withTimezone: true }),
+    lastBalanceSync: timestamp('last_balance_sync', { withTimezone: true }),
+
+    // Timestamps
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => ({
+    // Unique constraint for one item per user per institution
+    uniqueUserInstitution: unique().on(table.userId, table.institutionId),
+    // Index for fast lookups by user ID
+    userIdIdx: index('idx_plaid_items_user_id').on(table.userId),
+    // Index for institution lookups
+    institutionIdIdx: index('idx_plaid_items_institution_id').on(table.institutionId),
+    // Index for Plaid item ID lookups
+    plaidItemIdIdx: index('idx_plaid_items_plaid_item_id').on(table.plaidItemId),
+  })
+);
+
+// Plaid account mappings table - Maps Plaid accounts to Scani accounts
+export const plaidAccountMappings = pgTable(
+  'plaid_account_mappings',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    plaidItemId: uuid('plaid_item_id')
+      .notNull()
+      .references(() => plaidItems.id, { onDelete: 'cascade' }),
+    scaniAccountId: uuid('scani_account_id')
+      .notNull()
+      .references(() => accounts.id, { onDelete: 'cascade' })
+      .unique(), // Each Scani account can only be mapped to one Plaid account
+    plaidAccountId: text('plaid_account_id').notNull().unique(), // Plaid's account ID
+
+    // Account metadata
+    mask: text('mask'), // Last 4 digits of account number
+    officialName: text('official_name'),
+
+    isActive: boolean('is_active').notNull().default(true),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => ({
+    // Index for fast lookups by plaid item ID
+    plaidItemIdIdx: index('idx_plaid_account_mappings_plaid_item_id').on(table.plaidItemId),
+    // Index for Scani account ID lookups
+    scaniAccountIdIdx: index('idx_plaid_account_mappings_scani_account_id').on(
+      table.scaniAccountId
+    ),
+    // Index for Plaid account ID lookups
+    plaidAccountIdIdx: index('idx_plaid_account_mappings_plaid_account_id').on(
+      table.plaidAccountId
+    ),
+  })
+);
+
 // Schedules table - User-specific patterns of monetary movements
 export const schedules = pgTable(
   'schedules',
@@ -606,6 +710,15 @@ export type NewUserIntegrationCredentials = typeof userIntegrationCredentials.$i
 
 export type InstitutionBlockchainMapping = typeof institutionBlockchainMappings.$inferSelect;
 export type NewInstitutionBlockchainMapping = typeof institutionBlockchainMappings.$inferInsert;
+
+export type InstitutionPlaidMapping = typeof institutionPlaidMappings.$inferSelect;
+export type NewInstitutionPlaidMapping = typeof institutionPlaidMappings.$inferInsert;
+
+export type PlaidItem = typeof plaidItems.$inferSelect;
+export type NewPlaidItem = typeof plaidItems.$inferInsert;
+
+export type PlaidAccountMapping = typeof plaidAccountMappings.$inferSelect;
+export type NewPlaidAccountMapping = typeof plaidAccountMappings.$inferInsert;
 
 export type ScheduleType = typeof scheduleTypes.$inferSelect;
 

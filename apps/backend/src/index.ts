@@ -21,6 +21,7 @@ import { initializeContainer } from './config/container';
 import {
   executeDailyPortfolioDigestCronJob,
   executeExchangeBalancesCronJob,
+  executePlaidBalancesCronJob,
   executePricingCronJob,
   executeWalletBalancesCronJob,
 } from './infrastructure/cron';
@@ -136,6 +137,14 @@ const app = new Elysia()
       name: 'exchange-balances-cron',
       pattern: '*/15 * * * *', // Every 15 minutes
       run: executeExchangeBalancesCronJob,
+    })
+  )
+  // Plaid balances sync cron job
+  .use(
+    cron({
+      name: 'plaid-balances-cron',
+      pattern: '*/15 * * * *', // Every 15 minutes
+      run: executePlaidBalancesCronJob,
     })
   )
   .use(
@@ -348,6 +357,7 @@ app
       const pricingCron = cronStore['pricing-cron'];
       const walletBalancesCron = cronStore['wallet-balances-cron'];
       const exchangeBalancesCron = cronStore['exchange-balances-cron'];
+      const plaidBalancesCron = cronStore['plaid-balances-cron'];
       const dailyDigestCron = cronStore['daily-portfolio-digest-cron'];
 
       return {
@@ -370,6 +380,12 @@ app
             exists: !!exchangeBalancesCron,
             nextRun: exchangeBalancesCron?.nextRun()?.toISOString() || null,
             isRunning: exchangeBalancesCron?.isBusy() || false,
+            pattern: '*/15 * * * *',
+          },
+          'plaid-balances-cron': {
+            exists: !!plaidBalancesCron,
+            nextRun: plaidBalancesCron?.nextRun()?.toISOString() || null,
+            isRunning: plaidBalancesCron?.isBusy() || false,
             pattern: '*/15 * * * *',
           },
           'daily-portfolio-digest-cron': {

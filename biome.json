@@ -8,9 +8,9 @@
   "files": {
     "ignoreUnknown": false,
     "includes": [
-      "apps/**/*",
-      "packages/**/*",
-      "scripts/**/*",
+      "apps/**/*.{ts,tsx,js,jsx,json}",
+      "packages/**/*.{ts,tsx,js,jsx,json}",
+      "scripts/**/*.{ts,tsx,js,jsx,json}",
       "*.ts",
       "*.tsx",
       "*.js",
@@ -68,7 +68,8 @@
       "enabled": false
     },
     "parser": {
-      "tailwindDirectives": true
+      "cssModules": false,
+      "allowWrongLineComments": false
     }
   },
   "html": {
