@@ -4,6 +4,7 @@ import { TokenValidationService } from '@scani/core/services/TokenValidationServ
 import { Container } from 'typedi';
 import { accountTypesRouter } from './routers/account-types';
 import { accountsRouter } from './routers/accounts';
+import { aiChatRouter } from './routers/ai-chat';
 import { batchOperationsRouter } from './routers/batch-operations';
 import { dashboardRouter } from './routers/dashboard';
 import { holdingsRouter } from './routers/holdings';
@@ -61,6 +62,9 @@ export const appRouter = router({
 
   // Telegram (protected) - Telegram bot integration
   telegram: telegramRouter,
+
+  // AI Chat (protected) - AI-powered chat for schedule configuration
+  aiChat: aiChatRouter,
 
   // Health check (public)
   health: router({

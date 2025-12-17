@@ -23,6 +23,7 @@
     "test:coverage:html": "bun test --coverage --coverage-reporter=html"
   },
   "dependencies": {
+    "@ai-sdk/openai": "^2.0.87",
     "@elysiajs/cors": "^1.3.3",
     "@elysiajs/cron": "^1.4.1",
     "@elysiajs/trpc": "^1.1.0",
@@ -33,6 +34,10 @@
     "@supabase/supabase-js": "^2.57.4",
     "@trpc/server": "^10.45.2",
     "@types/jsonwebtoken": "^9.0.10",
+    "@voltagent/core": "^1.2.21",
+    "@voltagent/postgres": "^1.1.4",
+    "@voltagent/server-hono": "^1.2.8",
+    "ai": "^5.0.114",
     "decimal.js": "^10.6.0",
     "drizzle-orm": "^0.44.5",
     "elysia": "^1.3.21",

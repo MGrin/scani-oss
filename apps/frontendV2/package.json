@@ -49,6 +49,8 @@
     "tailwind-merge": "^3.3.1",
     "tailwindcss-animate": "^1.0.7",
     "vite-plugin-svgr": "^4.5.0",
+    "@voltagent/vercel-ui": "^1.0.1",
+    "ai": "^5.0.114",
     "zod": "^3.22.4"
   },
   "devDependencies": {

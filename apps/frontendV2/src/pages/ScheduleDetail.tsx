@@ -5,13 +5,13 @@ import {
   ChevronRight,
   Clock,
   Edit,
-  Plus,
   Repeat,
   Trash2,
   Workflow,
 } from 'lucide-react';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
+import { AIScheduleChat } from '@/components/features/AIScheduleChat';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import {
@@ -28,25 +28,11 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
 import { PageHeader } from '@/components/ui/page-header';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { showError, useToast } from '@/hooks/use-toast';
 import { trpc } from '@/lib/trpc';
-
-type ScheduleStepData =
-  | { from: string; toHoldingId: string; amount: string }
-  | { fromHoldingId: string; to: string; amount: string }
-  | { fromHoldingId: string; toHoldingId: string; amount?: string; percent?: number }
-  | { fromHoldingId: string; toHoldingId: string; amount?: string; percent?: number };
 
 export function ScheduleDetail() {
   const { id } = useParams<{ id: string }>();
@@ -55,9 +41,9 @@ export function ScheduleDetail() {
   const utils = trpc.useUtils();
 
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
-  const [isCreateStepDialogOpen, setIsCreateStepDialogOpen] = useState(false);
   const [isDeleteStepDialogOpen, setIsDeleteStepDialogOpen] = useState(false);
   const [stepToDelete, setStepToDelete] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState<string>('overview');
 
   // Fetch schedule details
   const { data: schedule, isLoading: scheduleLoading } = trpc.schedules.getById.useQuery(
@@ -77,11 +63,15 @@ export function ScheduleDetail() {
   // Fetch schedule step types
   const { data: scheduleStepTypes } = trpc.scheduleStepTypes.getAll.useQuery();
 
-  // Get schedule type code for validation rules
-  const scheduleTypeCode = scheduleTypes?.find((t) => t.id === schedule?.typeId)?.code;
-
   // Fetch holdings for dropdowns
   const { data: holdings } = trpc.holdings.getWithDetails.useQuery();
+
+  // Set active tab to "modify" if no steps exist
+  useEffect(() => {
+    if (!stepsLoading && steps && steps.length === 0) {
+      setActiveTab('modify');
+    }
+  }, [steps, stepsLoading]);
 
   // Delete schedule mutation
   const deleteSchedule = trpc.schedules.delete.useMutation({
@@ -93,19 +83,6 @@ export function ScheduleDetail() {
       navigate('/schedules');
     },
     onError: (error) => showError(error, 'Deleting schedule'),
-  });
-
-  // Create schedule step mutation
-  const createStep = trpc.schedules.createStep.useMutation({
-    onSuccess: () => {
-      utils.schedules.getSteps.invalidate({ id: id! });
-      setIsCreateStepDialogOpen(false);
-      toast({
-        title: 'Step added',
-        description: 'The schedule step has been added successfully.',
-      });
-    },
-    onError: (error) => showError(error, 'Adding step'),
   });
 
   // Delete schedule step mutation
@@ -134,48 +111,6 @@ export function ScheduleDetail() {
     }
   };
 
-  const handleCreateStep = (e: React.FormEvent<HTMLFormElement>) => {
-    e.preventDefault();
-    const formData = new FormData(e.currentTarget);
-
-    const typeId = formData.get('typeId') as string;
-    const stepType = scheduleStepTypes?.find((t) => t.id === typeId);
-
-    let data: ScheduleStepData;
-
-    if (stepType?.code === 'inflow') {
-      data = {
-        from: formData.get('from') as string,
-        toHoldingId: formData.get('toHoldingId') as string,
-        amount: formData.get('amount') as string,
-      };
-    } else if (stepType?.code === 'outflow') {
-      data = {
-        fromHoldingId: formData.get('fromHoldingId') as string,
-        to: formData.get('to') as string,
-        amount: formData.get('amount') as string,
-      };
-    } else if (stepType?.code === 'transfer' || stepType?.code === 'conversion') {
-      const usePercent = formData.get('usePercent') === 'percent';
-      data = {
-        fromHoldingId: formData.get('fromHoldingId') as string,
-        toHoldingId: formData.get('toHoldingId') as string,
-        ...(usePercent
-          ? { percent: Number(formData.get('percent')) }
-          : { amount: formData.get('amount') as string }),
-      };
-    } else {
-      return;
-    }
-
-    createStep.mutate({
-      scheduleId: id!,
-      typeId,
-      stepOrder: (steps?.length || 0) + 1,
-      data,
-    });
-  };
-
   if (scheduleLoading || !schedule) {
     return (
       <div className="space-y-6">
@@ -196,11 +131,6 @@ export function ScheduleDetail() {
         backButton={{
           onClick: () => navigate('/schedules'),
           label: 'Back to Schedules',
-        }}
-        primaryAction={{
-          label: 'Add Step',
-          onClick: () => setIsCreateStepDialogOpen(true),
-          icon: <Plus className="h-4 w-4" />,
         }}
         secondaryActions={
           <DropdownMenu>
@@ -300,70 +230,78 @@ export function ScheduleDetail() {
         </CardContent>
       </Card>
 
-      {/* Schedule Flow */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Workflow className="h-5 w-5" />
-            Schedule Flow
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          {stepsLoading ? (
-            <div className="space-y-4">
-              {[1, 2, 3].map((i) => (
-                <Skeleton key={i} className="h-24 w-full" />
-              ))}
-            </div>
-          ) : !steps || steps.length === 0 ? (
-            <div className="text-center py-12">
-              <Workflow className="mx-auto h-12 w-12 text-muted-foreground mb-4" />
-              <h3 className="text-lg font-semibold mb-2">No steps defined</h3>
-              <p className="text-muted-foreground mb-4">
-                Add steps to define the flow of monetary movements
-              </p>
-              <Button onClick={() => setIsCreateStepDialogOpen(true)}>
-                <Plus className="mr-2 h-4 w-4" />
-                Add First Step
-              </Button>
-            </div>
-          ) : (
-            <div className="space-y-4">
-              {steps.map((step, index) => (
-                <div key={step.id}>
-                  <ScheduleStepCard
-                    step={step}
-                    stepNumber={index + 1}
-                    scheduleStepTypes={scheduleStepTypes}
-                    holdings={holdings}
-                    onDelete={() => {
-                      setStepToDelete(step.id);
-                      setIsDeleteStepDialogOpen(true);
-                    }}
-                  />
-                  {index < steps.length - 1 && (
-                    <div className="flex justify-center py-2">
-                      <ArrowDown className="h-6 w-6 text-muted-foreground" />
-                    </div>
-                  )}
-                </div>
-              ))}
-            </div>
-          )}
-        </CardContent>
-      </Card>
+      {/* Schedule Tabs */}
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+        <TabsList className="grid w-full grid-cols-2">
+          <TabsTrigger value="overview">Overview</TabsTrigger>
+          <TabsTrigger value="modify">Modify</TabsTrigger>
+        </TabsList>
 
-      {/* Create Step Dialog */}
-      <CreateStepDialog
-        isOpen={isCreateStepDialogOpen}
-        onClose={() => setIsCreateStepDialogOpen(false)}
-        scheduleStepTypes={scheduleStepTypes}
-        holdings={holdings}
-        onSubmit={handleCreateStep}
-        isPending={createStep.isPending}
-        scheduleTypeCode={scheduleTypeCode}
-        existingSteps={steps || []}
-      />
+        <TabsContent value="overview" className="mt-6">
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Workflow className="h-5 w-5" />
+                Schedule Flow
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              {stepsLoading ? (
+                <div className="space-y-4">
+                  {[1, 2, 3].map((i) => (
+                    <Skeleton key={i} className="h-24 w-full" />
+                  ))}
+                </div>
+              ) : !steps || steps.length === 0 ? (
+                <div className="text-center py-12">
+                  <Workflow className="mx-auto h-12 w-12 text-muted-foreground mb-4" />
+                  <h3 className="text-lg font-semibold mb-2">No steps defined</h3>
+                  <p className="text-muted-foreground mb-4">
+                    Use the Modify tab to configure schedule steps using AI assistance
+                  </p>
+                  <Button onClick={() => setActiveTab('modify')}>Go to Modify Tab</Button>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  {steps.map((step, index) => (
+                    <div key={step.id}>
+                      <ScheduleStepCard
+                        step={step}
+                        stepNumber={index + 1}
+                        scheduleStepTypes={scheduleStepTypes}
+                        holdings={holdings}
+                        onDelete={() => {
+                          setStepToDelete(step.id);
+                          setIsDeleteStepDialogOpen(true);
+                        }}
+                      />
+                      {index < steps.length - 1 && (
+                        <div className="flex justify-center py-2">
+                          <ArrowDown className="h-6 w-6 text-muted-foreground" />
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="modify" className="mt-6">
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Workflow className="h-5 w-5" />
+                AI Assistant for Schedule Configuration
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <AIScheduleChat scheduleId={id!} />
+            </CardContent>
+          </Card>
+        </TabsContent>
+      </Tabs>
 
       {/* Delete Schedule Dialog */}
       <Dialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
@@ -423,351 +361,6 @@ export function ScheduleDetail() {
         </DialogContent>
       </Dialog>
     </div>
-  );
-}
-
-// Create Step Dialog Component
-function CreateStepDialog({
-  isOpen,
-  onClose,
-  scheduleStepTypes,
-  holdings,
-  onSubmit,
-  isPending,
-  scheduleTypeCode,
-  existingSteps,
-}: {
-  isOpen: boolean;
-  onClose: () => void;
-  scheduleStepTypes:
-    | Array<{
-        id: string;
-        code: string;
-        name: string;
-        description?: string | null;
-      }>
-    | undefined;
-  holdings:
-    | Array<{
-        id: string;
-        token: { symbol: string };
-        account: { name: string };
-      }>
-    | undefined;
-  onSubmit: (e: React.FormEvent<HTMLFormElement>) => void;
-  isPending: boolean;
-  scheduleTypeCode?: string;
-  existingSteps: Array<{ id: string; typeId: string; typeCode?: string }>;
-}) {
-  const [selectedStepTypeId, setSelectedStepTypeId] = useState<string>('');
-  const [amountType, setAmountType] = useState<'fixed' | 'percent'>('fixed');
-
-  const selectedStepType = scheduleStepTypes?.find((t) => t.id === selectedStepTypeId);
-
-  // Check if step type is allowed based on schedule type
-  const isStepTypeAllowed = (stepTypeCode: string): boolean => {
-    // For subscription and payment schedules, inflow steps are not allowed
-    if (
-      (scheduleTypeCode === 'subscription' || scheduleTypeCode === 'payment') &&
-      stepTypeCode === 'inflow'
-    ) {
-      return false;
-    }
-
-    // For income_allocation schedules, only one inflow step is allowed
-    if (scheduleTypeCode === 'income_allocation' && stepTypeCode === 'inflow') {
-      const hasInflowStep = existingSteps.some((step) => step.typeCode === 'inflow');
-      if (hasInflowStep) {
-        return false;
-      }
-    }
-
-    return true;
-  };
-
-  // Get validation message for disabled step types
-  const getDisabledReason = (stepTypeCode: string): string | null => {
-    if (
-      (scheduleTypeCode === 'subscription' || scheduleTypeCode === 'payment') &&
-      stepTypeCode === 'inflow'
-    ) {
-      return `${scheduleTypeCode === 'subscription' ? 'Subscription' : 'Payment'} schedules cannot have inflow steps`;
-    }
-
-    if (scheduleTypeCode === 'income_allocation' && stepTypeCode === 'inflow') {
-      const hasInflowStep = existingSteps.some((step) => step.typeCode === 'inflow');
-      if (hasInflowStep) {
-        return 'Income allocation schedules can have only one inflow step';
-      }
-    }
-
-    return null;
-  };
-
-  // Check if we need to show a warning for income allocation without inflow
-  const showIncomeAllocationWarning =
-    scheduleTypeCode === 'income_allocation' &&
-    existingSteps.length === 0 &&
-    selectedStepType?.code !== 'inflow';
-
-  return (
-    <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
-        <DialogHeader>
-          <DialogTitle>Add Schedule Step</DialogTitle>
-          <DialogDescription>Define a new step in the schedule flow</DialogDescription>
-        </DialogHeader>
-
-        {/* Schedule Type Rules Info */}
-        {scheduleTypeCode === 'income_allocation' && (
-          <div className="rounded-md bg-blue-50 p-3 text-sm text-blue-800 border border-blue-200">
-            <p className="font-semibold mb-1">ℹ️ Income Allocation Rules</p>
-            <ul className="list-disc list-inside space-y-1">
-              <li>Must start with exactly one inflow step</li>
-              <li>Can have multiple outflow, transfer, or conversion steps after the inflow</li>
-            </ul>
-          </div>
-        )}
-        {(scheduleTypeCode === 'subscription' || scheduleTypeCode === 'payment') && (
-          <div className="rounded-md bg-blue-50 p-3 text-sm text-blue-800 border border-blue-200">
-            <p className="font-semibold mb-1">
-              ℹ️ {scheduleTypeCode === 'subscription' ? 'Subscription' : 'Payment'} Rules
-            </p>
-            <ul className="list-disc list-inside space-y-1">
-              <li>Cannot have inflow steps (money only goes out)</li>
-              <li>Can have outflow, transfer, or conversion steps</li>
-            </ul>
-          </div>
-        )}
-
-        <form onSubmit={onSubmit}>
-          <div className="space-y-4">
-            {/* Step Type Selector */}
-            <div>
-              <Label htmlFor="typeId">Step Type</Label>
-              <Select
-                name="typeId"
-                required
-                value={selectedStepTypeId}
-                onValueChange={setSelectedStepTypeId}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Select step type" />
-                </SelectTrigger>
-                <SelectContent>
-                  {scheduleStepTypes?.map((type) => {
-                    const isAllowed = isStepTypeAllowed(type.code);
-                    const disabledReason = getDisabledReason(type.code);
-
-                    return (
-                      <SelectItem key={type.id} value={type.id} disabled={!isAllowed}>
-                        <div>
-                          <div className="font-medium">{type.name}</div>
-                          {isAllowed && type.description && (
-                            <div className="text-xs text-muted-foreground">{type.description}</div>
-                          )}
-                          {!isAllowed && disabledReason && (
-                            <div className="text-xs text-red-500">{disabledReason}</div>
-                          )}
-                        </div>
-                      </SelectItem>
-                    );
-                  })}
-                </SelectContent>
-              </Select>
-              {scheduleTypeCode === 'income_allocation' && existingSteps.length === 0 && (
-                <p className="text-xs text-amber-600 mt-1 flex items-start gap-1">
-                  <span className="font-bold">⚠️</span>
-                  <span>Income allocation schedules must start with an inflow step</span>
-                </p>
-              )}
-            </div>
-
-            {/* Show warning if trying to add non-inflow step first in income allocation */}
-            {showIncomeAllocationWarning && (
-              <div className="rounded-md bg-amber-50 p-3 text-sm text-amber-800 border border-amber-200">
-                <p className="font-semibold mb-1">⚠️ Warning</p>
-                <p>
-                  Income allocation schedules must start with an inflow step. Please select "Inflow"
-                  as the first step type.
-                </p>
-              </div>
-            )}
-
-            {/* Dynamic Fields Based on Step Type */}
-            {selectedStepType?.code === 'inflow' && (
-              <>
-                <div>
-                  <Label htmlFor="from">From (Counterparty)</Label>
-                  <Input id="from" name="from" required placeholder="e.g., Employer, Client" />
-                  <p className="text-xs text-muted-foreground mt-1">
-                    Name of the person or entity sending money
-                  </p>
-                </div>
-                <div>
-                  <Label htmlFor="toHoldingId">To (Holding)</Label>
-                  <Select name="toHoldingId" required>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select destination holding" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {holdings?.map((holding) => (
-                        <SelectItem key={holding.id} value={holding.id}>
-                          {holding.account.name} - {holding.token.symbol}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div>
-                  <Label htmlFor="amount">Amount</Label>
-                  <Input
-                    id="amount"
-                    name="amount"
-                    type="number"
-                    step="0.01"
-                    required
-                    placeholder="0.00"
-                  />
-                </div>
-              </>
-            )}
-
-            {selectedStepType?.code === 'outflow' && (
-              <>
-                <div>
-                  <Label htmlFor="fromHoldingId">From (Holding)</Label>
-                  <Select name="fromHoldingId" required>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select source holding" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {holdings?.map((holding) => (
-                        <SelectItem key={holding.id} value={holding.id}>
-                          {holding.account.name} - {holding.token.symbol}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div>
-                  <Label htmlFor="to">To (Counterparty)</Label>
-                  <Input id="to" name="to" required placeholder="e.g., Netflix, Rent" />
-                  <p className="text-xs text-muted-foreground mt-1">
-                    Name of the person or entity receiving money
-                  </p>
-                </div>
-                <div>
-                  <Label htmlFor="amount">Amount</Label>
-                  <Input
-                    id="amount"
-                    name="amount"
-                    type="number"
-                    step="0.01"
-                    required
-                    placeholder="0.00"
-                  />
-                </div>
-              </>
-            )}
-
-            {(selectedStepType?.code === 'transfer' || selectedStepType?.code === 'conversion') && (
-              <>
-                <div>
-                  <Label htmlFor="fromHoldingId">From (Holding)</Label>
-                  <Select name="fromHoldingId" required>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select source holding" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {holdings?.map((holding) => (
-                        <SelectItem key={holding.id} value={holding.id}>
-                          {holding.account.name} - {holding.token.symbol}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div>
-                  <Label htmlFor="toHoldingId">To (Holding)</Label>
-                  <Select name="toHoldingId" required>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select destination holding" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {holdings?.map((holding) => (
-                        <SelectItem key={holding.id} value={holding.id}>
-                          {holding.account.name} - {holding.token.symbol}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  {selectedStepType?.code === 'transfer' && (
-                    <p className="text-xs text-muted-foreground mt-1">
-                      Both holdings must have the same token
-                    </p>
-                  )}
-                </div>
-                <div>
-                  <Label>Amount Type</Label>
-                  <Select
-                    name="usePercent"
-                    value={amountType}
-                    onValueChange={(value) => setAmountType(value as 'fixed' | 'percent')}
-                  >
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="fixed">Fixed Amount</SelectItem>
-                      <SelectItem value="percent">Percentage of Inflow</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                {amountType === 'fixed' ? (
-                  <div>
-                    <Label htmlFor="amount">Amount</Label>
-                    <Input
-                      id="amount"
-                      name="amount"
-                      type="number"
-                      step="0.01"
-                      required
-                      placeholder="0.00"
-                    />
-                  </div>
-                ) : (
-                  <div>
-                    <Label htmlFor="percent">Percentage</Label>
-                    <Input
-                      id="percent"
-                      name="percent"
-                      type="number"
-                      min="0"
-                      max="100"
-                      step="0.1"
-                      required
-                      placeholder="0"
-                    />
-                    <p className="text-xs text-muted-foreground mt-1">
-                      Percentage of the inflow amount in this schedule
-                    </p>
-                  </div>
-                )}
-              </>
-            )}
-          </div>
-          <DialogFooter className="mt-6">
-            <Button type="button" variant="outline" onClick={onClose}>
-              Cancel
-            </Button>
-            <Button type="submit" disabled={isPending || !selectedStepTypeId}>
-              {isPending ? 'Adding...' : 'Add Step'}
-            </Button>
-          </DialogFooter>
-        </form>
-      </DialogContent>
-    </Dialog>
   );
 }
 
