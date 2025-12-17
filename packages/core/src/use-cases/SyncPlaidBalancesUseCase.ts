@@ -217,6 +217,30 @@ export class SyncPlaidBalancesUseCase {
           }
         }
 
+        // Update account metadata with lastSync timestamp
+        const [account] = await db
+          .select()
+          .from(schema.accounts)
+          .where(eq(schema.accounts.id, mapping.scaniAccountId))
+          .limit(1);
+
+        if (account) {
+          const updatedMetadata = {
+            ...(account.metadata && typeof account.metadata === 'object' ? account.metadata : {}),
+            lastSync: new Date().toISOString(),
+          };
+
+          await db
+            .update(schema.accounts)
+            .set({
+              metadata: updatedMetadata,
+              updatedAt: new Date(),
+            })
+            .where(eq(schema.accounts.id, mapping.scaniAccountId));
+
+          logger.debug({ accountId: mapping.scaniAccountId }, 'Updated account lastSync timestamp');
+        }
+
         result.accountsUpdated++;
       } catch (error) {
         logger.error({ plaidAccountId: mapping.plaidAccountId, error }, 'Failed to sync account');

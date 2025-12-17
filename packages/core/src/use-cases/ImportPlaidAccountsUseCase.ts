@@ -168,6 +168,24 @@ export class ImportPlaidAccountsUseCase {
               { accountId: scaniAccount.id, plaidAccountId: account.externalId },
               'Created account with Plaid mapping'
             );
+          } else {
+            // Update existing account metadata with lastSync timestamp
+            const updatedMetadata = {
+              ...(scaniAccount.metadata && typeof scaniAccount.metadata === 'object'
+                ? scaniAccount.metadata
+                : {}),
+              lastSync: new Date().toISOString(),
+            };
+
+            await db
+              .update(schema.accounts)
+              .set({
+                metadata: updatedMetadata,
+                updatedAt: new Date(),
+              })
+              .where(eq(schema.accounts.id, scaniAccount.id));
+
+            logger.debug({ accountId: scaniAccount.id }, 'Updated account lastSync timestamp');
           }
 
           if (!scaniAccount) {
