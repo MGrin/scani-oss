@@ -7,10 +7,10 @@
 
 import { exchangePlaidPublicToken, getPlaidInstitution } from '@scani/integrations';
 import { eq } from 'drizzle-orm';
-import { Service } from 'typedi';
+import { Container, Service } from 'typedi';
 import { db } from '../database/connection';
 import * as schema from '../database/schema';
-import type { IntegrationCredentialsService } from '../services/IntegrationCredentialsService';
+import { IntegrationCredentialsService } from '../services/IntegrationCredentialsService';
 import { createComponentLogger } from '../utils/logger';
 
 const logger = createComponentLogger('use-case:exchange-plaid-token');
@@ -40,7 +40,7 @@ export interface ExchangePlaidTokenResult {
  */
 @Service()
 export class ExchangePlaidTokenUseCase {
-  constructor(private readonly integrationCredentialsService: IntegrationCredentialsService) {}
+  private readonly integrationCredentialsService = Container.get(IntegrationCredentialsService);
 
   async execute(input: ExchangePlaidTokenInput): Promise<ExchangePlaidTokenResult> {
     logger.info(
