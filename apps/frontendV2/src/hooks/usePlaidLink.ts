@@ -86,12 +86,12 @@ export function usePlaidLink(config: PlaidLinkConfig = {}) {
   });
 
   // Create Link token on mount
+  // biome-ignore lint/correctness/useExhaustiveDependencies: mutate function is stable and should not be in dependencies
   useEffect(() => {
     createLinkTokenMutation.mutate({
       plaidInstitutionId: config.plaidInstitutionId,
     });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [config.plaidInstitutionId, createLinkTokenMutation.mutate]);
+  }, [config.plaidInstitutionId]);
 
   // Initialize Plaid Link SDK
   const { open, ready } = usePlaidLinkSDK({
