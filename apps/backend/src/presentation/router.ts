@@ -11,6 +11,7 @@ import { holdingsRouter } from './routers/holdings';
 import { institutionTypesRouter } from './routers/institution-types';
 import { institutionsRouter } from './routers/institutions';
 import { integrationsRouter } from './routers/integrations';
+import { plaidRouter } from './routers/plaid';
 import { scheduleStepTypesRouter } from './routers/schedule-step-types';
 import { scheduleTypesRouter } from './routers/schedule-types';
 import { schedulesRouter } from './routers/schedules';
@@ -59,6 +60,9 @@ export const appRouter = router({
 
   // Integration authentication (protected) - Credential validation and storage
   integrations: integrationsRouter,
+
+  // Plaid integration (protected) - Bank account connection via Plaid
+  plaid: plaidRouter,
 
   // Telegram (protected) - Telegram bot integration
   telegram: telegramRouter,
