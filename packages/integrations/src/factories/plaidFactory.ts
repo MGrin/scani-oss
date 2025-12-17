@@ -22,7 +22,13 @@ export function createPlaidApiService(): PlaidApiService {
   const secret = process.env.PLAID_SECRET || '';
 
   if (!clientId || !secret) {
-    throw new Error('PLAID_CLIENT_ID and PLAID_SECRET environment variables are required');
+    const missingVars = [];
+    if (!clientId) missingVars.push('PLAID_CLIENT_ID');
+    if (!secret) missingVars.push('PLAID_SECRET');
+    throw new Error(
+      `Missing required Plaid environment variables: ${missingVars.join(', ')}. ` +
+        'Please set these in your .env file. See apps/backend/.env.example for reference.'
+    );
   }
 
   return new PlaidApiService(environment, clientId, secret, plaidRateLimiter);

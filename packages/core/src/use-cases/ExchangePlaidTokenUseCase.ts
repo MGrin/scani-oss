@@ -50,6 +50,7 @@ export class ExchangePlaidTokenUseCase {
 
     try {
       // Exchange public token for access token
+      logger.debug({ userId: input.userId }, 'Calling Plaid API to exchange public token');
       const { accessToken, itemId } = await exchangePlaidPublicToken(input.publicToken);
 
       logger.info({ userId: input.userId, itemId }, 'Token exchanged successfully');
@@ -96,7 +97,22 @@ export class ExchangePlaidTokenUseCase {
         institutionCreated: created,
       };
     } catch (error) {
-      logger.error({ userId: input.userId, error }, 'Failed to exchange Plaid token');
+      // Log detailed error information for debugging (sanitized)
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      const errorStack = error instanceof Error ? error.stack : undefined;
+      const errorName = error instanceof Error ? error.name : 'Error';
+
+      logger.error(
+        {
+          userId: input.userId,
+          plaidInstitutionId: input.plaidInstitutionId,
+          errorName,
+          errorMessage,
+          errorStack,
+          // Note: Not logging full error object to avoid exposing sensitive data
+        },
+        'Failed to exchange Plaid token'
+      );
       throw error;
     }
   }

@@ -136,9 +136,17 @@ export class PlaidApiService {
       });
 
       if (!response.ok) {
-        // biome-ignore lint/suspicious/noExplicitAny: Plaid API error response type is unknown
         const error = await response.json();
-        throw new Error(`Plaid API error: ${(error as any)?.error_message || response.statusText}`);
+        // biome-ignore lint/suspicious/noExplicitAny: Plaid API error response type is unknown
+        const errorCode = (error as any)?.error_code || 'UNKNOWN';
+        // biome-ignore lint/suspicious/noExplicitAny: Plaid API error response type is unknown
+        const errorType = (error as any)?.error_type || 'API_ERROR';
+        // biome-ignore lint/suspicious/noExplicitAny: Plaid API error response type is unknown
+        const errorMessage = (error as any)?.error_message || response.statusText;
+
+        throw new Error(
+          `Plaid API error [${errorCode}]: ${errorMessage} (type: ${errorType}, status: ${response.status})`
+        );
       }
 
       return response.json() as Promise<PlaidLinkTokenResponse>;
@@ -163,9 +171,17 @@ export class PlaidApiService {
       });
 
       if (!response.ok) {
-        // biome-ignore lint/suspicious/noExplicitAny: Plaid API error response type is unknown
         const error = await response.json();
-        throw new Error(`Plaid API error: ${(error as any)?.error_message || response.statusText}`);
+        // biome-ignore lint/suspicious/noExplicitAny: Plaid API error response type is unknown
+        const errorCode = (error as any)?.error_code || 'UNKNOWN';
+        // biome-ignore lint/suspicious/noExplicitAny: Plaid API error response type is unknown
+        const errorType = (error as any)?.error_type || 'API_ERROR';
+        // biome-ignore lint/suspicious/noExplicitAny: Plaid API error response type is unknown
+        const errorMessage = (error as any)?.error_message || response.statusText;
+
+        throw new Error(
+          `Plaid API error [${errorCode}]: ${errorMessage} (type: ${errorType}, status: ${response.status})`
+        );
       }
 
       // biome-ignore lint/suspicious/noExplicitAny: Plaid API response types vary by endpoint
@@ -189,9 +205,17 @@ export class PlaidApiService {
       });
 
       if (!response.ok) {
-        // biome-ignore lint/suspicious/noExplicitAny: Plaid API error response type is unknown
         const error = await response.json();
-        throw new Error(`Plaid API error: ${(error as any)?.error_message || response.statusText}`);
+        // biome-ignore lint/suspicious/noExplicitAny: Plaid API error response type is unknown
+        const errorCode = (error as any)?.error_code || 'UNKNOWN';
+        // biome-ignore lint/suspicious/noExplicitAny: Plaid API error response type is unknown
+        const errorType = (error as any)?.error_type || 'API_ERROR';
+        // biome-ignore lint/suspicious/noExplicitAny: Plaid API error response type is unknown
+        const errorMessage = (error as any)?.error_message || response.statusText;
+
+        throw new Error(
+          `Plaid API error [${errorCode}]: ${errorMessage} (type: ${errorType}, status: ${response.status})`
+        );
       }
 
       // biome-ignore lint/suspicious/noExplicitAny: Plaid API response types vary by endpoint
@@ -218,9 +242,17 @@ export class PlaidApiService {
       });
 
       if (!response.ok) {
-        // biome-ignore lint/suspicious/noExplicitAny: Plaid API error response type is unknown
         const error = await response.json();
-        throw new Error(`Plaid API error: ${(error as any)?.error_message || response.statusText}`);
+        // biome-ignore lint/suspicious/noExplicitAny: Plaid API error response type is unknown
+        const errorCode = (error as any)?.error_code || 'UNKNOWN';
+        // biome-ignore lint/suspicious/noExplicitAny: Plaid API error response type is unknown
+        const errorType = (error as any)?.error_type || 'API_ERROR';
+        // biome-ignore lint/suspicious/noExplicitAny: Plaid API error response type is unknown
+        const errorMessage = (error as any)?.error_message || response.statusText;
+
+        throw new Error(
+          `Plaid API error [${errorCode}]: ${errorMessage} (type: ${errorType}, status: ${response.status})`
+        );
       }
 
       // biome-ignore lint/suspicious/noExplicitAny: Plaid API response types vary by endpoint
@@ -244,9 +276,17 @@ export class PlaidApiService {
       });
 
       if (!response.ok) {
-        // biome-ignore lint/suspicious/noExplicitAny: Plaid API error response type is unknown
         const error = await response.json();
-        throw new Error(`Plaid API error: ${(error as any)?.error_message || response.statusText}`);
+        // biome-ignore lint/suspicious/noExplicitAny: Plaid API error response type is unknown
+        const errorCode = (error as any)?.error_code || 'UNKNOWN';
+        // biome-ignore lint/suspicious/noExplicitAny: Plaid API error response type is unknown
+        const errorType = (error as any)?.error_type || 'API_ERROR';
+        // biome-ignore lint/suspicious/noExplicitAny: Plaid API error response type is unknown
+        const errorMessage = (error as any)?.error_message || response.statusText;
+
+        throw new Error(
+          `Plaid API error [${errorCode}]: ${errorMessage} (type: ${errorType}, status: ${response.status})`
+        );
       }
 
       // biome-ignore lint/suspicious/noExplicitAny: Plaid API response type is unknown
@@ -271,9 +311,17 @@ export class PlaidApiService {
       });
 
       if (!response.ok) {
-        // biome-ignore lint/suspicious/noExplicitAny: Plaid API error response type is unknown
         const error = await response.json();
-        throw new Error(`Plaid API error: ${(error as any)?.error_message || response.statusText}`);
+        // biome-ignore lint/suspicious/noExplicitAny: Plaid API error response type is unknown
+        const errorCode = (error as any)?.error_code || 'UNKNOWN';
+        // biome-ignore lint/suspicious/noExplicitAny: Plaid API error response type is unknown
+        const errorType = (error as any)?.error_type || 'API_ERROR';
+        // biome-ignore lint/suspicious/noExplicitAny: Plaid API error response type is unknown
+        const errorMessage = (error as any)?.error_message || response.statusText;
+
+        throw new Error(
+          `Plaid API error [${errorCode}]: ${errorMessage} (type: ${errorType}, status: ${response.status})`
+        );
       }
 
       // biome-ignore lint/suspicious/noExplicitAny: Plaid API response types vary by endpoint
@@ -299,9 +347,17 @@ export class PlaidApiService {
       });
 
       if (!response.ok) {
-        // biome-ignore lint/suspicious/noExplicitAny: Plaid API error response type is unknown
         const error = await response.json();
-        throw new Error(`Plaid API error: ${(error as any)?.error_message || response.statusText}`);
+        // biome-ignore lint/suspicious/noExplicitAny: Plaid API error response type is unknown
+        const errorCode = (error as any)?.error_code || 'UNKNOWN';
+        // biome-ignore lint/suspicious/noExplicitAny: Plaid API error response type is unknown
+        const errorType = (error as any)?.error_type || 'API_ERROR';
+        // biome-ignore lint/suspicious/noExplicitAny: Plaid API error response type is unknown
+        const errorMessage = (error as any)?.error_message || response.statusText;
+
+        throw new Error(
+          `Plaid API error [${errorCode}]: ${errorMessage} (type: ${errorType}, status: ${response.status})`
+        );
       }
     });
   }

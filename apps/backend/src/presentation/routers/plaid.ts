@@ -94,9 +94,12 @@ export const plaidRouter = router({
           errors: importResult.errors,
         };
       } catch (error) {
+        // Extract detailed error message from Plaid API if available
+        const errorMessage =
+          error instanceof Error ? error.message : 'Failed to exchange Plaid token';
         throw new TRPCError({
           code: 'INTERNAL_SERVER_ERROR',
-          message: 'Failed to exchange Plaid token',
+          message: errorMessage,
           cause: error,
         });
       }
