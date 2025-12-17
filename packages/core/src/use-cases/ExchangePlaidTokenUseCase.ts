@@ -6,7 +6,7 @@
  */
 
 import { exchangePlaidPublicToken, getPlaidInstitution } from '@scani/integrations';
-import { eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import { Container, Service } from 'typedi';
 import { db } from '../database/connection';
 import * as schema from '../database/schema';
@@ -214,26 +214,42 @@ export class ExchangePlaidTokenUseCase {
     plaidAccessToken: string;
     plaidInstitutionId: string;
   }): Promise<void> {
-    // Check if item already exists
+    // Check if item already exists for this user and institution
+    // This prevents unique constraint violation on (user_id, institution_id)
     const [existingItem] = await db
       .select()
       .from(schema.plaidItems)
-      .where(eq(schema.plaidItems.plaidItemId, data.plaidItemId))
+      .where(
+        and(
+          eq(schema.plaidItems.userId, data.userId),
+          eq(schema.plaidItems.institutionId, data.institutionId)
+        )
+      )
       .limit(1);
 
     if (existingItem) {
-      // Update existing item
+      // Update existing item with new Plaid credentials
+      // This handles reconnection scenario where user gets a new plaidItemId
       await db
         .update(schema.plaidItems)
         .set({
+          plaidItemId: data.plaidItemId,
           plaidAccessToken: data.plaidAccessToken,
+          plaidInstitutionId: data.plaidInstitutionId,
           isActive: true,
           error: null,
           updatedAt: new Date(),
         })
         .where(eq(schema.plaidItems.id, existingItem.id));
 
-      logger.info({ plaidItemId: data.plaidItemId }, 'Updated existing Plaid item');
+      logger.info(
+        {
+          plaidItemId: data.plaidItemId,
+          userId: data.userId,
+          institutionId: data.institutionId,
+        },
+        'Updated existing Plaid item with new credentials'
+      );
     } else {
       // Create new item
       await db.insert(schema.plaidItems).values({
@@ -245,7 +261,14 @@ export class ExchangePlaidTokenUseCase {
         isActive: true,
       });
 
-      logger.info({ plaidItemId: data.plaidItemId }, 'Created new Plaid item');
+      logger.info(
+        {
+          plaidItemId: data.plaidItemId,
+          userId: data.userId,
+          institutionId: data.institutionId,
+        },
+        'Created new Plaid item'
+      );
     }
   }
 }
