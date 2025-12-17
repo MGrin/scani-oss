@@ -131,13 +131,30 @@ export class PlaidIntegration extends ScaniIntegration {
 
       // Only add holding if balance is non-zero or account is active
       if (balance !== 0 || balance === 0) {
+        // Determine token type based on account type
+        // - depository, credit, loan accounts hold fiat currencies
+        // - investment accounts may hold stocks, ETFs, or other securities
+        // Let the token type be determined by the integration, not hardcoded here
+        let tokenType: string | undefined;
+        const decimals = 2; // Default for fiat currencies
+
+        if (account.type === 'depository' || account.type === 'credit' || account.type === 'loan') {
+          // Bank accounts, credit cards, loans are always in fiat currency
+          tokenType = 'fiat';
+          // decimals already set to 2 above
+        }
+        // For investment accounts, don't set tokenType - let it be determined
+        // by the currency code or external data
+        // Investment accounts can hold stocks (AAPL, TSLA), ETFs, bonds, etc.
+        // Leave tokenType undefined and decimals at default
+
         // Always add, even if zero, so we can track the account
         holdings.push({
           symbol: currency,
           name: currency,
           balance: Math.abs(balance).toString(),
-          decimals: 2, // Standard for fiat currencies
-          tokenType: 'fiat',
+          decimals,
+          tokenType, // Will be 'fiat' for bank accounts, undefined for investment accounts
           metadata: {
             accountType: account.type,
             accountSubtype: account.subtype,
@@ -169,7 +186,9 @@ export class PlaidIntegration extends ScaniIntegration {
 
   /**
    * Map a Plaid holding to a Scani token
-   * For Plaid, holdings are typically fiat currencies
+   * Token type is determined by account type:
+   * - Bank accounts (depository/credit/loan) hold fiat currencies
+   * - Investment accounts may hold stocks, ETFs, or other securities
    */
   async mapToken(holding: IntegrationHolding): Promise<TokenMappingResult> {
     return {
@@ -177,11 +196,11 @@ export class PlaidIntegration extends ScaniIntegration {
         symbol: holding.symbol,
         name: holding.name,
         typeId: '', // Will be set by the token service based on token type
-        decimals: 2,
+        decimals: holding.decimals ?? 2, // Use holding decimals, fallback to 2 if null/undefined
         iconUrl: holding.iconUrl,
         providerMetadata: JSON.stringify({
           provider: 'plaid',
-          tokenType: 'fiat',
+          tokenType: holding.tokenType, // Token type from holding (may be undefined for investment accounts)
           ...holding.metadata,
         }),
       },

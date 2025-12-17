@@ -379,12 +379,116 @@ export class TokenService extends BaseService {
 
   /**
    * Find or create token from integration token mapping
-   * Used by use cases that work with integration holdings
+   * Used by use cases that work with integration holdings (all types: crypto, fiat, stock, etc.)
    *
-   * IMPORTANT: Tokens from blockchain integrations MUST always be of type 'crypto'.
-   * This method enforces this requirement by using the provided cryptoTokenTypeId.
+   * This is a generic method that works with any token type based on the tokenMapping
+   * result from integration.mapToken().
+   *
+   * @param tokenMapping - Token mapping from integration
+   * @param tokenTypeId - The token type ID to use (can be crypto, fiat, stock, etc.)
+   * @param defaultDecimals - Default decimals if not provided in token mapping
    */
   async findOrCreateTokenFromIntegration(
+    tokenMapping: {
+      token: {
+        symbol: string;
+        name: string;
+        typeId: string;
+        decimals?: number;
+        iconUrl?: string | null;
+        providerMetadata?: string;
+      };
+      isNew: boolean;
+      confidence: number;
+    },
+    tokenTypeId: string,
+    defaultDecimals = 18
+  ): Promise<Token> {
+    try {
+      // Validate that we have a valid token type ID
+      this.validateNonEmptyString(tokenTypeId, 'tokenTypeId');
+
+      // Verify the provided token type exists
+      const tokenType = await this.tokenTypeRepository.findById(tokenTypeId);
+      if (!tokenType) {
+        throw new Error(`Token type with ID '${tokenTypeId}' not found`);
+      }
+
+      // Try to find existing token by symbol and type
+      let token = await this.tokenRepository.findBySymbolAndType(
+        tokenMapping.token.symbol,
+        tokenTypeId
+      );
+
+      if (token) {
+        // Update metadata if we have new information
+        const existingMetadata = JSON.parse(token.providerMetadata || '{}');
+        const newMetadata = JSON.parse(tokenMapping.token.providerMetadata || '{}');
+        const updatedMetadata = {
+          ...existingMetadata,
+          ...newMetadata,
+        };
+
+        token = await this.tokenRepository.update(token.id, {
+          providerMetadata: JSON.stringify(updatedMetadata),
+        });
+
+        this.assertExists(token, 'Failed to update token');
+      } else {
+        // Calculate scam probability only for crypto tokens
+        // Note: Price data is not available at token creation time; it's fetched separately by pricing services.
+        // This means initial scam detection relies on symbol/name patterns rather than price volatility.
+        let scamProbability = 0;
+        if (tokenType.code === 'crypto') {
+          scamProbability = this.scamDetectionService.calculateScamProbability(
+            tokenMapping.token.symbol,
+            tokenMapping.token.name,
+            new Date(), // Token is being created now
+            false // No price data available yet
+          );
+        }
+
+        // Create new token
+        token = await this.tokenRepository.create({
+          symbol: tokenMapping.token.symbol.toUpperCase(),
+          name: tokenMapping.token.name,
+          typeId: tokenTypeId,
+          decimals: tokenMapping.token.decimals ?? defaultDecimals,
+          iconUrl: tokenMapping.token.iconUrl || null,
+          providerMetadata: tokenMapping.token.providerMetadata || '{}',
+          isScamProbability: scamProbability,
+          isActive: true,
+        });
+
+        this.assertExists(token, 'Failed to create token');
+        this.logInfo('Token created from integration mapping', {
+          tokenId: token.id,
+          symbol: token.symbol,
+          tokenType: tokenType.code,
+          scamProbability: tokenType.code === 'crypto' ? scamProbability.toFixed(2) : 'N/A',
+        });
+      }
+
+      return token;
+    } catch (error) {
+      throw this.handleError(error, 'findOrCreateTokenFromIntegration');
+    }
+  }
+
+  /**
+   * Find or create token from integration token mapping (for blockchain/wallet integrations)
+   * Used by blockchain-specific use cases (wallet imports, blockchain sync)
+   *
+   * IMPORTANT: Tokens from blockchain integrations MUST always be of type 'crypto'.
+   * This method enforces this requirement by validating the provided cryptoTokenTypeId.
+   *
+   * This is a wrapper around findOrCreateTokenFromIntegration with crypto-only validation.
+   *
+   * @param tokenMapping - Token mapping from blockchain integration
+   * @param cryptoTokenTypeId - The crypto token type ID (must be 'crypto' type)
+   * @param defaultDecimals - Default decimals if not provided (typically 18 for EVM chains)
+   */
+  async findOrCreateTokenFromIntegrationMapping(
     tokenMapping: {
       token: {
         symbol: string;
@@ -415,58 +519,14 @@ export class TokenService extends BaseService {
         );
       }
 
-      // Try to find existing token by symbol and type
-      let token = await this.tokenRepository.findBySymbolAndType(
-        tokenMapping.token.symbol,
-        cryptoTokenTypeId
+      // Delegate to the generic method
+      return this.findOrCreateTokenFromIntegration(
+        tokenMapping,
+        cryptoTokenTypeId,
+        defaultDecimals
       );
-
-      if (token) {
-        // Update metadata if we have new information
-        const existingMetadata = JSON.parse(token.providerMetadata || '{}');
-        const newMetadata = JSON.parse(tokenMapping.token.providerMetadata || '{}');
-        const updatedMetadata = {
-          ...existingMetadata,
-          ...newMetadata,
-        };
-
-        token = await this.tokenRepository.update(token.id, {
-          providerMetadata: JSON.stringify(updatedMetadata),
-        });
-
-        this.assertExists(token, 'Failed to update token');
-      } else {
-        // Calculate scam probability for crypto tokens
-        const scamProbability = this.scamDetectionService.calculateScamProbability(
-          tokenMapping.token.symbol,
-          tokenMapping.token.name,
-          new Date(), // Token is being created now
-          false // We don't have price data yet at creation time
-        );
-
-        // Create new token
-        token = await this.tokenRepository.create({
-          symbol: tokenMapping.token.symbol.toUpperCase(),
-          name: tokenMapping.token.name,
-          typeId: cryptoTokenTypeId,
-          decimals: tokenMapping.token.decimals ?? defaultDecimals,
-          iconUrl: tokenMapping.token.iconUrl || null,
-          providerMetadata: tokenMapping.token.providerMetadata || '{}',
-          isScamProbability: scamProbability,
-          isActive: true,
-        });
-
-        this.assertExists(token, 'Failed to create token');
-        this.logInfo('Token created from integration mapping', {
-          tokenId: token.id,
-          symbol: token.symbol,
-          scamProbability: scamProbability.toFixed(2),
-        });
-      }
-
-      return token;
     } catch (error) {
-      throw this.handleError(error, 'findOrCreateTokenFromIntegration');
+      throw this.handleError(error, 'findOrCreateTokenFromIntegrationMapping');
     }
   }
 

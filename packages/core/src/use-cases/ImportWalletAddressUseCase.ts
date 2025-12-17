@@ -568,8 +568,8 @@ export class ImportWalletAddressUseCase {
         // Map the integration holding to our token format
         const tokenMapping = await integration.mapToken(holding);
 
-        // Find or create token using service method
-        const token = await this.tokenService.findOrCreateTokenFromIntegration(
+        // Find or create token using blockchain-specific integration mapping method
+        const token = await this.tokenService.findOrCreateTokenFromIntegrationMapping(
           tokenMapping,
           cryptoTokenTypeId
         );

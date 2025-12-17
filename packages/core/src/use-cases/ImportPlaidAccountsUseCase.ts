@@ -201,22 +201,28 @@ export class ImportPlaidAccountsUseCase {
               // Map token
               const tokenMapping = await integration.mapToken(holding);
 
-              // Get or create fiat token type
-              const [fiatType] = await db
+              // Determine token type from holding
+              // For bank accounts (depository/credit/loan), tokenType will be 'fiat'
+              // For investment accounts, tokenType may be undefined - default to 'fiat'
+              // This allows investment accounts to potentially hold stocks, ETFs, or other securities
+              const tokenTypeCode = holding.tokenType || 'fiat';
+
+              // Get token type from database
+              const [tokenType] = await db
                 .select()
                 .from(schema.tokenTypes)
-                .where(eq(schema.tokenTypes.code, 'fiat'))
+                .where(eq(schema.tokenTypes.code, tokenTypeCode))
                 .limit(1);
 
-              if (!fiatType) {
-                throw new Error('Fiat token type not found');
+              if (!tokenType) {
+                throw new Error(`Token type '${tokenTypeCode}' not found`);
               }
 
               // Create or get token using integration mapping
               const token = await this.tokenService.findOrCreateTokenFromIntegration(
                 tokenMapping,
-                fiatType.id,
-                2 // Default decimals for fiat currencies
+                tokenType.id,
+                holding.decimals || 2 // Use decimals from holding, default to 2 for fiat
               );
 
               // Check if holding already exists
