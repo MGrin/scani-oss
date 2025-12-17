@@ -1,0 +1,70 @@
+name: Copilot Setup Steps
+description: Pre-install dependencies and set up the development environment for GitHub Copilot coding agent
+
+steps:
+  - name: Setup Bun Runtime
+    uses: oven-sh/setup-bun@v2
+    with:
+      bun-version: latest
+
+  - name: Install Dependencies
+    run: bun install --frozen-lockfile
+
+  - name: Create Environment Files
+    run: |
+      # Create backend .env.local for development
+      mkdir -p apps/backend
+      cat > apps/backend/.env.local << 'EOF'
+      # Minimal environment for Copilot development
+      # These are placeholder values only - see apps/backend/.env.example for full configuration
+      # Actual secrets should not be committed to version control
+      PORT=3001
+      HOST=localhost
+      NODE_ENV=development
+      FRONTEND_URL=http://localhost:5173
+      
+      # Database Configuration (placeholder - update with actual connection string)
+      DATABASE_URL=postgresql://postgres:postgres@localhost:5432/scani
+      
+      # Logging Configuration
+      LOG_LEVEL=info
+      LOG_SQL_QUERIES=false
+      LOG_PRETTY=true
+      
+      # Sentry Configuration (disabled by default)
+      SENTRY_ENABLED=false
+      
+      # Note: Supabase credentials are required for full functionality
+      # but are not included here for security reasons
+      # SUPABASE_URL=https://your-project.supabase.co
+      # SUPABASE_ANON_KEY=your_anon_key
+      # SUPABASE_SERVICE_ROLE_KEY=your_service_role_key
+      EOF
+
+      # Create frontend .env.local for development
+      mkdir -p apps/frontendV2
+      cat > apps/frontendV2/.env.local << 'EOF'
+      # Minimal environment for Copilot development
+      # See apps/frontendV2/.env.example for full configuration
+      VITE_API_URL=http://localhost:3001
+      
+      # Sentry Configuration (disabled by default)
+      VITE_SENTRY_ENABLED=false
+      
+      # Note: Supabase credentials are required for full functionality
+      # but are not included here for security reasons
+      # VITE_SUPABASE_URL=https://your-project.supabase.co
+      # VITE_SUPABASE_ANON_KEY=your_anon_key
+      EOF
+
+  - name: Verify Setup
+    run: |
+      echo "✅ Bun version: $(bun --version)"
+      echo "✅ Node modules installed: $(ls node_modules | wc -l) packages"
+      echo "✅ Backend env file: $(ls -lh apps/backend/.env.local)"
+      echo "✅ Frontend env file: $(ls -lh apps/frontendV2/.env.local)"
+      echo ""
+      echo "📦 Available bun scripts configured"
+      echo "🔍 Workspace structure configured"
+      echo ""
+      echo "Ready for Copilot coding agent!"
