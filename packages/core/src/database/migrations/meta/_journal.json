@@ -134,6 +134,13 @@
       "when": 1765856263435,
       "tag": "0018_yellow_songbird",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1765940670551,
+      "tag": "0019_closed_bucky",
+      "breakpoints": true
     }
   ]
 }
