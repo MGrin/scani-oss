@@ -21,30 +21,82 @@ const SUPABASE_JWT_SECRET =
   process.env.SUPABASE_JWT_SECRET || process.env.SUPABASE_SERVICE_ROLE_KEY;
 
 /**
+ * Helper function to retry database operations with exponential backoff
+ */
+async function retryDatabaseOperation<T>(
+  operation: () => Promise<T>,
+  maxRetries = 3,
+  baseDelay = 100
+): Promise<T> {
+  let lastError: Error | unknown;
+
+  for (let attempt = 0; attempt < maxRetries; attempt++) {
+    try {
+      return await operation();
+    } catch (error) {
+      lastError = error;
+
+      // Check if error is a connection/timeout issue that's worth retrying
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      const isRetriableError =
+        errorMessage.includes('timeout') ||
+        errorMessage.includes('connection') ||
+        errorMessage.includes('ECONNREFUSED') ||
+        errorMessage.includes('ETIMEDOUT') ||
+        errorMessage.includes('Failed query');
+
+      if (!isRetriableError || attempt === maxRetries - 1) {
+        throw error;
+      }
+
+      // Exponential backoff with jitter
+      const delay = baseDelay * 2 ** attempt + Math.random() * 100;
+      authLogger.debug(
+        {
+          attempt: attempt + 1,
+          maxRetries,
+          delay: `${delay}ms`,
+          error: error instanceof Error ? { name: error.name, message: error.message } : error,
+        },
+        'Retrying database operation after error'
+      );
+
+      await new Promise((resolve) => setTimeout(resolve, delay));
+    }
+  }
+
+  throw lastError;
+}
+
+/**
  * Creates or updates a user in the database based on Supabase user data
  */
 async function syncUserWithDatabase(supabaseUser: User): Promise<typeof schema.users.$inferSelect> {
   try {
-    // Check if user already exists
-    const [existingUser] = await db
-      .select()
-      .from(schema.users)
-      .where(eq(schema.users.id, supabaseUser.id))
-      .limit(1);
+    // Check if user already exists with retry logic
+    const [existingUser] = await retryDatabaseOperation(async () => {
+      return await db
+        .select()
+        .from(schema.users)
+        .where(eq(schema.users.id, supabaseUser.id))
+        .limit(1);
+    });
 
     if (existingUser) {
       // Update existing user email if needed, but never update the name or avatar
       const needsUpdate = existingUser.email !== supabaseUser.email;
 
       if (needsUpdate) {
-        const [updatedUser] = await db
-          .update(schema.users)
-          .set({
-            email: supabaseUser.email || existingUser.email,
-            updatedAt: new Date(),
-          })
-          .where(eq(schema.users.id, supabaseUser.id))
-          .returning();
+        const [updatedUser] = await retryDatabaseOperation(async () => {
+          return await db
+            .update(schema.users)
+            .set({
+              email: supabaseUser.email || existingUser.email,
+              updatedAt: new Date(),
+            })
+            .where(eq(schema.users.id, supabaseUser.id))
+            .returning();
+        });
 
         return updatedUser || existingUser;
       }
@@ -58,12 +110,14 @@ async function syncUserWithDatabase(supabaseUser: User): Promise<typeof schema.u
     // Extract username from email (everything before @)
     const emailUsername = supabaseUser.email?.split('@')[0] || 'User';
 
-    // Get USD token ID as default base currency
-    const [usdToken] = await db
-      .select({ id: schema.tokens.id })
-      .from(schema.tokens)
-      .where(eq(schema.tokens.symbol, 'USD'))
-      .limit(1);
+    // Get USD token ID as default base currency with retry logic
+    const [usdToken] = await retryDatabaseOperation(async () => {
+      return await db
+        .select({ id: schema.tokens.id })
+        .from(schema.tokens)
+        .where(eq(schema.tokens.symbol, 'USD'))
+        .limit(1);
+    });
 
     const userData = {
       id: supabaseUser.id, // Use Supabase user ID
@@ -75,7 +129,9 @@ async function syncUserWithDatabase(supabaseUser: User): Promise<typeof schema.u
       updatedAt: now,
     };
 
-    const [newUser] = await db.insert(schema.users).values(userData).returning();
+    const [newUser] = await retryDatabaseOperation(async () => {
+      return await db.insert(schema.users).values(userData).returning();
+    });
 
     if (!newUser) {
       throw new Error('Failed to create user in database');
@@ -85,13 +141,19 @@ async function syncUserWithDatabase(supabaseUser: User): Promise<typeof schema.u
   } catch (error) {
     authLogger.error(
       {
-        error: error instanceof Error ? { name: error.name, message: error.message } : error,
+        error:
+          error instanceof Error
+            ? { name: error.name, message: error.message, stack: error.stack }
+            : error,
+        userId: supabaseUser.id,
+        userEmail: supabaseUser.email,
       },
       'Error syncing user with database'
     );
     throw new TRPCError({
       code: 'INTERNAL_SERVER_ERROR',
       message: 'Failed to sync user data',
+      cause: error,
     });
   }
 }
@@ -186,7 +248,7 @@ export async function createAuthContext(opts: CreateContextOptions): Promise<Aut
       };
     }
 
-    // Sync user with database
+    // Sync user with database with retry logic
     const dbUser = await syncUserWithDatabase(user);
 
     authLogger.debug(
@@ -205,7 +267,10 @@ export async function createAuthContext(opts: CreateContextOptions): Promise<Aut
   } catch (error) {
     authLogger.error(
       {
-        error: error instanceof Error ? { name: error.name, message: error.message } : error,
+        error:
+          error instanceof Error
+            ? { name: error.name, message: error.message, stack: error.stack }
+            : error,
       },
       'Auth verification error'
     );
