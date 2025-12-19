@@ -16,8 +16,8 @@ const IDLE_TIMEOUT = process.env.DB_IDLE_TIMEOUT
   ? Math.max(0, parseInt(process.env.DB_IDLE_TIMEOUT, 10) || 30)
   : 30; // 30 seconds
 const CONNECT_TIMEOUT = process.env.DB_CONNECT_TIMEOUT
-  ? Math.max(1, parseInt(process.env.DB_CONNECT_TIMEOUT, 10) || 10)
-  : 10; // 10 seconds
+  ? Math.max(1, parseInt(process.env.DB_CONNECT_TIMEOUT, 10) || 30)
+  : 30; // 30 seconds - increased for Supabase pooler stability
 const MAX_LIFETIME = process.env.DB_MAX_LIFETIME
   ? Math.max(0, parseInt(process.env.DB_MAX_LIFETIME, 10) || 1800)
   : 60 * 30; // 30 minutes

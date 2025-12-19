@@ -2,6 +2,7 @@ import { eq, inArray } from 'drizzle-orm';
 import { Service } from 'typedi';
 import * as schema from '../database/schema';
 import type { AccountType, InstitutionType, TokenType } from '../domain/entities';
+import { withRetry } from '../utils/retry';
 import { BaseRepository, type DatabaseTransaction } from './BaseRepository';
 
 @Service()
@@ -17,14 +18,16 @@ export class InstitutionTypeRepository extends BaseRepository<
     transaction?: DatabaseTransaction
   ): Promise<InstitutionType | null> {
     try {
-      const database = this.getDb(transaction);
-      const results = await database
-        .select()
-        .from(schema.institutionTypes)
-        .where(eq(schema.institutionTypes.code, code))
-        .limit(1);
+      return await withRetry(async () => {
+        const database = this.getDb(transaction);
+        const results = await database
+          .select()
+          .from(schema.institutionTypes)
+          .where(eq(schema.institutionTypes.code, code))
+          .limit(1);
 
-      return results[0] || null;
+        return results[0] || null;
+      });
     } catch (error) {
       this.logger.error({ code, error }, 'Failed to find institution type by code');
       throw error;
@@ -39,14 +42,16 @@ export class AccountTypeRepository extends BaseRepository<AccountType, Partial<A
 
   async findByCode(code: string, transaction?: DatabaseTransaction): Promise<AccountType | null> {
     try {
-      const database = this.getDb(transaction);
-      const results = await database
-        .select()
-        .from(schema.accountTypes)
-        .where(eq(schema.accountTypes.code, code))
-        .limit(1);
+      return await withRetry(async () => {
+        const database = this.getDb(transaction);
+        const results = await database
+          .select()
+          .from(schema.accountTypes)
+          .where(eq(schema.accountTypes.code, code))
+          .limit(1);
 
-      return results[0] || null;
+        return results[0] || null;
+      });
     } catch (error) {
       this.logger.error({ code, error }, 'Failed to find account type by code');
       throw error;
@@ -61,14 +66,16 @@ export class TokenTypeRepository extends BaseRepository<TokenType, Partial<Token
 
   async findByCode(code: string, transaction?: DatabaseTransaction): Promise<TokenType | null> {
     try {
-      const database = this.getDb(transaction);
-      const results = await database
-        .select()
-        .from(schema.tokenTypes)
-        .where(eq(schema.tokenTypes.code, code))
-        .limit(1);
+      return await withRetry(async () => {
+        const database = this.getDb(transaction);
+        const results = await database
+          .select()
+          .from(schema.tokenTypes)
+          .where(eq(schema.tokenTypes.code, code))
+          .limit(1);
 
-      return results[0] || null;
+        return results[0] || null;
+      });
     } catch (error) {
       this.logger.error({ code, error }, 'Failed to find token type by code');
       throw error;
@@ -84,13 +91,15 @@ export class TokenTypeRepository extends BaseRepository<TokenType, Partial<Token
         return [];
       }
 
-      const database = this.getDb(transaction);
-      const results = await database
-        .select()
-        .from(schema.tokenTypes)
-        .where(inArray(schema.tokenTypes.code, codes));
+      return await withRetry(async () => {
+        const database = this.getDb(transaction);
+        const results = await database
+          .select()
+          .from(schema.tokenTypes)
+          .where(inArray(schema.tokenTypes.code, codes));
 
-      return results;
+        return results;
+      });
     } catch (error) {
       this.logger.error({ codes, error }, 'Failed to find token types by codes');
       throw error;

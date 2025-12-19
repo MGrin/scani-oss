@@ -28,6 +28,7 @@ import { HoldingRepository } from '../repositories/HoldingRepository';
 import { IntegrationCredentialsService } from '../services/IntegrationCredentialsService';
 import { TokenService } from '../services/TokenService';
 import { createComponentLogger } from '../utils/logger';
+import { withRetry } from '../utils/retry';
 
 const logger = createComponentLogger('use-case:sync-exchange-balances');
 
@@ -91,10 +92,12 @@ export class SyncExchangeBalancesUseCase {
 
       logger.debug({ exchangeNames }, 'Looking for exchange institutions');
 
-      const exchangeInstitutions = await db
-        .select()
-        .from(schema.institutions)
-        .where(inArray(schema.institutions.name, exchangeNames));
+      const exchangeInstitutions = await withRetry(async () =>
+        db
+          .select()
+          .from(schema.institutions)
+          .where(inArray(schema.institutions.name, exchangeNames))
+      );
 
       if (exchangeInstitutions.length === 0) {
         logger.warn({ exchangeNames }, 'No exchange institutions found in database');
