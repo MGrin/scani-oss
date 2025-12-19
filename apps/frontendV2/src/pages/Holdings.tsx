@@ -1,6 +1,7 @@
 import type { HoldingWithDetails } from '@scani/shared';
 import {
   AlertTriangle,
+  CheckCircle2,
   Download,
   Filter,
   Grid3X3,
@@ -8,6 +9,7 @@ import {
   MoreHorizontal,
   PieChart,
   Trash2,
+  XCircle,
 } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
@@ -336,6 +338,30 @@ export function Holdings() {
     deleteHoldingMutation.mutate({ id: holding.id });
   };
 
+  // Update holding mutation for toggling isActive
+  const updateHoldingMutation = trpc.holdings.update.useMutation({
+    onSuccess: () => {
+      // Invalidate all holding-related queries
+      utils.holdings.getWithDetails.invalidate();
+      utils.accounts.getHoldings.invalidate();
+      utils.accounts.getByUserIdWithSummary.invalidate();
+      utils.dashboard.getOverview.invalidate();
+
+      toast({
+        title: 'Holding updated',
+        description: 'The holding status has been successfully updated.',
+      });
+    },
+    onError: (error) => showError(error, 'Updating holding'),
+  });
+
+  const handleToggleActive = (holding: HoldingWithDetails) => {
+    updateHoldingMutation.mutate({
+      id: holding.id,
+      data: { isActive: !holding.isActive },
+    });
+  };
+
   const handleSelectRow = (rowKey: string) => {
     setSelectedRows((prev) => {
       const newSet = new Set(prev);
@@ -378,6 +404,24 @@ export function Holdings() {
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end">
+        <DropdownMenuItem
+          onClick={(e) => {
+            e.stopPropagation();
+            handleToggleActive(holding);
+          }}
+        >
+          {holding.isActive ? (
+            <>
+              <XCircle className="mr-2 h-4 w-4" />
+              Mark as Inactive
+            </>
+          ) : (
+            <>
+              <CheckCircle2 className="mr-2 h-4 w-4" />
+              Mark as Active
+            </>
+          )}
+        </DropdownMenuItem>
         <DropdownMenuItem
           onClick={(e) => {
             e.stopPropagation();

@@ -12,6 +12,7 @@ import { Label } from '@/components/ui/label';
 import { MoneyDisplay } from '@/components/ui/money-display';
 import { PageHeader } from '@/components/ui/page-header';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Switch } from '@/components/ui/switch';
 import { showError, useToast } from '@/hooks/use-toast';
 import { trpc } from '@/lib/trpc';
 import { createCurrencyToken } from '@/lib/utils';
@@ -24,6 +25,7 @@ export function HoldingDetail() {
 
   const [editTokenId, setEditTokenId] = useState('');
   const [editBalance, setEditBalance] = useState('');
+  const [editIsActive, setEditIsActive] = useState(true);
   const [isEditing, setIsEditing] = useState(false);
 
   // Fetch base currency
@@ -96,25 +98,35 @@ export function HoldingDetail() {
     if (holding) {
       setEditTokenId(holding.token?.id || '');
       setEditBalance(holding.amount.toString());
+      setEditIsActive(holding.isActive);
     }
   }, [holding]);
 
   // Check if there are any changes
   const hasChanges = () => {
     if (!holding) return false;
-    return editTokenId !== (holding.token?.id || '') || editBalance !== holding.amount.toString();
+    return (
+      editTokenId !== (holding.token?.id || '') ||
+      editBalance !== holding.amount.toString() ||
+      editIsActive !== holding.isActive
+    );
   };
 
   const handleSave = () => {
     if (!holding || !editBalance?.trim()) return;
 
-    const updateData: { balance: string; tokenId?: string } = {
+    const updateData: { balance: string; tokenId?: string; isActive?: boolean } = {
       balance: editBalance,
     };
 
     // Only include tokenId if it changed
     if (editTokenId !== (holding.token?.id || '')) {
       updateData.tokenId = editTokenId;
+    }
+
+    // Only include isActive if it changed
+    if (editIsActive !== holding.isActive) {
+      updateData.isActive = editIsActive;
     }
 
     updateHoldingMutation.mutate({
@@ -210,6 +222,7 @@ export function HoldingDetail() {
                     setIsEditing(false);
                     setEditTokenId(holding.token?.id || '');
                     setEditBalance(holding.amount.toString());
+                    setEditIsActive(holding.isActive);
                   }}
                 >
                   Cancel
@@ -304,6 +317,40 @@ export function HoldingDetail() {
                   className="text-2xl font-bold"
                 />
               </div>
+            </div>
+
+            <div>
+              <Label className="text-sm font-medium text-muted-foreground">Status</Label>
+              <div className="mt-2 flex items-center gap-3">
+                {isEditing ? (
+                  <>
+                    <Switch
+                      id="holding-active-toggle"
+                      checked={editIsActive}
+                      onCheckedChange={setEditIsActive}
+                      aria-label="Toggle holding active status"
+                    />
+                    <Label htmlFor="holding-active-toggle" className="cursor-pointer font-normal">
+                      {editIsActive ? 'Active' : 'Inactive'}
+                    </Label>
+                  </>
+                ) : (
+                  <span
+                    className={`text-xs px-2 py-1 rounded-full ${
+                      holding.isActive
+                        ? 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400'
+                        : 'bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-400'
+                    }`}
+                  >
+                    {holding.isActive ? 'Active' : 'Inactive'}
+                  </span>
+                )}
+              </div>
+              {isEditing && (
+                <p className="text-xs text-muted-foreground mt-2">
+                  Inactive holdings are visible but excluded from portfolio calculations
+                </p>
+              )}
             </div>
           </CardContent>
         </Card>
