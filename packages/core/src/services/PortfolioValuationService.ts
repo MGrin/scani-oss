@@ -68,12 +68,16 @@ export class PortfolioValuationService {
     }
 
     // Get user holdings with token information
+    // Apply filters:
+    // 1. User ownership
+    // 2. Exclude hidden holdings (completely hidden from queries)
+    // 3. Exclude inactive holdings (visible but not in totals)
+    // 4. Filter out scam tokens to match HoldingRepository behavior
     // Optionally filter by account ID if provided
-    // Exclude hidden holdings
-    // Filter out scam tokens to match HoldingRepository behavior
     const conditions = [
       eq(schema.holdings.userId, userId),
       eq(schema.holdings.isHidden, false),
+      eq(schema.holdings.isActive, true),
       lt(schema.tokens.isScamProbability, SCAM_PROBABILITY_THRESHOLD),
     ];
     if (accountId) {

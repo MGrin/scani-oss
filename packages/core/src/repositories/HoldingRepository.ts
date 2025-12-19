@@ -183,6 +183,7 @@ export class HoldingRepository extends BaseRepository<Holding, NewHolding> {
           holdingBalance: schema.holdings.balance,
           holdingSource: schema.holdings.source,
           holdingIsHidden: schema.holdings.isHidden,
+          holdingIsActive: schema.holdings.isActive,
           holdingLastUpdated: schema.holdings.lastUpdated,
           holdingCreatedAt: schema.holdings.createdAt,
           // Token data with type
@@ -223,6 +224,7 @@ export class HoldingRepository extends BaseRepository<Holding, NewHolding> {
           balance: r.holdingBalance,
           source: r.holdingSource,
           isHidden: r.holdingIsHidden,
+          isActive: r.holdingIsActive,
           lastUpdated: r.holdingLastUpdated,
           createdAt: r.holdingCreatedAt,
         },

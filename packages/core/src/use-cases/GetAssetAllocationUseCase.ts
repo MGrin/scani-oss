@@ -27,6 +27,7 @@ type HoldingWithCompleteDetails = {
     balance: string;
     source: string;
     isHidden: boolean;
+    isActive: boolean;
     lastUpdated: Date;
     createdAt: Date;
   };
@@ -125,8 +126,12 @@ export class GetAssetAllocationUseCase extends BaseService {
       { id: string; code: string; name: string; value: Decimal }
     >();
 
-    // Aggregate by dimension
+    // Aggregate by dimension - only include active holdings
     for (const { holding, token, account, institution } of holdingsWithDetails) {
+      // Skip inactive holdings from allocation calculations
+      if (!holding.isActive) {
+        continue;
+      }
       const price = priceMap.get(token.symbol) || '0';
       const balance = new Decimal(holding.balance);
       const value = balance.mul(new Decimal(price));

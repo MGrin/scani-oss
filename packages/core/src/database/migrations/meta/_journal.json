@@ -141,6 +141,13 @@
       "when": 1765940670551,
       "tag": "0019_closed_bucky",
       "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1766137179867,
+      "tag": "0020_empty_luke_cage",
+      "breakpoints": true
     }
   ]
 }

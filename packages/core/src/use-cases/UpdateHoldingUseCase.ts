@@ -9,6 +9,7 @@ const logger = createComponentLogger('use-case:update-holding');
 export interface UpdateHoldingInput {
   balance?: string;
   lastUpdated?: Date;
+  isActive?: boolean;
 }
 
 /**

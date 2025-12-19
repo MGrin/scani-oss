@@ -198,6 +198,7 @@ export const holdings = pgTable(
     balance: text('balance').notNull(), // Store as string for Decimal.js precision
     source: text('source').notNull().default('manual'), // 'blockchain' or 'manual' - tracks origin of holding
     isHidden: boolean('is_hidden').notNull().default(false), // Hidden holdings are excluded from queries but updated by cron
+    isActive: boolean('is_active').notNull().default(true), // Inactive holdings are visible but excluded from total calculations
     lastUpdated: timestamp('last_updated', { withTimezone: true }).notNull().defaultNow(),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
@@ -215,6 +216,8 @@ export const holdings = pgTable(
     userTokenIdx: index('idx_holdings_user_token').on(table.userId, table.tokenId),
     // Index for filtering hidden holdings
     isHiddenIdx: index('idx_holdings_is_hidden').on(table.isHidden),
+    // Index for filtering active holdings in calculations
+    isActiveIdx: index('idx_holdings_is_active').on(table.isActive),
   })
 );
 

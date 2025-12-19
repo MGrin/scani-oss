@@ -183,6 +183,7 @@ export class HoldingService extends BaseService {
           },
           lastUpdated: holding.lastUpdated.toISOString(),
           createdAt: holding.createdAt.toISOString(),
+          isActive: holding.isActive,
         };
       }
     );

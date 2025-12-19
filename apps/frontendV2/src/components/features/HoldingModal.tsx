@@ -5,6 +5,7 @@ import { NumericFormat } from 'react-number-format';
 import TimeAgo from 'react-timeago';
 import { TokenSearchableSelector } from '@/components/selectors/TokenSearchableSelector';
 import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
 import {
   Dialog,
   DialogContent,
@@ -42,6 +43,7 @@ export function HoldingModal({
   const utils = trpc.useUtils();
   const [editTokenId, setEditTokenId] = useState('');
   const [editBalance, setEditBalance] = useState('');
+  const [editIsActive, setEditIsActive] = useState(true);
 
   // Fetch base currency
   const { data: baseCurrency } = trpc.users.getBaseCurrency.useQuery();
@@ -111,25 +113,41 @@ export function HoldingModal({
     if (holding) {
       setEditTokenId(holding.token?.id || '');
       setEditBalance(holding.amount.toString());
+      setEditIsActive(holding.isActive);
     }
   }, [holding]);
 
   // Check if there are any changes
   const hasChanges = () => {
     if (!holding) return false;
-    return editTokenId !== (holding.token?.id || '') || editBalance !== holding.amount.toString();
+    return (
+      editTokenId !== (holding.token?.id || '') ||
+      editBalance !== holding.amount.toString() ||
+      editIsActive !== holding.isActive
+    );
   };
 
   const handleSave = () => {
-    if (!holding || !editBalance?.trim()) return;
+    if (!holding) return;
 
-    const updateData: { balance: string; tokenId?: string } = {
-      balance: editBalance,
-    };
+    const updateData: { balance?: string; tokenId?: string; isActive?: boolean } = {};
 
-    // Only include tokenId if it changed
+    // Only include changed fields
+    if (editBalance?.trim() && editBalance !== holding.amount.toString()) {
+      updateData.balance = editBalance;
+    }
+
     if (editTokenId !== (holding.token?.id || '')) {
       updateData.tokenId = editTokenId;
+    }
+
+    if (editIsActive !== holding.isActive) {
+      updateData.isActive = editIsActive;
+    }
+
+    // Ensure at least one field is being updated
+    if (Object.keys(updateData).length === 0) {
+      return;
     }
 
     updateHoldingMutation.mutate({
@@ -307,6 +325,27 @@ export function HoldingModal({
               </div>
             </div>
           </div>
+
+          {/* Active Status Toggle */}
+          <div className="flex items-center space-x-2 pt-4 border-t">
+            <Checkbox
+              id="isActive"
+              checked={editIsActive}
+              onCheckedChange={(checked) => setEditIsActive(checked === true)}
+            />
+            <Label
+              htmlFor="isActive"
+              className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 cursor-pointer"
+            >
+              Include in total balance calculations
+            </Label>
+          </div>
+          {!editIsActive && (
+            <div className="text-sm text-muted-foreground bg-muted/50 p-3 rounded-md">
+              When unchecked, this holding will still be visible but won't be included in portfolio
+              totals, asset allocation, or dashboard statistics.
+            </div>
+          )}
         </div>
 
         <DialogFooter className="flex justify-between">

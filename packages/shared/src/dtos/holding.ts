@@ -27,15 +27,19 @@ export const CreateHoldingDto = z.object({
 });
 
 export const UpdateHoldingDto = z.object({
-  balance: z.string().refine(
-    (val) => {
-      if (!isValidDecimalString(val)) return false;
-      return new Decimal(val).greaterThanOrEqualTo(0);
-    },
-    {
-      message: 'Balance must be a valid decimal number string that is non-negative',
-    }
-  ),
+  balance: z
+    .string()
+    .refine(
+      (val) => {
+        if (!isValidDecimalString(val)) return false;
+        return new Decimal(val).greaterThanOrEqualTo(0);
+      },
+      {
+        message: 'Balance must be a valid decimal number string that is non-negative',
+      }
+    )
+    .optional(),
+  isActive: z.boolean().optional(),
 });
 
 export type HoldingWithDetails = {
@@ -72,6 +76,7 @@ export type HoldingWithDetails = {
   };
   lastUpdated: string;
   createdAt: string;
+  isActive: boolean;
 };
 
 export type CreateHoldingInput = z.infer<typeof CreateHoldingDto>;

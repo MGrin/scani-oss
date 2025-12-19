@@ -78,6 +78,32 @@ describe('UpdateHoldingDto validation', () => {
     expect(result.success).toBe(true);
   });
 
+  test('should accept valid isActive value', () => {
+    const validData = {
+      isActive: true,
+    };
+
+    const result = UpdateHoldingDto.safeParse(validData);
+    expect(result.success).toBe(true);
+  });
+
+  test('should accept both balance and isActive', () => {
+    const validData = {
+      balance: '123.45',
+      isActive: false,
+    };
+
+    const result = UpdateHoldingDto.safeParse(validData);
+    expect(result.success).toBe(true);
+  });
+
+  test('should accept empty object (optional fields)', () => {
+    const validData = {};
+
+    const result = UpdateHoldingDto.safeParse(validData);
+    expect(result.success).toBe(true);
+  });
+
   test('should reject invalid balance values', () => {
     const invalidBalances = ['abc', 'NaN', 'Infinity', '-5', '12.34.56', ''];
 
@@ -87,6 +113,15 @@ describe('UpdateHoldingDto validation', () => {
       if (!result.success) {
         expect(result.error.issues[0]?.path).toContain('balance');
       }
+    }
+  });
+
+  test('should reject invalid isActive values', () => {
+    const invalidValues = ['true', 'false', 1, 0];
+
+    for (const isActive of invalidValues) {
+      const result = UpdateHoldingDto.safeParse({ isActive });
+      expect(result.success).toBe(false);
     }
   });
 });
