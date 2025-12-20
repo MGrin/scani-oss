@@ -5,6 +5,7 @@ import {
   Home,
   LogOut,
   Menu,
+  Palette,
   Settings,
   TrendingUp,
   X,
@@ -52,6 +53,7 @@ const navigation = [
   { name: 'Dashboard', href: '/', icon: Home },
   { name: 'Accounts', href: '/accounts', icon: CreditCard },
   { name: 'Holdings', href: '/holdings', icon: TrendingUp },
+  { name: 'Groups', href: '/groups', icon: Palette },
   { name: 'Schedules', href: '/schedules', icon: Calendar },
   { name: 'Settings', href: '/settings', icon: Settings },
 ];
@@ -63,6 +65,7 @@ function getActiveNavItem(pathname: string): string {
   if (pathname === '/') return '/';
   if (pathname.startsWith('/accounts')) return '/accounts';
   if (pathname.startsWith('/holdings')) return '/holdings';
+  if (pathname.startsWith('/groups')) return '/groups';
   if (pathname.startsWith('/schedules')) return '/schedules';
   if (pathname.startsWith('/settings')) return '/settings';
   return '';
@@ -77,6 +80,7 @@ function useBreadcrumbs(pathname: string) {
   const routeMap: Record<string, string> = {
     accounts: 'Accounts',
     holdings: 'Holdings',
+    groups: 'Groups',
     schedules: 'Schedules',
     settings: 'Settings',
   };

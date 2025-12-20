@@ -33,6 +33,7 @@ export enum FeatureCategory {
   HOLDINGS = 'holdings',
   INSTITUTIONS = 'institutions',
   TOKENS = 'tokens',
+  GROUPS = 'groups',
   WALLET = 'wallet',
   BATCH_OPERATIONS = 'batch_operations',
   SCREENSHOTS = 'screenshots',

@@ -8,6 +8,7 @@ export {
   ScheduleTypeRepository,
   TokenTypeRepository,
 } from './EnumRepositories';
+export { GroupRepository } from './GroupRepository';
 export { HoldingRepository } from './HoldingRepository';
 export { InstitutionBlockchainMappingRepository } from './InstitutionBlockchainMappingRepository';
 export { InstitutionRepository } from './InstitutionRepository';

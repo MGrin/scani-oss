@@ -7,6 +7,7 @@ export const AssetAllocationDimensionDto = z.enum([
   'account_type',
   'institution',
   'institution_type',
+  'group',
 ]);
 
 export type AssetAllocationDimension = z.infer<typeof AssetAllocationDimensionDto>;

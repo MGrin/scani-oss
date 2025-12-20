@@ -3,6 +3,7 @@ export * from './batch';
 export * from './common';
 export * from './dashboard';
 export * from './enums';
+export * from './group';
 export * from './holding';
 export * from './institution';
 export * from './schedule';

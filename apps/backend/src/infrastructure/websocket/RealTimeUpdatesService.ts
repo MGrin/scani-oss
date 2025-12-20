@@ -10,7 +10,8 @@ export type EntityType =
   | 'user'
   | 'token'
   | 'schedule'
-  | 'schedule_step';
+  | 'schedule_step'
+  | 'group';
 export type OperationType = 'create' | 'update' | 'delete' | 'sync';
 
 export interface RealTimeEvent {
@@ -28,7 +29,7 @@ export interface RealTimeEvent {
       type: EntityType;
       id: string;
     }>;
-  };
+  } & Record<string, unknown>;
 }
 
 export interface ClientConnection {

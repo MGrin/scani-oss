@@ -17,6 +17,7 @@ import {
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { MoneyDisplay } from '@/components/ui/money-display';
+import { MultiSelect } from '@/components/ui/multi-select';
 import { showError, useToast } from '@/hooks/use-toast';
 import { trpc } from '@/lib/trpc';
 import { createCurrencyToken } from '@/lib/utils';
@@ -44,11 +45,19 @@ export function HoldingModal({
   const [editTokenId, setEditTokenId] = useState('');
   const [editBalance, setEditBalance] = useState('');
   const [editIsActive, setEditIsActive] = useState(true);
+  const [selectedGroups, setSelectedGroups] = useState<string[]>([]);
 
   // Fetch base currency
   const { data: baseCurrency } = trpc.users.getBaseCurrency.useQuery();
   const currency = baseCurrency?.symbol || 'USD';
   const baseCurrencyToken = createCurrencyToken(currency);
+
+  // Fetch groups and holding groups
+  const { data: groups } = trpc.groups.getAll.useQuery();
+  const { data: holdingGroups } = trpc.groups.getHoldingGroups.useQuery(
+    { id: holding?.id || '' },
+    { enabled: !!holding?.id }
+  );
 
   // Update holding mutation
   const updateHoldingMutation = trpc.holdings.update.useMutation({
@@ -89,6 +98,21 @@ export function HoldingModal({
     onError: (error) => showError(error, 'Deleting holding'),
   });
 
+  // Assign groups mutation
+  const assignGroupsMutation = trpc.groups.assignHoldingGroups.useMutation({
+    onSuccess: () => {
+      utils.groups.getHoldingGroups.invalidate();
+      utils.holdings.getWithDetails.invalidate();
+      utils.dashboard.getOverview.invalidate();
+
+      toast({
+        title: 'Groups updated',
+        description: 'Holding groups have been successfully updated.',
+      });
+    },
+    onError: (error) => showError(error, 'Updating groups'),
+  });
+
   // Update price mutation
   const updatePriceMutation = trpc.holdings.updatePrice.useMutation({
     onSuccess: (data) => {
@@ -117,17 +141,29 @@ export function HoldingModal({
     }
   }, [holding]);
 
+  // Update selected groups when holding groups are loaded
+  useEffect(() => {
+    if (holdingGroups) {
+      setSelectedGroups(holdingGroups.map((g) => g.id));
+    }
+  }, [holdingGroups]);
+
   // Check if there are any changes
   const hasChanges = () => {
     if (!holding) return false;
+    const originalGroups = holdingGroups?.map((g) => g.id).sort() || [];
+    const currentGroups = [...selectedGroups].sort();
+    const groupsChanged = JSON.stringify(originalGroups) !== JSON.stringify(currentGroups);
+
     return (
       editTokenId !== (holding.token?.id || '') ||
       editBalance !== holding.amount.toString() ||
-      editIsActive !== holding.isActive
+      editIsActive !== holding.isActive ||
+      groupsChanged
     );
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
     if (!holding) return;
 
     const updateData: { balance?: string; tokenId?: string; isActive?: boolean } = {};
@@ -145,15 +181,26 @@ export function HoldingModal({
       updateData.isActive = editIsActive;
     }
 
-    // Ensure at least one field is being updated
-    if (Object.keys(updateData).length === 0) {
-      return;
+    // Check if groups changed
+    const originalGroups = holdingGroups?.map((g) => g.id).sort() || [];
+    const currentGroups = [...selectedGroups].sort();
+    const groupsChanged = JSON.stringify(originalGroups) !== JSON.stringify(currentGroups);
+
+    // Update holding data if changed
+    if (Object.keys(updateData).length > 0) {
+      updateHoldingMutation.mutate({
+        id: holding.id,
+        data: updateData,
+      });
     }
 
-    updateHoldingMutation.mutate({
-      id: holding.id,
-      data: updateData,
-    });
+    // Update groups if changed
+    if (groupsChanged) {
+      assignGroupsMutation.mutate({
+        holdingId: holding.id,
+        groupIds: selectedGroups,
+      });
+    }
   };
 
   const handleDelete = () => {
@@ -308,6 +355,30 @@ export function HoldingModal({
               />
               {updatePriceMutation.isPending ? 'Updating Price...' : 'Update Price'}
             </Button>
+          </div>
+
+          {/* Groups Assignment */}
+          <div className="pt-4 border-t">
+            <Label className="text-sm font-medium text-muted-foreground">Groups</Label>
+            <div className="mt-2">
+              <MultiSelect
+                selected={selectedGroups}
+                onSelectedChange={setSelectedGroups}
+                placeholder="Select groups..."
+                searchPlaceholder="Search groups..."
+                emptyMessage="No groups found."
+                items={
+                  groups?.map((group) => ({
+                    value: group.id,
+                    label: group.name,
+                    color: group.color,
+                  })) || []
+                }
+              />
+            </div>
+            <p className="text-xs text-muted-foreground mt-2">
+              Assign this holding to one or more groups for better organization
+            </p>
           </div>
 
           {/* Timestamps */}

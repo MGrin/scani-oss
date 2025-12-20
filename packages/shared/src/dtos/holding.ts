@@ -74,6 +74,11 @@ export type HoldingWithDetails = {
     typeCode: string;
     website?: string | null;
   };
+  groups: Array<{
+    id: string;
+    name: string;
+    color: string;
+  }>;
   lastUpdated: string;
   createdAt: string;
   isActive: boolean;

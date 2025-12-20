@@ -1,6 +1,7 @@
 import type { AssetAllocationDimension, AssetAllocationItem } from '@scani/shared';
 import Decimal from 'decimal.js';
 import { Container, Service } from 'typedi';
+import { GroupRepository } from '../repositories/GroupRepository';
 import { HoldingRepository } from '../repositories/HoldingRepository';
 import { BaseService } from '../services/BaseService';
 import { PortfolioValuationService } from '../services/PortfolioValuationService';
@@ -59,6 +60,7 @@ type HoldingWithCompleteDetails = {
 export class GetAssetAllocationUseCase extends BaseService {
   private readonly portfolioService = Container.get(PortfolioValuationService);
   private readonly holdingRepository = Container.get(HoldingRepository);
+  private readonly groupRepository = Container.get(GroupRepository);
 
   constructor() {
     super('GetAssetAllocationUseCase');
@@ -101,11 +103,12 @@ export class GetAssetAllocationUseCase extends BaseService {
     const priceMap = this.extractPriceMap(portfolioValue);
 
     // Calculate allocation based on dimension
-    const items = this.calculateAllocationByDimension(
+    const items = await this.calculateAllocationByDimension(
       holdingsWithDetails,
       priceMap,
       portfolioValue.totalValue,
-      dimension
+      dimension,
+      userId
     );
 
     return {
@@ -115,12 +118,13 @@ export class GetAssetAllocationUseCase extends BaseService {
     };
   }
 
-  private calculateAllocationByDimension(
+  private async calculateAllocationByDimension(
     holdingsWithDetails: HoldingWithCompleteDetails[],
     priceMap: Map<string, string>,
     totalValue: string,
-    dimension: AssetAllocationDimension
-  ): AssetAllocationItem[] {
+    dimension: AssetAllocationDimension,
+    userId: string
+  ): Promise<AssetAllocationItem[]> {
     const aggregationMap = new Map<
       string,
       { id: string; code: string; name: string; value: Decimal }
@@ -178,9 +182,12 @@ export class GetAssetAllocationUseCase extends BaseService {
           code = institution.typeCode;
           name = institution.typeName;
           break;
+        case 'group':
+          // Skip - will be handled separately after the loop
+          continue;
         default:
           throw new Error(
-            `Unknown dimension: ${dimension}. Valid dimensions are: token, token_type, account, account_type, institution, institution_type`
+            `Unknown dimension: ${dimension}. Valid dimensions are: token, token_type, account, account_type, institution, institution_type, group`
           );
       }
 
@@ -192,9 +199,126 @@ export class GetAssetAllocationUseCase extends BaseService {
       existing.value = existing.value.add(value);
     }
 
+    // Handle group dimension separately
+    if (dimension === 'group') {
+      return await this.calculateGroupAllocation(holdingsWithDetails, priceMap, totalValue, userId);
+    }
+
     // Convert to array and calculate percentages
     const totalValueDecimal = new Decimal(totalValue);
     const items = Array.from(aggregationMap.values())
+      .map((item) => ({
+        id: item.id,
+        code: item.code,
+        name: item.name,
+        value: item.value.toString(),
+        percentage: totalValueDecimal.greaterThan(0)
+          ? item.value.div(totalValueDecimal).mul(100).toFixed(2)
+          : '0',
+      }))
+      .filter((item) => new Decimal(item.value).greaterThan(0))
+      .sort((a, b) => new Decimal(b.value).comparedTo(new Decimal(a.value)));
+
+    return items;
+  }
+
+  private async calculateGroupAllocation(
+    holdingsWithDetails: HoldingWithCompleteDetails[],
+    priceMap: Map<string, string>,
+    totalValue: string,
+    userId: string
+  ): Promise<AssetAllocationItem[]> {
+    // Get all groups for the user
+    const groups = await this.groupRepository.findByUser(userId);
+
+    // Create a map to aggregate values by group
+    const groupAggregationMap = new Map<
+      string,
+      { id: string; code: string; name: string; color: string; value: Decimal }
+    >();
+
+    // Track holdings that have been assigned to at least one group
+    const holdingsInGroups = new Set<string>();
+
+    // For each group, get its holdings and calculate value
+    for (const group of groups) {
+      const holdingIds = await this.groupRepository.getHoldingsByGroupId(group.id);
+      let groupValue = new Decimal(0);
+
+      for (const holdingId of holdingIds) {
+        const holdingWithDetails = holdingsWithDetails.find(
+          (h) => h.holding.id === holdingId && h.holding.isActive
+        );
+
+        if (holdingWithDetails) {
+          holdingsInGroups.add(holdingId);
+          const { holding, token } = holdingWithDetails;
+          const price = priceMap.get(token.symbol) || '0';
+          const balance = new Decimal(holding.balance);
+          const value = balance.mul(new Decimal(price));
+          groupValue = groupValue.add(value);
+        }
+      }
+
+      // Also get account-level groups
+      const accountIds = await this.groupRepository.getAccountsByGroupId(group.id);
+      for (const accountId of accountIds) {
+        // Find all holdings in this account
+        const accountHoldings = holdingsWithDetails.filter(
+          (h) => h.holding.accountId === accountId && h.holding.isActive
+        );
+
+        for (const holdingWithDetails of accountHoldings) {
+          const holdingId = holdingWithDetails.holding.id;
+          // Only add if not already counted from direct holding assignment
+          if (!holdingsInGroups.has(holdingId)) {
+            holdingsInGroups.add(holdingId);
+            const { holding, token } = holdingWithDetails;
+            const price = priceMap.get(token.symbol) || '0';
+            const balance = new Decimal(holding.balance);
+            const value = balance.mul(new Decimal(price));
+            groupValue = groupValue.add(value);
+          }
+        }
+      }
+
+      if (groupValue.greaterThan(0)) {
+        groupAggregationMap.set(group.id, {
+          id: group.id,
+          code: group.name,
+          name: group.name,
+          color: group.color,
+          value: groupValue,
+        });
+      }
+    }
+
+    // Add "Ungrouped" category for holdings not in any group
+    let ungroupedValue = new Decimal(0);
+    for (const { holding, token } of holdingsWithDetails) {
+      if (!holding.isActive || holdingsInGroups.has(holding.id)) {
+        continue;
+      }
+
+      const price = priceMap.get(token.symbol) || '0';
+      const balance = new Decimal(holding.balance);
+      const value = balance.mul(new Decimal(price));
+      ungroupedValue = ungroupedValue.add(value);
+    }
+
+    if (ungroupedValue.greaterThan(0)) {
+      groupAggregationMap.set('ungrouped', {
+        id: 'ungrouped',
+        code: 'Ungrouped',
+        name: 'Ungrouped',
+        color: '#64748b', // slate color for ungrouped
+        value: ungroupedValue,
+      });
+    }
+
+    // Convert to array and calculate percentages
+    const totalValueDecimal = new Decimal(totalValue);
+    const items = Array.from(groupAggregationMap.values())
       .map((item) => ({
         id: item.id,
         code: item.code,

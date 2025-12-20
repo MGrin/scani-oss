@@ -519,6 +519,76 @@ export const scheduleSteps = pgTable(
   })
 );
 
+// Groups table - User-defined custom groups for organizing holdings
+export const groups = pgTable(
+  'groups',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    name: text('name').notNull(),
+    color: text('color').notNull(), // Hex color code (e.g., '#3b82f6')
+    description: text('description'),
+    displayOrder: real('display_order').notNull().default(0), // For custom ordering
+    isActive: boolean('is_active').notNull().default(true),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => ({
+    // Unique constraint for group name per user
+    uniqueUserGroupName: unique().on(table.userId, table.name),
+    // Performance index for user queries
+    userIdIdx: index('idx_groups_user_id').on(table.userId),
+    // Index for ordering
+    displayOrderIdx: index('idx_groups_display_order').on(table.userId, table.displayOrder),
+  })
+);
+
+// Holding groups junction table - Many-to-many relationship between holdings and groups
+export const holdingGroups = pgTable(
+  'holding_groups',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    holdingId: uuid('holding_id')
+      .notNull()
+      .references(() => holdings.id, { onDelete: 'cascade' }),
+    groupId: uuid('group_id')
+      .notNull()
+      .references(() => groups.id, { onDelete: 'cascade' }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => ({
+    // Unique constraint to prevent duplicate assignments
+    uniqueHoldingGroup: unique().on(table.holdingId, table.groupId),
+    // Performance indexes for lookups
+    holdingIdIdx: index('idx_holding_groups_holding_id').on(table.holdingId),
+    groupIdIdx: index('idx_holding_groups_group_id').on(table.groupId),
+  })
+);
+
+// Account groups junction table - Many-to-many relationship between accounts and groups
+export const accountGroups = pgTable(
+  'account_groups',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    accountId: uuid('account_id')
+      .notNull()
+      .references(() => accounts.id, { onDelete: 'cascade' }),
+    groupId: uuid('group_id')
+      .notNull()
+      .references(() => groups.id, { onDelete: 'cascade' }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => ({
+    // Unique constraint to prevent duplicate assignments
+    uniqueAccountGroup: unique().on(table.accountId, table.groupId),
+    // Performance indexes for lookups
+    accountIdIdx: index('idx_account_groups_account_id').on(table.accountId),
+    groupIdIdx: index('idx_account_groups_group_id').on(table.groupId),
+  })
+);
+
 // =============================================================================
 // MAIN TABLES
 // =============================================================================
@@ -550,6 +620,7 @@ export const usersRelations = relations(users, ({ one, many }) => ({
   userWallets: many(userWallets),
   userIntegrationCredentials: many(userIntegrationCredentials),
   schedules: many(schedules),
+  groups: many(groups),
   baseCurrency: one(tokens, {
     fields: [users.baseCurrencyId],
     references: [tokens.id],
@@ -582,6 +653,7 @@ export const accountsRelations = relations(accounts, ({ one, many }) => ({
     references: [accountTypes.id],
   }),
   holdings: many(holdings),
+  accountGroups: many(accountGroups),
 }));
 
 export const tokensRelations = relations(tokens, ({ one, many }) => ({
@@ -596,7 +668,7 @@ export const tokensRelations = relations(tokens, ({ one, many }) => ({
   }),
 }));
 
-export const holdingsRelations = relations(holdings, ({ one }) => ({
+export const holdingsRelations = relations(holdings, ({ one, many }) => ({
   user: one(users, {
     fields: [holdings.userId],
     references: [users.id],
@@ -609,6 +681,7 @@ export const holdingsRelations = relations(holdings, ({ one }) => ({
     fields: [holdings.tokenId],
     references: [tokens.id],
   }),
+  holdingGroups: many(holdingGroups),
 }));
 
 export const tokenPricesRelations = relations(tokenPrices, ({ one }) => ({
@@ -677,6 +750,37 @@ export const scheduleStepsRelations = relations(scheduleSteps, ({ one }) => ({
   }),
 }));
 
+export const groupsRelations = relations(groups, ({ one, many }) => ({
+  user: one(users, {
+    fields: [groups.userId],
+    references: [users.id],
+  }),
+  holdingGroups: many(holdingGroups),
+  accountGroups: many(accountGroups),
+}));
+
+export const holdingGroupsRelations = relations(holdingGroups, ({ one }) => ({
+  holding: one(holdings, {
+    fields: [holdingGroups.holdingId],
+    references: [holdings.id],
+  }),
+  group: one(groups, {
+    fields: [holdingGroups.groupId],
+    references: [groups.id],
+  }),
+}));
+
+export const accountGroupsRelations = relations(accountGroups, ({ one }) => ({
+  account: one(accounts, {
+    fields: [accountGroups.accountId],
+    references: [accounts.id],
+  }),
+  group: one(groups, {
+    fields: [accountGroups.groupId],
+    references: [groups.id],
+  }),
+}));
+
 // Export types for use in application
 export type User = typeof users.$inferSelect;
 export type NewUser = typeof users.$inferInsert;
@@ -732,3 +836,12 @@ export type NewSchedule = typeof schedules.$inferInsert;
 
 export type ScheduleStep = typeof scheduleSteps.$inferSelect;
 export type NewScheduleStep = typeof scheduleSteps.$inferInsert;
+
+export type Group = typeof groups.$inferSelect;
+export type NewGroup = typeof groups.$inferInsert;
+
+export type HoldingGroup = typeof holdingGroups.$inferSelect;
+export type NewHoldingGroup = typeof holdingGroups.$inferInsert;
+
+export type AccountGroup = typeof accountGroups.$inferSelect;
+export type NewAccountGroup = typeof accountGroups.$inferInsert;

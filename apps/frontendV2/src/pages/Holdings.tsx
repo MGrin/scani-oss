@@ -22,6 +22,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Checkbox } from '@/components/ui/checkbox';
+import { Combobox } from '@/components/ui/combobox';
 import { DataTable } from '@/components/ui/data-table';
 import {
   DropdownMenu,
@@ -51,6 +52,10 @@ type GroupBy = 'none' | 'institution' | 'account' | 'tokenType';
 export function Holdings() {
   // Fetch holdings data from tRPC
   const { data: holdingsData, isLoading, error } = trpc.holdings.getWithDetails.useQuery();
+
+  // Fetch groups for filtering
+  const { data: groupsData } = trpc.groups.getAll.useQuery();
+  const groups = groupsData || [];
 
   // Fetch base currency for proper formatting
   const { data: baseCurrency } = trpc.users.getBaseCurrency.useQuery();
@@ -125,11 +130,13 @@ export function Holdings() {
     { key: 'type', defaultValue: '' },
     { key: 'account', defaultValue: '' },
     { key: 'token', defaultValue: '' },
+    { key: 'group', defaultValue: '' },
   ]);
 
   const filterBy = filterValues.type || '';
   const filterByAccount = filterValues.account || '';
   const filterByToken = filterValues.token || '';
+  const filterByGroup = filterValues.group || '';
 
   // Get unique values for filters
   // Deduplicate institutions by ID
@@ -207,6 +214,8 @@ export function Holdings() {
       const matchesTypeFilter = filterBy === '' || holding.token.typeCode === filterBy;
       const matchesAccountFilter = filterByAccount === '' || holding.account.id === filterByAccount;
       const matchesTokenFilter = filterByToken === '' || holding.token.symbol === filterByToken;
+      const matchesGroupFilter =
+        filterByGroup === '' || holding.groups.some((g) => g.id === filterByGroup);
 
       // Value range filter
       let matchesValueRange = true;
@@ -233,6 +242,7 @@ export function Holdings() {
         matchesTypeFilter &&
         matchesAccountFilter &&
         matchesTokenFilter &&
+        matchesGroupFilter &&
         matchesValueRange
       );
     });
@@ -615,6 +625,7 @@ export function Holdings() {
               filterBy !== '' ||
               filterByAccount !== '' ||
               filterByToken !== '' ||
+              filterByGroup !== '' ||
               valueRange !== 'all'
             }
             filters={[
@@ -645,6 +656,19 @@ export function Holdings() {
                 tokens={tokenOptions}
                 placeholder="Filter by token..."
                 includeAllOption={false}
+              />,
+              <Combobox
+                key="group"
+                value={filterByGroup}
+                onValueChange={(value: string) => updateFilter('group', value)}
+                items={
+                  groups?.map((group) => ({
+                    value: group.id,
+                    label: group.name,
+                  })) || []
+                }
+                placeholder="Filter by group..."
+                buttonSize="sm"
               />,
             ]}
             extraActions={

@@ -7,6 +7,7 @@ import { accountsRouter } from './routers/accounts';
 import { aiChatRouter } from './routers/ai-chat';
 import { batchOperationsRouter } from './routers/batch-operations';
 import { dashboardRouter } from './routers/dashboard';
+import { groupsRouter } from './routers/groups';
 import { holdingsRouter } from './routers/holdings';
 import { institutionTypesRouter } from './routers/institution-types';
 import { institutionsRouter } from './routers/institutions';
@@ -45,6 +46,7 @@ export const appRouter = router({
   institutions: institutionsRouter,
   accounts: accountsRouter,
   holdings: holdingsRouter,
+  groups: groupsRouter,
 
   // Schedules (protected) - Recurring monetary movement patterns
   schedules: schedulesRouter,

@@ -8,6 +8,7 @@ import { AddData } from '@/pages/AddData';
 import { Auth } from '@/pages/Auth';
 import { AuthCallback } from '@/pages/AuthCallback';
 import { Dashboard } from '@/pages/Dashboard';
+import { Groups } from '@/pages/Groups';
 import { HoldingDetail } from '@/pages/HoldingDetail';
 import { Holdings } from '@/pages/Holdings';
 import { InstitutionDetail } from '@/pages/InstitutionDetail';
@@ -70,6 +71,16 @@ function App() {
               <ProtectedRoute>
                 <Layout>
                   <Accounts />
+                </Layout>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/groups"
+            element={
+              <ProtectedRoute>
+                <Layout>
+                  <Groups />
                 </Layout>
               </ProtectedRoute>
             }

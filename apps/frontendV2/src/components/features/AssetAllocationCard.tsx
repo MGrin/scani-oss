@@ -39,6 +39,7 @@ const DIMENSION_LABELS: Record<AssetAllocationDimension, string> = {
   account_type: 'Account Type',
   institution: 'Institution',
   institution_type: 'Institution Type',
+  group: 'Group',
 };
 
 const COLORS = [

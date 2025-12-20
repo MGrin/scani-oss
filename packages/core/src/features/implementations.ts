@@ -8,7 +8,9 @@
 import { Container } from 'typedi';
 import { BlockchainServiceManager } from '../external-services/blockchain';
 import {
+  AccountRepository,
   AccountTypeRepository,
+  GroupRepository,
   HoldingRepository,
   InstitutionRepository,
   InstitutionTypeRepository,
@@ -96,7 +98,8 @@ export const DashboardImplementations = {
         | 'account'
         | 'account_type'
         | 'institution'
-        | 'institution_type';
+        | 'institution_type'
+        | 'group';
     }
   ) {
     const useCase = Container.get(GetAssetAllocationUseCase);
@@ -487,5 +490,184 @@ export const TypeImplementations = {
   async getScheduleStepTypes(_context: FeatureExecutionContext, _input: Record<string, never>) {
     const scheduleStepTypeRepository = Container.get(ScheduleStepTypeRepository);
     return await scheduleStepTypeRepository.findAll();
+  },
+};
+
+/**
+ * Group Implementations
+ */
+export const GroupImplementations = {
+  async getAll(context: FeatureExecutionContext, _input: Record<string, never>) {
+    const groupRepository = Container.get(GroupRepository);
+    return await groupRepository.findByUser(context.userId);
+  },
+
+  async getAllWithCounts(context: FeatureExecutionContext, _input: Record<string, never>) {
+    const groupRepository = Container.get(GroupRepository);
+    return await groupRepository.findByUserWithCounts(context.userId);
+  },
+
+  async getById(context: FeatureExecutionContext, input: { id: string }) {
+    const groupRepository = Container.get(GroupRepository);
+    const group = await groupRepository.findById(input.id);
+
+    // Verify ownership
+    if (group && group.userId !== context.userId) {
+      throw new Error('Unauthorized access to group');
+    }
+
+    return group;
+  },
+
+  async create(
+    context: FeatureExecutionContext,
+    input: {
+      name: string;
+      color: string;
+      description?: string | null;
+      displayOrder?: number;
+    }
+  ) {
+    const groupRepository = Container.get(GroupRepository);
+
+    return await groupRepository.create({
+      userId: context.userId,
+      name: input.name,
+      color: input.color,
+      description: input.description || null,
+      displayOrder: input.displayOrder || 0,
+      isActive: true,
+    });
+  },
+
+  async update(
+    context: FeatureExecutionContext,
+    input: {
+      id: string;
+      data: {
+        name?: string;
+        color?: string;
+        description?: string | null;
+        displayOrder?: number;
+        isActive?: boolean;
+      };
+    }
+  ) {
+    const groupRepository = Container.get(GroupRepository);
+
+    // Verify ownership
+    const group = await groupRepository.findById(input.id);
+    if (!group || group.userId !== context.userId) {
+      throw new Error('Unauthorized access to group');
+    }
+
+    return await groupRepository.update(input.id, input.data);
+  },
+
+  async delete(context: FeatureExecutionContext, input: { id: string }) {
+    const groupRepository = Container.get(GroupRepository);
+
+    // Verify ownership
+    const group = await groupRepository.findById(input.id);
+    if (!group || group.userId !== context.userId) {
+      throw new Error('Unauthorized access to group');
+    }
+
+    // Delete the group (cascade will handle junction table cleanup)
+    await groupRepository.delete(input.id);
+
+    return { success: true };
+  },
+
+  async bulkDelete(context: FeatureExecutionContext, input: { ids: string[] }) {
+    return executeBulkOperation(input.ids, async (id) => {
+      await GroupImplementations.delete(context, { id });
+    });
+  },
+
+  async assignHoldingGroups(
+    context: FeatureExecutionContext,
+    input: {
+      holdingId: string;
+      groupIds: string[];
+    }
+  ) {
+    const groupRepository = Container.get(GroupRepository);
+    const holdingRepository = Container.get(HoldingRepository);
+
+    // Verify holding ownership
+    const holding = await holdingRepository.findById(input.holdingId);
+    if (!holding || holding.userId !== context.userId) {
+      throw new Error('Unauthorized access to holding');
+    }
+
+    // Verify all groups belong to the user
+    if (input.groupIds.length > 0) {
+      const groups = await Promise.all(input.groupIds.map((id) => groupRepository.findById(id)));
+
+      if (groups.some((g) => !g || g.userId !== context.userId)) {
+        throw new Error('Unauthorized access to one or more groups');
+      }
+    }
+
+    await groupRepository.assignHoldingGroups(input.holdingId, input.groupIds);
+
+    return { success: true };
+  },
+
+  async assignAccountGroups(
+    context: FeatureExecutionContext,
+    input: {
+      accountId: string;
+      groupIds: string[];
+    }
+  ) {
+    const groupRepository = Container.get(GroupRepository);
+    const accountRepository = Container.get(AccountRepository);
+
+    // Verify account ownership
+    const account = await accountRepository.findById(input.accountId);
+    if (!account || account.userId !== context.userId) {
+      throw new Error('Unauthorized access to account');
+    }
+
+    // Verify all groups belong to the user
+    if (input.groupIds.length > 0) {
+      const groups = await Promise.all(input.groupIds.map((id) => groupRepository.findById(id)));
+
+      if (groups.some((g) => !g || g.userId !== context.userId)) {
+        throw new Error('Unauthorized access to one or more groups');
+      }
+    }
+
+    await groupRepository.assignAccountGroups(input.accountId, input.groupIds);
+
+    return { success: true };
+  },
+
+  async getHoldingGroups(context: FeatureExecutionContext, input: { holdingId: string }) {
+    const groupRepository = Container.get(GroupRepository);
+    const holdingRepository = Container.get(HoldingRepository);
+
+    // Verify holding ownership
+    const holding = await holdingRepository.findById(input.holdingId);
+    if (!holding || holding.userId !== context.userId) {
+      throw new Error('Unauthorized access to holding');
+    }
+
+    return await groupRepository.findGroupsByHoldingId(input.holdingId);
+  },
+
+  async getAccountGroups(context: FeatureExecutionContext, input: { accountId: string }) {
+    const groupRepository = Container.get(GroupRepository);
+    const accountRepository = Container.get(AccountRepository);
+
+    // Verify account ownership
+    const account = await accountRepository.findById(input.accountId);
+    if (!account || account.userId !== context.userId) {
+      throw new Error('Unauthorized access to account');
+    }
+
+    return await groupRepository.findGroupsByAccountId(input.accountId);
   },
 };

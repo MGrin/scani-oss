@@ -4,6 +4,7 @@ import { Container, Service } from 'typedi';
 import type { Holding, User } from '../domain/entities';
 import { AccountRepository } from '../repositories/AccountRepository';
 import type { DatabaseTransaction } from '../repositories/BaseRepository';
+import { GroupRepository } from '../repositories/GroupRepository';
 import { HoldingRepository } from '../repositories/HoldingRepository';
 import { BaseService } from './BaseService';
 import { PortfolioValuationService } from './PortfolioValuationService';
@@ -17,6 +18,7 @@ import { PortfolioValuationService } from './PortfolioValuationService';
 export class HoldingService extends BaseService {
   private readonly holdingRepository = Container.get(HoldingRepository);
   private readonly accountRepository = Container.get(AccountRepository);
+  private readonly groupRepository = Container.get(GroupRepository);
   private readonly portfolioValuationService = Container.get(PortfolioValuationService);
 
   constructor() {
@@ -111,7 +113,7 @@ export class HoldingService extends BaseService {
 
     this.logger.debug({ userId: user.id, accountId }, 'Getting holdings with details');
 
-    // Parallel fetch: optimized holdings query + portfolio valuation
+    // Parallel fetch: optimized holdings query + portfolio valuation + groups
     const [holdingsWithFullDetails, portfolioValue] = await Promise.all([
       this.holdingRepository.findByUserWithFullDetails(user.id, accountId),
       this.portfolioValuationService.getUserPortfolioValue(user.id, user.baseCurrencyId, accountId),
@@ -120,6 +122,14 @@ export class HoldingService extends BaseService {
     if (holdingsWithFullDetails.length === 0) {
       return [];
     }
+
+    // Fetch groups for all holdings in a single query
+    const groupsMap = await this.groupRepository.findGroupsForHoldings(
+      holdingsWithFullDetails.map(({ holding, account }) => ({
+        id: holding.id,
+        accountId: account.id,
+      }))
+    );
 
     // Create maps for efficient lookups - get individual token prices
     const portfolioPriceMap = new Map(
@@ -153,6 +163,9 @@ export class HoldingService extends BaseService {
         // Get price information from portfolio valuation service
         const priceInfo = priceMetadataMap.get(token.symbol);
 
+        // Get groups for this holding (both direct and account-level)
+        const holdingGroups = groupsMap.get(holding.id) || [];
+
         return {
           id: holding.id,
           token: {
@@ -181,6 +194,11 @@ export class HoldingService extends BaseService {
             typeCode: institution.typeCode,
             website: institution.website,
           },
+          groups: holdingGroups.map((g) => ({
+            id: g.id,
+            name: g.name,
+            color: g.color,
+          })),
           lastUpdated: holding.lastUpdated.toISOString(),
           createdAt: holding.createdAt.toISOString(),
           isActive: holding.isActive,
