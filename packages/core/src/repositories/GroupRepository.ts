@@ -1,4 +1,4 @@
-import { and, eq, inArray } from 'drizzle-orm';
+import { and, eq, inArray, sql } from 'drizzle-orm';
 import { Service } from 'typedi';
 import * as schema from '../database/schema';
 import type { Group, NewGroup } from '../domain/entities';
@@ -37,35 +37,44 @@ export class GroupRepository extends BaseRepository<Group, NewGroup> {
     try {
       const database = this.getDb(transaction);
 
-      // Get all groups for the user
-      const groups = await this.findByUser(userId, transaction);
-
-      // Get counts for each group
-      const results = await Promise.all(
-        groups.map(async (group) => {
-          // Count holdings
-          const holdingsCount = await database
-            .select()
-            .from(schema.holdingGroups)
-            .where(eq(schema.holdingGroups.groupId, group.id))
-            .then((rows) => rows.length);
-
-          // Count accounts
-          const accountsCount = await database
-            .select()
-            .from(schema.accountGroups)
-            .where(eq(schema.accountGroups.groupId, group.id))
-            .then((rows) => rows.length);
-
-          return {
-            ...group,
-            holdingsCount,
-            accountsCount,
-          };
+      // Optimized query using subqueries for counts - single DB query instead of N+1
+      const results = await database
+        .select({
+          id: schema.groups.id,
+          userId: schema.groups.userId,
+          name: schema.groups.name,
+          color: schema.groups.color,
+          description: schema.groups.description,
+          displayOrder: schema.groups.displayOrder,
+          isActive: schema.groups.isActive,
+          createdAt: schema.groups.createdAt,
+          updatedAt: schema.groups.updatedAt,
+          holdingsCount: sql<number>`COALESCE(COUNT(DISTINCT ${schema.holdingGroups.holdingId}), 0)`,
+          accountsCount: sql<number>`COALESCE(COUNT(DISTINCT ${schema.accountGroups.accountId}), 0)`,
         })
-      );
+        .from(schema.groups)
+        .leftJoin(schema.holdingGroups, eq(schema.groups.id, schema.holdingGroups.groupId))
+        .leftJoin(schema.accountGroups, eq(schema.groups.id, schema.accountGroups.groupId))
+        .where(and(eq(schema.groups.userId, userId), eq(schema.groups.isActive, true)))
+        .groupBy(
+          schema.groups.id,
+          schema.groups.userId,
+          schema.groups.name,
+          schema.groups.color,
+          schema.groups.description,
+          schema.groups.displayOrder,
+          schema.groups.isActive,
+          schema.groups.createdAt,
+          schema.groups.updatedAt
+        )
+        .orderBy(schema.groups.displayOrder, schema.groups.name);
 
-      return results;
+      return results as Array<
+        Group & {
+          holdingsCount: number;
+          accountsCount: number;
+        }
+      >;
     } catch (error) {
       this.logger.error({ userId, error }, 'Failed to find groups with counts');
       throw error;

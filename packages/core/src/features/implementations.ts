@@ -530,14 +530,31 @@ export const GroupImplementations = {
   ) {
     const groupRepository = Container.get(GroupRepository);
 
-    return await groupRepository.create({
-      userId: context.userId,
-      name: input.name,
-      color: input.color,
-      description: input.description || null,
-      displayOrder: input.displayOrder || 0,
-      isActive: true,
-    });
+    try {
+      return await groupRepository.create({
+        userId: context.userId,
+        name: input.name,
+        color: input.color,
+        description: input.description || null,
+        displayOrder: input.displayOrder || 0,
+        isActive: true,
+      });
+    } catch (error) {
+      // Check if this is a unique constraint violation on (userId, name)
+      // PostgreSQL error code 23505 = unique_violation
+      if (
+        error instanceof Error &&
+        // biome-ignore lint/suspicious/noExplicitAny: Database error type is not strictly typed
+        ((error as any).code === '23505' ||
+          error.message.includes('unique constraint') ||
+          error.message.includes('duplicate key') ||
+          error.message.includes('uniqueUserGroupName'))
+      ) {
+        throw new Error(`A group with the name "${input.name}" already exists`);
+      }
+      // Re-throw other errors
+      throw error;
+    }
   },
 
   async update(
