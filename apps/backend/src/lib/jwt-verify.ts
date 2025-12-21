@@ -80,47 +80,23 @@ export async function verifySupabaseJWT(token: string): Promise<JWTPayload | nul
   try {
     const jwks = getJWKS();
 
-    // First try with audience validation
-    try {
-      const { payload } = await jwtVerify(token, jwks, {
-        // Supabase uses 'authenticated' as the audience
-        audience: 'authenticated',
-      });
+    // Try verification with audience check
+    const { payload } = await jwtVerify(token, jwks, {
+      // Supabase uses 'authenticated' as the audience
+      audience: 'authenticated',
+    });
 
-      authLogger.info({ userId: payload.sub }, 'JWT verified successfully with audience check');
-      return payload as JWTPayload;
-    } catch (audienceError) {
-      // If audience check fails, try without it to get more info
-      authLogger.warn(
-        {
-          error:
-            audienceError instanceof Error
-              ? {
-                  name: audienceError.name,
-                  message: audienceError.message,
-                  code: (audienceError as unknown as { code: string }).code,
-                  claim: (audienceError as unknown as { claim: string }).claim,
-                }
-              : String(audienceError),
-        },
-        'JWT verification with audience failed, trying without audience check'
-      );
+    authLogger.info(
+      {
+        userId: payload.sub,
+        email: payload.email,
+        aud: payload.aud,
+        iss: payload.iss,
+      },
+      'JWT verified successfully'
+    );
 
-      // Try without audience to see if that's the issue
-      const { payload } = await jwtVerify(token, jwks);
-
-      authLogger.warn(
-        {
-          userId: payload.sub,
-          aud: payload.aud,
-          iss: payload.iss,
-          exp: payload.exp,
-        },
-        'JWT verified WITHOUT audience check - token might have wrong audience'
-      );
-
-      return payload as JWTPayload;
-    }
+    return payload as JWTPayload;
   } catch (error) {
     // Log detailed error information for debugging
     const errorDetails =
@@ -128,9 +104,9 @@ export async function verifySupabaseJWT(token: string): Promise<JWTPayload | nul
         ? {
             name: error.name,
             message: error.message,
-            code: (error as unknown as { code: string }).code,
-            claim: (error as unknown as { claim: string }).claim,
-            reason: (error as unknown as { reason: string }).reason,
+            code: (error as unknown as { code?: string }).code,
+            claim: (error as unknown as { claim?: string }).claim,
+            reason: (error as unknown as { reason?: string }).reason,
           }
         : { message: String(error) };
 
@@ -139,6 +115,7 @@ export async function verifySupabaseJWT(token: string): Promise<JWTPayload | nul
         error: errorDetails,
         jwksUri: JWKS_URI,
         tokenPrefix: `${token.substring(0, 20)}...`,
+        supabaseUrl,
       },
       'JWT verification failed'
     );

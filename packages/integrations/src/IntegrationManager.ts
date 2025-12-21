@@ -115,7 +115,7 @@ async function initializeIntegrationRegistry(): Promise<void> {
     }
   } catch (error) {
     logger.warn(
-      { error: error instanceof Error ? error.message : String(error) },
+      { error },
       'Failed to register exchanges with database UUIDs - will fall back to static IDs'
     );
   }
