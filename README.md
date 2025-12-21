@@ -1,8 +1,30 @@
 # Scani - Personal Finance Management SaaS
 
-A modern personal finance management application built with TypeScript, React, and tRPC.
+A comprehensive personal finance management platform built with modern TypeScript stack, featuring multi-platform support (web, mobile, Telegram bot) and extensive integrations with banks, brokerages, and cryptocurrency exchanges.
 
-## Tech Stack
+## 🌟 Features
+
+### Core Capabilities
+- **Multi-platform Access** - Web app, React Native mobile app, and Telegram bot
+- **Real-time Portfolio Tracking** - WebSocket-powered live updates
+- **Bank & Brokerage Integration** - Plaid integration for automatic bank account sync
+- **Cryptocurrency Support** - Track holdings across multiple blockchains and exchanges
+- **Exchange Integrations** - Binance, Kraken, and more
+- **AI-Powered Features** - Screenshot parsing for quick data entry, AI chat assistant
+- **Scheduled Transactions** - Automated recurring income allocations and payments
+- **Asset Allocation Analysis** - Visual breakdown of portfolio composition
+- **Multi-Currency Support** - Track assets in multiple currencies with automatic conversion
+
+### Technical Highlights
+- **End-to-End Type Safety** - Full TypeScript with tRPC for type-safe API calls
+- **Clean Architecture** - Use Cases → Services → Repositories pattern
+- **Dependency Injection** - TypeDI for service management
+- **Real-time Updates** - WebSocket server for instant portfolio changes
+- **Error Tracking** - Sentry integration for both frontend and backend
+- **Rate Limiting** - Smart rate limiting for external API calls
+- **Database Migrations** - Drizzle ORM with automatic migration generation
+
+## 🏗️ Tech Stack
 
 ### Frontend
 
@@ -19,20 +41,33 @@ A modern personal finance management application built with TypeScript, React, a
 
 - **Bun** - Runtime and package manager
 - **TypeScript** - Type safety
+- **Elysia** - Fast HTTP server framework
 - **tRPC** - End-to-end type safety
+- **TypeDI** - Dependency injection container
 - **Zod** - Schema validation
 - **Drizzle ORM** - Type-safe database queries
-- **PostgreSQL** - Database (all environments)
+- **PostgreSQL** - Primary database
 - **Supabase** - Authentication and user management
-- **WebSocket** - Real-time updates
-- **CORS** - Cross-origin resource sharing
+- **WebSocket** - Real-time updates via custom WebSocket server
+- **Sentry** - Error tracking and performance monitoring
+- **Pino** - Structured logging
+- **OpenAI** - AI integration for screenshot parsing and chat
+
+### Integrations
+
+- **Plaid** - Bank and brokerage account integration
+- **Binance** - Cryptocurrency exchange integration
+- **Kraken** - Cryptocurrency exchange integration
+- **DefiLlama** - DeFi protocol data
+- **Blockchain Explorers** - Ethereum, Bitcoin, and other blockchain data
+- **CoinGecko** - Cryptocurrency price data
 
 ### Mobile
 
-- **React Native** - core technology
-- **Ignite** - battle-prover template for theming and internationalization
-- **tRPC** - End-to-end type safety
-- **WebSocket** - Real-time updates
+- **React Native** - Core framework
+- **Ignite** - Battle-tested template for theming and internationalization
+- **tRPC** - Type-safe API communication
+- **WebSocket** - Real-time portfolio updates
 
 ### Landing
 
@@ -46,37 +81,96 @@ A modern personal finance management application built with TypeScript, React, a
 ### Development
 
 - **Bun Workspaces** - Monorepo management
-- **Shared Types** - Common type definitions
+- **Biome** - Fast linter and formatter
 - **Drizzle Kit** - Database migrations and schema management
-- **Bun Test** - Testing framework with 93%+ test coverage
+- **TypeDI** - Dependency injection
+- **Decimal.js** - Precise financial calculations
 
-## Project Structure
+## 📁 Project Structure
 
 ```
 scani/
 ├── apps/
-│   ├── backend/          # tRPC API server
-│   ├── frontend/         # React web application
-│   ├── landing/          # React static landing
-│   └── mobile/           # React Native mobile application
-|
+│   ├── backend/              # tRPC API server with Elysia
+│   │   ├── src/
+│   │   │   ├── config/       # Container and configuration
+│   │   │   ├── infrastructure/ # Cron jobs, Telegram, WebSocket
+│   │   │   ├── presentation/  # tRPC routers and middleware
+│   │   │   └── index.ts      # Application entry point
+│   │   └── package.json
+│   │
+│   ├── frontendV2/           # React web application (main frontend)
+│   │   ├── src/
+│   │   │   ├── components/   # Reusable UI components
+│   │   │   ├── contexts/     # React contexts (Auth, Theme)
+│   │   │   ├── hooks/        # Custom React hooks
+│   │   │   ├── lib/          # tRPC client setup
+│   │   │   ├── pages/        # Route pages
+│   │   │   └── main.tsx      # Application entry point
+│   │   └── package.json
+│   │
+│   ├── landing/              # Marketing landing page
+│   │   └── src/
+│   │
+│   ├── mobile/               # React Native mobile app (Ignite)
+│   │   └── src/
+│   │
+│   └── telegram-bot/         # Telegram bot integration
+│       └── src/
+│
 ├── packages/
-│   └── shared/          # Shared types and utilities
-└── package.json         # Workspace configuration
+│   ├── core/                 # Core business logic
+│   │   ├── src/
+│   │   │   ├── database/     # Drizzle schema and connection
+│   │   │   ├── use-cases/    # Business logic (18 use cases)
+│   │   │   ├── services/     # Infrastructure services
+│   │   │   ├── repositories/ # Data access layer
+│   │   │   ├── entities/     # Domain entities
+│   │   │   ├── features/     # Feature implementations
+│   │   │   └── external-services/ # External API clients
+│   │   └── package.json
+│   │
+│   ├── integrations/         # Integration framework
+│   │   ├── src/
+│   │   │   ├── implementations/ # Plaid, Binance, Kraken, etc.
+│   │   │   ├── services/     # Integration API clients
+│   │   │   └── IntegrationManager.ts
+│   │   └── package.json
+│   │
+│   ├── rate-limiter/         # Rate limiting utilities
+│   │   └── package.json
+│   │
+│   └── shared/               # Shared types and utilities
+│       ├── src/
+│       │   └── index.ts      # Zod schemas, Decimal.js helpers
+│       └── package.json
+│
+├── docs/                     # Documentation
+│   ├── ARCHITECTURE.md       # Technical architecture
+│   ├── EXECUTIVE_SUMMARY.md  # Project status
+│   ├── ROADMAP.md           # Development roadmap
+│   ├── features/            # Feature documentation
+│   ├── technical/           # Technical deep-dives
+│   └── stability/           # Stability fixes and analysis
+│
+└── package.json             # Workspace root configuration
 ```
 
-## Getting Started
+## 🚀 Getting Started
 
 ### Prerequisites
 
-- [Bun](https://bun.sh/) (latest version)
-- Node.js 18+ (for compatibility)
+- [Bun](https://bun.sh/) (latest version recommended)
+- PostgreSQL database (can use Supabase or local instance)
+- Node.js 18+ (for compatibility with some tools)
 
 ### Installation
 
 1. **Clone the repository and install dependencies**
 
    ```bash
+   git clone <repository-url>
+   cd scani
    bun install
    ```
 
@@ -97,24 +191,28 @@ scani/
    SUPABASE_ANON_KEY=your_supabase_anon_key_here
    SUPABASE_SERVICE_ROLE_KEY=your_supabase_service_role_key_here
 
+   # Database Configuration (Required)
+   # Use Supabase PostgreSQL or local PostgreSQL instance
+   DATABASE_URL=postgresql://username:password@localhost:5432/scani_dev
+
    # Server Configuration (Optional)
    PORT=3001
    FRONTEND_URL=http://localhost:5173
 
-   # Database Configuration
-   # PostgreSQL connection string (required for all environments)
-   # You can use your Supabase database URL or a local PostgreSQL instance
-   DATABASE_URL=postgresql://username:password@localhost:5432/scani_dev
+   # External API Keys (Optional - for specific features)
+   OPENAI_API_KEY=your_openai_api_key_here
+   PLAID_CLIENT_ID=your_plaid_client_id
+   PLAID_SECRET=your_plaid_secret
    ```
 
    **Frontend Environment Variables:**
 
    ```bash
    # Copy the example file and customize
-   cp apps/frontend/.env.example apps/frontend/.env.local
+   cp apps/frontendV2/.env.example apps/frontendV2/.env.local
    ```
 
-   Edit `apps/frontend/.env.local` with your actual values:
+   Edit `apps/frontendV2/.env.local` with your actual values:
 
    ```bash
    # Supabase Configuration (Required)
@@ -123,6 +221,10 @@ scani/
 
    # API Configuration (Optional)
    VITE_API_URL=http://localhost:3001
+   VITE_WS_URL=ws://localhost:3002
+
+   # Sentry Configuration (Optional)
+   VITE_SENTRY_DSN=your_sentry_dsn_here
    ```
 
 3. **Set up Supabase Authentication**
@@ -134,11 +236,9 @@ scani/
 
 4. **Set up the database**
 
-   The application now uses PostgreSQL for all environments except tests. You have two options:
+   The application uses PostgreSQL for all data storage. You have two options:
 
    **Option A: Use Supabase PostgreSQL (Recommended)**
-
-   If you're already using Supabase for authentication, you can use the same PostgreSQL database:
 
    ```bash
    # Use your Supabase database URL in the environment file
@@ -147,184 +247,345 @@ scani/
 
    **Option B: Local PostgreSQL**
 
-   Install and set up a local PostgreSQL instance:
-
    ```bash
    # macOS with Homebrew
-   brew install postgresql
-   brew services start postgresql
+   brew install postgresql@15
+   brew services start postgresql@15
    createdb scani_dev
+
+   # Ubuntu/Debian
+   sudo apt install postgresql
+   sudo systemctl start postgresql
+   sudo -u postgres createdb scani_dev
 
    # Set DATABASE_URL in your .env.local file
    # DATABASE_URL=postgresql://username:password@localhost:5432/scani_dev
    ```
 
-   **Apply migrations:**
+   **Apply database migrations:**
 
    ```bash
-   # Generate database migrations (if schema changes)
+   # Generate migrations (only needed if schema changed)
+   cd packages/core
    bun run db:generate
 
-   # Apply database migrations
+   # Apply migrations to database
    bun run db:migrate
    ```
 
-5. **Start the backend**
+5. **Start the development servers**
 
+   **Option 1: Start all servers at once (recommended)**
    ```bash
-   cd apps/backend
    bun dev
    ```
+   This starts:
+   - Backend API server on `http://localhost:3001`
+   - WebSocket server on `ws://localhost:3002`
+   - Frontend web app on `http://localhost:5173`
+   - Landing page on `http://localhost:5174`
 
-   The API server will start on `http://localhost:3001`
-   WebSocket server will start on `ws://localhost:3002`
-
-6. **Start the frontend** (in a new terminal)
+   **Option 2: Start servers individually**
    ```bash
-   cd apps/frontend
-   bun dev
+   # Terminal 1 - Backend
+   bun dev:backend
+
+   # Terminal 2 - Frontend
+   bun dev:frontend
+
+   # Terminal 3 - Landing page (optional)
+   bun dev:landing
    ```
-   The web app will start on `http://localhost:5173`
 
-### Development Commands
+6. **Access the application**
 
-#### General Commands (from root directory):
+   - Web App: `http://localhost:5173`
+   - API Server: `http://localhost:3001`
+   - Landing Page: `http://localhost:5174`
 
-- `bun dev` - Start both frontend and backend in development mode
-- `bun build` - Build all packages
-- `bun clean` - Clean all build artifacts
-- `bun type-check` - Run TypeScript checks
-- `bun test` - Run all tests
-- `bun lint` - Run linting checks
-- `bun format` - Format code with Biome.js
-
-#### Database Commands:
-
-- `bun run db:generate` - Generate database migrations from schema changes
-- `bun run db:migrate` - Apply pending migrations to database
-- `bun run db:setup` - Complete database setup (migrate)
-- `bun run db:studio` - Open Drizzle Studio for database management
-
-## Database Architecture
-
-Scani uses **Drizzle ORM** for type-safe database operations with PostgreSQL for all environments.
-
-### Database Schema
-
-The application includes the following main entities:
-
-- **Users** - User account information
-- **Institutions** - Financial institutions (banks, brokers, etc.)
-- **Accounts** - User's financial accounts (checking, savings, investment)
-- **Tokens** - Tradeable assets (stocks, crypto, fiat currencies)
-- **Holdings** - Asset positions in accounts
-- **Transactions** - Financial transaction records
-- **Token Prices** - Historical price data for assets
-
-### Environment Configuration
-
-- **All environments**: Use PostgreSQL via `DATABASE_URL` environment variable
-
-The application requires a valid PostgreSQL connection string in the `DATABASE_URL` environment variable for all environments including development, testing, and production.For detailed PostgreSQL setup instructions, see [PostgreSQL Setup Guide](./docs/POSTGRESQL_SETUP.md).
-
-### Database Operations
-
-All database operations are:
-
-- ✅ **Type-safe** with Drizzle ORM and TypeScript
-- ✅ **Validated** using Zod schemas
-- ✅ **Tested** with comprehensive test coverage
-- ✅ **Migrated** using Drizzle Kit migration system
-- ✅ **Seeded** with sample data for development
-
-## Testing
-
-Scani maintains **93%+ test coverage** across the entire codebase with comprehensive testing strategies:
-
-### Test Types
-
-- **Unit Tests** - Individual function and component testing
-- **Integration Tests** - Database operations and API endpoints
-- **Type Tests** - Schema validation and type safety
-- **Financial Math Tests** - Precision calculations and edge cases
-
-### Test Features
-
-- ✅ **Database Isolation** - Each test uses fresh database state
-- ✅ **Real Database Testing** - Tests use actual Drizzle ORM operations
-- ✅ **Backend Coverage** - All routers, utilities, and schemas tested
-- ✅ **Shared Package Coverage** - Financial math and type validation tested
-- ✅ **Edge Case Handling** - Negative balances, precision, large numbers
-- ✅ **Error Path Testing** - Validation errors and edge conditions
-- ⚠️ **Frontend Testing** - Currently disabled (UI tests to be implemented later)
-
-### Running Tests
+### Mobile Development
 
 ```bash
-# Run all tests
-bun test
+# iOS
+bun dev:mobile:ios
 
-# Run tests with coverage report
-bun test --coverage
-
-# Run specific test file
-bun test apps/backend/src/routers/accounts.test.ts
+# Android
+bun dev:mobile:android
 ```
 
-## Security & Authentication
+Prerequisites:
+- iOS: macOS with Xcode installed
+- Android: Android Studio with Android SDK
 
-Scani implements secure authentication using **Supabase Auth** with the following features:
+## 🛠️ Development Commands
 
-### Authentication Features
+### General Commands (from root):
+- `bun dev` - Start all development servers (backend + frontendV2 + landing)
+- `bun dev:backend` - Start backend server only
+- `bun dev:frontend` - Start frontend web app only
+- `bun dev:landing` - Start landing page only
+- `bun build` - Build all packages for production
+- `bun clean` - Clean all build artifacts
 
-- ✅ **Email/Password Authentication** - Secure user registration and login
-- ✅ **JWT Token-based Security** - All API endpoints are protected with JWT validation
-- ✅ **Password Reset** - Email-based password reset functionality
-- ✅ **Session Management** - Automatic token refresh and session persistence
-- ✅ **User Data Isolation** - Each user only sees their own financial data
-- ✅ **Route Protection** - Frontend routes require authentication
-- ✅ **Environment Variables** - All secrets managed via environment variables
+### Code Quality Commands:
+- `bun lint` - Run Biome linter across all packages
+- `bun lint:fix` - Auto-fix linting issues
+- `bun type-check` - Run TypeScript type checking on all packages
+- `bun format` - Format code with Biome
 
-### Security Implementation
+### Database Commands (from packages/core):
+- `cd packages/core && bun run db:generate` - Generate migrations from schema changes
+- `bun run db:migrate` - Apply pending migrations to database
+- `bun run db:studio` - Open Drizzle Studio for database management
 
-- **Backend Protection**: All tRPC procedures use `protectedProcedure` requiring valid JWT
-- **Data Scoping**: Database queries automatically filter by authenticated user ID
-- **Token Validation**: JWT tokens are validated on every API request
-- **Secure Headers**: Authorization tokens sent via HTTP headers
-- **No Hardcoded Secrets**: All sensitive data configured via environment variables
+### Package-Specific Commands:
+```bash
+# Backend
+cd apps/backend
+bun dev              # Start with debug logging
+bun dev:verbose      # Start with trace logging (includes SQL queries)
+bun dev:quiet        # Start with minimal logging
+
+# Frontend
+cd apps/frontendV2
+bun dev              # Start development server
+bun build            # Build for production
+
+# Mobile
+cd apps/mobile
+bun ios              # Run on iOS simulator
+bun android          # Run on Android emulator
+```
+
+## 🏛️ Architecture Overview
+
+### Clean Architecture Principles
+
+Scani follows clean architecture with clear separation of concerns:
+
+1. **Presentation Layer** (`apps/backend/src/presentation/`)
+   - tRPC routers - Thin controllers that handle HTTP/WebSocket
+   - Middleware - Authentication, rate limiting, logging
+   - Type definitions and validation
+
+2. **Use Case Layer** (`packages/core/src/use-cases/`)
+   - Business logic encapsulation (18 use cases)
+   - Single responsibility per use case
+   - Reusable across different entry points
+
+3. **Service Layer** (`packages/core/src/services/`)
+   - Infrastructure services (Pricing, Portfolio Valuation, AI)
+   - External API integrations
+   - Complex calculations and aggregations
+
+4. **Repository Layer** (`packages/core/src/repositories/`)
+   - Data access abstraction
+   - Database operations via Drizzle ORM
+   - Query optimization
+
+5. **Domain Layer** (`packages/core/src/entities/`)
+   - Domain models and entities
+   - Business rules and validations
+
+### Dependency Injection
+
+All services use **TypeDI** for dependency injection:
+- Services are registered with `@Service()` decorator
+- Retrieved from container using `Container.get(ServiceName)`
+- Container initialized before application startup
+- Promotes testability and loose coupling
+
+## 📊 Database Architecture
+
+Scani uses **Drizzle ORM** for type-safe database operations with PostgreSQL.
+
+### Database Schema Design
+
+The application uses **dynamic enums** stored in database tables instead of TypeScript enums:
+
+**Enum Tables:**
+- `institutionTypes` - Bank, broker, exchange, wallet types
+- `accountTypes` - Checking, savings, investment, crypto wallet
+- `tokenTypes` - Fiat, cryptocurrency, stock, ETF
+- `scheduleTypes` - Income allocation, subscription, payment
+- `scheduleStepTypes` - Inflow, outflow, transfer, conversion
+
+**Core Entities:**
+- `users` - User accounts with base currency preference
+- `institutions` - Financial institutions (banks, exchanges, wallets)
+- `accounts` - User's financial accounts linked to institutions
+- `tokens` - Tradeable assets (stocks, crypto, fiat currencies)
+- `holdings` - Asset positions in accounts with quantity and cost basis
+- `tokenPrices` - Historical price data for assets
+- `schedules` - Recurring transaction patterns with cron expressions
+- `userWallets` - Blockchain wallet addresses for crypto tracking
+- `integrationCredentials` - Encrypted API keys for external services
+
+**Features:**
+- UUID primary keys with `defaultRandom()`
+- Automatic timestamps (`createdAt`, `updatedAt`)
+- User scoping - All data automatically filtered by authenticated user
+- Financial precision - Uses `Decimal.js` for all monetary calculations
+- Foreign key relationships with proper cascading
+
+### Database Migrations
+
+```bash
+# After schema changes in packages/core/src/database/schema.ts
+cd packages/core
+bun run db:generate    # Generate migration files
+bun run db:migrate     # Apply migrations to database
+bun run db:studio      # Visual database management
+```
+
+## 🔐 Authentication & Security
 
 ### Authentication Flow
+- **Supabase Auth** - JWT-based authentication
+- **User Sync** - Automatic sync from Supabase to local PostgreSQL
+- **Protected Procedures** - All user data access via `protectedProcedure`
+- **User Scoping** - Automatic filtering of all queries by authenticated user
 
-1. **Registration**: Users create accounts via signup form with email validation
-2. **Login**: Email/password authentication returns JWT access token
-3. **API Requests**: Frontend automatically includes JWT in request headers
-4. **Token Validation**: Backend validates JWT and extracts user information
-5. **Data Access**: All data operations are scoped to the authenticated user
-6. **Session Persistence**: Tokens are automatically refreshed and persisted
+### Security Measures
+- **Environment Variables** - All secrets stored in `.env.local` files
+- **Input Validation** - Zod schemas for all API inputs
+- **SQL Injection Prevention** - Drizzle ORM parameterized queries only
+- **Rate Limiting** - Per-endpoint and per-user rate limits
+- **Error Sanitization** - Sensitive data removed from error responses
+- **Sentry Integration** - Error tracking without exposing secrets
 
-## Features
+## 🔌 Integrations
 
-- 🔐 **Authentication** - Secure user accounts with Supabase Auth (email/password, password reset)
-- 📊 **Dashboard** - Overview of financial status with real-time calculations
-- 💳 **Account Management** - Track multiple accounts with full CRUD operations
-- 🏦 **Institution Management** - Organize accounts by financial institutions
-- 💰 **Holdings Tracking** - Monitor investment positions and balances
-- 📝 **Transaction History** - Comprehensive transaction recording
-- 🗃️ **Database Persistence** - Reliable SQLite/PostgreSQL data storage
-- 📈 **Real-time Updates** - Live data synchronization via WebSocket
-- 🎨 **Modern UI** - Clean, responsive design with Shadcn UI
-- 🔒 **Type Safety** - Full TypeScript coverage with Drizzle ORM
-- ✅ **High Test Coverage** - 93%+ test coverage with comprehensive test suite
-- 🛡️ **Data Privacy** - User-scoped data access with secure JWT authentication
-- 🤖 **Telegram Bot** - AI-powered chatbot for managing your portfolio via Telegram ([Documentation](./docs/features/TELEGRAM_BOT.md))
+### Financial Integrations
+- **Plaid** - Bank and brokerage account linking (OAuth flow)
+- **Binance** - Cryptocurrency exchange API integration
+- **Kraken** - Cryptocurrency exchange API integration
 
-## Future Enhancements
+### Blockchain Integrations
+- **Ethereum** - ERC-20 token balances via Ethers.js
+- **Bitcoin** - Bitcoin address balance tracking
+- **Multi-chain support** - Extensible architecture for additional chains
 
-- **Mobile App** - React Native mobile version
-- 🏦 **Bank Integration** - Connect to banking APIs (Open Banking, Plaid)
-- 📊 **Advanced Analytics** - Charts, trends, and insights
-- 💡 **Budget Planning** - Budget creation and tracking
-- 🔄 **Import/Export** - CSV/OFX file import and data export
-- 📧 **Email Notifications** - Account alerts and reports
-- 🌍 **Multi-currency** - Support for multiple currencies
-- 📱 **Mobile-first UI** - Enhanced mobile experience
+### Data Providers
+- **CoinGecko** - Cryptocurrency price data
+- **DefiLlama** - DeFi protocol data and prices
+- **Blockchain Explorers** - Balance and transaction data
+
+### AI Integration
+- **OpenAI GPT-4** - Screenshot parsing for quick data entry
+- **Structured Outputs** - Type-safe AI responses with Zod validation
+
+## 🤖 AI Features
+
+### Screenshot Parsing
+- Upload screenshots of holdings or transactions
+- AI extracts structured data (token, quantity, price)
+- Manual review and editing before saving
+- Support for multiple assets per screenshot
+
+### AI Chat Assistant
+- Natural language schedule configuration
+- Context-aware suggestions
+- Integration with existing data
+
+## 📱 Platform Support
+
+### Web Application
+- React 18 with TypeScript
+- Vite for fast development
+- Tailwind CSS + Shadcn UI components
+- Responsive design for desktop and mobile browsers
+
+### Mobile Application
+- React Native with Ignite template
+- iOS and Android support
+- Native navigation and theming
+- Shared tRPC API client with web
+
+### Telegram Bot
+- Portfolio tracking via Telegram
+- Daily digest notifications
+- Quick balance checks
+- Integration with main platform data
+
+## 🧪 Testing Strategy
+
+**Note:** The project currently does not require tests. Testing scripts can be created for development purposes but should be removed before final submission.
+
+### Test Coverage (when tests exist)
+- Backend routers and use cases
+- Financial calculations (Decimal.js precision)
+- Database operations (Drizzle ORM)
+- Type validation (Zod schemas)
+
+## 🚀 Deployment
+
+### Production Build
+
+```bash
+# Build all packages
+bun build
+
+# Build specific package
+cd apps/backend && bun run build
+cd apps/frontendV2 && bun run build
+```
+
+### Environment Variables
+
+Production requires the following environment variables:
+- `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`
+- `DATABASE_URL` - PostgreSQL connection string
+- `OPENAI_API_KEY` - For AI features
+- `PLAID_CLIENT_ID`, `PLAID_SECRET` - For bank integrations
+- `SENTRY_DSN` - For error tracking
+
+### Deployment Platforms
+
+Recommended platforms:
+- **Backend** - Fly.io, Railway, or any Node.js/Bun hosting
+- **Frontend** - Vercel, Netlify, or Cloudflare Pages
+- **Database** - Supabase, Neon, or managed PostgreSQL
+
+## 📖 Documentation
+
+- [`ARCHITECTURE.md`](./docs/ARCHITECTURE.md) - Technical architecture details
+- [`EXECUTIVE_SUMMARY.md`](./docs/EXECUTIVE_SUMMARY.md) - Project status and overview
+- [`ROADMAP.md`](./docs/ROADMAP.md) - Development roadmap and planned features
+- [`/docs/features/`](./docs/features/) - Feature-specific documentation
+- [`/docs/technical/`](./docs/technical/) - Technical deep-dives
+
+## 🤝 Contributing
+
+### Development Workflow
+
+1. Create a feature branch
+2. Make changes following the architecture patterns
+3. Run `bun lint:fix` to fix linting issues
+4. Run `bun type-check` to verify TypeScript
+5. Test functionality manually
+6. Submit pull request with clear description
+
+### Code Style
+
+- Use **Biome** for linting and formatting
+- Follow **clean architecture** principles (Use Cases → Services → Repositories)
+- Use **TypeDI** for dependency injection
+- Use **Decimal.js** for all financial calculations
+- Use **Drizzle ORM** for all database operations
+- Never use `require()` - always use ES6 imports
+
+## 📄 License
+
+[Your License Here]
+
+## 🙏 Acknowledgments
+
+Built with:
+- [Bun](https://bun.sh/) - Fast JavaScript runtime
+- [tRPC](https://trpc.io/) - End-to-end type safety
+- [Drizzle ORM](https://orm.drizzle.team/) - TypeScript ORM
+- [React](https://react.dev/) - UI framework
+- [Supabase](https://supabase.com/) - Authentication and database
+- [TypeDI](https://github.com/typestack/typedi) - Dependency injection
+

@@ -5,38 +5,61 @@
 ## Quick Reference for Agents
 
 **Essential Commands:**
-- `bun dev` - Start development servers (frontend + backend)
-- `bun lint` - Run Biome linter
-- `bun type=check` - Run typecheck
-- `bun run db:generate` - Generate new migrations
+- `bun dev` - Start all development servers (backend + frontendV2 + landing)
+- `bun dev:backend` - Start backend only
+- `bun dev:frontend` - Start frontendV2 only
+- `bun lint` - Run Biome linter across all packages
+- `bun type-check` - Run TypeScript checks on all packages
+- `cd packages/core && bun run db:generate` - Generate new migrations
+- `bun run db:migrate` - Apply database migrations
 
 **Critical Rules:**
 - ✅ Always use `bun` and `bunx` (never npm/yarn/npx)
 - ✅ Use Drizzle ORM for database operations (never raw SQL)
 - ✅ Use `Decimal.js` for all financial calculations
 - ✅ All user data must be scoped via `protectedProcedure`
-- ✅ Run linter, build, and tests before finalizing changes
-- ✅ **ALWAYS use proper ES6 imports at the top of files** (NEVER use `require()` or `await import()` or dynamic imports)
-- ✅ Follow clean architecture - use factory patterns from packages, never instantiate services directly
+- ✅ Use TypeDI Container for dependency injection
+- ✅ **ALWAYS use proper ES6 imports at the top of files** (NEVER use `require()` or dynamic imports)
+- ✅ Follow clean architecture - Use Cases → Services → Repositories
 - ✅ Follow DRY, OOP, SOLID, and Onion Architecture principles
+- ✅ Initialize container before importing routers (see `apps/backend/src/index.ts`)
 - ❌ **NEVER use `require()` or `await import()` or any dynamic imports** - always use static ES6 imports
 - ❌ Never auto-apply database migrations
 - ❌ Never use TypeScript enums for dynamic data
 - ❌ Never bypass authentication for user-scoped data
 - ❌ Never commit secrets or sensitive data
-- ❌ Never instantiate integration services directly - always use factory functions from packages
+- ❌ Never instantiate services directly - always use TypeDI Container
 
 ## Architecture Overview
 
-**Scani** is a TypeScript monorepo personal finance SaaS built with tRPC, Drizzle ORM, and Bun. The architecture follows a strict separation between frontend (React + Vite) and backend (Elysia + tRPC) with shared type definitions.
+**Scani** is a TypeScript monorepo personal finance SaaS built with tRPC, Drizzle ORM, Bun, and TypeDI. The architecture follows clean architecture principles with strict separation of concerns.
 
 ### Key Architecture Patterns
 
-- **Monorepo Structure**: `apps/backend` (tRPC API), `apps/frontend` (React SPA), `packages/shared` (common types/utils)
-- **End-to-End Type Safety**: All API communication uses tRPC with shared TypeScript types from `@scani/backend/router`
+- **Monorepo Structure**: `apps/backend` (tRPC API), `apps/frontendV2` (React SPA), `apps/landing` (Marketing site), `apps/mobile` (React Native), `apps/telegram-bot` (Telegram integration), `packages/*` (shared code)
+- **End-to-End Type Safety**: All API communication uses tRPC with shared TypeScript types
 - **Database**: PostgreSQL with Drizzle ORM, dynamic enums stored in database tables (not TypeScript enums)
-- **Authentication**: Supabase Auth with JWT tokens, user sync to local PostgreSQL via `middleware/auth.ts`
-- **Clean Architecture**: Following DRY, OOP, SOLID, and Onion Architecture principles
+- **Authentication**: Supabase Auth with JWT tokens, user sync to local PostgreSQL via middleware
+- **Dependency Injection**: TypeDI Container for service management and dependency injection
+- **Clean Architecture**: Use Cases → Services → Repositories → Database
+- **Real-time Updates**: WebSocket server for live portfolio updates
+- **Error Tracking**: Sentry integration for both frontend and backend
+- **AI Integration**: OpenAI integration for screenshot parsing and chat assistance
+
+### Package Structure
+
+**Packages:**
+- `@scani/core` - Core business logic, database, services, use cases, repositories
+- `@scani/integrations` - Integration framework (Plaid, Binance, Kraken, etc.)
+- `@scani/rate-limiter` - Rate limiting utilities
+- `@scani/shared` - Shared types and utilities (Zod schemas, Decimal.js helpers)
+
+**Apps:**
+- `@scani/backend` - tRPC API server with Elysia
+- `@scani/frontend-v2` - React SPA with Vite
+- `@scani/landing` - Marketing landing page
+- `@scani/mobile` - React Native mobile app (Ignite template)
+- `@scani/telegram-bot` - Telegram bot integration
 
 ### Import and Module Guidelines
 
@@ -45,8 +68,12 @@
 ```typescript
 // ✅ CORRECT - Proper ES6 imports at the top of the file
 import { IntegrationManager } from '@scani/integrations';
-import { IntegrationCredentialsService } from '@scani/core/services';
-import { validateBinanceCredentials } from '@scani/integrations';
+import { db } from '@scani/core/database/connection';
+import * as schema from '@scani/core/database/schema';
+import { Container } from 'typedi';
+
+// ✅ CORRECT - Using TypeDI Container
+const service = Container.get(MyService);
 
 // ❌ WRONG - Dynamic require statements
 const { IntegrationManager } = require('@scani/integrations');
@@ -54,41 +81,61 @@ const { IntegrationManager } = require('@scani/integrations');
 // ❌ WRONG - Async/dynamic imports
 const { IntegrationManager } = await import('@scani/integrations');
 
-// ❌ WRONG - Lazy import functions
-const getService = () => require('@scani/integrations/services/SomeService');
+// ❌ WRONG - Direct instantiation (bypass DI)
+const service = new MyService();
 ```
 
-### Integration Architecture and Factory Pattern
+### Dependency Injection with TypeDI
 
-**All integration implementations must be hidden behind factory functions**
-
-The `@scani/integrations` package provides factory functions to create and configure integrations. **Never instantiate integration services directly in application code.**
+**All services must use TypeDI Container for dependency injection**
 
 ```typescript
-// ✅ CORRECT - Use factory functions from integrations package
-import { validateBinanceCredentials } from '@scani/integrations';
+// ✅ CORRECT - Service class with @Service decorator
+import { Service } from 'typedi';
 
-const isValid = await validateBinanceCredentials(apiKey, apiSecret);
+@Service()
+export class MyService {
+  constructor(
+    private readonly repository: MyRepository,
+    private readonly logger: Logger
+  ) {}
+}
 
-// ❌ WRONG - Direct instantiation of integration services
-import { BinanceApiService } from '@scani/integrations/services/BinanceApiService';
-const service = new BinanceApiService(baseUrl, rateLimiter);
+// ✅ CORRECT - Getting service from container
+import { Container } from 'typedi';
+const service = Container.get(MyService);
 
-// ❌ WRONG - Creating rate limiters in application code
-const binanceRateLimiter = new RateLimiter(10, 1000);
+// ❌ WRONG - Manual instantiation
+const service = new MyService(repository, logger);
 ```
 
-**Factory Pattern Benefits:**
-- Encapsulates implementation details (rate limiters, API URLs, configuration)
-- Centralizes integration logic in the `@scani/integrations` package
-- Makes code more maintainable and testable
-- Prevents coupling between application code and integration implementations
+**Container Initialization:**
+- Container MUST be initialized before any service imports
+- See `apps/backend/src/config/container.ts` for setup
+- Call `initializeContainer()` in `apps/backend/src/index.ts` before imports
 
-**When adding new integrations:**
-1. Create the integration implementation in `packages/integrations/src/implementations/`
-2. Add factory functions in `packages/integrations/src/factories/`
-3. Export factory functions from `packages/integrations/src/index.ts`
-4. Use only the exported factory functions in application code
+### Integration Architecture
+
+**The `@scani/integrations` package manages external service integrations:**
+
+- **IntegrationManager** - Central registry for all integrations
+- **Implementations** - Plaid, Binance, Kraken, DefiLlama, Blockchain explorers
+- **Services** - Integration-specific API clients
+- **Base Classes** - Abstract base classes for integration implementations
+- **Rate Limiters** - Per-integration rate limiting configurations
+
+**Integration Pattern:**
+```typescript
+// ✅ CORRECT - Use IntegrationManager from Container
+import { IntegrationManager } from '@scani/integrations';
+import { Container } from 'typedi';
+
+const manager = Container.get(IntegrationManager);
+const integration = manager.getIntegration('binance');
+
+// ✅ CORRECT - Use integration implementations through manager
+await integration.validateCredentials({ apiKey, apiSecret });
+```
 
 ## Development Workflows
 
@@ -96,9 +143,23 @@ const binanceRateLimiter = new RateLimiter(10, 1000);
 
 ```bash
 # Development (from root)
-bun dev                    # Start both frontend + backend with hot reload
-# from packages/core
-bun run db:generate       # Generate migrations after schema changes
+bun dev                    # Start backend + frontendV2 + landing
+bun dev:backend            # Start backend only
+bun dev:frontend           # Start frontendV2 only
+bun dev:landing            # Start landing page only
+bun dev:mobile:ios         # Start mobile app (iOS)
+bun dev:mobile:android     # Start mobile app (Android)
+
+# Database (from packages/core)
+cd packages/core
+bun run db:generate        # Generate migrations after schema changes
+bun run db:migrate         # Apply migrations
+bun run db:studio          # Open Drizzle Studio (database GUI)
+
+# Linting & Type Checking (from root)
+bun lint                   # Run Biome linter
+bun lint:fix              # Auto-fix linting issues
+bun type-check            # Check TypeScript types
 ```
 
 ## Project-Specific Conventions
@@ -119,7 +180,7 @@ bun run db:generate       # Generate migrations after schema changes
 ### tRPC Router Structure
 
 ```typescript
-// All routers follow this pattern in apps/backend/src/routers/
+// All routers follow this pattern in apps/backend/src/presentation/routers/
 export const entityRouter = router({
   getAll: protectedProcedure.query(async ({ ctx }) => {
     const userId = getUserId(ctx); // Auto user scoping
@@ -144,46 +205,50 @@ const { data: accounts } = trpc.accounts.getAll.useQuery();
 const createAccount = trpc.accounts.create.useMutation();
 ```
 
-### Clean Architecture with Use Cases ✨ NEW
+### Clean Architecture with Use Cases
 
-**The backend follows clean architecture principles with a dedicated use cases layer:**
+**The project follows clean architecture principles with a dedicated use cases layer:**
 
-- **Use Cases** (`apps/backend/src/application/use-cases/`) - Business logic encapsulation
-  - 11 use cases created (transactions, tokens, holdings, wallets)
+- **Use Cases** (`packages/core/src/use-cases/`) - Business logic encapsulation
+  - 18 use cases for various business operations
+  - Examples: `CreateHoldingUseCase`, `ImportWalletAddressUseCase`, `SyncPlaidBalancesUseCase`
   - Each use case handles a single business operation
   - Reusable across routers, background jobs, and CLI tools
-  - Examples: `CreateHoldingUseCase`, `ImportWalletAddressUseCase`
   
-- **Services** (`apps/backend/src/application/services/`) - Infrastructure & external integrations
+- **Services** (`packages/core/src/services/`) - Infrastructure & external integrations
   - PricingService, PortfolioValuationService, UserContextService
-  - Handle complex operations like price fetching (Finnhub, CoinGecko)
-  - Rate limiting and external API management
+  - Handle complex operations like price fetching and portfolio calculations
+  - Manage rate limiting and external API calls
   
-- **Repositories** (`apps/backend/src/infrastructure/repositories/`) - Data access layer
+- **Repositories** (`packages/core/src/repositories/`) - Data access layer
   - Clean abstraction over database operations
-  - Used by use cases for data persistence
+  - Used by use cases and services for data persistence
+  - Examples: `HoldingRepository`, `TokenRepository`, `AccountRepository`
   
 - **Routers** (`apps/backend/src/presentation/routers/`) - Thin controllers
   - Delegate to use cases for business logic
   - Handle HTTP concerns (validation, response formatting)
-  - Real-time updates via WebSocket
+  - 20+ routers for different domains (accounts, holdings, tokens, etc.)
 
 **Architecture Benefits:**
-- ~1,178 lines removed from routers (51-91% reduction)
+- Clear separation of concerns
 - Improved testability (use cases can be unit tested)
-- Better separation of concerns
+- Better code reusability
 - Easier to maintain and scale
 
 ## Key Files to Understand
 
-- `apps/backend/src/infrastructure/database/schema.ts` - Complete database schema with relationships
-- `apps/backend/src/application/use-cases/` - Business logic layer (11 use cases)
-- `apps/backend/src/application/use-cases/index.ts` - All use case exports
-- `packages/shared/src/types/finance.ts` - All validation schemas using Zod
-- `apps/backend/src/middleware/auth.ts` - Authentication and user sync logic
+- `packages/core/src/database/schema.ts` - Complete database schema with relationships
+- `packages/core/src/use-cases/` - Business logic layer (18 use cases)
+- `packages/core/src/use-cases/index.ts` - All use case exports
+- `packages/core/src/services/` - Infrastructure services
+- `packages/core/src/repositories/` - Data access layer
+- `packages/shared/src/index.ts` - Shared validation schemas using Zod
+- `apps/backend/src/config/container.ts` - TypeDI container initialization
+- `apps/backend/src/presentation/middleware/auth.ts` - Authentication and user sync logic
 - `apps/backend/src/presentation/router.ts` - Main tRPC router assembly
 - `apps/backend/src/presentation/routers/` - Individual route handlers (thin controllers)
-- `apps/frontend/src/lib/trpc-provider.tsx` - Frontend tRPC client setup
+- `apps/frontendV2/src/lib/trpc-provider.tsx` - Frontend tRPC client setup
 
 ## Critical Integration Points
 
@@ -202,8 +267,8 @@ const createAccount = trpc.accounts.create.useMutation();
 ### Financial Data Handling
 
 - All monetary values use `Decimal.js` for precision
-- Price data from external APIs (Finnhub, CoinGecko) cached in `tokenPrices` table
-- Portfolio calculations in `services/portfolio-valuation.ts`
+- Price data from external APIs (CoinGecko, DefiLlama, blockchain explorers) cached in `tokenPrices` table
+- Portfolio calculations in `packages/core/src/services/PortfolioValuationService.ts`
 
 ### Testing Requirements
 
@@ -284,7 +349,7 @@ const createAccount = trpc.accounts.create.useMutation();
 ### Before Making Changes
 
 1. **Understand the codebase**: Explore relevant files and understand existing patterns
-2. **Check current state**: Run `bun test` and `bun run lint` to see baseline
+2. **Check current state**: Run `bun lint` to see baseline
 3. **Identify minimal changes**: Plan the smallest possible modifications
 4. **Review architecture**: Check if changes align with clean architecture (use cases → services → repositories)
 
@@ -293,28 +358,26 @@ const createAccount = trpc.accounts.create.useMutation();
 1. **Make incremental changes**: One feature or fix at a time
 2. **Follow existing patterns**: Match code style and structure of similar files
 3. **Use proper layers**:
-   - Business logic → Use Cases (`apps/backend/src/application/use-cases/`)
-   - External APIs → Services (`apps/backend/src/application/services/`)
-   - Database → Repositories (`apps/backend/src/infrastructure/repositories/`)
+   - Business logic → Use Cases (`packages/core/src/use-cases/`)
+   - External APIs → Services (`packages/core/src/services/`)
+   - Database → Repositories (`packages/core/src/repositories/`)
    - HTTP/WebSocket → Routers (`apps/backend/src/presentation/routers/`)
 4. **Test as you go**: Run relevant tests after each change
 
 ### Before Finalizing
 
-1. **Run full test suite**: `bun test` (maintain 93%+ coverage)
-2. **Run linter**: `bun run lint` (fix all issues with `bun run lint:fix`)
-3. **Build check**: Verify TypeScript compilation succeeds
-4. **Manual verification**: Test the actual functionality (run servers, test endpoints)
-5. **Review changes**: Ensure only relevant files are modified
-6. **Security check**: Verify no secrets committed, all auth checks in place
+1. **Run linter**: `bun lint` (fix all issues with `bun lint:fix`)
+2. **Build check**: Verify TypeScript compilation succeeds with `bun type-check`
+3. **Manual verification**: Test the actual functionality (run servers, test endpoints)
+4. **Review changes**: Ensure only relevant files are modified
+5. **Security check**: Verify no secrets committed, all auth checks in place
 
 ### Code Review Checklist
 
 Before committing, verify:
 
-- [ ] All tests pass (`bun test`)
-- [ ] Linter passes (`bun run lint`)
-- [ ] TypeScript compiles without errors
+- [ ] Linter passes (`bun lint`)
+- [ ] TypeScript compiles without errors (`bun type-check`)
 - [ ] No hardcoded secrets or sensitive data
 - [ ] User data properly scoped with authentication
 - [ ] Financial calculations use `Decimal.js`
@@ -427,47 +490,41 @@ bun run build           # Verify build succeeds
 **Adding New Feature:**
 ```bash
 # 1. Create use case
-# Edit: apps/backend/src/application/use-cases/your-feature.use-case.ts
+# Edit: packages/core/src/use-cases/YourFeatureUseCase.ts
 
 # 2. Add router endpoint
-# Edit: apps/backend/src/presentation/routers/your-feature.router.ts
+# Edit: apps/backend/src/presentation/routers/your-feature.ts
 
 # 3. Add to main router
 # Edit: apps/backend/src/presentation/router.ts
 
-# 4. Test
-bun test apps/backend/src/presentation/routers/your-feature.test.ts
-
-# 5. Frontend integration
+# 4. Frontend integration
 # Edit: apps/frontendV2/src/components/YourFeature.tsx
 ```
 
 **Database Schema Change:**
 ```bash
 # 1. Edit schema
-# Edit: apps/backend/src/infrastructure/database/schema.ts
+# Edit: packages/core/src/database/schema.ts
 
 # 2. Generate migration
-cd apps/backend && bun run db:generate
+cd packages/core && bun run db:generate
 
 # 3. User applies migration (not automated)
 # User runs: bun run db:migrate
 
 # 4. Update repositories if needed
-# Edit: apps/backend/src/infrastructure/repositories/
+# Edit: packages/core/src/repositories/
 ```
 
 **Bug Fix:**
 ```bash
-# 1. Write failing test first
-# Create: apps/backend/src/path/to/bug.test.ts
+# 1. Fix the bug
+# Edit: packages/core/src/path/to/fix.ts
 
-# 2. Fix the bug
-# Edit: apps/backend/src/path/to/fix.ts
+# 2. Run linter
+bun lint
 
-# 3. Verify test passes
-bun test apps/backend/src/path/to/bug.test.ts
-
-# 4. Run full suite
-bun test
+# 3. Type check
+bun type-check
 ```

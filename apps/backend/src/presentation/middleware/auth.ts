@@ -129,7 +129,21 @@ async function syncUserWithDatabase(
 export async function createAuthContext(opts: CreateContextOptions): Promise<AuthContext> {
   const authHeader = opts.req.headers.get('authorization');
 
-  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+  if (!authHeader) {
+    authLogger.debug('No authorization header present');
+    return {
+      userId: null,
+      email: null,
+      isAuthenticated: false,
+      dbUser: null,
+    };
+  }
+
+  if (!authHeader.startsWith('Bearer ')) {
+    authLogger.warn(
+      { authHeaderPrefix: authHeader.substring(0, 10) },
+      'Authorization header does not start with Bearer'
+    );
     return {
       userId: null,
       email: null,
@@ -139,6 +153,10 @@ export async function createAuthContext(opts: CreateContextOptions): Promise<Aut
   }
 
   const token = authHeader.substring(7); // Remove "Bearer " prefix
+  authLogger.debug(
+    { tokenLength: token.length, tokenPrefix: `${token.substring(0, 20)}...` },
+    'Extracted JWT token from header'
+  );
 
   try {
     // Verify the JWT token locally using JWKS

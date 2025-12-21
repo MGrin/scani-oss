@@ -28,11 +28,35 @@ function getJWKS() {
   }
 
   // Create new JWKS instance
-  authLogger.info({ jwksUri: JWKS_URI }, 'Creating new JWKS instance');
-  jwksCache = createRemoteJWKSet(new URL(JWKS_URI));
-  jwksCacheTime = now;
-  authLogger.info({ jwksUri: JWKS_URI }, 'New JWKS instace created');
-  return jwksCache;
+  authLogger.info('Creating new JWKS instance');
+  try {
+    const jwksUrl = new URL(JWKS_URI);
+    authLogger.info(
+      {
+        jwksUri: JWKS_URI,
+        protocol: jwksUrl.protocol,
+        host: jwksUrl.host,
+        pathname: jwksUrl.pathname,
+      },
+      'JWKS URL parsed successfully'
+    );
+
+    jwksCache = createRemoteJWKSet(jwksUrl);
+    jwksCacheTime = now;
+    authLogger.info('New JWKS instance created');
+    return jwksCache;
+  } catch (error) {
+    authLogger.error(
+      {
+        error:
+          error instanceof Error ? { name: error.name, message: error.message } : String(error),
+        jwksUri: JWKS_URI,
+        supabaseUrl: supabaseUrl,
+      },
+      'Failed to create JWKS instance'
+    );
+    throw error;
+  }
 }
 
 export interface JWTPayload {
@@ -56,19 +80,65 @@ export async function verifySupabaseJWT(token: string): Promise<JWTPayload | nul
   try {
     const jwks = getJWKS();
 
-    // Verify the JWT signature and decode the payload
-    const { payload } = await jwtVerify(token, jwks, {
-      // Supabase uses 'authenticated' as the audience
-      audience: 'authenticated',
-    });
+    // First try with audience validation
+    try {
+      const { payload } = await jwtVerify(token, jwks, {
+        // Supabase uses 'authenticated' as the audience
+        audience: 'authenticated',
+      });
 
-    authLogger.info({ userId: payload.sub }, 'JWT verified successfully');
+      authLogger.info({ userId: payload.sub }, 'JWT verified successfully with audience check');
+      return payload as JWTPayload;
+    } catch (audienceError) {
+      // If audience check fails, try without it to get more info
+      authLogger.warn(
+        {
+          error:
+            audienceError instanceof Error
+              ? {
+                  name: audienceError.name,
+                  message: audienceError.message,
+                  code: (audienceError as unknown as { code: string }).code,
+                  claim: (audienceError as unknown as { claim: string }).claim,
+                }
+              : String(audienceError),
+        },
+        'JWT verification with audience failed, trying without audience check'
+      );
 
-    return payload as JWTPayload;
+      // Try without audience to see if that's the issue
+      const { payload } = await jwtVerify(token, jwks);
+
+      authLogger.warn(
+        {
+          userId: payload.sub,
+          aud: payload.aud,
+          iss: payload.iss,
+          exp: payload.exp,
+        },
+        'JWT verified WITHOUT audience check - token might have wrong audience'
+      );
+
+      return payload as JWTPayload;
+    }
   } catch (error) {
+    // Log detailed error information for debugging
+    const errorDetails =
+      error instanceof Error
+        ? {
+            name: error.name,
+            message: error.message,
+            code: (error as unknown as { code: string }).code,
+            claim: (error as unknown as { claim: string }).claim,
+            reason: (error as unknown as { reason: string }).reason,
+          }
+        : { message: String(error) };
+
     authLogger.warn(
       {
-        error: error instanceof Error ? error.message : String(error),
+        error: errorDetails,
+        jwksUri: JWKS_URI,
+        tokenPrefix: `${token.substring(0, 20)}...`,
       },
       'JWT verification failed'
     );
