@@ -1,0 +1,46 @@
+{
+  "$schema": "https://unpkg.com/knip@latest/schema.json",
+  "workspaces": {
+    "apps/backend": {
+      "entry": ["src/index.ts"],
+      "project": ["src/**/*.ts"]
+    },
+    "apps/frontendV2": {
+      "entry": ["src/main.tsx", "src/App.tsx"],
+      "project": ["src/**/*.{ts,tsx}"]
+    },
+    "apps/landing": {
+      "entry": ["src/main.tsx"],
+      "project": ["src/**/*.{ts,tsx}"]
+    },
+    "apps/telegram-bot": {
+      "entry": ["src/index.ts"],
+      "project": ["src/**/*.ts"]
+    },
+    "packages/core": {
+      "entry": ["src/index.ts"],
+      "project": ["src/**/*.ts"]
+    },
+    "packages/shared": {
+      "entry": ["src/index.ts"],
+      "project": ["src/**/*.ts"]
+    },
+    "packages/integrations": {
+      "entry": ["src/index.ts", "src/IntegrationManager.ts"],
+      "project": ["src/**/*.ts"]
+    },
+    "packages/rate-limiter": {
+      "entry": ["src/index.ts"],
+      "project": ["src/**/*.ts"]
+    }
+  },
+  "ignore": [
+    "**/__mocks__/**",
+    "**/test/**",
+    "**/*.test.ts",
+    "**/*.test.tsx",
+    "apps/mobile/**",
+    "specs/**",
+    "packages/core/src/scripts/**"
+  ]
+}

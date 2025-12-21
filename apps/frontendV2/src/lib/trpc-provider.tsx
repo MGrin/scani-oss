@@ -79,9 +79,37 @@ export function TRPCProvider({ children }: TRPCProviderProps) {
           url: `${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/trpc`,
           // Include auth token in headers
           async headers() {
+            // Get session - this will automatically refresh the token if needed
             const {
               data: { session },
+              error,
             } = await supabase.auth.getSession();
+
+            if (error) {
+              console.error('[tRPC] Error getting session:', error);
+            }
+
+            // If no session or token is close to expiry, try to refresh
+            if (session?.expires_at) {
+              const expiresAt = session.expires_at * 1000; // Convert to ms
+              const now = Date.now();
+              const timeUntilExpiry = expiresAt - now;
+              const fiveMinutes = 5 * 60 * 1000;
+
+              // If token expires in less than 5 minutes, refresh it
+              if (timeUntilExpiry < fiveMinutes) {
+                console.log('[tRPC] Token expiring soon, refreshing session');
+                const { data: refreshData, error: refreshError } =
+                  await supabase.auth.refreshSession();
+                if (refreshError) {
+                  console.error('[tRPC] Error refreshing session:', refreshError);
+                } else if (refreshData.session) {
+                  return {
+                    authorization: `Bearer ${refreshData.session.access_token}`,
+                  };
+                }
+              }
+            }
 
             return {
               authorization: session?.access_token ? `Bearer ${session.access_token}` : '',
