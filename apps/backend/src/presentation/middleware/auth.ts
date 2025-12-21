@@ -24,6 +24,8 @@ async function syncUserWithDatabase(
   email: string
 ): Promise<typeof schema.users.$inferSelect> {
   try {
+    authLogger.debug({ userId, email }, 'Syncing user with database');
+
     // Check if user already exists
     const [existingUser] = await db
       .select()
@@ -32,6 +34,7 @@ async function syncUserWithDatabase(
       .limit(1);
 
     if (existingUser) {
+      authLogger.debug({ userId }, 'User found in database, checking for updates');
       // Update existing user email if needed, but never update the name or avatar
       const needsUpdate = existingUser.email !== email;
 
@@ -52,6 +55,7 @@ async function syncUserWithDatabase(
     }
 
     // Create new user
+    authLogger.info({ userId, email }, 'Creating new user in database');
     const now = new Date();
 
     // Extract username from email (everything before @)
@@ -80,19 +84,36 @@ async function syncUserWithDatabase(
       throw new Error('Failed to create user in database');
     }
 
+    authLogger.info({ userId, email }, 'User created successfully in database');
+
     return newUser;
   } catch (error) {
-    authLogger.error(
-      {
-        error:
-          error instanceof Error
-            ? { name: error.name, message: error.message, stack: error.stack }
-            : error,
-        userId,
-        userEmail: email,
-      },
-      'Error syncing user with database'
-    );
+    // Enhanced error logging with full error details
+    const errorObj = error as Error & {
+      code?: string;
+      detail?: string;
+      hint?: string;
+    };
+
+    const errorDetails = {
+      userId,
+      userEmail: email,
+      error:
+        error instanceof Error
+          ? {
+              name: errorObj.name,
+              message: errorObj.message,
+              stack: errorObj.stack,
+              // Include postgres-specific error details if available
+              ...(errorObj.code && { code: errorObj.code }),
+              ...(errorObj.detail && { detail: errorObj.detail }),
+              ...(errorObj.hint && { hint: errorObj.hint }),
+            }
+          : error,
+    };
+
+    authLogger.error(errorDetails, 'Error syncing user with database');
+
     throw new TRPCError({
       code: 'INTERNAL_SERVER_ERROR',
       message: 'Failed to sync user data',

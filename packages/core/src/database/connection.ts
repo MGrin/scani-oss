@@ -14,11 +14,11 @@ const MAX_CONNECTIONS = process.env.DB_MAX_CONNECTIONS
   ? Math.max(1, parseInt(process.env.DB_MAX_CONNECTIONS, 10) || 10)
   : 10; // Reduced from 50 to 10 - Render free tier has limited connections
 const IDLE_TIMEOUT = process.env.DB_IDLE_TIMEOUT
-  ? Math.max(0, parseInt(process.env.DB_IDLE_TIMEOUT, 10) || 5)
-  : 5; // Reduced from 10s to 5s - release idle connections faster on free tier
+  ? Math.max(0, parseInt(process.env.DB_IDLE_TIMEOUT, 10) || 10)
+  : 10; // Keep connections alive for 10s - balance between resource usage and connection reuse
 const CONNECT_TIMEOUT = process.env.DB_CONNECT_TIMEOUT
-  ? Math.max(1, parseInt(process.env.DB_CONNECT_TIMEOUT, 10) || 5)
-  : 5; // Reduced from 10s to 5s - fail faster on connection issues
+  ? Math.max(1, parseInt(process.env.DB_CONNECT_TIMEOUT, 10) || 15)
+  : 15; // Increased to 15s - Render free tier can be slow on cold starts
 const MAX_LIFETIME = process.env.DB_MAX_LIFETIME
   ? Math.max(0, parseInt(process.env.DB_MAX_LIFETIME, 10) || 1800)
   : 60 * 15; // 15 minutes (reduced from 30) - recycle connections more frequently on free tier
