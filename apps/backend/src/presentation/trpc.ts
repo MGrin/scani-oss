@@ -32,15 +32,17 @@ export const createContext = async (opts?: FetchCreateContextFnOptions): Promise
   const authContext = opts?.req
     ? await createAuthContext({ req: opts.req })
     : {
-        user: null,
+        userId: null,
+        email: null,
         isAuthenticated: false,
+        dbUser: null,
       };
 
   // Set user context in Sentry for tracing
-  if (authContext.user) {
+  if (authContext.userId) {
     setUser({
-      id: authContext.user.id,
-      email: authContext.user.email,
+      id: authContext.userId,
+      email: authContext.email || undefined,
     });
   }
 
@@ -175,7 +177,7 @@ export const publicProcedure = t.procedure.use(loggingMiddleware);
 
 // Protected procedure that requires authentication
 export const protectedProcedure = t.procedure.use(loggingMiddleware).use(async ({ ctx, next }) => {
-  if (!ctx.isAuthenticated || !ctx.user || !ctx.dbUser) {
+  if (!ctx.isAuthenticated || !ctx.userId || !ctx.dbUser) {
     throw new TRPCError({
       code: 'UNAUTHORIZED',
       message: 'Authentication required',
@@ -184,7 +186,8 @@ export const protectedProcedure = t.procedure.use(loggingMiddleware).use(async (
   return next({
     ctx: {
       ...ctx,
-      user: ctx.user,
+      userId: ctx.userId,
+      email: ctx.email,
       dbUser: ctx.dbUser,
     },
   });

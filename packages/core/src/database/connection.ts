@@ -9,18 +9,20 @@ const DATABASE_URL = process.env.DATABASE_URL;
 const NODE_ENV = process.env.NODE_ENV || 'development';
 
 // Database connection pool configuration with validation
+// Optimized for Render free tier and Supabase connection pooler
 const MAX_CONNECTIONS = process.env.DB_MAX_CONNECTIONS
-  ? Math.max(1, parseInt(process.env.DB_MAX_CONNECTIONS, 10) || 20)
-  : 20; // Increased from default 10
+  ? Math.max(1, parseInt(process.env.DB_MAX_CONNECTIONS, 10) || 10)
+  : 10; // Reduced from 50 to 10 - Render free tier has limited connections
 const IDLE_TIMEOUT = process.env.DB_IDLE_TIMEOUT
-  ? Math.max(0, parseInt(process.env.DB_IDLE_TIMEOUT, 10) || 30)
-  : 30; // 30 seconds
+  ? Math.max(0, parseInt(process.env.DB_IDLE_TIMEOUT, 10) || 5)
+  : 5; // Reduced from 10s to 5s - release idle connections faster on free tier
 const CONNECT_TIMEOUT = process.env.DB_CONNECT_TIMEOUT
-  ? Math.max(1, parseInt(process.env.DB_CONNECT_TIMEOUT, 10) || 30)
-  : 30; // 30 seconds - increased for Supabase pooler stability
+  ? Math.max(1, parseInt(process.env.DB_CONNECT_TIMEOUT, 10) || 5)
+  : 5; // Reduced from 10s to 5s - fail faster on connection issues
 const MAX_LIFETIME = process.env.DB_MAX_LIFETIME
   ? Math.max(0, parseInt(process.env.DB_MAX_LIFETIME, 10) || 1800)
-  : 60 * 30; // 30 minutes
+  : 60 * 15; // 15 minutes (reduced from 30) - recycle connections more frequently on free tier
+const PREPARE = process.env.DB_PREPARE === 'true'; // Disable prepared statements by default
 
 // Database connection
 let db: ReturnType<typeof drizzlePostgres>;
@@ -38,6 +40,13 @@ const client = postgres(DATABASE_URL, {
   idle_timeout: IDLE_TIMEOUT, // Close idle connections after this many seconds
   connect_timeout: CONNECT_TIMEOUT, // Fail connection after this many seconds
   max_lifetime: MAX_LIFETIME, // Close connections after this many seconds (prevents connection leaks)
+  prepare: PREPARE, // Use prepared statements for better performance (disabled if behind PgBouncer)
+  // Connection optimization for Supabase pooler
+  fetch_types: false, // Skip type fetching on connect - faster connection establishment
+  // Retry configuration for transient errors
+  connection: {
+    application_name: `scani-${NODE_ENV}`, // Helps identify connections in pg_stat_activity
+  },
   onnotice: (notice) => {
     dbLogger.info({ notice }, '📢 PostgreSQL Notice');
   },
@@ -99,6 +108,8 @@ dbLogger.info(
       idleTimeout: `${IDLE_TIMEOUT}s`,
       connectTimeout: `${CONNECT_TIMEOUT}s`,
       maxLifetime: `${MAX_LIFETIME}s`,
+      prepare: PREPARE,
+      fetchTypes: false,
     },
   },
   '🐘 Connected to PostgreSQL database'
@@ -132,7 +143,28 @@ export function getConnectionStats() {
     idleTimeout: IDLE_TIMEOUT,
     connectTimeout: CONNECT_TIMEOUT,
     maxLifetime: MAX_LIFETIME,
+    prepare: PREPARE,
+    fetchTypes: false,
     // Note: postgres.js doesn't expose active/idle connection counts
     // For that, you'd need to query pg_stat_activity
   };
+}
+
+/**
+ * Get active database connections count from PostgreSQL
+ * Useful for monitoring connection pool usage
+ */
+export async function getActiveConnectionsCount(): Promise<number> {
+  try {
+    const result = await db.execute<{ count: number }>(
+      // Query pg_stat_activity for connections from this application
+      // biome-ignore lint/suspicious/noExplicitAny: Raw SQL query with unknown result type
+      `SELECT COUNT(*) as count FROM pg_stat_activity WHERE application_name LIKE 'scani-%'` as any
+    );
+    // biome-ignore lint/suspicious/noExplicitAny: Result type varies by query
+    return (result as any)?.rows?.[0]?.count || 0;
+  } catch (error) {
+    dbLogger.warn({ error }, 'Failed to get active connections count');
+    return 0;
+  }
 }

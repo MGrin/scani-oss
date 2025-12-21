@@ -3,6 +3,6 @@ import { protectedProcedure, router } from '../trpc';
 
 export const accountTypesRouter = router({
   getAll: protectedProcedure.query(async ({ ctx }) => {
-    return await TypeImplementations.getAccountTypes({ userId: ctx.user.id }, {});
+    return await TypeImplementations.getAccountTypes({ userId: ctx.userId }, {});
   }),
 });

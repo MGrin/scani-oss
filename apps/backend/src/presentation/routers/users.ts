@@ -23,10 +23,7 @@ export const usersRouter = router({
   // Get supported fiat currencies (tokens) for base currency selection
   getSupportedCurrencies: protectedProcedure.query(async ({ ctx }) => {
     usersLogger.debug('Fetching supported fiat currencies');
-    const result = await SettingsImplementations.getSupportedCurrencies(
-      { userId: ctx.user.id },
-      {}
-    );
+    const result = await SettingsImplementations.getSupportedCurrencies({ userId: ctx.userId }, {});
     usersLogger.debug({ count: result.length }, 'Fetched fiat tokens');
     return result;
   }),

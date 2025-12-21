@@ -166,14 +166,16 @@ export const AccountImplementations = {
     }
   ) {
     const accountService = Container.get(AccountService);
-    return await accountService.updateAccount(input.id, input.data, context.userId);
+    const result = await accountService.updateAccount(input.id, input.data, context.userId);
+    return result;
   },
 
   async bulkDelete(context: FeatureExecutionContext, input: { ids: string[] }) {
     const accountService = Container.get(AccountService);
-    return executeBulkOperation(input.ids, (id) =>
+    const result = await executeBulkOperation(input.ids, (id) =>
       accountService.deleteAccount(id, context.userId)
     );
+    return result;
   },
 };
 
@@ -238,17 +240,22 @@ export const HoldingImplementations = {
 
   async update(context: FeatureExecutionContext, input: { id: string; data: UpdateHoldingInput }) {
     const useCase = Container.get(UpdateHoldingUseCase);
-    return await useCase.execute(input.id, input.data, context.userId);
+    const result = await useCase.execute(input.id, input.data, context.userId);
+    return result;
   },
 
   async delete(context: FeatureExecutionContext, input: { id: string }) {
     const useCase = Container.get(DeleteHoldingUseCase);
-    return await useCase.execute(input.id, context.userId);
+    const result = await useCase.execute(input.id, context.userId);
+    return result;
   },
 
   async bulkDelete(context: FeatureExecutionContext, input: { ids: string[] }) {
     const useCase = Container.get(DeleteHoldingUseCase);
-    return executeBulkOperation(input.ids, (id) => useCase.execute(id, context.userId));
+    const result = await executeBulkOperation(input.ids, (id) =>
+      useCase.execute(id, context.userId)
+    );
+    return result;
   },
 
   async updatePrice(context: FeatureExecutionContext, input: { id: string }) {
@@ -377,7 +384,8 @@ export const BatchOperationImplementations = {
     }
     // Type assertion since the function expects a full user object
     // biome-ignore lint/suspicious/noExplicitAny: Type assertion needed for user object compatibility
-    return await useCase.execute(input, dbUser as any);
+    const result = await useCase.execute(input, dbUser as any);
+    return result;
   },
 
   async updateHoldingsBatch(
@@ -392,7 +400,8 @@ export const BatchOperationImplementations = {
       ...h,
       lastUpdated: h.lastUpdated ? new Date(h.lastUpdated) : undefined,
     }));
-    return await useCase.execute({ holdings: formattedHoldings }, context.userId);
+    const result = await useCase.execute({ holdings: formattedHoldings }, context.userId);
+    return result;
   },
 };
 
@@ -410,7 +419,8 @@ export const SettingsImplementations = {
     input: { name?: string; avatar?: string | null; baseCurrencyId?: string | null }
   ) {
     const userService = Container.get(UserService);
-    return await userService.updateUser(context.userId, input);
+    const result = await userService.updateUser(context.userId, input);
+    return result;
   },
 
   async getSupportedCurrencies(_context: FeatureExecutionContext, _input: Record<string, never>) {

@@ -29,7 +29,7 @@ export const plaidRouter = router({
       })
     )
     .mutation(async ({ input, ctx }) => {
-      const userId = ctx.user.id;
+      const userId = ctx.userId;
 
       try {
         const createLinkTokenUseCase = Container.get(CreatePlaidLinkTokenUseCase);
@@ -66,7 +66,7 @@ export const plaidRouter = router({
       })
     )
     .mutation(async ({ input, ctx }) => {
-      const userId = ctx.user.id;
+      const userId = ctx.userId;
 
       try {
         const exchangeTokenUseCase = Container.get(ExchangePlaidTokenUseCase);
@@ -116,7 +116,7 @@ export const plaidRouter = router({
       })
     )
     .mutation(async ({ input, ctx }) => {
-      const userId = ctx.user.id;
+      const userId = ctx.userId;
 
       try {
         const importAccountsUseCase = Container.get(ImportPlaidAccountsUseCase);
@@ -153,7 +153,7 @@ export const plaidRouter = router({
       })
     )
     .mutation(async ({ input, ctx }) => {
-      const userId = ctx.user.id;
+      const userId = ctx.userId;
 
       try {
         const syncBalancesUseCase = Container.get(SyncPlaidBalancesUseCase);

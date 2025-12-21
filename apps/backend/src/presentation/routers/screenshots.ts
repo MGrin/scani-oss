@@ -91,7 +91,7 @@ export const screenshotsRouter = router({
             context: input.context,
             minConfidence: input.minConfidence,
             accountId: input.accountId,
-            userId: ctx.user.id, // Get user ID from authenticated context
+            userId: ctx.userId, // Get user ID from authenticated context
           });
 
           result.success = true;

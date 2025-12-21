@@ -6,11 +6,11 @@ import { protectedProcedure, router } from '../trpc';
 export const institutionsRouter = router({
   // Get all institutions
   getAll: protectedProcedure.query(async ({ ctx }) => {
-    return await InstitutionImplementations.getAll({ userId: ctx.user.id }, {});
+    return await InstitutionImplementations.getAll({ userId: ctx.userId }, {});
   }),
 
   getByUserId: protectedProcedure.query(async ({ ctx }) => {
-    const userId = ctx.user.id;
+    const userId = ctx.userId;
     return await InstitutionImplementations.getByUserId({ userId }, {});
   }),
 
@@ -21,7 +21,7 @@ export const institutionsRouter = router({
   }),
 
   getById: protectedProcedure.input(z.object({ id: z.string() })).query(async ({ input, ctx }) => {
-    return await InstitutionImplementations.getById({ userId: ctx.user.id }, { id: input.id });
+    return await InstitutionImplementations.getById({ userId: ctx.userId }, { id: input.id });
   }),
 
   // Get Open Graph metadata from a website URL

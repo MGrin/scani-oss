@@ -1,14 +1,13 @@
 import { db } from '@scani/core/database/connection';
 import * as schema from '@scani/core/database/schema';
-import { supabase } from '@scani/core/lib/supabase';
 import { authLogger } from '@scani/core/utils/logger';
-import type { User } from '@supabase/supabase-js';
 import { TRPCError } from '@trpc/server';
 import { eq } from 'drizzle-orm';
-import jwt, { type JwtPayload } from 'jsonwebtoken';
+import { verifySupabaseJWT } from '../../lib/jwt-verify';
 
 export interface AuthContext {
-  user: User | null;
+  userId: string | null;
+  email: string | null;
   isAuthenticated: boolean;
   dbUser?: typeof schema.users.$inferSelect | null;
 }
@@ -17,86 +16,34 @@ export interface CreateContextOptions {
   req: Request;
 }
 
-const SUPABASE_JWT_SECRET =
-  process.env.SUPABASE_JWT_SECRET || process.env.SUPABASE_SERVICE_ROLE_KEY;
-
 /**
- * Helper function to retry database operations with exponential backoff
+ * Creates or updates a user in the database based on JWT user data
  */
-async function retryDatabaseOperation<T>(
-  operation: () => Promise<T>,
-  maxRetries = 3,
-  baseDelay = 100
-): Promise<T> {
-  let lastError: Error | unknown;
-
-  for (let attempt = 0; attempt < maxRetries; attempt++) {
-    try {
-      return await operation();
-    } catch (error) {
-      lastError = error;
-
-      // Check if error is a connection/timeout issue that's worth retrying
-      const errorMessage = error instanceof Error ? error.message : String(error);
-      const isRetriableError =
-        errorMessage.includes('timeout') ||
-        errorMessage.includes('connection') ||
-        errorMessage.includes('ECONNREFUSED') ||
-        errorMessage.includes('ETIMEDOUT') ||
-        errorMessage.includes('Failed query');
-
-      if (!isRetriableError || attempt === maxRetries - 1) {
-        throw error;
-      }
-
-      // Exponential backoff with jitter
-      const delay = baseDelay * 2 ** attempt + Math.random() * 100;
-      authLogger.debug(
-        {
-          attempt: attempt + 1,
-          maxRetries,
-          delay: `${delay}ms`,
-          error: error instanceof Error ? { name: error.name, message: error.message } : error,
-        },
-        'Retrying database operation after error'
-      );
-
-      await new Promise((resolve) => setTimeout(resolve, delay));
-    }
-  }
-
-  throw lastError;
-}
-
-/**
- * Creates or updates a user in the database based on Supabase user data
- */
-async function syncUserWithDatabase(supabaseUser: User): Promise<typeof schema.users.$inferSelect> {
+async function syncUserWithDatabase(
+  userId: string,
+  email: string
+): Promise<typeof schema.users.$inferSelect> {
   try {
-    // Check if user already exists with retry logic
-    const [existingUser] = await retryDatabaseOperation(async () => {
-      return await db
-        .select()
-        .from(schema.users)
-        .where(eq(schema.users.id, supabaseUser.id))
-        .limit(1);
-    });
+    // Check if user already exists
+    const [existingUser] = await db
+      .select()
+      .from(schema.users)
+      .where(eq(schema.users.id, userId))
+      .limit(1);
 
     if (existingUser) {
       // Update existing user email if needed, but never update the name or avatar
-      const needsUpdate = existingUser.email !== supabaseUser.email;
+      const needsUpdate = existingUser.email !== email;
 
       if (needsUpdate) {
-        const [updatedUser] = await retryDatabaseOperation(async () => {
-          return await db
-            .update(schema.users)
-            .set({
-              email: supabaseUser.email || existingUser.email,
-              updatedAt: new Date(),
-            })
-            .where(eq(schema.users.id, supabaseUser.id))
-            .returning();
-        });
+        const [updatedUser] = await db
+          .update(schema.users)
+          .set({
+            email: email || existingUser.email,
+            updatedAt: new Date(),
+          })
+          .where(eq(schema.users.id, userId))
+          .returning();
 
         return updatedUser || existingUser;
       }
@@ -108,30 +55,26 @@ async function syncUserWithDatabase(supabaseUser: User): Promise<typeof schema.u
     const now = new Date();
 
     // Extract username from email (everything before @)
-    const emailUsername = supabaseUser.email?.split('@')[0] || 'User';
+    const emailUsername = email?.split('@')[0] || 'User';
 
-    // Get USD token ID as default base currency with retry logic
-    const [usdToken] = await retryDatabaseOperation(async () => {
-      return await db
-        .select({ id: schema.tokens.id })
-        .from(schema.tokens)
-        .where(eq(schema.tokens.symbol, 'USD'))
-        .limit(1);
-    });
+    // Get USD token ID as default base currency
+    const [usdToken] = await db
+      .select({ id: schema.tokens.id })
+      .from(schema.tokens)
+      .where(eq(schema.tokens.symbol, 'USD'))
+      .limit(1);
 
     const userData = {
-      id: supabaseUser.id, // Use Supabase user ID
-      email: supabaseUser.email || '',
+      id: userId, // Use JWT user ID
+      email: email || '',
       name: emailUsername, // Use email prefix as username
-      avatar: supabaseUser.user_metadata?.avatar_url || null,
+      avatar: null,
       baseCurrencyId: usdToken?.id || null, // Use USD token ID or null if not found
       createdAt: now,
       updatedAt: now,
     };
 
-    const [newUser] = await retryDatabaseOperation(async () => {
-      return await db.insert(schema.users).values(userData).returning();
-    });
+    const [newUser] = await db.insert(schema.users).values(userData).returning();
 
     if (!newUser) {
       throw new Error('Failed to create user in database');
@@ -145,8 +88,8 @@ async function syncUserWithDatabase(supabaseUser: User): Promise<typeof schema.u
           error instanceof Error
             ? { name: error.name, message: error.message, stack: error.stack }
             : error,
-        userId: supabaseUser.id,
-        userEmail: supabaseUser.email,
+        userId,
+        userEmail: email,
       },
       'Error syncing user with database'
     );
@@ -160,13 +103,15 @@ async function syncUserWithDatabase(supabaseUser: User): Promise<typeof schema.u
 
 /**
  * Extracts and validates the JWT token from the Authorization header
+ * Uses local JWT verification to avoid calling Supabase API for every request
  */
 export async function createAuthContext(opts: CreateContextOptions): Promise<AuthContext> {
   const authHeader = opts.req.headers.get('authorization');
 
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
     return {
-      user: null,
+      userId: null,
+      email: null,
       isAuthenticated: false,
       dbUser: null,
     };
@@ -175,92 +120,31 @@ export async function createAuthContext(opts: CreateContextOptions): Promise<Aut
   const token = authHeader.substring(7); // Remove "Bearer " prefix
 
   try {
-    let user: User | null = null;
-    let verificationSource: 'local' | 'remote' | 'none' = 'none';
-    let localVerificationError: Error | null = null;
+    // Verify the JWT token locally using JWKS
+    const payload = await verifySupabaseJWT(token);
 
-    if (SUPABASE_JWT_SECRET) {
-      const localResult = verifyTokenLocally(token);
-      if (localResult.user) {
-        user = localResult.user;
-        verificationSource = 'local';
-        authLogger.debug({ userId: user.id }, 'Authenticated via local JWT verification');
-      } else {
-        localVerificationError = localResult.error;
-      }
-    } else {
-      authLogger.warn(
-        'SUPABASE_JWT_SECRET not configured - local JWT verification disabled. Set SUPABASE_JWT_SECRET or SUPABASE_SERVICE_ROLE_KEY environment variable.'
-      );
-    }
-
-    // Verify the JWT token with Supabase
-    if (!user) {
-      const remoteStartTime = Date.now();
-      const {
-        data: { user: remoteUser },
-        error,
-      } = await supabase.auth.getUser(token);
-      const remoteDuration = Date.now() - remoteStartTime;
-
-      if (error || !remoteUser) {
-        authLogger.warn(
-          {
-            error: error?.message,
-            remoteDuration: `${remoteDuration}ms`,
-            localVerificationFailed: localVerificationError !== null,
-            localError: localVerificationError
-              ? { name: localVerificationError.name, message: localVerificationError.message }
-              : undefined,
-          },
-          'Supabase token verification failed'
-        );
-        return {
-          user: null,
-          isAuthenticated: false,
-          dbUser: null,
-        };
-      }
-
-      user = remoteUser;
-      verificationSource = 'remote';
-
-      if (localVerificationError) {
-        authLogger.info(
-          {
-            userId: user.id,
-            remoteDuration: `${remoteDuration}ms`,
-            localError: {
-              name: localVerificationError.name,
-              message: localVerificationError.message,
-            },
-          },
-          `Local JWT verification failed but remote verification succeeded (${remoteDuration}ms). Consider checking JWT secret configuration.`
-        );
-      }
-    }
-
-    if (!user) {
+    if (!payload) {
       return {
-        user: null,
+        userId: null,
+        email: null,
         isAuthenticated: false,
         dbUser: null,
       };
     }
 
-    // Sync user with database with retry logic
-    const dbUser = await syncUserWithDatabase(user);
+    // Sync user with database
+    const dbUser = await syncUserWithDatabase(payload.sub, payload.email || '');
 
     authLogger.debug(
       {
-        userId: user.id,
-        verificationSource,
+        userId: payload.sub,
       },
       'User authenticated successfully'
     );
 
     return {
-      user,
+      userId: payload.sub,
+      email: payload.email || null,
       isAuthenticated: true,
       dbUser,
     };
@@ -275,84 +159,19 @@ export async function createAuthContext(opts: CreateContextOptions): Promise<Aut
       'Auth verification error'
     );
     return {
-      user: null,
+      userId: null,
+      email: null,
       isAuthenticated: false,
       dbUser: null,
     };
   }
 }
 
-function verifyTokenLocally(token: string): { user: User | null; error: Error | null } {
-  if (!SUPABASE_JWT_SECRET) {
-    return { user: null, error: null };
-  }
-
-  try {
-    const payload = jwt.verify(token, SUPABASE_JWT_SECRET, {
-      algorithms: ['HS256'],
-    }) as JwtPayload & {
-      email?: string;
-      phone?: string;
-      role?: string;
-      user_metadata?: Record<string, unknown>;
-      app_metadata?: Record<string, unknown>;
-      is_anonymous?: boolean;
-      identities?: User['identities'];
-      factors?: User['factors'];
-    };
-
-    if (!payload.sub) {
-      return {
-        user: null,
-        error: new Error('JWT payload missing subject (sub) claim'),
-      };
-    }
-
-    return { user: buildUserFromPayload(payload), error: null };
-  } catch (error) {
-    const verificationError = error instanceof Error ? error : new Error(String(error));
-
-    authLogger.debug(
-      {
-        error: { name: verificationError.name, message: verificationError.message },
-        jwtSecretConfigured: !!SUPABASE_JWT_SECRET,
-        jwtSecretLength: SUPABASE_JWT_SECRET ? SUPABASE_JWT_SECRET.length : 0,
-      },
-      'Local JWT verification failed - will fallback to remote Supabase verification'
-    );
-
-    return { user: null, error: verificationError };
-  }
-}
-
-function buildUserFromPayload(payload: JwtPayload & { email?: string; phone?: string }): User {
-  const nowIso = new Date().toISOString();
-  const issuedAtIso =
-    typeof payload.iat === 'number' ? new Date(payload.iat * 1000).toISOString() : nowIso;
-
-  return {
-    id: payload.sub ?? '',
-    email: payload.email ?? undefined,
-    phone: payload.phone ?? undefined,
-    app_metadata: (payload.app_metadata as Record<string, unknown>) ?? {},
-    user_metadata: (payload.user_metadata as Record<string, unknown>) ?? {},
-    aud: (payload.aud as string) ?? 'authenticated',
-    created_at: (payload.created_at as string) ?? issuedAtIso,
-    updated_at: (payload.updated_at as string) ?? nowIso,
-    last_sign_in_at: (payload.last_sign_in_at as string) ?? nowIso,
-    role: (payload.role as string | undefined) ?? undefined,
-    identities: payload.identities ?? [],
-    factors: payload.factors ?? [],
-    is_anonymous: payload.is_anonymous ?? false,
-    expires_at: typeof payload.exp === 'number' ? payload.exp : undefined,
-  } as User;
-}
-
 /**
  * Middleware to ensure user is authenticated
  */
 export function requireAuth(ctx: AuthContext) {
-  if (!ctx.isAuthenticated || !ctx.user || !ctx.dbUser) {
+  if (!ctx.isAuthenticated || !ctx.userId || !ctx.dbUser) {
     throw new TRPCError({
       code: 'UNAUTHORIZED',
       message: 'Authentication required',
@@ -360,7 +179,8 @@ export function requireAuth(ctx: AuthContext) {
   }
 
   return {
-    supabaseUser: ctx.user,
+    userId: ctx.userId,
+    email: ctx.email,
     dbUser: ctx.dbUser,
   };
 }

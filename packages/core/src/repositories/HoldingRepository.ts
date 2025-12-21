@@ -3,7 +3,6 @@ import { Service } from 'typedi';
 import { SCAM_PROBABILITY_THRESHOLD } from '../config/tokens';
 import * as schema from '../database/schema';
 import type { Holding, NewHolding, Token } from '../domain/entities';
-import { withRetry } from '../utils/retry';
 import { BaseRepository, type DatabaseTransaction } from './BaseRepository';
 
 @Service()
@@ -389,14 +388,12 @@ export class HoldingRepository extends BaseRepository<Holding, NewHolding> {
    */
   async getDistinctTokenIds(transaction?: DatabaseTransaction): Promise<string[]> {
     try {
-      return await withRetry(async () => {
-        const database = this.getDb(transaction);
-        const results = await database
-          .selectDistinct({ tokenId: schema.holdings.tokenId })
-          .from(schema.holdings);
+      const database = this.getDb(transaction);
+      const results = await database
+        .selectDistinct({ tokenId: schema.holdings.tokenId })
+        .from(schema.holdings);
 
-        return results.map((row) => row.tokenId);
-      });
+      return results.map((row) => row.tokenId);
     } catch (error) {
       this.logger.error({ error }, 'Failed to get distinct token IDs');
       throw error;

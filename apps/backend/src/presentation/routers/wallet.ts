@@ -25,7 +25,7 @@ export const walletRouter = router({
    * Get all supported blockchain chains
    */
   getSupportedChains: protectedProcedure.query(async ({ ctx }) => {
-    return await WalletImplementations.getSupportedChains({ userId: ctx.user.id }, {});
+    return await WalletImplementations.getSupportedChains({ userId: ctx.userId }, {});
   }),
 
   /**
@@ -109,6 +109,6 @@ export const walletRouter = router({
       })
     )
     .mutation(async ({ input, ctx }) => {
-      return await WalletImplementations.detectChains({ userId: ctx.user.id }, input);
+      return await WalletImplementations.detectChains({ userId: ctx.userId }, input);
     }),
 });

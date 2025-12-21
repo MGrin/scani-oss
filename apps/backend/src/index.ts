@@ -48,7 +48,7 @@ try {
 initializeSentry();
 
 // Import database for health checks
-import { db, getConnectionStats } from '@scani/core/database';
+import { db, getActiveConnectionsCount, getConnectionStats } from '@scani/core/database';
 
 // Import Telegram bot services (conditionally initialized later)
 import { TelegramBotService } from '@scani/telegram-bot';
@@ -69,26 +69,6 @@ logger.info(
   },
   '🚀 Starting Scani Backend Server'
 );
-
-// Validate JWT configuration at startup
-const jwtSecret = process.env.SUPABASE_JWT_SECRET || process.env.SUPABASE_SERVICE_ROLE_KEY;
-if (!jwtSecret) {
-  logger.warn(
-    {
-      recommendation: 'Set SUPABASE_JWT_SECRET or SUPABASE_SERVICE_ROLE_KEY environment variable',
-      impact: 'All JWT verifications will require remote Supabase API calls, increasing latency',
-    },
-    '⚠️ JWT Secret not configured - local JWT verification disabled'
-  );
-} else {
-  logger.info(
-    {
-      jwtSecretLength: jwtSecret.length,
-      source: process.env.SUPABASE_JWT_SECRET ? 'SUPABASE_JWT_SECRET' : 'SUPABASE_SERVICE_ROLE_KEY',
-    },
-    '✅ JWT Secret configured - local verification enabled'
-  );
-}
 
 // Extended request interface for tracking
 interface RequestWithTracking extends Request {
@@ -414,6 +394,7 @@ app
       const queryTime = Date.now() - startTime;
 
       const connectionStats = getConnectionStats();
+      const activeConnections = await getActiveConnectionsCount();
 
       return {
         status: 'ok',
@@ -422,6 +403,7 @@ app
           connected: true,
           queryTime: `${queryTime}ms`,
           poolConfig: connectionStats,
+          activeConnections,
         },
       };
     } catch (error) {

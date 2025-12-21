@@ -31,7 +31,7 @@ export const integrationsRouter = router({
       )
       .mutation(async ({ input, ctx }) => {
         const { apiKey, apiSecret } = input;
-        const userId = ctx.user.id;
+        const userId = ctx.userId;
 
         // Validate keys using the factory function from integrations package
         let isValid: boolean;
@@ -129,7 +129,7 @@ export const integrationsRouter = router({
       )
       .mutation(async ({ input, ctx }) => {
         const { apiKey, apiSecret } = input;
-        const userId = ctx.user.id;
+        const userId = ctx.userId;
 
         // Validate keys using the factory function from integrations package
         let isValid: boolean;

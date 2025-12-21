@@ -14,7 +14,6 @@ import * as schema from '../database/schema';
 import { HoldingRepository } from '../repositories/HoldingRepository';
 import { TokenService } from '../services/TokenService';
 import { createComponentLogger } from '../utils/logger';
-import { withRetry } from '../utils/retry';
 
 const logger = createComponentLogger('use-case:sync-plaid-balances');
 
@@ -69,12 +68,10 @@ export class SyncPlaidBalancesUseCase {
         conditions.push(eq(schema.plaidItems.plaidItemId, input.plaidItemId));
       }
 
-      const plaidItems = await withRetry(async () =>
-        db
-          .select()
-          .from(schema.plaidItems)
-          .where(and(...conditions))
-      );
+      const plaidItems = await db
+        .select()
+        .from(schema.plaidItems)
+        .where(and(...conditions));
 
       logger.info({ itemCount: plaidItems.length }, 'Found Plaid items to sync');
 
