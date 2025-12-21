@@ -445,7 +445,7 @@ export class PricingService {
                   );
 
                   results.set(token.id, fallbackPrice);
-                  pricingLogger.info(
+                  pricingLogger.debug(
                     {
                       tokenId: token.id,
                       symbol: token.symbol,
@@ -1574,7 +1574,7 @@ export class PricingService {
             baseCurrencyToken
           );
 
-          pricingLogger.info(
+          pricingLogger.debug(
             {
               tokenId: token.id,
               symbol: token.symbol,

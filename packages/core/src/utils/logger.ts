@@ -1,5 +1,47 @@
 import pino from 'pino';
 
+/**
+ * Custom logger types for better developer experience.
+ *
+ * Pino supports two calling patterns:
+ * 1. logger.info('Simple message') - for basic logging
+ * 2. logger.info({ key: 'value' }, 'Message with context') - for structured logging
+ *
+ * Our custom formatter handles both patterns automatically.
+ */
+export type LogContext = object;
+
+/**
+ * Logger interface that supports both simple and structured logging.
+ *
+ * @example
+ * // Simple logging
+ * logger.info('User logged in');
+ *
+ * @example
+ * // Structured logging with context
+ * logger.info({ userId: '123', email: 'user@example.com' }, 'User logged in');
+ */
+export interface CustomLogger extends pino.Logger {
+  trace(message: string): void;
+  trace(obj: LogContext, message: string): void;
+
+  debug(message: string): void;
+  debug(obj: LogContext, message: string): void;
+
+  info(message: string): void;
+  info(obj: LogContext, message: string): void;
+
+  warn(message: string): void;
+  warn(obj: LogContext, message: string): void;
+
+  error(message: string): void;
+  error(obj: LogContext, message: string): void;
+
+  fatal(message: string): void;
+  fatal(obj: LogContext, message: string): void;
+}
+
 // Determine if we're in development mode
 const isDevelopment = process.env.NODE_ENV === 'development' || !process.env.NODE_ENV;
 
@@ -64,8 +106,21 @@ const createHumanReadableLogger = () => {
     hooks: {
       logMethod: (inputArgs, method, level) => {
         if (logConfig.pretty) {
-          const logObj = inputArgs[0] as Record<string, unknown>;
-          const message = inputArgs[1] as string;
+          // Handle both patterns:
+          // 1. logger.info('message') - single string parameter
+          // 2. logger.info({ data }, 'message') - object + string parameters
+          let logObj: Record<string, unknown>;
+          let message: string;
+
+          if (typeof inputArgs[0] === 'string') {
+            // Pattern 1: Single string parameter
+            message = inputArgs[0];
+            logObj = {};
+          } else {
+            // Pattern 2: Object + string parameters
+            logObj = (inputArgs[0] as Record<string, unknown>) || {};
+            message = (inputArgs[1] as string) || '';
+          }
 
           // Format timestamp
           const timestamp = new Date().toLocaleTimeString('en-US', {
@@ -142,28 +197,30 @@ const createHumanReadableLogger = () => {
 };
 
 // Create the logger
-export const logger = logConfig.pretty
-  ? createHumanReadableLogger()
-  : pino({
-      level: logConfig.level,
-      base: {
-        pid: process.pid,
-        hostname: process.env.HOSTNAME || 'localhost',
-        service: 'scani-backend',
-        version: process.env.npm_package_version || '1.0.0',
-      },
-      timestamp: logConfig.timestamp ? () => `,"timestamp":"${new Date().toISOString()}"` : false,
-      formatters: {
-        log: (object: Record<string, unknown>) => ({
-          ...object,
-          environment: process.env.NODE_ENV || 'development',
-        }),
-      },
-    });
+export const logger = (
+  logConfig.pretty
+    ? createHumanReadableLogger()
+    : pino({
+        level: logConfig.level,
+        base: {
+          pid: process.pid,
+          hostname: process.env.HOSTNAME || 'localhost',
+          service: 'scani-backend',
+          version: process.env.npm_package_version || '1.0.0',
+        },
+        timestamp: logConfig.timestamp ? () => `,"timestamp":"${new Date().toISOString()}"` : false,
+        formatters: {
+          log: (object: Record<string, unknown>) => ({
+            ...object,
+            environment: process.env.NODE_ENV || 'development',
+          }),
+        },
+      })
+) as CustomLogger;
 
 // Create child loggers for different components
-export const createComponentLogger = (component: string) => {
-  return logger.child({ component });
+export const createComponentLogger = (component: string): CustomLogger => {
+  return logger.child({ component }) as CustomLogger;
 };
 
 // tRPC specific logger
@@ -180,7 +237,7 @@ export const authLogger = createComponentLogger('auth');
 
 // Utility function to log request/response cycles
 export const logRequestResponse = (
-  logger: pino.Logger,
+  logger: CustomLogger,
   req: {
     method?: string;
     url?: string;
