@@ -155,6 +155,13 @@
       "when": 1734613567000,
       "tag": "0021_add_groups_tables",
       "breakpoints": true
+    },
+    {
+      "idx": 22,
+      "version": "7",
+      "when": 1766283728735,
+      "tag": "0022_same_mystique",
+      "breakpoints": true
     }
   ]
 }
