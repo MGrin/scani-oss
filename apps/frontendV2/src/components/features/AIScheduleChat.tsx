@@ -1,19 +1,16 @@
-import { Bot, Send, User } from 'lucide-react';
-import { useEffect, useRef, useState } from 'react';
-import { Button } from '@/components/ui/button';
+import { Bot } from 'lucide-react';
 import { Card } from '@/components/ui/card';
-import { Input } from '@/components/ui/input';
-import { showError } from '@/hooks/use-toast';
-import { trpc } from '@/lib/trpc';
 
 interface AIScheduleChatProps {
   scheduleId: string;
 }
 
 export function AIScheduleChat({ scheduleId }: AIScheduleChatProps) {
+  console.log(scheduleId);
+
   return (
     <div className="flex flex-col h-[600px]">
-      <div ref={scrollAreaRef} className="flex-1 p-4 overflow-y-auto">
+      <div className="flex-1 p-4 overflow-y-auto">
         <div className="space-y-4">
           <Card className="p-4 bg-muted">
             <div className="flex items-center gap-3">
