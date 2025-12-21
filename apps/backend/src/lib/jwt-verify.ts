@@ -11,7 +11,7 @@ if (!SUPABASE_URL) {
 const supabaseUrl = SUPABASE_URL.endsWith('/') ? SUPABASE_URL.slice(0, -1) : SUPABASE_URL;
 
 // JWKS endpoint for the Supabase project
-const JWKS_URI = `${supabaseUrl}/auth/v1/jwks.json`;
+const JWKS_URI = `${supabaseUrl}/auth/v1/.well-known/jwks.json`;
 
 // Cache for JWKS - jose's createRemoteJWKSet handles caching internally with a default TTL
 // We'll create a new JWKS instance that will be reused
@@ -28,10 +28,10 @@ function getJWKS() {
   }
 
   // Create new JWKS instance
-  authLogger.debug({ jwksUri: JWKS_URI }, 'Creating new JWKS instance');
+  authLogger.info({ jwksUri: JWKS_URI }, 'Creating new JWKS instance');
   jwksCache = createRemoteJWKSet(new URL(JWKS_URI));
   jwksCacheTime = now;
-
+  authLogger.info({ jwksUri: JWKS_URI }, 'New JWKS instace created');
   return jwksCache;
 }
 
@@ -62,7 +62,7 @@ export async function verifySupabaseJWT(token: string): Promise<JWTPayload | nul
       audience: 'authenticated',
     });
 
-    authLogger.debug({ userId: payload.sub }, 'JWT verified successfully');
+    authLogger.info({ userId: payload.sub }, 'JWT verified successfully');
 
     return payload as JWTPayload;
   } catch (error) {
