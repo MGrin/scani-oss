@@ -293,6 +293,7 @@ export function Holdings() {
     valueRange,
     sortField,
     sortDirection,
+    filterByGroup,
   ]);
 
   // Group holdings if needed
