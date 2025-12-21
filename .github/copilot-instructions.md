@@ -6,9 +6,8 @@
 
 **Essential Commands:**
 - `bun dev` - Start development servers (frontend + backend)
-- `bun test` - Run all tests (maintain 93%+ coverage)
-- `bun run lint` - Run Biome linter
-- `bun run db:migrate` - Apply database migrations (user only)
+- `bun lint` - Run Biome linter
+- `bun type=check` - Run typecheck
 - `bun run db:generate` - Generate new migrations
 
 **Critical Rules:**
@@ -98,23 +97,9 @@ const binanceRateLimiter = new RateLimiter(10, 1000);
 ```bash
 # Development (from root)
 bun dev                    # Start both frontend + backend with hot reload
-bun run db:migrate         # Apply database migrations
-bun run db:studio          # Open Drizzle Studio for DB management
-
-# Backend-specific (from apps/backend/)
-bun dev:verbose           # Enable SQL query logging + WebSocket debugging
+# from packages/core
 bun run db:generate       # Generate migrations after schema changes
-
-# Testing
-bun test                  # Run all tests (93%+ coverage maintained)
-bun test --coverage       # Generate coverage report
 ```
-
-### Environment Setup
-
-- **Backend**: Requires `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, `DATABASE_URL`
-- **Frontend**: Requires `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`
-- **Database**: PostgreSQL (all envs) - use Supabase DB or local instance
 
 ## Project-Specific Conventions
 
