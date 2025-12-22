@@ -10,7 +10,7 @@
     "dev": "LOG_LEVEL=debug LOG_PRETTY=true bun run --watch src/index.ts",
     "dev:verbose": "LOG_LEVEL=trace LOG_PRETTY=true LOG_SQL_QUERIES=true LOG_WEBSOCKET_MESSAGES=true bun run --watch src/index.ts",
     "dev:quiet": "LOG_LEVEL=warn LOG_PRETTY=true bun run --watch src/index.ts",
-    "build": "bun build src/index.ts --outdir=dist --target=bun",
+    "build": "bun build src/index.ts --outdir=dist --target=bun --sourcemap=linked",
     "start": "bun run dist/index.js",
     "start:prod": "NODE_ENV=production LOG_LEVEL=info LOG_PRETTY=false bun run dist/index.js",
     "clean": "rm -rf dist",
