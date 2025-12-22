@@ -156,7 +156,7 @@ export class SyncExchangeBalancesUseCase {
             continue;
           }
 
-          logger.info(
+          logger.debug(
             { institutionId, credentialsCount: credentials.length },
             'Found credentials for institution'
           );

@@ -34,13 +34,12 @@ export async function executePlaidBalancesCronJob(): Promise<void> {
 
     logger.info(
       {
-        itemsSynced: result.itemsSynced,
-        accountsUpdated: result.accountsUpdated,
-        holdingsUpdated: result.holdingsUpdated,
-        errorCount: result.errors.length,
-        totalDurationMs: durationMs,
+        items: result.itemsSynced,
+        accounts: result.accountsUpdated,
+        holdings: result.holdingsUpdated,
+        duration: `${durationMs}ms`,
       },
-      '✅ Plaid balances sync cron job completed successfully'
+      '✅ Plaid balances sync completed'
     );
 
     // Log errors if any

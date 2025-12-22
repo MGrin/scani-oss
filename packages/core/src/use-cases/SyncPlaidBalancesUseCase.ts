@@ -73,7 +73,7 @@ export class SyncPlaidBalancesUseCase {
         .from(schema.plaidItems)
         .where(and(...conditions));
 
-      logger.info({ itemCount: plaidItems.length }, 'Found Plaid items to sync');
+      logger.debug({ itemCount: plaidItems.length }, 'Found Plaid items to sync');
 
       // Sync each item
       for (const plaidItem of plaidItems) {
@@ -100,16 +100,6 @@ export class SyncPlaidBalancesUseCase {
         }
       }
 
-      logger.info(
-        {
-          itemsSynced: result.itemsSynced,
-          accountsUpdated: result.accountsUpdated,
-          holdingsUpdated: result.holdingsUpdated,
-          errorCount: result.errors.length,
-        },
-        'Plaid balances sync completed'
-      );
-
       return result;
     } catch (error) {
       logger.error({ error }, 'Failed to sync Plaid balances');
@@ -124,7 +114,7 @@ export class SyncPlaidBalancesUseCase {
     plaidItem: schema.PlaidItem,
     result: SyncPlaidBalancesResult
   ): Promise<void> {
-    logger.info({ plaidItemId: plaidItem.plaidItemId }, 'Syncing Plaid item');
+    logger.debug({ plaidItemId: plaidItem.plaidItemId }, 'Syncing Plaid item');
 
     // Create integration instance
     const integration = createPlaidIntegration(plaidItem.institutionId);

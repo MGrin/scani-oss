@@ -27,7 +27,7 @@ export class HoldingService extends BaseService {
 
   async createHolding(data: CreateHoldingInput, userId: string): Promise<Holding> {
     try {
-      this.logInfo('Creating holding', {
+      this.logDebug('Creating holding', {
         accountId: data.accountId,
         tokenId: data.tokenId,
         balance: data.balance,
@@ -71,7 +71,7 @@ export class HoldingService extends BaseService {
 
       this.assertExists(holding, 'Failed to create holding');
 
-      this.logInfo('Holding created successfully', { holdingId: holding.id });
+      this.logDebug('Holding created successfully', { holdingId: holding.id });
       return holding;
     } catch (error) {
       throw this.handleError(error, 'createHolding');
@@ -84,7 +84,7 @@ export class HoldingService extends BaseService {
     tx?: DatabaseTransaction
   ): Promise<Holding[]> {
     try {
-      this.logInfo('Creating multiple holdings', { count: data.length });
+      this.logDebug('Creating multiple holdings', { count: data.length });
 
       const createdHoldings: Holding[] = await this.holdingRepository.createMany(
         data.map((holdingInput) => ({
@@ -94,7 +94,7 @@ export class HoldingService extends BaseService {
         tx
       );
 
-      this.logInfo('Multiple holdings created successfully', {
+      this.logDebug('Multiple holdings created successfully', {
         count: createdHoldings.length,
       });
       return createdHoldings;
@@ -238,7 +238,7 @@ export class HoldingService extends BaseService {
     transaction?: DatabaseTransaction
   ): Promise<void> {
     try {
-      this.logInfo('Updating holding balance', { holdingId, balance });
+      // Note: Not logging individual balance updates to reduce log volume
       await this.holdingRepository.updateBalance(holdingId, balance, transaction);
     } catch (error) {
       throw this.handleError(error, 'updateHoldingBalance');
@@ -250,7 +250,7 @@ export class HoldingService extends BaseService {
    */
   async deleteHolding(holdingId: string, transaction?: DatabaseTransaction): Promise<void> {
     try {
-      this.logInfo('Deleting holding', { holdingId });
+      this.logDebug('Deleting holding', { holdingId });
       await this.holdingRepository.deleteById(holdingId, transaction);
     } catch (error) {
       throw this.handleError(error, 'deleteHolding');

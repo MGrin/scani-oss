@@ -34,17 +34,12 @@ export async function executeWalletBalancesCronJob(): Promise<void> {
 
     logger.info(
       {
-        accountsFound: result.accountsFound,
-        accountsSynced: result.accountsSynced,
-        accountsFailed: result.accountsFailed,
-        holdingsUpdated: result.holdingsUpdated,
-        holdingsCreated: result.holdingsCreated,
-        holdingsRemoved: result.holdingsRemoved,
-        errorCount: result.errors.length,
-        useCaseDurationMs: result.durationMs,
-        totalDurationMs: durationMs,
+        synced: result.accountsSynced,
+        failed: result.accountsFailed,
+        holdings: `+${result.holdingsCreated} ~${result.holdingsUpdated} -${result.holdingsRemoved}`,
+        duration: `${durationMs}ms`,
       },
-      '✅ Wallet balances sync cron job completed successfully'
+      '✅ Wallet balances sync completed'
     );
 
     // Log errors if any

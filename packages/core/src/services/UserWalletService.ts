@@ -16,7 +16,7 @@ export class UserWalletService extends BaseService {
    */
   async getUserWallets(userId: string): Promise<UserWallet[]> {
     try {
-      this.logInfo('Getting user wallets', { userId });
+      // Note: Not logging individual wallet retrievals to reduce log volume
       return await this.userWalletRepository.findByUser(userId);
     } catch (error) {
       throw this.handleError(error, 'getUserWallets');
@@ -28,7 +28,7 @@ export class UserWalletService extends BaseService {
    */
   async getWalletById(walletId: string): Promise<UserWallet | null> {
     try {
-      this.logInfo('Getting wallet by ID', { walletId });
+      this.logDebug('Getting wallet by ID', { walletId });
       return await this.userWalletRepository.findById(walletId);
     } catch (error) {
       throw this.handleError(error, 'getWalletById');
@@ -40,7 +40,7 @@ export class UserWalletService extends BaseService {
    */
   async getWalletByAddress(userId: string, walletAddress: string): Promise<UserWallet | null> {
     try {
-      this.logInfo('Getting wallet by address', { userId, walletAddress });
+      this.logDebug('Getting wallet by address', { userId, walletAddress });
       const wallet = await this.userWalletRepository.findByUserAndAddress(userId, walletAddress);
       return wallet || null;
     } catch (error) {
@@ -67,7 +67,7 @@ export class UserWalletService extends BaseService {
       const wallet = await this.userWalletRepository.create(data);
       this.assertExists(wallet, 'Failed to create wallet');
 
-      this.logInfo('Wallet created successfully', { walletId: wallet.id });
+      this.logDebug('Wallet created successfully', { walletId: wallet.id });
       return wallet;
     } catch (error) {
       throw this.handleError(error, 'createWallet');

@@ -1,7 +1,8 @@
 import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
-import pino from 'pino';
 import { getDb } from '../database/connection';
 import type * as schema from '../database/schema';
+import type { CustomLogger } from '../utils/logger';
+import { createComponentLogger } from '../utils/logger';
 
 /**
  * Base Service Class
@@ -13,16 +14,10 @@ import type * as schema from '../database/schema';
  * - Common validation patterns
  */
 export abstract class BaseService {
-  protected readonly logger: pino.Logger;
+  protected readonly logger: CustomLogger;
 
   constructor(serviceName: string) {
-    this.logger = pino({
-      name: serviceName,
-      level: process.env.LOG_LEVEL || 'info',
-      serializers: {
-        error: pino.stdSerializers.err,
-      },
-    });
+    this.logger = createComponentLogger(serviceName);
   }
 
   /**
@@ -99,8 +94,12 @@ export abstract class BaseService {
    * @param message - Warning message
    * @param context - Additional context data
    */
-  protected logWarning(_message: string, _context?: Record<string, unknown>): void {
-    // this.logger.warn(context, message);
+  protected logWarning(message: string, context?: Record<string, unknown>): void {
+    if (context) {
+      this.logger.warn(context, message);
+    } else {
+      this.logger.warn(message);
+    }
   }
 
   /**
@@ -109,8 +108,12 @@ export abstract class BaseService {
    * @param message - Info message
    * @param context - Additional context data
    */
-  protected logInfo(_message: string, _context?: Record<string, unknown>): void {
-    // this.logger.info(context, message);
+  protected logInfo(message: string, context?: Record<string, unknown>): void {
+    if (context) {
+      this.logger.info(context, message);
+    } else {
+      this.logger.info(message);
+    }
   }
 
   /**
@@ -119,8 +122,12 @@ export abstract class BaseService {
    * @param message - Debug message
    * @param context - Additional context data
    */
-  protected logDebug(_message: string, _context?: Record<string, unknown>): void {
-    // this.logger.debug(context, message);
+  protected logDebug(message: string, context?: Record<string, unknown>): void {
+    if (context) {
+      this.logger.debug(context, message);
+    } else {
+      this.logger.debug(message);
+    }
   }
 
   /**
@@ -129,8 +136,12 @@ export abstract class BaseService {
    * @param message - Error message
    * @param context - Additional context data
    */
-  protected logError(_message: string, _context?: Record<string, unknown>): void {
-    // this.logger.error(context, message);
+  protected logError(message: string, context?: Record<string, unknown>): void {
+    if (context) {
+      this.logger.error(context, message);
+    } else {
+      this.logger.error(message);
+    }
   }
 
   /**

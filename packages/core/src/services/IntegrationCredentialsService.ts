@@ -21,7 +21,7 @@ export class IntegrationCredentialsService extends BaseService {
    */
   async getUserCredentials(userId: string): Promise<UserIntegrationCredentials[]> {
     try {
-      this.logInfo('Getting user credentials', { userId });
+      // Note: Not logging individual credential retrievals to reduce log volume
       return await this.credentialsRepository.findByUser(userId);
     } catch (error) {
       throw this.handleError(error, 'getUserCredentials');
@@ -36,7 +36,7 @@ export class IntegrationCredentialsService extends BaseService {
     institutionId: string
   ): Promise<UserIntegrationCredentials | null> {
     try {
-      this.logInfo('Getting credentials', { userId, institutionId });
+      this.logDebug('Getting credentials', { userId, institutionId });
       const credentials = await this.credentialsRepository.findByUserAndInstitution(
         userId,
         institutionId
@@ -55,7 +55,7 @@ export class IntegrationCredentialsService extends BaseService {
     institutionId: string
   ): Promise<Record<string, unknown> | null> {
     try {
-      this.logInfo('Getting decrypted credentials', { userId, institutionId });
+      // Note: Not logging credential decryption to reduce log volume
       const credentials = await this.credentialsRepository.findByUserAndInstitution(
         userId,
         institutionId
@@ -90,7 +90,7 @@ export class IntegrationCredentialsService extends BaseService {
     expiresAt?: Date
   ): Promise<UserIntegrationCredentials> {
     try {
-      this.logInfo('Storing credentials', { userId, institutionId, credentialsType });
+      this.logDebug('Storing credentials', { userId, institutionId, credentialsType });
 
       // Encrypt the credentials
       const encrypted = encryptCredentials(credentials);
@@ -111,7 +111,7 @@ export class IntegrationCredentialsService extends BaseService {
           isActive: true,
         });
         this.assertExists(updated, 'Failed to update credentials');
-        this.logInfo('Credentials updated successfully', { credentialsId: updated.id });
+        this.logDebug('Credentials updated successfully', { credentialsId: updated.id });
         return updated;
       }
 
@@ -128,7 +128,7 @@ export class IntegrationCredentialsService extends BaseService {
       const created = await this.credentialsRepository.create(data);
       this.assertExists(created, 'Failed to create credentials');
 
-      this.logInfo('Credentials stored successfully', { credentialsId: created.id });
+      this.logDebug('Credentials stored successfully', { credentialsId: created.id });
       return created;
     } catch (error) {
       throw this.handleError(error, 'storeCredentials');
