@@ -39,14 +39,14 @@ if (!DATABASE_URL) {
 const isSupabasePooler = DATABASE_URL.includes('.pooler.supabase.com');
 const connectionConfig: postgres.Options<Record<string, postgres.PostgresType>> = {
   max: MAX_CONNECTIONS, // Maximum number of connections in the pool
-  idle_timeout: IDLE_TIMEOUT, // Close idle connections after this many seconds
-  connect_timeout: CONNECT_TIMEOUT, // Fail connection after this many seconds
-  max_lifetime: MAX_LIFETIME, // Close connections after this many seconds (prevents connection leaks)
-  prepare: PREPARE, // Use prepared statements for better performance (disabled if behind PgBouncer)
+  // idle_timeout: IDLE_TIMEOUT, // Close idle connections after this many seconds
+  // connect_timeout: CONNECT_TIMEOUT, // Fail connection after this many seconds
+  // max_lifetime: MAX_LIFETIME, // Close connections after this many seconds (prevents connection leaks)
+  // prepare: PREPARE, // Use prepared statements for better performance (disabled if behind PgBouncer)
   // Connection optimization for Supabase pooler
   fetch_types: false, // Skip type fetching on connect - faster connection establishment
   // SSL configuration - required for Supabase
-  ssl: isSupabasePooler ? 'require' : false,
+  // ssl: isSupabasePooler ? 'require' : false,
   // Retry configuration for transient errors
   connection: {
     application_name: `scani-${NODE_ENV}`, // Helps identify connections in pg_stat_activity
@@ -111,13 +111,13 @@ dbLogger.info(
     environment: NODE_ENV,
     isSupabasePooler,
     poolConfig: {
-      max: MAX_CONNECTIONS,
-      idleTimeout: `${IDLE_TIMEOUT}s`,
-      connectTimeout: `${CONNECT_TIMEOUT}s`,
-      maxLifetime: `${MAX_LIFETIME}s`,
-      prepare: PREPARE,
-      fetchTypes: false,
-      ssl: isSupabasePooler ? 'require' : false,
+      // max: MAX_CONNECTIONS,
+      // idleTimeout: `${IDLE_TIMEOUT}s`,
+      // connectTimeout: `${CONNECT_TIMEOUT}s`,
+      // maxLifetime: `${MAX_LIFETIME}s`,
+      // prepare: PREPARE,
+      // fetchTypes: false,
+      // ssl: isSupabasePooler ? 'require' : false,
     },
   },
   '🐘 Connected to PostgreSQL database'

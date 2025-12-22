@@ -99,8 +99,8 @@ export abstract class BaseService {
    * @param message - Warning message
    * @param context - Additional context data
    */
-  protected logWarning(message: string, context?: Record<string, unknown>): void {
-    this.logger.warn(context, message);
+  protected logWarning(_message: string, _context?: Record<string, unknown>): void {
+    // this.logger.warn(context, message);
   }
 
   /**
@@ -109,8 +109,8 @@ export abstract class BaseService {
    * @param message - Info message
    * @param context - Additional context data
    */
-  protected logInfo(message: string, context?: Record<string, unknown>): void {
-    this.logger.info(context, message);
+  protected logInfo(_message: string, _context?: Record<string, unknown>): void {
+    // this.logger.info(context, message);
   }
 
   /**
@@ -119,8 +119,8 @@ export abstract class BaseService {
    * @param message - Debug message
    * @param context - Additional context data
    */
-  protected logDebug(message: string, context?: Record<string, unknown>): void {
-    this.logger.debug(context, message);
+  protected logDebug(_message: string, _context?: Record<string, unknown>): void {
+    // this.logger.debug(context, message);
   }
 
   /**
@@ -129,8 +129,8 @@ export abstract class BaseService {
    * @param message - Error message
    * @param context - Additional context data
    */
-  protected logError(message: string, context?: Record<string, unknown>): void {
-    this.logger.error(context, message);
+  protected logError(_message: string, _context?: Record<string, unknown>): void {
+    // this.logger.error(context, message);
   }
 
   /**
