@@ -35,7 +35,9 @@ if (!DATABASE_URL) {
   );
 }
 
-const client = postgres(DATABASE_URL, {
+// Detect if using Supabase pooler and add SSL configuration
+const isSupabasePooler = DATABASE_URL.includes('.pooler.supabase.com');
+const connectionConfig: postgres.Options<Record<string, postgres.PostgresType>> = {
   max: MAX_CONNECTIONS, // Maximum number of connections in the pool
   idle_timeout: IDLE_TIMEOUT, // Close idle connections after this many seconds
   connect_timeout: CONNECT_TIMEOUT, // Fail connection after this many seconds
@@ -43,6 +45,8 @@ const client = postgres(DATABASE_URL, {
   prepare: PREPARE, // Use prepared statements for better performance (disabled if behind PgBouncer)
   // Connection optimization for Supabase pooler
   fetch_types: false, // Skip type fetching on connect - faster connection establishment
+  // SSL configuration - required for Supabase
+  ssl: isSupabasePooler ? 'require' : false,
   // Retry configuration for transient errors
   connection: {
     application_name: `scani-${NODE_ENV}`, // Helps identify connections in pg_stat_activity
@@ -80,7 +84,9 @@ const client = postgres(DATABASE_URL, {
       };
     });
   },
-});
+};
+
+const client = postgres(DATABASE_URL, connectionConfig);
 
 db = drizzlePostgres(client, {
   schema,
@@ -103,6 +109,7 @@ dbLogger.info(
   {
     url: DATABASE_URL.replace(/:[^:@]*@/, ':***@'), // Hide password in logs
     environment: NODE_ENV,
+    isSupabasePooler,
     poolConfig: {
       max: MAX_CONNECTIONS,
       idleTimeout: `${IDLE_TIMEOUT}s`,
@@ -110,6 +117,7 @@ dbLogger.info(
       maxLifetime: `${MAX_LIFETIME}s`,
       prepare: PREPARE,
       fetchTypes: false,
+      ssl: isSupabasePooler ? 'require' : false,
     },
   },
   '🐘 Connected to PostgreSQL database'

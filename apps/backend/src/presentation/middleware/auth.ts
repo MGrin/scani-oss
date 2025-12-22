@@ -31,7 +31,23 @@ async function syncUserWithDatabase(
       .select()
       .from(schema.users)
       .where(eq(schema.users.id, userId))
-      .limit(1);
+      .limit(1)
+      .catch((err) => {
+        authLogger.error(
+          {
+            userId,
+            error: {
+              name: err.name,
+              message: err.message,
+              code: err.code,
+              detail: err.detail,
+              stack: err.stack,
+            },
+          },
+          'Database query failed when checking for existing user'
+        );
+        throw err;
+      });
 
     if (existingUser) {
       authLogger.debug({ userId }, 'User found in database, checking for updates');
