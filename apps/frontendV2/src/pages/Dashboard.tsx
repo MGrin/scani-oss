@@ -108,7 +108,10 @@ export function Dashboard() {
 
       {/* Asset Allocation & Top Holdings */}
       <div className="flex flex-col gap-4 md:flex-row md:align-center md:justify-stretch">
-        <AssetAllocationCard className="w-full h-fit" />
+        <AssetAllocationCard
+          className="w-full h-fit"
+          initialAllocation={overview?.assetAllocation}
+        />
 
         <Card className="w-full">
           <CardHeader>

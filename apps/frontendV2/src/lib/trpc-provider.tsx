@@ -14,9 +14,11 @@ export function TRPCProvider({ children }: TRPCProviderProps) {
       new QueryClient({
         defaultOptions: {
           queries: {
-            refetchOnMount: true,
-            refetchOnWindowFocus: true,
-            refetchOnReconnect: true,
+            staleTime: 30 * 1000, // Consider data fresh for 30 seconds
+            cacheTime: 5 * 60 * 1000, // Keep in cache for 5 minutes
+            refetchOnMount: false, // Don't refetch on mount if data is fresh
+            refetchOnWindowFocus: false, // Don't refetch on window focus
+            refetchOnReconnect: true, // Refetch on reconnect only
             networkMode: 'online',
             retry: (failureCount, error) => {
               // Don't retry on 401 errors

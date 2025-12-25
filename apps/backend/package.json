@@ -7,20 +7,13 @@
     "./src/router": "./src/router.ts"
   },
   "scripts": {
-    "dev": "LOG_LEVEL=debug LOG_PRETTY=true bun run --watch src/index.ts",
-    "dev:verbose": "LOG_LEVEL=trace LOG_PRETTY=true LOG_SQL_QUERIES=true LOG_WEBSOCKET_MESSAGES=true bun run --watch src/index.ts",
-    "dev:quiet": "LOG_LEVEL=warn LOG_PRETTY=true bun run --watch src/index.ts",
+    "dev": "bun run --watch src/index.ts",
     "build": "bun build src/index.ts --outdir=dist --target=bun --sourcemap=linked",
     "start": "bun run dist/index.js",
-    "start:prod": "NODE_ENV=production LOG_LEVEL=info LOG_PRETTY=false bun run dist/index.js",
     "clean": "rm -rf dist",
     "lint": "biome check .",
     "lint:fix": "biome check --write .",
-    "type-check": "tsc --noEmit",
-    "test": "bun test",
-    "test:watch": "bun test --watch",
-    "test:coverage": "bun test --coverage",
-    "test:coverage:html": "bun test --coverage --coverage-reporter=html"
+    "type-check": "tsc --noEmit"
   },
   "dependencies": {
     "@ai-sdk/openai": "^2.0.87",

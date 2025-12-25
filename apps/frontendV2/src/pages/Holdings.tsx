@@ -3,6 +3,7 @@ import {
   AlertTriangle,
   CheckCircle2,
   Download,
+  Edit,
   Filter,
   Grid3X3,
   List,
@@ -14,6 +15,7 @@ import {
 import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { AccountBadge, InstitutionBadge, TokenTypeBadge } from '@/components/features';
+import { BulkEditGroupsModal } from '@/components/modals/BulkEditGroupsModal';
 import {
   AccountFilterSelector,
   TokenFilterSelector,
@@ -120,6 +122,7 @@ export function Holdings() {
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc');
   const [valueRange, setValueRange] = useState('all');
   const [selectedRows, setSelectedRows] = useState<Set<string>>(new Set());
+  const [bulkEditGroupsModalOpen, setBulkEditGroupsModalOpen] = useState(false);
 
   // Unified filter system
   const {
@@ -321,13 +324,14 @@ export function Holdings() {
           {} as Record<string, typeof filteredAndSortedHoldings>
         );
 
-  // Calculate summary statistics
+  // Calculate summary statistics (exclude inactive holdings from totals)
   const summaryStats = useMemo(() => {
-    const totalValue = filteredAndSortedHoldings.reduce((sum, h) => sum + h.value, 0);
+    const activeHoldings = filteredAndSortedHoldings.filter((h) => h.isActive);
+    const totalValue = activeHoldings.reduce((sum, h) => sum + h.value, 0);
 
     return {
       totalValue,
-      holdingCount: filteredAndSortedHoldings.length,
+      holdingCount: activeHoldings.length,
     };
   }, [filteredAndSortedHoldings]);
 
@@ -398,7 +402,9 @@ export function Holdings() {
     if (selectedRows.size === 0) return;
 
     const confirmed = window.confirm(
-      `Are you sure you want to delete ${selectedRows.size} holding${selectedRows.size !== 1 ? 's' : ''}?`
+      `Are you sure you want to delete ${selectedRows.size} holding${
+        selectedRows.size !== 1 ? 's' : ''
+      }?`
     );
 
     if (confirmed) {
@@ -518,7 +524,7 @@ export function Holdings() {
       />
 
       {isLoading ? (
-        <div className="space-y-6 max-w-[calc(100vw-2rem)]">
+        <div className="space-y-6">
           {/* Summary cards skeletons */}
           <div className="grid gap-4 md:grid-cols-2">
             <Card>
@@ -731,214 +737,241 @@ export function Holdings() {
           {/* Holdings Display */}
           <Tabs value="holdings" className="w-full">
             <TabsContent value="holdings" className="space-y-6">
-              {Object.entries(groupedHoldings).map(([groupName, holdings]) => (
-                <div key={groupName}>
-                  {groupBy !== 'none' && (
-                    <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
-                      <Filter className="h-5 w-5" />
-                      {groupName} ({holdings.length} holdings •{' '}
-                      <MoneyDisplay
-                        value={holdings.reduce((sum, h) => sum + h.value, 0)}
-                        token={baseCurrencyToken}
-                        minimumFractionDigits={0}
-                        maximumFractionDigits={0}
-                      />
-                      )
-                    </h3>
-                  )}
+              {Object.entries(groupedHoldings).map(([groupName, holdings]) => {
+                const activeHoldings = holdings.filter((h) => h.isActive);
+                const groupValue = activeHoldings.reduce((sum, h) => sum + h.value, 0);
+                return (
+                  <div key={groupName}>
+                    {groupBy !== 'none' && (
+                      <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
+                        <Filter className="h-5 w-5" />
+                        {groupName} ({activeHoldings.length} holdings •{' '}
+                        <MoneyDisplay
+                          value={groupValue}
+                          token={baseCurrencyToken}
+                          minimumFractionDigits={0}
+                          maximumFractionDigits={0}
+                        />
+                        )
+                      </h3>
+                    )}
 
-                  {viewMode === 'cards' ? (
-                    <>
-                      {selectedRows.size > 0 && (
-                        <Card className="mb-4">
-                          <CardContent className="py-3">
-                            <div className="flex items-center justify-between">
-                              <span className="text-sm font-medium">
-                                {selectedRows.size} holding{selectedRows.size !== 1 ? 's' : ''}{' '}
-                                selected
-                              </span>
-                              <Button
-                                variant="destructive"
-                                size="sm"
-                                onClick={handleBulkDelete}
-                                disabled={bulkDeleteHoldingsMutation.isPending}
-                              >
-                                <Trash2 className="h-4 w-4 mr-2" />
-                                Delete Selected
-                              </Button>
-                            </div>
-                          </CardContent>
-                        </Card>
-                      )}
-                      <div className="grid gap-4 grid-cols-1 md:grid-cols-2 lg:grid-cols-3">
-                        {holdings.map((holding) => {
-                          const isSelected = selectedRows.has(holding.id);
-                          return (
-                            <Card
-                              key={holding.id}
-                              className={`hover:shadow-md transition-shadow ${
-                                isSelected ? 'ring-2 ring-primary' : ''
-                              }`}
-                            >
-                              <CardHeader>
-                                <CardTitle className="flex items-center justify-between">
-                                  <span className="flex items-center gap-2">
-                                    <div className="min-w-[44px] min-h-[44px] flex items-center justify-center">
-                                      <Checkbox
-                                        checked={isSelected}
-                                        onCheckedChange={() => handleSelectRow(holding.id)}
-                                        onClick={(e) => e.stopPropagation()}
-                                        aria-label={`Select ${holding.token.symbol}`}
-                                      />
-                                    </div>
-                                    <button
-                                      type="button"
-                                      className="cursor-pointer text-left font-semibold hover:underline"
-                                      onClick={() => handleHoldingClick(holding)}
-                                    >
-                                      {holding.token.symbol || holding.token.name}
-                                    </button>
-                                  </span>
-                                  <TokenTypeBadge tokenTypeCode={holding.token.typeCode} />
-                                </CardTitle>
+                    {viewMode === 'cards' ? (
+                      <>
+                        {selectedRows.size > 0 && (
+                          <Card className="mb-4">
+                            <CardContent className="py-3">
+                              <div className="flex items-center justify-between">
+                                <span className="text-sm font-medium">
+                                  {selectedRows.size} holding
+                                  {selectedRows.size !== 1 ? 's' : ''} selected
+                                </span>
                                 <div className="flex items-center gap-2">
-                                  <AccountBadge
-                                    accountId={holding.account.id}
-                                    accountName={holding.account.name}
-                                    accountTypeCode={holding.account.typeCode}
-                                  />
-                                  <InstitutionBadge
-                                    institutionId={holding.institution.id}
-                                    institutionName={holding.institution.name}
-                                    institutionWebsite={holding.institution.website ?? undefined}
-                                  />
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => setBulkEditGroupsModalOpen(true)}
+                                  >
+                                    <Edit className="h-4 w-4 mr-2" />
+                                    Edit Selected
+                                  </Button>
+                                  <Button
+                                    variant="destructive"
+                                    size="sm"
+                                    onClick={handleBulkDelete}
+                                    disabled={bulkDeleteHoldingsMutation.isPending}
+                                  >
+                                    <Trash2 className="h-4 w-4 mr-2" />
+                                    Delete Selected
+                                  </Button>
                                 </div>
-                              </CardHeader>
-                              <CardContent
-                                className="cursor-pointer"
-                                onClick={() => handleHoldingClick(holding)}
-                              >
-                                <div className="space-y-2">
-                                  <div className="text-2xl font-bold">
-                                    {holding.amount.toString()} {holding.token.symbol}
-                                  </div>
-                                  <div className="text-lg font-semibold">
-                                    <MoneyDisplay value={holding.value} token={baseCurrencyToken} />
-                                  </div>
-                                </div>
-                              </CardContent>
-                            </Card>
-                          );
-                        })}
-                      </div>
-                    </>
-                  ) : (
-                    <>
-                      {selectedRows.size > 0 && (
-                        <Card className="mb-4">
-                          <CardContent className="py-3">
-                            <div className="flex items-center justify-between">
-                              <span className="text-sm font-medium">
-                                {selectedRows.size} holding{selectedRows.size !== 1 ? 's' : ''}{' '}
-                                selected
-                              </span>
-                              <Button
-                                variant="destructive"
-                                size="sm"
-                                onClick={handleBulkDelete}
-                                disabled={bulkDeleteHoldingsMutation.isPending}
-                              >
-                                <Trash2 className="h-4 w-4 mr-2" />
-                                Delete Selected
-                              </Button>
-                            </div>
-                          </CardContent>
-                        </Card>
-                      )}
-                      <DataTable
-                        data={holdings}
-                        columns={[
-                          {
-                            header: 'Token',
-                            accessor: (row) => (
-                              <div>
-                                <div className="font-medium flex items-center gap-2">
-                                  {row.token.symbol}
-                                </div>
-                                <div className="text-sm text-muted-foreground">
-                                  {row.token.name}
-                                </div>
-                                <TokenTypeBadge tokenTypeCode={row.token.typeCode} />
                               </div>
-                            ),
-                            sortable: true,
-                          },
-                          {
-                            header: 'Amount',
-                            accessor: (row) => {
-                              return row.amount;
-                            },
-                            className: 'font-mono',
-                            sortable: true,
-                          },
-                          {
-                            header: 'Value',
-                            accessor: (row) => (
-                              <MoneyDisplay value={row.value} token={baseCurrencyToken} />
-                            ),
-                            className: 'font-mono font-medium',
-                            sortable: true,
-                          },
-                          {
-                            header: 'Institution',
-                            accessor: (row) => (
-                              <InstitutionBadge
-                                institutionId={row.institution.id}
-                                institutionName={row.institution.name}
-                                institutionWebsite={row.institution.website ?? undefined}
-                              />
-                            ),
-                            sortable: true,
-                          },
-                          {
-                            header: 'Account',
-                            accessor: (row) => (
-                              <AccountBadge
-                                accountId={row.account.id}
-                                accountName={row.account.name}
-                                accountTypeCode={row.account.typeCode}
-                              />
-                            ),
-                          },
-                          {
-                            header: 'Status',
-                            accessor: (row) => (
-                              <span
-                                className={`text-xs px-2 py-1 rounded-full ${
-                                  row.isActive
-                                    ? 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400'
-                                    : 'bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-400'
+                            </CardContent>
+                          </Card>
+                        )}
+                        <div className="grid gap-4 grid-cols-1 md:grid-cols-2 lg:grid-cols-3">
+                          {holdings.map((holding) => {
+                            const isSelected = selectedRows.has(holding.id);
+                            return (
+                              <Card
+                                key={holding.id}
+                                className={`hover:shadow-md transition-shadow ${
+                                  isSelected ? 'ring-2 ring-primary' : ''
                                 }`}
                               >
-                                {row.isActive ? 'Active' : 'Inactive'}
-                              </span>
-                            ),
-                            sortable: false,
-                          },
-                        ]}
-                        getRowKey={(row) => row.id}
-                        onSort={handleSort}
-                        onRowClick={(row) => handleHoldingClick(row)}
-                        actions={renderActions}
-                        selectable={true}
-                        selectedRows={selectedRows}
-                        onSelectRow={handleSelectRow}
-                        onSelectAll={handleSelectAll}
-                      />
-                    </>
-                  )}
-                </div>
-              ))}
+                                <CardHeader>
+                                  <CardTitle className="flex items-center justify-between">
+                                    <span className="flex items-center gap-2">
+                                      <div className="min-w-[44px] min-h-[44px] flex items-center justify-center">
+                                        <Checkbox
+                                          checked={isSelected}
+                                          onCheckedChange={() => handleSelectRow(holding.id)}
+                                          onClick={(e) => e.stopPropagation()}
+                                          aria-label={`Select ${holding.token.symbol}`}
+                                        />
+                                      </div>
+                                      <button
+                                        type="button"
+                                        className="cursor-pointer text-left font-semibold hover:underline"
+                                        onClick={() => handleHoldingClick(holding)}
+                                      >
+                                        {holding.token.symbol || holding.token.name}
+                                      </button>
+                                    </span>
+                                    <TokenTypeBadge tokenTypeCode={holding.token.typeCode} />
+                                  </CardTitle>
+                                  <div className="flex items-center gap-2">
+                                    <AccountBadge
+                                      accountId={holding.account.id}
+                                      accountName={holding.account.name}
+                                      accountTypeCode={holding.account.typeCode}
+                                    />
+                                    <InstitutionBadge
+                                      institutionId={holding.institution.id}
+                                      institutionName={holding.institution.name}
+                                      institutionWebsite={holding.institution.website ?? undefined}
+                                    />
+                                  </div>
+                                </CardHeader>
+                                <CardContent
+                                  className="cursor-pointer"
+                                  onClick={() => handleHoldingClick(holding)}
+                                >
+                                  <div className="space-y-2">
+                                    <div className="text-2xl font-bold">
+                                      {holding.amount.toString()} {holding.token.symbol}
+                                    </div>
+                                    <div className="text-lg font-semibold">
+                                      <MoneyDisplay
+                                        value={holding.value}
+                                        token={baseCurrencyToken}
+                                      />
+                                    </div>
+                                  </div>
+                                </CardContent>
+                              </Card>
+                            );
+                          })}
+                        </div>
+                      </>
+                    ) : (
+                      <>
+                        {selectedRows.size > 0 && (
+                          <Card className="mb-4">
+                            <CardContent className="py-3">
+                              <div className="flex items-center justify-between">
+                                <span className="text-sm font-medium">
+                                  {selectedRows.size} holding
+                                  {selectedRows.size !== 1 ? 's' : ''} selected
+                                </span>
+                                <div className="flex items-center gap-2">
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => setBulkEditGroupsModalOpen(true)}
+                                  >
+                                    <Edit className="h-4 w-4 mr-2" />
+                                    Edit Selected
+                                  </Button>
+                                  <Button
+                                    variant="destructive"
+                                    size="sm"
+                                    onClick={handleBulkDelete}
+                                    disabled={bulkDeleteHoldingsMutation.isPending}
+                                  >
+                                    <Trash2 className="h-4 w-4 mr-2" />
+                                    Delete Selected
+                                  </Button>
+                                </div>
+                              </div>
+                            </CardContent>
+                          </Card>
+                        )}
+                        <DataTable
+                          data={holdings}
+                          columns={[
+                            {
+                              header: 'Token',
+                              accessor: (row) => (
+                                <div>
+                                  <div className="font-medium flex items-center gap-2">
+                                    {row.token.symbol}
+                                  </div>
+                                  <div className="text-sm text-muted-foreground">
+                                    {row.token.name}
+                                  </div>
+                                  <TokenTypeBadge tokenTypeCode={row.token.typeCode} />
+                                </div>
+                              ),
+                              sortable: true,
+                            },
+                            {
+                              header: 'Amount',
+                              accessor: (row) => {
+                                return row.amount;
+                              },
+                              className: 'font-mono',
+                              sortable: true,
+                            },
+                            {
+                              header: 'Value',
+                              accessor: (row) => (
+                                <MoneyDisplay value={row.value} token={baseCurrencyToken} />
+                              ),
+                              className: 'font-mono font-medium',
+                              sortable: true,
+                            },
+                            {
+                              header: 'Institution',
+                              accessor: (row) => (
+                                <InstitutionBadge
+                                  institutionId={row.institution.id}
+                                  institutionName={row.institution.name}
+                                  institutionWebsite={row.institution.website ?? undefined}
+                                />
+                              ),
+                              sortable: true,
+                            },
+                            {
+                              header: 'Account',
+                              accessor: (row) => (
+                                <AccountBadge
+                                  accountId={row.account.id}
+                                  accountName={row.account.name}
+                                  accountTypeCode={row.account.typeCode}
+                                />
+                              ),
+                            },
+                            {
+                              header: 'Status',
+                              accessor: (row) => (
+                                <span
+                                  className={`text-xs px-2 py-1 rounded-full ${
+                                    row.isActive
+                                      ? 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400'
+                                      : 'bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-400'
+                                  }`}
+                                >
+                                  {row.isActive ? 'Active' : 'Inactive'}
+                                </span>
+                              ),
+                              sortable: false,
+                            },
+                          ]}
+                          getRowKey={(row) => row.id}
+                          onSort={handleSort}
+                          onRowClick={(row) => handleHoldingClick(row)}
+                          actions={renderActions}
+                          selectable={true}
+                          selectedRows={selectedRows}
+                          onSelectRow={handleSelectRow}
+                          onSelectAll={handleSelectAll}
+                        />
+                      </>
+                    )}
+                  </div>
+                );
+              })}
 
               {filteredAndSortedHoldings.length === 0 && (
                 <Card>
@@ -955,6 +988,21 @@ export function Holdings() {
           </Tabs>
         </>
       )}
+
+      <BulkEditGroupsModal
+        open={bulkEditGroupsModalOpen}
+        onOpenChange={setBulkEditGroupsModalOpen}
+        entityType="holding"
+        selectedEntityIds={Array.from(selectedRows)}
+        onSuccess={() => {
+          utils.holdings.getWithDetails.invalidate();
+          setSelectedRows(new Set());
+          toast({
+            title: 'Groups updated',
+            description: 'Holding groups have been updated successfully.',
+          });
+        }}
+      />
     </div>
   );
 }

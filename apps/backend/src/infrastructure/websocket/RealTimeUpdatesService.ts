@@ -65,7 +65,7 @@ export class RealTimeUpdatesService extends EventEmitter {
   // biome-ignore lint/suspicious/noExplicitAny: Elysia type not well defined, using any for app instance
   setElysiaApp(app: any) {
     this.elysiaApp = app;
-    wsLogger.info('Elysia app instance registered with realTimeUpdatesService');
+    wsLogger.info('✅ Elysia app instance registered with realTimeUpdatesService');
   }
 
   /**
@@ -87,7 +87,7 @@ export class RealTimeUpdatesService extends EventEmitter {
     }, 30000); // Every 30 seconds
 
     if (logConfig.logWebSocketMessages) {
-      wsLogger.info('Real-time updates service initialized (Elysia mode)');
+      wsLogger.info('✅ Real-time updates service initialized (Elysia mode)');
     }
   }
 

@@ -1,6 +1,7 @@
-import { Grid3X3, List, MoreHorizontal, Trash2 } from 'lucide-react';
+import { Edit, Grid3X3, List, MoreHorizontal, Trash2 } from 'lucide-react';
 import { useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
+import { BulkEditGroupsModal } from '@/components/modals/BulkEditGroupsModal';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { DataTable } from '@/components/ui/data-table';
@@ -22,15 +23,15 @@ import { createCurrencyToken } from '@/lib/utils';
 export function InstitutionDetail() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const { toast } = useToast();
+  const utils = trpc.useUtils();
 
   // View mode state
   const [viewMode, setViewMode] = useViewMode('cards');
 
   // Selection state for bulk operations
   const [selectedRows, setSelectedRows] = useState<Set<string>>(new Set());
-
-  const { toast } = useToast();
-  const utils = trpc.useUtils();
+  const [bulkEditGroupsModalOpen, setBulkEditGroupsModalOpen] = useState(false);
 
   // Fetch base currency
   const { data: baseCurrency } = trpc.users.getBaseCurrency.useQuery();
@@ -123,7 +124,9 @@ export function InstitutionDetail() {
     if (selectedRows.size === 0) return;
 
     const confirmed = window.confirm(
-      `Are you sure you want to delete ${selectedRows.size} account${selectedRows.size !== 1 ? 's' : ''}?`
+      `Are you sure you want to delete ${selectedRows.size} account${
+        selectedRows.size !== 1 ? 's' : ''
+      }?`
     );
 
     if (confirmed) {
@@ -239,7 +242,7 @@ export function InstitutionDetail() {
 
   const totalValue = institutionAccounts.reduce((sum, account) => {
     const accountHoldings = institutionHoldings.filter(
-      (holding) => holding.account.id === account.id
+      (holding) => holding.account.id === account.id && holding.isActive
     );
     return sum + accountHoldings.reduce((accSum, holding) => accSum + holding.value, 0);
   }, 0);
@@ -267,7 +270,7 @@ export function InstitutionDetail() {
         <SummaryCard
           type="count"
           title="Holdings"
-          value={institutionHoldings.length}
+          value={institutionHoldings.filter((h) => h.isActive).length}
           label="holdings"
         />
       </div>
@@ -305,17 +308,28 @@ export function InstitutionDetail() {
                 <CardContent className="py-3">
                   <div className="flex items-center justify-between">
                     <span className="text-sm font-medium">
-                      {selectedRows.size} account{selectedRows.size !== 1 ? 's' : ''} selected
+                      {selectedRows.size} account
+                      {selectedRows.size !== 1 ? 's' : ''} selected
                     </span>
-                    <Button
-                      variant="destructive"
-                      size="sm"
-                      onClick={handleBulkDelete}
-                      disabled={bulkDeleteAccountsMutation.isPending}
-                    >
-                      <Trash2 className="h-4 w-4 mr-2" />
-                      Delete Selected
-                    </Button>
+                    <div className="flex items-center gap-2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setBulkEditGroupsModalOpen(true)}
+                      >
+                        <Edit className="h-4 w-4 mr-2" />
+                        Edit Selected
+                      </Button>
+                      <Button
+                        variant="destructive"
+                        size="sm"
+                        onClick={handleBulkDelete}
+                        disabled={bulkDeleteAccountsMutation.isPending}
+                      >
+                        <Trash2 className="h-4 w-4 mr-2" />
+                        Delete Selected
+                      </Button>
+                    </div>
                   </div>
                 </CardContent>
               </Card>
@@ -340,9 +354,11 @@ export function InstitutionDetail() {
                   header: 'Holdings',
                   accessor: (row) => {
                     const accountHoldings = institutionHoldings.filter(
-                      (holding) => holding.account.id === row.id
+                      (holding) => holding.account.id === row.id && holding.isActive
                     );
-                    return `${accountHoldings.length} holding${accountHoldings.length !== 1 ? 's' : ''}`;
+                    return `${accountHoldings.length} holding${
+                      accountHoldings.length !== 1 ? 's' : ''
+                    }`;
                   },
                   className: 'text-muted-foreground',
                 },
@@ -350,7 +366,7 @@ export function InstitutionDetail() {
                   header: 'Value',
                   accessor: (row) => {
                     const accountHoldings = institutionHoldings.filter(
-                      (holding) => holding.account.id === row.id
+                      (holding) => holding.account.id === row.id && holding.isActive
                     );
                     const accountValue = accountHoldings.reduce(
                       (sum, holding) => sum + holding.value,
@@ -375,7 +391,7 @@ export function InstitutionDetail() {
           <div className="grid gap-4 grid-cols-1 md:grid-cols-2">
             {institutionAccounts.map((account) => {
               const accountHoldings = institutionHoldings.filter(
-                (holding) => holding.account.id === account.id
+                (holding) => holding.account.id === account.id && holding.isActive
               );
               const accountValue = accountHoldings.reduce((sum, holding) => sum + holding.value, 0);
               const accountType = accountTypes?.find((type) => type.id === account.typeId);
@@ -406,6 +422,20 @@ export function InstitutionDetail() {
           </div>
         )}
       </div>
+
+      <BulkEditGroupsModal
+        open={bulkEditGroupsModalOpen}
+        onOpenChange={setBulkEditGroupsModalOpen}
+        entityType="account"
+        selectedEntityIds={Array.from(selectedRows)}
+        onSuccess={() => {
+          utils.accounts.getAll.invalidate();
+          toast({
+            title: 'Success',
+            description: 'Groups updated successfully',
+          });
+        }}
+      />
     </div>
   );
 }

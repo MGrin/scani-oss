@@ -1,0 +1,8 @@
+{
+  "servers": {
+    "playwright": {
+      "command": "bunx",
+      "args": ["@playwright/mcp@latest"]
+    }
+  }
+}

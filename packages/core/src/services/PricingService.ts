@@ -47,6 +47,7 @@ const GLOBAL_RATE_LIMITERS = {
   // DeFiLlama: Free tier, 5 calls/sec = 300 calls/min
   defiLlama: new RateLimiter(5, 1000), // 5 calls per second
   googleSheets: new RateLimiter(100, 100 * 1000), // 100 calls per 100 seconds
+  exchangeRate: new RateLimiter(2, 60 * 1000), // 2 calls per minute
 };
 
 @Service()
@@ -61,6 +62,7 @@ export class PricingService {
   public readonly coinGeckoRateLimiter = GLOBAL_RATE_LIMITERS.coinGecko;
   private readonly defiLlamaRateLimiter = GLOBAL_RATE_LIMITERS.defiLlama;
   private readonly googleSheetsRateLimiter = GLOBAL_RATE_LIMITERS.googleSheets;
+  private readonly exchangeRateRateLimiter = GLOBAL_RATE_LIMITERS.exchangeRate;
 
   private readonly providers: ProviderRegistry;
   private readonly googleSheetsProvider: GoogleSheetsProvider;
@@ -647,10 +649,75 @@ export class PricingService {
     return results;
   }
 
+  /**
+   * Get currency conversion rate from database (cached prices)
+   * Looks for a price of fromCurrency token priced in toCurrency
+   */
+  private async getConversionRateFromDatabase(
+    fromCurrencySymbol: string,
+    toCurrencySymbol: string,
+    timestamp: Date
+  ): Promise<string | null> {
+    try {
+      // Get both currency tokens
+      const fromToken = await this.tokenRepository.findBySymbol(fromCurrencySymbol);
+      const toToken = await this.tokenRepository.findBySymbol(toCurrencySymbol);
+
+      if (!fromToken || !toToken) {
+        return null;
+      }
+
+      // Same currency - conversion rate is always 1
+      if (fromToken.id === toToken.id) {
+        return '1';
+      }
+
+      // Look for a price of fromCurrency in toCurrency
+      const priceResult = await this.tokenPriceRepository.findLatestPrice(fromToken.id, toToken.id);
+
+      if (!priceResult || priceResult.price === '0') {
+        return null;
+      }
+
+      // Check if price is recent enough (within 24 hours)
+      const priceAge = timestamp.getTime() - new Date(priceResult.timestamp).getTime();
+      if (priceAge > 24 * 60 * 60 * 1000) {
+        pricingLogger.debug(
+          {
+            fromCurrency: fromCurrencySymbol,
+            toCurrency: toCurrencySymbol,
+            priceAge: priceAge / (60 * 60 * 1000),
+          },
+          'Conversion rate from database is too old'
+        );
+        return null;
+      }
+
+      pricingLogger.debug(
+        {
+          fromCurrency: fromCurrencySymbol,
+          toCurrency: toCurrencySymbol,
+          rate: priceResult.price,
+          source: priceResult.source,
+        },
+        'Using conversion rate from database'
+      );
+
+      return priceResult.price;
+    } catch (error) {
+      pricingLogger.warn(
+        { error, fromCurrencySymbol, toCurrencySymbol },
+        'Failed to get conversion rate from database'
+      );
+      return null;
+    }
+  }
+
   private async getCurrencyConversionRate(
     fromCurrency: string,
     toCurrency: string,
-    _timestamp: Date
+    timestamp: Date,
+    cacheOnly = false
   ): Promise<string> {
     if (fromCurrency === toCurrency) {
       return '1';
@@ -660,6 +727,7 @@ export class PricingService {
     const cached = this.currencyRateCache.get(cacheKey);
     const now = Date.now();
 
+    // Check in-memory cache first
     if (cached) {
       if (cached.expiresAt > now) {
         logger.debug({ fromCurrency, toCurrency }, 'Using cached currency conversion rate');
@@ -668,8 +736,33 @@ export class PricingService {
       this.currencyRateCache.delete(cacheKey);
     }
 
+    // Try to get conversion rate from database (stored token prices)
+    const dbRate = await this.getConversionRateFromDatabase(fromCurrency, toCurrency, timestamp);
+    if (dbRate) {
+      // Cache it in memory for future use
+      this.currencyRateCache.set(cacheKey, {
+        rate: dbRate,
+        expiresAt: now + this.CURRENCY_CONVERSION_TTL_MS,
+      });
+      return dbRate;
+    }
+
+    // If cache-only mode and no cached rate, return '0' instead of making external API call
+    if (cacheOnly) {
+      logger.debug(
+        { fromCurrency, toCurrency },
+        'No cached conversion rate available in cache-only mode'
+      );
+      return '0';
+    }
+
+    // Fetch from external API as last resort
     try {
       const url = `${PROVIDER_CONFIGS.exchangeRate.baseUrl}/${fromCurrency}`;
+
+      // Apply rate limiting before making external API call
+      await this.exchangeRateRateLimiter.execute(async () => {});
+
       const response = await fetchWithTimeout(url);
 
       if (!response.ok) {
@@ -691,13 +784,43 @@ export class PricingService {
 
       logger.debug(
         { fromCurrency, toCurrency, rate: conversionRate, apiUrl: url },
-        'Currency conversion rate fetched'
+        'Currency conversion rate fetched from external API'
       );
 
+      // Cache in memory
       this.currencyRateCache.set(cacheKey, {
         rate: rateString,
         expiresAt: now + this.CURRENCY_CONVERSION_TTL_MS,
       });
+
+      // Store in database for future use
+      try {
+        const fromToken = await this.tokenRepository.findBySymbol(fromCurrency);
+        const toToken = await this.tokenRepository.findBySymbol(toCurrency);
+
+        if (fromToken && toToken) {
+          await this.tokenPriceRepository.bulkUpsert([
+            {
+              tokenId: fromToken.id,
+              baseTokenId: toToken.id,
+              price: rateString,
+              timestamp: new Date(),
+              source: 'exchangerate-api',
+            },
+          ]);
+
+          pricingLogger.debug(
+            { fromCurrency, toCurrency, rate: rateString },
+            'Stored conversion rate in database'
+          );
+        }
+      } catch (dbError) {
+        pricingLogger.warn(
+          { dbError, fromCurrency, toCurrency },
+          'Failed to store conversion rate in database'
+        );
+        // Don't fail the whole operation if database storage fails
+      }
 
       return rateString;
     } catch (error) {
@@ -714,7 +837,8 @@ export class PricingService {
     price: string,
     fromCurrency: string,
     toCurrency: string,
-    timestamp: Date
+    timestamp: Date,
+    cacheOnly = false
   ): Promise<string> {
     if (fromCurrency === toCurrency || price === '0') {
       return price;
@@ -724,7 +848,8 @@ export class PricingService {
       const conversionRate = await this.getCurrencyConversionRate(
         fromCurrency,
         toCurrency,
-        timestamp
+        timestamp,
+        cacheOnly
       );
 
       if (conversionRate === '0') {
@@ -1552,7 +1677,8 @@ export class PricingService {
               cached.price,
               cachedBaseCurrencyToken.symbol,
               baseCurrencyToken.symbol,
-              timestamp
+              timestamp,
+              true // cache-only mode - don't make external API calls
             );
 
             results.set(token.id, convertedPrice);

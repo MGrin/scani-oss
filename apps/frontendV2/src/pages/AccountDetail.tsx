@@ -4,6 +4,7 @@ import { useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import TimeAgo from 'react-timeago';
 import { EditAccountModal, TokenTypeBadge } from '@/components/features';
+import { BulkEditGroupsModal } from '@/components/modals/BulkEditGroupsModal';
 import { TokenFilterSelector, TokenTypeSelector } from '@/components/selectors/SearchableSelectors';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
@@ -51,6 +52,7 @@ export function AccountDetail() {
 
   // Selection state for bulk operations
   const [selectedRows, setSelectedRows] = useState<Set<string>>(new Set());
+  const [bulkEditGroupsModalOpen, setBulkEditGroupsModalOpen] = useState(false);
 
   // Fetch base currency
   const { data: baseCurrency } = trpc.users.getBaseCurrency.useQuery();
@@ -288,7 +290,9 @@ export function AccountDetail() {
     if (selectedRows.size === 0) return;
 
     const confirmed = window.confirm(
-      `Are you sure you want to delete ${selectedRows.size} holding${selectedRows.size !== 1 ? 's' : ''}?`
+      `Are you sure you want to delete ${selectedRows.size} holding${
+        selectedRows.size !== 1 ? 's' : ''
+      }?`
     );
 
     if (confirmed) {
@@ -421,7 +425,7 @@ export function AccountDetail() {
   }
 
   const totalValue = (filteredAndSortedHoldings || []).reduce(
-    (sum: number, holding) => sum + holding.value,
+    (sum: number, holding) => (holding.isActive ? sum + holding.value : sum),
     0
   );
 
@@ -565,17 +569,28 @@ export function AccountDetail() {
               <CardContent className="py-3">
                 <div className="flex items-center justify-between">
                   <span className="text-sm font-medium">
-                    {selectedRows.size} holding{selectedRows.size !== 1 ? 's' : ''} selected
+                    {selectedRows.size} holding
+                    {selectedRows.size !== 1 ? 's' : ''} selected
                   </span>
-                  <Button
-                    variant="destructive"
-                    size="sm"
-                    onClick={handleBulkDelete}
-                    disabled={bulkDeleteHoldingsMutation.isPending}
-                  >
-                    <Trash2 className="h-4 w-4 mr-2" />
-                    Delete Selected
-                  </Button>
+                  <div className="flex items-center gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setBulkEditGroupsModalOpen(true)}
+                    >
+                      <Edit className="h-4 w-4 mr-2" />
+                      Edit Selected
+                    </Button>
+                    <Button
+                      variant="destructive"
+                      size="sm"
+                      onClick={handleBulkDelete}
+                      disabled={bulkDeleteHoldingsMutation.isPending}
+                    >
+                      <Trash2 className="h-4 w-4 mr-2" />
+                      Delete Selected
+                    </Button>
+                  </div>
                 </div>
               </CardContent>
             </Card>
@@ -700,6 +715,22 @@ export function AccountDetail() {
         isOpen={isEditAccountModalOpen}
         onClose={handleEditAccountModalClose}
         onAccountUpdated={handleAccountUpdated}
+      />
+
+      {/* Bulk Edit Groups Modal */}
+      <BulkEditGroupsModal
+        open={bulkEditGroupsModalOpen}
+        onOpenChange={setBulkEditGroupsModalOpen}
+        entityType="holding"
+        selectedEntityIds={Array.from(selectedRows)}
+        onSuccess={() => {
+          utils.accounts.getHoldings.invalidate();
+          setSelectedRows(new Set());
+          toast({
+            title: 'Groups updated',
+            description: 'Holding groups have been updated successfully.',
+          });
+        }}
       />
     </div>
   );

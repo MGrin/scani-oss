@@ -107,7 +107,11 @@ async function initializeIntegrationRegistry(): Promise<void> {
             institutionId: institution.id, // Use the database UUID
           });
           logger.debug(
-            { exchangeName, staticId: staticConfig.institutionId, dbId: institution.id },
+            {
+              exchangeName,
+              staticId: staticConfig.institutionId,
+              dbId: institution.id,
+            },
             'Registered exchange with database UUID'
           );
         }
@@ -119,11 +123,6 @@ async function initializeIntegrationRegistry(): Promise<void> {
       'Failed to register exchanges with database UUIDs - will fall back to static IDs'
     );
   }
-
-  logger.info(
-    { totalIntegrations: integrationRegistry.size() },
-    'Integration registry initialized'
-  );
 }
 
 /**
@@ -331,7 +330,10 @@ export class IntegrationManager {
           const hasActivity = await integration.hasActivity(address);
           if (hasActivity) {
             logger.debug(
-              { institutionId: mapping.institutionId, chainId: mapping.chainId },
+              {
+                institutionId: mapping.institutionId,
+                chainId: mapping.chainId,
+              },
               'Wallet has activity on chain'
             );
             return mapping.institutionId;

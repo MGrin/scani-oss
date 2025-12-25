@@ -161,7 +161,16 @@ export class HoldingService extends BaseService {
         const costBasis = currentValue;
 
         // Get price information from portfolio valuation service
-        const priceInfo = priceMetadataMap.get(token.symbol);
+        let priceInfo = priceMetadataMap.get(token.symbol);
+
+        // Synthesize price object for base currency holdings (always 1:1 conversion)
+        if (!priceInfo && token.id === user.baseCurrencyId) {
+          priceInfo = {
+            value: '1',
+            timestamp: new Date().toISOString(),
+            source: 'Base Currency',
+          };
+        }
 
         // Get groups for this holding (both direct and account-level)
         const holdingGroups = groupsMap.get(holding.id) || [];

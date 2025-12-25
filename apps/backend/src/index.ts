@@ -34,7 +34,7 @@ initializeContainer();
 // Initialize integration registry
 try {
   const integrationManager = Container.get(IntegrationManager);
-  integrationManager.initialize();
+  await integrationManager.initialize();
   logger.info({}, '✅ Integration registry initialized');
 } catch (error) {
   logger.error(
@@ -639,7 +639,7 @@ const initTelegramBot = async () => {
   const openAIApiKey = process.env.OPENAI_API_KEY;
 
   if (!botToken) {
-    logger.info({}, '⚠️ Telegram bot not configured (TELEGRAM_BOT_TOKEN not set)');
+    logger.warn({}, '⚠️  Telegram bot not configured (TELEGRAM_BOT_TOKEN not set)');
     return;
   }
 

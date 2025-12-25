@@ -18,9 +18,15 @@ const DEFAULT_PREFERENCES: AssetAllocationPreferences = {
 function isValidDimension(value: unknown): value is AssetAllocationDimension {
   return (
     typeof value === 'string' &&
-    ['token', 'token_type', 'account', 'account_type', 'institution', 'institution_type'].includes(
-      value
-    )
+    [
+      'token',
+      'token_type',
+      'account',
+      'account_type',
+      'institution',
+      'institution_type',
+      'group',
+    ].includes(value)
   );
 }
 

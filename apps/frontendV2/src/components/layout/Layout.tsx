@@ -504,10 +504,10 @@ function LayoutContent({
 
         {/* Page content - scrollable with pull-to-refresh */}
         <PullToRefresh onRefresh={handleRefresh}>
-          <div className="h-full overflow-auto" data-scrollable="true">
+          <div className="h-full overflow-y-auto overflow-x-hidden" data-scrollable="true">
             <main
               id={mainContentId}
-              className={cn('px-4 pt-4 pb-6 sm:px-6 sm:pt-5 sm:pb-6')}
+              className={cn('px-4 pt-4 pb-6 sm:px-6 sm:pt-5 sm:pb-6 max-w-full overflow-x-hidden')}
               style={{
                 paddingBottom: 'max(1.5rem, calc(1.5rem + env(safe-area-inset-bottom)))',
                 paddingLeft: 'max(1rem, calc(1rem + env(safe-area-inset-left)))',

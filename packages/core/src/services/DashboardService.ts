@@ -2,6 +2,7 @@ import Decimal from 'decimal.js';
 import { Container, Service } from 'typedi';
 import type { Holding, Token } from '../domain/entities';
 import { HoldingRepository } from '../repositories/HoldingRepository';
+import { GetAssetAllocationUseCase } from '../use-cases/GetAssetAllocationUseCase';
 import { BaseService } from './BaseService';
 import { PortfolioValuationService } from './PortfolioValuationService';
 
@@ -63,18 +64,28 @@ export interface DashboardOverview {
     institutionName: string;
     institutionWebsite?: string;
   }>;
-  assetAllocation: Array<{
-    type: string;
-    code: string;
-    value: string;
-    percentage: string;
-  }>;
+  /**
+   * Asset allocation by token type (default dimension)
+   * Included to avoid a separate API call on dashboard load
+   */
+  assetAllocation: {
+    items: Array<{
+      id: string;
+      code: string;
+      name: string;
+      value: string;
+      percentage: string;
+    }>;
+    totalValue: string;
+    baseCurrency: string;
+  };
 }
 
 @Service()
 export class DashboardService extends BaseService {
   private readonly portfolioService = Container.get(PortfolioValuationService);
   private readonly holdingRepository = Container.get(HoldingRepository);
+  private readonly assetAllocationUseCase = Container.get(GetAssetAllocationUseCase);
 
   constructor() {
     super('DashboardService');
@@ -118,11 +129,14 @@ export class DashboardService extends BaseService {
       this.holdingRepository.findByUserWithCompleteDetails(userId),
     ]);
 
-    // Extract unique accounts and institutions from holdings data
+    // Filter active holdings for counts (exclude inactive holdings)
+    const activeHoldings = holdingsWithDetails.filter((h) => h.holding.isActive);
+
+    // Extract unique accounts and institutions from active holdings only
     const accountMap = new Map<string, { id: string; name: string; institutionId: string }>();
     const institutionSet = new Set<string>();
 
-    holdingsWithDetails.forEach(({ account, institution }) => {
+    activeHoldings.forEach(({ account, institution }) => {
       if (!accountMap.has(account.id)) {
         accountMap.set(account.id, account);
       }
@@ -132,22 +146,24 @@ export class DashboardService extends BaseService {
     const counts = {
       institutions: institutionSet.size,
       accounts: accountMap.size,
-      holdings: holdingsWithDetails.length,
+      holdings: activeHoldings.length,
     };
 
     this.logger.debug({ userId, counts }, 'Counts calculated');
 
-    // Parallel calculation of top holdings and asset allocation
+    // Parallel calculation: top holdings and default asset allocation (token_type)
+    // Asset allocation reuses the already-fetched portfolio data
     const [topHoldings, assetAllocation] = await Promise.all([
       this.calculateTopHoldings(holdingsWithDetails, portfolioValue),
-      this.calculateAssetAllocation(holdingsWithDetails, portfolioValue),
+      this.assetAllocationUseCase.calculateFromFetchedData(
+        userId,
+        'token_type',
+        portfolioValue,
+        holdingsWithDetails
+      ),
     ]);
 
     this.logger.debug({ userId, topHoldingsCount: topHoldings.length }, 'Top holdings calculated');
-    this.logger.debug(
-      { userId, assetAllocationCount: assetAllocation.length },
-      'Asset allocation calculated'
-    );
 
     return {
       portfolioValue: {
@@ -210,52 +226,5 @@ export class DashboardService extends BaseService {
       }));
 
     return topHoldings;
-  }
-
-  /**
-   * Calculate asset allocation from pre-fetched data
-   */
-  private async calculateAssetAllocation(
-    holdingsWithDetails: Array<HoldingWithDetails>,
-    portfolioValue: PortfolioValueResult
-  ): Promise<DashboardOverview['assetAllocation']> {
-    // Extract token prices using helper method
-    const priceMap = this.extractPriceMap(portfolioValue);
-
-    // Group by token type and calculate totals
-    const typeAggregation = holdingsWithDetails.reduce(
-      (acc, { holding, token }) => {
-        const price = priceMap.get(token.symbol) || '0';
-        const balance = new Decimal(holding.balance);
-        const value = balance.mul(new Decimal(price));
-
-        if (!acc[token.typeCode]) {
-          acc[token.typeCode] = {
-            typeCode: token.typeCode,
-            typeName: token.typeName,
-            value: new Decimal(0),
-          };
-        }
-
-        acc[token.typeCode]!.value = acc[token.typeCode]!.value.add(value);
-        return acc;
-      },
-      {} as Record<string, { typeCode: string; typeName: string; value: Decimal }>
-    );
-
-    const totalValue = new Decimal(portfolioValue.totalValue);
-    const assetAllocation = Object.values(typeAggregation)
-      .map((allocation) => ({
-        type: allocation.typeName,
-        code: allocation.typeCode,
-        value: allocation.value.toString(),
-        percentage: totalValue.greaterThan(0)
-          ? allocation.value.div(totalValue).mul(100).toFixed(2)
-          : '0',
-      }))
-      .filter((a) => new Decimal(a.value).greaterThan(0))
-      .sort((a, b) => new Decimal(b.value).comparedTo(new Decimal(a.value)));
-
-    return assetAllocation;
   }
 }

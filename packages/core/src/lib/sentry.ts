@@ -1,4 +1,5 @@
 import * as Sentry from '@sentry/bun';
+import logger from '../utils/logger';
 
 /**
  * Initialize Sentry for error tracking and monitoring
@@ -46,7 +47,7 @@ export function initializeSentry() {
     enabled: process.env.NODE_ENV === 'production' || process.env.SENTRY_ENABLED === 'true',
   });
 
-  console.log('✅ Sentry initialized successfully');
+  logger.info('✅ Sentry initialized successfully');
 }
 
 /**

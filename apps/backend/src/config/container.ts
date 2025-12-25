@@ -45,19 +45,13 @@ const containerLogger = createComponentLogger('container');
  * - All use cases are also @Service() decorated and auto-registered
  */
 export function initializeContainer(): void {
-  containerLogger.info({}, 'Initializing Dependency Injection Container');
-
   // TypeDI auto-registers all classes with @Service() decorator
   // Imports above ensure all our services and repositories are loaded
   // from the core package and backend-specific services
 
   containerLogger.info(
     {},
-    '✓ DI Container initialized with all services and repositories from @scani/core'
-  );
-  containerLogger.debug(
-    {},
-    'All @Service() decorated classes from core package and backend-specific services are now available via Container.get()'
+    '✅ DI Container initialized with all services and repositories from @scani/core'
   );
 }
 

@@ -99,6 +99,23 @@ export class GetAssetAllocationUseCase extends BaseService {
       this.holdingRepository.findByUserWithCompleteDetails(userId),
     ]);
 
+    return this.calculateFromFetchedData(userId, dimension, portfolioValue, holdingsWithDetails);
+  }
+
+  /**
+   * Calculate asset allocation from already-fetched data
+   * Used internally to avoid duplicate fetches when called from dashboard
+   */
+  async calculateFromFetchedData(
+    userId: string,
+    dimension: AssetAllocationDimension,
+    portfolioValue: PortfolioValueResult,
+    holdingsWithDetails: HoldingWithCompleteDetails[]
+  ): Promise<{
+    items: AssetAllocationItem[];
+    totalValue: string;
+    baseCurrency: string;
+  }> {
     // Extract token prices
     const priceMap = this.extractPriceMap(portfolioValue);
 

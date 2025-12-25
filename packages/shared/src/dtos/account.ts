@@ -1,4 +1,4 @@
-import { z } from 'zod';
+import { z } from "zod";
 
 export type Account = {
   name: string;
@@ -24,6 +24,11 @@ export type AccountWihSumaryDTO = Account & {
     holdingsCount: number;
     totalValue: string;
   };
+  groups: Array<{
+    id: string;
+    name: string;
+    color?: string;
+  }>;
 };
 export type CreateAccountInput = z.infer<typeof CreateAccountDto>;
 

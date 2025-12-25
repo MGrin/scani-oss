@@ -48,6 +48,7 @@ export function MultiSelect({
     } else {
       onSelectedChange([...selected, value]);
     }
+    setOpen(false);
   };
 
   const handleRemove = (value: string, e: React.MouseEvent) => {
@@ -70,11 +71,18 @@ export function MultiSelect({
           {selectedItems.length > 0 ? (
             <div className="flex flex-wrap gap-1">
               {selectedItems.map((item) => (
-                <Badge key={item.value} variant="secondary" className="flex items-center gap-1">
+                <Badge
+                  key={item.value}
+                  variant="secondary"
+                  className="flex items-center gap-1 px-1.5 py-0.5 text-xs h-6"
+                >
                   {item.color && (
-                    <div className="w-2 h-2 rounded-full" style={{ backgroundColor: item.color }} />
+                    <div
+                      className="w-2 h-2 rounded-full flex-shrink-0"
+                      style={{ backgroundColor: item.color }}
+                    />
                   )}
-                  <span>{item.label}</span>
+                  <span className="leading-none">{item.label}</span>
                   <button
                     type="button"
                     onClick={(e) => handleRemove(item.value, e)}

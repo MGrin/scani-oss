@@ -118,4 +118,47 @@ export const holdingsRouter = router({
 
       return result;
     }),
+
+  bulkAssignGroups: protectedProcedure
+    .input(
+      z.object({
+        holdingIds: z.array(z.string()).min(1),
+        groupIds: z.array(z.string()),
+      })
+    )
+    .mutation(async ({ input, ctx }) => {
+      const { dbUser } = requireAuth(ctx);
+
+      const result = await HoldingImplementations.bulkAssignGroups(
+        { userId: dbUser.id, dbUser },
+        { holdingIds: input.holdingIds, groupIds: input.groupIds }
+      );
+
+      // Emit entity change events for updated holdings
+      for (const id of input.holdingIds) {
+        emitEntityChange({
+          type: 'entity_changed',
+          entityType: 'holding',
+          operationType: 'update',
+          entityId: id,
+          userId: dbUser.id,
+          data: {},
+        });
+      }
+
+      return result;
+    }),
+
+  getCommonGroups: protectedProcedure
+    .input(z.object({ holdingIds: z.array(z.string()).min(1) }))
+    .query(async ({ input, ctx }) => {
+      const { dbUser } = requireAuth(ctx);
+
+      const result = await HoldingImplementations.getCommonGroups(
+        { userId: dbUser.id, dbUser },
+        { holdingIds: input.holdingIds }
+      );
+
+      return result;
+    }),
 });

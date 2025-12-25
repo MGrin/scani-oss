@@ -100,4 +100,47 @@ export const accountsRouter = router({
 
       return result;
     }),
+
+  bulkAssignGroups: protectedProcedure
+    .input(
+      z.object({
+        accountIds: z.array(z.string()).min(1),
+        groupIds: z.array(z.string()),
+      })
+    )
+    .mutation(async ({ input, ctx }) => {
+      const { dbUser } = requireAuth(ctx);
+
+      const result = await AccountImplementations.bulkAssignGroups(
+        { userId: dbUser.id, dbUser },
+        { accountIds: input.accountIds, groupIds: input.groupIds }
+      );
+
+      // Emit entity change events for updated accounts
+      for (const id of input.accountIds) {
+        emitEntityChange({
+          type: 'entity_changed',
+          entityType: 'account',
+          operationType: 'update',
+          entityId: id,
+          userId: dbUser.id,
+          data: {},
+        });
+      }
+
+      return result;
+    }),
+
+  getCommonGroups: protectedProcedure
+    .input(z.object({ accountIds: z.array(z.string()).min(1) }))
+    .query(async ({ input, ctx }) => {
+      const { dbUser } = requireAuth(ctx);
+
+      const result = await AccountImplementations.getCommonGroups(
+        { userId: dbUser.id, dbUser },
+        { accountIds: input.accountIds }
+      );
+
+      return result;
+    }),
 });

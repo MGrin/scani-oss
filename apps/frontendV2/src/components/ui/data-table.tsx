@@ -78,9 +78,9 @@ export function DataTable<T>({
 
   if (isLoading) {
     return (
-      <Card>
+      <Card className="max-w-full">
         <CardContent className="p-0">
-          <div className="overflow-x-auto max-w-[calc(100vw-2rem)]">
+          <div className="overflow-x-auto">
             <table className="w-full">
               <thead className="border-b bg-muted/50">
                 <tr className="text-left">
@@ -145,7 +145,7 @@ export function DataTable<T>({
 
   if (data.length === 0) {
     return (
-      <Card>
+      <Card className="max-w-full">
         <CardContent className="py-12 text-center">
           <p className="text-muted-foreground">{emptyMessage}</p>
         </CardContent>
@@ -154,9 +154,9 @@ export function DataTable<T>({
   }
 
   return (
-    <Card>
+    <Card className="max-w-full">
       <CardContent className="p-0">
-        <div className="overflow-x-auto max-w-[calc(100vw-2rem)]">
+        <div className="overflow-x-auto">
           <table className="w-full">
             <thead className="border-b bg-muted/50">
               <tr className="text-left">

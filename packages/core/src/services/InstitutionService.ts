@@ -78,11 +78,13 @@ export class InstitutionService extends BaseService {
       // Get all related data
       const accounts = await this.accountRepository.findByUser(userId);
       const holdings = await this.holdingRepository.findByUser(userId);
+      // Filter out inactive holdings from calculations
+      const activeHoldings = holdings.filter((h) => h.isActive);
       const portfolioValue = await this.portfolioService.getUserPortfolioValue(userId);
 
       // Create maps for efficient lookups
-      const holdingsByAccount = new Map<string, typeof holdings>();
-      for (const holding of holdings) {
+      const holdingsByAccount = new Map<string, typeof activeHoldings>();
+      for (const holding of activeHoldings) {
         if (!holdingsByAccount.has(holding.accountId)) {
           holdingsByAccount.set(holding.accountId, []);
         }
@@ -98,7 +100,7 @@ export class InstitutionService extends BaseService {
       }
 
       // Get token repository to map holding tokenIds to symbols and prices
-      const tokenIds = [...new Set(holdings.map((h) => h.tokenId))];
+      const tokenIds = [...new Set(activeHoldings.map((h) => h.tokenId))];
       const tokens = await this.tokenRepository.findByIds(tokenIds);
       const tokenMap = new Map(tokens.map((t) => [t.id, t]));
 

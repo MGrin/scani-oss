@@ -1,45 +1,49 @@
 import {
   AlertTriangle,
   CreditCard,
+  Edit,
   Filter,
   Grid3X3,
   List,
   MoreHorizontal,
   Trash2,
-} from 'lucide-react';
-import { useMemo, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { InstitutionBadge } from '@/components/features';
+} from "lucide-react";
+import { useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
+import { InstitutionBadge } from "@/components/features";
+import { BulkEditGroupsModal } from "@/components/modals/BulkEditGroupsModal";
 import {
   AccountTypeSelector,
   InstitutionSelector,
-} from '@/components/selectors/SearchableSelectors';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Checkbox } from '@/components/ui/checkbox';
-import { DataTable } from '@/components/ui/data-table';
+} from "@/components/selectors/SearchableSelectors";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Combobox } from "@/components/ui/combobox";
+import { DataTable } from "@/components/ui/data-table";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
-import { MoneyDisplay } from '@/components/ui/money-display';
-import { PageAggregation } from '@/components/ui/page-aggregation';
-import { PageHeader } from '@/components/ui/page-header';
+} from "@/components/ui/dropdown-menu";
+import { MoneyDisplay } from "@/components/ui/money-display";
+import { PageAggregation } from "@/components/ui/page-aggregation";
+import { PageHeader } from "@/components/ui/page-header";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from '@/components/ui/select';
-import { Skeleton } from '@/components/ui/skeleton';
-import { Tabs, TabsContent } from '@/components/ui/tabs';
-import { useFilters, useViewMode } from '@/hooks';
-import { showError, useToast } from '@/hooks/use-toast';
-import { trpc } from '@/lib/trpc';
-import { createCurrencyToken } from '@/lib/utils';
+} from "@/components/ui/select";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Tabs, TabsContent } from "@/components/ui/tabs";
+import { useFilters, useViewMode } from "@/hooks";
+import { showError, useToast } from "@/hooks/use-toast";
+import { trpc } from "@/lib/trpc";
+import { createCurrencyToken } from "@/lib/utils";
 
 type Account = {
   id: string;
@@ -58,19 +62,24 @@ type Account = {
   };
 };
 
-type GroupBy = 'none' | 'institution' | 'type';
+type GroupBy = "none" | "institution" | "type";
 
 export function Accounts() {
   // Fetch accounts data from tRPC
-  const { data: accountsData, isLoading, error } = trpc.accounts.getByUserIdWithSummary.useQuery();
+  const {
+    data: accountsData,
+    isLoading,
+    error,
+  } = trpc.accounts.getByUserIdWithSummary.useQuery();
 
   // Fetch account types and institutions for display
   const { data: accountTypes } = trpc.accountTypes.getAll.useQuery();
   const { data: institutions } = trpc.institutions.getByUserId.useQuery();
+  const { data: groupsData } = trpc.groups.getAll.useQuery();
 
   // Fetch base currency for proper formatting
   const { data: baseCurrency } = trpc.users.getBaseCurrency.useQuery();
-  const currency = baseCurrency?.symbol || 'USD';
+  const currency = baseCurrency?.symbol || "USD";
   const baseCurrencyToken = createCurrencyToken(currency);
 
   const { toast } = useToast();
@@ -92,20 +101,23 @@ export function Accounts() {
     },
     onSuccess: () => {
       toast({
-        title: 'Account deleted',
-        description: 'The account has been successfully deleted.',
+        title: "Account deleted",
+        description: "The account has been successfully deleted.",
       });
 
       // Navigate to accounts page
-      navigate('/accounts');
+      navigate("/accounts");
     },
     onError: (err, _accountId, context) => {
       // Rollback on error
       if (context?.previousAccounts) {
-        utils.accounts.getByUserIdWithSummary.setData(undefined, context.previousAccounts);
+        utils.accounts.getByUserIdWithSummary.setData(
+          undefined,
+          context.previousAccounts
+        );
       }
 
-      showError(err, 'Deleting account');
+      showError(err, "Deleting account");
     },
     onSettled: () => {
       // Always refetch after error or success
@@ -128,7 +140,8 @@ export function Accounts() {
     },
     onSuccess: (result) => {
       toast({
-        title: result.failed > 0 ? 'Accounts partially deleted' : 'Accounts deleted',
+        title:
+          result.failed > 0 ? "Accounts partially deleted" : "Accounts deleted",
         description:
           result.failed > 0
             ? `Successfully deleted ${result.deleted} of ${result.total} accounts. ${result.failed} failed.`
@@ -145,7 +158,7 @@ export function Accounts() {
     onError: (err, _input, _context) => {
       // Don't rollback - let onSettled refetch instead
       // This ensures consistency with actual backend state
-      showError(err, 'Deleting accounts');
+      showError(err, "Deleting accounts");
     },
     onSettled: () => {
       // Always refetch after error or success
@@ -156,13 +169,14 @@ export function Accounts() {
   // Transform backend data to match frontend expectations
   const accounts = accountsData || [];
 
-  const [searchTerm, setSearchTerm] = useState('');
-  const [groupBy, setGroupBy] = useState<GroupBy>('none');
-  const [viewMode, setViewMode] = useViewMode('cards');
-  const [sortField, setSortField] = useState('value');
-  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc');
-  const [valueRange, setValueRange] = useState('all');
+  const [searchTerm, setSearchTerm] = useState("");
+  const [groupBy, setGroupBy] = useState<GroupBy>("none");
+  const [viewMode, setViewMode] = useViewMode("cards");
+  const [sortField, setSortField] = useState("value");
+  const [sortDirection, setSortDirection] = useState<"asc" | "desc">("desc");
+  const [valueRange, setValueRange] = useState("all");
   const [selectedRows, setSelectedRows] = useState<Set<string>>(new Set());
+  const [bulkEditGroupsModalOpen, setBulkEditGroupsModalOpen] = useState(false);
 
   // Unified filter system
   const {
@@ -170,18 +184,22 @@ export function Accounts() {
     updateFilter,
     clearAllFilters,
   } = useFilters([
-    { key: 'type', defaultValue: '' },
-    { key: 'institution', defaultValue: '' },
+    { key: "type", defaultValue: "" },
+    { key: "institution", defaultValue: "" },
+    { key: "group", defaultValue: "" },
   ]);
 
-  const filterByType = filterValues.type || '';
-  const filterByInstitution = filterValues.institution || '';
+  const filterByType = filterValues.type || "";
+  const filterByInstitution = filterValues.institution || "";
+  const filterByGroup = filterValues.group || "";
 
   // Get unique values for filters
   const institutionMap = new Map();
   accounts.forEach((account) => {
     if (!institutionMap.has(account.institutionId)) {
-      const institution = institutions?.find((inst) => inst.id === account.institutionId);
+      const institution = institutions?.find(
+        (inst) => inst.id === account.institutionId
+      );
       if (institution) {
         institutionMap.set(account.institutionId, institution);
       }
@@ -192,7 +210,9 @@ export function Accounts() {
   const accountTypeMap = new Map();
   accounts.forEach((account) => {
     if (!accountTypeMap.has(account.typeId)) {
-      const accountType = accountTypes?.find((type) => type.id === account.typeId);
+      const accountType = accountTypes?.find(
+        (type) => type.id === account.typeId
+      );
       if (accountType) {
         accountTypeMap.set(account.typeId, accountType);
       }
@@ -211,40 +231,57 @@ export function Accounts() {
   // Filter and sort accounts
   const filteredAndSortedAccounts = useMemo(() => {
     const filtered = accounts.filter((account) => {
-      const institution = institutions?.find((inst) => inst.id === account.institutionId);
-      const accountType = accountTypes?.find((type) => type.id === account.typeId);
+      const institution = institutions?.find(
+        (inst) => inst.id === account.institutionId
+      );
+      const accountType = accountTypes?.find(
+        (type) => type.id === account.typeId
+      );
 
       const matchesSearch =
-        searchTerm === '' ||
+        searchTerm === "" ||
         account.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
         institution?.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
         accountType?.name.toLowerCase().includes(searchTerm.toLowerCase());
 
-      const matchesTypeFilter = filterByType === '' || account.typeId === filterByType;
+      const matchesTypeFilter =
+        filterByType === "" || account.typeId === filterByType;
       const matchesInstitutionFilter =
-        filterByInstitution === '' || account.institutionId === filterByInstitution;
+        filterByInstitution === "" ||
+        account.institutionId === filterByInstitution;
+
+      // Group filter - check if account has any groups matching the selected group
+      const matchesGroupFilter =
+        filterByGroup === "" ||
+        account.groups.some((g) => g.id === filterByGroup);
 
       // Value range filter
       let matchesValueRange = true;
-      if (valueRange !== 'all') {
+      if (valueRange !== "all") {
         const value = parseFloat(account.summary.totalValue);
         switch (valueRange) {
-          case 'under-1k':
+          case "under-1k":
             matchesValueRange = value < 1000;
             break;
-          case '1k-10k':
+          case "1k-10k":
             matchesValueRange = value >= 1000 && value < 10000;
             break;
-          case '10k-100k':
+          case "10k-100k":
             matchesValueRange = value >= 10000 && value < 100000;
             break;
-          case 'over-100k':
+          case "over-100k":
             matchesValueRange = value >= 100000;
             break;
         }
       }
 
-      return matchesSearch && matchesTypeFilter && matchesInstitutionFilter && matchesValueRange;
+      return (
+        matchesSearch &&
+        matchesTypeFilter &&
+        matchesInstitutionFilter &&
+        matchesGroupFilter &&
+        matchesValueRange
+      );
     });
 
     // Sort accounts
@@ -252,17 +289,21 @@ export function Accounts() {
       let aValue: number | string, bValue: number | string;
 
       switch (sortField) {
-        case 'value':
+        case "value":
           aValue = parseFloat(a.summary.totalValue);
           bValue = parseFloat(b.summary.totalValue);
           break;
-        case 'name':
+        case "name":
           aValue = a.name.toLowerCase();
           bValue = b.name.toLowerCase();
           break;
-        case 'institution': {
-          const aInst = institutions?.find((inst) => inst.id === a.institutionId)?.name || '';
-          const bInst = institutions?.find((inst) => inst.id === b.institutionId)?.name || '';
+        case "institution": {
+          const aInst =
+            institutions?.find((inst) => inst.id === a.institutionId)?.name ||
+            "";
+          const bInst =
+            institutions?.find((inst) => inst.id === b.institutionId)?.name ||
+            "";
           aValue = aInst.toLowerCase();
           bValue = bInst.toLowerCase();
           break;
@@ -272,13 +313,13 @@ export function Accounts() {
           bValue = parseFloat(b.summary.totalValue);
       }
 
-      if (typeof aValue === 'string') {
-        return sortDirection === 'asc'
+      if (typeof aValue === "string") {
+        return sortDirection === "asc"
           ? aValue.localeCompare(bValue as string)
           : (bValue as string).localeCompare(aValue);
       }
 
-      return sortDirection === 'asc'
+      return sortDirection === "asc"
         ? (aValue as number) - (bValue as number)
         : (bValue as number) - aValue;
     });
@@ -289,6 +330,7 @@ export function Accounts() {
     searchTerm,
     filterByType,
     filterByInstitution,
+    filterByGroup,
     valueRange,
     sortField,
     sortDirection,
@@ -298,28 +340,26 @@ export function Accounts() {
 
   // Group accounts if needed
   const groupedAccounts =
-    groupBy === 'none'
-      ? { 'All Accounts': filteredAndSortedAccounts }
-      : filteredAndSortedAccounts.reduce(
-          (groups, account) => {
-            let key = '';
-            switch (groupBy) {
-              case 'institution':
-                key =
-                  institutions?.find((inst) => inst.id === account.institutionId)?.name ||
-                  'Unknown Institution';
-                break;
-              case 'type':
-                key =
-                  accountTypes?.find((type) => type.id === account.typeId)?.name || 'Unknown Type';
-                break;
-            }
-            if (!groups[key]) groups[key] = [];
-            groups[key]!.push(account);
-            return groups;
-          },
-          {} as Record<string, typeof filteredAndSortedAccounts>
-        );
+    groupBy === "none"
+      ? { "All Accounts": filteredAndSortedAccounts }
+      : filteredAndSortedAccounts.reduce((groups, account) => {
+          let key = "";
+          switch (groupBy) {
+            case "institution":
+              key =
+                institutions?.find((inst) => inst.id === account.institutionId)
+                  ?.name || "Unknown Institution";
+              break;
+            case "type":
+              key =
+                accountTypes?.find((type) => type.id === account.typeId)
+                  ?.name || "Unknown Type";
+              break;
+          }
+          if (!groups[key]) groups[key] = [];
+          groups[key]!.push(account);
+          return groups;
+        }, {} as Record<string, typeof filteredAndSortedAccounts>);
 
   // Calculate summary statistics
   const summaryStats = useMemo(() => {
@@ -336,10 +376,10 @@ export function Accounts() {
 
   const handleSort = (field: string) => {
     if (sortField === field) {
-      setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc');
+      setSortDirection(sortDirection === "asc" ? "desc" : "asc");
     } else {
       setSortField(field);
-      setSortDirection('desc');
+      setSortDirection("desc");
     }
   };
 
@@ -372,7 +412,9 @@ export function Accounts() {
     if (selectedRows.size === 0) return;
 
     const confirmed = window.confirm(
-      `Are you sure you want to delete ${selectedRows.size} account${selectedRows.size !== 1 ? 's' : ''}?`
+      `Are you sure you want to delete ${selectedRows.size} account${
+        selectedRows.size !== 1 ? "s" : ""
+      }?`
     );
 
     if (confirmed) {
@@ -404,16 +446,19 @@ export function Accounts() {
   );
 
   const clearFilters = () => {
-    setSearchTerm('');
+    setSearchTerm("");
     clearAllFilters();
-    setValueRange('all');
-    setSortField('value');
-    setSortDirection('desc');
+    setValueRange("all");
+    setSortField("value");
+    setSortDirection("desc");
   };
 
   return (
     <div className="space-y-6">
-      <PageHeader title="Accounts" subtitle="Manage all your financial accounts" />
+      <PageHeader
+        title="Accounts"
+        subtitle="Manage all your financial accounts"
+      />
 
       {isLoading ? (
         <div className="space-y-6 max-w-[calc(100vw-2rem)]">
@@ -492,7 +537,9 @@ export function Accounts() {
           <CardContent className="py-12 text-center">
             <div className="text-muted-foreground">
               <AlertTriangle className="h-12 w-12 mx-auto mb-4 opacity-50" />
-              <h3 className="text-lg font-medium mb-2">Error loading accounts</h3>
+              <h3 className="text-lg font-medium mb-2">
+                Error loading accounts
+              </h3>
               <p>Unable to load your accounts data. Please try again later.</p>
             </div>
           </CardContent>
@@ -504,7 +551,8 @@ export function Accounts() {
               <CreditCard className="h-12 w-12 mx-auto mb-4 opacity-50" />
               <h3 className="text-lg font-medium mb-2">No accounts found</h3>
               <p>
-                You don't have any accounts yet. Connect your financial institutions to get started.
+                You don't have any accounts yet. Connect your financial
+                institutions to get started.
               </p>
             </div>
           </CardContent>
@@ -523,38 +571,54 @@ export function Accounts() {
             onSearchChange={setSearchTerm}
             searchPlaceholder="Search accounts by name, institution, or type..."
             hasActiveFilters={
-              filterByType !== '' || filterByInstitution !== '' || valueRange !== 'all'
+              filterByType !== "" ||
+              filterByInstitution !== "" ||
+              filterByGroup !== "" ||
+              valueRange !== "all"
             }
             filters={[
               <AccountTypeSelector
                 key="type"
                 value={filterByType}
-                onValueChange={(value) => updateFilter('type', value)}
+                onValueChange={(value) => updateFilter("type", value)}
                 accountTypes={Array.from(accountTypeMap.values())}
                 placeholder="Filter by type..."
               />,
               <InstitutionSelector
                 key="institution"
                 value={filterByInstitution}
-                onValueChange={(value) => updateFilter('institution', value)}
+                onValueChange={(value) => updateFilter("institution", value)}
                 institutions={institutionOptions}
                 placeholder="Filter by institution..."
+              />,
+              <Combobox
+                key="group"
+                value={filterByGroup}
+                onValueChange={(value: string) => updateFilter("group", value)}
+                items={
+                  groupsData?.map((group) => ({
+                    value: group.id,
+                    label: group.name,
+                  })) || []
+                }
+                placeholder="Filter by group..."
+                buttonSize="sm"
               />,
             ]}
             extraActions={
               <div className="flex items-center gap-2">
                 <Button
-                  variant={viewMode === 'cards' ? 'default' : 'outline'}
+                  variant={viewMode === "cards" ? "default" : "outline"}
                   size="sm"
-                  onClick={() => setViewMode('cards')}
+                  onClick={() => setViewMode("cards")}
                 >
                   <Grid3X3 className="h-4 w-4 mr-2" />
                   Cards
                 </Button>
                 <Button
-                  variant={viewMode === 'table' ? 'default' : 'outline'}
+                  variant={viewMode === "table" ? "default" : "outline"}
                   size="sm"
-                  onClick={() => setViewMode('table')}
+                  onClick={() => setViewMode("table")}
                 >
                   <List className="h-4 w-4 mr-2" />
                   Table
@@ -576,7 +640,10 @@ export function Accounts() {
                   </SelectContent>
                 </Select>
 
-                <Select value={groupBy} onValueChange={(value: GroupBy) => setGroupBy(value)}>
+                <Select
+                  value={groupBy}
+                  onValueChange={(value: GroupBy) => setGroupBy(value)}
+                >
                   <SelectTrigger className="w-full md:w-40">
                     <SelectValue placeholder="Group by..." />
                   </SelectTrigger>
@@ -601,33 +668,47 @@ export function Accounts() {
             <TabsContent value="accounts" className="space-y-6">
               {Object.entries(groupedAccounts).map(([groupName, accounts]) => (
                 <div key={groupName}>
-                  {groupBy !== 'none' && (
+                  {groupBy !== "none" && (
                     <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
                       <Filter className="h-5 w-5" />
                       {groupName} ({accounts.length} account
-                      {accounts.length !== 1 ? 's' : ''})
+                      {accounts.length !== 1 ? "s" : ""})
                     </h3>
                   )}
 
-                  {viewMode === 'cards' ? (
+                  {viewMode === "cards" ? (
                     <>
                       {selectedRows.size > 0 && (
                         <Card className="mb-4">
                           <CardContent className="py-3">
                             <div className="flex items-center justify-between">
                               <span className="text-sm font-medium">
-                                {selectedRows.size} account{selectedRows.size !== 1 ? 's' : ''}{' '}
-                                selected
+                                {selectedRows.size} account
+                                {selectedRows.size !== 1 ? "s" : ""} selected
                               </span>
-                              <Button
-                                variant="destructive"
-                                size="sm"
-                                onClick={handleBulkDelete}
-                                disabled={bulkDeleteAccountsMutation.isPending}
-                              >
-                                <Trash2 className="h-4 w-4 mr-2" />
-                                Delete Selected
-                              </Button>
+                              <div className="flex items-center gap-2">
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() =>
+                                    setBulkEditGroupsModalOpen(true)
+                                  }
+                                >
+                                  <Edit className="h-4 w-4 mr-2" />
+                                  Edit Selected
+                                </Button>
+                                <Button
+                                  variant="destructive"
+                                  size="sm"
+                                  onClick={handleBulkDelete}
+                                  disabled={
+                                    bulkDeleteAccountsMutation.isPending
+                                  }
+                                >
+                                  <Trash2 className="h-4 w-4 mr-2" />
+                                  Delete Selected
+                                </Button>
+                              </div>
                             </div>
                           </CardContent>
                         </Card>
@@ -646,7 +727,7 @@ export function Accounts() {
                             <Card
                               key={account.id}
                               className={`hover:shadow-md transition-shadow ${
-                                isSelected ? 'ring-2 ring-primary' : ''
+                                isSelected ? "ring-2 ring-primary" : ""
                               }`}
                             >
                               <CardHeader>
@@ -655,7 +736,9 @@ export function Accounts() {
                                     <div className="min-w-[44px] min-h-[44px] flex items-center justify-center">
                                       <Checkbox
                                         checked={isSelected}
-                                        onCheckedChange={() => handleSelectRow(account.id)}
+                                        onCheckedChange={() =>
+                                          handleSelectRow(account.id)
+                                        }
                                         onClick={(e) => e.stopPropagation()}
                                         aria-label={`Select ${account.name}`}
                                       />
@@ -663,38 +746,78 @@ export function Accounts() {
                                     <button
                                       type="button"
                                       className="cursor-pointer text-left font-semibold hover:underline"
-                                      onClick={() => navigate(`/accounts/${account.id}`)}
+                                      onClick={() =>
+                                        navigate(`/accounts/${account.id}`)
+                                      }
                                     >
                                       {account.name}
                                     </button>
                                   </span>
                                   <div className="text-sm text-muted-foreground">
-                                    {accountType?.name || 'Unknown'}
+                                    {accountType?.name || "Unknown"}
                                   </div>
                                 </CardTitle>
                                 <div className="flex items-center gap-2">
                                   <InstitutionBadge
                                     institutionId={account.institutionId}
-                                    institutionName={institution?.name || 'Unknown Institution'}
-                                    institutionWebsite={institution?.website || undefined}
+                                    institutionName={
+                                      institution?.name || "Unknown Institution"
+                                    }
+                                    institutionWebsite={
+                                      institution?.website || undefined
+                                    }
                                   />
                                 </div>
                               </CardHeader>
                               <CardContent
                                 className="cursor-pointer"
-                                onClick={() => navigate(`/accounts/${account.id}`)}
+                                onClick={() =>
+                                  navigate(`/accounts/${account.id}`)
+                                }
                               >
-                                <div className="space-y-2">
+                                <div className="space-y-3">
                                   <div className="text-2xl font-bold">
                                     <MoneyDisplay
-                                      value={parseFloat(account.summary.totalValue)}
+                                      value={parseFloat(
+                                        account.summary.totalValue
+                                      )}
                                       token={baseCurrencyToken}
                                     />
                                   </div>
                                   <div className="text-sm text-muted-foreground">
                                     {account.summary.holdingsCount} holding
-                                    {account.summary.holdingsCount !== 1 ? 's' : ''}
+                                    {account.summary.holdingsCount !== 1
+                                      ? "s"
+                                      : ""}
                                   </div>
+                                  {account.groups && (
+                                    <div className="flex flex-wrap gap-1 pt-2">
+                                      {/* biome-ignore lint/suspicious/noExplicitAny: Account type doesn't know about groups at compile time */}
+                                      {account.groups
+                                        .slice(0, 3)
+                                        .map((group: any) => (
+                                          <Badge
+                                            key={group.id}
+                                            variant="outline"
+                                            className="text-xs"
+                                            style={{
+                                              backgroundColor: group.color,
+                                              opacity: 0.2,
+                                            }}
+                                          >
+                                            {group.name}
+                                          </Badge>
+                                        ))}
+                                      {account.groups.length > 3 && (
+                                        <Badge
+                                          variant="secondary"
+                                          className="text-xs"
+                                        >
+                                          +{account.groups.length - 3}
+                                        </Badge>
+                                      )}
+                                    </div>
+                                  )}
                                 </div>
                               </CardContent>
                             </Card>
@@ -709,18 +832,32 @@ export function Accounts() {
                           <CardContent className="py-3">
                             <div className="flex items-center justify-between">
                               <span className="text-sm font-medium">
-                                {selectedRows.size} account{selectedRows.size !== 1 ? 's' : ''}{' '}
-                                selected
+                                {selectedRows.size} account
+                                {selectedRows.size !== 1 ? "s" : ""} selected
                               </span>
-                              <Button
-                                variant="destructive"
-                                size="sm"
-                                onClick={handleBulkDelete}
-                                disabled={bulkDeleteAccountsMutation.isPending}
-                              >
-                                <Trash2 className="h-4 w-4 mr-2" />
-                                Delete Selected
-                              </Button>
+                              <div className="flex items-center gap-2">
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() =>
+                                    setBulkEditGroupsModalOpen(true)
+                                  }
+                                >
+                                  <Edit className="h-4 w-4 mr-2" />
+                                  Edit Selected
+                                </Button>
+                                <Button
+                                  variant="destructive"
+                                  size="sm"
+                                  onClick={handleBulkDelete}
+                                  disabled={
+                                    bulkDeleteAccountsMutation.isPending
+                                  }
+                                >
+                                  <Trash2 className="h-4 w-4 mr-2" />
+                                  Delete Selected
+                                </Button>
+                              </div>
                             </div>
                           </CardContent>
                         </Card>
@@ -730,53 +867,96 @@ export function Accounts() {
                         data={accounts}
                         columns={[
                           {
-                            header: 'Account',
+                            header: "Account",
                             accessor: (row) => (
                               <div>
                                 <div className="font-medium">{row.name}</div>
                                 <div className="text-sm text-muted-foreground">
-                                  {accountTypes?.find((type) => type.id === row.typeId)?.name ||
-                                    'Unknown Type'}
+                                  {accountTypes?.find(
+                                    (type) => type.id === row.typeId
+                                  )?.name || "Unknown Type"}
                                 </div>
                               </div>
                             ),
                             sortable: true,
                           },
                           {
-                            header: 'Institution',
+                            header: "Institution",
                             accessor: (row) => (
                               <InstitutionBadge
                                 institutionId={row.institutionId}
                                 institutionName={
-                                  institutions?.find((inst) => inst.id === row.institutionId)
-                                    ?.name || 'Unknown'
+                                  institutions?.find(
+                                    (inst) => inst.id === row.institutionId
+                                  )?.name || "Unknown"
                                 }
                                 institutionWebsite={
-                                  institutions?.find((inst) => inst.id === row.institutionId)
-                                    ?.website || undefined
+                                  institutions?.find(
+                                    (inst) => inst.id === row.institutionId
+                                  )?.website || undefined
                                 }
                               />
                             ),
                             sortable: true,
                           },
                           {
-                            header: 'Balance',
+                            header: "Balance",
                             accessor: (row) => (
                               <MoneyDisplay
                                 value={parseFloat(row.summary.totalValue)}
                                 token={baseCurrencyToken}
                               />
                             ),
-                            className: 'font-mono font-medium',
+                            className: "font-mono font-medium",
                             sortable: true,
                           },
                           {
-                            header: 'Holdings',
+                            header: "Groups",
+                            accessor: (row) => {
+                              // @ts-expect-error Account type from query includes groups at runtime
+                              const groups = row.groups;
+                              if (!groups || groups.length === 0) {
+                                return (
+                                  <span className="text-xs text-muted-foreground">
+                                    -
+                                  </span>
+                                );
+                              }
+                              return (
+                                <div className="flex flex-wrap gap-1">
+                                  {/* biome-ignore lint/suspicious/noExplicitAny: Account type doesn't know about groups at compile time */}
+                                  {groups.slice(0, 2).map((group: any) => (
+                                    <Badge
+                                      key={group.id}
+                                      variant="outline"
+                                      className="text-xs truncate"
+                                      style={{
+                                        backgroundColor: group.color,
+                                        opacity: 0.2,
+                                      }}
+                                    >
+                                      {group.name}
+                                    </Badge>
+                                  ))}
+                                  {groups.length > 2 && (
+                                    <Badge
+                                      variant="secondary"
+                                      className="text-xs"
+                                    >
+                                      +{groups.length - 2}
+                                    </Badge>
+                                  )}
+                                </div>
+                              );
+                            },
+                          },
+                          {
+                            header: "Holdings",
                             accessor: (row) =>
                               `${row.summary.holdingsCount} holding${
-                                row.summary.holdingsCount !== 1 ? 's' : ''
+                                row.summary.holdingsCount !== 1 ? "s" : ""
                               }`,
-                            className: 'text-muted-foreground',
+                            className: "text-muted-foreground",
                           },
                         ]}
                         getRowKey={(row) => row.id}
@@ -798,7 +978,9 @@ export function Accounts() {
                   <CardContent className="py-12 text-center">
                     <div className="text-muted-foreground">
                       <Filter className="h-12 w-12 mx-auto mb-4 opacity-50" />
-                      <h3 className="text-lg font-medium mb-2">No accounts found</h3>
+                      <h3 className="text-lg font-medium mb-2">
+                        No accounts found
+                      </h3>
                       <p>Try adjusting your filters or search terms.</p>
                     </div>
                   </CardContent>
@@ -808,6 +990,21 @@ export function Accounts() {
           </Tabs>
         </>
       )}
+
+      <BulkEditGroupsModal
+        open={bulkEditGroupsModalOpen}
+        onOpenChange={setBulkEditGroupsModalOpen}
+        entityType="account"
+        selectedEntityIds={Array.from(selectedRows)}
+        onSuccess={() => {
+          utils.accounts.getByUserIdWithSummary.invalidate();
+          setSelectedRows(new Set());
+          toast({
+            title: "Groups updated",
+            description: "Account groups have been updated successfully.",
+          });
+        }}
+      />
     </div>
   );
 }

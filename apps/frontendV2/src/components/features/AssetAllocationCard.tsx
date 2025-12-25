@@ -30,6 +30,21 @@ type VisualizationType = 'list' | 'bar' | 'donut';
 
 interface AssetAllocationCardProps {
   className?: string;
+  /**
+   * Pre-fetched asset allocation data (from dashboard.getOverview)
+   * Used for token_type dimension to avoid duplicate API call
+   */
+  initialAllocation?: {
+    items: Array<{
+      id: string;
+      code: string;
+      name: string;
+      value: string;
+      percentage: string;
+    }>;
+    totalValue: string;
+    baseCurrency: string;
+  };
 }
 
 const DIMENSION_LABELS: Record<AssetAllocationDimension, string> = {
@@ -55,14 +70,21 @@ const COLORS = [
   '#6366f1', // indigo-500
 ];
 
-export function AssetAllocationCard({ className }: AssetAllocationCardProps) {
+export function AssetAllocationCard({ className, initialAllocation }: AssetAllocationCardProps) {
   const { dimension, visualizationType, setDimension, setVisualizationType } =
     useAssetAllocationPreferences();
 
   const { data: baseCurrency } = trpc.users.getBaseCurrency.useQuery();
-  const { data: allocation, isLoading } = trpc.dashboard.getAssetAllocation.useQuery({
-    dimension,
-  });
+
+  // Only fetch if not token_type (which is provided via initialAllocation)
+  const { data: fetchedAllocation, isLoading } = trpc.dashboard.getAssetAllocation.useQuery(
+    { dimension },
+    { enabled: dimension !== 'token_type' || !initialAllocation }
+  );
+
+  // Use initial data for token_type, fetched data for other dimensions
+  const allocation =
+    dimension === 'token_type' && initialAllocation ? initialAllocation : fetchedAllocation;
 
   const currency = baseCurrency?.symbol || 'USD';
   const baseCurrencyToken = createCurrencyToken(currency);
@@ -134,7 +156,23 @@ export function AssetAllocationCard({ className }: AssetAllocationCardProps) {
               />
               <YAxis tick={{ fontSize: 12 }} />
               <Tooltip
-                formatter={(value: number) => [`${value.toFixed(2)}%`, 'Percentage']}
+                formatter={(
+                  value: number,
+                  _name: string,
+                  props?: { payload?: { name: string } }
+                ) => {
+                  const item = allocation?.items.find((i) => i.name === props?.payload?.name);
+                  const currencyValue = item ? Number(item.value) : 0;
+                  return [
+                    `${value.toFixed(2)}% (${
+                      baseCurrency?.symbol || 'USD'
+                    } ${currencyValue.toLocaleString(undefined, {
+                      minimumFractionDigits: 2,
+                      maximumFractionDigits: 2,
+                    })})`,
+                    'Allocation',
+                  ];
+                }}
                 contentStyle={{
                   backgroundColor: 'hsl(var(--card))',
                   border: '1px solid hsl(var(--border))',
@@ -160,7 +198,10 @@ export function AssetAllocationCard({ className }: AssetAllocationCardProps) {
                 paddingAngle={2}
                 dataKey="percentage"
                 label={(props) => {
-                  const payload = props.payload as { name: string; percentage: number };
+                  const payload = props.payload as {
+                    name: string;
+                    percentage: number;
+                  };
                   return `${payload.name}: ${payload.percentage.toFixed(1)}%`;
                 }}
                 labelLine={{ stroke: 'hsl(var(--foreground))', strokeWidth: 1 }}
@@ -170,7 +211,19 @@ export function AssetAllocationCard({ className }: AssetAllocationCardProps) {
                 ))}
               </Pie>
               <Tooltip
-                formatter={(value: number) => [`${value.toFixed(2)}%`, 'Percentage']}
+                formatter={(value: number, _name: string, props?: { name?: string }) => {
+                  const item = allocation?.items.find((i) => i.name === props?.name);
+                  const currencyValue = item ? Number(item.value) : 0;
+                  return [
+                    `${value.toFixed(2)}% (${
+                      baseCurrency?.symbol || 'USD'
+                    } ${currencyValue.toLocaleString(undefined, {
+                      minimumFractionDigits: 2,
+                      maximumFractionDigits: 2,
+                    })})`,
+                    'Allocation',
+                  ];
+                }}
                 contentStyle={{
                   backgroundColor: 'hsl(var(--card))',
                   border: '1px solid hsl(var(--border))',

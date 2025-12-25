@@ -1,4 +1,4 @@
-import { RefreshCw, Save, Trash2 } from 'lucide-react';
+import { Save, Trash2 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { NumericFormat } from 'react-number-format';
 import { useNavigate, useParams } from 'react-router-dom';
@@ -10,6 +10,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { MoneyDisplay } from '@/components/ui/money-display';
+import { MultiSelect } from '@/components/ui/multi-select';
 import { PageHeader } from '@/components/ui/page-header';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Switch } from '@/components/ui/switch';
@@ -26,6 +27,7 @@ export function HoldingDetail() {
   const [editTokenId, setEditTokenId] = useState('');
   const [editBalance, setEditBalance] = useState('');
   const [editIsActive, setEditIsActive] = useState(true);
+  const [selectedGroups, setSelectedGroups] = useState<string[]>([]);
   const [isEditing, setIsEditing] = useState(false);
 
   // Fetch base currency
@@ -36,6 +38,13 @@ export function HoldingDetail() {
   // Fetch all holdings to find the one we need
   const { data: allHoldings, isLoading } = trpc.holdings.getWithDetails.useQuery();
   const holding = allHoldings?.find((h) => h.id === id);
+
+  // Fetch groups and holding groups
+  const { data: groups } = trpc.groups.getAll.useQuery();
+  const { data: holdingGroups } = trpc.groups.getHoldingGroups.useQuery(
+    { id: id || '' },
+    { enabled: !!id }
+  );
 
   // Update holding mutation
   const updateHoldingMutation = trpc.holdings.update.useMutation({
@@ -76,21 +85,21 @@ export function HoldingDetail() {
     onError: (error) => showError(error, 'Deleting holding'),
   });
 
-  // Update price mutation
-  const updatePriceMutation = trpc.holdings.updatePrice.useMutation({
-    onSuccess: (data) => {
-      // Invalidate all holding-related queries to refresh the data
+  // Assign groups mutation
+  const assignGroupsMutation = trpc.groups.assignHoldingGroups.useMutation({
+    onSuccess: () => {
+      utils.groups.getHoldingGroups.invalidate();
       utils.holdings.getWithDetails.invalidate();
-      utils.accounts.getHoldings.invalidate();
-      utils.accounts.getByUserIdWithSummary.invalidate();
       utils.dashboard.getOverview.invalidate();
 
       toast({
-        title: 'Price updated',
-        description: `Price refreshed successfully from ${data.source}.`,
+        title: 'Groups updated',
+        description: 'Holding groups have been successfully updated.',
       });
+
+      setIsEditing(false);
     },
-    onError: (error) => showError(error, 'Updating price'),
+    onError: (error) => showError(error, 'Updating groups'),
   });
 
   // Reset edit state when holding changes
@@ -102,37 +111,70 @@ export function HoldingDetail() {
     }
   }, [holding]);
 
+  // Update selected groups when holding groups are loaded
+  useEffect(() => {
+    if (holdingGroups) {
+      setSelectedGroups(holdingGroups.map((g) => g.id));
+    }
+  }, [holdingGroups]);
+
   // Check if there are any changes
   const hasChanges = () => {
     if (!holding) return false;
+    const originalGroups = holdingGroups?.map((g) => g.id).sort() || [];
+    const currentGroups = [...selectedGroups].sort();
+    const groupsChanged = JSON.stringify(originalGroups) !== JSON.stringify(currentGroups);
+
     return (
       editTokenId !== (holding.token?.id || '') ||
       editBalance !== holding.amount.toString() ||
-      editIsActive !== holding.isActive
+      editIsActive !== holding.isActive ||
+      groupsChanged
     );
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
     if (!holding || !editBalance?.trim()) return;
 
-    const updateData: { balance: string; tokenId?: string; isActive?: boolean } = {
-      balance: editBalance,
-    };
+    const updateData: {
+      balance?: string;
+      tokenId?: string;
+      isActive?: boolean;
+    } = {};
 
-    // Only include tokenId if it changed
+    // Only include changed fields
+    if (editBalance !== holding.amount.toString()) {
+      updateData.balance = editBalance;
+    }
+
     if (editTokenId !== (holding.token?.id || '')) {
       updateData.tokenId = editTokenId;
     }
 
-    // Only include isActive if it changed
     if (editIsActive !== holding.isActive) {
       updateData.isActive = editIsActive;
     }
 
-    updateHoldingMutation.mutate({
-      id: holding.id,
-      data: updateData,
-    });
+    // Check if groups changed
+    const originalGroups = holdingGroups?.map((g) => g.id).sort() || [];
+    const currentGroups = [...selectedGroups].sort();
+    const groupsChanged = JSON.stringify(originalGroups) !== JSON.stringify(currentGroups);
+
+    // Update holding data if changed
+    if (Object.keys(updateData).length > 0) {
+      updateHoldingMutation.mutate({
+        id: holding.id,
+        data: updateData,
+      });
+    }
+
+    // Update groups if changed
+    if (groupsChanged) {
+      assignGroupsMutation.mutate({
+        holdingId: holding.id,
+        groupIds: selectedGroups,
+      });
+    }
   };
 
   const handleDelete = () => {
@@ -144,12 +186,6 @@ export function HoldingDetail() {
     if (confirmed) {
       deleteHoldingMutation.mutate({ id: holding.id });
     }
-  };
-
-  const handleUpdatePrice = () => {
-    if (!holding) return;
-
-    updatePriceMutation.mutate({ id: holding.id });
   };
 
   if (isLoading) {
@@ -382,18 +418,6 @@ export function HoldingDetail() {
                   </>
                 )}
               </div>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={handleUpdatePrice}
-                disabled={updatePriceMutation.isPending}
-                className="mt-2"
-              >
-                <RefreshCw
-                  className={`h-4 w-4 mr-2 ${updatePriceMutation.isPending ? 'animate-spin' : ''}`}
-                />
-                {updatePriceMutation.isPending ? 'Updating...' : 'Update Price'}
-              </Button>
             </div>
 
             <div>
@@ -428,6 +452,57 @@ export function HoldingDetail() {
           </CardContent>
         </Card>
       </div>
+
+      {/* Groups */}
+      <Card>
+        <CardContent className="pt-6">
+          <div>
+            <Label className="text-sm font-medium text-muted-foreground">Groups</Label>
+            <div className="mt-2">
+              {isEditing ? (
+                <MultiSelect
+                  selected={selectedGroups}
+                  onSelectedChange={setSelectedGroups}
+                  placeholder="Select groups..."
+                  searchPlaceholder="Search groups..."
+                  emptyMessage="No groups found."
+                  items={
+                    groups?.map((group) => ({
+                      value: group.id,
+                      label: group.name,
+                      color: group.color,
+                    })) || []
+                  }
+                />
+              ) : (
+                <div className="flex flex-wrap gap-2">
+                  {holdingGroups && holdingGroups.length > 0 ? (
+                    holdingGroups.map((group) => (
+                      <span
+                        key={group.id}
+                        className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium"
+                        style={{
+                          backgroundColor: `${group.color}20`,
+                          color: group.color,
+                        }}
+                      >
+                        {group.name}
+                      </span>
+                    ))
+                  ) : (
+                    <span className="text-sm text-muted-foreground">No groups assigned</span>
+                  )}
+                </div>
+              )}
+            </div>
+            {isEditing && (
+              <p className="text-xs text-muted-foreground mt-2">
+                Assign this holding to one or more groups for better organization
+              </p>
+            )}
+          </div>
+        </CardContent>
+      </Card>
 
       {/* Timestamps */}
       <Card>

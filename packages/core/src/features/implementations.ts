@@ -177,6 +177,74 @@ export const AccountImplementations = {
     );
     return result;
   },
+
+  async bulkAssignGroups(
+    context: FeatureExecutionContext,
+    input: { accountIds: string[]; groupIds: string[] }
+  ) {
+    const groupRepository = Container.get(GroupRepository);
+    const accountRepository = Container.get(AccountRepository);
+
+    // Verify all accounts belong to the user
+    const userAccounts = await accountRepository.findByUser(context.userId);
+    const userAccountIds = new Set(userAccounts.map((a) => a.id));
+
+    const invalidAccountIds = input.accountIds.filter((id) => !userAccountIds.has(id));
+    if (invalidAccountIds.length > 0) {
+      throw new Error(
+        `Unauthorized: Cannot assign groups to accounts that don't belong to you: ${invalidAccountIds.join(
+          ', '
+        )}`
+      );
+    }
+
+    // Assign groups to each account
+    for (const accountId of input.accountIds) {
+      await groupRepository.assignAccountGroups(accountId, input.groupIds);
+    }
+
+    return {
+      success: true,
+      updatedAccountIds: input.accountIds,
+    };
+  },
+
+  async getCommonGroups(context: FeatureExecutionContext, input: { accountIds: string[] }) {
+    const groupRepository = Container.get(GroupRepository);
+    const accountRepository = Container.get(AccountRepository);
+
+    // Verify all accounts belong to the user
+    const userAccounts = await accountRepository.findByUser(context.userId);
+    const userAccountIds = new Set(userAccounts.map((a) => a.id));
+
+    const invalidAccountIds = input.accountIds.filter((id) => !userAccountIds.has(id));
+    if (invalidAccountIds.length > 0) {
+      throw new Error(
+        `Unauthorized: Cannot access groups for accounts that don't belong to you: ${invalidAccountIds.join(
+          ', '
+        )}`
+      );
+    }
+
+    // Get groups for each account
+    const allAccountGroups = await Promise.all(
+      input.accountIds.map((accountId) => groupRepository.findGroupsByAccountId(accountId))
+    );
+
+    // Find common groups (present in all accounts)
+    if (allAccountGroups.length === 0) {
+      return [];
+    }
+
+    const commonGroups = allAccountGroups.reduce(
+      (common: (typeof allAccountGroups)[0], accountGroups: (typeof allAccountGroups)[0]) => {
+        const accountGroupIds = new Set(accountGroups.map((g) => g.id));
+        return common.filter((group) => accountGroupIds.has(group.id));
+      }
+    );
+
+    return commonGroups;
+  },
 };
 
 /**
@@ -268,6 +336,74 @@ export const HoldingImplementations = {
       : 'USD';
 
     return await useCase.execute(input.id, context.userId, baseCurrency);
+  },
+
+  async bulkAssignGroups(
+    context: FeatureExecutionContext,
+    input: { holdingIds: string[]; groupIds: string[] }
+  ) {
+    const groupRepository = Container.get(GroupRepository);
+    const holdingRepository = Container.get(HoldingRepository);
+
+    // Verify all holdings belong to the user
+    const userHoldings = await holdingRepository.findByUserWithCompleteDetails(context.userId);
+    const userHoldingIds = new Set(userHoldings.map((h) => h.holding.id));
+
+    const invalidHoldingIds = input.holdingIds.filter((id) => !userHoldingIds.has(id));
+    if (invalidHoldingIds.length > 0) {
+      throw new Error(
+        `Unauthorized: Cannot assign groups to holdings that don't belong to you: ${invalidHoldingIds.join(
+          ', '
+        )}`
+      );
+    }
+
+    // Assign groups to each holding
+    for (const holdingId of input.holdingIds) {
+      await groupRepository.assignHoldingGroups(holdingId, input.groupIds);
+    }
+
+    return {
+      success: true,
+      updatedHoldingIds: input.holdingIds,
+    };
+  },
+
+  async getCommonGroups(context: FeatureExecutionContext, input: { holdingIds: string[] }) {
+    const groupRepository = Container.get(GroupRepository);
+    const holdingRepository = Container.get(HoldingRepository);
+
+    // Verify all holdings belong to the user
+    const userHoldings = await holdingRepository.findByUserWithCompleteDetails(context.userId);
+    const userHoldingIds = new Set(userHoldings.map((h) => h.holding.id));
+
+    const invalidHoldingIds = input.holdingIds.filter((id) => !userHoldingIds.has(id));
+    if (invalidHoldingIds.length > 0) {
+      throw new Error(
+        `Unauthorized: Cannot access groups for holdings that don't belong to you: ${invalidHoldingIds.join(
+          ', '
+        )}`
+      );
+    }
+
+    // Get groups for each holding
+    const allHoldingGroups = await Promise.all(
+      input.holdingIds.map((holdingId) => groupRepository.findGroupsByHoldingId(holdingId))
+    );
+
+    // Find common groups (present in all holdings)
+    if (allHoldingGroups.length === 0) {
+      return [];
+    }
+
+    const commonGroups = allHoldingGroups.reduce(
+      (common: (typeof allHoldingGroups)[0], holdingGroups: (typeof allHoldingGroups)[0]) => {
+        const holdingGroupIds = new Set(holdingGroups.map((g) => g.id));
+        return common.filter((group) => holdingGroupIds.has(group.id));
+      }
+    );
+
+    return commonGroups;
   },
 };
 
@@ -371,7 +507,10 @@ export const WalletImplementations = {
 export const BatchOperationImplementations = {
   async createHoldingsWithDependencies(
     context: FeatureExecutionContext,
-    input: { accountId?: string; holdings: Array<{ tokenId: string; balance: string }> }
+    input: {
+      accountId?: string;
+      holdings: Array<{ tokenId: string; balance: string }>;
+    }
   ) {
     const useCase = Container.get(CreateHoldingsWithDependenciesUseCase);
     // Need full user object
@@ -416,7 +555,11 @@ export const SettingsImplementations = {
 
   async updateCurrent(
     context: FeatureExecutionContext,
-    input: { name?: string; avatar?: string | null; baseCurrencyId?: string | null }
+    input: {
+      name?: string;
+      avatar?: string | null;
+      baseCurrencyId?: string | null;
+    }
   ) {
     const userService = Container.get(UserService);
     const result = await userService.updateUser(context.userId, input);
