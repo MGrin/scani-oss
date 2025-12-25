@@ -1,4 +1,4 @@
-import { Badge } from "@/components/ui/badge";
+import { Badge } from '@/components/ui/badge';
 
 export interface Group {
   id: string;
@@ -9,14 +9,10 @@ export interface Group {
 interface GroupBadgesProps {
   groups?: Group[];
   maxDisplay?: number;
-  size?: "sm" | "md" | "lg";
+  size?: 'sm' | 'md' | 'lg';
 }
 
-export function GroupBadges({
-  groups = [],
-  maxDisplay = 3,
-  size = "sm",
-}: GroupBadgesProps) {
+export function GroupBadges({ groups = [], maxDisplay = 3, size = 'sm' }: GroupBadgesProps) {
   if (!groups || groups.length === 0) {
     return <span className="text-xs text-muted-foreground">No groups</span>;
   }
@@ -25,9 +21,9 @@ export function GroupBadges({
   const remainingCount = Math.max(0, groups.length - maxDisplay);
 
   const sizeClasses = {
-    sm: "text-xs px-2 py-0.5",
-    md: "text-sm px-2.5 py-1",
-    lg: "text-base px-3 py-1.5",
+    sm: 'text-xs px-2 py-0.5',
+    md: 'text-sm px-2.5 py-1',
+    lg: 'text-base px-3 py-1.5',
   };
 
   const getBadgeStyle = (color?: string) => {

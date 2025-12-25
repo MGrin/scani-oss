@@ -1,17 +1,17 @@
-import type { AccountWihSumaryDTO, CreateAccountInput } from "@scani/shared";
-import Decimal from "decimal.js";
-import { Container, Service } from "typedi";
-import type { Account } from "../domain/entities";
-import { AccountRepository } from "../repositories/AccountRepository";
-import type { DatabaseTransaction } from "../repositories/BaseRepository";
-import { AccountTypeRepository } from "../repositories/EnumRepositories";
-import { GroupRepository } from "../repositories/GroupRepository";
-import { HoldingRepository } from "../repositories/HoldingRepository";
-import { InstitutionRepository } from "../repositories/InstitutionRepository";
-import { TokenRepository } from "../repositories/TokenRepository";
-import { BaseService } from "./BaseService";
-import { PortfolioValuationService } from "./PortfolioValuationService";
-import { UserWalletService } from "./UserWalletService";
+import type { AccountWihSumaryDTO, CreateAccountInput } from '@scani/shared';
+import Decimal from 'decimal.js';
+import { Container, Service } from 'typedi';
+import type { Account } from '../domain/entities';
+import { AccountRepository } from '../repositories/AccountRepository';
+import type { DatabaseTransaction } from '../repositories/BaseRepository';
+import { AccountTypeRepository } from '../repositories/EnumRepositories';
+import { GroupRepository } from '../repositories/GroupRepository';
+import { HoldingRepository } from '../repositories/HoldingRepository';
+import { InstitutionRepository } from '../repositories/InstitutionRepository';
+import { TokenRepository } from '../repositories/TokenRepository';
+import { BaseService } from './BaseService';
+import { PortfolioValuationService } from './PortfolioValuationService';
+import { UserWalletService } from './UserWalletService';
 
 @Service()
 export class AccountService extends BaseService {
@@ -26,7 +26,7 @@ export class AccountService extends BaseService {
   private readonly portfolioService = Container.get(PortfolioValuationService);
 
   constructor() {
-    super("AccountService");
+    super('AccountService');
   }
 
   /**
@@ -46,11 +46,8 @@ export class AccountService extends BaseService {
     const priceMap = new Map<string, string>();
     for (const portfolioHolding of portfolioValue.holdings) {
       const balance = new Decimal(portfolioHolding.balance);
-      const value = new Decimal(portfolioHolding.value || "0");
-      if (
-        balance.greaterThan(0) &&
-        !priceMap.has(portfolioHolding.tokenSymbol)
-      ) {
+      const value = new Decimal(portfolioHolding.value || '0');
+      if (balance.greaterThan(0) && !priceMap.has(portfolioHolding.tokenSymbol)) {
         const price = value.div(balance);
         priceMap.set(portfolioHolding.tokenSymbol, price.toString());
       }
@@ -64,28 +61,17 @@ export class AccountService extends BaseService {
     tx?: DatabaseTransaction
   ): Promise<Account> {
     try {
-      this.logInfo("Creating account", {
+      this.logInfo('Creating account', {
         name: data.name,
         institutionId: data.institutionId,
       });
 
-      this.validateRequiredFields(data, [
-        "institutionId",
-        "name",
-        "typeId",
-        "institutionId",
-      ]);
-      this.validateNonEmptyString(data.name, "name");
+      this.validateRequiredFields(data, ['institutionId', 'name', 'typeId', 'institutionId']);
+      this.validateNonEmptyString(data.name, 'name');
 
       // Validate institution exists and belongs to user
-      const institution = await this.institutionRepository.findById(
-        data.institutionId!,
-        tx
-      );
-      this.assertExists(
-        institution,
-        `Institution with ID ${data.institutionId} not found`
-      );
+      const institution = await this.institutionRepository.findById(data.institutionId!, tx);
+      this.assertExists(institution, `Institution with ID ${data.institutionId} not found`);
 
       const account = await this.accountRepository.create(
         {
@@ -100,10 +86,10 @@ export class AccountService extends BaseService {
         tx
       );
 
-      this.logInfo("Account created", { accountId: account.id });
+      this.logInfo('Account created', { accountId: account.id });
       return account;
     } catch (error) {
-      throw this.handleError(error, "createAccount");
+      throw this.handleError(error, 'createAccount');
     }
   }
 
@@ -117,11 +103,11 @@ export class AccountService extends BaseService {
       this.assertExists(account, `Account with ID ${accountId} not found`);
 
       if (account.userId !== userId) {
-        throw new Error("Access denied to this account");
+        throw new Error('Access denied to this account');
       }
       return account;
     } catch (error) {
-      throw this.handleError(error, "getAccountById");
+      throw this.handleError(error, 'getAccountById');
     }
   }
 
@@ -129,13 +115,11 @@ export class AccountService extends BaseService {
     try {
       return await this.accountRepository.findByUser(userId);
     } catch (error) {
-      throw this.handleError(error, "getAccountsByUserId");
+      throw this.handleError(error, 'getAccountsByUserId');
     }
   }
 
-  async getAccountsByUserIdWithSummary(
-    userId: string
-  ): Promise<AccountWihSumaryDTO[]> {
+  async getAccountsByUserIdWithSummary(userId: string): Promise<AccountWihSumaryDTO[]> {
     // Get user's accounts
     const accounts = await this.getAccountsByUserId(userId);
 
@@ -148,15 +132,11 @@ export class AccountService extends BaseService {
     const activeHoldings = holdings.filter((h) => h.isActive);
 
     // Get portfolio value for ALL holdings to get prices
-    const portfolioValue = await this.portfolioService.getUserPortfolioValue(
-      userId
-    );
+    const portfolioValue = await this.portfolioService.getUserPortfolioValue(userId);
 
     // Fetch groups for all accounts
     const accountIds = accounts.map((a) => a.id);
-    const groupsMap = await this.groupRepository.findGroupsForAccounts(
-      accountIds
-    );
+    const groupsMap = await this.groupRepository.findGroupsForAccounts(accountIds);
 
     const holdingsByAccount = new Map<string, typeof activeHoldings>();
     for (const holding of activeHoldings) {
@@ -182,7 +162,7 @@ export class AccountService extends BaseService {
       for (const holding of accountHoldings) {
         const token = tokenMap.get(holding.tokenId);
         if (token) {
-          const price = priceMap.get(token.symbol) || "0";
+          const price = priceMap.get(token.symbol) || '0';
           const balance = new Decimal(holding.balance);
           const holdingValue = balance.mul(new Decimal(price));
           totalValue = totalValue.add(holdingValue);
@@ -211,7 +191,7 @@ export class AccountService extends BaseService {
 
   async deleteAccount(accountId: string, _userId: string): Promise<boolean> {
     try {
-      this.logInfo("Deleting account", { accountId });
+      this.logInfo('Deleting account', { accountId });
 
       const existing = await this.accountRepository.findById(accountId);
       this.assertExists(existing, `Account with ID ${accountId} not found`);
@@ -228,33 +208,27 @@ export class AccountService extends BaseService {
             userWalletId,
             existing.institutionId
           );
-          this.logInfo("Removed institution from user wallet", {
+          this.logInfo('Removed institution from user wallet', {
             accountId,
             userWalletId,
             institutionId: existing.institutionId,
           });
         } catch (walletError) {
           // Log error but don't fail the account deletion
-          this.logWarning(
-            "Failed to update user wallet during account deletion (non-critical)",
-            {
-              accountId,
-              userWalletId,
-              institutionId: existing.institutionId,
-              error:
-                walletError instanceof Error
-                  ? walletError.message
-                  : String(walletError),
-            }
-          );
+          this.logWarning('Failed to update user wallet during account deletion (non-critical)', {
+            accountId,
+            userWalletId,
+            institutionId: existing.institutionId,
+            error: walletError instanceof Error ? walletError.message : String(walletError),
+          });
         }
       }
 
       const deleted = await this.accountRepository.delete(accountId);
-      this.logInfo("Account deleted", { accountId, deleted });
+      this.logInfo('Account deleted', { accountId, deleted });
       return deleted;
     } catch (error) {
-      throw this.handleError(error, "deleteAccount");
+      throw this.handleError(error, 'deleteAccount');
     }
   }
 
@@ -270,90 +244,58 @@ export class AccountService extends BaseService {
     tx?: DatabaseTransaction
   ): Promise<Account> {
     try {
-      this.logInfo("Updating account", { accountId, data });
+      this.logInfo('Updating account', { accountId, data });
 
       // Verify account exists and belongs to user
       const existing = await this.accountRepository.findById(accountId, tx);
       this.assertExists(existing, `Account with ID ${accountId} not found`);
 
       if (existing.userId !== userId) {
-        throw new Error("Access denied to this account");
+        throw new Error('Access denied to this account');
       }
 
       // Check if this is a synced account (has walletAddress in metadata)
-      const metadata = existing.metadata as
-        | Record<string, unknown>
-        | null
-        | undefined;
-      const isSynced =
-        metadata && typeof metadata === "object" && "walletAddress" in metadata;
+      const metadata = existing.metadata as Record<string, unknown> | null | undefined;
+      const isSynced = metadata && typeof metadata === 'object' && 'walletAddress' in metadata;
 
       // Prevent updating institutionId and typeId for synced accounts
       if (isSynced) {
-        if (
-          data.institutionId !== undefined &&
-          data.institutionId !== existing.institutionId
-        ) {
-          throw new Error(
-            "Cannot change institution for automatically synced accounts"
-          );
+        if (data.institutionId !== undefined && data.institutionId !== existing.institutionId) {
+          throw new Error('Cannot change institution for automatically synced accounts');
         }
         if (data.typeId !== undefined && data.typeId !== existing.typeId) {
-          throw new Error(
-            "Cannot change account type for automatically synced accounts"
-          );
+          throw new Error('Cannot change account type for automatically synced accounts');
         }
       }
 
       // Validate institution exists if being updated
-      if (
-        data.institutionId !== undefined &&
-        data.institutionId !== existing.institutionId
-      ) {
-        const institution = await this.institutionRepository.findById(
-          data.institutionId,
-          tx
-        );
-        this.assertExists(
-          institution,
-          `Institution with ID ${data.institutionId} not found`
-        );
+      if (data.institutionId !== undefined && data.institutionId !== existing.institutionId) {
+        const institution = await this.institutionRepository.findById(data.institutionId, tx);
+        this.assertExists(institution, `Institution with ID ${data.institutionId} not found`);
       }
 
       // Validate account type exists if being updated
       if (data.typeId !== undefined && data.typeId !== existing.typeId) {
-        const accountType = await this.accountTypeRepository.findById(
-          data.typeId,
-          tx
-        );
-        this.assertExists(
-          accountType,
-          `Account type with ID ${data.typeId} not found`
-        );
+        const accountType = await this.accountTypeRepository.findById(data.typeId, tx);
+        this.assertExists(accountType, `Account type with ID ${data.typeId} not found`);
       }
 
-      const updated = await this.accountRepository.updateAccount(
-        accountId,
-        data,
-        tx
-      );
-      this.logInfo("Account updated", { accountId });
+      const updated = await this.accountRepository.updateAccount(accountId, data, tx);
+      this.logInfo('Account updated', { accountId });
       return updated;
     } catch (error) {
-      throw this.handleError(error, "updateAccount");
+      throw this.handleError(error, 'updateAccount');
     }
   }
 
   /**
    * Find all wallet accounts (accounts with walletAddress in metadata)
    */
-  async findWalletAccounts(
-    transaction?: DatabaseTransaction
-  ): Promise<Account[]> {
+  async findWalletAccounts(transaction?: DatabaseTransaction): Promise<Account[]> {
     try {
       return await this.accountRepository.findWalletAccounts(transaction);
     } catch (error) {
-      throw this.handleError(error, "findWalletAccounts");
+      throw this.handleError(error, 'findWalletAccounts');
     }
   }
 
@@ -366,13 +308,9 @@ export class AccountService extends BaseService {
     transaction?: DatabaseTransaction
   ): Promise<void> {
     try {
-      await this.accountRepository.updateMetadata(
-        accountId,
-        metadata,
-        transaction
-      );
+      await this.accountRepository.updateMetadata(accountId, metadata, transaction);
     } catch (error) {
-      throw this.handleError(error, "updateAccountMetadata");
+      throw this.handleError(error, 'updateAccountMetadata');
     }
   }
 }

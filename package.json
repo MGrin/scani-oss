@@ -51,6 +51,7 @@
   "devDependencies": {
     "@biomejs/biome": "^2.2.2",
     "@types/bun": "latest",
+    "@typescript/native-preview": "^7.0.0-dev.20251223.1",
     "concurrently": "^8.2.2",
     "typescript": "^5"
   },

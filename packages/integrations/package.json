@@ -12,7 +12,7 @@
   "scripts": {
     "lint": "biome check .",
     "lint:fix": "biome check --write .",
-    "type-check": "tsc --noEmit"
+    "type-check": "tsgo --noEmit"
   },
   "dependencies": {
     "@scani/core": "workspace:*",
