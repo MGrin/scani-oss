@@ -1,0 +1,31 @@
+{
+  "name": "@scani/cron",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "bun run src/index.ts --tasks=pricing,wallet-balances,exchange-balances,plaid-balances",
+    "start": "bun run src/index.ts",
+    "lint": "biome check .",
+    "lint:fix": "biome check --write .",
+    "type-check": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@scani/core": "workspace:*",
+    "@scani/integrations": "workspace:*",
+    "@scani/shared": "workspace:*",
+    "@scani/telegram-bot": "workspace:*",
+    "@sentry/bun": "^10.21.0",
+    "@supabase/supabase-js": "^2.57.4",
+    "decimal.js": "^10.6.0",
+    "drizzle-orm": "^0.44.5",
+    "pino": "^9.9.4",
+    "postgres": "^3.4.4",
+    "reflect-metadata": "^0.2.2",
+    "typedi": "^0.10.0",
+    "zod": "^3.22.4"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "typescript": "^5"
+  }
+}

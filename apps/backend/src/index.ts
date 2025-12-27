@@ -1,6 +1,5 @@
 import 'reflect-metadata';
 import { cors } from '@elysiajs/cors';
-import { cron } from '@elysiajs/cron';
 import { trpc } from '@elysiajs/trpc';
 import {
   captureException,
@@ -18,13 +17,6 @@ import { Container } from 'typedi';
 // CRITICAL: Initialize container BEFORE importing any routers
 // This must happen before any module that calls Container.get()
 import { initializeContainer } from './config/container';
-import {
-  executeDailyPortfolioDigestCronJob,
-  executeExchangeBalancesCronJob,
-  executePlaidBalancesCronJob,
-  executePricingCronJob,
-  executeWalletBalancesCronJob,
-} from './infrastructure/cron';
 import { RealTimeUpdatesService } from './infrastructure/websocket/RealTimeUpdatesService';
 import { createStandardLimiter, createStrictLimiter } from './presentation/middleware/rate-limit';
 import { createContext } from './presentation/trpc';
@@ -82,66 +74,6 @@ const globalLimiter = createStandardLimiter(300, 500);
 const strictLimiter = createStrictLimiter(60, 90); // use for heavy/AI routes
 
 const app = new Elysia()
-  // Add cron jobs
-  .use(
-    cron({
-      name: 'pricing-cron',
-      pattern: '0,30 * * * *', // Every 30 minutes at :00 and :30
-      run: async () => {
-        try {
-          await executePricingCronJob();
-        } catch (error) {
-          logger.error(
-            {
-              error: error instanceof Error ? error.message : String(error),
-              stack: error instanceof Error ? error.stack : undefined,
-            },
-            '❌ Fatal error in pricing cron job - this should not happen as errors are caught internally'
-          );
-          captureException(error instanceof Error ? error : new Error(String(error)), {
-            context: 'pricing-cron-wrapper',
-          });
-        }
-      },
-    })
-  )
-  .use(
-    cron({
-      name: 'wallet-balances-cron',
-      pattern: '*/15 * * * *', // Every 15 minutes
-      run: executeWalletBalancesCronJob,
-    })
-  )
-  .use(
-    cron({
-      name: 'exchange-balances-cron',
-      pattern: '*/15 * * * *', // Every 15 minutes
-      run: executeExchangeBalancesCronJob,
-    })
-  )
-  // Plaid balances sync cron job
-  .use(
-    cron({
-      name: 'plaid-balances-cron',
-      pattern: '*/15 * * * *', // Every 15 minutes
-      run: executePlaidBalancesCronJob,
-    })
-  )
-  .use(
-    cron({
-      name: 'daily-portfolio-digest-cron',
-      pattern: '0 0 * * *', // Daily at midnight UTC
-      run: async () => {
-        // Check if telegram bot is available before executing
-        // The bot is initialized asynchronously, so this check ensures it's ready
-        if (telegramBot) {
-          await executeDailyPortfolioDigestCronJob(telegramBot);
-        } else {
-          logger.warn('⚠️ Daily digest cron skipped: Telegram bot not initialized');
-        }
-      },
-    })
-  )
   // Add request logging middleware
   .onBeforeHandle(({ request, set }) => {
     const url = new URL(request.url);
@@ -319,71 +251,6 @@ app
     set.status = 200;
     set.headers['Content-Type'] = 'application/json';
     return;
-  })
-  // Cron health check endpoint - returns status of cron jobs
-  .get('/health/cron', ({ set }: { set: { status: number } }) => {
-    try {
-      // biome-ignore lint/suspicious/noExplicitAny: Elysia internal types not exposed
-      const cronStore = (app as any).singleton?.store?.cron;
-      if (!cronStore) {
-        set.status = 503;
-        return {
-          status: 'error',
-          message: 'Cron store not initialized',
-          timestamp: new Date().toISOString(),
-        };
-      }
-
-      const pricingCron = cronStore['pricing-cron'];
-      const walletBalancesCron = cronStore['wallet-balances-cron'];
-      const exchangeBalancesCron = cronStore['exchange-balances-cron'];
-      const plaidBalancesCron = cronStore['plaid-balances-cron'];
-      const dailyDigestCron = cronStore['daily-portfolio-digest-cron'];
-
-      return {
-        status: 'ok',
-        timestamp: new Date().toISOString(),
-        crons: {
-          'pricing-cron': {
-            exists: !!pricingCron,
-            nextRun: pricingCron?.nextRun()?.toISOString() || null,
-            isRunning: pricingCron?.isBusy() || false,
-            pattern: '0,30 * * * *',
-          },
-          'wallet-balances-cron': {
-            exists: !!walletBalancesCron,
-            nextRun: walletBalancesCron?.nextRun()?.toISOString() || null,
-            isRunning: walletBalancesCron?.isBusy() || false,
-            pattern: '*/15 * * * *',
-          },
-          'exchange-balances-cron': {
-            exists: !!exchangeBalancesCron,
-            nextRun: exchangeBalancesCron?.nextRun()?.toISOString() || null,
-            isRunning: exchangeBalancesCron?.isBusy() || false,
-            pattern: '*/15 * * * *',
-          },
-          'plaid-balances-cron': {
-            exists: !!plaidBalancesCron,
-            nextRun: plaidBalancesCron?.nextRun()?.toISOString() || null,
-            isRunning: plaidBalancesCron?.isBusy() || false,
-            pattern: '*/15 * * * *',
-          },
-          'daily-portfolio-digest-cron': {
-            exists: !!dailyDigestCron,
-            nextRun: dailyDigestCron?.nextRun()?.toISOString() || null,
-            isRunning: dailyDigestCron?.isBusy() || false,
-            pattern: '0 0 * * *',
-          },
-        },
-      };
-    } catch (error) {
-      set.status = 500;
-      return {
-        status: 'error',
-        message: error instanceof Error ? error.message : 'Unknown error',
-        timestamp: new Date().toISOString(),
-      };
-    }
   })
   // Database health check endpoint - returns database connection status
   .get('/health/db', async ({ set }: { set: { status: number } }) => {
@@ -566,53 +433,6 @@ wsLogger.info(
   },
   '🔌 WebSocket endpoint configured (using Elysia native WebSocket)'
 );
-
-logger.info(
-  {
-    pricingCronPattern: '0,30 * * * *',
-    pricingCronDescription: 'Every 30 minutes at :00 and :30',
-    pricingCronNextRun: 'Check logs for actual schedule',
-    walletBalancesCronPattern: '*/15 * * * *',
-    walletBalancesCronDescription: 'Every 15 minutes',
-    dailyDigestCronPattern: '0 0 * * *',
-    dailyDigestCronDescription: 'Daily at midnight UTC (requires telegram bot initialization)',
-  },
-  '⏰ Cron jobs configured and scheduled'
-);
-
-// Log next run times for debugging
-try {
-  // Access the cron jobs from the app state to log next run times
-  // biome-ignore lint/suspicious/noExplicitAny: Elysia internal types not exposed
-  const cronStore = (app as any).singleton?.store?.cron;
-  if (cronStore) {
-    const pricingCron = cronStore['pricing-cron'];
-    if (pricingCron) {
-      const nextRun = pricingCron.nextRun();
-      logger.info(
-        {
-          cronName: 'pricing-cron',
-          nextRunTime: nextRun ? nextRun.toISOString() : 'unknown',
-          isRunning: pricingCron.isBusy(),
-        },
-        '📅 Pricing cron next run time'
-      );
-    } else {
-      logger.warn(
-        '⚠️ Pricing cron not found in cron store - this may indicate an initialization issue'
-      );
-    }
-  } else {
-    logger.warn('⚠️ Cron store not found - cron jobs may not be properly initialized');
-  }
-} catch (error) {
-  logger.warn(
-    {
-      error: error instanceof Error ? error.message : String(error),
-    },
-    '⚠️ Could not access cron state for debugging - cron jobs should still work'
-  );
-}
 
 // Start HTTP server with enhanced logging
 const server = app.listen(PORT, () => {

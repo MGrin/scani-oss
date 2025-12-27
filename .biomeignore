@@ -12,3 +12,5 @@ coverage
 .env.production.local
 apps/frontend/public/vite.svg
 apps/frontend/src/index.css
+*.sh
+*.sql
