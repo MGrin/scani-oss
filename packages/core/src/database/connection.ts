@@ -20,6 +20,7 @@ if (!DATABASE_URL) {
 
 // Detect if using Supabase pooler and add SSL configuration
 const connectionConfig: postgres.Options<Record<string, postgres.PostgresType>> = {
+  max_connections: 5,
   fetch_types: false, // Skip type fetching on connect - faster connection establishment
   connection: {
     application_name: `scani-${NODE_ENV}`, // Helps identify connections in pg_stat_activity
