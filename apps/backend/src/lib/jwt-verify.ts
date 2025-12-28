@@ -19,6 +19,11 @@ let jwksCache: ReturnType<typeof createRemoteJWKSet> | null = null;
 let jwksCacheTime = 0;
 const JWKS_CACHE_TTL = 30 * 60 * 1000; // 30 minutes
 
+// Timeout constants for JWT operations
+const JWKS_FETCH_TIMEOUT_MS = 10000; // 10 seconds
+const JWKS_COOLDOWN_MS = 30000; // 30 seconds
+const JWT_VERIFICATION_TIMEOUT_MS = 10000; // 10 seconds
+
 function getJWKS() {
   const now = Date.now();
 
@@ -28,7 +33,7 @@ function getJWKS() {
   }
 
   // Create new JWKS instance
-  authLogger.info('Creating new JWKS instance');
+  authLogger.info('Creating new JWKS instance or refreshing cache');
   try {
     const jwksUrl = new URL(JWKS_URI);
     authLogger.info(
@@ -41,7 +46,11 @@ function getJWKS() {
       'JWKS URL parsed successfully'
     );
 
-    jwksCache = createRemoteJWKSet(jwksUrl);
+    jwksCache = createRemoteJWKSet(jwksUrl, {
+      // Add timeout options to prevent hanging
+      timeoutDuration: JWKS_FETCH_TIMEOUT_MS,
+      cooldownDuration: JWKS_COOLDOWN_MS,
+    });
     jwksCacheTime = now;
     authLogger.info('New JWKS instance created');
     return jwksCache;
@@ -55,6 +64,13 @@ function getJWKS() {
       },
       'Failed to create JWKS instance'
     );
+
+    // If we have a stale cache, use it as fallback
+    if (jwksCache) {
+      authLogger.warn('Using stale JWKS cache as fallback');
+      return jwksCache;
+    }
+
     throw error;
   }
 }
@@ -80,11 +96,19 @@ export async function verifySupabaseJWT(token: string): Promise<JWTPayload | nul
   try {
     const jwks = getJWKS();
 
-    // Try verification with audience check
-    const { payload } = await jwtVerify(token, jwks, {
+    // Add timeout to prevent hanging on JWKS fetch failures
+    const verificationPromise = jwtVerify(token, jwks, {
       // Supabase uses 'authenticated' as the audience
       audience: 'authenticated',
     });
+
+    // Create a timeout promise
+    const timeoutPromise = new Promise<never>((_, reject) => {
+      setTimeout(() => reject(new Error('JWT verification timeout')), JWT_VERIFICATION_TIMEOUT_MS);
+    });
+
+    // Race between verification and timeout
+    const { payload } = await Promise.race([verificationPromise, timeoutPromise]);
 
     authLogger.info(
       {
