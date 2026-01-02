@@ -17,7 +17,7 @@ const JWKS_URI = `${supabaseUrl}/auth/v1/.well-known/jwks.json`;
 // We'll create a new JWKS instance that will be reused
 let jwksCache: ReturnType<typeof createRemoteJWKSet> | null = null;
 let jwksCacheTime = 0;
-const JWKS_CACHE_TTL = 30 * 60 * 1000; // 30 minutes
+const JWKS_CACHE_TTL = 60 * 60 * 1000; // 60 minutes (reduced refresh frequency to prevent performance issues)
 
 // Timeout constants for JWT operations
 const JWKS_FETCH_TIMEOUT_MS = 10000; // 10 seconds

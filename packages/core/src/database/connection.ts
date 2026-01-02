@@ -20,7 +20,11 @@ if (!DATABASE_URL) {
 
 // Detect if using Supabase pooler and add SSL configuration
 const connectionConfig: postgres.Options<Record<string, postgres.PostgresType>> = {
-  max: 5,
+  max: 10, // Increased from 5 to handle more concurrent requests
+  idle_timeout: 20, // Close idle connections after 20 seconds
+  connect_timeout: 10, // 10 second timeout for establishing connections
+  max_lifetime: 60 * 30, // 30 minutes max lifetime for connections (helps with stale connections)
+  prepare: false, // Disable prepared statements - required for Supabase connection pooler
   fetch_types: false, // Skip type fetching on connect - faster connection establishment
   connection: {
     application_name: `scani-${NODE_ENV}`, // Helps identify connections in pg_stat_activity
