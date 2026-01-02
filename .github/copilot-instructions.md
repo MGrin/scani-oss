@@ -23,7 +23,11 @@
 - ✅ Follow clean architecture - Use Cases → Services → Repositories
 - ✅ Follow DRY, OOP, SOLID, and Onion Architecture principles
 - ✅ Initialize container before importing routers (see `apps/backend/src/index.ts`)
+- ✅ **Supabase Connection Pooler**: Use max 1-3 connections per client (pooler handles scaling)
 - ❌ **NEVER use `require()` or `await import()` or any dynamic imports** - always use static ES6 imports
+- ❌ **NEVER add retry logic for database operations** - if queries fail, there's a fundamental issue
+- ❌ **NEVER increase connection pool size for Supabase** - use 1-3 connections, let pooler scale
+- ❌ **NEVER increase query timeouts** - queries must be fast, system must fail fast
 - ❌ Never auto-apply database migrations
 - ❌ Never use TypeScript enums for dynamic data
 - ❌ Never bypass authentication for user-scoped data
@@ -264,6 +268,26 @@ const createAccount = trpc.accounts.create.useMutation();
 - Always use Drizzle ORM syntax, never raw SQL for schema
 - Database migrations will be applied by user only, never auto-apply them
 
+### Supabase Connection Pooler Configuration
+
+**CRITICAL: Supabase uses PgBouncer in transaction mode**
+
+- **Connection Pool Size**: Use `max: 1` (single connection per client)
+  - The Supabase pooler handles all scaling
+  - Large client pools (>3) cause connection exhaustion at the pooler
+  - Never increase pool size to "fix" performance issues
+- **Timeouts**: Keep short to fail fast
+  - `connect_timeout: 10` seconds (default)
+  - Never add `statement_timeout` via connection string
+  - Let queries fail naturally if they take too long
+- **Required Settings**:
+  - `prepare: false` - Transaction pooler doesn't support prepared statements
+  - `fetch_types: false` - Skip type fetching for faster connections
+- **Never Add Retry Logic**:
+  - If database queries fail, there's a fundamental configuration issue
+  - Retries hide problems and make debugging harder
+  - Fix the root cause, don't mask it with retries
+
 ### Financial Data Handling
 
 - All monetary values use `Decimal.js` for precision
@@ -292,6 +316,13 @@ const createAccount = trpc.accounts.create.useMutation();
 - ❌ Avoid direct SQL queries (use Drizzle ORM)
 - ❌ Don't hardcode financial calculations (use `Decimal.js` and shared utilities)
 - ❌ Never expose sensitive data in frontend - all auth via backend tRPC procedures
+
+### Database Operations
+- ❌ **NEVER add retry logic for database queries** - retries hide fundamental issues
+- ❌ **NEVER increase Supabase connection pool size** - use max 1-3 connections
+- ❌ **NEVER increase query timeouts** - queries must be fast, fail fast
+- ❌ Never add exponential backoff or retry mechanisms for database failures
+- ❌ If queries fail, investigate the root cause (pooler config, network, schema)
 
 ### Tooling
 - ❌ Never use `npm` or `yarn` or `npx` or something else - always use `bun` and `bunx`

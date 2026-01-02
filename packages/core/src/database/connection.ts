@@ -23,23 +23,25 @@ if (!DATABASE_URL) {
 let finalDatabaseUrl = DATABASE_URL;
 if (IS_CRON_JOB) {
   const dbUrl = new URL(DATABASE_URL);
-  
+
   // Add statement_timeout if not already present (2 minutes for cron jobs)
   // This prevents queries from hanging indefinitely in cron job context
   if (!dbUrl.searchParams.has('statement_timeout')) {
     dbUrl.searchParams.set('statement_timeout', '120000'); // 120 seconds in milliseconds
   }
-  
+
   finalDatabaseUrl = dbUrl.toString();
 }
 
 // Detect if using Supabase pooler and add SSL configuration
+// For Supabase transaction pooler (port 6543), use a SMALL connection pool
+// The pooler itself handles scaling - large client pools cause connection exhaustion
 const connectionConfig: postgres.Options<Record<string, postgres.PostgresType>> = {
-  max: 10, // Increased from 5 to handle more concurrent requests
+  max: 1, // Use single connection per client - Supabase pooler handles scaling
   idle_timeout: 20, // Close idle connections after 20 seconds
-  connect_timeout: IS_CRON_JOB ? 30 : 10, // 30 second timeout for cron jobs, 10 for regular API
-  max_lifetime: 60 * 30, // 30 minutes max lifetime for connections (helps with stale connections)
-  prepare: false, // Disable prepared statements - required for Supabase connection pooler
+  connect_timeout: 10, // Keep timeouts short to fail fast
+  max_lifetime: 60 * 30, // 30 minutes max lifetime for connections
+  prepare: false, // Disable prepared statements - required for Supabase transaction pooler
   fetch_types: false, // Skip type fetching on connect - faster connection establishment
   connection: {
     application_name: `scani-${NODE_ENV}`, // Helps identify connections in pg_stat_activity
