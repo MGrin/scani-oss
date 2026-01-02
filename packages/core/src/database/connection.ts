@@ -36,8 +36,10 @@ if (IS_CRON_JOB) {
 // Detect if using Supabase pooler and add SSL configuration
 // For Supabase transaction pooler (port 6543), use a SMALL connection pool
 // The pooler itself handles scaling - large client pools cause connection exhaustion
+// CRITICAL: Use 2-3 connections for proper concurrent request handling
+// Using only 1 connection causes request queuing and timeouts under load
 const connectionConfig: postgres.Options<Record<string, postgres.PostgresType>> = {
-  max: 1, // Use single connection per client - Supabase pooler handles scaling
+  max: 3, // Optimal for Supabase pooler - allows concurrent requests without exhaustion
   idle_timeout: 20, // Close idle connections after 20 seconds
   connect_timeout: 10, // Keep timeouts short to fail fast
   max_lifetime: 60 * 30, // 30 minutes max lifetime for connections
@@ -99,7 +101,12 @@ export { schema };
 export function getConnectionStats() {
   // postgres.js doesn't expose pool stats directly, but we can provide config info
   return {
+    maxConnections: 3,
+    idleTimeout: 20,
+    connectTimeout: 10,
+    maxLifetime: 60 * 30,
     fetchTypes: false,
+    prepare: false,
     // Note: postgres.js doesn't expose active/idle connection counts
     // For that, you'd need to query pg_stat_activity
   };
