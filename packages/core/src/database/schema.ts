@@ -424,6 +424,8 @@ export const plaidItems = pgTable(
     institutionIdIdx: index('idx_plaid_items_institution_id').on(table.institutionId),
     // Index for Plaid item ID lookups
     plaidItemIdIdx: index('idx_plaid_items_plaid_item_id').on(table.plaidItemId),
+    // Index for filtering active Plaid items in cron jobs
+    isActiveIdx: index('idx_plaid_items_is_active').on(table.isActive),
   })
 );
 

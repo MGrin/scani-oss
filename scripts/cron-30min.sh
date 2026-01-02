@@ -14,6 +14,9 @@ echo "🕐 Starting 30-minute cron tasks..."
 # Navigate to cron app directory
 cd "$(dirname "$0")/../apps/cron"
 
+# Set environment variable to enable cron-specific database optimizations
+export IS_CRON_JOB=true
+
 # Run the cron tasks
 bun run src/index.ts --tasks=pricing
 

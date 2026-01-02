@@ -6,6 +6,7 @@ import * as schema from './schema';
 // Environment variables
 const DATABASE_URL = process.env.DATABASE_URL;
 const NODE_ENV = process.env.NODE_ENV || 'development';
+const IS_CRON_JOB = process.env.IS_CRON_JOB === 'true'; // Set to 'true' in cron job environment
 
 // Database connection
 let db: ReturnType<typeof drizzlePostgres>;
@@ -18,11 +19,25 @@ if (!DATABASE_URL) {
   );
 }
 
+// Prepare DATABASE_URL with cron-specific parameters if running in cron context
+let finalDatabaseUrl = DATABASE_URL;
+if (IS_CRON_JOB) {
+  const dbUrl = new URL(DATABASE_URL);
+  
+  // Add statement_timeout if not already present (2 minutes for cron jobs)
+  // This prevents queries from hanging indefinitely in cron job context
+  if (!dbUrl.searchParams.has('statement_timeout')) {
+    dbUrl.searchParams.set('statement_timeout', '120000'); // 120 seconds in milliseconds
+  }
+  
+  finalDatabaseUrl = dbUrl.toString();
+}
+
 // Detect if using Supabase pooler and add SSL configuration
 const connectionConfig: postgres.Options<Record<string, postgres.PostgresType>> = {
   max: 10, // Increased from 5 to handle more concurrent requests
   idle_timeout: 20, // Close idle connections after 20 seconds
-  connect_timeout: 10, // 10 second timeout for establishing connections
+  connect_timeout: IS_CRON_JOB ? 30 : 10, // 30 second timeout for cron jobs, 10 for regular API
   max_lifetime: 60 * 30, // 30 minutes max lifetime for connections (helps with stale connections)
   prepare: false, // Disable prepared statements - required for Supabase connection pooler
   fetch_types: false, // Skip type fetching on connect - faster connection establishment
@@ -31,7 +46,7 @@ const connectionConfig: postgres.Options<Record<string, postgres.PostgresType>> 
   },
 };
 
-const client = postgres(DATABASE_URL, connectionConfig);
+const client = postgres(finalDatabaseUrl, connectionConfig);
 
 db = drizzlePostgres(client, {
   schema,
