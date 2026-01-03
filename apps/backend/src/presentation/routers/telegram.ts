@@ -43,7 +43,7 @@ export const telegramRouter = router({
    * Check if user has linked Telegram account
    */
   getLinkedAccount: protectedProcedure.query(async ({ ctx }) => {
-    const { dbUser } = requireAuth(ctx);
+    const { dbUser } = await requireAuth(ctx);
     const telegramUser = await telegramUserRepo.findByUserId(dbUser.id);
 
     if (!telegramUser || !telegramUser.isActive) {
@@ -63,7 +63,7 @@ export const telegramRouter = router({
    * Unlink Telegram account
    */
   unlinkAccount: protectedProcedure.mutation(async ({ ctx }) => {
-    const { dbUser } = requireAuth(ctx);
+    const { dbUser } = await requireAuth(ctx);
     const telegramUser = await telegramUserRepo.findByUserId(dbUser.id);
 
     if (!telegramUser) {

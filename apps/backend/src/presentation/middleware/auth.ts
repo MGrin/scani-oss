@@ -17,60 +17,14 @@ export interface CreateContextOptions {
 }
 
 /**
- * Creates or updates a user in the database based on JWT user data
+ * Creates a new user in the database if they don't exist
+ * Only called when a user with valid JWT is not found in our database
  */
-async function syncUserWithDatabase(
+async function createUserIfNotExists(
   userId: string,
   email: string
 ): Promise<typeof schema.users.$inferSelect> {
   try {
-    authLogger.debug({ userId, email }, 'Syncing user with database');
-
-    // Check if user already exists
-    const [existingUser] = await db
-      .select()
-      .from(schema.users)
-      .where(eq(schema.users.id, userId))
-      .limit(1)
-      .catch((err) => {
-        authLogger.error(
-          {
-            userId,
-            error: {
-              name: err.name,
-              message: err.message,
-              code: err.code,
-              detail: err.detail,
-              stack: err.stack,
-            },
-          },
-          'Database query failed when checking for existing user'
-        );
-        throw err;
-      });
-
-    if (existingUser) {
-      authLogger.debug({ userId }, 'User found in database, checking for updates');
-      // Update existing user email if needed, but never update the name or avatar
-      const needsUpdate = existingUser.email !== email;
-
-      if (needsUpdate) {
-        const [updatedUser] = await db
-          .update(schema.users)
-          .set({
-            email: email || existingUser.email,
-            updatedAt: new Date(),
-          })
-          .where(eq(schema.users.id, userId))
-          .returning();
-
-        return updatedUser || existingUser;
-      }
-
-      return existingUser;
-    }
-
-    // Create new user
     authLogger.info({ userId, email }, 'Creating new user in database');
     const now = new Date();
 
@@ -128,11 +82,11 @@ async function syncUserWithDatabase(
           : error,
     };
 
-    authLogger.error(errorDetails, 'Error syncing user with database');
+    authLogger.error(errorDetails, 'Error creating user in database');
 
     throw new TRPCError({
       code: 'INTERNAL_SERVER_ERROR',
-      message: 'Failed to sync user data',
+      message: 'Failed to create user',
       cause: error,
     });
   }
@@ -141,6 +95,7 @@ async function syncUserWithDatabase(
 /**
  * Extracts and validates the JWT token from the Authorization header
  * Uses local JWT verification to avoid calling Supabase API for every request
+ * No longer syncs user on every request - only verifies JWT token
  */
 export async function createAuthContext(opts: CreateContextOptions): Promise<AuthContext> {
   const authHeader = opts.req.headers.get('authorization');
@@ -187,9 +142,6 @@ export async function createAuthContext(opts: CreateContextOptions): Promise<Aut
       };
     }
 
-    // Sync user with database
-    const dbUser = await syncUserWithDatabase(payload.sub, payload.email || '');
-
     authLogger.debug(
       {
         userId: payload.sub,
@@ -197,11 +149,12 @@ export async function createAuthContext(opts: CreateContextOptions): Promise<Aut
       'User authenticated successfully'
     );
 
+    // Return auth context without dbUser - it will be fetched lazily when needed
     return {
       userId: payload.sub,
       email: payload.email || null,
       isAuthenticated: true,
-      dbUser,
+      dbUser: null,
     };
   } catch (error) {
     authLogger.error(
@@ -224,18 +177,64 @@ export async function createAuthContext(opts: CreateContextOptions): Promise<Aut
 
 /**
  * Middleware to ensure user is authenticated
+ * Fetches dbUser from database if not already present in context
+ * Creates user in database if they don't exist (new user)
  */
-export function requireAuth(ctx: AuthContext) {
-  if (!ctx.isAuthenticated || !ctx.userId || !ctx.dbUser) {
+export async function requireAuth(ctx: AuthContext) {
+  if (!ctx.isAuthenticated || !ctx.userId) {
     throw new TRPCError({
       code: 'UNAUTHORIZED',
       message: 'Authentication required',
     });
   }
 
+  // Fetch dbUser from database if not already in context
+  let dbUser = ctx.dbUser;
+  if (!dbUser) {
+    try {
+      authLogger.debug({ userId: ctx.userId }, 'Fetching user from database');
+      const [existingUser] = await db
+        .select()
+        .from(schema.users)
+        .where(eq(schema.users.id, ctx.userId))
+        .limit(1);
+
+      if (existingUser) {
+        dbUser = existingUser;
+      } else {
+        // User doesn't exist in our database - create them (new user registration)
+        authLogger.info({ userId: ctx.userId }, 'User not found in database, creating new user');
+        dbUser = await createUserIfNotExists(ctx.userId, ctx.email || '');
+      }
+    } catch (error) {
+      authLogger.error(
+        {
+          userId: ctx.userId,
+          error:
+            error instanceof Error
+              ? { name: error.name, message: error.message, stack: error.stack }
+              : error,
+        },
+        'Error fetching or creating user'
+      );
+      throw new TRPCError({
+        code: 'INTERNAL_SERVER_ERROR',
+        message: 'Failed to fetch user data',
+        cause: error,
+      });
+    }
+  }
+
+  if (!dbUser) {
+    throw new TRPCError({
+      code: 'UNAUTHORIZED',
+      message: 'User not found',
+    });
+  }
+
   return {
     userId: ctx.userId,
     email: ctx.email,
-    dbUser: ctx.dbUser,
+    dbUser,
   };
 }

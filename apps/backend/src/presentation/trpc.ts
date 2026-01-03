@@ -176,8 +176,9 @@ const safeStringify = (value: unknown): string => {
 export const publicProcedure = t.procedure.use(loggingMiddleware);
 
 // Protected procedure that requires authentication
+// Note: dbUser is NOT checked here - it will be fetched lazily by requireAuth when needed
 export const protectedProcedure = t.procedure.use(loggingMiddleware).use(async ({ ctx, next }) => {
-  if (!ctx.isAuthenticated || !ctx.userId || !ctx.dbUser) {
+  if (!ctx.isAuthenticated || !ctx.userId) {
     throw new TRPCError({
       code: 'UNAUTHORIZED',
       message: 'Authentication required',

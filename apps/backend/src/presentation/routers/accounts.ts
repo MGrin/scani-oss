@@ -7,22 +7,22 @@ import { protectedProcedure, router } from '../trpc';
 
 export const accountsRouter = router({
   getAll: protectedProcedure.query(async ({ ctx }) => {
-    const { dbUser } = requireAuth(ctx);
+    const { dbUser } = await requireAuth(ctx);
     return await AccountImplementations.getAll({ userId: dbUser.id, dbUser }, {});
   }),
 
   getByUserIdWithSummary: protectedProcedure.query(async ({ ctx }) => {
-    const { dbUser } = requireAuth(ctx);
+    const { dbUser } = await requireAuth(ctx);
     return await AccountImplementations.getByUserIdWithSummary({ userId: dbUser.id, dbUser }, {});
   }),
 
   getById: protectedProcedure.input(IdInputDto).query(async ({ input, ctx }) => {
-    const { dbUser } = requireAuth(ctx);
+    const { dbUser } = await requireAuth(ctx);
     return await AccountImplementations.getById({ userId: dbUser.id, dbUser }, { id: input.id });
   }),
 
   getHoldings: protectedProcedure.input(IdInputDto).query(async ({ input, ctx }) => {
-    const { dbUser } = requireAuth(ctx);
+    const { dbUser } = await requireAuth(ctx);
     return await AccountImplementations.getHoldings(
       { userId: dbUser.id, dbUser },
       { id: input.id }
@@ -37,7 +37,7 @@ export const accountsRouter = router({
       })
     )
     .mutation(async ({ input, ctx }) => {
-      const { dbUser } = requireAuth(ctx);
+      const { dbUser } = await requireAuth(ctx);
 
       const result = await AccountImplementations.update(
         { userId: dbUser.id, dbUser },
@@ -57,7 +57,7 @@ export const accountsRouter = router({
     }),
 
   delete: protectedProcedure.input(IdInputDto).mutation(async ({ input, ctx }) => {
-    const { dbUser } = requireAuth(ctx);
+    const { dbUser } = await requireAuth(ctx);
 
     const result = await AccountImplementations.delete(
       { userId: dbUser.id, dbUser },
@@ -79,7 +79,7 @@ export const accountsRouter = router({
   bulkDelete: protectedProcedure
     .input(z.object({ ids: z.array(z.string()).min(1) }))
     .mutation(async ({ input, ctx }) => {
-      const { dbUser } = requireAuth(ctx);
+      const { dbUser } = await requireAuth(ctx);
 
       const result = await AccountImplementations.bulkDelete(
         { userId: dbUser.id, dbUser },
@@ -109,7 +109,7 @@ export const accountsRouter = router({
       })
     )
     .mutation(async ({ input, ctx }) => {
-      const { dbUser } = requireAuth(ctx);
+      const { dbUser } = await requireAuth(ctx);
 
       const result = await AccountImplementations.bulkAssignGroups(
         { userId: dbUser.id, dbUser },
@@ -134,7 +134,7 @@ export const accountsRouter = router({
   getCommonGroups: protectedProcedure
     .input(z.object({ accountIds: z.array(z.string()).min(1) }))
     .query(async ({ input, ctx }) => {
-      const { dbUser } = requireAuth(ctx);
+      const { dbUser } = await requireAuth(ctx);
 
       const result = await AccountImplementations.getCommonGroups(
         { userId: dbUser.id, dbUser },

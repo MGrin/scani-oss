@@ -1,6 +1,7 @@
 import { InstitutionImplementations } from '@scani/core/features/implementations';
 import ogs from 'open-graph-scraper';
 import { z } from 'zod';
+import { requireAuth } from '../middleware/auth';
 import { protectedProcedure, router } from '../trpc';
 
 export const institutionsRouter = router({
@@ -15,7 +16,7 @@ export const institutionsRouter = router({
   }),
 
   getByUserIdWithSummary: protectedProcedure.query(async ({ ctx }) => {
-    const { dbUser } = ctx;
+    const { dbUser } = await requireAuth(ctx);
     const userId = dbUser.id;
     return await InstitutionImplementations.getByUserIdWithSummary({ userId, dbUser }, {});
   }),

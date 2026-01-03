@@ -19,7 +19,7 @@ export const schedulesRouter = router({
    * Get all schedules for the authenticated user
    */
   getAll: protectedProcedure.query(async ({ ctx }) => {
-    const { dbUser } = requireAuth(ctx);
+    const { dbUser } = await requireAuth(ctx);
     return await scheduleService.getSchedulesByUserId(dbUser.id);
   }),
 
@@ -27,7 +27,7 @@ export const schedulesRouter = router({
    * Get a schedule by ID
    */
   getById: protectedProcedure.input(IdInputDto).query(async ({ input, ctx }) => {
-    const { dbUser } = requireAuth(ctx);
+    const { dbUser } = await requireAuth(ctx);
     return await scheduleService.getScheduleById(dbUser.id, input.id);
   }),
 
@@ -35,7 +35,7 @@ export const schedulesRouter = router({
    * Get all steps for a schedule
    */
   getSteps: protectedProcedure.input(IdInputDto).query(async ({ input, ctx }) => {
-    const { dbUser } = requireAuth(ctx);
+    const { dbUser } = await requireAuth(ctx);
     return await scheduleService.getScheduleSteps(dbUser.id, input.id);
   }),
 
@@ -43,7 +43,7 @@ export const schedulesRouter = router({
    * Create a new schedule
    */
   create: protectedProcedure.input(CreateScheduleDto).mutation(async ({ input, ctx }) => {
-    const { dbUser } = requireAuth(ctx);
+    const { dbUser } = await requireAuth(ctx);
 
     const result = await scheduleService.createSchedule(input, dbUser.id);
 
@@ -70,7 +70,7 @@ export const schedulesRouter = router({
       })
     )
     .mutation(async ({ input, ctx }) => {
-      const { dbUser } = requireAuth(ctx);
+      const { dbUser } = await requireAuth(ctx);
 
       const result = await scheduleService.updateSchedule(input.id, input.data, dbUser.id);
 
@@ -90,7 +90,7 @@ export const schedulesRouter = router({
    * Delete a schedule
    */
   delete: protectedProcedure.input(IdInputDto).mutation(async ({ input, ctx }) => {
-    const { dbUser } = requireAuth(ctx);
+    const { dbUser } = await requireAuth(ctx);
 
     const result = await scheduleService.deleteSchedule(input.id, dbUser.id);
 
@@ -110,7 +110,7 @@ export const schedulesRouter = router({
    * Create a schedule step
    */
   createStep: protectedProcedure.input(CreateScheduleStepDto).mutation(async ({ input, ctx }) => {
-    const { dbUser } = requireAuth(ctx);
+    const { dbUser } = await requireAuth(ctx);
 
     const result = await scheduleService.createScheduleStep(input, dbUser.id);
 
@@ -138,7 +138,7 @@ export const schedulesRouter = router({
       })
     )
     .mutation(async ({ input, ctx }) => {
-      const { dbUser } = requireAuth(ctx);
+      const { dbUser } = await requireAuth(ctx);
 
       const result = await scheduleService.updateScheduleStep(
         input.id,
@@ -170,7 +170,7 @@ export const schedulesRouter = router({
       })
     )
     .mutation(async ({ input, ctx }) => {
-      const { dbUser } = requireAuth(ctx);
+      const { dbUser } = await requireAuth(ctx);
 
       const result = await scheduleService.deleteScheduleStep(
         input.id,

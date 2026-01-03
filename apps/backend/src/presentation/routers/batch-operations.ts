@@ -34,7 +34,7 @@ export const batchOperationsRouter = router({
   createHoldingsWithDependencies: protectedProcedure
     .input(CreateHoldingsWithDependenciesDto)
     .mutation(async ({ input, ctx }): Promise<CreateHoldingsWithDependenciesResponseDto> => {
-      const { dbUser } = requireAuth(ctx);
+      const { dbUser } = await requireAuth(ctx);
       return await BatchOperationImplementations.createHoldingsWithDependencies(
         { userId: dbUser.id, dbUser },
         input
@@ -44,7 +44,7 @@ export const batchOperationsRouter = router({
   updateHoldingsBatch: protectedProcedure
     .input(UpdateHoldingsBatchSchema)
     .mutation(async ({ input, ctx }): Promise<UpdateHoldingsBatchResult> => {
-      const { dbUser } = requireAuth(ctx);
+      const { dbUser } = await requireAuth(ctx);
       return await BatchOperationImplementations.updateHoldingsBatch(
         { userId: dbUser.id, dbUser },
         input

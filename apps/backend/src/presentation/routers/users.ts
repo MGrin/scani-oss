@@ -10,13 +10,13 @@ export const usersRouter = router({
   // Get current authenticated user
   getCurrent: protectedProcedure.query(async ({ ctx }) => {
     // Use cached user data from auth context instead of querying database
-    const { dbUser } = requireAuth(ctx);
+    const { dbUser } = await requireAuth(ctx);
     return dbUser;
   }),
 
   // Update current user
   updateCurrent: protectedProcedure.input(UpdateUserDto).mutation(async ({ input, ctx }) => {
-    const { dbUser } = requireAuth(ctx);
+    const { dbUser } = await requireAuth(ctx);
     return await SettingsImplementations.updateCurrent({ userId: dbUser.id, dbUser }, input);
   }),
 
@@ -30,7 +30,7 @@ export const usersRouter = router({
 
   // Get user's base currency token (lightweight)
   getBaseCurrency: protectedProcedure.query(async ({ ctx }) => {
-    const { dbUser } = requireAuth(ctx);
+    const { dbUser } = await requireAuth(ctx);
     return await SettingsImplementations.getBaseCurrency({ userId: dbUser.id, dbUser }, {});
   }),
 });

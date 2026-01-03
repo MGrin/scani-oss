@@ -33,7 +33,7 @@ export const walletRouter = router({
    * Detects chains, fetches balances, creates accounts and holdings
    */
   importAddress: protectedProcedure.input(ImportWalletSchema).mutation(async ({ input, ctx }) => {
-    const { dbUser } = requireAuth(ctx);
+    const { dbUser } = await requireAuth(ctx);
 
     const result = await WalletImplementations.importAddress({ userId: dbUser.id, dbUser }, input);
 

@@ -243,7 +243,7 @@ export function createTokensRouter(
         )
       )
       .mutation(async ({ input, ctx }) => {
-        const { dbUser } = requireAuth(ctx);
+        const { dbUser } = await requireAuth(ctx);
 
         // Delegate to service for business logic
         const allTokens = await tokenService.createManyFromExternal(input, dbUser.id);
@@ -284,7 +284,7 @@ export function createTokensRouter(
         })
       )
       .mutation(async ({ input, ctx }) => {
-        const { dbUser } = requireAuth(ctx);
+        const { dbUser } = await requireAuth(ctx);
         const { symbol, metadata, provider } = input;
 
         // Delegate to service for business logic

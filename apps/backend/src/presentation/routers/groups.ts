@@ -14,25 +14,25 @@ import { protectedProcedure, router } from '../trpc';
 export const groupsRouter = router({
   // Get all groups for the user
   getAll: protectedProcedure.query(async ({ ctx }) => {
-    const { dbUser } = requireAuth(ctx);
+    const { dbUser } = await requireAuth(ctx);
     return await GroupImplementations.getAll({ userId: dbUser.id, dbUser }, {});
   }),
 
   // Get all groups with counts (holdings and accounts)
   getAllWithCounts: protectedProcedure.query(async ({ ctx }) => {
-    const { dbUser } = requireAuth(ctx);
+    const { dbUser } = await requireAuth(ctx);
     return await GroupImplementations.getAllWithCounts({ userId: dbUser.id, dbUser }, {});
   }),
 
   // Get a specific group by ID
   getById: protectedProcedure.input(IdInputDto).query(async ({ input, ctx }) => {
-    const { dbUser } = requireAuth(ctx);
+    const { dbUser } = await requireAuth(ctx);
     return await GroupImplementations.getById({ userId: dbUser.id, dbUser }, { id: input.id });
   }),
 
   // Create a new group
   create: protectedProcedure.input(CreateGroupDto).mutation(async ({ input, ctx }) => {
-    const { dbUser } = requireAuth(ctx);
+    const { dbUser } = await requireAuth(ctx);
 
     const result = await GroupImplementations.create({ userId: dbUser.id, dbUser }, input);
 
@@ -57,7 +57,7 @@ export const groupsRouter = router({
       })
     )
     .mutation(async ({ input, ctx }) => {
-      const { dbUser } = requireAuth(ctx);
+      const { dbUser } = await requireAuth(ctx);
 
       const result = await GroupImplementations.update(
         { userId: dbUser.id, dbUser },
@@ -78,7 +78,7 @@ export const groupsRouter = router({
 
   // Delete a group
   delete: protectedProcedure.input(IdInputDto).mutation(async ({ input, ctx }) => {
-    const { dbUser } = requireAuth(ctx);
+    const { dbUser } = await requireAuth(ctx);
 
     const result = await GroupImplementations.delete(
       { userId: dbUser.id, dbUser },
@@ -101,7 +101,7 @@ export const groupsRouter = router({
   bulkDelete: protectedProcedure
     .input(z.object({ ids: z.array(z.string()).min(1) }))
     .mutation(async ({ input, ctx }) => {
-      const { dbUser } = requireAuth(ctx);
+      const { dbUser } = await requireAuth(ctx);
 
       const result = await GroupImplementations.bulkDelete(
         { userId: dbUser.id, dbUser },
@@ -127,7 +127,7 @@ export const groupsRouter = router({
   assignHoldingGroups: protectedProcedure
     .input(AssignHoldingGroupsDto)
     .mutation(async ({ input, ctx }) => {
-      const { dbUser } = requireAuth(ctx);
+      const { dbUser } = await requireAuth(ctx);
 
       const result = await GroupImplementations.assignHoldingGroups(
         { userId: dbUser.id, dbUser },
@@ -152,7 +152,7 @@ export const groupsRouter = router({
   assignAccountGroups: protectedProcedure
     .input(AssignAccountGroupsDto)
     .mutation(async ({ input, ctx }) => {
-      const { dbUser } = requireAuth(ctx);
+      const { dbUser } = await requireAuth(ctx);
 
       const result = await GroupImplementations.assignAccountGroups(
         { userId: dbUser.id, dbUser },
@@ -175,7 +175,7 @@ export const groupsRouter = router({
 
   // Get groups assigned to a holding
   getHoldingGroups: protectedProcedure.input(IdInputDto).query(async ({ input, ctx }) => {
-    const { dbUser } = requireAuth(ctx);
+    const { dbUser } = await requireAuth(ctx);
     return await GroupImplementations.getHoldingGroups(
       { userId: dbUser.id, dbUser },
       { holdingId: input.id }
@@ -184,7 +184,7 @@ export const groupsRouter = router({
 
   // Get groups assigned to an account
   getAccountGroups: protectedProcedure.input(IdInputDto).query(async ({ input, ctx }) => {
-    const { dbUser } = requireAuth(ctx);
+    const { dbUser } = await requireAuth(ctx);
     return await GroupImplementations.getAccountGroups(
       { userId: dbUser.id, dbUser },
       { accountId: input.id }

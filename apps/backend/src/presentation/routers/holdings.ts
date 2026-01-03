@@ -8,7 +8,7 @@ import { protectedProcedure, router } from '../trpc';
 export const holdingsRouter = router({
   // Get all holdings with full details (for Holdings page)
   getWithDetails: protectedProcedure.query(async ({ ctx }) => {
-    const { dbUser } = requireAuth(ctx);
+    const { dbUser } = await requireAuth(ctx);
     return await HoldingImplementations.getWithDetails({ userId: dbUser.id, dbUser }, {});
   }),
 
@@ -20,7 +20,7 @@ export const holdingsRouter = router({
       })
     )
     .mutation(async ({ input, ctx }) => {
-      const { dbUser } = requireAuth(ctx);
+      const { dbUser } = await requireAuth(ctx);
 
       const updatedHolding = await HoldingImplementations.update(
         { userId: dbUser.id, dbUser },
@@ -46,7 +46,7 @@ export const holdingsRouter = router({
   delete: protectedProcedure
     .input(z.object({ id: z.string() }))
     .mutation(async ({ input, ctx }) => {
-      const { dbUser } = requireAuth(ctx);
+      const { dbUser } = await requireAuth(ctx);
 
       const result = await HoldingImplementations.delete(
         { userId: dbUser.id, dbUser },
@@ -75,7 +75,7 @@ export const holdingsRouter = router({
   bulkDelete: protectedProcedure
     .input(z.object({ ids: z.array(z.string()).min(1) }))
     .mutation(async ({ input, ctx }) => {
-      const { dbUser } = requireAuth(ctx);
+      const { dbUser } = await requireAuth(ctx);
 
       const result = await HoldingImplementations.bulkDelete(
         { userId: dbUser.id, dbUser },
@@ -100,7 +100,7 @@ export const holdingsRouter = router({
   updatePrice: protectedProcedure
     .input(z.object({ id: z.string() }))
     .mutation(async ({ input, ctx }) => {
-      const { dbUser } = requireAuth(ctx);
+      const { dbUser } = await requireAuth(ctx);
 
       const result = await HoldingImplementations.updatePrice(
         { userId: dbUser.id, dbUser },
@@ -127,7 +127,7 @@ export const holdingsRouter = router({
       })
     )
     .mutation(async ({ input, ctx }) => {
-      const { dbUser } = requireAuth(ctx);
+      const { dbUser } = await requireAuth(ctx);
 
       const result = await HoldingImplementations.bulkAssignGroups(
         { userId: dbUser.id, dbUser },
@@ -152,7 +152,7 @@ export const holdingsRouter = router({
   getCommonGroups: protectedProcedure
     .input(z.object({ holdingIds: z.array(z.string()).min(1) }))
     .query(async ({ input, ctx }) => {
-      const { dbUser } = requireAuth(ctx);
+      const { dbUser } = await requireAuth(ctx);
 
       const result = await HoldingImplementations.getCommonGroups(
         { userId: dbUser.id, dbUser },
