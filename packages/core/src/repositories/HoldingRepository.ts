@@ -5,6 +5,28 @@ import * as schema from '../database/schema';
 import type { Holding, NewHolding, Token } from '../domain/entities';
 import { BaseRepository, type DatabaseTransaction } from './BaseRepository';
 
+/**
+ * Type for holdings with full details including token, account, and institution info
+ */
+export interface HoldingWithFullDetails {
+  holding: Holding;
+  token: Token & { typeCode: string; typeName: string };
+  account: {
+    id: string;
+    name: string;
+    institutionId: string;
+    typeCode: string;
+    typeName: string;
+  };
+  institution: {
+    id: string;
+    name: string;
+    typeCode: string;
+    typeName: string;
+    website: string | null;
+  };
+}
+
 @Service()
 export class HoldingRepository extends BaseRepository<Holding, NewHolding> {
   protected readonly table = schema.holdings;
@@ -137,26 +159,7 @@ export class HoldingRepository extends BaseRepository<Holding, NewHolding> {
     accountId?: string,
     transaction?: DatabaseTransaction,
     includeHidden = false
-  ): Promise<
-    Array<{
-      holding: Holding;
-      token: Token & { typeCode: string; typeName: string };
-      account: {
-        id: string;
-        name: string;
-        institutionId: string;
-        typeCode: string;
-        typeName: string;
-      };
-      institution: {
-        id: string;
-        name: string;
-        typeCode: string;
-        typeName: string;
-        website: string | null;
-      };
-    }>
-  > {
+  ): Promise<HoldingWithFullDetails[]> {
     try {
       const database = this.getDb(transaction);
 

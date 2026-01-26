@@ -1,5 +1,6 @@
 import type { CreateTokenInput } from '@scani/shared';
 import { Container, Service } from 'typedi';
+import type { DatabaseTransaction } from '../database/transaction';
 import type { Token, TokenType } from '../domain/entities';
 import { TokenTypeRepository } from '../repositories/EnumRepositories';
 import { TokenPriceRepository } from '../repositories/TokenPriceRepository';
@@ -402,14 +403,15 @@ export class TokenService extends BaseService {
       confidence: number;
     },
     tokenTypeId: string,
-    defaultDecimals = 18
+    defaultDecimals = 18,
+    transaction?: DatabaseTransaction
   ): Promise<Token> {
     try {
       // Validate that we have a valid token type ID
       this.validateNonEmptyString(tokenTypeId, 'tokenTypeId');
 
       // Verify the provided token type exists
-      const tokenType = await this.tokenTypeRepository.findById(tokenTypeId);
+      const tokenType = await this.tokenTypeRepository.findById(tokenTypeId, transaction);
       if (!tokenType) {
         throw new Error(`Token type with ID '${tokenTypeId}' not found`);
       }
@@ -417,7 +419,8 @@ export class TokenService extends BaseService {
       // Try to find existing token by symbol and type
       let token = await this.tokenRepository.findBySymbolAndType(
         tokenMapping.token.symbol,
-        tokenTypeId
+        tokenTypeId,
+        transaction
       );
 
       if (token) {
@@ -429,9 +432,13 @@ export class TokenService extends BaseService {
           ...newMetadata,
         };
 
-        token = await this.tokenRepository.update(token.id, {
-          providerMetadata: JSON.stringify(updatedMetadata),
-        });
+        token = await this.tokenRepository.update(
+          token.id,
+          {
+            providerMetadata: JSON.stringify(updatedMetadata),
+          },
+          transaction
+        );
 
         this.assertExists(token, 'Failed to update token');
       } else {
@@ -449,16 +456,19 @@ export class TokenService extends BaseService {
         }
 
         // Create new token
-        token = await this.tokenRepository.create({
-          symbol: tokenMapping.token.symbol.toUpperCase(),
-          name: tokenMapping.token.name,
-          typeId: tokenTypeId,
-          decimals: tokenMapping.token.decimals ?? defaultDecimals,
-          iconUrl: tokenMapping.token.iconUrl || null,
-          providerMetadata: tokenMapping.token.providerMetadata || '{}',
-          isScamProbability: scamProbability,
-          isActive: true,
-        });
+        token = await this.tokenRepository.create(
+          {
+            symbol: tokenMapping.token.symbol.toUpperCase(),
+            name: tokenMapping.token.name,
+            typeId: tokenTypeId,
+            decimals: tokenMapping.token.decimals ?? defaultDecimals,
+            iconUrl: tokenMapping.token.iconUrl || null,
+            providerMetadata: tokenMapping.token.providerMetadata || '{}',
+            isScamProbability: scamProbability,
+            isActive: true,
+          },
+          transaction
+        );
 
         this.assertExists(token, 'Failed to create token');
         this.logInfo('Token created from integration mapping', {
@@ -487,6 +497,7 @@ export class TokenService extends BaseService {
    * @param tokenMapping - Token mapping from blockchain integration
    * @param cryptoTokenTypeId - The crypto token type ID (must be 'crypto' type)
    * @param defaultDecimals - Default decimals if not provided (typically 18 for EVM chains)
+   * @param transaction - Optional database transaction
    */
   async findOrCreateTokenFromIntegrationMapping(
     tokenMapping: {
@@ -502,14 +513,15 @@ export class TokenService extends BaseService {
       confidence: number;
     },
     cryptoTokenTypeId: string,
-    defaultDecimals = 18
+    defaultDecimals = 18,
+    transaction?: DatabaseTransaction
   ): Promise<Token> {
     try {
       // Validate that we have a valid crypto token type ID
       this.validateNonEmptyString(cryptoTokenTypeId, 'cryptoTokenTypeId');
 
       // Verify the provided token type is 'crypto' to enforce blockchain token requirement
-      const tokenType = await this.tokenTypeRepository.findById(cryptoTokenTypeId);
+      const tokenType = await this.tokenTypeRepository.findById(cryptoTokenTypeId, transaction);
       if (!tokenType) {
         throw new Error(`Token type with ID '${cryptoTokenTypeId}' not found`);
       }
@@ -523,7 +535,8 @@ export class TokenService extends BaseService {
       return this.findOrCreateTokenFromIntegration(
         tokenMapping,
         cryptoTokenTypeId,
-        defaultDecimals
+        defaultDecimals,
+        transaction
       );
     } catch (error) {
       throw this.handleError(error, 'findOrCreateTokenFromIntegrationMapping');

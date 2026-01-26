@@ -3,7 +3,7 @@ import type {
   CreateHoldingsWithDependenciesResponseDto,
 } from '@scani/shared';
 import Container, { Service } from 'typedi';
-import { getDb } from '../database/connection';
+import { withTransaction } from '../database/transaction';
 import type { User } from '../domain/entities';
 import { AccountService } from '../services/AccountService';
 import { HoldingService } from '../services/HoldingService';
@@ -24,152 +24,163 @@ export class CreateHoldingsWithDependenciesUseCase {
     input: CreateHoldingsWithDependenciesInput,
     user: User
   ): Promise<CreateHoldingsWithDependenciesResponseDto> {
-    const result = await getDb().transaction(async (tx) => {
-      if (!user.baseCurrencyId) {
-        throw new Error('User must have a base currency set');
-      }
-
-      const userId = user.id;
-      logger.debug(
-        {
-          userId,
-          accountId: input.accountId,
-          hasInstitution: !!input.institution,
-          hasAccount: !!input.account,
-          holdingsCount: input.holdings.length,
-          holdings: input.holdings.map((h) => ({
-            tokenId: h.tokenId,
-            balance: h.balance,
-          })),
-        },
-        'Creating holdings with dependencies'
-      );
-      let accountId: string;
-      let institutionId: string | undefined;
-      let createdAccount = false;
-      let createdInstitution = false;
-
-      // Step 1: Ensure we have an accountId
-      if (input.accountId) {
-        // Use existing account
-        accountId = input.accountId;
-        logger.debug({ userId, accountId }, 'Using existing account');
-      } else {
-        // Need to create account
-        if (!input.account) {
-          throw new Error('Either accountId or account details must be provided');
+    // Use new withTransaction helper for better error handling and logging
+    const result = await withTransaction(
+      async (tx) => {
+        if (!user.baseCurrencyId) {
+          throw new Error('User must have a base currency set');
         }
 
-        if (!input.account.institutionId) {
-          // Need to create institution
-          if (!input.institution) {
-            throw new Error(
-              'Institution details are required when creating new account without institutionId'
-            );
+        const userId = user.id;
+        logger.debug(
+          {
+            userId,
+            accountId: input.accountId,
+            hasInstitution: !!input.institution,
+            hasAccount: !!input.account,
+            holdingsCount: input.holdings.length,
+            holdings: input.holdings.map((h) => ({
+              tokenId: h.tokenId,
+              balance: h.balance,
+            })),
+          },
+          'Creating holdings with dependencies'
+        );
+        let accountId: string;
+        let institutionId: string | undefined;
+        let createdAccount = false;
+        let createdInstitution = false;
+
+        // Step 1: Ensure we have an accountId
+        if (input.accountId) {
+          // Use existing account
+          accountId = input.accountId;
+          logger.debug({ userId, accountId }, 'Using existing account');
+        } else {
+          // Need to create account
+          if (!input.account) {
+            throw new Error('Either accountId or account details must be provided');
           }
 
-          logger.debug(
-            { userId, institutionName: input.institution.name },
-            'Creating new institution'
-          );
+          if (!input.account.institutionId) {
+            // Need to create institution
+            if (!input.institution) {
+              throw new Error(
+                'Institution details are required when creating new account without institutionId'
+              );
+            }
 
-          const institution = await this.institutionService.createInstitution(
-            input.institution,
-            userId,
-            tx
-          );
+            logger.debug(
+              { userId, institutionName: input.institution.name },
+              'Creating new institution'
+            );
 
-          logger.debug(
-            { userId, institutionId: institution.id, account: input.account },
-            'Creating account with new institution'
-          );
-          const account = await this.accountService.createAccount(
-            {
-              ...input.account,
-              institutionId: institution.id,
-            },
-            userId,
-            tx
-          );
+            const institution = await this.institutionService.createInstitution(
+              input.institution,
+              userId,
+              tx
+            );
 
-          institutionId = institution.id;
-          accountId = account.id;
-          createdInstitution = true;
-          createdAccount = true;
+            logger.debug(
+              { userId, institutionId: institution.id, account: input.account },
+              'Creating account with new institution'
+            );
+            const account = await this.accountService.createAccount(
+              {
+                ...input.account,
+                institutionId: institution.id,
+              },
+              userId,
+              tx
+            );
 
-          logger.info({ userId, institutionId, accountId }, 'Created institution and account');
-        } else {
-          // Use existing institution, create account only
-          institutionId = input.account.institutionId;
+            institutionId = institution.id;
+            accountId = account.id;
+            createdInstitution = true;
+            createdAccount = true;
 
-          logger.debug({ userId, institutionId }, 'Creating account with existing institution');
+            logger.info({ userId, institutionId, accountId }, 'Created institution and account');
+          } else {
+            // Use existing institution, create account only
+            institutionId = input.account.institutionId;
 
-          const account = await this.accountService.createAccount(input.account, userId, tx);
+            logger.debug({ userId, institutionId }, 'Creating account with existing institution');
 
-          accountId = account.id;
-          createdAccount = true;
+            const account = await this.accountService.createAccount(input.account, userId, tx);
 
-          logger.info({ userId, institutionId, accountId }, 'Created account');
+            accountId = account.id;
+            createdAccount = true;
+
+            logger.info({ userId, institutionId, accountId }, 'Created account');
+          }
         }
-      }
 
-      logger.info(
-        {
-          userId,
-          accountId,
-          totalHoldings: input.holdings.length,
-          holdingsToCreate: input.holdings.length,
-          holdingsToCreateDetails: input.holdings.map((h) => ({
-            tokenId: h.tokenId,
-            balance: h.balance,
-          })),
-        },
-        'Creating holdings for account'
-      );
-
-      const account = await this.accountService.getAccountById(userId, accountId, tx);
-      if (account.userId !== userId) {
-        throw new Error('Account does not belong to the user');
-      }
-
-      const createdHoldings = await this.holdingService.createManyHoldings(
-        input.holdings.map((h) => {
-          return {
+        logger.info(
+          {
+            userId,
             accountId,
-            tokenId: h.tokenId!,
-            balance: h.balance,
-          };
-        }),
-        userId,
-        tx
-      );
+            totalHoldings: input.holdings.length,
+            holdingsToCreate: input.holdings.length,
+            holdingsToCreateDetails: input.holdings.map((h) => ({
+              tokenId: h.tokenId,
+              balance: h.balance,
+            })),
+          },
+          'Creating holdings for account'
+        );
 
-      logger.info(
-        {
+        const account = await this.accountService.getAccountById(userId, accountId, tx);
+        if (account.userId !== userId) {
+          throw new Error('Account does not belong to the user');
+        }
+
+        const createdHoldings = await this.holdingService.createManyHoldings(
+          input.holdings.map((h) => {
+            return {
+              accountId,
+              tokenId: h.tokenId!,
+              balance: h.balance,
+            };
+          }),
           userId,
+          tx
+        );
+
+        logger.info(
+          {
+            userId,
+            accountId,
+            institutionId,
+            createdAccount,
+            createdInstitution,
+            holdingsCreated: createdHoldings.length,
+          },
+          'Completed creating holdings with dependencies'
+        );
+
+        return {
+          institutionId: account.institutionId,
           accountId,
-          institutionId,
-          createdAccount,
+          holdings: createdHoldings,
           createdInstitution,
-          holdingsCreated: createdHoldings.length,
-        },
-        'Completed creating holdings with dependencies'
-      );
+          createdAccount,
+        };
+      },
+      {
+        name: 'create-holdings-with-dependencies',
+        timeout: 30000, // Longer timeout for complex operation
+      }
+    );
 
-      return {
-        institutionId: account.institutionId,
-        accountId,
-        holdings: createdHoldings,
-        createdInstitution,
-        createdAccount,
-      };
-    });
-
+    // CRITICAL IMPROVEMENT: Portfolio valuation happens AFTER transaction commits
+    // This separates the external API call (pricing) from database operations
+    // Connection is released before potentially slow price fetching occurs
     await this.portfolioValuationService.getUserPortfolioValue(
       user.id,
       user.baseCurrencyId!,
       result.accountId
     );
+
     return result;
   }
 }

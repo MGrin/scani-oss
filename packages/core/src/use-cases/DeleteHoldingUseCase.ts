@@ -1,7 +1,7 @@
 import { and, eq } from 'drizzle-orm';
 import { Service } from 'typedi';
-import { db } from '../database/connection';
 import * as schema from '../database/schema';
+import { withTransaction } from '../database/transaction';
 import { createComponentLogger } from '../utils/logger';
 
 const logger = createComponentLogger('use-case:delete-holding');
@@ -36,81 +36,91 @@ export class DeleteHoldingUseCase {
       'Deleting holding'
     );
 
-    // First, fetch the holding to check its source
-    const [holding] = await db
-      .select()
-      .from(schema.holdings)
-      .where(and(eq(schema.holdings.id, holdingId), eq(schema.holdings.userId, userId)))
-      .limit(1);
+    // Use transaction to ensure atomicity
+    // This prevents race conditions where holding could be modified between fetch and delete/update
+    return await withTransaction(
+      async (tx) => {
+        // First, fetch the holding to check its source
+        const [holding] = await tx
+          .select()
+          .from(schema.holdings)
+          .where(and(eq(schema.holdings.id, holdingId), eq(schema.holdings.userId, userId)))
+          .limit(1);
 
-    if (!holding) {
-      logger.warn(
-        {
-          userId,
-          holdingId,
-        },
-        'Holding not found for deletion'
-      );
-      throw new Error('Holding not found');
-    }
+        if (!holding) {
+          logger.warn(
+            {
+              userId,
+              holdingId,
+            },
+            'Holding not found for deletion'
+          );
+          throw new Error('Holding not found');
+        }
 
-    // If the holding is from blockchain, mark as hidden instead of deleting
-    if (holding.source === 'blockchain') {
-      await db
-        .update(schema.holdings)
-        .set({
-          isHidden: true,
-        })
-        .where(eq(schema.holdings.id, holdingId));
+        // If the holding is from blockchain, mark as hidden instead of deleting
+        if (holding.source === 'blockchain') {
+          await tx
+            .update(schema.holdings)
+            .set({
+              isHidden: true,
+            })
+            .where(eq(schema.holdings.id, holdingId));
 
-      logger.info(
-        {
-          holdingId: holding.id,
-          accountId: holding.accountId,
-          tokenId: holding.tokenId,
-          source: holding.source,
-        },
-        'Blockchain holding marked as hidden'
-      );
+          logger.info(
+            {
+              holdingId: holding.id,
+              accountId: holding.accountId,
+              tokenId: holding.tokenId,
+              source: holding.source,
+            },
+            'Blockchain holding marked as hidden'
+          );
 
-      return {
-        success: true,
-        deleted: holding,
-        wasHidden: true,
-      };
-    }
+          return {
+            success: true,
+            deleted: holding,
+            wasHidden: true,
+          };
+        }
 
-    // For manual holdings, permanently delete
-    const [deletedHolding] = await db
-      .delete(schema.holdings)
-      .where(and(eq(schema.holdings.id, holdingId), eq(schema.holdings.userId, userId)))
-      .returning();
+        // For manual holdings, permanently delete
+        const [deletedHolding] = await tx
+          .delete(schema.holdings)
+          .where(and(eq(schema.holdings.id, holdingId), eq(schema.holdings.userId, userId)))
+          .returning();
 
-    if (!deletedHolding) {
-      logger.warn(
-        {
-          userId,
-          holdingId,
-        },
-        'Holding not found for deletion'
-      );
-      throw new Error('Holding not found');
-    }
+        if (!deletedHolding) {
+          logger.warn(
+            {
+              userId,
+              holdingId,
+            },
+            'Holding not found for deletion'
+          );
+          throw new Error('Holding not found');
+        }
 
-    logger.info(
-      {
-        holdingId: deletedHolding.id,
-        accountId: deletedHolding.accountId,
-        tokenId: deletedHolding.tokenId,
-        source: deletedHolding.source,
+        logger.info(
+          {
+            holdingId: deletedHolding.id,
+            accountId: deletedHolding.accountId,
+            tokenId: deletedHolding.tokenId,
+            source: deletedHolding.source,
+          },
+          'Manual holding deleted successfully'
+        );
+
+        return {
+          success: true,
+          deleted: deletedHolding,
+          wasHidden: false,
+        };
       },
-      'Manual holding deleted successfully'
+      {
+        name: 'delete-holding',
+        timeout: 10000,
+      }
     );
-
-    return {
-      success: true,
-      deleted: deletedHolding,
-      wasHidden: false,
-    };
   }
 }

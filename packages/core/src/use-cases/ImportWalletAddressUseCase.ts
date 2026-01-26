@@ -22,6 +22,7 @@ import { and, eq } from 'drizzle-orm';
 import { Container, Service } from 'typedi';
 import { db } from '../database/connection';
 import * as schema from '../database/schema';
+import { withTransaction } from '../database/transaction';
 import { HoldingRepository } from '../repositories/HoldingRepository';
 import { InstitutionBlockchainMappingRepository } from '../repositories/InstitutionBlockchainMappingRepository';
 import { IntegrationCredentialsService } from '../services/IntegrationCredentialsService';
@@ -98,7 +99,7 @@ export class ImportWalletAddressUseCase {
 
     // Use integration-based approach
     logger.debug('Using integration-based wallet import');
-    return await this.executeWithIntegrations(input, userId, user);
+    return await this.executeWithIntegrations(input, userId);
   }
 
   /**
@@ -106,8 +107,7 @@ export class ImportWalletAddressUseCase {
    */
   private async executeWithIntegrations(
     input: ImportWalletInput,
-    userId: string,
-    user: typeof schema.users.$inferSelect
+    userId: string
   ): Promise<ImportWalletResult> {
     logger.info(
       {
@@ -117,7 +117,7 @@ export class ImportWalletAddressUseCase {
       'Starting wallet import with integrations'
     );
 
-    // Detect which chains (institutions) this wallet exists on
+    // STEP 1: Quick metadata queries (no long-running operations, no transaction)
     logger.debug(
       {
         userId,
@@ -189,11 +189,6 @@ export class ImportWalletAddressUseCase {
       }
     }
 
-    // Process each institution (chain)
-    const accounts: ImportWalletResult['accounts'] = [];
-    const holdings: ImportWalletResult['holdings'] = [];
-    const errors: ImportWalletResult['errors'] = [];
-
     // Get account type for crypto wallets
     const [walletAccountType] = await db
       .select()
@@ -220,6 +215,24 @@ export class ImportWalletAddressUseCase {
       { userId, institutionCount: detectedInstitutionIds.length },
       'Processing institutions for wallet import'
     );
+
+    // STEP 2: Fetch ALL blockchain data (SLOW external API calls, no DB connection held)
+    const blockchainData: Array<{
+      institutionId: string;
+      institution: typeof schema.institutions.$inferSelect;
+      chainId: string;
+      integration: ScaniIntegration;
+      holdingsResult: Awaited<ReturnType<ScaniIntegration['fetchHoldings']>>;
+      tokenMappings: Array<{
+        holding: Awaited<ReturnType<ScaniIntegration['fetchHoldings']>>['holdings'][0];
+        tokenMapping: Awaited<ReturnType<ScaniIntegration['mapToken']>>;
+      }>;
+      existingAccount: typeof schema.accounts.$inferSelect | null;
+      accountName: string;
+      error?: string;
+    }> = [];
+
+    const errors: ImportWalletResult['errors'] = [];
 
     for (const institutionId of detectedInstitutionIds) {
       try {
@@ -274,36 +287,132 @@ export class ImportWalletAddressUseCase {
         }
 
         logger.info(
-          { userId, institutionId, institutionName: institution.name, chainId: mapping.chainId },
-          'Processing wallet on institution'
+          {
+            userId,
+            institutionId,
+            institutionName: institution.name,
+            chainId: mapping.chainId,
+          },
+          'Fetching blockchain holdings (SLOW external API call)'
         );
 
-        const result = await this.processWalletWithIntegration(
-          integration,
-          input.address,
-          userWallet.id,
-          userId,
-          user.baseCurrencyId || '',
-          walletAccountType.id,
-          cryptoTokenType.id,
-          institution,
-          mapping.chainId,
-          input.displayName
+        // Check for existing account
+        const accountName = this.generateAccountName(
+          institution.name,
+          input.displayName || input.address
         );
 
-        accounts.push(result.account);
-        holdings.push(...result.holdings);
+        const existingAccounts = await db
+          .select()
+          .from(schema.accounts)
+          .where(
+            and(
+              eq(schema.accounts.userId, userId),
+              eq(schema.accounts.institutionId, institution.id),
+              eq(schema.accounts.name, accountName)
+            )
+          )
+          .limit(1);
+
+        const existingAccount: typeof schema.accounts.$inferSelect | null =
+          existingAccounts.length > 0 ? existingAccounts[0]! : null;
+
+        // EXTERNAL API CALL - Fetch holdings from blockchain (5-30 seconds each)
+        const holdingsResult = await integration.fetchHoldings(input.address);
 
         logger.info(
           {
             userId,
             institutionId,
             institutionName: institution.name,
-            accountId: result.account.id,
-            holdingsCount: result.holdings.length,
+            holdingsCount: holdingsResult.holdings.length,
+            errorsCount: holdingsResult.errors?.length || 0,
           },
-          'Successfully processed institution'
+          'Holdings fetched from blockchain'
         );
+
+        if (holdingsResult.errors && holdingsResult.errors.length > 0) {
+          logger.warn(
+            {
+              userId,
+              institutionId: institution.id,
+              errors: holdingsResult.errors,
+            },
+            'Errors fetching holdings from integration'
+          );
+        }
+
+        // Map all tokens from external API (no DB connection held)
+        const tokenMappings: Array<{
+          holding: (typeof holdingsResult.holdings)[0];
+          tokenMapping: Awaited<ReturnType<typeof integration.mapToken>>;
+        }> = [];
+
+        for (const holding of holdingsResult.holdings) {
+          // Skip tokens with missing required data
+          if (!holding.symbol || !holding.balance) {
+            logger.warn(
+              {
+                userId,
+                institutionName: institution.name,
+                holding,
+              },
+              'Skipping holding with missing symbol or balance'
+            );
+            continue;
+          }
+
+          // Validate balance is a valid decimal string
+          if (!isValidDecimalString(holding.balance)) {
+            logger.warn(
+              {
+                userId,
+                institutionName: institution.name,
+                tokenSymbol: holding.symbol,
+                balance: holding.balance,
+              },
+              'Skipping holding with invalid balance format'
+            );
+            continue;
+          }
+
+          try {
+            // Map the integration holding to our token format (external API call)
+            const tokenMapping = await integration.mapToken(holding);
+            tokenMappings.push({ holding, tokenMapping });
+          } catch (error) {
+            logger.error(
+              {
+                userId,
+                tokenSymbol: holding.symbol,
+                institutionName: institution.name,
+                error: error instanceof Error ? error.message : String(error),
+              },
+              'Failed to map token, skipping'
+            );
+          }
+        }
+
+        logger.info(
+          {
+            userId,
+            institutionId,
+            institutionName: institution.name,
+            holdingsToProcess: tokenMappings.length,
+          },
+          'Token mappings prepared'
+        );
+
+        blockchainData.push({
+          institutionId,
+          institution,
+          chainId: mapping.chainId,
+          integration,
+          holdingsResult,
+          tokenMappings,
+          existingAccount,
+          accountName,
+        });
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : String(error);
         const errorStack = error instanceof Error ? error.stack : undefined;
@@ -315,7 +424,7 @@ export class ImportWalletAddressUseCase {
             error: errorMessage,
             stack: errorStack,
           },
-          'Failed to process wallet on institution'
+          'Failed to fetch blockchain data for institution'
         );
         errors.push({
           chainId: institutionId,
@@ -325,11 +434,300 @@ export class ImportWalletAddressUseCase {
       }
     }
 
+    logger.info(
+      { userId, institutionsWithData: blockchainData.length },
+      'All blockchain data fetched, starting database transaction'
+    );
+
+    // STEP 3: ALL database operations in a SINGLE TRANSACTION
+    const result = await withTransaction(
+      async (tx) => {
+        const accounts: ImportWalletResult['accounts'] = [];
+        const holdings: ImportWalletResult['holdings'] = [];
+
+        for (const chainData of blockchainData) {
+          try {
+            const {
+              institutionId,
+              institution,
+              chainId,
+              tokenMappings,
+              existingAccount,
+              accountName,
+            } = chainData;
+
+            let accountId: string;
+
+            // Create or update account (within transaction)
+            if (existingAccount) {
+              accountId = existingAccount.id;
+              await tx
+                .update(schema.accounts)
+                .set({
+                  metadata: {
+                    walletAddress: input.address,
+                    chainId,
+                    chainName: institution.name,
+                    displayName: input.displayName,
+                    lastSync: new Date().toISOString(),
+                    userWalletId: userWallet.id,
+                    migrated: true,
+                  },
+                  updatedAt: new Date(),
+                })
+                .where(eq(schema.accounts.id, accountId));
+
+              logger.info(
+                {
+                  userId,
+                  accountId,
+                  userWalletId: userWallet.id,
+                  institutionName: institution.name,
+                },
+                'Updated existing account with user_wallet_id'
+              );
+            } else {
+              const [newAccount] = await tx
+                .insert(schema.accounts)
+                .values({
+                  userId,
+                  institutionId: institution.id,
+                  name: accountName,
+                  typeId: walletAccountType.id,
+                  description: `Crypto wallet on ${institution.name}`,
+                  metadata: {
+                    walletAddress: input.address,
+                    chainId,
+                    chainName: institution.name,
+                    displayName: input.displayName,
+                    lastSync: new Date().toISOString(),
+                    userWalletId: userWallet.id,
+                    migrated: true,
+                  },
+                  isActive: true,
+                })
+                .returning();
+
+              if (!newAccount) {
+                throw new Error('Failed to create account');
+              }
+
+              accountId = newAccount.id;
+              logger.info(
+                {
+                  userId,
+                  accountId,
+                  userWalletId: userWallet.id,
+                  institutionName: institution.name,
+                },
+                'Created new account with user_wallet_id'
+              );
+            }
+
+            // Store/update credentials if needed (within transaction)
+            try {
+              const existingCredentials = await this.integrationCredentialsService.getCredentials(
+                userId,
+                institution.id
+              );
+
+              if (!existingCredentials) {
+                await this.integrationCredentialsService.storeCredentials(
+                  userId,
+                  institution.id,
+                  { type: 'public_rpc' },
+                  'rpc'
+                );
+
+                logger.debug(
+                  { institutionId: institution.id },
+                  'Stored public RPC credentials marker'
+                );
+              }
+            } catch (error) {
+              logger.debug(
+                {
+                  institutionId: institution.id,
+                  error: error instanceof Error ? error.message : String(error),
+                },
+                'Failed to store credentials (non-critical)'
+              );
+            }
+
+            // Process all holdings (within transaction)
+            for (const { holding, tokenMapping } of tokenMappings) {
+              try {
+                logger.debug(
+                  {
+                    userId,
+                    institutionName: institution.name,
+                    tokenSymbol: holding.symbol,
+                    balance: holding.balance,
+                  },
+                  'Processing holding'
+                );
+
+                // Find or create token (within transaction)
+                const token = await this.tokenService.findOrCreateTokenFromIntegrationMapping(
+                  tokenMapping,
+                  cryptoTokenType.id,
+                  18, // Default decimals for EVM chains
+                  tx
+                );
+
+                logger.debug(
+                  {
+                    userId,
+                    tokenId: token.id,
+                    tokenSymbol: token.symbol,
+                    institutionName: institution.name,
+                  },
+                  'Token resolved'
+                );
+
+                // Check if holding already exists (within transaction, including hidden ones)
+                const existingHolding = await this.holdingRepository.findByAccountAndToken(
+                  accountId,
+                  token.id,
+                  userId,
+                  undefined, // excludeId
+                  tx, // transaction
+                  true // includeHidden
+                );
+
+                if (existingHolding) {
+                  // Update existing holding and unhide if it was hidden (within transaction)
+                  await tx
+                    .update(schema.holdings)
+                    .set({
+                      balance: holding.balance,
+                      isHidden: false, // Unhide if balance is non-zero
+                      lastUpdated: new Date(),
+                    })
+                    .where(eq(schema.holdings.id, existingHolding.id));
+
+                  logger.info(
+                    {
+                      userId,
+                      holdingId: existingHolding.id,
+                      tokenSymbol: token.symbol,
+                      balance: holding.balance,
+                      institutionName: institution.name,
+                    },
+                    'Updated existing holding'
+                  );
+
+                  holdings.push({
+                    id: existingHolding.id,
+                    accountId,
+                    tokenSymbol: token.symbol,
+                    tokenName: token.name,
+                    balance: holding.balance,
+                  });
+                } else {
+                  // Create new holding (within transaction)
+                  const [newHolding] = await tx
+                    .insert(schema.holdings)
+                    .values({
+                      userId,
+                      accountId,
+                      tokenId: token.id,
+                      balance: holding.balance,
+                      source: 'blockchain',
+                      isHidden: false,
+                      lastUpdated: new Date(),
+                    })
+                    .returning();
+
+                  if (!newHolding) {
+                    throw new Error('Failed to create holding');
+                  }
+
+                  logger.info(
+                    {
+                      userId,
+                      holdingId: newHolding.id,
+                      tokenSymbol: token.symbol,
+                      balance: holding.balance,
+                      institutionName: institution.name,
+                    },
+                    'Created new holding'
+                  );
+
+                  holdings.push({
+                    id: newHolding.id,
+                    accountId,
+                    tokenSymbol: token.symbol,
+                    tokenName: token.name,
+                    balance: holding.balance,
+                  });
+                }
+              } catch (error) {
+                logger.error(
+                  {
+                    userId,
+                    tokenSymbol: holding?.symbol || 'unknown',
+                    tokenName: holding?.name || 'unknown',
+                    balance: holding?.balance || 'unknown',
+                    institutionName: institution.name,
+                    error: error instanceof Error ? error.message : String(error),
+                    stack: error instanceof Error ? error.stack : undefined,
+                  },
+                  'Failed to create holding for token'
+                );
+              }
+            }
+
+            logger.info(
+              {
+                userId,
+                institutionId,
+                institutionName: institution.name,
+                holdingsCreated: holdings.length,
+                holdingsProcessed: tokenMappings.length,
+              },
+              'Completed processing holdings for institution'
+            );
+
+            accounts.push({
+              id: accountId,
+              name: accountName,
+              chainId,
+              chainName: institution.name,
+              institutionId: institution.id,
+              institutionName: institution.name,
+            });
+          } catch (error) {
+            const errorMessage = error instanceof Error ? error.message : String(error);
+            logger.error(
+              {
+                userId,
+                institutionId: chainData.institutionId,
+                error: errorMessage,
+              },
+              'Failed to process institution in transaction'
+            );
+            errors.push({
+              chainId: chainData.institutionId,
+              chainName: chainData.institution.name,
+              error: errorMessage,
+            });
+          }
+        }
+
+        return { accounts, holdings };
+      },
+      {
+        name: 'importWallet',
+        timeout: 120000, // 120 seconds for large imports
+      }
+    );
+
     const finalResult = {
-      accounts,
-      holdings,
+      accounts: result.accounts,
+      holdings: result.holdings,
       chainsDetected: detectedInstitutionIds.length,
-      tokensImported: holdings.length,
+      tokensImported: result.holdings.length,
       errors,
     };
 
@@ -337,372 +735,15 @@ export class ImportWalletAddressUseCase {
       {
         userId,
         institutionsDetected: detectedInstitutionIds.length,
-        accountsCreated: accounts.length,
-        holdingsCreated: holdings.length,
+        accountsCreated: result.accounts.length,
+        holdingsCreated: result.holdings.length,
         errorsCount: errors.length,
-        success: accounts.length > 0 || holdings.length > 0,
+        success: result.accounts.length > 0 || result.holdings.length > 0,
       },
       'Wallet import completed with integrations'
     );
 
     return finalResult;
-  }
-
-  /**
-   * Process a wallet using integration-based approach
-   */
-  private async processWalletWithIntegration(
-    integration: ScaniIntegration,
-    walletAddress: string,
-    userWalletId: string,
-    userId: string,
-    _baseCurrencyId: string,
-    walletAccountTypeId: string,
-    cryptoTokenTypeId: string,
-    institution: typeof schema.institutions.$inferSelect,
-    chainId: string,
-    displayNameOverride?: string
-  ): Promise<{
-    account: ImportWalletResult['accounts'][0];
-    holdings: ImportWalletResult['holdings'];
-  }> {
-    logger.debug(
-      {
-        userId,
-        institutionId: institution.id,
-        institutionName: institution.name,
-        chainId,
-        walletAddress: `${walletAddress.substring(0, 10)}...`,
-      },
-      'Fetching holdings from integration'
-    );
-
-    // Fetch holdings from the integration
-    const holdingsResult = await integration.fetchHoldings(walletAddress);
-
-    logger.info(
-      {
-        userId,
-        institutionId: institution.id,
-        institutionName: institution.name,
-        holdingsCount: holdingsResult.holdings.length,
-        errorsCount: holdingsResult.errors?.length || 0,
-      },
-      'Holdings fetched from integration'
-    );
-
-    if (holdingsResult.errors && holdingsResult.errors.length > 0) {
-      logger.warn(
-        { userId, institutionId: institution.id, errors: holdingsResult.errors },
-        'Errors fetching holdings from integration'
-      );
-    }
-
-    // Generate account name
-    const accountName = this.generateAccountName(
-      institution.name,
-      displayNameOverride || walletAddress
-    );
-
-    logger.debug(
-      {
-        userId,
-        institutionId: institution.id,
-        accountName,
-      },
-      'Checking for existing account'
-    );
-
-    // Check if account already exists for this institution and address
-    const existingAccounts = await db
-      .select()
-      .from(schema.accounts)
-      .where(
-        and(
-          eq(schema.accounts.userId, userId),
-          eq(schema.accounts.institutionId, institution.id),
-          eq(schema.accounts.name, accountName)
-        )
-      )
-      .limit(1);
-
-    let accountId: string;
-    if (existingAccounts.length > 0 && existingAccounts[0]) {
-      // Update existing account metadata with user_wallet_id and migrated flag
-      accountId = existingAccounts[0].id;
-      await db
-        .update(schema.accounts)
-        .set({
-          metadata: {
-            walletAddress,
-            chainId,
-            chainName: institution.name,
-            displayName: displayNameOverride,
-            lastSync: new Date().toISOString(),
-            userWalletId, // NEW: Reference to user_wallet
-            migrated: true, // NEW: Mark as migrated
-          },
-          updatedAt: new Date(),
-        })
-        .where(eq(schema.accounts.id, accountId));
-
-      logger.info(
-        { userId, accountId, userWalletId, institutionName: institution.name },
-        'Updated existing account with user_wallet_id'
-      );
-    } else {
-      // Create new account with user_wallet_id in metadata
-      const [newAccount] = await db
-        .insert(schema.accounts)
-        .values({
-          userId,
-          institutionId: institution.id,
-          name: accountName,
-          typeId: walletAccountTypeId,
-          description: `Crypto wallet on ${institution.name}`,
-          metadata: {
-            walletAddress,
-            chainId,
-            chainName: institution.name,
-            displayName: displayNameOverride,
-            lastSync: new Date().toISOString(),
-            userWalletId, // NEW: Reference to user_wallet
-            migrated: true, // NEW: Mark as migrated
-          },
-          isActive: true,
-        })
-        .returning();
-
-      if (!newAccount) {
-        throw new Error('Failed to create account');
-      }
-
-      accountId = newAccount.id;
-      logger.info(
-        { userId, accountId, userWalletId, institutionName: institution.name },
-        'Created new account with user_wallet_id'
-      );
-    }
-
-    // Store/update credentials if needed (for now, just mark as stored for RPC-based chains)
-    // Most blockchain integrations don't need credentials, but we store a marker
-    try {
-      const existingCredentials = await this.integrationCredentialsService.getCredentials(
-        userId,
-        institution.id
-      );
-
-      if (!existingCredentials) {
-        await this.integrationCredentialsService.storeCredentials(
-          userId,
-          institution.id,
-          { type: 'public_rpc' }, // Empty credentials for public blockchain access
-          'rpc'
-        );
-
-        logger.debug({ institutionId: institution.id }, 'Stored public RPC credentials marker');
-      }
-    } catch (error) {
-      // Non-critical error - continue processing
-      logger.debug(
-        {
-          institutionId: institution.id,
-          error: error instanceof Error ? error.message : String(error),
-        },
-        'Failed to store credentials (non-critical)'
-      );
-    }
-
-    // Create holdings for each token
-    const holdings: ImportWalletResult['holdings'] = [];
-
-    logger.info(
-      {
-        userId,
-        institutionId: institution.id,
-        institutionName: institution.name,
-        holdingsToProcess: holdingsResult.holdings.length,
-      },
-      'Processing holdings for institution'
-    );
-
-    for (const holding of holdingsResult.holdings) {
-      try {
-        // Skip tokens with missing required data
-        if (!holding.symbol || !holding.balance) {
-          logger.warn(
-            {
-              userId,
-              institutionName: institution.name,
-              holding,
-            },
-            'Skipping holding with missing symbol or balance'
-          );
-          continue;
-        }
-
-        // Validate balance is a valid decimal string
-        if (!isValidDecimalString(holding.balance)) {
-          logger.warn(
-            {
-              userId,
-              institutionName: institution.name,
-              tokenSymbol: holding.symbol,
-              balance: holding.balance,
-            },
-            'Skipping holding with invalid balance format'
-          );
-          continue;
-        }
-
-        logger.debug(
-          {
-            userId,
-            institutionName: institution.name,
-            tokenSymbol: holding.symbol,
-            balance: holding.balance,
-          },
-          'Processing holding'
-        );
-
-        // Map the integration holding to our token format
-        const tokenMapping = await integration.mapToken(holding);
-
-        // Find or create token using blockchain-specific integration mapping method
-        const token = await this.tokenService.findOrCreateTokenFromIntegrationMapping(
-          tokenMapping,
-          cryptoTokenTypeId
-        );
-
-        logger.debug(
-          {
-            userId,
-            tokenId: token.id,
-            tokenSymbol: token.symbol,
-            institutionName: institution.name,
-          },
-          'Token resolved'
-        );
-
-        // Check if holding already exists (including hidden ones)
-        const existingHolding = await this.holdingRepository.findByAccountAndToken(
-          accountId,
-          token.id,
-          userId,
-          undefined,
-          undefined,
-          true // Include hidden holdings
-        );
-
-        if (existingHolding) {
-          // Update existing holding and unhide if it was hidden
-          await db
-            .update(schema.holdings)
-            .set({
-              balance: holding.balance,
-              isHidden: false, // Unhide if balance is non-zero
-              lastUpdated: new Date(),
-            })
-            .where(eq(schema.holdings.id, existingHolding.id));
-
-          logger.info(
-            {
-              userId,
-              holdingId: existingHolding.id,
-              tokenSymbol: token.symbol,
-              balance: holding.balance,
-              institutionName: institution.name,
-            },
-            'Updated existing holding'
-          );
-
-          holdings.push({
-            id: existingHolding.id,
-            accountId,
-            tokenSymbol: token.symbol,
-            tokenName: token.name,
-            balance: holding.balance,
-          });
-        } else {
-          // Create new holding with blockchain source
-          const [newHolding] = await db
-            .insert(schema.holdings)
-            .values({
-              userId,
-              accountId,
-              tokenId: token.id,
-              balance: holding.balance,
-              source: 'blockchain', // Mark as blockchain-sourced
-              isHidden: false,
-              lastUpdated: new Date(),
-            })
-            .returning();
-
-          if (!newHolding) {
-            throw new Error('Failed to create holding');
-          }
-
-          logger.info(
-            {
-              userId,
-              holdingId: newHolding.id,
-              tokenSymbol: token.symbol,
-              balance: holding.balance,
-              institutionName: institution.name,
-            },
-            'Created new holding'
-          );
-
-          holdings.push({
-            id: newHolding.id,
-            accountId,
-            tokenSymbol: token.symbol,
-            tokenName: token.name,
-            balance: holding.balance,
-          });
-        }
-
-        // NOTE: Removed price fetching during import to speed up the process
-        // Prices will be fetched on-demand when user views their portfolio
-      } catch (error) {
-        logger.error(
-          {
-            userId,
-            tokenSymbol: holding?.symbol || 'unknown',
-            tokenName: holding?.name || 'unknown',
-            balance: holding?.balance || 'unknown',
-            institutionName: institution.name,
-            error: error instanceof Error ? error.message : String(error),
-            stack: error instanceof Error ? error.stack : undefined,
-          },
-          'Failed to create holding for token'
-        );
-        // Continue with other tokens even if one fails
-      }
-    }
-
-    logger.info(
-      {
-        userId,
-        institutionId: institution.id,
-        institutionName: institution.name,
-        holdingsCreated: holdings.length,
-        holdingsProcessed: holdingsResult.holdings.length,
-      },
-      'Completed processing holdings for institution'
-    );
-
-    return {
-      account: {
-        id: accountId,
-        name: accountName,
-        chainId,
-        chainName: institution.name,
-        institutionId: institution.id,
-        institutionName: institution.name,
-      },
-      holdings,
-    };
   }
 
   /**

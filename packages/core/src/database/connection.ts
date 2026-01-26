@@ -1,6 +1,7 @@
 import { drizzle as drizzlePostgres } from 'drizzle-orm/postgres-js';
 import postgres from 'postgres';
 import { dbLogger, logConfig } from '../utils/logger';
+import { recordQueryExecuted } from './connection-monitor';
 import * as schema from './schema';
 
 // Environment variables
@@ -36,10 +37,12 @@ if (IS_CRON_JOB) {
 // Detect if using Supabase pooler and add SSL configuration
 // For Supabase transaction pooler (port 6543), use a SMALL connection pool
 // The pooler itself handles scaling - large client pools cause connection exhaustion
-// CRITICAL: Use 2-3 connections for proper concurrent request handling
-// Using only 1 connection causes request queuing and timeouts under load
+// ARCHITECTURAL FIX (Phase 1): Temporarily increased from 3 to 10 connections
+// This provides breathing room while we implement transaction management and query optimization
+// Once architecture is fixed (transaction boundaries, query batching, etc.),
+// this can potentially be reduced back to 3-5 connections
 const connectionConfig: postgres.Options<Record<string, postgres.PostgresType>> = {
-  max: 3, // Optimal for Supabase pooler - allows concurrent requests without exhaustion
+  max: 10, // Temporary increase - provides headroom during architectural fixes
   idle_timeout: 20, // Close idle connections after 20 seconds
   connect_timeout: 10, // Keep timeouts short to fail fast
   max_lifetime: 60 * 30, // 30 minutes max lifetime for connections
@@ -57,6 +60,8 @@ db = drizzlePostgres(client, {
   logger: logConfig.logSqlQueries
     ? {
         logQuery: (query, params) => {
+          const startTime = Date.now();
+
           dbLogger.debug(
             {
               query: query.substring(0, 1000),
@@ -64,6 +69,12 @@ db = drizzlePostgres(client, {
             },
             '📊 Drizzle PostgreSQL Query'
           );
+
+          // Record query execution for monitoring
+          // Note: We don't have exact duration here since Drizzle doesn't provide it
+          // This is a best-effort approximation
+          const duration = Date.now() - startTime;
+          recordQueryExecuted(undefined, query, duration);
         },
       }
     : false,
@@ -101,7 +112,7 @@ export { schema };
 export function getConnectionStats() {
   // postgres.js doesn't expose pool stats directly, but we can provide config info
   return {
-    maxConnections: 3,
+    maxConnections: 10,
     idleTimeout: 20,
     connectTimeout: 10,
     maxLifetime: 60 * 30,
@@ -130,3 +141,13 @@ export async function getActiveConnectionsCount(): Promise<number> {
     return 0;
   }
 }
+
+// Export connection monitoring utilities
+export {
+  endConnectionTracking,
+  getConnectionMonitoringStats,
+  recordConnectionAcquired,
+  recordConnectionReleased,
+  recordQueryExecuted,
+  startConnectionTracking,
+} from './connection-monitor';

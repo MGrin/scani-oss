@@ -39,8 +39,15 @@ try {
 // Initialize Sentry for error tracking
 initializeSentry();
 
-// Import database for health checks
-import { db, getActiveConnectionsCount, getConnectionStats } from '@scani/core/database';
+// Import database and connection monitoring
+import {
+  db,
+  endConnectionTracking,
+  getActiveConnectionsCount,
+  getConnectionMonitoringStats,
+  getConnectionStats,
+  startConnectionTracking,
+} from '@scani/core/database';
 
 // Import router AFTER container is initialized
 import { appRouter } from './presentation/router';
@@ -79,6 +86,9 @@ const app = new Elysia()
 
     return startHttpTransaction(method, url.pathname, requestId, () => {
       const timer = createTimer();
+
+      // Start connection tracking for this request
+      startConnectionTracking(requestId);
 
       // Add request ID to headers for tracing
       set.headers = set.headers || {};
@@ -125,6 +135,11 @@ const app = new Elysia()
     const timer = trackedRequest._timer;
     const requestId = trackedRequest._requestId;
     const duration = timer ? timer.end() : undefined;
+
+    // End connection tracking and log metrics
+    if (requestId) {
+      endConnectionTracking(requestId);
+    }
 
     // Skip logging for health check endpoints to reduce noise
     const url = new URL(request.url);
@@ -249,7 +264,7 @@ app
     set.headers['Content-Type'] = 'application/json';
     return;
   })
-  // Database health check endpoint - returns database connection status
+  // Database health check endpoint - returns database connection status and metrics
   .get('/health/db', async ({ set }: { set: { status: number } }) => {
     try {
       // Test database connection with a simple query
@@ -259,6 +274,7 @@ app
 
       const connectionStats = getConnectionStats();
       const activeConnections = await getActiveConnectionsCount();
+      const monitoringStats = getConnectionMonitoringStats();
 
       return {
         status: 'ok',
@@ -268,6 +284,7 @@ app
           queryTime: `${queryTime}ms`,
           poolConfig: connectionStats,
           activeConnections,
+          monitoring: monitoringStats,
         },
       };
     } catch (error) {

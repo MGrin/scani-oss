@@ -7,4 +7,14 @@ export {
   getDb,
   getTypedDb,
 } from './connection';
+export {
+  endConnectionTracking,
+  getConnectionMonitoringStats,
+  recordConnectionAcquired,
+  recordConnectionReleased,
+  recordQueryExecuted,
+  resetConnectionMonitoringStats,
+  startConnectionTracking,
+} from './connection-monitor';
 export * from './schema';
+export * from './transaction';

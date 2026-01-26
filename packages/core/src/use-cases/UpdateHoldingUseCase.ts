@@ -1,7 +1,7 @@
 import { and, eq } from 'drizzle-orm';
 import { Service } from 'typedi';
-import { db } from '../database/connection';
 import * as schema from '../database/schema';
+import { withTransaction } from '../database/transaction';
 import { createComponentLogger } from '../utils/logger';
 
 const logger = createComponentLogger('use-case:update-holding');
@@ -36,38 +36,48 @@ export class UpdateHoldingUseCase {
       'Updating holding'
     );
 
-    const updateData = {
-      ...data,
-      lastUpdated: data.lastUpdated || new Date(),
-    };
+    // Use transaction to ensure atomic update
+    // Prevents race conditions and ensures consistency
+    return await withTransaction(
+      async (tx) => {
+        const updateData = {
+          ...data,
+          lastUpdated: data.lastUpdated || new Date(),
+        };
 
-    const [updatedHolding] = await db
-      .update(schema.holdings)
-      .set(updateData)
-      .where(and(eq(schema.holdings.id, holdingId), eq(schema.holdings.userId, userId)))
-      .returning();
+        const [updatedHolding] = await tx
+          .update(schema.holdings)
+          .set(updateData)
+          .where(and(eq(schema.holdings.id, holdingId), eq(schema.holdings.userId, userId)))
+          .returning();
 
-    if (!updatedHolding) {
-      logger.warn(
-        {
-          userId,
-          holdingId,
-        },
-        'Holding not found for update'
-      );
-      throw new Error('Holding not found');
-    }
+        if (!updatedHolding) {
+          logger.warn(
+            {
+              userId,
+              holdingId,
+            },
+            'Holding not found for update'
+          );
+          throw new Error('Holding not found');
+        }
 
-    logger.info(
-      {
-        holdingId: updatedHolding.id,
-        accountId: updatedHolding.accountId,
-        tokenId: updatedHolding.tokenId,
-        balance: updatedHolding.balance,
+        logger.info(
+          {
+            holdingId: updatedHolding.id,
+            accountId: updatedHolding.accountId,
+            tokenId: updatedHolding.tokenId,
+            balance: updatedHolding.balance,
+          },
+          'Holding updated successfully'
+        );
+
+        return updatedHolding;
       },
-      'Holding updated successfully'
+      {
+        name: 'update-holding',
+        timeout: 10000,
+      }
     );
-
-    return updatedHolding;
   }
 }
