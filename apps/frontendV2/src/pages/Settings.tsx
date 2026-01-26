@@ -1,4 +1,4 @@
-import { Check, Copy, Eye, EyeOff, MessageSquare, User } from 'lucide-react';
+import { User } from 'lucide-react';
 import { useCallback, useEffect, useId, useMemo, useState } from 'react';
 import { CurrencySelector } from '@/components/selectors/CurrencySelector';
 import { Alert, AlertDescription } from '@/components/ui/alert';
@@ -9,7 +9,6 @@ import { Label } from '@/components/ui/label';
 import { PageHeader } from '@/components/ui/page-header';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useToast } from '@/hooks/use-toast';
-import { supabase } from '@/lib/supabase';
 import { trpc } from '@/lib/trpc';
 
 export function Settings() {
@@ -216,9 +215,6 @@ export function Settings() {
         onChange={(field, value) => setField(field, value)}
         supportedCurrencies={supportedCurrencies || []}
       />
-
-      {/* Integrations Section */}
-      <TelegramIntegration />
     </div>
   );
 }
@@ -335,187 +331,5 @@ function GeneralSettings({
         </CardContent>
       </Card>
     </div>
-  );
-}
-
-// Telegram Integration Component
-function TelegramIntegration() {
-  const { toast } = useToast();
-  const utils = trpc.useUtils();
-  const [authToken, setAuthToken] = useState<string | null>(null);
-  const [copied, setCopied] = useState(false);
-  const [showToken, setShowToken] = useState(false);
-
-  // Fetch linked Telegram account
-  const { data: linkedAccount, isLoading: isLoadingLinkedAccount } =
-    trpc.telegram.getLinkedAccount.useQuery();
-
-  // Unlink mutation
-  const unlinkMutation = trpc.telegram.unlinkAccount.useMutation({
-    onSuccess: () => {
-      toast({
-        title: 'Telegram Unlinked',
-        description: 'Your Telegram account has been unlinked successfully.',
-      });
-      utils.telegram.getLinkedAccount.invalidate();
-    },
-    onError: (error) => {
-      toast({
-        title: 'Unlink Failed',
-        description: error.message,
-        variant: 'destructive',
-      });
-    },
-  });
-
-  // Get auth token from Supabase session
-  useEffect(() => {
-    const getToken = async () => {
-      const {
-        data: { session },
-      } = await supabase.auth.getSession();
-      if (session?.access_token) {
-        setAuthToken(session.access_token);
-      }
-    };
-    getToken();
-  }, []);
-
-  const handleCopyToken = useCallback(async () => {
-    if (authToken) {
-      try {
-        await navigator.clipboard.writeText(authToken);
-        setCopied(true);
-        toast({
-          title: 'Token Copied',
-          description: 'Auth token copied to clipboard. Use it with the Telegram bot.',
-        });
-        setTimeout(() => setCopied(false), 2000);
-      } catch (_error) {
-        toast({
-          title: 'Copy Failed',
-          description: 'Failed to copy token to clipboard. Please try again.',
-          variant: 'destructive',
-        });
-      }
-    }
-  }, [authToken, toast]);
-
-  const handleUnlink = useCallback(() => {
-    if (window.confirm('Are you sure you want to unlink your Telegram account?')) {
-      unlinkMutation.mutate();
-    }
-  }, [unlinkMutation]);
-
-  if (isLoadingLinkedAccount) {
-    return (
-      <Card>
-        <CardHeader>
-          <Skeleton className="h-6 w-48" />
-          <Skeleton className="h-4 w-64" />
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <Skeleton className="h-20 w-full" />
-        </CardContent>
-      </Card>
-    );
-  }
-
-  return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="flex items-center space-x-2">
-          <MessageSquare className="h-5 w-5" />
-          <span>Telegram Integration</span>
-        </CardTitle>
-        <CardDescription>
-          Connect your Telegram account to manage your portfolio via chat.
-        </CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-4">
-        {linkedAccount ? (
-          // Already linked
-          <div className="space-y-4">
-            <Alert>
-              <Check className="h-4 w-4" />
-              <AlertDescription>
-                <div className="font-medium">Telegram Connected</div>
-                <div className="text-sm mt-1">
-                  Account:{' '}
-                  {linkedAccount.telegramUsername
-                    ? `@${linkedAccount.telegramUsername}`
-                    : `ID: ${linkedAccount.telegramId}`}
-                </div>
-                <div className="text-xs text-muted-foreground mt-1">
-                  Last interaction:{' '}
-                  {linkedAccount.lastInteractionAt
-                    ? new Date(linkedAccount.lastInteractionAt).toLocaleString()
-                    : 'Never'}
-                </div>
-              </AlertDescription>
-            </Alert>
-            <Button
-              variant="destructive"
-              onClick={handleUnlink}
-              disabled={unlinkMutation.isPending}
-            >
-              {unlinkMutation.isPending ? 'Unlinking...' : 'Unlink Telegram Account'}
-            </Button>
-          </div>
-        ) : (
-          // Not linked yet
-          <div className="space-y-4">
-            <Alert>
-              <AlertDescription>
-                <div className="font-medium mb-2">Connect Telegram Bot</div>
-                <ol className="text-sm space-y-2 list-decimal list-inside">
-                  <li>Open Telegram and search for the Scani bot</li>
-                  <li>Copy your authentication token below</li>
-                  <li>
-                    Send the command:{' '}
-                    <code className="bg-muted px-2 py-1 rounded text-xs">/auth YOUR_TOKEN</code>
-                  </li>
-                  <li>Start chatting with the bot to manage your portfolio!</li>
-                </ol>
-              </AlertDescription>
-            </Alert>
-
-            <div className="space-y-2">
-              <Label>Your Authentication Token</Label>
-              <div className="flex gap-2">
-                <Input
-                  value={authToken || 'Loading...'}
-                  readOnly
-                  className="font-mono text-xs"
-                  type={showToken ? 'text' : 'password'}
-                />
-                <Button
-                  variant="outline"
-                  size="icon"
-                  onClick={() => setShowToken(!showToken)}
-                  disabled={!authToken}
-                  title={showToken ? 'Hide token' : 'Show token'}
-                >
-                  {showToken ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                </Button>
-                <Button
-                  variant="outline"
-                  size="icon"
-                  onClick={handleCopyToken}
-                  disabled={!authToken}
-                  title="Copy token"
-                >
-                  {copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
-                </Button>
-              </div>
-              <p className="text-xs text-muted-foreground">
-                This token allows the Telegram bot to authenticate as you. Keep it secure and don't
-                share it publicly.
-              </p>
-            </div>
-          </div>
-        )}
-      </CardContent>
-    </Card>
   );
 }

@@ -53,17 +53,6 @@ export {
   createKrakenApiService,
   validateKrakenCredentials,
 } from './factories/krakenFactory';
-export {
-  createPlaidApiService,
-  createPlaidIntegration,
-  createPlaidLinkToken,
-  exchangePlaidPublicToken,
-  getPlaidAccounts,
-  getPlaidBalances,
-  getPlaidInstitution,
-  removePlaidItem,
-  validatePlaidAccessToken,
-} from './factories/plaidFactory';
 export { IntegrationManager } from './IntegrationManager';
 // Export blockchain integration implementations
 export * from './implementations';

@@ -4,17 +4,12 @@ export { BaseRepository } from './BaseRepository';
 export {
   AccountTypeRepository,
   InstitutionTypeRepository,
-  ScheduleStepTypeRepository,
-  ScheduleTypeRepository,
   TokenTypeRepository,
 } from './EnumRepositories';
 export { GroupRepository } from './GroupRepository';
 export { HoldingRepository } from './HoldingRepository';
 export { InstitutionBlockchainMappingRepository } from './InstitutionBlockchainMappingRepository';
 export { InstitutionRepository } from './InstitutionRepository';
-export { ScheduleRepository } from './ScheduleRepository';
-export { ScheduleStepRepository } from './ScheduleStepRepository';
-export { TelegramUserRepository } from './TelegramUserRepository';
 export { TokenPriceRepository } from './TokenPriceRepository';
 export { TokenRepository } from './TokenRepository';
 export { UserIntegrationCredentialsRepository } from './UserIntegrationCredentialsRepository';

@@ -51,30 +51,6 @@ export const tokenTypes = pgTable('token_types', {
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 });
 
-// Schedule types table - dynamic enum values
-export const scheduleTypes = pgTable('schedule_types', {
-  id: uuid('id').defaultRandom().primaryKey(),
-  code: text('code').notNull().unique(), // 'income_allocation', 'subscription', 'payment', 'other'
-  name: text('name').notNull(), // 'Income Allocation', 'Subscription', 'Payment', 'Other'
-  description: text('description'),
-  displayOrder: real('display_order').notNull().default(0),
-  isActive: boolean('is_active').notNull().default(true),
-  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
-});
-
-// Schedule step types table - dynamic enum values
-export const scheduleStepTypes = pgTable('schedule_step_types', {
-  id: uuid('id').defaultRandom().primaryKey(),
-  code: text('code').notNull().unique(), // 'inflow', 'outflow', 'transfer', 'conversion'
-  name: text('name').notNull(), // 'Inflow', 'Outflow', 'Transfer', 'Conversion'
-  description: text('description'),
-  displayOrder: real('display_order').notNull().default(0),
-  isActive: boolean('is_active').notNull().default(true),
-  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
-});
-
 // =============================================================================
 // MAIN TABLES
 // =============================================================================
@@ -250,29 +226,6 @@ export const tokenPrices = pgTable(
   })
 );
 
-// Telegram users table - Maps Telegram user IDs to Scani user accounts
-export const telegramUsers = pgTable(
-  'telegram_users',
-  {
-    id: uuid('id').defaultRandom().primaryKey(),
-    telegramId: text('telegram_id').notNull().unique(), // Telegram user ID (numeric string)
-    telegramUsername: text('telegram_username'), // Telegram username (optional)
-    userId: uuid('user_id')
-      .notNull()
-      .references(() => users.id, { onDelete: 'cascade' }), // Reference to Scani user
-    isActive: boolean('is_active').notNull().default(true),
-    lastInteractionAt: timestamp('last_interaction_at', { withTimezone: true }),
-    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
-  },
-  (table) => ({
-    // Index for fast lookups by telegram ID
-    telegramIdIdx: index('idx_telegram_users_telegram_id').on(table.telegramId),
-    // Index for user lookups
-    userIdIdx: index('idx_telegram_users_user_id').on(table.userId),
-  })
-);
-
 // User wallets table - Maps user wallets to multiple networks/institutions
 export const userWallets = pgTable(
   'user_wallets',
@@ -359,168 +312,7 @@ export const institutionBlockchainMappings = pgTable(
   })
 );
 
-// Institution Plaid mappings table - Maps institutions to Plaid institution IDs
-export const institutionPlaidMappings = pgTable(
-  'institution_plaid_mappings',
-  {
-    id: uuid('id').defaultRandom().primaryKey(),
-    institutionId: uuid('institution_id')
-      .notNull()
-      .references(() => institutions.id, { onDelete: 'cascade' })
-      .unique(), // Each institution can only map to one Plaid institution
-    plaidInstitutionId: text('plaid_institution_id').notNull().unique(), // Plaid's institution ID (e.g., 'ins_3')
-    isActive: boolean('is_active').notNull().default(true),
-    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
-  },
-  (table) => ({
-    // Index for fast lookups by institution ID
-    institutionIdIdx: index('idx_institution_plaid_mappings_institution_id').on(
-      table.institutionId
-    ),
-    // Index for Plaid institution ID lookups
-    plaidInstitutionIdIdx: index('idx_institution_plaid_mappings_plaid_institution_id').on(
-      table.plaidInstitutionId
-    ),
-  })
-);
-
-// Plaid items table - Stores Plaid Item (connection) data per user
-export const plaidItems = pgTable(
-  'plaid_items',
-  {
-    id: uuid('id').defaultRandom().primaryKey(),
-    userId: uuid('user_id')
-      .notNull()
-      .references(() => users.id, { onDelete: 'cascade' }),
-    institutionId: uuid('institution_id')
-      .notNull()
-      .references(() => institutions.id, { onDelete: 'cascade' }),
-
-    // Plaid-specific fields
-    plaidItemId: text('plaid_item_id').notNull().unique(), // Plaid's item ID
-    plaidAccessToken: text('plaid_access_token').notNull(), // Encrypted access token
-    plaidInstitutionId: text('plaid_institution_id').notNull(), // Plaid's institution ID
-
-    // Status tracking
-    isActive: boolean('is_active').notNull().default(true),
-    consentExpirationTime: timestamp('consent_expiration_time', { withTimezone: true }),
-    error: jsonb('error'), // Store Plaid error if any
-
-    // Sync tracking
-    lastSuccessfulSync: timestamp('last_successful_sync', { withTimezone: true }),
-    lastBalanceSync: timestamp('last_balance_sync', { withTimezone: true }),
-
-    // Timestamps
-    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
-  },
-  (table) => ({
-    // Unique constraint for one item per user per institution
-    uniqueUserInstitution: unique().on(table.userId, table.institutionId),
-    // Index for fast lookups by user ID
-    userIdIdx: index('idx_plaid_items_user_id').on(table.userId),
-    // Index for institution lookups
-    institutionIdIdx: index('idx_plaid_items_institution_id').on(table.institutionId),
-    // Index for Plaid item ID lookups
-    plaidItemIdIdx: index('idx_plaid_items_plaid_item_id').on(table.plaidItemId),
-    // Index for filtering active Plaid items in cron jobs
-    isActiveIdx: index('idx_plaid_items_is_active').on(table.isActive),
-  })
-);
-
-// Plaid account mappings table - Maps Plaid accounts to Scani accounts
-export const plaidAccountMappings = pgTable(
-  'plaid_account_mappings',
-  {
-    id: uuid('id').defaultRandom().primaryKey(),
-    plaidItemId: uuid('plaid_item_id')
-      .notNull()
-      .references(() => plaidItems.id, { onDelete: 'cascade' }),
-    scaniAccountId: uuid('scani_account_id')
-      .notNull()
-      .references(() => accounts.id, { onDelete: 'cascade' })
-      .unique(), // Each Scani account can only be mapped to one Plaid account
-    plaidAccountId: text('plaid_account_id').notNull().unique(), // Plaid's account ID
-
-    // Account metadata
-    mask: text('mask'), // Last 4 digits of account number
-    officialName: text('official_name'),
-
-    isActive: boolean('is_active').notNull().default(true),
-    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
-  },
-  (table) => ({
-    // Index for fast lookups by plaid item ID
-    plaidItemIdIdx: index('idx_plaid_account_mappings_plaid_item_id').on(table.plaidItemId),
-    // Index for Scani account ID lookups
-    scaniAccountIdIdx: index('idx_plaid_account_mappings_scani_account_id').on(
-      table.scaniAccountId
-    ),
-    // Index for Plaid account ID lookups
-    plaidAccountIdIdx: index('idx_plaid_account_mappings_plaid_account_id').on(
-      table.plaidAccountId
-    ),
-  })
-);
-
-// Schedules table - User-specific patterns of monetary movements
-export const schedules = pgTable(
-  'schedules',
-  {
-    id: uuid('id').defaultRandom().primaryKey(),
-    userId: uuid('user_id')
-      .notNull()
-      .references(() => users.id, { onDelete: 'cascade' }),
-    name: text('name').notNull(),
-    description: text('description'),
-    repetitiveCronPattern: text('repetitive_cron_pattern'), // Cron format for schedule repetition (optional when interval is set)
-    interval: text('interval'), // Extended interval format: '2w' = every 2 weeks, '3M' = every 3 months, etc.
-    intervalStartDate: timestamp('interval_start_date', { withTimezone: true }), // When to start counting intervals from
-    lastExecuted: timestamp('last_executed', { withTimezone: true }), // Last time the schedule was executed
-    typeId: uuid('type_id')
-      .notNull()
-      .references(() => scheduleTypes.id, { onDelete: 'restrict' }), // Reference to schedule_types
-    isActive: boolean('is_active').notNull().default(true),
-    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
-  },
-  (table) => ({
-    // Performance index for user queries
-    userIdIdx: index('idx_schedules_user_id').on(table.userId),
-    // Index for type-based filtering
-    typeIdIdx: index('idx_schedules_type_id').on(table.typeId),
-  })
-);
-
-// Schedule steps table - Steps within a schedule
-export const scheduleSteps = pgTable(
-  'schedule_steps',
-  {
-    id: uuid('id').defaultRandom().primaryKey(),
-    scheduleId: uuid('schedule_id')
-      .notNull()
-      .references(() => schedules.id, { onDelete: 'cascade' }),
-    typeId: uuid('type_id')
-      .notNull()
-      .references(() => scheduleStepTypes.id, { onDelete: 'restrict' }), // Reference to schedule_step_types
-    data: jsonb('data').notNull(), // Step-specific data (inflow, outflow, transfer, conversion)
-    stepOrder: real('step_order').notNull().default(0), // Order of execution within schedule
-    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
-  },
-  (table) => ({
-    // Performance index for schedule queries
-    scheduleIdIdx: index('idx_schedule_steps_schedule_id').on(table.scheduleId),
-    // Composite index for ordered step retrieval
-    scheduleOrderIdx: index('idx_schedule_steps_schedule_order').on(
-      table.scheduleId,
-      table.stepOrder
-    ),
-  })
-);
-
+// Groups table - User-defined custom groups for organizing holdings
 // Groups table - User-defined custom groups for organizing holdings
 export const groups = pgTable(
   'groups',
@@ -608,20 +400,11 @@ export const tokenTypesRelations = relations(tokenTypes, ({ many }) => ({
   tokens: many(tokens),
 }));
 
-export const scheduleTypesRelations = relations(scheduleTypes, ({ many }) => ({
-  schedules: many(schedules),
-}));
-
-export const scheduleStepTypesRelations = relations(scheduleStepTypes, ({ many }) => ({
-  scheduleSteps: many(scheduleSteps),
-}));
-
 export const usersRelations = relations(users, ({ one, many }) => ({
   accounts: many(accounts),
   holdings: many(holdings),
   userWallets: many(userWallets),
   userIntegrationCredentials: many(userIntegrationCredentials),
-  schedules: many(schedules),
   groups: many(groups),
   baseCurrency: one(tokens, {
     fields: [users.baseCurrencyId],
@@ -729,29 +512,6 @@ export const institutionBlockchainMappingsRelations = relations(
   })
 );
 
-export const schedulesRelations = relations(schedules, ({ one, many }) => ({
-  user: one(users, {
-    fields: [schedules.userId],
-    references: [users.id],
-  }),
-  type: one(scheduleTypes, {
-    fields: [schedules.typeId],
-    references: [scheduleTypes.id],
-  }),
-  steps: many(scheduleSteps),
-}));
-
-export const scheduleStepsRelations = relations(scheduleSteps, ({ one }) => ({
-  schedule: one(schedules, {
-    fields: [scheduleSteps.scheduleId],
-    references: [schedules.id],
-  }),
-  type: one(scheduleStepTypes, {
-    fields: [scheduleSteps.typeId],
-    references: [scheduleStepTypes.id],
-  }),
-}));
-
 export const groupsRelations = relations(groups, ({ one, many }) => ({
   user: one(users, {
     fields: [groups.userId],
@@ -808,9 +568,6 @@ export type NewHolding = typeof holdings.$inferInsert;
 export type TokenPrice = typeof tokenPrices.$inferSelect;
 export type NewTokenPrice = typeof tokenPrices.$inferInsert;
 
-export type TelegramUser = typeof telegramUsers.$inferSelect;
-export type NewTelegramUser = typeof telegramUsers.$inferInsert;
-
 export type UserWallet = typeof userWallets.$inferSelect;
 export type NewUserWallet = typeof userWallets.$inferInsert;
 
@@ -819,25 +576,6 @@ export type NewUserIntegrationCredentials = typeof userIntegrationCredentials.$i
 
 export type InstitutionBlockchainMapping = typeof institutionBlockchainMappings.$inferSelect;
 export type NewInstitutionBlockchainMapping = typeof institutionBlockchainMappings.$inferInsert;
-
-export type InstitutionPlaidMapping = typeof institutionPlaidMappings.$inferSelect;
-export type NewInstitutionPlaidMapping = typeof institutionPlaidMappings.$inferInsert;
-
-export type PlaidItem = typeof plaidItems.$inferSelect;
-export type NewPlaidItem = typeof plaidItems.$inferInsert;
-
-export type PlaidAccountMapping = typeof plaidAccountMappings.$inferSelect;
-export type NewPlaidAccountMapping = typeof plaidAccountMappings.$inferInsert;
-
-export type ScheduleType = typeof scheduleTypes.$inferSelect;
-
-export type ScheduleStepType = typeof scheduleStepTypes.$inferSelect;
-
-export type Schedule = typeof schedules.$inferSelect;
-export type NewSchedule = typeof schedules.$inferInsert;
-
-export type ScheduleStep = typeof scheduleSteps.$inferSelect;
-export type NewScheduleStep = typeof scheduleSteps.$inferInsert;
 
 export type Group = typeof groups.$inferSelect;
 export type NewGroup = typeof groups.$inferInsert;

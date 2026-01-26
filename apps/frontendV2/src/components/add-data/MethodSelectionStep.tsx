@@ -1,7 +1,5 @@
-import { Info } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { getFaviconUrl } from '@/lib/icons';
 import type { CompleteImportData } from '@/types/addData';
 
@@ -55,14 +53,6 @@ export function MethodSelectionStep({
       iconType: 'favicon' as const,
       disabled: false,
     },
-    {
-      id: 'plaid' as const,
-      title: 'Connect Bank Account',
-      description: 'Securely connect your bank account via Plaid',
-      icon: '🏦',
-      iconType: 'emoji' as const,
-      disabled: true,
-    },
   ];
 
   return (
@@ -92,31 +82,6 @@ export function MethodSelectionStep({
                     <Badge variant="secondary" className="bg-muted text-muted-foreground">
                       Coming Soon
                     </Badge>
-                    {method.id === 'plaid' && (
-                      <Popover>
-                        <PopoverTrigger asChild>
-                          <button
-                            type="button"
-                            className="inline-flex items-center justify-center rounded-full p-1 hover:bg-muted/80 transition-colors"
-                            onClick={(e) => e.stopPropagation()}
-                          >
-                            <Info className="h-4 w-4 text-muted-foreground" />
-                          </button>
-                        </PopoverTrigger>
-                        <PopoverContent className="w-80" align="end">
-                          <div className="space-y-2">
-                            <h4 className="font-medium leading-none">Why is this disabled?</h4>
-                            <p className="text-sm text-muted-foreground">
-                              We utilize Plaid to enable secure bank account connections. Plaid
-                              maintains rigorous security standards and requires comprehensive
-                              onboarding procedures. We are currently awaiting completion of Plaid's
-                              security audit. Once the audit is finalized and approved, we will
-                              promptly enable this feature and notify all users.
-                            </p>
-                          </div>
-                        </PopoverContent>
-                      </Popover>
-                    )}
                   </div>
                 )}
                 <div className="flex justify-center items-center mb-2 md:mb-4">

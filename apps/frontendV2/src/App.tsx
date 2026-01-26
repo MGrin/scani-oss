@@ -13,9 +13,6 @@ import { HoldingDetail } from '@/pages/HoldingDetail';
 import { Holdings } from '@/pages/Holdings';
 import { InstitutionDetail } from '@/pages/InstitutionDetail';
 import { Institutions } from '@/pages/Institutions';
-import { ScheduleCreate } from '@/pages/ScheduleCreate';
-import { ScheduleDetail } from '@/pages/ScheduleDetail';
-import { Schedules } from '@/pages/Schedules';
 import { Settings } from '@/pages/Settings';
 
 function App() {
@@ -105,36 +102,6 @@ function App() {
               </ProtectedRoute>
             }
           /> */}
-          <Route
-            path="/schedules"
-            element={
-              <ProtectedRoute>
-                <Layout>
-                  <Schedules />
-                </Layout>
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/schedules/new"
-            element={
-              <ProtectedRoute>
-                <Layout>
-                  <ScheduleCreate />
-                </Layout>
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/schedules/:id"
-            element={
-              <ProtectedRoute>
-                <Layout>
-                  <ScheduleDetail />
-                </Layout>
-              </ProtectedRoute>
-            }
-          />
           <Route
             path="/settings"
             element={

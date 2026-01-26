@@ -57,7 +57,7 @@ jobs:
           filters: |
             backend:
               - 'apps/backend/**'
-              - 'apps/telegram-bot/**'
+              - 'apps/cron/**'
               - 'packages/shared/**'
               - 'packages/core/**'
             frontend:

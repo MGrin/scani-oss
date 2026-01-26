@@ -4,21 +4,10 @@ export { GetAssetAllocationUseCase } from './GetAssetAllocationUseCase';
 // Holding Use Cases
 
 export { CreateHoldingsWithDependenciesUseCase } from './CreateHoldingsWithDependenciesUseCase';
-// Plaid Use Cases
-export {
-  type CreatePlaidLinkTokenInput,
-  type CreatePlaidLinkTokenResult,
-  CreatePlaidLinkTokenUseCase,
-} from './CreatePlaidLinkTokenUseCase';
 export {
   type DeleteHoldingResult,
   DeleteHoldingUseCase,
 } from './DeleteHoldingUseCase';
-export {
-  type ExchangePlaidTokenInput,
-  type ExchangePlaidTokenResult,
-  ExchangePlaidTokenUseCase,
-} from './ExchangePlaidTokenUseCase';
 // Wallet Import Use Cases
 export {
   type ImportBinanceAccountsInput,
@@ -30,11 +19,6 @@ export {
   type ImportKrakenAccountsResult,
   ImportKrakenAccountsUseCase,
 } from './ImportKrakenAccountsUseCase';
-export {
-  type ImportPlaidAccountsInput,
-  type ImportPlaidAccountsResult,
-  ImportPlaidAccountsUseCase,
-} from './ImportPlaidAccountsUseCase';
 export {
   ImportWalletAddressUseCase,
   type ImportWalletInput,
@@ -50,11 +34,6 @@ export {
   type SyncExchangeBalancesResult,
   SyncExchangeBalancesUseCase,
 } from './SyncExchangeBalancesUseCase';
-export {
-  type SyncPlaidBalancesInput,
-  type SyncPlaidBalancesResult,
-  SyncPlaidBalancesUseCase,
-} from './SyncPlaidBalancesUseCase';
 export {
   type SyncWalletBalancesResult,
   SyncWalletBalancesUseCase,

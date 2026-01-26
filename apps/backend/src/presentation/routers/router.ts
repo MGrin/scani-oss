@@ -11,7 +11,6 @@ import { holdingsRouter } from './holdings';
 import { institutionTypesRouter } from './institution-types';
 import { institutionsRouter } from './institutions';
 import { integrationsRouter } from './integrations';
-import { plaidRouter } from './plaid';
 import { screenshotsRouter } from './screenshots';
 import { createTokensRouter } from './tokens';
 import { usersRouter } from './users';
@@ -50,9 +49,6 @@ export const appRouter = router({
 
   // Integration authentication (protected) - API key validation and storage
   integrations: integrationsRouter,
-
-  // Plaid integration (protected) - Bank account connection via Plaid
-  plaid: plaidRouter,
 
   // Health check (public)
   health: router({

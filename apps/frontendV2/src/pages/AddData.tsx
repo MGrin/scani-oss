@@ -6,7 +6,6 @@ import { BinanceApiKeyStep } from '@/components/add-data/BinanceApiKeyStep';
 import { DataEntryStep } from '@/components/add-data/DataEntryStep';
 import { KrakenApiKeyStep } from '@/components/add-data/KrakenApiKeyStep';
 import { MethodSelectionStep } from '@/components/add-data/MethodSelectionStep';
-import { PlaidLinkStep } from '@/components/add-data/PlaidLinkStep';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
@@ -66,8 +65,6 @@ export function AddData() {
         setCurrentStep('binanceAuth');
       } else if (method === 'kraken') {
         setCurrentStep('krakenAuth');
-      } else if (method === 'plaid') {
-        setCurrentStep('plaidLink');
       } else if (method === 'wallet') {
         // Skip account selection for wallet imports
         setCurrentStep('data');
@@ -114,9 +111,7 @@ export function AddData() {
 
   // Helper to check if current import is using exchange API Key (Binance or Kraken)
   const isExchangeApiKey =
-    completeImportData.method === 'binance' ||
-    completeImportData.method === 'kraken' ||
-    completeImportData.method === 'plaid';
+    completeImportData.method === 'binance' || completeImportData.method === 'kraken';
 
   const nextStep = useCallback(() => {
     if (currentStep === 'method') {
@@ -127,12 +122,8 @@ export function AddData() {
       } else if (!isExchangeApiKey) {
         setCurrentStep('account');
       }
-    } else if (
-      currentStep === 'binanceAuth' ||
-      currentStep === 'krakenAuth' ||
-      currentStep === 'plaidLink'
-    ) {
-      // After exchange/bank auth, the component will handle navigation
+    } else if (currentStep === 'binanceAuth' || currentStep === 'krakenAuth') {
+      // After exchange auth, the component will handle navigation
       // This case shouldn't normally be called
     } else if (currentStep === 'account') {
       setCurrentStep('data');
@@ -171,12 +162,8 @@ export function AddData() {
         setCompleteImportData({});
         setCurrentStep('method');
       }
-    } else if (
-      currentStep === 'binanceAuth' ||
-      currentStep === 'krakenAuth' ||
-      currentStep === 'plaidLink'
-    ) {
-      // Going back from exchange/bank auth to method selection
+    } else if (currentStep === 'binanceAuth' || currentStep === 'krakenAuth') {
+      // Going back from exchange auth to method selection
       setCompleteImportData({});
       setCurrentStep('method');
     }
@@ -191,7 +178,6 @@ export function AddData() {
         return 1;
       case 'binanceAuth':
       case 'krakenAuth':
-      case 'plaidLink':
         return 2;
       case 'account':
         return 2;
@@ -561,11 +547,6 @@ export function AddData() {
                   2. Connect Kraken
                 </span>
               )}
-              {completeImportData.method === 'plaid' && (
-                <span className={currentStep === 'plaidLink' ? 'font-medium text-foreground' : ''}>
-                  2. Connect Bank
-                </span>
-              )}
               {isWalletImport && (
                 <span className={currentStep === 'data' ? 'font-medium text-foreground' : ''}>
                   2. Import Wallet
@@ -593,9 +574,6 @@ export function AddData() {
       )}
       {currentStep === 'krakenAuth' && (
         <KrakenApiKeyStep onCompleteDataUpdate={updateCompleteImportData} onNext={nextStep} />
-      )}
-      {currentStep === 'plaidLink' && (
-        <PlaidLinkStep onCompleteDataUpdate={updateCompleteImportData} onNext={nextStep} />
       )}
       {currentStep === 'account' && (
         <AccountSelectionStep

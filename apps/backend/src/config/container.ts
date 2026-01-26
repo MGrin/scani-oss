@@ -10,9 +10,6 @@ import '@scani/core/repositories';
 // This loads all @Service() decorated classes from the core package
 import '@scani/core/services';
 
-// Import backend-specific services
-import '../infrastructure/telegram/TelegramAuthService';
-
 const containerLogger = createComponentLogger('container');
 
 /**
@@ -32,12 +29,9 @@ const containerLogger = createComponentLogger('container');
  * - UserContextService, UserService
  * - AccountTypeService, InstitutionTypeService (EnumServices)
  *
- * Backend-Specific Services:
- * - TelegramAuthService (uses TRPCError, backend-only)
- *
  * Registered Repositories (from @scani/core/repositories):
  * - AccountRepository, BaseRepository, HoldingRepository
- * - InstitutionRepository, TelegramUserRepository, TokenRepository
+ * - InstitutionRepository, TokenRepository
  * - TokenPriceRepository, UserRepository
  * - AccountTypeRepository, InstitutionTypeRepository, TokenTypeRepository (Enums)
  *

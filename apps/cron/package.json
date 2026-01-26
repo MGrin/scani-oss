@@ -3,7 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "bun run src/index.ts --tasks=pricing,wallet-balances,exchange-balances,plaid-balances",
+    "dev": "bun run src/index.ts --tasks=pricing,wallet-balances,exchange-balances",
     "start": "bun run src/index.ts",
     "lint": "biome check .",
     "lint:fix": "biome check --write .",
@@ -13,7 +13,6 @@
     "@scani/core": "workspace:*",
     "@scani/integrations": "workspace:*",
     "@scani/shared": "workspace:*",
-    "@scani/telegram-bot": "workspace:*",
     "@sentry/bun": "^10.21.0",
     "@supabase/supabase-js": "^2.57.4",
     "decimal.js": "^10.6.0",

@@ -10,7 +10,6 @@ import '@scani/core/services';
 
 // Import all cron jobs
 import { executeExchangeBalancesCronJob } from './jobs/ExchangeBalancesCronJob';
-import { executePlaidBalancesCronJob } from './jobs/PlaidBalancesCronJob';
 import { executePricingCronJob } from './jobs/PricingCronJob';
 import { executeWalletBalancesCronJob } from './jobs/WalletBalancesCronJob';
 
@@ -52,20 +51,6 @@ const AVAILABLE_JOBS: Record<
     execute: executeExchangeBalancesCronJob,
     description: 'Sync exchange balances from exchanges',
   },
-  'plaid-balances': {
-    name: 'plaid-balances',
-    execute: executePlaidBalancesCronJob,
-    description: 'Sync Plaid account balances',
-  },
-  'daily-digest': {
-    name: 'daily-digest',
-    execute: async () => {
-      // For daily digest, we need to initialize Telegram bot service
-      // For now, we'll skip this job since it requires Telegram bot integration
-      logger.warn({}, '⚠️ Daily digest cron job requires Telegram bot service - skipping for now');
-    },
-    description: 'Send daily portfolio digest to Telegram users',
-  },
 };
 
 /**
@@ -98,200 +83,97 @@ async function main(): Promise<void> {
     '🚀 Starting Scani Cron Job Runner'
   );
 
+  // Initialize Sentry
+  initializeSentry();
+
+  // Initialize DI Container
+  initializeContainer();
+
+  // Initialize IntegrationManager
+  const integrationManager = Container.get(IntegrationManager);
+  await integrationManager.initialize();
+
   // Parse command line arguments
   const { tasks } = parseArgs();
 
-  // Validate tasks
+  // If no tasks specified, show available tasks
   if (tasks.length === 0) {
-    logger.error(
-      {
-        availableTasks: Object.keys(AVAILABLE_JOBS),
-      },
-      '❌ No tasks specified. Use --tasks=task1,task2,...'
-    );
-    process.exit(1);
+    logger.info({}, 'Available cron jobs:');
+    for (const [key, job] of Object.entries(AVAILABLE_JOBS)) {
+      logger.info({ name: key }, `  ${key}: ${job.description}`);
+    }
+    logger.info({}, '\nUsage: bun run src/index.ts --tasks=pricing,wallet-balances');
+    process.exit(0);
   }
 
-  // Validate task names
-  const invalidTasks = tasks.filter((task) => !AVAILABLE_JOBS[task]);
-  if (invalidTasks.length > 0) {
-    logger.error(
-      {
-        invalidTasks,
-        availableTasks: Object.keys(AVAILABLE_JOBS),
-      },
-      '❌ Invalid task names provided'
-    );
-    process.exit(1);
-  }
+  logger.info({ tasks }, `Executing ${tasks.length} cron job(s)`);
 
-  logger.info(
-    {
-      tasks,
-    },
-    '📋 Tasks to execute'
-  );
-
-  // Initialize container
-  initializeContainer();
-
-  // Initialize integration registry
-  try {
-    const integrationManager = Container.get(IntegrationManager);
-    await integrationManager.initialize();
-    logger.info({}, '✅ Integration registry initialized');
-  } catch (error) {
-    logger.error(
-      { error: error instanceof Error ? error.message : String(error) },
-      '⚠️ Failed to initialize integration registry - some integrations may not work'
-    );
-    // Exit with error code since integration registry is critical
-    process.exit(1);
-  }
-
-  // Initialize Sentry for error tracking
-  initializeSentry();
-
-  // Execute tasks sequentially
-  const results: Array<{ task: string; success: boolean; error?: string; durationMs: number }> = [];
+  // Execute each task
+  const results: Array<{ task: string; success: boolean; error?: Error }> = [];
 
   for (const taskName of tasks) {
     const job = AVAILABLE_JOBS[taskName];
-    if (!job) {
-      throw new Error(`No job found for task ${taskName}`);
-    }
-    const taskStartTime = Date.now();
 
-    logger.info(
-      {
+    if (!job) {
+      logger.error({ taskName }, `Unknown cron job: ${taskName}`);
+      results.push({
         task: taskName,
-        description: job.description,
-      },
-      '▶️ Starting task'
-    );
+        success: false,
+        error: new Error(`Unknown cron job: ${taskName}`),
+      });
+      continue;
+    }
 
     try {
+      logger.info({ taskName }, `Executing ${taskName}...`);
       await job.execute();
-      const durationMs = Date.now() - taskStartTime;
-      results.push({ task: taskName, success: true, durationMs });
-
-      logger.info(
-        {
-          task: taskName,
-          durationMs,
-        },
-        '✅ Task completed successfully'
-      );
+      results.push({ task: taskName, success: true });
     } catch (error) {
-      const durationMs = Date.now() - taskStartTime;
-      const errorMessage = error instanceof Error ? error.message : String(error);
-
-      results.push({ task: taskName, success: false, error: errorMessage, durationMs });
-
-      logger.error(
-        {
-          task: taskName,
-          error: errorMessage,
-          stack: error instanceof Error ? error.stack : undefined,
-          durationMs,
-        },
-        '❌ Task failed'
-      );
-
-      // Capture exception in Sentry
-      captureException(error instanceof Error ? error : new Error(errorMessage), {
+      logger.error({ taskName, error }, `Failed to execute ${taskName}`);
+      captureException(error instanceof Error ? error : new Error(String(error)), {
+        context: 'cron-job-execution',
+        extra: { taskName },
+      });
+      results.push({
         task: taskName,
-        durationMs,
+        success: false,
+        error: error instanceof Error ? error : new Error(String(error)),
       });
     }
   }
 
   // Summary
-  const totalDurationMs = Date.now() - startTime;
-  const successCount = results.filter((r) => r.success).length;
-  const failureCount = results.filter((r) => !r.success).length;
+  const totalDuration = Date.now() - startTime;
+  const successful = results.filter((r) => r.success).length;
+  const failed = results.filter((r) => !r.success).length;
 
   logger.info(
     {
-      totalTasks: results.length,
-      successCount,
-      failureCount,
-      totalDurationMs,
-      results,
+      total: results.length,
+      successful,
+      failed,
+      duration: `${totalDuration}ms`,
     },
-    '🏁 Cron job execution completed'
+    '✨ Cron job execution completed'
   );
 
   // Flush Sentry events
   await flush(2000);
-  await close(2000);
 
-  // Exit with error code if any task failed
-  if (failureCount > 0) {
-    process.exit(1);
-  }
+  // Close Sentry
+  await close();
 
-  process.exit(0);
+  // Exit with appropriate code
+  process.exit(failed > 0 ? 1 : 0);
 }
-
-// Handle uncaught exceptions and unhandled rejections
-process.on('uncaughtException', async (error) => {
-  captureException(error, {
-    type: 'uncaughtException',
-    fatal: true,
-  });
-
-  logger.fatal(
-    {
-      error: {
-        name: error.name,
-        message: error.message,
-        stack: error.stack,
-      },
-    },
-    '💀 Uncaught Exception - shutting down'
-  );
-
-  await flush(2000);
-  process.exit(1);
-});
-
-process.on('unhandledRejection', async (reason, promise) => {
-  const error = reason instanceof Error ? reason : new Error(String(reason));
-
-  captureException(error, {
-    type: 'unhandledRejection',
-    promise: promise.toString(),
-    fatal: true,
-  });
-
-  logger.fatal(
-    {
-      reason,
-      promise: promise.toString(),
-    },
-    '💀 Unhandled Promise Rejection - shutting down'
-  );
-
-  await flush(2000);
-  process.exit(1);
-});
 
 // Run main function
 main().catch(async (error) => {
-  logger.fatal(
-    {
-      error: error instanceof Error ? error.message : String(error),
-      stack: error instanceof Error ? error.stack : undefined,
-    },
-    '💀 Fatal error in main - shutting down'
-  );
-
+  logger.error({ error }, '💥 Unhandled error in cron job runner');
   captureException(error instanceof Error ? error : new Error(String(error)), {
-    context: 'main',
-    fatal: true,
+    context: 'cron-main-unhandled',
   });
-
   await flush(2000);
+  await close();
   process.exit(1);
 });

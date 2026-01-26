@@ -1,7 +1,7 @@
 #!/bin/bash
 #
 # 15-Minute Cron Job Script
-# Syncs wallet balances, exchange balances, and Plaid balances
+# Syncs wallet balances and exchange balances
 #
 # Schedule: */15 * * * * (Every 15 minutes)
 # Usage: bash scripts/cron-15min.sh
@@ -18,6 +18,6 @@ cd "$(dirname "$0")/../apps/cron"
 export IS_CRON_JOB=true
 
 # Run the cron tasks
-bun run src/index.ts --tasks=wallet-balances,exchange-balances,plaid-balances
+bun run src/index.ts --tasks=wallet-balances,exchange-balances
 
 echo "✅ 15-minute cron tasks completed"

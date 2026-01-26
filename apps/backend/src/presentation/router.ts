@@ -4,7 +4,6 @@ import { TokenValidationService } from '@scani/core/services/TokenValidationServ
 import { Container } from 'typedi';
 import { accountTypesRouter } from './routers/account-types';
 import { accountsRouter } from './routers/accounts';
-import { aiChatRouter } from './routers/ai-chat';
 import { batchOperationsRouter } from './routers/batch-operations';
 import { dashboardRouter } from './routers/dashboard';
 import { groupsRouter } from './routers/groups';
@@ -12,12 +11,7 @@ import { holdingsRouter } from './routers/holdings';
 import { institutionTypesRouter } from './routers/institution-types';
 import { institutionsRouter } from './routers/institutions';
 import { integrationsRouter } from './routers/integrations';
-import { plaidRouter } from './routers/plaid';
-import { scheduleStepTypesRouter } from './routers/schedule-step-types';
-import { scheduleTypesRouter } from './routers/schedule-types';
-import { schedulesRouter } from './routers/schedules';
 import { screenshotsRouter } from './routers/screenshots';
-import { telegramRouter } from './routers/telegram';
 import { createTokensRouter } from './routers/tokens';
 import { usersRouter } from './routers/users';
 import { walletRouter } from './routers/wallet';
@@ -39,17 +33,12 @@ export const appRouter = router({
   // Enum tables (protected)
   institutionTypes: institutionTypesRouter,
   accountTypes: accountTypesRouter,
-  scheduleTypes: scheduleTypesRouter,
-  scheduleStepTypes: scheduleStepTypesRouter,
 
   // Business entities (protected)
   institutions: institutionsRouter,
   accounts: accountsRouter,
   holdings: holdingsRouter,
   groups: groupsRouter,
-
-  // Schedules (protected) - Recurring monetary movement patterns
-  schedules: schedulesRouter,
 
   // Batch operations (protected) - Atomic multi-entity operations
   batchOperations: batchOperationsRouter,
@@ -62,15 +51,6 @@ export const appRouter = router({
 
   // Integration authentication (protected) - Credential validation and storage
   integrations: integrationsRouter,
-
-  // Plaid integration (protected) - Bank account connection via Plaid
-  plaid: plaidRouter,
-
-  // Telegram (protected) - Telegram bot integration
-  telegram: telegramRouter,
-
-  // AI Chat (protected) - AI-powered chat for schedule configuration
-  aiChat: aiChatRouter,
 
   // Health check (public)
   health: router({

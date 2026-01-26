@@ -42,9 +42,6 @@ initializeSentry();
 // Import database for health checks
 import { db, getActiveConnectionsCount, getConnectionStats } from '@scani/core/database';
 
-// Import Telegram bot services (conditionally initialized later)
-import { TelegramBotService } from '@scani/telegram-bot';
-import { TelegramAuthService } from './infrastructure/telegram/TelegramAuthService';
 // Import router AFTER container is initialized
 import { appRouter } from './presentation/router';
 
@@ -451,74 +448,9 @@ const realTimeUpdatesService = Container.get(RealTimeUpdatesService);
 realTimeUpdatesService.setElysiaApp(app);
 realTimeUpdatesService.initialize();
 
-// Initialize Telegram bot if configured
-// biome-ignore lint/suspicious/noExplicitAny: TelegramBotService type not available at runtime due to dynamic import
-let telegramBot: any = null;
-const initTelegramBot = async () => {
-  const botToken = process.env.TELEGRAM_BOT_TOKEN;
-  const openAIApiKey = process.env.OPENAI_API_KEY;
-
-  if (!botToken) {
-    logger.warn({}, '⚠️  Telegram bot not configured (TELEGRAM_BOT_TOKEN not set)');
-    return;
-  }
-
-  if (!openAIApiKey) {
-    logger.warn({}, '⚠️ Telegram bot disabled: OpenAI API key not configured');
-    return;
-  }
-
-  try {
-    logger.info({}, '🤖 Initializing Telegram bot...');
-    const telegramAuthService = Container.get(TelegramAuthService);
-
-    telegramBot = new TelegramBotService({
-      botToken,
-      openAIApiKey,
-      getAuthenticatedUser: async (telegramId: string) => {
-        return await telegramAuthService.getAuthenticatedUser(telegramId);
-      },
-      linkTelegramUser: async (
-        telegramId: string,
-        telegramUsername: string | undefined,
-        authToken: string
-      ) => {
-        await telegramAuthService.linkTelegramUser(telegramId, telegramUsername, authToken);
-      },
-      logger, // Pass the backend logger
-    });
-
-    await telegramBot.start();
-    logger.info({}, '✅ Telegram bot started successfully');
-  } catch (error) {
-    logger.error({ error }, '❌ Failed to start Telegram bot');
-    captureException(error instanceof Error ? error : new Error(String(error)), {
-      context: 'telegram-bot-initialization',
-    });
-  }
-};
-
-// Start telegram bot asynchronously (don't block server startup)
-initTelegramBot().catch((error) => {
-  logger.error({ error }, '💥 Unhandled error in Telegram bot initialization');
-  captureException(error instanceof Error ? error : new Error(String(error)), {
-    context: 'telegram-bot-initialization-unhandled',
-  });
-});
-
 // Graceful shutdown with logging
 const gracefulShutdown = async (signal: string) => {
   logger.info({ signal }, '🛑 Graceful shutdown initiated');
-
-  // Stop Telegram bot if running
-  if (telegramBot) {
-    logger.info({}, 'Stopping Telegram bot...');
-    try {
-      await telegramBot.stop();
-    } catch (error) {
-      logger.error({ error }, 'Error stopping Telegram bot');
-    }
-  }
 
   logger.info({}, 'Flushing Sentry events...');
   await flush(2000);
