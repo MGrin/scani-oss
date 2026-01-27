@@ -1,4 +1,4 @@
-import { and, eq } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 import { Service } from 'typedi';
 import * as schema from '../database/schema';
 import type { Account, NewAccount } from '../domain/entities';
@@ -63,6 +63,35 @@ export class AccountRepository extends BaseRepository<Account, NewAccount> {
       });
     } catch (error) {
       this.logger.error({ error }, 'Failed to find wallet accounts');
+      throw error;
+    }
+  }
+
+  /**
+   * Find accounts by user_wallet_id in metadata
+   */
+  async findByUserWalletId(
+    userWalletId: string,
+    transaction?: DatabaseTransaction
+  ): Promise<Account[]> {
+    try {
+      const database = this.getDb(transaction);
+
+      // Use SQL jsonb operator to filter at database level for better performance
+      const accounts = await database
+        .select()
+        .from(schema.accounts)
+        .where(
+          and(
+            eq(schema.accounts.isActive, true),
+            // Use SQL to filter by JSONB field
+            sql`${schema.accounts.metadata}->>'userWalletId' = ${userWalletId}`
+          )
+        );
+
+      return accounts;
+    } catch (error) {
+      this.logger.error({ userWalletId, error }, 'Failed to find accounts by user wallet ID');
       throw error;
     }
   }

@@ -21,6 +21,21 @@ export const accountsRouter = router({
     return await AccountImplementations.getById({ userId: dbUser.id, dbUser }, { id: input.id });
   }),
 
+  getByWalletId: protectedProcedure
+    .input(
+      z.object({
+        walletId: z.string().uuid(),
+        includeRemoved: z.boolean().optional().default(false),
+      })
+    )
+    .query(async ({ input, ctx }) => {
+      const { dbUser } = await requireAuth(ctx);
+      return await AccountImplementations.getByWalletId(
+        { userId: dbUser.id, dbUser },
+        { walletId: input.walletId, includeRemoved: input.includeRemoved }
+      );
+    }),
+
   getHoldings: protectedProcedure
     .input(
       z.object({
@@ -78,6 +93,26 @@ export const accountsRouter = router({
       entityId: input.id,
       userId: dbUser.id,
       data: {},
+    });
+
+    return result;
+  }),
+
+  restore: protectedProcedure.input(IdInputDto).mutation(async ({ input, ctx }) => {
+    const { dbUser } = await requireAuth(ctx);
+
+    const result = await AccountImplementations.restore(
+      { userId: dbUser.id, dbUser },
+      { id: input.id }
+    );
+
+    emitEntityChange({
+      type: 'entity_changed',
+      entityType: 'account',
+      operationType: 'update',
+      entityId: input.id,
+      userId: dbUser.id,
+      data: result,
     });
 
     return result;

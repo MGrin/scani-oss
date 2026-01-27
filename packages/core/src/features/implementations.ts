@@ -24,6 +24,7 @@ import {
   TokenService,
   UserContextService,
   UserService,
+  UserWalletService,
 } from '../services';
 import {
   CreateHoldingsWithDependenciesUseCase,
@@ -129,6 +130,36 @@ export const AccountImplementations = {
     return await accountService.getAccountById(context.userId, input.id);
   },
 
+  async getByWalletId(
+    context: FeatureExecutionContext,
+    input: { walletId: string; includeRemoved?: boolean }
+  ) {
+    const accountRepository = Container.get(AccountRepository);
+    const userWalletService = Container.get(UserWalletService);
+
+    // Verify wallet belongs to user
+    const wallet = await userWalletService.getWalletById(input.walletId);
+    if (!wallet) {
+      throw new Error('Wallet not found');
+    }
+    if (wallet.userId !== context.userId) {
+      throw new Error('Unauthorized: Wallet does not belong to user');
+    }
+
+    // Get all accounts for this wallet
+    const accounts = await accountRepository.findByUserWalletId(input.walletId);
+
+    // Filter out removed accounts unless includeRemoved is true
+    if (!input.includeRemoved) {
+      const institutionIds = (wallet.institutionIds as string[]) || [];
+      return accounts.filter((account) => {
+        return account.institutionId && institutionIds.includes(account.institutionId);
+      });
+    }
+
+    return accounts;
+  },
+
   async getHoldings(
     context: FeatureExecutionContext,
     input: { id: string; includeHidden?: boolean }
@@ -212,6 +243,50 @@ export const AccountImplementations = {
       success: true,
       updatedAccountIds: input.accountIds,
     };
+  },
+
+  async restore(context: FeatureExecutionContext, input: { id: string }) {
+    const accountRepository = Container.get(AccountRepository);
+    const userWalletService = Container.get(UserWalletService);
+    const accountService = Container.get(AccountService);
+
+    // Fetch the account to verify ownership
+    const account = await accountRepository.findById(input.id);
+    if (!account) {
+      throw new Error('Account not found');
+    }
+
+    if (account.userId !== context.userId) {
+      throw new Error('Unauthorized: Account does not belong to user');
+    }
+
+    // Check if this is a wallet account
+    const metadata = account.metadata as Record<string, unknown> | null;
+    const userWalletId = metadata?.userWalletId as string | undefined;
+    const migrated = metadata?.migrated as boolean | undefined;
+
+    if (!userWalletId || !migrated) {
+      throw new Error('Account is not a wallet account');
+    }
+
+    // Check if the institution is already active for this wallet
+    const wallet = await userWalletService.getWalletById(userWalletId);
+    if (!wallet) {
+      throw new Error('User wallet not found');
+    }
+
+    const institutionIds = (wallet.institutionIds as string[]) || [];
+    if (account.institutionId && institutionIds.includes(account.institutionId)) {
+      throw new Error('This account is already active for the wallet');
+    }
+
+    // Add the institution back to the wallet
+    if (account.institutionId) {
+      await userWalletService.addInstitutionToWallet(userWalletId, account.institutionId);
+    }
+
+    // Return the updated account
+    return await accountService.getAccountById(context.userId, input.id);
   },
 
   async getCommonGroups(context: FeatureExecutionContext, input: { accountIds: string[] }) {
