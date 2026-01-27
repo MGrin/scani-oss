@@ -7,7 +7,6 @@ import {
   List,
   MoreHorizontal,
   Trash2,
-  Undo2,
 } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
@@ -55,37 +54,24 @@ type Account = {
   description?: string | null;
   metadata?: unknown;
   isActive: boolean;
-  createdAt?: string;
-  updatedAt?: string;
+  createdAt: string;
+  updatedAt: string;
   summary: {
     holdingsCount: number;
     totalValue: string;
   };
-  groups: Array<{ id: string; name: string; color?: string | null }>;
 };
 
 type GroupBy = 'none' | 'institution' | 'type';
 
 export function Accounts() {
-  // State for showing removed accounts
-  const [showRemoved, setShowRemoved] = useState(false);
-
   // Fetch accounts data from tRPC
-  const {
-    data: accountsData,
-    isLoading,
-    error,
-  } = trpc.accounts.getByUserIdWithSummary.useQuery({
-    includeRemoved: showRemoved,
-  });
+  const { data: accountsData, isLoading, error } = trpc.accounts.getByUserIdWithSummary.useQuery();
 
   // Fetch account types and institutions for display
   const { data: accountTypes } = trpc.accountTypes.getAll.useQuery();
   const { data: institutions } = trpc.institutions.getByUserId.useQuery();
   const { data: groupsData } = trpc.groups.getAll.useQuery();
-
-  // Fetch user wallets to determine which accounts are removed
-  const { data: userWallets } = trpc.wallet.getUserWallets.useQuery();
 
   // Fetch base currency for proper formatting
   const { data: baseCurrency } = trpc.users.getBaseCurrency.useQuery();
@@ -171,43 +157,6 @@ export function Accounts() {
       utils.accounts.getByUserIdWithSummary.invalidate();
     },
   });
-
-  // Restore account mutation
-  const restoreAccountMutation = trpc.accounts.restore.useMutation({
-    onSuccess: () => {
-      // Invalidate all account-related queries
-      utils.accounts.getByUserIdWithSummary.invalidate();
-      utils.accounts.getAll.invalidate();
-      utils.dashboard.getOverview.invalidate();
-
-      toast({
-        title: 'Account restored',
-        description: 'The blockchain account has been successfully restored to your wallet.',
-      });
-    },
-    onError: (error) => showError(error, 'Restoring account'),
-  });
-
-  // Helper function to determine if an account is removed (wallet account with institutionId not in wallet's institutionIds)
-  const isAccountRemoved = (account: Account): boolean => {
-    const metadata = account.metadata as Record<string, unknown> | null;
-    const userWalletId = metadata?.userWalletId as string | undefined;
-
-    // If this is not a wallet account, it can't be "removed"
-    if (!userWalletId || !userWallets) {
-      return false;
-    }
-
-    // Find the wallet for this account
-    const wallet = userWallets.find((w) => w.id === userWalletId);
-    if (!wallet) {
-      return false;
-    }
-
-    // Check if the account's institutionId is in the wallet's active institutionIds
-    const institutionIds = (wallet.institutionIds as string[] | undefined) || [];
-    return account.institutionId ? !institutionIds.includes(account.institutionId) : false;
-  };
 
   // Transform backend data to match frontend expectations
   const accounts = accountsData || [];
@@ -417,10 +366,6 @@ export function Accounts() {
     deleteAccountMutation.mutate({ id: account.id });
   };
 
-  const handleRestoreAccount = (account: Account) => {
-    restoreAccountMutation.mutate({ id: account.id });
-  };
-
   const handleSelectRow = (rowKey: string) => {
     setSelectedRows((prev) => {
       const newSet = new Set(prev);
@@ -456,51 +401,33 @@ export function Accounts() {
     }
   };
 
-  const renderActions = (account: Account) => {
-    const removed = isAccountRemoved(account);
-
-    return (
-      <DropdownMenu>
-        <DropdownMenuTrigger asChild>
-          <Button variant="ghost" className="h-8 w-8 p-0">
-            <span className="sr-only">Open menu</span>
-            <MoreHorizontal className="h-4 w-4" />
-          </Button>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align="end">
-          {removed ? (
-            <DropdownMenuItem
-              onClick={(e) => {
-                e.stopPropagation();
-                handleRestoreAccount(account);
-              }}
-              className="text-green-600 focus:text-green-600"
-            >
-              <Undo2 className="mr-2 h-4 w-4" />
-              Restore Account
-            </DropdownMenuItem>
-          ) : (
-            <DropdownMenuItem
-              onClick={(e) => {
-                e.stopPropagation();
-                handleDeleteAccount(account);
-              }}
-              className="text-destructive focus:text-destructive"
-            >
-              <Trash2 className="mr-2 h-4 w-4" />
-              Remove Account
-            </DropdownMenuItem>
-          )}
-        </DropdownMenuContent>
-      </DropdownMenu>
-    );
-  };
+  const renderActions = (account: Account) => (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button variant="ghost" className="h-8 w-8 p-0">
+          <span className="sr-only">Open menu</span>
+          <MoreHorizontal className="h-4 w-4" />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end">
+        <DropdownMenuItem
+          onClick={(e) => {
+            e.stopPropagation();
+            handleDeleteAccount(account);
+          }}
+          className="text-destructive focus:text-destructive"
+        >
+          <Trash2 className="mr-2 h-4 w-4" />
+          Remove Account
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
 
   const clearFilters = () => {
     setSearchTerm('');
     clearAllFilters();
     setValueRange('all');
-    setShowRemoved(false);
     setSortField('value');
     setSortDirection('desc');
   };
@@ -697,21 +624,6 @@ export function Accounts() {
                   </SelectContent>
                 </Select>
 
-                {/* Show removed accounts checkbox */}
-                <div className="flex items-center space-x-2">
-                  <Checkbox
-                    id="show-removed"
-                    checked={showRemoved}
-                    onCheckedChange={(checked) => setShowRemoved(checked === true)}
-                  />
-                  <label
-                    htmlFor="show-removed"
-                    className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 cursor-pointer"
-                  >
-                    Show removed accounts
-                  </label>
-                </div>
-
                 <div className="ml-auto">
                   <Button variant="outline" size="sm" onClick={clearFilters}>
                     Clear Filters
@@ -802,11 +714,6 @@ export function Accounts() {
                                     >
                                       {account.name}
                                     </button>
-                                    {isAccountRemoved(account) && (
-                                      <Badge variant="secondary" className="text-xs">
-                                        Removed
-                                      </Badge>
-                                    )}
                                   </span>
                                   <div className="text-sm text-muted-foreground">
                                     {accountType?.name || 'Unknown'}
@@ -899,20 +806,14 @@ export function Accounts() {
                         </Card>
                       )}
                       <DataTable
+                        // @ts-expect-error TS2322 - Account type mismatch
                         data={accounts}
                         columns={[
                           {
                             header: 'Account',
                             accessor: (row) => (
                               <div>
-                                <div className="font-medium flex items-center gap-2">
-                                  {row.name}
-                                  {isAccountRemoved(row) && (
-                                    <Badge variant="secondary" className="text-xs">
-                                      Removed
-                                    </Badge>
-                                  )}
-                                </div>
+                                <div className="font-medium">{row.name}</div>
                                 <div className="text-sm text-muted-foreground">
                                   {accountTypes?.find((type) => type.id === row.typeId)?.name ||
                                     'Unknown Type'}
@@ -952,6 +853,7 @@ export function Accounts() {
                           {
                             header: 'Groups',
                             accessor: (row) => {
+                              // @ts-expect-error Account type from query includes groups at runtime
                               const groups = row.groups;
                               if (!groups || groups.length === 0) {
                                 return <span className="text-xs text-muted-foreground">-</span>;

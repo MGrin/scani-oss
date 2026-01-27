@@ -115,21 +115,14 @@ export const DashboardImplementations = {
  * Account Implementations
  */
 export const AccountImplementations = {
-  async getAll(context: FeatureExecutionContext, input: { includeRemoved?: boolean }) {
+  async getAll(context: FeatureExecutionContext, _input: Record<string, never>) {
     const accountService = Container.get(AccountService);
-    return await accountService.getAccountsByUserId(context.userId, {
-      includeRemoved: input.includeRemoved,
-    });
+    return await accountService.getAccountsByUserId(context.userId);
   },
 
-  async getByUserIdWithSummary(
-    context: FeatureExecutionContext,
-    input: { includeRemoved?: boolean }
-  ) {
+  async getByUserIdWithSummary(context: FeatureExecutionContext, _input: Record<string, never>) {
     const accountService = Container.get(AccountService);
-    return await accountService.getAccountsByUserIdWithSummary(context.userId, {
-      includeRemoved: input.includeRemoved,
-    });
+    return await accountService.getAccountsByUserIdWithSummary(context.userId);
   },
 
   async getById(context: FeatureExecutionContext, input: { id: string }) {
@@ -572,11 +565,6 @@ export const TokenImplementations = {
  * Wallet Implementations
  */
 export const WalletImplementations = {
-  async getUserWallets(context: FeatureExecutionContext, _input: Record<string, never>) {
-    const userWalletService = Container.get(UserWalletService);
-    return await userWalletService.getUserWallets(context.userId);
-  },
-
   async getSupportedChains(_context: FeatureExecutionContext, _input: Record<string, never>) {
     const blockchainService = Container.get(BlockchainServiceManager);
     const chains = blockchainService.getAllSupportedChains();
