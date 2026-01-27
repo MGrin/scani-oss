@@ -128,29 +128,6 @@ export function AccountDetail() {
     onError: (error) => showError(error, 'Restoring holding'),
   });
 
-  // Track if we've successfully restored this account to hide the button
-  const [accountRestored, setAccountRestored] = useState(false);
-
-  // Restore account mutation (for blockchain accounts)
-  const restoreAccountMutation = trpc.accounts.restore.useMutation({
-    onSuccess: () => {
-      // Invalidate all account-related queries
-      utils.accounts.getById.invalidate();
-      utils.accounts.getByUserIdWithSummary.invalidate();
-      utils.accounts.getAll.invalidate();
-      utils.dashboard.getOverview.invalidate();
-
-      // Hide the restore button
-      setAccountRestored(true);
-
-      toast({
-        title: 'Blockchain restored',
-        description: 'The blockchain has been successfully restored to your wallet.',
-      });
-    },
-    onError: (error) => showError(error, 'Restoring blockchain'),
-  });
-
   // Fetch account data
   const {
     data: account,
@@ -163,15 +140,6 @@ export function AccountDetail() {
     { id: id!, includeHidden: showHidden },
     { enabled: !!id }
   );
-
-  // Check if this is a removed blockchain account
-  // An account is considered "removed" if it's a wallet account but we can detect it's been removed
-  // We'll determine this based on whether we see a restore error or success
-  const isWalletAccount = useMemo(() => {
-    if (!account) return false;
-    const metadata = account.metadata as Record<string, unknown> | undefined;
-    return !!(metadata?.walletAddress && metadata?.migrated);
-  }, [account]);
 
   // Filter and sort holdings
   const filteredAndSortedHoldings = useMemo(() => {
@@ -320,12 +288,6 @@ export function AccountDetail() {
 
   const handleRestoreHolding = (holding: HoldingWithDetails) => {
     restoreHoldingMutation.mutate({ id: holding.id });
-  };
-
-  const handleRestoreAccount = () => {
-    if (id) {
-      restoreAccountMutation.mutate({ id });
-    }
   };
 
   const handleSelectRow = (rowKey: string) => {
@@ -520,18 +482,10 @@ export function AccountDetail() {
         title={account.name}
         subtitle={`Account • ${accountType?.name || 'Unknown Type'}`}
         secondaryActions={
-          <div className="flex gap-2">
-            {isWalletAccount && !accountRestored && (
-              <Button onClick={handleRestoreAccount} variant="outline" className="text-green-600">
-                <Undo2 className="h-4 w-4 mr-2" />
-                Restore Chain
-              </Button>
-            )}
-            <Button onClick={() => setIsEditAccountModalOpen(true)} variant="outline">
-              <Edit className="h-4 w-4 mr-2" />
-              Edit Account
-            </Button>
-          </div>
+          <Button onClick={() => setIsEditAccountModalOpen(true)} variant="outline">
+            <Edit className="h-4 w-4 mr-2" />
+            Edit Account
+          </Button>
         }
       />
 
