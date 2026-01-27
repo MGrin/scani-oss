@@ -6,15 +6,39 @@ import { requireAuth } from '../middleware/auth';
 import { protectedProcedure, router } from '../trpc';
 
 export const accountsRouter = router({
-  getAll: protectedProcedure.query(async ({ ctx }) => {
-    const { dbUser } = await requireAuth(ctx);
-    return await AccountImplementations.getAll({ userId: dbUser.id, dbUser }, {});
-  }),
+  getAll: protectedProcedure
+    .input(
+      z
+        .object({
+          includeRemoved: z.boolean().optional().default(false),
+        })
+        .optional()
+        .default({})
+    )
+    .query(async ({ input, ctx }) => {
+      const { dbUser } = await requireAuth(ctx);
+      return await AccountImplementations.getAll(
+        { userId: dbUser.id, dbUser },
+        { includeRemoved: input.includeRemoved }
+      );
+    }),
 
-  getByUserIdWithSummary: protectedProcedure.query(async ({ ctx }) => {
-    const { dbUser } = await requireAuth(ctx);
-    return await AccountImplementations.getByUserIdWithSummary({ userId: dbUser.id, dbUser }, {});
-  }),
+  getByUserIdWithSummary: protectedProcedure
+    .input(
+      z
+        .object({
+          includeRemoved: z.boolean().optional().default(false),
+        })
+        .optional()
+        .default({})
+    )
+    .query(async ({ input, ctx }) => {
+      const { dbUser } = await requireAuth(ctx);
+      return await AccountImplementations.getByUserIdWithSummary(
+        { userId: dbUser.id, dbUser },
+        { includeRemoved: input.includeRemoved }
+      );
+    }),
 
   getById: protectedProcedure.input(IdInputDto).query(async ({ input, ctx }) => {
     const { dbUser } = await requireAuth(ctx);

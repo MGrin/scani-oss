@@ -22,6 +22,14 @@ const ImportWalletSchema = z.object({
 
 export const walletRouter = router({
   /**
+   * Get all user wallets
+   */
+  getUserWallets: protectedProcedure.query(async ({ ctx }) => {
+    const { dbUser } = await requireAuth(ctx);
+    return await WalletImplementations.getUserWallets({ userId: dbUser.id, dbUser }, {});
+  }),
+
+  /**
    * Get all supported blockchain chains
    */
   getSupportedChains: protectedProcedure.query(async ({ ctx }) => {

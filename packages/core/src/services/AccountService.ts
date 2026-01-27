@@ -111,17 +111,69 @@ export class AccountService extends BaseService {
     }
   }
 
-  async getAccountsByUserId(userId: string): Promise<Account[]> {
+  async getAccountsByUserId(
+    userId: string,
+    options?: { includeRemoved?: boolean }
+  ): Promise<Account[]> {
     try {
-      return await this.accountRepository.findByUser(userId);
+      const accounts = await this.accountRepository.findByUser(userId);
+
+      // If includeRemoved is false (default), filter out removed wallet accounts
+      if (!options?.includeRemoved) {
+        return await this.filterOutRemovedWalletAccounts(userId, accounts);
+      }
+
+      return accounts;
     } catch (error) {
       throw this.handleError(error, 'getAccountsByUserId');
     }
   }
 
-  async getAccountsByUserIdWithSummary(userId: string): Promise<AccountWihSumaryDTO[]> {
+  /**
+   * Filter out wallet accounts whose institutionId is not in their wallet's institutionIds array
+   * These are considered "removed" chains for that wallet
+   */
+  private async filterOutRemovedWalletAccounts(
+    userId: string,
+    accounts: Account[]
+  ): Promise<Account[]> {
+    // Get all user wallets to check which institutions are active
+    const userWallets = await this.userWalletService.getUserWallets(userId);
+
+    // Build a map of walletId -> Set of active institutionIds
+    const walletInstitutionsMap = new Map<string, Set<string>>();
+    for (const wallet of userWallets) {
+      const institutionIds = (wallet.institutionIds as string[]) || [];
+      walletInstitutionsMap.set(wallet.id, new Set(institutionIds));
+    }
+
+    return accounts.filter((account) => {
+      const metadata = account.metadata as Record<string, unknown> | null;
+      const userWalletId = metadata?.userWalletId as string | undefined;
+
+      // If this is not a wallet account, always include it
+      if (!userWalletId) {
+        return true;
+      }
+
+      // If this is a wallet account, check if its institutionId is in the wallet's active institutionIds
+      const activeInstitutions = walletInstitutionsMap.get(userWalletId);
+      if (!activeInstitutions) {
+        // Wallet not found, exclude the account
+        return false;
+      }
+
+      // Include account only if its institutionId is in the wallet's active institutions
+      return account.institutionId ? activeInstitutions.has(account.institutionId) : false;
+    });
+  }
+
+  async getAccountsByUserIdWithSummary(
+    userId: string,
+    options?: { includeRemoved?: boolean }
+  ): Promise<AccountWihSumaryDTO[]> {
     // Get user's accounts
-    const accounts = await this.getAccountsByUserId(userId);
+    const accounts = await this.getAccountsByUserId(userId, options);
 
     if (accounts.length === 0) {
       return [];
