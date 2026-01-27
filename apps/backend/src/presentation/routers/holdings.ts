@@ -96,6 +96,32 @@ export const holdingsRouter = router({
       return result;
     }),
 
+  // Restore a hidden holding (unmark as hidden)
+  restore: protectedProcedure
+    .input(z.object({ id: z.string() }))
+    .mutation(async ({ input, ctx }) => {
+      const { dbUser } = await requireAuth(ctx);
+
+      const result = await HoldingImplementations.restore(
+        { userId: dbUser.id, dbUser },
+        { id: input.id }
+      );
+
+      emitEntityChange({
+        type: 'entity_changed',
+        entityType: 'holding',
+        operationType: 'update',
+        entityId: result.id,
+        userId: dbUser.id,
+        data: {
+          accountId: result.accountId,
+          tokenId: result.tokenId,
+        },
+      });
+
+      return result;
+    }),
+
   // Update holding price by forcing fresh fetch from pricing providers
   updatePrice: protectedProcedure
     .input(z.object({ id: z.string() }))

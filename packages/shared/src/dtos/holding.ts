@@ -82,6 +82,8 @@ export type HoldingWithDetails = {
   lastUpdated: string;
   createdAt: string;
   isActive: boolean;
+  isHidden: boolean;
+  source: string;
 };
 
 export type CreateHoldingInput = z.infer<typeof CreateHoldingDto>;

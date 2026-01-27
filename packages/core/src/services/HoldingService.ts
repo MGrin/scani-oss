@@ -105,17 +105,26 @@ export class HoldingService extends BaseService {
 
   async getHoldingsByAccountIdWithDetails(
     user: User,
-    accountId?: string
+    accountId?: string,
+    includeHidden = false
   ): Promise<HoldingWithDetails[]> {
     if (!user.baseCurrencyId) {
       throw new Error('User does not have a base currency set');
     }
 
-    this.logger.debug({ userId: user.id, accountId }, 'Getting holdings with details');
+    this.logger.debug(
+      { userId: user.id, accountId, includeHidden },
+      'Getting holdings with details'
+    );
 
     // Parallel fetch: optimized holdings query + portfolio valuation + groups
     const [holdingsWithFullDetails, portfolioValue] = await Promise.all([
-      this.holdingRepository.findByUserWithFullDetails(user.id, accountId),
+      this.holdingRepository.findByUserWithFullDetails(
+        user.id,
+        accountId,
+        undefined, // transaction: not using transaction here
+        includeHidden
+      ),
       this.portfolioValuationService.getUserPortfolioValue(user.id, user.baseCurrencyId, accountId),
     ]);
 
@@ -211,6 +220,8 @@ export class HoldingService extends BaseService {
           lastUpdated: holding.lastUpdated.toISOString(),
           createdAt: holding.createdAt.toISOString(),
           isActive: holding.isActive,
+          isHidden: holding.isHidden,
+          source: holding.source,
         };
       }
     );

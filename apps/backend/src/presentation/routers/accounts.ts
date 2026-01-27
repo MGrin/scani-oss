@@ -21,13 +21,20 @@ export const accountsRouter = router({
     return await AccountImplementations.getById({ userId: dbUser.id, dbUser }, { id: input.id });
   }),
 
-  getHoldings: protectedProcedure.input(IdInputDto).query(async ({ input, ctx }) => {
-    const { dbUser } = await requireAuth(ctx);
-    return await AccountImplementations.getHoldings(
-      { userId: dbUser.id, dbUser },
-      { id: input.id }
-    );
-  }),
+  getHoldings: protectedProcedure
+    .input(
+      z.object({
+        id: z.string().uuid(),
+        includeHidden: z.boolean().optional().default(false),
+      })
+    )
+    .query(async ({ input, ctx }) => {
+      const { dbUser } = await requireAuth(ctx);
+      return await AccountImplementations.getHoldings(
+        { userId: dbUser.id, dbUser },
+        { id: input.id, includeHidden: input.includeHidden }
+      );
+    }),
 
   update: protectedProcedure
     .input(

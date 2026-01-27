@@ -1,5 +1,5 @@
 import type { HoldingWithDetails } from '@scani/shared';
-import { Edit, Grid3X3, Info, List, MoreHorizontal, Trash2 } from 'lucide-react';
+import { Edit, Grid3X3, Info, List, MoreHorizontal, Trash2, Undo2 } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import TimeAgo from 'react-timeago';
@@ -9,6 +9,7 @@ import { TokenFilterSelector, TokenTypeSelector } from '@/components/selectors/S
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
+import { Checkbox } from '@/components/ui/checkbox';
 import { DataTable } from '@/components/ui/data-table';
 import {
   DropdownMenu,
@@ -46,6 +47,7 @@ export function AccountDetail() {
   const [filterByToken, setFilterByToken] = useState(''); // Token filter
   const [valueRange, setValueRange] = useState('all');
   const [viewMode, setViewMode] = useViewMode('table');
+  const [showHidden, setShowHidden] = useState(false); // Show hidden holdings toggle
 
   // Modal state
   const [isEditAccountModalOpen, setIsEditAccountModalOpen] = useState(false);
@@ -108,6 +110,24 @@ export function AccountDetail() {
     onError: (error) => showError(error, 'Deleting holdings'),
   });
 
+  // Restore holding mutation
+  const restoreHoldingMutation = trpc.holdings.restore.useMutation({
+    onSuccess: () => {
+      // Invalidate all holding-related queries
+      utils.holdings.getWithDetails.invalidate();
+      utils.accounts.getHoldings.invalidate();
+      utils.accounts.getById.invalidate();
+      utils.accounts.getByUserIdWithSummary.invalidate();
+      utils.dashboard.getOverview.invalidate();
+
+      toast({
+        title: 'Holding restored',
+        description: 'The holding has been successfully restored.',
+      });
+    },
+    onError: (error) => showError(error, 'Restoring holding'),
+  });
+
   // Fetch account data
   const {
     data: account,
@@ -117,7 +137,7 @@ export function AccountDetail() {
 
   // Fetch holdings for this account
   const { data: accountHoldings } = trpc.accounts.getHoldings.useQuery(
-    { id: id! },
+    { id: id!, includeHidden: showHidden },
     { enabled: !!id }
   );
 
@@ -243,6 +263,7 @@ export function AccountDetail() {
     setFilterBy('');
     setFilterByToken('');
     setValueRange('all');
+    setShowHidden(false);
     setSortField('value');
     setSortDirection('desc');
   };
@@ -263,6 +284,10 @@ export function AccountDetail() {
 
   const handleDeleteHolding = (holding: HoldingWithDetails) => {
     deleteHoldingMutation.mutate({ id: holding.id });
+  };
+
+  const handleRestoreHolding = (holding: HoldingWithDetails) => {
+    restoreHoldingMutation.mutate({ id: holding.id });
   };
 
   const handleSelectRow = (rowKey: string) => {
@@ -309,16 +334,29 @@ export function AccountDetail() {
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end">
-        <DropdownMenuItem
-          onClick={(e) => {
-            e.stopPropagation();
-            handleDeleteHolding(holding);
-          }}
-          className="text-destructive focus:text-destructive"
-        >
-          <Trash2 className="mr-2 h-4 w-4" />
-          Remove Holding
-        </DropdownMenuItem>
+        {holding.isHidden ? (
+          <DropdownMenuItem
+            onClick={(e) => {
+              e.stopPropagation();
+              handleRestoreHolding(holding);
+            }}
+            className="text-green-600 focus:text-green-600"
+          >
+            <Undo2 className="mr-2 h-4 w-4" />
+            Restore Holding
+          </DropdownMenuItem>
+        ) : (
+          <DropdownMenuItem
+            onClick={(e) => {
+              e.stopPropagation();
+              handleDeleteHolding(holding);
+            }}
+            className="text-destructive focus:text-destructive"
+          >
+            <Trash2 className="mr-2 h-4 w-4" />
+            Remove Holding
+          </DropdownMenuItem>
+        )}
       </DropdownMenuContent>
     </DropdownMenu>
   );
@@ -542,6 +580,23 @@ export function AccountDetail() {
               </SelectContent>
             </Select>
 
+            {/* Show hidden holdings checkbox - only for wallet accounts */}
+            {walletAddress && (
+              <div className="flex items-center space-x-2">
+                <Checkbox
+                  id="show-hidden"
+                  checked={showHidden}
+                  onCheckedChange={(checked) => setShowHidden(checked === true)}
+                />
+                <label
+                  htmlFor="show-hidden"
+                  className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 cursor-pointer"
+                >
+                  Show removed holdings
+                </label>
+              </div>
+            )}
+
             <div className="ml-auto mr-0">
               <Button
                 variant="outline"
@@ -551,7 +606,8 @@ export function AccountDetail() {
                   searchTerm === '' &&
                   filterBy === '' &&
                   filterByToken === '' &&
-                  valueRange === 'all'
+                  valueRange === 'all' &&
+                  !showHidden
                 }
               >
                 Clear Filters
@@ -602,7 +658,14 @@ export function AccountDetail() {
                 header: 'Token',
                 accessor: (row: HoldingWithDetails) => (
                   <div>
-                    <div className="font-medium flex items-center gap-2">{row.token.symbol}</div>
+                    <div className="font-medium flex items-center gap-2">
+                      {row.token.symbol}
+                      {row.isHidden && (
+                        <span className="text-xs text-muted-foreground bg-muted px-2 py-0.5 rounded">
+                          Removed
+                        </span>
+                      )}
+                    </div>
                     <div className="text-sm text-muted-foreground">{row.token.name}</div>
                     <TokenTypeBadge tokenTypeCode={row.token.typeCode} />
                   </div>
@@ -669,6 +732,11 @@ export function AccountDetail() {
                   <div className="flex items-center gap-2">
                     <div className="font-medium">{holding.token.symbol}</div>
                     <TokenTypeBadge tokenTypeCode={holding.token.typeCode} />
+                    {holding.isHidden && (
+                      <span className="text-xs text-muted-foreground bg-muted px-2 py-0.5 rounded">
+                        Removed
+                      </span>
+                    )}
                   </div>
                 </div>
                 <div className="text-sm text-muted-foreground">{holding.token.name}</div>

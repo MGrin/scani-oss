@@ -129,7 +129,10 @@ export const AccountImplementations = {
     return await accountService.getAccountById(context.userId, input.id);
   },
 
-  async getHoldings(context: FeatureExecutionContext, input: { id: string }) {
+  async getHoldings(
+    context: FeatureExecutionContext,
+    input: { id: string; includeHidden?: boolean }
+  ) {
     const holdingService = Container.get(HoldingService);
     // Need to fetch full user object if not provided
     let dbUser = context.dbUser;
@@ -138,8 +141,12 @@ export const AccountImplementations = {
       dbUser = (await userContextService.getUserById(context.userId)) || undefined;
     }
     // Type assertion since the function expects a full user object
-    // biome-ignore lint/suspicious/noExplicitAny: Type assertion needed for user object compatibility
-    return await holdingService.getHoldingsByAccountIdWithDetails(dbUser as any, input.id);
+    return await holdingService.getHoldingsByAccountIdWithDetails(
+      // biome-ignore lint/suspicious/noExplicitAny: Type assertion needed for user object compatibility
+      dbUser as any,
+      input.id,
+      input.includeHidden
+    );
   },
 
   async delete(context: FeatureExecutionContext, input: { id: string }) {
@@ -334,6 +341,33 @@ export const HoldingImplementations = {
       : 'USD';
 
     return await useCase.execute(input.id, context.userId, baseCurrency);
+  },
+
+  async restore(context: FeatureExecutionContext, input: { id: string }) {
+    const holdingRepository = Container.get(HoldingRepository);
+
+    // Fetch the holding to verify ownership and that it's hidden
+    // Pass includeHidden=true since we're specifically looking for hidden holdings
+    const holding = await holdingRepository.findById(input.id, undefined, true);
+    if (!holding) {
+      throw new Error('Holding not found');
+    }
+
+    if (holding.userId !== context.userId) {
+      throw new Error('Unauthorized: Holding does not belong to user');
+    }
+
+    if (!holding.isHidden) {
+      throw new Error('Holding is not hidden');
+    }
+
+    // Restore the holding by setting isHidden to false
+    const updatedHolding = await holdingRepository.update(input.id, { isHidden: false });
+    if (!updatedHolding) {
+      throw new Error('Failed to restore holding');
+    }
+
+    return updatedHolding;
   },
 
   async bulkAssignGroups(
