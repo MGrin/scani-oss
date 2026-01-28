@@ -14,12 +14,15 @@ export function QueryLoadingIndicator() {
       <div
         className={cn(
           'absolute top-0 left-0 right-0 h-1 w-full overflow-hidden bg-transparent transition-opacity duration-300',
-          isFetching ? 'opacity-100' : 'opacity-0'
+          isFetching > 0 ? 'opacity-100' : 'opacity-0'
         )}
       >
         <div className="h-full w-full bg-muted/30">
           <div
-            className={cn('h-full bg-primary', 'animate-[loading-bar_1.5s_ease-in-out_infinite]')}
+            className={cn(
+              'h-full bg-primary',
+              isFetching > 0 && 'animate-[loading-bar_1.5s_ease-in-out_infinite]'
+            )}
             style={{
               width: '40%',
               transformOrigin: 'left',
