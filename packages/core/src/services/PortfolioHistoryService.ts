@@ -1,5 +1,8 @@
 import Decimal from 'decimal.js';
+import { inArray } from 'drizzle-orm';
 import { Container, Service } from 'typedi';
+import { db } from '../database/connection';
+import { tokens } from '../database/schema';
 import { HoldingHistoryRepository } from '../repositories/HoldingHistoryRepository';
 import { TokenPriceRepository } from '../repositories/TokenPriceRepository';
 import { createComponentLogger } from '../utils/logger';
@@ -72,10 +75,6 @@ export class PortfolioHistoryService {
       }
 
       // Get token info for all tokens
-      const { db } = await import('../database/connection');
-      const { tokens } = await import('../database/schema');
-      const { inArray } = await import('drizzle-orm');
-
       const tokenInfo = await db
         .select({
           id: tokens.id,
