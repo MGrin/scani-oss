@@ -11,6 +11,7 @@ import { holdingsRouter } from './routers/holdings';
 import { institutionTypesRouter } from './routers/institution-types';
 import { institutionsRouter } from './routers/institutions';
 import { integrationsRouter } from './routers/integrations';
+import { portfolioHistoryRouter } from './routers/portfolio-history';
 import { screenshotsRouter } from './routers/screenshots';
 import { createTokensRouter } from './routers/tokens';
 import { usersRouter } from './routers/users';
@@ -26,6 +27,9 @@ export const appRouter = router({
 
   // Dashboard (protected) - Aggregated data for overview
   dashboard: dashboardRouter,
+
+  // Portfolio history (protected) - Historical portfolio data and events
+  portfolioHistory: portfolioHistoryRouter,
 
   // Core financial entities (protected)
   tokens: tokensRouter,
