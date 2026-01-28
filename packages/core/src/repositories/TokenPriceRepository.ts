@@ -188,4 +188,69 @@ export class TokenPriceRepository extends BaseRepository<TokenPrice, NewTokenPri
       throw error;
     }
   }
+
+  /**
+   * Find price updates for specific tokens within a date range with pagination
+   * Used for portfolio history events
+   */
+  async findPriceUpdatesPaginated(
+    tokenIds: string[],
+    baseTokenId: string,
+    options: {
+      limit: number;
+      offset: number;
+      startDate?: Date;
+      endDate?: Date;
+    },
+    transaction?: DatabaseTransaction
+  ): Promise<{ items: TokenPrice[]; total: number }> {
+    try {
+      if (tokenIds.length === 0) {
+        return { items: [], total: 0 };
+      }
+
+      const database = this.getDb(transaction);
+      const conditions = [
+        inArray(schema.tokenPrices.tokenId, tokenIds),
+        eq(schema.tokenPrices.baseTokenId, baseTokenId),
+      ];
+
+      if (options.startDate) {
+        conditions.push(gte(schema.tokenPrices.timestamp, options.startDate));
+      }
+      if (options.endDate) {
+        conditions.push(lte(schema.tokenPrices.timestamp, options.endDate));
+      }
+
+      const whereClause = and(...conditions);
+
+      // Get total count
+      const countResult = await database
+        .select({ count: sql<number>`count(*)` })
+        .from(schema.tokenPrices)
+        .where(whereClause);
+
+      const count = countResult[0]?.count ?? 0;
+
+      // Get paginated items
+      const items = await database
+        .select()
+        .from(schema.tokenPrices)
+        .where(whereClause)
+        .orderBy(desc(schema.tokenPrices.timestamp))
+        .limit(options.limit)
+        .offset(options.offset);
+
+      return {
+        items,
+        total: Number(count),
+      };
+    } catch (error) {
+      this.logger.error(
+        { tokenIds, baseTokenId, options, error },
+        'Failed to find price updates paginated'
+      );
+      throw error;
+    }
+  }
 }
