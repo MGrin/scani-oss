@@ -7,6 +7,7 @@ export { AccountTypeService, InstitutionTypeService } from './EnumServices';
 export { HoldingService } from './HoldingService';
 export { InstitutionService } from './InstitutionService';
 export { IntegrationCredentialsService } from './IntegrationCredentialsService';
+export { PortfolioHistoryService } from './PortfolioHistoryService';
 export { PortfolioValuationService } from './PortfolioValuationService';
 export { PricingService } from './PricingService';
 export { TokenService } from './TokenService';

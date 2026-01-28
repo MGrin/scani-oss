@@ -226,6 +226,41 @@ export const tokenPrices = pgTable(
   })
 );
 
+// Holding history table - Tracks balance changes over time
+export const holdingHistory = pgTable(
+  'holding_history',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    holdingId: uuid('holding_id')
+      .notNull()
+      .references(() => holdings.id, { onDelete: 'cascade' }),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    accountId: uuid('account_id')
+      .notNull()
+      .references(() => accounts.id, { onDelete: 'cascade' }),
+    tokenId: uuid('token_id')
+      .notNull()
+      .references(() => tokens.id, { onDelete: 'restrict' }),
+    balance: text('balance').notNull(), // Store as string for Decimal.js precision
+    source: text('source').notNull(), // 'blockchain' or 'manual'
+    timestamp: timestamp('timestamp', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => ({
+    // Performance indexes for historical queries
+    holdingIdTimestampIdx: index('idx_holding_history_holding_timestamp').on(
+      table.holdingId,
+      table.timestamp.desc()
+    ),
+    userIdTimestampIdx: index('idx_holding_history_user_timestamp').on(
+      table.userId,
+      table.timestamp.desc()
+    ),
+    timestampIdx: index('idx_holding_history_timestamp').on(table.timestamp.desc()),
+  })
+);
+
 // User wallets table - Maps user wallets to multiple networks/institutions
 export const userWallets = pgTable(
   'user_wallets',
@@ -467,6 +502,26 @@ export const holdingsRelations = relations(holdings, ({ one, many }) => ({
     references: [tokens.id],
   }),
   holdingGroups: many(holdingGroups),
+  history: many(holdingHistory),
+}));
+
+export const holdingHistoryRelations = relations(holdingHistory, ({ one }) => ({
+  holding: one(holdings, {
+    fields: [holdingHistory.holdingId],
+    references: [holdings.id],
+  }),
+  user: one(users, {
+    fields: [holdingHistory.userId],
+    references: [users.id],
+  }),
+  account: one(accounts, {
+    fields: [holdingHistory.accountId],
+    references: [accounts.id],
+  }),
+  token: one(tokens, {
+    fields: [holdingHistory.tokenId],
+    references: [tokens.id],
+  }),
 }));
 
 export const tokenPricesRelations = relations(tokenPrices, ({ one }) => ({
@@ -567,6 +622,9 @@ export type NewHolding = typeof holdings.$inferInsert;
 
 export type TokenPrice = typeof tokenPrices.$inferSelect;
 export type NewTokenPrice = typeof tokenPrices.$inferInsert;
+
+export type HoldingHistory = typeof holdingHistory.$inferSelect;
+export type NewHoldingHistory = typeof holdingHistory.$inferInsert;
 
 export type UserWallet = typeof userWallets.$inferSelect;
 export type NewUserWallet = typeof userWallets.$inferInsert;

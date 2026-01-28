@@ -8,6 +8,7 @@ import {
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { MoneyDisplay } from '@/components/ui/money-display';
 import { PageHeader } from '@/components/ui/page-header';
+import { PortfolioValueCard } from '@/components/ui/portfolio-value-card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { SummaryCard } from '@/components/ui/summary-card';
 import { trpc } from '@/lib/trpc';
@@ -69,9 +70,7 @@ export function Dashboard() {
           </>
         ) : (
           <>
-            <SummaryCard
-              type="currency"
-              title="Total Portfolio Value"
+            <PortfolioValueCard
               value={parseFloat(overview?.portfolioValue.totalValue || '0')}
               currency={currency}
             />

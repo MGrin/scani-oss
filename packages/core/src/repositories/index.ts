@@ -7,6 +7,7 @@ export {
   TokenTypeRepository,
 } from './EnumRepositories';
 export { GroupRepository } from './GroupRepository';
+export { HoldingHistoryRepository } from './HoldingHistoryRepository';
 export { HoldingRepository } from './HoldingRepository';
 export { InstitutionBlockchainMappingRepository } from './InstitutionBlockchainMappingRepository';
 export { InstitutionRepository } from './InstitutionRepository';

@@ -34,9 +34,12 @@
     "@trpc/client": "^10.45.2",
     "@trpc/react-query": "^10.45.2",
     "@trpc/server": "10.45.2",
+    "@voltagent/vercel-ui": "^1.0.1",
+    "ai": "^5.0.114",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "cmdk": "^1.1.1",
+    "date-fns": "^4.1.0",
     "lucide-react": "^0.545.0",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
@@ -50,8 +53,6 @@
     "tailwind-merge": "^3.3.1",
     "tailwindcss-animate": "^1.0.7",
     "vite-plugin-svgr": "^4.5.0",
-    "@voltagent/vercel-ui": "^1.0.1",
-    "ai": "^5.0.114",
     "zod": "^3.22.4"
   },
   "devDependencies": {
