@@ -235,6 +235,38 @@ export class HoldingService extends BaseService {
   }
 
   /**
+   * Get holdings by account ID with details and summary statistics
+   * This version returns both holdings and aggregated summary (excluding inactive holdings from totals)
+   */
+  async getHoldingsByAccountIdWithSummary(
+    user: User,
+    accountId?: string,
+    includeHidden = false
+  ): Promise<{
+    holdings: HoldingWithDetails[];
+    summary: {
+      totalCount: number;
+      activeCount: number;
+      totalValue: string;
+    };
+  }> {
+    const holdings = await this.getHoldingsByAccountIdWithDetails(user, accountId, includeHidden);
+
+    // Calculate summary statistics (only active holdings count towards totals)
+    const activeHoldings = holdings.filter((h) => h.isActive);
+    const totalValue = activeHoldings.reduce((sum, h) => sum + h.value, 0);
+
+    return {
+      holdings,
+      summary: {
+        totalCount: holdings.length,
+        activeCount: activeHoldings.length,
+        totalValue: totalValue.toString(),
+      },
+    };
+  }
+
+  /**
    * Find holdings by account
    */
   async findByAccount(

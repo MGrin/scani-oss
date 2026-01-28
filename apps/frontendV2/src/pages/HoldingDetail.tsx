@@ -37,7 +37,7 @@ export function HoldingDetail() {
 
   // Fetch all holdings to find the one we need
   const { data: allHoldings, isLoading } = trpc.holdings.getWithDetails.useQuery();
-  const holding = allHoldings?.find((h) => h.id === id);
+  const holding = allHoldings?.holdings?.find((h) => h.id === id);
 
   // Fetch groups and holding groups
   const { data: groups } = trpc.groups.getAll.useQuery();

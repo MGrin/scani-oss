@@ -29,7 +29,7 @@ export function DataEntryStep({
 
   // Filter holdings for the selected account
   const existingHoldings =
-    allHoldings?.filter((holding) => holding.account.id === selectedAccountId) || [];
+    allHoldings?.holdings?.filter((holding) => holding.account.id === selectedAccountId) || [];
 
   // Initialize holdings data when account changes
   const holdings = useMemo(() => {

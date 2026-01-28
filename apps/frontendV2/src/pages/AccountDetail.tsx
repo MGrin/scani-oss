@@ -136,10 +136,13 @@ export function AccountDetail() {
   } = trpc.accounts.getById.useQuery({ id: id! }, { enabled: !!id });
 
   // Fetch holdings for this account
-  const { data: accountHoldings } = trpc.accounts.getHoldings.useQuery(
+  const { data: accountHoldingsData } = trpc.accounts.getHoldings.useQuery(
     { id: id!, includeHidden: showHidden },
     { enabled: !!id }
   );
+
+  const accountHoldings = accountHoldingsData?.holdings;
+  const holdingsSummary = accountHoldingsData?.summary;
 
   // Filter and sort holdings
   const filteredAndSortedHoldings = useMemo(() => {
@@ -243,6 +246,25 @@ export function AccountDetail() {
 
     return { tokenTypes, tokens };
   }, [accountHoldings]);
+
+  // Use pre-calculated total from backend (already excludes inactive holdings)
+  // If filtered, recalculate only for active filtered holdings
+  const totalValue = useMemo(() => {
+    // If user has applied filters, we need to recalculate from filtered results
+    const hasFilters =
+      searchTerm !== '' || filterBy !== '' || filterByToken !== '' || valueRange !== 'all';
+
+    if (hasFilters) {
+      // Recalculate from filtered active holdings
+      return filteredAndSortedHoldings.reduce(
+        (sum: number, holding) => (holding.isActive ? sum + holding.value : sum),
+        0
+      );
+    }
+
+    // No filters: use pre-calculated total from backend
+    return holdingsSummary ? parseFloat(holdingsSummary.totalValue) : 0;
+  }, [filteredAndSortedHoldings, holdingsSummary, searchTerm, filterBy, filterByToken, valueRange]);
 
   // Fetch account types and institutions for display
   const { data: accountTypes } = trpc.accountTypes.getAll.useQuery();
@@ -461,11 +483,6 @@ export function AccountDetail() {
       </div>
     );
   }
-
-  const totalValue = (filteredAndSortedHoldings || []).reduce(
-    (sum: number, holding) => (holding.isActive ? sum + holding.value : sum),
-    0
-  );
 
   // Check if account is synced (has walletAddress or lastSync in metadata)
   const metadata = account.metadata as Record<string, unknown> | undefined;

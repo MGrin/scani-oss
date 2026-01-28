@@ -187,7 +187,9 @@ export class DashboardService extends BaseService {
     const priceMap = this.extractPriceMap(portfolioValue);
 
     // Build holdings with values calculated individually
+    // Only include active holdings (exclude inactive holdings from top holdings)
     const holdingsWithValues = holdingsWithDetails
+      .filter(({ holding }) => holding.isActive)
       .map(({ holding, token, account, institution }) => {
         const currentPrice = priceMap.get(token.symbol) || '0';
         const balance = new Decimal(holding.balance);

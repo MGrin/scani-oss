@@ -141,7 +141,8 @@ export const AccountImplementations = {
       dbUser = (await userContextService.getUserById(context.userId)) || undefined;
     }
     // Type assertion since the function expects a full user object
-    return await holdingService.getHoldingsByAccountIdWithDetails(
+    // Use new method that returns summary with pre-calculated totals
+    return await holdingService.getHoldingsByAccountIdWithSummary(
       // biome-ignore lint/suspicious/noExplicitAny: Type assertion needed for user object compatibility
       dbUser as any,
       input.id,
@@ -265,8 +266,9 @@ export const HoldingImplementations = {
       dbUser = (await userContextService.getUserById(context.userId)) || undefined;
     }
     // Type assertion since the function expects a full user object
+    // Use new method that returns summary with pre-calculated totals
     // biome-ignore lint/suspicious/noExplicitAny: Type assertion needed for user object compatibility
-    return await holdingService.getHoldingsByAccountIdWithDetails(dbUser as any);
+    return await holdingService.getHoldingsByAccountIdWithSummary(dbUser as any);
   },
 
   /**

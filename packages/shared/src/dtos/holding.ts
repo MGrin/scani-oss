@@ -86,5 +86,14 @@ export type HoldingWithDetails = {
   source: string;
 };
 
+export type HoldingsWithSummary = {
+  holdings: HoldingWithDetails[];
+  summary: {
+    totalCount: number;
+    activeCount: number;
+    totalValue: string;
+  };
+};
+
 export type CreateHoldingInput = z.infer<typeof CreateHoldingDto>;
 export type UpdateHoldingInput = z.infer<typeof UpdateHoldingDto>;

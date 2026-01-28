@@ -113,7 +113,8 @@ export function Holdings() {
   });
 
   // Transform backend data to match frontend expectations
-  const holdings = holdingsData || [];
+  const holdings = holdingsData?.holdings || [];
+  const holdingsSummary = holdingsData?.summary;
 
   const [searchTerm, setSearchTerm] = useState('');
   const [groupBy, setGroupBy] = useState<GroupBy>('none');
@@ -324,8 +325,27 @@ export function Holdings() {
           {} as Record<string, typeof filteredAndSortedHoldings>
         );
 
-  // Calculate summary statistics (exclude inactive holdings from totals)
+  // Calculate summary statistics
+  // Use pre-calculated backend values when no filters are applied
+  // Otherwise recalculate from filtered active holdings
   const summaryStats = useMemo(() => {
+    const hasFilters =
+      searchTerm !== '' ||
+      filterBy !== '' ||
+      filterByAccount !== '' ||
+      filterByToken !== '' ||
+      filterByGroup !== '' ||
+      valueRange !== 'all';
+
+    if (!hasFilters && holdingsSummary) {
+      // No filters: use pre-calculated backend values (excludes inactive holdings)
+      return {
+        totalValue: parseFloat(holdingsSummary.totalValue),
+        holdingCount: holdingsSummary.activeCount,
+      };
+    }
+
+    // Has filters: recalculate from filtered active holdings
     const activeHoldings = filteredAndSortedHoldings.filter((h) => h.isActive);
     const totalValue = activeHoldings.reduce((sum, h) => sum + h.value, 0);
 
@@ -333,7 +353,16 @@ export function Holdings() {
       totalValue,
       holdingCount: activeHoldings.length,
     };
-  }, [filteredAndSortedHoldings]);
+  }, [
+    filteredAndSortedHoldings,
+    holdingsSummary,
+    searchTerm,
+    filterBy,
+    filterByAccount,
+    filterByToken,
+    filterByGroup,
+    valueRange,
+  ]);
 
   const handleSort = (field: string) => {
     if (sortField === field) {

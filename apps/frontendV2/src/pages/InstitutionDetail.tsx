@@ -52,7 +52,7 @@ export function InstitutionDetail() {
   // Fetch holdings for all accounts in this institution
   const { data: allHoldings } = trpc.holdings.getWithDetails.useQuery();
   const institutionHoldings =
-    allHoldings?.filter((holding) =>
+    allHoldings?.holdings?.filter((holding) =>
       institutionAccounts.some((account) => account.id === holding.account.id)
     ) || [];
 
