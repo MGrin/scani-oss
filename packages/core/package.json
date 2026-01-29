@@ -32,7 +32,7 @@
     "type-check": "tsgo --noEmit",
     "db:generate": "bun drizzle-kit generate",
     "db:drop": "bun drizzle-kit drop",
-    "db:migrate": "bun drizzle-kit migrate",
+    "db:migrate": "bun src/database/migrate.ts",
     "db:studio": "bun drizzle-kit studio"
   },
   "dependencies": {
