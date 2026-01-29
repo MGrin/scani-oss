@@ -9,7 +9,6 @@
 -- Eliminates the need to scan all holding history records repeatedly in application code
 
 CREATE MATERIALIZED VIEW IF NOT EXISTS portfolio_history_holding_snapshots
-WITH NO DATA
 AS
 SELECT DISTINCT ON (hh.user_id, hh.holding_id, hh.timestamp)
   hh.id,
@@ -25,7 +24,8 @@ SELECT DISTINCT ON (hh.user_id, hh.holding_id, hh.timestamp)
 FROM holding_history hh
 JOIN tokens t ON t.id = hh.token_id
 WHERE t.is_active = true
-ORDER BY hh.user_id, hh.holding_id, hh.timestamp DESC;
+ORDER BY hh.user_id, hh.holding_id, hh.timestamp DESC
+WITH NO DATA;
 
 -- Create unique index required for CONCURRENT refresh
 CREATE UNIQUE INDEX IF NOT EXISTS idx_portfolio_snapshots_unique 
@@ -45,7 +45,6 @@ CREATE INDEX IF NOT EXISTS idx_portfolio_snapshots_token
 -- Eliminates expensive in-memory aggregations for chart data
 
 CREATE MATERIALIZED VIEW IF NOT EXISTS portfolio_history_chart_data
-WITH NO DATA
 AS
 WITH unique_user_timestamps AS (
   -- Get all unique (user_id, timestamp) combinations where portfolio changed
@@ -107,7 +106,8 @@ SELECT
   COUNT(DISTINCT holding_id) AS holdings_count,
   SUM(CAST(balance AS DECIMAL) * CAST(price AS DECIMAL))::TEXT AS total_value
 FROM holdings_with_prices
-GROUP BY user_id, timestamp, base_currency_id;
+GROUP BY user_id, timestamp, base_currency_id
+WITH NO DATA;
 
 -- Create unique index required for CONCURRENT refresh
 CREATE UNIQUE INDEX IF NOT EXISTS idx_portfolio_chart_unique 
@@ -124,7 +124,6 @@ CREATE INDEX IF NOT EXISTS idx_portfolio_chart_timestamp
 -- Eliminates the need to merge and sort events in application memory
 
 CREATE MATERIALIZED VIEW IF NOT EXISTS portfolio_history_events
-WITH NO DATA
 AS
 -- Holding update events
 SELECT 
@@ -198,7 +197,8 @@ WHERE hh_latest.balance IS NOT NULL
     WHERE hh.user_id = user_token.user_id 
       AND hh.token_id = user_token.token_id
       AND hh.timestamp = tp.timestamp
-  );
+  )
+WITH NO DATA;
 
 -- Create unique index required for CONCURRENT refresh
 -- Since we have UNION ALL with potential duplicates, we use id as unique identifier
