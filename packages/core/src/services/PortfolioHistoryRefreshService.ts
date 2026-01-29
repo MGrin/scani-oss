@@ -1,6 +1,7 @@
 import { Service } from 'typedi';
 import { createComponentLogger } from '../utils/logger';
-import type { PortfolioHistoryService } from './PortfolioHistoryService';
+// biome-ignore lint/style/useImportType: TypeDI requires the actual class for dependency injection, not just the type
+import { PortfolioHistoryService } from './PortfolioHistoryService';
 
 /**
  * Background service to refresh portfolio history materialized views
