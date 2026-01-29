@@ -68,7 +68,13 @@ Created three materialized views with proper unique indexes for CONCURRENT refre
 
 ### Critical Issues Fixed
 
-1. **CROSS JOIN Cartesian Product**
+1. **Empty View CONCURRENT Refresh Error** *(Migration 0028)*
+   - **Issue**: `REFRESH MATERIALIZED VIEW CONCURRENTLY` fails on empty views (created WITH NO DATA)
+   - **Error**: "Failed query: SELECT refresh_portfolio_history_views()"
+   - **Fix**: Modified function to detect empty views and use non-concurrent refresh first
+   - **Impact**: Initial view population now works correctly on backend startup
+
+2. **CROSS JOIN Cartesian Product**
    - **Issue**: Generated events for ALL users for ALL token prices
    - **Fix**: First identify user-token pairs from holding_history, then join with token_prices
    - **Impact**: Prevents generating millions of spurious events

@@ -197,6 +197,13 @@
       "when": 1769646775581,
       "tag": "0027_tranquil_klaw",
       "breakpoints": true
+    },
+    {
+      "idx": 28,
+      "version": "7",
+      "when": 1769652567850,
+      "tag": "0028_fix_refresh_function",
+      "breakpoints": true
     }
   ]
 }

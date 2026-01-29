@@ -48,7 +48,32 @@ AS
 SELECT ... -- Creates structure only (fast!)
 ```
 
-#### 2. Documentation Updates
+#### 2. Migration File (`packages/core/src/database/migrations/0028_fix_refresh_function.sql`)
+- ✅ Fixed `refresh_portfolio_history_views()` function to handle empty views
+- ✅ Added detection for empty views (first refresh)
+- ✅ Uses non-concurrent `REFRESH MATERIALIZED VIEW` for initial population
+- ✅ Uses `REFRESH MATERIALIZED VIEW CONCURRENTLY` for subsequent updates
+- ✅ Resolves "Failed query: SELECT refresh_portfolio_history_views()" error
+
+**Issue:** `REFRESH MATERIALIZED VIEW CONCURRENTLY` fails on empty views created with `WITH NO DATA`
+
+**Solution:** Check if views are empty and use non-concurrent refresh first
+```sql
+-- Check if views are empty
+SELECT COUNT(*) INTO v_count FROM portfolio_history_holding_snapshots;
+
+IF v_count = 0 THEN
+  -- First refresh: non-concurrent (populates empty views)
+  REFRESH MATERIALIZED VIEW portfolio_history_holding_snapshots;
+  -- ...
+ELSE
+  -- Subsequent: concurrent (doesn't block reads)
+  REFRESH MATERIALIZED VIEW CONCURRENTLY portfolio_history_holding_snapshots;
+  -- ...
+END IF;
+```
+
+#### 3. Documentation Updates
 - Updated `MATERIALIZED_VIEW_MIGRATION_TIMEOUT_FIX.md` (this file)
 - Updated `PORTFOLIO_HISTORY_IMPLEMENTATION_SUMMARY.md`
 - Updated `docs/technical/PORTFOLIO_HISTORY_OPTIMIZATION.md`
