@@ -228,7 +228,15 @@ $$ LANGUAGE plpgsql;
 -- 5. Initial population of materialized views
 -- ============================================================================
 
--- Refresh all views with initial data (non-concurrent for first population)
-REFRESH MATERIALIZED VIEW portfolio_history_holding_snapshots;
-REFRESH MATERIALIZED VIEW portfolio_history_chart_data;
-REFRESH MATERIALIZED VIEW portfolio_history_events;
+-- NOTE: Initial population removed to prevent migration timeout on Render
+-- The materialized views will be empty after migration and will be populated
+-- on first application startup by the PortfolioHistoryRefreshService
+-- This service runs automatically on backend initialization and refreshes views
+-- every 10 minutes thereafter.
+--
+-- The views are created with unique indexes to support CONCURRENT refresh,
+-- which allows the refresh to happen without blocking reads from the views.
+--
+-- If you need to manually populate the views before the first refresh cycle,
+-- you can run: SELECT refresh_portfolio_history_views();
+-- This will take several minutes to complete depending on data volume.

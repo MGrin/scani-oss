@@ -340,25 +340,33 @@ Created migration `0027_tranquil_klaw.sql` using drizzle-kit:
    cd packages/core
    bun run db:migrate
    ```
+   **Note**: The migration creates empty materialized views to prevent timeout issues on Render. Initial population happens automatically when the backend starts.
 
 2. **Verify Views Created**
    ```sql
    SELECT * FROM pg_matviews WHERE schemaname = 'public';
    ```
+   Views will show 0 rows initially - this is expected.
 
-3. **Check Initial Data**
-   ```sql
-   SELECT COUNT(*) FROM portfolio_history_events;
-   SELECT COUNT(*) FROM portfolio_history_chart_data;
-   ```
+3. **Start Backend Service**
+   The `PortfolioHistoryRefreshService` runs automatically on startup and populates the views within 5-10 minutes (depending on data volume).
 
 4. **Monitor Refresh Service**
    - Check logs for "Portfolio history refresh service started"
+   - Watch for "Starting materialized views refresh"
    - Watch for "Successfully refreshed portfolio history materialized views"
+   - Initial refresh may take 5-10 minutes for large datasets
 
-5. **Manual Refresh (if needed)**
+5. **Verify Data After First Refresh**
+   ```sql
+   SELECT COUNT(*) FROM portfolio_history_events;
+   SELECT COUNT(*) FROM portfolio_history_chart_data;
+   SELECT COUNT(*) FROM portfolio_history_holding_snapshots;
+   ```
+
+6. **Manual Refresh (if needed)**
    ```bash
-   # Directly in database
+   # Directly in database (takes 5-10 minutes for large datasets)
    SELECT refresh_portfolio_history_views();
    
    # Or via cron job that calls service method

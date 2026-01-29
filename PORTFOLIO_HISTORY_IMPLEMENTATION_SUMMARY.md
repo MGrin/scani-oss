@@ -146,17 +146,21 @@ See `/docs/technical/PORTFOLIO_HISTORY_TESTING_GUIDE.md` for comprehensive testi
 ### Steps
 1. **Merge PR** to main branch
 2. **Deploy to Staging**
-   - Apply migration: `bun run db:migrate`
-   - Restart backend service
+   - Apply migration: `bun run db:migrate` (creates empty views - fast, no timeout)
+   - Restart backend service (automatically populates views on startup)
+   - Wait ~5-10 minutes for initial view population
    - Monitor for 24-48 hours
 3. **Deploy to Production**
-   - Apply migration
-   - Restart backend
+   - Apply migration (creates empty views - fast, no timeout)
+   - Restart backend (automatically populates views on startup)
+   - Wait ~5-10 minutes for initial view population
    - Monitor Render metrics for improvements
 4. **Set Up Monitoring**
    - Alert on refresh failures
    - Track response times
    - Monitor resource usage
+
+**Important Note**: The migration no longer performs initial view population to prevent timeouts on Render. Views are created empty and automatically populated when the backend service starts. The `PortfolioHistoryRefreshService` runs immediately on startup and refreshes views every 10 minutes.
 
 ### Rollback Plan
 If issues arise:
