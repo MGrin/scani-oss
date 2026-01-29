@@ -203,6 +203,7 @@ export class PortfolioHistoryService {
   /**
    * Refresh materialized views
    * Should be called periodically (e.g., every 5-15 minutes) or after bulk updates
+   * Note: Initial refresh may take 5-10 minutes with large datasets
    */
   async refreshMaterializedViews(): Promise<void> {
     try {

@@ -204,6 +204,13 @@
       "when": 1769652567850,
       "tag": "0028_fix_refresh_function",
       "breakpoints": true
+    },
+    {
+      "idx": 29,
+      "version": "7",
+      "when": 1769652667850,
+      "tag": "0029_fix_unpopulated_views",
+      "breakpoints": true
     }
   ]
 }
