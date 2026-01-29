@@ -8,7 +8,9 @@
 -- This view pre-computes the most recent holding balance for each holding at each timestamp
 -- Eliminates the need to scan all holding history records repeatedly in application code
 
-CREATE MATERIALIZED VIEW IF NOT EXISTS portfolio_history_holding_snapshots AS
+CREATE MATERIALIZED VIEW IF NOT EXISTS portfolio_history_holding_snapshots
+WITH NO DATA
+AS
 SELECT DISTINCT ON (hh.user_id, hh.holding_id, hh.timestamp)
   hh.id,
   hh.holding_id,
@@ -42,7 +44,9 @@ CREATE INDEX IF NOT EXISTS idx_portfolio_snapshots_token
 -- This view pre-computes total portfolio value at each timestamp
 -- Eliminates expensive in-memory aggregations for chart data
 
-CREATE MATERIALIZED VIEW IF NOT EXISTS portfolio_history_chart_data AS
+CREATE MATERIALIZED VIEW IF NOT EXISTS portfolio_history_chart_data
+WITH NO DATA
+AS
 WITH unique_user_timestamps AS (
   -- Get all unique (user_id, timestamp) combinations where portfolio changed
   SELECT DISTINCT user_id, timestamp
@@ -119,7 +123,9 @@ CREATE INDEX IF NOT EXISTS idx_portfolio_chart_timestamp
 -- This view combines holding updates and price updates into a single timeline
 -- Eliminates the need to merge and sort events in application memory
 
-CREATE MATERIALIZED VIEW IF NOT EXISTS portfolio_history_events AS
+CREATE MATERIALIZED VIEW IF NOT EXISTS portfolio_history_events
+WITH NO DATA
+AS
 -- Holding update events
 SELECT 
   hh.id,
@@ -228,9 +234,15 @@ $$ LANGUAGE plpgsql;
 -- 5. Initial population of materialized views
 -- ============================================================================
 
--- NOTE: Initial population removed to prevent migration timeout on Render
+-- NOTE: Views are created WITH NO DATA to prevent migration timeout on Render
+-- 
+-- PostgreSQL's CREATE MATERIALIZED VIEW immediately populates the view by default,
+-- which causes timeouts when processing large datasets (225K+ rows) with complex
+-- joins and aggregations. The WITH NO DATA clause creates the view structure only,
+-- making the migration complete in seconds instead of minutes.
+--
 -- The materialized views will be empty after migration and will be populated
--- on first application startup by the PortfolioHistoryRefreshService
+-- on first application startup by the PortfolioHistoryRefreshService.
 -- This service runs automatically on backend initialization and refreshes views
 -- every 10 minutes thereafter.
 --

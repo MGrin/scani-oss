@@ -4,31 +4,52 @@
 Migration `0027_tranquil_klaw.sql` was timing out on Render during deployment due to initial materialized view population taking too long (5-10+ minutes) with large datasets (225K+ holding_history rows, 42K+ token_prices rows).
 
 ## Root Cause
-The migration included three synchronous `REFRESH MATERIALIZED VIEW` statements at the end:
+PostgreSQL's `CREATE MATERIALIZED VIEW` statement **immediately populates the view** with data from the query by default. The migration created three complex materialized views that attempted to process and populate large datasets during migration:
+
 ```sql
-REFRESH MATERIALIZED VIEW portfolio_history_holding_snapshots;
-REFRESH MATERIALIZED VIEW portfolio_history_chart_data;
-REFRESH MATERIALIZED VIEW portfolio_history_events;
+CREATE MATERIALIZED VIEW portfolio_history_holding_snapshots AS
+SELECT ... FROM holding_history ... -- Processes 225K+ rows
+
+CREATE MATERIALIZED VIEW portfolio_history_chart_data AS
+WITH ... -- Complex joins and aggregations
+
+CREATE MATERIALIZED VIEW portfolio_history_events AS
+SELECT ... UNION ALL ... -- Multi-table unions with lateral joins
 ```
 
-These operations:
-- Run synchronously during migration
-- Process 225K+ rows with complex joins and aggregations
-- Take 5-10+ minutes to complete
-- Exceed Render's migration timeout limit
+These `CREATE` statements alone (without any explicit REFRESH):
+- Process 225K+ rows with complex joins, aggregations, and window functions
+- Take 5-10+ minutes to complete on large datasets
+- Exceed Render's statement timeout limit
+- Cause deployment failures
 
 ## Solution
-**Remove initial data population from migration** and let the backend service handle it automatically.
+**Use `WITH NO DATA` clause to create empty views** and let the backend service populate them after deployment.
 
 ### Changes Made
 
 #### 1. Migration File (`packages/core/src/database/migrations/0027_tranquil_klaw.sql`)
-- ❌ Removed 3 REFRESH statements at end of file
-- ✅ Added comprehensive comment explaining the change
-- ✅ Migration now only creates schema (views, indexes, functions)
-- ✅ Views are created empty (< 1 minute migration time)
+- ✅ Added `WITH NO DATA` clause to all three CREATE MATERIALIZED VIEW statements
+- ✅ Updated comments to explain why WITH NO DATA is used
+- ✅ Views are created empty (< 1 second per view)
+- ✅ Migration completes in seconds instead of minutes
+
+**Before:**
+```sql
+CREATE MATERIALIZED VIEW IF NOT EXISTS portfolio_history_events AS
+SELECT ... -- Immediately populates view (slow!)
+```
+
+**After:**
+```sql
+CREATE MATERIALIZED VIEW IF NOT EXISTS portfolio_history_events
+WITH NO DATA
+AS
+SELECT ... -- Creates structure only (fast!)
+```
 
 #### 2. Documentation Updates
+- Updated `MATERIALIZED_VIEW_MIGRATION_TIMEOUT_FIX.md` (this file)
 - Updated `PORTFOLIO_HISTORY_IMPLEMENTATION_SUMMARY.md`
 - Updated `docs/technical/PORTFOLIO_HISTORY_OPTIMIZATION.md`
 - Clarified deployment process and expectations
@@ -38,9 +59,13 @@ These operations:
 1. **Migration Runs** (< 1 minute, no timeout)
    ```sql
    -- Creates empty materialized views with proper indexes
-   CREATE MATERIALIZED VIEW portfolio_history_events AS ...
+   CREATE MATERIALIZED VIEW portfolio_history_events
+   WITH NO DATA
+   AS
+   SELECT ...
+   
    CREATE UNIQUE INDEX idx_portfolio_events_unique ON ...
-   -- No REFRESH statements
+   -- Views exist but contain no data yet
    ```
 
 2. **Backend Service Starts**
@@ -138,14 +163,16 @@ Successfully refreshed portfolio history materialized views
 ## Benefits
 
 ### ✅ Solves Migration Timeout
-- Migration completes in < 1 minute (vs 10+ minutes before)
+- Migration completes in seconds (vs 10+ minutes before)
 - No more Render timeout errors
 - Deployments proceed smoothly
+- Uses PostgreSQL's `WITH NO DATA` feature designed for exactly this use case
 
-### ✅ Separates Concerns
+### ✅ Follows PostgreSQL Best Practices
 - **Migration**: Schema only (tables, views, indexes, functions)
 - **Service**: Data population and maintenance
-- Follows best practices for database migrations
+- Recommended approach for large dataset migrations
+- Allows independent scaling of schema deployment and data population
 
 ### ✅ No Downtime
 - CONCURRENT refresh doesn't block reads
