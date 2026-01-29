@@ -1,12 +1,7 @@
-import Decimal from 'decimal.js';
-import { inArray } from 'drizzle-orm';
-import { Container, Service } from 'typedi';
+import { sql } from 'drizzle-orm';
+import { Service } from 'typedi';
 import { db } from '../database/connection';
-import { tokens } from '../database/schema';
-import { HoldingHistoryRepository } from '../repositories/HoldingHistoryRepository';
-import { TokenPriceRepository } from '../repositories/TokenPriceRepository';
 import { createComponentLogger } from '../utils/logger';
-import { UserContextService } from './UserContextService';
 
 export interface PortfolioHistoryEvent {
   timestamp: Date;
@@ -28,17 +23,16 @@ export interface PortfolioHistoryChartData {
 }
 
 /**
- * Service to calculate portfolio history using holding history and price data
+ * Optimized service to fetch portfolio history using materialized views
+ * This eliminates expensive in-memory joins and calculations
  */
 @Service()
 export class PortfolioHistoryService {
   private readonly logger = createComponentLogger('portfolio-history');
-  private readonly holdingHistoryRepository = Container.get(HoldingHistoryRepository);
-  private readonly tokenPriceRepository = Container.get(TokenPriceRepository);
-  private readonly userContextService = Container.get(UserContextService);
 
   /**
    * Get portfolio history events (for the events list)
+   * Optimized to use materialized view instead of in-memory joins
    */
   async getHistoryEvents(
     userId: string,
@@ -50,158 +44,80 @@ export class PortfolioHistoryService {
     }
   ): Promise<{ events: PortfolioHistoryEvent[]; total: number; hasMore: boolean }> {
     try {
-      // Get user's base currency
-      const baseCurrency = await this.userContextService.getBaseCurrency(userId);
-
       // Set reasonable default date range if not provided (last 90 days)
       const startDate = options.startDate || new Date(Date.now() - 90 * 24 * 60 * 60 * 1000);
       const endDate = options.endDate || new Date();
 
-      // Get holding history with a large enough limit to fetch all events in the date range
-      // This is necessary because we need to merge with price updates and then paginate
-      const { items: holdingHistoryItems } =
-        await this.holdingHistoryRepository.findByUserIdPaginated(userId, {
-          limit: 10000,
-          offset: 0,
-          startDate,
-          endDate,
-        });
+      // Build WHERE conditions
+      const conditions = [
+        sql`user_id = ${userId}`,
+        sql`timestamp >= ${startDate.toISOString()}`,
+        sql`timestamp <= ${endDate.toISOString()}`,
+      ];
+      const whereClause = sql.join(conditions, sql` AND `);
 
-      // Get unique token IDs from holding history
-      const tokenIds = [...new Set(holdingHistoryItems.map((item) => item.tokenId))];
+      // Get total count efficiently
+      const totalResult = await db.execute(sql`
+        SELECT COUNT(*) as count
+        FROM portfolio_history_events
+        WHERE ${whereClause}
+      `);
+      // Type assertion for database results
+      const totalRows = totalResult as unknown as { rows: Array<{ count: number }> };
+      const total = Number(totalRows.rows[0]?.count ?? 0);
 
-      if (tokenIds.length === 0) {
-        return { events: [], total: 0, hasMore: false };
+      // Get paginated events from materialized view
+      const result = await db.execute(sql`
+        SELECT 
+          timestamp,
+          event_type,
+          holding_id,
+          token_id,
+          token_symbol,
+          token_name,
+          balance,
+          price,
+          value,
+          base_currency_symbol
+        FROM portfolio_history_events
+        WHERE ${whereClause}
+        ORDER BY timestamp DESC
+        LIMIT ${options.limit}
+        OFFSET ${options.offset}
+      `);
+
+      // Type assertion for database results
+      interface EventRow {
+        timestamp: string;
+        event_type: 'holding_update' | 'price_update';
+        holding_id: string | null;
+        token_id: string;
+        token_symbol: string;
+        token_name: string;
+        balance: string;
+        price: string;
+        value: string;
+        base_currency_symbol: string;
       }
+      const eventRows = result as unknown as { rows: EventRow[] };
 
-      // Get token info for all tokens
-      const tokenInfo = await db
-        .select({
-          id: tokens.id,
-          symbol: tokens.symbol,
-          name: tokens.name,
-        })
-        .from(tokens)
-        .where(inArray(tokens.id, tokenIds));
+      // Map database results to PortfolioHistoryEvent interface
+      const events: PortfolioHistoryEvent[] = eventRows.rows.map((row) => ({
+        timestamp: new Date(row.timestamp),
+        eventType: row.event_type,
+        holdingId: row.holding_id || undefined,
+        tokenId: row.token_id,
+        tokenSymbol: row.token_symbol,
+        tokenName: row.token_name,
+        balance: row.balance,
+        price: row.price,
+        value: row.value,
+        baseCurrencySymbol: row.base_currency_symbol,
+      }));
 
-      const tokenMap = new Map(tokenInfo.map((t) => [t.id, t]));
-
-      // Get price updates for the user's tokens
-      const { items: priceUpdateItems } = await this.tokenPriceRepository.findPriceUpdatesPaginated(
-        tokenIds,
-        baseCurrency.id,
-        {
-          limit: 10000,
-          offset: 0,
-          startDate,
-          endDate,
-        }
-      );
-
-      // Fetch latest prices for all tokens (used as fallback)
-      const latestPricesMap = await this.tokenPriceRepository.findLatestPricesForTokens(
-        tokenIds,
-        baseCurrency.id
-      );
-
-      // Build a map of holdings by tokenId for efficient lookup
-      // Sort holdings by timestamp (ascending) for each token
-      const holdingsByToken = new Map<string, typeof holdingHistoryItems>();
-      for (const holding of holdingHistoryItems) {
-        const holdings = holdingsByToken.get(holding.tokenId) || [];
-        holdings.push(holding);
-        holdingsByToken.set(holding.tokenId, holdings);
-      }
-      // Sort each token's holdings by timestamp
-      for (const holdings of holdingsByToken.values()) {
-        holdings.sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime());
-      }
-
-      // Build holding update events
-      const holdingEvents: PortfolioHistoryEvent[] = [];
-      for (const item of holdingHistoryItems) {
-        const token = tokenMap.get(item.tokenId);
-        if (!token) continue;
-
-        // Use latest known price as fallback
-        const latestPrice = latestPricesMap.get(item.tokenId);
-        const priceValue = latestPrice ? new Decimal(latestPrice.price) : new Decimal(0);
-        const balance = new Decimal(item.balance);
-        const value = balance.times(priceValue);
-
-        holdingEvents.push({
-          timestamp: item.timestamp,
-          eventType: 'holding_update',
-          holdingId: item.holdingId,
-          tokenId: item.tokenId,
-          tokenSymbol: token.symbol,
-          tokenName: token.name,
-          balance: item.balance,
-          price: priceValue.toString(),
-          value: value.toString(),
-          baseCurrencySymbol: baseCurrency.symbol,
-        });
-      }
-
-      // Build price update events
-      // Track timestamps to avoid duplicates with holding updates
-      const holdingUpdateTimestamps = new Set(
-        holdingHistoryItems.map((h) => `${h.tokenId}-${h.timestamp.getTime()}`)
-      );
-
-      const priceEvents: PortfolioHistoryEvent[] = [];
-      for (const priceUpdate of priceUpdateItems) {
-        const token = tokenMap.get(priceUpdate.tokenId);
-        if (!token) continue;
-
-        // Skip if there's a holding update at the exact same timestamp
-        const timestampKey = `${priceUpdate.tokenId}-${priceUpdate.timestamp.getTime()}`;
-        if (holdingUpdateTimestamps.has(timestampKey)) {
-          continue;
-        }
-
-        // Find the most recent holding at or before this price update timestamp
-        const tokenHoldings = holdingsByToken.get(priceUpdate.tokenId) || [];
-        let mostRecentHolding = null;
-        for (let i = tokenHoldings.length - 1; i >= 0; i--) {
-          const holding = tokenHoldings[i];
-          if (holding && holding.timestamp <= priceUpdate.timestamp) {
-            mostRecentHolding = holding;
-            break;
-          }
-        }
-
-        // Skip if no holding exists at or before this price update
-        if (!mostRecentHolding) continue;
-
-        const balance = new Decimal(mostRecentHolding.balance);
-        const priceValue = new Decimal(priceUpdate.price);
-        const value = balance.times(priceValue);
-
-        priceEvents.push({
-          timestamp: priceUpdate.timestamp,
-          eventType: 'price_update',
-          tokenId: priceUpdate.tokenId,
-          tokenSymbol: token.symbol,
-          tokenName: token.name,
-          balance: mostRecentHolding.balance,
-          price: priceUpdate.price,
-          value: value.toString(),
-          baseCurrencySymbol: baseCurrency.symbol,
-        });
-      }
-
-      // Merge and sort all events by timestamp (descending)
-      const allEvents = [...holdingEvents, ...priceEvents].sort(
-        (a, b) => b.timestamp.getTime() - a.timestamp.getTime()
-      );
-
-      // Apply pagination
-      const total = allEvents.length;
-      const paginatedEvents = allEvents.slice(options.offset, options.offset + options.limit);
       const hasMore = options.offset + options.limit < total;
 
-      return { events: paginatedEvents, total, hasMore };
+      return { events, total, hasMore };
     } catch (error) {
       this.logger.error({ error, userId }, 'Error getting history events');
       throw error;
@@ -210,6 +126,7 @@ export class PortfolioHistoryService {
 
   /**
    * Get portfolio history chart data (optimized for visualization)
+   * Uses materialized view to eliminate expensive in-memory aggregations
    */
   async getHistoryChart(
     userId: string,
@@ -218,78 +135,39 @@ export class PortfolioHistoryService {
     maxPoints = 500
   ): Promise<PortfolioHistoryChartData[]> {
     try {
-      // Get user's base currency
-      const baseCurrency = await this.userContextService.getBaseCurrency(userId);
+      // Query the pre-computed chart data from materialized view
+      const result = await db.execute(sql`
+        SELECT 
+          timestamp,
+          total_value,
+          holdings_count
+        FROM portfolio_history_chart_data
+        WHERE user_id = ${userId}
+          AND timestamp >= ${startDate.toISOString()}
+          AND timestamp <= ${endDate.toISOString()}
+        ORDER BY timestamp ASC
+      `);
 
-      // Get all unique timestamps from holding history in the date range
-      const timestamps = await this.holdingHistoryRepository.findUniqueTimestampsByUserId(
-        userId,
-        startDate,
-        endDate
-      );
+      // Type assertion for database results
+      interface ChartRow {
+        timestamp: string;
+        total_value: string;
+        holdings_count: number;
+      }
+      const chartRows = result as unknown as { rows: ChartRow[] };
+
+      const allData = chartRows.rows.map((row) => ({
+        timestamp: new Date(row.timestamp),
+        totalValue: row.total_value,
+        holdingsCount: row.holdings_count,
+      }));
 
       // If we have too many points, sample them
-      const sampledTimestamps =
-        timestamps.length > maxPoints ? this.sampleTimestamps(timestamps, maxPoints) : timestamps;
-
-      // Get all holdings history in one query for the date range
-      const allHoldingsHistory = await this.holdingHistoryRepository.findByUserIdInDateRange(
-        userId,
-        startDate,
-        endDate
-      );
-
-      // Get unique token IDs and fetch latest prices
-      const tokenIds = [...new Set(allHoldingsHistory.map((h) => h.tokenId))];
-      const latestPrices = await this.tokenPriceRepository.findLatestPricesForTokens(
-        tokenIds,
-        baseCurrency.id
-      );
-      const priceMap = new Map(
-        Array.from(latestPrices).map(([tokenId, price]) => [tokenId, new Decimal(price.price)])
-      );
-
-      // For each timestamp, calculate total portfolio value
-      const chartData: PortfolioHistoryChartData[] = [];
-
-      for (const timestamp of sampledTimestamps) {
-        // Get the most recent holding state for each holding at this timestamp
-        // Build a map of latest holdings before this timestamp
-        const holdingsMap = new Map<string, (typeof allHoldingsHistory)[0]>();
-
-        for (const holding of allHoldingsHistory) {
-          if (holding.timestamp <= timestamp) {
-            const existing = holdingsMap.get(holding.holdingId);
-            if (!existing || existing.timestamp < holding.timestamp) {
-              holdingsMap.set(holding.holdingId, holding);
-            }
-          }
-        }
-
-        if (holdingsMap.size === 0) {
-          continue;
-        }
-
-        // Calculate total value at this timestamp
-        let totalValue = new Decimal(0);
-
-        for (const holding of holdingsMap.values()) {
-          const price = priceMap.get(holding.tokenId);
-          if (price) {
-            const balance = new Decimal(holding.balance);
-            const value = balance.times(price);
-            totalValue = totalValue.plus(value);
-          }
-        }
-
-        chartData.push({
-          timestamp,
-          totalValue: totalValue.toString(),
-          holdingsCount: holdingsMap.size,
-        });
+      if (allData.length > maxPoints) {
+        return this.sampleChartData(allData, maxPoints);
       }
 
-      return chartData;
+      return allData;
     } catch (error) {
       this.logger.error({ error, userId, startDate, endDate }, 'Error getting history chart');
       throw error;
@@ -297,25 +175,43 @@ export class PortfolioHistoryService {
   }
 
   /**
-   * Sample timestamps evenly to reduce number of data points
+   * Sample chart data evenly to reduce number of data points
    */
-  private sampleTimestamps(timestamps: Date[], maxPoints: number): Date[] {
-    const step = Math.ceil(timestamps.length / maxPoints);
-    const sampled: Date[] = [];
+  private sampleChartData(
+    data: PortfolioHistoryChartData[],
+    maxPoints: number
+  ): PortfolioHistoryChartData[] {
+    const step = Math.ceil(data.length / maxPoints);
+    const sampled: PortfolioHistoryChartData[] = [];
 
-    for (let i = 0; i < timestamps.length; i += step) {
-      const timestamp = timestamps[i];
-      if (timestamp) {
-        sampled.push(timestamp);
+    for (let i = 0; i < data.length; i += step) {
+      const item = data[i];
+      if (item) {
+        sampled.push(item);
       }
     }
 
-    // Always include the last timestamp
-    const lastTimestamp = timestamps[timestamps.length - 1];
-    if (lastTimestamp && sampled[sampled.length - 1] !== lastTimestamp) {
-      sampled.push(lastTimestamp);
+    // Always include the last data point
+    const lastItem = data[data.length - 1];
+    if (lastItem && sampled[sampled.length - 1] !== lastItem) {
+      sampled.push(lastItem);
     }
 
     return sampled;
+  }
+
+  /**
+   * Refresh materialized views
+   * Should be called periodically (e.g., every 5-15 minutes) or after bulk updates
+   */
+  async refreshMaterializedViews(): Promise<void> {
+    try {
+      this.logger.info('Refreshing portfolio history materialized views');
+      await db.execute(sql`SELECT refresh_portfolio_history_views()`);
+      this.logger.info('Successfully refreshed portfolio history materialized views');
+    } catch (error) {
+      this.logger.error({ error }, 'Error refreshing materialized views');
+      throw error;
+    }
   }
 }

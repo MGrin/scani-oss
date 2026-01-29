@@ -48,7 +48,8 @@ import {
   getConnectionStats,
   startConnectionTracking,
 } from '@scani/core/database';
-
+// Import services that need to be initialized
+import { PortfolioHistoryRefreshService } from '@scani/core/services';
 // Import router AFTER container is initialized
 import { appRouter } from './presentation/router';
 
@@ -465,9 +466,19 @@ const realTimeUpdatesService = Container.get(RealTimeUpdatesService);
 realTimeUpdatesService.setElysiaApp(app);
 realTimeUpdatesService.initialize();
 
+// Initialize portfolio history refresh service
+// This will refresh materialized views every 10 minutes
+
+const portfolioHistoryRefreshService = Container.get(PortfolioHistoryRefreshService);
+portfolioHistoryRefreshService.start(10); // Refresh every 10 minutes
+logger.info({}, '🔄 Portfolio history refresh service started');
+
 // Graceful shutdown with logging
 const gracefulShutdown = async (signal: string) => {
   logger.info({ signal }, '🛑 Graceful shutdown initiated');
+
+  logger.info({}, 'Stopping portfolio history refresh service...');
+  portfolioHistoryRefreshService.stop();
 
   logger.info({}, 'Flushing Sentry events...');
   await flush(2000);

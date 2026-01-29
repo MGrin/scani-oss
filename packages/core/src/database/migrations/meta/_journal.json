@@ -190,6 +190,13 @@
       "when": 1769635939965,
       "tag": "0026_backfill_holding_history",
       "breakpoints": true
+    },
+    {
+      "idx": 27,
+      "version": "7",
+      "when": 1769646775581,
+      "tag": "0027_tranquil_klaw",
+      "breakpoints": true
     }
   ]
 }

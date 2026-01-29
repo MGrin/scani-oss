@@ -1,6 +1,6 @@
 {
-  "id": "ff56fe9b-5b9c-439e-a573-f7ea645c501b",
-  "prevId": "62d258e9-037a-490e-8ca2-c632961e61f9",
+  "id": "02765d34-0b4a-4d35-afd4-9aeb00ef32b7",
+  "prevId": "ff56fe9b-5b9c-439e-a573-f7ea645c501b",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -47,9 +47,9 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         },
         "idx_account_groups_group_id": {
           "name": "idx_account_groups_group_id",
@@ -62,37 +62,37 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         }
       },
       "foreignKeys": {
         "account_groups_account_id_accounts_id_fk": {
           "name": "account_groups_account_id_accounts_id_fk",
           "tableFrom": "account_groups",
-          "tableTo": "accounts",
           "columnsFrom": ["account_id"],
+          "tableTo": "accounts",
           "columnsTo": ["id"],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "cascade"
         },
         "account_groups_group_id_groups_id_fk": {
           "name": "account_groups_group_id_groups_id_fk",
           "tableFrom": "account_groups",
-          "tableTo": "groups",
           "columnsFrom": ["group_id"],
+          "tableTo": "groups",
           "columnsTo": ["id"],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "cascade"
         }
       },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {
         "account_groups_account_id_group_id_unique": {
           "name": "account_groups_account_id_group_id_unique",
-          "nullsNotDistinct": false,
-          "columns": ["account_id", "group_id"]
+          "columns": ["account_id", "group_id"],
+          "nullsNotDistinct": false
         }
       },
       "policies": {},
@@ -163,8 +163,8 @@
       "uniqueConstraints": {
         "account_types_code_unique": {
           "name": "account_types_code_unique",
-          "nullsNotDistinct": false,
-          "columns": ["code"]
+          "columns": ["code"],
+          "nullsNotDistinct": false
         }
       },
       "policies": {},
@@ -253,9 +253,9 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         },
         "idx_accounts_institution_id": {
           "name": "idx_accounts_institution_id",
@@ -268,9 +268,9 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         },
         "idx_accounts_user_institution": {
           "name": "idx_accounts_user_institution",
@@ -289,46 +289,46 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         }
       },
       "foreignKeys": {
         "accounts_user_id_users_id_fk": {
           "name": "accounts_user_id_users_id_fk",
           "tableFrom": "accounts",
-          "tableTo": "users",
           "columnsFrom": ["user_id"],
+          "tableTo": "users",
           "columnsTo": ["id"],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "cascade"
         },
         "accounts_institution_id_institutions_id_fk": {
           "name": "accounts_institution_id_institutions_id_fk",
           "tableFrom": "accounts",
-          "tableTo": "institutions",
           "columnsFrom": ["institution_id"],
+          "tableTo": "institutions",
           "columnsTo": ["id"],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "cascade"
         },
         "accounts_type_id_account_types_id_fk": {
           "name": "accounts_type_id_account_types_id_fk",
           "tableFrom": "accounts",
-          "tableTo": "account_types",
           "columnsFrom": ["type_id"],
+          "tableTo": "account_types",
           "columnsTo": ["id"],
-          "onDelete": "restrict",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "restrict"
         }
       },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {
         "accounts_user_id_institution_id_name_unique": {
           "name": "accounts_user_id_institution_id_name_unique",
-          "nullsNotDistinct": false,
-          "columns": ["user_id", "institution_id", "name"]
+          "columns": ["user_id", "institution_id", "name"],
+          "nullsNotDistinct": false
         }
       },
       "policies": {},
@@ -411,9 +411,9 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         },
         "idx_groups_display_order": {
           "name": "idx_groups_display_order",
@@ -432,28 +432,28 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         }
       },
       "foreignKeys": {
         "groups_user_id_users_id_fk": {
           "name": "groups_user_id_users_id_fk",
           "tableFrom": "groups",
-          "tableTo": "users",
           "columnsFrom": ["user_id"],
+          "tableTo": "users",
           "columnsTo": ["id"],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "cascade"
         }
       },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {
         "groups_user_id_name_unique": {
           "name": "groups_user_id_name_unique",
-          "nullsNotDistinct": false,
-          "columns": ["user_id", "name"]
+          "columns": ["user_id", "name"],
+          "nullsNotDistinct": false
         }
       },
       "policies": {},
@@ -503,9 +503,9 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         },
         "idx_holding_groups_group_id": {
           "name": "idx_holding_groups_group_id",
@@ -518,37 +518,37 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         }
       },
       "foreignKeys": {
         "holding_groups_holding_id_holdings_id_fk": {
           "name": "holding_groups_holding_id_holdings_id_fk",
           "tableFrom": "holding_groups",
-          "tableTo": "holdings",
           "columnsFrom": ["holding_id"],
+          "tableTo": "holdings",
           "columnsTo": ["id"],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "cascade"
         },
         "holding_groups_group_id_groups_id_fk": {
           "name": "holding_groups_group_id_groups_id_fk",
           "tableFrom": "holding_groups",
-          "tableTo": "groups",
           "columnsFrom": ["group_id"],
+          "tableTo": "groups",
           "columnsTo": ["id"],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "cascade"
         }
       },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {
         "holding_groups_holding_id_group_id_unique": {
           "name": "holding_groups_holding_id_group_id_unique",
-          "nullsNotDistinct": false,
-          "columns": ["holding_id", "group_id"]
+          "columns": ["holding_id", "group_id"],
+          "nullsNotDistinct": false
         }
       },
       "policies": {},
@@ -628,9 +628,9 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         },
         "idx_holding_history_user_timestamp": {
           "name": "idx_holding_history_user_timestamp",
@@ -649,9 +649,9 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         },
         "idx_holding_history_timestamp": {
           "name": "idx_holding_history_timestamp",
@@ -664,47 +664,47 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         }
       },
       "foreignKeys": {
         "holding_history_holding_id_holdings_id_fk": {
           "name": "holding_history_holding_id_holdings_id_fk",
           "tableFrom": "holding_history",
-          "tableTo": "holdings",
           "columnsFrom": ["holding_id"],
+          "tableTo": "holdings",
           "columnsTo": ["id"],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "cascade"
         },
         "holding_history_user_id_users_id_fk": {
           "name": "holding_history_user_id_users_id_fk",
           "tableFrom": "holding_history",
-          "tableTo": "users",
           "columnsFrom": ["user_id"],
+          "tableTo": "users",
           "columnsTo": ["id"],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "cascade"
         },
         "holding_history_account_id_accounts_id_fk": {
           "name": "holding_history_account_id_accounts_id_fk",
           "tableFrom": "holding_history",
-          "tableTo": "accounts",
           "columnsFrom": ["account_id"],
+          "tableTo": "accounts",
           "columnsTo": ["id"],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "cascade"
         },
         "holding_history_token_id_tokens_id_fk": {
           "name": "holding_history_token_id_tokens_id_fk",
           "tableFrom": "holding_history",
-          "tableTo": "tokens",
           "columnsFrom": ["token_id"],
+          "tableTo": "tokens",
           "columnsTo": ["id"],
-          "onDelete": "restrict",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "restrict"
         }
       },
       "compositePrimaryKeys": {},
@@ -796,9 +796,9 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         },
         "idx_holdings_account_id": {
           "name": "idx_holdings_account_id",
@@ -811,9 +811,9 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         },
         "idx_holdings_token_id": {
           "name": "idx_holdings_token_id",
@@ -826,9 +826,9 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         },
         "idx_holdings_user_account_token": {
           "name": "idx_holdings_user_account_token",
@@ -853,9 +853,9 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         },
         "idx_holdings_user_token": {
           "name": "idx_holdings_user_token",
@@ -874,9 +874,9 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         },
         "idx_holdings_is_hidden": {
           "name": "idx_holdings_is_hidden",
@@ -889,9 +889,9 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         },
         "idx_holdings_is_active": {
           "name": "idx_holdings_is_active",
@@ -904,38 +904,38 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         }
       },
       "foreignKeys": {
         "holdings_user_id_users_id_fk": {
           "name": "holdings_user_id_users_id_fk",
           "tableFrom": "holdings",
-          "tableTo": "users",
           "columnsFrom": ["user_id"],
+          "tableTo": "users",
           "columnsTo": ["id"],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "cascade"
         },
         "holdings_account_id_accounts_id_fk": {
           "name": "holdings_account_id_accounts_id_fk",
           "tableFrom": "holdings",
-          "tableTo": "accounts",
           "columnsFrom": ["account_id"],
+          "tableTo": "accounts",
           "columnsTo": ["id"],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "cascade"
         },
         "holdings_token_id_tokens_id_fk": {
           "name": "holdings_token_id_tokens_id_fk",
           "tableFrom": "holdings",
-          "tableTo": "tokens",
           "columnsFrom": ["token_id"],
+          "tableTo": "tokens",
           "columnsTo": ["id"],
-          "onDelete": "restrict",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "restrict"
         }
       },
       "compositePrimaryKeys": {},
@@ -1007,9 +1007,9 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         },
         "idx_institution_blockchain_mappings_chain_id": {
           "name": "idx_institution_blockchain_mappings_chain_id",
@@ -1022,28 +1022,28 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         }
       },
       "foreignKeys": {
         "institution_blockchain_mappings_institution_id_institutions_id_fk": {
           "name": "institution_blockchain_mappings_institution_id_institutions_id_fk",
           "tableFrom": "institution_blockchain_mappings",
-          "tableTo": "institutions",
           "columnsFrom": ["institution_id"],
+          "tableTo": "institutions",
           "columnsTo": ["id"],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "cascade"
         }
       },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {
         "institution_blockchain_mappings_institution_id_unique": {
           "name": "institution_blockchain_mappings_institution_id_unique",
-          "nullsNotDistinct": false,
-          "columns": ["institution_id"]
+          "columns": ["institution_id"],
+          "nullsNotDistinct": false
         }
       },
       "policies": {},
@@ -1114,8 +1114,8 @@
       "uniqueConstraints": {
         "institution_types_code_unique": {
           "name": "institution_types_code_unique",
-          "nullsNotDistinct": false,
-          "columns": ["code"]
+          "columns": ["code"],
+          "nullsNotDistinct": false
         }
       },
       "policies": {},
@@ -1204,28 +1204,28 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         }
       },
       "foreignKeys": {
         "institutions_type_id_institution_types_id_fk": {
           "name": "institutions_type_id_institution_types_id_fk",
           "tableFrom": "institutions",
-          "tableTo": "institution_types",
           "columnsFrom": ["type_id"],
+          "tableTo": "institution_types",
           "columnsTo": ["id"],
-          "onDelete": "restrict",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "restrict"
         }
       },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {
         "institutions_website_unique": {
           "name": "institutions_website_unique",
-          "nullsNotDistinct": false,
-          "columns": ["website"]
+          "columns": ["website"],
+          "nullsNotDistinct": false
         }
       },
       "policies": {},
@@ -1305,9 +1305,9 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         },
         "idx_token_prices_timestamp": {
           "name": "idx_token_prices_timestamp",
@@ -1320,37 +1320,37 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         }
       },
       "foreignKeys": {
         "token_prices_token_id_tokens_id_fk": {
           "name": "token_prices_token_id_tokens_id_fk",
           "tableFrom": "token_prices",
-          "tableTo": "tokens",
           "columnsFrom": ["token_id"],
+          "tableTo": "tokens",
           "columnsTo": ["id"],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "cascade"
         },
         "token_prices_base_token_id_tokens_id_fk": {
           "name": "token_prices_base_token_id_tokens_id_fk",
           "tableFrom": "token_prices",
-          "tableTo": "tokens",
           "columnsFrom": ["base_token_id"],
+          "tableTo": "tokens",
           "columnsTo": ["id"],
-          "onDelete": "restrict",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "restrict"
         }
       },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {
         "token_prices_token_id_base_token_id_timestamp_unique": {
           "name": "token_prices_token_id_base_token_id_timestamp_unique",
-          "nullsNotDistinct": false,
-          "columns": ["token_id", "base_token_id", "timestamp"]
+          "columns": ["token_id", "base_token_id", "timestamp"],
+          "nullsNotDistinct": false
         }
       },
       "policies": {},
@@ -1421,8 +1421,8 @@
       "uniqueConstraints": {
         "token_types_code_unique": {
           "name": "token_types_code_unique",
-          "nullsNotDistinct": false,
-          "columns": ["code"]
+          "columns": ["code"],
+          "nullsNotDistinct": false
         }
       },
       "policies": {},
@@ -1519,9 +1519,9 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         },
         "idx_tokens_type_id": {
           "name": "idx_tokens_type_id",
@@ -1534,28 +1534,28 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         }
       },
       "foreignKeys": {
         "tokens_type_id_token_types_id_fk": {
           "name": "tokens_type_id_token_types_id_fk",
           "tableFrom": "tokens",
-          "tableTo": "token_types",
           "columnsFrom": ["type_id"],
+          "tableTo": "token_types",
           "columnsTo": ["id"],
-          "onDelete": "restrict",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "restrict"
         }
       },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {
         "tokens_symbol_type_id_unique": {
           "name": "tokens_symbol_type_id_unique",
-          "nullsNotDistinct": false,
-          "columns": ["symbol", "type_id"]
+          "columns": ["symbol", "type_id"],
+          "nullsNotDistinct": false
         }
       },
       "policies": {},
@@ -1643,9 +1643,9 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         },
         "idx_user_integration_credentials_institution_id": {
           "name": "idx_user_integration_credentials_institution_id",
@@ -1658,9 +1658,9 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         },
         "idx_user_integration_credentials_user_institution": {
           "name": "idx_user_integration_credentials_user_institution",
@@ -1679,37 +1679,37 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         }
       },
       "foreignKeys": {
         "user_integration_credentials_user_id_users_id_fk": {
           "name": "user_integration_credentials_user_id_users_id_fk",
           "tableFrom": "user_integration_credentials",
-          "tableTo": "users",
           "columnsFrom": ["user_id"],
+          "tableTo": "users",
           "columnsTo": ["id"],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "cascade"
         },
         "user_integration_credentials_institution_id_institutions_id_fk": {
           "name": "user_integration_credentials_institution_id_institutions_id_fk",
           "tableFrom": "user_integration_credentials",
-          "tableTo": "institutions",
           "columnsFrom": ["institution_id"],
+          "tableTo": "institutions",
           "columnsTo": ["id"],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "cascade"
         }
       },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {
         "user_integration_credentials_user_id_institution_id_unique": {
           "name": "user_integration_credentials_user_id_institution_id_unique",
-          "nullsNotDistinct": false,
-          "columns": ["user_id", "institution_id"]
+          "columns": ["user_id", "institution_id"],
+          "nullsNotDistinct": false
         }
       },
       "policies": {},
@@ -1786,9 +1786,9 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         },
         "idx_user_wallets_wallet_address": {
           "name": "idx_user_wallets_wallet_address",
@@ -1801,28 +1801,28 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         }
       },
       "foreignKeys": {
         "user_wallets_user_id_users_id_fk": {
           "name": "user_wallets_user_id_users_id_fk",
           "tableFrom": "user_wallets",
-          "tableTo": "users",
           "columnsFrom": ["user_id"],
+          "tableTo": "users",
           "columnsTo": ["id"],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "cascade"
         }
       },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {
         "user_wallets_user_id_wallet_address_unique": {
           "name": "user_wallets_user_id_wallet_address_unique",
-          "nullsNotDistinct": false,
-          "columns": ["user_id", "wallet_address"]
+          "columns": ["user_id", "wallet_address"],
+          "nullsNotDistinct": false
         }
       },
       "policies": {},
@@ -1884,19 +1884,19 @@
         "users_base_currency_id_tokens_id_fk": {
           "name": "users_base_currency_id_tokens_id_fk",
           "tableFrom": "users",
-          "tableTo": "tokens",
           "columnsFrom": ["base_currency_id"],
+          "tableTo": "tokens",
           "columnsTo": ["id"],
-          "onDelete": "restrict",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "restrict"
         }
       },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {
         "users_email_unique": {
           "name": "users_email_unique",
-          "nullsNotDistinct": false,
-          "columns": ["email"]
+          "columns": ["email"],
+          "nullsNotDistinct": false
         }
       },
       "policies": {},
@@ -1906,10 +1906,10 @@
   },
   "enums": {},
   "schemas": {},
+  "views": {},
   "sequences": {},
   "roles": {},
   "policies": {},
-  "views": {},
   "_meta": {
     "columns": {},
     "schemas": {},
