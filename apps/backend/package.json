@@ -19,6 +19,7 @@
     "@ai-sdk/openai": "^2.0.87",
     "@elysiajs/cors": "^1.3.3",
     "@elysiajs/trpc": "^1.1.0",
+    "@modelcontextprotocol/sdk": "^1.25.3",
     "@scani/core": "workspace:*",
     "@scani/shared": "workspace:*",
     "@sentry/bun": "^10.21.0",

@@ -208,7 +208,7 @@ interface LayoutContentProps {
   user: User | null;
   userPrefs?: {
     name: string | null;
-    email: string;
+    email: string | null;
     avatar: string | null;
   };
   supportedCurrencies?: Array<{

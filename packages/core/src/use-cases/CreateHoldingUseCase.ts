@@ -3,10 +3,14 @@ import Container, { Service } from 'typedi';
 import { db } from '../database/connection';
 import * as schema from '../database/schema';
 import { withTransaction } from '../database/transaction';
+import { TokenPriceRepository } from '../repositories/TokenPriceRepository';
 import { PricingService } from '../services/PricingService';
 import { createComponentLogger } from '../utils/logger';
 
 const logger = createComponentLogger('use-case:create-holding');
+
+// Consider a token as having a recent price if there's a price within the last 12 hours
+const RECENT_PRICE_WINDOW_MS = 12 * 60 * 60 * 1000;
 
 export interface CreateHoldingInput {
   accountId: string;
@@ -32,6 +36,7 @@ export interface CreateHoldingResult {
 @Service()
 export class CreateHoldingUseCase {
   private readonly pricingService = Container.get(PricingService);
+  private readonly tokenPriceRepository = Container.get(TokenPriceRepository);
 
   async execute(
     input: CreateHoldingInput,
@@ -153,41 +158,70 @@ export class CreateHoldingUseCase {
         }
 
         if (baseCurrency && token.symbol !== baseCurrency.symbol) {
-          logger.debug(
-            {
-              tokenId: token.id,
-              symbol: token.symbol,
-              baseCurrency: baseCurrency.symbol,
-            },
-            'Fetching current price for newly created holding (external API call)'
+          // Check if the token has a recent price (within last 12 hours)
+          // If not, we need to explicitly fetch it to avoid the holding showing 0 value
+          const recentPrice = await this.tokenPriceRepository.findPriceAtTimestamp(
+            token.id,
+            baseCurrency.id,
+            now,
+            RECENT_PRICE_WINDOW_MS
           );
 
-          // External API call - happens AFTER database connection is released
-          const price = await this.pricingService.getTokenPrice(token, baseCurrency.symbol, now);
+          const hasRecentPrice = recentPrice && parseFloat(recentPrice.price) > 0;
 
-          if (price && parseFloat(price) > 0) {
+          if (hasRecentPrice) {
+            // Token already has a recent price, no need to fetch
             priceFetchSuccessful = true;
-            logger.info(
+            logger.debug(
               {
                 holdingId: holding.id,
                 tokenId: token.id,
                 symbol: token.symbol,
-                price,
-                baseCurrency: baseCurrency.symbol,
+                existingPrice: recentPrice.price,
+                priceTimestamp: recentPrice.timestamp,
+                source: recentPrice.source,
               },
-              'Successfully fetched price for newly created holding'
+              'Token already has recent price (within 12 hours), skipping fetch'
             );
           } else {
-            priceFetchError = 'Price returned as zero or invalid';
-            logger.warn(
+            // Token has no recent price - need to fetch it now
+            logger.debug(
               {
-                holdingId: holding.id,
                 tokenId: token.id,
                 symbol: token.symbol,
-                price,
+                baseCurrency: baseCurrency.symbol,
+                hasAnyPrice: !!recentPrice,
               },
-              'Token price returned as zero or invalid'
+              'Token has no recent price (within 12 hours), fetching current price for newly created holding'
             );
+
+            // External API call - happens AFTER database connection is released
+            const price = await this.pricingService.getTokenPrice(token, baseCurrency.symbol, now);
+
+            if (price && parseFloat(price) > 0) {
+              priceFetchSuccessful = true;
+              logger.info(
+                {
+                  holdingId: holding.id,
+                  tokenId: token.id,
+                  symbol: token.symbol,
+                  price,
+                  baseCurrency: baseCurrency.symbol,
+                },
+                'Successfully fetched price for newly created holding'
+              );
+            } else {
+              priceFetchError = 'Price returned as zero or invalid';
+              logger.warn(
+                {
+                  holdingId: holding.id,
+                  tokenId: token.id,
+                  symbol: token.symbol,
+                  price,
+                },
+                'Token price returned as zero or invalid'
+              );
+            }
           }
         } else if (token.symbol === baseCurrency?.symbol) {
           // Base currency doesn't need pricing

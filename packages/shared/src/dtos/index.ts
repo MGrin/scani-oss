@@ -1,4 +1,5 @@
 export * from './account';
+export * from './api-key';
 export * from './batch';
 export * from './common';
 export * from './dashboard';

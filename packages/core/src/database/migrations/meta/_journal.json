@@ -211,6 +211,20 @@
       "when": 1769652667850,
       "tag": "0029_fix_unpopulated_views",
       "breakpoints": true
+    },
+    {
+      "idx": 30,
+      "version": "7",
+      "when": 1769767535206,
+      "tag": "0030_shallow_oracle",
+      "breakpoints": true
+    },
+    {
+      "idx": 31,
+      "version": "7",
+      "when": 1769938214623,
+      "tag": "0031_groovy_starjammers",
+      "breakpoints": true
     }
   ]
 }

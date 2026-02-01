@@ -3,6 +3,10 @@
     "playwright": {
       "command": "bunx",
       "args": ["@playwright/mcp@latest"]
+    },
+    "scani-local": {
+      "type": "http",
+      "url": "http://localhost:3001/mcp"
     }
   }
 }

@@ -10,15 +10,12 @@
     "packages/*"
   ],
   "scripts": {
-    "check-env": "bun run scripts/check-env.ts",
     "db:migrate": "cd packages/core && bun db:migrate",
-    "dev": "concurrently \"cd apps/backend && bun dev\" \"cd apps/frontendV2 && bun dev\" \"cd apps/landing && bun dev\"",
+    "dev": "concurrently \"bun dev:backend\" \"bun dev:frontend\" \"bun dev:landing\"",
     "dev:backend": "cd apps/backend && bun dev",
     "dev:cron": "cd apps/cron && bun dev",
     "dev:frontend": "cd apps/frontendV2 && bun dev",
     "dev:landing": "cd apps/landing && bun dev",
-    "dev:mobile:ios": "cd apps/mobile && bun ios",
-    "dev:mobile:android": "cd apps/mobile && bun ios",
     "build": "bun run build:backend && bun run build:frontend",
     "build:backend": "cd apps/backend && bun run build",
     "build:frontend": "cd apps/frontendV2 && bun run build",
@@ -29,7 +26,6 @@
     "lint:cron": "cd apps/cron && bun run lint",
     "lint:frontend": "cd apps/frontendV2 && bun run lint",
     "lint:landing": "cd apps/landing && bun run lint",
-    "lint:mobile": "cd apps/mobile && bun run lint",
     "lint:shared": "cd packages/shared && bun run lint",
     "lint:core": "cd packages/core && bun run lint",
     "lint:integrations": "cd packages/integrations && bun run lint",
@@ -41,9 +37,7 @@
     "type-check:mobile": "cd apps/mobile && bun run type-check",
     "type-check:shared": "cd packages/shared && bun run type-check",
     "type-check:core": "cd packages/core && bun run type-check",
-    "type-check:integrations": "cd packages/integrations && bun run type-check",
-    "format": "biome format --write .",
-    "check": "biome check ."
+    "type-check:integrations": "cd packages/integrations && bun run type-check"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.2.2",

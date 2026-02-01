@@ -28,23 +28,22 @@ export function PortfolioHistory() {
   const [eventsOffset, setEventsOffset] = useState(0);
   const [allEvents, setAllEvents] = useState<
     Array<{
-      timestamp: Date;
+      timestamp: string;
       eventType: 'holding_update' | 'price_update';
+      holdingId?: string;
       tokenId: string;
       tokenSymbol: string;
       tokenName: string;
       balance: string;
       price: string;
       value: string;
+      baseCurrencySymbol: string;
     }>
   >([]);
   const eventsPerPage = 20;
 
   // Fetch chart data
-  // biome-ignore lint/suspicious/noExplicitAny: tRPC types not yet generated, will be available after backend build
-  const { data: chartData, isLoading: chartLoading } = (
-    trpc as any
-  ).portfolioHistory.getChart.useQuery(
+  const { data: chartData, isLoading: chartLoading } = trpc.portfolioHistory.getChart.useQuery(
     {
       startDate: dateRange.startDate.toISOString(),
       endDate: dateRange.endDate.toISOString(),
@@ -57,10 +56,7 @@ export function PortfolioHistory() {
   );
 
   // Fetch events data
-  // biome-ignore lint/suspicious/noExplicitAny: tRPC types not yet generated, will be available after backend build
-  const { data: eventsData, isLoading: eventsLoading } = (
-    trpc as any
-  ).portfolioHistory.getEvents.useQuery(
+  const { data: eventsData, isLoading: eventsLoading } = trpc.portfolioHistory.getEvents.useQuery(
     {
       limit: eventsPerPage,
       offset: eventsOffset,
@@ -94,7 +90,7 @@ export function PortfolioHistory() {
   // Transform chart data for Recharts
   const formattedChartData = useMemo(() => {
     if (!chartData) return [];
-    return chartData.map((point: { timestamp: Date; totalValue: string }) => ({
+    return chartData.map((point) => ({
       timestamp: new Date(point.timestamp).getTime(),
       value: Number(point.totalValue),
       displayDate: format(new Date(point.timestamp), 'MMM d, yyyy'),
@@ -242,55 +238,39 @@ export function PortfolioHistory() {
               ))
             ) : allEvents.length > 0 ? (
               <>
-                {allEvents.map(
-                  (
-                    event: {
-                      timestamp: Date;
-                      eventType: 'holding_update' | 'price_update';
-                      tokenId: string;
-                      tokenSymbol: string;
-                      tokenName: string;
-                      balance: string;
-                      price: string;
-                      value: string;
-                    },
-                    index: number
-                  ) => (
-                    <div
-                      key={`${event.timestamp}-${event.tokenId}-${index}`}
-                      className="flex items-center justify-between p-4 border rounded-lg hover:bg-accent transition-colors"
-                    >
-                      <div className="flex-1">
-                        <div className="flex items-center gap-2">
-                          <p className="font-medium">{event.tokenSymbol}</p>
-                          <span className="text-xs text-muted-foreground px-2 py-1 bg-secondary rounded">
-                            {event.eventType === 'holding_update'
-                              ? 'Balance Update'
-                              : 'Price Update'}
-                          </span>
-                        </div>
-                        <p className="text-sm text-muted-foreground mt-1">{event.tokenName}</p>
-                        <div className="flex items-center gap-4 mt-2 text-xs text-muted-foreground">
-                          <span>Balance: {Number(event.balance).toLocaleString()}</span>
-                          <span>
-                            Price:{' '}
-                            <MoneyDisplay
-                              value={Number(event.price)}
-                              token={baseCurrencyToken}
-                              className="inline"
-                            />
-                          </span>
-                          <span>{format(new Date(event.timestamp), 'MMM d, yyyy HH:mm')}</span>
-                        </div>
+                {allEvents.map((event, index) => (
+                  <div
+                    key={`${event.timestamp}-${event.tokenId}-${index}`}
+                    className="flex items-center justify-between p-4 border rounded-lg hover:bg-accent transition-colors"
+                  >
+                    <div className="flex-1">
+                      <div className="flex items-center gap-2">
+                        <p className="font-medium">{event.tokenSymbol}</p>
+                        <span className="text-xs text-muted-foreground px-2 py-1 bg-secondary rounded">
+                          {event.eventType === 'holding_update' ? 'Balance Update' : 'Price Update'}
+                        </span>
                       </div>
-                      <div className="text-right">
-                        <p className="font-semibold">
-                          <MoneyDisplay value={Number(event.value)} token={baseCurrencyToken} />
-                        </p>
+                      <p className="text-sm text-muted-foreground mt-1">{event.tokenName}</p>
+                      <div className="flex items-center gap-4 mt-2 text-xs text-muted-foreground">
+                        <span>Balance: {Number(event.balance).toLocaleString()}</span>
+                        <span>
+                          Price:{' '}
+                          <MoneyDisplay
+                            value={Number(event.price)}
+                            token={baseCurrencyToken}
+                            className="inline"
+                          />
+                        </span>
+                        <span>{format(new Date(event.timestamp), 'MMM d, yyyy HH:mm')}</span>
                       </div>
                     </div>
-                  )
-                )}
+                    <div className="text-right">
+                      <p className="font-semibold">
+                        <MoneyDisplay value={Number(event.value)} token={baseCurrencyToken} />
+                      </p>
+                    </div>
+                  </div>
+                ))}
 
                 {/* Loading more indicator */}
                 {eventsLoading && eventsOffset > 0 && (

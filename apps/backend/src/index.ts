@@ -23,6 +23,11 @@ import { createContext } from './presentation/trpc';
 
 initializeContainer();
 
+// Register MCP tools and initialize transport
+registerAllTools();
+await initializeMcpTransport();
+logger.info({}, '✅ MCP tools registered and transport initialized');
+
 // Initialize integration registry
 try {
   const integrationManager = Container.get(IntegrationManager);
@@ -48,8 +53,12 @@ import {
   getConnectionStats,
   startConnectionTracking,
 } from '@scani/core/database';
-// Import services that need to be initialized
-import { PortfolioHistoryRefreshService } from '@scani/core/services';
+// Import MCP server
+import {
+  handleMcpRequest,
+  initializeMcpTransport,
+  registerAllTools,
+} from './infrastructure/mcp/server';
 // Import router AFTER container is initialized
 import { appRouter } from './presentation/router';
 
@@ -249,7 +258,15 @@ const app = new Elysia()
       createContext,
       endpoint: '/trpc',
     })
-  );
+  )
+  // Add MCP endpoint for AI agents - uses Streamable HTTP transport
+  // Use native Elysia body parsing and reconstruct for MCP transport
+  .post('/mcp', async ({ request, body }: { request: Request; body: Record<string, unknown> }) => {
+    // Handle MCP protocol request using WebStandard transport
+    // Pass the raw body since Elysia may have already consumed the request body stream
+    const response = await handleMcpRequest(request, body);
+    return response;
+  });
 
 app
   // Health check endpoint (GET and HEAD)
@@ -469,8 +486,8 @@ realTimeUpdatesService.initialize();
 // Initialize portfolio history refresh service
 // This will refresh materialized views every 10 minutes
 
-const portfolioHistoryRefreshService = Container.get(PortfolioHistoryRefreshService);
-portfolioHistoryRefreshService.start(10); // Refresh every 10 minutes
+// const portfolioHistoryRefreshService = Container.get(PortfolioHistoryRefreshService);
+// portfolioHistoryRefreshService.start(10); // Refresh every 10 minutes
 logger.info({}, '🔄 Portfolio history refresh service started');
 
 // Graceful shutdown with logging
@@ -478,7 +495,7 @@ const gracefulShutdown = async (signal: string) => {
   logger.info({ signal }, '🛑 Graceful shutdown initiated');
 
   logger.info({}, 'Stopping portfolio history refresh service...');
-  portfolioHistoryRefreshService.stop();
+  // portfolioHistoryRefreshService.stop();
 
   logger.info({}, 'Flushing Sentry events...');
   await flush(2000);
