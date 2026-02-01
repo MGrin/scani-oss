@@ -1,22 +1,22 @@
-import { AsyncLocalStorage } from "node:async_hooks";
-import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
-import { createComponentLogger } from "@scani/core/utils/logger";
-import { RateLimiter } from "../../presentation/middleware/rate-limit";
-import type { MCPAuthContext } from "./auth";
-import { authenticateMCPRequest } from "./auth";
-import { registerAccountsTools } from "./tools/accounts";
-import { isUnauthenticatedTool, registerAgentTools } from "./tools/agent";
-import { registerBatchOperationsTools } from "./tools/batch-operations";
-import { registerDashboardTools } from "./tools/dashboard";
-import { registerHoldingsTools } from "./tools/holdings";
-import { registerInstitutionsTools } from "./tools/institutions";
-import { registerTokensTools } from "./tools/tokens";
-import { registerTypesTools } from "./tools/types";
-import { registerUsersTools } from "./tools/users";
-import { registerWalletTools } from "./tools/wallet";
+import { AsyncLocalStorage } from 'node:async_hooks';
+import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { WebStandardStreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js';
+import { createComponentLogger } from '@scani/core/utils/logger';
+import { RateLimiter } from '../../presentation/middleware/rate-limit';
+import type { MCPAuthContext } from './auth';
+import { authenticateMCPRequest } from './auth';
+import { registerAccountsTools } from './tools/accounts';
+import { isUnauthenticatedTool, registerAgentTools } from './tools/agent';
+import { registerBatchOperationsTools } from './tools/batch-operations';
+import { registerDashboardTools } from './tools/dashboard';
+import { registerHoldingsTools } from './tools/holdings';
+import { registerInstitutionsTools } from './tools/institutions';
+import { registerTokensTools } from './tools/tokens';
+import { registerTypesTools } from './tools/types';
+import { registerUsersTools } from './tools/users';
+import { registerWalletTools } from './tools/wallet';
 
-const logger = createComponentLogger("mcp:server");
+const logger = createComponentLogger('mcp:server');
 
 // MCP-specific rate limiter: 60 requests/minute per API key with burst of 90
 // Uses API key as the rate limit key for per-user limiting
@@ -27,8 +27,8 @@ const mcpRateLimiter = new RateLimiter({
   maxBuckets: 5000,
   // Key by API key (from Authorization header) for per-user rate limiting
   key: (req: Request) => {
-    const authHeader = req.headers.get("authorization");
-    if (authHeader?.startsWith("Bearer ")) {
+    const authHeader = req.headers.get('authorization');
+    if (authHeader?.startsWith('Bearer ')) {
       return authHeader.substring(7); // Use the API key as the bucket key
     }
     // Fallback to IP if no auth header
@@ -51,10 +51,10 @@ const registrationRateLimiter = new RateLimiter({
  */
 function getClientIp(req: Request): string {
   return (
-    req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ||
-    req.headers.get("cf-connecting-ip") ||
-    req.headers.get("x-real-ip") ||
-    "unknown"
+    req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ||
+    req.headers.get('cf-connecting-ip') ||
+    req.headers.get('x-real-ip') ||
+    'unknown'
   );
 }
 
@@ -63,8 +63,8 @@ const authStorage = new AsyncLocalStorage<MCPAuthContext>();
 
 // Create the MCP server instance
 export const mcpServer = new McpServer({
-  name: "scani-api",
-  version: "1.0.0",
+  name: 'scani-api',
+  version: '1.0.0',
 });
 
 // Transport instance for stateless HTTP mode (Bun-compatible)
@@ -78,7 +78,7 @@ let transport: WebStandardStreamableHTTPServerTransport | null = null;
 export function getCurrentUserId(): string {
   const context = authStorage.getStore();
   if (!context || !context.isAuthenticated) {
-    throw new Error("No authenticated user context");
+    throw new Error('No authenticated user context');
   }
   return context.userId;
 }
@@ -89,7 +89,7 @@ export function getCurrentUserId(): string {
  */
 export function runWithAuthContext<T>(
   context: MCPAuthContext,
-  callback: () => T | Promise<T>,
+  callback: () => T | Promise<T>
 ): T | Promise<T> {
   return authStorage.run(context, callback);
 }
@@ -113,7 +113,7 @@ export function clearAuthContext() {
  * Tools are organized by domain/router
  */
 export function registerAllTools() {
-  logger.info("Registering MCP tools");
+  logger.info('Registering MCP tools');
 
   // Register tools from each domain
   registerAgentTools(mcpServer); // Agent registration (includes unauthenticated tool)
@@ -129,7 +129,7 @@ export function registerAllTools() {
   // Note: Portfolio history, screenshots, and integrations tools not implemented
   // as they require complex workflows better suited for the web UI
 
-  logger.info("MCP tools registered successfully");
+  logger.info('MCP tools registered successfully');
 }
 
 /**
@@ -138,7 +138,7 @@ export function registerAllTools() {
  */
 export async function initializeMcpTransport(): Promise<void> {
   if (transport) {
-    logger.warn("MCP transport already initialized");
+    logger.warn('MCP transport already initialized');
     return;
   }
 
@@ -152,7 +152,7 @@ export async function initializeMcpTransport(): Promise<void> {
 
   // Connect the transport to the MCP server
   await mcpServer.connect(transport);
-  logger.info("MCP transport initialized and connected");
+  logger.info('MCP transport initialized and connected');
 }
 
 /**
@@ -170,15 +170,13 @@ interface ParsedMcpRequest {
  * If preBody is provided (from Elysia), use it directly
  * Otherwise, read from request (may fail if already consumed)
  */
-function parseMcpRequestBody(
-  preBody?: Record<string, unknown>,
-): ParsedMcpRequest {
+function parseMcpRequestBody(preBody?: Record<string, unknown>): ParsedMcpRequest {
   if (!preBody) {
     return {
       id: null,
       method: null,
       toolName: null,
-      rawBody: "",
+      rawBody: '',
     };
   }
 
@@ -189,15 +187,9 @@ function parseMcpRequestBody(
   };
 
   return {
-    id:
-      typeof body.id === "string" || typeof body.id === "number"
-        ? body.id
-        : null,
+    id: typeof body.id === 'string' || typeof body.id === 'number' ? body.id : null,
     method: body.method ?? null,
-    toolName:
-      body.method === "tools/call" && body.params?.name
-        ? body.params.name
-        : null,
+    toolName: body.method === 'tools/call' && body.params?.name ? body.params.name : null,
     rawBody: JSON.stringify(preBody),
   };
 }
@@ -222,25 +214,25 @@ function createJsonRpcError(
   code: number,
   message: string,
   id: string | number | null = null,
-  retryAfter?: number,
+  retryAfter?: number
 ): Response {
   const headers: Record<string, string> = {
-    "Content-Type": "application/json",
+    'Content-Type': 'application/json',
   };
   if (retryAfter) {
-    headers["Retry-After"] = String(retryAfter);
+    headers['Retry-After'] = String(retryAfter);
   }
 
   return new Response(
     JSON.stringify({
-      jsonrpc: "2.0",
+      jsonrpc: '2.0',
       error: {
         code,
         message,
       },
       id,
     }),
-    { status, headers },
+    { status, headers }
   );
 }
 
@@ -254,7 +246,7 @@ function createJsonRpcError(
  */
 export async function handleMcpRequest(
   request: Request,
-  preBody?: Record<string, unknown>,
+  preBody?: Record<string, unknown>
 ): Promise<Response> {
   // Ensure transport is initialized
   if (!transport) {
@@ -265,10 +257,7 @@ export async function handleMcpRequest(
   const parsed = parseMcpRequestBody(preBody);
   const { id: requestId, toolName } = parsed;
 
-  logger.debug(
-    { toolName, method: parsed.method, requestId },
-    "Parsed MCP request",
-  );
+  logger.debug({ toolName, method: parsed.method, requestId }, 'Parsed MCP request');
 
   // Create fresh request for transport (body has been consumed)
   const freshRequest = createFreshRequest(request, parsed.rawBody);
@@ -285,20 +274,20 @@ export async function handleMcpRequest(
           retryAfterSec: registrationRateResult.retryAfterSec,
           ip: getClientIp(request),
         },
-        "⚠️ Registration rate limit exceeded",
+        '⚠️ Registration rate limit exceeded'
       );
       return createJsonRpcError(
         429,
         -32005,
-        "Registration rate limit exceeded. Maximum 5 registrations per hour per IP.",
+        'Registration rate limit exceeded. Maximum 5 registrations per hour per IP.',
         requestId,
-        registrationRateResult.retryAfterSec,
+        registrationRateResult.retryAfterSec
       );
     }
 
     logger.info(
       { toolName, ip: getClientIp(request) },
-      "🤖 Processing unauthenticated MCP request",
+      '🤖 Processing unauthenticated MCP request'
     );
 
     // Process without authentication - no auth context needed
@@ -306,12 +295,8 @@ export async function handleMcpRequest(
       const response = await transport!.handleRequest(freshRequest);
       return response;
     } catch (error) {
-      const errorMessage =
-        error instanceof Error ? error.message : "Unknown error";
-      logger.error(
-        { error: errorMessage },
-        "❌ Unauthenticated MCP request failed",
-      );
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      logger.error({ error: errorMessage }, '❌ Unauthenticated MCP request failed');
       return createJsonRpcError(500, -32603, errorMessage, requestId);
     }
   }
@@ -319,16 +304,13 @@ export async function handleMcpRequest(
   // For authenticated requests, apply standard rate limiting
   const rateLimitResult = mcpRateLimiter.tryConsume(request);
   if (!rateLimitResult.ok) {
-    logger.warn(
-      { retryAfterSec: rateLimitResult.retryAfterSec },
-      "⚠️ MCP rate limit exceeded",
-    );
+    logger.warn({ retryAfterSec: rateLimitResult.retryAfterSec }, '⚠️ MCP rate limit exceeded');
     return createJsonRpcError(
       429,
       -32005, // Custom code for rate limiting
-      "Rate limit exceeded. Please retry later.",
+      'Rate limit exceeded. Please retry later.',
       requestId,
-      rateLimitResult.retryAfterSec,
+      rateLimitResult.retryAfterSec
     );
   }
 
@@ -338,7 +320,7 @@ export async function handleMcpRequest(
 
     logger.debug(
       { userId: authContext.userId, method: request.method },
-      "🤖 MCP request authenticated",
+      '🤖 MCP request authenticated'
     );
 
     // Process the request within the auth context
@@ -349,14 +331,11 @@ export async function handleMcpRequest(
 
     return response;
   } catch (error) {
-    const errorMessage =
-      error instanceof Error ? error.message : "Unknown error";
-    logger.error({ error: errorMessage }, "❌ MCP request failed");
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    logger.error({ error: errorMessage }, '❌ MCP request failed');
 
     // Determine appropriate error code and status
-    const isAuthError =
-      errorMessage.includes("Authentication") ||
-      errorMessage.includes("API key");
+    const isAuthError = errorMessage.includes('Authentication') || errorMessage.includes('API key');
     const status = isAuthError ? 401 : 500;
     const code = isAuthError ? -32001 : -32603;
 
@@ -367,8 +346,6 @@ export async function handleMcpRequest(
 /**
  * Authenticate a request and return the auth context
  */
-export async function authenticateRequest(
-  request: Request,
-): Promise<MCPAuthContext> {
+export async function authenticateRequest(request: Request): Promise<MCPAuthContext> {
   return await authenticateMCPRequest(request);
 }
