@@ -29,13 +29,14 @@ jobs:
           repo-token: ${{ secrets.GITHUB_TOKEN }}
           wait-interval: 10
       
-      - name: Wait for type-check workflow
-        uses: lewagon/wait-on-check-action@v1.3.1
-        with:
-          ref: ${{ github.ref }}
-          check-name: 'Run TypeScript Type Checking'
-          repo-token: ${{ secrets.GITHUB_TOKEN }}
-          wait-interval: 10
+      # DISABLED: type-check workflow is temporarily disabled
+      # - name: Wait for type-check workflow
+      #   uses: lewagon/wait-on-check-action@v1.3.1
+      #   with:
+      #     ref: ${{ github.ref }}
+      #     check-name: 'Run TypeScript Type Checking'
+      #     repo-token: ${{ secrets.GITHUB_TOKEN }}
+      #     wait-interval: 10
 
   check-changes:
     runs-on: ubuntu-latest
