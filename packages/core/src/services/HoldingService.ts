@@ -1,13 +1,13 @@
-import type { CreateHoldingInput, HoldingWithDetails } from "@scani/shared";
-import Decimal from "decimal.js";
-import { Container, Service } from "typedi";
-import type { Holding, User } from "../domain/entities";
-import { AccountRepository } from "../repositories/AccountRepository";
-import type { DatabaseTransaction } from "../repositories/BaseRepository";
-import { GroupRepository } from "../repositories/GroupRepository";
-import { HoldingRepository } from "../repositories/HoldingRepository";
-import { BaseService } from "./BaseService";
-import { PortfolioValuationService } from "./PortfolioValuationService";
+import type { CreateHoldingInput, HoldingWithDetails } from '@scani/shared';
+import Decimal from 'decimal.js';
+import { Container, Service } from 'typedi';
+import type { Holding, User } from '../domain/entities';
+import { AccountRepository } from '../repositories/AccountRepository';
+import type { DatabaseTransaction } from '../repositories/BaseRepository';
+import { GroupRepository } from '../repositories/GroupRepository';
+import { HoldingRepository } from '../repositories/HoldingRepository';
+import { BaseService } from './BaseService';
+import { PortfolioValuationService } from './PortfolioValuationService';
 
 /**
  * HoldingService
@@ -19,31 +19,26 @@ export class HoldingService extends BaseService {
   private readonly holdingRepository = Container.get(HoldingRepository);
   private readonly accountRepository = Container.get(AccountRepository);
   private readonly groupRepository = Container.get(GroupRepository);
-  private readonly portfolioValuationService = Container.get(
-    PortfolioValuationService,
-  );
+  private readonly portfolioValuationService = Container.get(PortfolioValuationService);
 
   constructor() {
-    super("HoldingService");
+    super('HoldingService');
   }
 
-  async createHolding(
-    data: CreateHoldingInput,
-    userId: string,
-  ): Promise<Holding> {
+  async createHolding(data: CreateHoldingInput, userId: string): Promise<Holding> {
     try {
-      this.logDebug("Creating holding", {
+      this.logDebug('Creating holding', {
         accountId: data.accountId,
         tokenId: data.tokenId,
         balance: data.balance,
       });
 
-      this.validateRequiredFields(data, ["accountId", "tokenId", "balance"]);
+      this.validateRequiredFields(data, ['accountId', 'tokenId', 'balance']);
 
       // Validate balance
       const balance = new Decimal(data.balance);
       if (balance.isNegative()) {
-        throw new Error("Balance cannot be negative");
+        throw new Error('Balance cannot be negative');
       }
 
       // Verify account exists and belongs to user
@@ -51,21 +46,18 @@ export class HoldingService extends BaseService {
       this.assertExists(account, `Account with ID ${data.accountId} not found`);
 
       if (account.userId !== userId) {
-        throw new Error("Unauthorized: Account does not belong to user");
+        throw new Error('Unauthorized: Account does not belong to user');
       }
 
       // Check if holding already exists
-      const existingHolding =
-        await this.holdingRepository.findByAccountAndToken(
-          data.accountId,
-          data.tokenId,
-          userId,
-        );
+      const existingHolding = await this.holdingRepository.findByAccountAndToken(
+        data.accountId,
+        data.tokenId,
+        userId
+      );
 
       if (existingHolding) {
-        throw new Error(
-          "Holding already exists for this token in this account",
-        );
+        throw new Error('Holding already exists for this token in this account');
       }
 
       // Create the holding
@@ -77,53 +69,52 @@ export class HoldingService extends BaseService {
         lastUpdated: data.lastUpdated || new Date(),
       });
 
-      this.assertExists(holding, "Failed to create holding");
+      this.assertExists(holding, 'Failed to create holding');
 
-      this.logDebug("Holding created successfully", { holdingId: holding.id });
+      this.logDebug('Holding created successfully', { holdingId: holding.id });
       return holding;
     } catch (error) {
-      throw this.handleError(error, "createHolding");
+      throw this.handleError(error, 'createHolding');
     }
   }
 
   async createManyHoldings(
     data: CreateHoldingInput[],
     userId: string,
-    tx?: DatabaseTransaction,
+    tx?: DatabaseTransaction
   ): Promise<Holding[]> {
     try {
-      this.logDebug("Creating multiple holdings", { count: data.length });
+      this.logDebug('Creating multiple holdings', { count: data.length });
 
-      const createdHoldings: Holding[] =
-        await this.holdingRepository.createMany(
-          data.map((holdingInput) => ({
-            ...holdingInput,
-            userId,
-          })),
-          tx,
-        );
+      const createdHoldings: Holding[] = await this.holdingRepository.createMany(
+        data.map((holdingInput) => ({
+          ...holdingInput,
+          userId,
+        })),
+        tx
+      );
 
-      this.logDebug("Multiple holdings created successfully", {
+      this.logDebug('Multiple holdings created successfully', {
         count: createdHoldings.length,
       });
       return createdHoldings;
     } catch (error) {
-      throw this.handleError(error, "createManyHoldings");
+      throw this.handleError(error, 'createManyHoldings');
     }
   }
 
   async getHoldingsByAccountIdWithDetails(
     user: User,
     accountId?: string,
-    includeHidden = false,
+    includeHidden = false
   ): Promise<HoldingWithDetails[]> {
     if (!user.baseCurrencyId) {
-      throw new Error("User does not have a base currency set");
+      throw new Error('User does not have a base currency set');
     }
 
     this.logger.debug(
       { userId: user.id, accountId, includeHidden },
-      "Getting holdings with details",
+      'Getting holdings with details'
     );
 
     // Parallel fetch: optimized holdings query + portfolio valuation + groups
@@ -132,13 +123,9 @@ export class HoldingService extends BaseService {
         user.id,
         accountId,
         undefined, // transaction: not using transaction here
-        includeHidden,
+        includeHidden
       ),
-      this.portfolioValuationService.getUserPortfolioValue(
-        user.id,
-        user.baseCurrencyId,
-        accountId,
-      ),
+      this.portfolioValuationService.getUserPortfolioValue(user.id, user.baseCurrencyId, accountId),
     ]);
 
     if (holdingsWithFullDetails.length === 0) {
@@ -150,15 +137,12 @@ export class HoldingService extends BaseService {
       holdingsWithFullDetails.map(({ holding, account }) => ({
         id: holding.id,
         accountId: account.id,
-      })),
+      }))
     );
 
     // Create maps for efficient lookups - get individual token prices
     const portfolioPriceMap = new Map(
-      portfolioValue.holdings.map((h) => [
-        h.tokenSymbol,
-        h.currentPrice || "0",
-      ]),
+      portfolioValue.holdings.map((h) => [h.tokenSymbol, h.currentPrice || '0'])
     );
 
     // Create price metadata map keyed by token symbol
@@ -168,21 +152,19 @@ export class HoldingService extends BaseService {
         .map((h) => [
           h.tokenSymbol,
           {
-            value: h.currentPrice || "0",
+            value: h.currentPrice || '0',
             timestamp: h.priceTimestamp!.toISOString(),
             source: h.priceSource,
           },
-        ]),
+        ])
     );
 
     // Build detailed holdings from pre-fetched data
     const detailedHoldings: HoldingWithDetails[] = holdingsWithFullDetails.map(
       ({ holding, token, account, institution }) => {
         // Get current price and calculate individual holding value
-        const currentPrice = portfolioPriceMap.get(token.symbol) || "0";
-        const currentValue = new Decimal(holding.balance)
-          .mul(new Decimal(currentPrice))
-          .toNumber();
+        const currentPrice = portfolioPriceMap.get(token.symbol) || '0';
+        const currentValue = new Decimal(holding.balance).mul(new Decimal(currentPrice)).toNumber();
 
         // For now, cost basis is the same as current value (simplified)
         const costBasis = currentValue;
@@ -193,9 +175,9 @@ export class HoldingService extends BaseService {
         // Synthesize price object for base currency holdings (always 1:1 conversion)
         if (!priceInfo && token.id === user.baseCurrencyId) {
           priceInfo = {
-            value: "1",
+            value: '1',
             timestamp: new Date().toISOString(),
-            source: "Base Currency",
+            source: 'Base Currency',
           };
         }
 
@@ -241,14 +223,12 @@ export class HoldingService extends BaseService {
           isHidden: holding.isHidden,
           source: holding.source,
         };
-      },
+      }
     );
 
     this.logger.debug(
       { userId: user.id, accountId, count: detailedHoldings.length },
-      accountId
-        ? "Account holdings with details retrieved"
-        : "Holdings with details retrieved",
+      accountId ? 'Account holdings with details retrieved' : 'Holdings with details retrieved'
     );
 
     return detailedHoldings;
@@ -261,7 +241,7 @@ export class HoldingService extends BaseService {
   async getHoldingsByAccountIdWithSummary(
     user: User,
     accountId?: string,
-    includeHidden = false,
+    includeHidden = false
   ): Promise<{
     holdings: HoldingWithDetails[];
     summary: {
@@ -270,11 +250,7 @@ export class HoldingService extends BaseService {
       totalValue: string;
     };
   }> {
-    const holdings = await this.getHoldingsByAccountIdWithDetails(
-      user,
-      accountId,
-      includeHidden,
-    );
+    const holdings = await this.getHoldingsByAccountIdWithDetails(user, accountId, includeHidden);
 
     // Calculate summary statistics (only active holdings count towards totals)
     const activeHoldings = holdings.filter((h) => h.isActive);
@@ -301,17 +277,17 @@ export class HoldingService extends BaseService {
     accountId: string,
     transaction?: DatabaseTransaction,
     includeHidden = false,
-    includeScamTokens = false,
+    includeScamTokens = false
   ): Promise<Holding[]> {
     try {
       return await this.holdingRepository.findByAccount(
         accountId,
         transaction,
         includeHidden,
-        includeScamTokens,
+        includeScamTokens
       );
     } catch (error) {
-      throw this.handleError(error, "findByAccount");
+      throw this.handleError(error, 'findByAccount');
     }
   }
 
@@ -321,45 +297,36 @@ export class HoldingService extends BaseService {
   async updateHoldingBalance(
     holdingId: string,
     balance: string,
-    transaction?: DatabaseTransaction,
+    transaction?: DatabaseTransaction
   ): Promise<void> {
     try {
       // Note: Not logging individual balance updates to reduce log volume
-      await this.holdingRepository.updateBalance(
-        holdingId,
-        balance,
-        transaction,
-      );
+      await this.holdingRepository.updateBalance(holdingId, balance, transaction);
     } catch (error) {
-      throw this.handleError(error, "updateHoldingBalance");
+      throw this.handleError(error, 'updateHoldingBalance');
     }
   }
 
   /**
    * Delete holding
    */
-  async deleteHolding(
-    holdingId: string,
-    transaction?: DatabaseTransaction,
-  ): Promise<void> {
+  async deleteHolding(holdingId: string, transaction?: DatabaseTransaction): Promise<void> {
     try {
-      this.logDebug("Deleting holding", { holdingId });
+      this.logDebug('Deleting holding', { holdingId });
       await this.holdingRepository.deleteById(holdingId, transaction);
     } catch (error) {
-      throw this.handleError(error, "deleteHolding");
+      throw this.handleError(error, 'deleteHolding');
     }
   }
 
   /**
    * Get distinct token IDs from all holdings
    */
-  async getDistinctTokenIds(
-    transaction?: DatabaseTransaction,
-  ): Promise<string[]> {
+  async getDistinctTokenIds(transaction?: DatabaseTransaction): Promise<string[]> {
     try {
       return await this.holdingRepository.getDistinctTokenIds(transaction);
     } catch (error) {
-      throw this.handleError(error, "getDistinctTokenIds");
+      throw this.handleError(error, 'getDistinctTokenIds');
     }
   }
 }

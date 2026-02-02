@@ -17,28 +17,23 @@
  * This preserves user intent when they explicitly hide a holding.
  */
 
-import type { FetchHoldingsResult } from "@scani/integrations";
-import { IntegrationManager } from "@scani/integrations";
-import { isValidDecimalString } from "@scani/shared";
-import { and, eq } from "drizzle-orm";
-import { Container, Service } from "typedi";
-import { db } from "../database/connection";
-import * as schema from "../database/schema";
-import { withTransaction } from "../database/transaction";
-import type {
-  Account,
-  Institution,
-  User,
-  UserWallet,
-} from "../domain/entities";
-import { TokenTypeRepository } from "../repositories/EnumRepositories";
-import { AccountService } from "../services/AccountService";
-import { HoldingService } from "../services/HoldingService";
-import { TokenService } from "../services/TokenService";
-import { UserWalletService } from "../services/UserWalletService";
-import { createComponentLogger } from "../utils/logger";
+import type { FetchHoldingsResult } from '@scani/integrations';
+import { IntegrationManager } from '@scani/integrations';
+import { isValidDecimalString } from '@scani/shared';
+import { and, eq } from 'drizzle-orm';
+import { Container, Service } from 'typedi';
+import { db } from '../database/connection';
+import * as schema from '../database/schema';
+import { withTransaction } from '../database/transaction';
+import type { Account, Institution, User, UserWallet } from '../domain/entities';
+import { TokenTypeRepository } from '../repositories/EnumRepositories';
+import { AccountService } from '../services/AccountService';
+import { HoldingService } from '../services/HoldingService';
+import { TokenService } from '../services/TokenService';
+import { UserWalletService } from '../services/UserWalletService';
+import { createComponentLogger } from '../utils/logger';
 
-const logger = createComponentLogger("use-case:sync-wallet-balances");
+const logger = createComponentLogger('use-case:sync-wallet-balances');
 
 export interface SyncWalletBalancesResult {
   /** Total number of wallet accounts found */
@@ -78,9 +73,9 @@ export class SyncWalletBalancesUseCase {
 
   async execute(): Promise<SyncWalletBalancesResult> {
     const startTime = Date.now();
-    logger.info("Starting wallet balance sync for all blockchain accounts");
+    logger.info('Starting wallet balance sync for all blockchain accounts');
 
-    const errors: SyncWalletBalancesResult["errors"] = [];
+    const errors: SyncWalletBalancesResult['errors'] = [];
     let accountsSynced = 0;
     let accountsFailed = 0;
     let holdingsUpdated = 0;
@@ -89,15 +84,14 @@ export class SyncWalletBalancesUseCase {
 
     try {
       // Get crypto token type
-      const cryptoTokenType =
-        await this.tokenTypeRepository.findByCode("crypto");
+      const cryptoTokenType = await this.tokenTypeRepository.findByCode('crypto');
 
       if (!cryptoTokenType) {
         throw new Error('Token type "crypto" not found');
       }
 
       // Sync wallets from user_wallets table
-      logger.debug("Syncing wallets from user_wallets table");
+      logger.debug('Syncing wallets from user_wallets table');
       const result = await this.syncUserWallets(cryptoTokenType.id);
 
       accountsSynced += result.accountsSynced;
@@ -120,7 +114,7 @@ export class SyncWalletBalancesUseCase {
           holdingsRemoved,
           durationMs,
         },
-        "Wallet balance sync completed",
+        'Wallet balance sync completed'
       );
 
       return {
@@ -140,7 +134,7 @@ export class SyncWalletBalancesUseCase {
           error: error instanceof Error ? error.message : String(error),
           durationMs,
         },
-        "Failed to sync wallet balances",
+        'Failed to sync wallet balances'
       );
 
       throw error;
@@ -156,9 +150,9 @@ export class SyncWalletBalancesUseCase {
     holdingsUpdated: number;
     holdingsCreated: number;
     holdingsRemoved: number;
-    errors: SyncWalletBalancesResult["errors"];
+    errors: SyncWalletBalancesResult['errors'];
   }> {
-    const errors: SyncWalletBalancesResult["errors"] = [];
+    const errors: SyncWalletBalancesResult['errors'] = [];
     let accountsSynced = 0;
     let accountsFailed = 0;
     let holdingsUpdated = 0;
@@ -189,13 +183,12 @@ export class SyncWalletBalancesUseCase {
         // Process each institution for this wallet
         for (const institutionId of institutionIds) {
           try {
-            const integration =
-              await this.integrationManager.getIntegration(institutionId);
+            const integration = await this.integrationManager.getIntegration(institutionId);
 
             if (!integration) {
               logger.warn(
                 { institutionId, walletAddress: userWallet.walletAddress },
-                "Integration not found for institution",
+                'Integration not found for institution'
               );
               continue;
             }
@@ -218,8 +211,8 @@ export class SyncWalletBalancesUseCase {
               .where(
                 and(
                   eq(schema.accounts.userId, user.id),
-                  eq(schema.accounts.institutionId, institutionId),
-                ),
+                  eq(schema.accounts.institutionId, institutionId)
+                )
               );
 
             // Filter accounts that have this userWalletId in metadata
@@ -231,7 +224,7 @@ export class SyncWalletBalancesUseCase {
             if (!account) {
               logger.warn(
                 { userWalletId: userWallet.id, institutionId },
-                "Account not found for user wallet and institution",
+                'Account not found for user wallet and institution'
               );
               continue;
             }
@@ -242,24 +235,22 @@ export class SyncWalletBalancesUseCase {
                 walletAddress: userWallet.walletAddress,
                 institutionId,
               },
-              "Fetching wallet holdings from blockchain",
+              'Fetching wallet holdings from blockchain'
             );
 
             // EXTERNAL API CALL - Fetch holdings from blockchain (no DB connection held)
-            const holdingsResult = await integration.fetchHoldings(
-              userWallet.walletAddress,
-            );
+            const holdingsResult = await integration.fetchHoldings(userWallet.walletAddress);
 
             if (holdingsResult.errors && holdingsResult.errors.length > 0) {
               logger.warn(
                 { accountId: account.id, errors: holdingsResult.errors },
-                "Errors fetching holdings from integration",
+                'Errors fetching holdings from integration'
               );
               errors.push({
                 accountId: account.id,
                 accountName: account.name,
                 walletAddress: userWallet.walletAddress,
-                error: holdingsResult.errors.join("; "),
+                error: holdingsResult.errors.join('; '),
               });
               accountsFailed++;
               continue;
@@ -276,10 +267,9 @@ export class SyncWalletBalancesUseCase {
             });
           } catch (error) {
             accountsFailed++;
-            const errorMessage =
-              error instanceof Error ? error.message : String(error);
+            const errorMessage = error instanceof Error ? error.message : String(error);
             errors.push({
-              accountId: "unknown",
+              accountId: 'unknown',
               accountName: `${userWallet.walletAddress.substring(0, 10)}...`,
               walletAddress: userWallet.walletAddress,
               error: errorMessage,
@@ -290,7 +280,7 @@ export class SyncWalletBalancesUseCase {
                 institutionId,
                 error: errorMessage,
               },
-              "Failed to fetch wallet data",
+              'Failed to fetch wallet data'
             );
           }
         }
@@ -305,8 +295,7 @@ export class SyncWalletBalancesUseCase {
           try {
             const { user, institutionId, account, holdingsResult } = walletData;
 
-            const integration =
-              await this.integrationManager.getIntegration(institutionId);
+            const integration = await this.integrationManager.getIntegration(institutionId);
             if (!integration) {
               continue;
             }
@@ -318,20 +307,16 @@ export class SyncWalletBalancesUseCase {
               account.id,
               tx,
               true, // includeHidden
-              true, // includeScamTokens - prevents duplicate holdings for scam tokens
+              true // includeScamTokens - prevents duplicate holdings for scam tokens
             );
 
             // Batch fetch all tokens for existing holdings (within transaction)
             const existingTokenIds = existingHoldings.map((h) => h.tokenId);
-            const existingTokens =
-              await this.tokenService.getTokensByIds(existingTokenIds);
+            const existingTokens = await this.tokenService.getTokensByIds(existingTokenIds);
             const tokensMap = new Map(existingTokens.map((t) => [t.id, t]));
 
             // Create a map of existing holdings by token symbol
-            const existingHoldingsMap = new Map<
-              string,
-              (typeof existingHoldings)[0]
-            >();
+            const existingHoldingsMap = new Map<string, (typeof existingHoldings)[0]>();
             for (const holding of existingHoldings) {
               const token = tokensMap.get(holding.tokenId);
               if (token) {
@@ -349,7 +334,7 @@ export class SyncWalletBalancesUseCase {
                       accountId: account.id,
                       holding: integrationHolding,
                     },
-                    "Skipping integration holding with missing symbol or balance",
+                    'Skipping integration holding with missing symbol or balance'
                   );
                   continue;
                 }
@@ -365,35 +350,29 @@ export class SyncWalletBalancesUseCase {
                       tokenSymbol,
                       balance,
                     },
-                    "Skipping integration holding with invalid balance format",
+                    'Skipping integration holding with invalid balance format'
                   );
                   continue;
                 }
 
                 // Map the integration holding to our token format
-                const tokenMapping =
-                  await integration.mapToken(integrationHolding);
+                const tokenMapping = await integration.mapToken(integrationHolding);
 
                 // Find or create token using blockchain-specific integration mapping method (within transaction)
-                const token =
-                  await this.tokenService.findOrCreateTokenFromIntegrationMapping(
-                    tokenMapping,
-                    cryptoTokenTypeId,
-                    18,
-                    tx,
-                  );
+                const token = await this.tokenService.findOrCreateTokenFromIntegrationMapping(
+                  tokenMapping,
+                  cryptoTokenTypeId,
+                  18,
+                  tx
+                );
 
                 const existingHolding = existingHoldingsMap.get(tokenSymbol);
                 const wasHidden = existingHolding?.isHidden ?? false;
 
-                if (balance === "0" || parseFloat(balance) === 0) {
+                if (balance === '0' || parseFloat(balance) === 0) {
                   // For zero balance, update existing holding if it exists
                   if (existingHolding) {
-                    await this.holdingService.updateHoldingBalance(
-                      existingHolding.id,
-                      balance,
-                      tx,
-                    );
+                    await this.holdingService.updateHoldingBalance(existingHolding.id, balance, tx);
                     if (!wasHidden) {
                       holdingsRemoved++;
                     }
@@ -403,17 +382,13 @@ export class SyncWalletBalancesUseCase {
                         tokenSymbol,
                         holdingId: existingHolding.id,
                       },
-                      "Updated holding with zero balance",
+                      'Updated holding with zero balance'
                     );
                   }
                 } else {
                   // Update or create holding with non-zero balance
                   if (existingHolding) {
-                    await this.holdingService.updateHoldingBalance(
-                      existingHolding.id,
-                      balance,
-                      tx,
-                    );
+                    await this.holdingService.updateHoldingBalance(existingHolding.id, balance, tx);
                     if (!wasHidden) {
                       holdingsUpdated++;
                     }
@@ -424,7 +399,7 @@ export class SyncWalletBalancesUseCase {
                         holdingId: existingHolding.id,
                         balance,
                       },
-                      "Updated holding balance",
+                      'Updated holding balance'
                     );
                   } else {
                     // Create new holding (within transaction)
@@ -435,7 +410,7 @@ export class SyncWalletBalancesUseCase {
                         accountId: account.id,
                         tokenId: token.id,
                         balance,
-                        source: "blockchain",
+                        source: 'blockchain',
                         isHidden: false,
                         lastUpdated: new Date(),
                       })
@@ -450,7 +425,7 @@ export class SyncWalletBalancesUseCase {
                           holdingId: newHolding.id,
                           balance,
                         },
-                        "Created new holding",
+                        'Created new holding'
                       );
                     }
                   }
@@ -462,13 +437,12 @@ export class SyncWalletBalancesUseCase {
                 logger.error(
                   {
                     accountId: account.id,
-                    tokenSymbol: integrationHolding?.symbol || "unknown",
-                    tokenName: integrationHolding?.name || "unknown",
-                    balance: integrationHolding?.balance || "unknown",
-                    error:
-                      error instanceof Error ? error.message : String(error),
+                    tokenSymbol: integrationHolding?.symbol || 'unknown',
+                    tokenName: integrationHolding?.name || 'unknown',
+                    balance: integrationHolding?.balance || 'unknown',
+                    error: error instanceof Error ? error.message : String(error),
                   },
-                  "Failed to process integration holding",
+                  'Failed to process integration holding'
                 );
               }
             }
@@ -481,28 +455,27 @@ export class SyncWalletBalancesUseCase {
                 ...metadata,
                 lastSync: new Date().toISOString(),
               },
-              tx,
+              tx
             );
 
             accountsSynced++;
           } catch (error) {
-            const errorMessage =
-              error instanceof Error ? error.message : String(error);
+            const errorMessage = error instanceof Error ? error.message : String(error);
             logger.error(
               {
                 accountId: walletData.account.id,
                 walletAddress: walletData.userWallet.walletAddress,
                 error: errorMessage,
               },
-              "Failed to process wallet in transaction",
+              'Failed to process wallet in transaction'
             );
           }
         }
       },
       {
-        name: "sync-wallet-balances",
+        name: 'sync-wallet-balances',
         timeout: 120000, // 120s timeout for potentially large sync operations
-      },
+      }
     );
 
     return {
