@@ -2,11 +2,10 @@
 
 /**
  * Custom migration script that uses the application's database connection.
- * This ensures migrations use the proper Supabase pooler configuration
- * (prepare: false, fetch_types: false, small connection pool).
+ * Uses a dedicated single connection for migrations to avoid conflicts.
  *
  * Unlike drizzle-kit migrate which uses its own pg connection pool,
- * this script reuses our optimized postgres.js connection.
+ * this script uses our optimized postgres.js connection settings.
  */
 
 import { dirname, join } from 'node:path';
@@ -27,17 +26,18 @@ async function runMigrations() {
   }
 
   console.log('🔄 Starting database migrations...');
-  console.log('📍 Using Supabase pooler-optimized connection settings');
+  console.log('📍 Using direct PostgreSQL connection (Render)');
 
-  // Create a migration-specific client with Supabase pooler settings
-  // These settings match the application's connection configuration
+  // Create a migration-specific client
+  // Migrations use a single dedicated connection to avoid conflicts
   const migrationClient = postgres(DATABASE_URL, {
-    max: 1, // Single connection for migrations - pooler handles scaling
-    idle_timeout: 20,
+    max: 1, // Single connection for migrations - avoids conflicts
+    idle_timeout: 30,
     connect_timeout: 10, // Fail fast if connection issues
-    max_lifetime: 60 * 30, // 30 minutes max lifetime for connections
-    prepare: false, // Required for Supabase transaction pooler
-    fetch_types: false, // Skip type fetching for faster connection
+    max_lifetime: 60 * 60, // 1 hour max lifetime
+    prepare: true, // Enable prepared statements (direct connection)
+    fetch_types: true, // Fetch types for proper type handling
+    ssl: 'require', // Required for Render PostgreSQL
     connection: {
       application_name: 'scani-migrations', // Helps identify migration connections in pg_stat_activity
     },

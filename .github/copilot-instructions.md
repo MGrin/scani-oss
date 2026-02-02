@@ -5,6 +5,7 @@
 ## Quick Reference for Agents
 
 **Essential Commands:**
+
 - `bun dev` - Start all development servers (backend + frontendV2 + landing)
 - `bun dev:backend` - Start backend only
 - `bun dev:frontend` - Start frontendV2 only
@@ -14,6 +15,7 @@
 - `bun run db:migrate` - Apply database migrations
 
 **Critical Rules:**
+
 - ✅ Always use `bun` and `bunx` (never npm/yarn/npx)
 - ✅ Use Drizzle ORM for database operations (never raw SQL)
 - ✅ Use `Decimal.js` for all financial calculations
@@ -23,10 +25,9 @@
 - ✅ Follow clean architecture - Use Cases → Services → Repositories
 - ✅ Follow DRY, OOP, SOLID, and Onion Architecture principles
 - ✅ Initialize container before importing routers (see `apps/backend/src/index.ts`)
-- ✅ **Supabase Connection Pooler**: Use max 1-3 connections per client (pooler handles scaling)
+- ✅ **Render PostgreSQL**: Direct connection with prepared statements enabled
 - ❌ **NEVER use `require()` or `await import()` or any dynamic imports** - always use static ES6 imports
 - ❌ **NEVER add retry logic for database operations** - if queries fail, there's a fundamental issue
-- ❌ **NEVER increase connection pool size for Supabase** - use 1-3 connections, let pooler scale
 - ❌ **NEVER increase query timeouts** - queries must be fast, system must fail fast
 - ❌ Never auto-apply database migrations
 - ❌ Never use TypeScript enums for dynamic data
@@ -53,12 +54,14 @@
 ### Package Structure
 
 **Packages:**
+
 - `@scani/core` - Core business logic, database, services, use cases, repositories
 - `@scani/integrations` - Integration framework (Plaid, Binance, Kraken, etc.)
 - `@scani/rate-limiter` - Rate limiting utilities
 - `@scani/shared` - Shared types and utilities (Zod schemas, Decimal.js helpers)
 
 **Apps:**
+
 - `@scani/backend` - tRPC API server with Elysia
 - `@scani/frontend-v2` - React SPA with Vite
 - `@scani/landing` - Marketing landing page
@@ -71,19 +74,19 @@
 
 ```typescript
 // ✅ CORRECT - Proper ES6 imports at the top of the file
-import { IntegrationManager } from '@scani/integrations';
-import { db } from '@scani/core/database/connection';
-import * as schema from '@scani/core/database/schema';
-import { Container } from 'typedi';
+import { IntegrationManager } from "@scani/integrations";
+import { db } from "@scani/core/database/connection";
+import * as schema from "@scani/core/database/schema";
+import { Container } from "typedi";
 
 // ✅ CORRECT - Using TypeDI Container
 const service = Container.get(MyService);
 
 // ❌ WRONG - Dynamic require statements
-const { IntegrationManager } = require('@scani/integrations');
+const { IntegrationManager } = require("@scani/integrations");
 
 // ❌ WRONG - Async/dynamic imports
-const { IntegrationManager } = await import('@scani/integrations');
+const { IntegrationManager } = await import("@scani/integrations");
 
 // ❌ WRONG - Direct instantiation (bypass DI)
 const service = new MyService();
@@ -95,18 +98,18 @@ const service = new MyService();
 
 ```typescript
 // ✅ CORRECT - Service class with @Service decorator
-import { Service } from 'typedi';
+import { Service } from "typedi";
 
 @Service()
 export class MyService {
   constructor(
     private readonly repository: MyRepository,
-    private readonly logger: Logger
+    private readonly logger: Logger,
   ) {}
 }
 
 // ✅ CORRECT - Getting service from container
-import { Container } from 'typedi';
+import { Container } from "typedi";
 const service = Container.get(MyService);
 
 // ❌ WRONG - Manual instantiation
@@ -114,6 +117,7 @@ const service = new MyService(repository, logger);
 ```
 
 **Container Initialization:**
+
 - Container MUST be initialized before any service imports
 - See `apps/backend/src/config/container.ts` for setup
 - Call `initializeContainer()` in `apps/backend/src/index.ts` before imports
@@ -129,13 +133,14 @@ const service = new MyService(repository, logger);
 - **Rate Limiters** - Per-integration rate limiting configurations
 
 **Integration Pattern:**
+
 ```typescript
 // ✅ CORRECT - Use IntegrationManager from Container
-import { IntegrationManager } from '@scani/integrations';
-import { Container } from 'typedi';
+import { IntegrationManager } from "@scani/integrations";
+import { Container } from "typedi";
 
 const manager = Container.get(IntegrationManager);
-const integration = manager.getIntegration('binance');
+const integration = manager.getIntegration("binance");
 
 // ✅ CORRECT - Use integration implementations through manager
 await integration.validateCredentials({ apiKey, apiSecret });
@@ -218,23 +223,21 @@ const createAccount = trpc.accounts.create.useMutation();
   - Examples: `CreateHoldingUseCase`, `ImportWalletAddressUseCase`, `SyncPlaidBalancesUseCase`
   - Each use case handles a single business operation
   - Reusable across routers, background jobs, and CLI tools
-  
 - **Services** (`packages/core/src/services/`) - Infrastructure & external integrations
   - PricingService, PortfolioValuationService, UserContextService
   - Handle complex operations like price fetching and portfolio calculations
   - Manage rate limiting and external API calls
-  
 - **Repositories** (`packages/core/src/repositories/`) - Data access layer
   - Clean abstraction over database operations
   - Used by use cases and services for data persistence
   - Examples: `HoldingRepository`, `TokenRepository`, `AccountRepository`
-  
 - **Routers** (`apps/backend/src/presentation/routers/`) - Thin controllers
   - Delegate to use cases for business logic
   - Handle HTTP concerns (validation, response formatting)
   - 20+ routers for different domains (accounts, holdings, tokens, etc.)
 
 **Architecture Benefits:**
+
 - Clear separation of concerns
 - Improved testability (use cases can be unit tested)
 - Better code reusability
@@ -264,27 +267,57 @@ const createAccount = trpc.accounts.create.useMutation();
 
 ### Database Migrations
 
-- Schema changes require `bun run db:generate`
-- Always use Drizzle ORM syntax, never raw SQL for schema
-- Database migrations will be applied by user only, never auto-apply them
+**IMPORTANT: Always use Drizzle's migration system properly**
 
-### Supabase Connection Pooler Configuration
+**For Schema Changes (adding/modifying tables, columns):**
 
-**CRITICAL: Supabase uses PgBouncer in transaction mode**
+1. Edit `packages/core/src/database/schema.ts`
+2. Run `cd packages/core && bun run db:generate` to auto-generate migration
+3. User applies migration with `bun run db:migrate`
 
-- **Connection Pool Size**: Use `max: 1` (single connection per client)
-  - The Supabase pooler handles all scaling
-  - Large client pools (>3) cause connection exhaustion at the pooler
-  - Never increase pool size to "fix" performance issues
+**For Custom SQL Migrations (dropping objects, raw SQL operations):**
+
+1. Create SQL file: `packages/core/src/database/migrations/XXXX_descriptive_name.sql`
+   - Use next sequential number (check existing migrations)
+2. **MUST register in journal**: Edit `packages/core/src/database/migrations/meta/_journal.json`
+   - Add entry with incremented `idx`, current timestamp in `when`, and `tag` matching filename (without .sql)
+3. User applies migration with `bun run db:migrate`
+
+**Migration Journal Entry Format:**
+
+```json
+{
+  "idx": 32,
+  "version": "7",
+  "when": 1738522200000,
+  "tag": "0032_descriptive_name",
+  "breakpoints": true
+}
+```
+
+**Critical Rules:**
+
+- ❌ NEVER create raw SQL files without registering in `_journal.json`
+- ❌ NEVER auto-apply migrations - user must run `bun run db:migrate`
+- ✅ Always use sequential numbering (check last migration number)
+- ✅ Use descriptive names for custom migrations
+
+### Render PostgreSQL Configuration
+
+**Direct PostgreSQL connection (no connection pooler)**
+
+- **Connection Pool Size**: Use `max: 20` (appropriate for direct connections)
+  - Render PostgreSQL supports up to 97 connections on standard plans
+  - Direct connections allow larger client pools
+  - Pool size can be adjusted based on workload
 - **Timeouts**: Keep short to fail fast
   - `connect_timeout: 10` seconds (default)
-  - Never add `statement_timeout` via connection string
   - Let queries fail naturally if they take too long
-- **Required Settings**:
-  - `prepare: false` - Transaction pooler doesn't support prepared statements
-  - `fetch_types: false` - Skip type fetching for faster connections
+- **Enabled Features** (direct connection supports these):
+  - `prepare: true` - Prepared statements for faster repeated queries
+  - `fetch_types: true` - Proper type handling
 - **Never Add Retry Logic**:
-  - If database queries fail, there's a fundamental configuration issue
+  - If database queries fail, there's a fundamental issue
   - Retries hide problems and make debugging harder
   - Fix the root cause, don't mask it with retries
 
@@ -302,6 +335,7 @@ const createAccount = trpc.accounts.create.useMutation();
 ## Anti-Patterns to Avoid
 
 ### Code Organization and Imports
+
 - ❌ **NEVER use `require()` or `await import()` for dynamic imports** - ALWAYS use proper static ES6 imports at the top of files
 - ❌ **NEVER use dynamic imports even for circular dependencies** - restructure code instead
 - ❌ **NEVER use lazy loading imports** - use static imports only
@@ -311,6 +345,7 @@ const createAccount = trpc.accounts.create.useMutation();
 - ❌ Never leak implementation details from packages (use factory pattern)
 
 ### Data and Type Safety
+
 - ❌ Never use TypeScript enums for dynamic data (use database tables instead)
 - ❌ Don't bypass `protectedProcedure` for user-scoped data
 - ❌ Avoid direct SQL queries (use Drizzle ORM)
@@ -318,13 +353,14 @@ const createAccount = trpc.accounts.create.useMutation();
 - ❌ Never expose sensitive data in frontend - all auth via backend tRPC procedures
 
 ### Database Operations
+
 - ❌ **NEVER add retry logic for database queries** - retries hide fundamental issues
-- ❌ **NEVER increase Supabase connection pool size** - use max 1-3 connections
 - ❌ **NEVER increase query timeouts** - queries must be fast, fail fast
 - ❌ Never add exponential backoff or retry mechanisms for database failures
-- ❌ If queries fail, investigate the root cause (pooler config, network, schema)
+- ❌ If queries fail, investigate the root cause (connection config, network, schema)
 
 ### Tooling
+
 - ❌ Never use `npm` or `yarn` or `npx` or something else - always use `bun` and `bunx`
 
 ## Documentation Organization
@@ -422,6 +458,7 @@ Before committing, verify:
 ### Common Issues
 
 **Build Errors:**
+
 ```bash
 # Clear build cache and reinstall
 bun clean
@@ -434,6 +471,7 @@ cd apps/frontendV2 && bun run type-check
 ```
 
 **Database Issues:**
+
 ```bash
 # Reset local database (CAUTION: destroys data)
 bun run db:push
@@ -446,6 +484,7 @@ cd apps/backend && bun run db:migrate
 ```
 
 **Test Failures:**
+
 ```bash
 # Run specific test file
 bun test path/to/test.test.ts
@@ -458,6 +497,7 @@ bun test --update-snapshots
 ```
 
 **Authentication Errors:**
+
 - Verify `.env` has correct Supabase keys
 - Check token expiration (tokens expire after 1 hour)
 - Ensure user exists in both Supabase and local `users` table
@@ -466,6 +506,7 @@ bun test --update-snapshots
 ### Debugging Patterns
 
 **Backend Debugging:**
+
 ```bash
 # Enable verbose logging
 cd apps/backend && bun dev:verbose
@@ -478,6 +519,7 @@ cd apps/backend && bun test src/presentation/routers/your-router.test.ts
 ```
 
 **Frontend Debugging:**
+
 - Check browser console for tRPC errors
 - Verify API endpoint URLs in network tab
 - Check React Query dev tools for cache state
@@ -488,12 +530,14 @@ cd apps/backend && bun test src/presentation/routers/your-router.test.ts
 ### GitHub Actions
 
 **Automated Checks:**
+
 - Linting with Biome
 - TypeScript compilation
 - Test suite execution
 - Build verification
 
 **When Changes Trigger CI:**
+
 - All PRs must pass CI checks
 - Push to main branch runs full test suite
 - Failed CI requires fixes before merge
@@ -519,6 +563,7 @@ bun run build           # Verify build succeeds
 ### Example Workflows
 
 **Adding New Feature:**
+
 ```bash
 # 1. Create use case
 # Edit: packages/core/src/use-cases/YourFeatureUseCase.ts
@@ -534,6 +579,7 @@ bun run build           # Verify build succeeds
 ```
 
 **Database Schema Change:**
+
 ```bash
 # 1. Edit schema
 # Edit: packages/core/src/database/schema.ts
@@ -548,7 +594,25 @@ cd packages/core && bun run db:generate
 # Edit: packages/core/src/repositories/
 ```
 
+**Custom SQL Migration (dropping objects, raw SQL):**
+
+```bash
+# 1. Find next migration number
+ls packages/core/src/database/migrations/*.sql | tail -1
+
+# 2. Create migration file
+# Create: packages/core/src/database/migrations/00XX_descriptive_name.sql
+
+# 3. MUST register in journal (required for Drizzle to recognize it)
+# Edit: packages/core/src/database/migrations/meta/_journal.json
+# Add entry: { "idx": XX, "version": "7", "when": <timestamp>, "tag": "00XX_descriptive_name", "breakpoints": true }
+
+# 4. User applies migration
+# User runs: bun run db:migrate
+```
+
 **Bug Fix:**
+
 ```bash
 # 1. Fix the bug
 # Edit: packages/core/src/path/to/fix.ts

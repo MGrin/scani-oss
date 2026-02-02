@@ -1,15 +1,18 @@
-import { GroupImplementations } from '@scani/core/features/implementations';
+import { GroupImplementations } from "@scani/core/features/implementations";
 import {
   AssignAccountGroupsDto,
   AssignHoldingGroupsDto,
   CreateGroupDto,
   IdInputDto,
   UpdateGroupDto,
-} from '@scani/shared';
-import { z } from 'zod';
-import { emitEntityChange } from '../../infrastructure/websocket/RealTimeUpdatesService';
-import { requireAuth } from '../middleware/auth';
-import { protectedProcedure, router } from '../trpc';
+} from "@scani/shared";
+import { z } from "zod";
+import {
+  emitBulkEntityChanges,
+  emitEntityChange,
+} from "../../infrastructure/websocket/RealTimeUpdatesService";
+import { requireAuth } from "../middleware/auth";
+import { protectedProcedure, router } from "../trpc";
 
 export const groupsRouter = router({
   // Get all groups for the user
@@ -21,32 +24,45 @@ export const groupsRouter = router({
   // Get all groups with counts (holdings and accounts)
   getAllWithCounts: protectedProcedure.query(async ({ ctx }) => {
     const { dbUser } = await requireAuth(ctx);
-    return await GroupImplementations.getAllWithCounts({ userId: dbUser.id, dbUser }, {});
+    return await GroupImplementations.getAllWithCounts(
+      { userId: dbUser.id, dbUser },
+      {},
+    );
   }),
 
   // Get a specific group by ID
-  getById: protectedProcedure.input(IdInputDto).query(async ({ input, ctx }) => {
-    const { dbUser } = await requireAuth(ctx);
-    return await GroupImplementations.getById({ userId: dbUser.id, dbUser }, { id: input.id });
-  }),
+  getById: protectedProcedure
+    .input(IdInputDto)
+    .query(async ({ input, ctx }) => {
+      const { dbUser } = await requireAuth(ctx);
+      return await GroupImplementations.getById(
+        { userId: dbUser.id, dbUser },
+        { id: input.id },
+      );
+    }),
 
   // Create a new group
-  create: protectedProcedure.input(CreateGroupDto).mutation(async ({ input, ctx }) => {
-    const { dbUser } = await requireAuth(ctx);
+  create: protectedProcedure
+    .input(CreateGroupDto)
+    .mutation(async ({ input, ctx }) => {
+      const { dbUser } = await requireAuth(ctx);
 
-    const result = await GroupImplementations.create({ userId: dbUser.id, dbUser }, input);
+      const result = await GroupImplementations.create(
+        { userId: dbUser.id, dbUser },
+        input,
+      );
 
-    emitEntityChange({
-      type: 'entity_changed',
-      entityType: 'group',
-      operationType: 'create',
-      entityId: result.id,
-      userId: dbUser.id,
-      data: result as Record<string, unknown>,
-    });
+      emitEntityChange({
+        type: "entity_changed",
+        entityType: "group",
+        operationType: "create",
+        entityId: result.id,
+        userId: dbUser.id,
+        data: result as Record<string, unknown>,
+      });
 
-    return result;
-  }),
+      return result;
+    }),
 
   // Update an existing group
   update: protectedProcedure
@@ -54,20 +70,20 @@ export const groupsRouter = router({
       z.object({
         id: z.string().uuid(),
         data: UpdateGroupDto,
-      })
+      }),
     )
     .mutation(async ({ input, ctx }) => {
       const { dbUser } = await requireAuth(ctx);
 
       const result = await GroupImplementations.update(
         { userId: dbUser.id, dbUser },
-        { id: input.id, data: input.data }
+        { id: input.id, data: input.data },
       );
 
       emitEntityChange({
-        type: 'entity_changed',
-        entityType: 'group',
-        operationType: 'update',
+        type: "entity_changed",
+        entityType: "group",
+        operationType: "update",
         entityId: input.id,
         userId: dbUser.id,
         data: result as Record<string, unknown>,
@@ -77,25 +93,27 @@ export const groupsRouter = router({
     }),
 
   // Delete a group
-  delete: protectedProcedure.input(IdInputDto).mutation(async ({ input, ctx }) => {
-    const { dbUser } = await requireAuth(ctx);
+  delete: protectedProcedure
+    .input(IdInputDto)
+    .mutation(async ({ input, ctx }) => {
+      const { dbUser } = await requireAuth(ctx);
 
-    const result = await GroupImplementations.delete(
-      { userId: dbUser.id, dbUser },
-      { id: input.id }
-    );
+      const result = await GroupImplementations.delete(
+        { userId: dbUser.id, dbUser },
+        { id: input.id },
+      );
 
-    emitEntityChange({
-      type: 'entity_changed',
-      entityType: 'group',
-      operationType: 'delete',
-      entityId: input.id,
-      userId: dbUser.id,
-      data: {},
-    });
+      emitEntityChange({
+        type: "entity_changed",
+        entityType: "group",
+        operationType: "delete",
+        entityId: input.id,
+        userId: dbUser.id,
+        data: {},
+      });
 
-    return result;
-  }),
+      return result;
+    }),
 
   // Bulk delete groups
   bulkDelete: protectedProcedure
@@ -105,19 +123,12 @@ export const groupsRouter = router({
 
       const result = await GroupImplementations.bulkDelete(
         { userId: dbUser.id, dbUser },
-        { ids: input.ids }
+        { ids: input.ids },
       );
 
-      // Emit delete events for all successfully deleted groups
-      for (const id of result.deletedIds) {
-        emitEntityChange({
-          type: 'entity_changed',
-          entityType: 'group',
-          operationType: 'delete',
-          entityId: id,
-          userId: dbUser.id,
-          data: {},
-        });
+      // PERFORMANCE: Emit single bulk event instead of looping
+      if (result.deletedIds.length > 0) {
+        emitBulkEntityChanges("group", "delete", result.deletedIds, dbUser.id);
       }
 
       return result;
@@ -131,13 +142,13 @@ export const groupsRouter = router({
 
       const result = await GroupImplementations.assignHoldingGroups(
         { userId: dbUser.id, dbUser },
-        input
+        input,
       );
 
       emitEntityChange({
-        type: 'entity_changed',
-        entityType: 'holding',
-        operationType: 'update',
+        type: "entity_changed",
+        entityType: "holding",
+        operationType: "update",
         entityId: input.holdingId,
         userId: dbUser.id,
         metadata: {
@@ -156,13 +167,13 @@ export const groupsRouter = router({
 
       const result = await GroupImplementations.assignAccountGroups(
         { userId: dbUser.id, dbUser },
-        input
+        input,
       );
 
       emitEntityChange({
-        type: 'entity_changed',
-        entityType: 'account',
-        operationType: 'update',
+        type: "entity_changed",
+        entityType: "account",
+        operationType: "update",
         entityId: input.accountId,
         userId: dbUser.id,
         metadata: {
@@ -174,20 +185,24 @@ export const groupsRouter = router({
     }),
 
   // Get groups assigned to a holding
-  getHoldingGroups: protectedProcedure.input(IdInputDto).query(async ({ input, ctx }) => {
-    const { dbUser } = await requireAuth(ctx);
-    return await GroupImplementations.getHoldingGroups(
-      { userId: dbUser.id, dbUser },
-      { holdingId: input.id }
-    );
-  }),
+  getHoldingGroups: protectedProcedure
+    .input(IdInputDto)
+    .query(async ({ input, ctx }) => {
+      const { dbUser } = await requireAuth(ctx);
+      return await GroupImplementations.getHoldingGroups(
+        { userId: dbUser.id, dbUser },
+        { holdingId: input.id },
+      );
+    }),
 
   // Get groups assigned to an account
-  getAccountGroups: protectedProcedure.input(IdInputDto).query(async ({ input, ctx }) => {
-    const { dbUser } = await requireAuth(ctx);
-    return await GroupImplementations.getAccountGroups(
-      { userId: dbUser.id, dbUser },
-      { accountId: input.id }
-    );
-  }),
+  getAccountGroups: protectedProcedure
+    .input(IdInputDto)
+    .query(async ({ input, ctx }) => {
+      const { dbUser } = await requireAuth(ctx);
+      return await GroupImplementations.getAccountGroups(
+        { userId: dbUser.id, dbUser },
+        { accountId: input.id },
+      );
+    }),
 });

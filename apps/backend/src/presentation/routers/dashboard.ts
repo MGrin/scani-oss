@@ -1,7 +1,7 @@
-import { DashboardImplementations } from '@scani/core/features/implementations';
-import { GetAssetAllocationInputDto } from '@scani/shared';
-import { requireAuth } from '../middleware/auth';
-import { protectedProcedure, router } from '../trpc';
+import { DashboardImplementations } from "@scani/core/features/implementations";
+import { GetAssetAllocationInputDto } from "@scani/shared";
+import { requireAuth } from "../middleware/auth";
+import { protectedProcedure, router } from "../trpc";
 
 export const dashboardRouter = router({
   /**
@@ -10,7 +10,10 @@ export const dashboardRouter = router({
    */
   getOverview: protectedProcedure.query(async ({ ctx }) => {
     const { dbUser } = await requireAuth(ctx);
-    return await DashboardImplementations.getOverview({ userId: dbUser.id, dbUser }, {});
+    return await DashboardImplementations.getOverview(
+      { userId: dbUser.id, dbUser, requestCache: ctx.requestCache },
+      {},
+    );
   }),
 
   /**
@@ -22,8 +25,8 @@ export const dashboardRouter = router({
     .query(async ({ ctx, input }) => {
       const { dbUser } = await requireAuth(ctx);
       return await DashboardImplementations.getAssetAllocation(
-        { userId: dbUser.id, dbUser },
-        input
+        { userId: dbUser.id, dbUser, requestCache: ctx.requestCache },
+        input,
       );
     }),
 });

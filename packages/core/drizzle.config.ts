@@ -5,7 +5,7 @@ import type { Config } from 'drizzle-kit';
  *
  * NOTE: This config is ONLY used for `drizzle-kit generate` (schema → SQL).
  * Migrations should use the custom migrate.ts script which uses the
- * application's proper Supabase pooler configuration.
+ * application's proper PostgreSQL connection configuration.
  *
  * For migrations, use: bun run db:migrate
  */
@@ -16,7 +16,12 @@ function getDatabaseUrl(): string {
     return '';
   }
 
-  return baseUrl;
+  // Add SSL parameter for Render PostgreSQL
+  const url = new URL(baseUrl);
+  if (!url.searchParams.has('sslmode')) {
+    url.searchParams.set('sslmode', 'require');
+  }
+  return url.toString();
 }
 
 export default {
@@ -25,6 +30,7 @@ export default {
   dialect: 'postgresql',
   dbCredentials: {
     url: getDatabaseUrl(),
+    ssl: 'require',
   },
   verbose: true,
   strict: true,

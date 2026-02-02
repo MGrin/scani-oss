@@ -29,7 +29,7 @@
     "lint:shared": "cd packages/shared && bun run lint",
     "lint:core": "cd packages/core && bun run lint",
     "lint:integrations": "cd packages/integrations && bun run lint",
-    "type-check": "bun run type-check:backend && bun run type-check:cron && bun run type-check:frontend && bun run type-check:landing && bun run type-check:shared && bun run type-check:core && bun run type-check:integrations",
+    "type-check": "concurrently \"bun run type-check:backend\" \"bun run type-check:cron\" \"bun run type-check:frontend\" \"bun run type-check:landing\" \"bun run type-check:shared\" \"bun run type-check:core\" \"bun run type-check:integrations\"",
     "type-check:backend": "cd apps/backend && bun run type-check",
     "type-check:cron": "cd apps/cron && bun run type-check",
     "type-check:frontend": "cd apps/frontendV2 && bun run type-check",

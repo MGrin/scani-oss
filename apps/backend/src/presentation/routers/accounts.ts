@@ -1,38 +1,52 @@
-import { AccountImplementations } from '@scani/core/features/implementations';
-import { IdInputDto, UpdateAccountDto } from '@scani/shared';
-import { z } from 'zod';
-import { emitEntityChange } from '../../infrastructure/websocket/RealTimeUpdatesService';
-import { requireAuth } from '../middleware/auth';
-import { protectedProcedure, router } from '../trpc';
+import { AccountImplementations } from "@scani/core/features/implementations";
+import { IdInputDto, UpdateAccountDto } from "@scani/shared";
+import { z } from "zod";
+import {
+  emitBulkEntityChanges,
+  emitEntityChange,
+} from "../../infrastructure/websocket/RealTimeUpdatesService";
+import { requireAuth } from "../middleware/auth";
+import { protectedProcedure, router } from "../trpc";
 
 export const accountsRouter = router({
   getAll: protectedProcedure.query(async ({ ctx }) => {
     const { dbUser } = await requireAuth(ctx);
-    return await AccountImplementations.getAll({ userId: dbUser.id, dbUser }, {});
+    return await AccountImplementations.getAll(
+      { userId: dbUser.id, dbUser },
+      {},
+    );
   }),
 
   getByUserIdWithSummary: protectedProcedure.query(async ({ ctx }) => {
     const { dbUser } = await requireAuth(ctx);
-    return await AccountImplementations.getByUserIdWithSummary({ userId: dbUser.id, dbUser }, {});
+    return await AccountImplementations.getByUserIdWithSummary(
+      { userId: dbUser.id, dbUser },
+      {},
+    );
   }),
 
-  getById: protectedProcedure.input(IdInputDto).query(async ({ input, ctx }) => {
-    const { dbUser } = await requireAuth(ctx);
-    return await AccountImplementations.getById({ userId: dbUser.id, dbUser }, { id: input.id });
-  }),
+  getById: protectedProcedure
+    .input(IdInputDto)
+    .query(async ({ input, ctx }) => {
+      const { dbUser } = await requireAuth(ctx);
+      return await AccountImplementations.getById(
+        { userId: dbUser.id, dbUser },
+        { id: input.id },
+      );
+    }),
 
   getHoldings: protectedProcedure
     .input(
       z.object({
         id: z.string().uuid(),
         includeHidden: z.boolean().optional().default(false),
-      })
+      }),
     )
     .query(async ({ input, ctx }) => {
       const { dbUser } = await requireAuth(ctx);
       return await AccountImplementations.getHoldings(
         { userId: dbUser.id, dbUser },
-        { id: input.id, includeHidden: input.includeHidden }
+        { id: input.id, includeHidden: input.includeHidden },
       );
     }),
 
@@ -41,20 +55,20 @@ export const accountsRouter = router({
       z.object({
         id: z.string().uuid(),
         data: UpdateAccountDto,
-      })
+      }),
     )
     .mutation(async ({ input, ctx }) => {
       const { dbUser } = await requireAuth(ctx);
 
       const result = await AccountImplementations.update(
         { userId: dbUser.id, dbUser },
-        { id: input.id, data: input.data }
+        { id: input.id, data: input.data },
       );
 
       emitEntityChange({
-        type: 'entity_changed',
-        entityType: 'account',
-        operationType: 'update',
+        type: "entity_changed",
+        entityType: "account",
+        operationType: "update",
         entityId: input.id,
         userId: dbUser.id,
         data: result,
@@ -63,25 +77,27 @@ export const accountsRouter = router({
       return result;
     }),
 
-  delete: protectedProcedure.input(IdInputDto).mutation(async ({ input, ctx }) => {
-    const { dbUser } = await requireAuth(ctx);
+  delete: protectedProcedure
+    .input(IdInputDto)
+    .mutation(async ({ input, ctx }) => {
+      const { dbUser } = await requireAuth(ctx);
 
-    const result = await AccountImplementations.delete(
-      { userId: dbUser.id, dbUser },
-      { id: input.id }
-    );
+      const result = await AccountImplementations.delete(
+        { userId: dbUser.id, dbUser },
+        { id: input.id },
+      );
 
-    emitEntityChange({
-      type: 'entity_changed',
-      entityType: 'account',
-      operationType: 'delete',
-      entityId: input.id,
-      userId: dbUser.id,
-      data: {},
-    });
+      emitEntityChange({
+        type: "entity_changed",
+        entityType: "account",
+        operationType: "delete",
+        entityId: input.id,
+        userId: dbUser.id,
+        data: {},
+      });
 
-    return result;
-  }),
+      return result;
+    }),
 
   bulkDelete: protectedProcedure
     .input(z.object({ ids: z.array(z.string()).min(1) }))
@@ -90,19 +106,17 @@ export const accountsRouter = router({
 
       const result = await AccountImplementations.bulkDelete(
         { userId: dbUser.id, dbUser },
-        { ids: input.ids }
+        { ids: input.ids },
       );
 
-      // Emit entity change events only for successfully deleted accounts
-      for (const id of result.deletedIds) {
-        emitEntityChange({
-          type: 'entity_changed',
-          entityType: 'account',
-          operationType: 'delete',
-          entityId: id,
-          userId: dbUser.id,
-          data: {},
-        });
+      // PERFORMANCE: Emit single bulk event instead of looping
+      if (result.deletedIds.length > 0) {
+        emitBulkEntityChanges(
+          "account",
+          "delete",
+          result.deletedIds,
+          dbUser.id,
+        );
       }
 
       return result;
@@ -113,26 +127,19 @@ export const accountsRouter = router({
       z.object({
         accountIds: z.array(z.string()).min(1),
         groupIds: z.array(z.string()),
-      })
+      }),
     )
     .mutation(async ({ input, ctx }) => {
       const { dbUser } = await requireAuth(ctx);
 
       const result = await AccountImplementations.bulkAssignGroups(
         { userId: dbUser.id, dbUser },
-        { accountIds: input.accountIds, groupIds: input.groupIds }
+        { accountIds: input.accountIds, groupIds: input.groupIds },
       );
 
-      // Emit entity change events for updated accounts
-      for (const id of input.accountIds) {
-        emitEntityChange({
-          type: 'entity_changed',
-          entityType: 'account',
-          operationType: 'update',
-          entityId: id,
-          userId: dbUser.id,
-          data: {},
-        });
+      // PERFORMANCE: Emit single bulk event instead of looping
+      if (input.accountIds.length > 0) {
+        emitBulkEntityChanges("account", "update", input.accountIds, dbUser.id);
       }
 
       return result;
@@ -145,7 +152,7 @@ export const accountsRouter = router({
 
       const result = await AccountImplementations.getCommonGroups(
         { userId: dbUser.id, dbUser },
-        { accountIds: input.accountIds }
+        { accountIds: input.accountIds },
       );
 
       return result;

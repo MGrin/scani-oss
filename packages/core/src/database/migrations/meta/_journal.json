@@ -225,6 +225,13 @@
       "when": 1769938214623,
       "tag": "0031_groovy_starjammers",
       "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "7",
+      "when": 1738522200000,
+      "tag": "0032_remove_materialized_views",
+      "breakpoints": true
     }
   ]
 }

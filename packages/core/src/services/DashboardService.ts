@@ -1,10 +1,14 @@
-import Decimal from 'decimal.js';
-import { Container, Service } from 'typedi';
-import type { Holding, Token } from '../domain/entities';
-import { HoldingRepository } from '../repositories/HoldingRepository';
-import { GetAssetAllocationUseCase } from '../use-cases/GetAssetAllocationUseCase';
-import { BaseService } from './BaseService';
-import { PortfolioValuationService } from './PortfolioValuationService';
+import Decimal from "decimal.js";
+import { Container, Service } from "typedi";
+import type { Holding, Token } from "../domain/entities";
+import { HoldingRepository } from "../repositories/HoldingRepository";
+import { GetAssetAllocationUseCase } from "../use-cases/GetAssetAllocationUseCase";
+import { getOrComputeFromCache } from "../utils/request-cache";
+import { BaseService } from "./BaseService";
+import {
+  PortfolioValuationService,
+  type RequestCache,
+} from "./PortfolioValuationService";
 
 type PortfolioValueResult = {
   totalValue: string;
@@ -85,10 +89,12 @@ export interface DashboardOverview {
 export class DashboardService extends BaseService {
   private readonly portfolioService = Container.get(PortfolioValuationService);
   private readonly holdingRepository = Container.get(HoldingRepository);
-  private readonly assetAllocationUseCase = Container.get(GetAssetAllocationUseCase);
+  private readonly assetAllocationUseCase = Container.get(
+    GetAssetAllocationUseCase,
+  );
 
   constructor() {
-    super('DashboardService');
+    super("DashboardService");
   }
 
   /**
@@ -100,12 +106,17 @@ export class DashboardService extends BaseService {
    * Note: This method is duplicated in AccountService - this is intentional
    * to keep services independent and avoid cross-service dependencies.
    */
-  private extractPriceMap(portfolioValue: PortfolioValueResult): Map<string, string> {
+  private extractPriceMap(
+    portfolioValue: PortfolioValueResult,
+  ): Map<string, string> {
     const priceMap = new Map<string, string>();
     for (const portfolioHolding of portfolioValue.holdings) {
       const balance = new Decimal(portfolioHolding.balance);
-      const value = new Decimal(portfolioHolding.value || '0');
-      if (balance.greaterThan(0) && !priceMap.has(portfolioHolding.tokenSymbol)) {
+      const value = new Decimal(portfolioHolding.value || "0");
+      if (
+        balance.greaterThan(0) &&
+        !priceMap.has(portfolioHolding.tokenSymbol)
+      ) {
         const price = value.div(balance);
         priceMap.set(portfolioHolding.tokenSymbol, price.toString());
       }
@@ -116,24 +127,45 @@ export class DashboardService extends BaseService {
   /**
    * Get comprehensive dashboard overview for a user
    * Optimized with parallel queries and single joined query for holdings
+   *
+   * @param userId - The user's ID
+   * @param userBaseCurrencyId - Optional user's base currency ID
+   * @param requestCache - Optional cache from tRPC context for deduplication
    */
   async getDashboardOverview(
     userId: string,
-    userBaseCurrencyId?: string
+    userBaseCurrencyId?: string,
+    requestCache?: RequestCache,
   ): Promise<DashboardOverview> {
-    this.logger.debug({ userId }, 'Fetching dashboard overview');
+    this.logger.debug({ userId }, "Fetching dashboard overview");
 
-    // Parallel fetch: portfolio value and holdings with complete details
+    // PERFORMANCE FIX: Use request cache for holdings to avoid duplicate fetches
+    // Holdings are also fetched in GetAssetAllocationUseCase, so cache them
+    const holdingsCacheKey = `holdings:${userId}:complete`;
+
+    // Parallel fetch: portfolio value and holdings with complete details (with caching)
     const [portfolioValue, holdingsWithDetails] = await Promise.all([
-      this.portfolioService.getUserPortfolioValue(userId, userBaseCurrencyId),
-      this.holdingRepository.findByUserWithCompleteDetails(userId),
+      this.portfolioService.getUserPortfolioValue(
+        userId,
+        userBaseCurrencyId,
+        undefined,
+        requestCache,
+      ),
+      getOrComputeFromCache(requestCache, holdingsCacheKey, () =>
+        this.holdingRepository.findByUserWithCompleteDetails(userId),
+      ),
     ]);
 
     // Filter active holdings for counts (exclude inactive holdings)
-    const activeHoldings = holdingsWithDetails.filter((h) => h.holding.isActive);
+    const activeHoldings = holdingsWithDetails.filter(
+      (h) => h.holding.isActive,
+    );
 
     // Extract unique accounts and institutions from active holdings only
-    const accountMap = new Map<string, { id: string; name: string; institutionId: string }>();
+    const accountMap = new Map<
+      string,
+      { id: string; name: string; institutionId: string }
+    >();
     const institutionSet = new Set<string>();
 
     activeHoldings.forEach(({ account, institution }) => {
@@ -149,7 +181,7 @@ export class DashboardService extends BaseService {
       holdings: activeHoldings.length,
     };
 
-    this.logger.debug({ userId, counts }, 'Counts calculated');
+    this.logger.debug({ userId, counts }, "Counts calculated");
 
     // Parallel calculation: top holdings and default asset allocation (token_type)
     // Asset allocation reuses the already-fetched portfolio data
@@ -157,13 +189,16 @@ export class DashboardService extends BaseService {
       this.calculateTopHoldings(holdingsWithDetails, portfolioValue),
       this.assetAllocationUseCase.calculateFromFetchedData(
         userId,
-        'token_type',
+        "token_type",
         portfolioValue,
-        holdingsWithDetails
+        holdingsWithDetails,
       ),
     ]);
 
-    this.logger.debug({ userId, topHoldingsCount: topHoldings.length }, 'Top holdings calculated');
+    this.logger.debug(
+      { userId, topHoldingsCount: topHoldings.length },
+      "Top holdings calculated",
+    );
 
     return {
       portfolioValue: {
@@ -181,8 +216,8 @@ export class DashboardService extends BaseService {
    */
   private async calculateTopHoldings(
     holdingsWithDetails: Array<HoldingWithDetails>,
-    portfolioValue: PortfolioValueResult
-  ): Promise<DashboardOverview['topHoldings']> {
+    portfolioValue: PortfolioValueResult,
+  ): Promise<DashboardOverview["topHoldings"]> {
     // Extract token prices using helper method
     const priceMap = this.extractPriceMap(portfolioValue);
 
@@ -191,7 +226,7 @@ export class DashboardService extends BaseService {
     const holdingsWithValues = holdingsWithDetails
       .filter(({ holding }) => holding.isActive)
       .map(({ holding, token, account, institution }) => {
-        const currentPrice = priceMap.get(token.symbol) || '0';
+        const currentPrice = priceMap.get(token.symbol) || "0";
         const balance = new Decimal(holding.balance);
         const value = balance.mul(new Decimal(currentPrice)).toString();
 

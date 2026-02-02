@@ -34,20 +34,21 @@ if (IS_CRON_JOB) {
   finalDatabaseUrl = dbUrl.toString();
 }
 
-// Detect if using Supabase pooler and add SSL configuration
-// For Supabase transaction pooler (port 6543), use a SMALL connection pool
-// The pooler itself handles scaling - large client pools cause connection exhaustion
-// ARCHITECTURAL FIX (Phase 1): Temporarily increased from 3 to 10 connections
-// This provides breathing room while we implement transaction management and query optimization
-// Once architecture is fixed (transaction boundaries, query batching, etc.),
-// this can potentially be reduced back to 3-5 connections
+// Connection pool configuration for PostgreSQL
+// Render provides direct PostgreSQL connections (no PgBouncer), so we can use
+// prepared statements and a reasonable connection pool size.
+// Direct connections benefit from:
+// - Prepared statements (faster repeated queries)
+// - Type caching (fetch_types: true)
+// - Larger connection pools (server-side limit, not pooler-limited)
 const connectionConfig: postgres.Options<Record<string, postgres.PostgresType>> = {
-  max: 10, // Temporary increase - provides headroom during architectural fixes
-  idle_timeout: 20, // Close idle connections after 20 seconds
-  connect_timeout: 10, // Keep timeouts short to fail fast
-  max_lifetime: 60 * 30, // 30 minutes max lifetime for connections
-  prepare: false, // Disable prepared statements - required for Supabase transaction pooler
-  fetch_types: false, // Skip type fetching on connect - faster connection establishment
+  max: 20, // Direct connection - can use larger pool (Render allows up to 97 connections)
+  idle_timeout: 30, // Close idle connections after 30 seconds
+  connect_timeout: 10, // Fail fast on connection issues
+  max_lifetime: 60 * 60, // 1 hour max lifetime for connections
+  prepare: true, // Enable prepared statements - faster for repeated queries (direct connection supports this)
+  fetch_types: true, // Fetch types on connect - enables proper type handling
+  ssl: 'require', // Required for Render PostgreSQL
   connection: {
     application_name: `scani-${NODE_ENV}`, // Helps identify connections in pg_stat_activity
   },
@@ -112,12 +113,12 @@ export { schema };
 export function getConnectionStats() {
   // postgres.js doesn't expose pool stats directly, but we can provide config info
   return {
-    maxConnections: 10,
-    idleTimeout: 20,
+    maxConnections: 20,
+    idleTimeout: 30,
     connectTimeout: 10,
-    maxLifetime: 60 * 30,
-    fetchTypes: false,
-    prepare: false,
+    maxLifetime: 60 * 60,
+    fetchTypes: true,
+    prepare: true,
     // Note: postgres.js doesn't expose active/idle connection counts
     // For that, you'd need to query pg_stat_activity
   };

@@ -1,10 +1,17 @@
-import type { AssetAllocationDimension, AssetAllocationItem } from '@scani/shared';
-import Decimal from 'decimal.js';
-import { Container, Service } from 'typedi';
-import { GroupRepository } from '../repositories/GroupRepository';
-import { HoldingRepository } from '../repositories/HoldingRepository';
-import { BaseService } from '../services/BaseService';
-import { PortfolioValuationService } from '../services/PortfolioValuationService';
+import type {
+  AssetAllocationDimension,
+  AssetAllocationItem,
+} from "@scani/shared";
+import Decimal from "decimal.js";
+import { Container, Service } from "typedi";
+import { GroupRepository } from "../repositories/GroupRepository";
+import { HoldingRepository } from "../repositories/HoldingRepository";
+import { BaseService } from "../services/BaseService";
+import {
+  PortfolioValuationService,
+  type RequestCache,
+} from "../services/PortfolioValuationService";
+import { getOrComputeFromCache } from "../utils/request-cache";
 
 type PortfolioValueResult = {
   totalValue: string;
@@ -63,18 +70,23 @@ export class GetAssetAllocationUseCase extends BaseService {
   private readonly groupRepository = Container.get(GroupRepository);
 
   constructor() {
-    super('GetAssetAllocationUseCase');
+    super("GetAssetAllocationUseCase");
   }
 
   /**
    * Extract token prices from portfolio value data
    */
-  private extractPriceMap(portfolioValue: PortfolioValueResult): Map<string, string> {
+  private extractPriceMap(
+    portfolioValue: PortfolioValueResult,
+  ): Map<string, string> {
     const priceMap = new Map<string, string>();
     for (const portfolioHolding of portfolioValue.holdings) {
       const balance = new Decimal(portfolioHolding.balance);
-      const value = new Decimal(portfolioHolding.value || '0');
-      if (balance.greaterThan(0) && !priceMap.has(portfolioHolding.tokenSymbol)) {
+      const value = new Decimal(portfolioHolding.value || "0");
+      if (
+        balance.greaterThan(0) &&
+        !priceMap.has(portfolioHolding.tokenSymbol)
+      ) {
         const price = value.div(balance);
         priceMap.set(portfolioHolding.tokenSymbol, price.toString());
       }
@@ -85,21 +97,38 @@ export class GetAssetAllocationUseCase extends BaseService {
   async execute(
     userId: string,
     dimension: AssetAllocationDimension,
-    userBaseCurrencyId?: string
+    userBaseCurrencyId?: string,
+    requestCache?: RequestCache,
   ): Promise<{
     items: AssetAllocationItem[];
     totalValue: string;
     baseCurrency: string;
   }> {
-    this.logger.debug({ userId, dimension }, 'Getting asset allocation');
+    this.logger.debug({ userId, dimension }, "Getting asset allocation");
 
-    // Fetch portfolio value and holdings with complete details
+    // PERFORMANCE FIX: Use request cache for holdings to avoid duplicate fetches
+    // Holdings are fetched in DashboardService too, so cache them
+    const holdingsCacheKey = `holdings:${userId}:complete`;
+
+    // Fetch portfolio value and holdings with complete details (with caching)
     const [portfolioValue, holdingsWithDetails] = await Promise.all([
-      this.portfolioService.getUserPortfolioValue(userId, userBaseCurrencyId),
-      this.holdingRepository.findByUserWithCompleteDetails(userId),
+      this.portfolioService.getUserPortfolioValue(
+        userId,
+        userBaseCurrencyId,
+        undefined,
+        requestCache,
+      ),
+      getOrComputeFromCache(requestCache, holdingsCacheKey, () =>
+        this.holdingRepository.findByUserWithCompleteDetails(userId),
+      ),
     ]);
 
-    return this.calculateFromFetchedData(userId, dimension, portfolioValue, holdingsWithDetails);
+    return this.calculateFromFetchedData(
+      userId,
+      dimension,
+      portfolioValue,
+      holdingsWithDetails,
+    );
   }
 
   /**
@@ -110,7 +139,7 @@ export class GetAssetAllocationUseCase extends BaseService {
     userId: string,
     dimension: AssetAllocationDimension,
     portfolioValue: PortfolioValueResult,
-    holdingsWithDetails: HoldingWithCompleteDetails[]
+    holdingsWithDetails: HoldingWithCompleteDetails[],
   ): Promise<{
     items: AssetAllocationItem[];
     totalValue: string;
@@ -125,7 +154,7 @@ export class GetAssetAllocationUseCase extends BaseService {
       priceMap,
       portfolioValue.totalValue,
       dimension,
-      userId
+      userId,
     );
 
     return {
@@ -140,7 +169,7 @@ export class GetAssetAllocationUseCase extends BaseService {
     priceMap: Map<string, string>,
     totalValue: string,
     dimension: AssetAllocationDimension,
-    userId: string
+    userId: string,
   ): Promise<AssetAllocationItem[]> {
     const aggregationMap = new Map<
       string,
@@ -148,12 +177,17 @@ export class GetAssetAllocationUseCase extends BaseService {
     >();
 
     // Aggregate by dimension - only include active holdings
-    for (const { holding, token, account, institution } of holdingsWithDetails) {
+    for (const {
+      holding,
+      token,
+      account,
+      institution,
+    } of holdingsWithDetails) {
       // Skip inactive holdings from allocation calculations
       if (!holding.isActive) {
         continue;
       }
-      const price = priceMap.get(token.symbol) || '0';
+      const price = priceMap.get(token.symbol) || "0";
       const balance = new Decimal(holding.balance);
       const value = balance.mul(new Decimal(price));
 
@@ -163,48 +197,48 @@ export class GetAssetAllocationUseCase extends BaseService {
       let name: string;
 
       switch (dimension) {
-        case 'token':
+        case "token":
           key = token.id;
           id = token.id;
           code = token.symbol;
           name = token.name;
           break;
-        case 'token_type':
+        case "token_type":
           key = token.typeCode;
           id = token.typeId;
           code = token.typeCode;
           name = token.typeName;
           break;
-        case 'account':
+        case "account":
           key = account.id;
           id = account.id;
           code = account.name;
           name = account.name;
           break;
-        case 'account_type':
+        case "account_type":
           key = account.typeCode;
           id = account.typeCode;
           code = account.typeCode;
           name = account.typeName;
           break;
-        case 'institution':
+        case "institution":
           key = institution.id;
           id = institution.id;
           code = institution.name;
           name = institution.name;
           break;
-        case 'institution_type':
+        case "institution_type":
           key = institution.typeCode;
           id = institution.typeCode;
           code = institution.typeCode;
           name = institution.typeName;
           break;
-        case 'group':
+        case "group":
           // Skip - will be handled separately after the loop
           continue;
         default:
           throw new Error(
-            `Unknown dimension: ${dimension}. Valid dimensions are: token, token_type, account, account_type, institution, institution_type, group`
+            `Unknown dimension: ${dimension}. Valid dimensions are: token, token_type, account, account_type, institution, institution_type, group`,
           );
       }
 
@@ -217,8 +251,13 @@ export class GetAssetAllocationUseCase extends BaseService {
     }
 
     // Handle group dimension separately
-    if (dimension === 'group') {
-      return await this.calculateGroupAllocation(holdingsWithDetails, priceMap, totalValue, userId);
+    if (dimension === "group") {
+      return await this.calculateGroupAllocation(
+        holdingsWithDetails,
+        priceMap,
+        totalValue,
+        userId,
+      );
     }
 
     // Convert to array and calculate percentages
@@ -231,7 +270,7 @@ export class GetAssetAllocationUseCase extends BaseService {
         value: item.value.toString(),
         percentage: totalValueDecimal.greaterThan(0)
           ? item.value.div(totalValueDecimal).mul(100).toFixed(2)
-          : '0',
+          : "0",
       }))
       .filter((item) => new Decimal(item.value).greaterThan(0))
       .sort((a, b) => new Decimal(b.value).comparedTo(new Decimal(a.value)));
@@ -243,7 +282,7 @@ export class GetAssetAllocationUseCase extends BaseService {
     holdingsWithDetails: HoldingWithCompleteDetails[],
     priceMap: Map<string, string>,
     totalValue: string,
-    userId: string
+    userId: string,
   ): Promise<AssetAllocationItem[]> {
     // Get all groups for the user
     const groups = await this.groupRepository.findByUser(userId);
@@ -259,18 +298,20 @@ export class GetAssetAllocationUseCase extends BaseService {
 
     // For each group, get its holdings and calculate value
     for (const group of groups) {
-      const holdingIds = await this.groupRepository.getHoldingsByGroupId(group.id);
+      const holdingIds = await this.groupRepository.getHoldingsByGroupId(
+        group.id,
+      );
       let groupValue = new Decimal(0);
 
       for (const holdingId of holdingIds) {
         const holdingWithDetails = holdingsWithDetails.find(
-          (h) => h.holding.id === holdingId && h.holding.isActive
+          (h) => h.holding.id === holdingId && h.holding.isActive,
         );
 
         if (holdingWithDetails) {
           holdingsInGroups.add(holdingId);
           const { holding, token } = holdingWithDetails;
-          const price = priceMap.get(token.symbol) || '0';
+          const price = priceMap.get(token.symbol) || "0";
           const balance = new Decimal(holding.balance);
           const value = balance.mul(new Decimal(price));
           groupValue = groupValue.add(value);
@@ -278,11 +319,13 @@ export class GetAssetAllocationUseCase extends BaseService {
       }
 
       // Also get account-level groups
-      const accountIds = await this.groupRepository.getAccountsByGroupId(group.id);
+      const accountIds = await this.groupRepository.getAccountsByGroupId(
+        group.id,
+      );
       for (const accountId of accountIds) {
         // Find all holdings in this account
         const accountHoldings = holdingsWithDetails.filter(
-          (h) => h.holding.accountId === accountId && h.holding.isActive
+          (h) => h.holding.accountId === accountId && h.holding.isActive,
         );
 
         for (const holdingWithDetails of accountHoldings) {
@@ -291,7 +334,7 @@ export class GetAssetAllocationUseCase extends BaseService {
           if (!holdingsInGroups.has(holdingId)) {
             holdingsInGroups.add(holdingId);
             const { holding, token } = holdingWithDetails;
-            const price = priceMap.get(token.symbol) || '0';
+            const price = priceMap.get(token.symbol) || "0";
             const balance = new Decimal(holding.balance);
             const value = balance.mul(new Decimal(price));
             groupValue = groupValue.add(value);
@@ -317,18 +360,18 @@ export class GetAssetAllocationUseCase extends BaseService {
         continue;
       }
 
-      const price = priceMap.get(token.symbol) || '0';
+      const price = priceMap.get(token.symbol) || "0";
       const balance = new Decimal(holding.balance);
       const value = balance.mul(new Decimal(price));
       ungroupedValue = ungroupedValue.add(value);
     }
 
     if (ungroupedValue.greaterThan(0)) {
-      groupAggregationMap.set('ungrouped', {
-        id: 'ungrouped',
-        code: 'Ungrouped',
-        name: 'Ungrouped',
-        color: '#64748b', // slate color for ungrouped
+      groupAggregationMap.set("ungrouped", {
+        id: "ungrouped",
+        code: "Ungrouped",
+        name: "Ungrouped",
+        color: "#64748b", // slate color for ungrouped
         value: ungroupedValue,
       });
     }
@@ -343,7 +386,7 @@ export class GetAssetAllocationUseCase extends BaseService {
         value: item.value.toString(),
         percentage: totalValueDecimal.greaterThan(0)
           ? item.value.div(totalValueDecimal).mul(100).toFixed(2)
-          : '0',
+          : "0",
       }))
       .filter((item) => new Decimal(item.value).greaterThan(0))
       .sort((a, b) => new Decimal(b.value).comparedTo(new Decimal(a.value)));
