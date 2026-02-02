@@ -1,4 +1,4 @@
-import { AsyncLocalStorage } from "node:async_hooks";
+import { AsyncLocalStorage } from 'node:async_hooks';
 
 /**
  * Request-scoped cache using AsyncLocalStorage
@@ -22,7 +22,7 @@ interface RequestCacheStore {
 const requestCacheStorage = new AsyncLocalStorage<RequestCacheStore>();
 
 // Special prefix for in-flight promises to deduplicate concurrent requests
-const PENDING_PREFIX = "__pending__";
+const PENDING_PREFIX = '__pending__';
 
 // ============================================================================
 // Context-based cache helpers (for tRPC batched requests)
@@ -40,7 +40,7 @@ const PENDING_PREFIX = "__pending__";
 export async function getOrComputeFromCache<T>(
   cache: Map<string, unknown> | undefined,
   key: string,
-  factory: () => Promise<T>,
+  factory: () => Promise<T>
 ): Promise<T> {
   if (!cache) {
     // No cache provided, just compute
@@ -85,7 +85,7 @@ export async function getOrComputeFromCache<T>(
 export function getOrComputeFromCacheSync<T>(
   cache: Map<string, unknown> | undefined,
   key: string,
-  factory: () => T,
+  factory: () => T
 ): T {
   if (!cache) {
     return factory();
@@ -106,7 +106,7 @@ export function getOrComputeFromCacheSync<T>(
  */
 export function getFromCache<T>(
   cache: Map<string, unknown> | undefined,
-  key: string,
+  key: string
 ): T | undefined {
   if (!cache) {
     return undefined;
@@ -120,7 +120,7 @@ export function getFromCache<T>(
 export function setInCache<T>(
   cache: Map<string, unknown> | undefined,
   key: string,
-  value: T,
+  value: T
 ): void {
   if (cache) {
     cache.set(key, value);
@@ -145,9 +145,7 @@ export function runWithRequestCache<T>(callback: () => T): T {
 /**
  * Run an async callback with request-scoped caching enabled
  */
-export async function runWithRequestCacheAsync<T>(
-  callback: () => Promise<T>,
-): Promise<T> {
+export async function runWithRequestCacheAsync<T>(callback: () => Promise<T>): Promise<T> {
   const store: RequestCacheStore = {
     cache: new Map(),
   };
@@ -195,7 +193,7 @@ export function hasRequestCache(): boolean {
  */
 export async function getOrComputeRequestCache<T>(
   key: string,
-  factory: () => Promise<T>,
+  factory: () => Promise<T>
 ): Promise<T> {
   const cached = getFromRequestCache<T>(key);
   if (cached !== undefined) {
@@ -231,10 +229,7 @@ export async function getOrComputeRequestCache<T>(
 /**
  * Synchronous version of getOrComputeRequestCache
  */
-export function getOrComputeRequestCacheSync<T>(
-  key: string,
-  factory: () => T,
-): T {
+export function getOrComputeRequestCacheSync<T>(key: string, factory: () => T): T {
   const cached = getFromRequestCache<T>(key);
   if (cached !== undefined) {
     return cached;
@@ -281,10 +276,7 @@ export function getRequestCacheSize(): number {
 /**
  * Create a cache key for portfolio value requests
  */
-export function createPortfolioCacheKey(
-  userId: string,
-  accountId?: string,
-): string {
+export function createPortfolioCacheKey(userId: string, accountId?: string): string {
   return accountId ? `portfolio:${userId}:${accountId}` : `portfolio:${userId}`;
 }
 
@@ -312,20 +304,14 @@ export function createTokenByIdCacheKey(tokenId: string): string {
 /**
  * Create a cache key for currency conversion rate
  */
-export function createCurrencyRateCacheKey(
-  fromCurrency: string,
-  toCurrency: string,
-): string {
+export function createCurrencyRateCacheKey(fromCurrency: string, toCurrency: string): string {
   return `rate:${fromCurrency.toUpperCase()}:${toCurrency.toUpperCase()}`;
 }
 
 /**
  * Create a cache key for user holdings
  */
-export function createUserHoldingsCacheKey(
-  userId: string,
-  accountId?: string,
-): string {
+export function createUserHoldingsCacheKey(userId: string, accountId?: string): string {
   return accountId ? `holdings:${userId}:${accountId}` : `holdings:${userId}`;
 }
 

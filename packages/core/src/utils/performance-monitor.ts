@@ -1,6 +1,6 @@
-import { createComponentLogger } from "./logger";
+import { createComponentLogger } from './logger';
 
-const logger = createComponentLogger("performance");
+const logger = createComponentLogger('performance');
 
 /**
  * Performance Monitoring Utility
@@ -26,9 +26,7 @@ interface PerformanceConfig {
 const DEFAULT_CONFIG: PerformanceConfig = {
   slowThresholdMs: 1000, // 1 second
   logSlowOperations: true,
-  enabled:
-    process.env.NODE_ENV !== "production" ||
-    process.env.ENABLE_PERF_MONITOR === "true",
+  enabled: process.env.NODE_ENV !== 'production' || process.env.ENABLE_PERF_MONITOR === 'true',
 };
 
 class PerformanceMonitor {
@@ -107,7 +105,7 @@ class PerformanceMonitor {
           durationMs: Math.round(durationMs),
           threshold: this.config.slowThresholdMs,
         },
-        `Slow operation detected: ${name}`,
+        `Slow operation detected: ${name}`
       );
     }
   }
@@ -157,12 +155,8 @@ class PerformanceMonitor {
     return {
       totalOperations,
       slowOperations,
-      slowestOperations: [...metrics]
-        .sort((a, b) => b.avgMs - a.avgMs)
-        .slice(0, 10),
-      mostFrequentOperations: [...metrics]
-        .sort((a, b) => b.count - a.count)
-        .slice(0, 10),
+      slowestOperations: [...metrics].sort((a, b) => b.avgMs - a.avgMs).slice(0, 10),
+      mostFrequentOperations: [...metrics].sort((a, b) => b.count - a.count).slice(0, 10),
     };
   }
 
@@ -190,7 +184,7 @@ class PerformanceMonitor {
           count: m.count,
         })),
       },
-      "Performance metrics summary",
+      'Performance metrics summary'
     );
   }
 }
@@ -206,10 +200,7 @@ export { PerformanceMonitor, type PerformanceConfig, type OperationMetric };
  * Usage:
  *   const result = await trackOperation('myOperation', () => someAsyncOperation());
  */
-export function trackOperation<T>(
-  name: string,
-  operation: () => Promise<T>,
-): Promise<T> {
+export function trackOperation<T>(name: string, operation: () => Promise<T>): Promise<T> {
   return performanceMonitor.track(name, operation);
 }
 

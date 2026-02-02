@@ -1,19 +1,19 @@
-import Decimal from "decimal.js";
-import { and, eq, lt } from "drizzle-orm";
-import { Container, Service } from "typedi";
-import { SCAM_PROBABILITY_THRESHOLD } from "../config/tokens";
-import { db } from "../database/connection";
-import * as schema from "../database/schema";
-import { TokenPriceRepository } from "../repositories/TokenPriceRepository";
-import { createComponentLogger } from "../utils/logger";
+import Decimal from 'decimal.js';
+import { and, eq, lt } from 'drizzle-orm';
+import { Container, Service } from 'typedi';
+import { SCAM_PROBABILITY_THRESHOLD } from '../config/tokens';
+import { db } from '../database/connection';
+import * as schema from '../database/schema';
+import { TokenPriceRepository } from '../repositories/TokenPriceRepository';
+import { createComponentLogger } from '../utils/logger';
 import {
   createPortfolioCacheKey,
   getOrComputeFromCache,
   getOrComputeRequestCache,
   hasRequestCache,
-} from "../utils/request-cache";
-import { PricingService } from "./PricingService";
-import { UserContextService } from "./UserContextService";
+} from '../utils/request-cache';
+import { PricingService } from './PricingService';
+import { UserContextService } from './UserContextService';
 
 // Type for request cache (shared with tRPC context)
 export type RequestCache = Map<string, unknown>;
@@ -45,7 +45,7 @@ type PortfolioValueResult = {
  */
 @Service()
 export class PortfolioValuationService {
-  private readonly logger = createComponentLogger("portfolio-valuation");
+  private readonly logger = createComponentLogger('portfolio-valuation');
   private readonly pricingService = Container.get(PricingService);
   private readonly userContextService = Container.get(UserContextService);
   private readonly tokenPriceRepository = Container.get(TokenPriceRepository);
@@ -65,21 +65,21 @@ export class PortfolioValuationService {
     userId: string,
     userBaseCurrencyId?: string,
     accountId?: string,
-    requestCache?: RequestCache,
+    requestCache?: RequestCache
   ): Promise<PortfolioValueResult> {
     const cacheKey = createPortfolioCacheKey(userId, accountId);
 
     // Priority 1: Use context-provided cache (for tRPC batched requests)
     if (requestCache) {
       return getOrComputeFromCache(requestCache, cacheKey, () =>
-        this.computePortfolioValue(userId, userBaseCurrencyId, accountId),
+        this.computePortfolioValue(userId, userBaseCurrencyId, accountId)
       );
     }
 
     // Priority 2: Use AsyncLocalStorage-based cache (for non-tRPC contexts like cron jobs)
     if (hasRequestCache()) {
       return getOrComputeRequestCache(cacheKey, () =>
-        this.computePortfolioValue(userId, userBaseCurrencyId, accountId),
+        this.computePortfolioValue(userId, userBaseCurrencyId, accountId)
       );
     }
 
@@ -93,7 +93,7 @@ export class PortfolioValuationService {
   private async computePortfolioValue(
     userId: string,
     userBaseCurrencyId?: string,
-    accountId?: string,
+    accountId?: string
   ): Promise<PortfolioValueResult> {
     let baseCurrency: { id: string; symbol: string; name: string };
 
@@ -111,15 +111,12 @@ export class PortfolioValuationService {
           baseCurrencyName: schema.tokens.name,
         })
         .from(schema.users)
-        .innerJoin(
-          schema.tokens,
-          eq(schema.users.baseCurrencyId, schema.tokens.id),
-        )
+        .innerJoin(schema.tokens, eq(schema.users.baseCurrencyId, schema.tokens.id))
         .where(eq(schema.users.id, userId))
         .limit(1);
 
       if (!userWithBaseCurrency) {
-        throw new Error("User not found or has no base currency set");
+        throw new Error('User not found or has no base currency set');
       }
 
       baseCurrency = {
@@ -166,10 +163,7 @@ export class PortfolioValuationService {
     const tokensToPrice = holdings
       .filter((holding) => holding.tokenId !== baseCurrency.id)
       .map((holding) => holding.token)
-      .filter(
-        (token, index, self) =>
-          self.findIndex((t) => t.id === token.id) === index,
-      );
+      .filter((token, index, self) => self.findIndex((t) => t.id === token.id) === index);
 
     this.logger.info(
       {
@@ -181,17 +175,13 @@ export class PortfolioValuationService {
       },
       accountId
         ? `Processing account portfolio value: ${tokensToPrice.length} tokens need pricing`
-        : `Processing portfolio value: ${tokensToPrice.length} tokens need pricing`,
+        : `Processing portfolio value: ${tokensToPrice.length} tokens need pricing`
     );
 
     // Fetch all prices at once using cached-only pricing (no external API calls)
     const priceResults =
       tokensToPrice.length > 0
-        ? await this.pricingService.getCachedTokenPrices(
-            tokensToPrice,
-            baseCurrency.symbol,
-            now,
-          )
+        ? await this.pricingService.getCachedTokenPrices(tokensToPrice, baseCurrency.symbol, now)
         : new Map<string, string>();
 
     this.logger.info(
@@ -201,16 +191,15 @@ export class PortfolioValuationService {
         pricesFetched: priceResults.size,
         tokensRequested: tokensToPrice.length,
       },
-      `Pricing complete: ${priceResults.size}/${tokensToPrice.length} prices retrieved`,
+      `Pricing complete: ${priceResults.size}/${tokensToPrice.length} prices retrieved`
     );
 
     // Fetch price metadata (timestamp and source) from database
     const tokenIds = Array.from(new Set(holdings.map((h) => h.tokenId)));
-    const priceMetadata =
-      await this.tokenPriceRepository.findLatestPricesForTokens(
-        tokenIds,
-        baseCurrency.id,
-      );
+    const priceMetadata = await this.tokenPriceRepository.findLatestPricesForTokens(
+      tokenIds,
+      baseCurrency.id
+    );
 
     // HIGH PRIORITY FIX: Process holdings with pure map() transformation
     // This prevents accidental N+1 queries and makes it clear this is data transformation only
@@ -221,8 +210,8 @@ export class PortfolioValuationService {
         // Determine price based on whether it's base currency or needs lookup
         const currentPrice =
           holding.tokenId === baseCurrency.id
-            ? "1" // Base currency is always 1:1
-            : priceResults.get(holding.tokenId) || "0"; // Use batched price result
+            ? '1' // Base currency is always 1:1
+            : priceResults.get(holding.tokenId) || '0'; // Use batched price result
 
         const value = balance.mul(new Decimal(currentPrice)).toString();
 
@@ -242,12 +231,9 @@ export class PortfolioValuationService {
           {
             userId,
             tokenSymbol: holding.tokenSymbol,
-            error:
-              error instanceof Error
-                ? { name: error.name, message: error.message }
-                : error,
+            error: error instanceof Error ? { name: error.name, message: error.message } : error,
           },
-          "Failed to process holding while computing portfolio value",
+          'Failed to process holding while computing portfolio value'
         );
 
         // Return fallback holding with 0 value
@@ -255,8 +241,8 @@ export class PortfolioValuationService {
         return {
           tokenSymbol: holding.tokenSymbol,
           balance: balance.toString(),
-          currentPrice: "0",
-          value: "0",
+          currentPrice: '0',
+          value: '0',
           priceTimestamp: undefined,
           priceSource: undefined,
         };
@@ -266,7 +252,7 @@ export class PortfolioValuationService {
     // Calculate total value separately (pure aggregation)
     const totalValue = portfolioHoldings.reduce(
       (sum, holding) => sum.add(new Decimal(holding.value)),
-      new Decimal(0),
+      new Decimal(0)
     );
 
     return {

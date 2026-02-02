@@ -1,9 +1,9 @@
-import { Service } from "typedi";
-import { createComponentLogger } from "../utils/logger";
+import { Service } from 'typedi';
+import { createComponentLogger } from '../utils/logger';
 
 export interface PortfolioHistoryEvent {
   timestamp: Date;
-  eventType: "holding_update" | "price_update";
+  eventType: 'holding_update' | 'price_update';
   holdingId?: string;
   tokenId: string;
   tokenSymbol: string;
@@ -32,7 +32,7 @@ export interface PortfolioHistoryChartData {
  */
 @Service()
 export class PortfolioHistoryService {
-  private readonly logger = createComponentLogger("portfolio-history");
+  private readonly logger = createComponentLogger('portfolio-history');
 
   /**
    * Get portfolio history events (for the events list)
@@ -46,7 +46,7 @@ export class PortfolioHistoryService {
       offset: number;
       startDate?: Date;
       endDate?: Date;
-    },
+    }
   ): Promise<{
     events: PortfolioHistoryEvent[];
     total: number;
@@ -54,7 +54,7 @@ export class PortfolioHistoryService {
   }> {
     this.logger.debug(
       { userId, ...options },
-      "Portfolio history events requested - returning empty data (materialized views removed)",
+      'Portfolio history events requested - returning empty data (materialized views removed)'
     );
 
     // Return empty placeholder data
@@ -74,11 +74,11 @@ export class PortfolioHistoryService {
     userId: string,
     startDate: Date,
     endDate: Date,
-    maxPoints = 500,
+    maxPoints = 500
   ): Promise<PortfolioHistoryChartData[]> {
     this.logger.debug(
       { userId, startDate, endDate, maxPoints },
-      "Portfolio history chart requested - returning empty data (materialized views removed)",
+      'Portfolio history chart requested - returning empty data (materialized views removed)'
     );
 
     // Return empty placeholder data

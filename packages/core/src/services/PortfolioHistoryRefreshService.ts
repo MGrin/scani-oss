@@ -1,5 +1,5 @@
-import { Service } from "typedi";
-import { createComponentLogger } from "../utils/logger";
+import { Service } from 'typedi';
+import { createComponentLogger } from '../utils/logger';
 
 /**
  * Background service for portfolio history materialized views
@@ -14,14 +14,14 @@ import { createComponentLogger } from "../utils/logger";
  */
 @Service()
 export class PortfolioHistoryRefreshService {
-  private readonly logger = createComponentLogger("portfolio-history-refresh");
+  private readonly logger = createComponentLogger('portfolio-history-refresh');
 
   /**
    * No-op: Start would have refreshed materialized views
    */
   start(_intervalMinutes = 10): void {
     this.logger.info(
-      "Portfolio history refresh service is disabled - materialized views have been removed",
+      'Portfolio history refresh service is disabled - materialized views have been removed'
     );
   }
 
@@ -29,16 +29,14 @@ export class PortfolioHistoryRefreshService {
    * No-op: Stop periodic refresh
    */
   stop(): void {
-    this.logger.debug("Portfolio history refresh service stop called (no-op)");
+    this.logger.debug('Portfolio history refresh service stop called (no-op)');
   }
 
   /**
    * No-op: Would have triggered a refresh
    */
   async refresh(): Promise<void> {
-    this.logger.debug(
-      "Portfolio history refresh called (no-op - views removed)",
-    );
+    this.logger.debug('Portfolio history refresh called (no-op - views removed)');
   }
 
   /**

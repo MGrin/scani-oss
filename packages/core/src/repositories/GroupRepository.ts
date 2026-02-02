@@ -1,39 +1,31 @@
-import { and, eq, inArray, sql } from "drizzle-orm";
-import { Service } from "typedi";
-import * as schema from "../database/schema";
-import type { Group, NewGroup } from "../domain/entities";
-import { BaseRepository, type DatabaseTransaction } from "./BaseRepository";
+import { and, eq, inArray, sql } from 'drizzle-orm';
+import { Service } from 'typedi';
+import * as schema from '../database/schema';
+import type { Group, NewGroup } from '../domain/entities';
+import { BaseRepository, type DatabaseTransaction } from './BaseRepository';
 
 @Service()
 export class GroupRepository extends BaseRepository<Group, NewGroup> {
   protected readonly table = schema.groups;
-  protected readonly tableName = "groups";
+  protected readonly tableName = 'groups';
 
-  async findByUser(
-    userId: string,
-    transaction?: DatabaseTransaction,
-  ): Promise<Group[]> {
+  async findByUser(userId: string, transaction?: DatabaseTransaction): Promise<Group[]> {
     try {
       const database = this.getDb(transaction);
       return await database
         .select()
         .from(schema.groups)
-        .where(
-          and(
-            eq(schema.groups.userId, userId),
-            eq(schema.groups.isActive, true),
-          ),
-        )
+        .where(and(eq(schema.groups.userId, userId), eq(schema.groups.isActive, true)))
         .orderBy(schema.groups.displayOrder, schema.groups.name);
     } catch (error) {
-      this.logger.error({ userId, error }, "Failed to find groups by user");
+      this.logger.error({ userId, error }, 'Failed to find groups by user');
       throw error;
     }
   }
 
   async findByUserWithCounts(
     userId: string,
-    transaction?: DatabaseTransaction,
+    transaction?: DatabaseTransaction
   ): Promise<
     Array<
       Group & {
@@ -61,20 +53,9 @@ export class GroupRepository extends BaseRepository<Group, NewGroup> {
           accountsCount: sql<number>`COALESCE(COUNT(DISTINCT ${schema.accountGroups.accountId}), 0)`,
         })
         .from(schema.groups)
-        .leftJoin(
-          schema.holdingGroups,
-          eq(schema.groups.id, schema.holdingGroups.groupId),
-        )
-        .leftJoin(
-          schema.accountGroups,
-          eq(schema.groups.id, schema.accountGroups.groupId),
-        )
-        .where(
-          and(
-            eq(schema.groups.userId, userId),
-            eq(schema.groups.isActive, true),
-          ),
-        )
+        .leftJoin(schema.holdingGroups, eq(schema.groups.id, schema.holdingGroups.groupId))
+        .leftJoin(schema.accountGroups, eq(schema.groups.id, schema.accountGroups.groupId))
+        .where(and(eq(schema.groups.userId, userId), eq(schema.groups.isActive, true)))
         .groupBy(
           schema.groups.id,
           schema.groups.userId,
@@ -84,7 +65,7 @@ export class GroupRepository extends BaseRepository<Group, NewGroup> {
           schema.groups.displayOrder,
           schema.groups.isActive,
           schema.groups.createdAt,
-          schema.groups.updatedAt,
+          schema.groups.updatedAt
         )
         .orderBy(schema.groups.displayOrder, schema.groups.name);
 
@@ -95,14 +76,14 @@ export class GroupRepository extends BaseRepository<Group, NewGroup> {
         }
       >;
     } catch (error) {
-      this.logger.error({ userId, error }, "Failed to find groups with counts");
+      this.logger.error({ userId, error }, 'Failed to find groups with counts');
       throw error;
     }
   }
 
   async findGroupsByHoldingId(
     holdingId: string,
-    transaction?: DatabaseTransaction,
+    transaction?: DatabaseTransaction
   ): Promise<Group[]> {
     try {
       const database = this.getDb(transaction);
@@ -111,25 +92,19 @@ export class GroupRepository extends BaseRepository<Group, NewGroup> {
           group: schema.groups,
         })
         .from(schema.holdingGroups)
-        .innerJoin(
-          schema.groups,
-          eq(schema.holdingGroups.groupId, schema.groups.id),
-        )
+        .innerJoin(schema.groups, eq(schema.holdingGroups.groupId, schema.groups.id))
         .where(eq(schema.holdingGroups.holdingId, holdingId));
 
       return results.map((r) => r.group);
     } catch (error) {
-      this.logger.error(
-        { holdingId, error },
-        "Failed to find groups by holding",
-      );
+      this.logger.error({ holdingId, error }, 'Failed to find groups by holding');
       throw error;
     }
   }
 
   async findGroupsByAccountId(
     accountId: string,
-    transaction?: DatabaseTransaction,
+    transaction?: DatabaseTransaction
   ): Promise<Group[]> {
     try {
       const database = this.getDb(transaction);
@@ -138,18 +113,12 @@ export class GroupRepository extends BaseRepository<Group, NewGroup> {
           group: schema.groups,
         })
         .from(schema.accountGroups)
-        .innerJoin(
-          schema.groups,
-          eq(schema.accountGroups.groupId, schema.groups.id),
-        )
+        .innerJoin(schema.groups, eq(schema.accountGroups.groupId, schema.groups.id))
         .where(eq(schema.accountGroups.accountId, accountId));
 
       return results.map((r) => r.group);
     } catch (error) {
-      this.logger.error(
-        { accountId, error },
-        "Failed to find groups by account",
-      );
+      this.logger.error({ accountId, error }, 'Failed to find groups by account');
       throw error;
     }
   }
@@ -158,7 +127,7 @@ export class GroupRepository extends BaseRepository<Group, NewGroup> {
   async assignHoldingGroups(
     holdingId: string,
     groupIds: string[],
-    transaction?: DatabaseTransaction,
+    transaction?: DatabaseTransaction
   ): Promise<void> {
     try {
       const database = this.getDb(transaction);
@@ -174,14 +143,11 @@ export class GroupRepository extends BaseRepository<Group, NewGroup> {
           groupIds.map((groupId) => ({
             holdingId,
             groupId,
-          })),
+          }))
         );
       }
     } catch (error) {
-      this.logger.error(
-        { holdingId, groupIds, error },
-        "Failed to assign holding groups",
-      );
+      this.logger.error({ holdingId, groupIds, error }, 'Failed to assign holding groups');
       throw error;
     }
   }
@@ -190,7 +156,7 @@ export class GroupRepository extends BaseRepository<Group, NewGroup> {
   async assignAccountGroups(
     accountId: string,
     groupIds: string[],
-    transaction?: DatabaseTransaction,
+    transaction?: DatabaseTransaction
   ): Promise<void> {
     try {
       const database = this.getDb(transaction);
@@ -206,14 +172,11 @@ export class GroupRepository extends BaseRepository<Group, NewGroup> {
           groupIds.map((groupId) => ({
             accountId,
             groupId,
-          })),
+          }))
         );
       }
     } catch (error) {
-      this.logger.error(
-        { accountId, groupIds, error },
-        "Failed to assign account groups",
-      );
+      this.logger.error({ accountId, groupIds, error }, 'Failed to assign account groups');
       throw error;
     }
   }
@@ -225,7 +188,7 @@ export class GroupRepository extends BaseRepository<Group, NewGroup> {
   async bulkAssignAccountGroups(
     accountIds: string[],
     groupIds: string[],
-    transaction?: DatabaseTransaction,
+    transaction?: DatabaseTransaction
   ): Promise<{ successCount: number; failedCount: number }> {
     if (accountIds.length === 0) {
       return { successCount: 0, failedCount: 0 };
@@ -245,7 +208,7 @@ export class GroupRepository extends BaseRepository<Group, NewGroup> {
           groupIds.map((groupId) => ({
             accountId,
             groupId,
-          })),
+          }))
         );
 
         await database.insert(schema.accountGroups).values(values);
@@ -253,15 +216,12 @@ export class GroupRepository extends BaseRepository<Group, NewGroup> {
 
       this.logger.debug(
         { accountCount: accountIds.length, groupCount: groupIds.length },
-        "Bulk assigned account groups",
+        'Bulk assigned account groups'
       );
 
       return { successCount: accountIds.length, failedCount: 0 };
     } catch (error) {
-      this.logger.error(
-        { accountIds, groupIds, error },
-        "Failed to bulk assign account groups",
-      );
+      this.logger.error({ accountIds, groupIds, error }, 'Failed to bulk assign account groups');
       throw error;
     }
   }
@@ -273,7 +233,7 @@ export class GroupRepository extends BaseRepository<Group, NewGroup> {
   async bulkAssignHoldingGroups(
     holdingIds: string[],
     groupIds: string[],
-    transaction?: DatabaseTransaction,
+    transaction?: DatabaseTransaction
   ): Promise<{ successCount: number; failedCount: number }> {
     if (holdingIds.length === 0) {
       return { successCount: 0, failedCount: 0 };
@@ -293,7 +253,7 @@ export class GroupRepository extends BaseRepository<Group, NewGroup> {
           groupIds.map((groupId) => ({
             holdingId,
             groupId,
-          })),
+          }))
         );
 
         await database.insert(schema.holdingGroups).values(values);
@@ -301,22 +261,19 @@ export class GroupRepository extends BaseRepository<Group, NewGroup> {
 
       this.logger.debug(
         { holdingCount: holdingIds.length, groupCount: groupIds.length },
-        "Bulk assigned holding groups",
+        'Bulk assigned holding groups'
       );
 
       return { successCount: holdingIds.length, failedCount: 0 };
     } catch (error) {
-      this.logger.error(
-        { holdingIds, groupIds, error },
-        "Failed to bulk assign holding groups",
-      );
+      this.logger.error({ holdingIds, groupIds, error }, 'Failed to bulk assign holding groups');
       throw error;
     }
   }
 
   async getHoldingsByGroupId(
     groupId: string,
-    transaction?: DatabaseTransaction,
+    transaction?: DatabaseTransaction
   ): Promise<string[]> {
     try {
       const database = this.getDb(transaction);
@@ -327,14 +284,14 @@ export class GroupRepository extends BaseRepository<Group, NewGroup> {
 
       return results.map((r) => r.holdingId);
     } catch (error) {
-      this.logger.error({ groupId, error }, "Failed to get holdings by group");
+      this.logger.error({ groupId, error }, 'Failed to get holdings by group');
       throw error;
     }
   }
 
   async getAccountsByGroupId(
     groupId: string,
-    transaction?: DatabaseTransaction,
+    transaction?: DatabaseTransaction
   ): Promise<string[]> {
     try {
       const database = this.getDb(transaction);
@@ -345,7 +302,7 @@ export class GroupRepository extends BaseRepository<Group, NewGroup> {
 
       return results.map((r) => r.accountId);
     } catch (error) {
-      this.logger.error({ groupId, error }, "Failed to get accounts by group");
+      this.logger.error({ groupId, error }, 'Failed to get accounts by group');
       throw error;
     }
   }
@@ -356,7 +313,7 @@ export class GroupRepository extends BaseRepository<Group, NewGroup> {
    */
   async findGroupsForHoldings(
     holdings: Array<{ id: string; accountId: string }>,
-    transaction?: DatabaseTransaction,
+    transaction?: DatabaseTransaction
   ): Promise<Map<string, Group[]>> {
     try {
       const database = this.getDb(transaction);
@@ -375,10 +332,7 @@ export class GroupRepository extends BaseRepository<Group, NewGroup> {
           group: schema.groups,
         })
         .from(schema.holdingGroups)
-        .innerJoin(
-          schema.groups,
-          eq(schema.holdingGroups.groupId, schema.groups.id),
-        )
+        .innerJoin(schema.groups, eq(schema.holdingGroups.groupId, schema.groups.id))
         .where(inArray(schema.holdingGroups.holdingId, holdingIds));
 
       // Get account groups
@@ -388,10 +342,7 @@ export class GroupRepository extends BaseRepository<Group, NewGroup> {
           group: schema.groups,
         })
         .from(schema.accountGroups)
-        .innerJoin(
-          schema.groups,
-          eq(schema.accountGroups.groupId, schema.groups.id),
-        )
+        .innerJoin(schema.groups, eq(schema.accountGroups.groupId, schema.groups.id))
         .where(inArray(schema.accountGroups.accountId, accountIds));
 
       // Build map of holdingId -> groups
@@ -405,24 +356,20 @@ export class GroupRepository extends BaseRepository<Group, NewGroup> {
 
       // Add account-level groups to holdings
       for (const holding of holdings) {
-        const accountGroups = accountGroupsResults.filter(
-          (r) => r.accountId === holding.accountId,
-        );
+        const accountGroups = accountGroupsResults.filter((r) => r.accountId === holding.accountId);
         const existing = groupsMap.get(holding.id) || [];
         const accountGroupList = accountGroups.map((r) => r.group);
 
         // Combine and deduplicate by group id
         const combined = [...existing, ...accountGroupList];
-        const unique = Array.from(
-          new Map(combined.map((g) => [g.id, g])).values(),
-        );
+        const unique = Array.from(new Map(combined.map((g) => [g.id, g])).values());
 
         groupsMap.set(holding.id, unique);
       }
 
       return groupsMap;
     } catch (error) {
-      this.logger.error({ error }, "Failed to find groups for holdings");
+      this.logger.error({ error }, 'Failed to find groups for holdings');
       throw error;
     }
   }
@@ -433,7 +380,7 @@ export class GroupRepository extends BaseRepository<Group, NewGroup> {
    */
   async findGroupsForAccounts(
     accountIds: string[],
-    transaction?: DatabaseTransaction,
+    transaction?: DatabaseTransaction
   ): Promise<Map<string, Group[]>> {
     try {
       const database = this.getDb(transaction);
@@ -448,10 +395,7 @@ export class GroupRepository extends BaseRepository<Group, NewGroup> {
           group: schema.groups,
         })
         .from(schema.accountGroups)
-        .innerJoin(
-          schema.groups,
-          eq(schema.accountGroups.groupId, schema.groups.id),
-        )
+        .innerJoin(schema.groups, eq(schema.accountGroups.groupId, schema.groups.id))
         .where(inArray(schema.accountGroups.accountId, accountIds));
 
       // Build map of accountId -> groups
@@ -471,7 +415,7 @@ export class GroupRepository extends BaseRepository<Group, NewGroup> {
 
       return groupsMap;
     } catch (error) {
-      this.logger.error({ error }, "Failed to find groups for accounts");
+      this.logger.error({ error }, 'Failed to find groups for accounts');
       throw error;
     }
   }

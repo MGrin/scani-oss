@@ -1,8 +1,8 @@
-import { InstitutionImplementations } from "@scani/core/features/implementations";
-import ogs from "open-graph-scraper";
-import { z } from "zod";
-import { requireAuth } from "../middleware/auth";
-import { protectedProcedure, router } from "../trpc";
+import { InstitutionImplementations } from '@scani/core/features/implementations';
+import ogs from 'open-graph-scraper';
+import { z } from 'zod';
+import { requireAuth } from '../middleware/auth';
+import { protectedProcedure, router } from '../trpc';
 
 // PERFORMANCE: In-memory cache for OpenGraph metadata
 // TTL: 1 hour (OG data rarely changes)
@@ -20,7 +20,7 @@ interface OGCacheEntry {
 const ogCache = new Map<string, OGCacheEntry>();
 const OG_CACHE_TTL_MS = 60 * 60 * 1000; // 1 hour
 
-function getOGFromCache(url: string): OGCacheEntry["data"] | null {
+function getOGFromCache(url: string): OGCacheEntry['data'] | null {
   const entry = ogCache.get(url);
   if (!entry) return null;
   if (Date.now() > entry.expiresAt) {
@@ -30,7 +30,7 @@ function getOGFromCache(url: string): OGCacheEntry["data"] | null {
   return entry.data;
 }
 
-function setOGInCache(url: string, data: OGCacheEntry["data"]): void {
+function setOGInCache(url: string, data: OGCacheEntry['data']): void {
   // Limit cache size to prevent memory issues
   if (ogCache.size > 1000) {
     // Remove oldest 100 entries
@@ -56,20 +56,12 @@ export const institutionsRouter = router({
   getByUserIdWithSummary: protectedProcedure.query(async ({ ctx }) => {
     const { dbUser } = await requireAuth(ctx);
     const userId = dbUser.id;
-    return await InstitutionImplementations.getByUserIdWithSummary(
-      { userId, dbUser },
-      {},
-    );
+    return await InstitutionImplementations.getByUserIdWithSummary({ userId, dbUser }, {});
   }),
 
-  getById: protectedProcedure
-    .input(z.object({ id: z.string() }))
-    .query(async ({ input, ctx }) => {
-      return await InstitutionImplementations.getById(
-        { userId: ctx.userId },
-        { id: input.id },
-      );
-    }),
+  getById: protectedProcedure.input(z.object({ id: z.string() })).query(async ({ input, ctx }) => {
+    return await InstitutionImplementations.getById({ userId: ctx.userId }, { id: input.id });
+  }),
 
   // Get Open Graph metadata from a website URL
   // PERFORMANCE: Cached for 1 hour to avoid repeated external fetches
@@ -86,16 +78,12 @@ export const institutionsRouter = router({
         const { result } = await ogs({ url: input.url });
 
         const data = {
-          title: result.ogTitle || result.twitterTitle || result.dcTitle || "",
+          title: result.ogTitle || result.twitterTitle || result.dcTitle || '',
           description:
-            result.ogDescription ||
-            result.twitterDescription ||
-            result.dcDescription ||
-            "",
-          siteName: result.ogSiteName || "",
-          image:
-            result.ogImage?.[0]?.url || result.twitterImage?.[0]?.url || "",
-          type: result.ogType || "",
+            result.ogDescription || result.twitterDescription || result.dcDescription || '',
+          siteName: result.ogSiteName || '',
+          image: result.ogImage?.[0]?.url || result.twitterImage?.[0]?.url || '',
+          type: result.ogType || '',
         };
 
         // Cache the result
@@ -103,14 +91,14 @@ export const institutionsRouter = router({
 
         return data;
       } catch (error) {
-        console.error("Failed to fetch Open Graph metadata:", error);
+        console.error('Failed to fetch Open Graph metadata:', error);
         // Return empty metadata instead of throwing
         const emptyData = {
-          title: "",
-          description: "",
-          siteName: "",
-          image: "",
-          type: "",
+          title: '',
+          description: '',
+          siteName: '',
+          image: '',
+          type: '',
         };
         // Cache empty results too to avoid repeated failed requests
         setOGInCache(input.url, emptyData);

@@ -1,45 +1,42 @@
-import "reflect-metadata";
-import { cors } from "@elysiajs/cors";
-import { trpc } from "@elysiajs/trpc";
+import 'reflect-metadata';
+import { cors } from '@elysiajs/cors';
+import { trpc } from '@elysiajs/trpc';
 import {
   captureException,
   close,
   flush,
   initializeSentry,
   startHttpTransaction,
-} from "@scani/core/lib/sentry";
-import { supabase } from "@scani/core/lib/supabase";
-import { createTimer, logger, wsLogger } from "@scani/core/utils/logger";
-import { IntegrationManager } from "@scani/integrations";
-import { sql } from "drizzle-orm";
-import { Elysia } from "elysia";
-import { Container } from "typedi";
+} from '@scani/core/lib/sentry';
+import { supabase } from '@scani/core/lib/supabase';
+import { createTimer, logger, wsLogger } from '@scani/core/utils/logger';
+import { IntegrationManager } from '@scani/integrations';
+import { sql } from 'drizzle-orm';
+import { Elysia } from 'elysia';
+import { Container } from 'typedi';
 // CRITICAL: Initialize container BEFORE importing any routers
 // This must happen before any module that calls Container.get()
-import { initializeContainer } from "./config/container";
-import { RealTimeUpdatesService } from "./infrastructure/websocket/RealTimeUpdatesService";
-import {
-  createStandardLimiter,
-  createStrictLimiter,
-} from "./presentation/middleware/rate-limit";
-import { createContext } from "./presentation/trpc";
+import { initializeContainer } from './config/container';
+import { RealTimeUpdatesService } from './infrastructure/websocket/RealTimeUpdatesService';
+import { createStandardLimiter, createStrictLimiter } from './presentation/middleware/rate-limit';
+import { createContext } from './presentation/trpc';
 
 initializeContainer();
 
 // Register MCP tools and initialize transport
 registerAllTools();
 await initializeMcpTransport();
-logger.info({}, "✅ MCP tools registered and transport initialized");
+logger.info({}, '✅ MCP tools registered and transport initialized');
 
 // Initialize integration registry
 try {
   const integrationManager = Container.get(IntegrationManager);
   await integrationManager.initialize();
-  logger.info({}, "✅ Integration registry initialized");
+  logger.info({}, '✅ Integration registry initialized');
 } catch (error) {
   logger.error(
     { error: error instanceof Error ? error.message : String(error) },
-    "⚠️ Failed to initialize integration registry - some integrations may not work",
+    '⚠️ Failed to initialize integration registry - some integrations may not work'
   );
   throw error;
 }
@@ -55,28 +52,28 @@ import {
   getConnectionMonitoringStats,
   getConnectionStats,
   startConnectionTracking,
-} from "@scani/core/database";
+} from '@scani/core/database';
 // Import MCP server
 import {
   handleMcpRequest,
   initializeMcpTransport,
   registerAllTools,
-} from "./infrastructure/mcp/server";
+} from './infrastructure/mcp/server';
 // Import router AFTER container is initialized
-import { appRouter } from "./presentation/router";
+import { appRouter } from './presentation/router';
 
 const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3001;
-const HOST = process.env.HOST ?? "localhost";
+const HOST = process.env.HOST ?? 'localhost';
 
 // Log startup information
 logger.info(
   {
     port: PORT,
     host: HOST,
-    nodeEnv: process.env.NODE_ENV || "development",
-    frontendUrl: process.env.FRONTEND_URL ?? "http://localhost:5173",
+    nodeEnv: process.env.NODE_ENV || 'development',
+    frontendUrl: process.env.FRONTEND_URL ?? 'http://localhost:5173',
   },
-  "🚀 Starting Scani Backend Server",
+  '🚀 Starting Scani Backend Server'
 );
 
 // Extended request interface for tracking
@@ -105,10 +102,10 @@ const app = new Elysia()
 
       // Add request ID to headers for tracing
       set.headers = set.headers || {};
-      set.headers["x-request-id"] = requestId;
+      set.headers['x-request-id'] = requestId;
 
       // Skip logging for health check endpoints to reduce noise
-      const isHealthCheck = url.pathname === "/health";
+      const isHealthCheck = url.pathname === '/health';
 
       if (!isHealthCheck) {
         logger.info(
@@ -116,11 +113,11 @@ const app = new Elysia()
             requestId,
             method: request.method,
             url: request.url,
-            userAgent: request.headers.get("user-agent"),
-            contentType: request.headers.get("content-type"),
-            origin: request.headers.get("origin"),
+            userAgent: request.headers.get('user-agent'),
+            contentType: request.headers.get('content-type'),
+            origin: request.headers.get('origin'),
           },
-          "📨 HTTP Request received",
+          '📨 HTTP Request received'
         );
       }
 
@@ -132,13 +129,13 @@ const app = new Elysia()
   // Global rate limiting (lightweight)
   .onBeforeHandle(({ request, set }) => {
     const res = globalLimiter.tryConsume(request);
-    if ("ok" in res && res.ok) return;
+    if ('ok' in res && res.ok) return;
     set.status = 429;
     set.headers = set.headers || {};
-    set.headers["Retry-After"] = String(res.retryAfterSec);
+    set.headers['Retry-After'] = String(res.retryAfterSec);
     return {
-      error: "Too Many Requests",
-      message: "Global rate limit exceeded",
+      error: 'Too Many Requests',
+      message: 'Global rate limit exceeded',
       retryAfterSec: res.retryAfterSec,
     };
   })
@@ -156,11 +153,11 @@ const app = new Elysia()
 
     // Skip logging for health check endpoints to reduce noise
     const url = new URL(request.url);
-    const isHealthCheck = url.pathname === "/health";
+    const isHealthCheck = url.pathname === '/health';
 
     if (!isHealthCheck) {
       const statusCode =
-        typeof set.status === "number"
+        typeof set.status === 'number'
           ? set.status
           : set.status
             ? parseInt(set.status.toString(), 10)
@@ -173,16 +170,13 @@ const app = new Elysia()
         url: request.url,
         statusCode,
         duration: duration ? `${duration}ms` : undefined,
-        contentType: set.headers?.["content-type"],
+        contentType: set.headers?.['content-type'],
       };
 
       if (isError) {
-        logger.warn(
-          logData,
-          `⚠️ HTTP Response sent with error status: ${statusCode}`,
-        );
+        logger.warn(logData, `⚠️ HTTP Response sent with error status: ${statusCode}`);
       } else {
-        logger.info(logData, "✅ HTTP Response sent successfully");
+        logger.info(logData, '✅ HTTP Response sent successfully');
       }
     }
 
@@ -196,9 +190,8 @@ const app = new Elysia()
     const duration = timer ? timer.end() : undefined;
 
     // Handle different error types
-    const errorMessage =
-      error instanceof Error ? error.message : "Unknown error";
-    const errorName = error instanceof Error ? error.name : "UnknownError";
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    const errorName = error instanceof Error ? error.name : 'UnknownError';
     const errorStack = error instanceof Error ? error.stack : undefined;
 
     // Capture error in Sentry
@@ -207,7 +200,7 @@ const app = new Elysia()
       method: request.method,
       url: request.url,
       duration: duration ? `${duration}ms` : undefined,
-      userAgent: request.headers.get("user-agent"),
+      userAgent: request.headers.get('user-agent'),
     });
 
     logger.error(
@@ -222,88 +215,75 @@ const app = new Elysia()
           stack: errorStack,
         },
       },
-      `💥 HTTP Request failed: ${errorMessage}`,
+      `💥 HTTP Request failed: ${errorMessage}`
     );
 
     // Set appropriate status code
     set.status = 500;
 
     return {
-      error: "Internal Server Error",
+      error: 'Internal Server Error',
       message: errorMessage,
       requestId,
     };
   })
   .use(
     cors({
-      origin: process.env.FRONTEND_URL ?? "http://localhost:5173",
+      origin: process.env.FRONTEND_URL ?? 'http://localhost:5173',
       credentials: true,
-      allowedHeaders: ["Authorization", "Content-Type"],
-    }),
+      allowedHeaders: ['Authorization', 'Content-Type'],
+    })
   )
   // Add security headers middleware (after CORS to avoid conflicts)
   .onAfterHandle(({ set }) => {
     // Prevent MIME type sniffing
     set.headers = set.headers || {};
-    set.headers["X-Content-Type-Options"] = "nosniff";
+    set.headers['X-Content-Type-Options'] = 'nosniff';
     // Prevent clickjacking
-    set.headers["X-Frame-Options"] = "DENY";
+    set.headers['X-Frame-Options'] = 'DENY';
     // Enable XSS protection
-    set.headers["X-XSS-Protection"] = "1; mode=block";
+    set.headers['X-XSS-Protection'] = '1; mode=block';
     // Referrer policy
-    set.headers["Referrer-Policy"] = "strict-origin-when-cross-origin";
+    set.headers['Referrer-Policy'] = 'strict-origin-when-cross-origin';
     // Content Security Policy for API responses
-    set.headers["Content-Security-Policy"] = "default-src 'none'";
+    set.headers['Content-Security-Policy'] = "default-src 'none'";
     // HSTS - Force HTTPS for 1 year (only in production)
-    if (process.env.NODE_ENV === "production") {
-      set.headers["Strict-Transport-Security"] =
-        "max-age=31536000; includeSubDomains; preload";
+    if (process.env.NODE_ENV === 'production') {
+      set.headers['Strict-Transport-Security'] = 'max-age=31536000; includeSubDomains; preload';
     }
     // Note: Vary header is set by CORS middleware
   })
   .use(
     trpc(appRouter, {
       createContext,
-      endpoint: "/trpc",
-    }),
+      endpoint: '/trpc',
+    })
   )
   // Add MCP endpoint for AI agents - uses Streamable HTTP transport
   // Use native Elysia body parsing and reconstruct for MCP transport
-  .post(
-    "/mcp",
-    async ({
-      request,
-      body,
-    }: {
-      request: Request;
-      body: Record<string, unknown>;
-    }) => {
-      // Handle MCP protocol request using WebStandard transport
-      // Pass the raw body since Elysia may have already consumed the request body stream
-      const response = await handleMcpRequest(request, body);
-      return response;
-    },
-  );
+  .post('/mcp', async ({ request, body }: { request: Request; body: Record<string, unknown> }) => {
+    // Handle MCP protocol request using WebStandard transport
+    // Pass the raw body since Elysia may have already consumed the request body stream
+    const response = await handleMcpRequest(request, body);
+    return response;
+  });
 
 app
   // Health check endpoint (GET and HEAD)
-  .get("/health", () => {
+  .get('/health', () => {
     return {
-      status: "ok",
+      status: 'ok',
       timestamp: new Date().toISOString(),
-      version: "1.0.0",
+      version: '1.0.0',
     };
   })
-  .head(
-    "/health",
-    ({ set }: { set: { status: number; headers: Record<string, string> } }) => {
-      set.status = 200;
-      set.headers["Content-Type"] = "application/json";
-      return;
-    },
-  )
+  .head('/health', ({ set }: { set: { status: number; headers: Record<string, string> } }) => {
+    set.status = 200;
+    set.headers['Content-Type'] = 'application/json';
+    return;
+  })
   // Database health check endpoint - returns database connection status and metrics
-  .get("/health/db", async ({ set }: { set: { status: number } }) => {
+  .get('/health/db', async ({ set }: { set: { status: number } }) => {
     try {
       // Test database connection with a simple query
       const startTime = Date.now();
@@ -315,7 +295,7 @@ app
       const monitoringStats = getConnectionMonitoringStats();
 
       return {
-        status: "ok",
+        status: 'ok',
         timestamp: new Date().toISOString(),
         database: {
           connected: true,
@@ -327,37 +307,36 @@ app
       };
     } catch (error) {
       set.status = 503;
-      logger.error({ error }, "❌ Database health check failed");
+      logger.error({ error }, '❌ Database health check failed');
       return {
-        status: "error",
-        message:
-          error instanceof Error ? error.message : "Database connection failed",
+        status: 'error',
+        message: error instanceof Error ? error.message : 'Database connection failed',
         timestamp: new Date().toISOString(),
       };
     }
   })
   // WebSocket health check endpoint - returns WebSocket connection stats
-  .get("/health/ws", ({ set }: { set: { status: number } }) => {
+  .get('/health/ws', ({ set }: { set: { status: number } }) => {
     try {
       const realTimeUpdatesService = Container.get(RealTimeUpdatesService);
       const stats = realTimeUpdatesService.getStats();
 
       return {
-        status: "ok",
+        status: 'ok',
         timestamp: new Date().toISOString(),
         websocket: stats,
       };
     } catch (error) {
       set.status = 503;
       return {
-        status: "error",
-        message: error instanceof Error ? error.message : "Unknown error",
+        status: 'error',
+        message: error instanceof Error ? error.message : 'Unknown error',
         timestamp: new Date().toISOString(),
       };
     }
   })
   // WebSocket endpoint using Elysia's native WebSocket support
-  .ws("/", {
+  .ws('/', {
     // biome-ignore lint/suspicious/noExplicitAny: Elysia WebSocket types not well documented
     open: async (ws: any) => {
       const connectionId = Math.random().toString(36).substring(2, 15);
@@ -371,22 +350,22 @@ app
         const token = query?.token;
 
         if (!token) {
-          connectionLogger.warn("No auth token provided");
-          ws.close(4401, "Unauthorized");
+          connectionLogger.warn('No auth token provided');
+          ws.close(4401, 'Unauthorized');
           return;
         }
 
         const { data, error } = await supabase.auth.getUser(token);
         if (error || !data?.user) {
-          connectionLogger.warn({ error }, "Invalid auth token");
-          ws.close(4401, "Unauthorized");
+          connectionLogger.warn({ error }, 'Invalid auth token');
+          ws.close(4401, 'Unauthorized');
           return;
         }
 
         authenticatedUserId = data.user.id;
       } catch (err) {
-        connectionLogger.error({ error: err }, "Auth failure");
-        ws.close(1011, "Auth failure");
+        connectionLogger.error({ error: err }, 'Auth failure');
+        ws.close(1011, 'Auth failure');
         return;
       }
 
@@ -394,7 +373,7 @@ app
         {
           userId: authenticatedUserId,
         },
-        "🔗 WebSocket client connected",
+        '🔗 WebSocket client connected'
       );
 
       // Store connection metadata
@@ -415,11 +394,11 @@ app
       // Send connection confirmation
       ws.send(
         JSON.stringify({
-          type: "connected",
+          type: 'connected',
           connectionId,
-          subscriptions: ["institution", "account", "holding", "token"],
+          subscriptions: ['institution', 'account', 'holding', 'token'],
           timestamp: new Date().toISOString(),
-        }),
+        })
       );
     },
     // biome-ignore lint/suspicious/noExplicitAny: Elysia WebSocket types not well documented
@@ -429,7 +408,7 @@ app
         const connectionLogger = wsLogger.child({
           connectionId: ws.data.connectionId,
         });
-        connectionLogger.debug({ message }, "📨 WebSocket message received");
+        connectionLogger.debug({ message }, '📨 WebSocket message received');
 
         // Handle subscription messages, pings, etc.
         const realTimeUpdatesService = Container.get(RealTimeUpdatesService);
@@ -448,7 +427,7 @@ app
             code,
             reason,
           },
-          "🔚 WebSocket client disconnected",
+          '🔚 WebSocket client disconnected'
         );
 
         // Clean up connection tracking
@@ -462,15 +441,15 @@ app
     // Apply only to the tRPC endpoint with potential heavy procedures
     try {
       const url = new URL(request.url);
-      if (url.pathname === "/trpc" && request.method === "POST") {
+      if (url.pathname === '/trpc' && request.method === 'POST') {
         const res = strictLimiter.tryConsume(request);
-        if ("ok" in res && res.ok) return;
+        if ('ok' in res && res.ok) return;
         set.status = 429;
         set.headers = set.headers || {};
-        set.headers["Retry-After"] = String(res.retryAfterSec);
+        set.headers['Retry-After'] = String(res.retryAfterSec);
         return {
-          error: "Too Many Requests",
-          message: "tRPC route rate limit exceeded",
+          error: 'Too Many Requests',
+          message: 'tRPC route rate limit exceeded',
           retryAfterSec: res.retryAfterSec,
         };
       }
@@ -484,7 +463,7 @@ wsLogger.info(
     port: PORT,
     host: HOST,
   },
-  "🔌 WebSocket endpoint configured (using Elysia native WebSocket)",
+  '🔌 WebSocket endpoint configured (using Elysia native WebSocket)'
 );
 
 // Start HTTP server with enhanced logging
@@ -493,9 +472,9 @@ const server = app.listen(PORT, () => {
     {
       httpUrl: `http://${HOST}:${PORT}`,
       wsUrl: `ws://${HOST}:${PORT}`,
-      environment: process.env.NODE_ENV || "development",
+      environment: process.env.NODE_ENV || 'development',
     },
-    "🎉 Scani Backend Server started successfully",
+    '🎉 Scani Backend Server started successfully'
   );
 });
 
@@ -505,17 +484,17 @@ realTimeUpdatesService.setElysiaApp(app);
 realTimeUpdatesService.initialize();
 
 // PERFORMANCE: Pre-warm caches asynchronously (non-blocking startup)
-import { PricingService } from "@scani/core/services";
+import { PricingService } from '@scani/core/services';
 
 (async () => {
   try {
     const pricingService = Container.get(PricingService);
     await pricingService.preWarmCurrencyConversionCache();
-    logger.info({}, "💰 Currency conversion cache pre-warmed");
+    logger.info({}, '💰 Currency conversion cache pre-warmed');
   } catch (error) {
     logger.warn(
       { error: error instanceof Error ? error.message : String(error) },
-      "⚠️ Failed to pre-warm currency cache - will fetch on demand",
+      '⚠️ Failed to pre-warm currency cache - will fetch on demand'
     );
   }
 })();
@@ -525,36 +504,36 @@ import { PricingService } from "@scani/core/services";
 
 // const portfolioHistoryRefreshService = Container.get(PortfolioHistoryRefreshService);
 // portfolioHistoryRefreshService.start(10); // Refresh every 10 minutes
-logger.info({}, "🔄 Portfolio history refresh service started");
+logger.info({}, '🔄 Portfolio history refresh service started');
 
 // Graceful shutdown with logging
 const gracefulShutdown = async (signal: string) => {
-  logger.info({ signal }, "🛑 Graceful shutdown initiated");
+  logger.info({ signal }, '🛑 Graceful shutdown initiated');
 
-  logger.info({}, "Stopping portfolio history refresh service...");
+  logger.info({}, 'Stopping portfolio history refresh service...');
   // portfolioHistoryRefreshService.stop();
 
-  logger.info({}, "Flushing Sentry events...");
+  logger.info({}, 'Flushing Sentry events...');
   await flush(2000);
 
-  logger.info({}, "Closing HTTP server...");
+  logger.info({}, 'Closing HTTP server...');
   server.stop();
 
-  logger.info({}, "Closing Sentry connection...");
+  logger.info({}, 'Closing Sentry connection...');
   await close(2000);
 
-  logger.info({}, "🏁 Graceful shutdown completed");
+  logger.info({}, '🏁 Graceful shutdown completed');
   process.exit(0);
 };
 
-process.on("SIGINT", () => gracefulShutdown("SIGINT"));
-process.on("SIGTERM", () => gracefulShutdown("SIGTERM"));
+process.on('SIGINT', () => gracefulShutdown('SIGINT'));
+process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
 
 // Handle uncaught exceptions and unhandled rejections
-process.on("uncaughtException", async (error) => {
+process.on('uncaughtException', async (error) => {
   // Capture in Sentry before logging
   captureException(error, {
-    type: "uncaughtException",
+    type: 'uncaughtException',
     fatal: true,
   });
 
@@ -566,7 +545,7 @@ process.on("uncaughtException", async (error) => {
         stack: error.stack,
       },
     },
-    "💀 Uncaught Exception - shutting down",
+    '💀 Uncaught Exception - shutting down'
   );
 
   // Give Sentry time to send the error
@@ -574,12 +553,12 @@ process.on("uncaughtException", async (error) => {
   process.exit(1);
 });
 
-process.on("unhandledRejection", async (reason, promise) => {
+process.on('unhandledRejection', async (reason, promise) => {
   const error = reason instanceof Error ? reason : new Error(String(reason));
 
   // Capture in Sentry before logging
   captureException(error, {
-    type: "unhandledRejection",
+    type: 'unhandledRejection',
     promise: promise.toString(),
     fatal: true,
   });
@@ -589,7 +568,7 @@ process.on("unhandledRejection", async (reason, promise) => {
       reason,
       promise: promise.toString(),
     },
-    "💀 Unhandled Promise Rejection - shutting down",
+    '💀 Unhandled Promise Rejection - shutting down'
   );
 
   // Give Sentry time to send the error
@@ -597,4 +576,4 @@ process.on("unhandledRejection", async (reason, promise) => {
   process.exit(1);
 });
 
-export type { AppRouter } from "./presentation/router";
+export type { AppRouter } from './presentation/router';
