@@ -232,6 +232,13 @@
       "when": 1738522200000,
       "tag": "0032_remove_materialized_views",
       "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "7",
+      "when": 1738526400000,
+      "tag": "0033_deduplicate_holdings",
+      "breakpoints": true
     }
   ]
 }

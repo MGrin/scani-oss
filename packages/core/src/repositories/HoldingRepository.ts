@@ -1,9 +1,9 @@
-import { and, eq, lt, ne } from 'drizzle-orm';
-import { Service } from 'typedi';
-import { SCAM_PROBABILITY_THRESHOLD } from '../config/tokens';
-import * as schema from '../database/schema';
-import type { Holding, NewHolding, Token } from '../domain/entities';
-import { BaseRepository, type DatabaseTransaction } from './BaseRepository';
+import { and, eq, lt, ne } from "drizzle-orm";
+import { Service } from "typedi";
+import { SCAM_PROBABILITY_THRESHOLD } from "../config/tokens";
+import * as schema from "../database/schema";
+import type { Holding, NewHolding, Token } from "../domain/entities";
+import { BaseRepository, type DatabaseTransaction } from "./BaseRepository";
 
 /**
  * Type for holdings with full details including token, account, and institution info
@@ -30,12 +30,12 @@ export interface HoldingWithFullDetails {
 @Service()
 export class HoldingRepository extends BaseRepository<Holding, NewHolding> {
   protected readonly table = schema.holdings;
-  protected readonly tableName = 'holdings';
+  protected readonly tableName = "holdings";
 
   async findByUser(
     userId: string,
     transaction?: DatabaseTransaction,
-    includeHidden = false
+    includeHidden = false,
   ): Promise<Holding[]> {
     try {
       const database = this.getDb(transaction);
@@ -60,7 +60,7 @@ export class HoldingRepository extends BaseRepository<Holding, NewHolding> {
       // Return only the holding objects (scam tokens already filtered at database level)
       return results.map((r) => r.holding);
     } catch (error) {
-      this.logger.error({ userId, error }, 'Failed to find holdings by user');
+      this.logger.error({ userId, error }, "Failed to find holdings by user");
       throw error;
     }
   }
@@ -71,7 +71,7 @@ export class HoldingRepository extends BaseRepository<Holding, NewHolding> {
     userId: string,
     excludeId?: string,
     transaction?: DatabaseTransaction,
-    includeHidden = false
+    includeHidden = false,
   ): Promise<Holding | null> {
     try {
       const database = this.getDb(transaction);
@@ -100,7 +100,7 @@ export class HoldingRepository extends BaseRepository<Holding, NewHolding> {
     } catch (error) {
       this.logger.error(
         { accountId, tokenId, userId, excludeId, error },
-        'Failed to find holding by account and token'
+        "Failed to find holding by account and token",
       );
       throw error;
     }
@@ -115,7 +115,7 @@ export class HoldingRepository extends BaseRepository<Holding, NewHolding> {
   async findByUserWithCompleteDetails(
     userId: string,
     transaction?: DatabaseTransaction,
-    includeHidden = false
+    includeHidden = false,
   ): Promise<
     Array<{
       holding: Holding;
@@ -141,7 +141,7 @@ export class HoldingRepository extends BaseRepository<Holding, NewHolding> {
       userId,
       undefined,
       transaction,
-      includeHidden
+      includeHidden,
     );
 
     // Transform website field from string | null to string | undefined for backward compatibility
@@ -158,7 +158,7 @@ export class HoldingRepository extends BaseRepository<Holding, NewHolding> {
     userId: string,
     accountId?: string,
     transaction?: DatabaseTransaction,
-    includeHidden = false
+    includeHidden = false,
   ): Promise<HoldingWithFullDetails[]> {
     try {
       const database = this.getDb(transaction);
@@ -172,7 +172,9 @@ export class HoldingRepository extends BaseRepository<Holding, NewHolding> {
         conditions.push(eq(schema.holdings.isHidden, false));
       }
       // Filter out scam tokens (only for crypto tokens)
-      conditions.push(lt(schema.tokens.isScamProbability, SCAM_PROBABILITY_THRESHOLD));
+      conditions.push(
+        lt(schema.tokens.isScamProbability, SCAM_PROBABILITY_THRESHOLD),
+      );
       const whereConditions = and(...conditions);
 
       const results = await database
@@ -207,13 +209,25 @@ export class HoldingRepository extends BaseRepository<Holding, NewHolding> {
         })
         .from(schema.holdings)
         .innerJoin(schema.tokens, eq(schema.holdings.tokenId, schema.tokens.id))
-        .innerJoin(schema.tokenTypes, eq(schema.tokens.typeId, schema.tokenTypes.id))
-        .innerJoin(schema.accounts, eq(schema.holdings.accountId, schema.accounts.id))
-        .innerJoin(schema.accountTypes, eq(schema.accounts.typeId, schema.accountTypes.id))
-        .innerJoin(schema.institutions, eq(schema.accounts.institutionId, schema.institutions.id))
+        .innerJoin(
+          schema.tokenTypes,
+          eq(schema.tokens.typeId, schema.tokenTypes.id),
+        )
+        .innerJoin(
+          schema.accounts,
+          eq(schema.holdings.accountId, schema.accounts.id),
+        )
+        .innerJoin(
+          schema.accountTypes,
+          eq(schema.accounts.typeId, schema.accountTypes.id),
+        )
+        .innerJoin(
+          schema.institutions,
+          eq(schema.accounts.institutionId, schema.institutions.id),
+        )
         .innerJoin(
           schema.institutionTypes,
-          eq(schema.institutions.typeId, schema.institutionTypes.id)
+          eq(schema.institutions.typeId, schema.institutionTypes.id),
         )
         .where(whereConditions);
 
@@ -251,25 +265,35 @@ export class HoldingRepository extends BaseRepository<Holding, NewHolding> {
         },
       }));
     } catch (error) {
-      this.logger.error({ userId, accountId, error }, 'Failed to find holdings with full details');
+      this.logger.error(
+        { userId, accountId, error },
+        "Failed to find holdings with full details",
+      );
       throw error;
     }
   }
 
   /**
    * Find all holdings for a specific account
+   * @param accountId - The account ID to find holdings for
+   * @param transaction - Optional database transaction
+   * @param includeHidden - Whether to include hidden holdings (default: false)
+   * @param includeScamTokens - Whether to include tokens marked as potential scams (default: false)
    */
   async findByAccount(
     accountId: string,
     transaction?: DatabaseTransaction,
-    includeHidden = false
+    includeHidden = false,
+    includeScamTokens = false,
   ): Promise<Holding[]> {
     try {
       const database = this.getDb(transaction);
-      const conditions = [
-        eq(schema.holdings.accountId, accountId),
-        lt(schema.tokens.isScamProbability, SCAM_PROBABILITY_THRESHOLD),
-      ];
+      const conditions = [eq(schema.holdings.accountId, accountId)];
+      if (!includeScamTokens) {
+        conditions.push(
+          lt(schema.tokens.isScamProbability, SCAM_PROBABILITY_THRESHOLD),
+        );
+      }
       if (!includeHidden) {
         conditions.push(eq(schema.holdings.isHidden, false));
       }
@@ -286,7 +310,10 @@ export class HoldingRepository extends BaseRepository<Holding, NewHolding> {
       // Return only the holding objects (scam tokens already filtered at database level)
       return results.map((r) => r.holding);
     } catch (error) {
-      this.logger.error({ accountId, error }, 'Failed to find holdings by account');
+      this.logger.error(
+        { accountId, error },
+        "Failed to find holdings by account",
+      );
       throw error;
     }
   }
@@ -294,7 +321,10 @@ export class HoldingRepository extends BaseRepository<Holding, NewHolding> {
   /**
    * Mark a holding as hidden (soft delete for blockchain holdings)
    */
-  async markAsHidden(holdingId: string, transaction?: DatabaseTransaction): Promise<void> {
+  async markAsHidden(
+    holdingId: string,
+    transaction?: DatabaseTransaction,
+  ): Promise<void> {
     try {
       const database = this.getDb(transaction);
       await database
@@ -304,7 +334,10 @@ export class HoldingRepository extends BaseRepository<Holding, NewHolding> {
         })
         .where(eq(schema.holdings.id, holdingId));
     } catch (error) {
-      this.logger.error({ holdingId, error }, 'Failed to mark holding as hidden');
+      this.logger.error(
+        { holdingId, error },
+        "Failed to mark holding as hidden",
+      );
       throw error;
     }
   }
@@ -312,7 +345,10 @@ export class HoldingRepository extends BaseRepository<Holding, NewHolding> {
   /**
    * Unhide a holding (restore from hidden state)
    */
-  async unhideHolding(holdingId: string, transaction?: DatabaseTransaction): Promise<void> {
+  async unhideHolding(
+    holdingId: string,
+    transaction?: DatabaseTransaction,
+  ): Promise<void> {
     try {
       const database = this.getDb(transaction);
       await database
@@ -322,7 +358,7 @@ export class HoldingRepository extends BaseRepository<Holding, NewHolding> {
         })
         .where(eq(schema.holdings.id, holdingId));
     } catch (error) {
-      this.logger.error({ holdingId, error }, 'Failed to unhide holding');
+      this.logger.error({ holdingId, error }, "Failed to unhide holding");
       throw error;
     }
   }
@@ -333,19 +369,26 @@ export class HoldingRepository extends BaseRepository<Holding, NewHolding> {
   async findById(
     holdingId: string,
     transaction?: DatabaseTransaction,
-    includeHidden = false
+    includeHidden = false,
   ): Promise<Holding | null> {
     try {
       const database = this.getDb(transaction);
       const conditions = includeHidden
         ? eq(schema.holdings.id, holdingId)
-        : and(eq(schema.holdings.id, holdingId), eq(schema.holdings.isHidden, false));
+        : and(
+            eq(schema.holdings.id, holdingId),
+            eq(schema.holdings.isHidden, false),
+          );
 
-      const results = await database.select().from(schema.holdings).where(conditions).limit(1);
+      const results = await database
+        .select()
+        .from(schema.holdings)
+        .where(conditions)
+        .limit(1);
 
       return results[0] || null;
     } catch (error) {
-      this.logger.error({ holdingId, error }, 'Failed to find holding by ID');
+      this.logger.error({ holdingId, error }, "Failed to find holding by ID");
       throw error;
     }
   }
@@ -356,7 +399,7 @@ export class HoldingRepository extends BaseRepository<Holding, NewHolding> {
   async updateBalance(
     holdingId: string,
     balance: string,
-    transaction?: DatabaseTransaction
+    transaction?: DatabaseTransaction,
   ): Promise<void> {
     try {
       const database = this.getDb(transaction);
@@ -368,7 +411,10 @@ export class HoldingRepository extends BaseRepository<Holding, NewHolding> {
         })
         .where(eq(schema.holdings.id, holdingId));
     } catch (error) {
-      this.logger.error({ holdingId, balance, error }, 'Failed to update holding balance');
+      this.logger.error(
+        { holdingId, balance, error },
+        "Failed to update holding balance",
+      );
       throw error;
     }
   }
@@ -376,12 +422,17 @@ export class HoldingRepository extends BaseRepository<Holding, NewHolding> {
   /**
    * Delete a holding by ID
    */
-  async deleteById(holdingId: string, transaction?: DatabaseTransaction): Promise<void> {
+  async deleteById(
+    holdingId: string,
+    transaction?: DatabaseTransaction,
+  ): Promise<void> {
     try {
       const database = this.getDb(transaction);
-      await database.delete(schema.holdings).where(eq(schema.holdings.id, holdingId));
+      await database
+        .delete(schema.holdings)
+        .where(eq(schema.holdings.id, holdingId));
     } catch (error) {
-      this.logger.error({ holdingId, error }, 'Failed to delete holding');
+      this.logger.error({ holdingId, error }, "Failed to delete holding");
       throw error;
     }
   }
@@ -389,7 +440,9 @@ export class HoldingRepository extends BaseRepository<Holding, NewHolding> {
   /**
    * Get distinct token IDs from all holdings
    */
-  async getDistinctTokenIds(transaction?: DatabaseTransaction): Promise<string[]> {
+  async getDistinctTokenIds(
+    transaction?: DatabaseTransaction,
+  ): Promise<string[]> {
     try {
       const database = this.getDb(transaction);
       const results = await database
@@ -398,7 +451,7 @@ export class HoldingRepository extends BaseRepository<Holding, NewHolding> {
 
       return results.map((row) => row.tokenId);
     } catch (error) {
-      this.logger.error({ error }, 'Failed to get distinct token IDs');
+      this.logger.error({ error }, "Failed to get distinct token IDs");
       throw error;
     }
   }
