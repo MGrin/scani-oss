@@ -13,9 +13,26 @@ import {
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { MoneyDisplay } from '@/components/ui/money-display';
 import { PageHeader } from '@/components/ui/page-header';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
 import { trpc } from '@/lib/trpc';
 import { createCurrencyToken } from '@/lib/utils';
+
+type ChartResolution = 'best' | 'hourly' | 'daily' | 'weekly' | 'monthly';
+
+const RESOLUTION_OPTIONS: { value: ChartResolution; label: string }[] = [
+  { value: 'best', label: 'All Events' },
+  { value: 'hourly', label: 'Hourly' },
+  { value: 'daily', label: 'Daily' },
+  { value: 'weekly', label: 'Weekly' },
+  { value: 'monthly', label: 'Monthly' },
+];
 
 export function PortfolioHistory() {
   const [dateRange] = useState(() => {
@@ -25,6 +42,7 @@ export function PortfolioHistory() {
     return { startDate, endDate };
   });
 
+  const [chartResolution, setChartResolution] = useState<ChartResolution>('daily');
   const [eventsOffset, setEventsOffset] = useState(0);
   const [allEvents, setAllEvents] = useState<
     Array<{
@@ -47,7 +65,7 @@ export function PortfolioHistory() {
     {
       startDate: dateRange.startDate.toISOString(),
       endDate: dateRange.endDate.toISOString(),
-      maxPoints: 500,
+      resolution: chartResolution,
     },
     {
       staleTime: Number.POSITIVE_INFINITY, // Cache indefinitely as past data never changes
@@ -82,6 +100,12 @@ export function PortfolioHistory() {
       }
     }
   }, [eventsData, eventsOffset]);
+
+  // Fetch current portfolio value from dashboard (source of truth)
+  const { data: dashboardOverview } = trpc.dashboard.getOverview.useQuery();
+  const currentPortfolioValue = dashboardOverview?.portfolioValue?.totalValue
+    ? Number.parseFloat(dashboardOverview.portfolioValue.totalValue)
+    : null;
 
   const { data: baseCurrency } = trpc.users.getBaseCurrency.useQuery();
   const currency = baseCurrency?.symbol || 'USD';
@@ -119,7 +143,10 @@ export function PortfolioHistory() {
     }
   }, [hasMore, eventsLoading]);
 
-  const latestValue = formattedChartData[formattedChartData.length - 1]?.value || 0;
+  // Use current portfolio value from dashboard (same as shown everywhere else)
+  // Fall back to last chart point only if dashboard data not yet loaded
+  const displayValue =
+    currentPortfolioValue ?? formattedChartData[formattedChartData.length - 1]?.value ?? 0;
 
   return (
     <div className="space-y-6">
@@ -127,8 +154,23 @@ export function PortfolioHistory() {
 
       {/* Portfolio Value Chart */}
       <Card>
-        <CardHeader>
+        <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
           <CardTitle>Portfolio Value Over Time</CardTitle>
+          <Select
+            value={chartResolution}
+            onValueChange={(value) => setChartResolution(value as ChartResolution)}
+          >
+            <SelectTrigger className="w-[140px]">
+              <SelectValue placeholder="Resolution" />
+            </SelectTrigger>
+            <SelectContent>
+              {RESOLUTION_OPTIONS.map((option) => (
+                <SelectItem key={option.value} value={option.value}>
+                  {option.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </CardHeader>
         <CardContent>
           {chartLoading ? (
@@ -149,7 +191,7 @@ export function PortfolioHistory() {
                 <div>
                   <p className="text-sm text-muted-foreground">Current Portfolio Value</p>
                   <p className="text-3xl font-bold">
-                    <MoneyDisplay value={latestValue} token={baseCurrencyToken} />
+                    <MoneyDisplay value={displayValue} token={baseCurrencyToken} />
                   </p>
                 </div>
                 <div className="text-right">

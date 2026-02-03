@@ -28,6 +28,7 @@ import { withTransaction } from '../database/transaction';
 import type { Holding } from '../domain/entities';
 import { TokenTypeRepository } from '../repositories/EnumRepositories';
 import { HoldingRepository, type HoldingWithFullDetails } from '../repositories/HoldingRepository';
+import { HoldingService } from '../services/HoldingService';
 import { IntegrationCredentialsService } from '../services/IntegrationCredentialsService';
 import { TokenService } from '../services/TokenService';
 import { createComponentLogger } from '../utils/logger';
@@ -66,6 +67,7 @@ export class SyncExchangeBalancesUseCase {
   private readonly integrationManager = Container.get(IntegrationManager);
   private readonly integrationCredentialsService = Container.get(IntegrationCredentialsService);
   private readonly holdingRepository = Container.get(HoldingRepository);
+  private readonly holdingService = Container.get(HoldingService);
   private readonly tokenService = Container.get(TokenService);
   private readonly tokenTypeRepository = Container.get(TokenTypeRepository);
 
@@ -128,6 +130,7 @@ export class SyncExchangeBalancesUseCase {
           metadata: unknown;
         };
         userId: string;
+        userBaseCurrencyId: string | null;
         institutionId: string;
         integration: ScaniIntegration;
         holdingsResult: FetchHoldingsResult;
@@ -275,10 +278,18 @@ export class SyncExchangeBalancesUseCase {
                     true // includeHidden so we can update them
                   );
 
+                // Get user's baseCurrencyId for event context
+                const [user] = await db
+                  .select({ baseCurrencyId: schema.users.baseCurrencyId })
+                  .from(schema.users)
+                  .where(eq(schema.users.id, userCredential.userId))
+                  .limit(1);
+
                 // Store all data for batch processing
                 allAccountHoldingsData.push({
                   account,
                   userId: userCredential.userId,
+                  userBaseCurrencyId: user?.baseCurrencyId ?? null,
                   institutionId,
                   integration,
                   holdingsResult,
@@ -359,10 +370,16 @@ export class SyncExchangeBalancesUseCase {
                   if (existing) {
                     // Update existing holding
                     if (existing.balance !== holding.balance) {
-                      await this.holdingRepository.update(
-                        existing.id,
+                      await this.holdingService.updateHoldingBalanceWithEvent(
                         {
+                          holdingId: existing.id,
                           balance: holding.balance,
+                          eventContext: accountData.userBaseCurrencyId
+                            ? {
+                                userId: account.userId,
+                                baseCurrencyId: accountData.userBaseCurrencyId,
+                              }
+                            : undefined,
                         },
                         tx
                       );
@@ -388,13 +405,18 @@ export class SyncExchangeBalancesUseCase {
                     }
                   } else if (!isZeroBalance) {
                     // Create new holding only if balance is not zero
-                    const newHolding = await this.holdingRepository.create(
+                    const newHolding = await this.holdingService.createHoldingWithEvent(
                       {
                         userId: account.userId,
                         accountId: account.id,
                         tokenId: token.id,
                         balance: holding.balance,
-                        isHidden: false,
+                        source: 'sync_exchange_balances',
+                        eventContext: accountData.userBaseCurrencyId
+                          ? {
+                              baseCurrencyId: accountData.userBaseCurrencyId,
+                            }
+                          : undefined,
                       },
                       tx
                     );

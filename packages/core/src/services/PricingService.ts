@@ -22,6 +22,7 @@ import { TokenTypeRepository } from '../repositories/EnumRepositories';
 import { TokenPriceRepository } from '../repositories/TokenPriceRepository';
 import { TokenRepository } from '../repositories/TokenRepository';
 import { createComponentLogger, logger } from '../utils/logger';
+import { UserPortfolioEventService } from './UserPortfolioEventService';
 
 const pricingLogger = createComponentLogger('pricing');
 
@@ -75,6 +76,7 @@ export class PricingService {
   private readonly tokenRepository = Container.get(TokenRepository);
   private readonly tokenPriceRepository = Container.get(TokenPriceRepository);
   readonly _tokenTypeRepository = Container.get(TokenTypeRepository);
+  private readonly userPortfolioEventService = Container.get(UserPortfolioEventService);
 
   constructor() {
     const createFailureResultBound = this.createFailureResult.bind(this);
@@ -1410,8 +1412,52 @@ export class PricingService {
         { cachedCount: priceRecords.length },
         'Successfully cached price results to database'
       );
+
+      // Create portfolio events for users who hold these tokens
+      // This is best-effort - don't fail the pricing operation if events fail
+      try {
+        await this.createPortfolioEventsForPriceUpdates(validPriceResults, baseCurrencyId);
+      } catch (eventError) {
+        logger.warn({ eventError }, 'Failed to create portfolio events for price updates');
+      }
     } catch (error) {
       logger.error({ error, priceRecords }, 'Failed to cache price results');
+    }
+  }
+
+  /**
+   * Create portfolio events for all users who hold tokens that received new prices.
+   * Events are created asynchronously and failures don't affect price caching.
+   */
+  private async createPortfolioEventsForPriceUpdates(
+    priceResults: ProviderPriceResult[],
+    baseCurrencyId: string
+  ): Promise<void> {
+    let totalEventsCreated = 0;
+
+    for (const result of priceResults) {
+      try {
+        const eventsCreated = await this.userPortfolioEventService.createPriceUpdateEvents({
+          tokenId: result.tokenId,
+          price: result.price,
+          baseCurrencyId,
+          timestamp: result.timestamp,
+        });
+        totalEventsCreated += eventsCreated;
+      } catch (error) {
+        logger.debug(
+          { error, tokenId: result.tokenId },
+          'Failed to create price_update events for token'
+        );
+        // Continue with other tokens
+      }
+    }
+
+    if (totalEventsCreated > 0) {
+      logger.debug(
+        { totalEventsCreated, tokenCount: priceResults.length },
+        'Created portfolio price_update events'
+      );
     }
   }
 

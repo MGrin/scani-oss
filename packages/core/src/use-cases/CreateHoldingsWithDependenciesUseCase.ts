@@ -134,15 +134,19 @@ export class CreateHoldingsWithDependenciesUseCase {
           throw new Error('Account does not belong to the user');
         }
 
-        const createdHoldings = await this.holdingService.createManyHoldings(
+        const createdHoldings = await this.holdingService.createManyHoldingsWithEvents(
           input.holdings.map((h) => {
             return {
               accountId,
               tokenId: h.tokenId!,
               balance: h.balance,
+              userId,
+              source: 'manual',
+              eventContext: {
+                baseCurrencyId: user.baseCurrencyId!,
+              },
             };
           }),
-          userId,
           tx
         );
 

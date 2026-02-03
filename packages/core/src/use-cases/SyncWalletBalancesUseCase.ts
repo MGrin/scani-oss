@@ -369,10 +369,34 @@ export class SyncWalletBalancesUseCase {
                 const existingHolding = existingHoldingsMap.get(tokenSymbol);
                 const wasHidden = existingHolding?.isHidden ?? false;
 
+                // Event context - only create events if user has baseCurrencyId
+                const eventContext = user.baseCurrencyId
+                  ? {
+                      userId: user.id,
+                      baseCurrencyId: user.baseCurrencyId,
+                      // Price will be fetched on-demand, use "0" for sync
+                    }
+                  : undefined;
+
                 if (balance === '0' || parseFloat(balance) === 0) {
                   // For zero balance, update existing holding if it exists
                   if (existingHolding) {
-                    await this.holdingService.updateHoldingBalance(existingHolding.id, balance, tx);
+                    if (eventContext) {
+                      await this.holdingService.updateHoldingBalanceWithEvent(
+                        {
+                          holdingId: existingHolding.id,
+                          balance,
+                          eventContext,
+                        },
+                        tx
+                      );
+                    } else {
+                      await this.holdingService.updateHoldingBalance(
+                        existingHolding.id,
+                        balance,
+                        tx
+                      );
+                    }
                     if (!wasHidden) {
                       holdingsRemoved++;
                     }
@@ -388,7 +412,22 @@ export class SyncWalletBalancesUseCase {
                 } else {
                   // Update or create holding with non-zero balance
                   if (existingHolding) {
-                    await this.holdingService.updateHoldingBalance(existingHolding.id, balance, tx);
+                    if (eventContext) {
+                      await this.holdingService.updateHoldingBalanceWithEvent(
+                        {
+                          holdingId: existingHolding.id,
+                          balance,
+                          eventContext,
+                        },
+                        tx
+                      );
+                    } else {
+                      await this.holdingService.updateHoldingBalance(
+                        existingHolding.id,
+                        balance,
+                        tx
+                      );
+                    }
                     if (!wasHidden) {
                       holdingsUpdated++;
                     }
@@ -402,19 +441,20 @@ export class SyncWalletBalancesUseCase {
                       'Updated holding balance'
                     );
                   } else {
-                    // Create new holding (within transaction)
-                    const [newHolding] = await tx
-                      .insert(schema.holdings)
-                      .values({
+                    // Create new holding via HoldingService
+                    const newHolding = await this.holdingService.createHoldingWithEvent(
+                      {
                         userId: user.id,
                         accountId: account.id,
                         tokenId: token.id,
                         balance,
                         source: 'blockchain',
-                        isHidden: false,
-                        lastUpdated: new Date(),
-                      })
-                      .returning();
+                        eventContext: eventContext
+                          ? { baseCurrencyId: eventContext.baseCurrencyId }
+                          : undefined,
+                      },
+                      tx
+                    );
 
                     if (newHolding) {
                       holdingsCreated++;

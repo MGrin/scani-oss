@@ -8,7 +8,8 @@
  * this script uses our optimized postgres.js connection settings.
  */
 
-import { dirname, join } from 'node:path';
+import { existsSync } from 'node:fs';
+import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { drizzle } from 'drizzle-orm/postgres-js';
 import { migrate } from 'drizzle-orm/postgres-js/migrator';
@@ -16,6 +17,29 @@ import postgres from 'postgres';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
+
+// Load .env from monorepo root (packages/core/src/database -> root)
+const monorepoRoot = resolve(__dirname, '../../../../');
+const envPath = join(monorepoRoot, '.env');
+
+if (existsSync(envPath)) {
+  // Bun has built-in .env loading, but we need to load from a specific path
+  const envFile = Bun.file(envPath);
+  const envContent = await envFile.text();
+
+  // Parse and set environment variables (only if not already set)
+  for (const line of envContent.split('\n')) {
+    const trimmed = line.trim();
+    if (trimmed && !trimmed.startsWith('#')) {
+      const [key, ...valueParts] = trimmed.split('=');
+      const value = valueParts.join('=');
+      if (key && value && !process.env[key]) {
+        process.env[key] = value;
+      }
+    }
+  }
+  console.log(`📁 Loaded environment from ${envPath}`);
+}
 
 async function runMigrations() {
   const DATABASE_URL = process.env.DATABASE_URL;

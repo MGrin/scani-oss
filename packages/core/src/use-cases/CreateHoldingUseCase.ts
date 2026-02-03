@@ -5,6 +5,7 @@ import * as schema from '../database/schema';
 import { withTransaction } from '../database/transaction';
 import { TokenPriceRepository } from '../repositories/TokenPriceRepository';
 import { PricingService } from '../services/PricingService';
+import { UserPortfolioEventService } from '../services/UserPortfolioEventService';
 import { createComponentLogger } from '../utils/logger';
 
 const logger = createComponentLogger('use-case:create-holding');
@@ -37,6 +38,7 @@ export interface CreateHoldingResult {
 export class CreateHoldingUseCase {
   private readonly pricingService = Container.get(PricingService);
   private readonly tokenPriceRepository = Container.get(TokenPriceRepository);
+  private readonly userPortfolioEventService = Container.get(UserPortfolioEventService);
 
   async execute(
     input: CreateHoldingInput,
@@ -252,6 +254,57 @@ export class CreateHoldingUseCase {
         'Failed to fetch token price after holding creation - holding still created successfully'
       );
       // Holding was already created successfully, pricing failure is non-blocking
+    }
+
+    // Create portfolio event for the new holding (best-effort, non-blocking)
+    try {
+      if (baseCurrencyId) {
+        // Get token info and latest price for the event
+        const [token] = await db
+          .select()
+          .from(schema.tokens)
+          .where(eq(schema.tokens.id, input.tokenId))
+          .limit(1);
+
+        const [account] = await db
+          .select()
+          .from(schema.accounts)
+          .where(eq(schema.accounts.id, input.accountId))
+          .limit(1);
+
+        if (token && account) {
+          const latestPrice = await this.tokenPriceRepository.findLatestPrice(
+            input.tokenId,
+            baseCurrencyId
+          );
+
+          await this.userPortfolioEventService.createHoldingCreateEvent({
+            userId,
+            holdingId: holding.id,
+            accountId: input.accountId,
+            institutionId: account.institutionId,
+            tokenId: input.tokenId,
+            tokenSymbol: token.symbol,
+            tokenName: token.name,
+            balance: holding.balance,
+            price: latestPrice?.price || '0',
+            baseCurrencyId,
+            timestamp: holding.createdAt,
+            source: 'holding_create',
+          });
+
+          logger.debug(
+            { holdingId: holding.id, tokenSymbol: token.symbol },
+            'Created holding_create portfolio event'
+          );
+        }
+      }
+    } catch (eventError) {
+      logger.warn(
+        { holdingId: holding.id, error: eventError },
+        'Failed to create portfolio event for holding creation'
+      );
+      // Event creation failure is non-blocking
     }
 
     return {

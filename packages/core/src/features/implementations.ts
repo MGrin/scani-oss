@@ -6,6 +6,7 @@
  */
 
 import { Container } from 'typedi';
+import type { User } from '../database';
 import { BlockchainServiceManager } from '../external-services/blockchain';
 import {
   AccountRepository,
@@ -152,8 +153,7 @@ export const AccountImplementations = {
     // Type assertion since the function expects a full user object
     // Use new method that returns summary with pre-calculated totals
     return await holdingService.getHoldingsByAccountIdWithSummary(
-      // biome-ignore lint/suspicious/noExplicitAny: Type assertion needed for user object compatibility
-      dbUser as any,
+      dbUser as User,
       input.id,
       input.includeHidden
     );
@@ -274,8 +274,7 @@ export const HoldingImplementations = {
     }
     // Type assertion since the function expects a full user object
     // Use new method that returns summary with pre-calculated totals
-    // biome-ignore lint/suspicious/noExplicitAny: Type assertion needed for user object compatibility
-    return await holdingService.getHoldingsByAccountIdWithSummary(dbUser as any);
+    return await holdingService.getHoldingsByAccountIdWithSummary(dbUser as User);
   },
 
   /**
@@ -322,20 +321,25 @@ export const HoldingImplementations = {
 
   async update(context: FeatureExecutionContext, input: { id: string; data: UpdateHoldingInput }) {
     const useCase = Container.get(UpdateHoldingUseCase);
-    const result = await useCase.execute(input.id, input.data, context.userId);
+    const result = await useCase.execute(input.id, input.data, context.userId, {
+      baseCurrencyId: context.dbUser?.baseCurrencyId || undefined,
+    });
     return result;
   },
 
   async delete(context: FeatureExecutionContext, input: { id: string }) {
     const useCase = Container.get(DeleteHoldingUseCase);
-    const result = await useCase.execute(input.id, context.userId);
+    const result = await useCase.execute(input.id, context.userId, {
+      baseCurrencyId: context.dbUser?.baseCurrencyId || undefined,
+    });
     return result;
   },
 
   async bulkDelete(context: FeatureExecutionContext, input: { ids: string[] }) {
     const useCase = Container.get(DeleteHoldingUseCase);
+    const baseCurrencyId = context.dbUser?.baseCurrencyId || undefined;
     const result = await executeBulkOperation(input.ids, (id) =>
-      useCase.execute(id, context.userId)
+      useCase.execute(id, context.userId, { baseCurrencyId })
     );
     return result;
   },
@@ -353,10 +357,10 @@ export const HoldingImplementations = {
   },
 
   async restore(context: FeatureExecutionContext, input: { id: string }) {
-    const holdingRepository = Container.get(HoldingRepository);
+    const holdingService = Container.get(HoldingService);
 
     // Fetch the holding to verify ownership and that it's hidden
-    // Pass includeHidden=true since we're specifically looking for hidden holdings
+    const holdingRepository = Container.get(HoldingRepository);
     const holding = await holdingRepository.findById(input.id, undefined, true);
     if (!holding) {
       throw new Error('Holding not found');
@@ -370,10 +374,17 @@ export const HoldingImplementations = {
       throw new Error('Holding is not hidden');
     }
 
-    // Restore the holding by setting isHidden to false
-    const updatedHolding = await holdingRepository.update(input.id, {
-      isHidden: false,
-    });
+    // Restore the holding by setting isHidden to false with event tracking
+    const baseCurrencyId = context.dbUser?.baseCurrencyId;
+    const updatedHolding = await holdingService.unhideHoldingWithEvent(
+      input.id,
+      baseCurrencyId
+        ? {
+            userId: context.userId,
+            baseCurrencyId,
+          }
+        : undefined
+    );
     if (!updatedHolding) {
       throw new Error('Failed to restore holding');
     }
@@ -563,8 +574,7 @@ export const BatchOperationImplementations = {
       dbUser = user;
     }
     // Type assertion since the function expects a full user object
-    // biome-ignore lint/suspicious/noExplicitAny: Type assertion needed for user object compatibility
-    const result = await useCase.execute(input, dbUser as any);
+    const result = await useCase.execute(input, dbUser as User);
     return result;
   },
 
@@ -728,8 +738,7 @@ export const GroupImplementations = {
       // PostgreSQL error code 23505 = unique_violation
       if (
         error instanceof Error &&
-        // biome-ignore lint/suspicious/noExplicitAny: Database error type is not strictly typed
-        ((error as any).code === '23505' ||
+        ((error as unknown as { code: string }).code === '23505' ||
           error.message.includes('unique constraint') ||
           error.message.includes('duplicate key') ||
           error.message.includes('uniqueUserGroupName'))

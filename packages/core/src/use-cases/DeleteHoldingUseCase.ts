@@ -1,7 +1,10 @@
 import { and, eq } from 'drizzle-orm';
-import { Service } from 'typedi';
+import Container, { Service } from 'typedi';
+import { db } from '../database/connection';
 import * as schema from '../database/schema';
 import { withTransaction } from '../database/transaction';
+import { TokenPriceRepository } from '../repositories/TokenPriceRepository';
+import { UserPortfolioEventService } from '../services/UserPortfolioEventService';
 import { createComponentLogger } from '../utils/logger';
 
 const logger = createComponentLogger('use-case:delete-holding');
@@ -12,6 +15,10 @@ export interface DeleteHoldingResult {
   wasHidden: boolean; // Indicates if the holding was marked as hidden instead of deleted
 }
 
+export interface DeleteHoldingOptions {
+  baseCurrencyId?: string;
+}
+
 /**
  * Use case for deleting a holding
  *
@@ -19,6 +26,7 @@ export interface DeleteHoldingResult {
  * - Validates holding ownership
  * - For blockchain-sourced holdings: marks them as hidden (soft delete)
  * - For manually created holdings: permanently deletes them
+ * - Creates portfolio event for the deletion
  * - Returns deletion information
  *
  * Blockchain holdings are marked as hidden instead of deleted because they
@@ -27,7 +35,14 @@ export interface DeleteHoldingResult {
  */
 @Service()
 export class DeleteHoldingUseCase {
-  async execute(holdingId: string, userId: string): Promise<DeleteHoldingResult> {
+  private readonly tokenPriceRepository = Container.get(TokenPriceRepository);
+  private readonly userPortfolioEventService = Container.get(UserPortfolioEventService);
+
+  async execute(
+    holdingId: string,
+    userId: string,
+    options?: DeleteHoldingOptions
+  ): Promise<DeleteHoldingResult> {
     logger.debug(
       {
         userId,
@@ -38,7 +53,7 @@ export class DeleteHoldingUseCase {
 
     // Use transaction to ensure atomicity
     // This prevents race conditions where holding could be modified between fetch and delete/update
-    return await withTransaction(
+    const result = await withTransaction(
       async (tx) => {
         // First, fetch the holding to check its source
         const [holding] = await tx
@@ -122,5 +137,69 @@ export class DeleteHoldingUseCase {
         timeout: 10000,
       }
     );
+
+    // Create portfolio event for deletion (best-effort, non-blocking)
+    if (options?.baseCurrencyId) {
+      await this.createDeleteEvent(result.deleted, userId, options.baseCurrencyId);
+    }
+
+    return result;
+  }
+
+  /**
+   * Helper to create a delete event after a holding is deleted/hidden
+   */
+  private async createDeleteEvent(
+    holding: typeof schema.holdings.$inferSelect,
+    userId: string,
+    baseCurrencyId: string
+  ): Promise<void> {
+    try {
+      // Get token and account info for the event
+      const [token] = await db
+        .select()
+        .from(schema.tokens)
+        .where(eq(schema.tokens.id, holding.tokenId))
+        .limit(1);
+
+      const [account] = await db
+        .select()
+        .from(schema.accounts)
+        .where(eq(schema.accounts.id, holding.accountId))
+        .limit(1);
+
+      if (token && account) {
+        const latestPrice = await this.tokenPriceRepository.findLatestPrice(
+          holding.tokenId,
+          baseCurrencyId
+        );
+
+        await this.userPortfolioEventService.createHoldingDeleteEvent({
+          userId,
+          holdingId: holding.id,
+          accountId: holding.accountId,
+          institutionId: account.institutionId,
+          tokenId: holding.tokenId,
+          tokenSymbol: token.symbol,
+          tokenName: token.name,
+          balance: '0', // Balance is 0 after deletion
+          price: latestPrice?.price || '0',
+          baseCurrencyId,
+          timestamp: new Date(),
+          source: 'holding_delete',
+        });
+
+        logger.debug(
+          { holdingId: holding.id, tokenSymbol: token.symbol },
+          'Created holding_delete portfolio event'
+        );
+      }
+    } catch (eventError) {
+      logger.warn(
+        { holdingId: holding.id, error: eventError },
+        'Failed to create portfolio event for holding deletion'
+      );
+      // Event creation failure is non-blocking
+    }
   }
 }

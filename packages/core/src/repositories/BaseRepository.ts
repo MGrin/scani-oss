@@ -2,7 +2,7 @@ import { eq, inArray, type SQL, sql } from 'drizzle-orm';
 import type { PgColumn, PgTable, PgTransaction, TableConfig } from 'drizzle-orm/pg-core';
 import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 import { Service } from 'typedi';
-import { db } from '../database/connection';
+import { getDb as getDbConnection } from '../database/connection';
 import { createComponentLogger } from '../utils/logger';
 
 export type DatabaseTransaction =
@@ -30,8 +30,10 @@ export abstract class BaseRepository<TEntity, TNewEntity = Partial<TEntity>> {
 
   /**
    * Get the database instance (with or without transaction)
+   * Uses a function call to ensure db is resolved at runtime rather than import time
    */
   protected getDb(transaction?: DatabaseTransaction) {
+    const db = getDbConnection();
     return transaction || db;
   }
 

@@ -17,6 +17,7 @@ import { db } from '../database/connection';
 import * as schema from '../database/schema';
 import { withTransaction } from '../database/transaction';
 import { HoldingRepository } from '../repositories/HoldingRepository';
+import { HoldingService } from '../services/HoldingService';
 import { IntegrationCredentialsService } from '../services/IntegrationCredentialsService';
 import { TokenService } from '../services/TokenService';
 import { createComponentLogger } from '../utils/logger';
@@ -64,6 +65,7 @@ export class ImportKrakenAccountsUseCase {
   private readonly integrationCredentialsService = Container.get(IntegrationCredentialsService);
   private readonly tokenService = Container.get(TokenService);
   private readonly holdingRepository = Container.get(HoldingRepository);
+  private readonly holdingService = Container.get(HoldingService);
 
   async execute(input: ImportKrakenAccountsInput): Promise<ImportKrakenAccountsResult> {
     logger.info(
@@ -278,23 +280,34 @@ export class ImportKrakenAccountsUseCase {
 
                   if (existingHolding) {
                     // Update existing holding
-                    await this.holdingRepository.update(
-                      existingHolding.id,
+                    await this.holdingService.updateHoldingBalanceWithEvent(
                       {
+                        holdingId: existingHolding.id,
                         balance: holding.balance,
+                        eventContext: user.baseCurrencyId
+                          ? {
+                              userId: input.userId,
+                              baseCurrencyId: user.baseCurrencyId,
+                            }
+                          : undefined,
                       },
                       tx
                     );
                     logger.debug({ holdingId: existingHolding.id }, 'Updated existing holding');
                   } else {
                     // Create new holding
-                    const newHolding = await this.holdingRepository.create(
+                    const newHolding = await this.holdingService.createHoldingWithEvent(
                       {
                         userId: input.userId,
                         accountId,
                         tokenId: token.id,
                         balance: holding.balance,
-                        isHidden: false,
+                        source: 'import_kraken',
+                        eventContext: user.baseCurrencyId
+                          ? {
+                              baseCurrencyId: user.baseCurrencyId,
+                            }
+                          : undefined,
                       },
                       tx
                     );
@@ -313,7 +326,9 @@ export class ImportKrakenAccountsUseCase {
                   }
                 } catch (error) {
                   logger.error(
-                    { error: error instanceof Error ? error.message : String(error) },
+                    {
+                      error: error instanceof Error ? error.message : String(error),
+                    },
                     'Failed to import holding'
                   );
                   result.errors.push({

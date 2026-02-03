@@ -7,12 +7,12 @@ export {
   TokenTypeRepository,
 } from './EnumRepositories';
 export { GroupRepository } from './GroupRepository';
-export { HoldingHistoryRepository } from './HoldingHistoryRepository';
 export { HoldingRepository } from './HoldingRepository';
 export { InstitutionBlockchainMappingRepository } from './InstitutionBlockchainMappingRepository';
 export { InstitutionRepository } from './InstitutionRepository';
 export { TokenPriceRepository } from './TokenPriceRepository';
 export { TokenRepository } from './TokenRepository';
 export { UserIntegrationCredentialsRepository } from './UserIntegrationCredentialsRepository';
+export { UserPortfolioEventRepository } from './UserPortfolioEventRepository';
 export { UserRepository } from './UserRepository';
 export { UserWalletRepository } from './UserWalletRepository';

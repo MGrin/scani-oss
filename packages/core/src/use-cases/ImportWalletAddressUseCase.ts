@@ -25,6 +25,7 @@ import * as schema from '../database/schema';
 import { withTransaction } from '../database/transaction';
 import { HoldingRepository } from '../repositories/HoldingRepository';
 import { InstitutionBlockchainMappingRepository } from '../repositories/InstitutionBlockchainMappingRepository';
+import { HoldingService } from '../services/HoldingService';
 import { IntegrationCredentialsService } from '../services/IntegrationCredentialsService';
 import { TokenService } from '../services/TokenService';
 import { UserWalletService } from '../services/UserWalletService';
@@ -80,6 +81,7 @@ export class ImportWalletAddressUseCase {
   private readonly mappingRepository = Container.get(InstitutionBlockchainMappingRepository);
   private readonly tokenService = Container.get(TokenService);
   private readonly holdingRepository = Container.get(HoldingRepository);
+  private readonly holdingService = Container.get(HoldingService);
 
   async execute(input: ImportWalletInput, userId: string): Promise<ImportWalletResult> {
     logger.info(
@@ -99,7 +101,7 @@ export class ImportWalletAddressUseCase {
 
     // Use integration-based approach
     logger.debug('Using integration-based wallet import');
-    return await this.executeWithIntegrations(input, userId);
+    return await this.executeWithIntegrations(input, userId, user.baseCurrencyId);
   }
 
   /**
@@ -107,7 +109,8 @@ export class ImportWalletAddressUseCase {
    */
   private async executeWithIntegrations(
     input: ImportWalletInput,
-    userId: string
+    userId: string,
+    baseCurrencyId: string | null
   ): Promise<ImportWalletResult> {
     logger.info(
       {
@@ -597,14 +600,21 @@ export class ImportWalletAddressUseCase {
 
                 if (existingHolding) {
                   // Update existing holding and unhide if it was hidden (within transaction)
-                  await tx
-                    .update(schema.holdings)
-                    .set({
+                  await this.holdingService.updateHoldingWithEvent(
+                    existingHolding.id,
+                    {
                       balance: holding.balance,
                       isHidden: false, // Unhide if balance is non-zero
                       lastUpdated: new Date(),
-                    })
-                    .where(eq(schema.holdings.id, existingHolding.id));
+                    },
+                    baseCurrencyId
+                      ? {
+                          userId,
+                          baseCurrencyId,
+                        }
+                      : undefined,
+                    tx
+                  );
 
                   logger.info(
                     {
@@ -626,22 +636,21 @@ export class ImportWalletAddressUseCase {
                   });
                 } else {
                   // Create new holding (within transaction)
-                  const [newHolding] = await tx
-                    .insert(schema.holdings)
-                    .values({
+                  const newHolding = await this.holdingService.createHoldingWithEvent(
+                    {
                       userId,
                       accountId,
                       tokenId: token.id,
                       balance: holding.balance,
                       source: 'blockchain',
-                      isHidden: false,
-                      lastUpdated: new Date(),
-                    })
-                    .returning();
-
-                  if (!newHolding) {
-                    throw new Error('Failed to create holding');
-                  }
+                      eventContext: baseCurrencyId
+                        ? {
+                            baseCurrencyId,
+                          }
+                        : undefined,
+                    },
+                    tx
+                  );
 
                   logger.info(
                     {

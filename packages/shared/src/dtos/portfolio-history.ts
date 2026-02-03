@@ -1,6 +1,12 @@
 import { z } from 'zod';
 
 /**
+ * Chart resolution options
+ */
+export const ChartResolution = z.enum(['best', 'hourly', 'daily', 'weekly', 'monthly']);
+export type ChartResolution = z.infer<typeof ChartResolution>;
+
+/**
  * Input DTO for getting portfolio history events (paginated list)
  */
 export const GetPortfolioHistoryEventsInputDto = z.object({
@@ -18,7 +24,7 @@ export type GetPortfolioHistoryEventsInput = z.infer<typeof GetPortfolioHistoryE
 export const GetPortfolioHistoryChartInputDto = z.object({
   startDate: z.string().datetime(),
   endDate: z.string().datetime(),
-  maxPoints: z.number().min(10).max(1000).default(500),
+  resolution: ChartResolution.default('daily'),
 });
 
 export type GetPortfolioHistoryChartInput = z.infer<typeof GetPortfolioHistoryChartInputDto>;

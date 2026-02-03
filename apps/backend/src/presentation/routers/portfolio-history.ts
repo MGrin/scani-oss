@@ -42,7 +42,7 @@ export const portfolioHistoryRouter = router({
         dbUser.id,
         startDate,
         endDate,
-        input.maxPoints
+        input.resolution
       );
     }),
 });

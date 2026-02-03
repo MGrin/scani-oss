@@ -15,5 +15,6 @@ export { PricingService } from './PricingService';
 export { TokenService } from './TokenService';
 export { TokenValidationService } from './TokenValidationService';
 export { UserContextService } from './UserContextService';
+export { UserPortfolioEventService } from './UserPortfolioEventService';
 export { UserService } from './UserService';
 export { UserWalletService } from './UserWalletService';
