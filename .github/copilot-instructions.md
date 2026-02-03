@@ -378,15 +378,40 @@ const createAccount = trpc.accounts.create.useMutation();
   - `/docs/stability/` - Stability fixes, debugging guides, and analysis reports
   - `/docs/implementation/` - Implementation summaries and batch operation docs
   - `/docs/backend-fixes/` - Backend-specific bug fixes and patches
+  - `/docs/performance/` - Performance optimization documentation
   - `/docs/archive/` - Historical documentation and deprecated guides
 
-**Rules:**
+**Date-Based Organization Rules:**
 
-- Never create .md files in root (except README.md)
-- Never create .md files in `/apps/backend` or `/apps/frontend`
-- Never create .md files in nested source directories
-- All AI-generated reports must go into appropriate `/docs` subfolder
-- Keep the 3 core docs files updated with current project state
+- **ALWAYS use date prefixes** for new documentation: `YYYY-MM-DD_descriptive_name.md`
+- Examples: `2026-02-03_database_optimization.md`, `2026-02-03_feature_implementation.md`
+- Use ISO 8601 date format (YYYY-MM-DD) for consistent sorting
+- Date represents when the work was completed or the document was finalized
+- Helps track chronological evolution of the project
+- Makes it easy to identify recent vs outdated documentation
+
+**Critical Rules:**
+
+- ❌ NEVER create .md files in project root (except README.md)
+- ❌ NEVER create .md files in `/apps/*` directories or their subdirectories
+- ❌ NEVER create .md files in package source directories (`/packages/*/src/`)
+- ❌ NEVER create .md files in nested source directories
+- ✅ ALWAYS use date prefixes for new docs: `YYYY-MM-DD_name.md`
+- ✅ ALL documentation must go into appropriate `/docs` subfolder
+- ✅ Choose the most specific subfolder for the content
+- ✅ Keep the 3 core docs files (`ARCHITECTURE.md`, `EXECUTIVE_SUMMARY.md`, `ROADMAP.md`) updated with current project state
+
+**Folder Selection Guidelines:**
+
+When creating new documentation, select the folder based on content type:
+
+- **Features** → New features, integrations, user-facing capabilities
+- **Technical** → Architecture docs, API specs, deployment guides, infrastructure
+- **Stability** → Bug fixes, debugging guides, stability improvements, security patches
+- **Implementation** → Implementation summaries, refactoring guides, architecture changes
+- **Backend-fixes** → Backend-specific bug fixes and patches
+- **Performance** → Performance analysis, optimization guides, benchmarks
+- **Archive** → Outdated docs, deprecated guides, historical reviews
 
 ## Security Considerations
 

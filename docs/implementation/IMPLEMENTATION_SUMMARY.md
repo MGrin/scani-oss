@@ -1,329 +1,166 @@
-# Implementation Summary - All Tasks Complete ✅
+# Implementation Summary: Show and Restore Removed Holdings Feature
 
-**Date:** October 8, 2025  
-**Status:** 98% Implementation Complete  
-**Result:** Production-Ready, Bug-Free Application
+## Overview
+Implemented a feature that allows users to view and restore removed holdings from wallet accounts. Holdings from blockchain sources are soft-deleted (flagged as hidden) instead of being permanently deleted, because they are automatically recreated during wallet syncs.
 
-## Executive Summary
+## Implementation Details
 
-Successfully implemented **ALL critical P0 fixes, ALL P1 optimizations, and 1 of 3 P2 enhancements**. The application is now production-ready with comprehensive stability fixes and performance optimizations.
+### Backend Changes
 
----
+#### 1. Updated Holdings Query to Support Hidden Holdings
+**File:** `apps/backend/src/presentation/routers/accounts.ts`
+- Modified `getHoldings` endpoint to accept an optional `includeHidden` boolean parameter
+- When `includeHidden` is true, the query returns all holdings including hidden ones
+- Default behavior (false) maintains backward compatibility
 
-## Implementation Breakdown
+#### 2. Added Restore Endpoint
+**File:** `apps/backend/src/presentation/routers/holdings.ts`
+- Added new `restore` mutation endpoint
+- Validates holding ownership and checks if holding is actually hidden
+- Sets `isHidden` flag to false to restore the holding
+- Emits real-time update events for UI synchronization
 
-### P0 Fixes - Critical Stability (4/4 Complete) ✅
+#### 3. Service Layer Updates
+**Files:**
+- `packages/core/src/features/implementations.ts`
+- `packages/core/src/services/HoldingService.ts`
 
-| Priority | Fix                               | Status  | Impact                            |
-| -------- | --------------------------------- | ------- | --------------------------------- |
-| P0       | Cache Staleness (30 sec)          | ✅ DONE | Eliminates stale data issues      |
-| P0       | Sequential Mutation Races         | ✅ DONE | Prevents entity creation failures |
-| P0       | Async Invalidations (6 functions) | ✅ DONE | Ensures cache updates complete    |
-| P0       | Null Return Handling (5 entities) | ✅ DONE | Removes phantom entities          |
+Changes:
+- Added `includeHidden` parameter propagation through service layers
+- Implemented `restore` method in HoldingImplementations
+- Repository layer already supported `includeHidden` parameter
 
-**Result:** All critical race conditions and cache issues resolved. App stable under heavy load.
+#### 4. Type Definition Updates
+**File:** `packages/shared/src/dtos/holding.ts`
+- Added `isHidden: boolean` field to `HoldingWithDetails` type
+- Added `source: string` field to `HoldingWithDetails` type
+- These fields are now returned in API responses
 
----
+### Frontend Changes
 
-### P1 Fixes - High Priority (3/3 Complete) ✅
+#### 1. Account Detail Page Updates
+**File:** `apps/frontendV2/src/pages/AccountDetail.tsx`
 
-| Priority | Fix                                   | Status  | Impact                        |
-| -------- | ------------------------------------- | ------- | ----------------------------- |
-| P1       | Replace .mutate() with .mutateAsync() | ✅ DONE | Proper error handling         |
-| P1       | Batch Invalidations                   | ✅ DONE | Already optimized in codebase |
-| P1       | Optimistic Deletes                    | ✅ DONE | Already implemented           |
+Key changes:
+- Added `showHidden` state to track toggle status
+- Added checkbox toggle "Show removed holdings" in the filters section
+- Toggle only visible for wallet accounts (accounts with `walletAddress` in metadata)
+- Updated holdings query to pass `includeHidden` parameter
+- Added restore mutation with proper cache invalidation
 
-**Result:** All high-priority optimizations in place. Enhanced UX and error handling.
+#### 2. Visual Indicators
+- Added "Removed" badge next to token symbol for hidden holdings
+- Badge appears in both table and card views
+- Styled with muted colors for clear differentiation
 
----
+#### 3. Action Menu Updates
+- Hidden holdings show "Restore Holding" action with Undo icon (green)
+- Visible holdings show "Remove Holding" action with Trash icon (red)
+- Actions are contextual based on `isHidden` status
 
-### P2 Fixes - Optional Enhancements (1/3 Complete) 🎯
+#### 4. Filter Integration
+- "Show removed holdings" toggle integrated into filters card
+- Checkbox only appears for wallet accounts
+- Clear filters button now resets the toggle
 
-| Priority | Fix                        | Status   | Impact                         |
-| -------- | -------------------------- | -------- | ------------------------------ |
-| P2       | Backend Batch Endpoint     | ✅ DONE  | Atomic multi-entity operations |
-| P2       | Request Deduplication      | ⏸️ DEFER | Performance optimization       |
-| P2       | Optimistic Lock Versioning | ⏸️ DEFER | Concurrent update protection   |
+## User Flow
 
-**Result:** Critical atomic operations implemented. Remaining items are nice-to-have.
+### Scenario 1: Viewing Removed Holdings
+1. User navigates to a wallet account detail page
+2. User sees "Show removed holdings" checkbox in filters section
+3. User checks the checkbox
+4. Holdings list refreshes to show both active and removed holdings
+5. Removed holdings display with a "Removed" badge
 
----
+### Scenario 2: Restoring a Hidden Holding
+1. User enables "Show removed holdings" toggle
+2. User clicks the action menu (⋯) for a removed holding
+3. User clicks "Restore Holding" option
+4. Holding is restored and "Removed" badge disappears
+5. Toast notification confirms successful restoration
 
-## Files Modified Summary
+### Scenario 3: Non-Wallet Account
+1. User navigates to a non-wallet account (manual, exchange, etc.)
+2. "Show removed holdings" toggle is NOT visible
+3. Regular delete behavior works as before (permanent deletion for manual holdings)
 
-### Backend (2 files)
+## Technical Notes
 
-1. **`apps/backend/src/routers/batch-operations.ts`** (NEW)
+### Soft Delete Logic
+- **Blockchain holdings:** Set `isHidden = true` (soft delete)
+  - Reason: Holdings auto-sync from blockchain, would be recreated
+  - Cron jobs continue to update hidden holdings
+  - Hidden holdings excluded from portfolio calculations
 
-   - Created atomic multi-entity creation endpoint
-   - Database transaction support
-   - Comprehensive error handling
+- **Manual holdings:** Permanently deleted
+  - Reason: User manually created, won't be recreated
+  - Standard delete operation applies
 
-2. **`apps/backend/src/router.ts`**
-   - Integrated batch operations router
-   - No breaking changes to existing APIs
-
-### Frontend (13 files)
-
-#### Core Configuration
-
-3. **`apps/frontend/src/lib/trpc-provider.tsx`**
-
-   - staleTime: 5 min → 30 sec
-   - cacheTime: 10 min → 5 min
-   - refetchOnMount: false → 'always'
-
-4. **`apps/frontend/src/contexts/EntityDataContext.tsx`**
-   - Removed duplicate query settings
-   - Inherits from global config
-
-#### Cache Management
-
-5. **`apps/frontend/src/lib/cache/invalidation.ts`**
-
-   - Made 6 invalidation functions async
-   - All return Promise<void>
-   - Proper await support
-
-6. **`apps/frontend/src/lib/cache/optimistic/entityManager.ts`**
-   - Fixed 5 create handlers (null return cleanup)
-   - Optimistic deletes already implemented
-   - Proper error handling
-
-#### Pages & Components
-
-7. **`apps/frontend/src/pages/AddData.tsx`**
-
-   - Added waitForCacheSettlement helper
-   - Sequential mutation fixes
-   - Batch invalidations
-
-8. **`apps/frontend/src/pages/Holdings.tsx`**
-
-   - Removed refetchOnMount override
-   - mutate → mutateAsync
-
-9. **`apps/frontend/src/pages/Accounts.tsx`**
-
-   - Removed refetchOnMount override
-   - mutate → mutateAsync
-
-10. **`apps/frontend/src/pages/Institutions.tsx`**
-
-    - Removed refetchOnMount override
-    - mutate → mutateAsync
-
-11. **`apps/frontend/src/pages/Transactions.tsx`**
-
-    - mutate → mutateAsync
-
-12. **`apps/frontend/src/components/HoldingForm.tsx`**
-
-    - mutate → mutateAsync
-    - Proper async error handling
-
-13. **`apps/frontend/src/components/TransactionForm.tsx`**
-    - mutate → mutateAsync
-    - Proper async error handling
-
-#### Hooks
-
-14. **`apps/frontend/src/hooks/useRealtimeEntitySync.ts`**
-    - Made handleMessage async
-    - Await all invalidations
-    - Try/catch error handling
-
----
-
-## Key Improvements
-
-### Stability
-
-- ✅ **Zero race conditions** - All mutations properly sequenced
-- ✅ **Fresh cache data** - 30 second staleness vs 5 minutes
-- ✅ **No phantom entities** - Null returns cleaned up
-- ✅ **No orphaned data** - Batch endpoint with transactions
-- ✅ **Proper async flow** - All invalidations awaited
-
-### Performance
-
-- ✅ **Reduced refetch cascades** - Optimized invalidation chains
-- ✅ **Batch invalidations** - Parallel Promise.all calls
-- ✅ **Optimistic updates** - Immediate UI feedback
-- ✅ **Cache settlement** - Prevents race conditions
-
-### Developer Experience
-
-- ✅ **Type safety** - Full tRPC type inference
-- ✅ **Error handling** - Comprehensive try/catch blocks
-- ✅ **Logging** - Debug-friendly console messages
-- ✅ **Documentation** - Extensive inline comments
-
----
+### Mobile Considerations
+- Checkbox and labels are touch-friendly
+- Clear visual feedback for all states
+- Responsive layout adjusts for mobile screens
+- Actions remain easily accessible in both views
 
 ## Testing Checklist
 
-### Critical Scenarios ✅
+### Backend Testing
+- [ ] GET `/accounts/:id/holdings?includeHidden=false` - Returns only visible holdings
+- [ ] GET `/accounts/:id/holdings?includeHidden=true` - Returns all holdings
+- [ ] POST `/holdings/restore` with valid hidden holding - Successfully restores
+- [ ] POST `/holdings/restore` with non-hidden holding - Returns error
+- [ ] POST `/holdings/restore` with unauthorized holding - Returns error
+- [ ] Verify `isHidden` and `source` fields in response
 
-- [x] **Rapid sequential creation** - Institution → Account → Holding works
-- [x] **Cache freshness** - Data refetches after 30 seconds
-- [x] **WebSocket updates** - Real-time sync with await invalidations
-- [x] **Null returns** - Failed mutations clean up optimistic entities
-- [x] **Delete operations** - Optimistic deletes with rollback on error
-- [x] **Error handling** - All mutations use mutateAsync with try/catch
+### Frontend Testing
+- [ ] Wallet account shows "Show removed holdings" toggle
+- [ ] Non-wallet account does NOT show toggle
+- [ ] Toggle OFF - Only visible holdings shown
+- [ ] Toggle ON - All holdings shown including removed
+- [ ] Hidden holdings show "Removed" badge in table view
+- [ ] Hidden holdings show "Removed" badge in card view
+- [ ] Action menu shows "Restore" for hidden holdings
+- [ ] Action menu shows "Remove" for visible holdings
+- [ ] Restore action successfully unhides holding
+- [ ] Toast notification appears on successful restore
+- [ ] Clear filters resets toggle to OFF
 
-### Edge Cases ✅
+### Integration Testing
+- [ ] Remove a blockchain holding → verify isHidden = true
+- [ ] Enable toggle → verify removed holding appears
+- [ ] Restore holding → verify isHidden = false
+- [ ] Disable toggle → verify restored holding remains visible
+- [ ] Multiple holdings can be restored in sequence
+- [ ] Real-time updates work correctly
 
-- [x] **Network timeout** - Batch endpoint rolls back transaction
-- [x] **Validation errors** - No partial entity creation
-- [x] **Concurrent mutations** - Async invalidations prevent conflicts
-- [x] **Navigation timing** - Cache settlement before navigation
-- [x] **Loading states** - Proper async await clears spinners
+## Files Modified
 
-### Performance ✅
+### Backend
+1. `apps/backend/src/presentation/routers/accounts.ts`
+2. `apps/backend/src/presentation/routers/holdings.ts`
+3. `packages/core/src/features/implementations.ts`
+4. `packages/core/src/services/HoldingService.ts`
+5. `packages/shared/src/dtos/holding.ts`
 
-- [x] **Reduced network requests** - Batch invalidations
-- [x] **No excessive refetches** - Optimized cascade chains
-- [x] **Fast UI updates** - Optimistic updates work correctly
-- [x] **Stable under load** - 30 sec staleness handles traffic
+### Frontend
+1. `apps/frontendV2/src/pages/AccountDetail.tsx`
 
----
+## Security Considerations
+- ✅ User authentication required for all endpoints
+- ✅ Ownership validation before restore
+- ✅ Hidden status validation before restore
+- ✅ Proper error handling for edge cases
+- ✅ Type safety maintained throughout
 
-## Metrics & Impact
+## Performance Considerations
+- ✅ No additional database queries (uses existing repository methods)
+- ✅ Efficient cache invalidation strategy
+- ✅ Minimal frontend re-renders
+- ✅ Toggle state persists during page interaction
 
-### Before Fixes
-
-- ❌ **Stale data**: 40% of page loads showed outdated info
-- ❌ **Failed mutations**: 15% of sequential creates failed
-- ❌ **Phantom entities**: 10% of failed creates left orphans
-- ❌ **Race conditions**: 25% of rapid actions caused errors
-- ❌ **Orphaned entities**: 5% of network failures left partial data
-
-### After Fixes
-
-- ✅ **Stale data**: <1% (30 sec vs 5 min)
-- ✅ **Failed mutations**: <1% (cache settlement + async)
-- ✅ **Phantom entities**: 0% (null return cleanup)
-- ✅ **Race conditions**: 0% (proper async invalidations)
-- ✅ **Orphaned entities**: 0% (batch endpoint with transactions)
-
-### Expected Performance Gains
-
-- **-70%** stale data incidents
-- **-90%** sequential mutation failures
-- **-100%** phantom optimistic entities
-- **-100%** orphaned partial data
-- **+50%** user confidence in data accuracy
-
----
-
-## Remaining Work (Optional P2 Enhancements)
-
-### Request Deduplication
-
-**Status:** Deferred  
-**Reason:** React Query v4 has basic deduplication. Full implementation needs architectural changes.  
-**Priority:** Low - Performance optimization, not correctness issue
-
-### Optimistic Lock Versioning
-
-**Status:** Deferred  
-**Reason:** Requires schema changes (version field on all entities).  
-**Priority:** Low - Concurrent updates rare in personal finance apps
-
----
-
-## Deployment Checklist
-
-### Pre-Deployment ✅
-
-- [x] All P0 fixes implemented
-- [x] All P1 fixes implemented
-- [x] Backend batch endpoint tested
-- [x] No TypeScript errors
-- [x] Documentation complete
-
-### Deployment Steps
-
-1. ✅ **Backend first:** Deploy batch-operations router
-2. ✅ **Frontend next:** Deploy all stability fixes
-3. ✅ **Verify health:** Check `/trpc/health.check`
-4. ✅ **Monitor logs:** Watch for errors in first hour
-5. ✅ **Smoke test:** Create holding via UI
-
-### Post-Deployment Monitoring
-
-- Monitor error rates (expect <1%)
-- Check cache hit ratios (expect >80%)
-- Watch mutation success rates (expect >99%)
-- Track page load times (expect faster)
-
----
-
-## Documentation Created
-
-1. **STABILITY_ISSUES_ANALYSIS.md** - Root cause analysis
-2. **STABILITY_FIX_IMPLEMENTATION_PLAN.md** - Detailed implementation guide
-3. **QUICK_START_2_HOUR_FIX.md** - Prioritized fixes
-4. **STABILITY_FIXES_COMPLETE.md** - Implementation summary
-5. **ALIGNMENT_ANALYSIS.md** - Plan vs implementation comparison
-6. **BATCH_OPERATIONS_IMPLEMENTATION.md** - Backend endpoint docs
-7. **IMPLEMENTATION_SUMMARY.md** - This file
-
----
-
-## Conclusion
-
-### What Was Achieved
-
-✅ **100% of P0 critical fixes** - App is stable and bug-free  
-✅ **100% of P1 high-priority fixes** - Performance optimized  
-✅ **33% of P2 enhancements** - Atomic operations implemented
-
-### Production Readiness
-
-The application is **production-ready** with:
-
-- Full ACID transaction support
-- Comprehensive error handling
-- Optimized cache management
-- Real-time WebSocket sync
-- Type-safe API layer
-- Zero known stability issues
-
-### Final Assessment
-
-**Alignment Score: 98%** 🎯
-
-The 2% gap represents optional P2 performance enhancements that can be added incrementally based on real-world usage data. All critical bugs are fixed, all high-priority optimizations are complete, and the most important P2 fix (batch endpoint) is implemented.
-
-**Recommendation:** Deploy to production with confidence. Monitor metrics for first week, then consider remaining P2 enhancements if performance data indicates need.
-
----
-
-## Next Steps
-
-### Immediate (Week 1)
-
-1. Deploy to production
-2. Monitor error rates and performance
-3. Gather user feedback on stability
-
-### Short-term (Month 1)
-
-1. Consider frontend adoption of batch endpoint
-2. Evaluate need for request deduplication
-3. Review cache hit rates
-
-### Long-term (Quarter 1)
-
-1. Implement optimistic lock versioning if concurrent updates become issue
-2. Further optimize refetch cascades if needed
-3. Add request deduplication if performance bottleneck identified
-
----
-
-**Status:** ✅ COMPLETE  
-**Quality:** Production-Ready  
-**Confidence:** High  
-**Risk:** Low
+## Future Enhancements
+- Bulk restore operation
+- Filter to show only removed holdings
+- Undo restore action
+- Audit log of hide/restore actions
+- Notification when hidden holding value changes significantly
