@@ -67,24 +67,70 @@ packages/core/src/repositories/interfaces/
 // IHoldingRepository.ts
 export interface IHoldingRepository {
   // Base operations
-  findById(id: string, transaction?: DatabaseTransaction): Promise<Holding | null>;
-  findByIds(ids: string[], transaction?: DatabaseTransaction): Promise<Holding[]>;
+  findById(
+    id: string,
+    transaction?: DatabaseTransaction,
+  ): Promise<Holding | null>;
+  findByIds(
+    ids: string[],
+    transaction?: DatabaseTransaction,
+  ): Promise<Holding[]>;
   create(data: NewHolding, transaction?: DatabaseTransaction): Promise<Holding>;
-  update(id: string, data: Partial<Holding>, transaction?: DatabaseTransaction): Promise<Holding>;
+  update(
+    id: string,
+    data: Partial<Holding>,
+    transaction?: DatabaseTransaction,
+  ): Promise<Holding>;
   delete(id: string, transaction?: DatabaseTransaction): Promise<void>;
-  
+
   // Domain-specific operations
-  findByUser(userId: string, options?: FindByUserOptions, transaction?: DatabaseTransaction): Promise<Holding[]>;
-  findByUserWithFullDetails(userId: string, options?: FindByUserOptions, transaction?: DatabaseTransaction): Promise<HoldingWithDetails[]>;
-  findByAccount(accountId: string, transaction?: DatabaseTransaction): Promise<Holding[]>;
-  findActiveByToken(tokenId: string, transaction?: DatabaseTransaction): Promise<Holding[]>;
-  markAsHidden(id: string, userId: string, transaction?: DatabaseTransaction): Promise<void>;
-  updateBalance(id: string, balance: string, transaction?: DatabaseTransaction): Promise<Holding>;
-  
+  findByUser(
+    userId: string,
+    options?: FindByUserOptions,
+    transaction?: DatabaseTransaction,
+  ): Promise<Holding[]>;
+  findByUserWithFullDetails(
+    userId: string,
+    options?: FindByUserOptions,
+    transaction?: DatabaseTransaction,
+  ): Promise<HoldingWithDetails[]>;
+  findByAccount(
+    accountId: string,
+    transaction?: DatabaseTransaction,
+  ): Promise<Holding[]>;
+  findActiveByToken(
+    tokenId: string,
+    transaction?: DatabaseTransaction,
+  ): Promise<Holding[]>;
+  markAsHidden(
+    id: string,
+    userId: string,
+    transaction?: DatabaseTransaction,
+  ): Promise<void>;
+  updateBalance(
+    id: string,
+    balance: string,
+    transaction?: DatabaseTransaction,
+  ): Promise<Holding>;
+
   // Event-aware operations (NEW)
-  createWithEvent(data: NewHolding, eventContext: EventContext, transaction?: DatabaseTransaction): Promise<Holding>;
-  updateBalanceWithEvent(id: string, balance: string, eventContext: EventContext, transaction?: DatabaseTransaction): Promise<Holding>;
-  deleteWithEvent(id: string, userId: string, eventContext: EventContext, transaction?: DatabaseTransaction): Promise<void>;
+  createWithEvent(
+    data: NewHolding,
+    eventContext: EventContext,
+    transaction?: DatabaseTransaction,
+  ): Promise<Holding>;
+  updateBalanceWithEvent(
+    id: string,
+    balance: string,
+    eventContext: EventContext,
+    transaction?: DatabaseTransaction,
+  ): Promise<Holding>;
+  deleteWithEvent(
+    id: string,
+    userId: string,
+    eventContext: EventContext,
+    transaction?: DatabaseTransaction,
+  ): Promise<void>;
 }
 ```
 
@@ -148,17 +194,19 @@ For each repository, service, and use case, add `implements I*`:
 ```typescript
 // Before
 @Service()
-export class HoldingRepository extends BaseRepository<Holding, NewHolding> { }
+export class HoldingRepository extends BaseRepository<Holding, NewHolding> {}
 
 // After
 @Service()
-export class HoldingRepository extends BaseRepository<Holding, NewHolding> implements IHoldingRepository { }
+export class HoldingRepository
+  extends BaseRepository<Holding, NewHolding>
+  implements IHoldingRepository {}
 ```
 
 ### 1.5 Deliverables
 
 - [ ] 14 repository interface files created
-- [ ] 17 service interface files created  
+- [ ] 17 service interface files created
 - [ ] 14 use case interface files created
 - [ ] All implementations updated with `implements` clause
 - [ ] TypeScript compilation passes
@@ -175,12 +223,14 @@ export class HoldingRepository extends BaseRepository<Holding, NewHolding> imple
 For each file that currently bypasses repositories, identify what operations it performs:
 
 **CreateHoldingUseCase.ts:**
+
 - Query account by ID and user → `AccountRepository.findByIdAndUser()`
 - Query token by symbol and type → `TokenRepository.findBySymbolAndType()` ✓ (exists)
 - Create holding → `HoldingRepository.create()` ✓ (exists)
 - Create portfolio event → `UserPortfolioEventService` ✓ (exists)
 
 **ImportBinanceAccountsUseCase.ts:**
+
 - Query institution by name → `InstitutionRepository.findByName()` (MISSING)
 - Query account by user and institution → `AccountRepository.findByUserAndInstitution()` (MISSING)
 - Bulk create/update accounts → `AccountRepository.upsertMany()` (MISSING)
@@ -188,21 +238,26 @@ For each file that currently bypasses repositories, identify what operations it 
 - Query holding by account and token → `HoldingRepository.findByAccountAndToken()` (MISSING)
 
 **ImportKrakenAccountsUseCase.ts:**
+
 - Same as Binance above
 
 **ImportWalletAddressUseCase.ts:**
+
 - All of the above plus:
 - Query wallet by address → `UserWalletRepository.findByAddress()` ✓ (exists)
 - Update wallet metadata → `UserWalletRepository.updateMetadata()` (MISSING)
 
 **SyncExchangeBalancesUseCase.ts:**
+
 - Query holdings with token details → `HoldingRepository.findByAccountWithTokenDetails()` (MISSING)
 - Batch update holdings → `HoldingRepository.batchUpdateBalances()` (MISSING)
 
 **SyncWalletBalancesUseCase.ts:**
+
 - Same as SyncExchangeBalances
 
 **UpdateHoldingsBatchUseCase.ts:**
+
 - Batch update holdings → `HoldingRepository.batchUpdateBalances()` (MISSING)
 
 ### 2.2 Add Missing Repository Methods
@@ -219,7 +274,7 @@ async findByAccountAndToken(accountId: string, tokenId: string, transaction?: Da
 async findByAccountWithTokenDetails(accountId: string, transaction?: DatabaseTransaction): Promise<HoldingWithToken[]>;
 
 async upsertMany(
-  data: NewHolding[], 
+  data: NewHolding[],
   conflictTarget: ['accountId', 'tokenId'],
   transaction?: DatabaseTransaction
 ): Promise<Holding[]>;
@@ -259,8 +314,8 @@ async deleteWithEvent(
 async findByIdAndUser(id: string, userId: string, transaction?: DatabaseTransaction): Promise<Account | null>;
 
 async findByUserAndInstitution(
-  userId: string, 
-  institutionId: string, 
+  userId: string,
+  institutionId: string,
   transaction?: DatabaseTransaction
 ): Promise<Account[]>;
 
@@ -320,13 +375,13 @@ async createWithEvent(
   transaction?: DatabaseTransaction
 ): Promise<Holding> {
   const db = this.getDb(transaction);
-  
+
   // Create holding
   const [holding] = await db
     .insert(this.table)
     .values(data)
     .returning();
-  
+
   // Create event in same transaction
   await db
     .insert(schema.userPortfolioEvents)
@@ -344,7 +399,7 @@ async createWithEvent(
       newValueInBaseCurrency: eventContext.valueInBaseCurrency,
       previousValueInBaseCurrency: '0',
     });
-  
+
   return holding;
 }
 ```
@@ -370,6 +425,7 @@ async createWithEvent(
 ### 3.1 Identify Responsibilities
 
 Current PricingService handles:
+
 1. Rate limiting management
 2. Provider registry and selection
 3. Price caching
@@ -428,17 +484,20 @@ export class PriceCacheService extends BaseService {
   private readonly tokenPriceRepository = Container.get(TokenPriceRepository);
 
   constructor() {
-    super('PriceCacheService');
+    super("PriceCacheService");
   }
 
   async getCachedPrice(
     tokenId: string,
     baseCurrencyId: string,
-    maxAgeMs: number = 5 * 60 * 1000
+    maxAgeMs: number = 5 * 60 * 1000,
   ): Promise<TokenPrice | null> {
-    const price = await this.tokenPriceRepository.findLatestPrice(tokenId, baseCurrencyId);
+    const price = await this.tokenPriceRepository.findLatestPrice(
+      tokenId,
+      baseCurrencyId,
+    );
     if (!price) return null;
-    
+
     const age = Date.now() - price.timestamp.getTime();
     return age < maxAgeMs ? price : null;
   }
@@ -463,16 +522,16 @@ export class CurrencyConversionService extends BaseService {
   private exchangeRates: Map<string, Decimal> = new Map();
 
   constructor() {
-    super('CurrencyConversionService');
+    super("CurrencyConversionService");
   }
 
   async convert(
     amount: string,
     fromCurrency: string,
-    toCurrency: string
+    toCurrency: string,
   ): Promise<string> {
     if (fromCurrency === toCurrency) return amount;
-    
+
     const rate = await this.getExchangeRate(fromCurrency, toCurrency);
     return new Decimal(amount).mul(rate).toString();
   }
@@ -492,7 +551,7 @@ export class PriceProviderRegistry extends BaseService {
   private providers: Map<string, IPriceProvider> = new Map();
 
   constructor() {
-    super('PriceProviderRegistry');
+    super("PriceProviderRegistry");
     this.registerDefaultProviders();
   }
 
@@ -523,13 +582,13 @@ export class PricingService extends BaseService implements IPricingService {
   private readonly tokenRepository = Container.get(TokenRepository);
 
   constructor() {
-    super('PricingService');
+    super("PricingService");
   }
 
   async getTokenPrice(
     token: Token,
     baseCurrency: string,
-    timestamp?: Date
+    timestamp?: Date,
   ): Promise<string> {
     // 1. Check cache
     const cached = await this.cache.getCachedPrice(token.id, baseCurrency);
@@ -540,7 +599,7 @@ export class PricingService extends BaseService implements IPricingService {
     for (const provider of providers) {
       const rateLimiter = this.rateLimiters.getForProvider(provider.name);
       await rateLimiter.waitForSlot();
-      
+
       try {
         const price = await provider.fetchPrice(token, baseCurrency, timestamp);
         if (price) {
@@ -553,7 +612,7 @@ export class PricingService extends BaseService implements IPricingService {
           return price;
         }
       } catch (error) {
-        this.logger.warn({ provider: provider.name, error }, 'Provider failed');
+        this.logger.warn({ provider: provider.name, error }, "Provider failed");
       }
     }
 
@@ -563,7 +622,7 @@ export class PricingService extends BaseService implements IPricingService {
   async getCachedTokenPrices(
     tokens: Token[],
     baseCurrency: string,
-    timestamp?: Date
+    timestamp?: Date,
   ): Promise<Map<string, string>> {
     // Implementation
   }
@@ -576,12 +635,12 @@ All files importing from old PricingService location need updating:
 
 ```typescript
 // Before
-import { PricingService } from '../services/PricingService';
+import { PricingService } from "../services/PricingService";
 
 // After
-import { PricingService } from '../services/pricing';
+import { PricingService } from "../services/pricing";
 // or
-import { PricingService } from '../services/pricing/PricingService';
+import { PricingService } from "../services/pricing/PricingService";
 ```
 
 ### 3.9 Deliverables
@@ -634,7 +693,7 @@ const events = await this.userPortfolioEventRepository.findByUserIdInDateRange(
   userId,
   startDate,
   endDate,
-  { groupBy: 'day' }
+  { groupBy: "day" },
 );
 ```
 
@@ -674,7 +733,7 @@ export class AssetAllocationService extends BaseService {
 
   async calculateFromHoldings(
     holdings: HoldingWithDetails[],
-    priceMap: Map<string, string>
+    priceMap: Map<string, string>,
   ): Promise<AssetAllocation> {
     // Move calculation logic here
   }
@@ -683,14 +742,18 @@ export class AssetAllocationService extends BaseService {
 // Update GetAssetAllocationUseCase to use service
 @Service()
 export class GetAssetAllocationUseCase implements IGetAssetAllocationUseCase {
-  private readonly assetAllocationService = Container.get(AssetAllocationService);
+  private readonly assetAllocationService = Container.get(
+    AssetAllocationService,
+  );
   // ...
 }
 
 // Update DashboardService to use service
 @Service()
 export class DashboardService extends BaseService {
-  private readonly assetAllocationService = Container.get(AssetAllocationService);
+  private readonly assetAllocationService = Container.get(
+    AssetAllocationService,
+  );
   // No longer imports use case!
 }
 ```
@@ -701,27 +764,29 @@ export class DashboardService extends BaseService {
 
 ```typescript
 // packages/core/src/utils/portfolio-helpers.ts
-import Decimal from 'decimal.js';
-import type { PortfolioValueResult } from '../types';
+import Decimal from "decimal.js";
+import type { PortfolioValueResult } from "../types";
 
-export function extractPriceMap(portfolioValue: PortfolioValueResult): Map<string, string> {
+export function extractPriceMap(
+  portfolioValue: PortfolioValueResult,
+): Map<string, string> {
   const priceMap = new Map<string, string>();
-  
+
   for (const holding of portfolioValue.holdings) {
     const balance = new Decimal(holding.balance);
-    const value = new Decimal(holding.value || '0');
-    
+    const value = new Decimal(holding.value || "0");
+
     if (balance.greaterThan(0) && !priceMap.has(holding.tokenSymbol)) {
       priceMap.set(holding.tokenSymbol, value.div(balance).toString());
     }
   }
-  
+
   return priceMap;
 }
 
 export function calculateTotalValue(holdings: HoldingValue[]): string {
   return holdings
-    .reduce((sum, h) => sum.plus(h.value || '0'), new Decimal(0))
+    .reduce((sum, h) => sum.plus(h.value || "0"), new Decimal(0))
     .toString();
 }
 ```
@@ -730,7 +795,7 @@ export function calculateTotalValue(holdings: HoldingValue[]): string {
 
 ```typescript
 // AccountService.ts, DashboardService.ts, etc.
-import { extractPriceMap } from '../utils/portfolio-helpers';
+import { extractPriceMap } from "../utils/portfolio-helpers";
 
 // Remove private extractPriceMap method, use imported function
 ```
@@ -751,14 +816,14 @@ import { extractPriceMap } from '../utils/portfolio-helpers';
 // Before
 @Service()
 export class PortfolioValuationService {
-  private readonly logger = createComponentLogger('portfolio-valuation');
+  private readonly logger = createComponentLogger("portfolio-valuation");
 }
 
 // After
 @Service()
 export class PortfolioValuationService extends BaseService {
   constructor() {
-    super('PortfolioValuationService');
+    super("PortfolioValuationService");
   }
   // Now has: this.logger, this.withTransaction, this.validateRequiredFields, this.handleError
 }
@@ -801,63 +866,79 @@ const [newHolding] = await tx
 // After (via service with event)
 import { HoldingService } from "../services/HoldingService";
 
-const newHolding = await this.holdingService.createHoldingWithEvent({
-  ...holdingData,
-  eventContext: {
-    baseCurrencyId: user.baseCurrencyId,
-    tokenSymbol: token.symbol,
-    tokenName: token.name,
-    price: currentPrice,
-  }
-}, tx);
+const newHolding = await this.holdingService.createHoldingWithEvent(
+  {
+    ...holdingData,
+    eventContext: {
+      baseCurrencyId: user.baseCurrencyId,
+      tokenSymbol: token.symbol,
+      tokenName: token.name,
+      price: currentPrice,
+    },
+  },
+  tx,
+);
 ```
 
 ### 5.2 CreateHoldingUseCase Refactor
 
 ```typescript
 @Service()
-export class CreateHoldingUseCase extends BaseService implements ICreateHoldingUseCase {
+export class CreateHoldingUseCase
+  extends BaseService
+  implements ICreateHoldingUseCase
+{
   private readonly accountRepository = Container.get(AccountRepository);
   private readonly holdingService = Container.get(HoldingService);
   private readonly pricingService = Container.get(PricingService);
   private readonly tokenService = Container.get(TokenService);
 
   constructor() {
-    super('CreateHoldingUseCase');
+    super("CreateHoldingUseCase");
   }
 
-  async execute(input: CreateHoldingInput, user: User): Promise<CreateHoldingResult> {
-    this.validateRequiredFields(input, ['accountId', 'tokenId', 'balance']);
+  async execute(
+    input: CreateHoldingInput,
+    user: User,
+  ): Promise<CreateHoldingResult> {
+    this.validateRequiredFields(input, ["accountId", "tokenId", "balance"]);
 
     return await this.withTransaction(async (tx) => {
       // Validate account ownership via repository
       const account = await this.accountRepository.findByIdAndUser(
-        input.accountId, 
-        user.id, 
-        tx
+        input.accountId,
+        user.id,
+        tx,
       );
       if (!account) {
-        throw new NotFoundError('Account not found');
+        throw new NotFoundError("Account not found");
       }
 
       // Get token and price
       const token = await this.tokenService.findById(input.tokenId);
-      const price = await this.pricingService.getTokenPrice(token, user.baseCurrencyId);
+      const price = await this.pricingService.getTokenPrice(
+        token,
+        user.baseCurrencyId,
+      );
 
       // Create holding with event via service
-      const holding = await this.holdingService.createHoldingWithEvent({
-        accountId: input.accountId,
-        userId: user.id,
-        tokenId: input.tokenId,
-        balance: input.balance,
-        isActive: true,
-        isHidden: false,
-      }, {
-        baseCurrencyId: user.baseCurrencyId,
-        tokenSymbol: token.symbol,
-        tokenName: token.name,
-        price,
-      }, tx);
+      const holding = await this.holdingService.createHoldingWithEvent(
+        {
+          accountId: input.accountId,
+          userId: user.id,
+          tokenId: input.tokenId,
+          balance: input.balance,
+          isActive: true,
+          isHidden: false,
+        },
+        {
+          baseCurrencyId: user.baseCurrencyId,
+          tokenSymbol: token.symbol,
+          tokenName: token.name,
+          price,
+        },
+        tx,
+      );
 
       return { holding, price };
     });
@@ -871,7 +952,10 @@ For ImportBinanceAccountsUseCase, ImportKrakenAccountsUseCase, ImportWalletAddre
 
 ```typescript
 @Service()
-export class ImportBinanceAccountsUseCase extends BaseService implements IImportBinanceAccountsUseCase {
+export class ImportBinanceAccountsUseCase
+  extends BaseService
+  implements IImportBinanceAccountsUseCase
+{
   private readonly institutionRepository = Container.get(InstitutionRepository);
   private readonly accountRepository = Container.get(AccountRepository);
   private readonly holdingService = Container.get(HoldingService);
@@ -880,7 +964,7 @@ export class ImportBinanceAccountsUseCase extends BaseService implements IImport
 
   async execute(input: ImportInput, user: User): Promise<ImportResult> {
     // 1. Fetch external data (outside transaction)
-    const integration = this.integrationManager.getIntegration('binance');
+    const integration = this.integrationManager.getIntegration("binance");
     const credentials = await this.getCredentials(user.id, input.institutionId);
     const externalAccounts = await integration.fetchAccounts(credentials);
     const externalHoldings = await integration.fetchHoldings(credentials);
@@ -888,42 +972,52 @@ export class ImportBinanceAccountsUseCase extends BaseService implements IImport
     // 2. Process in transaction
     return await this.withTransaction(async (tx) => {
       // Find or create institution
-      const institution = await this.institutionRepository.findOrCreate({
-        name: 'Binance',
-        institutionTypeId: 'exchange',
-        // ...
-      }, tx);
+      const institution = await this.institutionRepository.findOrCreate(
+        {
+          name: "Binance",
+          institutionTypeId: "exchange",
+          // ...
+        },
+        tx,
+      );
 
       // Upsert accounts
       const accounts = await this.accountRepository.upsertMany(
-        externalAccounts.map(ea => ({
+        externalAccounts.map((ea) => ({
           userId: user.id,
           institutionId: institution.id,
           externalId: ea.id,
           name: ea.name,
           // ...
         })),
-        ['userId', 'institutionId', 'externalId'],
-        tx
+        ["userId", "institutionId", "externalId"],
+        tx,
       );
 
       // Create/update holdings with events
       const results = await Promise.all(
         externalHoldings.map(async (eh) => {
-          const account = accounts.find(a => a.externalId === eh.accountId);
-          const token = await this.tokenService.findOrCreateBySymbol(eh.symbol, 'crypto');
-          
-          return await this.holdingService.createOrUpdateHoldingWithEvent({
-            accountId: account.id,
-            userId: user.id,
-            tokenId: token.id,
-            balance: eh.balance,
-          }, {
-            baseCurrencyId: user.baseCurrencyId,
-            tokenSymbol: token.symbol,
-            tokenName: token.name,
-          }, tx);
-        })
+          const account = accounts.find((a) => a.externalId === eh.accountId);
+          const token = await this.tokenService.findOrCreateBySymbol(
+            eh.symbol,
+            "crypto",
+          );
+
+          return await this.holdingService.createOrUpdateHoldingWithEvent(
+            {
+              accountId: account.id,
+              userId: user.id,
+              tokenId: token.id,
+              balance: eh.balance,
+            },
+            {
+              baseCurrencyId: user.baseCurrencyId,
+              tokenSymbol: token.symbol,
+              tokenName: token.name,
+            },
+            tx,
+          );
+        }),
       );
 
       return { accounts, holdings: results };
@@ -938,15 +1032,23 @@ For SyncExchangeBalancesUseCase, SyncWalletBalancesUseCase:
 
 ```typescript
 @Service()
-export class SyncExchangeBalancesUseCase extends BaseService implements ISyncExchangeBalancesUseCase {
+export class SyncExchangeBalancesUseCase
+  extends BaseService
+  implements ISyncExchangeBalancesUseCase
+{
   private readonly holdingService = Container.get(HoldingService);
   private readonly accountRepository = Container.get(AccountRepository);
   private readonly integrationManager = Container.get(IntegrationManager);
 
   async execute(input: SyncInput): Promise<SyncResult> {
     // 1. Fetch external balances (outside transaction)
-    const integration = this.integrationManager.getIntegration(input.exchangeType);
-    const credentials = await this.getCredentials(input.userId, input.institutionId);
+    const integration = this.integrationManager.getIntegration(
+      input.exchangeType,
+    );
+    const credentials = await this.getCredentials(
+      input.userId,
+      input.institutionId,
+    );
     const externalBalances = await integration.fetchBalances(credentials);
 
     // 2. Update in transaction
@@ -957,12 +1059,14 @@ export class SyncExchangeBalancesUseCase extends BaseService implements ISyncExc
       // Compare with existing holdings
       const existingHoldings = await this.holdingService.findByAccount(
         input.accountId,
-        tx
+        tx,
       );
 
       for (const external of externalBalances) {
-        const existing = existingHoldings.find(h => h.tokenSymbol === external.symbol);
-        
+        const existing = existingHoldings.find(
+          (h) => h.tokenSymbol === external.symbol,
+        );
+
         if (existing) {
           if (existing.balance !== external.balance) {
             updates.push({
@@ -981,14 +1085,22 @@ export class SyncExchangeBalancesUseCase extends BaseService implements ISyncExc
       }
 
       // Batch update with events
-      await this.holdingService.batchUpdateBalancesWithEvents(updates, {
-        baseCurrencyId: input.baseCurrencyId,
-      }, tx);
+      await this.holdingService.batchUpdateBalancesWithEvents(
+        updates,
+        {
+          baseCurrencyId: input.baseCurrencyId,
+        },
+        tx,
+      );
 
       // Create new holdings with events
-      await this.holdingService.createManyHoldingsWithEvents(creates, {
-        baseCurrencyId: input.baseCurrencyId,
-      }, tx);
+      await this.holdingService.createManyHoldingsWithEvents(
+        creates,
+        {
+          baseCurrencyId: input.baseCurrencyId,
+        },
+        tx,
+      );
 
       return { updated: updates.length, created: creates.length };
     });
@@ -1002,10 +1114,16 @@ Currently creates no events. After refactor:
 
 ```typescript
 @Service()
-export class UpdateHoldingsBatchUseCase extends BaseService implements IUpdateHoldingsBatchUseCase {
+export class UpdateHoldingsBatchUseCase
+  extends BaseService
+  implements IUpdateHoldingsBatchUseCase
+{
   private readonly holdingService = Container.get(HoldingService);
 
-  async execute(input: BatchUpdateInput, user: User): Promise<BatchUpdateResult> {
+  async execute(
+    input: BatchUpdateInput,
+    user: User,
+  ): Promise<BatchUpdateResult> {
     return await this.withTransaction(async (tx) => {
       // Now creates events for all updates
       await this.holdingService.batchUpdateBalancesWithEvents(
@@ -1013,7 +1131,7 @@ export class UpdateHoldingsBatchUseCase extends BaseService implements IUpdateHo
         {
           baseCurrencyId: user.baseCurrencyId,
         },
-        tx
+        tx,
       );
 
       return { updatedCount: input.updates.length };
@@ -1029,19 +1147,19 @@ export class UpdateHoldingsBatchUseCase extends BaseService implements IUpdateHo
 @Service()
 export class SomeUseCase extends BaseService implements ISomeUseCase {
   constructor() {
-    super('SomeUseCase');
+    super("SomeUseCase");
   }
 
   async execute(input: Input, user: User): Promise<Result> {
-    this.logger.debug({ input, userId: user.id }, 'Executing use case');
-    this.validateRequiredFields(input, ['requiredField1', 'requiredField2']);
-    
+    this.logger.debug({ input, userId: user.id }, "Executing use case");
+    this.validateRequiredFields(input, ["requiredField1", "requiredField2"]);
+
     try {
       return await this.withTransaction(async (tx) => {
         // Implementation
       });
     } catch (error) {
-      throw this.handleError(error, 'Failed to execute use case');
+      throw this.handleError(error, "Failed to execute use case");
     }
   }
 }
@@ -1090,24 +1208,26 @@ packages/core/src/use-cases/wallet-import/
 ```typescript
 @Service()
 export class ChainDetectionService extends BaseService {
-  private readonly blockchainMappingRepository = Container.get(InstitutionBlockchainMappingRepository);
+  private readonly blockchainMappingRepository = Container.get(
+    InstitutionBlockchainMappingRepository,
+  );
 
   async detectChainsForAddress(address: string): Promise<ChainInfo[]> {
     // Move chain detection logic here
     const chains: ChainInfo[] = [];
-    
+
     // Check Ethereum-compatible
     if (this.isEthereumAddress(address)) {
-      chains.push(...await this.getEthereumCompatibleChains());
+      chains.push(...(await this.getEthereumCompatibleChains()));
     }
-    
+
     // Check Solana
     if (this.isSolanaAddress(address)) {
-      chains.push({ chainId: 'solana', name: 'Solana' });
+      chains.push({ chainId: "solana", name: "Solana" });
     }
-    
+
     // ... other chains
-    
+
     return chains;
   }
 }
@@ -1128,28 +1248,35 @@ export class WalletTokenImporter extends BaseService {
     accountId: string,
     userId: string,
     eventContext: EventContext,
-    transaction: DatabaseTransaction
+    transaction: DatabaseTransaction,
   ): Promise<ImportedToken[]> {
     // Move token import logic here
-    const balances = await this.blockchainService.fetchBalances(walletAddress, chainId);
-    
+    const balances = await this.blockchainService.fetchBalances(
+      walletAddress,
+      chainId,
+    );
+
     const results: ImportedToken[] = [];
     for (const balance of balances) {
       const token = await this.tokenService.findOrCreateByContract(
         balance.contractAddress,
-        chainId
+        chainId,
       );
-      
-      const holding = await this.holdingService.createOrUpdateHoldingWithEvent({
-        accountId,
-        userId,
-        tokenId: token.id,
-        balance: balance.amount,
-      }, eventContext, transaction);
-      
+
+      const holding = await this.holdingService.createOrUpdateHoldingWithEvent(
+        {
+          accountId,
+          userId,
+          tokenId: token.id,
+          balance: balance.amount,
+        },
+        eventContext,
+        transaction,
+      );
+
       results.push({ token, holding, balance: balance.amount });
     }
-    
+
     return results;
   }
 }
@@ -1159,46 +1286,60 @@ export class WalletTokenImporter extends BaseService {
 
 ```typescript
 @Service()
-export class ImportWalletAddressUseCase extends BaseService implements IImportWalletAddressUseCase {
+export class ImportWalletAddressUseCase
+  extends BaseService
+  implements IImportWalletAddressUseCase
+{
   private readonly chainDetection = Container.get(ChainDetectionService);
   private readonly tokenImporter = Container.get(WalletTokenImporter);
   private readonly walletMetadata = Container.get(WalletMetadataService);
   private readonly userWalletRepository = Container.get(UserWalletRepository);
   private readonly accountRepository = Container.get(AccountRepository);
 
-  async execute(input: ImportWalletInput, user: User): Promise<ImportWalletResult> {
-    this.logger.info({ address: input.address, userId: user.id }, 'Starting wallet import');
+  async execute(
+    input: ImportWalletInput,
+    user: User,
+  ): Promise<ImportWalletResult> {
+    this.logger.info(
+      { address: input.address, userId: user.id },
+      "Starting wallet import",
+    );
 
     // 1. Detect chains (outside transaction)
-    const chains = await this.chainDetection.detectChainsForAddress(input.address);
-    
+    const chains = await this.chainDetection.detectChainsForAddress(
+      input.address,
+    );
+
     if (chains.length === 0) {
-      throw new ValidationError('No supported chains found for address');
+      throw new ValidationError("No supported chains found for address");
     }
 
     // 2. Process in transaction
     return await this.withTransaction(async (tx) => {
       // Create/update wallet record
-      const wallet = await this.userWalletRepository.upsert({
-        userId: user.id,
-        walletAddress: input.address,
-        institutionIds: chains.map(c => c.institutionId),
-      }, tx);
+      const wallet = await this.userWalletRepository.upsert(
+        {
+          userId: user.id,
+          walletAddress: input.address,
+          institutionIds: chains.map((c) => c.institutionId),
+        },
+        tx,
+      );
 
       // Import tokens for each chain
       const importResults: ChainImportResult[] = [];
       for (const chain of chains) {
         const account = await this.getOrCreateAccount(user.id, chain, tx);
-        
+
         const tokens = await this.tokenImporter.importTokensForChain(
           input.address,
           chain.chainId,
           account.id,
           user.id,
           { baseCurrencyId: user.baseCurrencyId },
-          tx
+          tx,
         );
-        
+
         importResults.push({ chain, account, tokens });
       }
 
@@ -1265,6 +1406,7 @@ async findByUser(userId: string): Promise<Entity[]>;
 ```
 
 Update all repositories:
+
 - [ ] UserWalletRepository.findByUserAndAddress → returns `null` not `undefined`
 - [ ] All other inconsistent methods
 
@@ -1272,17 +1414,17 @@ Update all repositories:
 
 **Conventions:**
 
-| Operation | Pattern | Example |
-|-----------|---------|---------|
-| Get single by ID | `findById` | `findById(id)` |
-| Get single by criteria | `findBy*` | `findByEmail(email)` |
-| Get multiple | `findAll*` | `findAllByUser(userId)` |
-| Create | `create` | `create(data)` |
-| Create with event | `createWithEvent` | `createWithEvent(data, context)` |
-| Update | `update` | `update(id, data)` |
-| Delete | `delete` | `delete(id)` |
-| Check existence | `exists` | `exists(id)` |
-| Count | `count` | `countByUser(userId)` |
+| Operation              | Pattern           | Example                          |
+| ---------------------- | ----------------- | -------------------------------- |
+| Get single by ID       | `findById`        | `findById(id)`                   |
+| Get single by criteria | `findBy*`         | `findByEmail(email)`             |
+| Get multiple           | `findAll*`        | `findAllByUser(userId)`          |
+| Create                 | `create`          | `create(data)`                   |
+| Create with event      | `createWithEvent` | `createWithEvent(data, context)` |
+| Update                 | `update`          | `update(id, data)`               |
+| Delete                 | `delete`          | `delete(id)`                     |
+| Check existence        | `exists`          | `exists(id)`                     |
+| Count                  | `count`           | `countByUser(userId)`            |
 
 ### 7.3 Add Missing Database Index
 
@@ -1366,6 +1508,7 @@ async findByInstitution(institutionId: string): Promise<UserWallet[]> {
 ### 8.1 Remove Unused Imports
 
 Run across codebase:
+
 - Remove all unused `import { db }` statements
 - Remove all unused `import * as schema` statements
 - Use linter to find and remove other unused imports
@@ -1382,20 +1525,20 @@ Run across codebase:
 
 ```typescript
 // scripts/validate-architecture.ts
-import * as ts from 'typescript';
-import * as glob from 'glob';
+import * as ts from "typescript";
+import * as glob from "glob";
 
 // Check that no use-case or service imports db/schema directly
-const forbidden = ['../database/connection', '../database/schema'];
+const forbidden = ["../database/connection", "../database/schema"];
 
-const useCaseFiles = glob.sync('packages/core/src/use-cases/**/*.ts');
-const serviceFiles = glob.sync('packages/core/src/services/**/*.ts');
+const useCaseFiles = glob.sync("packages/core/src/use-cases/**/*.ts");
+const serviceFiles = glob.sync("packages/core/src/services/**/*.ts");
 
 for (const file of [...useCaseFiles, ...serviceFiles]) {
   // Skip repository files
-  if (file.includes('/repositories/')) continue;
-  
-  const content = fs.readFileSync(file, 'utf-8');
+  if (file.includes("/repositories/")) continue;
+
+  const content = fs.readFileSync(file, "utf-8");
   for (const pattern of forbidden) {
     if (content.includes(pattern)) {
       console.error(`VIOLATION: ${file} imports ${pattern}`);
@@ -1404,7 +1547,7 @@ for (const file of [...useCaseFiles, ...serviceFiles]) {
   }
 }
 
-console.log('Architecture validation passed!');
+console.log("Architecture validation passed!");
 ```
 
 ### 8.4 Update Copilot Instructions
@@ -1430,18 +1573,21 @@ Update `docs/ARCHITECTURE.md`:
 ## Layer Rules
 
 ### Use Cases
+
 - Orchestrate business operations
 - Use services and repositories only
 - NEVER import db or schema
 - Extend BaseService
 
 ### Services
+
 - Contain business logic
 - Use repositories only
 - NEVER import db or schema
 - Extend BaseService
 
 ### Repositories
+
 - ONLY layer that accesses database
 - Implement interfaces
 - Extend BaseRepository
@@ -1500,15 +1646,15 @@ Phase 8: Cleanup & Validation
 
 After completing all phases:
 
-| Metric | Before | After |
-|--------|--------|-------|
-| Use cases with direct DB | 64% | 0% |
-| Services with direct DB | 24% | 0% |
-| Files > 300 lines | 8 | 0 |
-| Interfaces defined | 0% | 100% |
-| Extends BaseService | 38% | 100% |
-| Files to modify for new event | 11+ | 1 |
-| Architecture score | 6.6/10 | 9.0/10 |
+| Metric                        | Before | After  |
+| ----------------------------- | ------ | ------ |
+| Use cases with direct DB      | 64%    | 0%     |
+| Services with direct DB       | 24%    | 0%     |
+| Files > 300 lines             | 8      | 0      |
+| Interfaces defined            | 0%     | 100%   |
+| Extends BaseService           | 38%    | 100%   |
+| Files to modify for new event | 11+    | 1      |
+| Architecture score            | 6.6/10 | 9.0/10 |
 
 ### Key Principles
 

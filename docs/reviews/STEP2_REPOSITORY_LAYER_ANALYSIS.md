@@ -16,28 +16,29 @@ The repository layer provides a solid foundation with a well-designed `BaseRepos
 
 ### 1.1 Repository Files
 
-| Repository | Lines | Extends Base | Key Methods |
-|------------|-------|--------------|-------------|
-| `BaseRepository.ts` | 347 | N/A (abstract) | `findById`, `findByIds`, `findAll`, `findWithPagination`, `create`, `createMany`, `update`, `delete`, `exists`, `count` |
-| `HoldingRepository.ts` | 411 | ✅ Yes | `findByUser`, `findByUserWithFullDetails`, `findByAccount`, `markAsHidden`, `updateBalance`, `deleteById` |
-| `AccountRepository.ts` | 152 | ✅ Yes | `findByUser`, `findWalletAccounts`, `updateMetadata`, `updateAccount` |
-| `TokenRepository.ts` | 110 | ✅ Yes | `findBySymbol`, `findBySymbolAndType`, `findByType`, `createMany` |
-| `TokenPriceRepository.ts` | 257 | ✅ Yes | `findLatestPrice`, `findLatestPricesForTokens`, `bulkUpsert`, `findPriceAtTimestamp`, `findClosestPrice` |
-| `GroupRepository.ts` | 423 | ✅ Yes | `findByUser`, `findByUserWithCounts`, `assignHoldingGroups`, `assignAccountGroups`, `bulkAssignAccountGroups` |
-| `UserPortfolioEventRepository.ts` | 247 | ✅ Yes | `findByUserIdPaginated`, `findByUserIdInDateRange`, `createMany`, `findUserHoldingsForToken` |
-| `InstitutionRepository.ts` | 46 | ✅ Yes | `findByUserId` |
-| `UserRepository.ts` | 11 | ✅ Yes | (only inherited methods) |
-| `UserWalletRepository.ts` | 110 | ✅ Yes | `findByUser`, `findByUserAndAddress`, `findByAddress`, `findByInstitution` |
-| `UserIntegrationCredentialsRepository.ts` | 146 | ✅ Yes | `findByUser`, `findByUserAndInstitution`, `findByInstitution`, `findByType` |
-| `InstitutionBlockchainMappingRepository.ts` | 75 | ✅ Yes | `findByInstitutionId`, `findByChainId`, `findAllActive` |
-| `ApiKeyRepository.ts` | 135 | ✅ Yes | `findByUserId`, `findActiveByPrefix`, `updateLastUsed`, `revoke` |
-| `EnumRepositories.ts` | 96 | ✅ Yes | 3 repos: `InstitutionTypeRepository`, `AccountTypeRepository`, `TokenTypeRepository` - each has `findByCode` |
+| Repository                                  | Lines | Extends Base   | Key Methods                                                                                                             |
+| ------------------------------------------- | ----- | -------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| `BaseRepository.ts`                         | 347   | N/A (abstract) | `findById`, `findByIds`, `findAll`, `findWithPagination`, `create`, `createMany`, `update`, `delete`, `exists`, `count` |
+| `HoldingRepository.ts`                      | 411   | ✅ Yes         | `findByUser`, `findByUserWithFullDetails`, `findByAccount`, `markAsHidden`, `updateBalance`, `deleteById`               |
+| `AccountRepository.ts`                      | 152   | ✅ Yes         | `findByUser`, `findWalletAccounts`, `updateMetadata`, `updateAccount`                                                   |
+| `TokenRepository.ts`                        | 110   | ✅ Yes         | `findBySymbol`, `findBySymbolAndType`, `findByType`, `createMany`                                                       |
+| `TokenPriceRepository.ts`                   | 257   | ✅ Yes         | `findLatestPrice`, `findLatestPricesForTokens`, `bulkUpsert`, `findPriceAtTimestamp`, `findClosestPrice`                |
+| `GroupRepository.ts`                        | 423   | ✅ Yes         | `findByUser`, `findByUserWithCounts`, `assignHoldingGroups`, `assignAccountGroups`, `bulkAssignAccountGroups`           |
+| `UserPortfolioEventRepository.ts`           | 247   | ✅ Yes         | `findByUserIdPaginated`, `findByUserIdInDateRange`, `createMany`, `findUserHoldingsForToken`                            |
+| `InstitutionRepository.ts`                  | 46    | ✅ Yes         | `findByUserId`                                                                                                          |
+| `UserRepository.ts`                         | 11    | ✅ Yes         | (only inherited methods)                                                                                                |
+| `UserWalletRepository.ts`                   | 110   | ✅ Yes         | `findByUser`, `findByUserAndAddress`, `findByAddress`, `findByInstitution`                                              |
+| `UserIntegrationCredentialsRepository.ts`   | 146   | ✅ Yes         | `findByUser`, `findByUserAndInstitution`, `findByInstitution`, `findByType`                                             |
+| `InstitutionBlockchainMappingRepository.ts` | 75    | ✅ Yes         | `findByInstitutionId`, `findByChainId`, `findAllActive`                                                                 |
+| `ApiKeyRepository.ts`                       | 135   | ✅ Yes         | `findByUserId`, `findActiveByPrefix`, `updateLastUsed`, `revoke`                                                        |
+| `EnumRepositories.ts`                       | 96    | ✅ Yes         | 3 repos: `InstitutionTypeRepository`, `AccountTypeRepository`, `TokenTypeRepository` - each has `findByCode`            |
 
 **Total:** 14 concrete repositories + 1 abstract base
 
 ### 1.2 Domain Entities
 
 Domain entities are **type aliases** from schema, not rich domain models:
+
 ```typescript
 // packages/core/src/domain/entities/index.ts
 export type { Account, NewAccount, Holding, NewHolding, ... } from '../../database/schema';
@@ -52,7 +53,9 @@ export type { Account, NewAccount, Holding, NewHolding, ... } from '../../databa
 ### 2.1 ✅ What's Good
 
 #### 2.1.1 BaseRepository Pattern
+
 The `BaseRepository` provides excellent DRY implementation:
+
 - Generic type parameters `<TEntity, TNewEntity>`
 - Transaction support via `getDb(transaction?: DatabaseTransaction)`
 - Comprehensive CRUD operations with proper error handling and logging
@@ -64,7 +67,7 @@ The `BaseRepository` provides excellent DRY implementation:
 export abstract class BaseRepository<TEntity, TNewEntity = Partial<TEntity>> {
   protected abstract readonly table: PgTable<TableConfig>;
   protected abstract readonly tableName: string;
-  
+
   protected getDb(transaction?: DatabaseTransaction) {
     const db = getDbConnection();
     return transaction || db;
@@ -73,20 +76,26 @@ export abstract class BaseRepository<TEntity, TNewEntity = Partial<TEntity>> {
 ```
 
 #### 2.1.2 TypeDI Integration
+
 All repositories use `@Service()` decorator for proper DI:
+
 ```typescript
 @Service()
-export class HoldingRepository extends BaseRepository<Holding, NewHolding> { }
+export class HoldingRepository extends BaseRepository<Holding, NewHolding> {}
 ```
 
 #### 2.1.3 Logging
+
 Consistent structured logging in all operations:
+
 ```typescript
-this.logger.error({ userId, error }, 'Failed to find groups by user');
+this.logger.error({ userId, error }, "Failed to find groups by user");
 ```
 
 #### 2.1.4 Transaction Support
+
 All methods accept optional `transaction` parameter:
+
 ```typescript
 async findByUser(userId: string, transaction?: DatabaseTransaction): Promise<Group[]>
 ```
@@ -118,6 +127,7 @@ async findByUser(userId: string, transaction?: DatabaseTransaction): Promise<Gro
 | `PricingService.ts` | `import { db }` |
 
 **Why this is bad:**
+
 1. **Violates Dependency Inversion Principle (DIP)** - High-level modules depend on low-level modules
 2. **Defeats Repository Abstraction** - Can't switch persistence layer without touching business logic
 3. **Testing Nightmare** - Can't mock repositories since they're not used
@@ -125,10 +135,11 @@ async findByUser(userId: string, transaction?: DatabaseTransaction): Promise<Gro
 5. **Duplicated Queries** - Same queries might be written in multiple places
 
 **Example of bypass in use-case:**
+
 ```typescript
 // ImportBinanceAccountsUseCase.ts - Line 242
 const [institution] = await tx
-  .insert(schema.accounts)  // Direct schema access!
+  .insert(schema.accounts) // Direct schema access!
   .values(accountData)
   .returning();
 ```
@@ -136,6 +147,7 @@ const [institution] = await tx
 #### 2.2.2 Raw SQL in Repository (Leaky Abstraction)
 
 `UserPortfolioEventRepository.ts` uses raw SQL string:
+
 ```typescript
 const results = await database.execute<HoldingRow>(sql`
   SELECT h.user_id, h.id as holding_id, ...
@@ -146,6 +158,7 @@ const results = await database.execute<HoldingRow>(sql`
 ```
 
 **Issues:**
+
 - Column names use snake_case (`user_id`) while TypeScript uses camelCase
 - No type safety from Drizzle ORM
 - Potential SQL injection if not careful
@@ -154,6 +167,7 @@ const results = await database.execute<HoldingRow>(sql`
 #### 2.2.3 Inconsistent Return Types
 
 Some methods return `T | null`, others return `T | undefined`:
+
 ```typescript
 // Returns null
 async findById(id: string): Promise<TEntity | null>
@@ -165,6 +179,7 @@ async findByUserAndAddress(userId: string, walletAddress: string): Promise<UserW
 #### 2.2.4 In-Memory Filtering
 
 `UserWalletRepository.findByInstitution` filters in memory:
+
 ```typescript
 // Query all wallets then filter
 const results = await database.select().from(schema.userWallets)...
@@ -178,11 +193,13 @@ return results.filter((wallet) => {
 #### 2.2.5 Anemic Domain Model
 
 Entities are just type aliases from schema:
+
 ```typescript
 export type { Holding, NewHolding, ... } from '../../database/schema';
 ```
 
 **No:**
+
 - Domain logic/methods on entities
 - Value objects
 - Domain events
@@ -191,6 +208,7 @@ export type { Holding, NewHolding, ... } from '../../database/schema';
 #### 2.2.6 Missing Repositories
 
 Some tables don't have dedicated repositories:
+
 - `transactions` table
 - `holdingGroups` / `accountGroups` (managed by GroupRepository)
 
@@ -198,13 +216,13 @@ Some tables don't have dedicated repositories:
 
 ## 3. SOLID Principles Assessment
 
-| Principle | Score | Notes |
-|-----------|-------|-------|
-| **S**ingle Responsibility | 7/10 | Repositories focused on data access, but some do too much (GroupRepository manages 3 tables) |
-| **O**pen/Closed | 6/10 | BaseRepository is extensible, but concrete repos often need modification for new queries |
-| **L**iskov Substitution | 8/10 | Repositories can be substituted (though rarely done in practice) |
-| **I**nterface Segregation | 5/10 | No repository interfaces - clients depend on concrete implementations |
-| **D**ependency Inversion | 4/10 | **Major violation** - Services/use-cases bypass repositories, depend directly on DB |
+| Principle                 | Score | Notes                                                                                        |
+| ------------------------- | ----- | -------------------------------------------------------------------------------------------- |
+| **S**ingle Responsibility | 7/10  | Repositories focused on data access, but some do too much (GroupRepository manages 3 tables) |
+| **O**pen/Closed           | 6/10  | BaseRepository is extensible, but concrete repos often need modification for new queries     |
+| **L**iskov Substitution   | 8/10  | Repositories can be substituted (though rarely done in practice)                             |
+| **I**nterface Segregation | 5/10  | No repository interfaces - clients depend on concrete implementations                        |
+| **D**ependency Inversion  | 4/10  | **Major violation** - Services/use-cases bypass repositories, depend directly on DB          |
 
 ---
 
@@ -246,28 +264,28 @@ VIOLATIONS:
 
 ### 5.1 High Priority Issues
 
-| ID | Issue | File(s) | Impact |
-|----|-------|---------|--------|
-| R-001 | Use-cases bypass repositories | 7 use-case files | Architecture violation, testing difficulty |
-| R-002 | Services bypass repositories | 5 service files | Architecture violation, inconsistent data access |
-| R-003 | Raw SQL with snake_case columns | `UserPortfolioEventRepository.ts` | Type safety loss, mapping issues |
-| R-004 | No repository interfaces | All repositories | Can't mock, tight coupling |
+| ID    | Issue                           | File(s)                           | Impact                                           |
+| ----- | ------------------------------- | --------------------------------- | ------------------------------------------------ |
+| R-001 | Use-cases bypass repositories   | 7 use-case files                  | Architecture violation, testing difficulty       |
+| R-002 | Services bypass repositories    | 5 service files                   | Architecture violation, inconsistent data access |
+| R-003 | Raw SQL with snake_case columns | `UserPortfolioEventRepository.ts` | Type safety loss, mapping issues                 |
+| R-004 | No repository interfaces        | All repositories                  | Can't mock, tight coupling                       |
 
 ### 5.2 Medium Priority Issues
 
-| ID | Issue | File(s) | Impact |
-|----|-------|---------|--------|
-| R-005 | In-memory JSONB filtering | `UserWalletRepository.ts` | Performance |
-| R-006 | Inconsistent null/undefined returns | Multiple repos | API inconsistency |
-| R-007 | GroupRepository manages 3 tables | `GroupRepository.ts` | SRP violation |
-| R-008 | Anemic domain model | `domain/entities/` | No encapsulation of business rules |
+| ID    | Issue                               | File(s)                   | Impact                             |
+| ----- | ----------------------------------- | ------------------------- | ---------------------------------- |
+| R-005 | In-memory JSONB filtering           | `UserWalletRepository.ts` | Performance                        |
+| R-006 | Inconsistent null/undefined returns | Multiple repos            | API inconsistency                  |
+| R-007 | GroupRepository manages 3 tables    | `GroupRepository.ts`      | SRP violation                      |
+| R-008 | Anemic domain model                 | `domain/entities/`        | No encapsulation of business rules |
 
 ### 5.3 Low Priority Issues
 
-| ID | Issue | File(s) | Impact |
-|----|-------|---------|--------|
-| R-009 | Missing dedicated transaction repository | N/A | Incomplete abstraction |
-| R-010 | UserRepository has no custom methods | `UserRepository.ts` | Minimal value-add over base |
+| ID    | Issue                                    | File(s)             | Impact                      |
+| ----- | ---------------------------------------- | ------------------- | --------------------------- |
+| R-009 | Missing dedicated transaction repository | N/A                 | Incomplete abstraction      |
+| R-010 | UserRepository has no custom methods     | `UserRepository.ts` | Minimal value-add over base |
 
 ---
 
@@ -276,6 +294,7 @@ VIOLATIONS:
 ### 6.1 Immediate Actions (High Priority)
 
 #### 6.1.1 Create Repository Interfaces
+
 ```typescript
 // packages/core/src/repositories/interfaces/IHoldingRepository.ts
 export interface IHoldingRepository {
@@ -286,13 +305,14 @@ export interface IHoldingRepository {
 
 // Then:
 @Service()
-export class HoldingRepository extends BaseRepository<Holding, NewHolding> 
+export class HoldingRepository extends BaseRepository<Holding, NewHolding>
   implements IHoldingRepository { }
 ```
 
 #### 6.1.2 Refactor Use-Cases to Use Repositories
 
 **Before (bad):**
+
 ```typescript
 // CreateHoldingUseCase.ts
 import { db } from "../database/connection";
@@ -302,6 +322,7 @@ const [holding] = await db.insert(schema.holdings).values(data).returning();
 ```
 
 **After (good):**
+
 ```typescript
 // CreateHoldingUseCase.ts
 import { HoldingRepository } from "../repositories";
@@ -324,6 +345,7 @@ async updateBalanceWithEvent(id: string, balance: Decimal, transaction?: Databas
 ### 6.2 Short-Term Improvements (Medium Priority)
 
 #### 6.2.1 Fix JSONB Filtering
+
 ```typescript
 // UserWalletRepository.ts - use PostgreSQL @> operator
 async findByInstitution(institutionId: string): Promise<UserWallet[]> {
@@ -338,11 +360,13 @@ async findByInstitution(institutionId: string): Promise<UserWallet[]> {
 ```
 
 #### 6.2.2 Standardize Return Types
+
 Choose either `null` or `undefined` for "not found" and apply consistently.
 
 **Recommendation:** Use `null` (more explicit about absence)
 
 #### 6.2.3 Split GroupRepository
+
 ```typescript
 // Separate concerns:
 - GroupRepository (groups table only)
@@ -353,6 +377,7 @@ Choose either `null` or `undefined` for "not found" and apply consistently.
 ### 6.3 Long-Term Improvements (Low Priority)
 
 #### 6.3.1 Rich Domain Model
+
 Transform anemic entities into rich domain objects:
 
 ```typescript
@@ -382,6 +407,7 @@ export class Holding {
 ```
 
 #### 6.3.2 Unit of Work Pattern
+
 For complex operations spanning multiple repositories:
 
 ```typescript
@@ -392,7 +418,9 @@ export class UnitOfWork {
     readonly events: UserPortfolioEventRepository,
   ) {}
 
-  async executeInTransaction<T>(work: (uow: UnitOfWork) => Promise<T>): Promise<T> {
+  async executeInTransaction<T>(
+    work: (uow: UnitOfWork) => Promise<T>,
+  ): Promise<T> {
     return await db.transaction(async (tx) => {
       return work(this.withTransaction(tx));
     });
@@ -404,30 +432,33 @@ export class UnitOfWork {
 
 ## 7. Comparison with Best Practices
 
-| Aspect | Current State | Best Practice | Gap |
-|--------|--------------|---------------|-----|
-| Repository Pattern | Partially implemented | Fully encapsulate data access | Major - bypassed in 12+ files |
-| Dependency Injection | TypeDI used | Interface-based DI | Need interfaces |
-| Domain Model | Anemic (type aliases) | Rich domain objects | Significant |
-| Transaction Handling | Per-method transactions | Unit of Work | Could improve |
-| Query Abstraction | Drizzle ORM | Specification Pattern | Nice to have |
+| Aspect               | Current State           | Best Practice                 | Gap                           |
+| -------------------- | ----------------------- | ----------------------------- | ----------------------------- |
+| Repository Pattern   | Partially implemented   | Fully encapsulate data access | Major - bypassed in 12+ files |
+| Dependency Injection | TypeDI used             | Interface-based DI            | Need interfaces               |
+| Domain Model         | Anemic (type aliases)   | Rich domain objects           | Significant                   |
+| Transaction Handling | Per-method transactions | Unit of Work                  | Could improve                 |
+| Query Abstraction    | Drizzle ORM             | Specification Pattern         | Nice to have                  |
 
 ---
 
 ## 8. Summary
 
 ### Strengths
+
 1. Well-designed `BaseRepository` with comprehensive CRUD operations
 2. TypeDI properly integrated
 3. Transaction support throughout
 4. Good logging practices
 
 ### Critical Weaknesses
+
 1. **12+ files bypass repository pattern** - This is the most significant issue
 2. **No repository interfaces** - Can't mock or substitute implementations
 3. **Anemic domain model** - No business logic encapsulation
 
 ### Next Steps
+
 1. **Audit all `db` and `schema` imports** outside repositories
 2. **Create missing repository methods** instead of bypassing
 3. **Define repository interfaces** for better testability

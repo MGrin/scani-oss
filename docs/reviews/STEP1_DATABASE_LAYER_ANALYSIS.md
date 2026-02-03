@@ -10,30 +10,30 @@ This document analyzes the database structure of the Scani Finance SaaS applicat
 
 ### Core Entities (15 tables)
 
-| Table | Purpose | PK Type |
-|-------|---------|---------|
-| `users` | User accounts | UUID |
-| `institutions` | Financial institutions (banks, exchanges, blockchains) | UUID |
-| `accounts` | User accounts at institutions | UUID |
-| `holdings` | Token balances in accounts | UUID |
-| `tokens` | Tradeable assets (fiat, crypto) | UUID |
-| `token_prices` | Historical price data | UUID |
-| `user_portfolio_events` | Pre-computed portfolio history events | UUID |
-| `user_wallets` | User blockchain wallet mappings | UUID |
-| `user_integration_credentials` | Encrypted API keys/OAuth tokens | UUID |
-| `institution_blockchain_mappings` | Institution to blockchain chain mappings | UUID |
-| `groups` | User-defined custom groups | UUID |
-| `holding_groups` | Many-to-many: holdings ↔ groups | UUID |
-| `account_groups` | Many-to-many: accounts ↔ groups | UUID |
-| `api_keys` | MCP server API keys | UUID |
+| Table                             | Purpose                                                | PK Type |
+| --------------------------------- | ------------------------------------------------------ | ------- |
+| `users`                           | User accounts                                          | UUID    |
+| `institutions`                    | Financial institutions (banks, exchanges, blockchains) | UUID    |
+| `accounts`                        | User accounts at institutions                          | UUID    |
+| `holdings`                        | Token balances in accounts                             | UUID    |
+| `tokens`                          | Tradeable assets (fiat, crypto)                        | UUID    |
+| `token_prices`                    | Historical price data                                  | UUID    |
+| `user_portfolio_events`           | Pre-computed portfolio history events                  | UUID    |
+| `user_wallets`                    | User blockchain wallet mappings                        | UUID    |
+| `user_integration_credentials`    | Encrypted API keys/OAuth tokens                        | UUID    |
+| `institution_blockchain_mappings` | Institution to blockchain chain mappings               | UUID    |
+| `groups`                          | User-defined custom groups                             | UUID    |
+| `holding_groups`                  | Many-to-many: holdings ↔ groups                        | UUID    |
+| `account_groups`                  | Many-to-many: accounts ↔ groups                        | UUID    |
+| `api_keys`                        | MCP server API keys                                    | UUID    |
 
 ### Enum/Lookup Tables (3 tables)
 
-| Table | Purpose | PK Type |
-|-------|---------|---------|
-| `institution_types` | Bank, Broker, Exchange, Blockchain | UUID |
-| `account_types` | Checking, Savings, Wallet, etc. | UUID |
-| `token_types` | Fiat, Crypto | UUID |
+| Table               | Purpose                            | PK Type |
+| ------------------- | ---------------------------------- | ------- |
+| `institution_types` | Bank, Broker, Exchange, Blockchain | UUID    |
+| `account_types`     | Checking, Savings, Wallet, etc.    | UUID    |
+| `token_types`       | Fiat, Crypto                       | UUID    |
 
 ---
 
@@ -100,30 +100,30 @@ This document analyzes the database structure of the Scani Finance SaaS applicat
 
 ### Foreign Key Summary
 
-| Parent Table | Child Table | Relationship | On Delete |
-|-------------|-------------|--------------|-----------|
-| users | accounts | 1:N | CASCADE |
-| users | holdings | 1:N | CASCADE |
-| users | user_wallets | 1:N | CASCADE |
-| users | user_integration_credentials | 1:N | CASCADE |
-| users | groups | 1:N | CASCADE |
-| users | api_keys | 1:N | CASCADE |
-| users | user_portfolio_events | 1:N | CASCADE |
-| tokens | users.baseCurrencyId | N:1 | RESTRICT |
-| institutions | accounts | 1:N | CASCADE |
-| institution_types | institutions | 1:N | RESTRICT |
-| accounts | holdings | 1:N | CASCADE |
-| account_types | accounts | 1:N | RESTRICT |
-| tokens | holdings | 1:N | RESTRICT |
-| token_types | tokens | 1:N | RESTRICT |
-| tokens | token_prices.tokenId | 1:N | CASCADE |
-| tokens | token_prices.baseTokenId | 1:N | RESTRICT |
-| holdings | holding_groups | 1:N | CASCADE |
-| groups | holding_groups | 1:N | CASCADE |
-| accounts | account_groups | 1:N | CASCADE |
-| groups | account_groups | 1:N | CASCADE |
-| institutions | user_integration_credentials | 1:N | CASCADE |
-| institutions | institution_blockchain_mappings | 1:1 | CASCADE |
+| Parent Table      | Child Table                     | Relationship | On Delete |
+| ----------------- | ------------------------------- | ------------ | --------- |
+| users             | accounts                        | 1:N          | CASCADE   |
+| users             | holdings                        | 1:N          | CASCADE   |
+| users             | user_wallets                    | 1:N          | CASCADE   |
+| users             | user_integration_credentials    | 1:N          | CASCADE   |
+| users             | groups                          | 1:N          | CASCADE   |
+| users             | api_keys                        | 1:N          | CASCADE   |
+| users             | user_portfolio_events           | 1:N          | CASCADE   |
+| tokens            | users.baseCurrencyId            | N:1          | RESTRICT  |
+| institutions      | accounts                        | 1:N          | CASCADE   |
+| institution_types | institutions                    | 1:N          | RESTRICT  |
+| accounts          | holdings                        | 1:N          | CASCADE   |
+| account_types     | accounts                        | 1:N          | RESTRICT  |
+| tokens            | holdings                        | 1:N          | RESTRICT  |
+| token_types       | tokens                          | 1:N          | RESTRICT  |
+| tokens            | token_prices.tokenId            | 1:N          | CASCADE   |
+| tokens            | token_prices.baseTokenId        | 1:N          | RESTRICT  |
+| holdings          | holding_groups                  | 1:N          | CASCADE   |
+| groups            | holding_groups                  | 1:N          | CASCADE   |
+| accounts          | account_groups                  | 1:N          | CASCADE   |
+| groups            | account_groups                  | 1:N          | CASCADE   |
+| institutions      | user_integration_credentials    | 1:N          | CASCADE   |
+| institutions      | institution_blockchain_mappings | 1:1          | CASCADE   |
 
 ---
 
@@ -131,15 +131,15 @@ This document analyzes the database structure of the Scani Finance SaaS applicat
 
 ### ✅ Well-Indexed Tables
 
-| Table | Indexes | Assessment |
-|-------|---------|------------|
-| `holdings` | 7 indexes (user, account, token, composites, hidden, active) | **Excellent** - covers all query patterns |
-| `token_prices` | 3 indexes (lookup composite, timestamp desc) | **Good** - optimized for price lookups |
+| Table                   | Indexes                                                           | Assessment                                     |
+| ----------------------- | ----------------------------------------------------------------- | ---------------------------------------------- |
+| `holdings`              | 7 indexes (user, account, token, composites, hidden, active)      | **Excellent** - covers all query patterns      |
+| `token_prices`          | 3 indexes (lookup composite, timestamp desc)                      | **Good** - optimized for price lookups         |
 | `user_portfolio_events` | 6 indexes (user+time, holding, account, institution, type, token) | **Excellent** - covers all filtering scenarios |
-| `accounts` | 4 indexes (user, institution, composite) | **Good** |
-| `institutions` | 2 indexes (name, website unique) | **Adequate** |
-| `tokens` | 3 indexes (symbol, type, symbol+type unique) | **Good** |
-| `groups` | 3 indexes (user, display_order composite) | **Good** |
+| `accounts`              | 4 indexes (user, institution, composite)                          | **Good**                                       |
+| `institutions`          | 2 indexes (name, website unique)                                  | **Adequate**                                   |
+| `tokens`                | 3 indexes (symbol, type, symbol+type unique)                      | **Good**                                       |
+| `groups`                | 3 indexes (user, display_order composite)                         | **Good**                                       |
 
 ### ⚠️ Potential Index Improvements
 
@@ -193,26 +193,26 @@ This document analyzes the database structure of the Scani Finance SaaS applicat
 
 Based on domain analysis, consider these potential future entities:
 
-| Entity | Purpose | Priority |
-|--------|---------|----------|
-| `transactions` | Track buys, sells, transfers | High |
-| `transaction_types` | Buy, Sell, Transfer, Dividend, etc. | High |
-| `scheduled_syncs` | Track cron job executions | Medium |
-| `audit_logs` | Track all data changes | Medium |
-| `notifications` | User alerts and notifications | Low |
+| Entity              | Purpose                             | Priority |
+| ------------------- | ----------------------------------- | -------- |
+| `transactions`      | Track buys, sells, transfers        | High     |
+| `transaction_types` | Buy, Sell, Transfer, Dividend, etc. | High     |
+| `scheduled_syncs`   | Track cron job executions           | Medium   |
+| `audit_logs`        | Track all data changes              | Medium   |
+| `notifications`     | User alerts and notifications       | Low      |
 
 ---
 
 ## 6. Schema Health Score
 
-| Aspect | Score | Notes |
-|--------|-------|-------|
-| **Normalization** | 8/10 | Some intentional denormalization for performance |
-| **Index Coverage** | 9/10 | Excellent index coverage for query patterns |
-| **Referential Integrity** | 9/10 | Good FK coverage with appropriate cascade rules |
-| **Data Type Consistency** | 8/10 | Good, but `lastUpdated` vs `updatedAt` inconsistency |
-| **Naming Conventions** | 9/10 | Consistent snake_case, clear names |
-| **Audit Support** | 7/10 | Timestamps present, but no change tracking |
+| Aspect                    | Score | Notes                                                |
+| ------------------------- | ----- | ---------------------------------------------------- |
+| **Normalization**         | 8/10  | Some intentional denormalization for performance     |
+| **Index Coverage**        | 9/10  | Excellent index coverage for query patterns          |
+| **Referential Integrity** | 9/10  | Good FK coverage with appropriate cascade rules      |
+| **Data Type Consistency** | 8/10  | Good, but `lastUpdated` vs `updatedAt` inconsistency |
+| **Naming Conventions**    | 9/10  | Consistent snake_case, clear names                   |
+| **Audit Support**         | 7/10  | Timestamps present, but no change tracking           |
 
 **Overall Score: 8.3/10**
 
@@ -221,16 +221,19 @@ Based on domain analysis, consider these potential future entities:
 ## 7. Recommendations Summary
 
 ### High Priority
+
 1. Add unique constraint on `holdings(accountId, tokenId)` if duplicate prevention is desired
 2. Add index on `api_keys.key_hash` for authentication performance
 3. Standardize `lastUpdated` to `updatedAt` on holdings table
 
 ### Medium Priority
+
 4. Add `transactions` and `transaction_types` tables for financial tracking
 5. Consider adding `scheduled_syncs` for cron job auditing
 6. Add composite index on `user_wallets(userId, walletAddress)`
 
 ### Low Priority
+
 7. Add JSON schema validation triggers for JSONB fields
 8. Consider adding `audit_logs` table for compliance
 9. Document the intentional `userId` denormalization on holdings

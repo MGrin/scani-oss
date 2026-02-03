@@ -16,41 +16,41 @@ The service layer provides business logic orchestration with good patterns for l
 
 ### 1.1 Service Files
 
-| Service | Lines | Extends BaseService | Direct DB Access | Key Responsibilities |
-|---------|-------|---------------------|------------------|---------------------|
-| `BaseService.ts` | 214 | N/A (base class) | ✅ via `getDb()` | Logging, transactions, validation |
-| `HoldingService.ts` | 893 | ✅ Yes | ❌ Uses repos | Holding CRUD with event tracking |
-| `AccountService.ts` | 317 | ✅ Yes | ❌ Uses repos | Account CRUD, summaries |
-| `TokenService.ts` | 836 | ✅ Yes | ❌ Uses repos | Token CRUD, provider integration |
-| `PricingService.ts` | **2059** | ❌ No | ✅ Direct | Price fetching, caching, providers |
-| `PortfolioValuationService.ts` | 265 | ❌ No | ✅ Direct | Portfolio value calculations |
-| `PortfolioHistoryService.ts` | 655 | ❌ No | ✅ Direct | Historical portfolio data |
-| `DashboardService.ts` | 250 | ✅ Yes | ❌ Uses repos | Dashboard overview aggregation |
-| `InstitutionService.ts` | 181 | ✅ Yes | ❌ Uses repos | Institution CRUD |
-| `UserService.ts` | 40 | ✅ Yes | ❌ Uses repos | User updates |
-| `UserContextService.ts` | 120 | ❌ No | ✅ Direct | User context, base currency |
-| `UserPortfolioEventService.ts` | 269 | ✅ Yes | ❌ Uses repos | Portfolio event creation |
-| `AgenticUserService.ts` | 218 | ✅ Yes | ✅ Direct | Agentic user management |
-| `ApiKeyService.ts` | 211 | ✅ Yes | ❌ Uses repos | API key management |
-| `UserWalletService.ts` | 169 | ✅ Yes | ❌ Uses repos | Wallet management |
-| `IntegrationCredentialsService.ts` | 239 | ✅ Yes | ❌ Uses repos | Credential encryption/storage |
-| `TokenValidationService.ts` | 611 | ❌ No | ❌ Uses repos | External token validation |
-| `ScamTokenDetectionService.ts` | 261 | ✅ Yes | ❌ N/A | Scam probability calculation |
-| `AIService.ts` | 190 | ✅ Yes | ❌ Uses service | Screenshot parsing orchestration |
-| `EnumServices.ts` | ~80 | ✅ Yes | ❌ Uses repos | Institution/Account types |
-| `PortfolioHistoryRefreshService.ts` | ~150 | ✅ Yes | ❌ Uses repos | History refresh orchestration |
+| Service                             | Lines    | Extends BaseService | Direct DB Access | Key Responsibilities               |
+| ----------------------------------- | -------- | ------------------- | ---------------- | ---------------------------------- |
+| `BaseService.ts`                    | 214      | N/A (base class)    | ✅ via `getDb()` | Logging, transactions, validation  |
+| `HoldingService.ts`                 | 893      | ✅ Yes              | ❌ Uses repos    | Holding CRUD with event tracking   |
+| `AccountService.ts`                 | 317      | ✅ Yes              | ❌ Uses repos    | Account CRUD, summaries            |
+| `TokenService.ts`                   | 836      | ✅ Yes              | ❌ Uses repos    | Token CRUD, provider integration   |
+| `PricingService.ts`                 | **2059** | ❌ No               | ✅ Direct        | Price fetching, caching, providers |
+| `PortfolioValuationService.ts`      | 265      | ❌ No               | ✅ Direct        | Portfolio value calculations       |
+| `PortfolioHistoryService.ts`        | 655      | ❌ No               | ✅ Direct        | Historical portfolio data          |
+| `DashboardService.ts`               | 250      | ✅ Yes              | ❌ Uses repos    | Dashboard overview aggregation     |
+| `InstitutionService.ts`             | 181      | ✅ Yes              | ❌ Uses repos    | Institution CRUD                   |
+| `UserService.ts`                    | 40       | ✅ Yes              | ❌ Uses repos    | User updates                       |
+| `UserContextService.ts`             | 120      | ❌ No               | ✅ Direct        | User context, base currency        |
+| `UserPortfolioEventService.ts`      | 269      | ✅ Yes              | ❌ Uses repos    | Portfolio event creation           |
+| `AgenticUserService.ts`             | 218      | ✅ Yes              | ✅ Direct        | Agentic user management            |
+| `ApiKeyService.ts`                  | 211      | ✅ Yes              | ❌ Uses repos    | API key management                 |
+| `UserWalletService.ts`              | 169      | ✅ Yes              | ❌ Uses repos    | Wallet management                  |
+| `IntegrationCredentialsService.ts`  | 239      | ✅ Yes              | ❌ Uses repos    | Credential encryption/storage      |
+| `TokenValidationService.ts`         | 611      | ❌ No               | ❌ Uses repos    | External token validation          |
+| `ScamTokenDetectionService.ts`      | 261      | ✅ Yes              | ❌ N/A           | Scam probability calculation       |
+| `AIService.ts`                      | 190      | ✅ Yes              | ❌ Uses service  | Screenshot parsing orchestration   |
+| `EnumServices.ts`                   | ~80      | ✅ Yes              | ❌ Uses repos    | Institution/Account types          |
+| `PortfolioHistoryRefreshService.ts` | ~150     | ✅ Yes              | ❌ Uses repos    | History refresh orchestration      |
 
 **Total:** 21 services (19 concrete + 2 enum services in one file)
 
 ### 1.2 Services Bypassing Repositories
 
-| Service | Issue | Direct Import |
-|---------|-------|---------------|
-| `PricingService.ts` | Direct `db` import | `import { db } from '../database/connection'` |
-| `PortfolioValuationService.ts` | Direct `db` + `schema` | Both imports |
-| `PortfolioHistoryService.ts` | Direct `db` import | `import { db } from '../database/connection'` |
-| `UserContextService.ts` | Direct `db` + `schema` | Both imports |
-| `AgenticUserService.ts` | Direct `db` + `schema` | Both imports |
+| Service                        | Issue                  | Direct Import                                 |
+| ------------------------------ | ---------------------- | --------------------------------------------- |
+| `PricingService.ts`            | Direct `db` import     | `import { db } from '../database/connection'` |
+| `PortfolioValuationService.ts` | Direct `db` + `schema` | Both imports                                  |
+| `PortfolioHistoryService.ts`   | Direct `db` import     | `import { db } from '../database/connection'` |
+| `UserContextService.ts`        | Direct `db` + `schema` | Both imports                                  |
+| `AgenticUserService.ts`        | Direct `db` + `schema` | Both imports                                  |
 
 ---
 
@@ -59,25 +59,33 @@ The service layer provides business logic orchestration with good patterns for l
 ### 2.1 ✅ What's Good
 
 #### 2.1.1 BaseService Pattern
+
 Provides excellent foundation:
+
 ```typescript
 export abstract class BaseService {
   protected readonly logger: CustomLogger;
-  
+
   protected async withTransaction<T>(callback): Promise<T>;
-  protected validateRequiredFields<T>(data: T, requiredFields: (keyof T)[]): void;
+  protected validateRequiredFields<T>(
+    data: T,
+    requiredFields: (keyof T)[],
+  ): void;
   protected handleError(error: unknown, context: string): Error;
 }
 ```
 
 **Benefits:**
+
 - Consistent logging across all services
 - Transaction wrapper for complex operations
 - Validation helpers
 - Standardized error handling
 
 #### 2.1.2 TypeDI for Service Dependencies
+
 Services properly use `Container.get()`:
+
 ```typescript
 @Service()
 export class HoldingService extends BaseService {
@@ -88,12 +96,14 @@ export class HoldingService extends BaseService {
 ```
 
 #### 2.1.3 HoldingService - Event-Driven Pattern
+
 Well-designed methods for event tracking:
+
 ```typescript
 async createHoldingWithEvent(input: CreateHoldingWithEventInput, transaction?: DatabaseTransaction): Promise<Holding> {
   // Create holding via repository
   const holding = await this.holdingRepository.create({...}, transaction);
-  
+
   // Create event if context provided
   if (input.eventContext) {
     await this.userPortfolioEventService.createHoldingCreateEvent({...}, transaction);
@@ -103,12 +113,15 @@ async createHoldingWithEvent(input: CreateHoldingWithEventInput, transaction?: D
 ```
 
 **Why this is good:**
+
 - Atomic operations (single transaction)
 - Optional event tracking (caller decides)
 - Proper delegation to repository
 
 #### 2.1.4 Encryption in IntegrationCredentialsService
+
 Proper security pattern:
+
 ```typescript
 async storeCredentials(userId: string, institutionId: string, credentials: Record<string, unknown>): Promise<UserIntegrationCredentials> {
   const encrypted = encryptCredentials(credentials);  // Encrypt before storing
@@ -117,11 +130,18 @@ async storeCredentials(userId: string, institutionId: string, credentials: Recor
 ```
 
 #### 2.1.5 ScamTokenDetectionService - Pure Business Logic
+
 No database access, pure domain logic:
+
 ```typescript
 @Service()
 export class ScamTokenDetectionService extends BaseService {
-  calculateScamProbability(symbol: string, name: string, createdAt: Date, hasPriceData: boolean): number {
+  calculateScamProbability(
+    symbol: string,
+    name: string,
+    createdAt: Date,
+    hasPriceData: boolean,
+  ): number {
     // Pure calculation logic with heuristics
     // No DB access - exactly what a service should do
   }
@@ -133,17 +153,19 @@ export class ScamTokenDetectionService extends BaseService {
 #### 2.2.1 **God Class: PricingService (2059 lines)**
 
 **Symptoms:**
+
 - 2059 lines of code
 - Handles: rate limiting, caching, provider management, currency conversion, price fetching, error handling, fallback logic
 - Multiple global rate limiters defined at module level
 - Complex provider orchestration
 
 **SRP Violations:**
+
 ```typescript
 // PricingService does too many things:
 - Rate limiting management
 - Provider registry
-- Cache management  
+- Cache management
 - Currency conversion
 - Price fetching
 - Failure handling
@@ -151,6 +173,7 @@ export class ScamTokenDetectionService extends BaseService {
 ```
 
 **Recommendation:** Split into:
+
 - `RateLimiterService` - Rate limit management
 - `PricingProviderRegistry` - Provider management
 - `PriceCache` - Caching logic
@@ -179,6 +202,7 @@ const holdings = await db
 #### 2.2.3 **Duplicate Code: extractPriceMap**
 
 Same method in multiple services:
+
 ```typescript
 // AccountService.ts (lines 39-52)
 private extractPriceMap(portfolioValue: {...}): Map<string, string> {
@@ -193,7 +217,8 @@ private extractPriceMap(portfolioValue: {...}): Map<string, string> {
 // to keep services independent and avoid cross-service dependencies."
 ```
 
-**Why bad:** 
+**Why bad:**
+
 - DRY violation (acknowledged but not addressed)
 - When logic changes, must update multiple places
 - "Intentional" duplication is still tech debt
@@ -201,18 +226,19 @@ private extractPriceMap(portfolioValue: {...}): Map<string, string> {
 #### 2.2.4 **Inconsistent BaseService Usage**
 
 Some services don't extend `BaseService`:
+
 ```typescript
 // PricingService - No BaseService, creates own logger
 @Service()
 export class PricingService {
-  private readonly logger = createComponentLogger('pricing');
+  private readonly logger = createComponentLogger("pricing");
   // Missing: withTransaction, validateRequiredFields, handleError
 }
 
 // PortfolioValuationService - Same issue
 @Service()
 export class PortfolioValuationService {
-  private readonly logger = createComponentLogger('portfolio-valuation');
+  private readonly logger = createComponentLogger("portfolio-valuation");
 }
 
 // UserContextService - Doesn't even have logger
@@ -225,13 +251,16 @@ export class UserContextService {
 #### 2.2.5 **Service Depends on Use-Case**
 
 Violates layer direction:
+
 ```typescript
 // DashboardService.ts
-import { GetAssetAllocationUseCase } from '../use-cases/GetAssetAllocationUseCase';
+import { GetAssetAllocationUseCase } from "../use-cases/GetAssetAllocationUseCase";
 
 @Service()
 export class DashboardService extends BaseService {
-  private readonly assetAllocationUseCase = Container.get(GetAssetAllocationUseCase);
+  private readonly assetAllocationUseCase = Container.get(
+    GetAssetAllocationUseCase,
+  );
 }
 ```
 
@@ -241,24 +270,24 @@ export class DashboardService extends BaseService {
 
 ```typescript
 // Some use get*
-getUserPortfolioValue()
-getTokenPrice()
-getHistoryEvents()
+getUserPortfolioValue();
+getTokenPrice();
+getHistoryEvents();
 
 // Some use find*
-findByUserId()  // (in repository)
+findByUserId(); // (in repository)
 
 // Some use create*
-createHolding()
-createHoldingWithEvent()
+createHolding();
+createHoldingWithEvent();
 
 // Some use update*
-updateHolding()
-updateHoldingBalance()
+updateHolding();
+updateHoldingBalance();
 
 // Mixed conventions
-storeCredentials()  // not createCredentials()
-revokeApiKey()      // not deleteApiKey()
+storeCredentials(); // not createCredentials()
+revokeApiKey(); // not deleteApiKey()
 ```
 
 #### 2.2.7 **Raw SQL in PortfolioHistoryService**
@@ -277,6 +306,7 @@ const result = await db.execute(sql`
 ```
 
 **Issues:**
+
 - No type safety
 - Column names in snake_case don't match TypeScript
 - Complex JOIN logic that should be in repository
@@ -329,13 +359,13 @@ const result = await db.execute(sql`
 
 ## 4. SOLID Principles Assessment
 
-| Principle | Score | Notes |
-|-----------|-------|-------|
-| **S**ingle Responsibility | 4/10 | PricingService is a God class (2059 lines); many services do too much |
-| **O**pen/Closed | 6/10 | Provider pattern in PricingService is good, but services need modification for new features |
-| **L**iskov Substitution | 7/10 | Services can be substituted (when interfaces exist) |
-| **I**nterface Segregation | 4/10 | No service interfaces defined; clients depend on full implementations |
-| **D**ependency Inversion | 5/10 | Some services use repositories, some bypass directly to DB |
+| Principle                 | Score | Notes                                                                                       |
+| ------------------------- | ----- | ------------------------------------------------------------------------------------------- |
+| **S**ingle Responsibility | 4/10  | PricingService is a God class (2059 lines); many services do too much                       |
+| **O**pen/Closed           | 6/10  | Provider pattern in PricingService is good, but services need modification for new features |
+| **L**iskov Substitution   | 7/10  | Services can be substituted (when interfaces exist)                                         |
+| **I**nterface Segregation | 4/10  | No service interfaces defined; clients depend on full implementations                       |
+| **D**ependency Inversion  | 5/10  | Some services use repositories, some bypass directly to DB                                  |
 
 ---
 
@@ -343,28 +373,28 @@ const result = await db.execute(sql`
 
 ### 5.1 High Priority Issues
 
-| ID | Issue | File(s) | Impact |
-|----|-------|---------|--------|
-| S-001 | God class PricingService | `PricingService.ts` | 2059 lines, unmaintainable |
-| S-002 | Services bypass repositories | 5 service files | Architecture violation |
-| S-003 | Service depends on use-case | `DashboardService.ts` | Inverted layer dependency |
-| S-004 | No service interfaces | All services | Can't mock, tight coupling |
+| ID    | Issue                        | File(s)               | Impact                     |
+| ----- | ---------------------------- | --------------------- | -------------------------- |
+| S-001 | God class PricingService     | `PricingService.ts`   | 2059 lines, unmaintainable |
+| S-002 | Services bypass repositories | 5 service files       | Architecture violation     |
+| S-003 | Service depends on use-case  | `DashboardService.ts` | Inverted layer dependency  |
+| S-004 | No service interfaces        | All services          | Can't mock, tight coupling |
 
 ### 5.2 Medium Priority Issues
 
-| ID | Issue | File(s) | Impact |
-|----|-------|---------|--------|
-| S-005 | Duplicate extractPriceMap | `AccountService.ts`, `DashboardService.ts` | DRY violation |
-| S-006 | Inconsistent BaseService usage | 4 services | Missing logging/validation |
-| S-007 | Raw SQL in services | `PortfolioHistoryService.ts` | Type safety loss |
-| S-008 | Global rate limiters at module level | `PricingService.ts` | Hidden global state |
+| ID    | Issue                                | File(s)                                    | Impact                     |
+| ----- | ------------------------------------ | ------------------------------------------ | -------------------------- |
+| S-005 | Duplicate extractPriceMap            | `AccountService.ts`, `DashboardService.ts` | DRY violation              |
+| S-006 | Inconsistent BaseService usage       | 4 services                                 | Missing logging/validation |
+| S-007 | Raw SQL in services                  | `PortfolioHistoryService.ts`               | Type safety loss           |
+| S-008 | Global rate limiters at module level | `PricingService.ts`                        | Hidden global state        |
 
 ### 5.3 Low Priority Issues
 
-| ID | Issue | File(s) | Impact |
-|----|-------|---------|--------|
-| S-009 | Inconsistent method naming | Multiple services | Code readability |
-| S-010 | Some services very thin | `UserService.ts` (40 lines) | Questionable value-add |
+| ID    | Issue                      | File(s)                     | Impact                 |
+| ----- | -------------------------- | --------------------------- | ---------------------- |
+| S-009 | Inconsistent method naming | Multiple services           | Code readability       |
+| S-010 | Some services very thin    | `UserService.ts` (40 lines) | Questionable value-add |
 
 ---
 
@@ -386,7 +416,10 @@ export class RateLimiterRegistry {
 // 2. PriceCache - Price caching logic
 @Service()
 export class PriceCache {
-  async getCachedPrice(tokenId: string, baseCurrencyId: string): Promise<CachedPrice | null>;
+  async getCachedPrice(
+    tokenId: string,
+    baseCurrencyId: string,
+  ): Promise<CachedPrice | null>;
   async cachePrice(price: TokenPrice): Promise<void>;
 }
 
@@ -413,13 +446,21 @@ export class PricingService {
 ```typescript
 // packages/core/src/services/interfaces/IPricingService.ts
 export interface IPricingService {
-  getTokenPrice(token: Token, baseCurrency: string, timestamp: Date): Promise<string>;
-  getCachedTokenPrices(tokens: Token[], baseCurrency: string, timestamp: Date): Promise<Map<string, string>>;
+  getTokenPrice(
+    token: Token,
+    baseCurrency: string,
+    timestamp: Date,
+  ): Promise<string>;
+  getCachedTokenPrices(
+    tokens: Token[],
+    baseCurrency: string,
+    timestamp: Date,
+  ): Promise<Map<string, string>>;
 }
 
 // Implementation
 @Service()
-export class PricingService implements IPricingService { }
+export class PricingService implements IPricingService {}
 ```
 
 #### 6.1.3 Fix Repository Bypasses
@@ -467,11 +508,13 @@ export class GetAssetAllocationUseCase {
 
 ```typescript
 // packages/core/src/services/shared/price-utils.ts
-export function extractPriceMap(portfolioValue: PortfolioValueResult): Map<string, string> {
+export function extractPriceMap(
+  portfolioValue: PortfolioValueResult,
+): Map<string, string> {
   const priceMap = new Map<string, string>();
   for (const holding of portfolioValue.holdings) {
     const balance = new Decimal(holding.balance);
-    const value = new Decimal(holding.value || '0');
+    const value = new Decimal(holding.value || "0");
     if (balance.greaterThan(0) && !priceMap.has(holding.tokenSymbol)) {
       priceMap.set(holding.tokenSymbol, value.div(balance).toString());
     }
@@ -480,7 +523,7 @@ export function extractPriceMap(portfolioValue: PortfolioValueResult): Map<strin
 }
 
 // Services import from shared
-import { extractPriceMap } from './shared/price-utils';
+import { extractPriceMap } from "./shared/price-utils";
 ```
 
 #### 6.2.2 Standardize BaseService Usage
@@ -488,9 +531,10 @@ import { extractPriceMap } from './shared/price-utils';
 ```typescript
 // All services should extend BaseService
 @Service()
-export class PricingService extends BaseService {  // Add extends
+export class PricingService extends BaseService {
+  // Add extends
   constructor() {
-    super('PricingService');  // Add super call
+    super("PricingService"); // Add super call
   }
 }
 ```
@@ -533,7 +577,7 @@ interface HoldingCreatedEvent {
 // Event handler (separate from holding creation)
 @Service()
 export class PortfolioEventHandler {
-  @OnEvent('holding.created')
+  @OnEvent("holding.created")
   async handleHoldingCreated(event: HoldingCreatedEvent): Promise<void> {
     await this.portfolioEventService.createHoldingCreateEvent(event);
   }
@@ -544,25 +588,27 @@ export class PortfolioEventHandler {
 
 ## 7. Service Layer Metrics
 
-| Metric | Value | Target | Status |
-|--------|-------|--------|--------|
-| Average service size | 391 lines | < 300 lines | ❌ Over |
-| Max service size | 2059 lines | < 500 lines | ❌ Critical |
-| Services extending BaseService | 15/21 (71%) | 100% | ⚠️ Needs work |
-| Services with direct DB access | 5/21 (24%) | 0% | ❌ Violations |
-| Services with interfaces | 0/21 (0%) | 100% | ❌ Missing |
+| Metric                         | Value       | Target      | Status        |
+| ------------------------------ | ----------- | ----------- | ------------- |
+| Average service size           | 391 lines   | < 300 lines | ❌ Over       |
+| Max service size               | 2059 lines  | < 500 lines | ❌ Critical   |
+| Services extending BaseService | 15/21 (71%) | 100%        | ⚠️ Needs work |
+| Services with direct DB access | 5/21 (24%)  | 0%          | ❌ Violations |
+| Services with interfaces       | 0/21 (0%)   | 100%        | ❌ Missing    |
 
 ---
 
 ## 8. Summary
 
 ### Strengths
+
 1. `BaseService` provides good foundation (logging, validation, transactions)
 2. `HoldingService` demonstrates proper event-driven patterns
 3. `ScamTokenDetectionService` is pure domain logic (no DB)
 4. TypeDI integration is consistent
 
 ### Critical Weaknesses
+
 1. **PricingService is a 2059-line God class** - needs immediate splitting
 2. **5 services bypass repositories** - same issue as use-cases layer
 3. **Service depends on use-case** - inverted layer dependency
@@ -570,13 +616,16 @@ export class PortfolioEventHandler {
 5. **Duplicate code** - extractPriceMap duplicated and acknowledged
 
 ### Root Cause Analysis
+
 The service layer tries to do too much:
+
 - Business logic (good)
 - Data access (should be in repos)
 - Complex orchestration (should be in use-cases)
 - External API calls (good, but too much in one class)
 
 ### Next Steps
+
 1. **Split PricingService** into 4-5 focused services
 2. **Create service interfaces** for all services
 3. **Move DB queries** from services to repositories
