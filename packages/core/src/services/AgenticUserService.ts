@@ -214,4 +214,58 @@ export class AgenticUserService extends BaseService {
       throw this.handleError(error, 'isAgenticUser');
     }
   }
+
+  /**
+   * Get agent info for the whoami endpoint
+   * Returns basic info about the authenticated agent
+   */
+  async getAgentInfo(userId: string): Promise<{
+    agentId: string;
+    name: string;
+    userType: string;
+    baseCurrency: string | null;
+    linkedToUserId: string | null;
+    createdAt: Date;
+  } | null> {
+    try {
+      const [user] = await db
+        .select({
+          id: schema.users.id,
+          name: schema.users.name,
+          userType: schema.users.userType,
+          baseCurrencyId: schema.users.baseCurrencyId,
+          linkedToUserId: schema.users.linkedToUserId,
+          createdAt: schema.users.createdAt,
+        })
+        .from(schema.users)
+        .where(eq(schema.users.id, userId))
+        .limit(1);
+
+      if (!user) {
+        return null;
+      }
+
+      // Get base currency symbol if set
+      let baseCurrencySymbol: string | null = null;
+      if (user.baseCurrencyId) {
+        const [currency] = await db
+          .select({ symbol: schema.tokens.symbol })
+          .from(schema.tokens)
+          .where(eq(schema.tokens.id, user.baseCurrencyId))
+          .limit(1);
+        baseCurrencySymbol = currency?.symbol || null;
+      }
+
+      return {
+        agentId: user.id,
+        name: user.name,
+        userType: user.userType,
+        baseCurrency: baseCurrencySymbol,
+        linkedToUserId: user.linkedToUserId,
+        createdAt: user.createdAt,
+      };
+    } catch (error) {
+      throw this.handleError(error, 'getAgentInfo');
+    }
+  }
 }

@@ -8,24 +8,134 @@ import { createErrorResponse, createSuccessResponse } from './helpers';
 const agenticUserService = Container.get(AgenticUserService);
 
 /**
+ * Scani MCP capabilities - describes what the API can do
+ * Used by agent_getCapabilities for discovery
+ */
+const SCANI_CAPABILITIES = {
+  name: 'Scani Personal Finance API',
+  version: '1.0.0',
+  description:
+    'A comprehensive personal finance management API. Track portfolios, holdings, accounts across banks, brokerages, and crypto exchanges.',
+  authentication: {
+    type: 'bearer',
+    format: 'Authorization: Bearer <apiKey>',
+    registration: 'Call agent_register to get your API key (no auth required)',
+    expiration: 'API keys never expire unless manually revoked',
+  },
+  toolCategories: [
+    {
+      name: 'Agent Management',
+      tools: ['agent_register', 'agent_whoami', 'agent_getCapabilities', 'agent_linkToUser'],
+      description: 'Register, authenticate, and manage agent identity',
+    },
+    {
+      name: 'Dashboard',
+      tools: ['dashboard_getSummary'],
+      description: 'Get portfolio summary and overview',
+    },
+    {
+      name: 'Institutions',
+      tools: ['institutions_getAll', 'institutions_getById'],
+      description: 'Manage financial institutions (banks, exchanges, wallets)',
+    },
+    {
+      name: 'Accounts',
+      tools: [
+        'accounts_getAll',
+        'accounts_getById',
+        'accounts_create',
+        'accounts_update',
+        'accounts_delete',
+      ],
+      description: 'Manage accounts within institutions',
+    },
+    {
+      name: 'Holdings',
+      tools: [
+        'holdings_getAll',
+        'holdings_getById',
+        'holdings_create',
+        'holdings_update',
+        'holdings_delete',
+      ],
+      description: 'Manage asset holdings (stocks, crypto, fiat) within accounts',
+    },
+    {
+      name: 'Tokens',
+      tools: ['tokens_search', 'tokens_getById'],
+      description: 'Search and lookup tradeable assets',
+    },
+    {
+      name: 'Wallets',
+      tools: ['wallet_import', 'wallet_getAll', 'wallet_delete'],
+      description: 'Manage blockchain wallet addresses for automatic tracking',
+    },
+    {
+      name: 'Batch Operations',
+      tools: ['batch_createHoldingsWithDependencies'],
+      description: 'Bulk operations for efficient data management',
+    },
+    {
+      name: 'Reference Data',
+      tools: ['accountTypes_getAll', 'institutionTypes_getAll'],
+      description: 'Get available types for accounts and institutions',
+    },
+    {
+      name: 'User Settings',
+      tools: ['users_getSettings', 'users_updateSettings'],
+      description: 'Manage user preferences like base currency',
+    },
+  ],
+  quickStart: [
+    '1. Call agent_register with your agent name to get an API key',
+    '2. Store the returned apiKey securely - it will not be shown again',
+    '3. Include the API key in all subsequent requests: Authorization: Bearer <apiKey>',
+    '4. Call dashboard_getSummary to see your portfolio overview',
+    '5. Use accounts_create and holdings_create to add your financial data',
+  ],
+};
+
+/**
  * Register agent-related MCP tools
  * Includes both authenticated and unauthenticated tools
  */
 export function registerAgentTools(server: McpServer) {
+  // Get capabilities - UNAUTHENTICATED
+  // Allows agents to discover what Scani can do before registering
+  server.registerTool(
+    'agent_getCapabilities',
+    {
+      description:
+        'Discover Scani API capabilities and available tools. This tool does NOT require authentication. Use this to understand what Scani can do before registering.',
+    },
+    async (_extra) => {
+      return createSuccessResponse(SCANI_CAPABILITIES);
+    }
+  );
+
   // Register new agent - UNAUTHENTICATED
   // This tool does NOT require authentication
   // @ts-expect-error - MCP SDK type inference is excessively deep
   server.registerTool(
     'agent_register',
     {
-      description:
-        'Register a new AI agent user and receive API credentials. This tool does NOT require authentication. Use this if you do not have an API key yet. Returns: agentId (save this!), apiKey (save this - shown only once!), name, createdAt.',
+      description: `Register a new AI agent and receive permanent API credentials. This tool does NOT require authentication.
+
+IMPORTANT FOR AGENTS:
+- Call this ONLY if you don't have stored Scani credentials
+- The returned apiKey is shown ONLY ONCE - you MUST store it persistently
+- Credentials never expire - store them for all future sessions
+- If you lose your credentials, you must register again (previous data will be inaccessible)
+
+Returns: agentId, apiKey, name, createdAt`,
       inputSchema: z.object({
         name: z
           .string()
           .min(1)
           .max(100)
-          .describe('A name for the agent (e.g., "Claude Finance Assistant")'),
+          .describe(
+            'A unique name for your agent (e.g., "Claude Finance Assistant", "Cursor AI Helper")'
+          ),
       }),
     },
     async (params, _extra) => {
@@ -35,18 +145,82 @@ export function registerAgentTools(server: McpServer) {
         });
 
         return createSuccessResponse({
-          message:
-            'Agent registered successfully. IMPORTANT: Save your agentId and apiKey - the API key will not be shown again!',
-          agentId: result.agentId,
-          apiKey: result.apiKey,
-          name: result.name,
-          createdAt: result.createdAt.toISOString(),
-          instructions: {
-            authentication:
-              'Include your API key in all future requests as: Authorization: Bearer <apiKey>',
-            agentId:
-              'Save your agentId - you may need it later to link your account to a regular user',
+          success: true,
+          message: 'Agent registered successfully!',
+
+          // Core credentials - MUST BE STORED
+          credentials: {
+            agentId: result.agentId,
+            apiKey: result.apiKey,
+            warning: 'STORE THESE VALUES NOW - the apiKey will NEVER be shown again!',
           },
+
+          // Agent info
+          agent: {
+            name: result.name,
+            createdAt: result.createdAt.toISOString(),
+          },
+
+          // Clear usage instructions
+          usage: {
+            authentication: {
+              header: 'Authorization',
+              value: `Bearer ${result.apiKey}`,
+              example: `curl -H "Authorization: Bearer ${result.apiKey}" ...`,
+            },
+            nextSteps: [
+              'Store agentId and apiKey in persistent storage',
+              'Include Authorization header in all future MCP requests',
+              'Call agent_whoami to verify your credentials work',
+              'Call dashboard_getSummary to see your portfolio',
+            ],
+            persistenceHint:
+              'Store credentials in your agent memory/state system, environment variables, or secure file storage',
+          },
+        });
+      } catch (error) {
+        return createErrorResponse(error);
+      }
+    }
+  );
+
+  // Who am I - AUTHENTICATED
+  // Lets agents verify their credentials and get their info
+  server.registerTool(
+    'agent_whoami',
+    {
+      description: `Verify your API credentials and get your agent information. This tool REQUIRES authentication.
+
+Use this to:
+- Verify your stored credentials are still valid
+- Get your agent ID and name
+- Check your current base currency setting
+- See if you're linked to a regular user account
+
+If this returns an error, your credentials are invalid and you may need to re-register.`,
+    },
+    async (_extra) => {
+      try {
+        const userId = getCurrentUserId();
+        const agentInfo = await agenticUserService.getAgentInfo(userId);
+
+        if (!agentInfo) {
+          return createErrorResponse(new Error('Agent not found'));
+        }
+
+        return createSuccessResponse({
+          authenticated: true,
+          agent: {
+            agentId: agentInfo.agentId,
+            name: agentInfo.name,
+            userType: agentInfo.userType,
+            baseCurrency: agentInfo.baseCurrency,
+            linkedToUserId: agentInfo.linkedToUserId,
+            createdAt: agentInfo.createdAt.toISOString(),
+          },
+          status: agentInfo.linkedToUserId
+            ? 'Linked to regular user account'
+            : 'Standalone agent account',
         });
       } catch (error) {
         return createErrorResponse(error);
@@ -87,7 +261,7 @@ export function registerAgentTools(server: McpServer) {
  * Tools that can be called without authentication
  * Used by handleUnauthenticatedMcpRequest
  */
-export const UNAUTHENTICATED_TOOLS = ['agent_register'] as const;
+export const UNAUTHENTICATED_TOOLS = ['agent_register', 'agent_getCapabilities'] as const;
 
 /**
  * Check if a tool name is allowed without authentication
