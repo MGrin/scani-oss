@@ -29,6 +29,9 @@ export interface DataTableProps<T> {
   selectedRows?: Set<string>;
   onSelectRow?: (rowKey: string) => void;
   onSelectAll?: (selected: boolean) => void;
+  // UX improvements
+  stickyHeader?: boolean;
+  maxHeight?: string;
 }
 
 export function DataTable<T>({
@@ -45,6 +48,8 @@ export function DataTable<T>({
   selectedRows = new Set(),
   onSelectRow,
   onSelectAll,
+  stickyHeader = false,
+  maxHeight,
 }: DataTableProps<T>) {
   const handleSort = (column: Column<T>) => {
     if (!column.sortable || !onSort) return;
@@ -156,17 +161,23 @@ export function DataTable<T>({
   return (
     <Card className="max-w-full">
       <CardContent className="p-0">
-        <div className="overflow-x-auto">
+        <div
+          className={`overflow-x-auto ${maxHeight ? 'overflow-y-auto' : ''}`}
+          style={maxHeight ? { maxHeight } : undefined}
+        >
           <table className="w-full">
-            <thead className="border-b bg-muted/50">
+            <thead
+              className={`border-b bg-muted/50 ${stickyHeader ? 'sticky top-0 z-10 bg-card shadow-sm' : ''}`}
+            >
               <tr className="text-left">
                 {selectable && (
-                  <th className="p-4 font-medium whitespace-nowrap w-12">
-                    <div className="flex items-center justify-center">
+                  <th className="p-4 font-medium whitespace-nowrap w-14">
+                    <div className="flex items-center justify-center min-h-[44px] min-w-[44px]">
                       <Checkbox
                         checked={allSelected}
                         onCheckedChange={handleSelectAllChange}
                         aria-label="Select all rows"
+                        className="h-5 w-5"
                       />
                     </div>
                   </th>
@@ -215,11 +226,12 @@ export function DataTable<T>({
                           }
                         }}
                       >
-                        <div className="flex items-center justify-center">
+                        <div className="flex items-center justify-center min-h-[44px] min-w-[44px]">
                           <Checkbox
                             checked={isSelected}
                             onCheckedChange={() => handleSelectRowChange(rowKey)}
                             aria-label={`Select row ${rowKey}`}
+                            className="h-5 w-5"
                           />
                         </div>
                       </td>

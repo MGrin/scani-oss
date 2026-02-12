@@ -1,5 +1,6 @@
-import { Search } from 'lucide-react';
-import type { ReactNode } from 'react';
+import { ChevronDown, ChevronUp, Filter, Search } from 'lucide-react';
+import { type ReactNode, useState } from 'react';
+import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { SummaryCard } from '@/components/ui/summary-card';
@@ -37,6 +38,11 @@ export function PageAggregation({
   additionalControls,
   isAffectedByUnpriceableTokens = false,
 }: PageAggregationProps) {
+  // Mobile collapsible state - collapsed by default on mobile
+  const [filtersExpanded, setFiltersExpanded] = useState(false);
+  const hasFilters = filters && filters.length > 0;
+  const hasAdditionalControls = Boolean(additionalControls);
+
   const isFiltered = searchTerm || hasActiveFilters;
   const displayCount = isFiltered && filteredCount !== undefined ? filteredCount : totalCount;
   const displayBalance =
@@ -82,36 +88,63 @@ export function PageAggregation({
                 <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                 <Input
                   placeholder={searchPlaceholder}
-                  className="pl-10 h-9 text-sm"
+                  className="pl-10 h-10 text-sm"
                   value={searchTerm}
                   onChange={(e) => onSearchChange(e.target.value)}
                 />
               </div>
 
+              {/* Mobile filter toggle button */}
+              {(hasFilters || hasAdditionalControls) && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="md:hidden flex items-center gap-2 h-10 min-w-[44px]"
+                  onClick={() => setFiltersExpanded(!filtersExpanded)}
+                  aria-expanded={filtersExpanded}
+                  aria-controls="filter-section"
+                >
+                  <Filter className="h-4 w-4" />
+                  <span>Filters</span>
+                  {hasActiveFilters && <span className="ml-1 h-2 w-2 rounded-full bg-primary" />}
+                  {filtersExpanded ? (
+                    <ChevronUp className="h-4 w-4" />
+                  ) : (
+                    <ChevronDown className="h-4 w-4" />
+                  )}
+                </Button>
+              )}
+
               {/* Extra Actions on same line as search */}
               {extraActions && <div className="flex items-center space-x-2">{extraActions}</div>}
             </div>
 
-            {/* Second Line: Type, Account and Token filters */}
-            {filters && filters.length > 0 && (
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
-                {filters.map((filter, index) => {
-                  // Try to extract a more stable key from the React element
-                  const key =
-                    typeof filter === 'object' && filter && 'key' in filter && filter.key
-                      ? String(filter.key)
-                      : `filter-component-${index}`;
-                  return <div key={key}>{filter}</div>;
-                })}
-              </div>
-            )}
+            {/* Collapsible filter section - always visible on desktop, toggle on mobile */}
+            <div
+              id="filter-section"
+              className={`space-y-3 ${filtersExpanded ? 'block' : 'hidden md:block'}`}
+            >
+              {/* Second Line: Type, Account and Token filters */}
+              {hasFilters && (
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
+                  {filters.map((filter, index) => {
+                    // Try to extract a more stable key from the React element
+                    const key =
+                      typeof filter === 'object' && filter && 'key' in filter && filter.key
+                        ? String(filter.key)
+                        : `filter-component-${index}`;
+                    return <div key={key}>{filter}</div>;
+                  })}
+                </div>
+              )}
 
-            {/* Third Line: Additional controls (Values, Grouping, Clear Filter) */}
-            {additionalControls && (
-              <div className="flex flex-wrap items-center gap-2 pt-2 border-t">
-                {additionalControls}
-              </div>
-            )}
+              {/* Third Line: Additional controls (Values, Grouping, Clear Filter) */}
+              {additionalControls && (
+                <div className="flex flex-wrap items-center gap-2 pt-2 border-t">
+                  {additionalControls}
+                </div>
+              )}
+            </div>
           </div>
         </CardContent>
       </Card>

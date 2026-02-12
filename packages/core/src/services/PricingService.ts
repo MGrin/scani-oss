@@ -974,16 +974,22 @@ export class PricingService {
 
     if (tokensToGroup.length === 0) return groupedTokens;
 
-    // Get token types for all tokens using repository
-    const tokensWithType = await Promise.all(
-      tokensToGroup.map(async (token) => {
-        const tokenWithType = await this.tokenRepository.findWithType(token.id);
-        return {
-          token,
-          typeCode: tokenWithType?.typeCode || null,
-        };
-      })
-    );
+    // PERFORMANCE: Batch fetch all tokens with their types in a single query
+    // This replaces N individual queries with 1 batch query
+    const tokenIds = tokensToGroup.map((t) => t.id);
+    const tokensWithTypeData = await this.tokenRepository.findManyWithTypes(tokenIds);
+
+    // Create a map for O(1) lookup
+    const tokenTypeMap = new Map<string, string | null>();
+    for (const t of tokensWithTypeData) {
+      tokenTypeMap.set(t.id, t.typeCode);
+    }
+
+    // Transform to match expected format
+    const tokensWithType = tokensToGroup.map((token) => ({
+      token,
+      typeCode: tokenTypeMap.get(token.id) || null,
+    }));
 
     for (const { token, typeCode } of tokensWithType) {
       if (!typeCode) continue;

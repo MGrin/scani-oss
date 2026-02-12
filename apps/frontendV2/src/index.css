@@ -1,5 +1,6 @@
 /* Import additional styles - must come before @tailwind */
 @import "./styles/accessibility.css";
+@import "./styles/animations.css";
 @import "./styles/forms.css";
 
 @tailwind base;

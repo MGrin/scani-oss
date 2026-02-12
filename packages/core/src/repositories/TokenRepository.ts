@@ -1,4 +1,4 @@
-import { and, eq, or } from 'drizzle-orm';
+import { and, eq, inArray, or } from 'drizzle-orm';
 import { Service } from 'typedi';
 import * as schema from '../database/schema';
 import type { NewToken, Token } from '../domain/entities';
@@ -100,6 +100,39 @@ export class TokenRepository extends BaseRepository<Token, NewToken> {
       .where(or(...conditions));
 
     return results;
+  }
+
+  /**
+   * PERFORMANCE: Batch fetch tokens with their types
+   * Avoids N+1 query problem when fetching multiple tokens with type info
+   */
+  async findManyWithTypes(
+    tokenIds: string[],
+    transaction?: DatabaseTransaction
+  ): Promise<Array<Token & { typeCode: string | null }>> {
+    if (tokenIds.length === 0) return [];
+
+    const database = this.getDb(transaction);
+    const results = await database
+      .select({
+        id: schema.tokens.id,
+        symbol: schema.tokens.symbol,
+        name: schema.tokens.name,
+        typeId: schema.tokens.typeId,
+        decimals: schema.tokens.decimals,
+        iconUrl: schema.tokens.iconUrl,
+        providerMetadata: schema.tokens.providerMetadata,
+        isScamProbability: schema.tokens.isScamProbability,
+        isActive: schema.tokens.isActive,
+        createdAt: schema.tokens.createdAt,
+        updatedAt: schema.tokens.updatedAt,
+        typeCode: schema.tokenTypes.code,
+      })
+      .from(schema.tokens)
+      .leftJoin(schema.tokenTypes, eq(schema.tokens.typeId, schema.tokenTypes.id))
+      .where(inArray(schema.tokens.id, tokenIds));
+
+    return results as Array<Token & { typeCode: string | null }>;
   }
 
   /**

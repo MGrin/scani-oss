@@ -6,12 +6,38 @@ const Card = React.forwardRef<HTMLDivElement, React.HTMLAttributes<HTMLDivElemen
   ({ className, ...props }, ref) => (
     <div
       ref={ref}
-      className={cn('rounded-lg border bg-card text-card-foreground shadow-sm', className)}
+      className={cn(
+        'rounded-lg border bg-card text-card-foreground shadow-sm',
+        'transition-all duration-200 ease-in-out',
+        className
+      )}
       {...props}
     />
   )
 );
 Card.displayName = 'Card';
+
+/**
+ * Interactive card variant with hover effects
+ * Use for clickable cards like holdings, accounts, etc.
+ */
+const CardInteractive = React.forwardRef<HTMLDivElement, React.HTMLAttributes<HTMLDivElement>>(
+  ({ className, ...props }, ref) => (
+    <div
+      ref={ref}
+      className={cn(
+        'rounded-lg border bg-card text-card-foreground shadow-sm',
+        'transition-all duration-200 ease-in-out',
+        'hover:shadow-md hover:border-primary/20 hover:-translate-y-0.5',
+        'active:shadow-sm active:translate-y-0',
+        'cursor-pointer touch-manipulation',
+        className
+      )}
+      {...props}
+    />
+  )
+);
+CardInteractive.displayName = 'CardInteractive';
 
 const CardHeader = React.forwardRef<HTMLDivElement, React.HTMLAttributes<HTMLDivElement>>(
   ({ className, ...props }, ref) => (
@@ -53,4 +79,4 @@ const CardFooter = React.forwardRef<HTMLDivElement, React.HTMLAttributes<HTMLDiv
 );
 CardFooter.displayName = 'CardFooter';
 
-export { Card, CardHeader, CardFooter, CardTitle, CardDescription, CardContent };
+export { Card, CardInteractive, CardHeader, CardFooter, CardTitle, CardDescription, CardContent };

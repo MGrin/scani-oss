@@ -10,12 +10,13 @@ export const MOBILE_BREAKPOINTS = {
   xl: 1280,
 } as const;
 
-// Minimum tap target sizes (following WCAG AA guidelines, adjusted smaller)
+// Minimum tap target sizes (following WCAG AA guidelines)
+// AAA recommends 44x44px, but we use 44px as our minimum for accessibility
 export const TAP_TARGETS = {
-  // Minimum recommended tap target size
-  MIN_SIZE: 36, // Reduced from 44px to 36px
-  COMFORTABLE_SIZE: 40, // Reduced from 48px to 40px
-  LARGE_SIZE: 44, // Reduced from 56px to 44px
+  // WCAG AA minimum touch target size
+  MIN_SIZE: 44, // Recommended minimum for accessibility
+  COMFORTABLE_SIZE: 48, // Comfortable touch target
+  LARGE_SIZE: 56, // Large touch target for primary actions
 } as const;
 
 // Mobile-friendly spacing values
