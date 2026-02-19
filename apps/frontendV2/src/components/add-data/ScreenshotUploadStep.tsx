@@ -209,7 +209,10 @@ export function ScreenshotUploadStep({
     }
 
     if (errors.length > 0) {
-      // TODO: Show error toast with errors
+      // Show error toast for each validation failure
+      errors.forEach((error) => {
+        showError(`File validation failed: ${error}`);
+      });
       console.error('File validation errors:', errors);
     }
   };
