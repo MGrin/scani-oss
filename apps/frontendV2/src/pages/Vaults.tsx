@@ -1,7 +1,9 @@
 import { GROUP_COLORS } from '@scani/shared';
-import { Plus, Trash2, Vault } from 'lucide-react';
+import { Pencil, Plus, Trash2, Vault } from 'lucide-react';
 import { useState } from 'react';
+import { NumericFormat } from 'react-number-format';
 import { useNavigate } from 'react-router-dom';
+import { CurrencySelector } from '@/components/selectors/CurrencySelector';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import {
@@ -95,6 +97,7 @@ export function Vaults() {
       data: {
         name: formData.name,
         targetAmount: formData.targetAmount,
+        currencyId: formData.currencyId,
         color: formData.color,
         description: formData.description || null,
       },
@@ -204,21 +207,7 @@ export function Vaults() {
                         }}
                       >
                         <span className="sr-only">Edit</span>
-                        <svg
-                          xmlns="http://www.w3.org/2000/svg"
-                          width="14"
-                          height="14"
-                          viewBox="0 0 24 24"
-                          fill="none"
-                          stroke="currentColor"
-                          strokeWidth="2"
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          role="img"
-                          aria-label="Edit"
-                        >
-                          <path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z" />
-                        </svg>
+                        <Pencil className="h-3.5 w-3.5" />
                       </Button>
                       <Button
                         variant="ghost"
@@ -295,45 +284,47 @@ export function Vaults() {
             </div>
             <div>
               <Label htmlFor="vault-target">Target Amount</Label>
-              <Input
+              <NumericFormat
                 id="vault-target"
-                type="number"
-                placeholder="5000"
                 value={formData.targetAmount}
-                onChange={(e) => setFormData({ ...formData, targetAmount: e.target.value })}
+                onValueChange={(values) => setFormData({ ...formData, targetAmount: values.value })}
+                placeholder="5,000.00"
+                customInput={Input}
+                thousandSeparator=","
+                decimalSeparator="."
+                decimalScale={2}
+                allowNegative={false}
               />
             </div>
-            {!isEditDialogOpen && (
-              <div>
-                <Label htmlFor="vault-currency">Currency</Label>
-                <select
-                  id="vault-currency"
-                  className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-xs transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-                  value={formData.currencyId}
-                  onChange={(e) => setFormData({ ...formData, currencyId: e.target.value })}
-                >
-                  {currencies?.map((c) => (
-                    <option key={c.id} value={c.id}>
-                      {c.symbol} - {c.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            )}
+            <div>
+              <Label>Currency</Label>
+              <CurrencySelector
+                value={formData.currencyId}
+                onValueChange={(value) => setFormData({ ...formData, currencyId: value })}
+                currencies={currencies}
+                placeholder="Select currency..."
+              />
+              {isEditDialogOpen && (
+                <p className="text-xs text-muted-foreground mt-1">
+                  Changing currency will recalculate all vault amounts.
+                </p>
+              )}
+            </div>
             <div>
               <Label>Color</Label>
-              <div className="flex flex-wrap gap-2 mt-1">
+              <div className="grid grid-cols-9 gap-2 mt-2">
                 {GROUP_COLORS.map((color) => (
                   <button
                     key={color}
                     type="button"
-                    className={`w-6 h-6 rounded-full border-2 transition-all ${
+                    className={`w-8 h-8 rounded-full border-2 transition-all ${
                       formData.color === color
                         ? 'border-foreground scale-110'
-                        : 'border-transparent'
+                        : 'border-transparent hover:scale-105'
                     }`}
                     style={{ backgroundColor: color }}
                     onClick={() => setFormData({ ...formData, color })}
+                    aria-label={color}
                   />
                 ))}
               </div>

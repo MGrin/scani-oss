@@ -1,8 +1,12 @@
-import { Link, Plus, X } from 'lucide-react';
-import { useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { GROUP_COLORS } from '@scani/shared';
+import { Check, Pencil, Plus, Search, Trash2, Vault, X } from 'lucide-react';
+import { useMemo, useState } from 'react';
+import { NumericFormat } from 'react-number-format';
+import { Link, useNavigate, useParams } from 'react-router-dom';
+import { AccountBadge, InstitutionBadge, TokenTypeBadge } from '@/components/features';
+import { CurrencySelector } from '@/components/selectors/CurrencySelector';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import {
   Dialog,
   DialogContent,
@@ -13,11 +17,14 @@ import {
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { MoneyDisplay } from '@/components/ui/money-display';
 import { PageHeader } from '@/components/ui/page-header';
 import { Progress } from '@/components/ui/progress';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Textarea } from '@/components/ui/textarea';
 import { showError, useToast } from '@/hooks/use-toast';
 import { trpc } from '@/lib/trpc';
+import { createCurrencyToken } from '@/lib/utils';
 
 export function VaultDetail() {
   const { id } = useParams<{ id: string }>();
@@ -28,10 +35,53 @@ export function VaultDetail() {
   const { data: vault, isLoading } = trpc.vaults.getById.useQuery({ id: id! }, { enabled: !!id });
 
   const { data: allHoldings } = trpc.holdings.getWithDetails.useQuery();
+  const { data: baseCurrency } = trpc.users.getBaseCurrency.useQuery();
+  const { data: currencies } = trpc.users.getSupportedCurrencies.useQuery();
+  const baseCurrencyToken = createCurrencyToken(baseCurrency?.symbol || 'USD');
+  const vaultCurrencyToken = createCurrencyToken(
+    vault?.currencySymbol || baseCurrency?.symbol || 'USD'
+  );
+
+  // Build a lookup map from allHoldings for badge data
+  const holdingsLookup = useMemo(() => {
+    const map = new Map<string, NonNullable<typeof allHoldings>['holdings'][number]>();
+    for (const h of allHoldings?.holdings || []) {
+      map.set(h.id, h);
+    }
+    return map;
+  }, [allHoldings]);
 
   const [isAttachDialogOpen, setIsAttachDialogOpen] = useState(false);
+  const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [selectedHoldingId, setSelectedHoldingId] = useState('');
   const [percentage, setPercentage] = useState('100');
+  const [holdingSearch, setHoldingSearch] = useState('');
+  const [editForm, setEditForm] = useState({
+    name: '',
+    targetAmount: '',
+    currencyId: '',
+    color: '',
+    description: '',
+  });
+
+  const updateVaultMutation = trpc.vaults.update.useMutation({
+    onSuccess: () => {
+      utils.vaults.getById.invalidate({ id: id! });
+      utils.vaults.getAll.invalidate();
+      toast({ title: 'Vault updated', description: 'Your vault has been updated.' });
+      setIsEditDialogOpen(false);
+    },
+    onError: (error) => showError(error, 'Updating vault'),
+  });
+
+  const deleteVaultMutation = trpc.vaults.delete.useMutation({
+    onSuccess: () => {
+      utils.vaults.getAll.invalidate();
+      toast({ title: 'Vault deleted', description: 'The vault has been deleted.' });
+      navigate('/vaults');
+    },
+    onError: (error) => showError(error, 'Deleting vault'),
+  });
 
   const attachMutation = trpc.vaults.attachHolding.useMutation({
     onSuccess: () => {
@@ -68,6 +118,41 @@ export function VaultDetail() {
     },
     onError: (error) => showError(error, 'Updating percentage'),
   });
+
+  const handleEdit = () => {
+    if (!vault) return;
+    setEditForm({
+      name: vault.name,
+      targetAmount: vault.targetAmount,
+      currencyId: vault.currencyId,
+      color: vault.color,
+      description: vault.description || '',
+    });
+    setIsEditDialogOpen(true);
+  };
+
+  const handleSaveEdit = () => {
+    if (!id) return;
+    updateVaultMutation.mutate({
+      id,
+      data: {
+        name: editForm.name,
+        targetAmount: editForm.targetAmount,
+        currencyId: editForm.currencyId,
+        color: editForm.color,
+        description: editForm.description || null,
+      },
+    });
+  };
+
+  const handleDelete = () => {
+    if (!id) return;
+    if (
+      window.confirm(`Are you sure you want to delete "${vault?.name}"? This cannot be undone.`)
+    ) {
+      deleteVaultMutation.mutate({ id });
+    }
+  };
 
   const handleAttach = () => {
     if (!id || !selectedHoldingId) return;
@@ -106,29 +191,70 @@ export function VaultDetail() {
     return symbol ? `${symbol} ${formatted}` : formatted;
   };
 
-  // Filter available holdings (exclude those already attached)
+  // Filter available holdings (exclude those already attached), sorted by value desc
   const attachedHoldingIds = new Set(vault?.holdings.map((h) => h.holdingId) || []);
-  const availableHoldings = allHoldings?.holdings.filter(
-    (h) => !attachedHoldingIds.has(h.id) && !h.isHidden
-  );
+  const availableHoldings = useMemo(() => {
+    const filtered =
+      allHoldings?.holdings.filter((h) => !attachedHoldingIds.has(h.id) && !h.isHidden) || [];
+    return [...filtered].sort((a, b) => b.value - a.value);
+  }, [allHoldings, attachedHoldingIds]);
+
+  const filteredAvailableHoldings = useMemo(() => {
+    if (!holdingSearch) return availableHoldings;
+    const q = holdingSearch.toLowerCase();
+    return availableHoldings.filter(
+      (h) =>
+        h.token.symbol.toLowerCase().includes(q) ||
+        h.token.name.toLowerCase().includes(q) ||
+        h.account.name.toLowerCase().includes(q) ||
+        h.institution.name.toLowerCase().includes(q)
+    );
+  }, [availableHoldings, holdingSearch]);
 
   if (isLoading) {
     return (
       <div className="space-y-6">
-        <Skeleton className="h-10 w-64" />
-        <Skeleton className="h-40 w-full" />
-        <Skeleton className="h-60 w-full" />
+        <PageHeader title="" loading={true} />
+        <Card>
+          <CardContent className="pt-6 space-y-4">
+            <Skeleton className="h-8 w-48" />
+            <Skeleton className="h-3 w-full" />
+            <Skeleton className="h-4 w-32" />
+          </CardContent>
+        </Card>
+        <div>
+          <Skeleton className="h-6 w-40 mb-4" />
+          <div className="grid gap-4 grid-cols-1 md:grid-cols-2 lg:grid-cols-3">
+            {[1, 2, 3].map((i) => (
+              <Card key={i}>
+                <CardHeader>
+                  <Skeleton className="h-5 w-24" />
+                </CardHeader>
+                <CardContent>
+                  <Skeleton className="h-16 w-full" />
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        </div>
       </div>
     );
   }
 
   if (!vault) {
     return (
-      <div className="text-center py-16">
-        <p className="text-muted-foreground">Vault not found.</p>
-        <Button variant="link" onClick={() => navigate('/vaults')}>
-          Back to Vaults
-        </Button>
+      <div className="space-y-6">
+        <PageHeader title="Vault Not Found" subtitle="The requested vault could not be found" />
+        <Card>
+          <CardContent className="py-12 text-center">
+            <p className="text-muted-foreground">
+              This vault may have been deleted or does not exist.
+            </p>
+            <Button variant="outline" onClick={() => navigate('/vaults')} className="mt-4">
+              Back to Vaults
+            </Button>
+          </CardContent>
+        </Card>
       </div>
     );
   }
@@ -141,6 +267,23 @@ export function VaultDetail() {
         title={vault.name}
         subtitle={vault.description || undefined}
         backButton={{ onClick: () => navigate('/vaults') }}
+        secondaryActions={
+          <div className="flex gap-2">
+            <Button variant="outline" size="sm" onClick={handleEdit}>
+              <Pencil className="h-4 w-4 mr-1" />
+              Edit
+            </Button>
+            <Button
+              variant="destructive"
+              size="sm"
+              onClick={handleDelete}
+              disabled={deleteVaultMutation.isPending}
+            >
+              <Trash2 className="h-4 w-4 mr-1" />
+              Delete
+            </Button>
+          </div>
+        }
       />
 
       {/* Progress Card */}
@@ -180,7 +323,7 @@ export function VaultDetail() {
         {vault.holdings.length === 0 ? (
           <Card>
             <CardContent className="flex flex-col items-center justify-center py-12 text-center">
-              <Link className="h-10 w-10 text-muted-foreground mb-3" />
+              <Vault className="h-10 w-10 text-muted-foreground mb-3" />
               <p className="text-muted-foreground mb-3">
                 No holdings attached yet. Attach holdings to track progress toward your goal.
               </p>
@@ -191,96 +334,197 @@ export function VaultDetail() {
             </CardContent>
           </Card>
         ) : (
-          <div className="space-y-2">
-            {vault.holdings.map((holding) => (
-              <Card key={holding.holdingId}>
-                <CardContent className="py-3 px-4">
-                  <div className="flex items-center justify-between gap-4">
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2">
-                        <span className="font-medium truncate">{holding.tokenSymbol}</span>
-                        <span className="text-xs text-muted-foreground truncate">
-                          {holding.tokenName}
-                        </span>
-                      </div>
-                      <div className="text-xs text-muted-foreground mt-0.5">
-                        {holding.accountName} · {holding.institutionName}
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-3 flex-shrink-0">
-                      <div className="text-right">
-                        <div className="text-sm font-medium">
-                          {formatAmount(holding.attributedValue, vault.currencySymbol)}
-                        </div>
-                        <div className="text-xs text-muted-foreground">
-                          of {formatAmount(holding.holdingValue, vault.currencySymbol)}
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-1">
-                        <Input
-                          type="number"
-                          className="w-16 h-7 text-xs text-center"
-                          defaultValue={holding.percentage}
-                          min={0.01}
-                          max={100}
-                          step={1}
-                          onBlur={(e) => handlePercentageBlur(holding.holdingId, e.target.value)}
-                        />
-                        <span className="text-xs text-muted-foreground">%</span>
-                      </div>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="h-7 w-7 p-0 text-destructive hover:text-destructive"
-                        onClick={() => handleDetach(holding.holdingId)}
+          <div className="grid gap-4 grid-cols-1 md:grid-cols-2 lg:grid-cols-3">
+            {vault.holdings.map((holding) => {
+              const fullHolding = holdingsLookup.get(holding.holdingId);
+              return (
+                <Card key={holding.holdingId} className="hover:shadow-md transition-shadow">
+                  <CardHeader>
+                    <CardTitle className="flex items-center justify-between">
+                      <Link
+                        to={`/holdings/${holding.holdingId}`}
+                        className="font-semibold hover:underline"
                       >
-                        <X className="h-3.5 w-3.5" />
-                      </Button>
+                        {holding.tokenSymbol || holding.tokenName}
+                      </Link>
+                      <div className="flex items-center gap-2">
+                        {fullHolding && (
+                          <TokenTypeBadge tokenTypeCode={fullHolding.token.typeCode} />
+                        )}
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-7 w-7 p-0 text-destructive hover:text-destructive"
+                          onClick={() => handleDetach(holding.holdingId)}
+                        >
+                          <X className="h-3.5 w-3.5" />
+                        </Button>
+                      </div>
+                    </CardTitle>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      {fullHolding ? (
+                        <>
+                          <AccountBadge
+                            accountId={fullHolding.account.id}
+                            accountName={fullHolding.account.name}
+                            accountTypeCode={fullHolding.account.typeCode}
+                          />
+                          <InstitutionBadge
+                            institutionId={fullHolding.institution.id}
+                            institutionName={fullHolding.institution.name}
+                            institutionWebsite={fullHolding.institution.website ?? undefined}
+                          />
+                        </>
+                      ) : (
+                        <span className="text-xs text-muted-foreground">
+                          {holding.accountName} · {holding.institutionName}
+                        </span>
+                      )}
                     </div>
-                  </div>
-                </CardContent>
-              </Card>
-            ))}
+                  </CardHeader>
+                  <CardContent
+                    className="cursor-pointer"
+                    onClick={() => navigate(`/holdings/${holding.holdingId}`)}
+                  >
+                    <div className="space-y-2">
+                      <div className="text-2xl font-bold">
+                        {Number.parseFloat(holding.holdingBalance).toLocaleString()}{' '}
+                        {holding.tokenSymbol}
+                      </div>
+                      <div className="text-lg font-semibold">
+                        <MoneyDisplay value={holding.holdingValue} token={vaultCurrencyToken} />
+                      </div>
+                      <div className="flex items-center justify-between pt-2 border-t">
+                        <div className="text-sm text-muted-foreground">
+                          Attributed:{' '}
+                          <span className="font-medium text-foreground">
+                            <MoneyDisplay
+                              value={holding.attributedValue}
+                              token={vaultCurrencyToken}
+                            />
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-1">
+                          <Input
+                            type="number"
+                            className="w-16 h-7 text-xs text-center"
+                            defaultValue={holding.percentage}
+                            min={0.01}
+                            max={100}
+                            step={1}
+                            onBlur={(e) => handlePercentageBlur(holding.holdingId, e.target.value)}
+                          />
+                          <span className="text-xs text-muted-foreground">%</span>
+                        </div>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+              );
+            })}
           </div>
         )}
       </div>
 
       {/* Attach Holding Dialog */}
-      <Dialog open={isAttachDialogOpen} onOpenChange={setIsAttachDialogOpen}>
-        <DialogContent>
+      <Dialog
+        open={isAttachDialogOpen}
+        onOpenChange={(open) => {
+          setIsAttachDialogOpen(open);
+          if (!open) {
+            setSelectedHoldingId('');
+            setPercentage('100');
+            setHoldingSearch('');
+          }
+        }}
+      >
+        <DialogContent className="sm:max-w-lg max-h-[85vh] flex flex-col">
           <DialogHeader>
             <DialogTitle>Attach Holding</DialogTitle>
             <DialogDescription>
               Select a holding and the percentage to attribute to this vault.
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-4">
-            <div>
-              <Label htmlFor="holding-select">Holding</Label>
-              <select
-                id="holding-select"
-                className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-xs transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-                value={selectedHoldingId}
-                onChange={(e) => setSelectedHoldingId(e.target.value)}
-              >
-                <option value="">Select a holding...</option>
-                {availableHoldings?.map((h) => (
-                  <option key={h.id} value={h.id}>
-                    {h.token.symbol} ({h.account.name}) -{' '}
-                    {Number.parseFloat(String(h.amount)).toLocaleString()}
-                  </option>
-                ))}
-              </select>
+          <div className="space-y-4 flex-1 min-h-0 flex flex-col">
+            {/* Search */}
+            <div className="relative">
+              <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+              <Input
+                placeholder="Search holdings..."
+                value={holdingSearch}
+                onChange={(e) => setHoldingSearch(e.target.value)}
+                className="pl-9"
+              />
             </div>
+
+            {/* Holdings grid */}
+            <div className="flex-1 min-h-0 overflow-y-auto space-y-1.5 max-h-[40vh] pr-1">
+              {filteredAvailableHoldings.length === 0 ? (
+                <div className="text-center py-8 text-sm text-muted-foreground">
+                  {holdingSearch
+                    ? 'No holdings match your search.'
+                    : 'No holdings available to attach.'}
+                </div>
+              ) : (
+                filteredAvailableHoldings.map((h) => {
+                  const isSelected = selectedHoldingId === h.id;
+                  return (
+                    <button
+                      key={h.id}
+                      type="button"
+                      className={`w-full text-left rounded-md border p-3 transition-colors hover:bg-accent/50 ${
+                        isSelected
+                          ? 'border-primary bg-primary/5 ring-1 ring-primary'
+                          : 'border-border'
+                      }`}
+                      onClick={() => setSelectedHoldingId(isSelected ? '' : h.id)}
+                    >
+                      <div className="flex items-center justify-between gap-3">
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2">
+                            <span className="font-medium text-sm">{h.token.symbol}</span>
+                            <span className="text-xs text-muted-foreground truncate">
+                              {h.token.name}
+                            </span>
+                          </div>
+                          <div className="text-xs text-muted-foreground mt-0.5">
+                            {h.account.name} · {h.institution.name}
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2 flex-shrink-0">
+                          <div className="text-right">
+                            <div className="text-sm font-medium">
+                              <MoneyDisplay value={h.value} token={baseCurrencyToken} />
+                            </div>
+                            <div className="text-xs text-muted-foreground font-mono">
+                              {Number.parseFloat(String(h.amount)).toLocaleString()}{' '}
+                              {h.token.symbol}
+                            </div>
+                          </div>
+                          {isSelected && <Check className="h-4 w-4 text-primary flex-shrink-0" />}
+                        </div>
+                      </div>
+                    </button>
+                  );
+                })
+              )}
+            </div>
+
+            {/* Percentage */}
             <div>
               <Label htmlFor="attach-percentage">Percentage (%)</Label>
-              <Input
+              <NumericFormat
                 id="attach-percentage"
-                type="number"
-                min={0.01}
-                max={100}
                 value={percentage}
-                onChange={(e) => setPercentage(e.target.value)}
+                onValueChange={(values) => setPercentage(values.value)}
+                customInput={Input}
+                decimalScale={2}
+                allowNegative={false}
+                isAllowed={(values) => {
+                  const { floatValue } = values;
+                  return floatValue === undefined || (floatValue > 0 && floatValue <= 100);
+                }}
+                placeholder="100"
               />
               <p className="text-xs text-muted-foreground mt-1">
                 What percentage of this holding should count toward this vault?
@@ -293,6 +537,89 @@ export function VaultDetail() {
             </Button>
             <Button onClick={handleAttach} disabled={!selectedHoldingId || !percentage}>
               Attach
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit Vault Dialog */}
+      <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Edit Vault</DialogTitle>
+            <DialogDescription>Update your vault details.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <Label htmlFor="edit-vault-name">Name</Label>
+              <Input
+                id="edit-vault-name"
+                placeholder="e.g. Wedding Fund"
+                value={editForm.name}
+                onChange={(e) => setEditForm({ ...editForm, name: e.target.value })}
+              />
+            </div>
+            <div>
+              <Label htmlFor="edit-vault-target">Target Amount</Label>
+              <NumericFormat
+                id="edit-vault-target"
+                value={editForm.targetAmount}
+                onValueChange={(values) => setEditForm({ ...editForm, targetAmount: values.value })}
+                placeholder="5,000.00"
+                customInput={Input}
+                thousandSeparator=","
+                decimalSeparator="."
+                decimalScale={2}
+                allowNegative={false}
+              />
+            </div>
+            <div>
+              <Label>Currency</Label>
+              <CurrencySelector
+                value={editForm.currencyId}
+                onValueChange={(value) => setEditForm({ ...editForm, currencyId: value })}
+                currencies={currencies}
+                placeholder="Select currency..."
+              />
+              <p className="text-xs text-muted-foreground mt-1">
+                Changing currency will recalculate all vault amounts.
+              </p>
+            </div>
+            <div>
+              <Label>Color</Label>
+              <div className="grid grid-cols-9 gap-2 mt-2">
+                {GROUP_COLORS.map((color) => (
+                  <button
+                    key={color}
+                    type="button"
+                    className={`w-8 h-8 rounded-full border-2 transition-all ${
+                      editForm.color === color
+                        ? 'border-foreground scale-110'
+                        : 'border-transparent hover:scale-105'
+                    }`}
+                    style={{ backgroundColor: color }}
+                    onClick={() => setEditForm({ ...editForm, color })}
+                    aria-label={color}
+                  />
+                ))}
+              </div>
+            </div>
+            <div>
+              <Label htmlFor="edit-vault-desc">Description (optional)</Label>
+              <Textarea
+                id="edit-vault-desc"
+                placeholder="What are you saving for?"
+                value={editForm.description}
+                onChange={(e) => setEditForm({ ...editForm, description: e.target.value })}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsEditDialogOpen(false)}>
+              Cancel
+            </Button>
+            <Button onClick={handleSaveEdit} disabled={!editForm.name || !editForm.targetAmount}>
+              Save Changes
             </Button>
           </DialogFooter>
         </DialogContent>

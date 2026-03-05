@@ -1,3 +1,4 @@
+import { Vault } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import {
   AccountBadge,
@@ -9,6 +10,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { MoneyDisplay } from '@/components/ui/money-display';
 import { PageHeader } from '@/components/ui/page-header';
 import { PortfolioValueCard } from '@/components/ui/portfolio-value-card';
+import { Progress } from '@/components/ui/progress';
 import { Skeleton } from '@/components/ui/skeleton';
 import { SummaryCard } from '@/components/ui/summary-card';
 import { trpc } from '@/lib/trpc';
@@ -18,6 +20,7 @@ export function Dashboard() {
   // Fetch dashboard data
   const { data: overview, isLoading: overviewLoading } = trpc.dashboard.getOverview.useQuery();
   const { data: baseCurrency } = trpc.users.getBaseCurrency.useQuery();
+  const { data: vaults } = trpc.vaults.getAll.useQuery();
 
   const currency = baseCurrency?.symbol || 'USD';
   const baseCurrencyToken = createCurrencyToken(currency);
@@ -105,12 +108,74 @@ export function Dashboard() {
         )}
       </div>
 
-      {/* Asset Allocation & Top Holdings */}
+      {/* Asset Allocation, Vaults & Top Holdings */}
       <div className="flex flex-col gap-4 md:flex-row md:align-center md:justify-stretch">
-        <AssetAllocationCard
-          className="w-full h-fit"
-          initialAllocation={overview?.assetAllocation}
-        />
+        <div className="w-full flex flex-col gap-4">
+          <AssetAllocationCard
+            className="w-full h-fit"
+            initialAllocation={overview?.assetAllocation}
+          />
+
+          {/* Vaults */}
+          {vaults && vaults.length > 0 && (
+            <Card className="w-full">
+              <CardHeader className="pb-3">
+                <div className="flex items-center justify-between">
+                  <CardTitle className="flex items-center gap-2">
+                    <Vault className="h-4 w-4" />
+                    Vaults
+                  </CardTitle>
+                  <Link
+                    to="/vaults"
+                    className="text-sm text-muted-foreground hover:text-foreground transition-colors"
+                  >
+                    View all
+                  </Link>
+                </div>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                {vaults.map((vault) => {
+                  const progressClamped = Math.min(vault.progress, 100);
+                  return (
+                    <Link
+                      key={vault.id}
+                      to={`/vaults/${vault.id}`}
+                      className="block hover:bg-accent/50 -mx-2 px-2 py-2 rounded-md transition-colors"
+                    >
+                      <div className="flex items-center gap-2 mb-1.5">
+                        <div
+                          className="w-2.5 h-2.5 rounded-full flex-shrink-0"
+                          style={{ backgroundColor: vault.color }}
+                        />
+                        <span className="text-sm font-medium truncate flex-1">{vault.name}</span>
+                        <span className="text-xs text-muted-foreground">
+                          {vault.progress.toFixed(0)}%
+                        </span>
+                      </div>
+                      <Progress value={progressClamped} className="h-1.5 mb-1" />
+                      <div className="flex justify-between text-xs text-muted-foreground">
+                        <span>
+                          {vault.currencySymbol}{' '}
+                          {Number.parseFloat(vault.currentAmount).toLocaleString(undefined, {
+                            minimumFractionDigits: 0,
+                            maximumFractionDigits: 0,
+                          })}
+                        </span>
+                        <span>
+                          of {vault.currencySymbol}{' '}
+                          {Number.parseFloat(vault.targetAmount).toLocaleString(undefined, {
+                            minimumFractionDigits: 0,
+                            maximumFractionDigits: 0,
+                          })}
+                        </span>
+                      </div>
+                    </Link>
+                  );
+                })}
+              </CardContent>
+            </Card>
+          )}
+        </div>
 
         <Card className="w-full">
           <CardHeader>

@@ -1,7 +1,7 @@
-import { Save, Trash2 } from 'lucide-react';
+import { Save, Trash2, Vault } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { NumericFormat } from 'react-number-format';
-import { useNavigate, useParams } from 'react-router-dom';
+import { Link, useNavigate, useParams } from 'react-router-dom';
 import TimeAgo from 'react-timeago';
 import { AccountBadge, InstitutionBadge, TokenTypeBadge } from '@/components/features';
 import { TokenSearchableSelector } from '@/components/selectors/TokenSearchableSelector';
@@ -504,6 +504,9 @@ export function HoldingDetail() {
         </CardContent>
       </Card>
 
+      {/* Vaults */}
+      <VaultsSection holdingId={id} />
+
       {/* Timestamps */}
       <Card>
         <CardContent className="pt-6">
@@ -524,5 +527,41 @@ export function HoldingDetail() {
         </CardContent>
       </Card>
     </div>
+  );
+}
+
+function VaultsSection({ holdingId }: { holdingId: string | undefined }) {
+  const { data: vaults } = trpc.vaults.getByHoldingId.useQuery(
+    { holdingId: holdingId! },
+    { enabled: !!holdingId }
+  );
+
+  if (!vaults || vaults.length === 0) return null;
+
+  return (
+    <Card>
+      <CardContent className="pt-6">
+        <div>
+          <Label className="text-sm font-medium text-muted-foreground">Vaults</Label>
+          <div className="mt-2 flex flex-wrap gap-2">
+            {vaults.map((v) => (
+              <Link
+                key={v.id}
+                to={`/vaults/${v.id}`}
+                className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium hover:opacity-80 transition-opacity"
+                style={{
+                  backgroundColor: `${v.color}20`,
+                  color: v.color,
+                }}
+              >
+                <Vault className="h-3 w-3" />
+                {v.name}
+                <span className="opacity-70">({v.percentage}%)</span>
+              </Link>
+            ))}
+          </div>
+        </div>
+      </CardContent>
+    </Card>
   );
 }

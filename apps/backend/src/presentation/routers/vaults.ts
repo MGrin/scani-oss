@@ -28,6 +28,17 @@ export const vaultsRouter = router({
     return await VaultImplementations.getById({ userId: dbUser.id, dbUser }, { id: input.id });
   }),
 
+  // Get vaults that a specific holding is attached to
+  getByHoldingId: protectedProcedure
+    .input(z.object({ holdingId: z.string().uuid() }))
+    .query(async ({ input, ctx }) => {
+      const { dbUser } = await requireAuth(ctx);
+      return await VaultImplementations.getByHoldingId(
+        { userId: dbUser.id, dbUser },
+        { holdingId: input.holdingId }
+      );
+    }),
+
   // Create a new vault
   create: protectedProcedure.input(CreateVaultDto).mutation(async ({ input, ctx }) => {
     const { dbUser } = await requireAuth(ctx);

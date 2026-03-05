@@ -904,6 +904,31 @@ export const VaultImplementations = {
     return vault;
   },
 
+  async getByHoldingId(context: FeatureExecutionContext, input: { holdingId: string }) {
+    const vaultRepository = Container.get(VaultRepository);
+    const tokenRepository = Container.get(TokenRepository);
+
+    const vaultRefs = await vaultRepository.findVaultsByHoldingId(input.holdingId);
+
+    // Filter to only vaults owned by this user and enrich with currency symbol
+    const results = [];
+    for (const ref of vaultRefs) {
+      if (ref.vault.userId !== context.userId) continue;
+      const currency = await tokenRepository.findById(ref.vault.currencyId);
+      results.push({
+        id: ref.vault.id,
+        name: ref.vault.name,
+        color: ref.vault.color,
+        percentage: ref.percentage,
+        currencySymbol: currency?.symbol || '?',
+        targetAmount: ref.vault.targetAmount,
+        currentAmount: ref.vault.currentAmount,
+      });
+    }
+
+    return results;
+  },
+
   async create(
     context: FeatureExecutionContext,
     input: {
