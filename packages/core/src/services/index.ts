@@ -18,3 +18,4 @@ export { UserContextService } from './UserContextService';
 export { UserPortfolioEventService } from './UserPortfolioEventService';
 export { UserService } from './UserService';
 export { UserWalletService } from './UserWalletService';
+export { VaultService } from './VaultService';

@@ -504,8 +504,62 @@ export const apiKeys = pgTable(
   })
 );
 
+// Vaults table - User-defined savings goals with target amounts
+export const vaults = pgTable(
+  'vaults',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    name: text('name').notNull(),
+    description: text('description'),
+    targetAmount: text('target_amount').notNull(), // Store as string for Decimal.js precision
+    currencyId: uuid('currency_id')
+      .notNull()
+      .references(() => tokens.id, { onDelete: 'restrict' }), // Vault's target currency
+    currentAmount: text('current_amount').notNull().default('0'), // Pre-computed sum of attributed values
+    color: text('color').notNull(), // Hex color code (e.g., '#3b82f6')
+    iconName: text('icon_name'), // Optional icon identifier for UI
+    isActive: boolean('is_active').notNull().default(true),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => ({
+    // Unique constraint for vault name per user
+    uniqueUserVaultName: unique().on(table.userId, table.name),
+    // Performance index for user queries
+    userIdIdx: index('idx_vaults_user_id').on(table.userId),
+    // Composite index for active vaults by user
+    userActiveIdx: index('idx_vaults_user_active').on(table.userId, table.isActive),
+  })
+);
+
+// Vault holdings junction table - Links holdings to vaults with a percentage
+export const vaultHoldings = pgTable(
+  'vault_holdings',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    vaultId: uuid('vault_id')
+      .notNull()
+      .references(() => vaults.id, { onDelete: 'cascade' }),
+    holdingId: uuid('holding_id')
+      .notNull()
+      .references(() => holdings.id, { onDelete: 'cascade' }),
+    percentage: real('percentage').notNull(), // 1-100, fraction of holding attributed to this vault
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => ({
+    // Unique constraint to prevent duplicate vault-holding assignments
+    uniqueVaultHolding: unique().on(table.vaultId, table.holdingId),
+    // Performance indexes for lookups
+    vaultIdIdx: index('idx_vault_holdings_vault_id').on(table.vaultId),
+    holdingIdIdx: index('idx_vault_holdings_holding_id').on(table.holdingId),
+  })
+);
+
 // =============================================================================
-// MAIN TABLES
+// RELATIONS
 // =============================================================================
 
 // Relations
@@ -527,6 +581,7 @@ export const usersRelations = relations(users, ({ one, many }) => ({
   userWallets: many(userWallets),
   userIntegrationCredentials: many(userIntegrationCredentials),
   groups: many(groups),
+  vaults: many(vaults),
   apiKeys: many(apiKeys),
   baseCurrency: one(tokens, {
     fields: [users.baseCurrencyId],
@@ -589,6 +644,7 @@ export const holdingsRelations = relations(holdings, ({ one, many }) => ({
     references: [tokens.id],
   }),
   holdingGroups: many(holdingGroups),
+  vaultHoldings: many(vaultHoldings),
 }));
 
 export const tokenPricesRelations = relations(tokenPrices, ({ one }) => ({
@@ -672,6 +728,29 @@ export const apiKeysRelations = relations(apiKeys, ({ one }) => ({
   }),
 }));
 
+export const vaultsRelations = relations(vaults, ({ one, many }) => ({
+  user: one(users, {
+    fields: [vaults.userId],
+    references: [users.id],
+  }),
+  currency: one(tokens, {
+    fields: [vaults.currencyId],
+    references: [tokens.id],
+  }),
+  vaultHoldings: many(vaultHoldings),
+}));
+
+export const vaultHoldingsRelations = relations(vaultHoldings, ({ one }) => ({
+  vault: one(vaults, {
+    fields: [vaultHoldings.vaultId],
+    references: [vaults.id],
+  }),
+  holding: one(holdings, {
+    fields: [vaultHoldings.holdingId],
+    references: [holdings.id],
+  }),
+}));
+
 // Export types for use in application
 export type User = typeof users.$inferSelect;
 export type NewUser = typeof users.$inferInsert;
@@ -717,3 +796,9 @@ export type NewHoldingGroup = typeof holdingGroups.$inferInsert;
 
 export type AccountGroup = typeof accountGroups.$inferSelect;
 export type NewAccountGroup = typeof accountGroups.$inferInsert;
+
+export type Vault = typeof vaults.$inferSelect;
+export type NewVault = typeof vaults.$inferInsert;
+
+export type VaultHolding = typeof vaultHoldings.$inferSelect;
+export type NewVaultHolding = typeof vaultHoldings.$inferInsert;

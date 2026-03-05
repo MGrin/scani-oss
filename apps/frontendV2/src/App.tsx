@@ -15,6 +15,8 @@ import { InstitutionDetail } from '@/pages/InstitutionDetail';
 import { Institutions } from '@/pages/Institutions';
 import { PortfolioHistory } from '@/pages/PortfolioHistory';
 import { Settings } from '@/pages/Settings';
+import { VaultDetail } from '@/pages/VaultDetail';
+import { Vaults } from '@/pages/Vaults';
 
 function App() {
   return (
@@ -79,6 +81,26 @@ function App() {
               <ProtectedRoute>
                 <Layout>
                   <Groups />
+                </Layout>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/vaults"
+            element={
+              <ProtectedRoute>
+                <Layout>
+                  <Vaults />
+                </Layout>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/vaults/:id"
+            element={
+              <ProtectedRoute>
+                <Layout>
+                  <VaultDetail />
                 </Layout>
               </ProtectedRoute>
             }

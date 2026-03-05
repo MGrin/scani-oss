@@ -7,6 +7,7 @@ import {
   Palette,
   Settings,
   TrendingUp,
+  Vault,
   X,
 } from 'lucide-react';
 import React, { useEffect, useId, useState } from 'react';
@@ -53,6 +54,7 @@ const navigation = [
   { name: 'Accounts', href: '/accounts', icon: CreditCard },
   { name: 'Holdings', href: '/holdings', icon: TrendingUp },
   { name: 'Groups', href: '/groups', icon: Palette },
+  { name: 'Vaults', href: '/vaults', icon: Vault },
   { name: 'Settings', href: '/settings', icon: Settings },
 ];
 
@@ -64,6 +66,7 @@ function getActiveNavItem(pathname: string): string {
   if (pathname.startsWith('/accounts')) return '/accounts';
   if (pathname.startsWith('/holdings')) return '/holdings';
   if (pathname.startsWith('/groups')) return '/groups';
+  if (pathname.startsWith('/vaults')) return '/vaults';
   if (pathname.startsWith('/settings')) return '/settings';
   return '';
 }
@@ -78,6 +81,7 @@ function useBreadcrumbs(pathname: string) {
     accounts: 'Accounts',
     holdings: 'Holdings',
     groups: 'Groups',
+    vaults: 'Vaults',
     settings: 'Settings',
   };
 

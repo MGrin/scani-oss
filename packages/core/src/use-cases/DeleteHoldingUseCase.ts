@@ -4,7 +4,9 @@ import { db } from '../database/connection';
 import * as schema from '../database/schema';
 import { withTransaction } from '../database/transaction';
 import { TokenPriceRepository } from '../repositories/TokenPriceRepository';
+import { VaultRepository } from '../repositories/VaultRepository';
 import { UserPortfolioEventService } from '../services/UserPortfolioEventService';
+import { VaultService } from '../services/VaultService';
 import { createComponentLogger } from '../utils/logger';
 
 const logger = createComponentLogger('use-case:delete-holding');
@@ -37,6 +39,8 @@ export interface DeleteHoldingOptions {
 export class DeleteHoldingUseCase {
   private readonly tokenPriceRepository = Container.get(TokenPriceRepository);
   private readonly userPortfolioEventService = Container.get(UserPortfolioEventService);
+  private readonly vaultRepository = Container.get(VaultRepository);
+  private readonly vaultService = Container.get(VaultService);
 
   async execute(
     holdingId: string,
@@ -141,6 +145,21 @@ export class DeleteHoldingUseCase {
     // Create portfolio event for deletion (best-effort, non-blocking)
     if (options?.baseCurrencyId) {
       await this.createDeleteEvent(result.deleted, userId, options.baseCurrencyId);
+    }
+
+    // Detach from all vaults and recalculate affected vaults (best-effort, non-blocking)
+    try {
+      const affectedVaultIds = await this.vaultRepository.detachAllHoldingsForHolding(holdingId);
+      if (affectedVaultIds.length > 0) {
+        await Promise.all(
+          affectedVaultIds.map((vaultId) => this.vaultService.recalculateVaultAmount(vaultId))
+        );
+      }
+    } catch (vaultError) {
+      logger.warn(
+        { holdingId, error: vaultError },
+        'Failed to detach/recalculate vaults after holding deletion'
+      );
     }
 
     return result;

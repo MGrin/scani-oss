@@ -253,6 +253,13 @@
       "when": 1770087889147,
       "tag": "0035_wandering_saracen",
       "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "7",
+      "when": 1772700262131,
+      "tag": "0036_elite_rage",
+      "breakpoints": true
     }
   ]
 }

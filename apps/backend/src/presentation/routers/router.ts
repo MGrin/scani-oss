@@ -16,6 +16,7 @@ import { portfolioHistoryRouter } from './portfolio-history';
 import { screenshotsRouter } from './screenshots';
 import { createTokensRouter } from './tokens';
 import { usersRouter } from './users';
+import { vaultsRouter } from './vaults';
 import { walletRouter } from './wallet';
 
 // Create routers with DI
@@ -48,6 +49,9 @@ export const appRouter = router({
   institutions: institutionsRouter,
   accounts: accountsRouter,
   holdings: holdingsRouter,
+
+  // Vaults (protected) - Savings goals with attached holdings
+  vaults: vaultsRouter,
 
   // Batch operations (protected) - Atomic multi-entity operations
   batchOperations: batchOperationsRouter,

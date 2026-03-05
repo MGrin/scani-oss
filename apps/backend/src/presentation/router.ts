@@ -16,6 +16,7 @@ import { portfolioHistoryRouter } from './routers/portfolio-history';
 import { screenshotsRouter } from './routers/screenshots';
 import { createTokensRouter } from './routers/tokens';
 import { usersRouter } from './routers/users';
+import { vaultsRouter } from './routers/vaults';
 import { walletRouter } from './routers/wallet';
 import { publicProcedure, router } from './trpc';
 
@@ -47,6 +48,9 @@ export const appRouter = router({
   accounts: accountsRouter,
   holdings: holdingsRouter,
   groups: groupsRouter,
+
+  // Vaults (protected) - Savings goals with attached holdings
+  vaults: vaultsRouter,
 
   // Batch operations (protected) - Atomic multi-entity operations
   batchOperations: batchOperationsRouter,

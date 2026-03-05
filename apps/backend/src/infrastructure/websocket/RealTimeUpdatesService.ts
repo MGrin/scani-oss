@@ -11,7 +11,8 @@ export type EntityType =
   | 'token'
   | 'schedule'
   | 'schedule_step'
-  | 'group';
+  | 'group'
+  | 'vault';
 export type OperationType = 'create' | 'update' | 'delete' | 'sync';
 
 export interface RealTimeEvent {

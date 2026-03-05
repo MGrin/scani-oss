@@ -10,3 +10,4 @@ export * from './institution';
 export * from './portfolio-history';
 export * from './token';
 export * from './user';
+export * from './vault';

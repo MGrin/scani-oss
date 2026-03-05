@@ -11,10 +11,14 @@
  * - Log progress and errors
  */
 
+import { eq } from 'drizzle-orm';
 import { Container, Service } from 'typedi';
+import { db } from '../database/connection';
+import * as schema from '../database/schema';
 import { TokenRepository } from '../repositories/TokenRepository';
 import { HoldingService } from '../services/HoldingService';
 import { PricingService } from '../services/PricingService';
+import { VaultService } from '../services/VaultService';
 import { createComponentLogger } from '../utils/logger';
 
 const logger = createComponentLogger('use-case:update-token-prices');
@@ -44,6 +48,7 @@ export class UpdateTokenPricesUseCase {
   private readonly pricingService = Container.get(PricingService);
   private readonly tokenRepository = Container.get(TokenRepository);
   private readonly holdingService = Container.get(HoldingService);
+  private readonly vaultService = Container.get(VaultService);
 
   async execute(baseCurrencySymbol = 'USD'): Promise<UpdateTokenPricesResult> {
     const startTime = Date.now();
@@ -139,6 +144,33 @@ export class UpdateTokenPricesUseCase {
             'Failed to update token price'
           );
         }
+      }
+
+      // Recalculate vaults for all tokens that had price updates (best-effort)
+      try {
+        const updatedTokenIds = tokens
+          .filter((t) => {
+            const price = prices.get(t.id);
+            return price && price !== '0';
+          })
+          .map((t) => t.id);
+
+        if (updatedTokenIds.length > 0) {
+          // Find all holdings for updated tokens
+          for (const tokenId of updatedTokenIds) {
+            const holdingsForToken = await db
+              .select({ id: schema.holdings.id })
+              .from(schema.holdings)
+              .where(eq(schema.holdings.tokenId, tokenId));
+
+            const holdingIds = holdingsForToken.map((h) => h.id);
+            if (holdingIds.length > 0) {
+              await this.vaultService.recalculateVaultsForToken(tokenId, holdingIds);
+            }
+          }
+        }
+      } catch (vaultError) {
+        logger.warn({ error: vaultError }, 'Failed to recalculate vaults after token price update');
       }
 
       const durationMs = Date.now() - startTime;

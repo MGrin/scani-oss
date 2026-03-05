@@ -3,6 +3,7 @@ import { HoldingRepository } from '../repositories/HoldingRepository';
 import { TokenPriceRepository } from '../repositories/TokenPriceRepository';
 import { TokenRepository } from '../repositories/TokenRepository';
 import { PricingService } from '../services/PricingService';
+import { VaultService } from '../services/VaultService';
 import { createComponentLogger } from '../utils/logger';
 
 const logger = createComponentLogger('use-case:update-holding-price');
@@ -22,6 +23,7 @@ export class UpdateHoldingPriceUseCase {
   private readonly tokenRepository = Container.get(TokenRepository);
   private readonly tokenPriceRepository = Container.get(TokenPriceRepository);
   private readonly pricingService = Container.get(PricingService);
+  private readonly vaultService = Container.get(VaultService);
 
   async execute(
     holdingId: string,
@@ -123,6 +125,16 @@ export class UpdateHoldingPriceUseCase {
         },
         'Holding price updated successfully'
       );
+
+      // Recalculate vaults that reference this holding (best-effort, non-blocking)
+      try {
+        await this.vaultService.recalculateVaultsForHolding(holdingId);
+      } catch (vaultError) {
+        logger.warn(
+          { holdingId, error: vaultError },
+          'Failed to recalculate vaults after price update'
+        );
+      }
 
       return {
         success: true,

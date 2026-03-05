@@ -16,6 +16,7 @@ import {
   InstitutionRepository,
   InstitutionTypeRepository,
   TokenRepository,
+  VaultRepository,
 } from '../repositories';
 import {
   AccountService,
@@ -25,6 +26,7 @@ import {
   TokenService,
   UserContextService,
   UserService,
+  VaultService,
 } from '../services';
 import {
   CreateHoldingsWithDependenciesUseCase,
@@ -879,5 +881,203 @@ export const GroupImplementations = {
     }
 
     return await groupRepository.findGroupsByAccountId(input.accountId);
+  },
+};
+
+/**
+ * Vault Implementations
+ */
+export const VaultImplementations = {
+  async getAll(context: FeatureExecutionContext, _input: Record<string, never>) {
+    const vaultService = Container.get(VaultService);
+    return await vaultService.getVaultsForUser(context.userId);
+  },
+
+  async getById(context: FeatureExecutionContext, input: { id: string }) {
+    const vaultService = Container.get(VaultService);
+    const vault = await vaultService.getVaultWithProgress(input.id);
+
+    if (!vault || vault.userId !== context.userId) {
+      throw new Error('Vault not found');
+    }
+
+    return vault;
+  },
+
+  async create(
+    context: FeatureExecutionContext,
+    input: {
+      name: string;
+      targetAmount: string;
+      currencyId: string;
+      color: string;
+      iconName?: string | null;
+      description?: string | null;
+    }
+  ) {
+    const vaultRepository = Container.get(VaultRepository);
+
+    try {
+      return await vaultRepository.create({
+        userId: context.userId,
+        name: input.name,
+        targetAmount: input.targetAmount,
+        currencyId: input.currencyId,
+        color: input.color,
+        iconName: input.iconName || null,
+        description: input.description || null,
+        currentAmount: '0',
+        isActive: true,
+      });
+    } catch (error) {
+      if (
+        error instanceof Error &&
+        ((error as unknown as { code: string }).code === '23505' ||
+          error.message.includes('unique constraint') ||
+          error.message.includes('duplicate key') ||
+          error.message.includes('uniqueUserVaultName'))
+      ) {
+        throw new Error(`A vault with the name "${input.name}" already exists`);
+      }
+      throw error;
+    }
+  },
+
+  async update(
+    context: FeatureExecutionContext,
+    input: {
+      id: string;
+      data: {
+        name?: string;
+        targetAmount?: string;
+        currencyId?: string;
+        color?: string;
+        iconName?: string | null;
+        description?: string | null;
+        isActive?: boolean;
+      };
+    }
+  ) {
+    const vaultRepository = Container.get(VaultRepository);
+    const vaultService = Container.get(VaultService);
+
+    // Verify ownership
+    const vault = await vaultRepository.findById(input.id);
+    if (!vault || vault.userId !== context.userId) {
+      throw new Error('Vault not found');
+    }
+
+    const updated = await vaultRepository.update(input.id, {
+      ...input.data,
+      updatedAt: new Date(),
+    });
+
+    // If currency changed, recalculate vault amount
+    if (input.data.currencyId && input.data.currencyId !== vault.currencyId) {
+      await vaultService.recalculateVaultAmount(input.id);
+    }
+
+    return updated;
+  },
+
+  async delete(context: FeatureExecutionContext, input: { id: string }) {
+    const vaultRepository = Container.get(VaultRepository);
+
+    // Verify ownership
+    const vault = await vaultRepository.findById(input.id);
+    if (!vault || vault.userId !== context.userId) {
+      throw new Error('Vault not found');
+    }
+
+    await vaultRepository.delete(input.id);
+    return { success: true };
+  },
+
+  async bulkDelete(context: FeatureExecutionContext, input: { ids: string[] }) {
+    return executeBulkOperation(input.ids, async (id) => {
+      await VaultImplementations.delete(context, { id });
+    });
+  },
+
+  async attachHolding(
+    context: FeatureExecutionContext,
+    input: { vaultId: string; holdingId: string; percentage: number }
+  ) {
+    const vaultRepository = Container.get(VaultRepository);
+    const holdingRepository = Container.get(HoldingRepository);
+    const vaultService = Container.get(VaultService);
+
+    // Verify vault ownership
+    const vault = await vaultRepository.findById(input.vaultId);
+    if (!vault || vault.userId !== context.userId) {
+      throw new Error('Vault not found');
+    }
+
+    // Verify holding ownership
+    const holding = await holdingRepository.findById(input.holdingId);
+    if (!holding || holding.userId !== context.userId) {
+      throw new Error('Holding not found');
+    }
+
+    const result = await vaultRepository.attachHolding(
+      input.vaultId,
+      input.holdingId,
+      input.percentage
+    );
+
+    // Recalculate vault amount after attaching
+    await vaultService.recalculateVaultAmount(input.vaultId);
+
+    return result;
+  },
+
+  async detachHolding(
+    context: FeatureExecutionContext,
+    input: { vaultId: string; holdingId: string }
+  ) {
+    const vaultRepository = Container.get(VaultRepository);
+    const vaultService = Container.get(VaultService);
+
+    // Verify vault ownership
+    const vault = await vaultRepository.findById(input.vaultId);
+    if (!vault || vault.userId !== context.userId) {
+      throw new Error('Vault not found');
+    }
+
+    await vaultRepository.detachHolding(input.vaultId, input.holdingId);
+
+    // Recalculate vault amount after detaching
+    await vaultService.recalculateVaultAmount(input.vaultId);
+
+    return { success: true };
+  },
+
+  async updateHoldingPercentage(
+    context: FeatureExecutionContext,
+    input: { vaultId: string; holdingId: string; percentage: number }
+  ) {
+    const vaultRepository = Container.get(VaultRepository);
+    const vaultService = Container.get(VaultService);
+
+    // Verify vault ownership
+    const vault = await vaultRepository.findById(input.vaultId);
+    if (!vault || vault.userId !== context.userId) {
+      throw new Error('Vault not found');
+    }
+
+    const result = await vaultRepository.updateHoldingPercentage(
+      input.vaultId,
+      input.holdingId,
+      input.percentage
+    );
+
+    if (!result) {
+      throw new Error('Vault holding not found');
+    }
+
+    // Recalculate vault amount after percentage change
+    await vaultService.recalculateVaultAmount(input.vaultId);
+
+    return result;
   },
 };

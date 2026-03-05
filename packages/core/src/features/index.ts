@@ -21,6 +21,7 @@ import {
   SettingsImplementations,
   TokenImplementations,
   TypeImplementations,
+  VaultImplementations,
   WalletImplementations,
 } from './implementations';
 
@@ -34,6 +35,7 @@ export enum FeatureCategory {
   INSTITUTIONS = 'institutions',
   TOKENS = 'tokens',
   GROUPS = 'groups',
+  VAULTS = 'vaults',
   WALLET = 'wallet',
   BATCH_OPERATIONS = 'batch_operations',
   SCREENSHOTS = 'screenshots',
@@ -674,12 +676,85 @@ export const SETTINGS_FEATURES: Feature[] = [
 /**
  * All features registry
  */
+/**
+ * Vault Features
+ */
+export const VAULT_FEATURES: Feature[] = [
+  {
+    id: 'vaults.getAll',
+    category: FeatureCategory.VAULTS,
+    name: 'List All Vaults',
+    description: 'List all savings vaults for the user with progress towards their target amounts.',
+    procedurePath: 'vaults.getAll',
+    inputSchema: z.object({}),
+    isMutation: false,
+    requiresAuth: true,
+    tags: ['vaults', 'savings', 'goals', 'list'],
+    examples: ['Show my vaults', 'List my savings goals', 'How are my vaults doing?'],
+    execute: VaultImplementations.getAll,
+  },
+  {
+    id: 'vaults.getById',
+    category: FeatureCategory.VAULTS,
+    name: 'Get Vault Details',
+    description:
+      'Get detailed information about a specific vault including attached holdings and progress.',
+    procedurePath: 'vaults.getById',
+    inputSchema: z.object({ id: z.string().uuid() }),
+    isMutation: false,
+    requiresAuth: true,
+    tags: ['vault', 'details', 'progress'],
+    examples: ['Show me my wedding vault', 'Get vault details'],
+    execute: VaultImplementations.getById,
+  },
+  {
+    id: 'vaults.create',
+    category: FeatureCategory.VAULTS,
+    name: 'Create Vault',
+    description:
+      'Create a new savings vault with a target amount and currency. Use for saving goals like weddings, holidays, or big purchases.',
+    procedurePath: 'vaults.create',
+    inputSchema: z.object({
+      name: z.string().min(1).max(100),
+      targetAmount: z.string(),
+      currencyId: z.string().uuid(),
+      color: z.string(),
+      iconName: z.string().optional().nullable(),
+      description: z.string().optional().nullable(),
+    }),
+    isMutation: true,
+    requiresAuth: true,
+    tags: ['vault', 'create', 'savings', 'goal'],
+    examples: ['Create a wedding vault for €5000', 'Add a new savings goal'],
+    execute: VaultImplementations.create,
+  },
+  {
+    id: 'vaults.attachHolding',
+    category: FeatureCategory.VAULTS,
+    name: 'Attach Holding to Vault',
+    description:
+      'Attach a holding to a vault with a percentage of its value attributed to the vault goal.',
+    procedurePath: 'vaults.attachHolding',
+    inputSchema: z.object({
+      vaultId: z.string().uuid(),
+      holdingId: z.string().uuid(),
+      percentage: z.number().min(0.01).max(100),
+    }),
+    isMutation: true,
+    requiresAuth: true,
+    tags: ['vault', 'holding', 'attach', 'assign'],
+    examples: ['Add my savings account to the wedding vault at 50%'],
+    execute: VaultImplementations.attachHolding,
+  },
+];
+
 export const ALL_FEATURES: Feature[] = [
   ...DASHBOARD_FEATURES,
   ...ACCOUNT_FEATURES,
   ...HOLDINGS_FEATURES,
   ...INSTITUTION_FEATURES,
   ...TOKEN_FEATURES,
+  ...VAULT_FEATURES,
   ...WALLET_FEATURES,
   ...BATCH_OPERATION_FEATURES,
   ...SCREENSHOT_FEATURES,

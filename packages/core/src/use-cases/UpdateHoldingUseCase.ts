@@ -5,6 +5,7 @@ import * as schema from '../database/schema';
 import { withTransaction } from '../database/transaction';
 import { TokenPriceRepository } from '../repositories/TokenPriceRepository';
 import { UserPortfolioEventService } from '../services/UserPortfolioEventService';
+import { VaultService } from '../services/VaultService';
 import { createComponentLogger } from '../utils/logger';
 
 const logger = createComponentLogger('use-case:update-holding');
@@ -32,6 +33,7 @@ export interface UpdateHoldingOptions {
 export class UpdateHoldingUseCase {
   private readonly tokenPriceRepository = Container.get(TokenPriceRepository);
   private readonly userPortfolioEventService = Container.get(UserPortfolioEventService);
+  private readonly vaultService = Container.get(VaultService);
 
   async execute(
     holdingId: string,
@@ -142,6 +144,16 @@ export class UpdateHoldingUseCase {
         );
         // Event creation failure is non-blocking
       }
+    }
+
+    // Recalculate vaults that reference this holding (best-effort, non-blocking)
+    try {
+      await this.vaultService.recalculateVaultsForHolding(holdingId);
+    } catch (vaultError) {
+      logger.warn(
+        { holdingId, error: vaultError },
+        'Failed to recalculate vaults after holding update'
+      );
     }
 
     return updatedHolding;

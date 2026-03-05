@@ -16,3 +16,4 @@ export { UserIntegrationCredentialsRepository } from './UserIntegrationCredentia
 export { UserPortfolioEventRepository } from './UserPortfolioEventRepository';
 export { UserRepository } from './UserRepository';
 export { UserWalletRepository } from './UserWalletRepository';
+export { VaultRepository } from './VaultRepository';

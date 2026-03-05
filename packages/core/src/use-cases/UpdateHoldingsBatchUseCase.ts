@@ -1,7 +1,8 @@
 import { and, eq } from 'drizzle-orm';
-import { Service } from 'typedi';
+import Container, { Service } from 'typedi';
 import * as schema from '../database/schema';
 import { withTransaction } from '../database/transaction';
+import { VaultService } from '../services/VaultService';
 import { createComponentLogger } from '../utils/logger';
 
 const logger = createComponentLogger('use-case:update-holdings-batch');
@@ -36,6 +37,8 @@ export interface UpdateHoldingsBatchResult {
  */
 @Service()
 export class UpdateHoldingsBatchUseCase {
+  private readonly vaultService = Container.get(VaultService);
+
   async execute(
     input: UpdateHoldingsBatchInput,
     userId: string
@@ -51,7 +54,7 @@ export class UpdateHoldingsBatchUseCase {
     // OPTIMIZATION: Use a single transaction for all updates
     // This dramatically reduces connection usage from N connections to 1
     // All updates succeed or fail together (atomic operation)
-    return await withTransaction(
+    const result = await withTransaction(
       async (tx) => {
         const results = [];
         let successCount = 0;
@@ -118,5 +121,23 @@ export class UpdateHoldingsBatchUseCase {
         timeout: 30000, // Longer timeout for batch operations
       }
     );
+
+    // Recalculate vaults for all successfully updated holdings (best-effort, non-blocking)
+    const updatedHoldingIds = result.updated.filter((r) => r.success).map((r) => r.id);
+
+    if (updatedHoldingIds.length > 0) {
+      try {
+        await Promise.all(
+          updatedHoldingIds.map((id) => this.vaultService.recalculateVaultsForHolding(id))
+        );
+      } catch (vaultError) {
+        logger.warn(
+          { error: vaultError },
+          'Failed to recalculate vaults after batch holding update'
+        );
+      }
+    }
+
+    return result;
   }
 }
