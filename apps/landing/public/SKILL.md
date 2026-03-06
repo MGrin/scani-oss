@@ -6,7 +6,7 @@ category: Finance & Fintech
 subcategory: Personal Finance / Portfolio Management
 tags: finance, portfolio, crypto, stocks, holdings, wallet, x402, micropayments, personal-finance, defi, blockchain
 audience: AI agents, trading bots, financial assistants
-transport: http
+transport: streamable-http
 protocol: json-rpc-2.0
 auth: bearer
 payment: x402 (USDC on Base)
@@ -122,6 +122,8 @@ but **not** for standard MCP client libraries that require `initialize` first.
 3. **Configure the MCP client** — set the Bearer token in the MCP client's auth configuration
 4. The client can now call `initialize` → `tools/list` → `tools/call` normally
 
+> **Stateless server:** Scani's MCP endpoint does not use MCP sessions — no `Mcp-Session-Id` header is returned. Each request is independently authenticated via the Bearer token and is fully stateless.
+
 ---
 
 ## Pricing & x402 Payments
@@ -212,7 +214,7 @@ fi
 #### Signing a payment (TypeScript/viem example)
 
 ```typescript
-import { createWalletClient, http, encodeFunctionData } from 'viem';
+import { createWalletClient, http } from 'viem';
 import { base } from 'viem/chains';
 import { privateKeyToAccount } from 'viem/accounts';
 
@@ -288,6 +290,7 @@ const paidResponse = await fetch('https://api.scani.xyz/mcp', {
   method: 'POST',
   headers: {
     'Content-Type': 'application/json',
+    Accept: 'application/json, text/event-stream',
     Authorization: `Bearer ${agentApiKey}`,
     'X-PAYMENT-SIGNATURE': signedHeader,
   },
@@ -343,6 +346,7 @@ curl -s -X POST https://api.scani.xyz/mcp \
 ```json
 {
   "success": true,
+  "message": "Agent registered successfully!",
   "credentials": {
     "agentId": "uuid-here",
     "apiKey": "sk_live_...",
@@ -353,10 +357,21 @@ curl -s -X POST https://api.scani.xyz/mcp \
     "authentication": {
       "header": "Authorization",
       "value": "Bearer sk_live_..."
-    }
+    },
+    "nextSteps": [
+      "Store agentId and apiKey in persistent storage",
+      "Include Authorization header in all future MCP requests",
+      "Call agent_whoami to verify your credentials work",
+      "Call dashboard_getOverview to see your portfolio"
+    ],
+    "persistenceHint": "Store credentials in your agent memory/state system, environment variables, or secure file storage"
   }
 }
 ```
+
+<!-- Note: The live server currently returns "dashboard_getSummary" in nextSteps,
+     which is a server-side bug (that tool does not exist). The correct value is
+     "dashboard_getOverview" as documented above. -->
 
 #### `agent_whoami` — auth required
 
@@ -388,7 +403,7 @@ curl -s -X POST https://api.scani.xyz/mcp \
 
 #### `dashboard_getAssetAllocation` — auth required
 
-Get allocation breakdown by dimension (`token`, `account`, `institution`, etc.).
+Get allocation breakdown by dimension. The `dimension` parameter accepts exactly these values: `token`, `token_type`, `account`, `account_type`, `institution`, `institution_type`.
 
 ```bash
 curl -s -X POST https://api.scani.xyz/mcp \
@@ -408,6 +423,8 @@ curl -s -X POST https://api.scani.xyz/mcp \
 #### `institutions_create` — auth required
 
 Create a custom institution (bank, exchange, brokerage, etc.).
+
+**Parameters:** `name` (string, required), `typeId` (uuid, required), `description` (string, optional), `website` (url, optional), `logoUrl` (uri, optional — logo image URL)
 
 ```bash
 # 1. (Recommended) Fetch Open Graph metadata from the institution's website
@@ -578,6 +595,8 @@ Get groups that are common across the specified accounts.
 
 ---
 
+### Holdings
+
 #### `holdings_getWithDetails` — auth required
 
 ```bash
@@ -589,6 +608,8 @@ curl -s -X POST https://api.scani.xyz/mcp \
 ```
 
 #### `holdings_create` — auth required
+
+**Parameters:** `accountId` (uuid, required), `tokenId` (uuid, required), `balance` (string, required), `lastUpdated` (ISO 8601 datetime, optional — timestamp of last balance update)
 
 ```bash
 # First find the token ID
@@ -701,6 +722,8 @@ Detect which blockchain chains a wallet address belongs to.
 
 ---
 
+### Groups
+
 Groups are colour-coded labels that can be assigned to holdings and accounts for custom
 portfolio segmentation (e.g. "Long-term", "DeFi", "Stablecoins").
 
@@ -760,6 +783,8 @@ Assign groups to an account.
 **Parameters:** `accountId` (uuid, required), `groupIds` (uuid[], required — pass empty array to remove all)
 
 ---
+
+### Screenshot Parsing
 
 #### `screenshots_parse` — auth required, **$0.15 USDC**
 
@@ -905,6 +930,8 @@ Bulk update multiple holdings at once.
 
 ---
 
+### Tokens
+
 #### `tokens_search` — auth required, **always free**
 
 ```bash
@@ -918,6 +945,18 @@ curl -s -X POST https://api.scani.xyz/mcp \
 #### `tokens_getAll` — auth required, **always free**
 
 Get all available tokens in the system.
+
+---
+
+### Reference Data
+
+#### `accountTypes_getAll` — auth required
+
+Get all available account types. No parameters.
+
+#### `institutionTypes_getAll` — auth required
+
+Get all available institution types. No parameters.
 
 ---
 
@@ -1041,22 +1080,34 @@ All errors follow JSON-RPC 2.0:
 
 ## Environment Setup for MCP Clients
 
-```yaml
-# skill.yaml (example for MCP clients)
-name: scani-finance
-description: Scani Personal Finance API – track portfolios, holdings, and wallets
-endpoint: https://api.scani.xyz/mcp
-protocol: json-rpc-2.0
-auth:
-  type: bearer
-  key_env: SCANI_API_KEY
-  registration_tool: agent_register
-payment:
-  protocol: x402
-  network: eip155:8453   # Base mainnet
-  payment_header: X-PAYMENT-SIGNATURE
-  requirements_header: X-PAYMENT-REQUIRED
-capabilities_tool: agent_getCapabilities
+#### Claude Desktop (`claude_desktop_config.json`)
+
+```json
+{
+  "mcpServers": {
+    "scani": {
+      "url": "https://api.scani.xyz/mcp",
+      "headers": {
+        "Authorization": "Bearer ${SCANI_API_KEY}"
+      }
+    }
+  }
+}
+```
+
+#### Cursor (`.cursor/mcp.json`)
+
+```json
+{
+  "mcpServers": {
+    "scani": {
+      "url": "https://api.scani.xyz/mcp",
+      "headers": {
+        "Authorization": "Bearer ${SCANI_API_KEY}"
+      }
+    }
+  }
+}
 ```
 
 ### Persistent credential storage
@@ -1072,20 +1123,11 @@ Recommended storage:
 
 ---
 
-## Testing with Base Sepolia (no real money)
+## Testing x402 Payments with Base Sepolia (no real money)
 
-```bash
-# 1. Get testnet USDC from Circle faucet
-# https://faucet.circle.com/
+To test x402 payments without spending real USDC:
 
-# 2. Run integration tests against local server
-MCP_URL=http://localhost:3000/mcp \
-SKIP_PAID_TESTS=true \
-  bun scripts/test-mcp-integration.ts
-
-# 3. Run full tests including payment flow (requires funded testnet wallet)
-MCP_URL=http://localhost:3000/mcp \
-X402_NETWORK=eip155:84532 \
-AGENT_PRIVATE_KEY=0x... \
-  bun scripts/test-mcp-integration.ts
-```
+1. **Get testnet USDC** from the Circle faucet: https://faucet.circle.com/
+2. **Configure your agent's wallet** on Base Sepolia (chain ID `84532`, CAIP-2: `eip155:84532`)
+3. **Set `X402_NETWORK`** to `eip155:84532` on your own Scani deployment, or contact Scani support for a testnet endpoint
+4. **Send payment requests** as normal — the flow is identical to mainnet, but uses testnet USDC

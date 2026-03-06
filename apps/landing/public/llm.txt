@@ -37,7 +37,7 @@ Agents can:
 
 ### Authentication
 
-All MCP calls require a bearer token:
+Most MCP calls require a bearer token (exceptions: `agent_register` and `agent_getCapabilities`):
 
 ```
 Authorization: Bearer <SCANI_API_KEY>
