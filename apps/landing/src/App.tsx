@@ -11,8 +11,7 @@ import {
   Monitor,
   Network,
   ScanSearch,
-  Shield,
-  TrendingUp,
+  Users,
   Wallet,
   X,
   Zap,
@@ -62,7 +61,7 @@ function App() {
   ];
 
   return (
-    <div className="min-h-screen bg-white text-gray-900">
+    <div className="min-h-screen bg-white text-gray-900 overflow-x-hidden">
       {/* Navigation */}
       <nav className="fixed top-0 w-full bg-white/95 backdrop-blur-sm border-b border-gray-100 z-50">
         <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -166,9 +165,9 @@ function App() {
             transition={{ duration: 0.5, delay: 0.1 }}
             className="text-xl text-gray-500 max-w-2xl leading-relaxed mb-8"
           >
-            Scani aggregates your crypto exchanges, blockchain wallets, and bank accounts into one
-            place. Use it in your browser as a full-featured web app — or let AI agents query your
-            portfolio through an MCP server.
+            Scani aggregates crypto exchanges, blockchain wallets, and traditional investments into
+            one place. Use it as a full-featured web app — or let AI agents query and manage your
+            portfolio through MCP. Seamless data handoff between humans and AI.
           </motion.p>
 
           <motion.div
@@ -199,12 +198,14 @@ function App() {
             transition={{ duration: 0.5, delay: 0.25 }}
             className="mt-10 flex flex-wrap gap-5 text-sm text-gray-500"
           >
-            {['No credit card required', 'Web app included', 'MCP server included'].map((item) => (
-              <span key={item} className="flex items-center gap-1.5">
-                <CheckCircle className="w-4 h-4 text-green-500 flex-shrink-0" />
-                {item}
-              </span>
-            ))}
+            {['No credit card required', 'Web app + MCP server', 'Human ↔ Agent data handoff'].map(
+              (item) => (
+                <span key={item} className="flex items-center gap-1.5">
+                  <CheckCircle className="w-4 h-4 text-green-500 flex-shrink-0" />
+                  {item}
+                </span>
+              )
+            )}
           </motion.div>
         </div>
       </section>
@@ -220,10 +221,10 @@ function App() {
               </span>
             </div>
             <h2 className="text-3xl sm:text-4xl font-bold mb-4 max-w-2xl leading-tight">
-              A full-featured finance dashboard — in your browser
+              Your finances, one dashboard
             </h2>
             <p className="text-gray-500 text-lg max-w-2xl leading-relaxed mb-14">
-              No installation, no desktop client. Open{' '}
+              Open{' '}
               <a
                 href="https://app.scani.xyz"
                 target="_blank"
@@ -232,8 +233,8 @@ function App() {
               >
                 app.scani.xyz
               </a>{' '}
-              in any browser and get a live view of your entire portfolio — crypto, wallets, and
-              banks — in one place.
+              — your entire portfolio in one place. Crypto exchanges, blockchain wallets, and
+              AI-parsed brokerage screenshots, all in a single dashboard you own and control.
             </p>
           </FadeInSection>
 
@@ -242,22 +243,17 @@ function App() {
               {
                 icon: BarChart3,
                 title: 'Asset allocation',
-                body: 'Break down your portfolio by token, asset type, account, institution, or geography. Live charts.',
+                body: 'Break down your portfolio by token, asset type, account, institution, or geography. Interactive charts.',
               },
               {
                 icon: Globe,
                 title: 'Multi-currency',
-                body: 'Track everything in your chosen base currency. Live exchange rates. Switch at any time.',
-              },
-              {
-                icon: Zap,
-                title: 'Real-time sync',
-                body: 'WebSocket updates push price changes instantly. No polling, no manual refresh.',
+                body: 'Track everything in your chosen base currency. Automatic exchange rates. Switch at any time.',
               },
               {
                 icon: Network,
-                title: 'Price tracking',
-                body: 'Token prices sourced from CoinGecko and DefiLlama. Force-refresh any holding on demand.',
+                title: 'Universal price tracking',
+                body: 'Stocks, ETFs, and crypto — priced globally. CEX feeds, DEX pricing providers, and traditional market data in one place.',
               },
               {
                 icon: ScanSearch,
@@ -265,9 +261,9 @@ function App() {
                 body: 'No native integration for your broker? Upload a screenshot — AI parses it and creates all holdings automatically.',
               },
               {
-                icon: Shield,
-                title: 'API key management',
-                body: 'Create scoped API keys for agents or third-party tools. Revoke any key at any time.',
+                icon: Users,
+                title: 'Human ↔ Agent handoff',
+                body: 'Agents populate your portfolio, you review and refine it through the UI. Seamless data ownership between humans and AI.',
               },
             ].map((feature) => (
               <FadeInSection key={feature.title}>
@@ -313,7 +309,7 @@ function App() {
             <p className="text-gray-400 text-lg max-w-2xl leading-relaxed mb-14">
               Scani ships with a full MCP (Model Context Protocol) server. Any AI agent — Claude,
               GPT, your own LLM — can authenticate, query your portfolio, and manage your financial
-              data. No screen-scraping, no hacks. Agentic access is gated behind an{' '}
+              data programmatically. Agentic access is gated behind an{' '}
               <span className="text-indigo-300 font-semibold">x402 paywall</span> — agents pay
               micro-fees per tool call, no subscription required.
             </p>
@@ -321,7 +317,7 @@ function App() {
 
           <div className="grid md:grid-cols-2 gap-8 mb-12">
             <FadeInSection>
-              <div className="rounded-xl bg-gray-900 border border-gray-800 overflow-hidden h-full">
+              <div className="rounded-xl bg-gray-900 border border-gray-800 overflow-hidden h-full min-w-0">
                 <div className="flex items-center gap-2 px-4 py-3 border-b border-gray-800">
                   <div className="w-2.5 h-2.5 rounded-full bg-red-500/70" />
                   <div className="w-2.5 h-2.5 rounded-full bg-yellow-500/70" />
@@ -330,8 +326,9 @@ function App() {
                     claude_desktop_config.json
                   </span>
                 </div>
-                <pre className="p-5 text-sm font-mono text-gray-300 overflow-x-auto leading-relaxed whitespace-pre">
-                  {`{
+                <div className="overflow-x-auto">
+                  <pre className="p-5 text-sm font-mono text-gray-300 leading-relaxed whitespace-pre">
+                    {`{
   "mcpServers": {
     "scani": {
       "url": "https://api.scani.xyz/mcp",
@@ -341,7 +338,8 @@ function App() {
     }
   }
 }`}
-                </pre>
+                  </pre>
+                </div>
               </div>
             </FadeInSection>
 
@@ -351,17 +349,17 @@ function App() {
                   {
                     icon: Key,
                     title: 'Self-registration',
-                    body: 'Agents call agent_register to self-issue an API key. Link the agent to your Scani account once to grant it access. You can revoke any key at any time.',
+                    body: 'Agents call agent_register to self-issue an API key. Link the agent to your Scani account once to grant it access. Revoke any key at any time.',
                   },
                   {
                     icon: Code2,
-                    title: '30+ MCP tools',
-                    body: 'Full CRUD for accounts, holdings, institutions, blockchain wallets, and tokens. Plus dashboard summary and asset allocation.',
+                    title: 'Comprehensive MCP API',
+                    body: 'Full CRUD for accounts, holdings, institutions, blockchain wallets, and tokens. Dashboard summary and asset allocation — all via MCP.',
                   },
                   {
-                    icon: Shield,
-                    title: 'Scoped by user',
-                    body: 'Every tool call is automatically scoped to the authenticated user. Agents can only see and modify your data.',
+                    icon: Users,
+                    title: 'Human-in-the-loop',
+                    body: 'Agents create and manage your portfolio data. You review, edit, and take full ownership through the web UI. Seamless data handoff between AI and humans.',
                   },
                   {
                     icon: Zap,
@@ -440,12 +438,17 @@ function App() {
                 items: ['Bitcoin', 'Ethereum + all EVM chains', 'Solana', 'TON', 'TRON'],
               },
               {
-                icon: TrendingUp,
-                label: 'Coming soon',
-                labelColor: 'bg-amber-50 text-amber-700 border-amber-200',
-                title: 'Banks & brokers',
-                desc: 'Plaid integration for US banks and brokerage accounts.',
-                items: ['US banks', 'US brokerages', 'International support planned'],
+                icon: ScanSearch,
+                label: 'Live',
+                labelColor: 'bg-green-50 text-green-700 border-green-200',
+                title: 'Any institution via screenshots',
+                desc: 'Upload a portfolio screenshot from any broker, bank, or app — AI reads it and creates all holdings.',
+                items: [
+                  'Any broker worldwide',
+                  'Any bank or brokerage statement',
+                  'Any portfolio page or app',
+                  'Powered by AI vision',
+                ],
               },
             ].map((card) => (
               <FadeInSection key={card.title}>
@@ -482,11 +485,13 @@ function App() {
                   <Zap className="w-5 h-5 text-white" />
                 </div>
                 <div>
-                  <h3 className="font-semibold text-gray-900 mb-1">AI screenshot import</h3>
+                  <h3 className="font-semibold text-gray-900 mb-1">
+                    Universal coverage, zero integrations
+                  </h3>
                   <p className="text-gray-600 text-sm leading-relaxed max-w-xl">
-                    No native integration for your broker? Take a screenshot of your portfolio page
-                    and upload it. AI parses the image and creates all holdings automatically. Works
-                    with any institution worldwide.
+                    Scani doesn't need a native integration with every institution. Take a
+                    screenshot of any portfolio page — from any broker, bank, or app worldwide — and
+                    AI creates all holdings automatically. Works everywhere, instantly.
                   </p>
                 </div>
               </div>
@@ -514,32 +519,32 @@ function App() {
               {
                 icon: BarChart3,
                 title: 'Asset allocation',
-                body: 'Break down your portfolio by token, asset type, account, institution, or geography. Live charts.',
+                body: 'Break down your portfolio by token, asset type, account, institution, or geography. Interactive charts.',
               },
               {
                 icon: Globe,
                 title: 'Multi-currency',
-                body: 'Track everything in your chosen base currency. Live exchange rates. Switch at any time.',
-              },
-              {
-                icon: Zap,
-                title: 'Real-time sync',
-                body: 'WebSocket updates push price changes instantly. No polling, no manual refresh.',
+                body: 'Track everything in your chosen base currency. Automatic exchange rates. Switch at any time.',
               },
               {
                 icon: Network,
-                title: 'Price tracking',
-                body: 'Token prices sourced from CoinGecko and DefiLlama. Force-refresh any holding on demand.',
+                title: 'Universal price tracking',
+                body: 'Stocks, ETFs, and crypto — priced globally. CEX feeds, DEX pricing providers, and traditional market data in one place.',
+              },
+              {
+                icon: ScanSearch,
+                title: 'AI screenshot import',
+                body: 'Upload a portfolio screenshot from any broker, bank, or app worldwide — AI reads it and creates all holdings automatically.',
+              },
+              {
+                icon: Users,
+                title: 'Human ↔ Agent handoff',
+                body: 'Agents populate data via MCP, you review and refine through the UI. Seamless data ownership between humans and AI.',
               },
               {
                 icon: Code2,
-                title: '30+ MCP tools',
-                body: 'Full CRUD for accounts, holdings, institutions, blockchain wallets, and tokens via MCP.',
-              },
-              {
-                icon: Shield,
-                title: 'API key management',
-                body: 'Create scoped API keys for agents or third-party tools. Revoke any key at any time.',
+                title: 'Full MCP server',
+                body: 'Comprehensive API for accounts, holdings, institutions, blockchain wallets, and tokens — accessible to any MCP-capable agent.',
               },
             ].map((feature) => (
               <FadeInSection key={feature.title}>
@@ -595,12 +600,12 @@ function App() {
                 <ul className="space-y-2.5 mb-8 flex-1">
                   {[
                     'Full dashboard access',
-                    'Crypto exchange integrations (live)',
-                    'Blockchain wallet import (live)',
+                    'Crypto exchange integrations',
+                    'Blockchain wallet import',
                     'AI screenshot import',
                     'Multi-currency dashboard',
-                    'Real-time price tracking',
-                    'MCP API key generation',
+                    'Stocks, ETFs & crypto price tracking',
+                    'Human ↔ Agent data handoff',
                   ].map((item) => (
                     <li key={item} className="flex items-center gap-2 text-sm text-gray-700">
                       <CheckCircle className="w-4 h-4 text-green-500 flex-shrink-0" />
@@ -638,13 +643,13 @@ function App() {
 
                 <ul className="space-y-2.5 mb-8 flex-1">
                   {[
-                    '30+ MCP tools over HTTPS',
+                    'Full MCP server over HTTPS',
                     'Agent self-registration',
                     'Micro-payments via x402',
                     'No subscription required',
                     'Pay only for what agents use',
                     'Compatible with Claude, GPT, any LLM',
-                    'Scoped per user — agents see only your data',
+                    'Human ↔ Agent data handoff via UI',
                   ].map((item) => (
                     <li key={item} className="flex items-center gap-2 text-sm text-gray-700">
                       <CheckCircle className="w-4 h-4 text-indigo-500 flex-shrink-0" />
