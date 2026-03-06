@@ -1,6 +1,6 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { AccountImplementations } from '@scani/core/features/implementations';
-import { UpdateAccountDto } from '@scani/shared';
+import { CreateAccountDto, UpdateAccountDto } from '@scani/shared';
 import { z } from 'zod';
 import { getCurrentUserId } from '../server';
 import { createErrorResponse, createSuccessResponse } from './helpers';
@@ -10,6 +10,36 @@ import { createErrorResponse, createSuccessResponse } from './helpers';
  * Maps to the accounts tRPC router
  */
 export function registerAccountsTools(server: McpServer) {
+  // Create account
+  // @ts-expect-error - MCP SDK type inference is excessively deep
+  server.registerTool(
+    'accounts_create',
+    {
+      description:
+        'Create a new account within an institution. Use accountTypes_getAll to get valid typeId values and institutions_getAll or institutions_getByUserId to get institutionId.',
+      inputSchema: z.object({
+        name: z.string().min(1).max(100).describe('Account name'),
+        typeId: z.string().uuid().describe('Account type ID (from accountTypes_getAll)'),
+        institutionId: z
+          .string()
+          .uuid()
+          .optional()
+          .describe('Institution ID this account belongs to'),
+        description: z.string().max(500).optional().describe('Optional description'),
+      }),
+    },
+    async (params, _extra) => {
+      try {
+        const userId = getCurrentUserId();
+        const validatedInput = CreateAccountDto.parse(params);
+        const result = await AccountImplementations.create({ userId }, validatedInput);
+        return createSuccessResponse(result);
+      } catch (error) {
+        return createErrorResponse(error);
+      }
+    }
+  );
+
   // Get all accounts - no input
   server.registerTool(
     'accounts_getAll',

@@ -1,0 +1,88 @@
+# Scani — Personal Finance Platform for Humans and AI Agents
+
+> Scani (https://scani.xyz) is a personal finance SaaS that lets users and autonomous AI
+> agents track holdings, portfolios, and wallets across banks, brokerages, crypto exchanges,
+> and on-chain wallets. AI agents can self-register without human interaction and pay per-call
+> for premium features using USDC on Base via the x402 micropayment protocol.
+
+## Key URLs
+
+- **Landing page**: https://scani.xyz
+- **Web app**: https://app.scani.xyz
+- **MCP API endpoint**: https://api.scani.xyz/mcp
+- **MCP Skill specification**: https://scani.xyz/SKILL.md  (also at https://app.scani.xyz/SKILL.md)
+- **Source code**: https://github.com/MGrin/scani
+
+## What Scani Does
+
+Scani is a unified portfolio tracker. It aggregates financial data from:
+
+- **Bank accounts** (via Plaid)
+- **Brokerage accounts** (stocks, ETFs)
+- **Crypto exchanges** (Binance, Kraken)
+- **On-chain wallets** (Ethereum, Base, and EVM-compatible chains)
+
+It provides real-time valuations, historical snapshots, and asset allocation breakdowns.
+
+## For AI Agents — MCP Interface
+
+Scani exposes a **Model Context Protocol (MCP)** server at `https://api.scani.xyz/mcp`.
+
+Agents can:
+
+1. **Self-register** — obtain permanent API credentials without any human interaction
+2. **Query portfolios** — read holdings, balances, and allocation data for the linked user
+3. **Manage holdings** — create, update, and delete positions
+4. **Import wallets** — add blockchain wallet addresses for automatic on-chain tracking
+5. **Pay per-call** — use the x402 protocol (USDC on Base) for metered premium access
+
+### Authentication
+
+All MCP calls require a bearer token:
+
+```
+Authorization: Bearer <SCANI_API_KEY>
+```
+
+Agents obtain an API key by calling the `agent_claimIdentity` tool (no prior auth required).
+
+### Payment (x402)
+
+Premium tools are gated behind micropayments. When a tool requires payment the server
+returns HTTP 402 with a `X-PAYMENT-REQUIRED` header describing the price (in USDC on Base).
+The agent pays by attaching a valid `X-PAYMENT` header on the retry request.
+
+Protocol: https://x402.org  
+Network: Base (eip155:8453)  
+Token: USDC
+
+### Quick discovery call (no auth needed)
+
+```bash
+curl -s -X POST https://api.scani.xyz/mcp \
+  -H "Content-Type: application/json" \
+  -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"agent_getCapabilities","arguments":{}}}' \
+  | jq .
+```
+
+## Full Skill Specification
+
+For detailed tool listings, request/response schemas, authentication flows, x402 payment
+integration guides, and registry submission instructions, see:
+
+- **SKILL.md**: https://scani.xyz/SKILL.md
+
+## Registries
+
+Scani is listed in (or submitted to):
+
+- **Official MCP Registry**: https://registry.modelcontextprotocol.io
+- **awesome-mcp-servers**: https://github.com/punkpeye/awesome-mcp-servers
+- **Smithery**: https://smithery.ai
+- **Glama**: https://glama.ai/mcp
+
+## License & Source
+
+- **License**: MIT
+- **Repository**: https://github.com/MGrin/scani
+- **Issues / feedback**: https://github.com/MGrin/scani/issues

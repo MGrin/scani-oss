@@ -4,6 +4,10 @@ Allow: /
 # Sitemap
 Sitemap: https://scani.xyz/sitemap.xml
 
+# LLM / agent discovery
+# See https://scani.xyz/llm.txt for AI-readable platform description
+# See https://scani.xyz/SKILL.md for the full MCP Skill specification
+
 # Disallow development/staging paths if they exist
 Disallow: /admin/
 Disallow: /api/

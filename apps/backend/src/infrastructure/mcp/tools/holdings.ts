@@ -1,6 +1,6 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { HoldingImplementations } from '@scani/core/features/implementations';
-import { UpdateHoldingDto } from '@scani/shared';
+import { CreateHoldingDto, UpdateHoldingDto } from '@scani/shared';
 import { z } from 'zod';
 import { getCurrentUserId } from '../server';
 import { createErrorResponse, createSuccessResponse } from './helpers';
@@ -10,6 +10,45 @@ import { createErrorResponse, createSuccessResponse } from './helpers';
  * Maps to the holdings tRPC router
  */
 export function registerHoldingsTools(server: McpServer) {
+  // Create holding
+  // @ts-expect-error - MCP SDK type inference is excessively deep
+  server.registerTool(
+    'holdings_create',
+    {
+      description:
+        'Create a new holding in an account. Use tokens_search to find the tokenId, and accounts_getAll to find the accountId.',
+      inputSchema: z.object({
+        accountId: z.string().uuid().describe('Account ID'),
+        tokenId: z.string().uuid().describe('Token ID (from tokens_search)'),
+        balance: z.string().describe('Balance as a decimal string, e.g. "1.5" or "1000"'),
+        lastUpdated: z
+          .string()
+          .datetime()
+          .optional()
+          .describe('ISO 8601 timestamp of last balance update'),
+      }),
+    },
+    async (params, _extra) => {
+      try {
+        const userId = getCurrentUserId();
+        const validatedInput = CreateHoldingDto.parse({
+          ...params,
+          lastUpdated: params.lastUpdated ? new Date(params.lastUpdated) : undefined,
+        });
+        const result = await HoldingImplementations.create(
+          { userId },
+          {
+            ...validatedInput,
+            lastUpdated: validatedInput.lastUpdated,
+          }
+        );
+        return createSuccessResponse(result);
+      } catch (error) {
+        return createErrorResponse(error);
+      }
+    }
+  );
+
   // Get holdings with details - no input
   server.registerTool(
     'holdings_getWithDetails',

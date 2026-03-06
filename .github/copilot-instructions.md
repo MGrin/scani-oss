@@ -9,16 +9,17 @@
 - `bun dev` - Start all development servers (backend + frontendV2 + landing)
 - `bun dev:backend` - Start backend only
 - `bun dev:frontend` - Start frontendV2 only
-- `bun lint` - Run Biome linter across all packages
+- `bun lint:fix` - Run Biome linter and auto-fix all issues (run before every commit)
+- `bun lint` - Run Biome linter in check-only mode (no fixes applied)
 - `bun type-check` - Run TypeScript checks on all packages
 - `cd packages/core && bun run db:generate` - Generate new migrations
 - `bun run db:migrate` - Apply database migrations
 
 **Critical Rules:**
 
+- ✅ **ALWAYS run `bun lint:fix` before every `report_progress` commit** — Biome auto-fixes formatting, never commit without it
 - ✅ Always use `bun` and `bunx` (never npm/yarn/npx)
 - ✅ Use Drizzle ORM for database operations (never raw SQL)
-- ✅ Use `Decimal.js` for all financial calculations
 - ✅ All user data must be scoped via `protectedProcedure`
 - ✅ Use TypeDI Container for dependency injection
 - ✅ **ALWAYS use proper ES6 imports at the top of files** (NEVER use `require()` or dynamic imports)
@@ -166,8 +167,8 @@ bun run db:migrate         # Apply migrations
 bun run db:studio          # Open Drizzle Studio (database GUI)
 
 # Linting & Type Checking (from root)
-bun lint                   # Run Biome linter
-bun lint:fix              # Auto-fix linting issues
+bun lint:fix              # Auto-fix all Biome formatting/style issues (ALWAYS run before committing)
+bun lint                   # Check-only (no fixes) — verify after lint:fix
 bun type-check            # Check TypeScript types
 ```
 
@@ -441,7 +442,7 @@ When creating new documentation, select the folder based on content type:
 ### Before Making Changes
 
 1. **Understand the codebase**: Explore relevant files and understand existing patterns
-2. **Check current state**: Run `bun lint` to see baseline
+2. **Check current state**: Run `bun lint` to see baseline (use `bun lint:fix` to auto-fix before committing)
 3. **Identify minimal changes**: Plan the smallest possible modifications
 4. **Review architecture**: Check if changes align with clean architecture (use cases → services → repositories)
 
@@ -458,17 +459,19 @@ When creating new documentation, select the folder based on content type:
 
 ### Before Finalizing
 
-1. **Run linter**: `bun lint` (fix all issues with `bun lint:fix`)
-2. **Build check**: Verify TypeScript compilation succeeds with `bun type-check`
-3. **Manual verification**: Test the actual functionality (run servers, test endpoints)
-4. **Review changes**: Ensure only relevant files are modified
-5. **Security check**: Verify no secrets committed, all auth checks in place
+1. **Auto-fix linter**: Run `bun lint:fix` — this applies all Biome formatting/style fixes automatically
+2. **Verify clean**: Run `bun lint` to confirm no remaining errors after the fix
+3. **Build check**: Verify TypeScript compilation succeeds with `bun type-check`
+4. **Manual verification**: Test the actual functionality (run servers, test endpoints)
+5. **Review changes**: Ensure only relevant files are modified
+6. **Security check**: Verify no secrets committed, all auth checks in place
 
 ### Code Review Checklist
 
 Before committing, verify:
 
-- [ ] Linter passes (`bun lint`)
+- [ ] **`bun lint:fix` was run** (auto-fixes Biome formatting — required before every commit)
+- [ ] Linter passes with no errors after fix (`bun lint`)
 - [ ] TypeScript compiles without errors (`bun type-check`)
 - [ ] No hardcoded secrets or sensitive data
 - [ ] User data properly scoped with authentication
@@ -570,11 +573,11 @@ cd apps/backend && bun test src/presentation/routers/your-router.test.ts
 ### Local Pre-commit Validation
 
 ```bash
-# Run before committing
-bun run lint:fix        # Auto-fix linting issues
-bun test                # Verify tests pass
-bun run type-check      # Check TypeScript
-bun run build           # Verify build succeeds
+# ALWAYS run before committing — in this order:
+bun lint:fix        # Step 1: Auto-fix ALL Biome formatting and style issues (mandatory)
+bun lint            # Step 2: Verify no remaining lint errors after auto-fix
+bun run type-check  # Step 3: Check TypeScript types
+bun run build       # Step 4: Verify build succeeds
 ```
 
 ## Tool Usage Patterns
@@ -642,9 +645,12 @@ ls packages/core/src/database/migrations/*.sql | tail -1
 # 1. Fix the bug
 # Edit: packages/core/src/path/to/fix.ts
 
-# 2. Run linter
+# 2. Auto-fix linting (REQUIRED before every commit)
+bun lint:fix
+
+# 3. Verify no remaining errors
 bun lint
 
-# 3. Type check
+# 4. Type check
 bun type-check
 ```

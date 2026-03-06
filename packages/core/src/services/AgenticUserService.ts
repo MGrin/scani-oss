@@ -268,4 +268,35 @@ export class AgenticUserService extends BaseService {
       throw this.handleError(error, 'getAgentInfo');
     }
   }
+
+  /**
+   * Get all agentic users linked to a regular user account.
+   * Used by the Settings UI to display the linked-agents list.
+   */
+  async getLinkedAgents(
+    userId: string
+  ): Promise<Array<{ agentId: string; name: string; linkedAt: Date; createdAt: Date }>> {
+    try {
+      this.logInfo('Getting linked agents', { userId });
+
+      const agents = await db
+        .select({
+          id: schema.users.id,
+          name: schema.users.name,
+          updatedAt: schema.users.updatedAt,
+          createdAt: schema.users.createdAt,
+        })
+        .from(schema.users)
+        .where(eq(schema.users.linkedToUserId, userId));
+
+      return agents.map((a) => ({
+        agentId: a.id,
+        name: a.name,
+        linkedAt: a.updatedAt,
+        createdAt: a.createdAt,
+      }));
+    } catch (error) {
+      throw this.handleError(error, 'getLinkedAgents');
+    }
+  }
 }

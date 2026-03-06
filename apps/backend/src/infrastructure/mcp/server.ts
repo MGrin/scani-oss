@@ -9,12 +9,16 @@ import { registerAccountsTools } from './tools/accounts';
 import { isUnauthenticatedTool, registerAgentTools } from './tools/agent';
 import { registerBatchOperationsTools } from './tools/batch-operations';
 import { registerDashboardTools } from './tools/dashboard';
+import { registerGroupsTools } from './tools/groups';
 import { registerHoldingsTools } from './tools/holdings';
 import { registerInstitutionsTools } from './tools/institutions';
+import { registerIntegrationsTools } from './tools/integrations';
+import { registerScreenshotsTools } from './tools/screenshots';
 import { registerTokensTools } from './tools/tokens';
 import { registerTypesTools } from './tools/types';
 import { registerUsersTools } from './tools/users';
 import { registerWalletTools } from './tools/wallet';
+import { checkX402Payment, createX402Response } from './x402-middleware';
 
 const logger = createComponentLogger('mcp:server');
 
@@ -123,11 +127,12 @@ export function registerAllTools() {
   registerAccountsTools(mcpServer);
   registerHoldingsTools(mcpServer);
   registerInstitutionsTools(mcpServer);
+  registerGroupsTools(mcpServer);
   registerWalletTools(mcpServer);
   registerBatchOperationsTools(mcpServer);
   registerTypesTools(mcpServer);
-  // Note: Portfolio history, screenshots, and integrations tools not implemented
-  // as they require complex workflows better suited for the web UI
+  registerScreenshotsTools(mcpServer);
+  registerIntegrationsTools(mcpServer);
 
   logger.info('MCP tools registered successfully');
 }
@@ -322,6 +327,22 @@ export async function handleMcpRequest(
       { userId: authContext.userId, method: request.method },
       '🤖 MCP request authenticated'
     );
+
+    // Check x402 payment for paid tools
+    if (toolName) {
+      const paymentCheck = await checkX402Payment(toolName, request, authContext.userId);
+      if (paymentCheck.required) {
+        logger.info(
+          {
+            toolName,
+            userId: authContext.userId,
+            amount: paymentCheck.requirements.accepts[0]?.maxAmountRequired,
+          },
+          '💰 x402 payment required'
+        );
+        return createX402Response(paymentCheck.requirements, requestId);
+      }
+    }
 
     // Process the request within the auth context
     // AsyncLocalStorage ensures each concurrent request has its own isolated context

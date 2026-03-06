@@ -23,6 +23,7 @@ import {
   DashboardService,
   HoldingService,
   InstitutionService,
+  PortfolioHistoryService,
   TokenService,
   UserContextService,
   UserService,
@@ -224,6 +225,20 @@ export const AccountImplementations = {
     };
   },
 
+  async create(
+    context: FeatureExecutionContext,
+    input: {
+      institutionId?: string;
+      name: string;
+      typeId: string;
+      description?: string;
+      metadata?: Record<string, unknown>;
+    }
+  ) {
+    const accountService = Container.get(AccountService);
+    return await accountService.createAccount(input, context.userId);
+  },
+
   async getCommonGroups(context: FeatureExecutionContext, input: { accountIds: string[] }) {
     const groupRepository = Container.get(GroupRepository);
     const accountRepository = Container.get(AccountRepository);
@@ -277,6 +292,19 @@ export const HoldingImplementations = {
     // Type assertion since the function expects a full user object
     // Use new method that returns summary with pre-calculated totals
     return await holdingService.getHoldingsByAccountIdWithSummary(dbUser as User);
+  },
+
+  async create(
+    context: FeatureExecutionContext,
+    input: {
+      accountId: string;
+      tokenId: string;
+      balance: string;
+      lastUpdated?: Date;
+    }
+  ) {
+    const holdingService = Container.get(HoldingService);
+    return await holdingService.createHolding(input, context.userId);
   },
 
   /**
@@ -468,6 +496,20 @@ export const InstitutionImplementations = {
   async getAll(_context: FeatureExecutionContext, _input: Record<string, never>) {
     const institutionRepository = Container.get(InstitutionRepository);
     return await institutionRepository.findAll();
+  },
+
+  async create(
+    context: FeatureExecutionContext,
+    input: {
+      name: string;
+      typeId: string;
+      description?: string;
+      website?: string;
+      logoUrl?: string;
+    }
+  ) {
+    const institutionService = Container.get(InstitutionService);
+    return await institutionService.createInstitution(input, context.userId);
   },
 
   async getByUserId(context: FeatureExecutionContext, _input: Record<string, never>) {
@@ -686,6 +728,48 @@ export const TypeImplementations = {
   async getInstitutionTypes(_context: FeatureExecutionContext, _input: Record<string, never>) {
     const institutionTypeRepository = Container.get(InstitutionTypeRepository);
     return await institutionTypeRepository.findAll();
+  },
+};
+
+/**
+ * Portfolio History Implementations
+ */
+export const PortfolioHistoryImplementations = {
+  async getEvents(
+    context: FeatureExecutionContext,
+    input: {
+      limit?: number;
+      offset?: number;
+      startDate?: string;
+      endDate?: string;
+    }
+  ) {
+    const portfolioHistoryService = Container.get(PortfolioHistoryService);
+    const startDate = input.startDate ? new Date(input.startDate) : undefined;
+    const endDate = input.endDate ? new Date(input.endDate) : undefined;
+    return await portfolioHistoryService.getHistoryEvents(context.userId, {
+      limit: input.limit ?? 20,
+      offset: input.offset ?? 0,
+      startDate,
+      endDate,
+    });
+  },
+
+  async getChart(
+    context: FeatureExecutionContext,
+    input: {
+      startDate: string;
+      endDate: string;
+      resolution?: 'best' | 'hourly' | 'daily' | 'weekly' | 'monthly';
+    }
+  ) {
+    const portfolioHistoryService = Container.get(PortfolioHistoryService);
+    return await portfolioHistoryService.getHistoryChart(
+      context.userId,
+      new Date(input.startDate),
+      new Date(input.endDate),
+      input.resolution ?? 'daily'
+    );
   },
 };
 
