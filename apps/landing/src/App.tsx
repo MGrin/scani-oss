@@ -2,13 +2,15 @@ import { motion } from 'framer-motion';
 import {
   ArrowRight,
   BarChart3,
-  Bot,
   CheckCircle,
   Code2,
+  CreditCard,
   Globe,
   Key,
   Menu,
+  Monitor,
   Network,
+  ScanSearch,
   Shield,
   TrendingUp,
   Wallet,
@@ -52,9 +54,11 @@ function App() {
   }, [mobileMenuOpen]);
 
   const navLinks = [
+    { label: 'Web App', href: '#webapp' },
     { label: 'For Agents', href: '#for-agents' },
     { label: 'Integrations', href: '#integrations' },
     { label: 'Features', href: '#features' },
+    { label: 'Pricing', href: '#pricing' },
   ];
 
   return (
@@ -84,14 +88,6 @@ function App() {
                   {link.label}
                 </a>
               ))}
-              <a
-                href="https://github.com/MGrin/scani"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-sm text-gray-500 hover:text-gray-900 transition-colors font-medium"
-              >
-                GitHub
-              </a>
               <button
                 type="button"
                 onClick={() => window.open('https://app.scani.xyz', '_blank')}
@@ -124,15 +120,6 @@ function App() {
                 {link.label}
               </a>
             ))}
-            <a
-              href="https://github.com/MGrin/scani"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="block py-1.5 text-sm text-gray-600 hover:text-gray-900 font-medium"
-              onClick={() => setMobileMenuOpen(false)}
-            >
-              GitHub
-            </a>
             <button
               type="button"
               onClick={() => {
@@ -158,7 +145,7 @@ function App() {
           >
             <span className="inline-flex items-center gap-1.5 text-xs font-medium px-3 py-1 rounded-full bg-green-50 text-green-700 border border-green-200">
               <span className="w-1.5 h-1.5 rounded-full bg-green-500 inline-block" />
-              Alpha — free to use
+              Beta — free to use
             </span>
           </motion.div>
 
@@ -180,7 +167,8 @@ function App() {
             className="text-xl text-gray-500 max-w-2xl leading-relaxed mb-8"
           >
             Scani aggregates your crypto exchanges, blockchain wallets, and bank accounts into one
-            place. Then exposes everything through an MCP server — so AI agents can actually use it.
+            place. Use it in your browser as a full-featured web app — or let AI agents query your
+            portfolio through an MCP server.
           </motion.p>
 
           <motion.div
@@ -198,12 +186,10 @@ function App() {
               <ArrowRight className="w-4 h-4 group-hover:translate-x-0.5 transition-transform" />
             </button>
             <a
-              href="https://github.com/MGrin/scani"
-              target="_blank"
-              rel="noopener noreferrer"
+              href="#for-agents"
               className="inline-flex items-center justify-center gap-2 bg-white text-gray-700 px-6 py-3 rounded-lg text-base font-semibold border border-gray-200 hover:bg-gray-50 transition-colors"
             >
-              View on GitHub
+              MCP for agents
             </a>
           </motion.div>
 
@@ -213,7 +199,7 @@ function App() {
             transition={{ duration: 0.5, delay: 0.25 }}
             className="mt-10 flex flex-wrap gap-5 text-sm text-gray-500"
           >
-            {['No credit card required', 'Open source', 'MCP server included'].map((item) => (
+            {['No credit card required', 'Web app included', 'MCP server included'].map((item) => (
               <span key={item} className="flex items-center gap-1.5">
                 <CheckCircle className="w-4 h-4 text-green-500 flex-shrink-0" />
                 {item}
@@ -223,12 +209,100 @@ function App() {
         </div>
       </section>
 
+      {/* Web App */}
+      <section id="webapp" className="py-20 px-4 sm:px-6 lg:px-8 bg-gray-50">
+        <div className="max-w-6xl mx-auto">
+          <FadeInSection>
+            <div className="flex items-center gap-2 mb-4">
+              <Monitor className="w-5 h-5 text-gray-700" />
+              <span className="text-sm font-semibold text-gray-600 uppercase tracking-widest">
+                Web App
+              </span>
+            </div>
+            <h2 className="text-3xl sm:text-4xl font-bold mb-4 max-w-2xl leading-tight">
+              A full-featured finance dashboard — in your browser
+            </h2>
+            <p className="text-gray-500 text-lg max-w-2xl leading-relaxed mb-14">
+              No installation, no desktop client. Open{' '}
+              <a
+                href="https://app.scani.xyz"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="underline hover:text-gray-700 transition-colors"
+              >
+                app.scani.xyz
+              </a>{' '}
+              in any browser and get a live view of your entire portfolio — crypto, wallets, and
+              banks — in one place.
+            </p>
+          </FadeInSection>
+
+          <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-5">
+            {[
+              {
+                icon: BarChart3,
+                title: 'Asset allocation',
+                body: 'Break down your portfolio by token, asset type, account, institution, or geography. Live charts.',
+              },
+              {
+                icon: Globe,
+                title: 'Multi-currency',
+                body: 'Track everything in your chosen base currency. Live exchange rates. Switch at any time.',
+              },
+              {
+                icon: Zap,
+                title: 'Real-time sync',
+                body: 'WebSocket updates push price changes instantly. No polling, no manual refresh.',
+              },
+              {
+                icon: Network,
+                title: 'Price tracking',
+                body: 'Token prices sourced from CoinGecko and DefiLlama. Force-refresh any holding on demand.',
+              },
+              {
+                icon: ScanSearch,
+                title: 'AI screenshot import',
+                body: 'No native integration for your broker? Upload a screenshot — AI parses it and creates all holdings automatically.',
+              },
+              {
+                icon: Shield,
+                title: 'API key management',
+                body: 'Create scoped API keys for agents or third-party tools. Revoke any key at any time.',
+              },
+            ].map((feature) => (
+              <FadeInSection key={feature.title}>
+                <div className="bg-white p-6 rounded-xl border border-gray-200 hover:shadow-sm transition-all">
+                  <div className="w-9 h-9 bg-gray-100 rounded-lg flex items-center justify-center mb-4">
+                    <feature.icon className="w-[18px] h-[18px] text-gray-700" />
+                  </div>
+                  <h3 className="font-semibold text-gray-900 mb-2">{feature.title}</h3>
+                  <p className="text-gray-500 text-sm leading-relaxed">{feature.body}</p>
+                </div>
+              </FadeInSection>
+            ))}
+          </div>
+
+          <FadeInSection delay={0.1}>
+            <div className="mt-10 text-center">
+              <button
+                type="button"
+                onClick={() => window.open('https://app.scani.xyz', '_blank')}
+                className="group inline-flex items-center justify-center gap-2 bg-gray-900 text-white px-6 py-3 rounded-lg text-base font-semibold hover:bg-gray-700 transition-colors"
+              >
+                Open web app — it's free
+                <ArrowRight className="w-4 h-4 group-hover:translate-x-0.5 transition-transform" />
+              </button>
+            </div>
+          </FadeInSection>
+        </div>
+      </section>
+
       {/* For Agents / MCP */}
       <section id="for-agents" className="py-20 px-4 sm:px-6 lg:px-8 bg-gray-950 text-white">
         <div className="max-w-6xl mx-auto">
           <FadeInSection>
             <div className="flex items-center gap-2 mb-4">
-              <Bot className="w-5 h-5 text-indigo-400" />
+              <Code2 className="w-5 h-5 text-indigo-400" />
               <span className="text-sm font-semibold text-indigo-400 uppercase tracking-widest">
                 Agentic-ready
               </span>
@@ -239,7 +313,9 @@ function App() {
             <p className="text-gray-400 text-lg max-w-2xl leading-relaxed mb-14">
               Scani ships with a full MCP (Model Context Protocol) server. Any AI agent — Claude,
               GPT, your own LLM — can authenticate, query your portfolio, and manage your financial
-              data. No screen-scraping, no hacks.
+              data. No screen-scraping, no hacks. Agentic access is gated behind an{' '}
+              <span className="text-indigo-300 font-semibold">x402 paywall</span> — agents pay
+              micro-fees per tool call, no subscription required.
             </p>
           </FadeInSection>
 
@@ -456,9 +532,9 @@ function App() {
                 body: 'Token prices sourced from CoinGecko and DefiLlama. Force-refresh any holding on demand.',
               },
               {
-                icon: Bot,
-                title: 'AI chat assistant',
-                body: 'Ask questions about your portfolio in plain language. Powered by OpenAI.',
+                icon: Code2,
+                title: '30+ MCP tools',
+                body: 'Full CRUD for accounts, holdings, institutions, blockchain wallets, and tokens via MCP.',
               },
               {
                 icon: Shield,
@@ -480,65 +556,128 @@ function App() {
         </div>
       </section>
 
-      {/* Pricing / Alpha */}
-      <section className="py-20 px-4 sm:px-6 lg:px-8 bg-white">
-        <div className="max-w-3xl mx-auto text-center">
+      {/* Pricing */}
+      <section id="pricing" className="py-20 px-4 sm:px-6 lg:px-8 bg-white">
+        <div className="max-w-4xl mx-auto">
           <FadeInSection>
-            <span className="inline-flex items-center gap-1.5 text-xs font-medium px-3 py-1 rounded-full bg-green-50 text-green-700 border border-green-200 mb-6">
-              <span className="w-1.5 h-1.5 rounded-full bg-green-500 inline-block" />
-              Currently in alpha
-            </span>
-            <h2 className="text-3xl sm:text-4xl font-bold mb-4 leading-tight">
-              Free while we build it together
-            </h2>
-            <p className="text-gray-500 text-lg leading-relaxed mb-10 max-w-xl mx-auto">
-              Scani is in active development. Early users get full access at no cost and will
-              receive meaningful discounts when paid plans arrive.
-            </p>
-          </FadeInSection>
-
-          <FadeInSection delay={0.05}>
-            <div className="rounded-2xl border-2 border-gray-200 p-8 sm:p-10 text-left">
-              <div className="flex items-start justify-between mb-7 gap-4">
-                <div>
-                  <h3 className="text-2xl font-bold text-gray-900 mb-1">Alpha access</h3>
-                  <p className="text-gray-500 text-sm">Full platform. No limits. No card.</p>
-                </div>
-                <div className="text-right flex-shrink-0">
-                  <span className="text-4xl font-bold text-gray-900">$0</span>
-                  <span className="text-gray-400 text-sm ml-1">/mo</span>
-                </div>
-              </div>
-
-              <div className="grid sm:grid-cols-2 gap-x-8 gap-y-2.5 mb-8">
-                {[
-                  'Crypto exchange integrations (live)',
-                  'Blockchain wallet import (live)',
-                  'MCP server access',
-                  'AI screenshot import',
-                  'Multi-currency dashboard',
-                  'Real-time price tracking',
-                  'AI chat assistant',
-                  'Priority feedback channel',
-                  'Discount when paid plans launch',
-                ].map((item) => (
-                  <div key={item} className="flex items-center gap-2 text-sm text-gray-700">
-                    <CheckCircle className="w-4 h-4 text-green-500 flex-shrink-0" />
-                    {item}
-                  </div>
-                ))}
-              </div>
-
-              <button
-                type="button"
-                onClick={() => window.open('https://app.scani.xyz', '_blank')}
-                className="group w-full sm:w-auto inline-flex items-center justify-center gap-2 bg-gray-900 text-white px-8 py-3 rounded-lg text-base font-semibold hover:bg-gray-700 transition-colors"
-              >
-                Create free account
-                <ArrowRight className="w-4 h-4 group-hover:translate-x-0.5 transition-transform" />
-              </button>
+            <div className="text-center mb-12">
+              <span className="inline-flex items-center gap-1.5 text-xs font-medium px-3 py-1 rounded-full bg-green-50 text-green-700 border border-green-200 mb-6">
+                <span className="w-1.5 h-1.5 rounded-full bg-green-500 inline-block" />
+                Currently in beta
+              </span>
+              <h2 className="text-3xl sm:text-4xl font-bold mb-4 leading-tight">
+                Simple, transparent pricing
+              </h2>
+              <p className="text-gray-500 text-lg leading-relaxed max-w-xl mx-auto">
+                Free for humans. Pay-per-use for agents.
+              </p>
             </div>
           </FadeInSection>
+
+          <div className="grid md:grid-cols-2 gap-6">
+            {/* Web App — Free */}
+            <FadeInSection>
+              <div className="rounded-2xl border-2 border-gray-200 p-8 h-full flex flex-col">
+                <div className="flex items-start justify-between mb-6 gap-4">
+                  <div>
+                    <div className="flex items-center gap-2 mb-1">
+                      <Monitor className="w-4 h-4 text-gray-600" />
+                      <h3 className="text-xl font-bold text-gray-900">Web App</h3>
+                    </div>
+                    <p className="text-gray-500 text-sm">For humans, in the browser.</p>
+                  </div>
+                  <div className="text-right flex-shrink-0">
+                    <span className="text-4xl font-bold text-gray-900">$0</span>
+                    <span className="text-gray-400 text-sm ml-1">/mo</span>
+                  </div>
+                </div>
+
+                <ul className="space-y-2.5 mb-8 flex-1">
+                  {[
+                    'Full dashboard access',
+                    'Crypto exchange integrations (live)',
+                    'Blockchain wallet import (live)',
+                    'AI screenshot import',
+                    'Multi-currency dashboard',
+                    'Real-time price tracking',
+                    'MCP API key generation',
+                  ].map((item) => (
+                    <li key={item} className="flex items-center gap-2 text-sm text-gray-700">
+                      <CheckCircle className="w-4 h-4 text-green-500 flex-shrink-0" />
+                      {item}
+                    </li>
+                  ))}
+                </ul>
+
+                <button
+                  type="button"
+                  onClick={() => window.open('https://app.scani.xyz', '_blank')}
+                  className="group w-full inline-flex items-center justify-center gap-2 bg-gray-900 text-white px-6 py-3 rounded-lg text-sm font-semibold hover:bg-gray-700 transition-colors"
+                >
+                  Create free account
+                  <ArrowRight className="w-4 h-4 group-hover:translate-x-0.5 transition-transform" />
+                </button>
+              </div>
+            </FadeInSection>
+
+            {/* Agentic / MCP — x402 */}
+            <FadeInSection delay={0.05}>
+              <div className="rounded-2xl border-2 border-indigo-200 bg-indigo-50/30 p-8 h-full flex flex-col">
+                <div className="flex items-start justify-between mb-6 gap-4">
+                  <div>
+                    <div className="flex items-center gap-2 mb-1">
+                      <Code2 className="w-4 h-4 text-indigo-600" />
+                      <h3 className="text-xl font-bold text-gray-900">Agentic / MCP</h3>
+                    </div>
+                    <p className="text-gray-500 text-sm">For AI agents, via x402 paywall.</p>
+                  </div>
+                  <div className="text-right flex-shrink-0">
+                    <span className="text-2xl font-bold text-gray-900">Pay-per-use</span>
+                  </div>
+                </div>
+
+                <ul className="space-y-2.5 mb-8 flex-1">
+                  {[
+                    '30+ MCP tools over HTTPS',
+                    'Agent self-registration',
+                    'Micro-payments via x402',
+                    'No subscription required',
+                    'Pay only for what agents use',
+                    'Compatible with Claude, GPT, any LLM',
+                    'Scoped per user — agents see only your data',
+                  ].map((item) => (
+                    <li key={item} className="flex items-center gap-2 text-sm text-gray-700">
+                      <CheckCircle className="w-4 h-4 text-indigo-500 flex-shrink-0" />
+                      {item}
+                    </li>
+                  ))}
+                </ul>
+
+                <div className="rounded-lg bg-indigo-950/10 border border-indigo-200 p-4 mb-4">
+                  <div className="flex items-center gap-2 mb-1">
+                    <CreditCard className="w-4 h-4 text-indigo-600" />
+                    <span className="text-xs font-semibold text-indigo-700 uppercase tracking-wide">
+                      x402 Protocol
+                    </span>
+                  </div>
+                  <p className="text-xs text-gray-600 leading-relaxed">
+                    Agents attach a payment to each MCP request. No API billing setup, no monthly
+                    invoices — just micro-payments on Base (Ethereum L2).
+                  </p>
+                </div>
+
+                <a
+                  href="https://app.scani.xyz/settings"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="group w-full inline-flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-500 text-white px-6 py-3 rounded-lg text-sm font-semibold transition-colors"
+                >
+                  Get API key
+                  <ArrowRight className="w-4 h-4 group-hover:translate-x-0.5 transition-transform" />
+                </a>
+              </div>
+            </FadeInSection>
+          </div>
         </div>
       </section>
 
@@ -567,6 +706,11 @@ function App() {
                 <h4 className="font-semibold text-gray-700 mb-3">Product</h4>
                 <ul className="space-y-2 text-gray-400">
                   <li>
+                    <a href="#webapp" className="hover:text-gray-700 transition-colors">
+                      Web App
+                    </a>
+                  </li>
+                  <li>
                     <a href="#for-agents" className="hover:text-gray-700 transition-colors">
                       For agents
                     </a>
@@ -579,6 +723,11 @@ function App() {
                   <li>
                     <a href="#features" className="hover:text-gray-700 transition-colors">
                       Features
+                    </a>
+                  </li>
+                  <li>
+                    <a href="#pricing" className="hover:text-gray-700 transition-colors">
+                      Pricing
                     </a>
                   </li>
                   <li>
@@ -597,17 +746,17 @@ function App() {
                 <h4 className="font-semibold text-gray-700 mb-3">Developers</h4>
                 <ul className="space-y-2 text-gray-400">
                   <li>
+                    <code className="text-xs text-gray-500">api.scani.xyz/mcp</code>
+                  </li>
+                  <li>
                     <a
-                      href="https://github.com/MGrin/scani"
+                      href="https://app.scani.xyz/settings"
                       target="_blank"
                       rel="noopener noreferrer"
                       className="hover:text-gray-700 transition-colors"
                     >
-                      GitHub
+                      Get API key
                     </a>
-                  </li>
-                  <li>
-                    <code className="text-xs text-gray-500">api.scani.xyz/mcp</code>
                   </li>
                 </ul>
               </div>
@@ -616,7 +765,7 @@ function App() {
 
           <div className="mt-10 pt-6 border-t border-gray-100 flex flex-col sm:flex-row justify-between items-center gap-3 text-xs text-gray-400">
             <span>© {new Date().getFullYear()} Scani. All rights reserved.</span>
-            <span>Made with ❤️ for digital nomads &amp; AI enthusiasts</span>
+            <span>Made with ❤️ for nomads and agents</span>
           </div>
         </div>
       </footer>
