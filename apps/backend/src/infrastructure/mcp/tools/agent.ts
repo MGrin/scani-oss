@@ -105,11 +105,6 @@ const SCANI_CAPABILITIES = {
       description: 'Manage blockchain wallet addresses for automatic on-chain tracking',
     },
     {
-      name: 'Portfolio History',
-      tools: ['portfolioHistory_getEvents', 'portfolioHistory_getChart'],
-      description: 'Query historical portfolio snapshots and performance data',
-    },
-    {
       name: 'Exchange Integrations',
       tools: ['integrations_binance_validateKeys', 'integrations_kraken_validateKeys'],
       description: 'Connect Binance and Kraken accounts via API keys to auto-import balances',
