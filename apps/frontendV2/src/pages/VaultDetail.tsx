@@ -412,6 +412,7 @@ export function VaultDetail() {
                             min={0.01}
                             max={100}
                             step={1}
+                            onClick={(e) => e.stopPropagation()}
                             onBlur={(e) => handlePercentageBlur(holding.holdingId, e.target.value)}
                           />
                           <span className="text-xs text-muted-foreground">%</span>
