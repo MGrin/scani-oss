@@ -46,12 +46,11 @@ jobs:
     outputs:
       backend: ${{ steps.filter.outputs.backend }}
       frontend: ${{ steps.filter.outputs.frontend }}
-      landing: ${{ steps.filter.outputs.landing }}
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      
+
       - uses: dorny/paths-filter@v2
         id: filter
         with:
@@ -64,8 +63,6 @@ jobs:
             frontend:
               - 'apps/frontendV2/**'
               - 'packages/shared/**'
-            landing:
-              - 'apps/landing/**'
 
   deploy-backend:
     needs: [check-changes]
@@ -84,12 +81,3 @@ jobs:
       - name: Trigger frontend deployment
         run: |
           curl -X POST https://api.render.com/deploy/srv-d3j8p37diees73fl6q30?key=UP2oMJ6B9Vo
-
-  deploy-landing:
-    needs: [check-changes]
-    if: ${{ needs.check-changes.outputs.landing == 'true' }}
-    runs-on: ubuntu-latest
-    steps:
-      - name: Trigger landing deployment
-        run: |
-          curl -X POST https://api.render.com/deploy/srv-d3p8703uibrs738etau0?key=csrOYoHg-LE
