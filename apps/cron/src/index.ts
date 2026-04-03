@@ -1,5 +1,4 @@
 import 'reflect-metadata';
-import { captureException, close, flush, initializeSentry } from '@scani/core/lib/sentry';
 import { createComponentLogger } from '@scani/core/utils/logger';
 import { IntegrationManager } from '@scani/integrations';
 import { Container } from 'typedi';
@@ -83,9 +82,6 @@ async function main(): Promise<void> {
     '🚀 Starting Scani Cron Job Runner'
   );
 
-  // Initialize Sentry
-  initializeSentry();
-
   // Initialize DI Container
   initializeContainer();
 
@@ -130,10 +126,6 @@ async function main(): Promise<void> {
       results.push({ task: taskName, success: true });
     } catch (error) {
       logger.error({ taskName, error }, `Failed to execute ${taskName}`);
-      captureException(error instanceof Error ? error : new Error(String(error)), {
-        context: 'cron-job-execution',
-        extra: { taskName },
-      });
       results.push({
         task: taskName,
         success: false,
@@ -157,23 +149,12 @@ async function main(): Promise<void> {
     '✨ Cron job execution completed'
   );
 
-  // Flush Sentry events
-  await flush(2000);
-
-  // Close Sentry
-  await close();
-
   // Exit with appropriate code
   process.exit(failed > 0 ? 1 : 0);
 }
 
 // Run main function
-main().catch(async (error) => {
+main().catch((error) => {
   logger.error({ error }, '💥 Unhandled error in cron job runner');
-  captureException(error instanceof Error ? error : new Error(String(error)), {
-    context: 'cron-main-unhandled',
-  });
-  await flush(2000);
-  await close();
   process.exit(1);
 });

@@ -928,7 +928,7 @@ bun run build         # Vite production build
 - Basic logging only
 - No metrics collection
 - No distributed tracing
-- No error monitoring (Sentry)
+- No error monitoring
 
 ---
 
@@ -965,7 +965,6 @@ bun run build         # Vite production build
 
 - Prometheus metrics
 - Grafana dashboards
-- Sentry error tracking
 - OpenTelemetry tracing
 
 **Target Architecture Diagram:**

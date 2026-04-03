@@ -5,7 +5,6 @@ import { Container } from 'typedi';
 import { publicProcedure, router } from '../trpc';
 import { accountTypesRouter } from './account-types';
 import { accountsRouter } from './accounts';
-import { apiKeysRouter } from './api-keys';
 import { batchOperationsRouter } from './batch-operations';
 import { dashboardRouter } from './dashboard';
 import { holdingsRouter } from './holdings';
@@ -25,9 +24,6 @@ const tokensRouter = createTokensRouter(db, schema, Container.get(TokenValidatio
 export const appRouter = router({
   // User management (protected)
   users: usersRouter,
-
-  // API key management (protected) - For MCP server authentication
-  apiKeys: apiKeysRouter,
 
   // Dashboard (protected) - Aggregated data for overview
   dashboard: dashboardRouter,

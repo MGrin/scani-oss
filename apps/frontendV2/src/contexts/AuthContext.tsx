@@ -1,4 +1,3 @@
-import * as Sentry from '@sentry/react';
 import type { Session, User } from '@supabase/supabase-js';
 import type React from 'react';
 import { createContext, useContext, useEffect, useState } from 'react';
@@ -28,16 +27,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setSession(session);
       setUser(session?.user ?? null);
       setLoading(false);
-
-      // Set initial user context in Sentry
-      if (session?.user) {
-        Sentry.setUser({
-          id: session.user.id,
-          email: session.user.email,
-        });
-      } else {
-        Sentry.setUser(null);
-      }
     });
 
     // Listen for auth changes
@@ -47,16 +36,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setSession(session);
       setUser(session?.user ?? null);
       setLoading(false);
-
-      // Set user context in Sentry
-      if (session?.user) {
-        Sentry.setUser({
-          id: session.user.id,
-          email: session.user.email,
-        });
-      } else {
-        Sentry.setUser(null);
-      }
     });
 
     return () => subscription.unsubscribe();

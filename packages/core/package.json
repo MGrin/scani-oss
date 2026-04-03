@@ -25,7 +25,6 @@
     "./utils/query-cache": "./src/utils/query-cache.ts",
     "./utils/request-cache": "./src/utils/request-cache.ts",
     "./utils/performance-monitor": "./src/utils/performance-monitor.ts",
-    "./lib/sentry": "./src/lib/sentry.ts",
     "./lib/supabase": "./src/lib/supabase.ts"
   },
   "scripts": {
@@ -41,7 +40,6 @@
     "@scani/integrations": "workspace:*",
     "@scani/rate-limiter": "workspace:*",
     "@scani/shared": "workspace:*",
-    "@sentry/bun": "^10.21.0",
     "@supabase/supabase-js": "^2.57.4",
     "bcryptjs": "^3.0.3",
     "decimal.js": "^10.6.0",

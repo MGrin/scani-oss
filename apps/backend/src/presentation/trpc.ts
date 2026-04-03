@@ -1,4 +1,3 @@
-import { setUser } from '@scani/core/lib/sentry';
 import { createTimer, generateRequestId, logConfig, trpcLogger } from '@scani/core/utils/logger';
 import { initTRPC, TRPCError } from '@trpc/server';
 import type { FetchCreateContextFnOptions } from '@trpc/server/adapters/fetch';
@@ -42,14 +41,6 @@ export const createContext = async (opts?: FetchCreateContextFnOptions): Promise
         isAuthenticated: false,
         dbUser: null,
       };
-
-  // Set user context in Sentry for tracing
-  if (authContext.userId) {
-    setUser({
-      id: authContext.userId,
-      email: authContext.email || undefined,
-    });
-  }
 
   return {
     requestId,

@@ -43,7 +43,6 @@ packages/core/
 │   ├── utils/               # Utility functions
 │   │   └── logger.ts        # Logging utilities
 │   ├── lib/                 # Library integrations
-│   │   ├── sentry.ts        # Error tracking
 │   │   └── supabase.ts      # Authentication
 │   └── index.ts             # Main package exports
 ├── package.json

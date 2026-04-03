@@ -4,8 +4,6 @@ import { TokenValidationService } from '@scani/core/services/TokenValidationServ
 import { Container } from 'typedi';
 import { accountTypesRouter } from './routers/account-types';
 import { accountsRouter } from './routers/accounts';
-import { agentsRouter } from './routers/agents';
-import { apiKeysRouter } from './routers/api-keys';
 import { batchOperationsRouter } from './routers/batch-operations';
 import { dashboardRouter } from './routers/dashboard';
 import { groupsRouter } from './routers/groups';
@@ -27,12 +25,6 @@ const tokensRouter = createTokensRouter(db, schema, Container.get(TokenValidatio
 export const appRouter = router({
   // User management (protected)
   users: usersRouter,
-
-  // API key management (protected) - For MCP server authentication
-  apiKeys: apiKeysRouter,
-
-  // Agent identity management (protected) – claim & list AI agent accounts
-  agents: agentsRouter,
 
   // Dashboard (protected) - Aggregated data for overview
   dashboard: dashboardRouter,

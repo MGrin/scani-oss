@@ -58,18 +58,12 @@ export const tokenTypes = pgTable('token_types', {
 // Users table
 export const users = pgTable('users', {
   id: uuid('id').defaultRandom().primaryKey(),
-  email: text('email'), // Nullable for agentic users
+  email: text('email'),
   name: text('name').notNull(),
   avatar: text('avatar'),
   baseCurrencyId: uuid('base_currency_id').references(() => tokens.id, {
     onDelete: 'restrict',
   }), // Reference to a fiat token
-  // User type: 'regular' for normal users, 'agentic' for AI agent users
-  userType: text('user_type').notNull().default('regular'),
-  // For agentic users that get linked to a regular account later
-  // Self-reference handled as plain UUID (foreign key added via SQL migration)
-  linkedToUserId: uuid('linked_to_user_id'),
-
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 });
@@ -477,33 +471,6 @@ export const accountGroups = pgTable(
   })
 );
 
-// API Keys table - Stores hashed API keys for MCP server authentication
-export const apiKeys = pgTable(
-  'api_keys',
-  {
-    id: uuid('id').defaultRandom().primaryKey(),
-    userId: uuid('user_id')
-      .notNull()
-      .references(() => users.id, { onDelete: 'cascade' }),
-    name: text('name').notNull(), // User-friendly name for the key
-    keyHash: text('key_hash').notNull(), // Bcrypt hash of the API key
-    keyPrefix: text('key_prefix').notNull(), // First 8 chars for identification (e.g., "sk_live_")
-    lastUsedAt: timestamp('last_used_at', { withTimezone: true }), // Track last usage
-    expiresAt: timestamp('expires_at', { withTimezone: true }), // Optional expiration
-    isActive: boolean('is_active').notNull().default(true),
-    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
-  },
-  (table) => ({
-    // Performance indexes for API key lookups
-    userIdIdx: index('idx_api_keys_user_id').on(table.userId),
-    keyPrefixIdx: index('idx_api_keys_key_prefix').on(table.keyPrefix),
-    isActiveIdx: index('idx_api_keys_is_active').on(table.isActive),
-    // Composite index for active keys by user
-    userActiveIdx: index('idx_api_keys_user_active').on(table.userId, table.isActive),
-  })
-);
-
 // Vaults table - User-defined savings goals with target amounts
 export const vaults = pgTable(
   'vaults',
@@ -582,7 +549,6 @@ export const usersRelations = relations(users, ({ one, many }) => ({
   userIntegrationCredentials: many(userIntegrationCredentials),
   groups: many(groups),
   vaults: many(vaults),
-  apiKeys: many(apiKeys),
   baseCurrency: one(tokens, {
     fields: [users.baseCurrencyId],
     references: [tokens.id],
@@ -718,13 +684,6 @@ export const accountGroupsRelations = relations(accountGroups, ({ one }) => ({
   group: one(groups, {
     fields: [accountGroups.groupId],
     references: [groups.id],
-  }),
-}));
-
-export const apiKeysRelations = relations(apiKeys, ({ one }) => ({
-  user: one(users, {
-    fields: [apiKeys.userId],
-    references: [users.id],
   }),
 }));
 

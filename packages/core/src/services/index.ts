@@ -1,6 +1,5 @@
 // Export all services for use by other apps in the monorepo
 export { AccountService } from './AccountService';
-export { AgenticUserService } from './AgenticUserService';
 export { AIService } from './AIService';
 export { BaseService } from './BaseService';
 export { DashboardService } from './DashboardService';

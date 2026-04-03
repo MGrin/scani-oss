@@ -1,5 +1,3 @@
-import * as Sentry from '@sentry/react-native';
-
 import type { ILogger, LogContext } from './types';
 
 type LogLevel = 'debug' | 'info' | 'warn' | 'error';
@@ -8,20 +6,8 @@ class Logger implements ILogger {
   private isDev = __DEV__;
 
   private log(level: LogLevel, message: string, context?: LogContext, error?: Error) {
-    const timestamp = new Date().toISOString();
-    const logData = {
-      timestamp,
-      level,
-      message,
-      ...context,
-    };
-
     if (this.isDev) {
-      // this.logToConsole(level, message, logData, error)
       this.logToReactotron(level, message, context, error);
-    } else {
-      // this.logToConsole(level, message, logData, error)
-      this.logToSentry(level, message, logData, error);
     }
   }
 
@@ -51,33 +37,6 @@ class Logger implements ILogger {
       }
     } catch (e) {
       console.warn('Failed to log to Reactotron', e);
-    }
-  }
-
-  private logToSentry(level: LogLevel, message: string, data: unknown, error?: Error) {
-    try {
-      Sentry.addBreadcrumb({
-        message,
-        level: level as Sentry.SeverityLevel,
-        data: data as Record<string, unknown>,
-      });
-
-      if (level === 'error' && error) {
-        Sentry.captureException(error, {
-          contexts: {
-            data: data as Record<string, unknown>,
-          },
-        });
-      } else if (level === 'error') {
-        Sentry.captureMessage(message, {
-          level: 'error',
-          contexts: {
-            data: data as Record<string, unknown>,
-          },
-        });
-      }
-    } catch (e) {
-      console.warn('Failed to log to Sentry', e);
     }
   }
 
@@ -127,21 +86,10 @@ class Logger implements ILogger {
   }
 
   setUser(userId: string, email?: string): void {
-    if (!this.isDev) {
-      Sentry.setUser({
-        id: userId,
-        email,
-      });
-    }
-
     this.info('User context set', { userId, email });
   }
 
   clearUser(): void {
-    if (!this.isDev) {
-      Sentry.setUser(null);
-    }
-
     this.info('User context cleared');
   }
 }

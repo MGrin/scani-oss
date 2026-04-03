@@ -5,7 +5,7 @@
 
 ## Objective
 
-Extract core business logic from `apps/backend` into a new reusable package `packages/core` to enable code sharing across multiple applications (backend API, telegram bot, and future apps).
+Extract core business logic from `apps/backend` into a new reusable package `packages/core` to enable code sharing across multiple applications (backend API, cron jobs, and future apps).
 
 ## Implementation Results
 
@@ -25,7 +25,7 @@ packages/core/
 │   │   ├── blockchain/      # 9 blockchain service files
 │   │   └── pricing/         # 10 pricing provider files
 │   ├── utils/               # Logger utilities
-│   └── lib/                 # Sentry & Supabase integrations
+│   └── lib/                 # Supabase integration
 ├── package.json             # With comprehensive exports
 ├── tsconfig.json
 ├── drizzle.config.ts
@@ -42,7 +42,7 @@ packages/core/
 - Use Cases: 11 use case classes + index
 - External Services: 24 integration files (AI, blockchain, pricing)
 - Utilities: logger.ts
-- Libraries: sentry.ts, supabase.ts
+- Libraries: supabase.ts
 - Config: pricing.ts
 
 ### Files Removed from Backend
@@ -98,7 +98,7 @@ import { TokenRepository } from '@scani/core/repositories';
 ### Dependencies Updated
 
 **packages/core/package.json:**
-- Added @sentry/bun, @supabase/supabase-js, drizzle-orm, ethers, googleapis, pino, postgres, typedi, decimal.js, zod
+- Added @supabase/supabase-js, drizzle-orm, ethers, googleapis, pino, postgres, typedi, decimal.js, zod
 - Added drizzle-kit as dev dependency
 
 **apps/backend/package.json:**
@@ -129,7 +129,6 @@ import { TokenRepository } from '@scani/core/repositories';
   "./external-services/blockchain": "./src/external-services/blockchain/index.ts",
   "./external-services/pricing": "./src/external-services/pricing/index.ts",
   "./utils/logger": "./src/utils/logger.ts",
-  "./lib/sentry": "./src/lib/sentry.ts",
   "./lib/supabase": "./src/lib/supabase.ts"
 }
 ```

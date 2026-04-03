@@ -2591,7 +2591,6 @@ export function ExportButton() {
 **Launch Checklist:**
 
 - [ ] Deploy to production (Render/Railway)
-- [ ] Set up error monitoring (Sentry)
 - [ ] Configure analytics (PostHog/Mixpanel)
 - [ ] Create demo account with sample data
 - [ ] Record 2-min demo video
@@ -2831,7 +2830,6 @@ export class TaxCalculator {
 
 4. **Monitoring & Alerting** (Week 6)
 
-   - Sentry for errors
    - DataDog/Grafana for metrics
    - PagerDuty for incidents
 
@@ -2918,7 +2916,7 @@ export class ErrorBoundary extends React.Component<
 
   componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
     console.error("ErrorBoundary caught:", error, errorInfo);
-    // Send to Sentry
+    // Send to error tracking service
   }
 
   render() {

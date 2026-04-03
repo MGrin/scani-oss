@@ -13,7 +13,6 @@
     "@scani/core": "workspace:*",
     "@scani/integrations": "workspace:*",
     "@scani/shared": "workspace:*",
-    "@sentry/bun": "^10.21.0",
     "@supabase/supabase-js": "^2.57.4",
     "decimal.js": "^10.6.0",
     "drizzle-orm": "^0.44.5",

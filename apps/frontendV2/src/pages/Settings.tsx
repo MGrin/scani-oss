@@ -1,8 +1,6 @@
 import { User } from 'lucide-react';
 import { useCallback, useEffect, useId, useMemo, useState } from 'react';
 import { CurrencySelector } from '@/components/selectors/CurrencySelector';
-import { ApiKeysSection } from '@/components/settings/ApiKeysSection';
-import { LinkedAgentsSection } from '@/components/settings/LinkedAgentsSection';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -217,12 +215,6 @@ export function Settings() {
         onChange={(field, value) => setField(field, value)}
         supportedCurrencies={supportedCurrencies || []}
       />
-
-      {/* API Keys Section */}
-      <ApiKeysSection />
-
-      {/* Linked AI Agents Section */}
-      <LinkedAgentsSection />
     </div>
   );
 }
