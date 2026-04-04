@@ -22,7 +22,10 @@ export const screenshotsRouter = router({
           .array(
             z.object({
               filename: z.string().min(1, 'Filename is required'),
-              data: z.string().min(1, 'File data is required'), // base64 encoded
+              data: z
+                .string()
+                .min(1, 'File data is required')
+                .max(7_000_000, 'File too large (max ~5MB)'), // base64 encoded
               contentType: z.string().optional(),
             })
           )

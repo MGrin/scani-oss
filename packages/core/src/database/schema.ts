@@ -241,7 +241,7 @@ export const userPortfolioEvents = pgTable(
     // Event type: 'holding_create', 'holding_update', 'holding_delete', 'price_update'
     eventType: text('event_type').notNull(),
 
-    // Source of the event (blockchain, manual, plaid, exchange, etc.)
+    // Source of the event (blockchain, manual, exchange, file-import, etc.)
     source: text('source'),
 
     // Entity references for filtering

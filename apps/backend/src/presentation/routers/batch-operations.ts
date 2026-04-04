@@ -13,7 +13,7 @@ const UpdateHoldingsBatchSchema = z.object({
     .array(
       z.object({
         id: z.string().uuid(),
-        balance: z.string().regex(/^-?\d+\.?\d*$/, 'Balance must be a valid decimal string'),
+        balance: z.string().regex(/^-?\d+(\.\d+)?$/, 'Balance must be a valid decimal string'),
         lastUpdated: z.string().datetime().optional(),
       })
     )

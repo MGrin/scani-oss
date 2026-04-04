@@ -86,8 +86,8 @@ async function initializeIntegrationRegistry(): Promise<void> {
 
   // Then, dynamically register exchange integrations with their database UUIDs
   try {
-    // Query the database for known exchange institutions
-    const knownExchanges = ['Binance', 'Kraken']; // Can be expanded in the future
+    // Auto-discover exchange names from registered configs (single source of truth)
+    const knownExchanges = allIntegrationConfigs.map((config) => config.name);
 
     for (const exchangeName of knownExchanges) {
       const [institution] = await db

@@ -17,6 +17,10 @@ const tokenService = Container.get(TokenService);
 // Set to 0.45 to catch tokens with URLs/suspicious words while avoiding false positives
 const SCAM_PROBABILITY_THRESHOLD = 0.45;
 
+// Cache for external provider search results (avoids hammering CoinGecko/Finnhub)
+const searchCache = new Map<string, { results: unknown[]; expiresAt: number }>();
+const SEARCH_CACHE_TTL_MS = 60 * 60 * 1000; // 1 hour
+
 // Helper function to map provider token types to database token types
 // Note: 'stock' type covers Stock/ETF/Equity/Commodity as per seed data
 function mapProviderTypeToDbType(providerType: string): string {
@@ -132,6 +136,15 @@ export function createTokensRouter(
         // If we have fewer than the limit from database, search external providers
         if (dbTokens.length < input.limit) {
           try {
+            // Check search cache first
+            const cached = searchCache.get(query);
+            if (cached && cached.expiresAt > Date.now()) {
+              results.push(
+                ...(cached.results as typeof results).slice(0, input.limit - dbTokens.length)
+              );
+              return results;
+            }
+
             // Search both Finnhub and CoinGecko concurrently
             const [finnhubResults, coinGeckoResults] = await Promise.all([
               tokenValidationService.searchFinnhubTokens(query),
@@ -209,6 +222,19 @@ export function createTokensRouter(
                     metadata: { ...fallbackResult.metadata },
                   });
                 }
+              }
+            }
+            // Cache external results for future searches
+            const externalResults = results.filter((r) => r.source === 'external');
+            if (externalResults.length > 0) {
+              searchCache.set(query, {
+                results: externalResults,
+                expiresAt: Date.now() + SEARCH_CACHE_TTL_MS,
+              });
+              // Evict oldest entries if cache grows too large
+              if (searchCache.size > 500) {
+                const firstKey = searchCache.keys().next().value;
+                if (firstKey) searchCache.delete(firstKey);
               }
             }
           } catch (error) {

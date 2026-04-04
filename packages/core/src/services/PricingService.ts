@@ -21,6 +21,7 @@ import { fetchWithTimeout, RateLimiter } from '../external-services/pricing/util
 import { TokenTypeRepository } from '../repositories/EnumRepositories';
 import { TokenPriceRepository } from '../repositories/TokenPriceRepository';
 import { TokenRepository } from '../repositories/TokenRepository';
+import { pricingCircuitBreaker } from '../utils/circuit-breaker';
 import { createComponentLogger, logger } from '../utils/logger';
 import { UserPortfolioEventService } from './UserPortfolioEventService';
 
@@ -42,9 +43,9 @@ interface CachedPrice {
 // Prevents exceeding API provider limits when multiple instances exist
 const GLOBAL_RATE_LIMITERS = {
   finnhub: new RateLimiter(50, 60 * 1000), // 50 calls per minute
-  // CoinGecko Demo/Public API: ~30 calls/min, use 10 for safety under ANY load
+  // CoinGecko Demo/Public API: ~30 calls/min
   // Reference: https://docs.coingecko.com/docs/common-errors-rate-limit
-  coinGecko: new RateLimiter(10, 60 * 1000), // 10 calls per minute
+  coinGecko: new RateLimiter(25, 60 * 1000), // 25 calls per minute (safe margin under 30 limit)
   // DeFiLlama: Free tier, 5 calls/sec = 300 calls/min
   defiLlama: new RateLimiter(5, 1000), // 5 calls per second
   googleSheets: new RateLimiter(100, 100 * 1000), // 100 calls per 100 seconds
@@ -1165,9 +1166,20 @@ export class PricingService {
         return [] as ProviderPriceResult[];
       }
 
+      // Circuit breaker: skip providers that have been failing repeatedly
+      if (!pricingCircuitBreaker.isAvailable(providerKey)) {
+        logger.warn({ provider: providerKey }, 'Provider circuit open — skipping');
+        return tokensForProvider.map(({ token }) =>
+          this.createFailureResult(token.id, timestamp, provider.key, new Error('circuit open'))
+        );
+      }
+
       try {
-        return await provider.fetchPrices(tokensForProvider, context);
+        const results = await provider.fetchPrices(tokensForProvider, context);
+        pricingCircuitBreaker.recordSuccess(providerKey);
+        return results;
       } catch (error) {
+        pricingCircuitBreaker.recordFailure(providerKey);
         logger.error({ error, provider: providerKey }, 'Provider fetch failed');
         return tokensForProvider.map(({ token }) =>
           this.createFailureResult(token.id, timestamp, provider.key, error)

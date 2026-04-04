@@ -18,7 +18,7 @@ export const holdingsRouter = router({
   update: protectedProcedure
     .input(
       z.object({
-        id: z.string(),
+        id: z.string().uuid(),
         data: UpdateHoldingDto,
       })
     )
@@ -47,7 +47,7 @@ export const holdingsRouter = router({
 
   // Delete holding (with cascading to transactions)
   delete: protectedProcedure
-    .input(z.object({ id: z.string() }))
+    .input(z.object({ id: z.string().uuid() }))
     .mutation(async ({ input, ctx }) => {
       const { dbUser } = await requireAuth(ctx);
 
@@ -95,7 +95,7 @@ export const holdingsRouter = router({
 
   // Restore a hidden holding (unmark as hidden)
   restore: protectedProcedure
-    .input(z.object({ id: z.string() }))
+    .input(z.object({ id: z.string().uuid() }))
     .mutation(async ({ input, ctx }) => {
       const { dbUser } = await requireAuth(ctx);
 
@@ -121,7 +121,7 @@ export const holdingsRouter = router({
 
   // Update holding price by forcing fresh fetch from pricing providers
   updatePrice: protectedProcedure
-    .input(z.object({ id: z.string() }))
+    .input(z.object({ id: z.string().uuid() }))
     .mutation(async ({ input, ctx }) => {
       const { dbUser } = await requireAuth(ctx);
 

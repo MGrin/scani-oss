@@ -6,6 +6,7 @@ import { accountTypesRouter } from './routers/account-types';
 import { accountsRouter } from './routers/accounts';
 import { batchOperationsRouter } from './routers/batch-operations';
 import { dashboardRouter } from './routers/dashboard';
+import { fileImportRouter } from './routers/file-import';
 import { groupsRouter } from './routers/groups';
 import { holdingsRouter } from './routers/holdings';
 import { institutionTypesRouter } from './routers/institution-types';
@@ -59,6 +60,9 @@ export const appRouter = router({
 
   // Integration authentication (protected) - Credential validation and storage
   integrations: integrationsRouter,
+
+  // File import (protected) - Bank statement parsing (CSV, OFX)
+  fileImport: fileImportRouter,
 
   // Health check (public)
   health: router({

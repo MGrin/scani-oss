@@ -68,7 +68,7 @@ const strictLimiter = createStrictLimiter(60, 90);
 const app = new Elysia()
   .onBeforeHandle(({ request, set }) => {
     const url = new URL(request.url);
-    const requestId = Math.random().toString(36).substring(2, 15);
+    const requestId = crypto.randomUUID();
     const timer = createTimer();
 
     startConnectionTracking(requestId);
@@ -269,7 +269,7 @@ app
   .ws('/', {
     // biome-ignore lint/suspicious/noExplicitAny: Elysia WebSocket types
     open: async (ws: any) => {
-      const connectionId = Math.random().toString(36).substring(2, 15);
+      const connectionId = crypto.randomUUID();
       const connectionLogger = wsLogger.child({ connectionId });
 
       let authenticatedUserId: string | null = null;
@@ -347,7 +347,8 @@ app
         };
       }
     } catch {
-      // ignore parsing issues
+      set.status = 400;
+      return { error: 'Bad Request', message: 'Invalid request URL' };
     }
   });
 

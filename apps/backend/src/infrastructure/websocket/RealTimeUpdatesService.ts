@@ -346,7 +346,7 @@ export class RealTimeUpdatesService extends EventEmitter {
    * Generate unique connection ID
    */
   private generateConnectionId(): string {
-    return `conn_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    return `conn_${crypto.randomUUID()}`;
   }
 
   /**

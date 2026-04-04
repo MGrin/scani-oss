@@ -124,10 +124,7 @@ export async function createAuthContext(opts: CreateContextOptions): Promise<Aut
   }
 
   const token = authHeader.substring(7); // Remove "Bearer " prefix
-  authLogger.debug(
-    { tokenLength: token.length, tokenPrefix: `${token.substring(0, 20)}...` },
-    'Extracted JWT token from header'
-  );
+  authLogger.debug({ tokenLength: token.length }, 'Extracted JWT token from header');
 
   try {
     // Verify the JWT token locally using JWKS

@@ -50,9 +50,57 @@ export {
   validateBinanceCredentials,
 } from './factories/binanceFactory';
 export {
+  createBitgetApiService,
+  validateBitgetCredentials,
+} from './factories/bitgetFactory';
+export {
+  createBitstampApiService,
+  validateBitstampCredentials,
+} from './factories/bitstampFactory';
+export {
+  createBybitApiService,
+  validateBybitCredentials,
+} from './factories/bybitFactory';
+export {
+  createCoinbaseApiService,
+  validateCoinbaseCredentials,
+} from './factories/coinbaseFactory';
+export {
+  createGateioApiService,
+  validateGateioCredentials,
+} from './factories/gateioFactory';
+export {
+  createGeminiApiService,
+  validateGeminiCredentials,
+} from './factories/geminiFactory';
+export {
+  createHuobiApiService,
+  validateHuobiCredentials,
+} from './factories/huobiFactory';
+export {
+  createIbkrFlexQueryService,
+  validateIbkrCredentials,
+} from './factories/ibkrFactory';
+export {
   createKrakenApiService,
   validateKrakenCredentials,
 } from './factories/krakenFactory';
+export {
+  createKucoinApiService,
+  validateKucoinCredentials,
+} from './factories/kucoinFactory';
+export {
+  createMexcApiService,
+  validateMexcCredentials,
+} from './factories/mexcFactory';
+export {
+  createOkxApiService,
+  validateOkxCredentials,
+} from './factories/okxFactory';
+export {
+  createWiseApiService,
+  validateWiseCredentials,
+} from './factories/wiseFactory';
 export { IntegrationManager } from './IntegrationManager';
 // Export blockchain integration implementations
 export * from './implementations';

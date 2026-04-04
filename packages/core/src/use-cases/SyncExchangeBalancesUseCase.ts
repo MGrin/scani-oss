@@ -18,7 +18,7 @@
  */
 
 import type { FetchHoldingsResult, ScaniIntegration } from '@scani/integrations';
-import { IntegrationManager } from '@scani/integrations';
+import { allIntegrationConfigs, IntegrationManager } from '@scani/integrations';
 import { isValidDecimalString } from '@scani/shared';
 import { and, eq, inArray } from 'drizzle-orm';
 import { Container, Service } from 'typedi';
@@ -93,7 +93,8 @@ export class SyncExchangeBalancesUseCase {
       }
 
       // Query database for exchange institutions
-      const exchangeNames = ['Binance', 'Kraken'];
+      // Auto-discover exchange names from registered integration configs
+      const exchangeNames = allIntegrationConfigs.map((config) => config.name);
       logger.debug({ exchangeNames }, 'Looking for exchange institutions');
 
       const exchangeInstitutions = await db
@@ -252,10 +253,16 @@ export class SyncExchangeBalancesUseCase {
                 );
 
                 // Fetch current holdings from exchange (EXTERNAL API CALL)
-                const holdingsResult = await integration.fetchHoldings(
-                  externalId,
-                  decryptedCredentials
-                );
+                // Timeout after 30 seconds to prevent hanging on unresponsive APIs
+                const holdingsResult = await Promise.race([
+                  integration.fetchHoldings(externalId, decryptedCredentials),
+                  new Promise<FetchHoldingsResult>((_, reject) =>
+                    setTimeout(
+                      () => reject(new Error(`API timeout fetching ${institutionName} holdings`)),
+                      30_000
+                    )
+                  ),
+                ]);
 
                 if (holdingsResult.errors && holdingsResult.errors.length > 0) {
                   logger.warn({ errors: holdingsResult.errors }, 'Errors fetching holdings');

@@ -1,8 +1,11 @@
 import { InstitutionImplementations } from '@scani/core/features/implementations';
+import { createComponentLogger } from '@scani/core/utils/logger';
 import ogs from 'open-graph-scraper';
 import { z } from 'zod';
 import { requireAuth } from '../middleware/auth';
 import { protectedProcedure, router } from '../trpc';
+
+const institutionsLogger = createComponentLogger('router:institutions');
 
 // PERFORMANCE: In-memory cache for OpenGraph metadata
 // TTL: 1 hour (OG data rarely changes)
@@ -91,7 +94,7 @@ export const institutionsRouter = router({
 
         return data;
       } catch (error) {
-        console.error('Failed to fetch Open Graph metadata:', error);
+        institutionsLogger.error({ error }, 'Failed to fetch Open Graph metadata');
         // Return empty metadata instead of throwing
         const emptyData = {
           title: '',

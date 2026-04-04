@@ -115,16 +115,6 @@ function App() {
               </ProtectedRoute>
             }
           />
-          {/* <Route
-            path="/reports"
-            element={
-              <ProtectedRoute>
-                <Layout>
-                  <Reports />
-                </Layout>
-              </ProtectedRoute>
-            }
-          /> */}
           <Route
             path="/settings"
             element={

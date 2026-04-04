@@ -21,6 +21,7 @@
     "./external-services/ai": "./src/external-services/ai/index.ts",
     "./external-services/blockchain": "./src/external-services/blockchain/index.ts",
     "./external-services/pricing": "./src/external-services/pricing/index.ts",
+    "./external-services/file-import": "./src/external-services/file-import/index.ts",
     "./utils/logger": "./src/utils/logger.ts",
     "./utils/query-cache": "./src/utils/query-cache.ts",
     "./utils/request-cache": "./src/utils/request-cache.ts",
@@ -46,6 +47,8 @@
     "drizzle-orm": "^0.44.5",
     "ethers": "^6.15.0",
     "googleapis": "^160.0.0",
+    "ofx-js": "^0.2.0",
+    "papaparse": "^5.5.3",
     "pino": "^9.9.4",
     "postgres": "^3.4.4",
     "reflect-metadata": "^0.2.2",
@@ -54,6 +57,7 @@
   },
   "devDependencies": {
     "@types/bcryptjs": "^3.0.0",
+    "@types/papaparse": "^5.5.2",
     "drizzle-kit": "^0.31.4",
     "typescript": "^5"
   }
