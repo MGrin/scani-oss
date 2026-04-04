@@ -6,7 +6,7 @@ Core business logic, database schemas, and shared infrastructure for Scani Finan
 
 This package contains all reusable components that are shared across multiple Scani applications:
 - **Backend API** (`apps/backend`)
-- **Telegram Bot** (`apps/telegram-bot`)
+- **Mobile App** (`apps/mobile`)
 - Future applications
 
 ## What's Inside

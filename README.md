@@ -109,13 +109,7 @@ scani/
 │   │   │   └── main.tsx      # Application entry point
 │   │   └── package.json
 │   │
-│   ├── landing/              # Marketing landing page
-│   │   └── src/
-│   │
-│   ├── mobile/               # React Native mobile app (Ignite)
-│   │   └── src/
-│   │
-│   └── telegram-bot/         # Telegram bot integration
+│   └── mobile/               # React Native mobile app (Ignite)
 │       └── src/
 │
 ├── packages/

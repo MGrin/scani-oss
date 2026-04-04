@@ -6,7 +6,7 @@
 
 **Essential Commands:**
 
-- `bun dev` - Start all development servers (backend + frontendV2 + landing)
+- `bun dev` - Start all development servers (backend + frontendV2)
 - `bun dev:backend` - Start backend only
 - `bun dev:frontend` - Start frontendV2 only
 - `bun lint:fix` - Run Biome linter and auto-fix all issues (run before every commit)
@@ -42,14 +42,13 @@
 
 ### Key Architecture Patterns
 
-- **Monorepo Structure**: `apps/backend` (tRPC API), `apps/frontendV2` (React SPA), `apps/landing` (Marketing site), `apps/mobile` (React Native), `apps/telegram-bot` (Telegram integration), `packages/*` (shared code)
+- **Monorepo Structure**: `apps/backend` (tRPC API), `apps/frontendV2` (React SPA), `apps/mobile` (React Native), `packages/*` (shared code)
 - **End-to-End Type Safety**: All API communication uses tRPC with shared TypeScript types
 - **Database**: PostgreSQL with Drizzle ORM, dynamic enums stored in database tables (not TypeScript enums)
 - **Authentication**: Supabase Auth with JWT tokens, user sync to local PostgreSQL via middleware
 - **Dependency Injection**: TypeDI Container for service management and dependency injection
 - **Clean Architecture**: Use Cases → Services → Repositories → Database
 - **Real-time Updates**: WebSocket server for live portfolio updates
-- **Error Tracking**: Sentry integration for both frontend and backend
 - **AI Integration**: OpenAI integration for screenshot parsing and chat assistance
 
 ### Package Structure
@@ -65,9 +64,7 @@
 
 - `@scani/backend` - tRPC API server with Elysia
 - `@scani/frontend-v2` - React SPA with Vite
-- `@scani/landing` - Marketing landing page
 - `@scani/mobile` - React Native mobile app (Ignite template)
-- `@scani/telegram-bot` - Telegram bot integration
 
 ### Import and Module Guidelines
 
@@ -153,10 +150,9 @@ await integration.validateCredentials({ apiKey, apiSecret });
 
 ```bash
 # Development (from root)
-bun dev                    # Start backend + frontendV2 + landing
+bun dev                    # Start backend + frontendV2
 bun dev:backend            # Start backend only
 bun dev:frontend           # Start frontendV2 only
-bun dev:landing            # Start landing page only
 bun dev:mobile:ios         # Start mobile app (iOS)
 bun dev:mobile:android     # Start mobile app (Android)
 

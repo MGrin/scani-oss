@@ -2,7 +2,7 @@
 
 ## Overview
 
-The `@scani/core` package contains all reusable business logic, database schemas, and core infrastructure that can be shared across multiple applications (backend API, telegram bot, and future apps).
+The `@scani/core` package contains all reusable business logic, database schemas, and core infrastructure that can be shared across multiple applications (backend API, mobile app, and future apps).
 
 ## Package Structure
 

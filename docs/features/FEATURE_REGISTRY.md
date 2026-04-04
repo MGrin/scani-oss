@@ -122,11 +122,8 @@ When adding a new user-facing feature:
 ```
 
 3. **Add to feature array** (e.g., `CATEGORY_FEATURES`)
-4. **Implement tool executor method** if needed (for telegram bot)
-
 The feature will automatically be:
-- Available in the telegram bot
-- Listed in `/tools` command
+- Available via the API
 - Documented with description and examples
 
 ## Benefits
@@ -212,8 +209,7 @@ When testing features:
 
 1. **Unit Tests** - Test feature definitions and utilities
 2. **Integration Tests** - Test tRPC procedures mapped to features
-3. **E2E Tests** - Test telegram bot tool execution
-4. **Validation** - Ensure all features have valid procedure paths
+3. **Validation** - Ensure all features have valid procedure paths
 
 ## Maintenance
 
@@ -223,8 +219,6 @@ When modifying features:
 
 - [ ] Update feature definition in registry
 - [ ] Update corresponding tRPC procedure
-- [ ] Update tool executor if needed
-- [ ] Test in telegram bot
 - [ ] Update documentation
 - [ ] Verify linter passes
 - [ ] Check for breaking changes
@@ -243,6 +237,3 @@ Breaking changes to features require:
 - `packages/core/src/features/index.ts` - Feature registry
 - `apps/backend/src/presentation/router.ts` - Main tRPC router
 - `apps/backend/src/presentation/routers/*.ts` - Individual routers
-- `apps/telegram-bot/src/tools.ts` - Tool generation
-- `apps/telegram-bot/src/tool-executor.ts` - Tool execution
-- `apps/telegram-bot/src/bot.ts` - Bot commands

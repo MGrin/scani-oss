@@ -54,7 +54,6 @@ All core business logic files were removed from backend, leaving only:
 - Presentation layer (12 router files + middleware)
 - WebSocket service (RealTimeUpdatesService.ts)
 - Cron jobs (3 files - scheduling only, logic in core)
-- Telegram infrastructure (TelegramAuthService.ts - presentation layer)
 - Configuration (container.ts - updated to import from core)
 
 ### Import Updates
@@ -62,7 +61,6 @@ All core business logic files were removed from backend, leaving only:
 **Updated imports in 50+ files:**
 
 - Backend: All presentation layer routers, middleware, cron jobs
-- Telegram Bot: All source files (bot.ts, tool-executor.ts, etc.)
 - Container initialization: Simplified to import from core
 
 **Before:**
@@ -82,7 +80,6 @@ import { TokenRepository } from '@scani/core/repositories';
 ✅ **Type Checking**: All packages pass (`tsc --noEmit`)
 - packages/core: ✅ Pass
 - apps/backend: ✅ Pass
-- apps/telegram-bot: ✅ Pass
 - apps/frontendV2: ✅ Pass
 - packages/shared: ✅ Pass
 
@@ -105,9 +102,6 @@ import { TokenRepository } from '@scani/core/repositories';
 - Added @scani/core workspace dependency
 - Removed individual service/use-case/repository exports
 - Kept presentation and server-specific dependencies
-
-**apps/telegram-bot/package.json:**
-- Changed from @scani/backend to @scani/core
 
 ### Export Configuration
 
@@ -152,7 +146,6 @@ import { TokenRepository } from '@scani/core/repositories';
 
 ✅ **Code Reuse**: Business logic can now be shared across:
    - Backend API (apps/backend)
-   - Telegram Bot (apps/telegram-bot)
    - Future applications (mobile app, CLI tools, etc.)
 
 ✅ **Better Organization**: Clean separation between:
