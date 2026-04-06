@@ -26,93 +26,170 @@ interface ExchangeConnectDialogProps {
   exchange: ExchangeConfig;
 }
 
-const API_KEY_HELP: Record<string, { steps: string[]; docsUrl?: string }> = {
+interface ExchangeHelp {
+  steps: string[];
+  docsUrl?: string;
+  mobileNote?: string; // Shown when user is on mobile
+}
+
+const API_KEY_HELP: Record<string, ExchangeHelp> = {
   binance: {
     steps: [
-      'Go to Binance → Account → API Management',
-      'Create a new API key with "Read Only" permissions',
-      'Enable "Enable Reading" and disable all other permissions',
-      'Whitelist your IP if required',
+      'Log in to Binance → Profile icon → API Management',
+      'Click "Create API" and enter a label',
+      'Complete 2FA verification (email + authenticator)',
+      'Keep only "Enable Reading" checked (default) — disable all trading/withdrawal permissions',
     ],
-    docsUrl:
-      'https://www.binance.com/en/support/faq/how-to-create-api-keys-on-binance-360002502072',
+    docsUrl: 'https://www.binance.com/en/support/faq/detail/360002502072',
+    mobileNote: 'You can create API keys in the Binance app: Home → More → API Management',
   },
   kraken: {
     steps: [
-      'Go to Kraken → Security → API',
-      'Create a new key with "Query Funds" permission only',
-      'Do not enable trading or withdrawal permissions',
+      'Log in to Kraken Pro → Profile icon → Settings → API tab',
+      'Click "Create API key" and enter a name',
+      'Enable only "Query Funds" and "Query Orders & Trades"',
+      'Do NOT enable "Modify Orders" or withdrawal permissions',
     ],
-    docsUrl: 'https://support.kraken.com/hc/en-us/articles/360000919966-How-to-create-an-API-key',
+    docsUrl: 'https://support.kraken.com/articles/360000919966-how-to-create-an-api-key',
+    mobileNote: 'Use a desktop browser to access Kraken Pro settings.',
   },
   bybit: {
     steps: [
-      'Go to Bybit → Account & Security → API',
-      'Create a new API key with "Read-Only" permissions',
+      'Log in to Bybit → Profile icon → API',
+      'Click "Create New Key" → "System-generated API Key"',
+      'Set API Key Permissions to "Read-Only"',
+      'Complete Google Authenticator verification',
+      'Copy API Key and Secret (shown only once)',
     ],
+    docsUrl: 'https://www.bybit.com/en/help-center/article/How-to-create-your-API-key',
+    mobileNote: 'Use a desktop browser to create API keys on Bybit.',
   },
   okx: {
     steps: [
-      'Go to OKX → Settings → API',
-      'Create a new API key with "Read Only" permissions',
-      'You will need the API Key, Secret, and Passphrase',
+      'Log in to OKX on desktop → User icon → API',
+      'Click "Create V5 API Key"',
+      'Enter a key name and create a passphrase (save it — cannot be recovered)',
+      'Set permissions to "Read" only',
+      'Copy API Key, Secret Key, and Passphrase',
     ],
+    docsUrl: 'https://www.okx.com/docs-v5/en/',
+    mobileNote: 'OKX requires a desktop/PC to create API keys — not available on mobile.',
   },
   coinbase: {
     steps: [
-      'Go to Coinbase → Settings → API',
-      'Create a new API key with "View" permissions for all accounts',
+      'Log in to Coinbase → Grid icon (top right) → Developer Platform',
+      'Click "API Keys" → "Create API Key"',
+      'Set permission to "View" only — do NOT enable Trade or Transfer',
+      'Set signature algorithm to ECDSA',
+      'Click "Create & Download" — secret downloads as a JSON file (shown only once)',
     ],
+    docsUrl: 'https://help.coinbase.com/en/exchange/managing-my-account/how-to-create-an-api-key',
+    mobileNote: 'Use a desktop browser to access the Coinbase Developer Platform.',
   },
   kucoin: {
     steps: [
-      'Go to KuCoin → API Management',
-      'Create a new API key with read-only permissions',
-      'You will need the API Key, Secret, and Passphrase',
+      'Log in to KuCoin → Avatar → API Management',
+      'Click "Create API" → "API Trading"',
+      'Enter API name and create a passphrase (different from your passwords — save it)',
+      'Enable "General" permission only — do NOT enable Trade or Transfer',
+      'Complete verification (trading password + email + Google Authenticator)',
     ],
+    docsUrl:
+      'https://www.kucoin.com/docs/basic-info/connection-method/authentication/generating-an-api-key',
+    mobileNote: 'Use a desktop browser to create API keys on KuCoin.',
+  },
+  gateio: {
+    steps: [
+      'Log in to Gate.io → Profile icon → API Management',
+      'Click "Create API Key" and enter a name',
+      'Under API Permissions, select "Enable Reading" only',
+      'Do NOT enable Trading or Withdrawals',
+      'Copy API Key and Secret Key (secret shown only once)',
+    ],
+    docsUrl: 'https://www.gate.com/help/guide/common/17521/how-to-utilize-api',
+    mobileNote: 'Use a desktop browser to create API keys on Gate.io.',
+  },
+  bitstamp: {
+    steps: [
+      'Log in to Bitstamp → Profile icon → Settings → API Access',
+      'Click "New API Key"',
+      'Enable only "Account Balance" and "User Transactions" permissions',
+      'Do NOT enable Orders, Transfers, or Withdrawals',
+      'Check your email — click the activation link to finalize the key',
+    ],
+    docsUrl: 'https://www.bitstamp.net/api/',
+    mobileNote: 'Use a desktop browser to create API keys on Bitstamp.',
+  },
+  gemini: {
+    steps: [
+      'Log in to Gemini → Menu → Account → API',
+      'Click "Create a new API Key" and enter your 2FA code',
+      'Set the role to "Auditor" for read-only access',
+      'Choose IP restriction: "Unrestricted" or "Trusted IPs Only"',
+      'Copy API Key and Secret',
+    ],
+    docsUrl: 'https://support.gemini.com/hc/en-us/articles/360031080191-How-do-I-create-an-API-key',
+    mobileNote: 'Possible on mobile web, but desktop browser is recommended.',
+  },
+  mexc: {
+    steps: [
+      'Log in to MEXC → Profile icon → API Management',
+      'Click "Create New API Key" and enter a label',
+      'Enable only read/view permissions under Spot',
+      'Do NOT enable Withdraw or Transfer',
+      'Note: keys without IP binding expire after 90 days',
+    ],
+    docsUrl: 'https://www.mexc.com/support/articles/360055933652',
+    mobileNote: 'Use a desktop browser to create API keys on MEXC.',
+  },
+  bitget: {
+    steps: [
+      'Log in to Bitget → Account icon → API Keys',
+      'Click "Create API Key" → "System-generated"',
+      'Enter a name and create a passphrase (save it — cannot be recovered if lost)',
+      'Set permissions to "Read-Only"',
+      'Copy API Key, Secret Key, and Passphrase',
+    ],
+    docsUrl: 'https://www.bitget.com/support/articles/360038968251-API-Creation-Guide',
+    mobileNote: 'Use a desktop browser to create API keys on Bitget.',
+  },
+  huobi: {
+    steps: [
+      'Log in to HTX (Huobi) → Account icon → API Management',
+      'Click "Create API Key" and enter a label',
+      'Check "Read" permission only — do NOT enable Trade or Withdraw',
+      'Complete SMS + Email + Google Authenticator verification',
+      'Copy API Key and Secret Key (secret shown only once)',
+    ],
+    docsUrl: 'https://www.htx.com/support/360000203002',
+    mobileNote: 'Use a desktop browser to create API keys on HTX.',
   },
   wise: {
     steps: [
-      'Go to Wise → Settings → API tokens',
-      'Create a "Read only" token',
-      'Copy the full API token string',
+      'Log in to your Wise Business account at wise.com',
+      'Go to Your Account → Integrations and Tools → API tokens',
+      'Click "Add new token" and complete 2-step verification',
+      'Copy and securely store the token (shown only once)',
     ],
-    docsUrl: 'https://wise.com/help/articles/2958149',
+    docsUrl: 'https://docs.wise.com/guides/developer/auth-and-security/personal-api-token',
+    mobileNote: 'Use a desktop browser. Requires a Wise Business account (not personal).',
   },
   ibkr: {
     steps: [
-      'Log in to IBKR Client Portal or Account Management',
-      'Go to Settings → Flex Web Service',
-      'Create a Flex Query for your account positions',
-      'Copy the Token and Query ID',
+      'Log in to IBKR Client Portal → Reporting → Flex Queries',
+      'Enable "Flex Web Service Status" checkbox and click Save',
+      'Click "Generate New Token" and choose expiration (up to 1 year)',
+      'Under "Activity Flex Queries", click "+" to create a query for Positions',
+      'Note the Query ID (click info icon next to query name)',
     ],
-    docsUrl: 'https://www.interactivebrokers.com/en/software/am3/am/settings/flextradereports.htm',
+    docsUrl: 'https://www.interactivebrokers.com/campus/ibkr-api-page/flex-web-service/',
+    mobileNote: 'Use a desktop browser to access IBKR Client Portal.',
   },
 };
 
-function getDefaultHelp(credentialType: string): { steps: string[]; docsUrl?: string } {
-  switch (credentialType) {
-    case 'passphrase':
-      return {
-        steps: [
-          "Navigate to your exchange's API settings page",
-          'Create a new API key with read-only permissions',
-          'Copy the API Key, Secret, and Passphrase',
-        ],
-      };
-    case 'wise':
-      return { steps: ['Create a read-only API token in your account settings'] };
-    case 'ibkr':
-      return { steps: ['Set up Flex Web Service in your IBKR account'] };
-    default:
-      return {
-        steps: [
-          "Navigate to your exchange's API settings page",
-          'Create a new API key with read-only permissions',
-          'Copy the API Key and Secret',
-        ],
-      };
-  }
+function isMobileDevice(): boolean {
+  if (typeof window === 'undefined') return false;
+  return /Android|iPhone|iPad|iPod|webOS|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
 }
 
 export function ExchangeConnectDialog({
@@ -131,7 +208,8 @@ export function ExchangeConnectDialog({
   // biome-ignore lint/suspicious/noExplicitAny: Dynamic tRPC router access
   const integrations = trpc.integrations as any;
 
-  const help = API_KEY_HELP[exchange.key] || getDefaultHelp(exchange.credentialType);
+  const help = API_KEY_HELP[exchange.key];
+  const isMobile = isMobileDevice();
 
   const handleSubmit = async () => {
     setStatus('loading');
@@ -214,26 +292,45 @@ export function ExchangeConnectDialog({
           </DialogDescription>
         </DialogHeader>
 
+        {/* Mobile warning */}
+        {isMobile && help?.mobileNote && (
+          <div className="rounded-md bg-yellow-500/10 border border-yellow-500/30 p-3">
+            <p className="text-xs font-medium text-yellow-700 dark:text-yellow-400">
+              {help.mobileNote}
+            </p>
+          </div>
+        )}
+
         {/* Help section */}
-        <div className="rounded-md bg-muted/50 p-3 space-y-1.5">
-          <p className="text-xs font-medium text-muted-foreground">How to get your API keys:</p>
-          <ol className="text-xs text-muted-foreground space-y-1 list-decimal list-inside">
-            {help.steps.map((step, i) => (
-              <li key={`step-${i}`}>{step}</li>
-            ))}
-          </ol>
-          {help.docsUrl && (
-            <a
-              href={help.docsUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex items-center gap-1 text-xs text-primary hover:underline mt-1"
-            >
-              View documentation
-              <ExternalLink className="h-3 w-3" />
-            </a>
-          )}
-        </div>
+        {help && (
+          <div className="rounded-md bg-muted/50 p-3 space-y-1.5">
+            <p className="text-xs font-medium text-muted-foreground">
+              How to get your{' '}
+              {exchange.credentialType === 'wise'
+                ? 'API token'
+                : exchange.credentialType === 'ibkr'
+                  ? 'Flex Query credentials'
+                  : 'API keys'}
+              :
+            </p>
+            <ol className="text-xs text-muted-foreground space-y-1 list-decimal list-inside">
+              {help.steps.map((step, i) => (
+                <li key={`step-${i}`}>{step}</li>
+              ))}
+            </ol>
+            {help.docsUrl && (
+              <a
+                href={help.docsUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1 text-xs text-primary hover:underline mt-1"
+              >
+                View documentation
+                <ExternalLink className="h-3 w-3" />
+              </a>
+            )}
+          </div>
+        )}
 
         <div className="space-y-4 py-2">
           {(exchange.credentialType === 'apiKey' || exchange.credentialType === 'passphrase') && (
