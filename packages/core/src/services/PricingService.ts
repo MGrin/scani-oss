@@ -941,22 +941,13 @@ export class PricingService {
         return '0';
       }
 
-      let rate = parseFloat(conversionRate);
-      if (rate > 10) {
-        rate = 1 / rate;
-      }
+      const rate = parseFloat(conversionRate);
       const originalPrice = parseFloat(price);
       const convertedPrice = originalPrice * rate;
 
       logger.debug(
-        {
-          originalPrice,
-          rate,
-          convertedPrice,
-          fromCurrency,
-          toCurrency,
-        },
-        'Price converted (with inversion check)'
+        { originalPrice, rate, convertedPrice, fromCurrency, toCurrency },
+        'Price converted'
       );
 
       return convertedPrice.toString();
