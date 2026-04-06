@@ -39,12 +39,14 @@ interface ParsedResult {
   totalCount: number;
 }
 
+const AUTO_DETECT_VALUE = '__auto__';
+
 export function FileImportPage() {
   const { data: templates } = trpc.fileImport.getTemplates.useQuery();
   const parseMutation = trpc.fileImport.parse.useMutation();
 
   const [step, setStep] = useState<Step>('upload');
-  const [selectedTemplate, setSelectedTemplate] = useState<string>('');
+  const [selectedTemplate, setSelectedTemplate] = useState<string>(AUTO_DETECT_VALUE);
   const [fileName, setFileName] = useState('');
   const [result, setResult] = useState<ParsedResult | null>(null);
 
@@ -64,7 +66,7 @@ export function FileImportPage() {
           const parsed = await parseMutation.mutateAsync({
             content: base64,
             filename: file.name,
-            bankTemplate: selectedTemplate || undefined,
+            bankTemplate: selectedTemplate !== AUTO_DETECT_VALUE ? selectedTemplate : undefined,
           });
           setResult(parsed as ParsedResult);
           setStep('preview');
@@ -88,7 +90,7 @@ export function FileImportPage() {
         </Button>
         <h2 className="text-2xl font-bold tracking-tight">Import File</h2>
         <p className="text-sm text-muted-foreground mt-1">
-          Upload a bank statement (CSV or OFX) to import transactions
+          Upload a bank statement or screenshot to import your data
         </p>
       </div>
 
@@ -105,7 +107,7 @@ export function FileImportPage() {
                   <SelectValue placeholder="Auto-detect" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">Auto-detect</SelectItem>
+                  <SelectItem value={AUTO_DETECT_VALUE}>Auto-detect</SelectItem>
                   {templates?.map((t) => (
                     <SelectItem key={t.key} value={t.key}>
                       {t.key.charAt(0).toUpperCase() + t.key.slice(1)}
@@ -122,12 +124,14 @@ export function FileImportPage() {
               <label className="flex flex-col items-center justify-center border-2 border-dashed border-border rounded-lg p-8 cursor-pointer hover:border-primary/50 transition-colors">
                 <Upload className="h-10 w-10 text-muted-foreground mb-3" />
                 <p className="text-sm font-medium">
-                  {parseMutation.isPending ? 'Parsing...' : 'Click to upload or drag and drop'}
+                  {parseMutation.isPending ? 'Processing...' : 'Click to upload or drag and drop'}
                 </p>
-                <p className="text-xs text-muted-foreground mt-1">CSV, OFX, QFX (max 3MB)</p>
+                <p className="text-xs text-muted-foreground mt-1">
+                  CSV, OFX, QFX, or screenshot images (max 3MB)
+                </p>
                 <input
                   type="file"
-                  accept=".csv,.ofx,.qfx,.tsv"
+                  accept=".csv,.ofx,.qfx,.tsv,.png,.jpg,.jpeg,.webp"
                   className="hidden"
                   onChange={handleFileSelect}
                   disabled={parseMutation.isPending}

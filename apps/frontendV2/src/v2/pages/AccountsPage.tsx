@@ -2,21 +2,23 @@ import type { AccountWihSumaryDTO } from '@scani/shared';
 import { Wallet } from 'lucide-react';
 import { useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { Badge } from '@/components/ui/badge';
+import { getFaviconUrl } from '@/lib/icons';
 import { trpc } from '@/lib/trpc';
 import { AccountBulkActions } from '../components/accounts/AccountBulkActions';
 import { AccountCard } from '../components/accounts/AccountCard';
 import { DataView as DataViewComponent } from '../components/data-view/DataView';
+import type { ColumnDef } from '../components/data-view/DataViewTable';
 import { V2_ROUTES } from '../lib/routes';
 
-const accountColumns = [
-  { key: 'select', label: '', width: '40px' },
-  { key: 'name', label: 'Name' },
-  { key: 'institution', label: 'Institution' },
-  { key: 'type', label: 'Type' },
-  { key: 'holdingsCount', label: 'Holdings', align: 'right' as const },
-  { key: 'totalValue', label: 'Total Value', align: 'right' as const },
-  { key: 'groups', label: 'Groups' },
-];
+function formatMoney(value: number) {
+  return new Intl.NumberFormat('en-US', {
+    style: 'currency',
+    currency: 'USD',
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(value);
+}
 
 export function AccountsPage() {
   const { data: accountsData, isLoading } = trpc.accounts.getByUserIdWithSummary.useQuery();
@@ -55,11 +57,93 @@ export function AccountsPage() {
   );
   const groupOptions = groups.map((g) => ({ label: g.name, value: g.id }));
 
+  const accountColumns: ColumnDef<AccountWihSumaryDTO>[] = useMemo(
+    () => [
+      {
+        key: 'name',
+        label: 'Name',
+        sortable: true,
+        render: (item) => <span className="font-medium text-sm">{item.name}</span>,
+      },
+      {
+        key: 'institution',
+        label: 'Institution',
+        render: (item) => {
+          const inst = institutionMap.get(item.institutionId);
+          const favicon = getFaviconUrl(inst?.website);
+          return (
+            <span className="inline-flex items-center gap-1.5 text-sm text-muted-foreground">
+              {favicon && (
+                <img
+                  src={favicon}
+                  alt=""
+                  className="h-4 w-4 rounded-sm object-contain"
+                  onError={(e) => {
+                    (e.target as HTMLImageElement).style.display = 'none';
+                  }}
+                />
+              )}
+              {inst?.name ?? item.institutionId}
+            </span>
+          );
+        },
+      },
+      {
+        key: 'type',
+        label: 'Type',
+        render: (item) => (
+          <span className="text-sm text-muted-foreground">
+            {typeMap.get(item.typeId)?.name ?? item.typeId}
+          </span>
+        ),
+      },
+      {
+        key: 'holdingsCount',
+        label: 'Holdings',
+        align: 'right' as const,
+        sortable: true,
+        render: (item) => <span className="tabular-nums">{item.summary.holdingsCount}</span>,
+      },
+      {
+        key: 'totalValue',
+        label: 'Total Value',
+        align: 'right' as const,
+        sortable: true,
+        render: (item) => (
+          <span className="font-medium tabular-nums">
+            {formatMoney(Number.parseFloat(item.summary.totalValue))}
+          </span>
+        ),
+      },
+      {
+        key: 'groups',
+        label: 'Groups',
+        render: (item) => (
+          <div className="flex flex-wrap gap-1">
+            {item.groups.map((g) => (
+              <Badge
+                key={g.id}
+                variant="outline"
+                className="text-[10px] px-1.5 py-0"
+                style={{ borderColor: g.color, color: g.color }}
+              >
+                {g.name}
+              </Badge>
+            ))}
+          </div>
+        ),
+      },
+    ],
+    [institutionMap, typeMap]
+  );
+
   return (
     <div className="space-y-6">
       <div>
         <h2 className="text-2xl font-bold tracking-tight">Accounts</h2>
-        <p className="text-muted-foreground mt-1">{accounts.length} accounts</p>
+        <p className="text-muted-foreground mt-1">
+          {isLoading ? '' : `${accounts.length} accounts`}
+        </p>
       </div>
 
       <DataViewComponent
@@ -135,15 +219,19 @@ export function AccountsPage() {
           item: AccountWihSumaryDTO,
           isSelected: boolean,
           onSelect: (id: string) => void
-        ) => (
-          <AccountCard
-            item={item}
-            isSelected={isSelected}
-            onSelect={onSelect}
-            institutionName={institutionMap.get(item.institutionId)?.name}
-            typeName={typeMap.get(item.typeId)?.name}
-          />
-        )}
+        ) => {
+          const inst = institutionMap.get(item.institutionId);
+          return (
+            <AccountCard
+              item={item}
+              isSelected={isSelected}
+              onSelect={onSelect}
+              institutionName={inst?.name}
+              typeName={typeMap.get(item.typeId)?.name}
+              institutionFavicon={getFaviconUrl(inst?.website)}
+            />
+          );
+        }}
         renderBulkActions={(ids: Set<string>, clear: () => void) => (
           <AccountBulkActions selectedIds={ids} onClear={clear} />
         )}

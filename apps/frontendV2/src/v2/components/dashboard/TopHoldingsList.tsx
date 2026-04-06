@@ -1,5 +1,7 @@
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { getFaviconUrl } from '@/lib/icons';
+import { cn } from '@/lib/utils';
 
 interface TopHolding {
   id: string;
@@ -7,6 +9,9 @@ interface TopHolding {
   name: string;
   value: string;
   tokenTypeCode: string;
+  accountName?: string;
+  institutionName?: string;
+  institutionWebsite?: string;
 }
 
 interface TopHoldingsListProps {
@@ -46,6 +51,7 @@ export function TopHoldingsList({ holdings, totalValue, currency }: TopHoldingsL
             {holdings.map((holding) => {
               const val = Number.parseFloat(holding.value);
               const pct = totalValue > 0 ? (val / totalValue) * 100 : 0;
+              const favicon = getFaviconUrl(holding.institutionWebsite);
               return (
                 <div
                   key={holding.id}
@@ -56,14 +62,36 @@ export function TopHoldingsList({ holdings, totalValue, currency }: TopHoldingsL
                       <span className="font-medium text-sm">{holding.symbol}</span>
                       <Badge
                         variant="secondary"
-                        className={
+                        className={cn(
+                          'text-[10px] px-1.5 py-0',
                           TOKEN_TYPE_COLORS[holding.tokenTypeCode.toLowerCase()] ?? 'bg-secondary'
-                        }
+                        )}
                       >
                         {holding.tokenTypeCode}
                       </Badge>
                     </div>
                     <p className="text-xs text-muted-foreground truncate">{holding.name}</p>
+                    {(holding.institutionName || holding.accountName) && (
+                      <p className="text-xs text-muted-foreground/70 flex items-center gap-1 mt-0.5">
+                        {favicon && (
+                          <img
+                            src={favicon}
+                            alt=""
+                            className="h-3 w-3 rounded-sm object-contain inline-block"
+                            onError={(e) => {
+                              (e.target as HTMLImageElement).style.display = 'none';
+                            }}
+                          />
+                        )}
+                        {holding.institutionName}
+                        {holding.accountName && (
+                          <span>
+                            {holding.institutionName ? ' / ' : ''}
+                            {holding.accountName}
+                          </span>
+                        )}
+                      </p>
+                    )}
                   </div>
                   <div className="text-right ml-4 shrink-0">
                     <p className="text-sm font-medium">{formatMoney(val, currency)}</p>

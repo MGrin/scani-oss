@@ -9,6 +9,10 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { trpc } from '@/lib/trpc';
 import { V2_ROUTES } from '../lib/routes';
 
+function formatMoney(value: number | string, symbol: string) {
+  return `${symbol} ${Number(value).toLocaleString('en-US', { minimumFractionDigits: 2 })}`;
+}
+
 export function VaultDetailPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
@@ -77,16 +81,10 @@ export function VaultDetailPage() {
         <CardContent className="p-4 space-y-3">
           <div className="flex items-baseline justify-between">
             <span className="text-2xl font-bold">
-              {vault.currencySymbol}{' '}
-              {Number(vault.currentAmount || 0).toLocaleString('en-US', {
-                minimumFractionDigits: 2,
-              })}
+              {formatMoney(vault.currentAmount || 0, vault.currencySymbol)}
             </span>
             <span className="text-sm text-muted-foreground">
-              / {vault.currencySymbol}{' '}
-              {Number(vault.targetAmount).toLocaleString('en-US', {
-                minimumFractionDigits: 2,
-              })}
+              / {formatMoney(vault.targetAmount, vault.currencySymbol)}
             </span>
           </div>
           <Progress value={progress} className="h-2" />
@@ -103,29 +101,39 @@ export function VaultDetailPage() {
         <h3 className="text-sm font-medium mb-3">Attached Holdings ({vault.holdingsCount || 0})</h3>
         {vault.holdings && vault.holdings.length > 0 ? (
           <div className="space-y-2">
-            {vault.holdings.map(
-              (h: { holdingId: string; percentage: number; tokenSymbol?: string }) => (
-                <div
-                  key={h.holdingId}
-                  className="flex items-center justify-between p-3 rounded-md border border-border"
-                >
+            {vault.holdings.map((h) => (
+              <div
+                key={h.holdingId}
+                className="flex items-center justify-between p-3 rounded-md border border-border"
+              >
+                <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2">
                     <span className="text-sm font-medium">{h.tokenSymbol || 'Unknown'}</span>
                     <Badge variant="outline" className="text-xs">
                       {h.percentage}%
                     </Badge>
                   </div>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="h-7 text-xs text-muted-foreground"
-                    onClick={() => detachMutation.mutate({ vaultId: id, holdingId: h.holdingId })}
-                  >
-                    Remove
-                  </Button>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    {h.institutionName}
+                    {h.accountName && ` / ${h.accountName}`}
+                    {h.holdingValue && (
+                      <span className="ml-2">
+                        &middot;{' '}
+                        {formatMoney(h.attributedValue || h.holdingValue, vault.currencySymbol)}
+                      </span>
+                    )}
+                  </p>
                 </div>
-              )
-            )}
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 text-xs text-muted-foreground shrink-0"
+                  onClick={() => detachMutation.mutate({ vaultId: id, holdingId: h.holdingId })}
+                >
+                  Remove
+                </Button>
+              </div>
+            ))}
           </div>
         ) : (
           <p className="text-sm text-muted-foreground">No holdings attached to this vault yet</p>

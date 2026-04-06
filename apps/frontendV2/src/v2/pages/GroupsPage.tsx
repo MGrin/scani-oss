@@ -1,17 +1,21 @@
-import { Plus } from 'lucide-react';
+import { Pencil, Plus } from 'lucide-react';
 import { useState } from 'react';
+import { Link } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { trpc } from '@/lib/trpc';
 import { GroupFormDialog } from '../components/groups/GroupFormDialog';
+import { V2_ROUTES } from '../lib/routes';
 
 export function GroupsPage() {
   const { data: groups, isLoading } = trpc.groups.getAllWithCounts.useQuery();
   const [formOpen, setFormOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
 
-  const handleEdit = (id: string) => {
+  const handleEdit = (e: React.MouseEvent, id: string) => {
+    e.stopPropagation();
+    e.preventDefault();
     setEditingId(id);
     setFormOpen(true);
   };
@@ -53,11 +57,7 @@ export function GroupsPage() {
       {groups && groups.length > 0 ? (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
           {groups.map((group) => (
-            <Card
-              key={group.id}
-              className="cursor-pointer hover:border-primary/50 transition-colors"
-              onClick={() => handleEdit(group.id)}
-            >
+            <Card key={group.id} className="hover:border-primary/50 transition-colors">
               <CardContent className="p-4">
                 <div className="flex items-center gap-3">
                   <div
@@ -71,6 +71,37 @@ export function GroupsPage() {
                       accounts
                     </p>
                   </div>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-7 w-7 shrink-0"
+                    onClick={(e) => handleEdit(e, group.id)}
+                  >
+                    <Pencil className="h-3.5 w-3.5" />
+                  </Button>
+                </div>
+
+                {/* Quick links to view group contents */}
+                <div className="flex gap-2 mt-3 pt-3 border-t border-border">
+                  {(group.holdingsCount ?? 0) > 0 && (
+                    <Link
+                      to={`${V2_ROUTES.holdings}?group=${group.id}`}
+                      className="text-xs text-primary hover:underline"
+                    >
+                      View holdings
+                    </Link>
+                  )}
+                  {(group.accountsCount ?? 0) > 0 && (
+                    <Link
+                      to={`${V2_ROUTES.accounts}?group=${group.id}`}
+                      className="text-xs text-primary hover:underline"
+                    >
+                      View accounts
+                    </Link>
+                  )}
+                  {(group.holdingsCount ?? 0) === 0 && (group.accountsCount ?? 0) === 0 && (
+                    <p className="text-xs text-muted-foreground/60">No members yet</p>
+                  )}
                 </div>
               </CardContent>
             </Card>

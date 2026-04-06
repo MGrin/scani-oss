@@ -9,6 +9,7 @@ interface AccountCardProps {
   onSelect: (id: string) => void;
   institutionName?: string;
   typeName?: string;
+  institutionFavicon?: string | null;
 }
 
 function formatMoney(value: number) {
@@ -26,13 +27,24 @@ export function AccountCard({
   onSelect,
   institutionName,
   typeName,
+  institutionFavicon,
 }: AccountCardProps) {
   return (
     <CardInteractive className={cn('p-4', isSelected && 'ring-2 ring-primary')}>
       <div className="flex items-start justify-between mb-2">
         <div>
           <p className="font-semibold">{item.name}</p>
-          <p className="text-xs text-muted-foreground">
+          <p className="text-xs text-muted-foreground flex items-center gap-1">
+            {institutionFavicon && (
+              <img
+                src={institutionFavicon}
+                alt=""
+                className="h-3 w-3 rounded-sm object-contain"
+                onError={(e) => {
+                  (e.target as HTMLImageElement).style.display = 'none';
+                }}
+              />
+            )}
             {institutionName ?? item.institutionId}
             {typeName && <span className="ml-2 text-muted-foreground/60">{typeName}</span>}
           </p>

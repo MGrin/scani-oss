@@ -1,4 +1,4 @@
-import { Camera, FileUp, Keyboard, Plug, Wallet } from 'lucide-react';
+import { FileUp, Keyboard, Plug, Wallet } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { Card, CardContent } from '@/components/ui/card';
 import { V2_ROUTES } from '../lib/routes';
@@ -23,11 +23,11 @@ export function AddDataPage() {
       action: () => navigate('/add-data?method=manual'),
     },
     {
-      id: 'screenshots',
-      icon: Camera,
-      title: 'Screenshot Upload',
-      description: 'Upload screenshots and let AI extract your holdings',
-      action: () => navigate('/add-data?method=screenshots'),
+      id: 'file',
+      icon: FileUp,
+      title: 'Upload File or Screenshot',
+      description: 'Upload a CSV, OFX statement, or screenshot to import your data',
+      action: () => navigate(V2_ROUTES.fileImport),
     },
     {
       id: 'wallet',
@@ -42,13 +42,6 @@ export function AddDataPage() {
       title: 'Connect Exchange',
       description: 'Connect your exchange or broker with API keys',
       action: () => navigate(V2_ROUTES.integrations),
-    },
-    {
-      id: 'file',
-      icon: FileUp,
-      title: 'Import File',
-      description: 'Upload a CSV or OFX bank statement',
-      action: () => navigate(V2_ROUTES.fileImport),
     },
   ];
 

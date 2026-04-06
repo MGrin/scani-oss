@@ -1,22 +1,130 @@
 import type { HoldingWithDetails } from '@scani/shared';
 import { PieChart } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
+import { Badge } from '@/components/ui/badge';
+import { getFaviconUrl } from '@/lib/icons';
 import { trpc } from '@/lib/trpc';
+import { cn } from '@/lib/utils';
 import { DataView as DataViewComponent } from '../components/data-view/DataView';
+import type { ColumnDef } from '../components/data-view/DataViewTable';
 import { HoldingBulkActions } from '../components/holdings/HoldingBulkActions';
 import { HoldingCard } from '../components/holdings/HoldingCard';
 import { V2_ROUTES } from '../lib/routes';
 
-const holdingColumns = [
-  { key: 'select', label: '', width: '40px' },
-  { key: 'token', label: 'Token' },
-  { key: 'amount', label: 'Amount', align: 'right' as const },
-  { key: 'value', label: 'Value', align: 'right' as const },
-  { key: 'price', label: 'Price', align: 'right' as const },
-  { key: 'account', label: 'Account' },
-  { key: 'institution', label: 'Institution' },
-  { key: 'groups', label: 'Groups' },
-  { key: 'status', label: 'Status' },
+const TOKEN_TYPE_COLORS: Record<string, string> = {
+  crypto: 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200',
+  stock: 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200',
+  fiat: 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200',
+  bond: 'bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200',
+  commodity: 'bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-200',
+};
+
+function formatMoney(value: number) {
+  return new Intl.NumberFormat('en-US', {
+    style: 'currency',
+    currency: 'USD',
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(value);
+}
+
+function InstitutionIcon({ name, website }: { name: string; website?: string }) {
+  const favicon = getFaviconUrl(website);
+  return (
+    <span className="inline-flex items-center gap-1.5 text-sm text-muted-foreground">
+      {favicon && (
+        <img
+          src={favicon}
+          alt=""
+          className="h-4 w-4 rounded-sm object-contain"
+          onError={(e) => {
+            (e.target as HTMLImageElement).style.display = 'none';
+          }}
+        />
+      )}
+      {name}
+    </span>
+  );
+}
+
+const holdingColumns: ColumnDef<HoldingWithDetails>[] = [
+  {
+    key: 'token',
+    label: 'Token',
+    sortable: true,
+    render: (item) => (
+      <div className="flex items-center gap-2">
+        <span className="font-medium text-sm">{item.token.symbol}</span>
+        <span className="text-xs text-muted-foreground truncate max-w-[120px]">
+          {item.token.name}
+        </span>
+        <Badge
+          variant="secondary"
+          className={cn(
+            'text-[10px] px-1.5 py-0',
+            TOKEN_TYPE_COLORS[item.token.typeCode.toLowerCase()] ?? 'bg-secondary'
+          )}
+        >
+          {item.token.typeCode}
+        </Badge>
+      </div>
+    ),
+  },
+  {
+    key: 'amount',
+    label: 'Amount',
+    align: 'right',
+    sortable: true,
+    render: (item) => <span className="tabular-nums">{item.amount.toLocaleString()}</span>,
+  },
+  {
+    key: 'value',
+    label: 'Value',
+    align: 'right',
+    sortable: true,
+    render: (item) => <span className="font-medium tabular-nums">{formatMoney(item.value)}</span>,
+  },
+  {
+    key: 'price',
+    label: 'Price',
+    align: 'right',
+    sortable: true,
+    render: (item) => (
+      <span className="text-muted-foreground tabular-nums">
+        {item.price ? `$${Number.parseFloat(item.price.value).toLocaleString()}` : '-'}
+      </span>
+    ),
+  },
+  {
+    key: 'account',
+    label: 'Account',
+    render: (item) => <span className="text-sm text-muted-foreground">{item.account.name}</span>,
+  },
+  {
+    key: 'institution',
+    label: 'Institution',
+    render: (item) => (
+      <InstitutionIcon name={item.institution.name} website={item.institution.website} />
+    ),
+  },
+  {
+    key: 'groups',
+    label: 'Groups',
+    render: (item) => (
+      <div className="flex flex-wrap gap-1">
+        {item.groups.map((g) => (
+          <Badge
+            key={g.id}
+            variant="outline"
+            className="text-[10px] px-1.5 py-0"
+            style={{ borderColor: g.color, color: g.color }}
+          >
+            {g.name}
+          </Badge>
+        ))}
+      </div>
+    ),
+  },
 ];
 
 export function HoldingsPage() {
@@ -45,7 +153,8 @@ export function HoldingsPage() {
       <div>
         <h2 className="text-2xl font-bold tracking-tight">Holdings</h2>
         <p className="text-muted-foreground mt-1">
-          {holdings.length} holdings{currency !== 'USD' ? ` (${currency})` : ''}
+          {isLoading ? '' : `${holdings.length} holdings`}
+          {!isLoading && currency !== 'USD' ? ` (${currency})` : ''}
         </p>
       </div>
 

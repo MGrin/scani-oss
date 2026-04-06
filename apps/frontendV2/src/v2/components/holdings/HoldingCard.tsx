@@ -1,6 +1,7 @@
 import type { HoldingWithDetails } from '@scani/shared';
 import { Badge } from '@/components/ui/badge';
 import { CardInteractive } from '@/components/ui/card';
+import { getFaviconUrl } from '@/lib/icons';
 import { cn } from '@/lib/utils';
 
 interface HoldingCardProps {
@@ -27,6 +28,8 @@ function formatMoney(value: number) {
 }
 
 export function HoldingCard({ item, isSelected, onSelect }: HoldingCardProps) {
+  const favicon = getFaviconUrl(item.institution.website);
+
   return (
     <CardInteractive className={cn('p-4', isSelected && 'ring-2 ring-primary')}>
       <div className="flex items-start justify-between mb-2">
@@ -59,7 +62,17 @@ export function HoldingCard({ item, isSelected, onSelect }: HoldingCardProps) {
         {item.price && <span>@ ${Number.parseFloat(item.price.value).toLocaleString()}</span>}
       </div>
       <div className="mt-3 pt-3 border-t border-border space-y-1">
-        <p className="text-xs text-muted-foreground">
+        <p className="text-xs text-muted-foreground flex items-center gap-1">
+          {favicon && (
+            <img
+              src={favicon}
+              alt=""
+              className="h-3 w-3 rounded-sm object-contain"
+              onError={(e) => {
+                (e.target as HTMLImageElement).style.display = 'none';
+              }}
+            />
+          )}
           {item.institution.name} / {item.account.name}
         </p>
         {item.groups.length > 0 && (
