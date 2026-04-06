@@ -133,7 +133,10 @@ export const AccountImplementations = {
 
   async getByUserIdWithSummary(context: FeatureExecutionContext, _input: Record<string, never>) {
     const accountService = Container.get(AccountService);
-    return await accountService.getAccountsByUserIdWithSummary(context.userId);
+    return await accountService.getAccountsByUserIdWithSummary(
+      context.userId,
+      context.requestCache
+    );
   },
 
   async getById(context: FeatureExecutionContext, input: { id: string }) {
@@ -290,7 +293,12 @@ export const HoldingImplementations = {
     }
     // Type assertion since the function expects a full user object
     // Use new method that returns summary with pre-calculated totals
-    return await holdingService.getHoldingsByAccountIdWithSummary(dbUser as User);
+    return await holdingService.getHoldingsByAccountIdWithSummary(
+      dbUser as User,
+      undefined,
+      false,
+      context.requestCache
+    );
   },
 
   async create(
@@ -518,7 +526,10 @@ export const InstitutionImplementations = {
 
   async getByUserIdWithSummary(context: FeatureExecutionContext, _input: Record<string, never>) {
     const institutionService = Container.get(InstitutionService);
-    return await institutionService.getInstitutionsByUserIdWithSummary(context.userId);
+    return await institutionService.getInstitutionsByUserIdWithSummary(
+      context.userId,
+      context.requestCache
+    );
   },
 
   async getById(_context: FeatureExecutionContext, input: { id: string }) {

@@ -423,7 +423,8 @@ export class HoldingService extends BaseService {
   async getHoldingsByAccountIdWithDetails(
     user: User,
     accountId?: string,
-    includeHidden = false
+    includeHidden = false,
+    requestCache?: Map<string, unknown>
   ): Promise<HoldingWithDetails[]> {
     if (!user.baseCurrencyId) {
       throw new Error('User does not have a base currency set');
@@ -442,7 +443,12 @@ export class HoldingService extends BaseService {
         undefined, // transaction: not using transaction here
         includeHidden
       ),
-      this.portfolioValuationService.getUserPortfolioValue(user.id, user.baseCurrencyId, accountId),
+      this.portfolioValuationService.getUserPortfolioValue(
+        user.id,
+        user.baseCurrencyId,
+        accountId,
+        requestCache
+      ),
     ]);
 
     if (holdingsWithFullDetails.length === 0) {
@@ -558,7 +564,8 @@ export class HoldingService extends BaseService {
   async getHoldingsByAccountIdWithSummary(
     user: User,
     accountId?: string,
-    includeHidden = false
+    includeHidden = false,
+    requestCache?: Map<string, unknown>
   ): Promise<{
     holdings: HoldingWithDetails[];
     summary: {
@@ -567,7 +574,12 @@ export class HoldingService extends BaseService {
       totalValue: string;
     };
   }> {
-    const holdings = await this.getHoldingsByAccountIdWithDetails(user, accountId, includeHidden);
+    const holdings = await this.getHoldingsByAccountIdWithDetails(
+      user,
+      accountId,
+      includeHidden,
+      requestCache
+    );
 
     // Calculate summary statistics (only active holdings count towards totals)
     const activeHoldings = holdings.filter((h) => h.isActive);

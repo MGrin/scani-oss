@@ -20,7 +20,13 @@ export class AccountRepository extends BaseRepository<Account, NewAccount> {
         })
         .from(schema.accounts)
         .innerJoin(schema.accountTypes, eq(schema.accounts.typeId, schema.accountTypes.id))
-        .where(and(eq(schema.accounts.userId, userId), eq(schema.accounts.isActive, true)))
+        .where(
+          and(
+            eq(schema.accounts.userId, userId),
+            eq(schema.accounts.isActive, true),
+            eq(schema.accounts.isHidden, false)
+          )
+        )
         .orderBy(schema.accounts.name);
 
       return results.map((result) => ({
