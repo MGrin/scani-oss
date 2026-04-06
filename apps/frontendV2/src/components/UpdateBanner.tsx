@@ -12,7 +12,13 @@ export function UpdateBanner() {
   if (!updateAvailable) return null;
 
   return (
-    <div className="fixed top-0 left-0 right-0 z-[100] bg-primary text-primary-foreground px-4 py-2 flex items-center justify-center gap-3 text-sm shadow-lg animate-in slide-in-from-top duration-300">
+    <div
+      className="fixed top-0 left-0 right-0 z-[100] bg-primary text-primary-foreground px-4 flex items-center justify-center gap-3 text-sm shadow-lg animate-in slide-in-from-top duration-300"
+      style={{
+        paddingTop: 'calc(0.5rem + env(safe-area-inset-top, 0px))',
+        paddingBottom: '0.5rem',
+      }}
+    >
       <RefreshCw className="h-4 w-4 shrink-0" />
       <span>A new version is available</span>
       <button
