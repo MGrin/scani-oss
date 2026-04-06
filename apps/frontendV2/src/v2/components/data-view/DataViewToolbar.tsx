@@ -77,7 +77,7 @@ export function DataViewToolbar({
     <div className="space-y-3">
       <div className="flex flex-wrap items-center gap-2">
         {/* Search */}
-        <div className="relative min-w-[200px] flex-1">
+        <div className="relative w-full sm:w-auto sm:min-w-[200px] sm:flex-1">
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <Input
             placeholder="Search..."
@@ -119,7 +119,7 @@ export function DataViewToolbar({
         {/* Sort */}
         {sortDefs && sortDefs.length > 0 && (
           <Select value={sortField} onValueChange={onSetSort}>
-            <SelectTrigger className="w-[160px]">
+            <SelectTrigger className="w-[calc(50%-4px)] sm:w-[160px]">
               <SelectValue placeholder="Sort by..." />
             </SelectTrigger>
             <SelectContent>
@@ -138,7 +138,7 @@ export function DataViewToolbar({
             value={groupBy || '_none'}
             onValueChange={(v) => onSetGroupBy(v === '_none' ? '' : v)}
           >
-            <SelectTrigger className="w-[160px]">
+            <SelectTrigger className="w-[calc(50%-4px)] sm:w-[160px]">
               <SelectValue placeholder="Group by..." />
             </SelectTrigger>
             <SelectContent>

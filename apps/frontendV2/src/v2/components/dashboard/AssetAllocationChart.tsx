@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { Cell, Legend, Pie, PieChart, ResponsiveContainer, Tooltip } from 'recharts';
+import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip } from 'recharts';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { trpc } from '@/lib/trpc';
@@ -20,7 +20,7 @@ const COLORS = [
 type Dimension = 'token_type' | 'institution' | 'account' | 'group';
 
 const DIMENSION_OPTIONS: { value: Dimension; label: string }[] = [
-  { value: 'token_type', label: 'Asset Type' },
+  { value: 'token_type', label: 'Type' },
   { value: 'institution', label: 'Institution' },
   { value: 'account', label: 'Account' },
   { value: 'group', label: 'Group' },
@@ -34,19 +34,43 @@ export function AssetAllocationChart() {
 
   const chartData = useMemo(() => {
     if (!allocation?.items) return [];
-    return allocation.items.map((item, index) => ({
-      id: item.id,
-      name: item.name,
-      value: Number(item.percentage) || 0,
-      fill: COLORS[index % COLORS.length],
-    }));
+    // Group small slices into "Other" to keep chart readable
+    const sorted = [...allocation.items].sort(
+      (a, b) => Number(b.percentage) - Number(a.percentage)
+    );
+    const MAX_SLICES = 8;
+    if (sorted.length <= MAX_SLICES) {
+      return sorted.map((item, index) => ({
+        id: item.id,
+        name: item.name,
+        value: Number(item.percentage) || 0,
+        fill: COLORS[index % COLORS.length],
+      }));
+    }
+    const top = sorted.slice(0, MAX_SLICES - 1);
+    const rest = sorted.slice(MAX_SLICES - 1);
+    const otherValue = rest.reduce((sum, item) => sum + (Number(item.percentage) || 0), 0);
+    return [
+      ...top.map((item, index) => ({
+        id: item.id,
+        name: item.name,
+        value: Number(item.percentage) || 0,
+        fill: COLORS[index % COLORS.length],
+      })),
+      {
+        id: '__other__',
+        name: `Other (${rest.length})`,
+        value: otherValue,
+        fill: '#94a3b8',
+      },
+    ];
   }, [allocation?.items]);
 
   return (
     <Card>
       <CardHeader className="pb-2">
-        <div className="flex items-center justify-between">
-          <CardTitle>Asset Allocation</CardTitle>
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <CardTitle className="text-base">Allocation</CardTitle>
           <div className="flex gap-1">
             {DIMENSION_OPTIONS.map((opt) => (
               <button
@@ -78,37 +102,51 @@ export function AssetAllocationChart() {
         ) : chartData.length === 0 ? (
           <p className="text-sm text-muted-foreground">No assets yet</p>
         ) : (
-          <ResponsiveContainer width="100%" height={260}>
-            <PieChart>
-              <Pie
-                data={chartData}
-                cx="50%"
-                cy="50%"
-                innerRadius={50}
-                outerRadius={90}
-                paddingAngle={2}
-                dataKey="value"
-              >
-                {chartData.map((entry) => (
-                  <Cell key={entry.id} fill={entry.fill} />
-                ))}
-              </Pie>
-              <Tooltip
-                formatter={(value: number) => [`${value.toFixed(1)}%`, 'Allocation']}
-                contentStyle={{
-                  backgroundColor: 'hsl(var(--card))',
-                  border: '1px solid hsl(var(--border))',
-                  borderRadius: '6px',
-                }}
-              />
-              <Legend
-                wrapperStyle={{ fontSize: '12px' }}
-                formatter={(value: string) => (
-                  <span className="text-xs text-foreground">{value}</span>
-                )}
-              />
-            </PieChart>
-          </ResponsiveContainer>
+          <div>
+            <ResponsiveContainer width="100%" height={180}>
+              <PieChart>
+                <Pie
+                  data={chartData}
+                  cx="50%"
+                  cy="50%"
+                  innerRadius={40}
+                  outerRadius={75}
+                  paddingAngle={2}
+                  dataKey="value"
+                >
+                  {chartData.map((entry) => (
+                    <Cell key={entry.id} fill={entry.fill} />
+                  ))}
+                </Pie>
+                <Tooltip
+                  formatter={(value: number) => [`${value.toFixed(1)}%`, 'Allocation']}
+                  contentStyle={{
+                    backgroundColor: 'hsl(var(--card))',
+                    border: '1px solid hsl(var(--border))',
+                    borderRadius: '6px',
+                    fontSize: '12px',
+                  }}
+                />
+              </PieChart>
+            </ResponsiveContainer>
+            {/* Custom compact legend */}
+            <div className="mt-2 max-h-[120px] overflow-y-auto space-y-1">
+              {chartData.map((entry) => (
+                <div key={entry.id} className="flex items-center justify-between text-xs">
+                  <span className="flex items-center gap-1.5 min-w-0">
+                    <span
+                      className="h-2.5 w-2.5 rounded-sm shrink-0"
+                      style={{ backgroundColor: entry.fill }}
+                    />
+                    <span className="truncate">{entry.name}</span>
+                  </span>
+                  <span className="text-muted-foreground tabular-nums shrink-0 ml-2">
+                    {entry.value.toFixed(1)}%
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
         )}
       </CardContent>
     </Card>

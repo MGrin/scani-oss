@@ -79,67 +79,73 @@ export function DataViewTable<T>({
       {groupLabel && (
         <h3 className="mb-2 mt-4 text-sm font-semibold text-muted-foreground">{groupLabel}</h3>
       )}
-      <Table>
-        <TableHeader>
-          <TableRow>
-            <TableHead className="w-[40px]">
-              <Checkbox
-                checked={isAllSelected}
-                onCheckedChange={() => (hasSelection ? onClearSelection() : onSelectAll())}
-                aria-label="Select all"
-              />
-            </TableHead>
-            {columns.map((col) => (
-              <TableHead
-                key={col.key}
-                className={cn(
-                  col.width,
-                  col.className,
-                  col.sortable && 'cursor-pointer select-none'
-                )}
-                onClick={col.sortable ? () => onSetSort(col.key) : undefined}
-              >
-                <div className="flex items-center">
-                  {col.header || col.label || col.key}
-                  {col.sortable && (
-                    <SortIcon field={col.key} sortField={sortField} sortDirection={sortDirection} />
-                  )}
-                </div>
+      <div className="overflow-x-auto -mx-4 px-4 sm:mx-0 sm:px-0">
+        <Table className="min-w-[600px]">
+          <TableHeader>
+            <TableRow>
+              <TableHead className="w-[40px]">
+                <Checkbox
+                  checked={isAllSelected}
+                  onCheckedChange={() => (hasSelection ? onClearSelection() : onSelectAll())}
+                  aria-label="Select all"
+                />
               </TableHead>
-            ))}
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {data.map((item) => {
-            const id = getId(item);
-            const isSelected = selectedIds.has(id);
-            return (
-              <TableRow
-                key={id}
-                data-state={isSelected ? 'selected' : undefined}
-                className={cn(onRowClick && 'cursor-pointer')}
-                onClick={() => onRowClick?.(item)}
-              >
-                <TableCell>
-                  <Checkbox
-                    checked={isSelected}
-                    onCheckedChange={() => onToggleSelect(id)}
-                    onClick={(e) => e.stopPropagation()}
-                    aria-label={`Select row ${id}`}
-                  />
-                </TableCell>
-                {columns.map((col) => (
-                  <TableCell key={col.key} className={cn(col.width, col.className)}>
-                    {col.render
-                      ? col.render(item)
-                      : String((item as Record<string, unknown>)[col.key] ?? '')}
+              {columns.map((col) => (
+                <TableHead
+                  key={col.key}
+                  className={cn(
+                    col.width,
+                    col.className,
+                    col.sortable && 'cursor-pointer select-none'
+                  )}
+                  onClick={col.sortable ? () => onSetSort(col.key) : undefined}
+                >
+                  <div className="flex items-center">
+                    {col.header || col.label || col.key}
+                    {col.sortable && (
+                      <SortIcon
+                        field={col.key}
+                        sortField={sortField}
+                        sortDirection={sortDirection}
+                      />
+                    )}
+                  </div>
+                </TableHead>
+              ))}
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {data.map((item) => {
+              const id = getId(item);
+              const isSelected = selectedIds.has(id);
+              return (
+                <TableRow
+                  key={id}
+                  data-state={isSelected ? 'selected' : undefined}
+                  className={cn(onRowClick && 'cursor-pointer')}
+                  onClick={() => onRowClick?.(item)}
+                >
+                  <TableCell>
+                    <Checkbox
+                      checked={isSelected}
+                      onCheckedChange={() => onToggleSelect(id)}
+                      onClick={(e) => e.stopPropagation()}
+                      aria-label={`Select row ${id}`}
+                    />
                   </TableCell>
-                ))}
-              </TableRow>
-            );
-          })}
-        </TableBody>
-      </Table>
+                  {columns.map((col) => (
+                    <TableCell key={col.key} className={cn(col.width, col.className)}>
+                      {col.render
+                        ? col.render(item)
+                        : String((item as Record<string, unknown>)[col.key] ?? '')}
+                    </TableCell>
+                  ))}
+                </TableRow>
+              );
+            })}
+          </TableBody>
+        </Table>
+      </div>
     </div>
   );
 }

@@ -76,6 +76,7 @@ export function DataView<T>({
         selectedIds={dv.selectedIds}
         onToggleSelect={dv.toggleSelect}
         renderCard={renderCard}
+        onCardClick={onRowClick}
         groupLabel={groupLabel}
       />
     );
