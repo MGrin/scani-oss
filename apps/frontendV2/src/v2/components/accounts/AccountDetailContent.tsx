@@ -3,6 +3,7 @@ import { Separator } from '@/components/ui/separator';
 import { Skeleton } from '@/components/ui/skeleton';
 import { trpc } from '@/lib/trpc';
 import { cn } from '@/lib/utils';
+import { useBaseCurrency } from '../../hooks/useBaseCurrency';
 
 interface AccountDetailContentProps {
   accountId: string;
@@ -12,6 +13,7 @@ interface AccountDetailContentProps {
 export function AccountDetailContent({ accountId, mode = 'panel' }: AccountDetailContentProps) {
   const { data: account, isLoading } = trpc.accounts.getById.useQuery({ id: accountId });
   const { data: holdingsData } = trpc.accounts.getHoldings.useQuery({ id: accountId });
+  const { symbol: currencySymbol } = useBaseCurrency();
 
   if (isLoading) {
     return (
@@ -69,7 +71,14 @@ export function AccountDetailContent({ accountId, mode = 'panel' }: AccountDetai
                 }) => (
                   <div key={h.id} className="flex items-center justify-between text-sm">
                     <span className="font-medium">{h.token?.symbol || 'Unknown'}</span>
-                    <span className="text-muted-foreground">{h.balance || '0'}</span>
+                    <span className="text-muted-foreground">
+                      {new Intl.NumberFormat('en-US', {
+                        style: 'currency',
+                        currency: currencySymbol,
+                        minimumFractionDigits: 2,
+                        maximumFractionDigits: 2,
+                      }).format(Number(h.balance || 0))}
+                    </span>
                   </div>
                 )
               )}

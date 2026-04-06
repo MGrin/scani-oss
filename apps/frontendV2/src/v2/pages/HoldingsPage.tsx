@@ -1,5 +1,6 @@
 import type { HoldingWithDetails } from '@scani/shared';
 import { PieChart } from 'lucide-react';
+import { useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Badge } from '@/components/ui/badge';
 import { getFaviconUrl } from '@/lib/icons';
@@ -19,10 +20,10 @@ const TOKEN_TYPE_COLORS: Record<string, string> = {
   commodity: 'bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-200',
 };
 
-function formatMoney(value: number) {
+function formatMoney(value: number, currency = 'USD') {
   return new Intl.NumberFormat('en-US', {
     style: 'currency',
-    currency: 'USD',
+    currency,
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   }).format(value);
@@ -47,85 +48,89 @@ function InstitutionIcon({ name, website }: { name: string; website?: string | n
   );
 }
 
-const holdingColumns: ColumnDef<HoldingWithDetails>[] = [
-  {
-    key: 'token',
-    label: 'Token',
-    sortable: true,
-    render: (item) => (
-      <div className="flex items-center gap-2">
-        <span className="font-medium text-sm">{item.token.symbol}</span>
-        <span className="text-xs text-muted-foreground truncate max-w-[120px]">
-          {item.token.name}
-        </span>
-        <Badge
-          variant="secondary"
-          className={cn(
-            'text-[10px] px-1.5 py-0',
-            TOKEN_TYPE_COLORS[item.token.typeCode.toLowerCase()] ?? 'bg-secondary'
-          )}
-        >
-          {item.token.typeCode}
-        </Badge>
-      </div>
-    ),
-  },
-  {
-    key: 'amount',
-    label: 'Amount',
-    align: 'right',
-    sortable: true,
-    render: (item) => <span className="tabular-nums">{item.amount.toLocaleString()}</span>,
-  },
-  {
-    key: 'value',
-    label: 'Value',
-    align: 'right',
-    sortable: true,
-    render: (item) => <span className="font-medium tabular-nums">{formatMoney(item.value)}</span>,
-  },
-  {
-    key: 'price',
-    label: 'Price',
-    align: 'right',
-    sortable: true,
-    render: (item) => (
-      <span className="text-muted-foreground tabular-nums">
-        {item.price ? `$${Number.parseFloat(item.price.value).toLocaleString()}` : '-'}
-      </span>
-    ),
-  },
-  {
-    key: 'account',
-    label: 'Account',
-    render: (item) => <span className="text-sm text-muted-foreground">{item.account.name}</span>,
-  },
-  {
-    key: 'institution',
-    label: 'Institution',
-    render: (item) => (
-      <InstitutionIcon name={item.institution.name} website={item.institution.website} />
-    ),
-  },
-  {
-    key: 'groups',
-    label: 'Groups',
-    render: (item) => (
-      <div className="flex flex-wrap gap-1">
-        {item.groups.map((g) => (
+function getHoldingColumns(currency: string): ColumnDef<HoldingWithDetails>[] {
+  return [
+    {
+      key: 'token',
+      label: 'Token',
+      sortable: true,
+      render: (item) => (
+        <div className="flex items-center gap-2">
+          <span className="font-medium text-sm">{item.token.symbol}</span>
+          <span className="text-xs text-muted-foreground truncate max-w-[120px]">
+            {item.token.name}
+          </span>
           <Badge
-            key={g.id}
-            variant="outline"
-            className="text-[10px] px-1.5 py-0"
-            style={{ borderColor: g.color, color: g.color }}
+            variant="secondary"
+            className={cn(
+              'text-[10px] px-1.5 py-0',
+              TOKEN_TYPE_COLORS[item.token.typeCode.toLowerCase()] ?? 'bg-secondary'
+            )}
           >
-            {g.name}
+            {item.token.typeCode}
           </Badge>
-        ))}
-      </div>
-    ),
-  },
-];
+        </div>
+      ),
+    },
+    {
+      key: 'amount',
+      label: 'Amount',
+      align: 'right',
+      sortable: true,
+      render: (item) => <span className="tabular-nums">{item.amount.toLocaleString()}</span>,
+    },
+    {
+      key: 'value',
+      label: 'Value',
+      align: 'right',
+      sortable: true,
+      render: (item) => (
+        <span className="font-medium tabular-nums">{formatMoney(item.value, currency)}</span>
+      ),
+    },
+    {
+      key: 'price',
+      label: 'Price',
+      align: 'right',
+      sortable: true,
+      render: (item) => (
+        <span className="text-muted-foreground tabular-nums">
+          {item.price ? formatMoney(Number.parseFloat(item.price.value), currency) : '-'}
+        </span>
+      ),
+    },
+    {
+      key: 'account',
+      label: 'Account',
+      render: (item) => <span className="text-sm text-muted-foreground">{item.account.name}</span>,
+    },
+    {
+      key: 'institution',
+      label: 'Institution',
+      render: (item) => (
+        <InstitutionIcon name={item.institution.name} website={item.institution.website} />
+      ),
+    },
+    {
+      key: 'groups',
+      label: 'Groups',
+      render: (item) => (
+        <div className="flex flex-wrap gap-1">
+          {item.groups.map((g) => (
+            <Badge
+              key={g.id}
+              variant="outline"
+              className="text-[10px] px-1.5 py-0"
+              style={{ borderColor: g.color, color: g.color }}
+            >
+              {g.name}
+            </Badge>
+          ))}
+        </div>
+      ),
+    },
+  ];
+}
 
 export function HoldingsPage() {
   const { data: holdingsData, isLoading } = trpc.holdings.getWithDetails.useQuery();
@@ -136,6 +141,7 @@ export function HoldingsPage() {
   const holdings = holdingsData?.holdings ?? [];
   const groups = groupsData ?? [];
   const currency = baseCurrency?.symbol || 'USD';
+  const holdingColumns = useMemo(() => getHoldingColumns(currency), [currency]);
 
   const tokenTypeOptions = Array.from(new Set(holdings.map((h) => h.token.typeCode))).map(
     (code) => ({ label: code, value: code })

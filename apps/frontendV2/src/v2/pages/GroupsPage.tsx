@@ -56,56 +56,58 @@ export function GroupsPage() {
 
       {groups && groups.length > 0 ? (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          {groups.map((group) => (
-            <Card key={group.id} className="hover:border-primary/50 transition-colors">
-              <CardContent className="p-4">
-                <div className="flex items-center gap-3">
-                  <div
-                    className="h-3 w-3 rounded-full shrink-0"
-                    style={{ backgroundColor: group.color }}
-                  />
-                  <div className="min-w-0 flex-1">
-                    <p className="font-medium truncate">{group.name}</p>
-                    <p className="text-xs text-muted-foreground mt-0.5">
-                      {group.holdingsCount ?? 0} holdings &middot; {group.accountsCount ?? 0}{' '}
-                      accounts
-                    </p>
+          {[...groups]
+            .sort((a, b) => (b.holdingsCount ?? 0) - (a.holdingsCount ?? 0))
+            .map((group) => (
+              <Card key={group.id} className="hover:border-primary/50 transition-colors">
+                <CardContent className="p-4">
+                  <div className="flex items-center gap-3">
+                    <div
+                      className="h-3 w-3 rounded-full shrink-0"
+                      style={{ backgroundColor: group.color }}
+                    />
+                    <div className="min-w-0 flex-1">
+                      <p className="font-medium truncate">{group.name}</p>
+                      <p className="text-xs text-muted-foreground mt-0.5">
+                        {group.holdingsCount ?? 0} holdings &middot; {group.accountsCount ?? 0}{' '}
+                        accounts
+                      </p>
+                    </div>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-7 w-7 shrink-0"
+                      onClick={(e) => handleEdit(e, group.id)}
+                    >
+                      <Pencil className="h-3.5 w-3.5" />
+                    </Button>
                   </div>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="h-7 w-7 shrink-0"
-                    onClick={(e) => handleEdit(e, group.id)}
-                  >
-                    <Pencil className="h-3.5 w-3.5" />
-                  </Button>
-                </div>
 
-                {/* Quick links to view group contents */}
-                <div className="flex gap-2 mt-3 pt-3 border-t border-border">
-                  {(group.holdingsCount ?? 0) > 0 && (
-                    <Link
-                      to={`${V2_ROUTES.holdings}?group=${group.id}`}
-                      className="text-xs text-primary hover:underline"
-                    >
-                      View holdings
-                    </Link>
-                  )}
-                  {(group.accountsCount ?? 0) > 0 && (
-                    <Link
-                      to={`${V2_ROUTES.accounts}?group=${group.id}`}
-                      className="text-xs text-primary hover:underline"
-                    >
-                      View accounts
-                    </Link>
-                  )}
-                  {(group.holdingsCount ?? 0) === 0 && (group.accountsCount ?? 0) === 0 && (
-                    <p className="text-xs text-muted-foreground/60">No members yet</p>
-                  )}
-                </div>
-              </CardContent>
-            </Card>
-          ))}
+                  {/* Quick links to view group contents */}
+                  <div className="flex gap-2 mt-3 pt-3 border-t border-border">
+                    {(group.holdingsCount ?? 0) > 0 && (
+                      <Link
+                        to={`${V2_ROUTES.holdings}?group=${group.id}`}
+                        className="text-xs text-primary hover:underline"
+                      >
+                        View holdings
+                      </Link>
+                    )}
+                    {(group.accountsCount ?? 0) > 0 && (
+                      <Link
+                        to={`${V2_ROUTES.accounts}?group=${group.id}`}
+                        className="text-xs text-primary hover:underline"
+                      >
+                        View accounts
+                      </Link>
+                    )}
+                    {(group.holdingsCount ?? 0) === 0 && (group.accountsCount ?? 0) === 0 && (
+                      <p className="text-xs text-muted-foreground/60">No members yet</p>
+                    )}
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
         </div>
       ) : (
         <div className="text-center py-12">

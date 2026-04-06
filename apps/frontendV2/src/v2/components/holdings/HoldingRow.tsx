@@ -1,6 +1,7 @@
 import type { HoldingWithDetails } from '@scani/shared';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
+import { useBaseCurrency } from '../../hooks/useBaseCurrency';
 
 interface HoldingRowProps {
   item: HoldingWithDetails;
@@ -16,16 +17,17 @@ const TOKEN_TYPE_COLORS: Record<string, string> = {
   commodity: 'bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-200',
 };
 
-function formatMoney(value: number) {
+function formatMoney(value: number, currency = 'USD') {
   return new Intl.NumberFormat('en-US', {
     style: 'currency',
-    currency: 'USD',
+    currency,
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   }).format(value);
 }
 
 export function HoldingRow({ item, isSelected, onSelect }: HoldingRowProps) {
+  const { symbol: currencySymbol } = useBaseCurrency();
   return (
     <>
       <td className="py-2 px-2">
@@ -55,10 +57,10 @@ export function HoldingRow({ item, isSelected, onSelect }: HoldingRowProps) {
       </td>
       <td className="py-2 px-2 text-right text-sm tabular-nums">{item.amount.toLocaleString()}</td>
       <td className="py-2 px-2 text-right text-sm font-medium tabular-nums">
-        {formatMoney(item.value)}
+        {formatMoney(item.value, currencySymbol)}
       </td>
       <td className="py-2 px-2 text-right text-sm text-muted-foreground tabular-nums">
-        {item.price ? `$${Number.parseFloat(item.price.value).toLocaleString()}` : '-'}
+        {item.price ? formatMoney(Number.parseFloat(item.price.value), currencySymbol) : '-'}
       </td>
       <td className="py-2 px-2 text-sm text-muted-foreground">{item.account.name}</td>
       <td className="py-2 px-2 text-sm text-muted-foreground">{item.institution.name}</td>

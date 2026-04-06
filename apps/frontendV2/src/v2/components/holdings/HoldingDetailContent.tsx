@@ -3,6 +3,16 @@ import { Separator } from '@/components/ui/separator';
 import { Skeleton } from '@/components/ui/skeleton';
 import { trpc } from '@/lib/trpc';
 import { cn } from '@/lib/utils';
+import { useBaseCurrency } from '../../hooks/useBaseCurrency';
+
+function formatMoney(value: number, currency = 'USD') {
+  return new Intl.NumberFormat('en-US', {
+    style: 'currency',
+    currency,
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(value);
+}
 
 interface HoldingDetailContentProps {
   holdingId: string;
@@ -11,6 +21,7 @@ interface HoldingDetailContentProps {
 }
 
 export function HoldingDetailContent({ holdingId, mode = 'panel' }: HoldingDetailContentProps) {
+  const { symbol: currencySymbol } = useBaseCurrency();
   const { data: holdingsData, isLoading } = trpc.holdings.getWithDetails.useQuery();
   const holding = holdingsData?.holdings?.find((h: { id: string }) => h.id === holdingId);
 
@@ -50,13 +61,7 @@ export function HoldingDetailContent({ holdingId, mode = 'panel' }: HoldingDetai
         <div>
           <p className="text-xs text-muted-foreground uppercase tracking-wider">Value</p>
           <p className="text-xl font-semibold mt-0.5">
-            $
-            {typeof holding.value === 'number'
-              ? holding.value.toLocaleString('en-US', {
-                  minimumFractionDigits: 2,
-                  maximumFractionDigits: 2,
-                })
-              : '0.00'}
+            {formatMoney(typeof holding.value === 'number' ? holding.value : 0, currencySymbol)}
           </p>
         </div>
         <div>
@@ -75,7 +80,9 @@ export function HoldingDetailContent({ holdingId, mode = 'panel' }: HoldingDetai
       <div className="space-y-3">
         <DetailRow
           label="Price"
-          value={holding.price?.value ? `$${Number(holding.price.value).toLocaleString()}` : 'N/A'}
+          value={
+            holding.price?.value ? formatMoney(Number(holding.price.value), currencySymbol) : 'N/A'
+          }
         />
         <DetailRow label="Account" value={holding.account?.name || '-'} />
         <DetailRow label="Institution" value={holding.institution?.name || '-'} />

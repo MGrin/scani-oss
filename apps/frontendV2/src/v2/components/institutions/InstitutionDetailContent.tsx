@@ -3,6 +3,7 @@ import { Separator } from '@/components/ui/separator';
 import { Skeleton } from '@/components/ui/skeleton';
 import { trpc } from '@/lib/trpc';
 import { cn } from '@/lib/utils';
+import { useBaseCurrency } from '../../hooks/useBaseCurrency';
 
 interface InstitutionDetailContentProps {
   institutionId: string;
@@ -14,6 +15,7 @@ export function InstitutionDetailContent({
   mode = 'panel',
 }: InstitutionDetailContentProps) {
   const { data: institutions, isLoading } = trpc.institutions.getByUserIdWithSummary.useQuery();
+  const { symbol: currencySymbol } = useBaseCurrency();
 
   const institution = institutions?.find((i: { id: string }) => i.id === institutionId);
 
@@ -61,11 +63,12 @@ export function InstitutionDetailContent({
         <div>
           <p className="text-xs text-muted-foreground uppercase tracking-wider">Total Value</p>
           <p className="text-xl font-semibold mt-0.5">
-            $
-            {Number(institution.summary?.totalValue ?? 0).toLocaleString('en-US', {
+            {new Intl.NumberFormat('en-US', {
+              style: 'currency',
+              currency: currencySymbol,
               minimumFractionDigits: 2,
               maximumFractionDigits: 2,
-            })}
+            }).format(Number(institution.summary?.totalValue ?? 0))}
           </p>
         </div>
       </div>

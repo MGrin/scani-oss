@@ -2,6 +2,7 @@ import type { AccountWihSumaryDTO } from '@scani/shared';
 import { Badge } from '@/components/ui/badge';
 import { CardInteractive } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
+import { useBaseCurrency } from '../../hooks/useBaseCurrency';
 
 interface AccountCardProps {
   item: AccountWihSumaryDTO;
@@ -12,10 +13,10 @@ interface AccountCardProps {
   institutionFavicon?: string | null;
 }
 
-function formatMoney(value: number) {
+function formatMoney(value: number, currency = 'USD') {
   return new Intl.NumberFormat('en-US', {
     style: 'currency',
-    currency: 'USD',
+    currency,
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   }).format(value);
@@ -29,6 +30,8 @@ export function AccountCard({
   typeName,
   institutionFavicon,
 }: AccountCardProps) {
+  const { symbol: currencySymbol } = useBaseCurrency();
+
   return (
     <CardInteractive className={cn('p-4', isSelected && 'ring-2 ring-primary')}>
       <div className="flex items-start justify-between mb-2">
@@ -61,7 +64,7 @@ export function AccountCard({
       </div>
 
       <p className="text-xl font-bold tabular-nums mt-3">
-        {formatMoney(Number.parseFloat(item.summary.totalValue))}
+        {formatMoney(Number.parseFloat(item.summary.totalValue), currencySymbol)}
       </p>
       <p className="text-xs text-muted-foreground mt-1">
         {item.summary.holdingsCount} holding{item.summary.holdingsCount !== 1 ? 's' : ''}

@@ -1,6 +1,6 @@
 import type { AccountWihSumaryDTO } from '@scani/shared';
 import { Wallet } from 'lucide-react';
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Badge } from '@/components/ui/badge';
 import { getFaviconUrl } from '@/lib/icons';
@@ -9,12 +9,13 @@ import { AccountBulkActions } from '../components/accounts/AccountBulkActions';
 import { AccountCard } from '../components/accounts/AccountCard';
 import { DataView as DataViewComponent } from '../components/data-view/DataView';
 import type { ColumnDef } from '../components/data-view/DataViewTable';
+import { useBaseCurrency } from '../hooks/useBaseCurrency';
 import { V2_ROUTES } from '../lib/routes';
 
-function formatMoney(value: number) {
+function formatMoney(value: number, currency = 'USD') {
   return new Intl.NumberFormat('en-US', {
     style: 'currency',
-    currency: 'USD',
+    currency,
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   }).format(value);
@@ -26,8 +27,19 @@ export function AccountsPage() {
   const { data: institutions } = trpc.institutions.getByUserId.useQuery();
   const { data: accountTypes } = trpc.accountTypes.getAll.useQuery();
   const navigate = useNavigate();
+  const { symbol: currencySymbol } = useBaseCurrency();
+  const [showEmpty, setShowEmpty] = useState(false);
 
-  const accounts = accountsData ?? [];
+  const allAccounts = accountsData ?? [];
+  const emptyCount = useMemo(
+    () => allAccounts.filter((a) => a.summary.holdingsCount === 0).length,
+    [allAccounts]
+  );
+  // Hide accounts with no holdings by default
+  const accounts = useMemo(
+    () => (showEmpty ? allAccounts : allAccounts.filter((a) => a.summary.holdingsCount > 0)),
+    [allAccounts, showEmpty]
+  );
   const groups = groupsData ?? [];
 
   const institutionMap = useMemo(
@@ -111,7 +123,7 @@ export function AccountsPage() {
         sortable: true,
         render: (item) => (
           <span className="font-medium tabular-nums">
-            {formatMoney(Number.parseFloat(item.summary.totalValue))}
+            {formatMoney(Number.parseFloat(item.summary.totalValue), currencySymbol)}
           </span>
         ),
       },
@@ -134,16 +146,27 @@ export function AccountsPage() {
         ),
       },
     ],
-    [institutionMap, typeMap]
+    [institutionMap, typeMap, currencySymbol]
   );
 
   return (
     <div className="space-y-6">
-      <div>
-        <h2 className="text-2xl font-bold tracking-tight">Accounts</h2>
-        <p className="text-muted-foreground mt-1">
-          {isLoading ? '' : `${accounts.length} accounts`}
-        </p>
+      <div className="flex items-start justify-between">
+        <div>
+          <h2 className="text-2xl font-bold tracking-tight">Accounts</h2>
+          <p className="text-muted-foreground mt-1">
+            {isLoading ? '' : `${accounts.length} accounts`}
+          </p>
+        </div>
+        {emptyCount > 0 && (
+          <button
+            type="button"
+            onClick={() => setShowEmpty((v) => !v)}
+            className="text-xs text-muted-foreground hover:text-foreground transition-colors mt-2"
+          >
+            {showEmpty ? 'Hide' : 'Show'} {emptyCount} empty
+          </button>
+        )}
       </div>
 
       <DataViewComponent

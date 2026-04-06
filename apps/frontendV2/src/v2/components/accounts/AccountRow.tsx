@@ -1,5 +1,6 @@
 import type { AccountWihSumaryDTO } from '@scani/shared';
 import { Badge } from '@/components/ui/badge';
+import { useBaseCurrency } from '../../hooks/useBaseCurrency';
 
 interface AccountRowProps {
   item: AccountWihSumaryDTO;
@@ -9,10 +10,10 @@ interface AccountRowProps {
   typeName?: string;
 }
 
-function formatMoney(value: number) {
+function formatMoney(value: number, currency = 'USD') {
   return new Intl.NumberFormat('en-US', {
     style: 'currency',
-    currency: 'USD',
+    currency,
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   }).format(value);
@@ -25,6 +26,8 @@ export function AccountRow({
   institutionName,
   typeName,
 }: AccountRowProps) {
+  const { symbol: currencySymbol } = useBaseCurrency();
+
   return (
     <>
       <td className="py-2 px-2">
@@ -46,7 +49,7 @@ export function AccountRow({
       <td className="py-2 px-2 text-sm text-muted-foreground">{typeName ?? item.typeId}</td>
       <td className="py-2 px-2 text-right text-sm tabular-nums">{item.summary.holdingsCount}</td>
       <td className="py-2 px-2 text-right text-sm font-medium tabular-nums">
-        {formatMoney(Number.parseFloat(item.summary.totalValue))}
+        {formatMoney(Number.parseFloat(item.summary.totalValue), currencySymbol)}
       </td>
       <td className="py-2 px-2">
         <div className="flex flex-wrap gap-1">

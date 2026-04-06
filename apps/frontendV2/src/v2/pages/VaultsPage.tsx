@@ -45,46 +45,50 @@ export function VaultsPage() {
 
       {vaults && vaults.length > 0 ? (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          {vaults.map((vault) => {
-            const progress = Math.min(Number(vault.progress || 0), 100);
-            return (
-              <Card
-                key={vault.id}
-                className="cursor-pointer hover:border-primary/50 transition-colors"
-                onClick={() => navigate(V2_ROUTES.vaultDetail(vault.id))}
-              >
-                <CardHeader className="pb-2">
-                  <CardTitle className="text-base flex items-center gap-2">
-                    <div
-                      className="h-2.5 w-2.5 rounded-full shrink-0"
-                      style={{ backgroundColor: vault.color }}
-                    />
-                    {vault.name}
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-3">
-                  <div className="flex items-baseline justify-between text-sm">
-                    <span className="font-semibold">
-                      {vault.currencySymbol}{' '}
-                      {Number(vault.currentAmount || 0).toLocaleString('en-US', {
-                        minimumFractionDigits: 0,
-                        maximumFractionDigits: 0,
-                      })}
-                    </span>
-                    <span className="text-muted-foreground">
-                      / {vault.currencySymbol}{' '}
-                      {Number(vault.targetAmount).toLocaleString('en-US', {
-                        minimumFractionDigits: 0,
-                        maximumFractionDigits: 0,
-                      })}
-                    </span>
-                  </div>
-                  <Progress value={progress} className="h-1.5" />
-                  <p className="text-xs text-muted-foreground text-right">{progress.toFixed(0)}%</p>
-                </CardContent>
-              </Card>
-            );
-          })}
+          {[...vaults]
+            .sort((a, b) => Number(b.currentAmount || 0) - Number(a.currentAmount || 0))
+            .map((vault) => {
+              const progress = Math.min(Number(vault.progress || 0), 100);
+              return (
+                <Card
+                  key={vault.id}
+                  className="cursor-pointer hover:border-primary/50 transition-colors"
+                  onClick={() => navigate(V2_ROUTES.vaultDetail(vault.id))}
+                >
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-base flex items-center gap-2">
+                      <div
+                        className="h-2.5 w-2.5 rounded-full shrink-0"
+                        style={{ backgroundColor: vault.color }}
+                      />
+                      {vault.name}
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-3">
+                    <div className="flex items-baseline justify-between text-sm">
+                      <span className="font-semibold">
+                        {vault.currencySymbol}{' '}
+                        {Number(vault.currentAmount || 0).toLocaleString('en-US', {
+                          minimumFractionDigits: 0,
+                          maximumFractionDigits: 0,
+                        })}
+                      </span>
+                      <span className="text-muted-foreground">
+                        / {vault.currencySymbol}{' '}
+                        {Number(vault.targetAmount).toLocaleString('en-US', {
+                          minimumFractionDigits: 0,
+                          maximumFractionDigits: 0,
+                        })}
+                      </span>
+                    </div>
+                    <Progress value={progress} className="h-1.5" />
+                    <p className="text-xs text-muted-foreground text-right">
+                      {progress.toFixed(0)}%
+                    </p>
+                  </CardContent>
+                </Card>
+              );
+            })}
         </div>
       ) : (
         <div className="text-center py-12">

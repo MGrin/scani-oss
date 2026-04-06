@@ -3,6 +3,7 @@ import { Badge } from '@/components/ui/badge';
 import { CardInteractive } from '@/components/ui/card';
 import { getFaviconUrl } from '@/lib/icons';
 import { cn } from '@/lib/utils';
+import { useBaseCurrency } from '../../hooks/useBaseCurrency';
 
 interface HoldingCardProps {
   item: HoldingWithDetails;
@@ -18,16 +19,17 @@ const TOKEN_TYPE_COLORS: Record<string, string> = {
   commodity: 'bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-200',
 };
 
-function formatMoney(value: number) {
+function formatMoney(value: number, currency = 'USD') {
   return new Intl.NumberFormat('en-US', {
     style: 'currency',
-    currency: 'USD',
+    currency,
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   }).format(value);
 }
 
 export function HoldingCard({ item, isSelected, onSelect }: HoldingCardProps) {
+  const { symbol: currencySymbol } = useBaseCurrency();
   const favicon = getFaviconUrl(item.institution.website);
 
   return (
@@ -56,10 +58,12 @@ export function HoldingCard({ item, isSelected, onSelect }: HoldingCardProps) {
         />
       </div>
       <p className="text-xs text-muted-foreground truncate mb-3">{item.token.name}</p>
-      <p className="text-xl font-bold tabular-nums">{formatMoney(item.value)}</p>
+      <p className="text-xl font-bold tabular-nums">{formatMoney(item.value, currencySymbol)}</p>
       <div className="flex items-center gap-3 mt-1 text-xs text-muted-foreground">
         <span>{item.amount.toLocaleString()} units</span>
-        {item.price && <span>@ ${Number.parseFloat(item.price.value).toLocaleString()}</span>}
+        {item.price && (
+          <span>@ {formatMoney(Number.parseFloat(item.price.value), currencySymbol)}</span>
+        )}
       </div>
       <div className="mt-3 pt-3 border-t border-border space-y-1">
         <p className="text-xs text-muted-foreground flex items-center gap-1">

@@ -101,39 +101,45 @@ export function VaultDetailPage() {
         <h3 className="text-sm font-medium mb-3">Attached Holdings ({vault.holdingsCount || 0})</h3>
         {vault.holdings && vault.holdings.length > 0 ? (
           <div className="space-y-2">
-            {vault.holdings.map((h) => (
-              <div
-                key={h.holdingId}
-                className="flex items-center justify-between p-3 rounded-md border border-border"
-              >
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2">
-                    <span className="text-sm font-medium">{h.tokenSymbol || 'Unknown'}</span>
-                    <Badge variant="outline" className="text-xs">
-                      {h.percentage}%
-                    </Badge>
-                  </div>
-                  <p className="text-xs text-muted-foreground mt-0.5">
-                    {h.institutionName}
-                    {h.accountName && ` / ${h.accountName}`}
-                    {h.holdingValue && (
-                      <span className="ml-2">
-                        &middot;{' '}
-                        {formatMoney(h.attributedValue || h.holdingValue, vault.currencySymbol)}
-                      </span>
-                    )}
-                  </p>
-                </div>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="h-7 text-xs text-muted-foreground shrink-0"
-                  onClick={() => detachMutation.mutate({ vaultId: id, holdingId: h.holdingId })}
+            {[...vault.holdings]
+              .sort(
+                (a, b) =>
+                  Number(b.attributedValue || b.holdingValue || 0) -
+                  Number(a.attributedValue || a.holdingValue || 0)
+              )
+              .map((h) => (
+                <div
+                  key={h.holdingId}
+                  className="flex items-center justify-between p-3 rounded-md border border-border"
                 >
-                  Remove
-                </Button>
-              </div>
-            ))}
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-medium">{h.tokenSymbol || 'Unknown'}</span>
+                      <Badge variant="outline" className="text-xs">
+                        {h.percentage}%
+                      </Badge>
+                    </div>
+                    <p className="text-xs text-muted-foreground mt-0.5">
+                      {h.institutionName}
+                      {h.accountName && ` / ${h.accountName}`}
+                      {h.holdingValue && (
+                        <span className="ml-2">
+                          &middot;{' '}
+                          {formatMoney(h.attributedValue || h.holdingValue, vault.currencySymbol)}
+                        </span>
+                      )}
+                    </p>
+                  </div>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-7 text-xs text-muted-foreground shrink-0"
+                    onClick={() => detachMutation.mutate({ vaultId: id, holdingId: h.holdingId })}
+                  >
+                    Remove
+                  </Button>
+                </div>
+              ))}
           </div>
         ) : (
           <p className="text-sm text-muted-foreground">No holdings attached to this vault yet</p>

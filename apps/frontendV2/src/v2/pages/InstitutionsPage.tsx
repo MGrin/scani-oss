@@ -4,6 +4,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { getFaviconUrl } from '@/lib/icons';
 import { trpc } from '@/lib/trpc';
+import { useBaseCurrency } from '../hooks/useBaseCurrency';
 import { V2_ROUTES } from '../lib/routes';
 
 function InstitutionIcon({ name, website }: { name: string; website?: string | null }) {
@@ -36,6 +37,7 @@ function InstitutionIcon({ name, website }: { name: string; website?: string | n
 export function InstitutionsPage() {
   const navigate = useNavigate();
   const { data: institutions, isLoading } = trpc.institutions.getByUserIdWithSummary.useQuery();
+  const { symbol: currencySymbol } = useBaseCurrency();
 
   if (isLoading) {
     return (
@@ -61,32 +63,35 @@ export function InstitutionsPage() {
 
       {institutions && institutions.length > 0 ? (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-          {institutions.map((inst) => (
-            <Card
-              key={inst.id}
-              className="cursor-pointer hover:border-primary/50 transition-colors"
-              onClick={() => navigate(V2_ROUTES.institutionDetail(inst.id))}
-            >
-              <CardContent className="flex items-center gap-3 p-4">
-                <InstitutionIcon name={inst.name} website={inst.website} />
-                <div className="min-w-0 flex-1">
-                  <p className="font-medium text-sm truncate">{inst.name}</p>
-                  <p className="text-xs text-muted-foreground">
-                    {inst.summary?.accountCount ?? 0} accounts
-                  </p>
-                </div>
-                <div className="text-right shrink-0">
-                  <p className="text-sm font-semibold">
-                    $
-                    {Number(inst.summary?.totalValue ?? 0).toLocaleString('en-US', {
-                      minimumFractionDigits: 0,
-                      maximumFractionDigits: 0,
-                    })}
-                  </p>
-                </div>
-              </CardContent>
-            </Card>
-          ))}
+          {[...institutions]
+            .sort((a, b) => Number(b.summary?.totalValue ?? 0) - Number(a.summary?.totalValue ?? 0))
+            .map((inst) => (
+              <Card
+                key={inst.id}
+                className="cursor-pointer hover:border-primary/50 transition-colors"
+                onClick={() => navigate(V2_ROUTES.institutionDetail(inst.id))}
+              >
+                <CardContent className="flex items-center gap-3 p-4">
+                  <InstitutionIcon name={inst.name} website={inst.website} />
+                  <div className="min-w-0 flex-1">
+                    <p className="font-medium text-sm truncate">{inst.name}</p>
+                    <p className="text-xs text-muted-foreground">
+                      {inst.summary?.accountCount ?? 0} accounts
+                    </p>
+                  </div>
+                  <div className="text-right shrink-0">
+                    <p className="text-sm font-semibold">
+                      {new Intl.NumberFormat('en-US', {
+                        style: 'currency',
+                        currency: currencySymbol,
+                        minimumFractionDigits: 0,
+                        maximumFractionDigits: 0,
+                      }).format(Number(inst.summary?.totalValue ?? 0))}
+                    </p>
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
         </div>
       ) : (
         <div className="text-center py-12">
