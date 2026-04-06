@@ -178,7 +178,42 @@ export class SyncWalletBalancesUseCase {
       const userWallets = await this.userWalletService.getUserWallets(user.id);
 
       for (const userWallet of userWallets) {
-        const institutionIds = (userWallet.institutionIds as string[]) || [];
+        let institutionIds = (userWallet.institutionIds as string[]) || [];
+
+        // Periodic chain re-detection: check for new chains every 24 hours
+        // This discovers activity on chains added after initial import
+        const lastDetection = (userWallet as Record<string, unknown>).updatedAt as Date | undefined;
+        const hoursSinceDetection = lastDetection
+          ? (Date.now() - new Date(lastDetection).getTime()) / (1000 * 60 * 60)
+          : 999;
+
+        if (hoursSinceDetection >= 24 && userWallet.walletAddress) {
+          try {
+            const newChains = await this.integrationManager.detectWalletChains(
+              userWallet.walletAddress
+            );
+            const merged = Array.from(new Set([...institutionIds, ...newChains]));
+            if (merged.length > institutionIds.length) {
+              logger.info(
+                {
+                  walletAddress: userWallet.walletAddress.substring(0, 10),
+                  oldChains: institutionIds.length,
+                  newChains: merged.length,
+                },
+                'Discovered new chains for wallet'
+              );
+              await this.userWalletService.updateWallet(userWallet.id, {
+                institutionIds: merged,
+              });
+              institutionIds = merged;
+            }
+          } catch (error) {
+            logger.warn(
+              { walletAddress: userWallet.walletAddress.substring(0, 10), error },
+              'Chain re-detection failed, using existing chains'
+            );
+          }
+        }
 
         // Process each institution for this wallet
         for (const institutionId of institutionIds) {
@@ -222,16 +257,68 @@ export class SyncWalletBalancesUseCase {
             });
 
             if (!account) {
-              logger.warn(
-                { userWalletId: userWallet.id, institutionId },
-                'Account not found for user wallet and institution'
-              );
+              // Auto-create account for newly detected chain
+              try {
+                const walletAccountType = await db
+                  .select()
+                  .from(schema.accountTypes)
+                  .where(eq(schema.accountTypes.code, 'crypto'))
+                  .limit(1);
+
+                if (walletAccountType.length > 0) {
+                  const addrShort = userWallet.walletAddress.substring(0, 8);
+                  const [newAccount] = await db
+                    .insert(schema.accounts)
+                    .values({
+                      userId: user.id,
+                      institutionId,
+                      name: `${institution.name} - ${addrShort}`,
+                      typeId: walletAccountType[0]!.id,
+                      description: `Crypto wallet on ${institution.name}`,
+                      metadata: {
+                        walletAddress: userWallet.walletAddress,
+                        chainName: institution.name,
+                        userWalletId: userWallet.id,
+                        lastSync: null,
+                      },
+                      isActive: true,
+                    })
+                    .returning();
+
+                  if (newAccount) {
+                    logger.info(
+                      { accountId: newAccount.id, chain: institution.name },
+                      'Auto-created account for newly detected chain'
+                    );
+                    // Use the newly created account — assign to a mutable variable
+                    // and fall through to the fetch logic below
+                    Object.assign(accounts, [newAccount]);
+                  }
+                }
+              } catch (createErr) {
+                logger.warn(
+                  { userWalletId: userWallet.id, institutionId, error: createErr },
+                  'Failed to auto-create account for chain'
+                );
+                continue;
+              }
+            }
+
+            // Re-find account (may have been just created)
+            const syncAccount =
+              account ||
+              accounts.find((acc) => {
+                const md = acc.metadata as Record<string, unknown>;
+                return md?.userWalletId === userWallet.id;
+              });
+
+            if (!syncAccount) {
               continue;
             }
 
             logger.debug(
               {
-                accountId: account.id,
+                accountId: syncAccount.id,
                 walletAddress: userWallet.walletAddress,
                 institutionId,
               },
@@ -243,12 +330,12 @@ export class SyncWalletBalancesUseCase {
 
             if (holdingsResult.errors && holdingsResult.errors.length > 0) {
               logger.warn(
-                { accountId: account.id, errors: holdingsResult.errors },
+                { accountId: syncAccount.id, errors: holdingsResult.errors },
                 'Errors fetching holdings from integration'
               );
               errors.push({
-                accountId: account.id,
-                accountName: account.name,
+                accountId: syncAccount.id,
+                accountName: syncAccount.name,
                 walletAddress: userWallet.walletAddress,
                 error: holdingsResult.errors.join('; '),
               });
@@ -262,7 +349,7 @@ export class SyncWalletBalancesUseCase {
               userWallet,
               institutionId,
               institution,
-              account,
+              account: syncAccount,
               holdingsResult,
             });
           } catch (error) {

@@ -1,4 +1,4 @@
-import { and, eq } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 import { Service } from 'typedi';
 import * as schema from '../database/schema';
 import type { NewUserWallet, UserWallet } from '../domain/entities';
@@ -89,18 +89,18 @@ export class UserWalletRepository extends BaseRepository<UserWallet, NewUserWall
   ): Promise<UserWallet[]> {
     try {
       const database = this.getDb(transaction);
-      // Query wallets where institutionIds array contains the given institutionId
+      // Use PostgreSQL JSONB @> operator for efficient filtering
       const results = await database
         .select()
         .from(schema.userWallets)
-        .where(eq(schema.userWallets.isActive, true));
+        .where(
+          and(
+            eq(schema.userWallets.isActive, true),
+            sql`${schema.userWallets.institutionIds} @> ${JSON.stringify([institutionId])}::jsonb`
+          )
+        );
 
-      // Filter in memory for JSONB array contains check
-      // In production, you might want to use a raw SQL query with @> operator
-      return results.filter((wallet) => {
-        const institutionIds = wallet.institutionIds as string[];
-        return Array.isArray(institutionIds) && institutionIds.includes(institutionId);
-      });
+      return results;
     } catch (error) {
       this.logger.error({ institutionId, error }, 'Failed to find wallets by institution');
       throw error;
