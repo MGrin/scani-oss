@@ -55,7 +55,10 @@ export class InstitutionService extends BaseService {
   /**
    * Get institutions by user ID with summary information (account count and total value)
    */
-  async getInstitutionsByUserIdWithSummary(userId: string): Promise<
+  async getInstitutionsByUserIdWithSummary(
+    userId: string,
+    requestCache?: Map<string, unknown>
+  ): Promise<
     Array<
       Institution & {
         summary: {
@@ -80,7 +83,12 @@ export class InstitutionService extends BaseService {
       const holdings = await this.holdingRepository.findByUser(userId);
       // Filter out inactive holdings from calculations
       const activeHoldings = holdings.filter((h) => h.isActive);
-      const portfolioValue = await this.portfolioService.getUserPortfolioValue(userId);
+      const portfolioValue = await this.portfolioService.getUserPortfolioValue(
+        userId,
+        undefined,
+        undefined,
+        requestCache
+      );
 
       // Create maps for efficient lookups
       const holdingsByAccount = new Map<string, typeof activeHoldings>();

@@ -119,7 +119,10 @@ export class AccountService extends BaseService {
     }
   }
 
-  async getAccountsByUserIdWithSummary(userId: string): Promise<AccountWihSumaryDTO[]> {
+  async getAccountsByUserIdWithSummary(
+    userId: string,
+    requestCache?: Map<string, unknown>
+  ): Promise<AccountWihSumaryDTO[]> {
     // Get user's accounts
     const accounts = await this.getAccountsByUserId(userId);
 
@@ -132,7 +135,12 @@ export class AccountService extends BaseService {
     const activeHoldings = holdings.filter((h) => h.isActive);
 
     // Get portfolio value for ALL holdings to get prices
-    const portfolioValue = await this.portfolioService.getUserPortfolioValue(userId);
+    const portfolioValue = await this.portfolioService.getUserPortfolioValue(
+      userId,
+      undefined,
+      undefined,
+      requestCache
+    );
 
     // Fetch groups for all accounts
     const accountIds = accounts.map((a) => a.id);

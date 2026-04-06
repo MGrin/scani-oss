@@ -14,8 +14,8 @@ const tokensLogger = createComponentLogger('router:tokens');
 const tokenService = Container.get(TokenService);
 
 // Scam token probability threshold - tokens above this are filtered from UI
-// Set to 0.45 to catch tokens with URLs/suspicious words while avoiding false positives
-const SCAM_PROBABILITY_THRESHOLD = 0.45;
+// Import the shared threshold from core config
+import { SCAM_PROBABILITY_THRESHOLD } from '@scani/core/config/tokens';
 
 // Cache for external provider search results (avoids hammering CoinGecko/Finnhub)
 const searchCache = new Map<string, { results: unknown[]; expiresAt: number }>();

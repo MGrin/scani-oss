@@ -6,6 +6,7 @@
   "description": "Core business logic, database, and services for Scani Finance",
   "exports": {
     ".": "./src/index.ts",
+    "./config/*": "./src/config/*.ts",
     "./database": "./src/database/index.ts",
     "./database/schema": "./src/database/schema.ts",
     "./database/connection": "./src/database/connection.ts",
