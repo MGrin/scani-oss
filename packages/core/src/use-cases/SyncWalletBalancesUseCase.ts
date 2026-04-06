@@ -450,10 +450,14 @@ export class SyncWalletBalancesUseCase {
                 );
 
                 // Build externalId for blockchain holdings: contract address or symbol
-                const walletExternalId = integrationHolding.contractAddress || integrationHolding.externalTokenId || integrationHolding.symbol;
+                const walletExternalId =
+                  integrationHolding.contractAddress ||
+                  integrationHolding.externalTokenId ||
+                  integrationHolding.symbol;
                 // Look up by externalId first, fall back to tokenId for legacy holdings
                 const mapKey = `${token.id}:${walletExternalId}`;
-                const existingHolding = existingHoldingsMap.get(mapKey) || existingHoldingsMap.get(token.id);
+                const existingHolding =
+                  existingHoldingsMap.get(mapKey) || existingHoldingsMap.get(token.id);
                 const wasHidden = existingHolding?.isHidden ?? false;
 
                 // Event context - only create events if user has baseCurrencyId

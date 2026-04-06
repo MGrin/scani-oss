@@ -271,14 +271,15 @@ export class ImportKrakenAccountsUseCase {
 
                   // Match by externalId (exchange asset code) to avoid conflicts with manual holdings
                   const externalId = holding.externalTokenId || holding.symbol;
-                  const existingHolding = await this.holdingRepository.findByAccountTokenAndExternalId(
-                    accountId,
-                    token.id,
-                    externalId,
-                    input.userId,
-                    tx,
-                    true // includeHidden
-                  );
+                  const existingHolding =
+                    await this.holdingRepository.findByAccountTokenAndExternalId(
+                      accountId,
+                      token.id,
+                      externalId,
+                      input.userId,
+                      tx,
+                      true // includeHidden
+                    );
 
                   if (existingHolding) {
                     // Update existing synced holding
@@ -295,7 +296,10 @@ export class ImportKrakenAccountsUseCase {
                       },
                       tx
                     );
-                    logger.debug({ holdingId: existingHolding.id, externalId }, 'Updated existing holding');
+                    logger.debug(
+                      { holdingId: existingHolding.id, externalId },
+                      'Updated existing holding'
+                    );
                   } else {
                     // Create new holding with externalId for future sync matching
                     const newHolding = await this.holdingService.createHoldingWithEvent(
