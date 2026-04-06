@@ -1,13 +1,16 @@
 import {
+  ArrowLeft,
   Building2,
   ChevronLeft,
   FileUp,
   LayoutDashboard,
   type LucideIcon,
   Menu,
+  Moon,
   PieChart,
   Plug,
   Settings,
+  Sun,
   Tags,
   Vault,
   Wallet,
@@ -16,6 +19,7 @@ import { NavLink } from 'react-router-dom';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Separator } from '@/components/ui/separator';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { useTheme } from '@/contexts/ThemeContext';
 import { cn } from '@/lib/utils';
 import { SIDEBAR_COLLAPSED_WIDTH, SIDEBAR_WIDTH } from '../lib/constants';
 import { NAV_SECTIONS, V2_ROUTES } from '../lib/routes';
@@ -30,6 +34,33 @@ const ICON_MAP: Record<string, LucideIcon> = {
   Plug,
   FileUp,
 };
+
+function ThemeToggle({ collapsed }: { collapsed: boolean }) {
+  const { resolvedTheme, toggleTheme } = useTheme();
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <button
+          type="button"
+          onClick={toggleTheme}
+          className="flex items-center gap-2 rounded-md px-2 py-1.5 text-sm text-muted-foreground hover:bg-accent/50 hover:text-foreground transition-colors w-full"
+        >
+          {resolvedTheme === 'dark' ? (
+            <Sun className="h-4 w-4 shrink-0" />
+          ) : (
+            <Moon className="h-4 w-4 shrink-0" />
+          )}
+          {!collapsed && <span>{resolvedTheme === 'dark' ? 'Light mode' : 'Dark mode'}</span>}
+        </button>
+      </TooltipTrigger>
+      {collapsed && (
+        <TooltipContent side="right" sideOffset={8}>
+          {resolvedTheme === 'dark' ? 'Light mode' : 'Dark mode'}
+        </TooltipContent>
+      )}
+    </Tooltip>
+  );
+}
 
 interface SidebarProps {
   collapsed: boolean;
@@ -106,7 +137,7 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
       </ScrollArea>
 
       {/* Footer */}
-      <div className="border-t border-border p-2">
+      <div className="border-t border-border p-2 space-y-0.5">
         <Tooltip>
           <TooltipTrigger asChild>
             <NavLink
@@ -127,6 +158,23 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
           {collapsed && (
             <TooltipContent side="right" sideOffset={8}>
               Settings
+            </TooltipContent>
+          )}
+        </Tooltip>
+        <ThemeToggle collapsed={collapsed} />
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <a
+              href="/"
+              className="flex items-center gap-2 rounded-md px-2 py-1.5 text-sm text-muted-foreground hover:bg-accent/50 hover:text-foreground transition-colors"
+            >
+              <ArrowLeft className="h-4 w-4 shrink-0" />
+              {!collapsed && <span>Classic UI</span>}
+            </a>
+          </TooltipTrigger>
+          {collapsed && (
+            <TooltipContent side="right" sideOffset={8}>
+              Classic UI
             </TooltipContent>
           )}
         </Tooltip>

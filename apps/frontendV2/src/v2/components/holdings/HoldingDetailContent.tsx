@@ -1,6 +1,7 @@
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
 import { Skeleton } from '@/components/ui/skeleton';
+import { getFaviconUrl } from '@/lib/icons';
 import { trpc } from '@/lib/trpc';
 import { cn } from '@/lib/utils';
 import { useBaseCurrency } from '../../hooks/useBaseCurrency';
@@ -12,6 +13,20 @@ function formatMoney(value: number, currency = 'USD') {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   }).format(value);
+}
+
+function formatRelativeTime(dateStr: string): string {
+  const now = Date.now();
+  const date = new Date(dateStr).getTime();
+  const diffMs = now - date;
+  const diffMin = Math.floor(diffMs / 60000);
+  if (diffMin < 1) return 'just now';
+  if (diffMin < 60) return `${diffMin}m ago`;
+  const diffHr = Math.floor(diffMin / 60);
+  if (diffHr < 24) return `${diffHr}h ago`;
+  const diffDays = Math.floor(diffHr / 24);
+  if (diffDays < 30) return `${diffDays}d ago`;
+  return new Date(dateStr).toLocaleDateString();
 }
 
 interface HoldingDetailContentProps {
@@ -40,6 +55,11 @@ export function HoldingDetailContent({ holdingId, mode = 'panel' }: HoldingDetai
   }
 
   const isCompact = mode === 'panel';
+  const value = typeof holding.value === 'number' ? holding.value : 0;
+  const costBasis = typeof holding.costBasis === 'number' ? holding.costBasis : 0;
+  const gainLoss = costBasis > 0 ? value - costBasis : null;
+  const gainLossPct = costBasis > 0 ? ((value - costBasis) / costBasis) * 100 : null;
+  const favicon = getFaviconUrl(holding.institution?.website);
 
   return (
     <div className={cn('space-y-6', isCompact && 'space-y-4')}>
@@ -52,6 +72,11 @@ export function HoldingDetailContent({ holdingId, mode = 'panel' }: HoldingDetai
           <Badge variant="outline" className="text-xs">
             {holding.token.type || holding.token.typeCode}
           </Badge>
+          {holding.source && (
+            <Badge variant="secondary" className="text-[10px]">
+              {holding.source}
+            </Badge>
+          )}
         </div>
         <p className="text-sm text-muted-foreground mt-0.5">{holding.token.name}</p>
       </div>
@@ -60,9 +85,7 @@ export function HoldingDetailContent({ holdingId, mode = 'panel' }: HoldingDetai
       <div className="grid grid-cols-2 gap-4">
         <div>
           <p className="text-xs text-muted-foreground uppercase tracking-wider">Value</p>
-          <p className="text-xl font-semibold mt-0.5">
-            {formatMoney(typeof holding.value === 'number' ? holding.value : 0, currencySymbol)}
-          </p>
+          <p className="text-xl font-semibold mt-0.5">{formatMoney(value, currencySymbol)}</p>
         </div>
         <div>
           <p className="text-xs text-muted-foreground uppercase tracking-wider">Amount</p>
@@ -73,6 +96,30 @@ export function HoldingDetailContent({ holdingId, mode = 'panel' }: HoldingDetai
           </p>
         </div>
       </div>
+
+      {/* P&L section */}
+      {gainLoss !== null && (
+        <div className="grid grid-cols-2 gap-4">
+          <div>
+            <p className="text-xs text-muted-foreground uppercase tracking-wider">Cost Basis</p>
+            <p className="text-sm font-medium mt-0.5">{formatMoney(costBasis, currencySymbol)}</p>
+          </div>
+          <div>
+            <p className="text-xs text-muted-foreground uppercase tracking-wider">Gain / Loss</p>
+            <p
+              className={cn(
+                'text-sm font-medium mt-0.5',
+                gainLoss >= 0
+                  ? 'text-green-600 dark:text-green-400'
+                  : 'text-red-600 dark:text-red-400'
+              )}
+            >
+              {gainLoss >= 0 ? '+' : ''}
+              {formatMoney(gainLoss, currencySymbol)} ({gainLossPct!.toFixed(1)}%)
+            </p>
+          </div>
+        </div>
+      )}
 
       <Separator />
 
@@ -85,7 +132,24 @@ export function HoldingDetailContent({ holdingId, mode = 'panel' }: HoldingDetai
           }
         />
         <DetailRow label="Account" value={holding.account?.name || '-'} />
-        <DetailRow label="Institution" value={holding.institution?.name || '-'} />
+        <DetailRow
+          label="Institution"
+          value={
+            <span className="inline-flex items-center gap-1">
+              {favicon && (
+                <img
+                  src={favicon}
+                  alt=""
+                  className="h-3.5 w-3.5 rounded-sm object-contain"
+                  onError={(e) => {
+                    (e.target as HTMLImageElement).style.display = 'none';
+                  }}
+                />
+              )}
+              {holding.institution?.name || '-'}
+            </span>
+          }
+        />
         <DetailRow
           label="Status"
           value={
@@ -96,7 +160,7 @@ export function HoldingDetailContent({ holdingId, mode = 'panel' }: HoldingDetai
         />
         <DetailRow
           label="Last Updated"
-          value={holding.lastUpdated ? new Date(holding.lastUpdated).toLocaleDateString() : '-'}
+          value={holding.lastUpdated ? formatRelativeTime(holding.lastUpdated) : '-'}
         />
       </div>
 

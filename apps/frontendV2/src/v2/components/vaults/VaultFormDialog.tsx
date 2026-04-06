@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -9,6 +9,7 @@ import {
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { showError, showSuccess } from '@/hooks/use-toast';
 import { trpc } from '@/lib/trpc';
 
 const COLORS = [
@@ -27,15 +28,32 @@ const COLORS = [
 interface VaultFormDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  vaultId?: string | null;
 }
 
-export function VaultFormDialog({ open, onOpenChange }: VaultFormDialogProps) {
+export function VaultFormDialog({ open, onOpenChange, vaultId }: VaultFormDialogProps) {
   const utils = trpc.useUtils();
   const { data: baseCurrency } = trpc.users.getBaseCurrency.useQuery();
+  const { data: vault } = trpc.vaults.getById.useQuery({ id: vaultId! }, { enabled: !!vaultId });
+
+  const isEditMode = !!vaultId;
 
   const [name, setName] = useState('');
   const [targetAmount, setTargetAmount] = useState('');
   const [color, setColor] = useState(COLORS[0]!);
+
+  // Pre-fill form when editing
+  useEffect(() => {
+    if (vault && isEditMode) {
+      setName(vault.name);
+      setTargetAmount(vault.targetAmount);
+      setColor(vault.color);
+    } else if (!isEditMode) {
+      setName('');
+      setTargetAmount('');
+      setColor(COLORS[0]!);
+    }
+  }, [vault, isEditMode]);
 
   const createMutation = trpc.vaults.create.useMutation({
     onSuccess: () => {
@@ -43,24 +61,50 @@ export function VaultFormDialog({ open, onOpenChange }: VaultFormDialogProps) {
       onOpenChange(false);
       setName('');
       setTargetAmount('');
+      showSuccess('Vault created successfully');
     },
+    onError: (error) => showError(error, 'Failed to create vault'),
+  });
+
+  const updateMutation = trpc.vaults.update.useMutation({
+    onSuccess: () => {
+      utils.vaults.invalidate();
+      onOpenChange(false);
+      showSuccess('Vault updated successfully');
+    },
+    onError: (error) => showError(error, 'Failed to update vault'),
   });
 
   const handleSubmit = () => {
-    if (!name.trim() || !targetAmount || !baseCurrency?.id) return;
-    createMutation.mutate({
-      name: name.trim(),
-      targetAmount,
-      currencyId: baseCurrency.id,
-      color,
-    });
+    if (!name.trim() || !targetAmount) return;
+
+    if (isEditMode && vaultId) {
+      updateMutation.mutate({
+        id: vaultId,
+        data: {
+          name: name.trim(),
+          targetAmount,
+          color,
+        },
+      });
+    } else {
+      if (!baseCurrency?.id) return;
+      createMutation.mutate({
+        name: name.trim(),
+        targetAmount,
+        currencyId: baseCurrency.id,
+        color,
+      });
+    }
   };
+
+  const isPending = createMutation.isPending || updateMutation.isPending;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>New Vault</DialogTitle>
+          <DialogTitle>{isEditMode ? 'Edit Vault' : 'New Vault'}</DialogTitle>
         </DialogHeader>
 
         <div className="space-y-4 py-2">
@@ -110,11 +154,8 @@ export function VaultFormDialog({ open, onOpenChange }: VaultFormDialogProps) {
           <Button variant="outline" onClick={() => onOpenChange(false)}>
             Cancel
           </Button>
-          <Button
-            onClick={handleSubmit}
-            disabled={!name.trim() || !targetAmount || createMutation.isPending}
-          >
-            Create
+          <Button onClick={handleSubmit} disabled={!name.trim() || !targetAmount || isPending}>
+            {isEditMode ? 'Save' : 'Create'}
           </Button>
         </DialogFooter>
       </DialogContent>

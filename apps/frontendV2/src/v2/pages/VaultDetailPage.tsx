@@ -1,4 +1,5 @@
-import { ArrowLeft, Trash2 } from 'lucide-react';
+import { ArrowLeft, Pencil, Plus, Trash2 } from 'lucide-react';
+import { useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -6,7 +7,11 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Progress } from '@/components/ui/progress';
 import { Separator } from '@/components/ui/separator';
 import { Skeleton } from '@/components/ui/skeleton';
+import { showError, showSuccess } from '@/hooks/use-toast';
 import { trpc } from '@/lib/trpc';
+import { ConfirmDialog } from '../components/shared/ConfirmDialog';
+import { AttachHoldingDialog } from '../components/vaults/AttachHoldingDialog';
+import { VaultFormDialog } from '../components/vaults/VaultFormDialog';
 import { V2_ROUTES } from '../lib/routes';
 
 function formatMoney(value: number | string, symbol: string) {
@@ -19,15 +24,25 @@ export function VaultDetailPage() {
   const { data: vault, isLoading } = trpc.vaults.getById.useQuery({ id: id! }, { enabled: !!id });
   const utils = trpc.useUtils();
 
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [showEditDialog, setShowEditDialog] = useState(false);
+  const [showAttachHolding, setShowAttachHolding] = useState(false);
+
   const deleteMutation = trpc.vaults.delete.useMutation({
     onSuccess: () => {
       utils.vaults.invalidate();
+      showSuccess('Vault deleted successfully');
       navigate(V2_ROUTES.vaults);
     },
+    onError: (error) => showError(error, 'Failed to delete vault'),
   });
 
   const detachMutation = trpc.vaults.detachHolding.useMutation({
-    onSuccess: () => utils.vaults.invalidate(),
+    onSuccess: () => {
+      utils.vaults.invalidate();
+      showSuccess('Holding removed from vault');
+    },
+    onError: (error) => showError(error, 'Failed to remove holding'),
   });
 
   if (!id) return null;
@@ -57,15 +72,21 @@ export function VaultDetailPage() {
             Vaults
           </Link>
         </Button>
-        <Button
-          variant="ghost"
-          size="sm"
-          className="text-destructive hover:text-destructive"
-          onClick={() => deleteMutation.mutate({ id })}
-        >
-          <Trash2 className="h-4 w-4 mr-1" />
-          Delete
-        </Button>
+        <div className="flex items-center gap-1">
+          <Button variant="ghost" size="sm" onClick={() => setShowEditDialog(true)}>
+            <Pencil className="h-4 w-4 mr-1" />
+            Edit
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="text-destructive hover:text-destructive"
+            onClick={() => setShowDeleteConfirm(true)}
+          >
+            <Trash2 className="h-4 w-4 mr-1" />
+            Delete
+          </Button>
+        </div>
       </div>
 
       {/* Header */}
@@ -98,7 +119,13 @@ export function VaultDetailPage() {
 
       {/* Attached Holdings */}
       <div>
-        <h3 className="text-sm font-medium mb-3">Attached Holdings ({vault.holdingsCount || 0})</h3>
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="text-sm font-medium">Attached Holdings ({vault.holdingsCount || 0})</h3>
+          <Button size="sm" variant="outline" onClick={() => setShowAttachHolding(true)}>
+            <Plus className="h-3.5 w-3.5 mr-1" />
+            Attach Holding
+          </Button>
+        </div>
         {vault.holdings && vault.holdings.length > 0 ? (
           <div className="space-y-2">
             {[...vault.holdings]
@@ -145,6 +172,24 @@ export function VaultDetailPage() {
           <p className="text-sm text-muted-foreground">No holdings attached to this vault yet</p>
         )}
       </div>
+
+      <ConfirmDialog
+        open={showDeleteConfirm}
+        onOpenChange={setShowDeleteConfirm}
+        title="Delete Vault"
+        description={`Are you sure you want to delete "${vault.name}"? This action cannot be undone.`}
+        confirmLabel="Delete"
+        variant="destructive"
+        onConfirm={() => deleteMutation.mutate({ id })}
+      />
+
+      <VaultFormDialog open={showEditDialog} onOpenChange={setShowEditDialog} vaultId={id} />
+
+      <AttachHoldingDialog
+        open={showAttachHolding}
+        onOpenChange={setShowAttachHolding}
+        vaultId={id}
+      />
     </div>
   );
 }

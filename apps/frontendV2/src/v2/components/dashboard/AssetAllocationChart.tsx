@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { Cell, Legend, Pie, PieChart, ResponsiveContainer, Tooltip } from 'recharts';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -17,9 +17,19 @@ const COLORS = [
   '#6366f1',
 ];
 
+type Dimension = 'token_type' | 'institution' | 'account' | 'group';
+
+const DIMENSION_OPTIONS: { value: Dimension; label: string }[] = [
+  { value: 'token_type', label: 'Asset Type' },
+  { value: 'institution', label: 'Institution' },
+  { value: 'account', label: 'Account' },
+  { value: 'group', label: 'Group' },
+];
+
 export function AssetAllocationChart() {
+  const [dimension, setDimension] = useState<Dimension>('token_type');
   const { data: allocation, isLoading } = trpc.dashboard.getAssetAllocation.useQuery({
-    dimension: 'token_type',
+    dimension,
   });
 
   const chartData = useMemo(() => {
@@ -34,8 +44,26 @@ export function AssetAllocationChart() {
 
   return (
     <Card>
-      <CardHeader>
-        <CardTitle>Asset Allocation</CardTitle>
+      <CardHeader className="pb-2">
+        <div className="flex items-center justify-between">
+          <CardTitle>Asset Allocation</CardTitle>
+          <div className="flex gap-1">
+            {DIMENSION_OPTIONS.map((opt) => (
+              <button
+                key={opt.value}
+                type="button"
+                onClick={() => setDimension(opt.value)}
+                className={`px-2 py-0.5 rounded text-[11px] transition-colors ${
+                  dimension === opt.value
+                    ? 'bg-primary text-primary-foreground'
+                    : 'text-muted-foreground hover:text-foreground hover:bg-accent'
+                }`}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
+        </div>
       </CardHeader>
       <CardContent>
         {isLoading ? (

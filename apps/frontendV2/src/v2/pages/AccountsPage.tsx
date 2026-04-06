@@ -9,6 +9,8 @@ import { AccountBulkActions } from '../components/accounts/AccountBulkActions';
 import { AccountCard } from '../components/accounts/AccountCard';
 import { DataView as DataViewComponent } from '../components/data-view/DataView';
 import type { ColumnDef } from '../components/data-view/DataViewTable';
+import { ConfirmDialog } from '../components/shared/ConfirmDialog';
+import { useAccountActions } from '../hooks/useAccountActions';
 import { useBaseCurrency } from '../hooks/useBaseCurrency';
 import { V2_ROUTES } from '../lib/routes';
 
@@ -29,6 +31,9 @@ export function AccountsPage() {
   const navigate = useNavigate();
   const { symbol: currencySymbol } = useBaseCurrency();
   const [showEmpty, setShowEmpty] = useState(false);
+  const { bulkDelete } = useAccountActions();
+  const [deleteConfirmIds, setDeleteConfirmIds] = useState<Set<string> | null>(null);
+  const [assignGroupsIds, setAssignGroupsIds] = useState<Set<string> | null>(null);
 
   const allAccounts = accountsData ?? [];
   const emptyCount = useMemo(
@@ -256,7 +261,12 @@ export function AccountsPage() {
           );
         }}
         renderBulkActions={(ids: Set<string>, clear: () => void) => (
-          <AccountBulkActions selectedIds={ids} onClear={clear} />
+          <AccountBulkActions
+            selectedIds={ids}
+            onClear={clear}
+            onDelete={(selectedIds) => setDeleteConfirmIds(selectedIds)}
+            onAssignGroups={(selectedIds) => setAssignGroupsIds(selectedIds)}
+          />
         )}
         onRowClick={(item: AccountWihSumaryDTO) => navigate(V2_ROUTES.accountDetail(item.id))}
         getId={(item: AccountWihSumaryDTO) => item.id}
@@ -271,6 +281,27 @@ export function AccountsPage() {
           </div>
         }
       />
+
+      <ConfirmDialog
+        open={deleteConfirmIds !== null}
+        onOpenChange={(open) => {
+          if (!open) setDeleteConfirmIds(null);
+        }}
+        title="Delete Accounts"
+        description={`Are you sure you want to delete ${deleteConfirmIds?.size ?? 0} account(s)? This action cannot be undone.`}
+        confirmLabel="Delete"
+        variant="destructive"
+        onConfirm={() => {
+          if (deleteConfirmIds) {
+            bulkDelete(Array.from(deleteConfirmIds));
+          }
+        }}
+      />
+
+      {/* AssignGroupsDialog placeholder - will be wired when available */}
+      {assignGroupsIds && (
+        <span className="hidden" data-assign-groups-ids={Array.from(assignGroupsIds).join(',')} />
+      )}
     </div>
   );
 }

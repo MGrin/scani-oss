@@ -1,6 +1,6 @@
 import type { HoldingWithDetails } from '@scani/shared';
 import { PieChart } from 'lucide-react';
-import { useMemo } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Badge } from '@/components/ui/badge';
 import { getFaviconUrl } from '@/lib/icons';
@@ -8,8 +8,10 @@ import { trpc } from '@/lib/trpc';
 import { cn } from '@/lib/utils';
 import { DataView as DataViewComponent } from '../components/data-view/DataView';
 import type { ColumnDef } from '../components/data-view/DataViewTable';
+import { AssignGroupsDialog } from '../components/groups/AssignGroupsDialog';
 import { HoldingBulkActions } from '../components/holdings/HoldingBulkActions';
 import { HoldingCard } from '../components/holdings/HoldingCard';
+import { useHoldingActions } from '../hooks/useHoldingActions';
 import { V2_ROUTES } from '../lib/routes';
 
 const TOKEN_TYPE_COLORS: Record<string, string> = {
@@ -137,6 +139,21 @@ export function HoldingsPage() {
   const { data: groupsData } = trpc.groups.getAll.useQuery();
   const { data: baseCurrency } = trpc.users.getBaseCurrency.useQuery();
   const navigate = useNavigate();
+  const { bulkDeleteHoldings } = useHoldingActions();
+  const [assignGroupsIds, setAssignGroupsIds] = useState<string[]>([]);
+  const [assignGroupsOpen, setAssignGroupsOpen] = useState(false);
+
+  const handleBulkDelete = useCallback(
+    (ids: Set<string>) => {
+      bulkDeleteHoldings(Array.from(ids));
+    },
+    [bulkDeleteHoldings]
+  );
+
+  const handleAssignGroups = useCallback((ids: Set<string>) => {
+    setAssignGroupsIds(Array.from(ids));
+    setAssignGroupsOpen(true);
+  }, []);
 
   const holdings = holdingsData?.holdings ?? [];
   const groups = groupsData ?? [];
@@ -255,7 +272,12 @@ export function HoldingsPage() {
           onSelect: (id: string) => void
         ) => <HoldingCard item={item} isSelected={isSelected} onSelect={onSelect} />}
         renderBulkActions={(ids: Set<string>, clear: () => void) => (
-          <HoldingBulkActions selectedIds={ids} onClear={clear} />
+          <HoldingBulkActions
+            selectedIds={ids}
+            onClear={clear}
+            onDelete={handleBulkDelete}
+            onAssignGroups={handleAssignGroups}
+          />
         )}
         onRowClick={(item: HoldingWithDetails) => navigate(V2_ROUTES.holdingDetail(item.id))}
         getId={(item: HoldingWithDetails) => item.id}
@@ -269,6 +291,13 @@ export function HoldingsPage() {
             </p>
           </div>
         }
+      />
+
+      <AssignGroupsDialog
+        open={assignGroupsOpen}
+        onOpenChange={setAssignGroupsOpen}
+        entityType="holdings"
+        entityIds={assignGroupsIds}
       />
     </div>
   );

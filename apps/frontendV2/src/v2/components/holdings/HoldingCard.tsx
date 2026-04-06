@@ -65,6 +65,20 @@ export function HoldingCard({ item, isSelected, onSelect }: HoldingCardProps) {
           <span>@ {formatMoney(Number.parseFloat(item.price.value), currencySymbol)}</span>
         )}
       </div>
+      {item.costBasis > 0 && (
+        <p
+          className={cn(
+            'text-xs font-medium mt-1',
+            item.value - item.costBasis >= 0
+              ? 'text-green-600 dark:text-green-400'
+              : 'text-red-600 dark:text-red-400'
+          )}
+        >
+          {item.value - item.costBasis >= 0 ? '+' : ''}
+          {formatMoney(item.value - item.costBasis, currencySymbol)} (
+          {(((item.value - item.costBasis) / item.costBasis) * 100).toFixed(1)}%)
+        </p>
+      )}
       <div className="mt-3 pt-3 border-t border-border space-y-1">
         <p className="text-xs text-muted-foreground flex items-center gap-1">
           {favicon && (
