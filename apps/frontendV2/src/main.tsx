@@ -1,6 +1,7 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
+import { UpdateBanner } from '@/components/UpdateBanner';
 import { Toaster } from '@/components/ui/toaster';
 import { ThemeProvider } from '@/contexts/ThemeContext';
 import { TRPCProvider } from '@/lib/trpc-provider';
@@ -19,6 +20,7 @@ ReactDOM.createRoot(rootElement).render(
         <TRPCProvider>
           <App />
           <Toaster />
+          <UpdateBanner />
         </TRPCProvider>
       </ThemeProvider>
     </ErrorBoundary>
@@ -26,20 +28,13 @@ ReactDOM.createRoot(rootElement).render(
 );
 
 // Register service worker for PWA support
+// Update detection is handled by useAppUpdate hook + UpdateBanner component
 if ('serviceWorker' in navigator && import.meta.env.PROD) {
   window.addEventListener('load', () => {
     navigator.serviceWorker
       .register('/sw.js')
       .then((registration) => {
         console.log('[SW] Service Worker registered:', registration);
-
-        // Check for updates periodically
-        setInterval(
-          () => {
-            registration.update();
-          },
-          60 * 60 * 1000
-        ); // Check every hour
       })
       .catch((error) => {
         console.error('[SW] Service Worker registration failed:', error);

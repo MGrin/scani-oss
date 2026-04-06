@@ -1,33 +1,31 @@
 /**
  * Scani PWA Service Worker
- * Provides offline support and caching strategies for the Progressive Web App
+ * Provides offline support and smart caching with version update detection.
+ *
+ * Caching strategies:
+ * - HTML documents: network-first (always try to get fresh HTML)
+ * - Hashed assets (JS/CSS with content hashes): cache-first (immutable)
+ * - API requests (/trpc): network-first with cache fallback
+ * - version.json: always network, never cached (used for update detection)
  */
 
-const CACHE_VERSION = 'v1';
+const CACHE_VERSION = 'v2';
 const STATIC_CACHE = `scani-static-${CACHE_VERSION}`;
 const DYNAMIC_CACHE = `scani-dynamic-${CACHE_VERSION}`;
 const API_CACHE = `scani-api-${CACHE_VERSION}`;
 
-// Assets to cache immediately on install
-const STATIC_ASSETS = [
-  '/',
-  '/manifest.json',
-  '/favicon.ico',
-  '/favicon-16x16.png',
-  '/favicon-32x32.png',
-];
-
-// API routes that should be cached with network-first strategy
+const STATIC_ASSETS = ['/', '/manifest.json', '/favicon.ico'];
 const API_ROUTES = ['/trpc'];
 
-// Maximum age for cached API responses (5 minutes) - reserved for future cache expiration logic
-const _API_CACHE_MAX_AGE = 5 * 60 * 1000;
+// Files that should NEVER be served from cache
+const NEVER_CACHE = ['/version.json', '/sw.js'];
 
 /**
  * Install event - cache static assets
+ * Do NOT call skipWaiting here — let the app control when to activate
  */
 self.addEventListener('install', (event) => {
-  console.log('[SW] Installing service worker...');
+  console.log('[SW] Installing new service worker...');
 
   event.waitUntil(
     caches.open(STATIC_CACHE).then((cache) => {
@@ -36,40 +34,63 @@ self.addEventListener('install', (event) => {
     })
   );
 
-  // Activate immediately without waiting for old SW to be released
-  self.skipWaiting();
+  // Notify all clients that a new version is waiting
+  self.clients.matchAll({ type: 'window' }).then((clients) => {
+    for (const client of clients) {
+      client.postMessage({ type: 'SW_UPDATE_WAITING' });
+    }
+  });
 });
 
 /**
- * Activate event - clean up old caches
+ * Activate event - clean up old caches and take control
  */
 self.addEventListener('activate', (event) => {
   console.log('[SW] Activating service worker...');
 
   event.waitUntil(
-    caches.keys().then((cacheNames) => {
-      return Promise.all(
-        cacheNames
-          .filter((name) => {
-            // Delete old caches that don't match current version
-            return (
-              name.startsWith('scani-') &&
-              name !== STATIC_CACHE &&
-              name !== DYNAMIC_CACHE &&
-              name !== API_CACHE
-            );
-          })
-          .map((name) => {
-            console.log('[SW] Deleting old cache:', name);
-            return caches.delete(name);
-          })
-      );
-    })
+    caches
+      .keys()
+      .then((cacheNames) => {
+        return Promise.all(
+          cacheNames
+            .filter((name) => {
+              return (
+                name.startsWith('scani-') &&
+                name !== STATIC_CACHE &&
+                name !== DYNAMIC_CACHE &&
+                name !== API_CACHE
+              );
+            })
+            .map((name) => {
+              console.log('[SW] Deleting old cache:', name);
+              return caches.delete(name);
+            })
+        );
+      })
+      .then(() => {
+        // Take control of all pages immediately after activation
+        return self.clients.claim();
+      })
+      .then(() => {
+        // Notify all clients that the new SW is now active
+        return self.clients.matchAll({ type: 'window' });
+      })
+      .then((clients) => {
+        for (const client of clients) {
+          client.postMessage({ type: 'SW_ACTIVATED' });
+        }
+      })
   );
-
-  // Take control of all pages immediately
-  self.clients.claim();
 });
+
+/**
+ * Determine if a URL is a hashed asset (immutable, safe to cache forever).
+ * Vite generates filenames like: /assets/index-a1b2c3d4.js
+ */
+function isHashedAsset(url) {
+  return /\/assets\/.*-[a-f0-9]{8,}\.(js|css|woff2?|png|jpg|svg)$/i.test(url.pathname);
+}
 
 /**
  * Fetch event - handle requests with appropriate caching strategy
@@ -78,68 +99,63 @@ self.addEventListener('fetch', (event) => {
   const { request } = event;
   const url = new URL(request.url);
 
-  // Skip non-GET requests
-  if (request.method !== 'GET') {
+  if (request.method !== 'GET') return;
+  if (!url.protocol.startsWith('http')) return;
+
+  // Never cache these - always go to network
+  if (NEVER_CACHE.some((path) => url.pathname === path)) {
+    event.respondWith(fetch(request));
     return;
   }
 
-  // Skip chrome-extension and other non-http(s) requests
-  if (!url.protocol.startsWith('http')) {
-    return;
-  }
-
-  // Skip WebSocket requests
-  if (url.protocol === 'ws:' || url.protocol === 'wss:') {
-    return;
-  }
-
-  // API requests - Network first, fallback to cache
+  // API requests - network first, fallback to cache
   if (API_ROUTES.some((route) => url.pathname.startsWith(route))) {
     event.respondWith(networkFirstStrategy(request, API_CACHE));
     return;
   }
 
-  // Static assets and navigation - Cache first, fallback to network
+  // HTML documents - network first (get fresh HTML with latest asset references)
+  if (request.destination === 'document' || request.mode === 'navigate') {
+    event.respondWith(networkFirstStrategy(request, STATIC_CACHE));
+    return;
+  }
+
+  // Hashed assets (JS/CSS with content hashes) - cache first (they're immutable)
+  if (isHashedAsset(url)) {
+    event.respondWith(cacheFirstStrategy(request, DYNAMIC_CACHE));
+    return;
+  }
+
+  // Other static assets (images, fonts, etc.) - stale-while-revalidate
   if (
-    request.destination === 'document' ||
     request.destination === 'script' ||
     request.destination === 'style' ||
     request.destination === 'image' ||
     request.destination === 'font'
   ) {
-    event.respondWith(cacheFirstStrategy(request, DYNAMIC_CACHE));
+    event.respondWith(staleWhileRevalidate(request, DYNAMIC_CACHE));
     return;
   }
 
-  // Default: Network only
+  // Default: network only
   event.respondWith(fetch(request));
 });
 
 /**
- * Cache-first strategy: Try cache, fallback to network
- * Best for static assets that don't change often
+ * Cache-first strategy: for immutable hashed assets
  */
 async function cacheFirstStrategy(request, cacheName) {
-  const cachedResponse = await caches.match(request);
+  const cached = await caches.match(request);
+  if (cached) return cached;
 
-  if (cachedResponse) {
-    // Return cached response but also update cache in background
-    updateCache(request, cacheName);
-    return cachedResponse;
-  }
-
-  // Not in cache, fetch from network and cache
   try {
-    const networkResponse = await fetch(request);
-
-    if (networkResponse.ok) {
+    const response = await fetch(request);
+    if (response.ok) {
       const cache = await caches.open(cacheName);
-      cache.put(request, networkResponse.clone());
+      cache.put(request, response.clone());
     }
-
-    return networkResponse;
+    return response;
   } catch (error) {
-    // Network failed and no cache - return offline page if it's a navigation
     if (request.destination === 'document') {
       return caches.match('/');
     }
@@ -148,32 +164,28 @@ async function cacheFirstStrategy(request, cacheName) {
 }
 
 /**
- * Network-first strategy: Try network, fallback to cache
- * Best for API requests where fresh data is preferred
+ * Network-first strategy: for HTML and API requests
  */
 async function networkFirstStrategy(request, cacheName) {
   try {
-    const networkResponse = await fetch(request);
-
-    // Cache successful responses
-    if (networkResponse.ok) {
+    const response = await fetch(request);
+    if (response.ok) {
       const cache = await caches.open(cacheName);
-      // Add timestamp to cached response
-      const responseToCache = networkResponse.clone();
-      cache.put(request, responseToCache);
+      cache.put(request, response.clone());
     }
-
-    return networkResponse;
+    return response;
   } catch {
-    // Network failed, try cache
-    const cachedResponse = await caches.match(request);
-
-    if (cachedResponse) {
+    const cached = await caches.match(request);
+    if (cached) {
       console.log('[SW] Serving from cache (offline):', request.url);
-      return cachedResponse;
+      return cached;
     }
 
-    // No cache available, return error response
+    if (request.destination === 'document' || request.mode === 'navigate') {
+      const fallback = await caches.match('/');
+      if (fallback) return fallback;
+    }
+
     return new Response(
       JSON.stringify({ error: 'You are offline and no cached data is available.' }),
       {
@@ -186,30 +198,34 @@ async function networkFirstStrategy(request, cacheName) {
 }
 
 /**
- * Update cache in background (stale-while-revalidate)
+ * Stale-while-revalidate: return cache immediately, update in background
  */
-async function updateCache(request, cacheName) {
-  try {
-    const networkResponse = await fetch(request);
+async function staleWhileRevalidate(request, cacheName) {
+  const cached = await caches.match(request);
 
-    if (networkResponse.ok) {
-      const cache = await caches.open(cacheName);
-      cache.put(request, networkResponse);
-    }
-  } catch {
-    // Silently fail - we're just updating cache in background
-  }
+  const fetchPromise = fetch(request)
+    .then((response) => {
+      if (response.ok) {
+        const cache = caches.open(cacheName);
+        cache.then((c) => c.put(request, response.clone()));
+      }
+      return response;
+    })
+    .catch(() => null);
+
+  return cached || (await fetchPromise) || new Response('', { status: 408 });
 }
 
 /**
  * Handle messages from the main thread
  */
 self.addEventListener('message', (event) => {
-  if (event.data && event.data.type === 'SKIP_WAITING') {
+  if (event.data?.type === 'SKIP_WAITING') {
+    console.log('[SW] Skip waiting requested by app');
     self.skipWaiting();
   }
 
-  if (event.data && event.data.type === 'CLEAR_CACHE') {
+  if (event.data?.type === 'CLEAR_CACHE') {
     event.waitUntil(
       caches.keys().then((cacheNames) => {
         return Promise.all(
@@ -218,27 +234,30 @@ self.addEventListener('message', (event) => {
       })
     );
   }
+
+  if (event.data?.type === 'GET_VERSION') {
+    event.source?.postMessage({
+      type: 'SW_VERSION',
+      version: CACHE_VERSION,
+    });
+  }
 });
 
 /**
- * Push notification handler (for future use)
+ * Push notification handler
  */
 self.addEventListener('push', (event) => {
   if (!event.data) return;
 
   try {
     const data = event.data.json();
-
     const options = {
       body: data.body || 'New notification',
       icon: '/icons/icon-192x192.png',
       badge: '/icons/icon-72x72.png',
       vibrate: [100, 50, 100],
-      data: {
-        url: data.url || '/',
-      },
+      data: { url: data.url || '/' },
     };
-
     event.waitUntil(self.registration.showNotification(data.title || 'Scani', options));
   } catch (error) {
     console.error('[SW] Push notification error:', error);
@@ -250,18 +269,15 @@ self.addEventListener('push', (event) => {
  */
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();
-
   const url = event.notification.data?.url || '/';
 
   event.waitUntil(
     clients.matchAll({ type: 'window', includeUncontrolled: true }).then((windowClients) => {
-      // Check if there's already a window/tab open
       for (const client of windowClients) {
         if (client.url === url && 'focus' in client) {
           return client.focus();
         }
       }
-      // Open new window if none exists
       if (clients.openWindow) {
         return clients.openWindow(url);
       }
@@ -269,4 +285,4 @@ self.addEventListener('notificationclick', (event) => {
   );
 });
 
-console.log('[SW] Service worker loaded');
+console.log('[SW] Service worker loaded (cache version:', CACHE_VERSION, ')');
