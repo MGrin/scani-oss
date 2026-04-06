@@ -340,9 +340,10 @@ export class SyncExchangeBalancesUseCase {
               const { account, integration, holdingsResult, existingHoldingsWithDetails } =
                 accountData;
 
-              // Create a map of symbol -> holding for easier lookup
-              const existingBySymbol = new Map<string, Holding>(
-                existingHoldingsWithDetails.map((h) => [h.token.symbol, h.holding])
+              // Create a map of tokenId -> holding for deduplication
+              // Using tokenId (not symbol) prevents duplicates when multiple tokens share a symbol
+              const existingByTokenId = new Map<string, Holding>(
+                existingHoldingsWithDetails.map((h) => [h.holding.tokenId, h.holding])
               );
 
               // Process each fetched holding
@@ -371,8 +372,8 @@ export class SyncExchangeBalancesUseCase {
                     tx
                   );
 
-                  // Check if holding already exists
-                  const existing = existingBySymbol.get(token.symbol);
+                  // Check if holding already exists (by token ID, not symbol)
+                  const existing = existingByTokenId.get(token.id);
 
                   if (existing) {
                     // Update existing holding

@@ -132,6 +132,25 @@ export class HoldingService extends BaseService {
     transaction?: DatabaseTransaction
   ): Promise<Holding> {
     try {
+      // Safety check: prevent duplicate holdings (same account + token + user)
+      const existingHolding = await this.holdingRepository.findByAccountAndToken(
+        input.accountId,
+        input.tokenId,
+        input.userId,
+        undefined,
+        transaction,
+        true // includeHidden — prevent duplicates even for hidden holdings
+      );
+
+      if (existingHolding) {
+        this.logWarning('Duplicate holding prevented in createHoldingWithEvent', {
+          accountId: input.accountId,
+          tokenId: input.tokenId,
+          existingHoldingId: existingHolding.id,
+        });
+        return existingHolding;
+      }
+
       // Create the holding
       const holding = await this.holdingRepository.create(
         {

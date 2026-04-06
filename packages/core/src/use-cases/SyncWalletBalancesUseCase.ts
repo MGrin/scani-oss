@@ -315,13 +315,10 @@ export class SyncWalletBalancesUseCase {
             const existingTokens = await this.tokenService.getTokensByIds(existingTokenIds);
             const tokensMap = new Map(existingTokens.map((t) => [t.id, t]));
 
-            // Create a map of existing holdings by token symbol
+            // Create a map of existing holdings by tokenId (not symbol — prevents duplicates)
             const existingHoldingsMap = new Map<string, (typeof existingHoldings)[0]>();
             for (const holding of existingHoldings) {
-              const token = tokensMap.get(holding.tokenId);
-              if (token) {
-                existingHoldingsMap.set(token.symbol.toUpperCase(), holding);
-              }
+              existingHoldingsMap.set(holding.tokenId, holding);
             }
 
             // Process each integration holding
@@ -366,7 +363,7 @@ export class SyncWalletBalancesUseCase {
                   tx
                 );
 
-                const existingHolding = existingHoldingsMap.get(tokenSymbol);
+                const existingHolding = existingHoldingsMap.get(token.id);
                 const wasHidden = existingHolding?.isHidden ?? false;
 
                 // Event context - only create events if user has baseCurrencyId
