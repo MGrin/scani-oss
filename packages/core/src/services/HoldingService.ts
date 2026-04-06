@@ -18,6 +18,7 @@ export interface CreateHoldingWithEventInput {
   balance: string;
   userId: string;
   source?: string;
+  externalId?: string; // Exchange-specific identifier for synced holdings
   lastUpdated?: Date;
   // Event context (optional - if not provided, events won't be created)
   eventContext?: {
@@ -90,18 +91,7 @@ export class HoldingService extends BaseService {
         throw new Error('Unauthorized: Account does not belong to user');
       }
 
-      // Check if holding already exists
-      const existingHolding = await this.holdingRepository.findByAccountAndToken(
-        data.accountId,
-        data.tokenId,
-        userId
-      );
-
-      if (existingHolding) {
-        throw new Error('Holding already exists for this token in this account');
-      }
-
-      // Create the holding
+      // Create the holding (multiple holdings of same token in same account are allowed)
       const holding = await this.holdingRepository.create({
         accountId: data.accountId,
         tokenId: data.tokenId,
@@ -128,26 +118,7 @@ export class HoldingService extends BaseService {
     transaction?: DatabaseTransaction
   ): Promise<Holding> {
     try {
-      // Safety check: prevent duplicate holdings (same account + token + user)
-      const existingHolding = await this.holdingRepository.findByAccountAndToken(
-        input.accountId,
-        input.tokenId,
-        input.userId,
-        undefined,
-        transaction,
-        true // includeHidden — prevent duplicates even for hidden holdings
-      );
-
-      if (existingHolding) {
-        this.logWarning('Duplicate holding prevented in createHoldingWithEvent', {
-          accountId: input.accountId,
-          tokenId: input.tokenId,
-          existingHoldingId: existingHolding.id,
-        });
-        return existingHolding;
-      }
-
-      // Create the holding
+      // Create the holding (multiple same-token holdings per account are allowed)
       const holding = await this.holdingRepository.create(
         {
           accountId: input.accountId,
@@ -155,6 +126,7 @@ export class HoldingService extends BaseService {
           balance: input.balance,
           userId: input.userId,
           source: input.source || 'manual',
+          externalId: input.externalId || null,
           lastUpdated: input.lastUpdated || new Date(),
         },
         transaction

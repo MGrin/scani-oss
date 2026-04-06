@@ -173,6 +173,7 @@ export const holdings = pgTable(
       .references(() => tokens.id, { onDelete: 'restrict' }), // Prevent token deletion if holdings exist
     balance: text('balance').notNull(), // Store as string for Decimal.js precision
     source: text('source').notNull().default('manual'), // 'blockchain' or 'manual' - tracks origin of holding
+    externalId: text('external_id'), // Exchange-specific asset identifier for synced holdings (e.g., 'BTC' for Binance). NULL for manual holdings.
     isHidden: boolean('is_hidden').notNull().default(false), // Hidden holdings are excluded from queries but updated by cron
     isActive: boolean('is_active').notNull().default(true), // Inactive holdings are visible but excluded from total calculations
     lastUpdated: timestamp('last_updated', { withTimezone: true }).notNull().defaultNow(),
@@ -194,6 +195,12 @@ export const holdings = pgTable(
     isHiddenIdx: index('idx_holdings_is_hidden').on(table.isHidden),
     // Index for filtering active holdings in calculations
     isActiveIdx: index('idx_holdings_is_active').on(table.isActive),
+    // Index for sync matching: (account_id, token_id, external_id)
+    accountTokenExternalIdx: index('idx_holdings_account_token_external').on(
+      table.accountId,
+      table.tokenId,
+      table.externalId
+    ),
   })
 );
 

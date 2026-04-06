@@ -397,10 +397,14 @@ export class SyncWalletBalancesUseCase {
               true // includeScamTokens - prevents duplicate holdings for scam tokens
             );
 
-            // Create a map of existing holdings by tokenId (not symbol — prevents duplicates)
+            // Create a map of existing holdings by externalId (or tokenId for legacy holdings without externalId)
+            // This allows multiple holdings of the same token if they have different externalIds
             const existingHoldingsMap = new Map<string, (typeof existingHoldings)[0]>();
             for (const holding of existingHoldings) {
-              existingHoldingsMap.set(holding.tokenId, holding);
+              const key = holding.externalId
+                ? `${holding.tokenId}:${holding.externalId}`
+                : holding.tokenId;
+              existingHoldingsMap.set(key, holding);
             }
 
             // Process each integration holding
@@ -445,7 +449,11 @@ export class SyncWalletBalancesUseCase {
                   tx
                 );
 
-                const existingHolding = existingHoldingsMap.get(token.id);
+                // Build externalId for blockchain holdings: contract address or symbol
+                const walletExternalId = integrationHolding.contractAddress || integrationHolding.externalTokenId || integrationHolding.symbol;
+                // Look up by externalId first, fall back to tokenId for legacy holdings
+                const mapKey = `${token.id}:${walletExternalId}`;
+                const existingHolding = existingHoldingsMap.get(mapKey) || existingHoldingsMap.get(token.id);
                 const wasHidden = existingHolding?.isHidden ?? false;
 
                 // Event context - only create events if user has baseCurrencyId
@@ -520,7 +528,7 @@ export class SyncWalletBalancesUseCase {
                       'Updated holding balance'
                     );
                   } else {
-                    // Create new holding via HoldingService
+                    // Create new holding via HoldingService with externalId for sync matching
                     const newHolding = await this.holdingService.createHoldingWithEvent(
                       {
                         userId: user.id,
@@ -528,6 +536,7 @@ export class SyncWalletBalancesUseCase {
                         tokenId: token.id,
                         balance,
                         source: 'blockchain',
+                        externalId: walletExternalId,
                         eventContext: eventContext
                           ? { baseCurrencyId: eventContext.baseCurrencyId }
                           : undefined,

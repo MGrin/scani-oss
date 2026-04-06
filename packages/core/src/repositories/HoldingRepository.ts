@@ -107,6 +107,49 @@ export class HoldingRepository extends BaseRepository<Holding, NewHolding> {
   }
 
   /**
+   * Find a holding by account, token, and external ID.
+   * Used by sync/import flows to match synced holdings precisely
+   * without conflicting with manual holdings (which have NULL externalId).
+   */
+  async findByAccountTokenAndExternalId(
+    accountId: string,
+    tokenId: string,
+    externalId: string,
+    userId: string,
+    transaction?: DatabaseTransaction,
+    includeHidden = false
+  ): Promise<Holding | null> {
+    try {
+      const database = this.getDb(transaction);
+
+      const conditions = [
+        eq(schema.holdings.accountId, accountId),
+        eq(schema.holdings.tokenId, tokenId),
+        eq(schema.holdings.externalId, externalId),
+        eq(schema.holdings.userId, userId),
+      ];
+
+      if (!includeHidden) {
+        conditions.push(eq(schema.holdings.isHidden, false));
+      }
+
+      const results = await database
+        .select()
+        .from(schema.holdings)
+        .where(and(...conditions))
+        .limit(1);
+
+      return results[0] || null;
+    } catch (error) {
+      this.logger.error(
+        { accountId, tokenId, externalId, userId, error },
+        'Failed to find holding by account, token, and external ID'
+      );
+      throw error;
+    }
+  }
+
+  /**
    * Find holdings by user with complete details including token, account, and institution information.
    * This is a convenience wrapper around findByUserWithFullDetails without accountId filter.
    *
@@ -186,6 +229,7 @@ export class HoldingRepository extends BaseRepository<Holding, NewHolding> {
           holdingSource: schema.holdings.source,
           holdingIsHidden: schema.holdings.isHidden,
           holdingIsActive: schema.holdings.isActive,
+          holdingExternalId: schema.holdings.externalId,
           holdingLastUpdated: schema.holdings.lastUpdated,
           holdingCreatedAt: schema.holdings.createdAt,
           // Token data with type
@@ -227,6 +271,7 @@ export class HoldingRepository extends BaseRepository<Holding, NewHolding> {
           source: r.holdingSource,
           isHidden: r.holdingIsHidden,
           isActive: r.holdingIsActive,
+          externalId: r.holdingExternalId,
           lastUpdated: r.holdingLastUpdated,
           createdAt: r.holdingCreatedAt,
         },

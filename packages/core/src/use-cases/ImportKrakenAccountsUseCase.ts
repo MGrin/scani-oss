@@ -269,17 +269,19 @@ export class ImportKrakenAccountsUseCase {
                     continue;
                   }
 
-                  // Check if holding already exists
-                  const existingHolding = await this.holdingRepository.findByAccountAndToken(
+                  // Match by externalId (exchange asset code) to avoid conflicts with manual holdings
+                  const externalId = holding.externalTokenId || holding.symbol;
+                  const existingHolding = await this.holdingRepository.findByAccountTokenAndExternalId(
                     accountId,
                     token.id,
+                    externalId,
                     input.userId,
-                    undefined,
-                    tx
+                    tx,
+                    true // includeHidden
                   );
 
                   if (existingHolding) {
-                    // Update existing holding
+                    // Update existing synced holding
                     await this.holdingService.updateHoldingBalanceWithEvent(
                       {
                         holdingId: existingHolding.id,
@@ -293,9 +295,9 @@ export class ImportKrakenAccountsUseCase {
                       },
                       tx
                     );
-                    logger.debug({ holdingId: existingHolding.id }, 'Updated existing holding');
+                    logger.debug({ holdingId: existingHolding.id, externalId }, 'Updated existing holding');
                   } else {
-                    // Create new holding
+                    // Create new holding with externalId for future sync matching
                     const newHolding = await this.holdingService.createHoldingWithEvent(
                       {
                         userId: input.userId,
@@ -303,6 +305,7 @@ export class ImportKrakenAccountsUseCase {
                         tokenId: token.id,
                         balance: holding.balance,
                         source: 'import_kraken',
+                        externalId,
                         eventContext: user.baseCurrencyId
                           ? {
                               baseCurrencyId: user.baseCurrencyId,
