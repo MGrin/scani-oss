@@ -26,7 +26,10 @@ export function MobileNav({ onMorePress }: MobileNavProps) {
   return (
     <nav
       className="lg:hidden fixed bottom-0 left-0 right-0 z-50 flex items-center justify-around border-t border-border bg-background/95 backdrop-blur-sm"
-      style={{ paddingBottom: 'env(safe-area-inset-bottom)', minHeight: 'calc(3.5rem + env(safe-area-inset-bottom))' }}
+      style={{
+        paddingBottom: 'env(safe-area-inset-bottom)',
+        minHeight: 'calc(3.5rem + env(safe-area-inset-bottom))',
+      }}
     >
       {items.map((item) => (
         <NavLink
