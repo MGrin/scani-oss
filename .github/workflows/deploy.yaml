@@ -81,6 +81,20 @@ jobs:
         run: |
           curl -X POST https://api.render.com/deploy/srv-d3j88295pdvs739osbig?key=dPrNCQrxecI
 
+  deploy-crons:
+    needs: [check-changes]
+    if: ${{ needs.check-changes.outputs.backend == 'true' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger cron service deployments
+        env:
+          RENDER_API_KEY: rnd_xOsOjnyuYWUSEj38VyB3e93VjAPu
+        run: |
+          curl -s -X POST -H "Authorization: Bearer $RENDER_API_KEY" \
+            https://api.render.com/v1/services/crn-d57rudmr433s73eta530/deploys
+          curl -s -X POST -H "Authorization: Bearer $RENDER_API_KEY" \
+            https://api.render.com/v1/services/crn-d57rt26r433s73et96s0/deploys
+
   deploy-frontend:
     needs: [check-changes]
     if: ${{ needs.check-changes.outputs.frontend == 'true' }}

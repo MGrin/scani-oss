@@ -260,6 +260,13 @@
       "when": 1772700262131,
       "tag": "0036_elite_rage",
       "breakpoints": true
+    },
+    {
+      "idx": 37,
+      "version": "7",
+      "when": 1775228400000,
+      "tag": "0037_fix_duplicate_boa",
+      "breakpoints": true
     }
   ]
 }
