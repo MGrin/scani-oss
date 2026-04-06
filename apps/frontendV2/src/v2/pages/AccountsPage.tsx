@@ -9,6 +9,7 @@ import { AccountBulkActions } from '../components/accounts/AccountBulkActions';
 import { AccountCard } from '../components/accounts/AccountCard';
 import { DataView as DataViewComponent } from '../components/data-view/DataView';
 import type { ColumnDef } from '../components/data-view/DataViewTable';
+import { AssignGroupsDialog } from '../components/groups/AssignGroupsDialog';
 import { ConfirmDialog } from '../components/shared/ConfirmDialog';
 import { useAccountActions } from '../hooks/useAccountActions';
 import { useBaseCurrency } from '../hooks/useBaseCurrency';
@@ -298,10 +299,14 @@ export function AccountsPage() {
         }}
       />
 
-      {/* AssignGroupsDialog placeholder - will be wired when available */}
-      {assignGroupsIds && (
-        <span className="hidden" data-assign-groups-ids={Array.from(assignGroupsIds).join(',')} />
-      )}
+      <AssignGroupsDialog
+        open={assignGroupsIds !== null}
+        onOpenChange={(open) => {
+          if (!open) setAssignGroupsIds(null);
+        }}
+        entityType="accounts"
+        entityIds={assignGroupsIds ? Array.from(assignGroupsIds) : []}
+      />
     </div>
   );
 }

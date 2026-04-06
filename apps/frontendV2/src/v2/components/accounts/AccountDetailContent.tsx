@@ -138,31 +138,47 @@ export function AccountDetailContent({ accountId, mode = 'panel' }: AccountDetai
       {holdings.length > 0 && (
         <div>
           <p className="text-xs text-muted-foreground uppercase tracking-wider mb-2">Holdings</p>
-          <div className="space-y-2">
-            {holdings
-              .slice(0, 10)
+          <div className="space-y-1">
+            {[...holdings]
+              .sort(
+                (a: { value?: number }, b: { value?: number }) =>
+                  (Number(b.value) || 0) - (Number(a.value) || 0)
+              )
+              .slice(0, 15)
               .map(
                 (h: {
                   id: string;
                   token?: { symbol: string };
-                  balance?: string;
                   value?: number;
+                  source?: string;
                 }) => (
-                  <div key={h.id} className="flex items-center justify-between text-sm">
-                    <span className="font-medium">{h.token?.symbol || 'Unknown'}</span>
-                    <span className="text-muted-foreground">
+                  <button
+                    type="button"
+                    key={h.id}
+                    className="flex items-center justify-between text-sm w-full px-2 py-1.5 rounded-md hover:bg-accent/50 transition-colors text-left"
+                    onClick={() => navigate(V2_ROUTES.holdingDetail(h.id))}
+                  >
+                    <span className="flex items-center gap-2">
+                      <span className="font-medium">{h.token?.symbol || 'Unknown'}</span>
+                      {h.source && (
+                        <Badge variant="outline" className="text-[9px] px-1 py-0">
+                          {h.source}
+                        </Badge>
+                      )}
+                    </span>
+                    <span className="text-muted-foreground tabular-nums">
                       {new Intl.NumberFormat('en-US', {
                         style: 'currency',
                         currency: currencySymbol,
                         minimumFractionDigits: 2,
                         maximumFractionDigits: 2,
-                      }).format(Number(h.balance || 0))}
+                      }).format(Number(h.value || 0))}
                     </span>
-                  </div>
+                  </button>
                 )
               )}
-            {holdings.length > 10 && (
-              <p className="text-xs text-muted-foreground">+{holdings.length - 10} more</p>
+            {holdings.length > 15 && (
+              <p className="text-xs text-muted-foreground px-2">+{holdings.length - 15} more</p>
             )}
           </div>
         </div>

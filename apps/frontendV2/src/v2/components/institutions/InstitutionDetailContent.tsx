@@ -128,6 +128,12 @@ export function InstitutionDetailContent({
                 </Link>
               ))}
             </div>
+            <Link
+              to={`${V2_ROUTES.holdings}?institution=${institutionId}`}
+              className="text-xs text-primary hover:underline mt-2 inline-block"
+            >
+              View all holdings for this institution
+            </Link>
           </div>
         </>
       )}

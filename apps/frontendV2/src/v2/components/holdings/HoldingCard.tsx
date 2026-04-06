@@ -92,6 +92,11 @@ export function HoldingCard({ item, isSelected, onSelect }: HoldingCardProps) {
             />
           )}
           {item.institution.name} / {item.account.name}
+          {item.source && (
+            <Badge variant="outline" className="text-[9px] px-1 py-0 ml-1">
+              {item.source}
+            </Badge>
+          )}
         </p>
         {item.groups.length > 0 && (
           <div className="flex flex-wrap gap-1">
