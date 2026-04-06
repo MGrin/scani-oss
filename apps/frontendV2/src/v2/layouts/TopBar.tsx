@@ -19,7 +19,10 @@ export function TopBar({ onMobileMenuOpen, onCommandPaletteOpen }: TopBarProps) 
   const title = getPageTitle(pathname);
 
   return (
-    <header className="flex items-center gap-3 h-12 px-4 border-b border-border bg-background/80 backdrop-blur-sm shrink-0">
+    <header
+      className="flex items-center gap-3 px-4 border-b border-border bg-background/80 backdrop-blur-sm shrink-0"
+      style={{ paddingTop: 'env(safe-area-inset-top)', minHeight: 'calc(3rem + env(safe-area-inset-top))' }}
+    >
       {/* Mobile hamburger */}
       <Button
         variant="ghost"

@@ -108,7 +108,10 @@ export function AppShell() {
           onMobileMenuOpen={() => setMobileOpen(true)}
           onCommandPaletteOpen={() => setCommandOpen(true)}
         />
-        <main className="flex-1 overflow-y-auto pb-14 lg:pb-0">
+        <main
+          className="flex-1 overflow-y-auto lg:pb-0"
+          style={{ paddingBottom: 'calc(3.5rem + env(safe-area-inset-bottom, 0px))' }}
+        >
           <div className="mx-auto max-w-7xl px-4 sm:px-6 py-4 sm:py-6">
             <Outlet />
           </div>
