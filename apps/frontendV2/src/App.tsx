@@ -1,7 +1,6 @@
 import { Route, BrowserRouter as Router, Routes } from 'react-router-dom';
 import { Layout } from '@/components/layout';
 import { ProtectedRoute } from '@/components/ProtectedRoute';
-import { V2App } from '@/v2/V2App';
 import { AuthProvider } from '@/contexts/AuthContext';
 import { AccountDetail } from '@/pages/AccountDetail';
 import { Accounts } from '@/pages/Accounts';
@@ -17,6 +16,7 @@ import { Institutions } from '@/pages/Institutions';
 import { Settings } from '@/pages/Settings';
 import { VaultDetail } from '@/pages/VaultDetail';
 import { Vaults } from '@/pages/Vaults';
+import { V2App } from '@/v2/V2App';
 
 function App() {
   return (
