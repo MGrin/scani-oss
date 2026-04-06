@@ -1,6 +1,7 @@
 import { Route, BrowserRouter as Router, Routes } from 'react-router-dom';
 import { Layout } from '@/components/layout';
 import { ProtectedRoute } from '@/components/ProtectedRoute';
+import { V2App } from '@/v2/V2App';
 import { AuthProvider } from '@/contexts/AuthContext';
 import { AccountDetail } from '@/pages/AccountDetail';
 import { Accounts } from '@/pages/Accounts';
@@ -151,6 +152,15 @@ function App() {
                 <Layout>
                   <HoldingDetail />
                 </Layout>
+              </ProtectedRoute>
+            }
+          />
+          {/* V2 UI */}
+          <Route
+            path="/v2/*"
+            element={
+              <ProtectedRoute>
+                <V2App />
               </ProtectedRoute>
             }
           />
