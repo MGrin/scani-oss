@@ -23,7 +23,7 @@ import {
   CommandList,
   CommandSeparator,
 } from '@/components/ui/command';
-import { useTheme } from '@/hooks/use-theme';
+import { useTheme } from '@/contexts/ThemeContext';
 import { V2_ROUTES } from '../../lib/routes';
 
 interface CommandPaletteProps {
