@@ -14,9 +14,11 @@ import { HoldingsPage } from './pages/HoldingsPage';
 import { InstitutionDetailPage } from './pages/InstitutionDetailPage';
 import { InstitutionsPage } from './pages/InstitutionsPage';
 import { IntegrationsPage } from './pages/IntegrationsPage';
+import { ManualEntryPage } from './pages/ManualEntryPage';
 import { SettingsPage } from './pages/SettingsPage';
 import { VaultDetailPage } from './pages/VaultDetailPage';
 import { VaultsPage } from './pages/VaultsPage';
+import { WalletImportPage } from './pages/WalletImportPage';
 
 export function V2App() {
   return (
@@ -37,6 +39,8 @@ export function V2App() {
               <Route path="vaults/:id" element={<VaultDetailPage />} />
               <Route path="integrations" element={<IntegrationsPage />} />
               <Route path="import" element={<FileImportPage />} />
+              <Route path="wallet-import" element={<WalletImportPage />} />
+              <Route path="manual-entry" element={<ManualEntryPage />} />
               <Route path="add-data" element={<AddDataPage />} />
               <Route path="settings" element={<SettingsPage />} />
             </Route>

@@ -12,6 +12,8 @@ export const V2_ROUTES = {
   vaultDetail: (id: string) => `/v2/vaults/${id}`,
   integrations: '/v2/integrations',
   fileImport: '/v2/import',
+  walletImport: '/v2/wallet-import',
+  manualEntry: '/v2/manual-entry',
   addData: '/v2/add-data',
   settings: '/v2/settings',
 } as const;

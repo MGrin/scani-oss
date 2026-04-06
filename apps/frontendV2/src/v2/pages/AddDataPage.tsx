@@ -20,7 +20,7 @@ export function AddDataPage() {
       icon: Keyboard,
       title: 'Manual Entry',
       description: 'Manually enter your holdings and balances',
-      action: () => navigate('/add-data?method=manual'),
+      action: () => navigate(V2_ROUTES.manualEntry),
     },
     {
       id: 'file',
@@ -34,7 +34,7 @@ export function AddDataPage() {
       icon: Wallet,
       title: 'Crypto Wallet',
       description: 'Import balances from your blockchain wallet address',
-      action: () => navigate('/add-data?method=wallet'),
+      action: () => navigate(V2_ROUTES.walletImport),
     },
     {
       id: 'exchange',
