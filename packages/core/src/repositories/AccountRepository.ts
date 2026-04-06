@@ -49,6 +49,7 @@ export class AccountRepository extends BaseRepository<Account, NewAccount> {
           institutionId: schema.accounts.institutionId,
           typeId: schema.accounts.typeId,
           description: schema.accounts.description,
+          isHidden: schema.accounts.isHidden,
           isActive: schema.accounts.isActive,
           createdAt: schema.accounts.createdAt,
           updatedAt: schema.accounts.updatedAt,

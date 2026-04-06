@@ -13,7 +13,6 @@ export { InstitutionRepository } from './InstitutionRepository';
 export { TokenPriceRepository } from './TokenPriceRepository';
 export { TokenRepository } from './TokenRepository';
 export { UserIntegrationCredentialsRepository } from './UserIntegrationCredentialsRepository';
-export { UserPortfolioEventRepository } from './UserPortfolioEventRepository';
 export { UserRepository } from './UserRepository';
 export { UserWalletRepository } from './UserWalletRepository';
 export { VaultRepository } from './VaultRepository';

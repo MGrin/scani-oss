@@ -6,10 +6,8 @@ import { AccountRepository } from '../repositories/AccountRepository';
 import type { DatabaseTransaction } from '../repositories/BaseRepository';
 import { GroupRepository } from '../repositories/GroupRepository';
 import { HoldingRepository } from '../repositories/HoldingRepository';
-import { TokenRepository } from '../repositories/TokenRepository';
 import { BaseService } from './BaseService';
 import { PortfolioValuationService } from './PortfolioValuationService';
-import { UserPortfolioEventService } from './UserPortfolioEventService';
 
 /**
  * Input for creating a holding with full context for event tracking
@@ -54,9 +52,7 @@ export class HoldingService extends BaseService {
   private readonly holdingRepository = Container.get(HoldingRepository);
   private readonly accountRepository = Container.get(AccountRepository);
   private readonly groupRepository = Container.get(GroupRepository);
-  private readonly tokenRepository = Container.get(TokenRepository);
   private readonly portfolioValuationService = Container.get(PortfolioValuationService);
-  private readonly userPortfolioEventService = Container.get(UserPortfolioEventService);
 
   constructor() {
     super('HoldingService');
@@ -163,33 +159,7 @@ export class HoldingService extends BaseService {
         },
         transaction
       );
-
-      // Create event if context is provided
-      if (input.eventContext) {
-        const token = await this.tokenRepository.findById(input.tokenId, transaction);
-        const account = await this.accountRepository.findById(input.accountId, transaction);
-
-        if (token && account) {
-          await this.userPortfolioEventService.createHoldingCreateEvent(
-            {
-              userId: input.userId,
-              holdingId: holding.id,
-              accountId: input.accountId,
-              institutionId: account.institutionId,
-              tokenId: input.tokenId,
-              tokenSymbol: token.symbol,
-              tokenName: token.name,
-              balance: input.balance,
-              price: input.eventContext.price || '0',
-              baseCurrencyId: input.eventContext.baseCurrencyId,
-              source: input.source || 'manual',
-            },
-            transaction
-          );
-        }
-      }
-
-      this.logDebug('Holding created with event', { holdingId: holding.id });
+      this.logDebug('Holding created', { holdingId: holding.id });
       return holding;
     } catch (error) {
       throw this.handleError(error, 'createHoldingWithEvent');
@@ -285,31 +255,6 @@ export class HoldingService extends BaseService {
 
       // Update the balance
       await this.holdingRepository.updateBalance(input.holdingId, input.balance, transaction);
-
-      // Create event if context is provided
-      if (input.eventContext) {
-        const token = await this.tokenRepository.findById(holding.tokenId, transaction);
-        const account = await this.accountRepository.findById(holding.accountId, transaction);
-
-        if (token && account) {
-          await this.userPortfolioEventService.createHoldingUpdateEvent(
-            {
-              userId: input.eventContext.userId,
-              holdingId: input.holdingId,
-              accountId: holding.accountId,
-              institutionId: account.institutionId,
-              tokenId: holding.tokenId,
-              tokenSymbol: token.symbol,
-              tokenName: token.name,
-              balance: input.balance,
-              price: input.eventContext.price || '0',
-              baseCurrencyId: input.eventContext.baseCurrencyId,
-              source: holding.source,
-            },
-            transaction
-          );
-        }
-      }
     } catch (error) {
       throw this.handleError(error, 'updateHoldingBalanceWithEvent');
     }
@@ -336,7 +281,7 @@ export class HoldingService extends BaseService {
   async updateHoldingWithEvent(
     holdingId: string,
     updates: Partial<Pick<Holding, 'balance' | 'isActive' | 'isHidden' | 'lastUpdated'>>,
-    eventContext?: {
+    _eventContext?: {
       userId: string;
       baseCurrencyId: string;
       price?: string;
@@ -350,31 +295,6 @@ export class HoldingService extends BaseService {
       }
 
       const updated = await this.holdingRepository.update(holdingId, updates, transaction);
-
-      // Create event if balance changed and eventContext is provided
-      if (updates.balance !== undefined && updated && eventContext) {
-        const token = await this.tokenRepository.findById(holding.tokenId, transaction);
-        const account = await this.accountRepository.findById(holding.accountId, transaction);
-
-        if (token && account) {
-          await this.userPortfolioEventService.createHoldingUpdateEvent(
-            {
-              userId: eventContext.userId,
-              holdingId,
-              accountId: holding.accountId,
-              institutionId: account.institutionId,
-              tokenId: holding.tokenId,
-              tokenSymbol: token.symbol,
-              tokenName: token.name,
-              balance: updates.balance,
-              price: eventContext.price || '0',
-              baseCurrencyId: eventContext.baseCurrencyId,
-              source: holding.source,
-            },
-            transaction
-          );
-        }
-      }
 
       return updated;
     } catch (error) {
@@ -399,7 +319,7 @@ export class HoldingService extends BaseService {
    */
   async deleteHoldingWithEvent(
     holdingId: string,
-    eventContext: {
+    _eventContext: {
       userId: string;
       baseCurrencyId: string;
       price?: string;
@@ -413,33 +333,8 @@ export class HoldingService extends BaseService {
         throw new Error(`Holding not found: ${holdingId}`);
       }
 
-      const token = await this.tokenRepository.findById(holding.tokenId, transaction);
-      const account = await this.accountRepository.findById(holding.accountId, transaction);
-
-      // Delete the holding
       await this.holdingRepository.deleteById(holdingId, transaction);
-
-      // Create delete event
-      if (token && account) {
-        await this.userPortfolioEventService.createHoldingDeleteEvent(
-          {
-            userId: eventContext.userId,
-            holdingId,
-            accountId: holding.accountId,
-            institutionId: account.institutionId,
-            tokenId: holding.tokenId,
-            tokenSymbol: token.symbol,
-            tokenName: token.name,
-            balance: holding.balance,
-            price: eventContext.price || '0',
-            baseCurrencyId: eventContext.baseCurrencyId,
-            source: holding.source,
-          },
-          transaction
-        );
-      }
-
-      this.logDebug('Holding deleted with event', { holdingId });
+      this.logDebug('Holding deleted', { holdingId });
     } catch (error) {
       throw this.handleError(error, 'deleteHoldingWithEvent');
     }
@@ -461,7 +356,7 @@ export class HoldingService extends BaseService {
    */
   async hideHoldingWithEvent(
     holdingId: string,
-    eventContext: {
+    _eventContext: {
       userId: string;
       baseCurrencyId: string;
       price?: string;
@@ -474,32 +369,8 @@ export class HoldingService extends BaseService {
         throw new Error(`Holding not found: ${holdingId}`);
       }
 
-      const token = await this.tokenRepository.findById(holding.tokenId, transaction);
-      const account = await this.accountRepository.findById(holding.accountId, transaction);
-
       await this.holdingRepository.markAsHidden(holdingId, transaction);
-
-      // Create delete event (hiding is treated as deletion for portfolio history)
-      if (token && account) {
-        await this.userPortfolioEventService.createHoldingDeleteEvent(
-          {
-            userId: eventContext.userId,
-            holdingId,
-            accountId: holding.accountId,
-            institutionId: account.institutionId,
-            tokenId: holding.tokenId,
-            tokenSymbol: token.symbol,
-            tokenName: token.name,
-            balance: holding.balance,
-            price: eventContext.price || '0',
-            baseCurrencyId: eventContext.baseCurrencyId,
-            source: holding.source,
-          },
-          transaction
-        );
-      }
-
-      this.logDebug('Holding hidden with event', { holdingId });
+      this.logDebug('Holding hidden', { holdingId });
     } catch (error) {
       throw this.handleError(error, 'hideHoldingWithEvent');
     }
@@ -521,7 +392,7 @@ export class HoldingService extends BaseService {
    */
   async unhideHoldingWithEvent(
     holdingId: string,
-    eventContext?: {
+    _eventContext?: {
       userId: string;
       baseCurrencyId: string;
       price?: string;
@@ -536,35 +407,10 @@ export class HoldingService extends BaseService {
 
       await this.holdingRepository.unhideHolding(holdingId, transaction);
 
-      // Create create event (unhiding is treated as creation for portfolio history)
-      if (eventContext) {
-        const token = await this.tokenRepository.findById(holding.tokenId, transaction);
-        const account = await this.accountRepository.findById(holding.accountId, transaction);
+      this.logDebug('Holding unhidden', { holdingId });
 
-        if (token && account) {
-          await this.userPortfolioEventService.createHoldingCreateEvent(
-            {
-              userId: eventContext.userId,
-              holdingId,
-              accountId: holding.accountId,
-              institutionId: account.institutionId,
-              tokenId: holding.tokenId,
-              tokenSymbol: token.symbol,
-              tokenName: token.name,
-              balance: holding.balance,
-              price: eventContext.price || '0',
-              baseCurrencyId: eventContext.baseCurrencyId,
-              source: holding.source,
-            },
-            transaction
-          );
-        }
-      }
-
-      this.logDebug('Holding unhidden with event', { holdingId });
-
-      // Return the updated holding
-      return await this.holdingRepository.findById(holdingId, transaction, false);
+      // Return the updated holding (includeHidden=true since it was just unhidden)
+      return await this.holdingRepository.findById(holdingId, transaction, true);
     } catch (error) {
       throw this.handleError(error, 'unhideHoldingWithEvent');
     }

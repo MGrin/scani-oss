@@ -5,7 +5,6 @@ import * as schema from '../database/schema';
 import { withTransaction } from '../database/transaction';
 import { TokenPriceRepository } from '../repositories/TokenPriceRepository';
 import { PricingService } from '../services/PricingService';
-import { UserPortfolioEventService } from '../services/UserPortfolioEventService';
 import { createComponentLogger } from '../utils/logger';
 
 const logger = createComponentLogger('use-case:create-holding');
@@ -38,7 +37,6 @@ export interface CreateHoldingResult {
 export class CreateHoldingUseCase {
   private readonly pricingService = Container.get(PricingService);
   private readonly tokenPriceRepository = Container.get(TokenPriceRepository);
-  private readonly userPortfolioEventService = Container.get(UserPortfolioEventService);
 
   async execute(
     input: CreateHoldingInput,
@@ -273,26 +271,10 @@ export class CreateHoldingUseCase {
           .limit(1);
 
         if (token && account) {
-          const latestPrice = await this.tokenPriceRepository.findLatestPrice(
+          const _latestPrice = await this.tokenPriceRepository.findLatestPrice(
             input.tokenId,
             baseCurrencyId
           );
-
-          await this.userPortfolioEventService.createHoldingCreateEvent({
-            userId,
-            holdingId: holding.id,
-            accountId: input.accountId,
-            institutionId: account.institutionId,
-            tokenId: input.tokenId,
-            tokenSymbol: token.symbol,
-            tokenName: token.name,
-            balance: holding.balance,
-            price: latestPrice?.price || '0',
-            baseCurrencyId,
-            timestamp: holding.createdAt,
-            source: 'holding_create',
-          });
-
           logger.debug(
             { holdingId: holding.id, tokenSymbol: token.symbol },
             'Created holding_create portfolio event'

@@ -138,6 +138,7 @@ export const accounts = pgTable(
       .references(() => accountTypes.id, { onDelete: 'restrict' }), // Reference to account_types
     description: text('description'),
     metadata: jsonb('metadata').notNull().default('{}'), // Store wallet addresses and chain-specific data
+    isHidden: boolean('is_hidden').notNull().default(false), // Hidden accounts excluded from UI but still synced
     isActive: boolean('is_active').notNull().default(true),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
@@ -222,95 +223,6 @@ export const tokenPrices = pgTable(
       table.timestamp.desc()
     ),
     timestampIdx: index('idx_token_prices_timestamp').on(table.timestamp.desc()),
-  })
-);
-
-// User portfolio events table - Pre-computed events for fast history queries
-// Events are created at write-time when holdings change or prices update
-export const userPortfolioEvents = pgTable(
-  'user_portfolio_events',
-  {
-    id: uuid('id').defaultRandom().primaryKey(),
-
-    // User and timestamp
-    userId: uuid('user_id')
-      .notNull()
-      .references(() => users.id, { onDelete: 'cascade' }),
-    timestamp: timestamp('timestamp', { withTimezone: true }).notNull(),
-
-    // Event type: 'holding_create', 'holding_update', 'holding_delete', 'price_update'
-    eventType: text('event_type').notNull(),
-
-    // Source of the event (blockchain, manual, exchange, file-import, etc.)
-    source: text('source'),
-
-    // Entity references for filtering
-    holdingId: uuid('holding_id').references(() => holdings.id, {
-      onDelete: 'cascade',
-    }),
-    accountId: uuid('account_id')
-      .notNull()
-      .references(() => accounts.id, { onDelete: 'cascade' }),
-    institutionId: uuid('institution_id').references(() => institutions.id, {
-      onDelete: 'set null',
-    }),
-
-    // Token info (denormalized to avoid JOINs at query time)
-    tokenId: uuid('token_id')
-      .notNull()
-      .references(() => tokens.id, { onDelete: 'cascade' }),
-    tokenSymbol: text('token_symbol').notNull(),
-    tokenName: text('token_name').notNull(),
-
-    // Values at event time (snapshot)
-    balance: text('balance').notNull(),
-    price: text('price').notNull(),
-    value: text('value').notNull(), // Pre-computed: balance * price
-
-    // Base currency for the price
-    baseCurrencyId: uuid('base_currency_id')
-      .notNull()
-      .references(() => tokens.id, { onDelete: 'restrict' }),
-
-    // Metadata
-    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-  },
-  (table) => ({
-    // Primary query pattern: events by user, sorted by time
-    userTimestampIdx: index('idx_user_portfolio_events_user_timestamp').on(
-      table.userId,
-      table.timestamp.desc()
-    ),
-    // Filter by holding
-    holdingIdx: index('idx_user_portfolio_events_holding').on(
-      table.userId,
-      table.holdingId,
-      table.timestamp.desc()
-    ),
-    // Filter by account
-    accountIdx: index('idx_user_portfolio_events_account').on(
-      table.userId,
-      table.accountId,
-      table.timestamp.desc()
-    ),
-    // Filter by institution
-    institutionIdx: index('idx_user_portfolio_events_institution').on(
-      table.userId,
-      table.institutionId,
-      table.timestamp.desc()
-    ),
-    // Filter by event type
-    eventTypeIdx: index('idx_user_portfolio_events_type').on(
-      table.userId,
-      table.eventType,
-      table.timestamp.desc()
-    ),
-    // Filter by token
-    tokenIdx: index('idx_user_portfolio_events_token').on(
-      table.userId,
-      table.tokenId,
-      table.timestamp.desc()
-    ),
   })
 );
 
@@ -734,9 +646,6 @@ export type NewHolding = typeof holdings.$inferInsert;
 
 export type TokenPrice = typeof tokenPrices.$inferSelect;
 export type NewTokenPrice = typeof tokenPrices.$inferInsert;
-
-export type UserPortfolioEvent = typeof userPortfolioEvents.$inferSelect;
-export type NewUserPortfolioEvent = typeof userPortfolioEvents.$inferInsert;
 
 export type UserWallet = typeof userWallets.$inferSelect;
 export type NewUserWallet = typeof userWallets.$inferInsert;

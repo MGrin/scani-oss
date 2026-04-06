@@ -13,7 +13,6 @@ import { HoldingDetail } from '@/pages/HoldingDetail';
 import { Holdings } from '@/pages/Holdings';
 import { InstitutionDetail } from '@/pages/InstitutionDetail';
 import { Institutions } from '@/pages/Institutions';
-import { PortfolioHistory } from '@/pages/PortfolioHistory';
 import { Settings } from '@/pages/Settings';
 import { VaultDetail } from '@/pages/VaultDetail';
 import { Vaults } from '@/pages/Vaults';
@@ -151,16 +150,6 @@ function App() {
               <ProtectedRoute>
                 <Layout>
                   <HoldingDetail />
-                </Layout>
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/portfolio-history"
-            element={
-              <ProtectedRoute>
-                <Layout>
-                  <PortfolioHistory />
                 </Layout>
               </ProtectedRoute>
             }

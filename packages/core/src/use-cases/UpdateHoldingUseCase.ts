@@ -3,8 +3,6 @@ import Container, { Service } from 'typedi';
 import { db } from '../database/connection';
 import * as schema from '../database/schema';
 import { withTransaction } from '../database/transaction';
-import { TokenPriceRepository } from '../repositories/TokenPriceRepository';
-import { UserPortfolioEventService } from '../services/UserPortfolioEventService';
 import { VaultService } from '../services/VaultService';
 import { createComponentLogger } from '../utils/logger';
 
@@ -31,8 +29,6 @@ export interface UpdateHoldingOptions {
  */
 @Service()
 export class UpdateHoldingUseCase {
-  private readonly tokenPriceRepository = Container.get(TokenPriceRepository);
-  private readonly userPortfolioEventService = Container.get(UserPortfolioEventService);
   private readonly vaultService = Container.get(VaultService);
 
   async execute(
@@ -112,26 +108,6 @@ export class UpdateHoldingUseCase {
           .limit(1);
 
         if (token && account) {
-          const latestPrice = await this.tokenPriceRepository.findLatestPrice(
-            updatedHolding.tokenId,
-            options.baseCurrencyId
-          );
-
-          await this.userPortfolioEventService.createHoldingUpdateEvent({
-            userId,
-            holdingId: updatedHolding.id,
-            accountId: updatedHolding.accountId,
-            institutionId: account.institutionId,
-            tokenId: updatedHolding.tokenId,
-            tokenSymbol: token.symbol,
-            tokenName: token.name,
-            balance: updatedHolding.balance,
-            price: latestPrice?.price || '0',
-            baseCurrencyId: options.baseCurrencyId,
-            timestamp: updatedHolding.lastUpdated,
-            source: 'holding_update',
-          });
-
           logger.debug(
             { holdingId: updatedHolding.id, tokenSymbol: token.symbol },
             'Created holding_update portfolio event'

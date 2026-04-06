@@ -23,7 +23,6 @@ import {
   DashboardService,
   HoldingService,
   InstitutionService,
-  PortfolioHistoryService,
   TokenService,
   UserContextService,
   UserService,
@@ -734,44 +733,6 @@ export const TypeImplementations = {
 /**
  * Portfolio History Implementations
  */
-export const PortfolioHistoryImplementations = {
-  async getEvents(
-    context: FeatureExecutionContext,
-    input: {
-      limit?: number;
-      offset?: number;
-      startDate?: string;
-      endDate?: string;
-    }
-  ) {
-    const portfolioHistoryService = Container.get(PortfolioHistoryService);
-    const startDate = input.startDate ? new Date(input.startDate) : undefined;
-    const endDate = input.endDate ? new Date(input.endDate) : undefined;
-    return await portfolioHistoryService.getHistoryEvents(context.userId, {
-      limit: input.limit ?? 20,
-      offset: input.offset ?? 0,
-      startDate,
-      endDate,
-    });
-  },
-
-  async getChart(
-    context: FeatureExecutionContext,
-    input: {
-      startDate: string;
-      endDate: string;
-      resolution?: 'best' | 'hourly' | 'daily' | 'weekly' | 'monthly';
-    }
-  ) {
-    const portfolioHistoryService = Container.get(PortfolioHistoryService);
-    return await portfolioHistoryService.getHistoryChart(
-      context.userId,
-      new Date(input.startDate),
-      new Date(input.endDate),
-      input.resolution ?? 'daily'
-    );
-  },
-};
 
 /**
  * Group Implementations

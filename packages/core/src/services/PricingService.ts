@@ -23,7 +23,6 @@ import { TokenPriceRepository } from '../repositories/TokenPriceRepository';
 import { TokenRepository } from '../repositories/TokenRepository';
 import { pricingCircuitBreaker } from '../utils/circuit-breaker';
 import { createComponentLogger, logger } from '../utils/logger';
-import { UserPortfolioEventService } from './UserPortfolioEventService';
 
 const pricingLogger = createComponentLogger('pricing');
 
@@ -77,7 +76,6 @@ export class PricingService {
   private readonly tokenRepository = Container.get(TokenRepository);
   private readonly tokenPriceRepository = Container.get(TokenPriceRepository);
   readonly _tokenTypeRepository = Container.get(TokenTypeRepository);
-  private readonly userPortfolioEventService = Container.get(UserPortfolioEventService);
 
   constructor() {
     const createFailureResultBound = this.createFailureResult.bind(this);
@@ -1448,35 +1446,10 @@ export class PricingService {
    * Events are created asynchronously and failures don't affect price caching.
    */
   private async createPortfolioEventsForPriceUpdates(
-    priceResults: ProviderPriceResult[],
-    baseCurrencyId: string
+    _priceResults: ProviderPriceResult[],
+    _baseCurrencyId: string
   ): Promise<void> {
-    let totalEventsCreated = 0;
-
-    for (const result of priceResults) {
-      try {
-        const eventsCreated = await this.userPortfolioEventService.createPriceUpdateEvents({
-          tokenId: result.tokenId,
-          price: result.price,
-          baseCurrencyId,
-          timestamp: result.timestamp,
-        });
-        totalEventsCreated += eventsCreated;
-      } catch (error) {
-        logger.debug(
-          { error, tokenId: result.tokenId },
-          'Failed to create price_update events for token'
-        );
-        // Continue with other tokens
-      }
-    }
-
-    if (totalEventsCreated > 0) {
-      logger.debug(
-        { totalEventsCreated, tokenCount: priceResults.length },
-        'Created portfolio price_update events'
-      );
-    }
+    // Portfolio events removed — no-op stub
   }
 
   private isLivePrice(timestamp: Date): boolean {
