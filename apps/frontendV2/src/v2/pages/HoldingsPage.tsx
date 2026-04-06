@@ -28,7 +28,7 @@ function formatMoney(value: number) {
   }).format(value);
 }
 
-function InstitutionIcon({ name, website }: { name: string; website?: string }) {
+function InstitutionIcon({ name, website }: { name: string; website?: string | null }) {
   const favicon = getFaviconUrl(website);
   return (
     <span className="inline-flex items-center gap-1.5 text-sm text-muted-foreground">
