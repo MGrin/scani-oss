@@ -77,7 +77,13 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
       style={{ width: collapsed ? SIDEBAR_COLLAPSED_WIDTH : SIDEBAR_WIDTH }}
     >
       {/* Header */}
-      <div className="flex items-center justify-between h-14 px-3 border-b border-border">
+      <div
+        className="flex items-center justify-between px-3 border-b border-border shrink-0"
+        style={{
+          paddingTop: 'env(safe-area-inset-top)',
+          minHeight: 'calc(3.5rem + env(safe-area-inset-top))',
+        }}
+      >
         {!collapsed && <span className="text-lg font-semibold tracking-tight">Scani</span>}
         <button
           type="button"

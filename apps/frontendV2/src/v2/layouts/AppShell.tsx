@@ -45,7 +45,13 @@ export function AppShell() {
       <Sheet open={mobileOpen} onOpenChange={setMobileOpen}>
         <SheetContent side="left" className="w-64 p-0">
           <div className="flex flex-col h-full">
-            <div className="flex items-center h-14 px-4 border-b border-border">
+            <div
+              className="flex items-center px-4 border-b border-border shrink-0"
+              style={{
+                paddingTop: 'env(safe-area-inset-top)',
+                minHeight: 'calc(3.5rem + env(safe-area-inset-top))',
+              }}
+            >
               <span className="text-lg font-semibold tracking-tight">Scani</span>
             </div>
             <nav className="flex-1 overflow-y-auto py-2 px-2 space-y-4">
