@@ -88,7 +88,7 @@ jobs:
     steps:
       - name: Trigger cron service deployments
         env:
-          RENDER_API_KEY: rnd_xOsOjnyuYWUSEj38VyB3e93VjAPu
+          RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
         run: |
           curl -s -X POST -H "Authorization: Bearer $RENDER_API_KEY" \
             https://api.render.com/v1/services/crn-d57rudmr433s73eta530/deploys

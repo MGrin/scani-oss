@@ -310,11 +310,6 @@ export class SyncWalletBalancesUseCase {
               true // includeScamTokens - prevents duplicate holdings for scam tokens
             );
 
-            // Batch fetch all tokens for existing holdings (within transaction)
-            const existingTokenIds = existingHoldings.map((h) => h.tokenId);
-            const existingTokens = await this.tokenService.getTokensByIds(existingTokenIds);
-            const tokensMap = new Map(existingTokens.map((t) => [t.id, t]));
-
             // Create a map of existing holdings by tokenId (not symbol — prevents duplicates)
             const existingHoldingsMap = new Map<string, (typeof existingHoldings)[0]>();
             for (const holding of existingHoldings) {
