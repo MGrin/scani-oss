@@ -1,4 +1,5 @@
 import {
+  ArrowLeft,
   Building2,
   FileUp,
   LayoutDashboard,
@@ -94,7 +95,10 @@ export function AppShell() {
                 </div>
               ))}
             </nav>
-            <div className="border-t border-border p-2">
+            <div
+              className="border-t border-border p-2 space-y-0.5"
+              style={{ paddingBottom: 'env(safe-area-inset-bottom, 0.5rem)' }}
+            >
               <NavLink
                 to={V2_ROUTES.settings}
                 onClick={() => setMobileOpen(false)}
@@ -110,6 +114,14 @@ export function AppShell() {
                 <Settings className="h-4 w-4 shrink-0" />
                 <span>Settings</span>
               </NavLink>
+              <a
+                href="/"
+                className="flex items-center gap-2 rounded-md px-2 py-2 text-sm text-muted-foreground hover:bg-accent/50 hover:text-foreground transition-colors"
+                onClick={() => setMobileOpen(false)}
+              >
+                <ArrowLeft className="h-4 w-4 shrink-0" />
+                <span>Classic UI</span>
+              </a>
             </div>
           </div>
         </SheetContent>

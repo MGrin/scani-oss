@@ -1,7 +1,9 @@
+import { Link } from 'react-router-dom';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { getFaviconUrl } from '@/lib/icons';
 import { cn } from '@/lib/utils';
+import { V2_ROUTES } from '../../lib/routes';
 
 interface TopHolding {
   id: string;
@@ -53,9 +55,10 @@ export function TopHoldingsList({ holdings, totalValue, currency }: TopHoldingsL
               const pct = totalValue > 0 ? (val / totalValue) * 100 : 0;
               const favicon = getFaviconUrl(holding.institutionWebsite);
               return (
-                <div
+                <Link
                   key={holding.id}
-                  className="flex items-center justify-between border-b last:border-b-0 pb-2"
+                  to={V2_ROUTES.holdingDetail(holding.id)}
+                  className="flex items-center justify-between border-b last:border-b-0 pb-2 -mx-2 px-2 py-1 rounded-md hover:bg-accent/50 transition-colors"
                 >
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2">
@@ -97,7 +100,7 @@ export function TopHoldingsList({ holdings, totalValue, currency }: TopHoldingsL
                     <p className="text-sm font-medium">{formatMoney(val, currency)}</p>
                     <p className="text-xs text-muted-foreground">{pct.toFixed(1)}%</p>
                   </div>
-                </div>
+                </Link>
               );
             })}
           </div>
