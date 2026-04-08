@@ -144,29 +144,53 @@ export function AccountDetailContent({ accountId, mode = 'panel' }: AccountDetai
                 (a: { value?: number }, b: { value?: number }) =>
                   (Number(b.value) || 0) - (Number(a.value) || 0)
               )
-              .slice(0, 15)
+              .slice(0, 20)
               .map(
                 (h: {
                   id: string;
-                  token?: { symbol: string };
+                  token?: { symbol: string; name?: string; typeCode?: string };
+                  balance?: string;
                   value?: number;
                   source?: string;
+                  isActive?: boolean;
                 }) => (
                   <button
                     type="button"
                     key={h.id}
-                    className="flex items-center justify-between text-sm w-full px-2 py-1.5 rounded-md hover:bg-accent/50 transition-colors text-left"
+                    className="flex items-center gap-3 w-full p-2 rounded-md hover:bg-accent/50 transition-colors text-left border border-transparent hover:border-border"
                     onClick={() => navigate(V2_ROUTES.holdingDetail(h.id))}
                   >
-                    <span className="flex items-center gap-2">
-                      <span className="font-medium">{h.token?.symbol || 'Unknown'}</span>
-                      {h.source && (
-                        <Badge variant="outline" className="text-[9px] px-1 py-0">
-                          {h.source}
-                        </Badge>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className="font-medium text-sm">{h.token?.symbol || 'Unknown'}</span>
+                        {h.token?.typeCode && (
+                          <Badge variant="secondary" className="text-[9px] px-1 py-0">
+                            {h.token.typeCode}
+                          </Badge>
+                        )}
+                        {h.source && h.source !== 'manual' && (
+                          <Badge variant="outline" className="text-[9px] px-1 py-0">
+                            {h.source}
+                          </Badge>
+                        )}
+                        {h.isActive === false && (
+                          <Badge variant="secondary" className="text-[9px] px-1 py-0">
+                            inactive
+                          </Badge>
+                        )}
+                      </div>
+                      {h.token?.name && (
+                        <p className="text-xs text-muted-foreground truncate mt-0.5">
+                          {h.token.name}
+                          {h.balance && (
+                            <span className="ml-1">
+                              &middot; {Number(h.balance).toLocaleString()} units
+                            </span>
+                          )}
+                        </p>
                       )}
-                    </span>
-                    <span className="text-muted-foreground tabular-nums">
+                    </div>
+                    <span className="text-sm font-semibold tabular-nums shrink-0">
                       {new Intl.NumberFormat('en-US', {
                         style: 'currency',
                         currency: currencySymbol,
@@ -177,8 +201,10 @@ export function AccountDetailContent({ accountId, mode = 'panel' }: AccountDetai
                   </button>
                 )
               )}
-            {holdings.length > 15 && (
-              <p className="text-xs text-muted-foreground px-2">+{holdings.length - 15} more</p>
+            {holdings.length > 20 && (
+              <p className="text-xs text-muted-foreground px-2 mt-1">
+                +{holdings.length - 20} more holdings
+              </p>
             )}
           </div>
         </div>

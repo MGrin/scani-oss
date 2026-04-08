@@ -109,22 +109,39 @@ export function InstitutionDetailContent({
           <Separator />
           <div>
             <p className="text-xs text-muted-foreground uppercase tracking-wider mb-2">Accounts</p>
-            <div className="space-y-2">
+            <div className="space-y-1">
               {institutionAccounts.map((account) => (
                 <Link
                   key={account.id}
                   to={V2_ROUTES.accountDetail(account.id)}
-                  className="flex items-center justify-between text-sm p-2 rounded-md hover:bg-accent/50 transition-colors"
+                  className="flex items-center gap-3 p-3 rounded-md hover:bg-accent/50 transition-colors border border-transparent hover:border-border"
                 >
-                  <div>
-                    <span className="font-medium">{account.name}</span>
-                    <span className="text-xs text-muted-foreground ml-2">
-                      {account.summary.holdingsCount} holdings
-                    </span>
+                  <div className="flex-1 min-w-0">
+                    <p className="font-medium text-sm truncate">{account.name}</p>
+                    <div className="flex items-center gap-2 mt-0.5">
+                      <span className="text-xs text-muted-foreground">
+                        {account.summary.holdingsCount} holding
+                        {account.summary.holdingsCount !== 1 ? 's' : ''}
+                      </span>
+                      {account.groups?.length > 0 && (
+                        <div className="flex gap-1">
+                          {account.groups.slice(0, 2).map((g) => (
+                            <span
+                              key={g.id}
+                              className="h-2 w-2 rounded-full"
+                              style={{ backgroundColor: g.color }}
+                              title={g.name}
+                            />
+                          ))}
+                        </div>
+                      )}
+                    </div>
                   </div>
-                  <span className="font-medium tabular-nums">
-                    {formatMoney(Number.parseFloat(account.summary.totalValue), currencySymbol)}
-                  </span>
+                  <div className="text-right shrink-0">
+                    <p className="text-sm font-semibold tabular-nums">
+                      {formatMoney(Number.parseFloat(account.summary.totalValue), currencySymbol)}
+                    </p>
+                  </div>
                 </Link>
               ))}
             </div>
