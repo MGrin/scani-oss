@@ -68,19 +68,19 @@ export function AssetAllocationChart() {
 
   return (
     <Card>
-      <CardHeader className="pb-2">
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <CardTitle className="text-base">Allocation</CardTitle>
-          <div className="flex gap-1">
+      <CardHeader className="pb-2 px-4 pt-4">
+        <div className="flex flex-wrap items-center justify-between gap-1">
+          <CardTitle className="text-sm font-semibold">Allocation</CardTitle>
+          <div className="flex gap-0.5 rounded-md border border-border p-0.5">
             {DIMENSION_OPTIONS.map((opt) => (
               <button
                 key={opt.value}
                 type="button"
                 onClick={() => setDimension(opt.value)}
-                className={`px-2 py-0.5 rounded text-[11px] transition-colors ${
+                className={`px-1.5 py-0.5 rounded-sm text-[10px] leading-tight transition-colors ${
                   dimension === opt.value
                     ? 'bg-primary text-primary-foreground'
-                    : 'text-muted-foreground hover:text-foreground hover:bg-accent'
+                    : 'text-muted-foreground hover:text-foreground'
                 }`}
               >
                 {opt.label}

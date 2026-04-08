@@ -1,5 +1,6 @@
 import type { AccountWihSumaryDTO } from '@scani/shared';
 import { Badge } from '@/components/ui/badge';
+import { Checkbox } from '@/components/ui/checkbox';
 import { useBaseCurrency } from '../../hooks/useBaseCurrency';
 
 interface AccountRowProps {
@@ -31,11 +32,10 @@ export function AccountRow({
   return (
     <>
       <td className="py-2 px-2">
-        <input
-          type="checkbox"
+        <Checkbox
           checked={isSelected}
-          onChange={() => onSelect(item.id)}
-          className="rounded border-border"
+          onCheckedChange={() => onSelect(item.id)}
+          className="h-4 w-4"
         />
       </td>
       <td className="py-2 px-2">

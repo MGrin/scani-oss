@@ -1,6 +1,7 @@
 import type { HoldingWithDetails } from '@scani/shared';
 import { Badge } from '@/components/ui/badge';
 import { CardInteractive } from '@/components/ui/card';
+import { Checkbox } from '@/components/ui/checkbox';
 import { getFaviconUrl } from '@/lib/icons';
 import { cn } from '@/lib/utils';
 import { useBaseCurrency } from '../../hooks/useBaseCurrency';
@@ -47,14 +48,11 @@ export function HoldingCard({ item, isSelected, onSelect }: HoldingCardProps) {
             {item.token.typeCode}
           </Badge>
         </div>
-        <input
-          type="checkbox"
+        <Checkbox
           checked={isSelected}
-          onChange={(e) => {
-            e.stopPropagation();
-            onSelect(item.id);
-          }}
-          className="rounded border-border"
+          onCheckedChange={() => onSelect(item.id)}
+          onClick={(e) => e.stopPropagation()}
+          className="h-4 w-4"
         />
       </div>
       <p className="text-xs text-muted-foreground truncate mb-3">{item.token.name}</p>
