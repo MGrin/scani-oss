@@ -211,7 +211,17 @@ export function HoldingDetailContent({ holdingId, mode = 'panel' }: HoldingDetai
         <DetailRow
           label="Price"
           value={
-            holding.price?.value ? formatMoney(Number(holding.price.value), currencySymbol) : 'N/A'
+            holding.price?.value ? (
+              <span className="flex flex-col items-end gap-0.5">
+                <span>{formatMoney(Number(holding.price.value), currencySymbol)}</span>
+                <span className="text-[10px] text-muted-foreground/70">
+                  {holding.price.timestamp ? formatRelativeTime(holding.price.timestamp) : ''}
+                  {holding.price.source ? ` · ${holding.price.source}` : ''}
+                </span>
+              </span>
+            ) : (
+              'N/A'
+            )
           }
         />
         <DetailRow label="Account" value={holding.account?.name || '-'} />

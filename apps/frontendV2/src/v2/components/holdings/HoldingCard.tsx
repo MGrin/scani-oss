@@ -29,6 +29,18 @@ function formatMoney(value: number, currency = 'USD') {
   }).format(value);
 }
 
+function formatRelativeTime(dateStr: string): string {
+  const diffMs = Date.now() - new Date(dateStr).getTime();
+  const diffMin = Math.floor(diffMs / 60000);
+  if (diffMin < 1) return 'now';
+  if (diffMin < 60) return `${diffMin}m`;
+  const diffHr = Math.floor(diffMin / 60);
+  if (diffHr < 24) return `${diffHr}h`;
+  const diffDays = Math.floor(diffHr / 24);
+  if (diffDays < 30) return `${diffDays}d`;
+  return new Date(dateStr).toLocaleDateString();
+}
+
 export function HoldingCard({ item, isSelected, onSelect }: HoldingCardProps) {
   const { symbol: currencySymbol } = useBaseCurrency();
   const favicon = getFaviconUrl(item.institution.website);
@@ -60,7 +72,14 @@ export function HoldingCard({ item, isSelected, onSelect }: HoldingCardProps) {
       <div className="flex items-center gap-3 mt-1 text-xs text-muted-foreground">
         <span>{item.amount.toLocaleString()} units</span>
         {item.price && (
-          <span>@ {formatMoney(Number.parseFloat(item.price.value), currencySymbol)}</span>
+          <span>
+            @ {formatMoney(Number.parseFloat(item.price.value), currencySymbol)}
+            {item.price.timestamp && (
+              <span className="text-muted-foreground/50 ml-1">
+                ({formatRelativeTime(item.price.timestamp)})
+              </span>
+            )}
+          </span>
         )}
       </div>
       {item.costBasis > 0 && (

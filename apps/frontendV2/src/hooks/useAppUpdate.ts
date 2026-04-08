@@ -146,24 +146,30 @@ export function useAppUpdate(): AppUpdateState {
     return () => clearInterval(interval);
   }, []);
 
-  const applyUpdate = useCallback(() => {
-    if (waitingWorker.current) {
-      // Tell the waiting SW to take over
-      waitingWorker.current.postMessage({ type: 'SKIP_WAITING' });
-      // The SW will call clients.claim() and send SW_ACTIVATED, which triggers reload
-      // Fallback reload in case message doesn't come through
-      setTimeout(() => window.location.reload(), 1000);
-    } else {
-      // No waiting worker — just clear caches and reload
-      if ('serviceWorker' in navigator) {
-        navigator.serviceWorker.ready.then((registration) => {
-          registration.active?.postMessage({ type: 'CLEAR_CACHE' });
-          setTimeout(() => window.location.reload(), 500);
-        });
-      } else {
-        window.location.reload();
+  const applyUpdate = useCallback(async () => {
+    try {
+      // Always clear all caches first to ensure fresh content on reload
+      if ('caches' in window) {
+        const cacheNames = await caches.keys();
+        await Promise.all(cacheNames.map((name) => caches.delete(name)));
       }
+
+      if (waitingWorker.current) {
+        // Tell the waiting SW to take over
+        waitingWorker.current.postMessage({ type: 'SKIP_WAITING' });
+      } else if ('serviceWorker' in navigator) {
+        // No waiting worker — also tell current SW to clear its caches
+        const registration = await navigator.serviceWorker.ready;
+        registration.active?.postMessage({ type: 'CLEAR_CACHE' });
+        // Trigger a SW update check
+        await registration.update();
+      }
+    } catch {
+      // Best effort — proceed with reload regardless
     }
+
+    // Hard reload bypassing cache
+    window.location.reload();
   }, []);
 
   const dismissUpdate = useCallback(() => {

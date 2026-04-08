@@ -31,9 +31,12 @@ export function useHoldingActions() {
   });
 
   const refreshPriceMutation = trpc.holdings.updatePrice.useMutation({
-    onSuccess: () => {
+    onSuccess: (result) => {
       utils.holdings.getWithDetails.invalidate();
-      showSuccess('Price refreshed');
+      utils.dashboard.getOverview.invalidate();
+      utils.dashboard.getAssetAllocation.invalidate();
+      const priceInfo = result.price ? `Price: ${result.price}` : 'Price updated';
+      showSuccess(result.source ? `${priceInfo} (${result.source})` : priceInfo);
     },
     onError: (err) => showError(err, 'Refreshing price'),
   });

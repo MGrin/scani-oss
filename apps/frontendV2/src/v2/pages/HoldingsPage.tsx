@@ -97,7 +97,19 @@ function getHoldingColumns(currency: string): ColumnDef<HoldingWithDetails>[] {
       sortable: true,
       render: (item) => (
         <span className="text-muted-foreground tabular-nums">
-          {item.price ? formatMoney(Number.parseFloat(item.price.value), currency) : '-'}
+          {item.price ? (
+            <span
+              title={
+                item.price.timestamp
+                  ? `Updated ${new Date(item.price.timestamp).toLocaleString()}${item.price.source ? ` · ${item.price.source}` : ''}`
+                  : undefined
+              }
+            >
+              {formatMoney(Number.parseFloat(item.price.value), currency)}
+            </span>
+          ) : (
+            '-'
+          )}
         </span>
       ),
     },
