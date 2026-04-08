@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { NumericFormat } from 'react-number-format';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -120,14 +121,16 @@ export function VaultFormDialog({ open, onOpenChange, vaultId }: VaultFormDialog
 
           <div className="space-y-2">
             <Label htmlFor="vault-target">Target Amount ({baseCurrency?.symbol || 'USD'})</Label>
-            <Input
+            <NumericFormat
               id="vault-target"
-              type="number"
               value={targetAmount}
-              onChange={(e) => setTargetAmount(e.target.value)}
-              placeholder="10000"
-              min="0"
-              step="100"
+              onValueChange={(values) => setTargetAmount(values.value)}
+              customInput={Input}
+              placeholder="10,000"
+              thousandSeparator=","
+              decimalSeparator="."
+              decimalScale={2}
+              allowNegative={false}
             />
           </div>
 

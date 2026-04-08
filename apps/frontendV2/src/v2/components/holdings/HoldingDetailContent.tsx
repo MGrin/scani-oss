@@ -1,5 +1,6 @@
 import { Pencil, RefreshCw, Trash2 } from 'lucide-react';
 import { useState } from 'react';
+import { NumericFormat } from 'react-number-format';
 import { useNavigate } from 'react-router-dom';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -142,12 +143,15 @@ export function HoldingDetailContent({ holdingId, mode = 'panel' }: HoldingDetai
           <p className="text-xs text-muted-foreground uppercase tracking-wider">Amount</p>
           {editingBalance ? (
             <div className="flex gap-2 mt-0.5">
-              <Input
+              <NumericFormat
                 value={balanceInput}
-                onChange={(e) => setBalanceInput(e.target.value)}
+                onValueChange={(values) => setBalanceInput(values.value)}
+                customInput={Input}
                 className="h-8 text-sm"
-                type="text"
-                inputMode="decimal"
+                thousandSeparator=","
+                decimalSeparator="."
+                decimalScale={8}
+                allowNegative={false}
                 autoFocus
                 onKeyDown={(e) => {
                   if (e.key === 'Enter') saveBalance();

@@ -12,7 +12,9 @@ import {
 } from 'lucide-react';
 import { useState } from 'react';
 import { NavLink, Outlet } from 'react-router-dom';
+import { PullToRefresh } from '@/components/PullToRefresh';
 import { Sheet, SheetContent } from '@/components/ui/sheet';
+import { trpc } from '@/lib/trpc';
 import { cn } from '@/lib/utils';
 import { CommandPalette } from '../components/command-palette/CommandPalette';
 import { useSidebarState } from '../hooks/useSidebarState';
@@ -35,6 +37,11 @@ const ICON_MAP: Record<string, LucideIcon> = {
 export function AppShell() {
   const { collapsed, toggle, mobileOpen, setMobileOpen } = useSidebarState();
   const [commandOpen, setCommandOpen] = useState(false);
+  const utils = trpc.useUtils();
+
+  const handleRefresh = async () => {
+    await utils.invalidate();
+  };
 
   return (
     <div className="flex h-dvh overflow-hidden bg-background">
@@ -114,14 +121,17 @@ export function AppShell() {
           onMobileMenuOpen={() => setMobileOpen(true)}
           onCommandPaletteOpen={() => setCommandOpen(true)}
         />
-        <main
-          className="flex-1 overflow-y-auto lg:pb-0"
-          style={{ paddingBottom: 'calc(3.5rem + env(safe-area-inset-bottom, 0px))' }}
-        >
-          <div className="mx-auto max-w-7xl px-4 sm:px-6 py-4 sm:py-6">
-            <Outlet />
-          </div>
-        </main>
+        <PullToRefresh onRefresh={handleRefresh}>
+          <main
+            className="flex-1 overflow-y-auto lg:pb-0"
+            style={{ paddingBottom: 'calc(3.5rem + env(safe-area-inset-bottom, 0px))' }}
+            data-scrollable="true"
+          >
+            <div className="mx-auto max-w-7xl px-4 sm:px-6 py-4 sm:py-6">
+              <Outlet />
+            </div>
+          </main>
+        </PullToRefresh>
       </div>
 
       {/* Mobile bottom nav */}

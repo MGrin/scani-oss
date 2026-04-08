@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { NumericFormat } from 'react-number-format';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -133,14 +134,19 @@ export function AttachHoldingDialog({ open, onOpenChange, vaultId }: AttachHoldi
 
           <div className="space-y-2">
             <Label htmlFor="attach-percentage">Percentage (0-100)</Label>
-            <Input
+            <NumericFormat
               id="attach-percentage"
-              type="number"
               value={percentage}
-              onChange={(e) => setPercentage(e.target.value)}
-              min="0.01"
-              max="100"
-              step="1"
+              onValueChange={(values) => setPercentage(values.value)}
+              customInput={Input}
+              placeholder="100"
+              decimalScale={2}
+              allowNegative={false}
+              isAllowed={(values) => {
+                const val = Number(values.value);
+                return values.value === '' || (val >= 0 && val <= 100);
+              }}
+              suffix="%"
             />
           </div>
         </div>

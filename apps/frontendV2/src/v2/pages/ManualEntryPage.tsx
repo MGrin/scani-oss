@@ -1,5 +1,6 @@
 import { ArrowLeft, Globe, Loader2, Plus, Trash2 } from 'lucide-react';
 import { useCallback, useMemo, useState } from 'react';
+import { NumericFormat } from 'react-number-format';
 import { Link, useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -594,16 +595,19 @@ export function ManualEntryPage() {
                 />
               </div>
               <div className="w-28 shrink-0">
-                <Input
+                <NumericFormat
                   value={entry.balance}
-                  onChange={(e) =>
+                  onValueChange={(values) =>
                     setHoldings((prev) =>
-                      prev.map((h, i) => (i === index ? { ...h, balance: e.target.value } : h))
+                      prev.map((h, i) => (i === index ? { ...h, balance: values.value } : h))
                     )
                   }
-                  placeholder="Amount"
-                  type="text"
-                  inputMode="decimal"
+                  placeholder="0.00"
+                  customInput={Input}
+                  thousandSeparator=","
+                  decimalSeparator="."
+                  decimalScale={8}
+                  allowNegative={false}
                 />
               </div>
               {holdings.length > 1 && (
