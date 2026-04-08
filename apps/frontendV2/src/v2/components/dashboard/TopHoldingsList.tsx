@@ -54,10 +54,12 @@ export function TopHoldingsList({ holdings, totalValue, currency }: TopHoldingsL
               const val = Number.parseFloat(holding.value);
               const pct = totalValue > 0 ? (val / totalValue) * 100 : 0;
               const favicon = getFaviconUrl(holding.institutionWebsite);
+              // Dashboard API appends "-index" to holding IDs, strip it to get the real UUID
+              const holdingId = holding.id.replace(/-\d+$/, '');
               return (
                 <Link
                   key={holding.id}
-                  to={V2_ROUTES.holdingDetail(holding.id)}
+                  to={V2_ROUTES.holdingDetail(holdingId)}
                   className="flex items-center justify-between border-b last:border-b-0 pb-2 -mx-2 px-2 py-1 rounded-md hover:bg-accent/50 transition-colors"
                 >
                   <div className="flex-1 min-w-0">

@@ -8,16 +8,19 @@ interface FilterPillProps {
 
 export function FilterPill({ label, value, onRemove }: FilterPillProps) {
   return (
-    <span className="inline-flex items-center gap-1 rounded-full border border-border bg-muted/50 pl-2.5 pr-1 py-0.5 text-xs">
-      <span className="text-muted-foreground">{label}:</span>
-      <span className="font-medium truncate max-w-[120px]">{value}</span>
+    <span className="inline-flex items-center rounded-full border border-border bg-muted/50 pl-2 pr-0.5 py-0.5 text-xs leading-none">
+      <span className="text-muted-foreground mr-1">{label}:</span>
+      <span className="font-medium truncate max-w-[100px]">{value}</span>
       <button
         type="button"
-        onClick={onRemove}
-        className="ml-0.5 rounded-full p-0.5 hover:bg-destructive/20 hover:text-destructive transition-colors"
+        onClick={(e) => {
+          e.stopPropagation();
+          onRemove();
+        }}
+        className="ml-1 rounded-full p-[3px] hover:bg-destructive/20 hover:text-destructive transition-colors flex items-center justify-center"
         aria-label={`Remove ${label} filter`}
       >
-        <X className="h-2.5 w-2.5" />
+        <X className="h-3 w-3" />
       </button>
     </span>
   );

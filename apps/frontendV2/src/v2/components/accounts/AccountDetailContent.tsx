@@ -161,7 +161,7 @@ export function AccountDetailContent({ accountId, mode = 'panel' }: AccountDetai
                     onClick={() => navigate(V2_ROUTES.holdingDetail(h.id))}
                   >
                     <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-1.5">
                         <span className="font-medium text-sm">{h.token?.symbol || 'Unknown'}</span>
                         {h.token?.typeCode && (
                           <Badge variant="secondary" className="text-[9px] px-1 py-0">
@@ -179,16 +179,12 @@ export function AccountDetailContent({ accountId, mode = 'panel' }: AccountDetai
                           </Badge>
                         )}
                       </div>
-                      {h.token?.name && (
-                        <p className="text-xs text-muted-foreground truncate mt-0.5">
-                          {h.token.name}
-                          {h.balance && (
-                            <span className="ml-1">
-                              &middot; {Number(h.balance).toLocaleString()} units
-                            </span>
-                          )}
-                        </p>
-                      )}
+                      <p className="text-xs text-muted-foreground truncate mt-0.5">
+                        {h.balance
+                          ? `${Number(h.balance).toLocaleString()} ${h.token?.symbol || ''}`
+                          : ''}
+                        {h.token?.name ? ` · ${h.token.name}` : ''}
+                      </p>
                     </div>
                     <span className="text-sm font-semibold tabular-nums shrink-0">
                       {new Intl.NumberFormat('en-US', {
