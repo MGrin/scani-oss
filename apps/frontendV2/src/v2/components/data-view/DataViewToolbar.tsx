@@ -1,4 +1,4 @@
-import { Plus, Search, XCircle } from 'lucide-react';
+import { ArrowDownUp, Layers, Plus, Search, XCircle } from 'lucide-react';
 import { useEffect, useState } from 'react';
 
 import { Button } from '@/components/ui/button';
@@ -74,10 +74,10 @@ export function DataViewToolbar({
   const availableFilterDefs = filterDefs?.filter((def) => !filters[def.key]) ?? [];
 
   return (
-    <div className="space-y-3">
-      <div className="flex flex-wrap items-center gap-2">
-        {/* Search */}
-        <div className="relative w-full sm:w-auto sm:min-w-[200px] sm:flex-1">
+    <div className="space-y-2">
+      {/* Row 1: Search + Filter button */}
+      <div className="flex items-center gap-2">
+        <div className="relative flex-1">
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <Input
             placeholder="Search..."
@@ -87,16 +87,15 @@ export function DataViewToolbar({
           />
         </div>
 
-        {/* Add filter */}
         {availableFilterDefs.length > 0 && (
           <Popover>
             <PopoverTrigger asChild>
-              <Button variant="outline" size="sm">
-                <Plus className="mr-1 h-4 w-4" />
+              <Button variant="outline" size="sm" className="shrink-0">
+                <Plus className="mr-1 h-3.5 w-3.5" />
                 Filter
               </Button>
             </PopoverTrigger>
-            <PopoverContent align="start" className="w-56 p-2">
+            <PopoverContent align="end" className="w-56 p-2">
               {availableFilterDefs.map((def) => (
                 <div key={def.key} className="mb-2 last:mb-0">
                   <p className="mb-1 px-1 text-xs font-medium text-muted-foreground">{def.label}</p>
@@ -115,12 +114,15 @@ export function DataViewToolbar({
             </PopoverContent>
           </Popover>
         )}
+      </div>
 
-        {/* Sort */}
+      {/* Row 2: Sort + Group + View toggle */}
+      <div className="flex items-center gap-2">
         {sortDefs && sortDefs.length > 0 && (
           <Select value={sortField} onValueChange={onSetSort}>
-            <SelectTrigger className="w-[calc(50%-4px)] sm:w-[160px]">
-              <SelectValue placeholder="Sort by..." />
+            <SelectTrigger className="h-8 w-auto min-w-0 flex-1 sm:flex-none sm:w-[140px] text-xs">
+              <ArrowDownUp className="h-3 w-3 mr-1 shrink-0 text-muted-foreground" />
+              <SelectValue placeholder="Sort" />
             </SelectTrigger>
             <SelectContent>
               {sortDefs.map((def) => (
@@ -132,14 +134,14 @@ export function DataViewToolbar({
           </Select>
         )}
 
-        {/* Group by */}
         {groupByDefs && groupByDefs.length > 0 && (
           <Select
             value={groupBy || '_none'}
             onValueChange={(v) => onSetGroupBy(v === '_none' ? '' : v)}
           >
-            <SelectTrigger className="w-[calc(50%-4px)] sm:w-[160px]">
-              <SelectValue placeholder="Group by..." />
+            <SelectTrigger className="h-8 w-auto min-w-0 flex-1 sm:flex-none sm:w-[140px] text-xs">
+              <Layers className="h-3 w-3 mr-1 shrink-0 text-muted-foreground" />
+              <SelectValue placeholder="Group" />
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="_none">No grouping</SelectItem>
@@ -152,13 +154,14 @@ export function DataViewToolbar({
           </Select>
         )}
 
-        {/* View toggle */}
-        <ViewToggle viewMode={viewMode} onChange={onSetViewMode} />
+        <div className="ml-auto">
+          <ViewToggle viewMode={viewMode} onChange={onSetViewMode} />
+        </div>
       </div>
 
-      {/* Active filters + count */}
+      {/* Row 3: Active filters + count */}
       {(activeFilterEntries.length > 0 || hasActiveFilters) && (
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="flex flex-wrap items-center gap-1.5">
           {activeFilterEntries.map(([key, value]) => {
             const def = filterDefs?.find((d) => d.key === key);
             const optLabel = def?.options.find((o) => o.value === value)?.label ?? value;
@@ -172,13 +175,18 @@ export function DataViewToolbar({
             );
           })}
           {hasActiveFilters && (
-            <Button variant="ghost" size="sm" onClick={onClearFilters} className="h-7 px-2 text-xs">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={onClearFilters}
+              className="h-6 px-2 text-[11px] text-muted-foreground"
+            >
               <XCircle className="mr-1 h-3 w-3" />
               Clear all
             </Button>
           )}
-          <span className="ml-auto text-xs text-muted-foreground">
-            {filteredCount} of {totalCount} items
+          <span className="ml-auto text-[11px] text-muted-foreground">
+            {filteredCount} of {totalCount}
           </span>
         </div>
       )}
