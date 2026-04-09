@@ -19,6 +19,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
+import { showError } from '@/hooks/use-toast';
 import { trpc } from '@/lib/trpc';
 import { V2_ROUTES } from '../lib/routes';
 
@@ -41,14 +42,83 @@ interface ParsedResult {
 
 const AUTO_DETECT_VALUE = '__auto__';
 
+const IMAGE_EXTENSIONS = ['png', 'jpg', 'jpeg', 'gif', 'webp'];
+
+function arrayBufferToBase64(buffer: ArrayBuffer): string {
+  const bytes = new Uint8Array(buffer);
+  let binary = '';
+  for (let i = 0; i < bytes.byteLength; i++) {
+    binary += String.fromCharCode(bytes[i]!);
+  }
+  return btoa(binary);
+}
+
+function isImageFile(filename: string): boolean {
+  const ext = filename.split('.').pop()?.toLowerCase() || '';
+  return IMAGE_EXTENSIONS.includes(ext);
+}
+
+// biome-ignore lint/suspicious/noExplicitAny: screenshot API response shape
+function ScreenshotResultView({ data }: { data: any }) {
+  const firstResult = data?.results?.[0];
+  if (!firstResult?.success || !firstResult.data) {
+    return (
+      <p className="text-sm text-destructive">
+        {firstResult?.error || 'Failed to extract holdings from screenshot'}
+      </p>
+    );
+  }
+  const holdings = firstResult.data.holdings as Array<{
+    symbol: string;
+    name?: string;
+    amount?: string;
+    value?: string;
+    confidence?: number;
+  }>;
+  return (
+    <div className="space-y-2">
+      {firstResult.data.overallConfidence !== undefined && (
+        <p className="text-xs text-muted-foreground mb-3">
+          Confidence: {(firstResult.data.overallConfidence * 100).toFixed(0)}%
+        </p>
+      )}
+      {holdings.map((h, i) => (
+        <div
+          key={`h-${i}`}
+          className="flex items-center justify-between text-sm p-2 rounded-md border border-border"
+        >
+          <div>
+            <span className="font-medium">{h.symbol}</span>
+            {h.name && <span className="text-muted-foreground ml-2 text-xs">{h.name}</span>}
+            {h.amount && (
+              <span className="text-muted-foreground ml-2 text-xs">{h.amount} units</span>
+            )}
+          </div>
+          <div className="text-right">
+            {h.value && <span className="font-medium">{h.value}</span>}
+            {h.confidence !== undefined && (
+              <span className="text-[10px] text-muted-foreground ml-2">
+                {(h.confidence * 100).toFixed(0)}%
+              </span>
+            )}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 export function FileImportPage() {
   const { data: templates } = trpc.fileImport.getTemplates.useQuery();
   const parseMutation = trpc.fileImport.parse.useMutation();
+  const screenshotMutation = trpc.screenshots.parseScreenshots.useMutation();
+  const [isProcessing, setIsProcessing] = useState(false);
 
   const [step, setStep] = useState<Step>('upload');
   const [selectedTemplate, setSelectedTemplate] = useState<string>(AUTO_DETECT_VALUE);
   const [fileName, setFileName] = useState('');
   const [result, setResult] = useState<ParsedResult | null>(null);
+  const [screenshotResult, setScreenshotResult] = useState<unknown>(null);
 
   const handleFileSelect = useCallback(
     async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -56,13 +126,24 @@ export function FileImportPage() {
       if (!file) return;
 
       setFileName(file.name);
+      setIsProcessing(true);
 
-      const reader = new FileReader();
-      reader.onload = async (ev) => {
-        const content = ev.target?.result as string;
-        const base64 = btoa(content);
+      try {
+        if (isImageFile(file.name)) {
+          // Image file → use screenshots API
+          const buffer = await file.arrayBuffer();
+          const base64 = arrayBufferToBase64(buffer);
 
-        try {
+          const parsed = await screenshotMutation.mutateAsync({
+            files: [{ filename: file.name, data: base64 }],
+          });
+          setScreenshotResult(parsed);
+          setStep('preview');
+        } else {
+          // CSV/OFX/text file → use fileImport API
+          const text = await file.text();
+          const base64 = btoa(unescape(encodeURIComponent(text)));
+
           const parsed = await parseMutation.mutateAsync({
             content: base64,
             filename: file.name,
@@ -70,13 +151,14 @@ export function FileImportPage() {
           });
           setResult(parsed as ParsedResult);
           setStep('preview');
-        } catch (_err) {
-          // Error handled by mutation state
         }
-      };
-      reader.readAsText(file);
+      } catch (err) {
+        showError(err, 'Processing file');
+      } finally {
+        setIsProcessing(false);
+      }
     },
-    [parseMutation, selectedTemplate]
+    [parseMutation, screenshotMutation, selectedTemplate]
   );
 
   return (
@@ -124,21 +206,23 @@ export function FileImportPage() {
               <label className="flex flex-col items-center justify-center border-2 border-dashed border-border rounded-lg p-8 cursor-pointer hover:border-primary/50 transition-colors">
                 <Upload className="h-10 w-10 text-muted-foreground mb-3" />
                 <p className="text-sm font-medium">
-                  {parseMutation.isPending ? 'Processing...' : 'Click to upload or drag and drop'}
+                  {isProcessing ? 'Processing...' : 'Click to upload or drag and drop'}
                 </p>
                 <p className="text-xs text-muted-foreground mt-1">
-                  CSV, OFX, QFX, or screenshot images (max 3MB)
+                  CSV, OFX, QFX, PNG, JPG, or PDF (max 5MB)
                 </p>
                 <input
                   type="file"
                   accept=".csv,.ofx,.qfx,.tsv,.png,.jpg,.jpeg,.webp"
                   className="hidden"
                   onChange={handleFileSelect}
-                  disabled={parseMutation.isPending}
+                  disabled={isProcessing}
                 />
               </label>
-              {parseMutation.isError && (
-                <p className="text-sm text-destructive mt-3">{parseMutation.error.message}</p>
+              {(parseMutation.isError || screenshotMutation.isError) && (
+                <p className="text-sm text-destructive mt-3">
+                  {parseMutation.error?.message || screenshotMutation.error?.message}
+                </p>
               )}
             </CardContent>
           </Card>
@@ -232,6 +316,39 @@ export function FileImportPage() {
               onClick={() => {
                 setStep('upload');
                 setResult(null);
+              }}
+            >
+              Upload Different File
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {/* Screenshot result preview */}
+      {step === 'preview' && screenshotResult !== null && !result && (
+        <div className="space-y-4">
+          <div className="flex items-center gap-3 flex-wrap">
+            <Badge variant="outline">Screenshot</Badge>
+            <span className="text-sm text-muted-foreground">
+              AI-extracted holdings from {fileName}
+            </span>
+          </div>
+
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">Extracted Holdings</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <ScreenshotResultView data={screenshotResult} />
+            </CardContent>
+          </Card>
+
+          <div className="flex gap-3">
+            <Button
+              variant="outline"
+              onClick={() => {
+                setStep('upload');
+                setScreenshotResult(null);
               }}
             >
               Upload Different File
