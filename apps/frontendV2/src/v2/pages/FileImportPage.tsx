@@ -5,13 +5,6 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
-import {
   Table,
   TableBody,
   TableCell,
@@ -39,8 +32,6 @@ interface ParsedResult {
   warnings: string[];
   totalCount: number;
 }
-
-const AUTO_DETECT_VALUE = '__auto__';
 
 const IMAGE_EXTENSIONS = ['png', 'jpg', 'jpeg', 'gif', 'webp'];
 
@@ -109,13 +100,11 @@ function ScreenshotResultView({ data }: { data: any }) {
 }
 
 export function FileImportPage() {
-  const { data: templates } = trpc.fileImport.getTemplates.useQuery();
   const parseMutation = trpc.fileImport.parse.useMutation();
   const screenshotMutation = trpc.screenshots.parseScreenshots.useMutation();
   const [isProcessing, setIsProcessing] = useState(false);
 
   const [step, setStep] = useState<Step>('upload');
-  const [selectedTemplate, setSelectedTemplate] = useState<string>(AUTO_DETECT_VALUE);
   const [fileName, setFileName] = useState('');
   const [result, setResult] = useState<ParsedResult | null>(null);
   const [screenshotResult, setScreenshotResult] = useState<unknown>(null);
@@ -147,7 +136,6 @@ export function FileImportPage() {
           const parsed = await parseMutation.mutateAsync({
             content: base64,
             filename: file.name,
-            bankTemplate: selectedTemplate !== AUTO_DETECT_VALUE ? selectedTemplate : undefined,
           });
           setResult(parsed as ParsedResult);
           setStep('preview');
@@ -158,7 +146,7 @@ export function FileImportPage() {
         setIsProcessing(false);
       }
     },
-    [parseMutation, screenshotMutation, selectedTemplate]
+    [parseMutation, screenshotMutation]
   );
 
   return (
@@ -178,28 +166,6 @@ export function FileImportPage() {
 
       {step === 'upload' && (
         <div className="space-y-4">
-          {/* Template selector */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-base">Bank Template (optional)</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <Select value={selectedTemplate} onValueChange={setSelectedTemplate}>
-                <SelectTrigger className="max-w-xs">
-                  <SelectValue placeholder="Auto-detect" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value={AUTO_DETECT_VALUE}>Auto-detect</SelectItem>
-                  {templates?.map((t) => (
-                    <SelectItem key={t.key} value={t.key}>
-                      {t.key.charAt(0).toUpperCase() + t.key.slice(1)}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </CardContent>
-          </Card>
-
           {/* Upload zone */}
           <Card>
             <CardContent className="p-8">
