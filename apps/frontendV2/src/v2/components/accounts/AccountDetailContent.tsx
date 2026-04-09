@@ -132,6 +132,21 @@ export function AccountDetailContent({ accountId, mode = 'panel' }: AccountDetai
         </div>
       </div>
 
+      {/* Sync info */}
+      {(() => {
+        const meta = account.metadata as Record<string, string> | null | undefined;
+        const lastSync = meta?.lastSync;
+        if (!lastSync) return null;
+        return (
+          <div className="rounded-md bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
+            <span>Last synced: </span>
+            <span className="font-medium text-foreground">
+              {new Date(lastSync).toLocaleString()}
+            </span>
+          </div>
+        );
+      })()}
+
       <Separator />
 
       {/* Holdings list */}

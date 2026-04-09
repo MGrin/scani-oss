@@ -345,6 +345,44 @@ export class ImportKrakenAccountsUseCase {
                 }
               }
 
+              // Zero out holdings that exist in our DB but were NOT in the Kraken response
+              try {
+                const existingHoldings = await this.holdingRepository.findByAccount(
+                  accountId,
+                  tx,
+                  true,
+                  true
+                );
+                const seenExternalIds = new Set(
+                  holdingsResult.holdings.map((h) => h.externalTokenId || h.symbol)
+                );
+                for (const existing of existingHoldings) {
+                  if (existing.source !== 'import_kraken') continue;
+                  if (existing.externalId && seenExternalIds.has(existing.externalId)) continue;
+                  if (existing.balance === '0') continue;
+
+                  await this.holdingService.updateHoldingBalanceWithEvent(
+                    {
+                      holdingId: existing.id,
+                      balance: '0',
+                      eventContext: user.baseCurrencyId
+                        ? { userId: input.userId, baseCurrencyId: user.baseCurrencyId }
+                        : undefined,
+                    },
+                    tx
+                  );
+                  logger.info(
+                    { holdingId: existing.id, externalId: existing.externalId },
+                    'Zeroed out holding not present in Kraken response'
+                  );
+                }
+              } catch (error) {
+                logger.warn(
+                  { error: error instanceof Error ? error.message : String(error) },
+                  'Failed to zero out stale holdings (non-critical)'
+                );
+              }
+
               // Update account metadata with lastSync timestamp for existing accounts
               // (New accounts already have lastSync set during creation)
               if (existing) {

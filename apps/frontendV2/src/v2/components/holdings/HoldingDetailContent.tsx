@@ -262,6 +262,16 @@ export function HoldingDetailContent({ holdingId, mode = 'panel' }: HoldingDetai
           label="Last Updated"
           value={holding.lastUpdated ? formatRelativeTime(holding.lastUpdated) : '-'}
         />
+        {holding.source && holding.source !== 'manual' && (
+          <DetailRow
+            label="Data Source"
+            value={
+              <Badge variant="outline" className="text-xs">
+                {holding.source.replace('import_', '').replace('_', ' ')}
+              </Badge>
+            }
+          />
+        )}
       </div>
 
       {holding.groups && holding.groups.length > 0 && (
