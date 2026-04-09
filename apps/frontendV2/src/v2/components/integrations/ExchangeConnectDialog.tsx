@@ -207,6 +207,7 @@ export function ExchangeConnectDialog({
 
   // biome-ignore lint/suspicious/noExplicitAny: Dynamic tRPC router access
   const integrations = trpc.integrations as any;
+  const utils = trpc.useUtils();
 
   const help = API_KEY_HELP[exchange.key];
   const isMobile = isMobileDevice();
@@ -243,10 +244,11 @@ export function ExchangeConnectDialog({
 
       await router.validateKeys.mutate(input);
       setStatus('success');
-      setTimeout(() => {
-        onOpenChange(false);
-        resetForm();
-      }, 1500);
+      // Invalidate queries so new holdings/accounts show up
+      utils.holdings.getWithDetails.invalidate();
+      utils.accounts.getByUserIdWithSummary.invalidate();
+      utils.institutions.getByUserIdWithSummary.invalidate();
+      utils.dashboard.getOverview.invalidate();
     } catch (err) {
       setErrorMsg(err instanceof Error ? err.message : 'Connection failed');
       setStatus('error');
