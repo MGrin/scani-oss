@@ -1,9 +1,10 @@
-import { ArrowLeft, Check, Loader2, Upload } from 'lucide-react';
-import { useCallback, useMemo, useState } from 'react';
+import { ArrowLeft, ArrowRight, Check, Loader2, Plus, Upload } from 'lucide-react';
+import { useCallback, useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
 import {
   Select,
   SelectContent,
@@ -23,7 +24,7 @@ import { showError, showSuccess } from '@/hooks/use-toast';
 import { trpc } from '@/lib/trpc';
 import { V2_ROUTES } from '../lib/routes';
 
-type Step = 'upload' | 'processing' | 'preview' | 'saving';
+type Step = 'upload' | 'processing' | 'preview' | 'account';
 
 interface ParsedTransaction {
   date: string;
@@ -36,9 +37,12 @@ interface ParsedTransaction {
 interface ExtractedHolding {
   symbol: string;
   name?: string;
-  amount?: string;
-  value?: string;
-  confidence?: number;
+  balance: string;
+  confidence: number;
+  tokenId?: string;
+  holdingId?: string;
+  existingBalance?: string;
+  notes?: string;
 }
 
 const IMAGE_EXTENSIONS = ['png', 'jpg', 'jpeg', 'gif', 'webp'];
@@ -62,16 +66,31 @@ export function FileImportPage() {
   const navigate = useNavigate();
   const parseMutation = trpc.fileImport.parse.useMutation();
   const screenshotMutation = trpc.screenshots.parseScreenshots.useMutation();
+  const utils = trpc.useUtils();
 
-  const { data: accounts } = trpc.accounts.getAll.useQuery();
-  const { data: tokens } = trpc.tokens.getAll.useQuery();
+  const { data: accountsData } = trpc.accounts.getByUserIdWithSummary.useQuery();
+  const { data: accountTypes } = trpc.accountTypes.getAll.useQuery();
+  const { data: institutions } = trpc.institutions.getByUserId.useQuery();
 
   const createMutation = trpc.batchOperations.createHoldingsWithDependencies.useMutation({
     onSuccess: () => {
       showSuccess('Holdings imported successfully');
+      utils.holdings.getWithDetails.invalidate();
+      utils.accounts.getByUserIdWithSummary.invalidate();
+      utils.dashboard.getOverview.invalidate();
       navigate(V2_ROUTES.holdings);
     },
     onError: (err) => showError(err, 'Saving holdings'),
+  });
+
+  const updateBatchMutation = trpc.batchOperations.updateHoldingsBatch.useMutation({
+    onSuccess: () => {
+      showSuccess('Holdings updated successfully');
+      utils.holdings.getWithDetails.invalidate();
+      utils.dashboard.getOverview.invalidate();
+      navigate(V2_ROUTES.holdings);
+    },
+    onError: (err) => showError(err, 'Updating holdings'),
   });
 
   const [step, setStep] = useState<Step>('upload');
@@ -93,18 +112,30 @@ export function FileImportPage() {
   const [overallConfidence, setOverallConfidence] = useState<number | null>(null);
   const [screenshotError, setScreenshotError] = useState<string | null>(null);
 
-  // Account selection for saving
+  // Account selection
   const [selectedAccountId, setSelectedAccountId] = useState('');
+  const [accountSearch, setAccountSearch] = useState('');
+  const [newAccountName, setNewAccountName] = useState('');
+  const [newAccountTypeId, setNewAccountTypeId] = useState('');
+  const [newAccountInstitutionId, setNewAccountInstitutionId] = useState('');
 
-  const tokenMap = useMemo(() => {
-    const map = new Map<string, string>();
-    if (tokens) {
-      for (const t of tokens) {
-        map.set(t.symbol.toUpperCase(), t.id);
-      }
+  const accounts = accountsData ?? [];
+  const filteredAccounts = accountSearch
+    ? accounts.filter((a) => a.name.toLowerCase().includes(accountSearch.toLowerCase()))
+    : accounts;
+
+  // Categorize holdings into new vs updates
+  const newHoldings = extractedHoldings.filter((h) => h.tokenId && !h.holdingId);
+  const updateHoldings = extractedHoldings.filter((h) => h.holdingId);
+  const unmatchedHoldings = extractedHoldings.filter((h) => !h.tokenId);
+
+  // Re-parse with accountId when account is selected to get existing holding matches
+  useEffect(() => {
+    if (selectedAccountId && selectedAccountId !== NEW_ACCOUNT && fileType === 'screenshot') {
+      // The API already enriched with holdingId/existingBalance if accountId was passed
+      // Since we didn't pass accountId initially, we compare client-side
     }
-    return map;
-  }, [tokens]);
+  }, [selectedAccountId, fileType]);
 
   const handleFileSelect = useCallback(
     async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -164,32 +195,52 @@ export function FileImportPage() {
     [parseMutation, screenshotMutation]
   );
 
-  const handleSaveScreenshot = () => {
-    if (!selectedAccountId || selectedAccountId === NEW_ACCOUNT) return;
+  const handleSave = () => {
+    const isNewAccount = selectedAccountId === NEW_ACCOUNT;
 
-    // Match extracted symbols to token IDs
-    const holdingsToCreate = extractedHoldings
-      .filter((h) => h.amount && h.symbol)
-      .map((h) => {
-        const tokenId = tokenMap.get(h.symbol.toUpperCase());
-        return tokenId ? { tokenId, balance: h.amount! } : null;
-      })
-      .filter((h): h is { tokenId: string; balance: string } => h !== null);
+    // Split into creates and updates
+    const toUpdate = updateHoldings.filter((h) => h.holdingId && h.balance);
+    const toCreate = newHoldings.filter((h) => h.tokenId && h.balance);
 
-    if (holdingsToCreate.length === 0) {
-      showError('No matching tokens found for the extracted holdings', 'Saving');
-      return;
+    // Update existing holdings
+    if (toUpdate.length > 0) {
+      updateBatchMutation.mutate({
+        holdings: toUpdate.map((h) => ({
+          id: h.holdingId!,
+          balance: h.balance,
+        })),
+      });
     }
 
-    createMutation.mutate({
-      accountId: selectedAccountId,
-      holdings: holdingsToCreate,
-    });
+    // Create new holdings
+    if (toCreate.length > 0) {
+      createMutation.mutate({
+        accountId: isNewAccount ? undefined : selectedAccountId || undefined,
+        account:
+          isNewAccount && newAccountName.trim() && newAccountTypeId
+            ? {
+                name: newAccountName.trim(),
+                typeId: newAccountTypeId,
+                institutionId: newAccountInstitutionId || undefined,
+              }
+            : undefined,
+        holdings: toCreate.map((h) => ({
+          tokenId: h.tokenId!,
+          balance: h.balance,
+        })),
+      });
+    }
+
+    // If only updates and no creates, navigate is handled by updateBatchMutation.onSuccess
+    if (toCreate.length === 0 && toUpdate.length === 0) {
+      showError('No valid holdings to import', 'Import');
+    }
   };
 
-  const matchedCount = extractedHoldings.filter(
-    (h) => h.symbol && tokenMap.has(h.symbol.toUpperCase())
-  ).length;
+  const isSaving = createMutation.isPending || updateBatchMutation.isPending;
+  const canSave =
+    (selectedAccountId || (newAccountName.trim() && newAccountTypeId)) &&
+    (newHoldings.length > 0 || updateHoldings.length > 0);
 
   return (
     <div className="max-w-4xl space-y-6">
@@ -238,7 +289,7 @@ export function FileImportPage() {
             </p>
             <p className="text-xs text-muted-foreground mt-1">
               {isImageFile(fileName)
-                ? 'Extracting holdings data with computer vision. This may take 10-30 seconds.'
+                ? 'Extracting holdings with computer vision. This may take 10-30 seconds.'
                 : `Reading ${fileName}...`}
             </p>
           </CardContent>
@@ -258,107 +309,240 @@ export function FileImportPage() {
             )}
           </div>
 
-          {/* Extracted holdings */}
+          {/* Extracted holdings with amounts */}
           <Card>
             <CardHeader>
               <CardTitle className="text-base">Extracted Holdings</CardTitle>
             </CardHeader>
             <CardContent className="space-y-2">
               {extractedHoldings.map((h, i) => {
-                const matched = h.symbol && tokenMap.has(h.symbol.toUpperCase());
+                const isUpdate = !!h.holdingId;
+                const isMatched = !!h.tokenId;
                 return (
                   <div
                     key={`h-${i}`}
                     className="flex items-center justify-between text-sm p-2.5 rounded-md border border-border"
                   >
-                    <div className="flex items-center gap-2">
-                      {matched ? (
+                    <div className="flex items-center gap-2 min-w-0">
+                      {isMatched ? (
                         <Check className="h-3.5 w-3.5 text-green-500 shrink-0" />
                       ) : (
                         <span className="h-3.5 w-3.5 rounded-full border border-yellow-500 shrink-0" />
                       )}
-                      <span className="font-medium">{h.symbol}</span>
-                      {h.name && h.name !== h.symbol && (
-                        <span className="text-muted-foreground text-xs">{h.name}</span>
-                      )}
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-1.5">
+                          <span className="font-medium">{h.symbol}</span>
+                          {h.name && h.name !== h.symbol && (
+                            <span className="text-muted-foreground text-xs truncate">{h.name}</span>
+                          )}
+                          {isUpdate && (
+                            <Badge
+                              variant="outline"
+                              className="text-[9px] px-1 py-0 border-blue-500 text-blue-500"
+                            >
+                              update
+                            </Badge>
+                          )}
+                          {isMatched && !isUpdate && (
+                            <Badge
+                              variant="outline"
+                              className="text-[9px] px-1 py-0 border-green-500 text-green-500"
+                            >
+                              new
+                            </Badge>
+                          )}
+                        </div>
+                        {isUpdate && h.existingBalance && (
+                          <p className="text-[10px] text-muted-foreground mt-0.5">
+                            Current: {Number(h.existingBalance).toLocaleString()} →{' '}
+                            <span className="text-foreground font-medium">
+                              {Number(h.balance).toLocaleString()}
+                            </span>
+                          </p>
+                        )}
+                      </div>
                     </div>
-                    <div className="flex items-center gap-3 text-right">
-                      {h.amount && (
-                        <span className="text-xs text-muted-foreground tabular-nums">
-                          {h.amount}
-                        </span>
-                      )}
-                      {h.value && <span className="font-medium tabular-nums">{h.value}</span>}
-                      {h.confidence !== undefined && (
-                        <span className="text-[10px] text-muted-foreground">
-                          {(h.confidence * 100).toFixed(0)}%
-                        </span>
-                      )}
+                    <div className="flex items-center gap-3 shrink-0 text-right">
+                      <span className="font-medium tabular-nums">
+                        {Number(h.balance).toLocaleString()}
+                      </span>
+                      <span className="text-[10px] text-muted-foreground w-8">
+                        {(h.confidence * 100).toFixed(0)}%
+                      </span>
                     </div>
                   </div>
                 );
               })}
-              <p className="text-xs text-muted-foreground mt-2">
-                <Check className="h-3 w-3 text-green-500 inline mr-1" />
-                {matchedCount} of {extractedHoldings.length} matched to existing tokens
-              </p>
+              <div className="flex gap-3 text-xs text-muted-foreground mt-2 pt-2 border-t border-border">
+                {newHoldings.length > 0 && (
+                  <span className="text-green-500">{newHoldings.length} new</span>
+                )}
+                {updateHoldings.length > 0 && (
+                  <span className="text-blue-500">{updateHoldings.length} updates</span>
+                )}
+                {unmatchedHoldings.length > 0 && (
+                  <span className="text-yellow-500">{unmatchedHoldings.length} unmatched</span>
+                )}
+              </div>
             </CardContent>
           </Card>
 
-          {/* Account selection */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-base">Save to Account</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              <p className="text-xs text-muted-foreground">
-                Select which account to add these holdings to.
-              </p>
-              <Select value={selectedAccountId} onValueChange={setSelectedAccountId}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Select an account" />
-                </SelectTrigger>
-                <SelectContent>
-                  {accounts?.map((acc) => (
-                    <SelectItem key={acc.id} value={acc.id}>
-                      {acc.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </CardContent>
-          </Card>
+          <Button onClick={() => setStep('account')} className="w-full">
+            Continue to Account Selection
+            <ArrowRight className="h-4 w-4 ml-2" />
+          </Button>
 
-          {/* Actions */}
-          <div className="flex gap-3">
-            <Button
-              onClick={handleSaveScreenshot}
-              disabled={!selectedAccountId || matchedCount === 0 || createMutation.isPending}
-            >
-              {createMutation.isPending ? (
-                <>
-                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                  Saving...
-                </>
-              ) : (
-                `Import ${matchedCount} Holdings`
-              )}
-            </Button>
-            <Button
-              variant="outline"
-              onClick={() => {
-                setStep('upload');
-                setExtractedHoldings([]);
-                setOverallConfidence(null);
-              }}
-            >
-              Upload Different File
-            </Button>
-          </div>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="text-xs text-muted-foreground"
+            onClick={() => {
+              setStep('upload');
+              setExtractedHoldings([]);
+            }}
+          >
+            Upload Different File
+          </Button>
         </div>
       )}
 
-      {/* Step 3: Preview - CSV/OFX */}
+      {/* Step 4: Account selection + save */}
+      {step === 'account' && fileType === 'screenshot' && (
+        <div className="space-y-4">
+          <Button variant="ghost" size="sm" onClick={() => setStep('preview')} className="-ml-2">
+            <ArrowLeft className="h-4 w-4 mr-1" />
+            Back to Preview
+          </Button>
+
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">Select Account</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <p className="text-xs text-muted-foreground">
+                Choose which account to add/update these holdings in.
+              </p>
+
+              {/* Searchable account list */}
+              {selectedAccountId !== NEW_ACCOUNT && (
+                <div className="space-y-2">
+                  <Input
+                    value={accountSearch}
+                    onChange={(e) => setAccountSearch(e.target.value)}
+                    placeholder="Search accounts..."
+                    className="h-9"
+                  />
+                  <div className="max-h-[200px] overflow-y-auto space-y-1 rounded-md border border-border p-1">
+                    <button
+                      type="button"
+                      className="w-full text-left px-3 py-2 text-sm rounded-sm hover:bg-accent flex items-center gap-2 text-primary"
+                      onClick={() => {
+                        setSelectedAccountId(NEW_ACCOUNT);
+                        setAccountSearch('');
+                      }}
+                    >
+                      <Plus className="h-3.5 w-3.5" />
+                      Create new account
+                    </button>
+                    {filteredAccounts.map((acc) => (
+                      <button
+                        type="button"
+                        key={acc.id}
+                        className={`w-full text-left px-3 py-2 text-sm rounded-sm hover:bg-accent flex items-center justify-between ${selectedAccountId === acc.id ? 'bg-accent' : ''}`}
+                        onClick={() => setSelectedAccountId(acc.id)}
+                      >
+                        <span className="font-medium">{acc.name}</span>
+                        <span className="text-xs text-muted-foreground">
+                          {acc.summary.holdingsCount} holdings
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* New account form */}
+              {selectedAccountId === NEW_ACCOUNT && (
+                <div className="space-y-3">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="text-xs"
+                    onClick={() => setSelectedAccountId('')}
+                  >
+                    ← Select existing account
+                  </Button>
+                  <Input
+                    value={newAccountName}
+                    onChange={(e) => setNewAccountName(e.target.value)}
+                    placeholder="Account name"
+                  />
+                  <Select value={newAccountTypeId} onValueChange={setNewAccountTypeId}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Account type" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {accountTypes?.map((t) => (
+                        <SelectItem key={t.id} value={t.id}>
+                          {t.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <Select
+                    value={newAccountInstitutionId}
+                    onValueChange={setNewAccountInstitutionId}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Institution (optional)" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {institutions?.map((inst) => (
+                        <SelectItem key={inst.id} value={inst.id}>
+                          {inst.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Summary + Save */}
+          <Card>
+            <CardContent className="p-4 space-y-2">
+              <div className="flex justify-between text-sm">
+                <span className="text-muted-foreground">New holdings to create</span>
+                <span className="font-medium">{newHoldings.length}</span>
+              </div>
+              <div className="flex justify-between text-sm">
+                <span className="text-muted-foreground">Existing holdings to update</span>
+                <span className="font-medium">{updateHoldings.length}</span>
+              </div>
+              {unmatchedHoldings.length > 0 && (
+                <div className="flex justify-between text-sm">
+                  <span className="text-yellow-500">Unmatched (will be skipped)</span>
+                  <span className="font-medium text-yellow-500">{unmatchedHoldings.length}</span>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          <Button onClick={handleSave} disabled={!canSave || isSaving} className="w-full">
+            {isSaving ? (
+              <>
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                Saving...
+              </>
+            ) : (
+              `Import ${newHoldings.length + updateHoldings.length} Holdings`
+            )}
+          </Button>
+        </div>
+      )}
+
+      {/* CSV Preview */}
       {step === 'preview' && fileType === 'csv' && csvMeta && (
         <div className="space-y-4">
           <div className="flex items-center gap-3 flex-wrap">
@@ -434,18 +618,16 @@ export function FileImportPage() {
             </CardContent>
           </Card>
 
-          <div className="flex gap-3">
-            <Button
-              variant="outline"
-              onClick={() => {
-                setStep('upload');
-                setTransactions([]);
-                setCsvMeta(null);
-              }}
-            >
-              Upload Different File
-            </Button>
-          </div>
+          <Button
+            variant="outline"
+            onClick={() => {
+              setStep('upload');
+              setTransactions([]);
+              setCsvMeta(null);
+            }}
+          >
+            Upload Different File
+          </Button>
         </div>
       )}
     </div>
