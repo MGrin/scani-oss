@@ -87,17 +87,21 @@ export function FileImportPage() {
       const file = e.target.files?.[0];
       if (!file) return;
 
-      if (!isImageFile(file.name)) {
-        showError('Please upload a screenshot image (PNG, JPG, WEBP)', 'File type');
-        return;
-      }
-
       setFileName(file.name);
       setStep('processing');
 
       try {
-        const buffer = await file.arrayBuffer();
-        const base64 = arrayBufferToBase64(buffer);
+        let base64: string;
+
+        if (isImageFile(file.name)) {
+          // Screenshot — binary → base64
+          const buffer = await file.arrayBuffer();
+          base64 = arrayBufferToBase64(buffer);
+        } else {
+          // CSV/text — use text encoding
+          const text = await file.text();
+          base64 = btoa(unescape(encodeURIComponent(text)));
+        }
 
         const parsed = await screenshotMutation.mutateAsync({
           files: [{ filename: file.name, data: base64 }],
@@ -179,9 +183,9 @@ export function FileImportPage() {
             Add Data
           </Link>
         </Button>
-        <h2 className="text-2xl font-bold tracking-tight">Import Screenshot</h2>
+        <h2 className="text-2xl font-bold tracking-tight">Import File</h2>
         <p className="text-sm text-muted-foreground mt-1">
-          Upload a screenshot to extract and import holdings
+          Upload a screenshot or bank statement to import holdings
         </p>
         {/* Progress indicator */}
         <div className="flex gap-1 mt-3">
@@ -230,11 +234,13 @@ export function FileImportPage() {
             <CardContent className="p-8">
               <label className="flex flex-col items-center justify-center border-2 border-dashed border-border rounded-lg p-8 cursor-pointer hover:border-primary/50 transition-colors">
                 <Upload className="h-10 w-10 text-muted-foreground mb-3" />
-                <p className="text-sm font-medium">Click to upload screenshot</p>
-                <p className="text-xs text-muted-foreground mt-1">PNG, JPG, WEBP (max 5MB)</p>
+                <p className="text-sm font-medium">Click to upload file</p>
+                <p className="text-xs text-muted-foreground mt-1">
+                  Screenshots (PNG, JPG) or bank statements (CSV, OFX)
+                </p>
                 <input
                   type="file"
-                  accept=".png,.jpg,.jpeg,.webp"
+                  accept=".png,.jpg,.jpeg,.webp,.csv,.ofx,.qfx,.tsv"
                   className="hidden"
                   onChange={handleFileSelect}
                 />
