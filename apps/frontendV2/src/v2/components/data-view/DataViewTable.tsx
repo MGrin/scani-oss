@@ -79,8 +79,8 @@ export function DataViewTable<T>({
       {groupLabel && (
         <h3 className="mb-2 mt-4 text-sm font-semibold text-muted-foreground">{groupLabel}</h3>
       )}
-      <div className="overflow-x-auto -mx-4 px-4 sm:mx-0 sm:px-0">
-        <Table className="min-w-[600px]">
+      <div className="overflow-x-auto">
+        <Table className="min-w-[700px]">
           <TableHeader>
             <TableRow>
               <TableHead className="w-[40px]">

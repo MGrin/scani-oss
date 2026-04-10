@@ -9,6 +9,7 @@ import {
   Moon,
   PieChart,
   Plug,
+  PlusCircle,
   Settings,
   Sun,
   Tags,
@@ -17,7 +18,6 @@ import {
 } from 'lucide-react';
 import { NavLink } from 'react-router-dom';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { Separator } from '@/components/ui/separator';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { useTheme } from '@/contexts/ThemeContext';
 import { cn } from '@/lib/utils';
@@ -43,14 +43,14 @@ function ThemeToggle({ collapsed }: { collapsed: boolean }) {
         <button
           type="button"
           onClick={toggleTheme}
-          className="flex items-center gap-2 rounded-md px-2 py-1.5 text-sm text-muted-foreground hover:bg-accent/50 hover:text-foreground transition-colors w-full"
+          className="flex items-center gap-2.5 rounded-md px-2 py-1.5 text-[13px] text-muted-foreground hover:bg-accent/50 hover:text-foreground transition-colors w-full"
         >
           {resolvedTheme === 'dark' ? (
             <Sun className="h-4 w-4 shrink-0" />
           ) : (
             <Moon className="h-4 w-4 shrink-0" />
           )}
-          {!collapsed && <span>{resolvedTheme === 'dark' ? 'Light mode' : 'Dark mode'}</span>}
+          {!collapsed && <span>{resolvedTheme === 'dark' ? 'Light' : 'Dark'} mode</span>}
         </button>
       </TooltipTrigger>
       {collapsed && (
@@ -71,7 +71,7 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
   return (
     <aside
       className={cn(
-        'hidden lg:flex flex-col border-r border-border bg-muted/30 transition-all duration-200',
+        'hidden lg:flex flex-col border-r border-border bg-card transition-all duration-200',
         collapsed ? 'w-12' : 'w-60'
       )}
       style={{ width: collapsed ? SIDEBAR_COLLAPSED_WIDTH : SIDEBAR_WIDTH }}
@@ -81,10 +81,10 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
         className="flex items-center justify-between px-3 border-b border-border shrink-0"
         style={{
           paddingTop: 'env(safe-area-inset-top)',
-          minHeight: 'calc(3.5rem + env(safe-area-inset-top))',
+          minHeight: 'calc(3rem + env(safe-area-inset-top))',
         }}
       >
-        {!collapsed && <span className="text-lg font-semibold tracking-tight">Scani</span>}
+        {!collapsed && <span className="text-base font-semibold tracking-tight">Scani</span>}
         <button
           type="button"
           onClick={onToggle}
@@ -95,18 +95,37 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
         </button>
       </div>
 
+      {/* Add Data button */}
+      <div className="px-2 pt-2">
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <NavLink
+              to={V2_ROUTES.addData}
+              className="flex items-center gap-2.5 rounded-md px-2 py-2 text-[13px] font-medium bg-primary text-primary-foreground hover:bg-primary/90 transition-colors"
+            >
+              <PlusCircle className="h-4 w-4 shrink-0" />
+              {!collapsed && <span>Add Data</span>}
+            </NavLink>
+          </TooltipTrigger>
+          {collapsed && (
+            <TooltipContent side="right" sideOffset={8}>
+              Add Data
+            </TooltipContent>
+          )}
+        </Tooltip>
+      </div>
+
       {/* Navigation */}
       <ScrollArea className="flex-1 py-2">
-        <nav className="space-y-4 px-2">
+        <nav className="space-y-3 px-2">
           {NAV_SECTIONS.map((section) => (
             <div key={section.title}>
               {!collapsed && (
-                <p className="px-2 mb-1 text-[11px] font-medium uppercase tracking-wider text-muted-foreground/60">
+                <p className="px-2 mb-0.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/50">
                   {section.title}
                 </p>
               )}
-              {collapsed && <Separator className="my-1" />}
-              <div className="space-y-0.5">
+              <div className="space-y-px">
                 {section.items.map((item) => {
                   const Icon = ICON_MAP[item.icon] || PieChart;
                   return (
@@ -117,7 +136,7 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
                           end={item.path === V2_ROUTES.dashboard}
                           className={({ isActive }) =>
                             cn(
-                              'flex items-center gap-2 rounded-md px-2 py-1.5 text-sm transition-colors',
+                              'flex items-center gap-2.5 rounded-md px-2 py-1.5 text-[13px] transition-colors',
                               isActive
                                 ? 'bg-accent text-accent-foreground font-medium'
                                 : 'text-muted-foreground hover:bg-accent/50 hover:text-foreground'
@@ -143,14 +162,14 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
       </ScrollArea>
 
       {/* Footer */}
-      <div className="border-t border-border p-2 space-y-0.5">
+      <div className="border-t border-border p-2 space-y-px">
         <Tooltip>
           <TooltipTrigger asChild>
             <NavLink
               to={V2_ROUTES.settings}
               className={({ isActive }) =>
                 cn(
-                  'flex items-center gap-2 rounded-md px-2 py-1.5 text-sm transition-colors',
+                  'flex items-center gap-2.5 rounded-md px-2 py-1.5 text-[13px] transition-colors',
                   isActive
                     ? 'bg-accent text-accent-foreground font-medium'
                     : 'text-muted-foreground hover:bg-accent/50 hover:text-foreground'
@@ -172,7 +191,7 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
           <TooltipTrigger asChild>
             <a
               href="/"
-              className="flex items-center gap-2 rounded-md px-2 py-1.5 text-sm text-muted-foreground hover:bg-accent/50 hover:text-foreground transition-colors"
+              className="flex items-center gap-2.5 rounded-md px-2 py-1.5 text-[13px] text-muted-foreground/60 hover:bg-accent/50 hover:text-foreground transition-colors"
             >
               <ArrowLeft className="h-4 w-4 shrink-0" />
               {!collapsed && <span>Classic UI</span>}
