@@ -36,8 +36,12 @@ export function parseCsvStatement(
     return { transactions: [], format: 'csv', warnings: ['No data rows found'] };
   }
 
-  // Determine column mapping
+  // Build case-insensitive header lookup
   const headers = Object.keys(rows[0]!);
+  const headerMap = new Map<string, string>(); // lowercase → original
+  for (const h of headers) {
+    headerMap.set(h.toLowerCase(), h);
+  }
   let mapping: CsvColumnMapping;
   let detectedTemplate: string | undefined;
 
@@ -53,9 +57,9 @@ export function parseCsvStatement(
       mapping = BANK_TEMPLATES[detected]!;
       detectedTemplate = detected;
     } else {
-      mapping = BANK_TEMPLATES.generic!;
-      detectedTemplate = 'generic';
-      warnings.push('Could not detect bank template — using generic column names');
+      // Smart auto-detect: try to match common column name patterns
+      mapping = autoDetectMapping(headerMap, warnings);
+      detectedTemplate = 'auto';
     }
   }
 
@@ -84,29 +88,88 @@ export function parseCsvStatement(
   };
 }
 
+/**
+ * Case-insensitive column access: tries exact match first, then case-insensitive
+ */
+function getColumn(
+  row: Record<string, string>,
+  columnName: string | undefined
+): string | undefined {
+  if (!columnName) return undefined;
+  // Try exact match first
+  if (row[columnName] !== undefined) return row[columnName];
+  // Try case-insensitive
+  const lower = columnName.toLowerCase();
+  for (const key of Object.keys(row)) {
+    if (key.toLowerCase() === lower) return row[key];
+  }
+  return undefined;
+}
+
+/**
+ * Auto-detect column mapping from headers using common patterns
+ */
+function autoDetectMapping(headerMap: Map<string, string>, warnings: string[]): CsvColumnMapping {
+  const find = (...patterns: string[]): string | undefined => {
+    for (const p of patterns) {
+      const match = headerMap.get(p.toLowerCase());
+      if (match) return match;
+    }
+    return undefined;
+  };
+
+  const date = find('date', 'transaction date', 'posted date', 'booking date', 'value date') || '';
+  const description =
+    find('description', 'details', 'narrative', 'memo', 'reference', 'product name') || '';
+  const amount = find('amount', 'transaction amount', 'sum') || '';
+  const credit = find('money in', 'credit', 'deposits', 'credit amount', 'inflow');
+  const debit = find('money out', 'debit', 'withdrawals', 'debit amount', 'outflow');
+  const currency = find('currency', 'ccy');
+  const balance = find(
+    'balance',
+    'running balance',
+    'account balance',
+    'closing balance',
+    'available balance'
+  );
+
+  if (!date) warnings.push('Could not detect date column');
+  if (!amount && !credit) warnings.push('Could not detect amount column');
+
+  return {
+    date,
+    description,
+    amount: amount || '',
+    credit,
+    debit,
+    currency,
+    balance,
+  };
+}
+
 function parseRow(
   row: Record<string, string>,
   mapping: CsvColumnMapping
 ): ParsedTransaction | null {
-  const dateStr = row[mapping.date]?.trim();
-  const description = row[mapping.description]?.trim() || '';
+  const dateStr = getColumn(row, mapping.date)?.trim();
+  const description = getColumn(row, mapping.description)?.trim() || '';
 
   if (!dateStr) return null;
 
   // Parse amount: either single amount column or credit/debit split
   let amount: number;
   if (mapping.credit && mapping.debit) {
-    const credit = parseNumber(row[mapping.credit]);
-    const debit = parseNumber(row[mapping.debit]);
+    const credit = parseNumber(getColumn(row, mapping.credit));
+    const debit = parseNumber(getColumn(row, mapping.debit));
     amount = (credit || 0) - (debit || 0);
   } else {
-    const rawAmount = parseNumber(row[mapping.amount]);
+    const rawAmount = parseNumber(getColumn(row, mapping.amount));
     if (rawAmount === null) return null;
     amount = rawAmount;
   }
 
-  const currency = row[mapping.currency || '']?.trim() || '';
-  const balance = mapping.balance ? parseNumber(row[mapping.balance]) : undefined;
+  const currency = getColumn(row, mapping.currency)?.trim() || '';
+  const balance = mapping.balance ? parseNumber(getColumn(row, mapping.balance)) : undefined;
 
   return {
     date: parseDate(dateStr, mapping.dateFormat),
