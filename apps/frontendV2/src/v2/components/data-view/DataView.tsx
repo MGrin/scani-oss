@@ -86,26 +86,28 @@ export function DataView<T>({
 
   return (
     <div className="space-y-4">
-      <DataViewToolbar
-        searchTerm={dv.searchTerm}
-        onSearchChange={dv.setSearchTerm}
-        filters={dv.filters}
-        filterDefs={config.filterDefs}
-        onSetFilter={dv.setFilter}
-        onClearFilters={dv.clearFilters}
-        hasActiveFilters={dv.hasActiveFilters}
-        sortField={dv.sortField}
-        sortDirection={dv.sortDirection}
-        sortDefs={config.sortDefs}
-        onSetSort={dv.setSort}
-        groupBy={dv.groupBy}
-        groupByDefs={config.groupByDefs}
-        onSetGroupBy={dv.setGroupBy}
-        viewMode={dv.viewMode}
-        onSetViewMode={dv.setViewMode}
-        totalCount={dv.totalCount}
-        filteredCount={dv.filteredCount}
-      />
+      <div className="sticky top-0 z-10 bg-background pb-2 -mt-2 pt-2">
+        <DataViewToolbar
+          searchTerm={dv.searchTerm}
+          onSearchChange={dv.setSearchTerm}
+          filters={dv.filters}
+          filterDefs={config.filterDefs}
+          onSetFilter={dv.setFilter}
+          onClearFilters={dv.clearFilters}
+          hasActiveFilters={dv.hasActiveFilters}
+          sortField={dv.sortField}
+          sortDirection={dv.sortDirection}
+          sortDefs={config.sortDefs}
+          onSetSort={dv.setSort}
+          groupBy={dv.groupBy}
+          groupByDefs={config.groupByDefs}
+          onSetGroupBy={dv.setGroupBy}
+          viewMode={dv.viewMode}
+          onSetViewMode={dv.setViewMode}
+          totalCount={dv.totalCount}
+          filteredCount={dv.filteredCount}
+        />
+      </div>
 
       {isEmpty &&
         (emptyState ?? (

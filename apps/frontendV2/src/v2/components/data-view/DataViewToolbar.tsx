@@ -1,8 +1,99 @@
 import { ArrowDown, ArrowUp, Layers, Plus, Search, XCircle } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import type { FilterDef } from '../../hooks/useDataView';
+
+function FilterPopover({
+  filterDefs,
+  onSetFilter,
+}: {
+  filterDefs: FilterDef[];
+  onSetFilter: (key: string, value: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [activeTab, setActiveTab] = useState(filterDefs[0]?.key || '');
+  const [filterSearch, setFilterSearch] = useState('');
+
+  const activeDef = filterDefs.find((d) => d.key === activeTab);
+
+  const filteredOptions = useMemo(() => {
+    if (!activeDef) return [];
+    if (!filterSearch) return activeDef.options;
+    const q = filterSearch.toLowerCase();
+    return activeDef.options.filter((o) => o.label.toLowerCase().includes(q));
+  }, [activeDef, filterSearch]);
+
+  // Reset search when tab changes
+  useEffect(() => {
+    setFilterSearch('');
+  }, [activeTab]);
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <Button variant="outline" size="sm" className="shrink-0">
+          <Plus className="mr-1 h-3.5 w-3.5" />
+          Filter
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent align="end" className="w-72 p-0">
+        {/* Tabs */}
+        {filterDefs.length > 1 && (
+          <div className="flex border-b border-border overflow-x-auto">
+            {filterDefs.map((def) => (
+              <button
+                key={def.key}
+                type="button"
+                onClick={() => setActiveTab(def.key)}
+                className={`px-3 py-2 text-xs whitespace-nowrap transition-colors border-b-2 ${
+                  activeTab === def.key
+                    ? 'border-primary text-foreground font-medium'
+                    : 'border-transparent text-muted-foreground hover:text-foreground'
+                }`}
+              >
+                {def.label}
+              </button>
+            ))}
+          </div>
+        )}
+
+        {/* Search */}
+        <div className="p-2 border-b border-border">
+          <Input
+            value={filterSearch}
+            onChange={(e) => setFilterSearch(e.target.value)}
+            placeholder={`Search ${activeDef?.label || ''}...`}
+            className="h-8 text-xs"
+          />
+        </div>
+
+        {/* Options */}
+        <div className="max-h-[250px] overflow-y-auto p-1">
+          {filteredOptions.length === 0 ? (
+            <p className="px-3 py-4 text-xs text-muted-foreground text-center">No matches</p>
+          ) : (
+            filteredOptions.map((opt) => (
+              <button
+                key={opt.value}
+                type="button"
+                className="w-full rounded-sm px-3 py-2 text-left text-sm hover:bg-accent flex items-center gap-2"
+                onClick={() => {
+                  onSetFilter(activeDef!.key, opt.value);
+                  setOpen(false);
+                }}
+              >
+                <span className="truncate">{opt.label}</span>
+              </button>
+            ))
+          )}
+        </div>
+      </PopoverContent>
+    </Popover>
+  );
+}
+
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import {
   Select,
@@ -11,7 +102,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import type { FilterDef, GroupByDef, SortDef } from '../../hooks/useDataView';
+import type { GroupByDef, SortDef } from '../../hooks/useDataView';
 import { FilterPill } from './FilterPill';
 import { ViewToggle } from './ViewToggle';
 
@@ -87,31 +178,7 @@ export function DataViewToolbar({
         </div>
 
         {availableFilterDefs.length > 0 && (
-          <Popover>
-            <PopoverTrigger asChild>
-              <Button variant="outline" size="sm" className="shrink-0">
-                <Plus className="mr-1 h-3.5 w-3.5" />
-                Filter
-              </Button>
-            </PopoverTrigger>
-            <PopoverContent align="end" className="w-56 p-2">
-              {availableFilterDefs.map((def) => (
-                <div key={def.key} className="mb-2 last:mb-0">
-                  <p className="mb-1 px-1 text-xs font-medium text-muted-foreground">{def.label}</p>
-                  {def.options.map((opt) => (
-                    <button
-                      key={opt.value}
-                      type="button"
-                      className="w-full rounded-sm px-2 py-1.5 text-left text-sm hover:bg-accent"
-                      onClick={() => onSetFilter(def.key, opt.value)}
-                    >
-                      {opt.label}
-                    </button>
-                  ))}
-                </div>
-              ))}
-            </PopoverContent>
-          </Popover>
+          <FilterPopover filterDefs={availableFilterDefs} onSetFilter={onSetFilter} />
         )}
       </div>
 

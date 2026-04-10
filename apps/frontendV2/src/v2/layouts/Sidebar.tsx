@@ -34,29 +34,81 @@ const ICON_MAP: Record<string, LucideIcon> = {
   FileUp,
 };
 
-function ThemeToggle({ collapsed }: { collapsed: boolean }) {
-  const { resolvedTheme, toggleTheme } = useTheme();
+const navItemClass = (isActive: boolean) =>
+  cn(
+    'flex items-center gap-2.5 rounded-md px-2 py-1.5 text-[13px] transition-colors w-full',
+    isActive
+      ? 'bg-accent text-accent-foreground font-medium'
+      : 'text-muted-foreground hover:bg-accent/50 hover:text-foreground'
+  );
+
+function SidebarNavLink({
+  to,
+  icon: Icon,
+  label,
+  collapsed,
+  end,
+}: {
+  to: string;
+  icon: LucideIcon;
+  label: string;
+  collapsed: boolean;
+  end?: boolean;
+}) {
+  const link = (
+    <NavLink to={to} end={end} className={({ isActive }) => navItemClass(isActive)}>
+      <Icon className="h-4 w-4 shrink-0" />
+      {!collapsed && <span className="truncate">{label}</span>}
+    </NavLink>
+  );
+
+  if (!collapsed) return link;
+
   return (
     <Tooltip>
-      <TooltipTrigger asChild>
-        <button
-          type="button"
-          onClick={toggleTheme}
-          className="flex items-center gap-2.5 rounded-md px-2 py-1.5 text-[13px] text-muted-foreground hover:bg-accent/50 hover:text-foreground transition-colors w-full"
-        >
-          {resolvedTheme === 'dark' ? (
-            <Sun className="h-4 w-4 shrink-0" />
-          ) : (
-            <Moon className="h-4 w-4 shrink-0" />
-          )}
-          {!collapsed && <span>{resolvedTheme === 'dark' ? 'Light' : 'Dark'} mode</span>}
-        </button>
-      </TooltipTrigger>
-      {collapsed && (
-        <TooltipContent side="right" sideOffset={8}>
-          {resolvedTheme === 'dark' ? 'Light mode' : 'Dark mode'}
-        </TooltipContent>
+      <TooltipTrigger asChild>{link}</TooltipTrigger>
+      <TooltipContent side="right" sideOffset={8}>
+        {label}
+      </TooltipContent>
+    </Tooltip>
+  );
+}
+
+function SidebarButton({
+  icon: Icon,
+  label,
+  collapsed,
+  onClick,
+  className,
+}: {
+  icon: LucideIcon;
+  label: string;
+  collapsed: boolean;
+  onClick: () => void;
+  className?: string;
+}) {
+  const btn = (
+    <button
+      type="button"
+      onClick={onClick}
+      className={cn(
+        'flex items-center gap-2.5 rounded-md px-2 py-1.5 text-[13px] text-muted-foreground hover:bg-accent/50 hover:text-foreground transition-colors w-full',
+        className
       )}
+    >
+      <Icon className="h-4 w-4 shrink-0" />
+      {!collapsed && <span className="truncate">{label}</span>}
+    </button>
+  );
+
+  if (!collapsed) return btn;
+
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>{btn}</TooltipTrigger>
+      <TooltipContent side="right" sideOffset={8}>
+        {label}
+      </TooltipContent>
     </Tooltip>
   );
 }
@@ -67,6 +119,8 @@ interface SidebarProps {
 }
 
 export function Sidebar({ collapsed, onToggle }: SidebarProps) {
+  const { resolvedTheme, toggleTheme } = useTheme();
+
   return (
     <aside
       className={cn(
@@ -87,38 +141,21 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
         <button
           type="button"
           onClick={onToggle}
-          className="p-1.5 rounded-md hover:bg-accent text-muted-foreground hover:text-foreground transition-colors"
+          className="p-1.5 rounded-md hover:bg-accent text-muted-foreground hover:text-foreground transition-colors flex items-center justify-center"
           aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
         >
           {collapsed ? <Menu className="h-4 w-4" /> : <ChevronLeft className="h-4 w-4" />}
         </button>
       </div>
 
-      {/* Add Data button */}
+      {/* Add Data */}
       <div className="px-2 pt-2">
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <NavLink
-              to={V2_ROUTES.addData}
-              className={({ isActive }) =>
-                cn(
-                  'flex items-center gap-2.5 rounded-md px-2 py-1.5 text-[13px] transition-colors',
-                  isActive
-                    ? 'bg-accent text-accent-foreground font-medium'
-                    : 'text-muted-foreground hover:bg-accent/50 hover:text-foreground'
-                )
-              }
-            >
-              <PlusCircle className="h-4 w-4 shrink-0" />
-              {!collapsed && <span>Add Data</span>}
-            </NavLink>
-          </TooltipTrigger>
-          {collapsed && (
-            <TooltipContent side="right" sideOffset={8}>
-              Add Data
-            </TooltipContent>
-          )}
-        </Tooltip>
+        <SidebarNavLink
+          to={V2_ROUTES.addData}
+          icon={PlusCircle}
+          label="Add Data"
+          collapsed={collapsed}
+        />
       </div>
 
       {/* Navigation */}
@@ -135,30 +172,14 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
                 {section.items.map((item) => {
                   const Icon = ICON_MAP[item.icon] || PieChart;
                   return (
-                    <Tooltip key={item.path}>
-                      <TooltipTrigger asChild>
-                        <NavLink
-                          to={item.path}
-                          end={item.path === V2_ROUTES.dashboard}
-                          className={({ isActive }) =>
-                            cn(
-                              'flex items-center gap-2.5 rounded-md px-2 py-1.5 text-[13px] transition-colors',
-                              isActive
-                                ? 'bg-accent text-accent-foreground font-medium'
-                                : 'text-muted-foreground hover:bg-accent/50 hover:text-foreground'
-                            )
-                          }
-                        >
-                          <Icon className="h-4 w-4 shrink-0" />
-                          {!collapsed && <span className="truncate">{item.label}</span>}
-                        </NavLink>
-                      </TooltipTrigger>
-                      {collapsed && (
-                        <TooltipContent side="right" sideOffset={8}>
-                          {item.label}
-                        </TooltipContent>
-                      )}
-                    </Tooltip>
+                    <SidebarNavLink
+                      key={item.path}
+                      to={item.path}
+                      icon={Icon}
+                      label={item.label}
+                      collapsed={collapsed}
+                      end={item.path === V2_ROUTES.dashboard}
+                    />
                   );
                 })}
               </div>
@@ -169,46 +190,27 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
 
       {/* Footer */}
       <div className="border-t border-border p-2 space-y-px">
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <NavLink
-              to={V2_ROUTES.settings}
-              className={({ isActive }) =>
-                cn(
-                  'flex items-center gap-2.5 rounded-md px-2 py-1.5 text-[13px] transition-colors',
-                  isActive
-                    ? 'bg-accent text-accent-foreground font-medium'
-                    : 'text-muted-foreground hover:bg-accent/50 hover:text-foreground'
-                )
-              }
-            >
-              <Settings className="h-4 w-4 shrink-0" />
-              {!collapsed && <span>Settings</span>}
-            </NavLink>
-          </TooltipTrigger>
-          {collapsed && (
-            <TooltipContent side="right" sideOffset={8}>
-              Settings
-            </TooltipContent>
-          )}
-        </Tooltip>
-        <ThemeToggle collapsed={collapsed} />
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <a
-              href="/"
-              className="flex items-center gap-2.5 rounded-md px-2 py-1.5 text-[13px] text-muted-foreground/60 hover:bg-accent/50 hover:text-foreground transition-colors"
-            >
-              <ArrowLeft className="h-4 w-4 shrink-0" />
-              {!collapsed && <span>Classic UI</span>}
-            </a>
-          </TooltipTrigger>
-          {collapsed && (
-            <TooltipContent side="right" sideOffset={8}>
-              Classic UI
-            </TooltipContent>
-          )}
-        </Tooltip>
+        <SidebarNavLink
+          to={V2_ROUTES.settings}
+          icon={Settings}
+          label="Settings"
+          collapsed={collapsed}
+        />
+        <SidebarButton
+          icon={resolvedTheme === 'dark' ? Sun : Moon}
+          label={resolvedTheme === 'dark' ? 'Light mode' : 'Dark mode'}
+          collapsed={collapsed}
+          onClick={toggleTheme}
+        />
+        <SidebarButton
+          icon={ArrowLeft}
+          label="Classic UI"
+          collapsed={collapsed}
+          onClick={() => {
+            window.location.href = '/';
+          }}
+          className="text-muted-foreground/50"
+        />
       </div>
     </aside>
   );
