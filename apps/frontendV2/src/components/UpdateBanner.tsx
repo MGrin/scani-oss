@@ -1,4 +1,5 @@
-import { RefreshCw, X } from 'lucide-react';
+import { Loader2, RefreshCw, X } from 'lucide-react';
+import { useState } from 'react';
 import { useAppUpdate } from '@/hooks/useAppUpdate';
 
 /**
@@ -8,8 +9,14 @@ import { useAppUpdate } from '@/hooks/useAppUpdate';
  */
 export function UpdateBanner() {
   const { updateAvailable, applyUpdate, dismissUpdate } = useAppUpdate();
+  const [updating, setUpdating] = useState(false);
 
   if (!updateAvailable) return null;
+
+  const handleUpdate = () => {
+    setUpdating(true);
+    applyUpdate();
+  };
 
   return (
     <div
@@ -19,23 +26,32 @@ export function UpdateBanner() {
         paddingBottom: '0.5rem',
       }}
     >
-      <RefreshCw className="h-4 w-4 shrink-0" />
-      <span>New version available</span>
-      <button
-        type="button"
-        onClick={applyUpdate}
-        className="font-semibold underline underline-offset-2 hover:no-underline"
-      >
-        Update
-      </button>
-      <button
-        type="button"
-        onClick={dismissUpdate}
-        className="ml-2 p-0.5 rounded hover:bg-white/20 transition-colors"
-        aria-label="Dismiss"
-      >
-        <X className="h-3.5 w-3.5" />
-      </button>
+      {updating ? (
+        <>
+          <Loader2 className="h-4 w-4 shrink-0 animate-spin" />
+          <span>Updating... please wait</span>
+        </>
+      ) : (
+        <>
+          <RefreshCw className="h-4 w-4 shrink-0" />
+          <span>New version available</span>
+          <button
+            type="button"
+            onClick={handleUpdate}
+            className="font-semibold underline underline-offset-2 hover:no-underline"
+          >
+            Update
+          </button>
+          <button
+            type="button"
+            onClick={dismissUpdate}
+            className="ml-2 p-0.5 rounded hover:bg-white/20 transition-colors"
+            aria-label="Dismiss"
+          >
+            <X className="h-3.5 w-3.5" />
+          </button>
+        </>
+      )}
     </div>
   );
 }

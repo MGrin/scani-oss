@@ -9,7 +9,7 @@
  * - version.json: always network, never cached (used for update detection)
  */
 
-const CACHE_VERSION = 'v3';
+const CACHE_VERSION = 'v4';
 const STATIC_CACHE = `scani-static-${CACHE_VERSION}`;
 const DYNAMIC_CACHE = `scani-dynamic-${CACHE_VERSION}`;
 const API_CACHE = `scani-api-${CACHE_VERSION}`;
@@ -204,10 +204,11 @@ async function staleWhileRevalidate(request, cacheName) {
   const cached = await caches.match(request);
 
   const fetchPromise = fetch(request)
-    .then((response) => {
+    .then(async (response) => {
       if (response.ok) {
-        const cache = caches.open(cacheName);
-        cache.then((c) => c.put(request, response.clone()));
+        const responseToCache = response.clone();
+        const cache = await caches.open(cacheName);
+        cache.put(request, responseToCache);
       }
       return response;
     })
