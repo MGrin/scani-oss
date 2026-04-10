@@ -172,10 +172,7 @@ export function PullToRefresh({ onRefresh, children, disabled = false }: PullToR
   return (
     <div
       ref={containerRef}
-      className={cn(
-        'relative h-full overflow-x-hidden touch-pan-y',
-        isPWA() ? 'overflow-y-auto' : 'overflow-y-hidden'
-      )}
+      className={cn('relative h-full overflow-x-hidden overflow-y-auto touch-pan-y')}
     >
       {/* Pull-to-refresh indicator */}
       {isEnabled && (

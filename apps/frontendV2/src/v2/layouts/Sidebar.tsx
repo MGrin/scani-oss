@@ -17,7 +17,6 @@ import {
   Wallet,
 } from 'lucide-react';
 import { NavLink } from 'react-router-dom';
-import { ScrollArea } from '@/components/ui/scroll-area';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { useTheme } from '@/contexts/ThemeContext';
 import { cn } from '@/lib/utils';
@@ -123,7 +122,7 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
       </div>
 
       {/* Navigation */}
-      <ScrollArea className="flex-1 py-2">
+      <div className="flex-1 overflow-y-auto py-2">
         <nav className="space-y-3 px-2">
           {NAV_SECTIONS.map((section) => (
             <div key={section.title}>
@@ -166,7 +165,7 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
             </div>
           ))}
         </nav>
-      </ScrollArea>
+      </div>
 
       {/* Footer */}
       <div className="border-t border-border p-2 space-y-px">

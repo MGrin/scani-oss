@@ -9,7 +9,7 @@
  * - version.json: always network, never cached (used for update detection)
  */
 
-const CACHE_VERSION = 'v2';
+const CACHE_VERSION = 'v3';
 const STATIC_CACHE = `scani-static-${CACHE_VERSION}`;
 const DYNAMIC_CACHE = `scani-dynamic-${CACHE_VERSION}`;
 const API_CACHE = `scani-api-${CACHE_VERSION}`;
