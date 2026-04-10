@@ -1,7 +1,7 @@
 import { ArrowLeft, Globe, Loader2, Plus, Trash2 } from 'lucide-react';
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { NumericFormat } from 'react-number-format';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -38,16 +38,26 @@ function SearchableDropdown({
   value,
   onSelect,
   placeholder,
-  renderItem,
 }: {
   items: Array<{ id: string; label: string; subtitle?: string; icon?: string | null }>;
   value: string;
   onSelect: (id: string) => void;
   placeholder: string;
-  renderItem?: (item: (typeof items)[0]) => React.ReactNode;
 }) {
   const [search, setSearch] = useState('');
   const [open, setOpen] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const handleClick = (e: MouseEvent) => {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+        setOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClick);
+    return () => document.removeEventListener('mousedown', handleClick);
+  }, [open]);
 
   const selected = items.find((i) => i.id === value);
   const filtered = search
@@ -94,7 +104,7 @@ function SearchableDropdown({
   }
 
   return (
-    <div className="relative">
+    <div className="relative" ref={containerRef}>
       <Input
         value={search}
         onChange={(e) => {
@@ -130,25 +140,19 @@ function SearchableDropdown({
                 setSearch('');
               }}
             >
-              {renderItem ? (
-                renderItem(item)
-              ) : (
-                <>
-                  {item.icon && (
-                    <img
-                      src={item.icon}
-                      alt=""
-                      className="h-4 w-4 rounded-sm object-contain"
-                      onError={(e) => {
-                        (e.target as HTMLImageElement).style.display = 'none';
-                      }}
-                    />
-                  )}
-                  <span className="font-medium">{item.label}</span>
-                  {item.subtitle && (
-                    <span className="text-muted-foreground text-xs">{item.subtitle}</span>
-                  )}
-                </>
+              {item.icon && (
+                <img
+                  src={item.icon}
+                  alt=""
+                  className="h-4 w-4 rounded-sm object-contain"
+                  onError={(e) => {
+                    (e.target as HTMLImageElement).style.display = 'none';
+                  }}
+                />
+              )}
+              <span className="font-medium">{item.label}</span>
+              {item.subtitle && (
+                <span className="text-muted-foreground text-xs">{item.subtitle}</span>
               )}
             </button>
           ))}
@@ -175,7 +179,20 @@ function TokenSearchInput({
   onClear: () => void;
 }) {
   const [search, setSearch] = useState('');
+  const [open, setOpen] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
   const { data: tokens } = trpc.tokens.getAll.useQuery();
+
+  useEffect(() => {
+    if (!open) return;
+    const handleClick = (e: MouseEvent) => {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+        setOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClick);
+    return () => document.removeEventListener('mousedown', handleClick);
+  }, [open]);
 
   const filtered = useMemo(() => {
     if (!tokens || !search) return [];
@@ -199,14 +216,18 @@ function TokenSearchInput({
   }
 
   return (
-    <div className="relative">
+    <div className="relative" ref={containerRef}>
       {label && <Label className="text-xs mb-1 block">{label}</Label>}
       <Input
         value={search}
-        onChange={(e) => setSearch(e.target.value)}
+        onChange={(e) => {
+          setSearch(e.target.value);
+          setOpen(true);
+        }}
+        onFocus={() => search.length > 0 && setOpen(true)}
         placeholder="Search tokens (BTC, USD, AAPL...)"
       />
-      {search.length > 0 && (
+      {open && search.length > 0 && (
         <div className="absolute z-20 mt-1 w-full bg-popover border rounded-md shadow-lg max-h-[200px] overflow-y-auto">
           {filtered.map((t) => (
             <button
@@ -216,6 +237,7 @@ function TokenSearchInput({
               onClick={() => {
                 onSelect(t.id, `${t.symbol} — ${t.name}`);
                 setSearch('');
+                setOpen(false);
               }}
             >
               <span className="font-medium w-14">{t.symbol}</span>
@@ -237,6 +259,11 @@ function TokenSearchInput({
 
 export function ManualEntryPage() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+
+  // URL context params
+  const urlAccountId = searchParams.get('accountId') || '';
+  const urlInstitutionId = searchParams.get('institutionId') || '';
 
   // Data queries
   const { data: institutions } = trpc.institutions.getByUserId.useQuery();
@@ -252,9 +279,28 @@ export function ManualEntryPage() {
   const [newInstWebsite, setNewInstWebsite] = useState('');
   const [fetchingOG, setFetchingOG] = useState(false);
 
+  // Pre-select institution from URL param or from pre-selected account
+  const [initialized, setInitialized] = useState(false);
+  useEffect(() => {
+    if (initialized) return;
+    if (!institutions || !accounts) return;
+
+    if (urlAccountId) {
+      const acc = accounts.find((a) => a.id === urlAccountId);
+      if (acc) {
+        setInstitutionId(acc.institutionId);
+      }
+    } else if (urlInstitutionId) {
+      if (institutions.some((i) => i.id === urlInstitutionId)) {
+        setInstitutionId(urlInstitutionId);
+      }
+    }
+    setInitialized(true);
+  }, [urlAccountId, urlInstitutionId, institutions, accounts, initialized]);
+
   // Account state
   const [accountMode, setAccountMode] = useState<AccountMode>('select');
-  const [accountId, setAccountId] = useState('');
+  const [accountId, setAccountId] = useState(urlAccountId);
   const [newAccountName, setNewAccountName] = useState('');
   const [newAccountTypeId, setNewAccountTypeId] = useState('');
 

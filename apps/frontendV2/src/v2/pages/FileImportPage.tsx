@@ -1,6 +1,6 @@
 import { ArrowLeft, ArrowRight, Check, Loader2, Plus, Upload } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -64,6 +64,8 @@ function isImageFile(filename: string): boolean {
 
 export function FileImportPage() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const urlAccountId = searchParams.get('accountId') || '';
   const parseMutation = trpc.fileImport.parse.useMutation();
   const screenshotMutation = trpc.screenshots.parseScreenshots.useMutation();
   const utils = trpc.useUtils();
@@ -113,7 +115,7 @@ export function FileImportPage() {
   const [screenshotError, setScreenshotError] = useState<string | null>(null);
 
   // Account selection
-  const [selectedAccountId, setSelectedAccountId] = useState('');
+  const [selectedAccountId, setSelectedAccountId] = useState(urlAccountId);
   const [accountSearch, setAccountSearch] = useState('');
   const [newAccountName, setNewAccountName] = useState('');
   const [newAccountTypeId, setNewAccountTypeId] = useState('');

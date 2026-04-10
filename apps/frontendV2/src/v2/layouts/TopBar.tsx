@@ -20,19 +20,17 @@ function getAddLink(pathname: string): { href: string; label: string } | null {
   const clean = pathname.replace('/v2', '');
 
   // Account detail page → add data with account preselected
-  if (/^\/accounts\/[^/]+$/.test(clean)) {
-    return { href: V2_ROUTES.addData, label: 'Add Data' };
+  const accountMatch = clean.match(/^\/accounts\/([^/]+)$/);
+  if (accountMatch) {
+    return { href: `${V2_ROUTES.addData}?accountId=${accountMatch[1]}`, label: 'Add' };
   }
-  // Holdings list
-  if (clean === '/holdings' || clean === '/') {
-    return { href: V2_ROUTES.addData, label: 'Add Data' };
+  // Institution detail → add data with institution preselected
+  const instMatch = clean.match(/^\/institutions\/([^/]+)$/);
+  if (instMatch) {
+    return { href: `${V2_ROUTES.addData}?institutionId=${instMatch[1]}`, label: 'Add' };
   }
-  // Accounts list
-  if (clean === '/accounts') {
-    return { href: V2_ROUTES.addData, label: 'Add Data' };
-  }
-  // Institution detail
-  if (/^\/institutions\/[^/]+$/.test(clean)) {
+  // Holdings list, Accounts list, Dashboard
+  if (clean === '/holdings' || clean === '/' || clean === '/accounts') {
     return { href: V2_ROUTES.addData, label: 'Add Data' };
   }
 

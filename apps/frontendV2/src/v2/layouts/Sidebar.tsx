@@ -101,7 +101,14 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
           <TooltipTrigger asChild>
             <NavLink
               to={V2_ROUTES.addData}
-              className="flex items-center gap-2.5 rounded-md px-2 py-2 text-[13px] font-medium bg-primary text-primary-foreground hover:bg-primary/90 transition-colors"
+              className={({ isActive }) =>
+                cn(
+                  'flex items-center gap-2.5 rounded-md px-2 py-1.5 text-[13px] transition-colors',
+                  isActive
+                    ? 'bg-accent text-accent-foreground font-medium'
+                    : 'text-muted-foreground hover:bg-accent/50 hover:text-foreground'
+                )
+              }
             >
               <PlusCircle className="h-4 w-4 shrink-0" />
               {!collapsed && <span>Add Data</span>}

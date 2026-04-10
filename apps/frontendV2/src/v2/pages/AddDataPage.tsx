@@ -1,5 +1,5 @@
 import { FileUp, Keyboard, Plug, Wallet } from 'lucide-react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Card, CardContent } from '@/components/ui/card';
 import { V2_ROUTES } from '../lib/routes';
 
@@ -13,6 +13,15 @@ interface MethodOption {
 
 export function AddDataPage() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+
+  // Forward context params (accountId, institutionId) to sub-pages
+  const contextParams = new URLSearchParams();
+  const accountId = searchParams.get('accountId');
+  const institutionId = searchParams.get('institutionId');
+  if (accountId) contextParams.set('accountId', accountId);
+  if (institutionId) contextParams.set('institutionId', institutionId);
+  const qs = contextParams.toString() ? `?${contextParams.toString()}` : '';
 
   const methods: MethodOption[] = [
     {
@@ -20,14 +29,14 @@ export function AddDataPage() {
       icon: Keyboard,
       title: 'Manual Entry',
       description: 'Manually enter your holdings and balances',
-      action: () => navigate(V2_ROUTES.manualEntry),
+      action: () => navigate(`${V2_ROUTES.manualEntry}${qs}`),
     },
     {
       id: 'file',
       icon: FileUp,
       title: 'Upload File or Screenshot',
       description: 'Upload a CSV, OFX statement, or screenshot to import your data',
-      action: () => navigate(V2_ROUTES.fileImport),
+      action: () => navigate(`${V2_ROUTES.fileImport}${qs}`),
     },
     {
       id: 'wallet',
