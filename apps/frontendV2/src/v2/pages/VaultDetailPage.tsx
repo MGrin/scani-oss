@@ -1,9 +1,11 @@
 import { ArrowLeft, Pencil, Plus, Trash2 } from 'lucide-react';
 import { useState } from 'react';
+import { NumericFormat } from 'react-number-format';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
 import { Progress } from '@/components/ui/progress';
 import { Separator } from '@/components/ui/separator';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -27,6 +29,8 @@ export function VaultDetailPage() {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [showEditDialog, setShowEditDialog] = useState(false);
   const [showAttachHolding, setShowAttachHolding] = useState(false);
+  const [editingPercentage, setEditingPercentage] = useState<string | null>(null);
+  const [percentageInput, setPercentageInput] = useState('');
 
   const deleteMutation = trpc.vaults.delete.useMutation({
     onSuccess: () => {
@@ -44,6 +48,26 @@ export function VaultDetailPage() {
     },
     onError: (error) => showError(error, 'Failed to remove holding'),
   });
+
+  const updatePercentageMutation = trpc.vaults.updateHoldingPercentage.useMutation({
+    onSuccess: () => {
+      utils.vaults.invalidate();
+      setEditingPercentage(null);
+      showSuccess('Percentage updated');
+    },
+    onError: (error) => showError(error, 'Failed to update percentage'),
+  });
+
+  const savePercentage = (holdingId: string) => {
+    const pct = Number(percentageInput);
+    if (pct > 0 && pct <= 100 && id) {
+      updatePercentageMutation.mutate({
+        vaultId: id,
+        holdingId,
+        percentage: pct,
+      });
+    }
+  };
 
   if (!id) return null;
 
@@ -142,13 +166,52 @@ export function VaultDetailPage() {
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2">
                       <span className="text-sm font-medium">{h.tokenSymbol || 'Unknown'}</span>
-                      <Badge variant="outline" className="text-xs">
-                        {h.percentage}%
-                      </Badge>
+                      {editingPercentage === h.holdingId ? (
+                        <div className="flex items-center gap-1">
+                          <NumericFormat
+                            value={percentageInput}
+                            onValueChange={(v) => setPercentageInput(v.value)}
+                            customInput={Input}
+                            className="h-6 w-16 text-xs"
+                            decimalScale={1}
+                            allowNegative={false}
+                            isAllowed={(v) =>
+                              v.value === '' || (Number(v.value) > 0 && Number(v.value) <= 100)
+                            }
+                            suffix="%"
+                            autoFocus
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') savePercentage(h.holdingId);
+                              if (e.key === 'Escape') setEditingPercentage(null);
+                            }}
+                          />
+                          <Button
+                            size="sm"
+                            className="h-6 px-2 text-xs"
+                            onClick={() => savePercentage(h.holdingId)}
+                          >
+                            OK
+                          </Button>
+                        </div>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setEditingPercentage(h.holdingId);
+                            setPercentageInput(String(h.percentage));
+                          }}
+                          className="inline-flex items-center gap-1 hover:bg-accent rounded px-1"
+                          title="Click to edit percentage"
+                        >
+                          <Badge variant="outline" className="text-xs">
+                            {h.percentage}%
+                          </Badge>
+                          <Pencil className="h-2.5 w-2.5 text-muted-foreground" />
+                        </button>
+                      )}
                     </div>
                     <p className="text-xs text-muted-foreground mt-0.5">
-                      {h.institutionName}
-                      {h.accountName && ` / ${h.accountName}`}
+                      {[h.institutionName, h.accountName].filter(Boolean).join(' / ')}
                       {h.holdingValue && (
                         <span className="ml-2">
                           &middot;{' '}

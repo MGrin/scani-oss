@@ -58,10 +58,26 @@ export function AttachHoldingDialog({ open, onOpenChange, vaultId }: AttachHoldi
     setPercentage('100');
   };
 
+  // Query existing vault allocations for the selected holding
+  const { data: holdingVaults } = trpc.vaults.getByHoldingId.useQuery(
+    { holdingId: selectedHoldingId! },
+    { enabled: !!selectedHoldingId }
+  );
+
+  // Calculate how much percentage is already allocated to OTHER vaults
+  const alreadyAllocated = useMemo(() => {
+    if (!holdingVaults) return 0;
+    return holdingVaults
+      .filter((v) => v.id !== vaultId) // exclude current vault
+      .reduce((sum, v) => sum + (v.percentage ?? 0), 0);
+  }, [holdingVaults, vaultId]);
+
+  const maxPercentage = Math.max(0, 100 - alreadyAllocated);
+
   const handleSubmit = () => {
     if (!selectedHoldingId) return;
     const pct = Number(percentage);
-    if (Number.isNaN(pct) || pct <= 0 || pct > 100) return;
+    if (Number.isNaN(pct) || pct <= 0 || pct > maxPercentage) return;
 
     attachMutation.mutate({
       vaultId,
@@ -133,21 +149,33 @@ export function AttachHoldingDialog({ open, onOpenChange, vaultId }: AttachHoldi
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="attach-percentage">Percentage (0-100)</Label>
+            <Label htmlFor="attach-percentage">
+              Percentage{' '}
+              {selectedHoldingId && alreadyAllocated > 0 && (
+                <span className="text-muted-foreground font-normal">
+                  (max {maxPercentage}% — {alreadyAllocated}% in other vaults)
+                </span>
+              )}
+            </Label>
             <NumericFormat
               id="attach-percentage"
               value={percentage}
               onValueChange={(values) => setPercentage(values.value)}
               customInput={Input}
-              placeholder="100"
+              placeholder={String(maxPercentage)}
               decimalScale={2}
               allowNegative={false}
               isAllowed={(values) => {
                 const val = Number(values.value);
-                return values.value === '' || (val >= 0 && val <= 100);
+                return values.value === '' || (val >= 0 && val <= maxPercentage);
               }}
               suffix="%"
             />
+            {maxPercentage === 0 && selectedHoldingId && (
+              <p className="text-xs text-destructive">
+                This holding is already 100% allocated to other vaults.
+              </p>
+            )}
           </div>
         </div>
 
