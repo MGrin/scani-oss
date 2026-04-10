@@ -105,15 +105,15 @@ describe('parseCsvStatement', () => {
 2024-03-15,Payment,100.00,SGD,100.00
 2024-03-16,Withdrawal,-20.00,SGD,80.00`;
 
-    it('should fall back to generic template', () => {
+    it('should fall back to auto-detect template', () => {
       const result = parseCsvStatement(genericCsv);
-      expect(result.bankTemplate).toBe('generic');
+      expect(result.bankTemplate).toBe('auto');
       expect(result.transactions).toHaveLength(2);
     });
 
-    it('should add warning about generic detection', () => {
+    it('should parse generic CSV correctly', () => {
       const result = parseCsvStatement(genericCsv);
-      expect(result.warnings.some((w) => w.includes('generic'))).toBe(true);
+      expect(result.transactions[0]!.amount).toBe(100);
     });
   });
 
