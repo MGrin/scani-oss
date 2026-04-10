@@ -11,6 +11,7 @@ interface AppUpdateState {
 
 const VERSION_CHECK_INTERVAL = 2 * 60 * 1000; // Check every 2 minutes
 const VERSION_URL = '/version.json';
+const VERSION_STORAGE_KEY = 'scani-last-known-version';
 
 /**
  * Hook that detects when a new version of the app is deployed.
@@ -98,10 +99,20 @@ export function useAppUpdate(): AppUpdateState {
         if (!version || version === 'dev') return;
 
         if (initialVersion.current === null) {
-          // First check — store the current version
+          // First check this session — compare with last known version from localStorage
           initialVersion.current = version;
+          const lastKnown = localStorage.getItem(VERSION_STORAGE_KEY);
+          if (lastKnown && lastKnown !== version) {
+            // Version changed since last session — show update banner
+            if (active) {
+              setUpdateAvailable(true);
+              setDismissed(false);
+            }
+          }
+          localStorage.setItem(VERSION_STORAGE_KEY, version);
         } else if (version !== initialVersion.current) {
           // Version changed — new deployment detected
+          localStorage.setItem(VERSION_STORAGE_KEY, version);
           if (active) {
             setUpdateAvailable(true);
             setDismissed(false);
