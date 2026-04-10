@@ -14,7 +14,7 @@ import {
 } from '../components/shared/AccountSelectionStep';
 import { V2_ROUTES } from '../lib/routes';
 
-type Step = 'account' | 'upload' | 'processing' | 'review';
+type Step = 'account' | 'upload' | 'processing' | 'review' | 'csvResult';
 
 interface ExtractedHolding {
   symbol: string;
@@ -50,6 +50,7 @@ export function FileImportPage() {
   const urlInstitutionId = searchParams.get('institutionId') || '';
 
   const screenshotMutation = trpc.screenshots.parseScreenshots.useMutation();
+  const csvParseMutation = trpc.fileImport.parse.useMutation();
   const utils = trpc.useUtils();
 
   const createMutation = trpc.batchOperations.createHoldingsWithDependencies.useMutation({
@@ -81,6 +82,8 @@ export function FileImportPage() {
   const [fileName, setFileName] = useState('');
   const [extractedHoldings, setExtractedHoldings] = useState<ExtractedHolding[]>([]);
   const [overallConfidence, setOverallConfidence] = useState<number | null>(null);
+  const [csvBalance, setCsvBalance] = useState<{ currency: string; balance: number } | null>(null);
+  const [csvHasNoBalance, setCsvHasNoBalance] = useState(false);
 
   const handleFileSelect = useCallback(
     async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -91,44 +94,71 @@ export function FileImportPage() {
       setStep('processing');
 
       try {
-        let base64: string;
-
         if (isImageFile(file.name)) {
-          // Screenshot — binary → base64
+          // Screenshot path — AI extraction
           const buffer = await file.arrayBuffer();
-          base64 = arrayBufferToBase64(buffer);
+          const base64 = arrayBufferToBase64(buffer);
+
+          const parsed = await screenshotMutation.mutateAsync({
+            files: [{ filename: file.name, data: base64 }],
+            accountId: accountSelection.accountId || undefined,
+          });
+
+          // biome-ignore lint/suspicious/noExplicitAny: dynamic API response
+          const firstResult = (parsed as any)?.results?.[0];
+          if (firstResult?.success && firstResult.data) {
+            setExtractedHoldings(
+              (firstResult.data.holdings || []).map((h: ExtractedHolding) => ({
+                ...h,
+                removed: false,
+              }))
+            );
+            setOverallConfidence(firstResult.data.overallConfidence ?? null);
+            setStep('review');
+          } else {
+            showError(firstResult?.error || 'Failed to extract holdings', 'Screenshot parsing');
+            setStep('upload');
+          }
         } else {
-          // CSV/text — use text encoding
+          // CSV/OFX path — extract balance from transactions
           const text = await file.text();
-          base64 = btoa(unescape(encodeURIComponent(text)));
-        }
+          const base64 = btoa(unescape(encodeURIComponent(text)));
 
-        const parsed = await screenshotMutation.mutateAsync({
-          files: [{ filename: file.name, data: base64 }],
-          accountId: accountSelection.accountId || undefined,
-        });
+          // biome-ignore lint/suspicious/noExplicitAny: dynamic API response
+          const csvResult = (await csvParseMutation.mutateAsync({
+            content: base64,
+            filename: file.name,
+          })) as any;
 
-        // biome-ignore lint/suspicious/noExplicitAny: dynamic API response
-        const firstResult = (parsed as any)?.results?.[0];
-        if (firstResult?.success && firstResult.data) {
-          setExtractedHoldings(
-            (firstResult.data.holdings || []).map((h: ExtractedHolding) => ({
-              ...h,
-              removed: false,
-            }))
-          );
-          setOverallConfidence(firstResult.data.overallConfidence ?? null);
-          setStep('review');
-        } else {
-          showError(firstResult?.error || 'Failed to extract holdings', 'Screenshot parsing');
-          setStep('upload');
+          const transactions = csvResult?.transactions || [];
+          if (transactions.length > 0) {
+            // Find the latest transaction with a balance
+            const withBalance = transactions.filter(
+              (t: { balance: number | null }) => t.balance !== null
+            );
+            if (withBalance.length > 0) {
+              const latest = withBalance[withBalance.length - 1];
+              setCsvBalance({
+                currency: csvResult.detectedCurrency || latest.currency || 'USD',
+                balance: latest.balance,
+              });
+              setCsvHasNoBalance(false);
+            } else {
+              setCsvBalance(null);
+              setCsvHasNoBalance(true);
+            }
+          } else {
+            setCsvBalance(null);
+            setCsvHasNoBalance(true);
+          }
+          setStep('csvResult');
         }
       } catch (err) {
-        showError(err, 'Processing screenshot');
+        showError(err, 'Processing file');
         setStep('upload');
       }
     },
-    [screenshotMutation, accountSelection.accountId]
+    [screenshotMutation, csvParseMutation, accountSelection.accountId]
   );
 
   const activeHoldings = extractedHoldings.filter((h) => !h.removed);
@@ -407,6 +437,82 @@ export function FileImportPage() {
               Upload Different
             </Button>
           </div>
+        </div>
+      )}
+
+      {/* CSV Result */}
+      {step === 'csvResult' && (
+        <div className="space-y-4">
+          <Badge variant="outline">Bank Statement</Badge>
+
+          {csvBalance && !csvHasNoBalance ? (
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base">Detected Balance</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <p className="text-sm text-muted-foreground">
+                  The latest balance found in this bank statement:
+                </p>
+                <p className="text-2xl font-bold">
+                  {new Intl.NumberFormat('en-US', {
+                    style: 'currency',
+                    currency: csvBalance.currency,
+                    minimumFractionDigits: 2,
+                  }).format(csvBalance.balance)}
+                </p>
+                <p className="text-xs text-muted-foreground">Currency: {csvBalance.currency}</p>
+                <p className="text-xs text-muted-foreground mt-2">
+                  To import this balance as a holding, use Manual Entry with the amount pre-filled.
+                </p>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() =>
+                    navigate(
+                      `${V2_ROUTES.manualEntry}${accountSelection.accountId ? `?accountId=${accountSelection.accountId}` : ''}`
+                    )
+                  }
+                >
+                  Go to Manual Entry
+                </Button>
+              </CardContent>
+            </Card>
+          ) : (
+            <Card>
+              <CardContent className="p-6 text-center">
+                <p className="font-medium">No balance found in this file</p>
+                <p className="text-sm text-muted-foreground mt-1">
+                  This bank statement contains transactions but no final balance. You can enter
+                  holdings manually instead.
+                </p>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="mt-3"
+                  onClick={() =>
+                    navigate(
+                      `${V2_ROUTES.manualEntry}${accountSelection.accountId ? `?accountId=${accountSelection.accountId}` : ''}`
+                    )
+                  }
+                >
+                  Go to Manual Entry
+                </Button>
+              </CardContent>
+            </Card>
+          )}
+
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => {
+              setStep('upload');
+              setCsvBalance(null);
+              setCsvHasNoBalance(false);
+            }}
+          >
+            Upload Different File
+          </Button>
         </div>
       )}
     </div>
