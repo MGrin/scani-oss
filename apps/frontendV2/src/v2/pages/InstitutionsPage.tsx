@@ -1,26 +1,43 @@
 import { Building2 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
-import { Card, CardContent } from '@/components/ui/card';
-import { Skeleton } from '@/components/ui/skeleton';
+import { CardInteractive } from '@/components/ui/card';
 import { getFaviconUrl } from '@/lib/icons';
 import { trpc } from '@/lib/trpc';
+import { DataView as DataViewComponent } from '../components/data-view/DataView';
+import type { ColumnDef } from '../components/data-view/DataViewTable';
 import { useBaseCurrency } from '../hooks/useBaseCurrency';
 import { V2_ROUTES } from '../lib/routes';
+
+// Institution type from the query result
+interface InstitutionWithSummary {
+  id: string;
+  name: string;
+  description: string | null;
+  website: string | null;
+  typeId: string;
+  summary?: {
+    accountCount: number;
+    totalValue: string;
+  };
+}
 
 function InstitutionIcon({ name, website }: { name: string; website?: string | null }) {
   const favicon = getFaviconUrl(website);
   if (favicon) {
     return (
-      <div className="h-9 w-9 rounded-lg bg-muted flex items-center justify-center shrink-0 overflow-hidden">
+      <div className="h-8 w-8 rounded-lg bg-muted flex items-center justify-center shrink-0 overflow-hidden">
         <img
           src={favicon}
           alt={`${name} logo`}
           className="h-5 w-5 object-contain"
           onError={(e) => {
+            (e.target as HTMLImageElement).style.display = 'none';
             const parent = (e.target as HTMLImageElement).parentElement;
             if (parent) {
-              parent.innerHTML =
-                '<svg class="h-4 w-4 text-muted-foreground" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 22V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v18Z"/><path d="M6 12H4a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2"/><path d="M18 9h2a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-2"/><path d="M10 6h4"/><path d="M10 10h4"/><path d="M10 14h4"/><path d="M10 18h4"/></svg>';
+              const fallback = document.createElement('span');
+              fallback.className = 'text-xs font-bold text-muted-foreground';
+              fallback.textContent = name.charAt(0).toUpperCase();
+              parent.appendChild(fallback);
             }
           }}
         />
@@ -28,80 +45,168 @@ function InstitutionIcon({ name, website }: { name: string; website?: string | n
     );
   }
   return (
-    <div className="h-9 w-9 rounded-lg bg-muted flex items-center justify-center shrink-0">
+    <div className="h-8 w-8 rounded-lg bg-muted flex items-center justify-center shrink-0">
       <Building2 className="h-4 w-4 text-muted-foreground" />
     </div>
   );
 }
 
-export function InstitutionsPage() {
-  const navigate = useNavigate();
-  const { data: institutions, isLoading } = trpc.institutions.getByUserIdWithSummary.useQuery();
-  const { symbol: currencySymbol } = useBaseCurrency();
+function formatMoney(value: number, currency: string) {
+  return new Intl.NumberFormat('en-US', {
+    style: 'currency',
+    currency,
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 0,
+  }).format(value);
+}
 
-  if (isLoading) {
-    return (
-      <div className="space-y-4">
-        <Skeleton className="h-8 w-40" />
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-          {Array.from({ length: 6 }).map((_, i) => (
-            <Skeleton key={`skel-${i}`} className="h-20" />
-          ))}
+function InstitutionCard({
+  item,
+  currency,
+}: {
+  item: InstitutionWithSummary;
+  isSelected: boolean;
+  onSelect: (id: string) => void;
+  currency: string;
+}) {
+  return (
+    <CardInteractive className="p-4">
+      <div className="flex items-center gap-3">
+        <InstitutionIcon name={item.name} website={item.website} />
+        <div className="min-w-0 flex-1">
+          <p className="font-medium text-sm truncate">{item.name}</p>
+          <p className="text-xs text-muted-foreground">
+            {item.summary?.accountCount ?? 0} accounts
+          </p>
+        </div>
+        <div className="text-right shrink-0">
+          <p className="text-sm font-semibold tabular-nums">
+            {formatMoney(Number(item.summary?.totalValue ?? 0), currency)}
+          </p>
         </div>
       </div>
-    );
-  }
+    </CardInteractive>
+  );
+}
+
+export function InstitutionsPage() {
+  const navigate = useNavigate();
+  const { data: institutionsData, isLoading } = trpc.institutions.getByUserIdWithSummary.useQuery();
+  const { data: institutionTypes } = trpc.institutionTypes.getAll.useQuery();
+  const { symbol: currencySymbol } = useBaseCurrency();
+
+  const institutions = (institutionsData ?? []) as InstitutionWithSummary[];
+
+  const typeOptions = institutionTypes?.map((t) => ({ label: t.name, value: t.id })) ?? [];
+
+  const columns: ColumnDef<InstitutionWithSummary>[] = [
+    {
+      key: 'name',
+      label: 'Name',
+      sortable: true,
+      render: (item) => (
+        <span className="inline-flex items-center gap-2">
+          <InstitutionIcon name={item.name} website={item.website} />
+          <span className="font-medium text-sm">{item.name}</span>
+        </span>
+      ),
+    },
+    {
+      key: 'accounts',
+      label: 'Accounts',
+      align: 'right',
+      sortable: true,
+      render: (item) => <span className="tabular-nums">{item.summary?.accountCount ?? 0}</span>,
+    },
+    {
+      key: 'totalValue',
+      label: 'Total Value',
+      align: 'right',
+      sortable: true,
+      render: (item) => (
+        <span className="font-medium tabular-nums">
+          {formatMoney(Number(item.summary?.totalValue ?? 0), currencySymbol)}
+        </span>
+      ),
+    },
+  ];
 
   return (
     <div className="space-y-6">
       <div>
         <h2 className="text-2xl font-bold tracking-tight">Institutions</h2>
-        <p className="text-sm text-muted-foreground mt-1">
-          {institutions?.length || 0} institutions with accounts
+        <p className="text-muted-foreground mt-1">
+          {isLoading ? '' : `${institutions.length} institutions`}
         </p>
       </div>
 
-      {institutions && institutions.length > 0 ? (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-          {[...institutions]
-            .sort((a, b) => Number(b.summary?.totalValue ?? 0) - Number(a.summary?.totalValue ?? 0))
-            .map((inst) => (
-              <Card
-                key={inst.id}
-                className="cursor-pointer hover:border-primary/50 transition-colors"
-                onClick={() => navigate(V2_ROUTES.institutionDetail(inst.id))}
-              >
-                <CardContent className="flex items-center gap-3 p-4">
-                  <InstitutionIcon name={inst.name} website={inst.website} />
-                  <div className="min-w-0 flex-1">
-                    <p className="font-medium text-sm truncate">{inst.name}</p>
-                    <p className="text-xs text-muted-foreground">
-                      {inst.summary?.accountCount ?? 0} accounts
-                    </p>
-                  </div>
-                  <div className="text-right shrink-0">
-                    <p className="text-sm font-semibold">
-                      {new Intl.NumberFormat('en-US', {
-                        style: 'currency',
-                        currency: currencySymbol,
-                        minimumFractionDigits: 0,
-                        maximumFractionDigits: 0,
-                      }).format(Number(inst.summary?.totalValue ?? 0))}
-                    </p>
-                  </div>
-                </CardContent>
-              </Card>
-            ))}
-        </div>
-      ) : (
-        <div className="text-center py-12">
-          <Building2 className="h-10 w-10 mx-auto text-muted-foreground mb-3" />
-          <p className="text-muted-foreground">No institutions yet</p>
-          <p className="text-xs text-muted-foreground mt-1">
-            Add data to see your institutions here
-          </p>
-        </div>
-      )}
+      <DataViewComponent
+        config={{
+          pageKey: 'institutions',
+          data: institutions,
+          searchFn: (item, query) => {
+            const q = query.toLowerCase();
+            return (
+              item.name.toLowerCase().includes(q) ||
+              (item.description?.toLowerCase().includes(q) ?? false)
+            );
+          },
+          filterDefs:
+            typeOptions.length > 0
+              ? [
+                  {
+                    key: 'type',
+                    label: 'Type',
+                    options: typeOptions,
+                    fn: (item: InstitutionWithSummary, value: string) => item.typeId === value,
+                  },
+                ]
+              : [],
+          sortDefs: [
+            { key: 'totalValue', label: 'Total Value' },
+            { key: 'name', label: 'Name' },
+            { key: 'accounts', label: 'Accounts' },
+          ],
+          sortFn: (a, b, field, dir) => {
+            const mult = dir === 'asc' ? 1 : -1;
+            switch (field) {
+              case 'totalValue':
+                return (
+                  (Number(a.summary?.totalValue ?? 0) - Number(b.summary?.totalValue ?? 0)) * mult
+                );
+              case 'name':
+                return a.name.localeCompare(b.name) * mult;
+              case 'accounts':
+                return ((a.summary?.accountCount ?? 0) - (b.summary?.accountCount ?? 0)) * mult;
+              default:
+                return 0;
+            }
+          },
+          defaultSort: { field: 'totalValue', direction: 'desc' },
+          defaultView: 'cards',
+        }}
+        columns={columns}
+        renderCard={(item, isSelected, onSelect) => (
+          <InstitutionCard
+            item={item}
+            isSelected={isSelected}
+            onSelect={onSelect}
+            currency={currencySymbol}
+          />
+        )}
+        onRowClick={(item) => navigate(V2_ROUTES.institutionDetail(item.id))}
+        getId={(item) => item.id}
+        isLoading={isLoading}
+        emptyState={
+          <div className="flex flex-col items-center justify-center py-12 text-center">
+            <Building2 className="h-10 w-10 text-muted-foreground mb-3" />
+            <h3 className="text-lg font-semibold">No institutions</h3>
+            <p className="text-sm text-muted-foreground mt-1">
+              Add data to see your institutions here
+            </p>
+          </div>
+        }
+      />
     </div>
   );
 }
