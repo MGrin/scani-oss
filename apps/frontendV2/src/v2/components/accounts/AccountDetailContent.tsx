@@ -183,11 +183,6 @@ export function AccountDetailContent({ accountId, mode = 'panel' }: AccountDetai
                             {h.token.typeCode}
                           </Badge>
                         )}
-                        {h.source && h.source !== 'manual' && (
-                          <Badge variant="outline" className="text-[9px] px-1 py-0">
-                            {h.source}
-                          </Badge>
-                        )}
                         {h.isActive === false && (
                           <Badge variant="secondary" className="text-[9px] px-1 py-0">
                             inactive
@@ -195,10 +190,14 @@ export function AccountDetailContent({ accountId, mode = 'panel' }: AccountDetai
                         )}
                       </div>
                       <p className="text-xs text-muted-foreground truncate mt-0.5">
-                        {h.balance
-                          ? `${Number(h.balance).toLocaleString()} ${h.token?.symbol || ''}`
-                          : ''}
-                        {h.token?.name ? ` · ${h.token.name}` : ''}
+                        {[
+                          h.balance
+                            ? `${Number(h.balance).toLocaleString()} ${h.token?.symbol || ''}`
+                            : null,
+                          h.token?.name || null,
+                        ]
+                          .filter(Boolean)
+                          .join(' · ')}
                       </p>
                     </div>
                     <span className="text-sm font-semibold tabular-nums shrink-0">

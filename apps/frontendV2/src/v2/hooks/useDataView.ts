@@ -37,6 +37,7 @@ export interface DataViewConfig<T> {
   groupByDefs?: GroupByDef[];
   defaultSort?: { field: string; direction: 'asc' | 'desc' };
   defaultView?: 'table' | 'cards';
+  defaultFilters?: Record<string, string>;
 }
 
 export interface DataViewReturn<T> {
@@ -101,7 +102,7 @@ export function useDataView<T>(
   const persisted = useMemo(() => loadPersistedState(pageKey), [pageKey]);
 
   const [searchTerm, setSearchTerm] = useState('');
-  const [filters, setFilters] = useState<Record<string, string>>({});
+  const [filters, setFilters] = useState<Record<string, string>>(config.defaultFilters ?? {});
   const [sortField, setSortField] = useState<string>(
     (persisted?.sortField as string) ?? defaultSort?.field ?? sortDefs?.[0]?.key ?? ''
   );

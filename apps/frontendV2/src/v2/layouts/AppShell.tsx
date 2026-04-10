@@ -135,7 +135,7 @@ export function AppShell() {
         />
         <PullToRefresh onRefresh={handleRefresh}>
           <main
-            className="flex-1 overflow-y-auto lg:pb-0"
+            className="flex-1 lg:pb-0"
             style={{ paddingBottom: 'calc(3.5rem + env(safe-area-inset-bottom, 0px))' }}
             data-scrollable="true"
           >

@@ -1,7 +1,7 @@
 import type { HoldingWithDetails } from '@scani/shared';
 import { PieChart } from 'lucide-react';
 import { useCallback, useMemo, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Badge } from '@/components/ui/badge';
 import { getFaviconUrl } from '@/lib/icons';
 import { trpc } from '@/lib/trpc';
@@ -151,6 +151,21 @@ export function HoldingsPage() {
   const { data: groupsData } = trpc.groups.getAll.useQuery();
   const { data: baseCurrency } = trpc.users.getBaseCurrency.useQuery();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+
+  // Build default filters from URL params
+  const defaultFilters = useMemo(() => {
+    const f: Record<string, string> = {};
+    const inst = searchParams.get('institution');
+    if (inst) f.institution = inst;
+    const account = searchParams.get('account');
+    if (account) f.account = account;
+    const tokenType = searchParams.get('tokenType');
+    if (tokenType) f.tokenType = tokenType;
+    const group = searchParams.get('group');
+    if (group) f.group = group;
+    return f;
+  }, [searchParams]);
   const { bulkDeleteHoldings } = useHoldingActions();
   const [assignGroupsIds, setAssignGroupsIds] = useState<string[]>([]);
   const [assignGroupsOpen, setAssignGroupsOpen] = useState(false);
@@ -276,6 +291,7 @@ export function HoldingsPage() {
           ],
           defaultSort: { field: 'value', direction: 'desc' },
           defaultView: 'table',
+          defaultFilters,
         }}
         columns={holdingColumns}
         renderCard={(
