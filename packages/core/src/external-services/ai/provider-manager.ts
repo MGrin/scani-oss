@@ -2,7 +2,7 @@ import { createComponentLogger } from '../../utils/logger';
 import { DeepSeekProvider } from './deepseek-provider';
 import { OpenAIProvider } from './openai-provider';
 import { PerplexityProvider } from './perplexity-provider';
-import type { AIProviderResponse } from './types';
+import type { AIProviderConfig, AIProviderResponse } from './types';
 import { type AIProvider, AIProviderError } from './types';
 
 export type AIProviderType = 'openai' | 'perplexity' | 'deepseek';
@@ -154,6 +154,97 @@ export class AIProviderManager {
 
     throw new AIProviderError(
       'All AI providers failed to parse screenshot',
+      'AIProviderManager',
+      'ALL_PROVIDERS_FAILED'
+    );
+  }
+
+  /**
+   * Make a text-only AI completion (no images). Uses the same provider
+   * infrastructure with fallback. Ideal for lightweight tasks like
+   * CSV column mapping where vision is not needed.
+   */
+  async completeText(
+    prompt: string,
+    options?: {
+      provider?: AIProviderType;
+      maxTokens?: number;
+      temperature?: number;
+      jsonMode?: boolean;
+      fallbackProviders?: boolean;
+    }
+  ): Promise<{ content: string; provider: string }> {
+    const targetProvider = options?.provider || this.config.defaultProvider;
+    const useFallback = options?.fallbackProviders ?? true;
+    const providerOrder = [
+      targetProvider,
+      ...(useFallback ? Array.from(this.providers.keys()).filter((n) => n !== targetProvider) : []),
+    ];
+
+    for (const providerName of providerOrder) {
+      const provider = this.providers.get(providerName);
+      if (!provider || !provider.isConfigured()) continue;
+
+      try {
+        const info = provider.getProviderInfo();
+        // Use a cheaper model for text tasks when available
+        const model =
+          providerName === 'openai'
+            ? 'gpt-4o-mini'
+            : providerName === 'deepseek'
+              ? 'deepseek-chat'
+              : info.model;
+
+        const config = (provider as unknown as { config: AIProviderConfig }).config;
+        const baseUrl = config.baseUrl;
+
+        const body: Record<string, unknown> = {
+          model,
+          messages: [{ role: 'user', content: prompt }],
+          max_tokens: options?.maxTokens || 200,
+          temperature: options?.temperature ?? 0,
+        };
+        if (options?.jsonMode && providerName === 'openai') {
+          body.response_format = { type: 'json_object' };
+        }
+
+        const response = await fetch(`${baseUrl}/chat/completions`, {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${config.apiKey}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(body),
+        });
+
+        if (!response.ok) {
+          this.logger.warn(
+            { provider: providerName, status: response.status },
+            'Text completion failed'
+          );
+          continue;
+        }
+
+        const data = (await response.json()) as {
+          choices: Array<{ message: { content: string } }>;
+        };
+        const content = data.choices?.[0]?.message?.content;
+        if (content) {
+          return { content, provider: providerName };
+        }
+      } catch (error) {
+        this.logger.warn(
+          {
+            provider: providerName,
+            error: error instanceof Error ? error.message : error,
+          },
+          'Text completion error, trying next provider'
+        );
+      }
+    }
+
+    throw new AIProviderError(
+      'All AI providers failed for text completion',
       'AIProviderManager',
       'ALL_PROVIDERS_FAILED'
     );

@@ -1,4 +1,3 @@
-export { detectCsvColumnsWithAI } from './ai-csv-mapper';
 export { parseCsvStatement } from './csv-parser';
 export { detectBankTemplate, detectFormat } from './format-detector';
 export { parseOfxStatement } from './ofx-parser';
@@ -11,8 +10,9 @@ export type {
 export { BANK_TEMPLATES } from './types';
 
 import Papa from 'papaparse';
+import { Container } from 'typedi';
+import { AIService } from '../../services/AIService';
 import { createComponentLogger } from '../../utils/logger';
-import { detectCsvColumnsWithAI } from './ai-csv-mapper';
 import { parseCsvStatement } from './csv-parser';
 import { detectFormat } from './format-detector';
 import { parseOfxStatement } from './ofx-parser';
@@ -69,7 +69,8 @@ export async function parseStatement(
 
             if (raw.data.length > 0) {
               const headers = Object.keys(raw.data[0]!);
-              const aiMapping = await detectCsvColumnsWithAI(headers, raw.data.slice(0, 3));
+              const aiService = Container.get(AIService);
+              const aiMapping = await aiService.detectCsvColumns(headers, raw.data.slice(0, 3));
 
               if (aiMapping && (aiMapping.balance || aiMapping.credit || aiMapping.date)) {
                 // Re-parse with AI-detected mapping
@@ -77,10 +78,10 @@ export async function parseStatement(
                   date: aiMapping.date || '',
                   description: aiMapping.description || '',
                   amount: aiMapping.amount || '',
-                  credit: aiMapping.credit,
-                  debit: aiMapping.debit,
-                  currency: aiMapping.currency,
-                  balance: aiMapping.balance,
+                  credit: aiMapping.credit || undefined,
+                  debit: aiMapping.debit || undefined,
+                  currency: aiMapping.currency || undefined,
+                  balance: aiMapping.balance || undefined,
                 };
                 result = parseCsvStatement(content, undefined, mergedMapping);
                 result.warnings.push('Column mapping detected by AI');
