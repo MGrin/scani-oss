@@ -1,3 +1,4 @@
+export { detectCsvColumnsWithAI } from './ai-csv-mapper';
 export { parseCsvStatement } from './csv-parser';
 export { detectBankTemplate, detectFormat } from './format-detector';
 export { parseOfxStatement } from './ofx-parser';
@@ -9,13 +10,19 @@ export type {
 } from './types';
 export { BANK_TEMPLATES } from './types';
 
+import Papa from 'papaparse';
+import { createComponentLogger } from '../../utils/logger';
+import { detectCsvColumnsWithAI } from './ai-csv-mapper';
 import { parseCsvStatement } from './csv-parser';
 import { detectFormat } from './format-detector';
 import { parseOfxStatement } from './ofx-parser';
 import type { CsvColumnMapping, ParseResult } from './types';
 
+const logger = createComponentLogger('file-import');
+
 /**
  * Parse a bank statement file, auto-detecting the format.
+ * For CSV files, uses AI fallback when auto-detection misses key columns.
  *
  * @param content - Raw file content (string)
  * @param filename - Original filename (used for format detection)
@@ -39,12 +46,58 @@ export async function parseStatement(
   }
 
   switch (format) {
-    case 'csv':
-      return parseCsvStatement(content, bankTemplate, customMapping);
+    case 'csv': {
+      // First pass: auto-detect columns
+      let result = parseCsvStatement(content, bankTemplate, customMapping);
+
+      // Check if balance was detected — if not, try AI
+      if (!customMapping && !bankTemplate) {
+        const hasBalance = result.transactions.some(
+          (t) => t.balance !== null && t.balance !== undefined
+        );
+
+        if (!hasBalance && result.transactions.length > 0) {
+          logger.info('No balance detected in CSV, trying AI column mapping');
+
+          try {
+            // Parse raw CSV to get headers and sample rows
+            const raw = Papa.parse<Record<string, string>>(content, {
+              header: true,
+              skipEmptyLines: true,
+              transformHeader: (h) => h.trim(),
+            });
+
+            if (raw.data.length > 0) {
+              const headers = Object.keys(raw.data[0]!);
+              const aiMapping = await detectCsvColumnsWithAI(headers, raw.data.slice(0, 3));
+
+              if (aiMapping && (aiMapping.balance || aiMapping.credit || aiMapping.date)) {
+                // Re-parse with AI-detected mapping
+                const mergedMapping: CsvColumnMapping = {
+                  date: aiMapping.date || '',
+                  description: aiMapping.description || '',
+                  amount: aiMapping.amount || '',
+                  credit: aiMapping.credit,
+                  debit: aiMapping.debit,
+                  currency: aiMapping.currency,
+                  balance: aiMapping.balance,
+                };
+                result = parseCsvStatement(content, undefined, mergedMapping);
+                result.warnings.push('Column mapping detected by AI');
+                logger.info({ aiMapping }, 'Successfully re-parsed CSV with AI column mapping');
+              }
+            }
+          } catch (error) {
+            logger.warn({ error }, 'AI CSV column detection failed, using auto-detect result');
+          }
+        }
+      }
+
+      return result;
+    }
     case 'ofx':
       return parseOfxStatement(content);
     case 'mt940':
-      // MT940 support can be added later with mt940js library
       return {
         transactions: [],
         format: 'mt940',
