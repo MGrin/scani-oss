@@ -266,7 +266,10 @@ export function ManualEntryPage() {
   const urlInstitutionId = searchParams.get('institutionId') || '';
 
   // Data queries
-  const { data: institutions } = trpc.institutions.getByUserId.useQuery();
+  // Institution picker needs the full system-wide catalog, not just the
+  // institutions the user already has accounts with — otherwise a new user
+  // with no data sees an empty selector. Use `getAll`.
+  const { data: institutions } = trpc.institutions.getAll.useQuery();
   const { data: accounts } = trpc.accounts.getAll.useQuery();
   const { data: accountTypes } = trpc.accountTypes.getAll.useQuery();
   const { data: institutionTypes } = trpc.institutionTypes.getAll.useQuery();
