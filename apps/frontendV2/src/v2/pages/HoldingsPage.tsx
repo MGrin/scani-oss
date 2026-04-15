@@ -1,6 +1,6 @@
 import type { HoldingWithDetails } from '@scani/shared';
 import { PieChart } from 'lucide-react';
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Badge } from '@/components/ui/badge';
 import { getFaviconUrl } from '@/lib/icons';
@@ -169,13 +169,10 @@ export function HoldingsPage() {
   const { bulkDeleteHoldings } = useHoldingActions();
   const [assignGroupsIds, setAssignGroupsIds] = useState<string[]>([]);
   const [assignGroupsOpen, setAssignGroupsOpen] = useState(false);
-
-  const handleBulkDelete = useCallback(
-    (ids: Set<string>) => {
-      bulkDeleteHoldings(Array.from(ids));
-    },
-    [bulkDeleteHoldings]
-  );
+  // Stash the DataView's clearSelection inside the bulk-actions render closure
+  // so the assign-groups dialog can clear selection too, once its mutation
+  // settles. The DataView exposes `clear` via the renderBulkActions callback.
+  const clearSelectionRef = useRef<(() => void) | null>(null);
 
   const handleAssignGroups = useCallback((ids: Set<string>) => {
     setAssignGroupsIds(Array.from(ids));
@@ -299,14 +296,25 @@ export function HoldingsPage() {
           isSelected: boolean,
           onSelect: (id: string) => void
         ) => <HoldingCard item={item} isSelected={isSelected} onSelect={onSelect} />}
-        renderBulkActions={(ids: Set<string>, clear: () => void) => (
-          <HoldingBulkActions
-            selectedIds={ids}
-            onClear={clear}
-            onDelete={handleBulkDelete}
-            onAssignGroups={handleAssignGroups}
-          />
-        )}
+        renderBulkActions={(ids: Set<string>, clear: () => void) => {
+          // Capture the latest clear function so the assign-groups dialog
+          // (which lives outside this render closure) can also clear the
+          // selection after its mutation settles.
+          clearSelectionRef.current = clear;
+          return (
+            <HoldingBulkActions
+              selectedIds={ids}
+              onClear={clear}
+              onDelete={(selectedIds) => {
+                // Clear the selection the moment the delete succeeds —
+                // otherwise the footer lingers showing "N selected" for
+                // rows that no longer exist.
+                bulkDeleteHoldings(Array.from(selectedIds), { onSuccess: clear });
+              }}
+              onAssignGroups={handleAssignGroups}
+            />
+          );
+        }}
         onRowClick={(item: HoldingWithDetails) => navigate(V2_ROUTES.holdingDetail(item.id))}
         getId={(item: HoldingWithDetails) => item.id}
         isLoading={isLoading}
@@ -323,7 +331,12 @@ export function HoldingsPage() {
 
       <AssignGroupsDialog
         open={assignGroupsOpen}
-        onOpenChange={setAssignGroupsOpen}
+        onOpenChange={(open) => {
+          setAssignGroupsOpen(open);
+          // When the dialog closes after a successful save, also clear
+          // the bulk-action selection so the footer doesn't linger.
+          if (!open) clearSelectionRef.current?.();
+        }}
         entityType="holdings"
         entityIds={assignGroupsIds}
       />

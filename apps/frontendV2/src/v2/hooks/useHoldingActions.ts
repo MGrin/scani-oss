@@ -39,8 +39,10 @@ export function useHoldingActions() {
   });
 
   return {
-    deleteHolding: (id: string) => deleteMutation.mutate({ id }),
-    bulkDeleteHoldings: (ids: string[]) => bulkDeleteMutation.mutate({ ids }),
+    deleteHolding: (id: string, options?: { onSuccess?: () => void }) =>
+      deleteMutation.mutate({ id }, { onSuccess: options?.onSuccess }),
+    bulkDeleteHoldings: (ids: string[], options?: { onSuccess?: () => void }) =>
+      bulkDeleteMutation.mutate({ ids }, { onSuccess: options?.onSuccess }),
     updateHolding: (id: string, data: { balance?: string; isActive?: boolean }) =>
       updateMutation.mutate({ id, data }),
     refreshPrice: (id: string) => refreshPriceMutation.mutate({ id }),

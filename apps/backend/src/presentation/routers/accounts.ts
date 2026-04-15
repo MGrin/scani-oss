@@ -108,7 +108,15 @@ export const accountsRouter = router({
     .input(
       z.object({
         accountIds: z.array(z.string()).min(1),
-        groupIds: z.array(z.string()),
+        // Diff-based like `holdings.bulkAssignGroups` — see that
+        // procedure for the rationale. Under the current model, an
+        // account is "in" a group iff all of its visible holdings are
+        // in that group. Assigning a group to an account adds that
+        // group to every visible holding of the account; removing a
+        // group from an account removes that group from every visible
+        // holding. `accountGroups` is then recomputed as a cache.
+        addedGroupIds: z.array(z.string()).default([]),
+        removedGroupIds: z.array(z.string()).default([]),
       })
     )
     .mutation(async ({ input, ctx }) => {
@@ -116,7 +124,11 @@ export const accountsRouter = router({
 
       const result = await AccountImplementations.bulkAssignGroups(
         { userId: dbUser.id, dbUser },
-        { accountIds: input.accountIds, groupIds: input.groupIds }
+        {
+          accountIds: input.accountIds,
+          addedGroupIds: input.addedGroupIds,
+          removedGroupIds: input.removedGroupIds,
+        }
       );
 
       // PERFORMANCE: Emit single bulk event instead of looping

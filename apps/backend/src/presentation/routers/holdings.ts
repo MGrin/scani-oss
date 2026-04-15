@@ -146,7 +146,13 @@ export const holdingsRouter = router({
     .input(
       z.object({
         holdingIds: z.array(z.string()).min(1),
-        groupIds: z.array(z.string()),
+        // The dialog computes an explicit diff between the pre-checked
+        // common-groups state and the user's save selection, then sends
+        // add/remove sets. Preferable to REPLACE semantics because
+        // REPLACE would clobber any per-holding groups that weren't in
+        // the pre-checked set.
+        addedGroupIds: z.array(z.string()).default([]),
+        removedGroupIds: z.array(z.string()).default([]),
       })
     )
     .mutation(async ({ input, ctx }) => {
@@ -154,7 +160,11 @@ export const holdingsRouter = router({
 
       const result = await HoldingImplementations.bulkAssignGroups(
         { userId: dbUser.id, dbUser },
-        { holdingIds: input.holdingIds, groupIds: input.groupIds }
+        {
+          holdingIds: input.holdingIds,
+          addedGroupIds: input.addedGroupIds,
+          removedGroupIds: input.removedGroupIds,
+        }
       );
 
       // PERFORMANCE: Emit single bulk event instead of looping

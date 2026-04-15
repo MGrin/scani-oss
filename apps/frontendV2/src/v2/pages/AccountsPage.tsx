@@ -1,6 +1,6 @@
 import type { AccountWihSumaryDTO } from '@scani/shared';
 import { Wallet } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Badge } from '@/components/ui/badge';
 import { getFaviconUrl } from '@/lib/icons';
@@ -35,6 +35,10 @@ export function AccountsPage() {
   const { bulkDelete } = useAccountActions();
   const [deleteConfirmIds, setDeleteConfirmIds] = useState<Set<string> | null>(null);
   const [assignGroupsIds, setAssignGroupsIds] = useState<Set<string> | null>(null);
+  // Stash the DataView's clearSelection so confirm-dialog and assign-groups
+  // flows (which both live outside the renderBulkActions closure) can clear
+  // the selection footer once their mutations settle.
+  const clearSelectionRef = useRef<(() => void) | null>(null);
 
   const allAccounts = accountsData ?? [];
   const emptyCount = useMemo(
@@ -261,14 +265,17 @@ export function AccountsPage() {
             />
           );
         }}
-        renderBulkActions={(ids: Set<string>, clear: () => void) => (
-          <AccountBulkActions
-            selectedIds={ids}
-            onClear={clear}
-            onDelete={(selectedIds) => setDeleteConfirmIds(selectedIds)}
-            onAssignGroups={(selectedIds) => setAssignGroupsIds(selectedIds)}
-          />
-        )}
+        renderBulkActions={(ids: Set<string>, clear: () => void) => {
+          clearSelectionRef.current = clear;
+          return (
+            <AccountBulkActions
+              selectedIds={ids}
+              onClear={clear}
+              onDelete={(selectedIds) => setDeleteConfirmIds(selectedIds)}
+              onAssignGroups={(selectedIds) => setAssignGroupsIds(selectedIds)}
+            />
+          );
+        }}
         onRowClick={(item: AccountWihSumaryDTO) => navigate(V2_ROUTES.accountDetail(item.id))}
         getId={(item: AccountWihSumaryDTO) => item.id}
         isLoading={isLoading}
@@ -294,7 +301,12 @@ export function AccountsPage() {
         variant="destructive"
         onConfirm={() => {
           if (deleteConfirmIds) {
-            bulkDelete(Array.from(deleteConfirmIds));
+            bulkDelete(Array.from(deleteConfirmIds), {
+              // Clear selection the moment the delete succeeds so the
+              // bulk-action footer doesn't linger showing "N selected"
+              // for rows that no longer exist.
+              onSuccess: () => clearSelectionRef.current?.(),
+            });
           }
         }}
       />
@@ -302,7 +314,12 @@ export function AccountsPage() {
       <AssignGroupsDialog
         open={assignGroupsIds !== null}
         onOpenChange={(open) => {
-          if (!open) setAssignGroupsIds(null);
+          if (!open) {
+            setAssignGroupsIds(null);
+            // Clear selection once the dialog closes so the bulk-action
+            // footer doesn't persist between dialog open/close cycles.
+            clearSelectionRef.current?.();
+          }
         }}
         entityType="accounts"
         entityIds={assignGroupsIds ? Array.from(assignGroupsIds) : []}

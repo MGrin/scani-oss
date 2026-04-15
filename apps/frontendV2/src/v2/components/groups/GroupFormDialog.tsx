@@ -1,5 +1,5 @@
 import { ArrowLeft, ArrowRight } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import {
@@ -54,6 +54,13 @@ export function GroupFormDialog({ open, onOpenChange, groupId }: GroupFormDialog
   const [accountSearch, setAccountSearch] = useState('');
   const [selectedHoldingIds, setSelectedHoldingIds] = useState<Set<string>>(new Set());
   const [selectedAccountIds, setSelectedAccountIds] = useState<Set<string>>(new Set());
+  // When editing an existing group, we stash the initial membership so
+  // that on save we can compute a diff (added/removed) and translate
+  // it into the add/remove repository operations. Without this, we'd
+  // only know what the user *wants* the final state to be and would
+  // have no way to remove deselected entities from the group.
+  const initialHoldingIdsRef = useRef<Set<string>>(new Set());
+  const initialAccountIdsRef = useRef<Set<string>>(new Set());
 
   const holdings = holdingsData?.holdings ?? [];
   const accounts = accountsData ?? [];
@@ -70,17 +77,21 @@ export function GroupFormDialog({ open, onOpenChange, groupId }: GroupFormDialog
         if (h.groups.some((g) => g.id === groupId)) hIds.add(h.id);
       }
       setSelectedHoldingIds(hIds);
+      initialHoldingIdsRef.current = new Set(hIds);
       const aIds = new Set<string>();
       for (const a of accounts) {
         if (a.groups.some((g) => g.id === groupId)) aIds.add(a.id);
       }
       setSelectedAccountIds(aIds);
+      initialAccountIdsRef.current = new Set(aIds);
     } else {
       setName('');
       setDescription('');
       setColor(COLORS[Math.floor(Math.random() * COLORS.length)]!);
       setSelectedHoldingIds(new Set());
       setSelectedAccountIds(new Set());
+      initialHoldingIdsRef.current = new Set();
+      initialAccountIdsRef.current = new Set();
     }
     setStep(1);
     setHoldingSearch('');
@@ -124,12 +135,22 @@ export function GroupFormDialog({ open, onOpenChange, groupId }: GroupFormDialog
 
   const createMutation = trpc.groups.create.useMutation({
     onSuccess: async (newGroup) => {
-      const groupIds = [newGroup.id];
+      // The new group doesn't exist on any entity yet, so the save is
+      // pure add — every selected entity gets the new group added,
+      // nothing is removed.
       if (selectedHoldingIds.size > 0) {
-        assignHoldingsMutation.mutate({ holdingIds: Array.from(selectedHoldingIds), groupIds });
+        assignHoldingsMutation.mutate({
+          holdingIds: Array.from(selectedHoldingIds),
+          addedGroupIds: [newGroup.id],
+          removedGroupIds: [],
+        });
       }
       if (selectedAccountIds.size > 0) {
-        assignAccountsMutation.mutate({ accountIds: Array.from(selectedAccountIds), groupIds });
+        assignAccountsMutation.mutate({
+          accountIds: Array.from(selectedAccountIds),
+          addedGroupIds: [newGroup.id],
+          removedGroupIds: [],
+        });
       }
       await invalidatePortfolioQueries(utils);
       onOpenChange(false);
@@ -141,14 +162,57 @@ export function GroupFormDialog({ open, onOpenChange, groupId }: GroupFormDialog
   const updateMutation = trpc.groups.update.useMutation({
     onSuccess: async () => {
       if (groupId) {
-        assignHoldingsMutation.mutate({
-          holdingIds: Array.from(selectedHoldingIds),
-          groupIds: [groupId],
-        });
-        assignAccountsMutation.mutate({
-          accountIds: Array.from(selectedAccountIds),
-          groupIds: [groupId],
-        });
+        // For an existing group we care about the *diff* between the
+        // initial membership (captured when the dialog opened) and the
+        // current selection. Entities present in both sets are
+        // untouched; newly-checked entities get the group added;
+        // unchecked entities get it removed. We split add and remove
+        // into separate mutation calls so the backend's add/remove
+        // paths operate on disjoint entity lists — calling both on the
+        // same list would cancel out to a no-op.
+        const initialHoldings = initialHoldingIdsRef.current;
+        const holdingsAdded = Array.from(selectedHoldingIds).filter(
+          (id) => !initialHoldings.has(id)
+        );
+        const holdingsRemoved = Array.from(initialHoldings).filter(
+          (id) => !selectedHoldingIds.has(id)
+        );
+        if (holdingsAdded.length > 0) {
+          assignHoldingsMutation.mutate({
+            holdingIds: holdingsAdded,
+            addedGroupIds: [groupId],
+            removedGroupIds: [],
+          });
+        }
+        if (holdingsRemoved.length > 0) {
+          assignHoldingsMutation.mutate({
+            holdingIds: holdingsRemoved,
+            addedGroupIds: [],
+            removedGroupIds: [groupId],
+          });
+        }
+
+        const initialAccounts = initialAccountIdsRef.current;
+        const accountsAdded = Array.from(selectedAccountIds).filter(
+          (id) => !initialAccounts.has(id)
+        );
+        const accountsRemoved = Array.from(initialAccounts).filter(
+          (id) => !selectedAccountIds.has(id)
+        );
+        if (accountsAdded.length > 0) {
+          assignAccountsMutation.mutate({
+            accountIds: accountsAdded,
+            addedGroupIds: [groupId],
+            removedGroupIds: [],
+          });
+        }
+        if (accountsRemoved.length > 0) {
+          assignAccountsMutation.mutate({
+            accountIds: accountsRemoved,
+            addedGroupIds: [],
+            removedGroupIds: [groupId],
+          });
+        }
       }
       await invalidatePortfolioQueries(utils);
       onOpenChange(false);

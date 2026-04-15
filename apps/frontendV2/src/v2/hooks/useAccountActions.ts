@@ -2,6 +2,12 @@ import { showError, showSuccess } from '@/hooks/use-toast';
 import { trpc } from '@/lib/trpc';
 import { invalidatePortfolioQueries } from './invalidatePortfolioQueries';
 
+// Note: there is no `bulkAssignGroups` here. That flow lives inside
+// `AssignGroupsDialog` because it needs access to the current common-
+// groups state to compute the add/remove diff against the user's save
+// selection. Pulling the mutation into this hook would mean duplicating
+// that diff logic at every call site.
+
 export function useAccountActions() {
   const utils = trpc.useUtils();
 
@@ -29,24 +35,15 @@ export function useAccountActions() {
     onError: (error) => showError(error, 'Failed to update account'),
   });
 
-  const bulkAssignGroupsMutation = trpc.accounts.bulkAssignGroups.useMutation({
-    onSuccess: async () => {
-      await invalidatePortfolioQueries(utils);
-      showSuccess('Groups assigned successfully');
-    },
-    onError: (error) => showError(error, 'Failed to assign groups'),
-  });
-
   return {
-    deleteAccount: (id: string) => deleteMutation.mutate({ id }),
-    bulkDelete: (ids: string[]) => bulkDeleteMutation.mutate({ ids }),
+    deleteAccount: (id: string, options?: { onSuccess?: () => void }) =>
+      deleteMutation.mutate({ id }, { onSuccess: options?.onSuccess }),
+    bulkDelete: (ids: string[], options?: { onSuccess?: () => void }) =>
+      bulkDeleteMutation.mutate({ ids }, { onSuccess: options?.onSuccess }),
     updateAccount: (id: string, data: { name?: string; description?: string | null }) =>
       updateMutation.mutate({ id, data }),
-    bulkAssignGroups: (accountIds: string[], groupIds: string[]) =>
-      bulkAssignGroupsMutation.mutate({ accountIds, groupIds }),
     isDeleting: deleteMutation.isPending,
     isBulkDeleting: bulkDeleteMutation.isPending,
     isUpdating: updateMutation.isPending,
-    isAssigningGroups: bulkAssignGroupsMutation.isPending,
   };
 }

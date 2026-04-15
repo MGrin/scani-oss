@@ -200,7 +200,7 @@ export const AccountImplementations = {
 
   async bulkAssignGroups(
     context: FeatureExecutionContext,
-    input: { accountIds: string[]; groupIds: string[] }
+    input: { accountIds: string[]; addedGroupIds: string[]; removedGroupIds: string[] }
   ) {
     const groupRepository = Container.get(GroupRepository);
     const accountRepository = Container.get(AccountRepository);
@@ -218,8 +218,29 @@ export const AccountImplementations = {
       );
     }
 
-    // PERFORMANCE: Use bulk assignment instead of sequential loop
-    await groupRepository.bulkAssignAccountGroups(input.accountIds, input.groupIds);
+    // Under the current group model, account membership is derived from
+    // holding membership: an account is "in" group G iff every visible
+    // holding of the account is in G. So an account-level group add
+    // cascades down to every visible holding of each account, and a
+    // removal is the symmetric operation. The accountGroups table is a
+    // cache and gets rebuilt after the holding-layer writes.
+    const holdingIds = await groupRepository.findVisibleHoldingIdsForAccounts(input.accountIds);
+
+    if (holdingIds.length > 0) {
+      if (input.addedGroupIds.length > 0) {
+        await groupRepository.bulkAddHoldingGroups(holdingIds, input.addedGroupIds);
+      }
+      if (input.removedGroupIds.length > 0) {
+        await groupRepository.bulkRemoveHoldingGroups(holdingIds, input.removedGroupIds);
+      }
+    }
+
+    // Rebuild the accountGroups cache for every account we touched. We
+    // always recompute — even if the account had zero holdings and
+    // therefore nothing actually changed at the holding layer — because
+    // the cache may be holding stale rows from before this model was
+    // introduced.
+    await groupRepository.recomputeAccountGroups(input.accountIds);
 
     return {
       success: true,
@@ -431,7 +452,7 @@ export const HoldingImplementations = {
 
   async bulkAssignGroups(
     context: FeatureExecutionContext,
-    input: { holdingIds: string[]; groupIds: string[] }
+    input: { holdingIds: string[]; addedGroupIds: string[]; removedGroupIds: string[] }
   ) {
     const groupRepository = Container.get(GroupRepository);
     const holdingRepository = Container.get(HoldingRepository);
@@ -449,8 +470,28 @@ export const HoldingImplementations = {
       );
     }
 
-    // PERFORMANCE: Use bulk assignment instead of sequential loop
-    await groupRepository.bulkAssignHoldingGroups(input.holdingIds, input.groupIds);
+    // Apply the diff from the dialog. Add then remove — order doesn't
+    // matter because the two sets never overlap (the dialog can't both
+    // add and remove the same group in one save), but running adds
+    // first keeps the DB in a valid intermediate state for any observer.
+    if (input.addedGroupIds.length > 0) {
+      await groupRepository.bulkAddHoldingGroups(input.holdingIds, input.addedGroupIds);
+    }
+    if (input.removedGroupIds.length > 0) {
+      await groupRepository.bulkRemoveHoldingGroups(input.holdingIds, input.removedGroupIds);
+    }
+
+    // Any change to `holdingGroups` can flip the derived membership of
+    // the parent account — e.g. removing group G from a single holding
+    // means the account no longer qualifies for G (because the "all
+    // holdings of the account are in G" predicate no longer holds).
+    // Recompute the cache for every affected parent account.
+    const parentAccountIds = await groupRepository.findParentAccountIdsForHoldings(
+      input.holdingIds
+    );
+    if (parentAccountIds.length > 0) {
+      await groupRepository.recomputeAccountGroups(parentAccountIds);
+    }
 
     return {
       success: true,
@@ -878,7 +919,29 @@ export const GroupImplementations = {
       }
     }
 
-    await groupRepository.assignHoldingGroups(input.holdingId, input.groupIds);
+    // REPLACE semantics for this legacy single-holding endpoint: clear
+    // existing groups then add the new set. We compute the diff against
+    // the current state so the underlying operation can still go through
+    // the diff-based repo methods (which then recompute accountGroups
+    // for the parent account).
+    const currentGroups = await groupRepository.findGroupsByHoldingId(input.holdingId);
+    const currentIds = new Set(currentGroups.map((g) => g.id));
+    const desired = new Set(input.groupIds);
+    const toAdd = input.groupIds.filter((id) => !currentIds.has(id));
+    const toRemove = Array.from(currentIds).filter((id) => !desired.has(id));
+
+    if (toAdd.length > 0) {
+      await groupRepository.bulkAddHoldingGroups([input.holdingId], toAdd);
+    }
+    if (toRemove.length > 0) {
+      await groupRepository.bulkRemoveHoldingGroups([input.holdingId], toRemove);
+    }
+    if (toAdd.length > 0 || toRemove.length > 0) {
+      const parentIds = await groupRepository.findParentAccountIdsForHoldings([input.holdingId]);
+      if (parentIds.length > 0) {
+        await groupRepository.recomputeAccountGroups(parentIds);
+      }
+    }
 
     return { success: true };
   },
@@ -908,7 +971,25 @@ export const GroupImplementations = {
       }
     }
 
-    await groupRepository.assignAccountGroups(input.accountId, input.groupIds);
+    // Legacy single-account endpoint — route through the bulk path so
+    // it picks up the new cascade-to-holdings semantics. Compute a diff
+    // against the current derived group set and apply.
+    const currentGroups = await groupRepository.findGroupsByAccountId(input.accountId);
+    const currentIds = new Set(currentGroups.map((g) => g.id));
+    const desired = new Set(input.groupIds);
+    const addedGroupIds = input.groupIds.filter((id) => !currentIds.has(id));
+    const removedGroupIds = Array.from(currentIds).filter((id) => !desired.has(id));
+
+    const holdingIds = await groupRepository.findVisibleHoldingIdsForAccounts([input.accountId]);
+    if (holdingIds.length > 0) {
+      if (addedGroupIds.length > 0) {
+        await groupRepository.bulkAddHoldingGroups(holdingIds, addedGroupIds);
+      }
+      if (removedGroupIds.length > 0) {
+        await groupRepository.bulkRemoveHoldingGroups(holdingIds, removedGroupIds);
+      }
+    }
+    await groupRepository.recomputeAccountGroups([input.accountId]);
 
     return { success: true };
   },
