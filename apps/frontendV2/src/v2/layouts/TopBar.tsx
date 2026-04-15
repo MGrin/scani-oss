@@ -10,27 +10,25 @@ interface TopBarProps {
 
 /** Derive page title from URL path */
 function getPageTitle(pathname: string): string {
-  const segment = pathname.replace('/v2', '').split('/').filter(Boolean)[0];
+  const segment = pathname.split('/').filter(Boolean)[0];
   if (!segment) return 'Dashboard';
   return segment.charAt(0).toUpperCase() + segment.slice(1).replace(/-/g, ' ');
 }
 
 /** Get context-aware add link based on current page */
 function getAddLink(pathname: string): { href: string; label: string } | null {
-  const clean = pathname.replace('/v2', '');
-
   // Account detail page → add data with account preselected
-  const accountMatch = clean.match(/^\/accounts\/([^/]+)$/);
+  const accountMatch = pathname.match(/^\/accounts\/([^/]+)$/);
   if (accountMatch) {
     return { href: `${V2_ROUTES.addData}?accountId=${accountMatch[1]}`, label: 'Add' };
   }
   // Institution detail → add data with institution preselected
-  const instMatch = clean.match(/^\/institutions\/([^/]+)$/);
+  const instMatch = pathname.match(/^\/institutions\/([^/]+)$/);
   if (instMatch) {
     return { href: `${V2_ROUTES.addData}?institutionId=${instMatch[1]}`, label: 'Add' };
   }
   // Holdings list, Accounts list, Dashboard
-  if (clean === '/holdings' || clean === '/' || clean === '/accounts') {
+  if (pathname === '/holdings' || pathname === '/' || pathname === '/accounts') {
     return { href: V2_ROUTES.addData, label: 'Add Data' };
   }
 

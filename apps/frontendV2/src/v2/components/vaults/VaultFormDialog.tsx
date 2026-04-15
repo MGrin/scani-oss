@@ -12,6 +12,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { showError, showSuccess } from '@/hooks/use-toast';
 import { trpc } from '@/lib/trpc';
+import { invalidatePortfolioQueries } from '@/v2/hooks/invalidatePortfolioQueries';
 
 const COLORS = [
   '#3b82f6',
@@ -57,8 +58,8 @@ export function VaultFormDialog({ open, onOpenChange, vaultId }: VaultFormDialog
   }, [vault, isEditMode]);
 
   const createMutation = trpc.vaults.create.useMutation({
-    onSuccess: () => {
-      utils.vaults.invalidate();
+    onSuccess: async () => {
+      await invalidatePortfolioQueries(utils);
       onOpenChange(false);
       setName('');
       setTargetAmount('');
@@ -68,8 +69,8 @@ export function VaultFormDialog({ open, onOpenChange, vaultId }: VaultFormDialog
   });
 
   const updateMutation = trpc.vaults.update.useMutation({
-    onSuccess: () => {
-      utils.vaults.invalidate();
+    onSuccess: async () => {
+      await invalidatePortfolioQueries(utils);
       onOpenChange(false);
       showSuccess('Vault updated successfully');
     },

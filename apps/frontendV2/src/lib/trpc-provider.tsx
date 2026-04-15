@@ -21,7 +21,16 @@ export function TRPCProvider({ children }: TRPCProviderProps) {
           queries: {
             staleTime: 30 * 1000, // Consider data fresh for 30 seconds
             cacheTime: 5 * 60 * 1000, // Keep in cache for 5 minutes
-            refetchOnMount: false, // Don't refetch on mount if data is fresh
+            // Refetch on mount when the cached data is stale. Combined with
+            // `staleTime: 30s`, this means: within 30s of last fetch the cache
+            // is served instantly, after 30s (or after an `invalidate()` call
+            // which marks stale immediately) the data is refetched on next
+            // mount. Previously this was `false`, which caused a subtle bug:
+            // post-mutation `.invalidate()` calls that then navigated to a
+            // list page served stale cached data on arrival, because the
+            // invalidated query had no active observers at invalidation time
+            // and `refetchOnMount: false` skipped the refetch on mount.
+            refetchOnMount: true,
             refetchOnWindowFocus: false, // Don't refetch on window focus
             refetchOnReconnect: true, // Refetch on reconnect only
             networkMode: 'online',

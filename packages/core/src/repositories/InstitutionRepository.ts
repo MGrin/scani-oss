@@ -28,6 +28,12 @@ export class InstitutionRepository extends BaseRepository<Institution, NewInstit
           and(
             eq(schema.accounts.userId, userId),
             eq(schema.accounts.isActive, true),
+            // Must match `AccountRepository.findByUser`, which excludes hidden
+            // accounts — otherwise an institution whose only accounts are
+            // hidden shows up on the list with an `accountCount: 0` summary,
+            // because the service counts come from `findByUser` but the
+            // institution visibility comes from here.
+            eq(schema.accounts.isHidden, false),
             eq(schema.institutions.isActive, true)
           )
         )

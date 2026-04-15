@@ -10,6 +10,7 @@ import {
 } from '@/components/ui/dialog';
 import { showError, showSuccess } from '@/hooks/use-toast';
 import { trpc } from '@/lib/trpc';
+import { invalidatePortfolioQueries } from '@/v2/hooks/invalidatePortfolioQueries';
 
 interface AssignGroupsDialogProps {
   open: boolean;
@@ -50,9 +51,8 @@ export function AssignGroupsDialog({
   }, [commonGroups]);
 
   const holdingAssignMutation = trpc.holdings.bulkAssignGroups.useMutation({
-    onSuccess: () => {
-      utils.holdings.getWithDetails.invalidate();
-      utils.groups.invalidate();
+    onSuccess: async () => {
+      await invalidatePortfolioQueries(utils);
       showSuccess('Groups assigned');
       onOpenChange(false);
     },
@@ -60,9 +60,8 @@ export function AssignGroupsDialog({
   });
 
   const accountAssignMutation = trpc.accounts.bulkAssignGroups.useMutation({
-    onSuccess: () => {
-      utils.accounts.getByUserIdWithSummary.invalidate();
-      utils.groups.invalidate();
+    onSuccess: async () => {
+      await invalidatePortfolioQueries(utils);
       showSuccess('Groups assigned');
       onOpenChange(false);
     },

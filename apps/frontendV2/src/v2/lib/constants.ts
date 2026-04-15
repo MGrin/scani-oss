@@ -10,7 +10,14 @@ export const BREAKPOINTS = {
   xl: 1280,
 } as const;
 
-/** LocalStorage keys */
+/**
+ * LocalStorage keys.
+ *
+ * The `scani-v2-` prefix is retained intentionally even though V2 is now
+ * the only UI — existing users already have preferences stored under
+ * these keys, and changing the namespace would silently wipe their
+ * sidebar-collapsed and view-mode choices on first load post-deploy.
+ */
 export const STORAGE_KEYS = {
   sidebarCollapsed: 'scani-v2-sidebar-collapsed',
   viewMode: (page: string) => `scani-v2-view-${page}`,
@@ -26,9 +33,9 @@ export const ANIMATION = {
 
 /** Mobile bottom nav items */
 export const MOBILE_NAV_ITEMS = [
-  { label: 'Dashboard', icon: 'LayoutDashboard', path: '/v2' },
-  { label: 'Holdings', icon: 'PieChart', path: '/v2/holdings' },
-  { label: 'Accounts', icon: 'Wallet', path: '/v2/accounts' },
-  { label: 'Add', icon: 'PlusCircle', path: '/v2/add-data' },
+  { label: 'Dashboard', icon: 'LayoutDashboard', path: '/' },
+  { label: 'Holdings', icon: 'PieChart', path: '/holdings' },
+  { label: 'Accounts', icon: 'Wallet', path: '/accounts' },
+  { label: 'Add', icon: 'PlusCircle', path: '/add-data' },
   { label: 'More', icon: 'Menu', path: '' }, // opens sheet with remaining nav
 ] as const;

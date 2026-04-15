@@ -4,6 +4,10 @@ import {
   type CreateHoldingsWithDependenciesResponseDto,
 } from '@scani/shared';
 import { z } from 'zod';
+import {
+  emitBulkEntityChanges,
+  emitEntityChange,
+} from '../../infrastructure/websocket/RealTimeUpdatesService';
 import { withIdempotency } from '../../lib/idempotency';
 import { requireAuth } from '../middleware/auth';
 import { protectedProcedure, router } from '../trpc';
@@ -50,12 +54,46 @@ export const batchOperationsRouter = router({
     .mutation(async ({ input, ctx }): Promise<CreateHoldingsWithDependenciesResponseDto> => {
       const { dbUser } = await requireAuth(ctx);
       const { idempotencyKey, ...payload } = input;
-      return withIdempotency(dbUser.id, idempotencyKey, () =>
+      const result = await withIdempotency(dbUser.id, idempotencyKey, () =>
         BatchOperationImplementations.createHoldingsWithDependencies(
           { userId: dbUser.id, dbUser },
           payload
         )
       );
+
+      // Broadcast the new entities so other open tabs / sessions for this
+      // user see the imported data without a manual reload. Without these,
+      // file-import and manual-entry flows only updated the initiating tab
+      // (via React Query invalidation in `onSuccess`), and a second tab
+      // would drift out of sync until the user refreshed it.
+      if (result.createdInstitution && result.institutionId) {
+        emitEntityChange({
+          type: 'entity_changed',
+          entityType: 'institution',
+          operationType: 'create',
+          entityId: result.institutionId,
+          userId: dbUser.id,
+          data: {},
+        });
+      }
+      if (result.createdAccount && result.accountId) {
+        emitEntityChange({
+          type: 'entity_changed',
+          entityType: 'account',
+          operationType: 'create',
+          entityId: result.accountId,
+          userId: dbUser.id,
+          data: { institutionId: result.institutionId },
+        });
+      }
+      const createdHoldingIds = result.holdings.map((h) => h.id);
+      if (createdHoldingIds.length > 0) {
+        emitBulkEntityChanges('holding', 'create', createdHoldingIds, dbUser.id, {
+          source: 'batch-operations.createHoldingsWithDependencies',
+        });
+      }
+
+      return result;
     }),
 
   updateHoldingsBatch: protectedProcedure
@@ -63,8 +101,18 @@ export const batchOperationsRouter = router({
     .mutation(async ({ input, ctx }): Promise<UpdateHoldingsBatchResult> => {
       const { dbUser } = await requireAuth(ctx);
       const { idempotencyKey, ...payload } = input;
-      return withIdempotency(dbUser.id, idempotencyKey, () =>
+      const result = await withIdempotency(dbUser.id, idempotencyKey, () =>
         BatchOperationImplementations.updateHoldingsBatch({ userId: dbUser.id, dbUser }, payload)
       );
+
+      // Broadcast successful updates so other tabs refresh too.
+      const updatedIds = result.updated.filter((u) => u.success).map((u) => u.id);
+      if (updatedIds.length > 0) {
+        emitBulkEntityChanges('holding', 'update', updatedIds, dbUser.id, {
+          source: 'batch-operations.updateHoldingsBatch',
+        });
+      }
+
+      return result;
     }),
 });

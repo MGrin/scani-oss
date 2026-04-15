@@ -1,40 +1,37 @@
 import { showError, showSuccess } from '@/hooks/use-toast';
 import { trpc } from '@/lib/trpc';
+import { invalidatePortfolioQueries } from './invalidatePortfolioQueries';
 
 export function useHoldingActions() {
   const utils = trpc.useUtils();
 
   const deleteMutation = trpc.holdings.delete.useMutation({
-    onSuccess: () => {
-      utils.holdings.getWithDetails.invalidate();
-      utils.dashboard.getOverview.invalidate();
+    onSuccess: async () => {
+      await invalidatePortfolioQueries(utils);
       showSuccess('Holding deleted');
     },
     onError: (err) => showError(err, 'Deleting holding'),
   });
 
   const bulkDeleteMutation = trpc.holdings.bulkDelete.useMutation({
-    onSuccess: (result) => {
-      utils.holdings.getWithDetails.invalidate();
-      utils.dashboard.getOverview.invalidate();
+    onSuccess: async (result) => {
+      await invalidatePortfolioQueries(utils);
       showSuccess(`${result.deletedIds.length} holding(s) deleted`);
     },
     onError: (err) => showError(err, 'Deleting holdings'),
   });
 
   const updateMutation = trpc.holdings.update.useMutation({
-    onSuccess: () => {
-      utils.holdings.getWithDetails.invalidate();
+    onSuccess: async () => {
+      await invalidatePortfolioQueries(utils);
       showSuccess('Holding updated');
     },
     onError: (err) => showError(err, 'Updating holding'),
   });
 
   const refreshPriceMutation = trpc.holdings.updatePrice.useMutation({
-    onSuccess: (result) => {
-      utils.holdings.getWithDetails.invalidate();
-      utils.dashboard.getOverview.invalidate();
-      utils.dashboard.getAssetAllocation.invalidate();
+    onSuccess: async (result) => {
+      await invalidatePortfolioQueries(utils);
       const priceInfo = result.price ? `Price: ${result.price}` : 'Price updated';
       showSuccess(result.source ? `${priceInfo} (${result.source})` : priceInfo);
     },

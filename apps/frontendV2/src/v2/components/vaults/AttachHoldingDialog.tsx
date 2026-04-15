@@ -12,6 +12,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { showError, showSuccess } from '@/hooks/use-toast';
 import { trpc } from '@/lib/trpc';
+import { invalidatePortfolioQueries } from '@/v2/hooks/invalidatePortfolioQueries';
 
 interface AttachHoldingDialogProps {
   open: boolean;
@@ -43,8 +44,8 @@ export function AttachHoldingDialog({ open, onOpenChange, vaultId }: AttachHoldi
   }, [holdingsData, search]);
 
   const attachMutation = trpc.vaults.attachHolding.useMutation({
-    onSuccess: () => {
-      utils.vaults.invalidate();
+    onSuccess: async () => {
+      await invalidatePortfolioQueries(utils);
       showSuccess('Holding attached to vault');
       onOpenChange(false);
       resetForm();

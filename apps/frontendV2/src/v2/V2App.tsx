@@ -1,5 +1,6 @@
 import { Route, Routes } from 'react-router-dom';
 import { TooltipProvider } from '@/components/ui/tooltip';
+import { RealtimeProvider } from '@/contexts/RealtimeContext';
 import { V2ErrorBoundary } from './components/shared/V2ErrorBoundary';
 import { BaseCurrencyProvider } from './hooks/useBaseCurrency';
 import { AppShell } from './layouts/AppShell';
@@ -24,28 +25,30 @@ export function V2App() {
   return (
     <V2ErrorBoundary>
       <BaseCurrencyProvider>
-        <TooltipProvider delayDuration={0}>
-          <Routes>
-            <Route element={<AppShell />}>
-              <Route index element={<DashboardPage />} />
-              <Route path="holdings" element={<HoldingsPage />} />
-              <Route path="holdings/:id" element={<HoldingDetailPage />} />
-              <Route path="accounts" element={<AccountsPage />} />
-              <Route path="accounts/:id" element={<AccountDetailPage />} />
-              <Route path="institutions" element={<InstitutionsPage />} />
-              <Route path="institutions/:id" element={<InstitutionDetailPage />} />
-              <Route path="groups" element={<GroupsPage />} />
-              <Route path="vaults" element={<VaultsPage />} />
-              <Route path="vaults/:id" element={<VaultDetailPage />} />
-              <Route path="integrations" element={<IntegrationsPage />} />
-              <Route path="import" element={<FileImportPage />} />
-              <Route path="wallet-import" element={<WalletImportPage />} />
-              <Route path="manual-entry" element={<ManualEntryPage />} />
-              <Route path="add-data" element={<AddDataPage />} />
-              <Route path="settings" element={<SettingsPage />} />
-            </Route>
-          </Routes>
-        </TooltipProvider>
+        <RealtimeProvider>
+          <TooltipProvider delayDuration={0}>
+            <Routes>
+              <Route element={<AppShell />}>
+                <Route index element={<DashboardPage />} />
+                <Route path="holdings" element={<HoldingsPage />} />
+                <Route path="holdings/:id" element={<HoldingDetailPage />} />
+                <Route path="accounts" element={<AccountsPage />} />
+                <Route path="accounts/:id" element={<AccountDetailPage />} />
+                <Route path="institutions" element={<InstitutionsPage />} />
+                <Route path="institutions/:id" element={<InstitutionDetailPage />} />
+                <Route path="groups" element={<GroupsPage />} />
+                <Route path="vaults" element={<VaultsPage />} />
+                <Route path="vaults/:id" element={<VaultDetailPage />} />
+                <Route path="integrations" element={<IntegrationsPage />} />
+                <Route path="import" element={<FileImportPage />} />
+                <Route path="wallet-import" element={<WalletImportPage />} />
+                <Route path="manual-entry" element={<ManualEntryPage />} />
+                <Route path="add-data" element={<AddDataPage />} />
+                <Route path="settings" element={<SettingsPage />} />
+              </Route>
+            </Routes>
+          </TooltipProvider>
+        </RealtimeProvider>
       </BaseCurrencyProvider>
     </V2ErrorBoundary>
   );

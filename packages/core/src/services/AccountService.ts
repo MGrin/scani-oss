@@ -209,10 +209,14 @@ export class AccountService extends BaseService {
       const userWalletId = metadata?.userWalletId as string | undefined;
       const migrated = metadata?.migrated as boolean | undefined;
 
-      // If account is associated with a user_wallet, remove the institution from the wallet
+      // If account is associated with a user_wallet, remove the institution
+      // from the wallet. If that was the last institution on the wallet, we
+      // then hard-delete the wallet row entirely so `SyncWalletBalancesUseCase`
+      // doesn't later re-detect chains and silently rehydrate the accounts
+      // the user just deleted.
       if (userWalletId && migrated && existing.institutionId) {
         try {
-          await this.userWalletService.removeInstitutionFromWallet(
+          const updatedWallet = await this.userWalletService.removeInstitutionFromWallet(
             userWalletId,
             existing.institutionId
           );
@@ -221,6 +225,19 @@ export class AccountService extends BaseService {
             userWalletId,
             institutionId: existing.institutionId,
           });
+
+          const remainingInstitutions =
+            (updatedWallet?.institutionIds as string[] | undefined) ?? [];
+          if (remainingInstitutions.length === 0) {
+            // Last institution for this wallet — the user is fully removing
+            // the wallet from the system. Hard-delete so the sync cron has
+            // no row to re-detect chains against on its next 24h pass.
+            await this.userWalletService.hardDeleteWallet(userWalletId);
+            this.logInfo('Hard-deleted user wallet after last account removal', {
+              accountId,
+              userWalletId,
+            });
+          }
         } catch (walletError) {
           // Log error but don't fail the account deletion
           this.logWarning('Failed to update user wallet during account deletion (non-critical)', {

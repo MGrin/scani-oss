@@ -14,6 +14,7 @@ import { trpc } from '@/lib/trpc';
 import { ConfirmDialog } from '../components/shared/ConfirmDialog';
 import { AttachHoldingDialog } from '../components/vaults/AttachHoldingDialog';
 import { VaultFormDialog } from '../components/vaults/VaultFormDialog';
+import { invalidatePortfolioQueries } from '../hooks/invalidatePortfolioQueries';
 import { V2_ROUTES } from '../lib/routes';
 
 function formatMoney(value: number | string, symbol: string) {
@@ -33,8 +34,8 @@ export function VaultDetailPage() {
   const [percentageInput, setPercentageInput] = useState('');
 
   const deleteMutation = trpc.vaults.delete.useMutation({
-    onSuccess: () => {
-      utils.vaults.invalidate();
+    onSuccess: async () => {
+      await invalidatePortfolioQueries(utils);
       showSuccess('Vault deleted successfully');
       navigate(V2_ROUTES.vaults);
     },
@@ -42,16 +43,16 @@ export function VaultDetailPage() {
   });
 
   const detachMutation = trpc.vaults.detachHolding.useMutation({
-    onSuccess: () => {
-      utils.vaults.invalidate();
+    onSuccess: async () => {
+      await invalidatePortfolioQueries(utils);
       showSuccess('Holding removed from vault');
     },
     onError: (error) => showError(error, 'Failed to remove holding'),
   });
 
   const updatePercentageMutation = trpc.vaults.updateHoldingPercentage.useMutation({
-    onSuccess: () => {
-      utils.vaults.invalidate();
+    onSuccess: async () => {
+      await invalidatePortfolioQueries(utils);
       setEditingPercentage(null);
       showSuccess('Percentage updated');
     },

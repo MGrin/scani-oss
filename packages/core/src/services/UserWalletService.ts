@@ -155,6 +155,35 @@ export class UserWalletService extends BaseService {
   }
 
   /**
+   * Hard-delete a wallet row.
+   *
+   * Use when the user has removed every account associated with a wallet
+   * and we want the system to forget the wallet entirely. Soft-deleting
+   * (isActive: false) isn't enough here: `SyncWalletBalancesUseCase`'s
+   * 24-hour chain re-detection loop will still happily re-detect chains
+   * for a row that's isActive=true and automatically re-create the
+   * accounts the user just deleted. Removing the row makes the sync
+   * pipeline forget the wallet cleanly.
+   */
+  async hardDeleteWallet(walletId: string): Promise<void> {
+    try {
+      this.logInfo('Hard-deleting wallet', { walletId });
+
+      const wallet = await this.userWalletRepository.findById(walletId);
+      if (!wallet) {
+        // Already gone — treat as success so callers don't need to guard.
+        return;
+      }
+
+      await this.userWalletRepository.delete(walletId);
+
+      this.logInfo('Wallet hard-deleted successfully', { walletId });
+    } catch (error) {
+      throw this.handleError(error, 'hardDeleteWallet');
+    }
+  }
+
+  /**
    * Get wallets by institution (network)
    */
   async getWalletsByInstitution(institutionId: string): Promise<UserWallet[]> {

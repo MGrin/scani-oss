@@ -1,37 +1,37 @@
 import { showError, showSuccess } from '@/hooks/use-toast';
 import { trpc } from '@/lib/trpc';
+import { invalidatePortfolioQueries } from './invalidatePortfolioQueries';
 
 export function useAccountActions() {
   const utils = trpc.useUtils();
 
   const deleteMutation = trpc.accounts.delete.useMutation({
-    onSuccess: () => {
-      utils.accounts.invalidate();
+    onSuccess: async () => {
+      await invalidatePortfolioQueries(utils);
       showSuccess('Account deleted successfully');
     },
     onError: (error) => showError(error, 'Failed to delete account'),
   });
 
   const bulkDeleteMutation = trpc.accounts.bulkDelete.useMutation({
-    onSuccess: (_data, variables) => {
-      utils.accounts.invalidate();
+    onSuccess: async (_data, variables) => {
+      await invalidatePortfolioQueries(utils);
       showSuccess(`${variables.ids.length} account(s) deleted successfully`);
     },
     onError: (error) => showError(error, 'Failed to delete accounts'),
   });
 
   const updateMutation = trpc.accounts.update.useMutation({
-    onSuccess: () => {
-      utils.accounts.invalidate();
+    onSuccess: async () => {
+      await invalidatePortfolioQueries(utils);
       showSuccess('Account updated successfully');
     },
     onError: (error) => showError(error, 'Failed to update account'),
   });
 
   const bulkAssignGroupsMutation = trpc.accounts.bulkAssignGroups.useMutation({
-    onSuccess: () => {
-      utils.accounts.invalidate();
-      utils.groups.invalidate();
+    onSuccess: async () => {
+      await invalidatePortfolioQueries(utils);
       showSuccess('Groups assigned successfully');
     },
     onError: (error) => showError(error, 'Failed to assign groups'),

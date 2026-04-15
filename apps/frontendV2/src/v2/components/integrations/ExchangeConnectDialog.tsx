@@ -12,6 +12,7 @@ import {
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { trpc } from '@/lib/trpc';
+import { invalidatePortfolioQueries } from '@/v2/hooks/invalidatePortfolioQueries';
 
 interface ExchangeConfig {
   key: string;
@@ -244,11 +245,10 @@ export function ExchangeConnectDialog({
 
       await router.validateKeys.mutate(input);
       setStatus('success');
-      // Invalidate queries so new holdings/accounts show up
-      utils.holdings.getWithDetails.invalidate();
-      utils.accounts.getByUserIdWithSummary.invalidate();
-      utils.institutions.getByUserIdWithSummary.invalidate();
-      utils.dashboard.getOverview.invalidate();
+      // Invalidate everything — connecting an exchange creates accounts
+      // and holdings, which roll up into institutions, dashboard totals,
+      // vaults, and the asset-allocation chart.
+      await invalidatePortfolioQueries(utils);
     } catch (err) {
       setErrorMsg(err instanceof Error ? err.message : 'Connection failed');
       setStatus('error');

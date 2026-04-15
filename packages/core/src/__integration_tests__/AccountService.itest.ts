@@ -39,7 +39,10 @@ const mockGroupRepository = {
 };
 
 const mockUserWalletService = {
-  removeInstitutionFromWallet: mock(() => Promise.resolve()),
+  removeInstitutionFromWallet: mock(() =>
+    Promise.resolve({ id: 'wallet-1', institutionIds: ['inst-other'] })
+  ),
+  hardDeleteWallet: mock(() => Promise.resolve()),
 };
 
 const mockPortfolioService = {
@@ -141,7 +144,10 @@ describe('AccountService', () => {
     mockHoldingRepository.findByUser.mockImplementation(() => Promise.resolve([]));
     mockTokenRepository.findByIds.mockImplementation(() => Promise.resolve([]));
     mockGroupRepository.findGroupsForAccounts.mockImplementation(() => Promise.resolve(new Map()));
-    mockUserWalletService.removeInstitutionFromWallet.mockImplementation(() => Promise.resolve());
+    mockUserWalletService.removeInstitutionFromWallet.mockImplementation(() =>
+      Promise.resolve({ id: 'wallet-1', institutionIds: ['inst-other'] })
+    );
+    mockUserWalletService.hardDeleteWallet.mockImplementation(() => Promise.resolve());
     mockPortfolioService.getUserPortfolioValue.mockImplementation(() =>
       Promise.resolve({ holdings: [], totalValue: '0' })
     );
@@ -275,6 +281,41 @@ describe('AccountService', () => {
         'wallet-1',
         'inst-1'
       );
+    });
+
+    it('should NOT hard-delete the wallet when other institutions remain', async () => {
+      const walletAccount = {
+        ...mockAccount,
+        metadata: { userWalletId: 'wallet-1', migrated: true },
+      };
+      mockAccountRepository.findById.mockImplementation(() => Promise.resolve(walletAccount));
+      mockAccountRepository.delete.mockImplementation(() => Promise.resolve(true));
+      // Wallet still has other chains after removing this one
+      mockUserWalletService.removeInstitutionFromWallet.mockImplementation(() =>
+        Promise.resolve({ id: 'wallet-1', institutionIds: ['inst-eth', 'inst-polygon'] })
+      );
+
+      await service.deleteAccount('account-1', 'user-1');
+
+      expect(mockUserWalletService.hardDeleteWallet).not.toHaveBeenCalled();
+    });
+
+    it('should hard-delete the wallet when the last account for that wallet is removed', async () => {
+      const walletAccount = {
+        ...mockAccount,
+        metadata: { userWalletId: 'wallet-1', migrated: true },
+      };
+      mockAccountRepository.findById.mockImplementation(() => Promise.resolve(walletAccount));
+      mockAccountRepository.delete.mockImplementation(() => Promise.resolve(true));
+      // Removing this institution empties the wallet's institution list
+      mockUserWalletService.removeInstitutionFromWallet.mockImplementation(() =>
+        Promise.resolve({ id: 'wallet-1', institutionIds: [] })
+      );
+
+      await service.deleteAccount('account-1', 'user-1');
+
+      expect(mockUserWalletService.hardDeleteWallet).toHaveBeenCalledWith('wallet-1');
+      expect(mockAccountRepository.delete).toHaveBeenCalledWith('account-1');
     });
 
     it('should still delete account if wallet service fails', async () => {

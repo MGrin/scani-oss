@@ -7,7 +7,9 @@
  * - Creates institution for each chain (if not exists)
  * - Creates account for each chain with wallet metadata
  * - Creates holdings for each token with non-zero balance
- * - NOTE: Token prices are NOT fetched during import to improve performance
+ * - Fetches token prices for the imported holdings (best-effort) so the
+ *   success response reflects real USD values instead of zeroes that
+ *   trickle in over the next 30 minutes from the pricing cron.
  *
  * Reusable for:
  * - Manual wallet import by users
@@ -25,8 +27,10 @@ import * as schema from '../database/schema';
 import { withTransaction } from '../database/transaction';
 import { HoldingRepository } from '../repositories/HoldingRepository';
 import { InstitutionBlockchainMappingRepository } from '../repositories/InstitutionBlockchainMappingRepository';
+import { TokenRepository } from '../repositories/TokenRepository';
 import { HoldingService } from '../services/HoldingService';
 import { IntegrationCredentialsService } from '../services/IntegrationCredentialsService';
+import { PricingService } from '../services/PricingService';
 import { TokenService } from '../services/TokenService';
 import { UserWalletService } from '../services/UserWalletService';
 import { createComponentLogger } from '../utils/logger';
@@ -97,8 +101,10 @@ export class ImportWalletAddressUseCase {
   private readonly integrationCredentialsService = Container.get(IntegrationCredentialsService);
   private readonly mappingRepository = Container.get(InstitutionBlockchainMappingRepository);
   private readonly tokenService = Container.get(TokenService);
+  private readonly tokenRepository = Container.get(TokenRepository);
   private readonly holdingRepository = Container.get(HoldingRepository);
   private readonly holdingService = Container.get(HoldingService);
+  private readonly pricingService = Container.get(PricingService);
 
   async execute(input: ImportWalletInput, userId: string): Promise<ImportWalletResult> {
     logger.info(
@@ -770,6 +776,23 @@ export class ImportWalletAddressUseCase {
       }
     );
 
+    // Fetch prices for the newly imported tokens so the success response
+    // reflects real USD values, rather than zeroes that only populate 0–30
+    // minutes later when the pricing cron next runs.
+    //
+    // This is deliberately outside the transaction — it's best-effort, so
+    // a rate-limited provider or a slow external API won't roll back the
+    // user's import. If it fails or times out, the existing pricing cron
+    // still picks the tokens up on its next scheduled run.
+    //
+    // `PricingService.getTokenPrices()` does two things we need:
+    //   1. Fetches fresh prices from CoinGecko / DeFiLlama / etc., with
+    //      internal rate limiting, deduplication, retries, and circuit
+    //      breaking.
+    //   2. Persists the results to `token_prices` via bulkUpsert, which
+    //      is what the holdings query reads when rendering the UI.
+    await this.warmTokenPricesForImport(userId, result.holdings);
+
     const finalResult = {
       accounts: result.accounts,
       holdings: result.holdings,
@@ -791,6 +814,104 @@ export class ImportWalletAddressUseCase {
     );
 
     return finalResult;
+  }
+
+  /**
+   * Fetch and persist prices for the tokens we just imported so the UI
+   * lands on the holdings list with real USD values rather than zeroes.
+   *
+   * Best-effort: any error here is logged but not rethrown. The import
+   * itself has already committed. The whole pass is bounded by a timeout
+   * so a rate-limited pricing provider can't make the import response
+   * hang indefinitely — if the warm-up hasn't finished in WARM_UP_BUDGET_MS,
+   * we return and the pricing cron picks up the slack on its next run.
+   */
+  private async warmTokenPricesForImport(
+    userId: string,
+    importedHoldings: ImportWalletResult['holdings']
+  ): Promise<void> {
+    if (importedHoldings.length === 0) return;
+
+    // Hard cap on how long we're willing to delay the import response to
+    // warm prices. Chosen so a ~50-token wallet with healthy providers
+    // comfortably finishes, but a stuck / rate-limited provider can't
+    // make the user wait forever.
+    const WARM_UP_BUDGET_MS = 15_000;
+
+    const work = (async () => {
+      const uniqueTokenIds = Array.from(new Set(importedHoldings.map((h) => h.tokenId)));
+      const tokens = await this.tokenRepository.findByIds(uniqueTokenIds);
+
+      if (tokens.length === 0) return;
+
+      // Resolve base currency once so prices are stored against the right
+      // reference token. Fall back to USD — PricingService handles the
+      // symbol lookup internally.
+      const [user] = await db
+        .select({ baseCurrencyId: schema.users.baseCurrencyId })
+        .from(schema.users)
+        .where(eq(schema.users.id, userId))
+        .limit(1);
+
+      let baseCurrencySymbol = 'USD';
+      if (user?.baseCurrencyId) {
+        const [baseToken] = await db
+          .select({ symbol: schema.tokens.symbol })
+          .from(schema.tokens)
+          .where(eq(schema.tokens.id, user.baseCurrencyId))
+          .limit(1);
+        if (baseToken?.symbol) {
+          baseCurrencySymbol = baseToken.symbol;
+        }
+      }
+
+      logger.info(
+        { userId, tokenCount: tokens.length, baseCurrencySymbol },
+        'Warming prices for imported tokens'
+      );
+
+      const prices = await this.pricingService.getTokenPrices(
+        tokens,
+        baseCurrencySymbol,
+        new Date()
+      );
+
+      const pricedCount = Array.from(prices.values()).filter((p) => p && p !== '0').length;
+
+      logger.info(
+        {
+          userId,
+          tokenCount: tokens.length,
+          pricedCount,
+          unpricedCount: tokens.length - pricedCount,
+        },
+        'Token price warm-up completed'
+      );
+    })();
+
+    const timeout = new Promise<void>((resolve) => {
+      setTimeout(() => {
+        logger.warn(
+          { userId, budgetMs: WARM_UP_BUDGET_MS },
+          'Token price warm-up exceeded time budget — returning early, cron will backfill'
+        );
+        resolve();
+      }, WARM_UP_BUDGET_MS);
+    });
+
+    try {
+      await Promise.race([work, timeout]);
+    } catch (error) {
+      // Swallow — the cron will backfill later and the user still has a
+      // successful import. We just lose the "see values immediately" UX.
+      logger.warn(
+        {
+          userId,
+          error: error instanceof Error ? error.message : String(error),
+        },
+        'Token price warm-up failed (non-fatal — cron will backfill)'
+      );
+    }
   }
 
   /**

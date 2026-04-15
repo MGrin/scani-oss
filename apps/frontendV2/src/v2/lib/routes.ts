@@ -1,21 +1,21 @@
-/** V2 route path constants */
+/** Application route path constants. */
 export const V2_ROUTES = {
-  dashboard: '/v2',
-  holdings: '/v2/holdings',
-  holdingDetail: (id: string) => `/v2/holdings/${id}`,
-  accounts: '/v2/accounts',
-  accountDetail: (id: string) => `/v2/accounts/${id}`,
-  institutions: '/v2/institutions',
-  institutionDetail: (id: string) => `/v2/institutions/${id}`,
-  groups: '/v2/groups',
-  vaults: '/v2/vaults',
-  vaultDetail: (id: string) => `/v2/vaults/${id}`,
-  integrations: '/v2/integrations',
-  fileImport: '/v2/import',
-  walletImport: '/v2/wallet-import',
-  manualEntry: '/v2/manual-entry',
-  addData: '/v2/add-data',
-  settings: '/v2/settings',
+  dashboard: '/',
+  holdings: '/holdings',
+  holdingDetail: (id: string) => `/holdings/${id}`,
+  accounts: '/accounts',
+  accountDetail: (id: string) => `/accounts/${id}`,
+  institutions: '/institutions',
+  institutionDetail: (id: string) => `/institutions/${id}`,
+  groups: '/groups',
+  vaults: '/vaults',
+  vaultDetail: (id: string) => `/vaults/${id}`,
+  integrations: '/integrations',
+  fileImport: '/import',
+  walletImport: '/wallet-import',
+  manualEntry: '/manual-entry',
+  addData: '/add-data',
+  settings: '/settings',
 } as const;
 
 /** Sidebar navigation structure */

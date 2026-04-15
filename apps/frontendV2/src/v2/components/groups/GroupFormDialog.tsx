@@ -14,6 +14,7 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { showError, showSuccess } from '@/hooks/use-toast';
 import { trpc } from '@/lib/trpc';
+import { invalidatePortfolioQueries } from '@/v2/hooks/invalidatePortfolioQueries';
 import { ConfirmDialog } from '../shared/ConfirmDialog';
 
 const COLORS = [
@@ -122,7 +123,7 @@ export function GroupFormDialog({ open, onOpenChange, groupId }: GroupFormDialog
   };
 
   const createMutation = trpc.groups.create.useMutation({
-    onSuccess: (newGroup) => {
+    onSuccess: async (newGroup) => {
       const groupIds = [newGroup.id];
       if (selectedHoldingIds.size > 0) {
         assignHoldingsMutation.mutate({ holdingIds: Array.from(selectedHoldingIds), groupIds });
@@ -130,9 +131,7 @@ export function GroupFormDialog({ open, onOpenChange, groupId }: GroupFormDialog
       if (selectedAccountIds.size > 0) {
         assignAccountsMutation.mutate({ accountIds: Array.from(selectedAccountIds), groupIds });
       }
-      utils.groups.invalidate();
-      utils.holdings.invalidate();
-      utils.accounts.invalidate();
+      await invalidatePortfolioQueries(utils);
       onOpenChange(false);
       showSuccess('Group created');
     },
@@ -140,7 +139,7 @@ export function GroupFormDialog({ open, onOpenChange, groupId }: GroupFormDialog
   });
 
   const updateMutation = trpc.groups.update.useMutation({
-    onSuccess: () => {
+    onSuccess: async () => {
       if (groupId) {
         assignHoldingsMutation.mutate({
           holdingIds: Array.from(selectedHoldingIds),
@@ -151,9 +150,7 @@ export function GroupFormDialog({ open, onOpenChange, groupId }: GroupFormDialog
           groupIds: [groupId],
         });
       }
-      utils.groups.invalidate();
-      utils.holdings.invalidate();
-      utils.accounts.invalidate();
+      await invalidatePortfolioQueries(utils);
       onOpenChange(false);
       showSuccess('Group updated');
     },
@@ -161,8 +158,8 @@ export function GroupFormDialog({ open, onOpenChange, groupId }: GroupFormDialog
   });
 
   const deleteMutation = trpc.groups.delete.useMutation({
-    onSuccess: () => {
-      utils.groups.invalidate();
+    onSuccess: async () => {
+      await invalidatePortfolioQueries(utils);
       onOpenChange(false);
       showSuccess('Group deleted');
     },
