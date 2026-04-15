@@ -3,6 +3,7 @@ import {
   Building2,
   FileUp,
   LayoutDashboard,
+  LogOut,
   type LucideIcon,
   PieChart,
   Plug,
@@ -16,6 +17,7 @@ import { useState } from 'react';
 import { NavLink, Outlet } from 'react-router-dom';
 import { PullToRefresh } from '@/components/PullToRefresh';
 import { Sheet, SheetContent } from '@/components/ui/sheet';
+import { useAuth } from '@/contexts/AuthContext';
 import { trpc } from '@/lib/trpc';
 import { cn } from '@/lib/utils';
 import { CommandPalette } from '../components/command-palette/CommandPalette';
@@ -40,9 +42,15 @@ export function AppShell() {
   const { collapsed, toggle, mobileOpen, setMobileOpen } = useSidebarState();
   const [commandOpen, setCommandOpen] = useState(false);
   const utils = trpc.useUtils();
+  const { signOut } = useAuth();
 
   const handleRefresh = async () => {
     await utils.invalidate();
+  };
+
+  const handleSignOut = () => {
+    setMobileOpen(false);
+    void signOut();
   };
 
   return (
@@ -140,6 +148,14 @@ export function AppShell() {
                 <ArrowLeft className="h-4 w-4 shrink-0" />
                 <span>Classic UI</span>
               </a>
+              <button
+                type="button"
+                onClick={handleSignOut}
+                className="flex items-center gap-2 rounded-md px-2 py-2 text-sm text-red-600 hover:bg-red-600/10 transition-colors w-full"
+              >
+                <LogOut className="h-4 w-4 shrink-0" />
+                <span>Sign out</span>
+              </button>
             </div>
           </div>
         </SheetContent>

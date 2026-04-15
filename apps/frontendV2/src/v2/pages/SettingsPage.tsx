@@ -1,4 +1,6 @@
+import { LogOut } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
+import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -10,12 +12,19 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
+import { useAuth } from '@/contexts/AuthContext';
 import { trpc } from '@/lib/trpc';
 
 export function SettingsPage() {
   const { data: user, isLoading: userLoading } = trpc.users.getCurrent.useQuery();
   const { data: currencies } = trpc.users.getSupportedCurrencies.useQuery();
   const utils = trpc.useUtils();
+  const { signOut } = useAuth();
+
+  const handleSignOut = () => {
+    // ProtectedRoute will redirect to /auth on session loss.
+    void signOut();
+  };
 
   const updateMutation = trpc.users.updateCurrent.useMutation({
     onSuccess: () => {
@@ -116,6 +125,23 @@ export function SettingsPage() {
       {isDirty && !updateMutation.isPending && (
         <p className="text-xs text-muted-foreground">Changes will auto-save</p>
       )}
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Account</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <Button
+            type="button"
+            variant="outline"
+            onClick={handleSignOut}
+            className="text-red-600 hover:text-red-600 hover:bg-red-600/10"
+          >
+            <LogOut className="h-4 w-4 mr-2" />
+            Sign out
+          </Button>
+        </CardContent>
+      </Card>
     </div>
   );
 }

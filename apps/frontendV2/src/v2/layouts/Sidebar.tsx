@@ -4,6 +4,7 @@ import {
   ChevronLeft,
   FileUp,
   LayoutDashboard,
+  LogOut,
   type LucideIcon,
   Menu,
   Moon,
@@ -18,6 +19,7 @@ import {
 } from 'lucide-react';
 import { NavLink } from 'react-router-dom';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { useAuth } from '@/contexts/AuthContext';
 import { useTheme } from '@/contexts/ThemeContext';
 import { cn } from '@/lib/utils';
 import { SIDEBAR_COLLAPSED_WIDTH, SIDEBAR_WIDTH } from '../lib/constants';
@@ -120,6 +122,13 @@ interface SidebarProps {
 
 export function Sidebar({ collapsed, onToggle }: SidebarProps) {
   const { resolvedTheme, toggleTheme } = useTheme();
+  const { signOut } = useAuth();
+
+  const handleSignOut = () => {
+    // Fire and forget. ProtectedRoute will redirect to /auth when the
+    // session disappears, so there's no explicit navigation to do here.
+    void signOut();
+  };
 
   return (
     <aside
@@ -210,6 +219,13 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
             window.location.href = '/';
           }}
           className="text-muted-foreground/50"
+        />
+        <SidebarButton
+          icon={LogOut}
+          label="Sign out"
+          collapsed={collapsed}
+          onClick={handleSignOut}
+          className="text-red-600 hover:text-red-600 hover:bg-red-600/10"
         />
       </div>
     </aside>
