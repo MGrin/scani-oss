@@ -3,7 +3,7 @@ import * as schema from '@scani/core/database/schema';
 import { authLogger } from '@scani/core/utils/logger';
 import { TRPCError } from '@trpc/server';
 import { eq } from 'drizzle-orm';
-import { verifySupabaseJWT } from '../../lib/jwt-verify';
+import { JwksUnavailableError, verifySupabaseJWT } from '../../lib/jwt-verify';
 
 export interface AuthContext {
   userId: string | null;
@@ -154,6 +154,22 @@ export async function createAuthContext(opts: CreateContextOptions): Promise<Aut
       dbUser: null,
     };
   } catch (error) {
+    // JWKS unavailable = infrastructure issue, NOT an invalid token. Surface
+    // this as a 503 so clients retry instead of logging users out.
+    if (error instanceof JwksUnavailableError) {
+      authLogger.error(
+        {
+          error: { name: error.name, message: error.message },
+        },
+        'Auth verification failed — JWKS unavailable, returning 503'
+      );
+      throw new TRPCError({
+        code: 'INTERNAL_SERVER_ERROR',
+        message: 'Authentication service temporarily unavailable',
+        cause: error,
+      });
+    }
+
     authLogger.error(
       {
         error:

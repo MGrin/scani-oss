@@ -316,8 +316,8 @@ export function ExchangeConnectDialog({
               :
             </p>
             <ol className="text-xs text-muted-foreground space-y-1 list-decimal list-inside">
-              {help.steps.map((step, i) => (
-                <li key={`step-${i}`}>{step}</li>
+              {help.steps.map((step) => (
+                <li key={step}>{step}</li>
               ))}
             </ol>
             {help.docsUrl && (

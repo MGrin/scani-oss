@@ -281,6 +281,13 @@
       "when": 1775660000000,
       "tag": "0039_add_holding_external_id",
       "breakpoints": true
+    },
+    {
+      "idx": 40,
+      "version": "7",
+      "when": 1776120000000,
+      "tag": "0040_add_ops_tables",
+      "breakpoints": true
     }
   ]
 }

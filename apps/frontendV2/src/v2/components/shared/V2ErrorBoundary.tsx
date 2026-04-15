@@ -1,5 +1,6 @@
 import type { ErrorInfo, ReactNode } from 'react';
 import { Component } from 'react';
+import { reportClientError } from '../../../lib/report-client-error';
 
 interface Props {
   children: ReactNode;
@@ -21,7 +22,17 @@ export class V2ErrorBoundary extends Component<Props, State> {
   }
 
   componentDidCatch(error: Error, errorInfo: ErrorInfo) {
-    console.error('V2 ErrorBoundary caught:', error, errorInfo);
+    if (import.meta.env.DEV) {
+      // Keep the console error in development for fast feedback, but avoid
+      // noisy production logs — we have the server-side record instead.
+      console.error('V2 ErrorBoundary caught:', error, errorInfo);
+    }
+    // Fire-and-forget: posts to the backend so operators have visibility
+    // without relying on the user to report the crash.
+    void reportClientError({
+      error,
+      componentStack: errorInfo.componentStack ?? undefined,
+    });
   }
 
   render() {

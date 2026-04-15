@@ -70,3 +70,13 @@ export class CircuitBreaker {
 
 /** Shared circuit breaker for all pricing providers */
 export const pricingCircuitBreaker = new CircuitBreaker(5, 5 * 60 * 1000);
+
+/**
+ * Shared circuit breaker for integration services (exchanges, blockchains).
+ *
+ * Opens after 5 consecutive failures per provider and stays open for 2 minutes.
+ * Threshold is tighter than the pricing breaker because exchange outages are
+ * more bursty and we want to bail out faster rather than hammering a failing
+ * endpoint through retry + backoff.
+ */
+export const integrationCircuitBreaker = new CircuitBreaker(5, 2 * 60 * 1000);

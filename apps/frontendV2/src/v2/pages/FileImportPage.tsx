@@ -25,6 +25,14 @@ interface ExtractedHolding {
   holdingId?: string;
   existingBalance?: string;
   removed?: boolean; // User removed this from import
+  /** Client-side stable identifier for React keys. Generated at parse time. */
+  clientId: string;
+}
+
+let _clientIdCounter = 0;
+function nextClientId(): string {
+  _clientIdCounter += 1;
+  return `ch-${Date.now()}-${_clientIdCounter}`;
 }
 
 const IMAGE_EXTENSIONS = ['png', 'jpg', 'jpeg', 'gif', 'webp'];
@@ -43,11 +51,21 @@ function isImageFile(filename: string): boolean {
   return IMAGE_EXTENSIONS.includes(ext);
 }
 
+// URL params are untrusted input — validate shape before using them as IDs.
+// We don't require a strict UUID here (the backend enforces that), but we do
+// reject obviously bad input like control characters or oversized strings.
+function sanitizeUrlId(value: string | null): string {
+  if (!value) return '';
+  if (value.length > 100) return '';
+  if (!/^[A-Za-z0-9_-]+$/.test(value)) return '';
+  return value;
+}
+
 export function FileImportPage() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
-  const urlAccountId = searchParams.get('accountId') || '';
-  const urlInstitutionId = searchParams.get('institutionId') || '';
+  const urlAccountId = sanitizeUrlId(searchParams.get('accountId'));
+  const urlInstitutionId = sanitizeUrlId(searchParams.get('institutionId'));
 
   const screenshotMutation = trpc.screenshots.parseScreenshots.useMutation();
   const csvParseMutation = trpc.fileImport.parse.useMutation();
@@ -111,6 +129,7 @@ export function FileImportPage() {
               (firstResult.data.holdings || []).map((h: ExtractedHolding) => ({
                 ...h,
                 removed: false,
+                clientId: nextClientId(),
               }))
             );
             setOverallConfidence(firstResult.data.overallConfidence ?? null);
@@ -124,25 +143,30 @@ export function FileImportPage() {
           const text = await file.text();
           const base64 = btoa(unescape(encodeURIComponent(text)));
 
-          // biome-ignore lint/suspicious/noExplicitAny: dynamic API response
-          const csvResult = (await csvParseMutation.mutateAsync({
+          // Typed via the tRPC router inference — no `as any` needed.
+          const csvResult = await csvParseMutation.mutateAsync({
             content: base64,
             filename: file.name,
-          })) as any;
+          });
 
-          const transactions = csvResult?.transactions || [];
+          const transactions = csvResult?.transactions ?? [];
           if (transactions.length > 0) {
             // Find the latest transaction with a balance
             const withBalance = transactions.filter(
-              (t: { balance: number | null }) => t.balance !== null
+              (t): t is (typeof transactions)[number] & { balance: number } => t.balance !== null
             );
             if (withBalance.length > 0) {
               const latest = withBalance[withBalance.length - 1];
-              setCsvBalance({
-                currency: csvResult.detectedCurrency || latest.currency || 'USD',
-                balance: latest.balance,
-              });
-              setCsvHasNoBalance(false);
+              if (latest) {
+                setCsvBalance({
+                  currency: csvResult.detectedCurrency || latest.currency || 'USD',
+                  balance: latest.balance,
+                });
+                setCsvHasNoBalance(false);
+              } else {
+                setCsvBalance(null);
+                setCsvHasNoBalance(true);
+              }
             } else {
               setCsvBalance(null);
               setCsvHasNoBalance(true);
@@ -317,7 +341,7 @@ export function FileImportPage() {
                 const isMatched = !!h.tokenId;
                 return (
                   <div
-                    key={`h-${i}`}
+                    key={h.clientId}
                     className={`flex items-center gap-2 text-sm p-2.5 rounded-md border transition-opacity ${
                       h.removed ? 'border-border/50 opacity-40' : 'border-border'
                     }`}

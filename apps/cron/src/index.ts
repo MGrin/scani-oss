@@ -1,4 +1,9 @@
 import 'reflect-metadata';
+// CRITICAL: Validate env before importing modules that read process.env.
+import { loadEnv } from './config/env';
+
+const env = loadEnv();
+
 import { createComponentLogger } from '@scani/core/utils/logger';
 import { IntegrationManager } from '@scani/integrations';
 import { Container } from 'typedi';
@@ -11,6 +16,7 @@ import '@scani/core/services';
 import { executeExchangeBalancesCronJob } from './jobs/ExchangeBalancesCronJob';
 import { executePricingCronJob } from './jobs/PricingCronJob';
 import { executeWalletBalancesCronJob } from './jobs/WalletBalancesCronJob';
+import { withJobLock } from './lib/cron-lock';
 
 const logger = createComponentLogger('cron:main');
 
@@ -69,6 +75,49 @@ function parseArgs(): { tasks: string[] } {
   return { tasks };
 }
 
+// --- Graceful shutdown support ---------------------------------------------
+// Render can send SIGTERM mid-job during redeploys. We flip a flag so the
+// outer loop stops launching new tasks, and we await the current task (with a
+// hard cap) before exiting. This prevents torn transactions and duplicate
+// work when the container is restarted during a sync.
+let shuttingDown = false;
+let currentJob: Promise<unknown> | null = null;
+const SHUTDOWN_HARD_CAP_MS = 30_000;
+
+function installShutdownHandlers(): void {
+  const handle = async (signal: NodeJS.Signals) => {
+    if (shuttingDown) return;
+    shuttingDown = true;
+    logger.warn({ signal }, '🛑 Shutdown signal received — will exit after current job drains');
+
+    if (!currentJob) {
+      process.exit(0);
+      return;
+    }
+
+    const timer = setTimeout(() => {
+      logger.error(
+        { capMs: SHUTDOWN_HARD_CAP_MS },
+        '⏱️ Drain cap reached — forcing exit (in-flight job may be incomplete)'
+      );
+      process.exit(1);
+    }, SHUTDOWN_HARD_CAP_MS);
+    timer.unref?.();
+
+    try {
+      await currentJob;
+      logger.info({}, '✅ In-flight job drained cleanly');
+      process.exit(0);
+    } catch (err) {
+      logger.error({ error: err }, '❌ In-flight job failed during drain');
+      process.exit(1);
+    }
+  };
+
+  process.on('SIGTERM', () => void handle('SIGTERM'));
+  process.on('SIGINT', () => void handle('SIGINT'));
+}
+
 /**
  * Main entry point
  */
@@ -77,10 +126,12 @@ async function main(): Promise<void> {
 
   logger.info(
     {
-      nodeEnv: process.env.NODE_ENV || 'development',
+      nodeEnv: env.NODE_ENV,
     },
     '🚀 Starting Scani Cron Job Runner'
   );
+
+  installShutdownHandlers();
 
   // Initialize DI Container
   initializeContainer();
@@ -104,10 +155,17 @@ async function main(): Promise<void> {
 
   logger.info({ tasks }, `Executing ${tasks.length} cron job(s)`);
 
-  // Execute each task
-  const results: Array<{ task: string; success: boolean; error?: Error }> = [];
+  // Execute each task. Each task is isolated from the others — one failure
+  // no longer aborts subsequent tasks (e.g. a pricing API outage must not
+  // stop wallet balance sync).
+  const results: Array<{ task: string; success: boolean; skipped?: boolean; error?: Error }> = [];
 
   for (const taskName of tasks) {
+    if (shuttingDown) {
+      logger.warn({ taskName }, 'Skipping job — shutdown in progress');
+      break;
+    }
+
     const job = AVAILABLE_JOBS[taskName];
 
     if (!job) {
@@ -122,8 +180,16 @@ async function main(): Promise<void> {
 
     try {
       logger.info({ taskName }, `Executing ${taskName}...`);
-      await job.execute();
-      results.push({ task: taskName, success: true });
+      // Wrap execution in a distributed advisory lock so two overlapping
+      // cron containers cannot run the same job concurrently.
+      const jobPromise = withJobLock(`cron:${taskName}`, () => job.execute());
+      currentJob = jobPromise;
+      const outcome = await jobPromise;
+      if (outcome.ran) {
+        results.push({ task: taskName, success: true });
+      } else {
+        results.push({ task: taskName, success: true, skipped: true });
+      }
     } catch (error) {
       logger.error({ taskName, error }, `Failed to execute ${taskName}`);
       results.push({
@@ -131,18 +197,22 @@ async function main(): Promise<void> {
         success: false,
         error: error instanceof Error ? error : new Error(String(error)),
       });
+    } finally {
+      currentJob = null;
     }
   }
 
   // Summary
   const totalDuration = Date.now() - startTime;
-  const successful = results.filter((r) => r.success).length;
+  const successful = results.filter((r) => r.success && !r.skipped).length;
+  const skipped = results.filter((r) => r.skipped).length;
   const failed = results.filter((r) => !r.success).length;
 
   logger.info(
     {
       total: results.length,
       successful,
+      skipped,
       failed,
       duration: `${totalDuration}ms`,
     },

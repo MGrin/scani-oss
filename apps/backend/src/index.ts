@@ -1,4 +1,10 @@
 import 'reflect-metadata';
+// CRITICAL: Validate env vars BEFORE importing anything that reads them.
+// loadEnv() will process.exit(1) with a clear error list on misconfiguration.
+import { loadEnv } from './config/env';
+
+const env = loadEnv();
+
 import { cors } from '@elysiajs/cors';
 import { trpc } from '@elysiajs/trpc';
 import { supabase } from '@scani/core/lib/supabase';
@@ -41,16 +47,16 @@ import {
 // Import router AFTER container is initialized
 import { appRouter } from './presentation/router';
 
-const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3001;
-const HOST = process.env.HOST ?? 'localhost';
+const PORT = env.PORT;
+const HOST = env.HOST;
 
 // Log startup information
 logger.info(
   {
     port: PORT,
     host: HOST,
-    nodeEnv: process.env.NODE_ENV || 'development',
-    frontendUrl: process.env.FRONTEND_URL ?? 'http://localhost:5173',
+    nodeEnv: env.NODE_ENV,
+    frontendUrl: env.FRONTEND_URL,
   },
   '🚀 Starting Scani Backend Server'
 );
@@ -64,6 +70,10 @@ interface RequestWithTracking extends Request {
 // Create limiters
 const globalLimiter = createStandardLimiter(300, 500);
 const strictLimiter = createStrictLimiter(60, 90);
+// WebSocket connection limiter: max 30 auth attempts per minute per IP.
+// Prevents brute-forcing auth tokens over the ws endpoint, which bypasses
+// the HTTP limiters above.
+const wsAuthLimiter = createStrictLimiter(30, 40);
 
 const app = new Elysia()
   .onBeforeHandle(({ request, set }) => {
@@ -182,7 +192,8 @@ const app = new Elysia()
   })
   .use(
     cors({
-      origin: process.env.FRONTEND_URL ?? 'http://localhost:5173',
+      // env.FRONTEND_URL is validated at startup: required + https in production.
+      origin: env.FRONTEND_URL,
       credentials: true,
       allowedHeaders: ['Authorization', 'Content-Type'],
     })
@@ -271,6 +282,33 @@ app
     open: async (ws: any) => {
       const connectionId = crypto.randomUUID();
       const connectionLogger = wsLogger.child({ connectionId });
+
+      // Rate-limit WS auth attempts. The limiter keys by forwarded-for headers
+      // exactly like the HTTP limiter, so per-IP caps carry over across both.
+      const headers = new Headers();
+      const rawHeaders = ws.data.headers as Record<string, string> | undefined;
+      if (rawHeaders) {
+        for (const [k, v] of Object.entries(rawHeaders)) {
+          try {
+            headers.set(k, v);
+          } catch {
+            // ignore invalid header names
+          }
+        }
+      }
+      const wsPseudoRequest = new Request('http://ws.internal/', {
+        method: 'GET',
+        headers,
+      });
+      const limit = wsAuthLimiter.tryConsume(wsPseudoRequest);
+      if ('ok' in limit && !limit.ok) {
+        connectionLogger.warn(
+          { retryAfterSec: limit.retryAfterSec },
+          'WebSocket auth rate limit exceeded — closing connection'
+        );
+        ws.close(4429, 'Too Many Requests');
+        return;
+      }
 
       let authenticatedUserId: string | null = null;
       try {
@@ -369,30 +407,71 @@ const realTimeUpdatesService = Container.get(RealTimeUpdatesService);
 realTimeUpdatesService.setElysiaApp(app);
 realTimeUpdatesService.initialize();
 
+import { client as pgClient } from '@scani/core/database/connection';
 import { PricingService } from '@scani/core/services';
 
-(async () => {
+// Pre-warm the currency-conversion cache in the background. Errors here are
+// NOT fatal, but the promise MUST be `.catch`-ed so Node's
+// unhandledRejection handler (which we install below) doesn't crash the
+// process during startup.
+void (async () => {
   try {
     const pricingService = Container.get(PricingService);
     await pricingService.preWarmCurrencyConversionCache();
     logger.info({}, '💰 Currency conversion cache pre-warmed');
   } catch (error) {
-    logger.warn(
+    logger.error(
       { error: error instanceof Error ? error.message : String(error) },
       '⚠️ Failed to pre-warm currency cache - will fetch on demand'
     );
   }
-})();
+})().catch((error) => {
+  // Defense in depth: if the async IIFE itself rejects (shouldn't, because we
+  // catch inside), surface it without crashing.
+  logger.error({ error }, 'Unexpected rejection from pre-warm task');
+});
 
-const gracefulShutdown = (signal: string) => {
+// Graceful shutdown: drain in-flight requests (bounded) and close the PG pool
+// before exiting. Prevents torn transactions and leaked connections on
+// Render redeploys.
+const SHUTDOWN_HARD_CAP_MS = 15_000;
+let isShuttingDown = false;
+
+const gracefulShutdown = async (signal: string) => {
+  if (isShuttingDown) return;
+  isShuttingDown = true;
   logger.info({ signal }, '🛑 Graceful shutdown initiated');
-  server.stop();
-  logger.info({}, '🏁 Graceful shutdown completed');
-  process.exit(0);
+
+  const hardTimer = setTimeout(() => {
+    logger.error({ capMs: SHUTDOWN_HARD_CAP_MS }, '⏱️ Shutdown cap reached — forcing exit');
+    process.exit(1);
+  }, SHUTDOWN_HARD_CAP_MS);
+  hardTimer.unref?.();
+
+  try {
+    server.stop();
+    logger.info({}, 'HTTP server stopped accepting new connections');
+
+    // Close the PG pool so idle connections don't linger as zombies.
+    try {
+      // postgres.js accepts `{ timeout: <seconds> }` — forces close after the
+      // grace window expires.
+      await pgClient.end({ timeout: 10 });
+      logger.info({}, 'PostgreSQL pool closed');
+    } catch (err) {
+      logger.error({ err }, 'Error closing PG pool during shutdown');
+    }
+
+    logger.info({}, '🏁 Graceful shutdown completed');
+    process.exit(0);
+  } catch (error) {
+    logger.error({ error }, 'Error during graceful shutdown');
+    process.exit(1);
+  }
 };
 
-process.on('SIGINT', () => gracefulShutdown('SIGINT'));
-process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+process.on('SIGINT', () => void gracefulShutdown('SIGINT'));
+process.on('SIGTERM', () => void gracefulShutdown('SIGTERM'));
 
 process.on('uncaughtException', (error) => {
   logger.fatal(

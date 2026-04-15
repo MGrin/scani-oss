@@ -5,6 +5,7 @@ import { Container } from 'typedi';
 import { accountTypesRouter } from './routers/account-types';
 import { accountsRouter } from './routers/accounts';
 import { batchOperationsRouter } from './routers/batch-operations';
+import { clientErrorsRouter } from './routers/client-errors';
 import { dashboardRouter } from './routers/dashboard';
 import { fileImportRouter } from './routers/file-import';
 import { groupsRouter } from './routers/groups';
@@ -61,6 +62,9 @@ export const appRouter = router({
 
   // File import (protected) - Bank statement parsing (CSV, OFX)
   fileImport: fileImportRouter,
+
+  // Client error reporting (public) - V2 ErrorBoundary posts here
+  clientErrors: clientErrorsRouter,
 
   // Health check (public)
   health: router({

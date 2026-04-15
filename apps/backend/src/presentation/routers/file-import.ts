@@ -5,10 +5,24 @@
 
 import { BANK_TEMPLATES, parseStatement } from '@scani/core/external-services/file-import';
 import { createComponentLogger } from '@scani/core/utils/logger';
+import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 import { protectedProcedure, router } from '../trpc';
 
 const fileImportLogger = createComponentLogger('router:file-import');
+
+/**
+ * File parsing safety caps.
+ *
+ * Base64 inputs up to ~4 MB decode to ~3 MB of raw bytes, which in turn can
+ * expand into much more heap (papaparse keeps multiple copies of each row
+ * during parsing). Without post-parse limits, an adversarial CSV can still
+ * push memory far beyond the input size. These caps are enforced AFTER
+ * parsing to bound the final result regardless of how compressible the input
+ * was.
+ */
+const MAX_PARSED_TRANSACTIONS = 10_000;
+const MAX_DECODED_BYTES = 4 * 1024 * 1024; // 4 MB
 
 export const fileImportRouter = router({
   /** Get available bank templates for CSV parsing */
@@ -64,12 +78,30 @@ export const fileImportRouter = router({
         decoded = input.content; // Try as plain text
       }
 
+      // Reject files that decode to oversized payloads regardless of the
+      // base64 size. Belt-and-braces with the input-level `.max()`.
+      const decodedBytes = Buffer.byteLength(decoded, 'utf-8');
+      if (decodedBytes > MAX_DECODED_BYTES) {
+        throw new TRPCError({
+          code: 'PAYLOAD_TOO_LARGE',
+          message: `Decoded file is too large (${decodedBytes} bytes, max ${MAX_DECODED_BYTES})`,
+        });
+      }
+
       const result = await parseStatement(
         decoded,
         input.filename,
         input.bankTemplate,
         input.customMapping
       );
+
+      // Cap the number of parsed transactions to bound memory/response size.
+      if (result.transactions.length > MAX_PARSED_TRANSACTIONS) {
+        throw new TRPCError({
+          code: 'PAYLOAD_TOO_LARGE',
+          message: `File contains ${result.transactions.length} transactions, max ${MAX_PARSED_TRANSACTIONS}`,
+        });
+      }
 
       fileImportLogger.info(
         {

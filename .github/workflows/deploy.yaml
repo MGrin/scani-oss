@@ -72,14 +72,26 @@ jobs:
               - 'apps/frontendV2/**'
               - 'packages/shared/**'
 
+  # All services are deployed via the Render REST API with a single account
+  # API key. Service IDs are public identifiers (not secret) and live in the
+  # workflow. The only secret is RENDER_API_KEY.
   deploy-backend:
     needs: [check-changes]
     if: ${{ needs.check-changes.outputs.backend == 'true' }}
     runs-on: ubuntu-latest
     steps:
       - name: Trigger backend deployment
+        env:
+          RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
         run: |
-          curl -X POST https://api.render.com/deploy/srv-d3j88295pdvs739osbig?key=dPrNCQrxecI
+          if [ -z "$RENDER_API_KEY" ]; then
+            echo "RENDER_API_KEY secret is not set" >&2
+            exit 1
+          fi
+          curl -fsS -X POST \
+            -H "Authorization: Bearer $RENDER_API_KEY" \
+            -H "Accept: application/json" \
+            https://api.render.com/v1/services/srv-d3j88295pdvs739osbig/deploys
 
   deploy-crons:
     needs: [check-changes]
@@ -90,9 +102,17 @@ jobs:
         env:
           RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
         run: |
-          curl -s -X POST -H "Authorization: Bearer $RENDER_API_KEY" \
+          if [ -z "$RENDER_API_KEY" ]; then
+            echo "RENDER_API_KEY secret is not set" >&2
+            exit 1
+          fi
+          curl -fsS -X POST \
+            -H "Authorization: Bearer $RENDER_API_KEY" \
+            -H "Accept: application/json" \
             https://api.render.com/v1/services/crn-d57rudmr433s73eta530/deploys
-          curl -s -X POST -H "Authorization: Bearer $RENDER_API_KEY" \
+          curl -fsS -X POST \
+            -H "Authorization: Bearer $RENDER_API_KEY" \
+            -H "Accept: application/json" \
             https://api.render.com/v1/services/crn-d57rt26r433s73et96s0/deploys
 
   deploy-frontend:
@@ -101,5 +121,14 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Trigger frontend deployment
+        env:
+          RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
         run: |
-          curl -X POST https://api.render.com/deploy/srv-d3j8p37diees73fl6q30?key=UP2oMJ6B9Vo
+          if [ -z "$RENDER_API_KEY" ]; then
+            echo "RENDER_API_KEY secret is not set" >&2
+            exit 1
+          fi
+          curl -fsS -X POST \
+            -H "Authorization: Bearer $RENDER_API_KEY" \
+            -H "Accept: application/json" \
+            https://api.render.com/v1/services/srv-d3j8p37diees73fl6q30/deploys

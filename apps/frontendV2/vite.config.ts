@@ -27,4 +27,25 @@ export default defineConfig({
       },
     },
   },
+  build: {
+    // Disable source maps in production to avoid shipping full source to
+    // the browser. Dev builds keep them on via the default.
+    sourcemap: false,
+    rollupOptions: {
+      output: {
+        // Split the large radix/vendor surface into its own chunk so the
+        // main app bundle stays below the vite warning threshold and
+        // cache invalidation on app changes doesn't blow away vendor code.
+        manualChunks(id) {
+          if (id.includes('node_modules')) {
+            if (id.includes('@radix-ui')) return 'vendor-radix';
+            if (id.includes('@tanstack') || id.includes('@trpc')) return 'vendor-data';
+            if (id.includes('react') || id.includes('scheduler')) return 'vendor-react';
+            if (id.includes('recharts') || id.includes('d3-')) return 'vendor-charts';
+            return 'vendor';
+          }
+        },
+      },
+    },
+  },
 });

@@ -12,9 +12,15 @@ const TAG_LENGTH = 16;
 const KEY_LENGTH = 32; // 256 bits
 
 /**
- * Get encryption key from environment variable
- * The key should be a hex string (64 characters for 32 bytes)
- * Returns null if ENCRYPTION_KEY is not set
+ * Get encryption key from environment variable.
+ * The key should be a hex string (64 characters for 32 bytes) or any string
+ * from which we derive a key via scrypt.
+ *
+ * In production, returning null here is treated as a fatal misconfiguration
+ * by the callers (see `encrypt`/`encryptCredentials`). Outside production we
+ * still allow a plaintext fallback for local development and tests.
+ *
+ * Returns null if ENCRYPTION_KEY is not set.
  */
 function getEncryptionKey(): Buffer | null {
   const key = process.env.ENCRYPTION_KEY;
@@ -32,18 +38,36 @@ function getEncryptionKey(): Buffer | null {
 }
 
 /**
+ * Throws if ENCRYPTION_KEY is missing while running in production.
+ *
+ * Without this guard, `encrypt()` silently returns plaintext and any
+ * downstream `encryptCredentials()` call writes exchange API keys to the
+ * database in the clear. We refuse to start that code path in production.
+ */
+function assertEncryptionKeyInProduction(): void {
+  if (process.env.NODE_ENV === 'production' && !process.env.ENCRYPTION_KEY) {
+    throw new Error(
+      'ENCRYPTION_KEY is required in production. Refusing to store sensitive ' +
+        'data without encryption. Set ENCRYPTION_KEY (>=32 chars) and restart.'
+    );
+  }
+}
+
+/**
  * Encrypt a string or object
  * Returns a base64-encoded string containing IV, salt, tag, and encrypted data
  * If ENCRYPTION_KEY is not set, returns the plain text as a JSON string
  */
 export function encrypt(data: string | Record<string, unknown>): string {
   try {
+    assertEncryptionKeyInProduction();
     const key = getEncryptionKey();
 
     // Convert data to string if it's an object
     const plaintext = typeof data === 'string' ? data : JSON.stringify(data);
 
-    // If no encryption key is available, return plain text
+    // If no encryption key is available (dev/test only), return plain text.
+    // Production is already blocked above.
     if (!key) {
       return plaintext;
     }
@@ -147,6 +171,7 @@ export function decrypt<T = string>(encryptedData: string): T {
  * If ENCRYPTION_KEY is not set, stores data in plain text with encrypted: false
  */
 export function encryptCredentials(credentials: Record<string, unknown>): Record<string, unknown> {
+  assertEncryptionKeyInProduction();
   const hasKey = hasEncryptionKey();
   const encryptedData = encrypt(credentials);
   return {

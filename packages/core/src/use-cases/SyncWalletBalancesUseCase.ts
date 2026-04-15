@@ -20,7 +20,7 @@
 import type { FetchHoldingsResult } from '@scani/integrations';
 import { IntegrationManager } from '@scani/integrations';
 import { isValidDecimalString } from '@scani/shared';
-import { and, eq } from 'drizzle-orm';
+import { and, asc, eq, gt, sql } from 'drizzle-orm';
 import { Container, Service } from 'typedi';
 import { db } from '../database/connection';
 import * as schema from '../database/schema';
@@ -31,9 +31,63 @@ import { AccountService } from '../services/AccountService';
 import { HoldingService } from '../services/HoldingService';
 import { TokenService } from '../services/TokenService';
 import { UserWalletService } from '../services/UserWalletService';
+import { integrationCircuitBreaker } from '../utils/circuit-breaker';
 import { createComponentLogger } from '../utils/logger';
+import { withRetry } from '../utils/retry';
 
 const logger = createComponentLogger('use-case:sync-wallet-balances');
+
+/** Page size for user iteration. Keeps peak memory bounded regardless of scale. */
+const USER_PAGE_SIZE = 100;
+
+/**
+ * Record a wallet sync failure so operators can query stuck targets without
+ * tailing logs. Upserts by (kind, target_id) and increments failure_count.
+ */
+async function recordSyncFailure(params: {
+  kind: string;
+  targetId: string;
+  error: string;
+  metadata?: Record<string, unknown>;
+}): Promise<void> {
+  try {
+    await db
+      .insert(schema.syncFailures)
+      .values({
+        kind: params.kind,
+        targetId: params.targetId,
+        failureCount: 1,
+        lastError: params.error,
+        metadata: params.metadata ?? null,
+      })
+      .onConflictDoUpdate({
+        target: [schema.syncFailures.kind, schema.syncFailures.targetId],
+        set: {
+          failureCount: sql`${schema.syncFailures.failureCount} + 1`,
+          lastError: params.error,
+          lastAttemptAt: new Date(),
+          metadata: params.metadata ?? null,
+        },
+      });
+  } catch (err) {
+    // Observability table failures must not bring down the sync job.
+    logger.warn({ err, params }, 'Failed to record sync failure (non-fatal)');
+  }
+}
+
+/**
+ * Clear a previously-recorded sync failure after a successful sync.
+ * Silent no-op if there was no existing row.
+ */
+async function clearSyncFailure(kind: string, targetId: string): Promise<void> {
+  try {
+    await db
+      .delete(schema.syncFailures)
+      .where(and(eq(schema.syncFailures.kind, kind), eq(schema.syncFailures.targetId, targetId)));
+  } catch (err) {
+    logger.warn({ err, kind, targetId }, 'Failed to clear sync failure (non-fatal)');
+  }
+}
 
 export interface SyncWalletBalancesResult {
   /** Total number of wallet accounts found */
@@ -159,11 +213,10 @@ export class SyncWalletBalancesUseCase {
     let holdingsCreated = 0;
     let holdingsRemoved = 0;
 
-    // STEP 1: Get all users and their wallets (quick database query)
-    const users = await db.select().from(schema.users);
-
-    // STEP 2: Fetch ALL blockchain data first (external API calls, no DB connection held)
-    // This is critical for preventing connection exhaustion during slow blockchain API calls
+    // STEP 1 & 2 combined: iterate users in pages (keyset pagination on id)
+    // and fetch blockchain data incrementally. This keeps peak memory bounded
+    // regardless of user count, which matters once the user base grows beyond
+    // a few hundred.
     const walletDataToSync: Array<{
       user: User;
       userWallet: UserWallet;
@@ -173,206 +226,294 @@ export class SyncWalletBalancesUseCase {
       holdingsResult: FetchHoldingsResult;
     }> = [];
 
-    for (const user of users) {
-      // Get user's wallets
-      const userWallets = await this.userWalletService.getUserWallets(user.id);
+    // Keyset pagination cursor (id is uuid; lexicographic ordering is fine here).
+    let cursor: string | null = null;
+    type UserRow = typeof schema.users.$inferSelect;
+    let pageUsers: UserRow[] = [];
 
-      for (const userWallet of userWallets) {
-        let institutionIds = (userWallet.institutionIds as string[]) || [];
+    do {
+      const query = cursor
+        ? db
+            .select()
+            .from(schema.users)
+            .where(gt(schema.users.id, cursor))
+            .orderBy(asc(schema.users.id))
+            .limit(USER_PAGE_SIZE)
+        : db.select().from(schema.users).orderBy(asc(schema.users.id)).limit(USER_PAGE_SIZE);
 
-        // Periodic chain re-detection: check for new chains every 24 hours
-        // This discovers activity on chains added after initial import
-        const lastDetection = (userWallet as Record<string, unknown>).updatedAt as Date | undefined;
-        const hoursSinceDetection = lastDetection
-          ? (Date.now() - new Date(lastDetection).getTime()) / (1000 * 60 * 60)
-          : 999;
+      pageUsers = await query;
+      if (pageUsers.length === 0) break;
+      cursor = pageUsers[pageUsers.length - 1]?.id ?? null;
 
-        if (hoursSinceDetection >= 24 && userWallet.walletAddress) {
-          try {
-            const newChains = await this.integrationManager.detectWalletChains(
-              userWallet.walletAddress
-            );
-            const merged = Array.from(new Set([...institutionIds, ...newChains]));
-            if (merged.length > institutionIds.length) {
-              logger.info(
-                {
-                  walletAddress: userWallet.walletAddress.substring(0, 10),
-                  oldChains: institutionIds.length,
-                  newChains: merged.length,
-                },
-                'Discovered new chains for wallet'
+      for (const user of pageUsers) {
+        // Get user's wallets
+        const userWallets = await this.userWalletService.getUserWallets(user.id);
+
+        for (const userWallet of userWallets) {
+          let institutionIds = (userWallet.institutionIds as string[]) || [];
+
+          // Periodic chain re-detection: check for new chains every 24 hours
+          // This discovers activity on chains added after initial import
+          const lastDetection = (userWallet as Record<string, unknown>).updatedAt as
+            | Date
+            | undefined;
+          const hoursSinceDetection = lastDetection
+            ? (Date.now() - new Date(lastDetection).getTime()) / (1000 * 60 * 60)
+            : 999;
+
+          if (hoursSinceDetection >= 24 && userWallet.walletAddress) {
+            try {
+              const newChains = await this.integrationManager.detectWalletChains(
+                userWallet.walletAddress
               );
-              await this.userWalletService.updateWallet(userWallet.id, {
-                institutionIds: merged,
-              });
-              institutionIds = merged;
-            }
-          } catch (error) {
-            logger.warn(
-              { walletAddress: userWallet.walletAddress.substring(0, 10), error },
-              'Chain re-detection failed, using existing chains'
-            );
-          }
-        }
-
-        // Process each institution for this wallet
-        for (const institutionId of institutionIds) {
-          try {
-            const integration = await this.integrationManager.getIntegration(institutionId);
-
-            if (!integration) {
+              const merged = Array.from(new Set([...institutionIds, ...newChains]));
+              if (merged.length > institutionIds.length) {
+                logger.info(
+                  {
+                    walletAddress: userWallet.walletAddress.substring(0, 10),
+                    oldChains: institutionIds.length,
+                    newChains: merged.length,
+                  },
+                  'Discovered new chains for wallet'
+                );
+                await this.userWalletService.updateWallet(userWallet.id, {
+                  institutionIds: merged,
+                });
+                institutionIds = merged;
+              }
+            } catch (error) {
               logger.warn(
-                { institutionId, walletAddress: userWallet.walletAddress },
-                'Integration not found for institution'
+                { walletAddress: userWallet.walletAddress.substring(0, 10), error },
+                'Chain re-detection failed, using existing chains'
               );
-              continue;
             }
+          }
 
-            // Get institution
-            const [institution] = await db
-              .select()
-              .from(schema.institutions)
-              .where(eq(schema.institutions.id, institutionId))
-              .limit(1);
+          // Process each institution for this wallet
+          for (const institutionId of institutionIds) {
+            try {
+              const integration = await this.integrationManager.getIntegration(institutionId);
 
-            if (!institution) {
-              continue;
-            }
-
-            // Find the account for this wallet and institution
-            const accounts = await db
-              .select()
-              .from(schema.accounts)
-              .where(
-                and(
-                  eq(schema.accounts.userId, user.id),
-                  eq(schema.accounts.institutionId, institutionId)
-                )
-              );
-
-            // Filter accounts that have this userWalletId in metadata
-            const account = accounts.find((acc) => {
-              const metadata = acc.metadata as Record<string, unknown>;
-              return metadata?.userWalletId === userWallet.id;
-            });
-
-            if (!account) {
-              // Auto-create account for newly detected chain
-              try {
-                const walletAccountType = await db
-                  .select()
-                  .from(schema.accountTypes)
-                  .where(eq(schema.accountTypes.code, 'crypto'))
-                  .limit(1);
-
-                if (walletAccountType.length > 0) {
-                  const addrShort = userWallet.walletAddress.substring(0, 8);
-                  const [newAccount] = await db
-                    .insert(schema.accounts)
-                    .values({
-                      userId: user.id,
-                      institutionId,
-                      name: `${institution.name} - ${addrShort}`,
-                      typeId: walletAccountType[0]!.id,
-                      description: `Crypto wallet on ${institution.name}`,
-                      metadata: {
-                        walletAddress: userWallet.walletAddress,
-                        chainName: institution.name,
-                        userWalletId: userWallet.id,
-                        lastSync: null,
-                      },
-                      isActive: true,
-                    })
-                    .returning();
-
-                  if (newAccount) {
-                    logger.info(
-                      { accountId: newAccount.id, chain: institution.name },
-                      'Auto-created account for newly detected chain'
-                    );
-                    // Use the newly created account — assign to a mutable variable
-                    // and fall through to the fetch logic below
-                    Object.assign(accounts, [newAccount]);
-                  }
-                }
-              } catch (createErr) {
+              if (!integration) {
                 logger.warn(
-                  { userWalletId: userWallet.id, institutionId, error: createErr },
-                  'Failed to auto-create account for chain'
+                  { institutionId, walletAddress: userWallet.walletAddress },
+                  'Integration not found for institution'
                 );
                 continue;
               }
-            }
 
-            // Re-find account (may have been just created)
-            const syncAccount =
-              account ||
-              accounts.find((acc) => {
-                const md = acc.metadata as Record<string, unknown>;
-                return md?.userWalletId === userWallet.id;
+              // Get institution
+              const [institution] = await db
+                .select()
+                .from(schema.institutions)
+                .where(eq(schema.institutions.id, institutionId))
+                .limit(1);
+
+              if (!institution) {
+                continue;
+              }
+
+              // Find the account for this wallet and institution
+              const accounts = await db
+                .select()
+                .from(schema.accounts)
+                .where(
+                  and(
+                    eq(schema.accounts.userId, user.id),
+                    eq(schema.accounts.institutionId, institutionId)
+                  )
+                );
+
+              // Filter accounts that have this userWalletId in metadata
+              const account = accounts.find((acc) => {
+                const metadata = acc.metadata as Record<string, unknown>;
+                return metadata?.userWalletId === userWallet.id;
               });
 
-            if (!syncAccount) {
-              continue;
-            }
+              if (!account) {
+                // Auto-create account for newly detected chain
+                try {
+                  const walletAccountType = await db
+                    .select()
+                    .from(schema.accountTypes)
+                    .where(eq(schema.accountTypes.code, 'crypto'))
+                    .limit(1);
 
-            logger.debug(
-              {
-                accountId: syncAccount.id,
-                walletAddress: userWallet.walletAddress,
-                institutionId,
-              },
-              'Fetching wallet holdings from blockchain'
-            );
+                  if (walletAccountType.length > 0) {
+                    const addrShort = userWallet.walletAddress.substring(0, 8);
+                    const [newAccount] = await db
+                      .insert(schema.accounts)
+                      .values({
+                        userId: user.id,
+                        institutionId,
+                        name: `${institution.name} - ${addrShort}`,
+                        typeId: walletAccountType[0]!.id,
+                        description: `Crypto wallet on ${institution.name}`,
+                        metadata: {
+                          walletAddress: userWallet.walletAddress,
+                          chainName: institution.name,
+                          userWalletId: userWallet.id,
+                          lastSync: null,
+                        },
+                        isActive: true,
+                      })
+                      .returning();
 
-            // EXTERNAL API CALL - Fetch holdings from blockchain (no DB connection held)
-            const holdingsResult = await integration.fetchHoldings(userWallet.walletAddress);
+                    if (newAccount) {
+                      logger.info(
+                        { accountId: newAccount.id, chain: institution.name },
+                        'Auto-created account for newly detected chain'
+                      );
+                      // Use the newly created account — assign to a mutable variable
+                      // and fall through to the fetch logic below
+                      Object.assign(accounts, [newAccount]);
+                    }
+                  }
+                } catch (createErr) {
+                  logger.warn(
+                    { userWalletId: userWallet.id, institutionId, error: createErr },
+                    'Failed to auto-create account for chain'
+                  );
+                  continue;
+                }
+              }
 
-            if (holdingsResult.errors && holdingsResult.errors.length > 0) {
-              logger.warn(
-                { accountId: syncAccount.id, errors: holdingsResult.errors },
-                'Errors fetching holdings from integration'
+              // Re-find account (may have been just created)
+              const syncAccount =
+                account ||
+                accounts.find((acc) => {
+                  const md = acc.metadata as Record<string, unknown>;
+                  return md?.userWalletId === userWallet.id;
+                });
+
+              if (!syncAccount) {
+                continue;
+              }
+
+              logger.debug(
+                {
+                  accountId: syncAccount.id,
+                  walletAddress: userWallet.walletAddress,
+                  institutionId,
+                },
+                'Fetching wallet holdings from blockchain'
               );
-              errors.push({
-                accountId: syncAccount.id,
-                accountName: syncAccount.name,
-                walletAddress: userWallet.walletAddress,
-                error: holdingsResult.errors.join('; '),
-              });
-              accountsFailed++;
-              continue;
-            }
 
-            // Store the data for batch processing
-            walletDataToSync.push({
-              user,
-              userWallet,
-              institutionId,
-              institution,
-              account: syncAccount,
-              holdingsResult,
-            });
-          } catch (error) {
-            accountsFailed++;
-            const errorMessage = error instanceof Error ? error.message : String(error);
-            errors.push({
-              accountId: 'unknown',
-              accountName: `${userWallet.walletAddress.substring(0, 10)}...`,
-              walletAddress: userWallet.walletAddress,
-              error: errorMessage,
-            });
-            logger.error(
-              {
-                userWalletId: userWallet.id,
+              // Circuit breaker: if this integration has been failing repeatedly,
+              // bail out immediately instead of stacking up retries + backoffs.
+              // Prevents one bad provider (e.g. a rate-limited exchange) from
+              // blowing up the whole cron run's wall-clock time.
+              const failureTargetId = `${syncAccount.id}:${institutionId}`;
+              if (!integrationCircuitBreaker.isAvailable(institutionId)) {
+                logger.warn(
+                  { institutionId, accountId: syncAccount.id },
+                  'Integration circuit open — skipping wallet fetch'
+                );
+                await recordSyncFailure({
+                  kind: 'wallet',
+                  targetId: failureTargetId,
+                  error: 'circuit breaker open',
+                  metadata: { walletAddress: userWallet.walletAddress, institutionId },
+                });
+                accountsFailed++;
+                continue;
+              }
+
+              // EXTERNAL API CALL - Fetch holdings from blockchain (no DB connection held).
+              // Retries transient failures (network, 5xx, 429) with backoff. A
+              // persistent failure is recorded in sync_failures so operators can
+              // see stuck wallets without tailing logs.
+              let holdingsResult: FetchHoldingsResult;
+              try {
+                holdingsResult = await withRetry(
+                  () => integration.fetchHoldings(userWallet.walletAddress),
+                  {
+                    onRetry: (attempt, err) => {
+                      logger.warn(
+                        {
+                          attempt,
+                          accountId: syncAccount.id,
+                          walletAddress: userWallet.walletAddress,
+                          error: err instanceof Error ? err.message : String(err),
+                        },
+                        'Retrying wallet fetch after transient failure'
+                      );
+                    },
+                  }
+                );
+                integrationCircuitBreaker.recordSuccess(institutionId);
+              } catch (fetchErr) {
+                integrationCircuitBreaker.recordFailure(institutionId);
+                throw fetchErr;
+              }
+
+              if (holdingsResult.errors && holdingsResult.errors.length > 0) {
+                logger.warn(
+                  { accountId: syncAccount.id, errors: holdingsResult.errors },
+                  'Errors fetching holdings from integration'
+                );
+                errors.push({
+                  accountId: syncAccount.id,
+                  accountName: syncAccount.name,
+                  walletAddress: userWallet.walletAddress,
+                  error: holdingsResult.errors.join('; '),
+                });
+                await recordSyncFailure({
+                  kind: 'wallet',
+                  targetId: failureTargetId,
+                  error: holdingsResult.errors.join('; '),
+                  metadata: {
+                    walletAddress: userWallet.walletAddress,
+                    institutionId,
+                  },
+                });
+                accountsFailed++;
+                continue;
+              }
+
+              // Successful fetch — clear any stale failure record.
+              await clearSyncFailure('wallet', failureTargetId);
+
+              // Store the data for batch processing
+              walletDataToSync.push({
+                user,
+                userWallet,
                 institutionId,
+                institution,
+                account: syncAccount,
+                holdingsResult,
+              });
+            } catch (error) {
+              accountsFailed++;
+              const errorMessage = error instanceof Error ? error.message : String(error);
+              errors.push({
+                accountId: 'unknown',
+                accountName: `${userWallet.walletAddress.substring(0, 10)}...`,
+                walletAddress: userWallet.walletAddress,
                 error: errorMessage,
-              },
-              'Failed to fetch wallet data'
-            );
+              });
+              await recordSyncFailure({
+                kind: 'wallet',
+                targetId: `${userWallet.id}:${institutionId}`,
+                error: errorMessage,
+                metadata: {
+                  walletAddress: userWallet.walletAddress,
+                  institutionId,
+                },
+              });
+              logger.error(
+                {
+                  userWalletId: userWallet.id,
+                  institutionId,
+                  error: errorMessage,
+                },
+                'Failed to fetch wallet data'
+              );
+            }
           }
         }
-      }
-    }
+      } // end for (user of pageUsers)
+    } while (pageUsers.length === USER_PAGE_SIZE);
 
     // STEP 3: Process ALL updates in a SINGLE TRANSACTION
     // This dramatically reduces connection usage from N*M operations to 1 transaction
