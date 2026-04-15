@@ -249,45 +249,52 @@ export class SyncWalletBalancesUseCase {
         // Get user's wallets
         const userWallets = await this.userWalletService.getUserWallets(user.id);
 
+        // Pre-fetch the user's wallet-backed accounts once per user so we can
+        // cheaply tell which `user_wallet` rows still have any accounts and
+        // skip orphan rows. `AccountService.deleteAccount` hard-deletes the
+        // wallet row when its last account is removed, but older rows from
+        // before that fix landed may still exist — this is the belt-and-
+        // suspenders layer that keeps them out of the sync loop regardless.
+        const userAccounts = await db
+          .select()
+          .from(schema.accounts)
+          .where(eq(schema.accounts.userId, user.id));
+        const walletIdsWithAccounts = new Set<string>();
+        for (const acc of userAccounts) {
+          const meta = acc.metadata as Record<string, unknown> | null;
+          const wid = meta?.userWalletId as string | undefined;
+          if (wid) walletIdsWithAccounts.add(wid);
+        }
+
         for (const userWallet of userWallets) {
-          let institutionIds = (userWallet.institutionIds as string[]) || [];
-
-          // Periodic chain re-detection: check for new chains every 24 hours
-          // This discovers activity on chains added after initial import
-          const lastDetection = (userWallet as Record<string, unknown>).updatedAt as
-            | Date
-            | undefined;
-          const hoursSinceDetection = lastDetection
-            ? (Date.now() - new Date(lastDetection).getTime()) / (1000 * 60 * 60)
-            : 999;
-
-          if (hoursSinceDetection >= 24 && userWallet.walletAddress) {
-            try {
-              const newChains = await this.integrationManager.detectWalletChains(
-                userWallet.walletAddress
-              );
-              const merged = Array.from(new Set([...institutionIds, ...newChains]));
-              if (merged.length > institutionIds.length) {
-                logger.info(
-                  {
-                    walletAddress: userWallet.walletAddress.substring(0, 10),
-                    oldChains: institutionIds.length,
-                    newChains: merged.length,
-                  },
-                  'Discovered new chains for wallet'
-                );
-                await this.userWalletService.updateWallet(userWallet.id, {
-                  institutionIds: merged,
-                });
-                institutionIds = merged;
-              }
-            } catch (error) {
-              logger.warn(
-                { walletAddress: userWallet.walletAddress.substring(0, 10), error },
-                'Chain re-detection failed, using existing chains'
-              );
-            }
+          if (!walletIdsWithAccounts.has(userWallet.id)) {
+            logger.debug(
+              { userWalletId: userWallet.id },
+              'Skipping orphan user_wallet with no associated accounts'
+            );
+            continue;
           }
+
+          const institutionIds = (userWallet.institutionIds as string[]) || [];
+
+          // NOTE: periodic chain re-detection was removed intentionally.
+          //
+          // The previous implementation ran `detectWalletChains` every 24
+          // hours and merged any newly-detected chains into the wallet's
+          // `institutionIds`. That created a bug where any chain the user
+          // had explicitly deleted (via account deletion) would silently
+          // come back after 24 hours, because re-detect would find it
+          // and re-add it to the wallet, and the inner-loop auto-create
+          // block would then resurrect the account.
+          //
+          // There's no way to distinguish "user removed this chain on
+          // purpose" from "user has never seen this chain" without an
+          // exclusion history, which would need a schema change. Until
+          // we add that history, chain discovery is strictly an import-
+          // time operation: the user re-imports the same wallet address
+          // (idempotent via `findByUserAndAddress`) and the import flow
+          // detects and merges any new chains into the existing wallet
+          // row. See `ImportWalletAddressUseCase.executeWithIntegrations`.
 
           // Process each institution for this wallet
           for (const institutionId of institutionIds) {
@@ -324,69 +331,27 @@ export class SyncWalletBalancesUseCase {
                   )
                 );
 
-              // Filter accounts that have this userWalletId in metadata
-              const account = accounts.find((acc) => {
+              // Find the account that actually backs this (wallet, institution)
+              // pair. If none exists, the user explicitly deleted it — DO NOT
+              // resurrect it. The previous code auto-created a fresh account
+              // here, which silently undid user deletions every time the sync
+              // ran. If the user wants this chain back, they can re-import
+              // the wallet address (the import flow merges new chains into
+              // the existing wallet row idempotently).
+              const syncAccount = accounts.find((acc) => {
                 const metadata = acc.metadata as Record<string, unknown>;
                 return metadata?.userWalletId === userWallet.id;
               });
 
-              if (!account) {
-                // Auto-create account for newly detected chain
-                try {
-                  const walletAccountType = await db
-                    .select()
-                    .from(schema.accountTypes)
-                    .where(eq(schema.accountTypes.code, 'crypto'))
-                    .limit(1);
-
-                  if (walletAccountType.length > 0) {
-                    const addrShort = userWallet.walletAddress.substring(0, 8);
-                    const [newAccount] = await db
-                      .insert(schema.accounts)
-                      .values({
-                        userId: user.id,
-                        institutionId,
-                        name: `${institution.name} - ${addrShort}`,
-                        typeId: walletAccountType[0]!.id,
-                        description: `Crypto wallet on ${institution.name}`,
-                        metadata: {
-                          walletAddress: userWallet.walletAddress,
-                          chainName: institution.name,
-                          userWalletId: userWallet.id,
-                          lastSync: null,
-                        },
-                        isActive: true,
-                      })
-                      .returning();
-
-                    if (newAccount) {
-                      logger.info(
-                        { accountId: newAccount.id, chain: institution.name },
-                        'Auto-created account for newly detected chain'
-                      );
-                      // Use the newly created account — assign to a mutable variable
-                      // and fall through to the fetch logic below
-                      Object.assign(accounts, [newAccount]);
-                    }
-                  }
-                } catch (createErr) {
-                  logger.warn(
-                    { userWalletId: userWallet.id, institutionId, error: createErr },
-                    'Failed to auto-create account for chain'
-                  );
-                  continue;
-                }
-              }
-
-              // Re-find account (may have been just created)
-              const syncAccount =
-                account ||
-                accounts.find((acc) => {
-                  const md = acc.metadata as Record<string, unknown>;
-                  return md?.userWalletId === userWallet.id;
-                });
-
               if (!syncAccount) {
+                logger.debug(
+                  {
+                    userWalletId: userWallet.id,
+                    institutionId,
+                    walletAddress: userWallet.walletAddress.substring(0, 10),
+                  },
+                  'No account for this wallet+institution — skipping (user likely deleted it)'
+                );
                 continue;
               }
 

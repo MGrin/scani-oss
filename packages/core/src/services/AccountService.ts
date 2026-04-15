@@ -204,17 +204,26 @@ export class AccountService extends BaseService {
       const existing = await this.accountRepository.findById(accountId);
       this.assertExists(existing, `Account with ID ${accountId} not found`);
 
-      // Check if this is a wallet account with user_wallet association
+      // Check if this is a wallet account with user_wallet association.
+      //
+      // Historically we also checked `metadata.migrated === true` here,
+      // but `SyncWalletBalancesUseCase`'s "auto-create account for newly
+      // detected chain" block writes metadata WITHOUT that flag. That
+      // meant deleting a cron-auto-created wallet account silently
+      // skipped the wallet cleanup below, leaving a stale institutionId
+      // on the wallet row — and the next sync immediately re-created
+      // the account. The only reliable signal of "this is a wallet
+      // account" is `userWalletId` being set; `migrated` is a vestigial
+      // flag from the pre-user_wallet data migration.
       const metadata = existing.metadata as Record<string, unknown>;
       const userWalletId = metadata?.userWalletId as string | undefined;
-      const migrated = metadata?.migrated as boolean | undefined;
 
       // If account is associated with a user_wallet, remove the institution
       // from the wallet. If that was the last institution on the wallet, we
       // then hard-delete the wallet row entirely so `SyncWalletBalancesUseCase`
       // doesn't later re-detect chains and silently rehydrate the accounts
       // the user just deleted.
-      if (userWalletId && migrated && existing.institutionId) {
+      if (userWalletId && existing.institutionId) {
         try {
           const updatedWallet = await this.userWalletService.removeInstitutionFromWallet(
             userWalletId,
@@ -231,7 +240,7 @@ export class AccountService extends BaseService {
           if (remainingInstitutions.length === 0) {
             // Last institution for this wallet — the user is fully removing
             // the wallet from the system. Hard-delete so the sync cron has
-            // no row to re-detect chains against on its next 24h pass.
+            // no row to re-detect chains against on its next pass.
             await this.userWalletService.hardDeleteWallet(userWalletId);
             this.logInfo('Hard-deleted user wallet after last account removal', {
               accountId,
