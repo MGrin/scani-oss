@@ -31,21 +31,12 @@ export default defineConfig({
     // Disable source maps in production to avoid shipping full source to
     // the browser. Dev builds keep them on via the default.
     sourcemap: false,
-    rollupOptions: {
-      output: {
-        // Split the large radix/vendor surface into its own chunk so the
-        // main app bundle stays below the vite warning threshold and
-        // cache invalidation on app changes doesn't blow away vendor code.
-        manualChunks(id) {
-          if (id.includes('node_modules')) {
-            if (id.includes('@radix-ui')) return 'vendor-radix';
-            if (id.includes('@tanstack') || id.includes('@trpc')) return 'vendor-data';
-            if (id.includes('react') || id.includes('scheduler')) return 'vendor-react';
-            if (id.includes('recharts') || id.includes('d3-')) return 'vendor-charts';
-            return 'vendor';
-          }
-        },
-      },
-    },
+    // IMPORTANT: do NOT manually split React or anything that imports it at
+    // module-init time (Radix, react-router, react-hook-form, recharts, ...)
+    // into separate chunks. When React lives in a different chunk than its
+    // consumers, Rollup can emit an execution order where the consumer's
+    // top-level code runs before the React chunk has initialized, producing
+    // `Cannot read properties of undefined (reading 'forwardRef')` at boot.
+    // We keep Vite's default vendor chunking, which handles this correctly.
   },
 });
