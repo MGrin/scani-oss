@@ -1,5 +1,5 @@
-import { ArrowLeft, Check, Loader2, Search, Wallet } from 'lucide-react';
-import { useState } from 'react';
+import { AlertTriangle, ArrowLeft, Check, Loader2, Search, Trash2, Wallet } from 'lucide-react';
+import { useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -18,6 +18,11 @@ export function WalletImportPage() {
   const navigate = useNavigate();
   const utils = trpc.useUtils();
 
+  // Track holdings the user has already reviewed (deleted or marked as scam)
+  // in the post-import review screen, so they disappear from the list
+  // without requiring a refetch of the imported data.
+  const [reviewedHoldingIds, setReviewedHoldingIds] = useState<Set<string>>(new Set());
+
   const detectMutation = trpc.wallet.detectChains.useMutation({
     onSuccess: () => setStep('detected'),
     onError: (err) => {
@@ -29,9 +34,16 @@ export function WalletImportPage() {
   const importMutation = trpc.wallet.importAddress.useMutation({
     onSuccess: (result) => {
       setStep('result');
-      utils.holdings.getWithDetails.invalidate();
-      utils.accounts.getByUserIdWithSummary.invalidate();
-      utils.dashboard.getOverview.invalidate();
+      setReviewedHoldingIds(new Set());
+      // Refetch relevant lists so Holdings/Dashboard show the new data when
+      // the user eventually navigates there. `refetchType: 'all'` ensures
+      // inactive observers also get fresh data (see trpc-provider note).
+      void Promise.all([
+        utils.holdings.getWithDetails.invalidate(undefined, { refetchType: 'all' }),
+        utils.accounts.getByUserIdWithSummary.invalidate(undefined, { refetchType: 'all' }),
+        utils.dashboard.getOverview.invalidate(undefined, { refetchType: 'all' }),
+        utils.dashboard.getAssetAllocation.invalidate(undefined, { refetchType: 'all' }),
+      ]);
       showSuccess(
         `Imported ${result.holdings?.length ?? 0} holdings across ${result.accounts?.length ?? 0} accounts`
       );
@@ -41,6 +53,40 @@ export function WalletImportPage() {
       setStep('detected');
     },
   });
+
+  // Delete (soft-delete — sets isHidden=true) the user's own holding.
+  const deleteHoldingMutation = trpc.holdings.delete.useMutation({
+    onError: (err) => showError(err, 'Deleting holding'),
+  });
+
+  // Flag a token as scam across the system. Only offered for tokens that
+  // this import was the first to introduce to the system.
+  const markTokenAsScamMutation = trpc.tokens.markAsScam.useMutation({
+    onError: (err) => showError(err, 'Marking token as scam'),
+  });
+
+  const handleDeleteHolding = async (holdingId: string) => {
+    try {
+      await deleteHoldingMutation.mutateAsync({ id: holdingId });
+      setReviewedHoldingIds((prev) => new Set(prev).add(holdingId));
+      showSuccess('Holding removed');
+    } catch {
+      // Error already surfaced via onError toast.
+    }
+  };
+
+  const handleMarkAsScam = async (holdingId: string, tokenId: string, tokenSymbol: string) => {
+    try {
+      // Order matters: mark scam first (global classification), then remove
+      // the user's own holding. If the scam-mark fails we don't delete.
+      await markTokenAsScamMutation.mutateAsync({ tokenId });
+      await deleteHoldingMutation.mutateAsync({ id: holdingId });
+      setReviewedHoldingIds((prev) => new Set(prev).add(holdingId));
+      showSuccess(`${tokenSymbol} marked as scam and removed from your portfolio`);
+    } catch {
+      // Error already surfaced via onError toast.
+    }
+  };
 
   const handleDetect = () => {
     if (!address.trim()) return;
@@ -174,43 +220,235 @@ export function WalletImportPage() {
 
       {/* Step 5: Result */}
       {step === 'result' && importMutation.data && (
-        <div className="space-y-4">
-          <Card>
-            <CardContent className="p-6 text-center">
-              <Wallet className="h-10 w-10 mx-auto text-green-500 mb-3" />
-              <h3 className="text-lg font-semibold">Import Complete</h3>
-              <p className="text-sm text-muted-foreground mt-1">
-                {importMutation.data.accounts?.length ?? 0} accounts and{' '}
-                {importMutation.data.holdings?.length ?? 0} holdings imported
-              </p>
-              {importMutation.data.errors && importMutation.data.errors.length > 0 && (
-                <div className="mt-3 text-left">
-                  <p className="text-xs font-medium text-destructive mb-1">Errors:</p>
-                  {importMutation.data.errors.map((err: { error: string }, i: number) => (
-                    <p key={`err-${i}`} className="text-xs text-muted-foreground">
-                      {err.error}
-                    </p>
-                  ))}
-                </div>
-              )}
-            </CardContent>
-          </Card>
-
-          <div className="flex gap-3">
-            <Button onClick={() => navigate(V2_ROUTES.holdings)}>View Holdings</Button>
-            <Button
-              variant="outline"
-              onClick={() => {
-                setStep('input');
-                setAddress('');
-                setDisplayName('');
-              }}
-            >
-              Import Another
-            </Button>
-          </div>
-        </div>
+        <ResultStep
+          data={importMutation.data}
+          reviewedHoldingIds={reviewedHoldingIds}
+          onDelete={handleDeleteHolding}
+          onMarkAsScam={handleMarkAsScam}
+          onViewHoldings={() => navigate(V2_ROUTES.holdings)}
+          onImportAnother={() => {
+            setStep('input');
+            setAddress('');
+            setDisplayName('');
+            setReviewedHoldingIds(new Set());
+          }}
+          isBusy={deleteHoldingMutation.isPending || markTokenAsScamMutation.isPending}
+        />
       )}
     </div>
   );
+}
+
+// ── Result Step ────────────────────────────────────────────────────────────
+
+type ImportResult = NonNullable<ReturnType<typeof trpc.wallet.importAddress.useMutation>['data']>;
+type ImportedHolding = ImportResult['holdings'][number];
+
+interface ResultStepProps {
+  data: ImportResult;
+  reviewedHoldingIds: Set<string>;
+  onDelete: (holdingId: string) => void;
+  onMarkAsScam: (holdingId: string, tokenId: string, tokenSymbol: string) => void;
+  onViewHoldings: () => void;
+  onImportAnother: () => void;
+  isBusy: boolean;
+}
+
+function ResultStep({
+  data,
+  reviewedHoldingIds,
+  onDelete,
+  onMarkAsScam,
+  onViewHoldings,
+  onImportAnother,
+  isBusy,
+}: ResultStepProps) {
+  // Group visible holdings by chain, preserving the server-side order within
+  // each group so sync output is stable across renders.
+  const grouped = useMemo(() => {
+    const map = new Map<string, ImportedHolding[]>();
+    for (const h of data.holdings) {
+      if (reviewedHoldingIds.has(h.id)) continue;
+      const key = h.chainName || 'Unknown chain';
+      const list = map.get(key) ?? [];
+      list.push(h);
+      map.set(key, list);
+    }
+    return Array.from(map.entries());
+  }, [data.holdings, reviewedHoldingIds]);
+
+  const visibleCount = data.holdings.length - reviewedHoldingIds.size;
+  const newTokenCount = data.holdings.filter(
+    (h) => h.tokenIsNew && !reviewedHoldingIds.has(h.id)
+  ).length;
+
+  return (
+    <div className="space-y-4">
+      <Card>
+        <CardContent className="p-6 text-center">
+          <Wallet className="h-10 w-10 mx-auto text-green-500 mb-3" />
+          <h3 className="text-lg font-semibold">Import Complete</h3>
+          <p className="text-sm text-muted-foreground mt-1">
+            {data.accounts?.length ?? 0} account
+            {data.accounts?.length === 1 ? '' : 's'} and {visibleCount} holding
+            {visibleCount === 1 ? '' : 's'} imported
+          </p>
+          {newTokenCount > 0 && (
+            <p className="text-xs text-muted-foreground mt-2">
+              {newTokenCount} previously-unknown token
+              {newTokenCount === 1 ? '' : 's'} — review below
+            </p>
+          )}
+          {data.errors && data.errors.length > 0 && (
+            <div className="mt-3 text-left">
+              <p className="text-xs font-medium text-destructive mb-1">Errors:</p>
+              {data.errors.map((err) => (
+                <p key={`${err.chainId}-${err.error}`} className="text-xs text-muted-foreground">
+                  {err.chainName}: {err.error}
+                </p>
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {visibleCount > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Review Imported Holdings</CardTitle>
+            <p className="text-xs text-muted-foreground">
+              Delete any unwanted holdings. Tokens new to our system can be flagged as scam to help
+              improve detection for everyone.
+            </p>
+          </CardHeader>
+          <CardContent className="space-y-5">
+            {grouped.map(([chainName, holdings]) => (
+              <div key={chainName} className="space-y-2">
+                <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70">
+                  {chainName}
+                </p>
+                <div className="space-y-1.5">
+                  {holdings.map((h) => (
+                    <HoldingReviewRow
+                      key={h.id}
+                      holding={h}
+                      onDelete={() => onDelete(h.id)}
+                      onMarkAsScam={() => onMarkAsScam(h.id, h.tokenId, h.tokenSymbol)}
+                      disabled={isBusy}
+                    />
+                  ))}
+                </div>
+              </div>
+            ))}
+          </CardContent>
+        </Card>
+      )}
+
+      {visibleCount === 0 && data.holdings.length > 0 && (
+        <Card>
+          <CardContent className="p-6 text-center text-sm text-muted-foreground">
+            All imported holdings were reviewed. Nothing left to process.
+          </CardContent>
+        </Card>
+      )}
+
+      <div className="flex gap-3">
+        <Button onClick={onViewHoldings}>View Holdings</Button>
+        <Button variant="outline" onClick={onImportAnother}>
+          Import Another
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+function HoldingReviewRow({
+  holding,
+  onDelete,
+  onMarkAsScam,
+  disabled,
+}: {
+  holding: ImportedHolding;
+  onDelete: () => void;
+  onMarkAsScam: () => void;
+  disabled: boolean;
+}) {
+  // Format balance: up to 6 significant digits, drop trailing zeros.
+  const formattedBalance = formatBalance(holding.balance);
+
+  return (
+    <div className="flex items-center gap-3 rounded-md border border-border p-2.5">
+      <div className="flex items-center gap-2 min-w-0 flex-1">
+        {holding.tokenIconUrl ? (
+          <img
+            src={holding.tokenIconUrl}
+            alt=""
+            className="h-5 w-5 rounded-full object-contain shrink-0"
+            onError={(e) => {
+              (e.target as HTMLImageElement).style.display = 'none';
+            }}
+          />
+        ) : (
+          <div className="h-5 w-5 rounded-full bg-muted shrink-0" />
+        )}
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-1.5">
+            <span className="font-medium text-sm">{holding.tokenSymbol}</span>
+            {holding.tokenIsNew && (
+              <Badge
+                variant="secondary"
+                className="text-[9px] bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-200"
+              >
+                New token
+              </Badge>
+            )}
+          </div>
+          {holding.tokenName && holding.tokenName !== holding.tokenSymbol && (
+            <p className="text-xs text-muted-foreground truncate">{holding.tokenName}</p>
+          )}
+        </div>
+      </div>
+      <span className="text-sm font-mono text-right shrink-0 tabular-nums">{formattedBalance}</span>
+      <div className="flex items-center gap-1 shrink-0">
+        {holding.tokenIsNew && (
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-7 text-[11px] text-red-600 hover:text-red-600 hover:bg-red-600/10 border-red-600/40"
+            onClick={onMarkAsScam}
+            disabled={disabled}
+            title="Mark this token as scam across the system and remove from your portfolio"
+          >
+            <AlertTriangle className="h-3 w-3 mr-1" />
+            Mark scam
+          </Button>
+        )}
+        <Button
+          variant="ghost"
+          size="sm"
+          className="h-7 w-7 p-0 text-muted-foreground hover:text-destructive"
+          onClick={onDelete}
+          disabled={disabled}
+          title="Remove this holding from your portfolio"
+        >
+          <Trash2 className="h-3.5 w-3.5" />
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+function formatBalance(raw: string): string {
+  // The backend stores balance as a decimal string. For display we parse
+  // and format — the rest of the app uses Decimal.js, but for a simple
+  // review row this is enough. If parseFloat fails we show the raw string.
+  const n = Number(raw);
+  if (!Number.isFinite(n)) return raw;
+  if (n === 0) return '0';
+  if (n < 0.000001) return n.toExponential(2);
+  // Up to 6 significant digits, trim trailing zeros.
+  return n
+    .toPrecision(6)
+    .replace(/\.?0+$/, '')
+    .replace(/(\.\d*[1-9])0+$/, '$1');
 }

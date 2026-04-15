@@ -256,7 +256,7 @@ export class ImportKrakenAccountsUseCase {
                   const tokenMapping = await integration.mapToken(holding);
 
                   // Create or get token
-                  const token = await this.tokenService.findOrCreateTokenFromIntegration(
+                  const { token } = await this.tokenService.findOrCreateTokenFromIntegration(
                     tokenMapping,
                     cryptoType.id,
                     8,

@@ -365,7 +365,7 @@ export class SyncExchangeBalancesUseCase {
                   const tokenMapping = await integration.mapToken(holding);
 
                   // Get or create token
-                  const token = await this.tokenService.findOrCreateTokenFromIntegration(
+                  const { token } = await this.tokenService.findOrCreateTokenFromIntegration(
                     tokenMapping,
                     cryptoTokenType.id,
                     8,

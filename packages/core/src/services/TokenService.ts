@@ -405,7 +405,7 @@ export class TokenService extends BaseService {
     tokenTypeId: string,
     defaultDecimals = 18,
     transaction?: DatabaseTransaction
-  ): Promise<Token> {
+  ): Promise<{ token: Token; wasCreated: boolean }> {
     try {
       // Validate that we have a valid token type ID
       this.validateNonEmptyString(tokenTypeId, 'tokenTypeId');
@@ -441,45 +441,46 @@ export class TokenService extends BaseService {
         );
 
         this.assertExists(token, 'Failed to update token');
-      } else {
-        // Calculate scam probability only for crypto tokens
-        // Note: Price data is not available at token creation time; it's fetched separately by pricing services.
-        // This means initial scam detection relies on symbol/name patterns rather than price volatility.
-        let scamProbability = 0;
-        if (tokenType.code === 'crypto') {
-          scamProbability = this.scamDetectionService.calculateScamProbability(
-            tokenMapping.token.symbol,
-            tokenMapping.token.name,
-            new Date(), // Token is being created now
-            false // No price data available yet
-          );
-        }
-
-        // Create new token
-        token = await this.tokenRepository.create(
-          {
-            symbol: tokenMapping.token.symbol.toUpperCase(),
-            name: tokenMapping.token.name,
-            typeId: tokenTypeId,
-            decimals: tokenMapping.token.decimals ?? defaultDecimals,
-            iconUrl: tokenMapping.token.iconUrl || null,
-            providerMetadata: tokenMapping.token.providerMetadata || '{}',
-            isScamProbability: scamProbability,
-            isActive: true,
-          },
-          transaction
-        );
-
-        this.assertExists(token, 'Failed to create token');
-        this.logInfo('Token created from integration mapping', {
-          tokenId: token.id,
-          symbol: token.symbol,
-          tokenType: tokenType.code,
-          scamProbability: tokenType.code === 'crypto' ? scamProbability.toFixed(2) : 'N/A',
-        });
+        return { token, wasCreated: false };
       }
 
-      return token;
+      // Calculate scam probability only for crypto tokens
+      // Note: Price data is not available at token creation time; it's fetched separately by pricing services.
+      // This means initial scam detection relies on symbol/name patterns rather than price volatility.
+      let scamProbability = 0;
+      if (tokenType.code === 'crypto') {
+        scamProbability = this.scamDetectionService.calculateScamProbability(
+          tokenMapping.token.symbol,
+          tokenMapping.token.name,
+          new Date(), // Token is being created now
+          false // No price data available yet
+        );
+      }
+
+      // Create new token
+      token = await this.tokenRepository.create(
+        {
+          symbol: tokenMapping.token.symbol.toUpperCase(),
+          name: tokenMapping.token.name,
+          typeId: tokenTypeId,
+          decimals: tokenMapping.token.decimals ?? defaultDecimals,
+          iconUrl: tokenMapping.token.iconUrl || null,
+          providerMetadata: tokenMapping.token.providerMetadata || '{}',
+          isScamProbability: scamProbability,
+          isActive: true,
+        },
+        transaction
+      );
+
+      this.assertExists(token, 'Failed to create token');
+      this.logInfo('Token created from integration mapping', {
+        tokenId: token.id,
+        symbol: token.symbol,
+        tokenType: tokenType.code,
+        scamProbability: tokenType.code === 'crypto' ? scamProbability.toFixed(2) : 'N/A',
+      });
+
+      return { token, wasCreated: true };
     } catch (error) {
       throw this.handleError(error, 'findOrCreateTokenFromIntegration');
     }
@@ -515,7 +516,7 @@ export class TokenService extends BaseService {
     cryptoTokenTypeId: string,
     defaultDecimals = 18,
     transaction?: DatabaseTransaction
-  ): Promise<Token> {
+  ): Promise<{ token: Token; wasCreated: boolean }> {
     try {
       // Validate that we have a valid crypto token type ID
       this.validateNonEmptyString(cryptoTokenTypeId, 'cryptoTokenTypeId');

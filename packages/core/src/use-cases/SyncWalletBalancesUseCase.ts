@@ -583,7 +583,7 @@ export class SyncWalletBalancesUseCase {
                 const tokenMapping = await integration.mapToken(integrationHolding);
 
                 // Find or create token using blockchain-specific integration mapping method (within transaction)
-                const token = await this.tokenService.findOrCreateTokenFromIntegrationMapping(
+                const { token } = await this.tokenService.findOrCreateTokenFromIntegrationMapping(
                   tokenMapping,
                   cryptoTokenTypeId,
                   18,

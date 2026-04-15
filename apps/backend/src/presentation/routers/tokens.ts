@@ -337,5 +337,96 @@ export function createTokensRouter(
 
         return createdToken;
       }),
+
+    /**
+     * Flag a crypto token as a scam, contributing to the global scam detection.
+     *
+     * Authorization rule: the caller must have held this token in one of their
+     * own accounts at some point (hidden or visible). This is an anti-abuse
+     * measure — without it, any authenticated user could poison the catalog
+     * by marking arbitrary legitimate tokens as scam.
+     *
+     * Side effect: bumps `is_scam_probability` to 1.0 on the token row. Once
+     * a token crosses SCAM_PROBABILITY_THRESHOLD it is filtered out of the
+     * getAll / search endpoints everywhere in the app.
+     *
+     * Scope: crypto tokens only. Fiat / stock markings don't make sense here.
+     */
+    markAsScam: protectedProcedure
+      .input(z.object({ tokenId: z.string().uuid() }))
+      .mutation(async ({ input, ctx }) => {
+        const { dbUser } = await requireAuth(ctx);
+
+        // Verify the user has (or has had) a holding of this token.
+        const userHasHeldThisToken = await db
+          .select({ id: schemaObj.holdings.id })
+          .from(schemaObj.holdings)
+          .where(
+            and(
+              eq(schemaObj.holdings.userId, dbUser.id),
+              eq(schemaObj.holdings.tokenId, input.tokenId)
+            )
+          )
+          .limit(1);
+
+        if (userHasHeldThisToken.length === 0) {
+          tokensLogger.warn(
+            { userId: dbUser.id, tokenId: input.tokenId },
+            'Rejected markAsScam: user has never held this token'
+          );
+          throw new Error(
+            'You can only mark a token as scam if you have held it in one of your accounts'
+          );
+        }
+
+        // Verify the token is crypto. We don't flag fiat / stocks this way.
+        const [token] = await db
+          .select({
+            id: schemaObj.tokens.id,
+            symbol: schemaObj.tokens.symbol,
+            typeCode: schemaObj.tokenTypes.code,
+          })
+          .from(schemaObj.tokens)
+          .leftJoin(schemaObj.tokenTypes, eq(schemaObj.tokens.typeId, schemaObj.tokenTypes.id))
+          .where(eq(schemaObj.tokens.id, input.tokenId))
+          .limit(1);
+
+        if (!token) {
+          throw new Error('Token not found');
+        }
+
+        if (token.typeCode !== 'crypto') {
+          throw new Error('Only crypto tokens can be marked as scam');
+        }
+
+        // Bump scam probability to 1.0 — definitively over the threshold.
+        await db
+          .update(schemaObj.tokens)
+          .set({
+            isScamProbability: 1.0,
+            updatedAt: new Date(),
+          })
+          .where(eq(schemaObj.tokens.id, input.tokenId));
+
+        tokensLogger.info(
+          {
+            userId: dbUser.id,
+            tokenId: token.id,
+            symbol: token.symbol,
+          },
+          'Token marked as scam by user'
+        );
+
+        emitEntityChange({
+          type: 'entity_changed',
+          entityType: 'token',
+          operationType: 'update',
+          entityId: token.id,
+          userId: dbUser.id,
+          data: { scamProbability: 1.0 },
+        });
+
+        return { success: true as const, tokenId: token.id };
+      }),
   });
 }

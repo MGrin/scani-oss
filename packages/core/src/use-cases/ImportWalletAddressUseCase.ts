@@ -50,12 +50,29 @@ export interface ImportWalletResult {
     institutionId: string;
     institutionName: string;
   }>;
-  /** Created holdings */
+  /** Created holdings — enriched for the post-import review UI */
   holdings: Array<{
     id: string;
     accountId: string;
+    accountName: string;
+    chainName: string;
+    tokenId: string;
     tokenSymbol: string;
     tokenName: string;
+    tokenIconUrl: string | null;
+    /**
+     * True if THIS import was the first time our system ever saw this token.
+     * The UI uses this to decide whether to offer "Mark as scam" (new tokens
+     * only — existing tokens' scam classification is owned by the system,
+     * not individual users) versus a plain "Delete" / "Hide" action.
+     */
+    tokenIsNew: boolean;
+    /**
+     * Current scam probability on the token record. For newly-created tokens
+     * this is the score from `ScamTokenDetectionService`; for existing
+     * tokens it's whatever's already stored.
+     */
+    tokenScamProbability: number;
     balance: string;
   }>;
   /** Total number of chains detected */
@@ -570,19 +587,25 @@ export class ImportWalletAddressUseCase {
                   'Processing holding'
                 );
 
-                // Find or create token (within transaction)
-                const token = await this.tokenService.findOrCreateTokenFromIntegrationMapping(
-                  tokenMapping,
-                  cryptoTokenType.id,
-                  18, // Default decimals for EVM chains
-                  tx
-                );
+                // Find or create token (within transaction).
+                // `wasCreated` tells us whether this import was the first
+                // time the system encountered this token — used downstream
+                // so the UI can offer "Mark as scam" for genuinely new
+                // tokens only.
+                const { token, wasCreated: tokenIsNew } =
+                  await this.tokenService.findOrCreateTokenFromIntegrationMapping(
+                    tokenMapping,
+                    cryptoTokenType.id,
+                    18, // Default decimals for EVM chains
+                    tx
+                  );
 
                 logger.debug(
                   {
                     userId,
                     tokenId: token.id,
                     tokenSymbol: token.symbol,
+                    tokenIsNew,
                     institutionName: institution.name,
                   },
                   'Token resolved'
@@ -630,8 +653,17 @@ export class ImportWalletAddressUseCase {
                   holdings.push({
                     id: existingHolding.id,
                     accountId,
+                    accountName,
+                    chainName: institution.name,
+                    tokenId: token.id,
                     tokenSymbol: token.symbol,
                     tokenName: token.name,
+                    tokenIconUrl: token.iconUrl ?? null,
+                    // Force-false: if the user already has a holding in this
+                    // account for this token, the token is definitionally not
+                    // new to the system.
+                    tokenIsNew: false,
+                    tokenScamProbability: token.isScamProbability ?? 0,
                     balance: holding.balance,
                   });
                 } else {
@@ -666,8 +698,14 @@ export class ImportWalletAddressUseCase {
                   holdings.push({
                     id: newHolding.id,
                     accountId,
+                    accountName,
+                    chainName: institution.name,
+                    tokenId: token.id,
                     tokenSymbol: token.symbol,
                     tokenName: token.name,
+                    tokenIconUrl: token.iconUrl ?? null,
+                    tokenIsNew,
+                    tokenScamProbability: token.isScamProbability ?? 0,
                     balance: holding.balance,
                   });
                 }
