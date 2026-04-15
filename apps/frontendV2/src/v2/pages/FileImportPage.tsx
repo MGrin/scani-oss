@@ -213,7 +213,18 @@ export function FileImportPage() {
     if (toCreate.length > 0) {
       createMutation.mutate({
         accountId: accountSelection.accountId || undefined,
-        account: accountSelection.newAccount ? { ...accountSelection.newAccount } : undefined,
+        account: accountSelection.newAccount
+          ? {
+              ...accountSelection.newAccount,
+              // Forward the selected existing institution onto the new account.
+              // If the user is creating a new institution (`newInstitution` set),
+              // leave institutionId undefined so the backend links the newly
+              // created institution via the top-level `institution` payload.
+              institutionId: accountSelection.newInstitution
+                ? undefined
+                : accountSelection.institutionId,
+            }
+          : undefined,
         institution: accountSelection.newInstitution
           ? { ...accountSelection.newInstitution }
           : undefined,

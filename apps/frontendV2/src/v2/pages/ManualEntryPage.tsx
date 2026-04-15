@@ -419,7 +419,17 @@ export function ManualEntryPage() {
       accountId: isNewAccount ? undefined : accountId || undefined,
       account:
         isNewAccount && newAccountName.trim() && newAccountTypeId
-          ? { name: newAccountName.trim(), typeId: newAccountTypeId }
+          ? {
+              name: newAccountName.trim(),
+              typeId: newAccountTypeId,
+              // When the user picked an existing institution, forward its id
+              // on the new account so the backend uses it. When the user is
+              // creating a new institution (isNewInst), leave institutionId
+              // undefined — the backend will create the institution from the
+              // `institution: {...}` payload above and wire it up.
+              institutionId:
+                !isNewInst && institutionMode === 'select' ? institutionId || undefined : undefined,
+            }
           : undefined,
       holdings: validHoldings.map((h) => ({
         tokenId: h.tokenId,
