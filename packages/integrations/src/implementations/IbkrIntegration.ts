@@ -150,11 +150,15 @@ export class IbkrIntegration extends ScaniIntegration {
         });
       }
 
-      // Warn if no cash balances found (may indicate Flex Query config issue)
+      // Log cash balance parsing results for debugging
+      console.log(
+        `IBKR: Parsed ${data.positions.length} positions and ${data.cashBalances.length} cash balances`
+      );
       if (data.cashBalances.length === 0 && data.positions.length > 0) {
         console.warn(
           'IBKR: No cash balances found in Flex Query response. ' +
-            'Ensure your Flex Query configuration includes the "Cash Report" section.'
+            'Ensure your Flex Query configuration includes the "Cash Report" section ' +
+            'with "Ending Cash" or "Ending Settled Cash" columns enabled.'
         );
       }
 

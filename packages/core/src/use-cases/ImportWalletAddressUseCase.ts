@@ -31,6 +31,7 @@ import { TokenRepository } from '../repositories/TokenRepository';
 import { HoldingService } from '../services/HoldingService';
 import { IntegrationCredentialsService } from '../services/IntegrationCredentialsService';
 import { PricingService } from '../services/PricingService';
+import { ScamTokenDetectionService } from '../services/ScamTokenDetectionService';
 import { TokenService } from '../services/TokenService';
 import { UserWalletService } from '../services/UserWalletService';
 import { createComponentLogger } from '../utils/logger';
@@ -109,6 +110,7 @@ export class ImportWalletAddressUseCase {
   private readonly holdingRepository = Container.get(HoldingRepository);
   private readonly holdingService = Container.get(HoldingService);
   private readonly pricingService = Container.get(PricingService);
+  private readonly scamDetectionService = Container.get(ScamTokenDetectionService);
 
   async execute(input: ImportWalletInput, userId: string): Promise<ImportWalletResult> {
     logger.info(
@@ -908,6 +910,39 @@ export class ImportWalletAddressUseCase {
         },
         'Token price warm-up completed'
       );
+
+      // Re-evaluate scam scores for tokens that received a valid price.
+      // At creation time, hasPriceData=false inflates the score. Now that
+      // we have pricing data, re-run detection to lower false positives
+      // for legitimate tokens like ETH, USDC, etc.
+      const tokensToReScore = tokens.filter((t) => {
+        const price = prices.get(t.id);
+        return price && price !== '0';
+      });
+
+      if (tokensToReScore.length > 0) {
+        let reScored = 0;
+        for (const token of tokensToReScore) {
+          const newScore = this.scamDetectionService.calculateScamProbability(
+            token.symbol,
+            token.name,
+            token.createdAt,
+            true // hasPriceData — the key difference
+          );
+          if (newScore !== token.isScamProbability) {
+            await this.tokenRepository.update(token.id, {
+              isScamProbability: newScore,
+            });
+            reScored++;
+          }
+        }
+        if (reScored > 0) {
+          logger.info(
+            { reScored, total: tokensToReScore.length },
+            'Re-evaluated scam scores after pricing — lowered false positives'
+          );
+        }
+      }
 
       return prices;
     })();

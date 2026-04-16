@@ -135,9 +135,13 @@ export class ScamTokenDetectionService extends BaseService {
       reasons.push('Common symbol but recently created');
     }
 
-    // Check 6: No pricing data from reliable sources (strong indicator)
+    // Check 6: No pricing data from reliable sources
+    // Weight is kept below SCAM_PROBABILITY_THRESHOLD (0.35) so this signal
+    // alone doesn't filter out legitimate tokens that simply haven't been
+    // priced yet (e.g., freshly imported tokens). It still contributes
+    // meaningfully when combined with other signals.
     if (!hasPriceData) {
-      probability += 0.4;
+      probability += 0.3;
       reasons.push('No pricing data available');
     }
 

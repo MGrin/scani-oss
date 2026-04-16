@@ -21,6 +21,7 @@ import { HoldingRepository } from '../repositories/HoldingRepository';
 import { TokenRepository } from '../repositories/TokenRepository';
 import { HoldingService } from '../services/HoldingService';
 import { IntegrationCredentialsService } from '../services/IntegrationCredentialsService';
+import { PricingService } from '../services/PricingService';
 import { TokenService } from '../services/TokenService';
 import { createComponentLogger } from '../utils/logger';
 
@@ -40,6 +41,7 @@ export interface ImportIbkrAccountsResult {
   holdings: Array<{
     id: string;
     accountId: string;
+    tokenId: string;
     tokenSymbol: string;
     balance: string;
   }>;
@@ -60,6 +62,7 @@ export class ImportIbkrAccountsUseCase {
   private readonly tokenRepository = Container.get(TokenRepository);
   private readonly holdingRepository = Container.get(HoldingRepository);
   private readonly holdingService = Container.get(HoldingService);
+  private readonly pricingService = Container.get(PricingService);
 
   async execute(input: ImportIbkrAccountsInput): Promise<ImportIbkrAccountsResult> {
     logger.info(
@@ -334,6 +337,7 @@ export class ImportIbkrAccountsUseCase {
                     result.holdings.push({
                       id: newHolding.id,
                       accountId,
+                      tokenId: token.id,
                       tokenSymbol: token.symbol,
                       balance: holding.balance,
                     });
@@ -438,6 +442,47 @@ export class ImportIbkrAccountsUseCase {
         },
         'IBKR accounts import completed'
       );
+
+      // Warm up prices for imported tokens so the UI shows values immediately
+      // instead of waiting for the pricing cron. Best-effort with timeout.
+      if (result.holdings.length > 0) {
+        try {
+          const tokenIds = [...new Set(result.holdings.map((h) => h.tokenId))];
+          const tokens = await this.tokenRepository.findByIds(tokenIds);
+
+          if (tokens.length > 0) {
+            let baseCurrencySymbol = 'USD';
+            if (user.baseCurrencyId) {
+              const baseToken = await this.tokenRepository.findById(user.baseCurrencyId);
+              if (baseToken) baseCurrencySymbol = baseToken.symbol;
+            }
+
+            logger.info(
+              { tokenCount: tokens.length, baseCurrencySymbol },
+              'Warming prices for IBKR imported tokens'
+            );
+
+            const WARM_UP_BUDGET_MS = 15_000;
+            const work = this.pricingService.getTokenPrices(tokens, baseCurrencySymbol, new Date());
+            const timeout = new Promise<Map<string, string>>((resolve) =>
+              setTimeout(() => resolve(new Map()), WARM_UP_BUDGET_MS)
+            );
+
+            const prices = await Promise.race([work, timeout]);
+            const pricedCount = Array.from(prices.values()).filter((p) => p && p !== '0').length;
+
+            logger.info(
+              { pricedCount, total: tokens.length },
+              'IBKR token price warm-up completed'
+            );
+          }
+        } catch (error) {
+          logger.warn(
+            { error: error instanceof Error ? error.message : String(error) },
+            'IBKR token price warm-up failed (non-fatal — cron will backfill)'
+          );
+        }
+      }
 
       return result;
     } catch (error) {

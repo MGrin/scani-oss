@@ -180,11 +180,12 @@ const API_KEY_HELP: Record<string, ExchangeHelp> = {
   },
   ibkr: {
     steps: [
-      'Log in to IBKR Client Portal → Reporting → Flex Queries',
-      'Enable "Flex Web Service Status" checkbox and click Save',
-      'Click "Generate New Token" and choose expiration (up to 1 year)',
-      'Under "Activity Flex Queries", click "+" to create a query for Positions',
-      'Note the Query ID (click info icon next to query name)',
+      'Log in to IBKR Client Portal → Performance & Reports → Flex Queries',
+      'Under "Activity Flex Queries", click "+" to create a new query',
+      'In the query editor, add these sections: "Open Positions" (check all fields) and "Cash Report" (enable "Ending Cash" or "Ending Settled Cash")',
+      'Save the query and note the Query ID (shown next to the query name)',
+      'Scroll down to "Flex Web Service", enable it, and click "Generate New Token"',
+      'Copy the token (shown only once) and paste it below along with the Query ID',
     ],
     docsUrl: 'https://www.interactivebrokers.com/campus/ibkr-api-page/flex-web-service/',
     mobileNote: 'Use a desktop browser to access IBKR Client Portal.',
