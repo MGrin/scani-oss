@@ -144,21 +144,18 @@ export function AppShell() {
           onMobileMenuOpen={() => setMobileOpen(true)}
           onCommandPaletteOpen={() => setCommandOpen(true)}
         />
-        <PullToRefresh onRefresh={handleRefresh}>
-          <main
-            className="flex-1 lg:pb-0"
-            style={{ paddingBottom: 'calc(3.5rem + env(safe-area-inset-bottom, 0px))' }}
-            data-scrollable="true"
-          >
-            <div className="mx-auto max-w-7xl px-4 sm:px-6 py-4 sm:py-6">
-              <Outlet />
-            </div>
-          </main>
-        </PullToRefresh>
+        <div className="flex-1 min-h-0">
+          <PullToRefresh onRefresh={handleRefresh}>
+            <main data-scrollable="true">
+              <div className="mx-auto max-w-7xl px-4 sm:px-6 py-4 sm:py-6">
+                <Outlet />
+              </div>
+            </main>
+          </PullToRefresh>
+        </div>
+        {/* Mobile bottom nav */}
+        <MobileNav onMorePress={() => setMobileOpen(true)} />
       </div>
-
-      {/* Mobile bottom nav */}
-      <MobileNav onMorePress={() => setMobileOpen(true)} />
 
       {/* Command palette */}
       <CommandPalette open={commandOpen} onOpenChange={setCommandOpen} />
