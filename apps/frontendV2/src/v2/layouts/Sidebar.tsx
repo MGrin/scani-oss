@@ -17,7 +17,7 @@ import {
   Vault,
   Wallet,
 } from 'lucide-react';
-import { NavLink } from 'react-router-dom';
+import { Link, NavLink, useLocation } from 'react-router-dom';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { useAuth } from '@/contexts/AuthContext';
 import { useTheme } from '@/contexts/ThemeContext';
@@ -41,7 +41,7 @@ const ICON_MAP: Record<string, LucideIcon> = {
 const navItemBase =
   'flex items-center gap-2.5 rounded-md px-2 py-1.5 text-[13px] transition-colors w-full';
 
-const collapsedItemBase = 'flex items-center justify-center rounded-md h-9 w-9 transition-colors';
+const collapsedItemBase = 'p-1.5 rounded-md transition-colors flex items-center justify-center';
 
 const activeClass = 'bg-accent text-accent-foreground font-medium';
 const inactiveClass = 'text-muted-foreground hover:bg-accent/50 hover:text-foreground';
@@ -59,26 +59,21 @@ function SidebarNavLink({
   collapsed: boolean;
   end?: boolean;
 }) {
+  const { pathname } = useLocation();
+
   if (collapsed) {
+    const isActive = end ? pathname === to : pathname.startsWith(to);
     return (
-      <div className="flex justify-center">
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <NavLink
-              to={to}
-              end={end}
-              className={({ isActive }) =>
-                cn(collapsedItemBase, isActive ? activeClass : inactiveClass)
-              }
-            >
-              <Icon className="h-5 w-5 shrink-0" />
-            </NavLink>
-          </TooltipTrigger>
-          <TooltipContent side="right" sideOffset={8}>
-            {label}
-          </TooltipContent>
-        </Tooltip>
-      </div>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Link to={to} className={cn(collapsedItemBase, isActive ? activeClass : inactiveClass)}>
+            <Icon className="h-5 w-5 shrink-0" />
+          </Link>
+        </TooltipTrigger>
+        <TooltipContent side="right" sideOffset={8}>
+          {label}
+        </TooltipContent>
+      </Tooltip>
     );
   }
 
@@ -109,22 +104,20 @@ function SidebarButton({
 }) {
   if (collapsed) {
     return (
-      <div className="flex justify-center">
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <button
-              type="button"
-              onClick={onClick}
-              className={cn(collapsedItemBase, inactiveClass, className)}
-            >
-              <Icon className="h-5 w-5 shrink-0" />
-            </button>
-          </TooltipTrigger>
-          <TooltipContent side="right" sideOffset={8}>
-            {label}
-          </TooltipContent>
-        </Tooltip>
-      </div>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <button
+            type="button"
+            onClick={onClick}
+            className={cn(collapsedItemBase, inactiveClass, className)}
+          >
+            <Icon className="h-5 w-5 shrink-0" />
+          </button>
+        </TooltipTrigger>
+        <TooltipContent side="right" sideOffset={8}>
+          {label}
+        </TooltipContent>
+      </Tooltip>
     );
   }
 
