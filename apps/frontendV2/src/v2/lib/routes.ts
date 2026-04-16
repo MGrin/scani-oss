@@ -49,10 +49,12 @@ export const NAV_SECTIONS: NavSection[] = [
     ],
   },
   {
-    title: 'Connections',
+    title: 'Add Data',
     items: [
-      { label: 'Integrations', icon: 'Plug', path: V2_ROUTES.integrations },
-      { label: 'Import File', icon: 'FileUp', path: V2_ROUTES.fileImport },
+      { label: 'Manual Entry', icon: 'Keyboard', path: V2_ROUTES.manualEntry },
+      { label: 'Upload File', icon: 'FileUp', path: V2_ROUTES.fileImport },
+      { label: 'Crypto Wallet', icon: 'Coins', path: V2_ROUTES.walletImport },
+      { label: 'Integration', icon: 'Plug', path: V2_ROUTES.integrations },
     ],
   },
 ];

@@ -1,8 +1,9 @@
 import {
-  ArrowLeft,
   Building2,
   ChevronLeft,
+  Coins,
   FileUp,
+  Keyboard,
   LayoutDashboard,
   LogOut,
   type LucideIcon,
@@ -10,7 +11,6 @@ import {
   Moon,
   PieChart,
   Plug,
-  PlusCircle,
   Settings,
   Sun,
   Tags,
@@ -34,6 +34,8 @@ const ICON_MAP: Record<string, LucideIcon> = {
   Vault,
   Plug,
   FileUp,
+  Keyboard,
+  Coins,
 };
 
 const navItemClass = (isActive: boolean) =>
@@ -157,21 +159,12 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
         </button>
       </div>
 
-      {/* Add Data */}
-      <div className="px-2 pt-2">
-        <SidebarNavLink
-          to={V2_ROUTES.addData}
-          icon={PlusCircle}
-          label="Add Data"
-          collapsed={collapsed}
-        />
-      </div>
-
       {/* Navigation */}
       <div className="flex-1 overflow-y-auto py-2">
         <nav className="space-y-3 px-2">
-          {NAV_SECTIONS.map((section) => (
+          {NAV_SECTIONS.map((section, idx) => (
             <div key={section.title}>
+              {collapsed && idx > 0 && <div className="border-t border-border mb-2 -mx-1" />}
               {!collapsed && (
                 <p className="px-2 mb-0.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/50">
                   {section.title}
@@ -210,15 +203,6 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
           label={resolvedTheme === 'dark' ? 'Light mode' : 'Dark mode'}
           collapsed={collapsed}
           onClick={toggleTheme}
-        />
-        <SidebarButton
-          icon={ArrowLeft}
-          label="Classic UI"
-          collapsed={collapsed}
-          onClick={() => {
-            window.location.href = '/';
-          }}
-          className="text-muted-foreground/50"
         />
         <SidebarButton
           icon={LogOut}
