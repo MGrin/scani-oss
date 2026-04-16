@@ -100,6 +100,7 @@ export function FileImportPage() {
         utils.dashboard.getOverview.invalidate(undefined, { refetchType: 'all' }),
         utils.dashboard.getAssetAllocation.invalidate(undefined, { refetchType: 'all' }),
       ]);
+      navigate(V2_ROUTES.holdings);
     },
     onError: (err) => showError(err, 'Updating holdings'),
   });
@@ -415,6 +416,7 @@ export function FileImportPage() {
                         thousandSeparator=","
                         decimalScale={8}
                         allowNegative={false}
+                        disabled={isSaving}
                       />
                     )}
 
@@ -430,6 +432,7 @@ export function FileImportPage() {
                       className="h-7 w-7 shrink-0"
                       onClick={() => toggleRemove(i)}
                       title={h.removed ? 'Restore' : 'Remove'}
+                      disabled={isSaving}
                     >
                       {h.removed ? (
                         <ArrowLeft className="h-3.5 w-3.5" />
@@ -477,6 +480,7 @@ export function FileImportPage() {
             </Button>
             <Button
               variant="outline"
+              disabled={isSaving}
               onClick={() => {
                 setStep('upload');
                 setExtractedHoldings([]);

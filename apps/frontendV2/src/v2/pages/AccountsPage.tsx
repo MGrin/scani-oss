@@ -32,7 +32,7 @@ export function AccountsPage() {
   const navigate = useNavigate();
   const { symbol: currencySymbol } = useBaseCurrency();
   const [showEmpty, setShowEmpty] = useState(false);
-  const { bulkDelete } = useAccountActions();
+  const { bulkDelete, isBulkDeleting } = useAccountActions();
   const [deleteConfirmIds, setDeleteConfirmIds] = useState<Set<string> | null>(null);
   const [assignGroupsIds, setAssignGroupsIds] = useState<Set<string> | null>(null);
   // Stash the DataView's clearSelection so confirm-dialog and assign-groups
@@ -299,13 +299,14 @@ export function AccountsPage() {
         description={`Are you sure you want to delete ${deleteConfirmIds?.size ?? 0} account(s)? This action cannot be undone.`}
         confirmLabel="Delete"
         variant="destructive"
+        isPending={isBulkDeleting}
         onConfirm={() => {
           if (deleteConfirmIds) {
             bulkDelete(Array.from(deleteConfirmIds), {
-              // Clear selection the moment the delete succeeds so the
-              // bulk-action footer doesn't linger showing "N selected"
-              // for rows that no longer exist.
-              onSuccess: () => clearSelectionRef.current?.(),
+              onSuccess: () => {
+                setDeleteConfirmIds(null);
+                clearSelectionRef.current?.();
+              },
             });
           }
         }}

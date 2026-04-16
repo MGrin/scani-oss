@@ -237,7 +237,13 @@ export function AssignGroupsDialog({
   if (open && allGroups !== undefined && !hasGroups) {
     const canCreate = newGroupName.trim().length > 0 && !isPending;
     return (
-      <Dialog open={open} onOpenChange={onOpenChange}>
+      <Dialog
+        open={open}
+        onOpenChange={(v) => {
+          if (isPending) return;
+          onOpenChange(v);
+        }}
+      >
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>Assign a group to {entityCountLabel}</DialogTitle>
@@ -283,7 +289,13 @@ export function AssignGroupsDialog({
 
   // === Standard branch: at least one group exists ===
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog
+      open={open}
+      onOpenChange={(v) => {
+        if (isPending) return;
+        onOpenChange(v);
+      }}
+    >
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle>Assign groups to {entityCountLabel}</DialogTitle>
@@ -299,9 +311,11 @@ export function AssignGroupsDialog({
                 className={cn(
                   'flex items-center gap-3 rounded-md px-2 py-2 w-full text-left transition-colors',
                   'hover:bg-muted/60',
-                  checked && 'bg-muted/30'
+                  checked && 'bg-muted/30',
+                  'disabled:opacity-50 disabled:pointer-events-none'
                 )}
                 onClick={() => toggleGroup(group.id)}
+                disabled={isPending}
               >
                 <Checkbox
                   checked={checked}
@@ -360,7 +374,8 @@ export function AssignGroupsDialog({
           <button
             type="button"
             onClick={() => setShowCreateForm(true)}
-            className="flex items-center gap-2 px-2 py-2 text-sm text-muted-foreground hover:text-foreground transition-colors border-t pt-3 w-full"
+            disabled={isPending}
+            className="flex items-center gap-2 px-2 py-2 text-sm text-muted-foreground hover:text-foreground transition-colors border-t pt-3 w-full disabled:opacity-50 disabled:pointer-events-none"
           >
             <Plus className="h-3.5 w-3.5" />
             Create new group

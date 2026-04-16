@@ -302,9 +302,14 @@ export function HoldingDetailContent({ holdingId, mode = 'panel' }: HoldingDetai
         description={`Are you sure you want to delete ${holding.token.symbol}? This action cannot be undone.`}
         confirmLabel="Delete"
         variant="destructive"
+        isPending={isDeleting}
         onConfirm={() => {
-          deleteHolding(holdingId);
-          navigate(V2_ROUTES.holdings);
+          deleteHolding(holdingId, {
+            onSuccess: () => {
+              setShowDeleteConfirm(false);
+              navigate(V2_ROUTES.holdings);
+            },
+          });
         }}
       />
     </div>

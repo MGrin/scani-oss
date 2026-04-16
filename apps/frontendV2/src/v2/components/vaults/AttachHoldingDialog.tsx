@@ -87,6 +87,8 @@ export function AttachHoldingDialog({ open, onOpenChange, vaultId }: AttachHoldi
     });
   };
 
+  const isPending = attachMutation.isPending;
+
   const formatValue = (value: number) =>
     new Intl.NumberFormat('en-US', {
       style: 'currency',
@@ -99,6 +101,7 @@ export function AttachHoldingDialog({ open, onOpenChange, vaultId }: AttachHoldi
     <Dialog
       open={open}
       onOpenChange={(o) => {
+        if (isPending) return;
         if (!o) resetForm();
         onOpenChange(o);
       }}
@@ -115,6 +118,7 @@ export function AttachHoldingDialog({ open, onOpenChange, vaultId }: AttachHoldi
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Search by symbol, name, account..."
+              disabled={isPending}
             />
           </div>
 
@@ -127,7 +131,8 @@ export function AttachHoldingDialog({ open, onOpenChange, vaultId }: AttachHoldi
                   key={h.id}
                   type="button"
                   onClick={() => setSelectedHoldingId(h.id)}
-                  className={`w-full text-left p-3 hover:bg-accent transition-colors ${
+                  disabled={isPending}
+                  className={`w-full text-left p-3 hover:bg-accent transition-colors disabled:opacity-50 disabled:pointer-events-none ${
                     selectedHoldingId === h.id ? 'bg-accent' : ''
                   }`}
                 >
@@ -171,6 +176,7 @@ export function AttachHoldingDialog({ open, onOpenChange, vaultId }: AttachHoldi
                 return values.value === '' || (val >= 0 && val <= maxPercentage);
               }}
               suffix="%"
+              disabled={isPending}
             />
             {maxPercentage === 0 && selectedHoldingId && (
               <p className="text-xs text-destructive">
@@ -181,7 +187,7 @@ export function AttachHoldingDialog({ open, onOpenChange, vaultId }: AttachHoldi
         </div>
 
         <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>
+          <Button variant="outline" onClick={() => onOpenChange(false)} disabled={isPending}>
             Cancel
           </Button>
           <Button
@@ -191,7 +197,7 @@ export function AttachHoldingDialog({ open, onOpenChange, vaultId }: AttachHoldi
               !percentage ||
               Number(percentage) <= 0 ||
               Number(percentage) > 100 ||
-              attachMutation.isPending
+              isPending
             }
           >
             Attach

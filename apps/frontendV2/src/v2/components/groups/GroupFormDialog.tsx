@@ -224,6 +224,7 @@ export function GroupFormDialog({ open, onOpenChange, groupId }: GroupFormDialog
   const deleteMutation = trpc.groups.delete.useMutation({
     onSuccess: async () => {
       await invalidatePortfolioQueries(utils);
+      setShowDeleteConfirm(false);
       onOpenChange(false);
       showSuccess('Group deleted');
     },
@@ -250,12 +251,23 @@ export function GroupFormDialog({ open, onOpenChange, groupId }: GroupFormDialog
     }
   };
 
-  const isPending = createMutation.isPending || updateMutation.isPending;
+  const isPending =
+    createMutation.isPending ||
+    updateMutation.isPending ||
+    deleteMutation.isPending ||
+    assignHoldingsMutation.isPending ||
+    assignAccountsMutation.isPending;
   const stepTitle = step === 1 ? 'Details' : step === 2 ? 'Select Accounts' : 'Select Holdings';
 
   return (
     <>
-      <Dialog open={open} onOpenChange={onOpenChange}>
+      <Dialog
+        open={open}
+        onOpenChange={(v) => {
+          if (isPending) return;
+          onOpenChange(v);
+        }}
+      >
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>
@@ -285,6 +297,7 @@ export function GroupFormDialog({ open, onOpenChange, groupId }: GroupFormDialog
                   value={name}
                   onChange={(e) => setName(e.target.value)}
                   placeholder="Group name"
+                  disabled={isPending}
                 />
               </div>
               <div className="space-y-2">
@@ -296,6 +309,7 @@ export function GroupFormDialog({ open, onOpenChange, groupId }: GroupFormDialog
                   placeholder="Optional description"
                   maxLength={200}
                   rows={2}
+                  disabled={isPending}
                 />
               </div>
               <div className="space-y-2">
@@ -306,7 +320,8 @@ export function GroupFormDialog({ open, onOpenChange, groupId }: GroupFormDialog
                       key={c}
                       type="button"
                       onClick={() => setColor(c)}
-                      className="h-7 w-7 rounded-full border-2 transition-transform hover:scale-110"
+                      disabled={isPending}
+                      className="h-7 w-7 rounded-full border-2 transition-transform hover:scale-110 disabled:opacity-50 disabled:pointer-events-none"
                       style={{
                         backgroundColor: c,
                         borderColor: color === c ? 'var(--foreground)' : 'transparent',
@@ -329,14 +344,16 @@ export function GroupFormDialog({ open, onOpenChange, groupId }: GroupFormDialog
                 onChange={(e) => setAccountSearch(e.target.value)}
                 placeholder="Search accounts..."
                 className="h-8 text-xs"
+                disabled={isPending}
               />
               <div className="max-h-[280px] overflow-y-auto space-y-px rounded-md border border-border p-1">
                 {filteredAccounts.map((a) => (
                   <button
                     key={a.id}
                     type="button"
-                    className="flex items-center gap-2 w-full px-2 py-2 rounded-sm hover:bg-accent text-left text-sm"
+                    className="flex items-center gap-2 w-full px-2 py-2 rounded-sm hover:bg-accent text-left text-sm disabled:opacity-50 disabled:pointer-events-none"
                     onClick={() => toggleAccount(a.id)}
+                    disabled={isPending}
                   >
                     <Checkbox checked={selectedAccountIds.has(a.id)} className="h-3.5 w-3.5" />
                     <span className="font-medium truncate flex-1">{a.name}</span>
@@ -365,14 +382,16 @@ export function GroupFormDialog({ open, onOpenChange, groupId }: GroupFormDialog
                 onChange={(e) => setHoldingSearch(e.target.value)}
                 placeholder="Search holdings..."
                 className="h-8 text-xs"
+                disabled={isPending}
               />
               <div className="max-h-[280px] overflow-y-auto space-y-px rounded-md border border-border p-1">
                 {filteredHoldings.map((h) => (
                   <button
                     key={h.id}
                     type="button"
-                    className="flex items-center gap-2 w-full px-2 py-2 rounded-sm hover:bg-accent text-left text-sm"
+                    className="flex items-center gap-2 w-full px-2 py-2 rounded-sm hover:bg-accent text-left text-sm disabled:opacity-50 disabled:pointer-events-none"
                     onClick={() => toggleHolding(h.id)}
+                    disabled={isPending}
                   >
                     <Checkbox checked={selectedHoldingIds.has(h.id)} className="h-3.5 w-3.5" />
                     <span className="font-medium w-12 shrink-0">{h.token.symbol}</span>
@@ -400,7 +419,7 @@ export function GroupFormDialog({ open, onOpenChange, groupId }: GroupFormDialog
                   variant="destructive"
                   size="sm"
                   onClick={() => setShowDeleteConfirm(true)}
-                  disabled={deleteMutation.isPending}
+                  disabled={isPending}
                 >
                   Delete
                 </Button>
@@ -408,13 +427,23 @@ export function GroupFormDialog({ open, onOpenChange, groupId }: GroupFormDialog
             </div>
             <div className="flex gap-2 ml-auto">
               {step > 1 && (
-                <Button variant="outline" size="sm" onClick={() => setStep((s) => (s - 1) as Step)}>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setStep((s) => (s - 1) as Step)}
+                  disabled={isPending}
+                >
                   <ArrowLeft className="h-3.5 w-3.5 mr-1" />
                   Back
                 </Button>
               )}
               {step === 1 && (
-                <Button variant="outline" size="sm" onClick={() => onOpenChange(false)}>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => onOpenChange(false)}
+                  disabled={isPending}
+                >
                   Cancel
                 </Button>
               )}
@@ -422,7 +451,7 @@ export function GroupFormDialog({ open, onOpenChange, groupId }: GroupFormDialog
                 <Button
                   size="sm"
                   onClick={() => setStep((s) => (s + 1) as Step)}
-                  disabled={step === 1 && !name.trim()}
+                  disabled={(step === 1 && !name.trim()) || isPending}
                 >
                   Next
                   <ArrowRight className="h-3.5 w-3.5 ml-1" />
@@ -445,6 +474,7 @@ export function GroupFormDialog({ open, onOpenChange, groupId }: GroupFormDialog
           description={`Are you sure you want to delete "${group?.name || 'this group'}"?`}
           confirmLabel="Delete"
           variant="destructive"
+          isPending={deleteMutation.isPending}
           onConfirm={() => deleteMutation.mutate({ id: groupId })}
         />
       )}

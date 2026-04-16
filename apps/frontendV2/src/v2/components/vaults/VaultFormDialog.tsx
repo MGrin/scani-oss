@@ -103,7 +103,13 @@ export function VaultFormDialog({ open, onOpenChange, vaultId }: VaultFormDialog
   const isPending = createMutation.isPending || updateMutation.isPending;
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog
+      open={open}
+      onOpenChange={(v) => {
+        if (isPending) return;
+        onOpenChange(v);
+      }}
+    >
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle>{isEditMode ? 'Edit Vault' : 'New Vault'}</DialogTitle>
@@ -117,6 +123,7 @@ export function VaultFormDialog({ open, onOpenChange, vaultId }: VaultFormDialog
               value={name}
               onChange={(e) => setName(e.target.value)}
               placeholder="e.g., Emergency Fund"
+              disabled={isPending}
             />
           </div>
 
@@ -132,6 +139,7 @@ export function VaultFormDialog({ open, onOpenChange, vaultId }: VaultFormDialog
               decimalSeparator="."
               decimalScale={2}
               allowNegative={false}
+              disabled={isPending}
             />
           </div>
 
@@ -143,7 +151,8 @@ export function VaultFormDialog({ open, onOpenChange, vaultId }: VaultFormDialog
                   key={c}
                   type="button"
                   onClick={() => setColor(c)}
-                  className="h-7 w-7 rounded-full border-2 transition-transform hover:scale-110"
+                  disabled={isPending}
+                  className="h-7 w-7 rounded-full border-2 transition-transform hover:scale-110 disabled:opacity-50 disabled:pointer-events-none"
                   style={{
                     backgroundColor: c,
                     borderColor: color === c ? 'var(--foreground)' : 'transparent',
@@ -155,7 +164,7 @@ export function VaultFormDialog({ open, onOpenChange, vaultId }: VaultFormDialog
         </div>
 
         <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>
+          <Button variant="outline" onClick={() => onOpenChange(false)} disabled={isPending}>
             Cancel
           </Button>
           <Button onClick={handleSubmit} disabled={!name.trim() || !targetAmount || isPending}>

@@ -21,7 +21,7 @@ export function AccountDetailContent({ accountId, mode = 'panel' }: AccountDetai
   const { data: account, isLoading } = trpc.accounts.getById.useQuery({ id: accountId });
   const { data: holdingsData } = trpc.accounts.getHoldings.useQuery({ id: accountId });
   const { symbol: currencySymbol } = useBaseCurrency();
-  const { deleteAccount, updateAccount, isUpdating } = useAccountActions();
+  const { deleteAccount, updateAccount, isUpdating, isDeleting } = useAccountActions();
   const navigate = useNavigate();
 
   const [isEditing, setIsEditing] = useState(false);
@@ -227,9 +227,14 @@ export function AccountDetailContent({ accountId, mode = 'panel' }: AccountDetai
         description={`Are you sure you want to delete "${account.name}"? This action cannot be undone.`}
         confirmLabel="Delete"
         variant="destructive"
+        isPending={isDeleting}
         onConfirm={() => {
-          deleteAccount(accountId);
-          navigate(V2_ROUTES.accounts);
+          deleteAccount(accountId, {
+            onSuccess: () => {
+              setShowDeleteConfirm(false);
+              navigate(V2_ROUTES.accounts);
+            },
+          });
         }}
       />
     </div>

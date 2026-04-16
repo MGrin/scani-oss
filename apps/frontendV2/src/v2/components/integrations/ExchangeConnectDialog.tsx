@@ -214,6 +214,7 @@ export function ExchangeConnectDialog({
 
   const help = API_KEY_HELP[exchange.key];
   const isMobile = isMobileDevice();
+  const isLoading = status === 'loading';
 
   const handleSubmit = async () => {
     setStatus('loading');
@@ -318,6 +319,7 @@ export function ExchangeConnectDialog({
     <Dialog
       open={open}
       onOpenChange={(v) => {
+        if (isLoading) return;
         if (!v) resetForm();
         onOpenChange(v);
       }}
@@ -381,6 +383,7 @@ export function ExchangeConnectDialog({
                   onChange={(e) => setApiKey(e.target.value)}
                   placeholder="Enter API key"
                   type="password"
+                  disabled={isLoading}
                 />
               </div>
               <div className="space-y-2">
@@ -391,6 +394,7 @@ export function ExchangeConnectDialog({
                   onChange={(e) => setApiSecret(e.target.value)}
                   placeholder="Enter API secret"
                   type="password"
+                  disabled={isLoading}
                 />
               </div>
             </>
@@ -405,6 +409,7 @@ export function ExchangeConnectDialog({
                 onChange={(e) => setPassphrase(e.target.value)}
                 placeholder="Enter passphrase"
                 type="password"
+                disabled={isLoading}
               />
             </div>
           )}
@@ -418,6 +423,7 @@ export function ExchangeConnectDialog({
                 onChange={(e) => setToken(e.target.value)}
                 placeholder="Enter Wise API token"
                 type="password"
+                disabled={isLoading}
               />
             </div>
           )}
@@ -432,6 +438,7 @@ export function ExchangeConnectDialog({
                   onChange={(e) => setToken(e.target.value)}
                   placeholder="Enter token"
                   type="password"
+                  disabled={isLoading}
                 />
               </div>
               <div className="space-y-2">
@@ -441,6 +448,7 @@ export function ExchangeConnectDialog({
                   value={queryId}
                   onChange={(e) => setQueryId(e.target.value)}
                   placeholder="Enter query ID"
+                  disabled={isLoading}
                 />
               </div>
             </>
@@ -462,13 +470,11 @@ export function ExchangeConnectDialog({
               resetForm();
               onOpenChange(false);
             }}
+            disabled={isLoading}
           >
             Cancel
           </Button>
-          <Button
-            onClick={handleSubmit}
-            disabled={!isValid() || status === 'loading' || status === 'success'}
-          >
+          <Button onClick={handleSubmit} disabled={!isValid() || isLoading || status === 'success'}>
             {status === 'loading'
               ? 'Connecting...'
               : status === 'success'

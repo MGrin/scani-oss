@@ -1,5 +1,6 @@
 import { LogOut, Trash2 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -17,11 +18,13 @@ import { showSuccess } from '@/hooks/use-toast';
 import { trpc } from '@/lib/trpc';
 import { ConfirmDialog } from '../components/shared/ConfirmDialog';
 import { invalidatePortfolioQueries } from '../hooks/invalidatePortfolioQueries';
+import { V2_ROUTES } from '../lib/routes';
 
 export function SettingsPage() {
   const { data: user, isLoading: userLoading } = trpc.users.getCurrent.useQuery();
   const { data: currencies } = trpc.users.getSupportedCurrencies.useQuery();
   const utils = trpc.useUtils();
+  const navigate = useNavigate();
   const { signOut } = useAuth();
 
   const [showDeleteAll, setShowDeleteAll] = useState(false);
@@ -34,7 +37,9 @@ export function SettingsPage() {
   const deleteAllDataMutation = trpc.users.deleteAllData.useMutation({
     onSuccess: async () => {
       await invalidatePortfolioQueries(utils);
+      setShowDeleteAll(false);
       showSuccess('All data deleted successfully. Your account is now clean.');
+      navigate(V2_ROUTES.dashboard);
     },
   });
 
@@ -184,6 +189,7 @@ export function SettingsPage() {
         confirmLabel="Delete everything"
         cancelLabel="Keep my data"
         variant="destructive"
+        isPending={deleteAllDataMutation.isPending}
         onConfirm={() => deleteAllDataMutation.mutate()}
       />
     </div>

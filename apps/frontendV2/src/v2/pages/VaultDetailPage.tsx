@@ -36,6 +36,7 @@ export function VaultDetailPage() {
   const deleteMutation = trpc.vaults.delete.useMutation({
     onSuccess: async () => {
       await invalidatePortfolioQueries(utils);
+      setShowDeleteConfirm(false);
       showSuccess('Vault deleted successfully');
       navigate(V2_ROUTES.vaults);
     },
@@ -244,6 +245,7 @@ export function VaultDetailPage() {
         description={`Are you sure you want to delete "${vault.name}"? This action cannot be undone.`}
         confirmLabel="Delete"
         variant="destructive"
+        isPending={deleteMutation.isPending}
         onConfirm={() => deleteMutation.mutate({ id })}
       />
 

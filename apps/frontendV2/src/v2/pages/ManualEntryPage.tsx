@@ -38,11 +38,13 @@ function SearchableDropdown({
   value,
   onSelect,
   placeholder,
+  disabled,
 }: {
   items: Array<{ id: string; label: string; subtitle?: string; icon?: string | null }>;
   value: string;
   onSelect: (id: string) => void;
   placeholder: string;
+  disabled?: boolean;
 }) {
   const [search, setSearch] = useState('');
   const [open, setOpen] = useState(false);
@@ -91,6 +93,7 @@ function SearchableDropdown({
           variant="ghost"
           size="sm"
           className="h-8 text-xs shrink-0"
+          disabled={disabled}
           onClick={() => {
             onSelect('');
             setOpen(true);
@@ -114,6 +117,7 @@ function SearchableDropdown({
         onFocus={() => setOpen(true)}
         placeholder={placeholder}
         autoFocus={open}
+        disabled={disabled}
       />
       {open && (
         <div className="absolute z-20 mt-1 w-full bg-popover border rounded-md shadow-lg max-h-[250px] overflow-y-auto">
@@ -172,11 +176,13 @@ function TokenSearchInput({
   label,
   onSelect,
   onClear,
+  disabled,
 }: {
   value: { id: string; label: string } | null;
   label?: string;
   onSelect: (id: string, label: string) => void;
   onClear: () => void;
+  disabled?: boolean;
 }) {
   const [search, setSearch] = useState('');
   const [open, setOpen] = useState(false);
@@ -208,7 +214,13 @@ function TokenSearchInput({
         <span className="text-sm font-medium px-3 py-2 border rounded-md flex-1 bg-muted truncate">
           {value.label}
         </span>
-        <Button variant="ghost" size="sm" className="h-8 text-xs shrink-0" onClick={onClear}>
+        <Button
+          variant="ghost"
+          size="sm"
+          className="h-8 text-xs shrink-0"
+          onClick={onClear}
+          disabled={disabled}
+        >
           Change
         </Button>
       </div>
@@ -226,6 +238,7 @@ function TokenSearchInput({
         }}
         onFocus={() => search.length > 0 && setOpen(true)}
         placeholder="Search tokens (BTC, USD, AAPL...)"
+        disabled={disabled}
       />
       {open && search.length > 0 && (
         <div className="absolute z-20 mt-1 w-full bg-popover border rounded-md shadow-lg max-h-[200px] overflow-y-auto">
@@ -470,6 +483,7 @@ export function ManualEntryPage() {
   const hasValidAccount =
     accountMode === 'select' ? !!accountId : !!(newAccountName.trim() && newAccountTypeId);
   const canSubmit = hasValidHoldings && hasValidInstitution && hasValidAccount;
+  const isSaving = createMutation.isPending;
 
   return (
     <div className="max-w-2xl space-y-6">
@@ -498,6 +512,7 @@ export function ManualEntryPage() {
               value={institutionId}
               onSelect={handleInstitutionSelect}
               placeholder="Search institutions..."
+              disabled={isSaving}
             />
           ) : (
             <div className="space-y-3">
@@ -506,6 +521,7 @@ export function ManualEntryPage() {
                   variant="ghost"
                   size="sm"
                   className="text-xs shrink-0"
+                  disabled={isSaving}
                   onClick={() => {
                     setInstitutionMode('select');
                     setNewInstName('');
@@ -530,13 +546,14 @@ export function ManualEntryPage() {
                     onKeyDown={(e) => {
                       if (e.key === 'Enter') handleFetchOG();
                     }}
+                    disabled={isSaving}
                   />
                   <Button
                     variant="outline"
                     size="icon"
                     className="h-9 w-9 shrink-0"
                     onClick={handleFetchOG}
-                    disabled={fetchingOG || !newInstWebsite.trim()}
+                    disabled={fetchingOG || !newInstWebsite.trim() || isSaving}
                   >
                     {fetchingOG ? (
                       <Loader2 className="h-4 w-4 animate-spin" />
@@ -553,12 +570,13 @@ export function ManualEntryPage() {
                   value={newInstName}
                   onChange={(e) => setNewInstName(e.target.value)}
                   placeholder="Institution name"
+                  disabled={isSaving}
                 />
               </div>
 
               <div className="space-y-2">
                 <Label className="text-xs">Type</Label>
-                <Select value={newInstTypeId} onValueChange={setNewInstTypeId}>
+                <Select value={newInstTypeId} onValueChange={setNewInstTypeId} disabled={isSaving}>
                   <SelectTrigger>
                     <SelectValue placeholder="Select type" />
                   </SelectTrigger>
@@ -588,6 +606,7 @@ export function ManualEntryPage() {
               value={accountId}
               onSelect={handleAccountSelect}
               placeholder="Search accounts..."
+              disabled={isSaving}
             />
           ) : (
             <div className="space-y-3">
@@ -596,6 +615,7 @@ export function ManualEntryPage() {
                   variant="ghost"
                   size="sm"
                   className="text-xs shrink-0"
+                  disabled={isSaving}
                   onClick={() => {
                     setAccountMode('select');
                     setNewAccountName('');
@@ -613,12 +633,17 @@ export function ManualEntryPage() {
                   value={newAccountName}
                   onChange={(e) => setNewAccountName(e.target.value)}
                   placeholder="e.g. Current Account, Savings, Trading"
+                  disabled={isSaving}
                 />
               </div>
 
               <div className="space-y-2">
                 <Label className="text-xs">Account Type</Label>
-                <Select value={newAccountTypeId} onValueChange={setNewAccountTypeId}>
+                <Select
+                  value={newAccountTypeId}
+                  onValueChange={setNewAccountTypeId}
+                  disabled={isSaving}
+                >
                   <SelectTrigger>
                     <SelectValue placeholder="Select type" />
                   </SelectTrigger>
@@ -641,7 +666,7 @@ export function ManualEntryPage() {
         <CardHeader>
           <div className="flex items-center justify-between">
             <CardTitle className="text-base">Holdings</CardTitle>
-            <Button variant="outline" size="sm" onClick={addHolding}>
+            <Button variant="outline" size="sm" onClick={addHolding} disabled={isSaving}>
               <Plus className="h-3.5 w-3.5 mr-1" />
               Add
             </Button>
@@ -665,6 +690,7 @@ export function ManualEntryPage() {
                       prev.map((h, i) => (i === index ? { ...h, tokenId: '', tokenLabel: '' } : h))
                     );
                   }}
+                  disabled={isSaving}
                 />
               </div>
               <div className="w-28 shrink-0">
@@ -681,6 +707,7 @@ export function ManualEntryPage() {
                   decimalSeparator="."
                   decimalScale={8}
                   allowNegative={false}
+                  disabled={isSaving}
                 />
               </div>
               {holdings.length > 1 && (
@@ -689,6 +716,7 @@ export function ManualEntryPage() {
                   size="icon"
                   className="h-9 w-9 shrink-0 text-muted-foreground"
                   onClick={() => removeHolding(index)}
+                  disabled={isSaving}
                 >
                   <Trash2 className="h-3.5 w-3.5" />
                 </Button>
