@@ -38,14 +38,13 @@ const ICON_MAP: Record<string, LucideIcon> = {
   Coins,
 };
 
-const navItemClass = (isActive: boolean, collapsed: boolean) =>
-  cn(
-    'flex items-center rounded-md text-[13px] transition-colors w-full',
-    collapsed ? 'justify-center p-2' : 'gap-2.5 px-2 py-1.5',
-    isActive
-      ? 'bg-accent text-accent-foreground font-medium'
-      : 'text-muted-foreground hover:bg-accent/50 hover:text-foreground'
-  );
+const navItemBase =
+  'flex items-center gap-2.5 rounded-md px-2 py-1.5 text-[13px] transition-colors w-full';
+
+const collapsedItemBase = 'flex items-center justify-center rounded-md h-9 w-9 transition-colors';
+
+const activeClass = 'bg-accent text-accent-foreground font-medium';
+const inactiveClass = 'text-muted-foreground hover:bg-accent/50 hover:text-foreground';
 
 function SidebarNavLink({
   to,
@@ -60,22 +59,38 @@ function SidebarNavLink({
   collapsed: boolean;
   end?: boolean;
 }) {
-  const link = (
-    <NavLink to={to} end={end} className={({ isActive }) => navItemClass(isActive, collapsed)}>
-      <Icon className={cn('shrink-0', collapsed ? 'h-5 w-5' : 'h-4 w-4')} />
-      {!collapsed && <span className="truncate">{label}</span>}
-    </NavLink>
-  );
-
-  if (!collapsed) return link;
+  if (collapsed) {
+    return (
+      <div className="flex justify-center">
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <NavLink
+              to={to}
+              end={end}
+              className={({ isActive }) =>
+                cn(collapsedItemBase, isActive ? activeClass : inactiveClass)
+              }
+            >
+              <Icon className="h-5 w-5 shrink-0" />
+            </NavLink>
+          </TooltipTrigger>
+          <TooltipContent side="right" sideOffset={8}>
+            {label}
+          </TooltipContent>
+        </Tooltip>
+      </div>
+    );
+  }
 
   return (
-    <Tooltip>
-      <TooltipTrigger asChild>{link}</TooltipTrigger>
-      <TooltipContent side="right" sideOffset={8}>
-        {label}
-      </TooltipContent>
-    </Tooltip>
+    <NavLink
+      to={to}
+      end={end}
+      className={({ isActive }) => cn(navItemBase, isActive ? activeClass : inactiveClass)}
+    >
+      <Icon className="h-4 w-4 shrink-0" />
+      <span className="truncate">{label}</span>
+    </NavLink>
   );
 }
 
@@ -92,30 +107,40 @@ function SidebarButton({
   onClick: () => void;
   className?: string;
 }) {
-  const btn = (
+  if (collapsed) {
+    return (
+      <div className="flex justify-center">
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <button
+              type="button"
+              onClick={onClick}
+              className={cn(collapsedItemBase, inactiveClass, className)}
+            >
+              <Icon className="h-5 w-5 shrink-0" />
+            </button>
+          </TooltipTrigger>
+          <TooltipContent side="right" sideOffset={8}>
+            {label}
+          </TooltipContent>
+        </Tooltip>
+      </div>
+    );
+  }
+
+  return (
     <button
       type="button"
       onClick={onClick}
       className={cn(
-        'flex items-center rounded-md text-[13px] text-muted-foreground hover:bg-accent/50 hover:text-foreground transition-colors w-full',
-        collapsed ? 'justify-center p-2' : 'gap-2.5 px-2 py-1.5',
+        navItemBase,
+        'text-muted-foreground hover:bg-accent/50 hover:text-foreground',
         className
       )}
     >
-      <Icon className={cn('shrink-0', collapsed ? 'h-5 w-5' : 'h-4 w-4')} />
-      {!collapsed && <span className="truncate">{label}</span>}
+      <Icon className="h-4 w-4 shrink-0" />
+      <span className="truncate">{label}</span>
     </button>
-  );
-
-  if (!collapsed) return btn;
-
-  return (
-    <Tooltip>
-      <TooltipTrigger asChild>{btn}</TooltipTrigger>
-      <TooltipContent side="right" sideOffset={8}>
-        {label}
-      </TooltipContent>
-    </Tooltip>
   );
 }
 
