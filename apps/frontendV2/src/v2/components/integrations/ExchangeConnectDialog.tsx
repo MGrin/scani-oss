@@ -12,6 +12,7 @@ import {
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { trpc } from '@/lib/trpc';
+import { trpcVanilla } from '@/lib/trpc-vanilla';
 import { invalidatePortfolioQueries } from '@/v2/hooks/invalidatePortfolioQueries';
 
 interface ExchangeConfig {
@@ -206,8 +207,6 @@ export function ExchangeConnectDialog({
   const [status, setStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
   const [errorMsg, setErrorMsg] = useState('');
 
-  // biome-ignore lint/suspicious/noExplicitAny: Dynamic tRPC router access
-  const integrations = trpc.integrations as any;
   const utils = trpc.useUtils();
 
   const help = API_KEY_HELP[exchange.key];
@@ -218,12 +217,24 @@ export function ExchangeConnectDialog({
     setErrorMsg('');
 
     try {
-      const router = integrations[exchange.key];
-      if (!router?.validateKeys?.mutate) {
-        setErrorMsg('Integration not available');
-        setStatus('error');
-        return;
-      }
+      // We need to dispatch to one of ~13 different routers
+      // (trpc.integrations.kraken, .binance, .coinbase, …) based on
+      // the `exchange.key` prop. The React tRPC client exposes those
+      // as `.useMutation()` hooks, which can't be called conditionally
+      // or inside an event handler, so we can't pick the right one
+      // at submit time. The vanilla proxy client (from
+      // `trpc-vanilla.ts`) exposes `.mutate()` as a real method and
+      // supports dynamic property access — exactly what we need here.
+      //
+      // Why the switch: the previous implementation cast the React
+      // client to `any` and did
+      // `trpc.integrations[key].validateKeys.mutate(input)`. That
+      // traverses the React client's proxy, which returns hook
+      // constructors at the leaves, not callable `.mutate()` methods.
+      // `.mutate` was therefore a non-callable proxy node and threw
+      // on invocation — surfaced as the minified error
+      // `t[s] is not a function` that reproduced on every exchange
+      // (Kraken, Binance, Coinbase, etc.) regardless of credentials.
 
       let input: Record<string, string>;
       switch (exchange.credentialType) {
@@ -243,6 +254,17 @@ export function ExchangeConnectDialog({
           input = { apiKey, apiSecret };
       }
 
+      // biome-ignore lint/suspicious/noExplicitAny: dynamic router path
+      const integrationsClient = (trpcVanilla as any).integrations;
+      // biome-ignore lint/suspicious/noExplicitAny: dynamic router path
+      const router: any = integrationsClient?.[exchange.key];
+      if (!router) {
+        // Can only happen if the `exchange.key` prop is something not
+        // in the backend router map — a programmer error, not a user
+        // error. The backend router itself can't validate this
+        // without a roundtrip.
+        throw new Error(`No integration client for "${exchange.key}"`);
+      }
       await router.validateKeys.mutate(input);
       setStatus('success');
       // Invalidate everything — connecting an exchange creates accounts

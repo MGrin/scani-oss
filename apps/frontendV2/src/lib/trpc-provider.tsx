@@ -3,15 +3,11 @@ import { httpBatchLink, TRPCClientError } from '@trpc/client';
 import { useEffect, useState } from 'react';
 import { supabase } from './supabase';
 import { trpc } from './trpc';
+import { getTrpcAuthHeaders } from './trpc-auth-headers';
 
 interface TRPCProviderProps {
   children: React.ReactNode;
 }
-
-// Timeout constants for auth operations
-const GET_SESSION_TIMEOUT_MS = 5000; // 5 seconds
-const REFRESH_SESSION_TIMEOUT_MS = 8000; // 8 seconds
-const TOKEN_REFRESH_THRESHOLD_MS = 5 * 60 * 1000; // 5 minutes
 
 export function TRPCProvider({ children }: TRPCProviderProps) {
   const [queryClient] = useState(
@@ -88,93 +84,17 @@ export function TRPCProvider({ children }: TRPCProviderProps) {
     };
   }, [queryClient]);
 
+  // Auth headers logic lives in `trpc-auth-headers.ts` so the React
+  // client here and the vanilla client in `trpc-vanilla.ts` stay in
+  // sync. Previously they had duplicated session-refresh code that
+  // could (and did) drift.
   const [trpcClient] = useState(() =>
     trpc.createClient({
       links: [
         httpBatchLink({
           url: `${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/trpc`,
-          // Include auth token in headers
           async headers() {
-            try {
-              // Get session with timeout to prevent hanging
-              const sessionPromise = supabase.auth.getSession();
-              const timeoutPromise = new Promise<never>((_, reject) => {
-                setTimeout(() => reject(new Error('getSession timeout')), GET_SESSION_TIMEOUT_MS);
-              });
-
-              const {
-                data: { session },
-                error,
-              } = await Promise.race([sessionPromise, timeoutPromise]);
-
-              if (error) {
-                console.error('[tRPC] Error getting session:', error);
-                return { authorization: '' };
-              }
-
-              // If no session, return empty auth header
-              if (!session) {
-                return { authorization: '' };
-              }
-
-              // Check if token has expired or will expire soon
-              if (session.expires_at) {
-                const expiresAt = session.expires_at * 1000; // Convert to ms
-                const now = Date.now();
-                const timeUntilExpiry = expiresAt - now;
-
-                // If token has already expired or expires in less than threshold, refresh it
-                if (timeUntilExpiry < TOKEN_REFRESH_THRESHOLD_MS) {
-                  console.log(
-                    `[tRPC] Token ${timeUntilExpiry < 0 ? 'expired' : 'expiring soon'}, refreshing session`
-                  );
-
-                  try {
-                    // Refresh session with timeout
-                    const refreshPromise = supabase.auth.refreshSession();
-                    const refreshTimeoutPromise = new Promise<never>((_, reject) => {
-                      setTimeout(
-                        () => reject(new Error('refreshSession timeout')),
-                        REFRESH_SESSION_TIMEOUT_MS
-                      );
-                    });
-
-                    const { data: refreshData, error: refreshError } = await Promise.race([
-                      refreshPromise,
-                      refreshTimeoutPromise,
-                    ]);
-
-                    if (refreshError) {
-                      console.error('[tRPC] Error refreshing session:', refreshError);
-                      // Return the old token anyway, backend will handle the auth error
-                      return {
-                        authorization: `Bearer ${session.access_token}`,
-                      };
-                    }
-
-                    if (refreshData.session) {
-                      console.log('[tRPC] Session refreshed successfully');
-                      return {
-                        authorization: `Bearer ${refreshData.session.access_token}`,
-                      };
-                    }
-                  } catch (refreshException) {
-                    console.error('[tRPC] Exception while refreshing session:', refreshException);
-                    // Return the old token anyway, backend will handle the auth error
-                    return {
-                      authorization: `Bearer ${session.access_token}`,
-                    };
-                  }
-                }
-              }
-
-              return {
-                authorization: `Bearer ${session.access_token}`,
-              };
-            } catch (error) {
-              console.error('[tRPC] Unexpected error in headers function:', error);
-              return { authorization: '' };
-            }
+            return getTrpcAuthHeaders();
           },
         }),
       ],

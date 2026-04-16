@@ -140,9 +140,15 @@ export const accountsRouter = router({
     }),
 
   getCommonGroups: protectedProcedure
-    .input(z.object({ accountIds: z.array(z.string()).min(1) }))
+    // Allow empty arrays — "common groups across 0 accounts" is well-
+    // defined (empty set), and the frontend can transiently pass []
+    // while the dialog is mounting or mid-transition. Returning []
+    // is cheaper and friendlier than a 400.
+    .input(z.object({ accountIds: z.array(z.string()) }))
     .query(async ({ input, ctx }) => {
       const { dbUser } = await requireAuth(ctx);
+
+      if (input.accountIds.length === 0) return [];
 
       const result = await AccountImplementations.getCommonGroups(
         { userId: dbUser.id, dbUser },
