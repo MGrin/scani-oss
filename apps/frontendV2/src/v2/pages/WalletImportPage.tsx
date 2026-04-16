@@ -32,15 +32,21 @@ export function WalletImportPage() {
   });
 
   const importMutation = trpc.wallet.importAddress.useMutation({
-    onSuccess: (result) => {
+    onSuccess: async (result) => {
       setStep('result');
       setReviewedHoldingIds(new Set());
-      // Refetch relevant lists so Holdings/Dashboard show the new data when
-      // the user eventually navigates there. `refetchType: 'all'` ensures
-      // inactive observers also get fresh data (see trpc-provider note).
-      void Promise.all([
+      // Force-invalidate every list/aggregate the new wallet's holdings
+      // can appear on. `refetchType: 'all'` is critical: without it,
+      // inactive observers (the Holdings list page the user may navigate
+      // to via "View Holdings") are only marked stale and never refetched,
+      // because React Query's `refetchOnMount: false` then serves the
+      // pre-mutation cache on arrival.
+      await Promise.all([
         utils.holdings.getWithDetails.invalidate(undefined, { refetchType: 'all' }),
+        utils.accounts.getAll.invalidate(undefined, { refetchType: 'all' }),
         utils.accounts.getByUserIdWithSummary.invalidate(undefined, { refetchType: 'all' }),
+        utils.institutions.getByUserId.invalidate(undefined, { refetchType: 'all' }),
+        utils.institutions.getByUserIdWithSummary.invalidate(undefined, { refetchType: 'all' }),
         utils.dashboard.getOverview.invalidate(undefined, { refetchType: 'all' }),
         utils.dashboard.getAssetAllocation.invalidate(undefined, { refetchType: 'all' }),
       ]);

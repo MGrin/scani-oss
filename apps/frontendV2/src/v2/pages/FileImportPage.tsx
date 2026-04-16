@@ -72,21 +72,34 @@ export function FileImportPage() {
   const utils = trpc.useUtils();
 
   const createMutation = trpc.batchOperations.createHoldingsWithDependencies.useMutation({
-    onSuccess: () => {
+    onSuccess: async () => {
       showSuccess('Holdings imported successfully');
-      utils.holdings.getWithDetails.invalidate();
-      utils.accounts.getByUserIdWithSummary.invalidate();
-      utils.dashboard.getOverview.invalidate();
+      // `refetchType: 'all'` is critical: without it, inactive observers
+      // (the Holdings list page we're about to navigate to) are only marked
+      // stale and never refetched — React Query's `refetchOnMount: false`
+      // then serves the pre-mutation cache on arrival.
+      await Promise.all([
+        utils.holdings.getWithDetails.invalidate(undefined, { refetchType: 'all' }),
+        utils.accounts.getAll.invalidate(undefined, { refetchType: 'all' }),
+        utils.accounts.getByUserIdWithSummary.invalidate(undefined, { refetchType: 'all' }),
+        utils.institutions.getByUserId.invalidate(undefined, { refetchType: 'all' }),
+        utils.institutions.getByUserIdWithSummary.invalidate(undefined, { refetchType: 'all' }),
+        utils.dashboard.getOverview.invalidate(undefined, { refetchType: 'all' }),
+        utils.dashboard.getAssetAllocation.invalidate(undefined, { refetchType: 'all' }),
+      ]);
       navigate(V2_ROUTES.holdings);
     },
     onError: (err) => showError(err, 'Saving holdings'),
   });
 
   const updateBatchMutation = trpc.batchOperations.updateHoldingsBatch.useMutation({
-    onSuccess: () => {
+    onSuccess: async () => {
       showSuccess('Holdings updated successfully');
-      utils.holdings.getWithDetails.invalidate();
-      utils.dashboard.getOverview.invalidate();
+      await Promise.all([
+        utils.holdings.getWithDetails.invalidate(undefined, { refetchType: 'all' }),
+        utils.dashboard.getOverview.invalidate(undefined, { refetchType: 'all' }),
+        utils.dashboard.getAssetAllocation.invalidate(undefined, { refetchType: 'all' }),
+      ]);
     },
     onError: (err) => showError(err, 'Updating holdings'),
   });
