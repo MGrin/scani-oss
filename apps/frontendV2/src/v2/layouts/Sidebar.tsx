@@ -38,9 +38,10 @@ const ICON_MAP: Record<string, LucideIcon> = {
   Coins,
 };
 
-const navItemClass = (isActive: boolean) =>
+const navItemClass = (isActive: boolean, collapsed: boolean) =>
   cn(
-    'flex items-center gap-2.5 rounded-md px-2 py-1.5 text-[13px] transition-colors w-full',
+    'flex items-center rounded-md text-[13px] transition-colors w-full',
+    collapsed ? 'justify-center p-2' : 'gap-2.5 px-2 py-1.5',
     isActive
       ? 'bg-accent text-accent-foreground font-medium'
       : 'text-muted-foreground hover:bg-accent/50 hover:text-foreground'
@@ -60,8 +61,8 @@ function SidebarNavLink({
   end?: boolean;
 }) {
   const link = (
-    <NavLink to={to} end={end} className={({ isActive }) => navItemClass(isActive)}>
-      <Icon className="h-4 w-4 shrink-0" />
+    <NavLink to={to} end={end} className={({ isActive }) => navItemClass(isActive, collapsed)}>
+      <Icon className={cn('shrink-0', collapsed ? 'h-5 w-5' : 'h-4 w-4')} />
       {!collapsed && <span className="truncate">{label}</span>}
     </NavLink>
   );
@@ -96,11 +97,12 @@ function SidebarButton({
       type="button"
       onClick={onClick}
       className={cn(
-        'flex items-center gap-2.5 rounded-md px-2 py-1.5 text-[13px] text-muted-foreground hover:bg-accent/50 hover:text-foreground transition-colors w-full',
+        'flex items-center rounded-md text-[13px] text-muted-foreground hover:bg-accent/50 hover:text-foreground transition-colors w-full',
+        collapsed ? 'justify-center p-2' : 'gap-2.5 px-2 py-1.5',
         className
       )}
     >
-      <Icon className="h-4 w-4 shrink-0" />
+      <Icon className={cn('shrink-0', collapsed ? 'h-5 w-5' : 'h-4 w-4')} />
       {!collapsed && <span className="truncate">{label}</span>}
     </button>
   );
@@ -142,7 +144,10 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
     >
       {/* Header */}
       <div
-        className="flex items-center justify-between px-3 border-b border-border shrink-0"
+        className={cn(
+          'flex items-center border-b border-border shrink-0',
+          collapsed ? 'justify-center px-1' : 'justify-between px-3'
+        )}
         style={{
           paddingTop: 'env(safe-area-inset-top)',
           minHeight: 'calc(3rem + env(safe-area-inset-top))',
@@ -155,7 +160,7 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
           className="p-1.5 rounded-md hover:bg-accent text-muted-foreground hover:text-foreground transition-colors flex items-center justify-center"
           aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
         >
-          {collapsed ? <Menu className="h-4 w-4" /> : <ChevronLeft className="h-4 w-4" />}
+          {collapsed ? <Menu className="h-5 w-5" /> : <ChevronLeft className="h-4 w-4" />}
         </button>
       </div>
 
