@@ -62,14 +62,17 @@ describe('ScamTokenDetectionService', () => {
       expect(prob).toBeGreaterThan(0.3);
     });
 
-    it('should flag common symbol created recently', () => {
+    it('should not flag common symbol just because it was created recently', () => {
+      // "Recently created" is measured by our system's token creation time,
+      // not the actual blockchain age. Legitimate imports always create tokens
+      // "now", so this signal only produces false positives.
       const prob = service.calculateScamProbability('BTC', 'Bitcoin', recentDate, false);
-      expect(prob).toBeGreaterThan(0.5);
+      expect(prob).toBeLessThan(0.35); // Only "no pricing data" contributes
     });
 
-    it('should NOT flag common symbol created long ago with price data', () => {
+    it('should score zero for common symbol with price data', () => {
       const prob = service.calculateScamProbability('BTC', 'Bitcoin', oldDate, true);
-      expect(prob).toBeLessThan(0.3);
+      expect(prob).toBe(0);
     });
 
     it('should cap probability at 1.0', () => {

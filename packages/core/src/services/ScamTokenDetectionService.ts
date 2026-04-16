@@ -8,34 +8,6 @@ import { BaseService } from './BaseService';
  */
 @Service()
 export class ScamTokenDetectionService extends BaseService {
-  // Common legitimate token symbols that scammers often mimic
-  private readonly COMMON_TOKEN_SYMBOLS = new Set([
-    'BTC',
-    'ETH',
-    'USDT',
-    'USDC',
-    'BNB',
-    'SOL',
-    'ADA',
-    'DOGE',
-    'MATIC',
-    'DOT',
-    'SHIB',
-    'AVAX',
-    'TRX',
-    'UNI',
-    'LINK',
-    'XRP',
-    'LTC',
-    'ETC',
-    'BCH',
-    'XLM',
-    'ATOM',
-    'FIL',
-    'APT',
-    'NEAR',
-  ]);
-
   // Suspicious words that often appear in scam token names/symbols
   private readonly SUSPICIOUS_WORDS = new Set([
     'visit',
@@ -71,9 +43,6 @@ export class ScamTokenDetectionService extends BaseService {
   private readonly EMOJI_PATTERN =
     /[\u{1F600}-\u{1F64F}\u{1F300}-\u{1F5FF}\u{1F680}-\u{1F6FF}\u{1F1E0}-\u{1F1FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}]/u;
 
-  // Creation date threshold (tokens claiming to be well-known but created recently)
-  private readonly RECENT_TOKEN_THRESHOLD_MONTHS = 24;
-
   constructor() {
     super('ScamTokenDetectionService');
   }
@@ -90,7 +59,7 @@ export class ScamTokenDetectionService extends BaseService {
   calculateScamProbability(
     symbol: string,
     name: string,
-    createdAt: Date,
+    _createdAt: Date,
     hasPriceData: boolean = false
   ): number {
     let probability = 0;
@@ -129,11 +98,11 @@ export class ScamTokenDetectionService extends BaseService {
       reasons.push('Contains emoji');
     }
 
-    // Check 5: Common symbol but created recently
-    if (this.isRecentCommonSymbol(symbol, createdAt)) {
-      probability += 0.3;
-      reasons.push('Common symbol but recently created');
-    }
+    // Check 5: Common symbol but created recently — DISABLED
+    // This check measures when our system created the token record, not the
+    // token's actual blockchain age. Since every import creates tokens "now",
+    // legitimate tokens like ETH/USDC always trigger this, causing false
+    // positives. Real scam tokens are caught by URL/name pattern checks above.
 
     // Check 6: No pricing data from reliable sources
     // Weight is kept below SCAM_PROBABILITY_THRESHOLD (0.35) so this signal
@@ -198,22 +167,6 @@ export class ScamTokenDetectionService extends BaseService {
    */
   private hasEmoji(text: string): boolean {
     return this.EMOJI_PATTERN.test(text);
-  }
-
-  /**
-   * Check if token has a common symbol but was created recently
-   * (scammers often create fake versions of popular tokens)
-   */
-  private isRecentCommonSymbol(symbol: string, createdAt: Date): boolean {
-    if (!this.COMMON_TOKEN_SYMBOLS.has(symbol.toUpperCase())) {
-      return false;
-    }
-
-    const monthsAgo = this.RECENT_TOKEN_THRESHOLD_MONTHS;
-    const threshold = new Date();
-    threshold.setMonth(threshold.getMonth() - monthsAgo);
-
-    return createdAt > threshold;
   }
 
   /**
