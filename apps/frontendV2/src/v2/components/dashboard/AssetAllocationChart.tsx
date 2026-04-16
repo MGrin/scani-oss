@@ -190,39 +190,39 @@ export function AssetAllocationChart() {
       <CardHeader className="px-4 pt-3 pb-1">
         <div className="flex flex-wrap items-center justify-between gap-1">
           <CardTitle className="text-sm font-semibold">Allocation</CardTitle>
-          <div className="flex gap-1.5">
-            <div className="flex rounded border border-border overflow-hidden">
-              {CHART_TYPE_OPTIONS.map((opt) => (
-                <button
-                  key={opt.value}
-                  type="button"
-                  onClick={() => handleChartTypeChange(opt.value)}
-                  className={`px-2 py-1 text-[10px] leading-none transition-colors border-r last:border-r-0 border-border ${
-                    chartType === opt.value
-                      ? 'bg-accent text-accent-foreground font-medium'
-                      : 'text-muted-foreground hover:text-foreground hover:bg-muted/50'
-                  }`}
-                >
-                  {opt.label}
-                </button>
-              ))}
-            </div>
-            <div className="flex rounded border border-border overflow-hidden">
-              {DIMENSION_OPTIONS.map((opt) => (
-                <button
-                  key={opt.value}
-                  type="button"
-                  onClick={() => handleDimensionChange(opt.value)}
-                  className={`px-2 py-1 text-[10px] leading-none transition-colors border-r last:border-r-0 border-border ${
-                    dimension === opt.value
-                      ? 'bg-accent text-accent-foreground font-medium'
-                      : 'text-muted-foreground hover:text-foreground hover:bg-muted/50'
-                  }`}
-                >
-                  {opt.label}
-                </button>
-              ))}
-            </div>
+          <div className="flex rounded border border-border overflow-hidden">
+            {DIMENSION_OPTIONS.map((opt) => (
+              <button
+                key={opt.value}
+                type="button"
+                onClick={() => handleDimensionChange(opt.value)}
+                className={`px-2 py-1 text-[10px] leading-none transition-colors border-r last:border-r-0 border-border ${
+                  dimension === opt.value
+                    ? 'bg-accent text-accent-foreground font-medium'
+                    : 'text-muted-foreground hover:text-foreground hover:bg-muted/50'
+                }`}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
+        </div>
+        <div className="flex justify-end mt-1">
+          <div className="flex rounded border border-border overflow-hidden">
+            {CHART_TYPE_OPTIONS.map((opt) => (
+              <button
+                key={opt.value}
+                type="button"
+                onClick={() => handleChartTypeChange(opt.value)}
+                className={`px-2 py-1 text-[10px] leading-none transition-colors border-r last:border-r-0 border-border ${
+                  chartType === opt.value
+                    ? 'bg-accent text-accent-foreground font-medium'
+                    : 'text-muted-foreground hover:text-foreground hover:bg-muted/50'
+                }`}
+              >
+                {opt.label}
+              </button>
+            ))}
           </div>
         </div>
       </CardHeader>
