@@ -118,11 +118,6 @@ export class BybitIntegration extends ScaniIntegration {
       }
 
       const holdingsWithNull = balances.map((balance) => {
-        const totalBalance = parseFloat(balance.walletBalance);
-        if (totalBalance === 0) {
-          return null;
-        }
-
         const holding: IntegrationHolding = {
           symbol: balance.coin.toUpperCase(),
           name: balance.coin,

@@ -11,7 +11,7 @@
  * - Log progress and errors
  */
 
-import { eq } from 'drizzle-orm';
+import { inArray } from 'drizzle-orm';
 import { Container, Service } from 'typedi';
 import { db } from '../database/connection';
 import * as schema from '../database/schema';
@@ -156,15 +156,26 @@ export class UpdateTokenPricesUseCase {
           .map((t) => t.id);
 
         if (updatedTokenIds.length > 0) {
-          // Find all holdings for updated tokens
-          for (const tokenId of updatedTokenIds) {
-            const holdingsForToken = await db
-              .select({ id: schema.holdings.id })
-              .from(schema.holdings)
-              .where(eq(schema.holdings.tokenId, tokenId));
+          // Batch query: find all holdings for all updated tokens at once
+          const allHoldingsForTokens = await db
+            .select({ id: schema.holdings.id, tokenId: schema.holdings.tokenId })
+            .from(schema.holdings)
+            .where(inArray(schema.holdings.tokenId, updatedTokenIds));
 
-            const holdingIds = holdingsForToken.map((h) => h.id);
-            if (holdingIds.length > 0) {
+          // Group by tokenId
+          const holdingsByToken = new Map<string, string[]>();
+          for (const h of allHoldingsForTokens) {
+            const ids = holdingsByToken.get(h.tokenId);
+            if (ids) {
+              ids.push(h.id);
+            } else {
+              holdingsByToken.set(h.tokenId, [h.id]);
+            }
+          }
+
+          for (const tokenId of updatedTokenIds) {
+            const holdingIds = holdingsByToken.get(tokenId);
+            if (holdingIds && holdingIds.length > 0) {
               await this.vaultService.recalculateVaultsForToken(tokenId, holdingIds);
             }
           }

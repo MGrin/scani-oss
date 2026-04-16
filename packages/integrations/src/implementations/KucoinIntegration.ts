@@ -130,8 +130,6 @@ export class KucoinIntegration extends ScaniIntegration {
 
       const holdings: IntegrationHolding[] = [];
       for (const [currency, totalBalance] of aggregated) {
-        if (totalBalance === 0) continue;
-
         holdings.push({
           symbol: currency.toUpperCase(),
           name: currency,

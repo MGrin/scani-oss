@@ -139,10 +139,6 @@ export class WiseIntegration extends ScaniIntegration {
       }
 
       const holdingsWithNull = balances.map((balance) => {
-        if (balance.amount.value === 0) {
-          return null;
-        }
-
         const holding: IntegrationHolding = {
           symbol: balance.currency.toUpperCase(),
           name: balance.currency.toUpperCase(),

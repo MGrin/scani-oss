@@ -118,11 +118,6 @@ export class KrakenIntegration extends ScaniIntegration {
       }
 
       const holdingsWithNull = balances.map((balance) => {
-        const totalBalance = parseFloat(balance.balance);
-        if (totalBalance === 0) {
-          return null;
-        }
-
         // Kraken prefixes some assets (e.g., XXBT for BTC, ZEUR for EUR)
         // Normalize the asset symbol
         let symbol = balance.asset;

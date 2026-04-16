@@ -20,7 +20,8 @@
 import type { FetchHoldingsResult } from '@scani/integrations';
 import { IntegrationManager } from '@scani/integrations';
 import { isValidDecimalString } from '@scani/shared';
-import { and, asc, eq, gt, sql } from 'drizzle-orm';
+import Decimal from 'decimal.js';
+import { and, asc, eq, gt } from 'drizzle-orm';
 import { Container, Service } from 'typedi';
 import { db } from '../database/connection';
 import * as schema from '../database/schema';
@@ -39,55 +40,6 @@ const logger = createComponentLogger('use-case:sync-wallet-balances');
 
 /** Page size for user iteration. Keeps peak memory bounded regardless of scale. */
 const USER_PAGE_SIZE = 100;
-
-/**
- * Record a wallet sync failure so operators can query stuck targets without
- * tailing logs. Upserts by (kind, target_id) and increments failure_count.
- */
-async function recordSyncFailure(params: {
-  kind: string;
-  targetId: string;
-  error: string;
-  metadata?: Record<string, unknown>;
-}): Promise<void> {
-  try {
-    await db
-      .insert(schema.syncFailures)
-      .values({
-        kind: params.kind,
-        targetId: params.targetId,
-        failureCount: 1,
-        lastError: params.error,
-        metadata: params.metadata ?? null,
-      })
-      .onConflictDoUpdate({
-        target: [schema.syncFailures.kind, schema.syncFailures.targetId],
-        set: {
-          failureCount: sql`${schema.syncFailures.failureCount} + 1`,
-          lastError: params.error,
-          lastAttemptAt: new Date(),
-          metadata: params.metadata ?? null,
-        },
-      });
-  } catch (err) {
-    // Observability table failures must not bring down the sync job.
-    logger.warn({ err, params }, 'Failed to record sync failure (non-fatal)');
-  }
-}
-
-/**
- * Clear a previously-recorded sync failure after a successful sync.
- * Silent no-op if there was no existing row.
- */
-async function clearSyncFailure(kind: string, targetId: string): Promise<void> {
-  try {
-    await db
-      .delete(schema.syncFailures)
-      .where(and(eq(schema.syncFailures.kind, kind), eq(schema.syncFailures.targetId, targetId)));
-  } catch (err) {
-    logger.warn({ err, kind, targetId }, 'Failed to clear sync failure (non-fatal)');
-  }
-}
 
 export interface SyncWalletBalancesResult {
   /** Total number of wallet accounts found */
@@ -368,26 +320,17 @@ export class SyncWalletBalancesUseCase {
               // bail out immediately instead of stacking up retries + backoffs.
               // Prevents one bad provider (e.g. a rate-limited exchange) from
               // blowing up the whole cron run's wall-clock time.
-              const failureTargetId = `${syncAccount.id}:${institutionId}`;
               if (!integrationCircuitBreaker.isAvailable(institutionId)) {
                 logger.warn(
                   { institutionId, accountId: syncAccount.id },
                   'Integration circuit open — skipping wallet fetch'
                 );
-                await recordSyncFailure({
-                  kind: 'wallet',
-                  targetId: failureTargetId,
-                  error: 'circuit breaker open',
-                  metadata: { walletAddress: userWallet.walletAddress, institutionId },
-                });
                 accountsFailed++;
                 continue;
               }
 
               // EXTERNAL API CALL - Fetch holdings from blockchain (no DB connection held).
-              // Retries transient failures (network, 5xx, 429) with backoff. A
-              // persistent failure is recorded in sync_failures so operators can
-              // see stuck wallets without tailing logs.
+              // Retries transient failures (network, 5xx, 429) with backoff.
               let holdingsResult: FetchHoldingsResult;
               try {
                 holdingsResult = await withRetry(
@@ -423,21 +366,9 @@ export class SyncWalletBalancesUseCase {
                   walletAddress: userWallet.walletAddress,
                   error: holdingsResult.errors.join('; '),
                 });
-                await recordSyncFailure({
-                  kind: 'wallet',
-                  targetId: failureTargetId,
-                  error: holdingsResult.errors.join('; '),
-                  metadata: {
-                    walletAddress: userWallet.walletAddress,
-                    institutionId,
-                  },
-                });
                 accountsFailed++;
                 continue;
               }
-
-              // Successful fetch — clear any stale failure record.
-              await clearSyncFailure('wallet', failureTargetId);
 
               // Store the data for batch processing
               walletDataToSync.push({
@@ -456,15 +387,6 @@ export class SyncWalletBalancesUseCase {
                 accountName: `${userWallet.walletAddress.substring(0, 10)}...`,
                 walletAddress: userWallet.walletAddress,
                 error: errorMessage,
-              });
-              await recordSyncFailure({
-                kind: 'wallet',
-                targetId: `${userWallet.id}:${institutionId}`,
-                error: errorMessage,
-                metadata: {
-                  walletAddress: userWallet.walletAddress,
-                  institutionId,
-                },
               });
               logger.error(
                 {
@@ -575,7 +497,7 @@ export class SyncWalletBalancesUseCase {
                     }
                   : undefined;
 
-                if (balance === '0' || parseFloat(balance) === 0) {
+                if (new Decimal(balance).isZero()) {
                   // For zero balance, update existing holding if it exists
                   if (existingHolding) {
                     if (eventContext) {

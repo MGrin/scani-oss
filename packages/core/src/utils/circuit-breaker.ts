@@ -14,6 +14,8 @@ interface CircuitState {
   failures: number;
   lastFailure: number;
   isOpen: boolean;
+  /** When true, exactly one probe request has been allowed through after cooldown */
+  isProbing: boolean;
 }
 
 export class CircuitBreaker {
@@ -31,12 +33,15 @@ export class CircuitBreaker {
     const state = this.circuits.get(provider);
     if (!state || !state.isOpen) return true;
 
-    // Check if cooldown has elapsed
+    // Check if cooldown has elapsed — enter half-open state
     if (Date.now() - state.lastFailure >= this.cooldownMs) {
-      // Reset — allow a probe request
-      state.isOpen = false;
-      state.failures = 0;
-      return true;
+      if (!state.isProbing) {
+        // Allow exactly one probe request through
+        state.isProbing = true;
+        return true;
+      }
+      // A probe is already in flight — block until it resolves
+      return false;
     }
 
     return false;
@@ -48,6 +53,7 @@ export class CircuitBreaker {
     if (state) {
       state.failures = 0;
       state.isOpen = false;
+      state.isProbing = false;
     }
   }
 
@@ -55,8 +61,16 @@ export class CircuitBreaker {
   recordFailure(provider: string): void {
     let state = this.circuits.get(provider);
     if (!state) {
-      state = { failures: 0, lastFailure: 0, isOpen: false };
+      state = { failures: 0, lastFailure: 0, isOpen: false, isProbing: false };
       this.circuits.set(provider, state);
+    }
+
+    // If we were probing and it failed, re-open with fresh cooldown
+    if (state.isProbing) {
+      state.isOpen = true;
+      state.isProbing = false;
+      state.lastFailure = Date.now();
+      return;
     }
 
     state.failures++;

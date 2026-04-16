@@ -118,11 +118,6 @@ export class GeminiIntegration extends ScaniIntegration {
       }
 
       const holdingsWithNull = balances.map((balance) => {
-        const totalBalance = parseFloat(balance.amount);
-        if (totalBalance === 0) {
-          return null;
-        }
-
         const holding: IntegrationHolding = {
           symbol: balance.currency.toUpperCase(),
           name: balance.currency,

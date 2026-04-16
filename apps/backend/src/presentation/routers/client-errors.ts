@@ -1,5 +1,3 @@
-import { db } from '@scani/core/database/connection';
-import { clientErrors } from '@scani/core/database/schema';
 import { createComponentLogger } from '@scani/core/utils/logger';
 import { z } from 'zod';
 import { publicProcedure, router } from '../trpc';
@@ -9,10 +7,8 @@ const logger = createComponentLogger('router:client-errors');
 /**
  * Client-side error reporting endpoint.
  *
- * The V2 ErrorBoundary posts to this on every caught exception. Without an
- * external error-reporting service, this is the only way operators learn
- * about frontend crashes. Size limits on every field prevent an abusive
- * client from filling the DB with garbage.
+ * The V2 ErrorBoundary posts to this on every caught exception. Errors are
+ * logged as structured JSON so they can be found via log search / grep.
  *
  * Intentionally a public procedure: if auth is the thing that's broken,
  * we still want the error report.
@@ -36,26 +32,18 @@ const reportInput = z.object({
 
 export const clientErrorsRouter = router({
   report: publicProcedure.input(reportInput).mutation(async ({ ctx, input }) => {
-    try {
-      await db.insert(clientErrors).values({
-        // userId is set from auth ctx if available, otherwise null (public route).
+    logger.error(
+      {
         userId: ctx.userId ?? null,
+        route: input.route,
         message: input.message,
-        stack: input.stack ?? null,
-        componentStack: input.componentStack ?? null,
-        route: input.route ?? null,
-        userAgent: input.userAgent ?? null,
-        appVersion: input.appVersion ?? null,
-      });
-      return { ok: true };
-    } catch (err) {
-      // Never fail the mutation back to the client; that just creates a
-      // retry loop on an already-crashed UI. Log on the server and ack.
-      logger.error(
-        { err: err instanceof Error ? err.message : String(err) },
-        'Failed to record client error report'
-      );
-      return { ok: true };
-    }
+        stack: input.stack,
+        componentStack: input.componentStack,
+        userAgent: input.userAgent,
+        appVersion: input.appVersion,
+      },
+      'Client error reported'
+    );
+    return { ok: true };
   }),
 });

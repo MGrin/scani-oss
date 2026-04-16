@@ -243,7 +243,7 @@ export class SyncExchangeBalancesUseCase {
                   typeof account.metadata === 'object' &&
                   'uid' in account.metadata
                     ? (account.metadata.uid as string)
-                    : 'binance-api-account';
+                    : `${institutionName.toLowerCase()}-api-account`;
 
                 const externalId = `${accountType}_${accountUid}`;
 
@@ -346,6 +346,9 @@ export class SyncExchangeBalancesUseCase {
                 existingHoldingsWithDetails.map((h) => [h.holding.tokenId, h.holding])
               );
 
+              // Track which tokenIds we see from the exchange so we can zero out stale ones
+              const seenTokenIds = new Set<string>();
+
               // Process each fetched holding
               for (const holding of holdingsResult.holdings) {
                 try {
@@ -371,6 +374,8 @@ export class SyncExchangeBalancesUseCase {
                     8,
                     tx
                   );
+
+                  seenTokenIds.add(token.id);
 
                   // Check if holding already exists (by token ID, not symbol)
                   const existing = existingByTokenId.get(token.id);
@@ -444,6 +449,44 @@ export class SyncExchangeBalancesUseCase {
                     'Failed to process holding'
                   );
                   // Continue with next holding
+                }
+              }
+
+              // Zero out stale holdings: existing holdings not returned by the exchange
+              for (const [tokenId, existing] of existingByTokenId) {
+                if (
+                  !seenTokenIds.has(tokenId) &&
+                  existing.balance !== '0' &&
+                  existing.source !== 'manual'
+                ) {
+                  try {
+                    await this.holdingService.updateHoldingBalanceWithEvent(
+                      {
+                        holdingId: existing.id,
+                        balance: '0',
+                        eventContext: accountData.userBaseCurrencyId
+                          ? {
+                              userId: account.userId,
+                              baseCurrencyId: accountData.userBaseCurrencyId,
+                            }
+                          : undefined,
+                      },
+                      tx
+                    );
+                    holdingsRemoved++;
+                    logger.debug(
+                      { holdingId: existing.id, tokenId },
+                      'Zeroed out stale holding not returned by exchange'
+                    );
+                  } catch (error) {
+                    logger.error(
+                      {
+                        holdingId: existing.id,
+                        error: error instanceof Error ? error.message : String(error),
+                      },
+                      'Failed to zero out stale holding'
+                    );
+                  }
                 }
               }
 

@@ -121,11 +121,6 @@ export class OkxIntegration extends ScaniIntegration {
       }
 
       const holdingsWithNull = balances.map((balance) => {
-        const totalBalance = parseFloat(balance.cashBal);
-        if (totalBalance === 0) {
-          return null;
-        }
-
         const holding: IntegrationHolding = {
           symbol: balance.ccy.toUpperCase(),
           name: balance.ccy,

@@ -96,8 +96,9 @@ export class RateLimiter {
 
   private cleanupBuckets() {
     const now = Date.now();
+    const hardTtl = this.windowMs * 2;
     for (const [key, bucket] of this.buckets) {
-      if (now - bucket.lastRefill > this.windowMs) {
+      if (now - bucket.lastRefill > hardTtl) {
         this.buckets.delete(key);
       }
     }

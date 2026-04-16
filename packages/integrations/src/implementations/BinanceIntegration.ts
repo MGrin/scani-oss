@@ -196,9 +196,6 @@ export class BinanceIntegration extends ScaniIntegration {
 
       const holdingsWithNull = balances.map((balance) => {
         const totalBalance = parseFloat(balance.free) + parseFloat(balance.locked);
-        if (totalBalance === 0) {
-          return null;
-        }
 
         const holding: IntegrationHolding = {
           symbol: balance.asset.toUpperCase(),

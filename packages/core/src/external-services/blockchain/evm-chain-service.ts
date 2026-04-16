@@ -7,7 +7,6 @@
  */
 
 import Decimal from 'decimal.js';
-import { ethers } from 'ethers';
 import { createComponentLogger } from '../../utils/logger';
 import { fetchWithTimeout } from '../pricing/utils';
 import type { ChainConfig } from './chain-config';
@@ -46,6 +45,69 @@ function isLikelySpamToken(token: { name: string; symbol: string }): boolean {
   const symbolMatch = suspiciousPatterns.some((pattern) => pattern.test(token.symbol));
 
   return nameMatch || symbolMatch;
+}
+
+/**
+ * Compute the ENS namehash for a domain name (EIP-137).
+ */
+function namehash(name: string): string {
+  let node = keccak256Hex(''); // Start with 32 zero bytes
+  node = '0'.repeat(64); // namehash('') = 0x00...00
+
+  if (name) {
+    const labels = name.split('.');
+    for (let i = labels.length - 1; i >= 0; i--) {
+      const label = labels[i]!;
+      const labelHash = keccak256Hex(label);
+      node = keccak256HexConcat(node, labelHash);
+    }
+  }
+
+  return node;
+}
+
+/**
+ * Keccak256 hash of a UTF-8 string, returning hex.
+ */
+function keccak256Hex(data: string): string {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { keccak_256 } = require('@noble/hashes/sha3') as {
+    keccak_256: (data: Uint8Array) => Uint8Array;
+  };
+  return Buffer.from(keccak_256(new TextEncoder().encode(data))).toString('hex');
+}
+
+/**
+ * Keccak256 hash of two concatenated hex strings.
+ */
+function keccak256HexConcat(a: string, b: string): string {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { keccak_256 } = require('@noble/hashes/sha3') as {
+    keccak_256: (data: Uint8Array) => Uint8Array;
+  };
+  return Buffer.from(keccak_256(Buffer.from(a + b, 'hex'))).toString('hex');
+}
+
+/**
+ * Decode an ABI-encoded string from an eth_call result.
+ */
+function decodeAbiString(hex: string): string | null {
+  try {
+    // Remove 0x prefix
+    const data = hex.startsWith('0x') ? hex.slice(2) : hex;
+    if (data.length < 128) return null;
+
+    // First 32 bytes: offset to string data
+    // Next 32 bytes: string length
+    const length = parseInt(data.slice(64, 128), 16);
+    if (length === 0 || length > 1000) return null;
+
+    // Following bytes: string content
+    const strHex = data.slice(128, 128 + length * 2);
+    return Buffer.from(strHex, 'hex').toString('utf8');
+  } catch {
+    return null;
+  }
 }
 
 interface EtherscanResponse<T> {
@@ -554,7 +616,8 @@ export class EvmChainService implements IBlockchainService {
   }
 
   /**
-   * Resolve ENS name for Ethereum mainnet
+   * Resolve ENS name for Ethereum mainnet using raw JSON-RPC calls.
+   * Performs reverse resolution: address -> ENS name.
    */
   async resolveAddressName(address: string): Promise<string | null> {
     // ENS only works on Ethereum mainnet
@@ -566,36 +629,78 @@ export class EvmChainService implements IBlockchainService {
       return null;
     }
 
-    try {
-      // Use ethers.js with a public Ethereum RPC endpoint
-      const provider = new ethers.JsonRpcProvider('https://eth.llamarpc.com');
+    const resolveEns = async (): Promise<string | null> => {
+      try {
+        // ENS reverse resolution: call the reverse registrar
+        // The reverse node for an address is <address-without-0x>.addr.reverse
+        const addrLower = address.toLowerCase().slice(2);
+        const reverseNode = `${addrLower}.addr.reverse`;
 
-      const resolveEns = async () => {
-        try {
-          // Lookup ENS name for address (reverse resolution)
-          const ensName = await provider.lookupAddress(address);
+        // namehash the reverse node
+        const node = namehash(reverseNode);
 
-          if (ensName) {
-            logger.debug(
-              { address: `${address.substring(0, 10)}...`, ensName },
-              'ENS name resolved'
-            );
-            return ensName;
-          }
+        // Call the ENS Universal Resolver's reverse() or use the name() function
+        // on the reverse registrar. We use eth_call to the ENS registry to get
+        // the resolver, then call name() on it.
+        const ENS_REGISTRY = '0x00000000000C2E074eC69A0dFb2997BA6C7d2e1e';
+        // resolver(bytes32) selector = 0x0178b8bf
+        const resolverCalldata = `0x0178b8bf${node}`;
 
-          return null;
-        } catch (error) {
-          logger.debug(
-            {
-              address: `${address.substring(0, 10)}...`,
-              error: error instanceof Error ? error.message : String(error),
-            },
-            'ENS lookup failed'
-          );
+        const resolverResponse = await fetchWithTimeout('https://eth.llamarpc.com', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            jsonrpc: '2.0',
+            id: 1,
+            method: 'eth_call',
+            params: [{ to: ENS_REGISTRY, data: resolverCalldata }, 'latest'],
+          }),
+        });
+
+        const resolverData = (await resolverResponse.json()) as { result?: string };
+        if (!resolverData.result || resolverData.result === `0x${'0'.repeat(64)}`) {
           return null;
         }
-      };
 
+        const resolverAddr = `0x${resolverData.result.slice(26)}`;
+        if (resolverAddr === `0x${'0'.repeat(40)}`) return null;
+
+        // Call name(bytes32) on the resolver. Selector = 0x691f3431
+        const nameCalldata = `0x691f3431${node}`;
+
+        const nameResponse = await fetchWithTimeout('https://eth.llamarpc.com', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            jsonrpc: '2.0',
+            id: 1,
+            method: 'eth_call',
+            params: [{ to: resolverAddr, data: nameCalldata }, 'latest'],
+          }),
+        });
+
+        const nameData = (await nameResponse.json()) as { result?: string };
+        if (!nameData.result || nameData.result.length <= 2) return null;
+
+        // Decode the ABI-encoded string response
+        const ensName = decodeAbiString(nameData.result);
+        if (ensName) {
+          logger.debug({ address: `${address.substring(0, 10)}...`, ensName }, 'ENS name resolved');
+        }
+        return ensName;
+      } catch (error) {
+        logger.debug(
+          {
+            address: `${address.substring(0, 10)}...`,
+            error: error instanceof Error ? error.message : String(error),
+          },
+          'ENS lookup failed'
+        );
+        return null;
+      }
+    };
+
+    try {
       if (this.rateLimiter) {
         return this.rateLimiter.execute(resolveEns);
       }

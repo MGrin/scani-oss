@@ -2,7 +2,6 @@ import { relations } from 'drizzle-orm';
 import {
   boolean,
   index,
-  integer,
   jsonb,
   pgTable,
   real,
@@ -678,69 +677,3 @@ export type NewVault = typeof vaults.$inferInsert;
 
 export type VaultHolding = typeof vaultHoldings.$inferSelect;
 export type NewVaultHolding = typeof vaultHoldings.$inferInsert;
-
-// =============================================================================
-// OPERATIONAL TABLES — observability, not business data
-// =============================================================================
-
-/**
- * Persistent record of failing sync operations (wallets, exchanges, etc).
- *
- * The cron runner increments `failure_count` each time a target fails and
- * resets the row when the target syncs successfully. Operators can query
- * `WHERE failure_count >= N` to find stuck targets without tailing logs.
- *
- * Rows are keyed by (kind, target_id) so each sync target has at most one
- * outstanding failure record.
- */
-export const syncFailures = pgTable(
-  'sync_failures',
-  {
-    id: uuid('id').defaultRandom().primaryKey(),
-    kind: text('kind').notNull(), // e.g. 'wallet', 'exchange', 'pricing'
-    targetId: text('target_id').notNull(), // wallet address, account id, etc.
-    failureCount: integer('failure_count').notNull().default(0),
-    lastError: text('last_error'),
-    lastAttemptAt: timestamp('last_attempt_at', { withTimezone: true }).notNull().defaultNow(),
-    firstFailedAt: timestamp('first_failed_at', { withTimezone: true }).notNull().defaultNow(),
-    metadata: jsonb('metadata'),
-  },
-  (table) => ({
-    uniqKindTarget: unique('sync_failures_kind_target_uq').on(table.kind, table.targetId),
-    kindIdx: index('sync_failures_kind_idx').on(table.kind),
-    failureCountIdx: index('sync_failures_failure_count_idx').on(table.failureCount),
-  })
-);
-
-export type SyncFailure = typeof syncFailures.$inferSelect;
-export type NewSyncFailure = typeof syncFailures.$inferInsert;
-
-/**
- * Persistent log of errors reported from the frontend V2 ErrorBoundary.
- *
- * Without an external error-reporting service, this gives operators a
- * single queryable table to see what's blowing up in the browser. The
- * columns are intentionally minimal — no PII, just the error shape and
- * the route that produced it.
- */
-export const clientErrors = pgTable(
-  'client_errors',
-  {
-    id: uuid('id').defaultRandom().primaryKey(),
-    userId: uuid('user_id'),
-    route: text('route'),
-    message: text('message').notNull(),
-    stack: text('stack'),
-    componentStack: text('component_stack'),
-    userAgent: text('user_agent'),
-    appVersion: text('app_version'),
-    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-  },
-  (table) => ({
-    createdAtIdx: index('client_errors_created_at_idx').on(table.createdAt),
-    userIdx: index('client_errors_user_id_idx').on(table.userId),
-  })
-);
-
-export type ClientError = typeof clientErrors.$inferSelect;
-export type NewClientError = typeof clientErrors.$inferInsert;

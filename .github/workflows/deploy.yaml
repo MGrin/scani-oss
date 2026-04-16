@@ -4,55 +4,25 @@ on:
   push:
     branches:
       - main
+  workflow_dispatch:
 
-# Ensure we wait for other workflows to complete
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  group: deploy-production
+  cancel-in-progress: false
 
 permissions:
-  checks: read
   contents: read
 
 jobs:
-  check-status:
-    runs-on: ubuntu-latest
-    permissions:
-      checks: read
-      contents: read
-    steps:
-      - name: Wait for lint workflow
-        uses: lewagon/wait-on-check-action@v1.3.1
-        with:
-          ref: ${{ github.ref }}
-          check-name: 'Run Biome Linter'
-          repo-token: ${{ secrets.GITHUB_TOKEN }}
-          wait-interval: 10
-      
-      - name: Wait for type-check workflow
-        uses: lewagon/wait-on-check-action@v1.3.1
-        with:
-          ref: ${{ github.ref }}
-          check-name: 'Run TypeScript Type Checking'
-          repo-token: ${{ secrets.GITHUB_TOKEN }}
-          wait-interval: 10
+  # ── Validate (reuses CI workflow) ────────────────────────────────────
+  validate:
+    uses: ./.github/workflows/ci.yml
 
-      - name: Wait for tests
-        uses: lewagon/wait-on-check-action@v1.3.1
-        with:
-          ref: ${{ github.ref }}
-          check-name: 'Run Tests'
-          repo-token: ${{ secrets.GITHUB_TOKEN }}
-          wait-interval: 10
-
-  check-changes:
+  # ── Detect changes & deploy ──────────────────────────────────────────
+  deploy:
+    name: Deploy
     runs-on: ubuntu-latest
-    needs: [check-status]  # Now depends on our own job instead of external workflows
-    permissions:
-      contents: read
-    outputs:
-      backend: ${{ steps.filter.outputs.backend }}
-      frontend: ${{ steps.filter.outputs.frontend }}
+    needs: validate
     steps:
       - uses: actions/checkout@v4
         with:
@@ -72,15 +42,8 @@ jobs:
               - 'apps/frontendV2/**'
               - 'packages/shared/**'
 
-  # All services are deployed via the Render REST API with a single account
-  # API key. Service IDs are public identifiers (not secret) and live in the
-  # workflow. The only secret is RENDER_API_KEY.
-  deploy-backend:
-    needs: [check-changes]
-    if: ${{ needs.check-changes.outputs.backend == 'true' }}
-    runs-on: ubuntu-latest
-    steps:
-      - name: Trigger backend deployment
+      - name: Deploy backend
+        if: steps.filter.outputs.backend == 'true' || github.event_name == 'workflow_dispatch'
         env:
           RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
         run: |
@@ -88,24 +51,18 @@ jobs:
             echo "RENDER_API_KEY secret is not set" >&2
             exit 1
           fi
+          echo "Deploying backend..."
           curl -fsS -X POST \
             -H "Authorization: Bearer $RENDER_API_KEY" \
             -H "Accept: application/json" \
             https://api.render.com/v1/services/srv-d3j88295pdvs739osbig/deploys
 
-  deploy-crons:
-    needs: [check-changes]
-    if: ${{ needs.check-changes.outputs.backend == 'true' }}
-    runs-on: ubuntu-latest
-    steps:
-      - name: Trigger cron service deployments
+      - name: Deploy cron services
+        if: steps.filter.outputs.backend == 'true' || github.event_name == 'workflow_dispatch'
         env:
           RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
         run: |
-          if [ -z "$RENDER_API_KEY" ]; then
-            echo "RENDER_API_KEY secret is not set" >&2
-            exit 1
-          fi
+          echo "Deploying cron services..."
           curl -fsS -X POST \
             -H "Authorization: Bearer $RENDER_API_KEY" \
             -H "Accept: application/json" \
@@ -115,20 +72,22 @@ jobs:
             -H "Accept: application/json" \
             https://api.render.com/v1/services/crn-d57rt26r433s73et96s0/deploys
 
-  deploy-frontend:
-    needs: [check-changes]
-    if: ${{ needs.check-changes.outputs.frontend == 'true' }}
-    runs-on: ubuntu-latest
-    steps:
-      - name: Trigger frontend deployment
+      - name: Deploy frontend
+        if: steps.filter.outputs.frontend == 'true' || github.event_name == 'workflow_dispatch'
         env:
           RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
         run: |
-          if [ -z "$RENDER_API_KEY" ]; then
-            echo "RENDER_API_KEY secret is not set" >&2
-            exit 1
-          fi
+          echo "Deploying frontend..."
           curl -fsS -X POST \
             -H "Authorization: Bearer $RENDER_API_KEY" \
             -H "Accept: application/json" \
             https://api.render.com/v1/services/srv-d3j8p37diees73fl6q30/deploys
+
+      - name: Summary
+        run: |
+          echo "### Deployment Summary" >> $GITHUB_STEP_SUMMARY
+          echo "| Service | Deployed |" >> $GITHUB_STEP_SUMMARY
+          echo "|---------|----------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Backend | ${{ steps.filter.outputs.backend == 'true' || github.event_name == 'workflow_dispatch' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Cron | ${{ steps.filter.outputs.backend == 'true' || github.event_name == 'workflow_dispatch' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Frontend | ${{ steps.filter.outputs.frontend == 'true' || github.event_name == 'workflow_dispatch' }} |" >> $GITHUB_STEP_SUMMARY

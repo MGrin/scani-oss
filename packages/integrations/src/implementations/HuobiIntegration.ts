@@ -102,16 +102,14 @@ export class HuobiIntegration extends ScaniIntegration {
 
       const holdings: IntegrationHolding[] = [];
       for (const [currency, balance] of aggregated) {
-        if (balance > 0) {
-          holdings.push({
-            symbol: currency.toUpperCase(),
-            name: currency.toUpperCase(),
-            balance: balance.toString(),
-            decimals: 8,
-            tokenType: 'crypto',
-            metadata: { exchange: 'huobi' },
-          });
-        }
+        holdings.push({
+          symbol: currency.toUpperCase(),
+          name: currency.toUpperCase(),
+          balance: balance.toString(),
+          decimals: 8,
+          tokenType: 'crypto',
+          metadata: { exchange: 'huobi' },
+        });
       }
 
       return { holdings, total: holdings.length, accountId, timestamp: new Date() };

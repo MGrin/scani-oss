@@ -1,3 +1,4 @@
+import Decimal from 'decimal.js';
 import { Container, Service } from 'typedi';
 import { db } from '../database/connection';
 import type { NewTokenPrice, Token } from '../domain/entities';
@@ -941,12 +942,16 @@ export class PricingService {
         return '0';
       }
 
-      const rate = parseFloat(conversionRate);
-      const originalPrice = parseFloat(price);
-      const convertedPrice = originalPrice * rate;
+      const convertedPrice = new Decimal(price).mul(new Decimal(conversionRate));
 
       logger.debug(
-        { originalPrice, rate, convertedPrice, fromCurrency, toCurrency },
+        {
+          originalPrice: price,
+          rate: conversionRate,
+          convertedPrice: convertedPrice.toString(),
+          fromCurrency,
+          toCurrency,
+        },
         'Price converted'
       );
 

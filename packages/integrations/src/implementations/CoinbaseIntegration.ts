@@ -123,11 +123,6 @@ export class CoinbaseIntegration extends ScaniIntegration {
       }
 
       const holdingsWithNull = balances.map((balance) => {
-        const totalBalance = parseFloat(balance.balance);
-        if (totalBalance === 0) {
-          return null;
-        }
-
         // Coinbase fiat wallets map to 'fiat', everything else to 'crypto'
         const tokenType = balance.type === 'fiat' ? ('fiat' as const) : ('crypto' as const);
 
