@@ -29,6 +29,7 @@ export class PerplexityProvider extends AIProvider {
       accountType?: string;
       expectedCurrency?: string;
       context?: string;
+      mimeType?: string;
     }
   ): Promise<AIProviderResponse> {
     if (!this.isConfigured()) {
@@ -68,7 +69,7 @@ export class PerplexityProvider extends AIProvider {
                 {
                   type: 'image_url',
                   image_url: {
-                    url: `data:image/jpeg;base64,${imageBase64}`,
+                    url: `data:${options?.mimeType || 'image/jpeg'};base64,${imageBase64}`,
                   },
                 },
               ],

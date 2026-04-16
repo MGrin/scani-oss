@@ -47,7 +47,7 @@ export function SearchableDropdown({
     ? items.filter(
         (i) =>
           i.label.toLowerCase().includes(search.toLowerCase()) ||
-          (i.subtitle && i.subtitle.toLowerCase().includes(search.toLowerCase()))
+          i.subtitle?.toLowerCase().includes(search.toLowerCase())
       )
     : items;
 

@@ -33,7 +33,7 @@ export function parseCsvStatement(
 
   const rows = parseResult.data;
   if (rows.length === 0) {
-    return { transactions: [], format: 'csv', warnings: ['No data rows found'] };
+    return { transactions: [], holdings: [], format: 'csv', warnings: ['No data rows found'] };
   }
 
   // Build case-insensitive header lookup
@@ -81,6 +81,7 @@ export function parseCsvStatement(
 
   return {
     transactions,
+    holdings: [],
     format: 'csv',
     bankTemplate: detectedTemplate,
     detectedCurrency,
@@ -161,7 +162,8 @@ function parseRow(
   if (mapping.credit && mapping.debit) {
     const credit = parseNumber(getColumn(row, mapping.credit));
     const debit = parseNumber(getColumn(row, mapping.debit));
-    amount = (credit || 0) - (debit || 0);
+    // Use Math.abs for debit since some banks (e.g. Monzo) put negative values in "Money Out"
+    amount = (credit || 0) - Math.abs(debit || 0);
   } else {
     const rawAmount = parseNumber(getColumn(row, mapping.amount));
     if (rawAmount === null) return null;
@@ -193,6 +195,10 @@ function parseNumber(value: string | undefined): number | null {
   // Handle European format (1.234,56 → 1234.56)
   if (/\d+\.\d{3},\d{2}$/.test(normalized)) {
     normalized = normalized.replace(/\./g, '').replace(',', '.');
+  }
+  // Handle US/UK thousands format (1,234 or 12,896.83 or 1,234,567.89)
+  else if (/^-?\d{1,3}(,\d{3})+(\.\d+)?$/.test(normalized)) {
+    normalized = normalized.replace(/,/g, '');
   }
   // Handle comma as decimal separator (1234,56 → 1234.56)
   else if (/,\d{1,2}$/.test(normalized)) {

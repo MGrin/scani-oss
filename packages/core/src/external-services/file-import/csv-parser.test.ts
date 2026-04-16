@@ -153,6 +153,74 @@ describe('parseCsvStatement', () => {
     });
   });
 
+  describe('US thousands separator format', () => {
+    const usCsv = `Date,Product name,Description,Money in,Money out,Balance
+1 Apr 2026,,Money brought forward,,,"$12,896.83"
+2 Apr 2026,Savings,Withdrawal,,$398.78,"$12,500.00"
+3 Apr 2026,Savings,Deposit,"$1,000.00",,"$13,500.00"`;
+
+    it('should parse US thousands format ($12,896.83)', () => {
+      const result = parseCsvStatement(usCsv);
+      expect(result.transactions[0]!.balance).toBe(12896.83);
+    });
+
+    it('should parse negative debit with US format', () => {
+      const result = parseCsvStatement(usCsv);
+      // Withdrawal row: credit=0, debit=398.78 → amount = -398.78
+      expect(result.transactions[1]!.amount).toBe(-398.78);
+    });
+
+    it('should parse credit with US thousands format ($1,000.00)', () => {
+      const result = parseCsvStatement(usCsv);
+      // Deposit row: credit=1000, debit=0 → amount = 1000
+      expect(result.transactions[2]!.amount).toBe(1000);
+    });
+
+    it('should parse balance with US thousands format ($13,500.00)', () => {
+      const result = parseCsvStatement(usCsv);
+      expect(result.transactions[2]!.balance).toBe(13500);
+    });
+  });
+
+  describe('Monzo CSV format', () => {
+    const monzoCsv = `Transaction ID,Date,Time,Type,Name,Emoji,Category,Amount,Currency,Local amount,Local currency,Notes and #tags,Address,Receipt,Description,Category split,Money Out,Money In
+tx_001,12/03/2026,11:26:03,Card payment,Coffee Shop,☕,Eating out,-13.03,GBP,-13.03,GBP,,,,,,-13.03,
+tx_002,13/03/2026,07:09:51,Faster payment,Employer,,Income,2000.00,GBP,2000.00,GBP,,,,,,2000.00`;
+
+    it('should auto-detect Monzo template', () => {
+      const result = parseCsvStatement(monzoCsv);
+      expect(result.bankTemplate).toBe('monzo');
+    });
+
+    it('should parse amounts correctly (using Amount column)', () => {
+      const result = parseCsvStatement(monzoCsv);
+      expect(result.transactions[0]!.amount).toBe(-13.03);
+      expect(result.transactions[1]!.amount).toBe(2000);
+    });
+
+    it('should detect GBP currency', () => {
+      const result = parseCsvStatement(monzoCsv);
+      expect(result.detectedCurrency).toBe('GBP');
+    });
+  });
+
+  describe('Negative debit values (credit/debit split)', () => {
+    const negativeCsv = `Date,Description,Money in,Money out,Balance
+2024-01-01,Deposit,100.00,,100.00
+2024-01-02,Payment,,-50.00,50.00`;
+
+    it('should handle negative values in debit column via Math.abs', () => {
+      const result = parseCsvStatement(negativeCsv);
+      // Money out = -50.00 → Math.abs(-50) = 50 → amount = 0 - 50 = -50
+      expect(result.transactions[1]!.amount).toBe(-50);
+    });
+
+    it('should handle positive credit correctly', () => {
+      const result = parseCsvStatement(negativeCsv);
+      expect(result.transactions[0]!.amount).toBe(100);
+    });
+  });
+
   describe('Edge cases', () => {
     it('should return empty for empty content', () => {
       const result = parseCsvStatement('');

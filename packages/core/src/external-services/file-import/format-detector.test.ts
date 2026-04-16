@@ -1,9 +1,27 @@
 import { describe, expect, it } from 'bun:test';
-import { detectBankTemplate, detectFormat } from './format-detector';
+import { detectBankTemplate, detectFormat, isInteractiveBrokersCsv } from './format-detector';
 
 describe('detectFormat', () => {
   it('should detect CSV by extension', () => {
     expect(detectFormat('data', 'statement.csv')).toBe('csv');
+  });
+
+  it('should detect PDF by extension', () => {
+    expect(detectFormat('data', 'statement.pdf')).toBe('pdf');
+  });
+
+  it('should detect QIF by extension', () => {
+    expect(detectFormat('data', 'export.qif')).toBe('qif');
+  });
+
+  it('should detect QIF by content (!Type:)', () => {
+    expect(detectFormat('!Type:Bank\nD12/03/2026\nT-50.00', undefined)).toBe('qif');
+  });
+
+  it('should detect IB CSV by extension + content', () => {
+    const ibContent =
+      'Statement,Header,Field Name,Field Value\nStatement,Data,BrokerName,Interactive Brokers LLC';
+    expect(detectFormat(ibContent, 'U7324249.csv')).toBe('ib-csv');
   });
 
   it('should detect TSV by extension', () => {
@@ -71,7 +89,35 @@ describe('detectBankTemplate', () => {
     ).toBe('wise');
   });
 
+  it('should detect Monzo headers', () => {
+    expect(
+      detectBankTemplate([
+        'Transaction ID',
+        'Date',
+        'Time',
+        'Type',
+        'Name',
+        'Emoji',
+        'Category',
+        'Amount',
+        'Currency',
+      ])
+    ).toBe('monzo');
+  });
+
   it('should return null for unknown headers', () => {
     expect(detectBankTemplate(['Col1', 'Col2', 'Col3'])).toBe(null);
+  });
+});
+
+describe('isInteractiveBrokersCsv', () => {
+  it('should detect IB CSV content', () => {
+    const content =
+      'Statement,Header,Field Name,Field Value\nStatement,Data,BrokerName,Interactive Brokers LLC';
+    expect(isInteractiveBrokersCsv(content)).toBe(true);
+  });
+
+  it('should not match regular CSV', () => {
+    expect(isInteractiveBrokersCsv('Date,Amount,Description\n2024-01-01,100,test')).toBe(false);
   });
 });

@@ -133,6 +133,7 @@ Rules:
       expectedCurrency?: string;
       context?: string;
       minConfidence?: number;
+      mimeType?: string;
     }
   ): Promise<ParsedPortfolio> {
     try {
@@ -140,6 +141,7 @@ Rules:
         provider: options?.provider || 'default',
         accountType: options?.accountType,
         expectedCurrency: options?.expectedCurrency,
+        mimeType: options?.mimeType,
       });
 
       // Check if any AI provider is available
@@ -155,6 +157,7 @@ Rules:
         accountType: options?.accountType,
         expectedCurrency: options?.expectedCurrency,
         context: options?.context,
+        mimeType: options?.mimeType,
         fallbackProviders: true, // Always try fallbacks
       });
 

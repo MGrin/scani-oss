@@ -28,7 +28,7 @@ function FilterPopover({
   // Reset search when tab changes
   useEffect(() => {
     setFilterSearch('');
-  }, [activeTab]);
+  }, []);
 
   return (
     <Popover open={open} onOpenChange={setOpen}>

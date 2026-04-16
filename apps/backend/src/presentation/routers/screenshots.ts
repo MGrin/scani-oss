@@ -7,8 +7,8 @@ import { protectedProcedure, router } from '../trpc';
 
 const screenshotsLogger = createComponentLogger('router:screenshots');
 
-// Supported image file extensions
-const SUPPORTED_EXTENSIONS = ['png', 'jpg', 'jpeg', 'gif', 'webp'] as const;
+// Supported file extensions (images + PDF for AI vision parsing)
+const SUPPORTED_EXTENSIONS = ['png', 'jpg', 'jpeg', 'gif', 'webp', 'pdf'] as const;
 type SupportedExtension = (typeof SUPPORTED_EXTENSIONS)[number];
 
 const parseScreenshotUseCase = Container.get(ParseScreenshotUseCase);
@@ -85,9 +85,13 @@ export const screenshotsRouter = router({
             return result;
           }
 
+          // Determine MIME type for PDF files
+          const mimeType = extension === 'pdf' ? 'application/pdf' : file.contentType || undefined;
+
           // Parse screenshot using ParseScreenshotUseCase
           const portfolio = await parseScreenshotUseCase.execute({
             imageBase64: file.data,
+            mimeType,
             provider: input.provider,
             accountType: input.accountType,
             expectedCurrency: input.expectedCurrency,

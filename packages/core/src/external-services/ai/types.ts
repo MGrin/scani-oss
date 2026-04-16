@@ -111,6 +111,8 @@ export abstract class AIProvider {
       accountType?: string;
       expectedCurrency?: string;
       context?: string;
+      /** MIME type for the data (default: image/jpeg). Use application/pdf for PDF files. */
+      mimeType?: string;
     }
   ): Promise<AIProviderResponse>;
 

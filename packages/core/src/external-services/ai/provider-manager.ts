@@ -86,6 +86,7 @@ export class AIProviderManager {
       accountType?: string;
       expectedCurrency?: string;
       context?: string;
+      mimeType?: string;
       fallbackProviders?: boolean;
     }
   ): Promise<AIProviderResponse> {
@@ -99,6 +100,7 @@ export class AIProviderManager {
         accountType: options?.accountType,
         expectedCurrency: options?.expectedCurrency,
         context: options?.context,
+        mimeType: options?.mimeType,
       });
     } catch (error) {
       this.logger.error(
@@ -128,6 +130,7 @@ export class AIProviderManager {
             accountType: options?.accountType,
             expectedCurrency: options?.expectedCurrency,
             context: options?.context,
+            mimeType: options?.mimeType,
           });
 
           // Add fallback info to metadata

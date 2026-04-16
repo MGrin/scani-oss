@@ -14,7 +14,7 @@ import {
 } from '../components/shared/AccountSelectionStep';
 import { V2_ROUTES } from '../lib/routes';
 
-type Step = 'account' | 'upload' | 'processing' | 'review' | 'csvResult';
+type Step = 'account' | 'upload' | 'processing' | 'review';
 
 interface ExtractedHolding {
   symbol: string;
@@ -36,6 +36,7 @@ function nextClientId(): string {
 }
 
 const IMAGE_EXTENSIONS = ['png', 'jpg', 'jpeg', 'gif', 'webp'];
+const PDF_EXTENSIONS = ['pdf'];
 
 function arrayBufferToBase64(buffer: ArrayBuffer): string {
   const bytes = new Uint8Array(buffer);
@@ -51,9 +52,12 @@ function isImageFile(filename: string): boolean {
   return IMAGE_EXTENSIONS.includes(ext);
 }
 
+function isPdfFile(filename: string): boolean {
+  const ext = filename.split('.').pop()?.toLowerCase() || '';
+  return PDF_EXTENSIONS.includes(ext);
+}
+
 // URL params are untrusted input — validate shape before using them as IDs.
-// We don't require a strict UUID here (the backend enforces that), but we do
-// reject obviously bad input like control characters or oversized strings.
 function sanitizeUrlId(value: string | null): string {
   if (!value) return '';
   if (value.length > 100) return '';
@@ -68,16 +72,12 @@ export function FileImportPage() {
   const urlInstitutionId = sanitizeUrlId(searchParams.get('institutionId'));
 
   const screenshotMutation = trpc.screenshots.parseScreenshots.useMutation();
-  const csvParseMutation = trpc.fileImport.parse.useMutation();
+  const fileEnrichMutation = trpc.fileImport.parseAndEnrich.useMutation();
   const utils = trpc.useUtils();
 
   const createMutation = trpc.batchOperations.createHoldingsWithDependencies.useMutation({
     onSuccess: async () => {
       showSuccess('Holdings imported successfully');
-      // `refetchType: 'all'` is critical: without it, inactive observers
-      // (the Holdings list page we're about to navigate to) are only marked
-      // stale and never refetched — React Query's `refetchOnMount: false`
-      // then serves the pre-mutation cache on arrival.
       await Promise.all([
         utils.holdings.getWithDetails.invalidate(undefined, { refetchType: 'all' }),
         utils.accounts.getAll.invalidate(undefined, { refetchType: 'all' }),
@@ -114,8 +114,7 @@ export function FileImportPage() {
   const [fileName, setFileName] = useState('');
   const [extractedHoldings, setExtractedHoldings] = useState<ExtractedHolding[]>([]);
   const [overallConfidence, setOverallConfidence] = useState<number | null>(null);
-  const [csvBalance, setCsvBalance] = useState<{ currency: string; balance: number } | null>(null);
-  const [csvHasNoBalance, setCsvHasNoBalance] = useState(false);
+  const [fileSource, setFileSource] = useState<'screenshot' | 'statement'>('screenshot');
 
   const handleFileSelect = useCallback(
     async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -128,6 +127,7 @@ export function FileImportPage() {
       try {
         if (isImageFile(file.name)) {
           // Screenshot path — AI extraction
+          setFileSource('screenshot');
           const buffer = await file.arrayBuffer();
           const base64 = arrayBufferToBase64(buffer);
 
@@ -152,51 +152,79 @@ export function FileImportPage() {
             showError(firstResult?.error || 'Failed to extract holdings', 'Screenshot parsing');
             setStep('upload');
           }
+        } else if (isPdfFile(file.name)) {
+          // PDF path — send as binary to screenshot AI pipeline
+          setFileSource('statement');
+          const buffer = await file.arrayBuffer();
+          const base64 = arrayBufferToBase64(buffer);
+
+          const parsed = await screenshotMutation.mutateAsync({
+            files: [{ filename: file.name, data: base64, contentType: 'application/pdf' }],
+            accountId: accountSelection.accountId || undefined,
+          });
+
+          // biome-ignore lint/suspicious/noExplicitAny: dynamic API response
+          const firstResult = (parsed as any)?.results?.[0];
+          if (firstResult?.success && firstResult.data) {
+            setExtractedHoldings(
+              (firstResult.data.holdings || []).map((h: ExtractedHolding) => ({
+                ...h,
+                removed: false,
+                clientId: nextClientId(),
+              }))
+            );
+            setOverallConfidence(firstResult.data.overallConfidence ?? null);
+            setStep('review');
+          } else {
+            showError(firstResult?.error || 'Failed to extract holdings from PDF', 'PDF parsing');
+            setStep('upload');
+          }
         } else {
-          // CSV/OFX path — extract balance from transactions
+          // CSV/OFX/QIF path — parse and enrich with holdings
+          setFileSource('statement');
           const text = await file.text();
           const base64 = btoa(unescape(encodeURIComponent(text)));
 
-          // Typed via the tRPC router inference — no `as any` needed.
-          const csvResult = await csvParseMutation.mutateAsync({
+          const enrichResult = await fileEnrichMutation.mutateAsync({
             content: base64,
             filename: file.name,
+            accountId: accountSelection.accountId || undefined,
           });
 
-          const transactions = csvResult?.transactions ?? [];
-          if (transactions.length > 0) {
-            // Find the latest transaction with a balance
-            const withBalance = transactions.filter(
-              (t): t is (typeof transactions)[number] & { balance: number } => t.balance !== null
+          const holdings = enrichResult?.holdings ?? [];
+          if (holdings.length > 0) {
+            setExtractedHoldings(
+              holdings.map((h) => ({
+                symbol: h.symbol,
+                name: h.name ?? undefined,
+                balance: h.balance,
+                confidence: h.confidence,
+                tokenId: h.tokenId ?? undefined,
+                holdingId: h.holdingId ?? undefined,
+                existingBalance: h.existingBalance ?? undefined,
+                removed: false,
+                clientId: nextClientId(),
+              }))
             );
-            if (withBalance.length > 0) {
-              const latest = withBalance[withBalance.length - 1];
-              if (latest) {
-                setCsvBalance({
-                  currency: csvResult.detectedCurrency || latest.currency || 'USD',
-                  balance: latest.balance,
-                });
-                setCsvHasNoBalance(false);
-              } else {
-                setCsvBalance(null);
-                setCsvHasNoBalance(true);
-              }
-            } else {
-              setCsvBalance(null);
-              setCsvHasNoBalance(true);
-            }
+            setOverallConfidence(null);
+            setStep('review');
           } else {
-            setCsvBalance(null);
-            setCsvHasNoBalance(true);
+            const warnings = enrichResult?.warnings ?? [];
+            showError(
+              warnings.length > 0
+                ? warnings.join('. ')
+                : 'No holdings could be extracted from this file',
+              'File parsing'
+            );
+            setStep('upload');
           }
-          setStep('csvResult');
         }
       } catch (err) {
         showError(err, 'Processing file');
         setStep('upload');
       }
     },
-    [screenshotMutation, csvParseMutation, accountSelection.accountId]
+    [screenshotMutation, fileEnrichMutation, accountSelection.accountId]
   );
 
   const activeHoldings = extractedHoldings.filter((h) => !h.removed);
@@ -230,10 +258,6 @@ export function FileImportPage() {
         account: accountSelection.newAccount
           ? {
               ...accountSelection.newAccount,
-              // Forward the selected existing institution onto the new account.
-              // If the user is creating a new institution (`newInstitution` set),
-              // leave institutionId undefined so the backend links the newly
-              // created institution via the top-level `institution` payload.
               institutionId: accountSelection.newInstitution
                 ? undefined
                 : accountSelection.institutionId,
@@ -264,7 +288,7 @@ export function FileImportPage() {
         </Button>
         <h2 className="text-2xl font-bold tracking-tight">Import File</h2>
         <p className="text-sm text-muted-foreground mt-1">
-          Upload a screenshot or bank statement to import holdings
+          Upload a screenshot, bank statement, or brokerage export to import holdings
         </p>
         {/* Progress indicator */}
         <div className="flex gap-1 mt-3">
@@ -295,7 +319,7 @@ export function FileImportPage() {
             onValidChange={setAccountValid}
           />
           <Button onClick={() => setStep('upload')} disabled={!accountValid} className="w-full">
-            Next: Upload Screenshot
+            Next: Upload File
             <ArrowRight className="h-4 w-4 ml-2" />
           </Button>
         </div>
@@ -315,11 +339,11 @@ export function FileImportPage() {
                 <Upload className="h-10 w-10 text-muted-foreground mb-3" />
                 <p className="text-sm font-medium">Click to upload file</p>
                 <p className="text-xs text-muted-foreground mt-1">
-                  Screenshots (PNG, JPG) or bank statements (CSV, OFX)
+                  Screenshots (PNG, JPG), bank statements (CSV, OFX, PDF), or brokerage exports
                 </p>
                 <input
                   type="file"
-                  accept=".png,.jpg,.jpeg,.webp,.csv,.ofx,.qfx,.tsv"
+                  accept=".png,.jpg,.jpeg,.webp,.csv,.ofx,.qfx,.tsv,.pdf,.qif"
                   className="hidden"
                   onChange={handleFileSelect}
                 />
@@ -334,9 +358,9 @@ export function FileImportPage() {
         <Card>
           <CardContent className="p-12 flex flex-col items-center justify-center text-center">
             <Loader2 className="h-8 w-8 animate-spin text-primary mb-4" />
-            <p className="font-medium">AI is analyzing your screenshot...</p>
+            <p className="font-medium">Processing your file...</p>
             <p className="text-xs text-muted-foreground mt-1">
-              Extracting holdings with computer vision. This may take 10-30 seconds.
+              Extracting holdings from your file. This may take a few seconds.
             </p>
           </CardContent>
         </Card>
@@ -346,7 +370,9 @@ export function FileImportPage() {
       {step === 'review' && (
         <div className="space-y-4">
           <div className="flex items-center gap-3 flex-wrap">
-            <Badge variant="outline">Screenshot</Badge>
+            <Badge variant="outline">
+              {fileSource === 'screenshot' ? 'Screenshot' : 'Bank Statement'}
+            </Badge>
             <span className="text-sm text-muted-foreground">
               {activeHoldings.length} holdings from {fileName}
             </span>
@@ -489,82 +515,6 @@ export function FileImportPage() {
               Upload Different
             </Button>
           </div>
-        </div>
-      )}
-
-      {/* CSV Result */}
-      {step === 'csvResult' && (
-        <div className="space-y-4">
-          <Badge variant="outline">Bank Statement</Badge>
-
-          {csvBalance && !csvHasNoBalance ? (
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-base">Detected Balance</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-3">
-                <p className="text-sm text-muted-foreground">
-                  The latest balance found in this bank statement:
-                </p>
-                <p className="text-2xl font-bold">
-                  {new Intl.NumberFormat('en-US', {
-                    style: 'currency',
-                    currency: csvBalance.currency,
-                    minimumFractionDigits: 2,
-                  }).format(csvBalance.balance)}
-                </p>
-                <p className="text-xs text-muted-foreground">Currency: {csvBalance.currency}</p>
-                <p className="text-xs text-muted-foreground mt-2">
-                  To import this balance as a holding, use Manual Entry with the amount pre-filled.
-                </p>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() =>
-                    navigate(
-                      `${V2_ROUTES.manualEntry}${accountSelection.accountId ? `?accountId=${accountSelection.accountId}` : ''}`
-                    )
-                  }
-                >
-                  Go to Manual Entry
-                </Button>
-              </CardContent>
-            </Card>
-          ) : (
-            <Card>
-              <CardContent className="p-6 text-center">
-                <p className="font-medium">No balance found in this file</p>
-                <p className="text-sm text-muted-foreground mt-1">
-                  This bank statement contains transactions but no final balance. You can enter
-                  holdings manually instead.
-                </p>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="mt-3"
-                  onClick={() =>
-                    navigate(
-                      `${V2_ROUTES.manualEntry}${accountSelection.accountId ? `?accountId=${accountSelection.accountId}` : ''}`
-                    )
-                  }
-                >
-                  Go to Manual Entry
-                </Button>
-              </CardContent>
-            </Card>
-          )}
-
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => {
-              setStep('upload');
-              setCsvBalance(null);
-              setCsvHasNoBalance(false);
-            }}
-          >
-            Upload Different File
-          </Button>
         </div>
       )}
     </div>

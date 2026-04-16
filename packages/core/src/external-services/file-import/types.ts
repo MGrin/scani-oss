@@ -13,6 +13,8 @@ export interface ParsedTransaction {
 /** Result of parsing a bank statement file */
 export interface ParseResult {
   transactions: ParsedTransaction[];
+  /** Direct holdings extracted from the file (final balances per currency/asset) */
+  holdings: ExtractedHolding[];
   /** Detected or overridden format */
   format: StatementFormat;
   /** Bank template used (for CSV) */
@@ -23,7 +25,21 @@ export interface ParseResult {
   warnings: string[];
 }
 
-export type StatementFormat = 'csv' | 'ofx' | 'mt940';
+/** A holding extracted from a file (final balance, not a transaction) */
+export interface ExtractedHolding {
+  /** Currency code (USD, EUR) or stock ticker (AAPL) */
+  symbol: string;
+  /** Human-readable name */
+  name?: string;
+  /** Balance as string for decimal precision */
+  balance: string;
+  /** Confidence 0-1 */
+  confidence: number;
+  /** Extra context */
+  notes?: string;
+}
+
+export type StatementFormat = 'csv' | 'ofx' | 'mt940' | 'ib-csv' | 'pdf' | 'qif';
 
 /** Column mapping for CSV files — maps logical fields to column names/indices */
 export interface CsvColumnMapping {
@@ -85,6 +101,13 @@ export const BANK_TEMPLATES: Record<string, CsvColumnMapping> = {
     currency: 'Currency',
     balance: 'Running Balance',
     dateFormat: 'dd-MM-yyyy',
+  },
+  monzo: {
+    date: 'Date',
+    description: 'Name',
+    amount: 'Amount',
+    currency: 'Currency',
+    dateFormat: 'dd/MM/yyyy',
   },
   generic: {
     date: 'date',

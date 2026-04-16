@@ -9,7 +9,13 @@ export function detectFormat(content: string, filename?: string): StatementForma
   // Extension-based detection
   if (ext === 'ofx' || ext === 'qfx') return 'ofx';
   if (ext === 'sta' || ext === 'mt940') return 'mt940';
-  if (ext === 'csv' || ext === 'tsv') return 'csv';
+  if (ext === 'pdf') return 'pdf';
+  if (ext === 'qif') return 'qif';
+  if (ext === 'csv' || ext === 'tsv') {
+    // Check if this is an Interactive Brokers multi-section CSV
+    if (isInteractiveBrokersCsv(content)) return 'ib-csv';
+    return 'csv';
+  }
 
   // Content-based detection
   const trimmed = content.trimStart();
@@ -19,6 +25,12 @@ export function detectFormat(content: string, filename?: string): StatementForma
 
   // MT940 files start with :20: (Transaction Reference Number)
   if (/^:20:/.test(trimmed)) return 'mt940';
+
+  // QIF files start with !Type:
+  if (trimmed.startsWith('!Type:')) return 'qif';
+
+  // IB CSV content-based detection
+  if (isInteractiveBrokersCsv(trimmed)) return 'ib-csv';
 
   // Default to CSV if it looks like structured text with delimiters
   if (trimmed.includes(',') || trimmed.includes(';') || trimmed.includes('\t')) return 'csv';
@@ -39,6 +51,7 @@ export function detectBankTemplate(headerRow: string[]): string | null {
     ['sberbank', matchScore(headers, ['Дата', 'Описание операции', 'Сумма'])],
     ['alfabank', matchScore(headers, ['Дата операции', 'Назначение платежа', 'Сумма'])],
     ['wise', matchScore(headers, ['Date', 'Description', 'Amount', 'Currency', 'Running Balance'])],
+    ['monzo', matchScore(headers, ['Transaction ID', 'Date', 'Name', 'Amount', 'Currency'])],
   ];
 
   const best = templateScores.sort((a, b) => b[1] - a[1])[0];
@@ -49,4 +62,17 @@ export function detectBankTemplate(headerRow: string[]): string | null {
 
 function matchScore(headers: Set<string>, required: string[]): number {
   return required.filter((r) => headers.has(r)).length;
+}
+
+/**
+ * Detect Interactive Brokers multi-section CSV format.
+ * IB CSVs start with "Statement,Header,Field Name,Field Value" and contain "Interactive Brokers".
+ */
+export function isInteractiveBrokersCsv(content: string): boolean {
+  const firstLines = content.slice(0, 500);
+  return (
+    firstLines.includes('Statement,') &&
+    firstLines.includes('BrokerName') &&
+    firstLines.includes('Interactive Brokers')
+  );
 }

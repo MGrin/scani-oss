@@ -95,6 +95,7 @@ export async function parseOfxStatement(content: string): Promise<ParseResult> {
 
     return {
       transactions,
+      holdings: [],
       format: 'ofx',
       detectedCurrency,
       warnings,
@@ -102,6 +103,7 @@ export async function parseOfxStatement(content: string): Promise<ParseResult> {
   } catch (error) {
     return {
       transactions: [],
+      holdings: [],
       format: 'ofx',
       warnings: [
         `Failed to parse OFX: ${error instanceof Error ? error.message : 'unknown error'}`,
