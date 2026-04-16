@@ -166,16 +166,16 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
 
       {/* Navigation */}
       <div className="flex-1 overflow-y-auto py-2">
-        <nav className="space-y-3 px-2">
+        <nav className={cn('space-y-3', collapsed ? 'px-1' : 'px-2')}>
           {NAV_SECTIONS.map((section, idx) => (
             <div key={section.title}>
-              {collapsed && idx > 0 && <div className="border-t border-border mb-2 -mx-1" />}
+              {collapsed && idx > 0 && <div className="border-t border-border mb-2" />}
               {!collapsed && (
                 <p className="px-2 mb-0.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/50">
                   {section.title}
                 </p>
               )}
-              <div className="space-y-px">
+              <div className={collapsed ? 'space-y-1' : 'space-y-px'}>
                 {section.items.map((item) => {
                   const Icon = ICON_MAP[item.icon] || PieChart;
                   return (
@@ -196,7 +196,7 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
       </div>
 
       {/* Footer */}
-      <div className="border-t border-border p-2 space-y-px">
+      <div className={cn('border-t border-border', collapsed ? 'p-1 space-y-1' : 'p-2 space-y-px')}>
         <SidebarNavLink
           to={V2_ROUTES.settings}
           icon={Settings}
