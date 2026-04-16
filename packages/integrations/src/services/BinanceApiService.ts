@@ -287,7 +287,7 @@ export class BinanceApiService {
       const queryString = this.createSignedQueryString(apiSecret);
 
       const response = await this.executeWithRateLimit(() =>
-        fetch(`${this.baseUrl}/sapi/v3/account?${queryString}`, {
+        fetch(`${this.baseUrl}/api/v3/account?${queryString}`, {
           headers: {
             'X-MBX-APIKEY': apiKey,
           },

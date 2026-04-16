@@ -16,7 +16,7 @@ describe('BinanceApiService', () => {
       expect(result).toBe(true);
 
       const call = (globalThis.fetch as ReturnType<typeof mock>).mock.calls[0];
-      expect(call![0]).toContain('/sapi/v3/account?');
+      expect(call![0]).toContain('/api/v3/account?');
       expect(call![0]).toContain('signature=');
       const headers = call![1]?.headers as Record<string, string>;
       expect(headers).toHaveProperty('X-MBX-APIKEY', 'valid-key');
