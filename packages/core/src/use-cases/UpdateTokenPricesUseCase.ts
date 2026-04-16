@@ -136,7 +136,7 @@ export class UpdateTokenPricesUseCase {
             tokenSymbol: token.symbol,
             error: 'Failed to fetch price or price is zero',
           });
-          logger.warn(
+          logger.debug(
             {
               tokenId: token.id,
               symbol: token.symbol,
@@ -186,15 +186,27 @@ export class UpdateTokenPricesUseCase {
 
       const durationMs = Date.now() - startTime;
 
-      logger.info(
-        {
-          tokensFound: uniqueTokenIds.length,
-          tokensUpdated,
-          tokensFailed,
-          durationMs,
-        },
-        'Token price update completed'
-      );
+      if (tokensFailed > 0) {
+        logger.warn(
+          {
+            tokensFound: uniqueTokenIds.length,
+            tokensUpdated,
+            tokensFailed,
+            failedSymbols: errors.map((e) => e.tokenSymbol).slice(0, 20),
+            durationMs,
+          },
+          'Token price update completed with failures'
+        );
+      } else {
+        logger.info(
+          {
+            tokensFound: uniqueTokenIds.length,
+            tokensUpdated,
+            durationMs,
+          },
+          'Token price update completed'
+        );
+      }
 
       return {
         tokensFound: uniqueTokenIds.length,

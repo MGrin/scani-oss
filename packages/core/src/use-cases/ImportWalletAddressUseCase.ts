@@ -317,7 +317,7 @@ export class ImportWalletAddressUseCase {
           continue;
         }
 
-        logger.info(
+        logger.debug(
           {
             userId,
             institutionId,
@@ -351,7 +351,7 @@ export class ImportWalletAddressUseCase {
         // EXTERNAL API CALL - Fetch holdings from blockchain (5-30 seconds each)
         const holdingsResult = await integration.fetchHoldings(input.address);
 
-        logger.info(
+        logger.debug(
           {
             userId,
             institutionId,
@@ -424,7 +424,7 @@ export class ImportWalletAddressUseCase {
           }
         }
 
-        logger.info(
+        logger.debug(
           {
             userId,
             institutionId,
@@ -544,7 +544,7 @@ export class ImportWalletAddressUseCase {
               }
 
               accountId = newAccount.id;
-              logger.info(
+              logger.debug(
                 {
                   userId,
                   accountId,
@@ -650,7 +650,7 @@ export class ImportWalletAddressUseCase {
                     tx
                   );
 
-                  logger.info(
+                  logger.debug(
                     {
                       userId,
                       holdingId: existingHolding.id,
@@ -696,7 +696,7 @@ export class ImportWalletAddressUseCase {
                     tx
                   );
 
-                  logger.info(
+                  logger.debug(
                     {
                       userId,
                       holdingId: newHolding.id,

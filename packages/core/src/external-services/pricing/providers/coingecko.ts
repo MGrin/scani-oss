@@ -22,6 +22,10 @@ interface CoinGeckoProviderDependencies {
   createFailureResult: CreateFailureResultFn;
 }
 
+// CoinGecko's /simple/price endpoint has a practical URL length limit.
+// With long coin IDs, ~250 IDs keeps URLs well under browser/server limits.
+const COINGECKO_MAX_IDS_PER_REQUEST = 250;
+
 export class CoinGeckoProvider implements PricingProvider {
   readonly key = 'coinGecko';
 
@@ -29,12 +33,30 @@ export class CoinGeckoProvider implements PricingProvider {
 
   async fetchPrices(
     tokens: TokenWithProvider[],
-    { baseCurrency, timestamp }: ProviderExecutionContext
+    context: ProviderExecutionContext
   ): Promise<ProviderPriceResult[]> {
     if (tokens.length === 0) {
       return [];
     }
 
+    // Split into chunks to avoid URL length overflow
+    if (tokens.length > COINGECKO_MAX_IDS_PER_REQUEST) {
+      const results: ProviderPriceResult[] = [];
+      for (let i = 0; i < tokens.length; i += COINGECKO_MAX_IDS_PER_REQUEST) {
+        const chunk = tokens.slice(i, i + COINGECKO_MAX_IDS_PER_REQUEST);
+        const chunkResults = await this.fetchPricesChunk(chunk, context);
+        results.push(...chunkResults);
+      }
+      return results;
+    }
+
+    return this.fetchPricesChunk(tokens, context);
+  }
+
+  private async fetchPricesChunk(
+    tokens: TokenWithProvider[],
+    { baseCurrency, timestamp }: ProviderExecutionContext
+  ): Promise<ProviderPriceResult[]> {
     const { rateLimiter, convertPrice, createFailureResult } = this.deps;
     const coinIds = tokens
       .map(({ providerTokenId, token }) => providerTokenId || token.symbol.toLowerCase())

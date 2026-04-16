@@ -42,20 +42,54 @@ export interface CustomLogger extends pino.Logger {
   fatal(obj: LogContext, message: string): void;
 }
 
-// Determine if we're in development mode
+// Determine environment mode
+const isProduction = process.env.NODE_ENV === 'production';
 const isDevelopment = process.env.NODE_ENV === 'development' || !process.env.NODE_ENV;
 
 // Configuration from environment variables
 export const logConfig = {
-  level: process.env.LOG_LEVEL || (isDevelopment ? 'debug' : 'info'),
-  pretty: process.env.LOG_PRETTY === 'true' || isDevelopment,
+  level: (process.env.LOG_LEVEL || (isDevelopment ? 'debug' : 'info')).toLowerCase(),
+  pretty: isProduction ? false : process.env.LOG_PRETTY === 'true' || isDevelopment,
   timestamp: process.env.LOG_TIMESTAMP !== 'false',
-  colorize: process.env.LOG_COLORIZE !== 'false' && isDevelopment,
+  colorize: isProduction ? false : process.env.LOG_COLORIZE !== 'false' && isDevelopment,
   logSqlQueries: process.env.LOG_SQL_QUERIES === 'true',
   logRequestBodies: process.env.LOG_REQUEST_BODIES === 'true',
   logResponseBodies: process.env.LOG_RESPONSE_BODIES === 'true',
   logWebSocketMessages: process.env.LOG_WEBSOCKET_MESSAGES !== 'false',
 };
+
+/**
+ * Redact sensitive query parameters from URLs before logging.
+ * Prevents JWT tokens, API keys, etc. from appearing in log output.
+ */
+const SENSITIVE_PARAMS = new Set([
+  'token',
+  'api_key',
+  'apikey',
+  'key',
+  'secret',
+  'password',
+  'authorization',
+]);
+
+export function sanitizeUrl(url: string): string {
+  try {
+    const parsed = new URL(url);
+    let changed = false;
+    for (const param of SENSITIVE_PARAMS) {
+      if (parsed.searchParams.has(param)) {
+        parsed.searchParams.set(param, '[REDACTED]');
+        changed = true;
+      }
+    }
+    return changed ? parsed.toString() : url;
+  } catch {
+    return url.replace(
+      /([?&])(token|api_key|apikey|key|secret|password|authorization)=[^&]*/gi,
+      '$1$2=[REDACTED]'
+    );
+  }
+}
 
 // Custom human-readable console writer for development
 const createHumanReadableLogger = () => {

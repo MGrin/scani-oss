@@ -473,7 +473,7 @@ export class TokenService extends BaseService {
       );
 
       this.assertExists(token, 'Failed to create token');
-      this.logInfo('Token created from integration mapping', {
+      this.logDebug('Token created from integration mapping', {
         tokenId: token.id,
         symbol: token.symbol,
         tokenType: tokenType.code,

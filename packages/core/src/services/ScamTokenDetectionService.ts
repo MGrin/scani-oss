@@ -145,7 +145,7 @@ export class ScamTokenDetectionService extends BaseService {
     probability = Math.min(probability, 1.0);
 
     if (probability > 0.5) {
-      this.logInfo('High scam probability detected', {
+      this.logDebug('High scam probability detected', {
         symbol,
         name,
         probability: probability.toFixed(2),

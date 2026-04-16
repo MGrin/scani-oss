@@ -8,7 +8,7 @@ const env = loadEnv();
 import { cors } from '@elysiajs/cors';
 import { trpc } from '@elysiajs/trpc';
 import { supabase } from '@scani/core/lib/supabase';
-import { createTimer, logger, wsLogger } from '@scani/core/utils/logger';
+import { createTimer, logger, sanitizeUrl, wsLogger } from '@scani/core/utils/logger';
 import { IntegrationManager } from '@scani/integrations';
 import { sql } from 'drizzle-orm';
 import { Elysia } from 'elysia';
@@ -87,13 +87,14 @@ const app = new Elysia()
     set.headers['x-request-id'] = requestId;
 
     const isHealthCheck = url.pathname === '/health';
+    const shouldSkipLogging = isHealthCheck || request.method === 'OPTIONS';
 
-    if (!isHealthCheck) {
+    if (!shouldSkipLogging) {
       logger.info(
         {
           requestId,
           method: request.method,
-          url: request.url,
+          url: sanitizeUrl(request.url),
           userAgent: request.headers.get('user-agent'),
           contentType: request.headers.get('content-type'),
           origin: request.headers.get('origin'),
@@ -129,8 +130,9 @@ const app = new Elysia()
 
     const url = new URL(request.url);
     const isHealthCheck = url.pathname === '/health';
+    const shouldSkipLogging = isHealthCheck || request.method === 'OPTIONS';
 
-    if (!isHealthCheck) {
+    if (!shouldSkipLogging) {
       const statusCode =
         typeof set.status === 'number'
           ? set.status
@@ -142,7 +144,7 @@ const app = new Elysia()
       const logData = {
         requestId,
         method: request.method,
-        url: request.url,
+        url: sanitizeUrl(request.url),
         statusCode,
         duration: duration ? `${duration}ms` : undefined,
         contentType: set.headers?.['content-type'],
@@ -171,7 +173,7 @@ const app = new Elysia()
       {
         requestId,
         method: request.method,
-        url: request.url,
+        url: sanitizeUrl(request.url),
         duration: duration ? `${duration}ms` : undefined,
         error: {
           name: errorName,
@@ -217,6 +219,8 @@ const app = new Elysia()
   );
 
 app
+  // Root path handler — prevents 404 errors from Render health probes during deploys
+  .get('/', () => ({ status: 'ok', service: 'scani-backend' }))
   .get('/health', () => ({
     status: 'ok',
     timestamp: new Date().toISOString(),

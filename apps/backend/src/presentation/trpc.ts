@@ -1,4 +1,10 @@
-import { createTimer, generateRequestId, logConfig, trpcLogger } from '@scani/core/utils/logger';
+import {
+  createTimer,
+  generateRequestId,
+  logConfig,
+  sanitizeUrl,
+  trpcLogger,
+} from '@scani/core/utils/logger';
 import { initTRPC, TRPCError } from '@trpc/server';
 import type { FetchCreateContextFnOptions } from '@trpc/server/adapters/fetch';
 import { type AuthContext, createAuthContext } from './middleware/auth';
@@ -24,7 +30,7 @@ export const createContext = async (opts?: FetchCreateContextFnOptions): Promise
       {
         requestId,
         method: opts.req.method,
-        url: opts.req.url,
+        url: sanitizeUrl(opts.req.url),
         userAgent: opts.req.headers.get('user-agent'),
         contentType: opts.req.headers.get('content-type'),
       },

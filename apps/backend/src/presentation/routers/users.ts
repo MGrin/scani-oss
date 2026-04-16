@@ -37,7 +37,6 @@ export const usersRouter = router({
   // Delete all user data (accounts, holdings, wallets, credentials, groups, vaults)
   deleteAllData: protectedProcedure.mutation(async ({ ctx }) => {
     const { dbUser } = await requireAuth(ctx);
-    usersLogger.warn({ userId: dbUser.id }, 'User requested deletion of all data');
     return await SettingsImplementations.deleteAllData({ userId: dbUser.id, dbUser }, {});
   }),
 });

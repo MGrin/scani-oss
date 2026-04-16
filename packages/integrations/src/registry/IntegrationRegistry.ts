@@ -77,7 +77,7 @@ class IntegrationRegistry {
   createIntegration(institutionId: string): ScaniIntegration | null {
     const config = this.get(institutionId);
     if (!config) {
-      logger.warn({ institutionId }, 'Integration not found in registry');
+      logger.debug({ institutionId }, 'Integration not found in registry');
       return null;
     }
 

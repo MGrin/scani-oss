@@ -68,8 +68,72 @@ const GLOBAL_INTEGRATION_RATE_LIMITERS = {
 };
 
 /**
+ * Create a blockchain integration factory for a given chain mapping.
+ * Returns a function that creates the correct integration type on demand.
+ */
+function createBlockchainIntegrationFactory(
+  institutionId: string,
+  chainConfig: ChainConfig,
+  chainType: string
+): (() => ScaniIntegration) | null {
+  const ETHERSCAN_API_KEY = process.env.ETHERSCAN_API_KEY || '';
+
+  switch (chainType) {
+    case 'evm':
+      return () =>
+        new EvmChainIntegration(
+          institutionId,
+          chainConfig,
+          ETHERSCAN_API_KEY,
+          GLOBAL_INTEGRATION_RATE_LIMITERS.etherscan,
+          undefined,
+          undefined
+        );
+    case 'bitcoin':
+      return () =>
+        new BitcoinIntegration(
+          institutionId,
+          chainConfig,
+          GLOBAL_INTEGRATION_RATE_LIMITERS.bitcoin,
+          undefined,
+          undefined
+        );
+    case 'solana':
+      return () =>
+        new SolanaIntegration(
+          institutionId,
+          chainConfig,
+          GLOBAL_INTEGRATION_RATE_LIMITERS.solana,
+          undefined,
+          undefined
+        );
+    case 'tron':
+      return () =>
+        new TronIntegration(
+          institutionId,
+          chainConfig,
+          GLOBAL_INTEGRATION_RATE_LIMITERS.tron,
+          undefined,
+          undefined
+        );
+    case 'ton':
+      return () =>
+        new TonIntegration(
+          institutionId,
+          chainConfig,
+          GLOBAL_INTEGRATION_RATE_LIMITERS.ton,
+          undefined,
+          undefined
+        );
+    default:
+      return null;
+  }
+}
+
+/**
  * Initialize the integration registry
  * This happens once at startup and registers all available integrations
+ * (exchanges AND blockchains) so the registry is the single source of truth.
  */
 async function initializeIntegrationRegistry(): Promise<void> {
   if (integrationRegistry.size() > 0) {
@@ -79,14 +143,13 @@ async function initializeIntegrationRegistry(): Promise<void> {
 
   logger.debug('Initializing integration registry with all configurations');
 
-  // First, register all integrations with their static IDs
+  // First, register all exchange integrations with their static IDs
   allIntegrationConfigs.forEach((config) => {
     integrationRegistry.register(config);
   });
 
   // Then, dynamically register exchange integrations with their database UUIDs
   try {
-    // Auto-discover exchange names from registered configs (single source of truth)
     const knownExchanges = allIntegrationConfigs.map((config) => config.name);
 
     for (const exchangeName of knownExchanges) {
@@ -97,14 +160,12 @@ async function initializeIntegrationRegistry(): Promise<void> {
         .limit(1);
 
       if (institution) {
-        // Find the corresponding config by the static name
         const staticConfig = allIntegrationConfigs.find((config) => config.name === exchangeName);
 
         if (staticConfig) {
-          // Register the same integration with the database UUID
           integrationRegistry.register({
             ...staticConfig,
-            institutionId: institution.id, // Use the database UUID
+            institutionId: institution.id,
           });
           logger.debug(
             {
@@ -121,6 +182,47 @@ async function initializeIntegrationRegistry(): Promise<void> {
     logger.warn(
       { error },
       'Failed to register exchanges with database UUIDs - will fall back to static IDs'
+    );
+  }
+
+  // Register blockchain integrations from DB mappings so the registry
+  // is the single source of truth (no more fallback to InstitutionBlockchainMappingRepository)
+  try {
+    const mappings = await db
+      .select()
+      .from(schema.institutionBlockchainMappings)
+      .where(eq(schema.institutionBlockchainMappings.isActive, true));
+
+    let registered = 0;
+    for (const mapping of mappings) {
+      const chainConfig = getChainConfig(mapping.chainId);
+      if (!chainConfig) continue;
+
+      const factory = createBlockchainIntegrationFactory(
+        mapping.institutionId,
+        chainConfig,
+        mapping.chainType
+      );
+      if (!factory) continue;
+
+      integrationRegistry.register({
+        institutionId: mapping.institutionId,
+        name: chainConfig.name,
+        type: 'blockchain',
+        authType: 'rpc',
+        createIntegration: factory,
+      });
+      registered++;
+    }
+
+    logger.info(
+      { blockchainCount: registered, exchangeCount: allIntegrationConfigs.length },
+      'Integration registry initialized'
+    );
+  } catch (error) {
+    logger.warn(
+      { error },
+      'Failed to register blockchain integrations - will fall back to DB mappings'
     );
   }
 }

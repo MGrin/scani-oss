@@ -135,13 +135,17 @@ export class RealTimeUpdatesService extends EventEmitter {
    * Handle incoming messages from clients
    * Called from Elysia WebSocket 'message' handler
    */
-  handleMessage(connectionId: string, data: string | Buffer) {
+  handleMessage(connectionId: string, data: unknown) {
     try {
       const client = this.clients.get(connectionId);
       if (!client) return;
 
-      const payload = typeof data === 'string' ? data : data.toString();
-      const message = JSON.parse(payload);
+      // Elysia/Bun auto-parses JSON WebSocket messages, so `data` may already
+      // be a plain object rather than a string. Handle both cases.
+      const message =
+        typeof data === 'object' && data !== null && !(data instanceof Buffer)
+          ? (data as Record<string, unknown>)
+          : JSON.parse(typeof data === 'string' ? data : String(data));
       client.lastSeen = new Date();
 
       switch (message.type) {

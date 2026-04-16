@@ -1010,7 +1010,7 @@ export class PricingService {
         } else if (metadata.coingecko?.id || metadata.coinGeckoId) {
           provider = 'coinGecko';
           providerTokenId = metadata.coingecko?.id || metadata.coinGeckoId;
-          logger.info(
+          logger.debug(
             {
               tokenId: token.id,
               symbol: token.symbol,
@@ -1024,7 +1024,7 @@ export class PricingService {
           // DeFiLlama will be used as fallback if CoinGecko fails
           provider = 'coinGecko';
           providerTokenId = this.getProviderTokenId(provider, token, metadata);
-          logger.info(
+          logger.debug(
             {
               tokenId: token.id,
               symbol: token.symbol,
@@ -1063,6 +1063,14 @@ export class PricingService {
         providerTokenId,
       });
     }
+
+    const summary = Object.fromEntries(
+      Array.from(groupedTokens.entries()).map(([k, v]) => [k, v.length])
+    );
+    logger.info(
+      { providerAssignments: summary, totalTokens: tokensWithType.length },
+      'Tokens grouped by pricing provider'
+    );
 
     return groupedTokens;
   }
@@ -1214,7 +1222,7 @@ export class PricingService {
                   providerTokenId: `${metadata.chainId}:${metadata.contractAddress}`,
                 });
 
-                logger.info(
+                logger.debug(
                   {
                     tokenId: tokenWithProvider.token.id,
                     symbol: tokenWithProvider.token.symbol,
@@ -1238,8 +1246,11 @@ export class PricingService {
       if (defiLlamaProvider) {
         try {
           logger.info(
-            { tokenCount: tokensNeedingDeFiLlamaFallback.length },
-            'Fetching DeFiLlama fallback prices for tokens that failed CoinGecko'
+            {
+              count: tokensNeedingDeFiLlamaFallback.length,
+              symbols: tokensNeedingDeFiLlamaFallback.map((t) => t.token.symbol).slice(0, 10),
+            },
+            'CoinGecko→DeFiLlama fallback triggered'
           );
 
           const defiLlamaResults = await defiLlamaProvider.fetchPrices(
@@ -1582,7 +1593,7 @@ export class PricingService {
       this.updateTokenProviderMetadata(tokenId, providerName, cacheStrategy.sourcePrefix, error);
     }
 
-    logger.warn(
+    logger.debug(
       {
         error,
         tokenId,

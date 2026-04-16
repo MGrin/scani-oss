@@ -43,9 +43,9 @@ if (IS_CRON_JOB) {
 // - Larger connection pools (server-side limit, not pooler-limited)
 const connectionConfig: postgres.Options<Record<string, postgres.PostgresType>> = {
   max: 20, // Direct connection - can use larger pool (Render allows up to 97 connections)
-  idle_timeout: 30, // Close idle connections after 30 seconds
+  idle_timeout: 120, // Must exceed longest operation (wallet import ~75s) to avoid postgres.js negative timeout warnings
   connect_timeout: 10, // Fail fast on connection issues
-  max_lifetime: 60 * 60, // 1 hour max lifetime for connections
+  max_lifetime: 600, // 10 minutes — recycle connections regularly
   prepare: true, // Enable prepared statements - faster for repeated queries (direct connection supports this)
   fetch_types: true, // Fetch types on connect - enables proper type handling
   ssl: 'require', // Required for Render PostgreSQL
