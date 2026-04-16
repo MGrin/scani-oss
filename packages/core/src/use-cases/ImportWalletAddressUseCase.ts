@@ -45,6 +45,8 @@ export interface ImportWalletInput {
 }
 
 export interface ImportWalletResult {
+  /** Human-readable label for the imported wallet (displayName or shortened address) */
+  walletLabel: string;
   /** Created accounts (one per chain) */
   accounts: Array<{
     id: string;
@@ -78,6 +80,8 @@ export interface ImportWalletResult {
      */
     tokenScamProbability: number;
     balance: string;
+    /** Price of one unit of this token in the user's base currency, or null if unavailable */
+    priceInBaseCurrency: string | null;
   }>;
   /** Total number of chains detected */
   chainsDetected: number;
@@ -173,6 +177,7 @@ export class ImportWalletAddressUseCase {
         'No institutions detected for wallet - wallet may not exist on any configured chains or has no activity'
       );
       return {
+        walletLabel: this.computeWalletLabel(input.displayName, input.address),
         accounts: [],
         holdings: [],
         chainsDetected: 0,
@@ -671,6 +676,7 @@ export class ImportWalletAddressUseCase {
                     tokenIsNew: false,
                     tokenScamProbability: token.isScamProbability ?? 0,
                     balance: holding.balance,
+                    priceInBaseCurrency: null, // Enriched after warm-up
                   });
                 } else {
                   // Create new holding (within transaction)
@@ -713,6 +719,7 @@ export class ImportWalletAddressUseCase {
                     tokenIsNew,
                     tokenScamProbability: token.isScamProbability ?? 0,
                     balance: holding.balance,
+                    priceInBaseCurrency: null, // Enriched after warm-up
                   });
                 }
               } catch (error) {
@@ -791,11 +798,24 @@ export class ImportWalletAddressUseCase {
     //      breaking.
     //   2. Persists the results to `token_prices` via bulkUpsert, which
     //      is what the holdings query reads when rendering the UI.
-    await this.warmTokenPricesForImport(userId, result.holdings);
+    const prices = await this.warmTokenPricesForImport(userId, result.holdings);
 
-    const finalResult = {
+    // Enrich holdings with prices from the warm-up pass
+    const enrichedHoldings = result.holdings.map((h) => {
+      const price = prices.get(h.tokenId);
+      return {
+        ...h,
+        priceInBaseCurrency: price && price !== '0' ? price : null,
+      };
+    });
+
+    // Compute wallet label: displayName > shortened address
+    const walletLabel = this.computeWalletLabel(input.displayName, input.address);
+
+    const finalResult: ImportWalletResult = {
+      walletLabel,
       accounts: result.accounts,
-      holdings: result.holdings,
+      holdings: enrichedHoldings,
       chainsDetected: detectedInstitutionIds.length,
       tokensImported: result.holdings.length,
       errors,
@@ -829,8 +849,9 @@ export class ImportWalletAddressUseCase {
   private async warmTokenPricesForImport(
     userId: string,
     importedHoldings: ImportWalletResult['holdings']
-  ): Promise<void> {
-    if (importedHoldings.length === 0) return;
+  ): Promise<Map<string, string>> {
+    const emptyPrices = new Map<string, string>();
+    if (importedHoldings.length === 0) return emptyPrices;
 
     // Hard cap on how long we're willing to delay the import response to
     // warm prices. Chosen so a ~50-token wallet with healthy providers
@@ -838,11 +859,11 @@ export class ImportWalletAddressUseCase {
     // make the user wait forever.
     const WARM_UP_BUDGET_MS = 15_000;
 
-    const work = (async () => {
+    const work = (async (): Promise<Map<string, string>> => {
       const uniqueTokenIds = Array.from(new Set(importedHoldings.map((h) => h.tokenId)));
       const tokens = await this.tokenRepository.findByIds(uniqueTokenIds);
 
-      if (tokens.length === 0) return;
+      if (tokens.length === 0) return emptyPrices;
 
       // Resolve base currency once so prices are stored against the right
       // reference token. Fall back to USD — PricingService handles the
@@ -887,20 +908,22 @@ export class ImportWalletAddressUseCase {
         },
         'Token price warm-up completed'
       );
+
+      return prices;
     })();
 
-    const timeout = new Promise<void>((resolve) => {
+    const timeout = new Promise<Map<string, string>>((resolve) => {
       setTimeout(() => {
         logger.warn(
           { userId, budgetMs: WARM_UP_BUDGET_MS },
           'Token price warm-up exceeded time budget — returning early, cron will backfill'
         );
-        resolve();
+        resolve(emptyPrices);
       }, WARM_UP_BUDGET_MS);
     });
 
     try {
-      await Promise.race([work, timeout]);
+      return await Promise.race([work, timeout]);
     } catch (error) {
       // Swallow — the cron will backfill later and the user still has a
       // successful import. We just lose the "see values immediately" UX.
@@ -911,7 +934,20 @@ export class ImportWalletAddressUseCase {
         },
         'Token price warm-up failed (non-fatal — cron will backfill)'
       );
+      return emptyPrices;
     }
+  }
+
+  /**
+   * Compute the human-readable wallet label for the import result.
+   * Priority: displayName (which may be ENS-resolved by the frontend) > shortened address.
+   */
+  private computeWalletLabel(displayName: string | undefined, address: string): string {
+    if (displayName) return displayName;
+    if (address.length > 20) {
+      return `${address.substring(0, 6)}...${address.substring(address.length - 4)}`;
+    }
+    return address;
   }
 
   /**

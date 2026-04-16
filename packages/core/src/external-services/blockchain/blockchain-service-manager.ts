@@ -130,6 +130,23 @@ export class BlockchainServiceManager {
   }
 
   /**
+   * Resolve ENS name for an Ethereum address (mainnet only).
+   * Returns null if not resolvable or not an Ethereum address.
+   */
+  async resolveEnsName(address: string): Promise<string | null> {
+    const ethereumService = this.services.get(1); // Ethereum mainnet chainId
+    if (ethereumService?.resolveAddressName) {
+      try {
+        return await ethereumService.resolveAddressName(address);
+      } catch (_error) {
+        logger.debug({ address: `${address.substring(0, 10)}...` }, 'Failed to resolve ENS name');
+        return null;
+      }
+    }
+    return null;
+  }
+
+  /**
    * Detect which chains a wallet address exists on
    * Checks for any transaction activity (normal, internal, or token transactions)
    * Returns ALL chains where the wallet has activity, regardless of current balance

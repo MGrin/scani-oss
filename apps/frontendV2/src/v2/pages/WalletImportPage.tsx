@@ -24,7 +24,13 @@ export function WalletImportPage() {
   const [reviewedHoldingIds, setReviewedHoldingIds] = useState<Set<string>>(new Set());
 
   const detectMutation = trpc.wallet.detectChains.useMutation({
-    onSuccess: () => setStep('detected'),
+    onSuccess: (data) => {
+      // Auto-fill displayName with ENS name if the user hasn't provided one
+      if (data.ensName && !displayName.trim()) {
+        setDisplayName(data.ensName);
+      }
+      setStep('detected');
+    },
     onError: (err) => {
       showError(err, 'Detecting chains');
       setStep('input');
@@ -175,6 +181,14 @@ export function WalletImportPage() {
             <CardContent>
               {detectMutation.data.chainsDetected?.length > 0 ? (
                 <div className="space-y-2">
+                  {detectMutation.data.ensName && (
+                    <p className="text-sm text-muted-foreground">
+                      ENS name resolved:{' '}
+                      <span className="font-medium text-foreground">
+                        {detectMutation.data.ensName}
+                      </span>
+                    </p>
+                  )}
                   {detectMutation.data.chainsDetected.map((chain) => (
                     <div
                       key={String(chain.chainId)}
@@ -260,6 +274,8 @@ interface ResultStepProps {
   isBusy: boolean;
 }
 
+const SCAM_PROBABILITY_THRESHOLD = 0.35;
+
 function ResultStep({
   data,
   reviewedHoldingIds,
@@ -269,23 +285,36 @@ function ResultStep({
   onImportAnother,
   isBusy,
 }: ResultStepProps) {
-  // Group visible holdings by chain, preserving the server-side order within
-  // each group so sync output is stable across renders.
-  const grouped = useMemo(() => {
+  // Filter out likely-scam tokens, then group visible holdings by chain,
+  // preserving the server-side order within each group.
+  const { grouped, visibleCount, scamHiddenCount } = useMemo(() => {
     const map = new Map<string, ImportedHolding[]>();
+    let visible = 0;
+    let scamHidden = 0;
     for (const h of data.holdings) {
       if (reviewedHoldingIds.has(h.id)) continue;
+      if (h.tokenScamProbability >= SCAM_PROBABILITY_THRESHOLD) {
+        scamHidden++;
+        continue;
+      }
+      visible++;
       const key = h.chainName || 'Unknown chain';
       const list = map.get(key) ?? [];
       list.push(h);
       map.set(key, list);
     }
-    return Array.from(map.entries());
+    return {
+      grouped: Array.from(map.entries()),
+      visibleCount: visible,
+      scamHiddenCount: scamHidden,
+    };
   }, [data.holdings, reviewedHoldingIds]);
 
-  const visibleCount = data.holdings.length - reviewedHoldingIds.size;
   const newTokenCount = data.holdings.filter(
-    (h) => h.tokenIsNew && !reviewedHoldingIds.has(h.id)
+    (h) =>
+      h.tokenIsNew &&
+      !reviewedHoldingIds.has(h.id) &&
+      h.tokenScamProbability < SCAM_PROBABILITY_THRESHOLD
   ).length;
 
   return (
@@ -294,11 +323,17 @@ function ResultStep({
         <CardContent className="p-6 text-center">
           <Wallet className="h-10 w-10 mx-auto text-green-500 mb-3" />
           <h3 className="text-lg font-semibold">Import Complete</h3>
+          {data.walletLabel && <p className="text-sm font-medium mt-1">{data.walletLabel}</p>}
           <p className="text-sm text-muted-foreground mt-1">
             {data.accounts?.length ?? 0} account
             {data.accounts?.length === 1 ? '' : 's'} and {visibleCount} holding
             {visibleCount === 1 ? '' : 's'} imported
           </p>
+          {scamHiddenCount > 0 && (
+            <p className="text-xs text-muted-foreground mt-1">
+              {scamHiddenCount} likely-scam token{scamHiddenCount === 1 ? '' : 's'} auto-hidden
+            </p>
+          )}
           {newTokenCount > 0 && (
             <p className="text-xs text-muted-foreground mt-2">
               {newTokenCount} previously-unknown token
@@ -350,7 +385,7 @@ function ResultStep({
         </Card>
       )}
 
-      {visibleCount === 0 && data.holdings.length > 0 && (
+      {visibleCount === 0 && data.holdings.length - scamHiddenCount > 0 && (
         <Card>
           <CardContent className="p-6 text-center text-sm text-muted-foreground">
             All imported holdings were reviewed. Nothing left to process.
@@ -381,6 +416,20 @@ function HoldingReviewRow({
 }) {
   // Format balance: up to 6 significant digits, drop trailing zeros.
   const formattedBalance = formatBalance(holding.balance);
+
+  // Compute value in base currency if price is available
+  const formattedValue = useMemo(() => {
+    if (!holding.priceInBaseCurrency) return null;
+    const balance = Number(holding.balance);
+    const price = Number(holding.priceInBaseCurrency);
+    if (!Number.isFinite(balance) || !Number.isFinite(price)) return null;
+    const value = balance * price;
+    if (value < 0.01) return null;
+    return value.toLocaleString(undefined, {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    });
+  }, [holding.balance, holding.priceInBaseCurrency]);
 
   return (
     <div className="flex items-center gap-3 rounded-md border border-border p-2.5">
@@ -414,7 +463,12 @@ function HoldingReviewRow({
           )}
         </div>
       </div>
-      <span className="text-sm font-mono text-right shrink-0 tabular-nums">{formattedBalance}</span>
+      <div className="text-right shrink-0">
+        <span className="text-sm font-mono tabular-nums">{formattedBalance}</span>
+        {formattedValue && (
+          <p className="text-[11px] text-muted-foreground tabular-nums">{formattedValue}</p>
+        )}
+      </div>
       <div className="flex items-center gap-1 shrink-0">
         {holding.tokenIsNew && (
           <Button

@@ -632,7 +632,12 @@ export const WalletImplementations = {
 
   async detectChains(_context: FeatureExecutionContext, input: { address: string }) {
     const blockchainService = Container.get(BlockchainServiceManager);
-    const detectedChains = await blockchainService.detectWalletChains(input.address);
+
+    // Run chain detection and ENS resolution in parallel
+    const [detectedChains, ensName] = await Promise.all([
+      blockchainService.detectWalletChains(input.address),
+      blockchainService.resolveEnsName(input.address),
+    ]);
 
     const chains = blockchainService.getAllSupportedChains();
     const detectedChainDetails = chains
@@ -646,6 +651,7 @@ export const WalletImplementations = {
 
     return {
       address: input.address,
+      ensName: ensName ?? undefined,
       chainsDetected: detectedChainDetails,
       totalChains: detectedChainDetails.length,
     };
