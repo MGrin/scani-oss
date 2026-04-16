@@ -6,11 +6,7 @@
 import { db } from '@scani/core/database/connection';
 import * as schema from '@scani/core/database/schema';
 import { IntegrationCredentialsService } from '@scani/core/services';
-import {
-  ImportBinanceAccountsUseCase,
-  ImportIbkrAccountsUseCase,
-  ImportKrakenAccountsUseCase,
-} from '@scani/core/use-cases';
+import { ImportExchangeAccountsUseCase, ImportIbkrAccountsUseCase } from '@scani/core/use-cases';
 import {
   validateBinanceCredentials,
   validateBitgetCredentials,
@@ -33,40 +29,10 @@ import { Container } from 'typedi';
 import { z } from 'zod';
 import { protectedProcedure, router } from '../trpc';
 
-interface ExchangeImportResult {
-  accounts: Array<{ id: string; name: string; accountType: string }>;
-  holdings: Array<{ id: string; accountId: string; tokenSymbol: string; balance: string }>;
-  accountsCreated: number;
-  tokensImported: number;
-  errors: Array<{ accountType: string; error: string }>;
+/** All crypto exchanges use the generic ImportExchangeAccountsUseCase */
+function getExchangeImportUseCase() {
+  return Container.get(ImportExchangeAccountsUseCase);
 }
-
-/** Config for exchanges with apiKey + apiSecret that support auto-import */
-interface ExchangeWithImportConfig {
-  name: string;
-  validateCredentials: (apiKey: string, apiSecret: string) => Promise<boolean>;
-  getImportUseCase: () => {
-    execute: (params: { userId: string; institutionId: string }) => Promise<ExchangeImportResult>;
-  };
-}
-
-const EXCHANGES_WITH_IMPORT: Record<string, ExchangeWithImportConfig> = {
-  binance: {
-    name: 'Binance',
-    validateCredentials: validateBinanceCredentials,
-    getImportUseCase: () => Container.get(ImportBinanceAccountsUseCase),
-  },
-  kraken: {
-    name: 'Kraken',
-    validateCredentials: validateKrakenCredentials,
-    getImportUseCase: () => Container.get(ImportKrakenAccountsUseCase),
-  },
-};
-
-const apiKeyInput = z.object({
-  apiKey: z.string().min(1, 'API Key is required'),
-  apiSecret: z.string().min(1, 'API Secret is required'),
-});
 
 /** Helper: look up institution by name and store credentials */
 async function storeExchangeCredentials(
@@ -100,42 +66,46 @@ async function storeExchangeCredentials(
   return institution.id;
 }
 
-/** Create router for exchanges with apiKey+apiSecret and auto-import */
-function createExchangeWithImportRouter(config: ExchangeWithImportConfig) {
+const apiKeyInput = z.object({
+  apiKey: z.string().min(1, 'API Key is required'),
+  apiSecret: z.string().min(1, 'API Secret is required'),
+});
+
+/** Create router for exchanges with apiKey+apiSecret — validates, stores, and auto-imports */
+function createApiKeyOnlyRouter(
+  name: string,
+  validate: (k: string, s: string) => Promise<boolean>
+) {
   return router({
     validateKeys: protectedProcedure.input(apiKeyInput).mutation(async ({ input, ctx }) => {
-      const { apiKey, apiSecret } = input;
       const userId = ctx.userId;
 
       try {
-        const isValid = await config.validateCredentials(apiKey, apiSecret);
+        const isValid = await validate(input.apiKey, input.apiSecret);
         if (!isValid) {
-          throw new TRPCError({
-            code: 'BAD_REQUEST',
-            message: `Invalid ${config.name} API Key or Secret`,
-          });
+          throw new TRPCError({ code: 'BAD_REQUEST', message: `Invalid ${name} API credentials` });
         }
       } catch (error) {
         if (error instanceof TRPCError) throw error;
         throw new TRPCError({
           code: 'BAD_REQUEST',
-          message: `Failed to validate ${config.name} credentials`,
+          message: `Failed to validate ${name} credentials`,
           cause: error,
         });
       }
 
       try {
-        const institutionId = await storeExchangeCredentials(userId, config.name, {
-          apiKey,
-          apiSecret,
+        const institutionId = await storeExchangeCredentials(userId, name, {
+          apiKey: input.apiKey,
+          apiSecret: input.apiSecret,
         });
 
-        const importUseCase = config.getImportUseCase();
+        const importUseCase = getExchangeImportUseCase();
         const importResult = await importUseCase.execute({ userId, institutionId });
 
         return {
           success: true,
-          message: `${config.name} credentials validated and stored`,
+          message: `${name} credentials validated and stored`,
           institutionId,
           accounts: importResult.accounts,
           holdings: importResult.holdings,
@@ -155,50 +125,7 @@ function createExchangeWithImportRouter(config: ExchangeWithImportConfig) {
   });
 }
 
-/** Create router for exchanges with apiKey+apiSecret (validate + store only, no auto-import) */
-function createApiKeyOnlyRouter(
-  name: string,
-  validate: (k: string, s: string) => Promise<boolean>
-) {
-  return router({
-    validateKeys: protectedProcedure.input(apiKeyInput).mutation(async ({ input, ctx }) => {
-      try {
-        const isValid = await validate(input.apiKey, input.apiSecret);
-        if (!isValid) {
-          throw new TRPCError({ code: 'BAD_REQUEST', message: `Invalid ${name} API credentials` });
-        }
-      } catch (error) {
-        if (error instanceof TRPCError) throw error;
-        throw new TRPCError({
-          code: 'BAD_REQUEST',
-          message: `Failed to validate ${name} credentials`,
-          cause: error,
-        });
-      }
-
-      try {
-        const institutionId = await storeExchangeCredentials(ctx.userId, name, {
-          apiKey: input.apiKey,
-          apiSecret: input.apiSecret,
-        });
-        return {
-          success: true,
-          message: `${name} credentials validated and stored`,
-          institutionId,
-        };
-      } catch (error) {
-        if (error instanceof TRPCError) throw error;
-        throw new TRPCError({
-          code: 'INTERNAL_SERVER_ERROR',
-          message: 'Failed to store credentials',
-          cause: error,
-        });
-      }
-    }),
-  });
-}
-
-/** Create router for exchanges needing apiKey+apiSecret+passphrase */
+/** Create router for exchanges needing apiKey+apiSecret+passphrase — validates, stores, and auto-imports */
 function createPassphraseRouter(
   name: string,
   validate: (k: string, s: string, p: string) => Promise<boolean>
@@ -213,6 +140,8 @@ function createPassphraseRouter(
         })
       )
       .mutation(async ({ input, ctx }) => {
+        const userId = ctx.userId;
+
         try {
           const isValid = await validate(input.apiKey, input.apiSecret, input.passphrase);
           if (!isValid) {
@@ -231,15 +160,24 @@ function createPassphraseRouter(
         }
 
         try {
-          const institutionId = await storeExchangeCredentials(ctx.userId, name, {
+          const institutionId = await storeExchangeCredentials(userId, name, {
             apiKey: input.apiKey,
             apiSecret: input.apiSecret,
             passphrase: input.passphrase,
           });
+
+          const importUseCase = getExchangeImportUseCase();
+          const importResult = await importUseCase.execute({ userId, institutionId });
+
           return {
             success: true,
             message: `${name} credentials validated and stored`,
             institutionId,
+            accounts: importResult.accounts,
+            holdings: importResult.holdings,
+            accountsCreated: importResult.accountsCreated,
+            tokensImported: importResult.tokensImported,
+            errors: importResult.errors,
           };
         } catch (error) {
           if (error instanceof TRPCError) throw error;
@@ -254,11 +192,9 @@ function createPassphraseRouter(
 }
 
 export const integrationsRouter = router({
-  // Exchanges with full auto-import (Binance/Kraken have dedicated use cases)
-  binance: createExchangeWithImportRouter(EXCHANGES_WITH_IMPORT.binance!),
-  kraken: createExchangeWithImportRouter(EXCHANGES_WITH_IMPORT.kraken!),
-
-  // Exchanges with apiKey + apiSecret (validate + store, sync via cron)
+  // All crypto exchanges: validate credentials, store, and auto-import immediately
+  binance: createApiKeyOnlyRouter('Binance', validateBinanceCredentials),
+  kraken: createApiKeyOnlyRouter('Kraken', validateKrakenCredentials),
   bybit: createApiKeyOnlyRouter('Bybit', validateBybitCredentials),
   coinbase: createApiKeyOnlyRouter('Coinbase', validateCoinbaseCredentials),
   bitstamp: createApiKeyOnlyRouter('Bitstamp', validateBitstampCredentials),
@@ -267,7 +203,6 @@ export const integrationsRouter = router({
   gateio: createApiKeyOnlyRouter('Gate.io', validateGateioCredentials),
   huobi: createApiKeyOnlyRouter('Huobi', validateHuobiCredentials),
 
-  // Exchanges needing apiKey + apiSecret + passphrase
   okx: createPassphraseRouter('OKX', validateOkxCredentials),
   kucoin: createPassphraseRouter('KuCoin', validateKucoinCredentials),
   bitget: createPassphraseRouter('Bitget', validateBitgetCredentials),

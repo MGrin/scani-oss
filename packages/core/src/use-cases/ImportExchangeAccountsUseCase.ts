@@ -1,12 +1,15 @@
 /**
- * ImportKrakenAccountsUseCase
+ * ImportExchangeAccountsUseCase
  *
- * Handles importing Kraken accounts after API key validation:
- * - Creates a spot trading account in the database
- * - Fetches and creates holdings for the account
- * - Stores integration credentials
+ * Generic use case for importing exchange accounts after API key validation.
+ * Works with any exchange integration (Binance, Kraken, Coinbase, Bybit, etc.):
+ * - Creates accounts in the database
+ * - Fetches and creates holdings (skipping zero balances)
+ * - Warms up prices so the UI shows values immediately
+ * - Zeros out stale holdings not present in the exchange response
  *
- * This use case is called after the user validates their Kraken API keys
+ * Replaces the exchange-specific ImportBinanceAccountsUseCase,
+ * ImportKrakenAccountsUseCase, etc. with a single reusable implementation.
  */
 
 import { IntegrationManager } from '@scani/integrations';
@@ -17,63 +20,58 @@ import { db } from '../database/connection';
 import * as schema from '../database/schema';
 import { withTransaction } from '../database/transaction';
 import { HoldingRepository } from '../repositories/HoldingRepository';
+import { TokenRepository } from '../repositories/TokenRepository';
 import { HoldingService } from '../services/HoldingService';
 import { IntegrationCredentialsService } from '../services/IntegrationCredentialsService';
+import { PricingService } from '../services/PricingService';
 import { TokenService } from '../services/TokenService';
 import { createComponentLogger } from '../utils/logger';
 
-const logger = createComponentLogger('use-case:import-kraken-accounts');
+const logger = createComponentLogger('use-case:import-exchange-accounts');
 
-export interface ImportKrakenAccountsInput {
-  /** User ID */
+export interface ImportExchangeAccountsInput {
   userId: string;
-  /** Institution ID (usually 'kraken') */
   institutionId: string;
 }
 
-export interface ImportKrakenAccountsResult {
-  /** Created accounts */
+export interface ImportExchangeAccountsResult {
   accounts: Array<{
     id: string;
     name: string;
     accountType: string;
   }>;
-  /** Created holdings */
   holdings: Array<{
     id: string;
     accountId: string;
+    tokenId: string;
     tokenSymbol: string;
     balance: string;
   }>;
-  /** Total accounts created */
   accountsCreated: number;
-  /** Total tokens imported */
   tokensImported: number;
-  /** Errors encountered during import */
   errors: Array<{
     accountType: string;
     error: string;
   }>;
 }
 
-/**
- * Import Kraken Accounts Use Case
- */
 @Service()
-export class ImportKrakenAccountsUseCase {
+export class ImportExchangeAccountsUseCase {
   private readonly integrationManager = Container.get(IntegrationManager);
   private readonly integrationCredentialsService = Container.get(IntegrationCredentialsService);
   private readonly tokenService = Container.get(TokenService);
+  private readonly tokenRepository = Container.get(TokenRepository);
   private readonly holdingRepository = Container.get(HoldingRepository);
   private readonly holdingService = Container.get(HoldingService);
+  private readonly pricingService = Container.get(PricingService);
 
-  async execute(input: ImportKrakenAccountsInput): Promise<ImportKrakenAccountsResult> {
+  async execute(input: ImportExchangeAccountsInput): Promise<ImportExchangeAccountsResult> {
     logger.info(
       { userId: input.userId, institutionId: input.institutionId },
-      'Starting Kraken accounts import'
+      'Starting exchange accounts import'
     );
 
-    const result: ImportKrakenAccountsResult = {
+    const result: ImportExchangeAccountsResult = {
       accounts: [],
       holdings: [],
       accountsCreated: 0,
@@ -83,7 +81,6 @@ export class ImportKrakenAccountsUseCase {
 
     try {
       // STEP 1: Fetch all external data (no DB connections held)
-      // Get user
       const [user] = await db
         .select()
         .from(schema.users)
@@ -94,7 +91,6 @@ export class ImportKrakenAccountsUseCase {
         throw new Error('User not found');
       }
 
-      // Get integration credentials
       const credentials = await this.integrationCredentialsService.getDecryptedCredentials(
         input.userId,
         input.institutionId
@@ -104,14 +100,12 @@ export class ImportKrakenAccountsUseCase {
         throw new Error('No credentials found for this institution');
       }
 
-      // Get integration
       const integration = await this.integrationManager.getIntegration(input.institutionId);
       if (!integration) {
         throw new Error(`Integration not found for institution: ${input.institutionId}`);
       }
 
-      // Fetch accounts from Kraken API (external call)
-      logger.debug('Fetching accounts from Kraken API');
+      // Fetch accounts from exchange API
       const accountsResult = await integration.fetchAccounts(credentials);
 
       if (accountsResult.errors && accountsResult.errors.length > 0) {
@@ -119,7 +113,7 @@ export class ImportKrakenAccountsUseCase {
       }
 
       if (accountsResult.accounts.length === 0) {
-        logger.warn('No accounts returned from Kraken');
+        logger.warn('No accounts returned from exchange');
         return result;
       }
 
@@ -132,8 +126,6 @@ export class ImportKrakenAccountsUseCase {
       const accountsWithHoldings: AccountWithHoldings[] = [];
 
       for (const accountInfo of accountsResult.accounts) {
-        logger.debug({ accountType: accountInfo.accountType }, 'Fetching holdings from Kraken API');
-
         const holdingsResult = await integration.fetchHoldings(accountInfo.externalId, credentials);
 
         if (holdingsResult.errors && holdingsResult.errors.length > 0) {
@@ -146,21 +138,21 @@ export class ImportKrakenAccountsUseCase {
         accountsWithHoldings.push({ accountInfo, holdingsResult });
       }
 
+      // Derive a source tag from the institution name for holding tracking
+      const [institution] = await db
+        .select()
+        .from(schema.institutions)
+        .where(eq(schema.institutions.id, input.institutionId))
+        .limit(1);
+      const sourceTag = `import_${(institution?.name || 'exchange').toLowerCase().replace(/[^a-z0-9]/g, '_')}`;
+
       // STEP 2: Process ALL database operations in single transaction
       await withTransaction(
         async (tx) => {
-          // Get institution from database
-          const [institution] = await tx
-            .select()
-            .from(schema.institutions)
-            .where(eq(schema.institutions.id, input.institutionId))
-            .limit(1);
-
           if (!institution) {
             throw new Error(`Institution not found: ${input.institutionId}`);
           }
 
-          // Get crypto account type
           const [cryptoAccountType] = await tx
             .select()
             .from(schema.accountTypes)
@@ -171,7 +163,6 @@ export class ImportKrakenAccountsUseCase {
             throw new Error('Crypto account type not found');
           }
 
-          // Get crypto token type
           const [cryptoType] = await tx
             .select()
             .from(schema.tokenTypes)
@@ -182,7 +173,6 @@ export class ImportKrakenAccountsUseCase {
             throw new Error('Crypto token type not found');
           }
 
-          // Create accounts and import holdings for each account type
           for (const { accountInfo, holdingsResult } of accountsWithHoldings) {
             try {
               // Check if account already exists
@@ -208,17 +198,7 @@ export class ImportKrakenAccountsUseCase {
 
               if (existing) {
                 accountId = existing.id;
-                logger.debug(
-                  { accountId, accountType: accountInfo.accountType },
-                  'Account already exists'
-                );
               } else {
-                // Create new account with lastSync timestamp in metadata
-                const accountMetadata = {
-                  ...(accountInfo.metadata || {}),
-                  lastSync: new Date().toISOString(),
-                };
-
                 const [newAccount] = await tx
                   .insert(schema.accounts)
                   .values({
@@ -227,7 +207,10 @@ export class ImportKrakenAccountsUseCase {
                     typeId: cryptoAccountType.id,
                     name: accountInfo.name,
                     description: accountInfo.description,
-                    metadata: accountMetadata,
+                    metadata: {
+                      ...(accountInfo.metadata || {}),
+                      lastSync: new Date().toISOString(),
+                    },
                     isActive: true,
                   })
                   .returning();
@@ -243,19 +226,12 @@ export class ImportKrakenAccountsUseCase {
                   name: accountInfo.name,
                   accountType: accountInfo.accountType,
                 });
-                logger.info(
-                  { accountId, accountType: accountInfo.accountType },
-                  'Created new account'
-                );
               }
 
-              // Import holdings (already fetched from external API)
+              // Import holdings
               for (const holding of holdingsResult.holdings) {
                 try {
-                  // Map token
                   const tokenMapping = await integration.mapToken(holding);
-
-                  // Create or get token
                   const { token } = await this.tokenService.findOrCreateTokenFromIntegration(
                     tokenMapping,
                     cryptoType.id,
@@ -263,13 +239,11 @@ export class ImportKrakenAccountsUseCase {
                     tx
                   );
 
-                  // Validate balance
                   if (!isValidDecimalString(holding.balance)) {
-                    logger.warn({ balance: holding.balance }, 'Invalid balance, skipping');
                     continue;
                   }
 
-                  // Match by externalId (exchange asset code) to avoid conflicts with manual holdings
+                  const isZeroBalance = parseFloat(holding.balance) === 0;
                   const externalId = holding.externalTokenId || holding.symbol;
                   const existingHolding =
                     await this.holdingRepository.findByAccountTokenAndExternalId(
@@ -278,42 +252,33 @@ export class ImportKrakenAccountsUseCase {
                       externalId,
                       input.userId,
                       tx,
-                      true // includeHidden
+                      true
                     );
 
                   if (existingHolding) {
-                    // Update existing synced holding
+                    // Update existing holding (including setting balance to 0)
                     await this.holdingService.updateHoldingBalanceWithEvent(
                       {
                         holdingId: existingHolding.id,
                         balance: holding.balance,
                         eventContext: user.baseCurrencyId
-                          ? {
-                              userId: input.userId,
-                              baseCurrencyId: user.baseCurrencyId,
-                            }
+                          ? { userId: input.userId, baseCurrencyId: user.baseCurrencyId }
                           : undefined,
                       },
                       tx
                     );
-                    logger.debug(
-                      { holdingId: existingHolding.id, externalId },
-                      'Updated existing holding'
-                    );
-                  } else {
-                    // Create new holding with externalId for future sync matching
+                  } else if (!isZeroBalance) {
+                    // Only create new holdings for non-zero balances
                     const newHolding = await this.holdingService.createHoldingWithEvent(
                       {
                         userId: input.userId,
                         accountId,
                         tokenId: token.id,
                         balance: holding.balance,
-                        source: 'import_kraken',
+                        source: sourceTag,
                         externalId,
                         eventContext: user.baseCurrencyId
-                          ? {
-                              baseCurrencyId: user.baseCurrencyId,
-                            }
+                          ? { baseCurrencyId: user.baseCurrencyId }
                           : undefined,
                       },
                       tx
@@ -322,22 +287,13 @@ export class ImportKrakenAccountsUseCase {
                     result.holdings.push({
                       id: newHolding.id,
                       accountId,
+                      tokenId: token.id,
                       tokenSymbol: token.symbol,
                       balance: holding.balance,
                     });
                     result.tokensImported++;
-                    logger.debug(
-                      { holdingId: newHolding.id, symbol: token.symbol },
-                      'Created new holding'
-                    );
                   }
                 } catch (error) {
-                  logger.error(
-                    {
-                      error: error instanceof Error ? error.message : String(error),
-                    },
-                    'Failed to import holding'
-                  );
                   result.errors.push({
                     accountType: accountInfo.accountType,
                     error: `Failed to import ${holding.symbol}: ${error instanceof Error ? error.message : String(error)}`,
@@ -345,7 +301,7 @@ export class ImportKrakenAccountsUseCase {
                 }
               }
 
-              // Zero out holdings that exist in our DB but were NOT in the Kraken response
+              // Zero out stale holdings not in the exchange response
               try {
                 const existingHoldings = await this.holdingRepository.findByAccount(
                   accountId,
@@ -356,14 +312,14 @@ export class ImportKrakenAccountsUseCase {
                 const seenExternalIds = new Set(
                   holdingsResult.holdings.map((h) => h.externalTokenId || h.symbol)
                 );
-                for (const existing of existingHoldings) {
-                  if (existing.source !== 'import_kraken') continue;
-                  if (existing.externalId && seenExternalIds.has(existing.externalId)) continue;
-                  if (existing.balance === '0') continue;
+                for (const eh of existingHoldings) {
+                  if (eh.source !== sourceTag) continue;
+                  if (eh.externalId && seenExternalIds.has(eh.externalId)) continue;
+                  if (eh.balance === '0') continue;
 
                   await this.holdingService.updateHoldingBalanceWithEvent(
                     {
-                      holdingId: existing.id,
+                      holdingId: eh.id,
                       balance: '0',
                       eventContext: user.baseCurrencyId
                         ? { userId: input.userId, baseCurrencyId: user.baseCurrencyId }
@@ -371,46 +327,27 @@ export class ImportKrakenAccountsUseCase {
                     },
                     tx
                   );
-                  logger.info(
-                    { holdingId: existing.id, externalId: existing.externalId },
-                    'Zeroed out holding not present in Kraken response'
-                  );
                 }
-              } catch (error) {
-                logger.warn(
-                  { error: error instanceof Error ? error.message : String(error) },
-                  'Failed to zero out stale holdings (non-critical)'
-                );
+              } catch {
+                // Non-critical
               }
 
-              // Update account metadata with lastSync timestamp for existing accounts
-              // (New accounts already have lastSync set during creation)
+              // Update lastSync for existing accounts
               if (existing) {
-                const updatedMetadata = {
-                  ...(existing.metadata && typeof existing.metadata === 'object'
-                    ? existing.metadata
-                    : {}),
-                  lastSync: new Date().toISOString(),
-                };
-
                 await tx
                   .update(schema.accounts)
                   .set({
-                    metadata: updatedMetadata,
+                    metadata: {
+                      ...(existing.metadata && typeof existing.metadata === 'object'
+                        ? existing.metadata
+                        : {}),
+                      lastSync: new Date().toISOString(),
+                    },
                     updatedAt: new Date(),
                   })
                   .where(eq(schema.accounts.id, accountId));
-
-                logger.debug({ accountId }, 'Updated account lastSync timestamp');
               }
             } catch (error) {
-              logger.error(
-                {
-                  accountType: accountInfo.accountType,
-                  error: error instanceof Error ? error.message : String(error),
-                },
-                'Failed to import account'
-              );
               result.errors.push({
                 accountType: accountInfo.accountType,
                 error: error instanceof Error ? error.message : String(error),
@@ -418,7 +355,7 @@ export class ImportKrakenAccountsUseCase {
             }
           }
         },
-        { name: 'importKrakenAccounts', timeout: 60000 }
+        { name: 'importExchangeAccounts', timeout: 60000 }
       );
 
       logger.info(
@@ -427,14 +364,41 @@ export class ImportKrakenAccountsUseCase {
           tokensImported: result.tokensImported,
           errorCount: result.errors.length,
         },
-        'Kraken accounts import completed'
+        'Exchange accounts import completed'
       );
+
+      // Warm up prices so the UI shows values immediately
+      if (result.holdings.length > 0) {
+        try {
+          const tokenIds = [...new Set(result.holdings.map((h) => h.tokenId))];
+          const tokens = await this.tokenRepository.findByIds(tokenIds);
+          if (tokens.length > 0) {
+            let baseCurrencySymbol = 'USD';
+            if (user.baseCurrencyId) {
+              const baseToken = await this.tokenRepository.findById(user.baseCurrencyId);
+              if (baseToken) baseCurrencySymbol = baseToken.symbol;
+            }
+            logger.info({ tokenCount: tokens.length }, 'Warming prices for exchange tokens');
+            const WARM_UP_BUDGET_MS = 15_000;
+            const work = this.pricingService.getTokenPrices(tokens, baseCurrencySymbol, new Date());
+            const timeout = new Promise<Map<string, string>>((resolve) =>
+              setTimeout(() => resolve(new Map()), WARM_UP_BUDGET_MS)
+            );
+            await Promise.race([work, timeout]);
+          }
+        } catch (error) {
+          logger.warn(
+            { error: error instanceof Error ? error.message : String(error) },
+            'Exchange token price warm-up failed (non-fatal)'
+          );
+        }
+      }
 
       return result;
     } catch (error) {
       logger.error(
         { error: error instanceof Error ? error.message : String(error) },
-        'Failed to import Kraken accounts'
+        'Failed to import exchange accounts'
       );
       throw error;
     }
