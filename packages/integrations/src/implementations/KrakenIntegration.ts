@@ -16,6 +16,7 @@ import type {
   RateLimiter,
   TokenMappingResult,
 } from '../types';
+import { detectTokenType } from '../utils/currencyDetection';
 
 export class KrakenIntegration extends ScaniIntegration {
   private readonly krakenService: KrakenApiService;
@@ -142,7 +143,7 @@ export class KrakenIntegration extends ScaniIntegration {
           name: symbol,
           balance: balance.balance,
           decimals: 8,
-          tokenType: 'crypto' as const,
+          tokenType: detectTokenType(symbol.toUpperCase()),
           externalTokenId: balance.asset,
           metadata: {
             originalAsset: balance.asset,

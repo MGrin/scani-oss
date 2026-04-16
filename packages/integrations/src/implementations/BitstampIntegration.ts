@@ -16,6 +16,7 @@ import type {
   RateLimiter,
   TokenMappingResult,
 } from '../types';
+import { detectTokenType } from '../utils/currencyDetection';
 
 export class BitstampIntegration extends ScaniIntegration {
   private readonly bitstampService: BitstampApiService;
@@ -123,7 +124,7 @@ export class BitstampIntegration extends ScaniIntegration {
           name: balance.currency,
           balance: balance.balance,
           decimals: 8,
-          tokenType: 'crypto' as const,
+          tokenType: detectTokenType(balance.currency.toUpperCase()),
           externalTokenId: balance.currency,
           metadata: {
             accountType: 'TRADING',

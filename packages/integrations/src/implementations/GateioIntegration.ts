@@ -16,6 +16,7 @@ import type {
   RateLimiter,
   TokenMappingResult,
 } from '../types';
+import { detectTokenType } from '../utils/currencyDetection';
 
 export class GateioIntegration extends ScaniIntegration {
   private readonly gateioService: GateioApiService;
@@ -125,7 +126,7 @@ export class GateioIntegration extends ScaniIntegration {
           name: balance.currency,
           balance: totalBalance.toString(),
           decimals: 8,
-          tokenType: 'crypto' as const,
+          tokenType: detectTokenType(balance.currency.toUpperCase()),
           externalTokenId: balance.currency,
           metadata: {
             available: balance.available,

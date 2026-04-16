@@ -16,6 +16,7 @@ import type {
   RateLimiter,
   TokenMappingResult,
 } from '../types';
+import { detectTokenType } from '../utils/currencyDetection';
 
 export class KucoinIntegration extends ScaniIntegration {
   private readonly kucoinService: KucoinApiService;
@@ -135,7 +136,7 @@ export class KucoinIntegration extends ScaniIntegration {
           name: currency,
           balance: totalBalance.toString(),
           decimals: 8,
-          tokenType: 'crypto' as const,
+          tokenType: detectTokenType(currency.toUpperCase()),
           externalTokenId: currency,
           metadata: {
             accountType: 'SPOT',

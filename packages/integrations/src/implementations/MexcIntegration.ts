@@ -17,6 +17,7 @@ import type {
   RateLimiter,
   TokenMappingResult,
 } from '../types';
+import { detectTokenType } from '../utils/currencyDetection';
 
 export class MexcIntegration extends ScaniIntegration {
   private readonly mexcService: MexcApiService;
@@ -126,7 +127,7 @@ export class MexcIntegration extends ScaniIntegration {
           name: balance.asset,
           balance: totalBalance.toString(),
           decimals: 8,
-          tokenType: 'crypto' as const,
+          tokenType: detectTokenType(balance.asset.toUpperCase()),
           externalTokenId: balance.asset,
           metadata: {
             free: balance.free,

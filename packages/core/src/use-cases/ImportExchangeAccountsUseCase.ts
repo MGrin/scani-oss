@@ -4,12 +4,10 @@
  * Generic use case for importing exchange accounts after API key validation.
  * Works with any exchange integration (Binance, Kraken, Coinbase, Bybit, etc.):
  * - Creates accounts in the database
- * - Fetches and creates holdings (skipping zero balances)
- * - Warms up prices so the UI shows values immediately
+ * - Fetches and creates holdings (skipping zero balances for new entries)
+ * - Respects token types from integrations (crypto, fiat, stock)
+ * - Warms up prices for ALL touched tokens so the UI shows values immediately
  * - Zeros out stale holdings not present in the exchange response
- *
- * Replaces the exchange-specific ImportBinanceAccountsUseCase,
- * ImportKrakenAccountsUseCase, etc. with a single reusable implementation.
  */
 
 import { IntegrationManager } from '@scani/integrations';
@@ -19,6 +17,7 @@ import { Container, Service } from 'typedi';
 import { db } from '../database/connection';
 import * as schema from '../database/schema';
 import { withTransaction } from '../database/transaction';
+import { TokenTypeRepository } from '../repositories/EnumRepositories';
 import { HoldingRepository } from '../repositories/HoldingRepository';
 import { TokenRepository } from '../repositories/TokenRepository';
 import { HoldingService } from '../services/HoldingService';
@@ -60,6 +59,7 @@ export class ImportExchangeAccountsUseCase {
   private readonly integrationManager = Container.get(IntegrationManager);
   private readonly integrationCredentialsService = Container.get(IntegrationCredentialsService);
   private readonly tokenService = Container.get(TokenService);
+  private readonly tokenTypeRepository = Container.get(TokenTypeRepository);
   private readonly tokenRepository = Container.get(TokenRepository);
   private readonly holdingRepository = Container.get(HoldingRepository);
   private readonly holdingService = Container.get(HoldingService);
@@ -78,6 +78,9 @@ export class ImportExchangeAccountsUseCase {
       tokensImported: 0,
       errors: [],
     };
+
+    // Track ALL token IDs touched during import (new + updated) for pricing warm-up
+    const allTouchedTokenIds = new Set<string>();
 
     try {
       // STEP 1: Fetch all external data (no DB connections held)
@@ -105,7 +108,6 @@ export class ImportExchangeAccountsUseCase {
         throw new Error(`Integration not found for institution: ${input.institutionId}`);
       }
 
-      // Fetch accounts from exchange API
       const accountsResult = await integration.fetchAccounts(credentials);
 
       if (accountsResult.errors && accountsResult.errors.length > 0) {
@@ -117,7 +119,6 @@ export class ImportExchangeAccountsUseCase {
         return result;
       }
 
-      // Fetch holdings for all accounts (external API calls)
       interface AccountWithHoldings {
         accountInfo: (typeof accountsResult.accounts)[0];
         holdingsResult: Awaited<ReturnType<typeof integration.fetchHoldings>>;
@@ -163,15 +164,20 @@ export class ImportExchangeAccountsUseCase {
             throw new Error('Crypto account type not found');
           }
 
-          const [cryptoType] = await tx
-            .select()
-            .from(schema.tokenTypes)
-            .where(eq(schema.tokenTypes.code, 'crypto'))
-            .limit(1);
+          // Fetch all token types so we can respect holding.tokenType
+          const cryptoTokenType = await this.tokenTypeRepository.findByCode('crypto');
+          const fiatTokenType = await this.tokenTypeRepository.findByCode('fiat');
+          const stockTokenType = await this.tokenTypeRepository.findByCode('stock');
 
-          if (!cryptoType) {
+          if (!cryptoTokenType) {
             throw new Error('Crypto token type not found');
           }
+
+          const tokenTypeMap: Record<string, string> = {
+            crypto: cryptoTokenType.id,
+            ...(fiatTokenType && { fiat: fiatTokenType.id }),
+            ...(stockTokenType && { stock: stockTokenType.id }),
+          };
 
           for (const { accountInfo, holdingsResult } of accountsWithHoldings) {
             try {
@@ -228,22 +234,42 @@ export class ImportExchangeAccountsUseCase {
                 });
               }
 
+              // Build seenExternalIds from ALL holdings BEFORE processing,
+              // so the stale-holdings cleanup works correctly even when we
+              // skip zero-balance holdings during import.
+              const seenExternalIds = new Set(
+                holdingsResult.holdings.map((h) => h.externalTokenId || h.symbol)
+              );
+
               // Import holdings
               for (const holding of holdingsResult.holdings) {
                 try {
-                  const tokenMapping = await integration.mapToken(holding);
-                  const { token } = await this.tokenService.findOrCreateTokenFromIntegration(
-                    tokenMapping,
-                    cryptoType.id,
-                    8,
-                    tx
-                  );
-
+                  // Validate balance BEFORE creating tokens — don't pollute DB
+                  // with orphan tokens for invalid/zero balances
                   if (!isValidDecimalString(holding.balance)) {
                     continue;
                   }
-
                   const isZeroBalance = parseFloat(holding.balance) === 0;
+
+                  // Skip zero-balance holdings entirely (no token, no holding)
+                  if (isZeroBalance) {
+                    continue;
+                  }
+
+                  const tokenMapping = await integration.mapToken(holding);
+
+                  // Use the token type from the integration (crypto, fiat, stock)
+                  const holdingTokenType = holding.tokenType || 'crypto';
+                  const tokenTypeId = tokenTypeMap[holdingTokenType] || cryptoTokenType.id;
+                  const defaultDecimals = holdingTokenType === 'fiat' ? 2 : 8;
+
+                  const { token } = await this.tokenService.findOrCreateTokenFromIntegration(
+                    tokenMapping,
+                    tokenTypeId,
+                    defaultDecimals,
+                    tx
+                  );
+
                   const externalId = holding.externalTokenId || holding.symbol;
                   const existingHolding =
                     await this.holdingRepository.findByAccountTokenAndExternalId(
@@ -256,7 +282,6 @@ export class ImportExchangeAccountsUseCase {
                     );
 
                   if (existingHolding) {
-                    // Update existing holding (including setting balance to 0)
                     await this.holdingService.updateHoldingBalanceWithEvent(
                       {
                         holdingId: existingHolding.id,
@@ -267,8 +292,8 @@ export class ImportExchangeAccountsUseCase {
                       },
                       tx
                     );
-                  } else if (!isZeroBalance) {
-                    // Only create new holdings for non-zero balances
+                    allTouchedTokenIds.add(token.id);
+                  } else {
                     const newHolding = await this.holdingService.createHoldingWithEvent(
                       {
                         userId: input.userId,
@@ -292,6 +317,7 @@ export class ImportExchangeAccountsUseCase {
                       balance: holding.balance,
                     });
                     result.tokensImported++;
+                    allTouchedTokenIds.add(token.id);
                   }
                 } catch (error) {
                   result.errors.push({
@@ -309,9 +335,6 @@ export class ImportExchangeAccountsUseCase {
                   true,
                   true
                 );
-                const seenExternalIds = new Set(
-                  holdingsResult.holdings.map((h) => h.externalTokenId || h.symbol)
-                );
                 for (const eh of existingHoldings) {
                   if (eh.source !== sourceTag) continue;
                   if (eh.externalId && seenExternalIds.has(eh.externalId)) continue;
@@ -328,8 +351,14 @@ export class ImportExchangeAccountsUseCase {
                     tx
                   );
                 }
-              } catch {
-                // Non-critical
+              } catch (error) {
+                logger.warn(
+                  {
+                    error: error instanceof Error ? error.message : String(error),
+                    accountId,
+                  },
+                  'Failed to cleanup stale holdings'
+                );
               }
 
               // Update lastSync for existing accounts
@@ -367,11 +396,10 @@ export class ImportExchangeAccountsUseCase {
         'Exchange accounts import completed'
       );
 
-      // Warm up prices so the UI shows values immediately
-      if (result.holdings.length > 0) {
+      // Warm up prices for ALL touched tokens (new + updated) so UI shows values
+      if (allTouchedTokenIds.size > 0) {
         try {
-          const tokenIds = [...new Set(result.holdings.map((h) => h.tokenId))];
-          const tokens = await this.tokenRepository.findByIds(tokenIds);
+          const tokens = await this.tokenRepository.findByIds([...allTouchedTokenIds]);
           if (tokens.length > 0) {
             let baseCurrencySymbol = 'USD';
             if (user.baseCurrencyId) {

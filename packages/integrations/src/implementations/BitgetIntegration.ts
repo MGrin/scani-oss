@@ -17,6 +17,7 @@ import type {
   RateLimiter,
   TokenMappingResult,
 } from '../types';
+import { detectTokenType } from '../utils/currencyDetection';
 
 export class BitgetIntegration extends ScaniIntegration {
   private readonly bitgetService: BitgetApiService;
@@ -134,7 +135,7 @@ export class BitgetIntegration extends ScaniIntegration {
           name: balance.coin,
           balance: totalBalance.toString(),
           decimals: 8,
-          tokenType: 'crypto' as const,
+          tokenType: detectTokenType(balance.coin.toUpperCase()),
           externalTokenId: balance.coin,
           metadata: {
             available: balance.available,

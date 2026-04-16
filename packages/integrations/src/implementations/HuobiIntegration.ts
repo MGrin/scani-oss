@@ -15,6 +15,7 @@ import type {
   RateLimiter,
   TokenMappingResult,
 } from '../types';
+import { detectTokenType } from '../utils/currencyDetection';
 
 export class HuobiIntegration extends ScaniIntegration {
   private readonly huobiService: HuobiApiService;
@@ -107,7 +108,7 @@ export class HuobiIntegration extends ScaniIntegration {
           name: currency.toUpperCase(),
           balance: balance.toString(),
           decimals: 8,
-          tokenType: 'crypto',
+          tokenType: detectTokenType(currency.toUpperCase()),
           metadata: { exchange: 'huobi' },
         });
       }

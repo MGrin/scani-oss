@@ -17,6 +17,7 @@ import type {
   RateLimiter,
   TokenMappingResult,
 } from '../types';
+import { detectTokenType } from '../utils/currencyDetection';
 
 export class OkxIntegration extends ScaniIntegration {
   private readonly okxService: OkxApiService;
@@ -126,7 +127,7 @@ export class OkxIntegration extends ScaniIntegration {
           name: balance.ccy,
           balance: balance.cashBal,
           decimals: 8,
-          tokenType: 'crypto' as const,
+          tokenType: detectTokenType(balance.ccy.toUpperCase()),
           externalTokenId: balance.ccy,
           metadata: {
             eqUsd: balance.eqUsd,

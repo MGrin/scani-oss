@@ -16,6 +16,7 @@ import type {
   RateLimiter,
   TokenMappingResult,
 } from '../types';
+import { detectTokenType } from '../utils/currencyDetection';
 
 export class GeminiIntegration extends ScaniIntegration {
   private readonly geminiService: GeminiApiService;
@@ -123,7 +124,7 @@ export class GeminiIntegration extends ScaniIntegration {
           name: balance.currency,
           balance: balance.amount,
           decimals: 8,
-          tokenType: 'crypto' as const,
+          tokenType: detectTokenType(balance.currency.toUpperCase()),
           externalTokenId: balance.currency,
           metadata: {
             balanceType: balance.type,

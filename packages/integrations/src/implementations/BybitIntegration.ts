@@ -16,6 +16,7 @@ import type {
   RateLimiter,
   TokenMappingResult,
 } from '../types';
+import { detectTokenType } from '../utils/currencyDetection';
 
 export class BybitIntegration extends ScaniIntegration {
   private readonly bybitService: BybitApiService;
@@ -123,7 +124,7 @@ export class BybitIntegration extends ScaniIntegration {
           name: balance.coin,
           balance: balance.walletBalance,
           decimals: 8,
-          tokenType: 'crypto' as const,
+          tokenType: detectTokenType(balance.coin.toUpperCase()),
           externalTokenId: balance.coin,
           metadata: {
             usdValue: balance.usdValue,
