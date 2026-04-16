@@ -25,6 +25,7 @@ import { Container, Service } from 'typedi';
 import { db } from '../database/connection';
 import * as schema from '../database/schema';
 import { withTransaction } from '../database/transaction';
+import { BlockchainServiceManager } from '../external-services/blockchain/blockchain-service-manager';
 import { HoldingRepository } from '../repositories/HoldingRepository';
 import { InstitutionBlockchainMappingRepository } from '../repositories/InstitutionBlockchainMappingRepository';
 import { TokenRepository } from '../repositories/TokenRepository';
@@ -111,6 +112,7 @@ export class ImportWalletAddressUseCase {
   private readonly holdingService = Container.get(HoldingService);
   private readonly pricingService = Container.get(PricingService);
   private readonly scamDetectionService = Container.get(ScamTokenDetectionService);
+  private readonly blockchainServiceManager = Container.get(BlockchainServiceManager);
 
   async execute(input: ImportWalletInput, userId: string): Promise<ImportWalletResult> {
     logger.info(
@@ -242,6 +244,20 @@ export class ImportWalletAddressUseCase {
 
     if (!cryptoTokenType) {
       throw new Error('Token type "crypto" not found');
+    }
+
+    // Resolve ENS name on the backend as a safety net — the frontend may have
+    // resolved it during detection but not passed it through to the import.
+    if (!input.displayName) {
+      try {
+        const ensName = await this.blockchainServiceManager.resolveEnsName(input.address);
+        if (ensName) {
+          input.displayName = ensName;
+          logger.info({ ensName }, 'Resolved ENS name on backend for wallet import');
+        }
+      } catch {
+        // Non-critical — account names will use shortened address
+      }
     }
 
     logger.info(
@@ -494,20 +510,36 @@ export class ImportWalletAddressUseCase {
             // Create or update account (within transaction)
             if (existingAccount) {
               accountId = existingAccount.id;
+
+              // Update account name if we now have ENS/display name but the
+              // account was originally created with a shortened address
+              const updateFields: Record<string, unknown> = {
+                metadata: {
+                  walletAddress: input.address,
+                  chainId,
+                  chainName: institution.name,
+                  displayName: input.displayName,
+                  lastSync: new Date().toISOString(),
+                  userWalletId: userWallet.id,
+                  migrated: true,
+                },
+                updatedAt: new Date(),
+              };
+
+              if (input.displayName && existingAccount.name.includes('...')) {
+                const newName = this.generateAccountName(institution.name, input.displayName);
+                if (newName !== existingAccount.name) {
+                  (updateFields as { name: string }).name = newName;
+                  logger.info(
+                    { oldName: existingAccount.name, newName },
+                    'Updating account name with ENS/display name'
+                  );
+                }
+              }
+
               await tx
                 .update(schema.accounts)
-                .set({
-                  metadata: {
-                    walletAddress: input.address,
-                    chainId,
-                    chainName: institution.name,
-                    displayName: input.displayName,
-                    lastSync: new Date().toISOString(),
-                    userWalletId: userWallet.id,
-                    migrated: true,
-                  },
-                  updatedAt: new Date(),
-                })
+                .set(updateFields)
                 .where(eq(schema.accounts.id, accountId));
 
               logger.info(
@@ -517,7 +549,7 @@ export class ImportWalletAddressUseCase {
                   userWalletId: userWallet.id,
                   institutionName: institution.name,
                 },
-                'Updated existing account with user_wallet_id'
+                'Updated existing account'
               );
             } else {
               const [newAccount] = await tx

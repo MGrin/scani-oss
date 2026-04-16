@@ -22,6 +22,45 @@ interface CoinGeckoProviderDependencies {
   createFailureResult: CreateFailureResultFn;
 }
 
+// CoinGecko uses slugs ("ethereum", "usd-coin") not standard ticker symbols
+// ("eth", "usdc"). This mapping covers the most common native tokens whose
+// CoinGecko IDs can't be derived from the symbol alone.
+const WELL_KNOWN_COINGECKO_IDS: Record<string, string> = {
+  eth: 'ethereum',
+  btc: 'bitcoin',
+  matic: 'matic-network',
+  pol: 'pol-ex-matic',
+  usdc: 'usd-coin',
+  usdt: 'tether',
+  bnb: 'binancecoin',
+  sol: 'solana',
+  avax: 'avalanche-2',
+  ada: 'cardano',
+  dot: 'polkadot',
+  doge: 'dogecoin',
+  shib: 'shiba-inu',
+  link: 'chainlink',
+  uni: 'uniswap',
+  xrp: 'ripple',
+  ltc: 'litecoin',
+  atom: 'cosmos',
+  near: 'near',
+  steth: 'staked-ether',
+  weth: 'weth',
+  dai: 'dai',
+  trx: 'tron',
+  ton: 'the-open-network',
+  apt: 'aptos',
+  fil: 'filecoin',
+  xlm: 'stellar',
+  etc: 'ethereum-classic',
+  bch: 'bitcoin-cash',
+};
+
+function resolveCoingeckoId(rawId: string): string {
+  return WELL_KNOWN_COINGECKO_IDS[rawId] || rawId;
+}
+
 // CoinGecko's /simple/price endpoint has a practical URL length limit.
 // With long coin IDs, ~250 IDs keeps URLs well under browser/server limits.
 const COINGECKO_MAX_IDS_PER_REQUEST = 250;
@@ -59,7 +98,9 @@ export class CoinGeckoProvider implements PricingProvider {
   ): Promise<ProviderPriceResult[]> {
     const { rateLimiter, convertPrice, createFailureResult } = this.deps;
     const coinIds = tokens
-      .map(({ providerTokenId, token }) => providerTokenId || token.symbol.toLowerCase())
+      .map(({ providerTokenId, token }) =>
+        resolveCoingeckoId(providerTokenId || token.symbol.toLowerCase())
+      )
       .filter(Boolean)
       .join(',');
 
@@ -94,7 +135,7 @@ export class CoinGeckoProvider implements PricingProvider {
       data = (await response.json()) as CoinGeckoPriceResponse;
 
       const hasDataInBaseCurrency = tokens.some(({ providerTokenId, token }) => {
-        const coinId = providerTokenId || token.symbol.toLowerCase();
+        const coinId = resolveCoingeckoId(providerTokenId || token.symbol.toLowerCase());
         return data && data[coinId]?.[apiCurrency] !== undefined;
       });
 
@@ -131,7 +172,7 @@ export class CoinGeckoProvider implements PricingProvider {
     const results: ProviderPriceResult[] = [];
 
     for (const { token, providerTokenId } of tokens) {
-      const coinId = providerTokenId || token.symbol.toLowerCase();
+      const coinId = resolveCoingeckoId(providerTokenId || token.symbol.toLowerCase());
       const priceData = data[coinId];
       const priceValue = priceData?.[apiCurrency];
 
