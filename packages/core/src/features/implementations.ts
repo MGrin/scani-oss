@@ -5,8 +5,11 @@
  * These implementations can be called from both tRPC routers and Telegram bot tools.
  */
 
+import { eq } from 'drizzle-orm';
 import { Container } from 'typedi';
 import type { User } from '../database';
+import * as schema from '../database/schema';
+import { withTransaction } from '../database/transaction';
 import { BlockchainServiceManager } from '../external-services/blockchain';
 import {
   AccountRepository,
@@ -38,6 +41,7 @@ import {
   UpdateHoldingUseCase,
 } from '../use-cases';
 import type { UpdateHoldingInput } from '../use-cases/UpdateHoldingUseCase';
+import { createComponentLogger } from '../utils/logger';
 import type { FeatureExecutionContext } from './index';
 
 /**
@@ -720,6 +724,63 @@ export const SettingsImplementations = {
       symbol: token.symbol,
       name: token.name,
     }));
+  },
+
+  async deleteAllData(context: FeatureExecutionContext, _input: Record<string, never>) {
+    const logger = createComponentLogger('settings:delete-all-data');
+    logger.warn({ userId: context.userId }, 'User requested deletion of all data');
+
+    await withTransaction(
+      async (tx) => {
+        // Delete in FK-safe order. Junction tables (holdingGroups, accountGroups,
+        // vaultHoldings) cascade automatically from their parent deletes.
+        const holdingsDel = await tx
+          .delete(schema.holdings)
+          .where(eq(schema.holdings.userId, context.userId))
+          .returning({ id: schema.holdings.id });
+
+        const accountsDel = await tx
+          .delete(schema.accounts)
+          .where(eq(schema.accounts.userId, context.userId))
+          .returning({ id: schema.accounts.id });
+
+        const vaultsDel = await tx
+          .delete(schema.vaults)
+          .where(eq(schema.vaults.userId, context.userId))
+          .returning({ id: schema.vaults.id });
+
+        const groupsDel = await tx
+          .delete(schema.groups)
+          .where(eq(schema.groups.userId, context.userId))
+          .returning({ id: schema.groups.id });
+
+        const walletsDel = await tx
+          .delete(schema.userWallets)
+          .where(eq(schema.userWallets.userId, context.userId))
+          .returning({ id: schema.userWallets.id });
+
+        const credentialsDel = await tx
+          .delete(schema.userIntegrationCredentials)
+          .where(eq(schema.userIntegrationCredentials.userId, context.userId))
+          .returning({ id: schema.userIntegrationCredentials.id });
+
+        logger.info(
+          {
+            userId: context.userId,
+            holdings: holdingsDel.length,
+            accounts: accountsDel.length,
+            vaults: vaultsDel.length,
+            groups: groupsDel.length,
+            wallets: walletsDel.length,
+            credentials: credentialsDel.length,
+          },
+          'All user data deleted successfully'
+        );
+      },
+      { name: 'deleteAllUserData', timeout: 30000 }
+    );
+
+    return { success: true };
   },
 
   async getBaseCurrency(context: FeatureExecutionContext, _input: Record<string, never>) {

@@ -1,5 +1,6 @@
 import { ExternalLink } from 'lucide-react';
 import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -14,6 +15,7 @@ import { Label } from '@/components/ui/label';
 import { trpc } from '@/lib/trpc';
 import { trpcVanilla } from '@/lib/trpc-vanilla';
 import { invalidatePortfolioQueries } from '@/v2/hooks/invalidatePortfolioQueries';
+import { V2_ROUTES } from '@/v2/lib/routes';
 
 interface ExchangeConfig {
   key: string;
@@ -208,6 +210,7 @@ export function ExchangeConnectDialog({
   const [errorMsg, setErrorMsg] = useState('');
 
   const utils = trpc.useUtils();
+  const navigate = useNavigate();
 
   const help = API_KEY_HELP[exchange.key];
   const isMobile = isMobileDevice();
@@ -265,12 +268,23 @@ export function ExchangeConnectDialog({
         // without a roundtrip.
         throw new Error(`No integration client for "${exchange.key}"`);
       }
-      await router.validateKeys.mutate(input);
+      const result = await router.validateKeys.mutate(input);
       setStatus('success');
       // Invalidate everything — connecting an exchange creates accounts
       // and holdings, which roll up into institutions, dashboard totals,
       // vaults, and the asset-allocation chart.
       await invalidatePortfolioQueries(utils);
+
+      // Navigate to holdings filtered by institution after a brief delay
+      // so the user sees the success state before navigating away.
+      const institutionId = result?.institutionId;
+      if (institutionId) {
+        setTimeout(() => {
+          resetForm();
+          onOpenChange(false);
+          navigate(`${V2_ROUTES.holdings}?institution=${institutionId}`);
+        }, 800);
+      }
     } catch (err) {
       setErrorMsg(err instanceof Error ? err.message : 'Connection failed');
       setStatus('error');

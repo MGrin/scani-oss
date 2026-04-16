@@ -85,12 +85,20 @@ export class SyncExchangeBalancesUseCase {
     try {
       // STEP 1: Fetch ALL external data first (no DB connections held during API calls)
 
-      // Get crypto token type
+      // Get token types (crypto for exchanges, fiat/stock for brokers like IBKR)
       const cryptoTokenType = await this.tokenTypeRepository.findByCode('crypto');
+      const fiatTokenType = await this.tokenTypeRepository.findByCode('fiat');
+      const stockTokenType = await this.tokenTypeRepository.findByCode('stock');
 
       if (!cryptoTokenType) {
         throw new Error('Token type "crypto" not found');
       }
+
+      const tokenTypeMap: Record<string, string> = {
+        crypto: cryptoTokenType.id,
+        fiat: fiatTokenType?.id ?? cryptoTokenType.id,
+        stock: stockTokenType?.id ?? cryptoTokenType.id,
+      };
 
       // Query database for exchange institutions
       // Auto-discover exchange names from registered integration configs
@@ -367,10 +375,14 @@ export class SyncExchangeBalancesUseCase {
                   // Map token
                   const tokenMapping = await integration.mapToken(holding);
 
+                  // Determine the correct token type based on the holding
+                  const holdingTokenType = holding.tokenType || 'crypto';
+                  const resolvedTokenTypeId = tokenTypeMap[holdingTokenType] ?? cryptoTokenType.id;
+
                   // Get or create token
                   const { token } = await this.tokenService.findOrCreateTokenFromIntegration(
                     tokenMapping,
-                    cryptoTokenType.id,
+                    resolvedTokenTypeId,
                     8,
                     tx
                   );

@@ -6,7 +6,11 @@
 import { db } from '@scani/core/database/connection';
 import * as schema from '@scani/core/database/schema';
 import { IntegrationCredentialsService } from '@scani/core/services';
-import { ImportBinanceAccountsUseCase, ImportKrakenAccountsUseCase } from '@scani/core/use-cases';
+import {
+  ImportBinanceAccountsUseCase,
+  ImportIbkrAccountsUseCase,
+  ImportKrakenAccountsUseCase,
+} from '@scani/core/use-cases';
 import {
   validateBinanceCredentials,
   validateBitgetCredentials,
@@ -132,6 +136,7 @@ function createExchangeWithImportRouter(config: ExchangeWithImportConfig) {
         return {
           success: true,
           message: `${config.name} credentials validated and stored`,
+          institutionId,
           accounts: importResult.accounts,
           holdings: importResult.holdings,
           accountsCreated: importResult.accountsCreated,
@@ -172,11 +177,15 @@ function createApiKeyOnlyRouter(
       }
 
       try {
-        await storeExchangeCredentials(ctx.userId, name, {
+        const institutionId = await storeExchangeCredentials(ctx.userId, name, {
           apiKey: input.apiKey,
           apiSecret: input.apiSecret,
         });
-        return { success: true, message: `${name} credentials validated and stored` };
+        return {
+          success: true,
+          message: `${name} credentials validated and stored`,
+          institutionId,
+        };
       } catch (error) {
         if (error instanceof TRPCError) throw error;
         throw new TRPCError({
@@ -222,12 +231,16 @@ function createPassphraseRouter(
         }
 
         try {
-          await storeExchangeCredentials(ctx.userId, name, {
+          const institutionId = await storeExchangeCredentials(ctx.userId, name, {
             apiKey: input.apiKey,
             apiSecret: input.apiSecret,
             passphrase: input.passphrase,
           });
-          return { success: true, message: `${name} credentials validated and stored` };
+          return {
+            success: true,
+            message: `${name} credentials validated and stored`,
+            institutionId,
+          };
         } catch (error) {
           if (error instanceof TRPCError) throw error;
           throw new TRPCError({
@@ -279,8 +292,10 @@ export const integrationsRouter = router({
         }
 
         try {
-          await storeExchangeCredentials(ctx.userId, 'Wise', { apiToken: input.apiToken });
-          return { success: true, message: 'Wise credentials validated and stored' };
+          const institutionId = await storeExchangeCredentials(ctx.userId, 'Wise', {
+            apiToken: input.apiToken,
+          });
+          return { success: true, message: 'Wise credentials validated and stored', institutionId };
         } catch (error) {
           if (error instanceof TRPCError) throw error;
           throw new TRPCError({
@@ -320,16 +335,32 @@ export const integrationsRouter = router({
         }
 
         try {
-          await storeExchangeCredentials(ctx.userId, 'Interactive Brokers', {
+          const institutionId = await storeExchangeCredentials(ctx.userId, 'Interactive Brokers', {
             token: input.token,
             queryId: input.queryId,
           });
-          return { success: true, message: 'Interactive Brokers credentials validated and stored' };
+
+          const importUseCase = Container.get(ImportIbkrAccountsUseCase);
+          const importResult = await importUseCase.execute({
+            userId: ctx.userId,
+            institutionId,
+          });
+
+          return {
+            success: true,
+            message: 'Interactive Brokers credentials validated and stored',
+            institutionId,
+            accounts: importResult.accounts,
+            holdings: importResult.holdings,
+            accountsCreated: importResult.accountsCreated,
+            tokensImported: importResult.tokensImported,
+            errors: importResult.errors,
+          };
         } catch (error) {
           if (error instanceof TRPCError) throw error;
           throw new TRPCError({
             code: 'INTERNAL_SERVER_ERROR',
-            message: 'Failed to store credentials',
+            message: 'Failed to store credentials and import accounts',
             cause: error,
           });
         }

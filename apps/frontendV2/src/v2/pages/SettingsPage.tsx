@@ -1,4 +1,4 @@
-import { LogOut } from 'lucide-react';
+import { LogOut, Trash2 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -13,7 +13,10 @@ import {
 } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useAuth } from '@/contexts/AuthContext';
+import { showSuccess } from '@/hooks/use-toast';
 import { trpc } from '@/lib/trpc';
+import { ConfirmDialog } from '../components/shared/ConfirmDialog';
+import { invalidatePortfolioQueries } from '../hooks/invalidatePortfolioQueries';
 
 export function SettingsPage() {
   const { data: user, isLoading: userLoading } = trpc.users.getCurrent.useQuery();
@@ -21,10 +24,19 @@ export function SettingsPage() {
   const utils = trpc.useUtils();
   const { signOut } = useAuth();
 
+  const [showDeleteAll, setShowDeleteAll] = useState(false);
+
   const handleSignOut = () => {
     // ProtectedRoute will redirect to /auth on session loss.
     void signOut();
   };
+
+  const deleteAllDataMutation = trpc.users.deleteAllData.useMutation({
+    onSuccess: async () => {
+      await invalidatePortfolioQueries(utils);
+      showSuccess('All data deleted successfully. Your account is now clean.');
+    },
+  });
 
   const updateMutation = trpc.users.updateCurrent.useMutation({
     onSuccess: () => {
@@ -142,6 +154,38 @@ export function SettingsPage() {
           </Button>
         </CardContent>
       </Card>
+
+      <Card className="border-destructive/50">
+        <CardHeader>
+          <CardTitle className="text-base text-destructive">Danger Zone</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <p className="text-sm text-muted-foreground">
+            Permanently delete all your financial data including accounts, holdings, wallets,
+            integration credentials, groups, and vaults. Your account will remain active but empty.
+          </p>
+          <Button
+            type="button"
+            variant="destructive"
+            onClick={() => setShowDeleteAll(true)}
+            disabled={deleteAllDataMutation.isPending}
+          >
+            <Trash2 className="h-4 w-4 mr-2" />
+            {deleteAllDataMutation.isPending ? 'Deleting...' : 'Delete all my data'}
+          </Button>
+        </CardContent>
+      </Card>
+
+      <ConfirmDialog
+        open={showDeleteAll}
+        onOpenChange={setShowDeleteAll}
+        title="Delete all your data?"
+        description="This will permanently delete all your accounts, holdings, wallets, integration credentials, groups, and vaults. This action cannot be undone. Your account will remain active but completely empty."
+        confirmLabel="Delete everything"
+        cancelLabel="Keep my data"
+        variant="destructive"
+        onConfirm={() => deleteAllDataMutation.mutate()}
+      />
     </div>
   );
 }
