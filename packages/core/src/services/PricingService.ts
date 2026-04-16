@@ -1035,7 +1035,7 @@ export class PricingService {
             'Assigning crypto token to CoinGecko (primary provider) - DeFiLlama fallback available'
           );
         } else {
-          provider = this.getProviderByTokenType(typeCode, token);
+          provider = this.getProviderByTokenType(typeCode, token, metadata);
           providerTokenId = this.getProviderTokenId(provider, token, metadata);
         }
       } catch (error) {
@@ -1075,7 +1075,11 @@ export class PricingService {
     return groupedTokens;
   }
 
-  private getProviderByTokenType(typeCode: string, token: Token): PricingProviderKey | null {
+  private getProviderByTokenType(
+    typeCode: string,
+    token: Token,
+    metadata?: Record<string, unknown>
+  ): PricingProviderKey | null {
     switch (typeCode.toLowerCase()) {
       case 'fiat':
         return 'exchangeRate';
@@ -1083,9 +1087,17 @@ export class PricingService {
       case 'crypto':
         return 'coinGecko';
 
-      case 'stock':
-        // 'stock' type covers Stock/ETF/Equity/Commodity as per seed data
+      case 'stock': {
+        // Route non-US stocks directly to Google Sheets (Finnhub free tier = US only).
+        // Stocks with unknown exchange still go to Finnhub (might be US).
+        const exchangeInfo = metadata?.exchangeInfo as
+          | { exchange?: string; currency?: string }
+          | undefined;
+        if (exchangeInfo && !this.isUSExchange(exchangeInfo)) {
+          return 'googleSheets';
+        }
         return 'finnhub';
+      }
 
       case 'private-company':
       case 'other':
@@ -1103,6 +1115,13 @@ export class PricingService {
         );
         return null;
     }
+  }
+
+  private isUSExchange(exchangeInfo: { exchange?: string; currency?: string }): boolean {
+    if (exchangeInfo.currency === 'USD') return true;
+    const exchange = (exchangeInfo.exchange || '').toUpperCase();
+    const usExchanges = ['NYSE', 'NASDAQ', 'ARCA', 'AMEX', 'BATS', 'IEX', 'US'];
+    return usExchanges.includes(exchange);
   }
 
   private getProviderTokenId(
@@ -1188,6 +1207,29 @@ export class PricingService {
         );
       }
     });
+
+    // Google Sheets as primary provider for non-US stocks (routed by groupTokensByProvider)
+    const googleSheetsPrimaryTokens = tokensByProvider.get('googleSheets');
+    if (
+      googleSheetsPrimaryTokens &&
+      googleSheetsPrimaryTokens.length > 0 &&
+      this.googleSheetsAvailable
+    ) {
+      providerPromises.push(
+        (async () => {
+          try {
+            logger.info(
+              { tokenCount: googleSheetsPrimaryTokens.length },
+              'Fetching non-US stock prices from Google Sheets (primary provider)'
+            );
+            return await this.googleSheetsProvider.fetchPrices(googleSheetsPrimaryTokens, context);
+          } catch (error) {
+            logger.error({ error }, 'Google Sheets primary provider fetch failed');
+            return [] as ProviderPriceResult[];
+          }
+        })()
+      );
+    }
 
     const providerResults = await Promise.all(providerPromises);
     for (const results of providerResults) {

@@ -87,9 +87,9 @@ describe('IbkrFlexQueryService', () => {
           <FlexStatements>
             <FlexStatement>
               <OpenPositions>
-                <OpenPosition symbol="AAPL" description="Apple Inc" position="100" markPrice="175.50" positionValue="17550" currency="USD" assetCategory="STK" />
-                <OpenPosition symbol="MSFT" description="Microsoft" position="50" markPrice="380.00" positionValue="19000" currency="USD" assetCategory="STK" />
-                <OpenPosition symbol="ZERO" description="Zero Position" position="0" markPrice="100" positionValue="0" currency="USD" assetCategory="STK" />
+                <OpenPosition symbol="AAPL" description="Apple Inc" position="100" markPrice="175.50" positionValue="17550" currency="USD" assetCategory="STK" listingExchange="NASDAQ" />
+                <OpenPosition symbol="XEQT" description="iShares Core Equity ETF" position="50" markPrice="30.00" positionValue="1500" currency="CAD" assetCategory="STK" listingExchange="TSE" />
+                <OpenPosition symbol="ZERO" description="Zero Position" position="0" markPrice="100" positionValue="0" currency="USD" assetCategory="STK" listingExchange="NYSE" />
               </OpenPositions>
               <CashReport>
                 <CashReportCurrency currency="USD" endingCash="25000.50" />
@@ -111,13 +111,56 @@ describe('IbkrFlexQueryService', () => {
       expect(result.positions[0]!.positionValue).toBe('17550');
       expect(result.positions[0]!.currency).toBe('USD');
       expect(result.positions[0]!.assetCategory).toBe('STK');
-      expect(result.positions[1]!.symbol).toBe('MSFT');
+      expect(result.positions[0]!.listingExchange).toBe('NASDAQ');
+      expect(result.positions[1]!.symbol).toBe('XEQT');
+      expect(result.positions[1]!.currency).toBe('CAD');
+      expect(result.positions[1]!.listingExchange).toBe('TSE');
 
       // Should exclude zero cash balance
       expect(result.cashBalances).toHaveLength(2);
       expect(result.cashBalances[0]!.currency).toBe('USD');
       expect(result.cashBalances[0]!.endingCash).toBe('25000.50');
       expect(result.cashBalances[1]!.currency).toBe('EUR');
+    });
+
+    it('should filter out BASE_SUMMARY cash rows', () => {
+      const xml = `
+        <FlexQueryResponse>
+          <FlexStatements>
+            <FlexStatement>
+              <OpenPositions></OpenPositions>
+              <CashReport>
+                <CashReportCurrency currency="USD" endingCash="10000.00" />
+                <CashReportCurrency currency="BASE_SUMMARY" endingCash="10000.00" />
+              </CashReport>
+            </FlexStatement>
+          </FlexStatements>
+        </FlexQueryResponse>
+      `;
+
+      const result = service.parseFlexQueryXml(xml);
+      expect(result.cashBalances).toHaveLength(1);
+      expect(result.cashBalances[0]!.currency).toBe('USD');
+    });
+
+    it('should fall back to endingSettledCash when endingCash is missing', () => {
+      const xml = `
+        <FlexQueryResponse>
+          <FlexStatements>
+            <FlexStatement>
+              <OpenPositions></OpenPositions>
+              <CashReport>
+                <CashReportCurrency currency="USD" endingSettledCash="7500.25" />
+              </CashReport>
+            </FlexStatement>
+          </FlexStatements>
+        </FlexQueryResponse>
+      `;
+
+      const result = service.parseFlexQueryXml(xml);
+      expect(result.cashBalances).toHaveLength(1);
+      expect(result.cashBalances[0]!.currency).toBe('USD');
+      expect(result.cashBalances[0]!.endingCash).toBe('7500.25');
     });
 
     it('should return empty arrays for XML with no positions or cash', () => {

@@ -144,9 +144,18 @@ export class IbkrIntegration extends ScaniIntegration {
             markPrice: pos.markPrice,
             positionValue: pos.positionValue,
             currency: pos.currency,
+            listingExchange: pos.listingExchange,
             provider: 'ibkr',
           },
         });
+      }
+
+      // Warn if no cash balances found (may indicate Flex Query config issue)
+      if (data.cashBalances.length === 0 && data.positions.length > 0) {
+        console.warn(
+          'IBKR: No cash balances found in Flex Query response. ' +
+            'Ensure your Flex Query configuration includes the "Cash Report" section.'
+        );
       }
 
       // Map cash balances to holdings
@@ -188,6 +197,25 @@ export class IbkrIntegration extends ScaniIntegration {
       holding.tokenType ??
       mapAssetCategoryToTokenType((holding.metadata?.assetCategory as string) ?? '');
 
+    const providerMetadata: Record<string, unknown> = {
+      provider: 'ibkr',
+      externalId: holding.externalTokenId,
+      tokenType,
+      assetCategory: holding.metadata?.assetCategory,
+      markPrice: holding.metadata?.markPrice,
+      positionValue: holding.metadata?.positionValue,
+      currency: holding.metadata?.currency,
+      listingExchange: holding.metadata?.listingExchange,
+    };
+
+    // Add exchangeInfo for pricing service routing (stocks/ETFs)
+    if (tokenType === 'stock' && holding.metadata?.currency) {
+      providerMetadata.exchangeInfo = {
+        exchange: holding.metadata.listingExchange || '',
+        currency: holding.metadata.currency,
+      };
+    }
+
     return {
       token: {
         symbol: holding.symbol,
@@ -195,12 +223,7 @@ export class IbkrIntegration extends ScaniIntegration {
         typeId: '',
         decimals: 2,
         iconUrl: holding.iconUrl,
-        providerMetadata: JSON.stringify({
-          provider: 'ibkr',
-          externalId: holding.externalTokenId,
-          tokenType,
-          ...holding.metadata,
-        }),
+        providerMetadata: JSON.stringify(providerMetadata),
       },
       isNew: false,
       confidence: 1.0,

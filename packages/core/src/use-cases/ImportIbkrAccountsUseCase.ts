@@ -18,6 +18,7 @@ import * as schema from '../database/schema';
 import { withTransaction } from '../database/transaction';
 import { TokenTypeRepository } from '../repositories/EnumRepositories';
 import { HoldingRepository } from '../repositories/HoldingRepository';
+import { TokenRepository } from '../repositories/TokenRepository';
 import { HoldingService } from '../services/HoldingService';
 import { IntegrationCredentialsService } from '../services/IntegrationCredentialsService';
 import { TokenService } from '../services/TokenService';
@@ -56,6 +57,7 @@ export class ImportIbkrAccountsUseCase {
   private readonly integrationCredentialsService = Container.get(IntegrationCredentialsService);
   private readonly tokenService = Container.get(TokenService);
   private readonly tokenTypeRepository = Container.get(TokenTypeRepository);
+  private readonly tokenRepository = Container.get(TokenRepository);
   private readonly holdingRepository = Container.get(HoldingRepository);
   private readonly holdingService = Container.get(HoldingService);
 
@@ -248,6 +250,27 @@ export class ImportIbkrAccountsUseCase {
                   // Determine the correct token type based on the holding's tokenType
                   const holdingTokenType = holding.tokenType || 'stock';
                   const tokenTypeId = tokenTypeMap[holdingTokenType] || stockTokenType.id;
+
+                  // Dedup: IBKR provides bare symbols (e.g., "XEQT") but DB may have
+                  // suffixed variants (e.g., "XEQT.TO"). Try fuzzy match first.
+                  if (holdingTokenType === 'stock' && !holding.symbol.includes('.')) {
+                    const existingSuffixed = await this.tokenRepository.findBySymbolPrefixAndType(
+                      holding.symbol,
+                      tokenTypeId,
+                      tx
+                    );
+                    if (existingSuffixed) {
+                      // Update the mapping to use the existing suffixed symbol
+                      tokenMapping.token.symbol = existingSuffixed.symbol;
+                      logger.info(
+                        {
+                          ibkrSymbol: holding.symbol,
+                          matchedSymbol: existingSuffixed.symbol,
+                        },
+                        'Matched IBKR bare symbol to existing suffixed token'
+                      );
+                    }
+                  }
 
                   const { token } = await this.tokenService.findOrCreateTokenFromIntegration(
                     tokenMapping,

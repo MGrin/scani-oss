@@ -95,7 +95,7 @@ export class FinnhubProvider implements PricingProvider {
             timestamp,
             PROVIDER_CONFIGS.finnhub.name,
             new Error('No valid price data from Finnhub'),
-            { response, dataEmpty: false }
+            { response, dataEmpty: true }
           );
         }
 

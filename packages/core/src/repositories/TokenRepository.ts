@@ -1,4 +1,4 @@
-import { and, eq, inArray, or } from 'drizzle-orm';
+import { and, eq, inArray, like, or } from 'drizzle-orm';
 import { Service } from 'typedi';
 import * as schema from '../database/schema';
 import type { NewToken, Token } from '../domain/entities';
@@ -133,6 +133,30 @@ export class TokenRepository extends BaseRepository<Token, NewToken> {
       .where(inArray(schema.tokens.id, tokenIds));
 
     return results as Array<Token & { typeCode: string | null }>;
+  }
+
+  /**
+   * Find a token whose symbol starts with the given prefix followed by a dot.
+   * Used for deduplication: e.g., IBKR imports "XEQT" and we search for "XEQT.%" to find "XEQT.TO".
+   */
+  async findBySymbolPrefixAndType(
+    symbolPrefix: string,
+    typeId: string,
+    transaction?: DatabaseTransaction
+  ): Promise<Token | null> {
+    const database = this.getDb(transaction);
+    const results = await database
+      .select()
+      .from(schema.tokens)
+      .where(
+        and(
+          like(schema.tokens.symbol, `${symbolPrefix.toUpperCase()}.%`),
+          eq(schema.tokens.typeId, typeId)
+        )
+      )
+      .limit(1);
+
+    return results[0] || null;
   }
 
   /**

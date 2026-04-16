@@ -33,6 +33,7 @@ export interface IbkrOpenPosition {
   positionValue: string;
   currency: string;
   assetCategory: string;
+  listingExchange: string;
 }
 
 /**
@@ -206,6 +207,7 @@ export class IbkrFlexQueryService {
         positionValue: this.extractAttr(attrs, 'positionValue'),
         currency: this.extractAttr(attrs, 'currency'),
         assetCategory: this.extractAttr(attrs, 'assetCategory'),
+        listingExchange: this.extractAttr(attrs, 'listingExchange'),
       };
 
       // Only include positions with non-zero quantity
@@ -227,9 +229,20 @@ export class IbkrFlexQueryService {
 
     for (const match of xml.matchAll(cashRegex)) {
       const attrs = match[1] ?? '';
+      const currency = this.extractAttr(attrs, 'currency');
+
+      // Skip aggregate summary rows
+      if (currency === 'BASE_SUMMARY') continue;
+
+      // Try endingCash first, fall back to endingSettledCash
+      let endingCash = this.extractAttr(attrs, 'endingCash');
+      if (!endingCash) {
+        endingCash = this.extractAttr(attrs, 'endingSettledCash');
+      }
+
       const balance: IbkrCashBalance = {
-        currency: this.extractAttr(attrs, 'currency'),
-        endingCash: this.extractAttr(attrs, 'endingCash'),
+        currency,
+        endingCash,
       };
 
       // Only include non-zero cash balances

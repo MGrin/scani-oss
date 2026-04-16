@@ -1194,6 +1194,33 @@ export class GoogleSheetsProvider implements PricingProvider {
       BA: 'BCBA',
       'BOLSA DE COMERCIO DE BUENOS AIRES': 'BCBA',
       'BUENOS AIRES': 'BCBA',
+
+      // IBKR exchange codes (standard exchange identifiers used by Interactive Brokers)
+      TSE: 'TSE',
+      SEHK: 'HKG',
+      TSEJ: 'TYO',
+      SBF: 'EPA',
+      FWB: 'FRA',
+      IBIS: 'FRA',
+      AEB: 'AMS',
+      BVME: 'BIT',
+      VIRTX: 'SWX',
+      EBS: 'SWX',
+      BM: 'BME',
+      VENTURE: 'CVE',
+      CVE: 'CVE',
+      'ENEXT.BE': 'EBR',
+      BVL: 'ELI',
+      HSE: 'HEL',
+      KSE: 'CSE',
+      OSE: 'OSE',
+      SFB: 'STO',
+      SGX: 'SGX',
+      ASX: 'ASX',
+      NSE: 'NSE',
+      BSE: 'BSE',
+      MEXI: 'BMV',
+      BVMF: 'BVMF',
     };
 
     const prefix = exchangeToPrefix[exchange];
@@ -1295,14 +1322,9 @@ export class GoogleSheetsProvider implements PricingProvider {
       };
     }
 
-    if (!symbol.includes('.') && !/[^A-Z0-9]/i.test(symbol)) {
-      return {
-        exchange: 'US',
-        currency: 'USD',
-        mic: 'XNAS',
-      };
-    }
-
+    // Don't assume US for plain symbols — this can produce wrong formulas
+    // for non-US stocks imported without exchange suffixes (e.g., IBKR's "XEQT").
+    // Exchange info should come from token metadata instead.
     return null;
   }
 }
