@@ -444,6 +444,31 @@ export const vaultHoldings = pgTable(
   })
 );
 
+// Holding APY configs table - Per-holding interest/yield configuration
+export const holdingApyConfigs = pgTable(
+  'holding_apy_configs',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    holdingId: uuid('holding_id')
+      .notNull()
+      .references(() => holdings.id, { onDelete: 'cascade' })
+      .unique(), // One APY config per holding
+    annualRatePct: text('annual_rate_pct').notNull(), // Decimal string, e.g. "4.5" for 4.5%
+    payoutFrequency: text('payout_frequency').notNull(), // 'daily' | 'weekdays' | 'weekly' | 'monthly' | 'yearly'
+    payoutDayOfWeek: real('payout_day_of_week'), // 0=Sun..6=Sat, for 'weekly'
+    payoutDayOfMonth: real('payout_day_of_month'), // 1-31, for 'monthly' and 'yearly'
+    payoutMonth: real('payout_month'), // 1-12, for 'yearly'
+    lastPayoutAt: timestamp('last_payout_at', { withTimezone: true }), // Tracks last successful payout
+    isActive: boolean('is_active').notNull().default(true),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => ({
+    holdingIdIdx: index('idx_holding_apy_configs_holding_id').on(table.holdingId),
+    activeIdx: index('idx_holding_apy_configs_active').on(table.isActive),
+  })
+);
+
 // =============================================================================
 // RELATIONS
 // =============================================================================
@@ -530,6 +555,10 @@ export const holdingsRelations = relations(holdings, ({ one, many }) => ({
   }),
   holdingGroups: many(holdingGroups),
   vaultHoldings: many(vaultHoldings),
+  apyConfig: one(holdingApyConfigs, {
+    fields: [holdings.id],
+    references: [holdingApyConfigs.holdingId],
+  }),
 }));
 
 export const tokenPricesRelations = relations(tokenPrices, ({ one }) => ({
@@ -629,6 +658,13 @@ export const vaultHoldingsRelations = relations(vaultHoldings, ({ one }) => ({
   }),
 }));
 
+export const holdingApyConfigsRelations = relations(holdingApyConfigs, ({ one }) => ({
+  holding: one(holdings, {
+    fields: [holdingApyConfigs.holdingId],
+    references: [holdings.id],
+  }),
+}));
+
 // Export types for use in application
 export type User = typeof users.$inferSelect;
 export type NewUser = typeof users.$inferInsert;
@@ -677,3 +713,6 @@ export type NewVault = typeof vaults.$inferInsert;
 
 export type VaultHolding = typeof vaultHoldings.$inferSelect;
 export type NewVaultHolding = typeof vaultHoldings.$inferInsert;
+
+export type HoldingApyConfig = typeof holdingApyConfigs.$inferSelect;
+export type NewHoldingApyConfig = typeof holdingApyConfigs.$inferInsert;

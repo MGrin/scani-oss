@@ -5,6 +5,7 @@ import type { Holding, User } from '../domain/entities';
 import { AccountRepository } from '../repositories/AccountRepository';
 import type { DatabaseTransaction } from '../repositories/BaseRepository';
 import { GroupRepository } from '../repositories/GroupRepository';
+import { HoldingApyConfigRepository } from '../repositories/HoldingApyConfigRepository';
 import { HoldingRepository } from '../repositories/HoldingRepository';
 import { BaseService } from './BaseService';
 import { PortfolioValuationService } from './PortfolioValuationService';
@@ -53,6 +54,7 @@ export class HoldingService extends BaseService {
   private readonly holdingRepository = Container.get(HoldingRepository);
   private readonly accountRepository = Container.get(AccountRepository);
   private readonly groupRepository = Container.get(GroupRepository);
+  private readonly holdingApyConfigRepository = Container.get(HoldingApyConfigRepository);
   private readonly portfolioValuationService = Container.get(PortfolioValuationService);
 
   constructor() {
@@ -427,13 +429,17 @@ export class HoldingService extends BaseService {
       return [];
     }
 
-    // Fetch groups for all holdings in a single query
-    const groupsMap = await this.groupRepository.findGroupsForHoldings(
-      holdingsWithFullDetails.map(({ holding, account }) => ({
-        id: holding.id,
-        accountId: account.id,
-      }))
-    );
+    // Fetch groups and APY configs for all holdings in parallel
+    const holdingIds = holdingsWithFullDetails.map(({ holding }) => holding.id);
+    const [groupsMap, apyConfigsMap] = await Promise.all([
+      this.groupRepository.findGroupsForHoldings(
+        holdingsWithFullDetails.map(({ holding, account }) => ({
+          id: holding.id,
+          accountId: account.id,
+        }))
+      ),
+      this.holdingApyConfigRepository.findByHoldingIds(holdingIds),
+    ]);
 
     // Create maps for efficient lookups - get individual token prices
     const portfolioPriceMap = new Map(
@@ -479,7 +485,10 @@ export class HoldingService extends BaseService {
         // Get groups for this holding (both direct and account-level)
         const holdingGroups = groupsMap.get(holding.id) || [];
 
-        return {
+        // Get APY config if present
+        const apyConfig = apyConfigsMap.get(holding.id);
+
+        const result: HoldingWithDetails = {
           id: holding.id,
           token: {
             id: token.id,
@@ -518,6 +527,21 @@ export class HoldingService extends BaseService {
           isHidden: holding.isHidden,
           source: holding.source,
         };
+
+        if (apyConfig) {
+          result.apyConfig = {
+            id: apyConfig.id,
+            annualRatePct: apyConfig.annualRatePct,
+            payoutFrequency: apyConfig.payoutFrequency,
+            payoutDayOfWeek: apyConfig.payoutDayOfWeek,
+            payoutDayOfMonth: apyConfig.payoutDayOfMonth,
+            payoutMonth: apyConfig.payoutMonth,
+            lastPayoutAt: apyConfig.lastPayoutAt?.toISOString() ?? null,
+            isActive: apyConfig.isActive,
+          };
+        }
+
+        return result;
       }
     );
 

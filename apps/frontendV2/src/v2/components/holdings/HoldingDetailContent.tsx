@@ -1,4 +1,4 @@
-import { Pencil, RefreshCw, Trash2 } from 'lucide-react';
+import { Pencil, RefreshCw, Settings, Trash2 } from 'lucide-react';
 import { useState } from 'react';
 import { NumericFormat } from 'react-number-format';
 import { useNavigate } from 'react-router-dom';
@@ -7,13 +7,16 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Separator } from '@/components/ui/separator';
 import { Skeleton } from '@/components/ui/skeleton';
+import { showError, showSuccess } from '@/hooks/use-toast';
 import { getFaviconUrl } from '@/lib/icons';
 import { trpc } from '@/lib/trpc';
 import { cn } from '@/lib/utils';
+import { invalidatePortfolioQueries } from '../../hooks/invalidatePortfolioQueries';
 import { useBaseCurrency } from '../../hooks/useBaseCurrency';
 import { useHoldingActions } from '../../hooks/useHoldingActions';
 import { V2_ROUTES } from '../../lib/routes';
 import { ConfirmDialog } from '../shared/ConfirmDialog';
+import { ApyConfigDialog } from './ApyConfigDialog';
 
 function formatMoney(value: number, currency = 'USD') {
   return new Intl.NumberFormat('en-US', {
@@ -38,6 +41,45 @@ function formatRelativeTime(dateStr: string): string {
   return new Date(dateStr).toLocaleDateString();
 }
 
+const DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+const MONTH_NAMES = [
+  '',
+  'January',
+  'February',
+  'March',
+  'April',
+  'May',
+  'June',
+  'July',
+  'August',
+  'September',
+  'October',
+  'November',
+  'December',
+];
+
+function formatPayoutSchedule(
+  frequency: string,
+  dayOfWeek: number | null,
+  dayOfMonth: number | null,
+  month: number | null
+): string {
+  switch (frequency) {
+    case 'daily':
+      return 'Paid daily';
+    case 'weekdays':
+      return 'Paid on weekdays (Mon-Fri)';
+    case 'weekly':
+      return `Paid weekly on ${DAY_NAMES[dayOfWeek ?? 0]}`;
+    case 'monthly':
+      return `Paid monthly on day ${dayOfMonth ?? 1}`;
+    case 'yearly':
+      return `Paid yearly on ${MONTH_NAMES[month ?? 1]} ${dayOfMonth ?? 1}`;
+    default:
+      return frequency;
+  }
+}
+
 interface HoldingDetailContentProps {
   holdingId: string;
   mode?: 'panel' | 'fullPage';
@@ -52,9 +94,22 @@ export function HoldingDetailContent({ holdingId, mode = 'panel' }: HoldingDetai
     useHoldingActions();
   const navigate = useNavigate();
 
+  const utils = trpc.useUtils();
+
   const [editingBalance, setEditingBalance] = useState(false);
   const [balanceInput, setBalanceInput] = useState('');
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [showApyDialog, setShowApyDialog] = useState(false);
+  const [showApyDeleteConfirm, setShowApyDeleteConfirm] = useState(false);
+
+  const deleteApyMutation = trpc.holdings.deleteApyConfig.useMutation({
+    onSuccess: async () => {
+      await invalidatePortfolioQueries(utils);
+      setShowApyDeleteConfirm(false);
+      showSuccess('APY configuration removed');
+    },
+    onError: (err) => showError(err, 'Failed to remove APY configuration'),
+  });
 
   if (isLoading) {
     return (
@@ -294,6 +349,89 @@ export function HoldingDetailContent({ holdingId, mode = 'panel' }: HoldingDetai
           </div>
         </>
       )}
+
+      {/* APY Configuration - only for checking, savings, investment */}
+      {holding.account?.typeCode &&
+        ['checking', 'savings', 'investment'].includes(holding.account.typeCode) && (
+          <>
+            <Separator />
+            <div>
+              <p className="text-xs text-muted-foreground uppercase tracking-wider mb-2">
+                APY Configuration
+              </p>
+              {holding.apyConfig ? (
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm font-medium">
+                      {holding.apyConfig.annualRatePct}% APY
+                    </span>
+                    <div className="flex gap-1">
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-7 w-7"
+                        onClick={() => setShowApyDialog(true)}
+                        title="Edit APY configuration"
+                      >
+                        <Settings className="h-3.5 w-3.5" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-7 w-7 text-destructive hover:text-destructive"
+                        onClick={() => setShowApyDeleteConfirm(true)}
+                        title="Remove APY configuration"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </Button>
+                    </div>
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    {formatPayoutSchedule(
+                      holding.apyConfig.payoutFrequency,
+                      holding.apyConfig.payoutDayOfWeek,
+                      holding.apyConfig.payoutDayOfMonth,
+                      holding.apyConfig.payoutMonth
+                    )}
+                  </p>
+                  {holding.apyConfig.lastPayoutAt && (
+                    <p className="text-[10px] text-muted-foreground/70">
+                      Last payout: {formatRelativeTime(holding.apyConfig.lastPayoutAt)}
+                    </p>
+                  )}
+                </div>
+              ) : (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="w-full"
+                  onClick={() => setShowApyDialog(true)}
+                >
+                  <Settings className="h-3.5 w-3.5 mr-2" />
+                  Configure APY
+                </Button>
+              )}
+            </div>
+          </>
+        )}
+
+      <ApyConfigDialog
+        open={showApyDialog}
+        onOpenChange={setShowApyDialog}
+        holdingId={holdingId}
+        existingConfig={holding.apyConfig ?? undefined}
+      />
+
+      <ConfirmDialog
+        open={showApyDeleteConfirm}
+        onOpenChange={setShowApyDeleteConfirm}
+        title="Remove APY Configuration"
+        description="Are you sure you want to remove the APY configuration? Interest will no longer accrue automatically."
+        confirmLabel="Remove"
+        variant="destructive"
+        isPending={deleteApyMutation.isPending}
+        onConfirm={() => deleteApyMutation.mutate({ holdingId })}
+      />
 
       <ConfirmDialog
         open={showDeleteConfirm}

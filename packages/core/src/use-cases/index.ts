@@ -3,6 +3,10 @@ export { GetAssetAllocationUseCase } from './GetAssetAllocationUseCase';
 
 // Holding Use Cases
 
+export {
+  type ApplyApyPayoutsResult,
+  ApplyApyPayoutsUseCase,
+} from './ApplyApyPayoutsUseCase';
 export { CreateHoldingsWithDependenciesUseCase } from './CreateHoldingsWithDependenciesUseCase';
 export {
   type DeleteHoldingResult,

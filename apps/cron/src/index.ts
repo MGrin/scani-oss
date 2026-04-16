@@ -13,6 +13,7 @@ import '@scani/core/repositories';
 import '@scani/core/services';
 
 // Import all cron jobs
+import { executeApyPayoutsCronJob } from './jobs/ApyPayoutsCronJob';
 import { executeExchangeBalancesCronJob } from './jobs/ExchangeBalancesCronJob';
 import { executePricingCronJob } from './jobs/PricingCronJob';
 import { executeWalletBalancesCronJob } from './jobs/WalletBalancesCronJob';
@@ -55,6 +56,11 @@ const AVAILABLE_JOBS: Record<
     name: 'exchange-balances',
     execute: executeExchangeBalancesCronJob,
     description: 'Sync exchange balances from exchanges',
+  },
+  'apy-payouts': {
+    name: 'apy-payouts',
+    execute: executeApyPayoutsCronJob,
+    description: 'Apply APY interest payouts to configured holdings',
   },
 };
 

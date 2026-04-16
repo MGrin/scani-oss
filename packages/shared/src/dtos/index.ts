@@ -5,6 +5,7 @@ export * from './dashboard';
 export * from './enums';
 export * from './group';
 export * from './holding';
+export * from './holdingApy';
 export * from './institution';
 export * from './token';
 export * from './user';

@@ -15,6 +15,7 @@ import {
   AccountRepository,
   AccountTypeRepository,
   GroupRepository,
+  HoldingApyConfigRepository,
   HoldingRepository,
   InstitutionRepository,
   InstitutionTypeRepository,
@@ -538,6 +539,73 @@ export const HoldingImplementations = {
     );
 
     return commonGroups;
+  },
+
+  async getApyConfig(context: FeatureExecutionContext, input: { holdingId: string }) {
+    const holdingRepository = Container.get(HoldingRepository);
+    const apyConfigRepository = Container.get(HoldingApyConfigRepository);
+
+    // Verify holding belongs to user
+    const holding = await holdingRepository.findById(input.holdingId);
+    if (!holding || holding.userId !== context.userId) {
+      throw new Error('Holding not found');
+    }
+
+    return await apyConfigRepository.findByHoldingId(input.holdingId);
+  },
+
+  async upsertApyConfig(
+    context: FeatureExecutionContext,
+    input: {
+      holdingId: string;
+      annualRatePct: string;
+      payoutFrequency: string;
+      payoutDayOfWeek?: number | null;
+      payoutDayOfMonth?: number | null;
+      payoutMonth?: number | null;
+    }
+  ) {
+    const holdingRepository = Container.get(HoldingRepository);
+    const accountRepository = Container.get(AccountRepository);
+    const accountTypeRepository = Container.get(AccountTypeRepository);
+    const apyConfigRepository = Container.get(HoldingApyConfigRepository);
+
+    // Verify holding belongs to user
+    const holding = await holdingRepository.findById(input.holdingId);
+    if (!holding || holding.userId !== context.userId) {
+      throw new Error('Holding not found');
+    }
+
+    // Verify account type is eligible
+    const account = await accountRepository.findById(holding.accountId);
+    if (!account) throw new Error('Account not found');
+    const accountType = await accountTypeRepository.findById(account.typeId);
+    if (!accountType || !['checking', 'savings', 'investment'].includes(accountType.code)) {
+      throw new Error(
+        'APY configuration is only available for checking, savings, and investment accounts'
+      );
+    }
+
+    return await apyConfigRepository.upsertByHoldingId(input.holdingId, {
+      annualRatePct: input.annualRatePct,
+      payoutFrequency: input.payoutFrequency,
+      payoutDayOfWeek: input.payoutDayOfWeek ?? null,
+      payoutDayOfMonth: input.payoutDayOfMonth ?? null,
+      payoutMonth: input.payoutMonth ?? null,
+    });
+  },
+
+  async deleteApyConfig(context: FeatureExecutionContext, input: { holdingId: string }) {
+    const holdingRepository = Container.get(HoldingRepository);
+    const apyConfigRepository = Container.get(HoldingApyConfigRepository);
+
+    // Verify holding belongs to user
+    const holding = await holdingRepository.findById(input.holdingId);
+    if (!holding || holding.userId !== context.userId) {
+      throw new Error('Holding not found');
+    }
+
+    return await apyConfigRepository.deleteByHoldingId(input.holdingId);
   },
 };
 

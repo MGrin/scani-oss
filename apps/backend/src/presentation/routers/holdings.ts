@@ -1,5 +1,5 @@
 import { HoldingImplementations } from '@scani/core/features/implementations';
-import { UpdateHoldingDto } from '@scani/shared';
+import { UpdateHoldingDto, UpsertHoldingApyConfigDto } from '@scani/shared';
 import { z } from 'zod';
 import {
   emitBulkEntityChanges,
@@ -190,6 +190,66 @@ export const holdingsRouter = router({
         { userId: dbUser.id, dbUser },
         { holdingIds: input.holdingIds }
       );
+
+      return result;
+    }),
+
+  // APY Config endpoints
+  getApyConfig: protectedProcedure
+    .input(z.object({ holdingId: z.string().uuid() }))
+    .query(async ({ input, ctx }) => {
+      const { dbUser } = await requireAuth(ctx);
+      return await HoldingImplementations.getApyConfig(
+        { userId: dbUser.id, dbUser },
+        { holdingId: input.holdingId }
+      );
+    }),
+
+  upsertApyConfig: protectedProcedure
+    .input(UpsertHoldingApyConfigDto)
+    .mutation(async ({ input, ctx }) => {
+      const { dbUser } = await requireAuth(ctx);
+
+      const result = await HoldingImplementations.upsertApyConfig(
+        { userId: dbUser.id, dbUser },
+        {
+          holdingId: input.holdingId,
+          annualRatePct: input.annualRatePct,
+          payoutFrequency: input.payoutFrequency,
+          payoutDayOfWeek: input.payoutDayOfWeek,
+          payoutDayOfMonth: input.payoutDayOfMonth,
+          payoutMonth: input.payoutMonth,
+        }
+      );
+
+      emitEntityChange({
+        type: 'entity_changed',
+        entityType: 'holding',
+        operationType: 'update',
+        entityId: input.holdingId,
+        userId: dbUser.id,
+      });
+
+      return result;
+    }),
+
+  deleteApyConfig: protectedProcedure
+    .input(z.object({ holdingId: z.string().uuid() }))
+    .mutation(async ({ input, ctx }) => {
+      const { dbUser } = await requireAuth(ctx);
+
+      const result = await HoldingImplementations.deleteApyConfig(
+        { userId: dbUser.id, dbUser },
+        { holdingId: input.holdingId }
+      );
+
+      emitEntityChange({
+        type: 'entity_changed',
+        entityType: 'holding',
+        operationType: 'update',
+        entityId: input.holdingId,
+        userId: dbUser.id,
+      });
 
       return result;
     }),

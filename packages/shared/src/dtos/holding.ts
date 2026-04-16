@@ -84,6 +84,16 @@ export type HoldingWithDetails = {
   isActive: boolean;
   isHidden: boolean;
   source: string;
+  apyConfig?: {
+    id: string;
+    annualRatePct: string;
+    payoutFrequency: string;
+    payoutDayOfWeek: number | null;
+    payoutDayOfMonth: number | null;
+    payoutMonth: number | null;
+    lastPayoutAt: string | null;
+    isActive: boolean;
+  };
 };
 
 export type HoldingsWithSummary = {

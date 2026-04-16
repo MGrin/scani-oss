@@ -71,6 +71,10 @@ jobs:
             -H "Authorization: Bearer $RENDER_API_KEY" \
             -H "Accept: application/json" \
             https://api.render.com/v1/services/crn-d57rt26r433s73et96s0/deploys
+          curl -fsS -X POST \
+            -H "Authorization: Bearer $RENDER_API_KEY" \
+            -H "Accept: application/json" \
+            https://api.render.com/v1/services/crn-d7ge0af7f7vs73bv5acg/deploys
 
       - name: Deploy frontend
         if: steps.filter.outputs.frontend == 'true' || github.event_name == 'workflow_dispatch'

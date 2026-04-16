@@ -7,6 +7,7 @@ export {
   TokenTypeRepository,
 } from './EnumRepositories';
 export { GroupRepository } from './GroupRepository';
+export { HoldingApyConfigRepository } from './HoldingApyConfigRepository';
 export { HoldingRepository } from './HoldingRepository';
 export { InstitutionBlockchainMappingRepository } from './InstitutionBlockchainMappingRepository';
 export { InstitutionRepository } from './InstitutionRepository';
