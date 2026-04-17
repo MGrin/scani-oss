@@ -1,0 +1,140 @@
+# Local development stack for scani.
+#
+# Usage:
+#   Infra only (default — great for running `bun dev` against it):
+#     docker compose up -d postgres redis mailpit
+#
+#   Full stack with backend + worker running inside containers:
+#     docker compose --profile full up -d --build
+#
+# Default ports (host-side offsets to avoid clashing with other local services):
+#   Postgres : localhost:5433
+#   Redis    : localhost:6380
+#   Backend  : localhost:3002
+#   Mailpit  : SMTP localhost:1026, UI http://localhost:8026
+#
+# Env contract (same for local, Fly, and self-hosters):
+#   DATABASE_URL=postgres://scani:scani@postgres:5432/scani?sslmode=disable
+#   REDIS_URL=redis://redis:6379
+#   SMTP_URL=smtp://mailpit:1025
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: scani-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: scani
+      POSTGRES_PASSWORD: scani
+      POSTGRES_DB: scani
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U scani -d scani"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    container_name: scani-redis
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    ports:
+      - "6380:6379"
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  mailpit:
+    image: axllent/mailpit:latest
+    container_name: scani-mailpit
+    restart: unless-stopped
+    ports:
+      - "1026:1025"   # SMTP
+      - "8026:8025"   # Web UI
+    environment:
+      MP_MAX_MESSAGES: 500
+      MP_SMTP_AUTH_ACCEPT_ANY: 1
+      MP_SMTP_AUTH_ALLOW_INSECURE: 1
+
+  # Schema + seed runner. One-shot container that applies the migrations
+  # against postgres, then exits. `docker compose --profile full up` runs it
+  # automatically before the backend starts; run manually with
+  # `docker compose run --rm migrate`.
+  migrate:
+    profiles: ["full", "migrate"]
+    build:
+      context: .
+      dockerfile: apps/backend/Dockerfile
+    image: scani-backend:dev
+    container_name: scani-migrate
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgres://scani:scani@postgres:5432/scani?sslmode=disable
+    command:
+      ["bun", "run", "/app/packages/core/src/database/migrate.ts"]
+    restart: "no"
+
+  backend:
+    profiles: ["full"]
+    build:
+      context: .
+      dockerfile: apps/backend/Dockerfile
+    image: scani-backend:dev
+    container_name: scani-backend
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    ports:
+      - "3002:8080"
+    environment:
+      DATABASE_URL: postgres://scani:scani@postgres:5432/scani?sslmode=disable
+      REDIS_URL: redis://redis:6379
+      FRONTEND_URL: http://localhost:5173
+      BACKEND_URL: http://localhost:3002
+      NODE_ENV: development
+      ENCRYPTION_KEY: 0123456789abcdef0123456789abcdef
+      BETTER_AUTH_SECRET: dev_secret_change_me_this_is_not_production_safe
+      SMTP_URL: smtp://mailpit:1025
+      SMTP_FROM: no-reply@scani.local
+      PORT: "8080"
+      HOST: "0.0.0.0"
+
+  worker:
+    profiles: ["full"]
+    build:
+      context: .
+      dockerfile: apps/worker/Dockerfile
+    image: scani-worker:dev
+    container_name: scani-worker
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    environment:
+      DATABASE_URL: postgres://scani:scani@postgres:5432/scani?sslmode=disable
+      REDIS_URL: redis://redis:6379
+      NODE_ENV: development
+      ENCRYPTION_KEY: 0123456789abcdef0123456789abcdef
+      EXTERNAL_API_MODE: direct
+      WORKER_CONCURRENCY: "2"
+
+volumes:
+  postgres-data:
+  redis-data:

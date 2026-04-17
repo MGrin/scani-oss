@@ -5,302 +5,36 @@
     {
       "idx": 0,
       "version": "7",
-      "when": 1759296712620,
-      "tag": "0000_wise_the_initiative",
+      "when": 1776398451195,
+      "tag": "0000_init_schema",
       "breakpoints": true
     },
     {
       "idx": 1,
       "version": "7",
-      "when": 1759296729072,
-      "tag": "0001_seed_token_types",
+      "when": 1776398462140,
+      "tag": "0001_seed_type_enums",
       "breakpoints": true
     },
     {
       "idx": 2,
       "version": "7",
-      "when": 1759296745619,
-      "tag": "0002_seed_institution_types",
+      "when": 1776398463489,
+      "tag": "0002_seed_fiat_tokens",
       "breakpoints": true
     },
     {
       "idx": 3,
       "version": "7",
-      "when": 1759296771449,
-      "tag": "0003_seed_account_types",
+      "when": 1776398464846,
+      "tag": "0003_seed_institutions",
       "breakpoints": true
     },
     {
       "idx": 4,
       "version": "7",
-      "when": 1759297014307,
-      "tag": "0004_seed_fiat_tokens",
-      "breakpoints": true
-    },
-    {
-      "idx": 5,
-      "version": "7",
-      "when": 1759297907740,
-      "tag": "0005_seed_institutions",
-      "breakpoints": true
-    },
-    {
-      "idx": 6,
-      "version": "7",
-      "when": 1759298700093,
-      "tag": "0006_seed_transaction_types",
-      "breakpoints": true
-    },
-    {
-      "idx": 7,
-      "version": "7",
-      "when": 1759312132971,
-      "tag": "0007_amazing_rage",
-      "breakpoints": true
-    },
-    {
-      "idx": 8,
-      "version": "7",
-      "when": 1759312162935,
-      "tag": "0008_seed_evm_chains",
-      "breakpoints": true
-    },
-    {
-      "idx": 9,
-      "version": "7",
-      "when": 1760515391710,
-      "tag": "0009_fat_kulan_gath",
-      "breakpoints": true
-    },
-    {
-      "idx": 10,
-      "version": "7",
-      "when": 1762260444881,
-      "tag": "0010_chunky_winter_soldier",
-      "breakpoints": true
-    },
-    {
-      "idx": 11,
-      "version": "7",
-      "when": 1762267374030,
-      "tag": "0011_narrow_skrulls",
-      "breakpoints": true
-    },
-    {
-      "idx": 12,
-      "version": "7",
-      "when": 1762587492028,
-      "tag": "0012_lovely_lilandra",
-      "breakpoints": true
-    },
-    {
-      "idx": 13,
-      "version": "7",
-      "when": 1762591561995,
-      "tag": "0013_foamy_vapor",
-      "breakpoints": true
-    },
-    {
-      "idx": 14,
-      "version": "7",
-      "when": 1762617661724,
-      "tag": "0014_cooing_shooting_star",
-      "breakpoints": true
-    },
-    {
-      "idx": 15,
-      "version": "7",
-      "when": 1764049684707,
-      "tag": "0015_fixed_outlaw_kid",
-      "breakpoints": true
-    },
-    {
-      "idx": 16,
-      "version": "7",
-      "when": 1765847913452,
-      "tag": "0016_add_schedules_feature",
-      "breakpoints": true
-    },
-    {
-      "idx": 17,
-      "version": "7",
-      "when": 1765848000000,
-      "tag": "0017_seed_schedule_types",
-      "breakpoints": true
-    },
-    {
-      "idx": 18,
-      "version": "7",
-      "when": 1765856263435,
-      "tag": "0018_yellow_songbird",
-      "breakpoints": true
-    },
-    {
-      "idx": 19,
-      "version": "7",
-      "when": 1765940670551,
-      "tag": "0019_closed_bucky",
-      "breakpoints": true
-    },
-    {
-      "idx": 20,
-      "version": "7",
-      "when": 1766137179867,
-      "tag": "0020_empty_luke_cage",
-      "breakpoints": true
-    },
-    {
-      "idx": 21,
-      "version": "7",
-      "when": 1734613567000,
-      "tag": "0021_add_groups_tables",
-      "breakpoints": true
-    },
-    {
-      "idx": 22,
-      "version": "7",
-      "when": 1766283728735,
-      "tag": "0022_same_mystique",
-      "breakpoints": true
-    },
-    {
-      "idx": 23,
-      "version": "7",
-      "when": 1735818000000,
-      "tag": "0023_add_plaid_items_is_active_index",
-      "breakpoints": true
-    },
-    {
-      "idx": 24,
-      "version": "7",
-      "when": 1769432225199,
-      "tag": "0024_tiny_roland_deschain",
-      "breakpoints": true
-    },
-    {
-      "idx": 25,
-      "version": "7",
-      "when": 1769611738242,
-      "tag": "0025_thick_spitfire",
-      "breakpoints": true
-    },
-    {
-      "idx": 26,
-      "version": "7",
-      "when": 1769635939965,
-      "tag": "0026_backfill_holding_history",
-      "breakpoints": true
-    },
-    {
-      "idx": 27,
-      "version": "7",
-      "when": 1769646775581,
-      "tag": "0027_tranquil_klaw",
-      "breakpoints": true
-    },
-    {
-      "idx": 28,
-      "version": "7",
-      "when": 1769652567850,
-      "tag": "0028_fix_refresh_function",
-      "breakpoints": true
-    },
-    {
-      "idx": 29,
-      "version": "7",
-      "when": 1769652667850,
-      "tag": "0029_fix_unpopulated_views",
-      "breakpoints": true
-    },
-    {
-      "idx": 30,
-      "version": "7",
-      "when": 1769767535206,
-      "tag": "0030_shallow_oracle",
-      "breakpoints": true
-    },
-    {
-      "idx": 31,
-      "version": "7",
-      "when": 1769938214623,
-      "tag": "0031_groovy_starjammers",
-      "breakpoints": true
-    },
-    {
-      "idx": 32,
-      "version": "7",
-      "when": 1769948214623,
-      "tag": "0032_remove_materialized_views",
-      "breakpoints": true
-    },
-    {
-      "idx": 33,
-      "version": "7",
-      "when": 1769958214623,
-      "tag": "0033_deduplicate_holdings",
-      "breakpoints": true
-    },
-    {
-      "idx": 34,
-      "version": "7",
-      "when": 1770041611194,
-      "tag": "0034_acoustic_madame_hydra",
-      "breakpoints": true
-    },
-    {
-      "idx": 35,
-      "version": "7",
-      "when": 1770087889147,
-      "tag": "0035_wandering_saracen",
-      "breakpoints": true
-    },
-    {
-      "idx": 36,
-      "version": "7",
-      "when": 1772700262131,
-      "tag": "0036_elite_rage",
-      "breakpoints": true
-    },
-    {
-      "idx": 37,
-      "version": "7",
-      "when": 1775228400000,
-      "tag": "0037_fix_duplicate_boa",
-      "breakpoints": true
-    },
-    {
-      "idx": 38,
-      "version": "7",
-      "when": 1775400000000,
-      "tag": "0038_remove_portfolio_events_add_account_hidden",
-      "breakpoints": true
-    },
-    {
-      "idx": 39,
-      "version": "7",
-      "when": 1775660000000,
-      "tag": "0039_add_holding_external_id",
-      "breakpoints": true
-    },
-    {
-      "idx": 40,
-      "version": "7",
-      "when": 1776120000000,
-      "tag": "0040_add_ops_tables",
-      "breakpoints": true
-    },
-    {
-      "idx": 41,
-      "version": "7",
-      "when": 1776380000000,
-      "tag": "0041_drop_ops_tables",
-      "breakpoints": true
-    },
-    {
-      "idx": 42,
-      "version": "7",
-      "when": 1776640000000,
-      "tag": "0042_add_holding_apy_configs",
+      "when": 1776398466198,
+      "tag": "0004_seed_evm_chains",
       "breakpoints": true
     },
     {

@@ -50,7 +50,25 @@ async function runMigrations() {
   }
 
   console.log('🔄 Starting database migrations...');
-  console.log('📍 Using direct PostgreSQL connection (Render)');
+
+  // Decide SSL mode from the URL (sslmode=disable for local dev, otherwise
+  // default to require for hosted Postgres). Explicit sslmode in the URL wins.
+  const sslMode = (() => {
+    try {
+      const url = new URL(DATABASE_URL);
+      const param = url.searchParams.get('sslmode');
+      if (param === 'disable') return false;
+      if (param === 'require' || param === 'verify-full' || param === 'verify-ca')
+        return 'require' as const;
+      // No sslmode in URL: default to require except for local loopback hosts.
+      const local = ['localhost', '127.0.0.1', '::1'];
+      return local.includes(url.hostname) ? false : ('require' as const);
+    } catch {
+      return 'require' as const;
+    }
+  })();
+
+  console.log(`📍 PostgreSQL connection (ssl=${sslMode})`);
 
   // Create a migration-specific client
   // Migrations use a single dedicated connection to avoid conflicts
@@ -61,7 +79,7 @@ async function runMigrations() {
     max_lifetime: 60 * 60, // 1 hour max lifetime
     prepare: true, // Enable prepared statements (direct connection)
     fetch_types: true, // Fetch types for proper type handling
-    ssl: 'require', // Required for Render PostgreSQL
+    ssl: sslMode,
     connection: {
       application_name: 'scani-migrations', // Helps identify migration connections in pg_stat_activity
     },

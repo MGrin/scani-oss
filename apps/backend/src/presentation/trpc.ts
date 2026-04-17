@@ -7,7 +7,16 @@ import {
 } from '@scani/core/utils/logger';
 import { initTRPC, TRPCError } from '@trpc/server';
 import type { FetchCreateContextFnOptions } from '@trpc/server/adapters/fetch';
+import type { BetterAuthInstance } from '../auth/better-auth';
 import { type AuthContext, createAuthContext } from './middleware/auth';
+
+// Injected at boot so tRPC's context creator can read Better-Auth sessions.
+// Must be set before the first request — done in index.ts immediately after
+// the Better-Auth instance is created.
+let betterAuthRef: BetterAuthInstance | null = null;
+export function setBetterAuthForContext(instance: BetterAuthInstance) {
+  betterAuthRef = instance;
+}
 
 // Request-scoped cache that lives in context - shared across all procedures in a batch
 type RequestCache = Map<string, unknown>;
@@ -38,9 +47,13 @@ export const createContext = async (opts?: FetchCreateContextFnOptions): Promise
     );
   }
 
-  // Create auth context
+  // Create auth context. setBetterAuthForContext() must have been called
+  // at boot — we assert it here so any misconfiguration fails loudly.
+  if (!betterAuthRef) {
+    throw new Error('Better-Auth not initialized — setBetterAuthForContext must be called at boot');
+  }
   const authContext = opts?.req
-    ? await createAuthContext({ req: opts.req })
+    ? await createAuthContext({ req: opts.req, betterAuth: betterAuthRef })
     : {
         userId: null,
         email: null,

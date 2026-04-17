@@ -6,9 +6,11 @@
     "apps/backend",
     "apps/cron",
     "apps/frontendV2",
+    "apps/worker",
     "packages/*"
   ],
   "scripts": {
+    "prepare": "git config --local core.hooksPath .githooks || true",
     "db:migrate": "cd packages/core && bun db:migrate",
     "dev": "concurrently \"bun dev:backend\" \"bun dev:frontend\"",
     "dev:backend": "cd apps/backend && bun dev",
@@ -26,8 +28,9 @@
     "lint:shared": "cd packages/shared && bun run lint",
     "lint:core": "cd packages/core && bun run lint",
     "lint:integrations": "cd packages/integrations && bun run lint",
-    "type-check": "concurrently \"bun run type-check:backend\" \"bun run type-check:cron\" \"bun run type-check:frontend\" \"bun run type-check:shared\" \"bun run type-check:core\" \"bun run type-check:integrations\"",
+    "type-check": "concurrently \"bun run type-check:backend\" \"bun run type-check:worker\" \"bun run type-check:cron\" \"bun run type-check:frontend\" \"bun run type-check:shared\" \"bun run type-check:core\" \"bun run type-check:integrations\"",
     "type-check:backend": "cd apps/backend && bun run type-check",
+    "type-check:worker": "cd apps/worker && bun run type-check",
     "type-check:cron": "cd apps/cron && bun run type-check",
     "type-check:frontend": "cd apps/frontendV2 && bun run type-check",
     "type-check:mobile": "cd apps/mobile && bun run type-check",

@@ -1,0 +1,38 @@
+name: Weekly Neon backup to R2
+
+on:
+  schedule:
+    - cron: "7 3 * * 0" # Sundays 03:07 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Install Postgres client
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client
+
+      - name: Dump + upload to R2
+        env:
+          DATABASE_URL:          ${{ secrets.DATABASE_URL_DIRECT }}
+          AWS_ACCESS_KEY_ID:     ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          AWS_ENDPOINT_URL_S3:   ${{ secrets.R2_S3_ENDPOINT }}
+          BACKUP_BUCKET:         scani-backups
+        run: |
+          set -euo pipefail
+          ts=$(date -u +"%Y%m%dT%H%M%SZ")
+          file="scani-${ts}.dump"
+          pg_dump --format=custom --no-owner --no-privileges \
+            "$DATABASE_URL" > "$file"
+
+          pip install --quiet awscli
+          aws --endpoint-url "$AWS_ENDPOINT_URL_S3" \
+            s3 cp "$file" "s3://$BACKUP_BUCKET/$file"
+          echo "Uploaded $file ($(wc -c < "$file") bytes)"

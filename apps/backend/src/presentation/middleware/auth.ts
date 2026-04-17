@@ -3,7 +3,7 @@ import * as schema from '@scani/core/database/schema';
 import { authLogger } from '@scani/core/utils/logger';
 import { TRPCError } from '@trpc/server';
 import { eq } from 'drizzle-orm';
-import { JwksUnavailableError, verifySupabaseJWT } from '../../lib/jwt-verify';
+import type { BetterAuthInstance } from '../../auth/better-auth';
 
 export interface AuthContext {
   userId: string | null;
@@ -14,184 +14,45 @@ export interface AuthContext {
 
 export interface CreateContextOptions {
   req: Request;
+  /**
+   * Better-Auth instance, wired at boot. Used to resolve the session
+   * cookie on every request.
+   */
+  betterAuth: BetterAuthInstance;
 }
 
 /**
- * Creates a new user in the database if they don't exist
- * Only called when a user with valid JWT is not found in our database
- */
-async function createUserIfNotExists(
-  userId: string,
-  email: string
-): Promise<typeof schema.users.$inferSelect> {
-  try {
-    authLogger.info({ userId, email }, 'Creating new user in database');
-    const now = new Date();
-
-    // Extract username from email (everything before @)
-    const emailUsername = email?.split('@')[0] || 'User';
-
-    // Get USD token ID as default base currency
-    const [usdToken] = await db
-      .select({ id: schema.tokens.id })
-      .from(schema.tokens)
-      .where(eq(schema.tokens.symbol, 'USD'))
-      .limit(1);
-
-    const userData = {
-      id: userId, // Use JWT user ID
-      email,
-      name: emailUsername, // Use email prefix as username
-      avatar: null,
-      baseCurrencyId: usdToken?.id || null, // Use USD token ID or null if not found
-      createdAt: now,
-      updatedAt: now,
-    };
-
-    const [newUser] = await db.insert(schema.users).values(userData).returning();
-
-    if (!newUser) {
-      throw new Error('Failed to create user in database');
-    }
-
-    authLogger.info({ userId, email }, 'User created successfully in database');
-
-    return newUser;
-  } catch (error) {
-    // Enhanced error logging with full error details
-    const errorObj = error as Error & {
-      code?: string;
-      detail?: string;
-      hint?: string;
-    };
-
-    const errorDetails = {
-      userId,
-      userEmail: email,
-      error:
-        error instanceof Error
-          ? {
-              name: errorObj.name,
-              message: errorObj.message,
-              stack: errorObj.stack,
-              // Include postgres-specific error details if available
-              ...(errorObj.code && { code: errorObj.code }),
-              ...(errorObj.detail && { detail: errorObj.detail }),
-              ...(errorObj.hint && { hint: errorObj.hint }),
-            }
-          : error,
-    };
-
-    authLogger.error(errorDetails, 'Error creating user in database');
-
-    throw new TRPCError({
-      code: 'INTERNAL_SERVER_ERROR',
-      message: 'Failed to create user',
-      cause: error,
-    });
-  }
-}
-
-/**
- * Extracts and validates the JWT token from the Authorization header
- * Uses local JWT verification to avoid calling Supabase API for every request
- * No longer syncs user on every request - only verifies JWT token
+ * Resolve the Better-Auth session cookie to a user. The client sends
+ * the cookie via `credentials: 'include'`; we hand its headers to
+ * `betterAuth.api.getSession`.
  */
 export async function createAuthContext(opts: CreateContextOptions): Promise<AuthContext> {
-  const authHeader = opts.req.headers.get('authorization');
-
-  if (!authHeader) {
-    authLogger.debug('No authorization header present');
-    return {
-      userId: null,
-      email: null,
-      isAuthenticated: false,
-      dbUser: null,
-    };
-  }
-
-  if (!authHeader.startsWith('Bearer ')) {
-    authLogger.warn(
-      { authHeaderPrefix: authHeader.substring(0, 10) },
-      'Authorization header does not start with Bearer'
-    );
-    return {
-      userId: null,
-      email: null,
-      isAuthenticated: false,
-      dbUser: null,
-    };
-  }
-
-  const token = authHeader.substring(7); // Remove "Bearer " prefix
-  authLogger.debug({ tokenLength: token.length }, 'Extracted JWT token from header');
-
   try {
-    // Verify the JWT token locally using JWKS
-    const payload = await verifySupabaseJWT(token);
-
-    if (!payload) {
+    const result = await opts.betterAuth.api.getSession({ headers: opts.req.headers });
+    if (result?.user) {
       return {
-        userId: null,
-        email: null,
-        isAuthenticated: false,
+        userId: result.user.id,
+        email: result.user.email ?? null,
+        isAuthenticated: true,
         dbUser: null,
       };
     }
-
-    authLogger.debug(
-      {
-        userId: payload.sub,
-      },
-      'User authenticated successfully'
-    );
-
-    // Return auth context without dbUser - it will be fetched lazily when needed
-    return {
-      userId: payload.sub,
-      email: payload.email || null,
-      isAuthenticated: true,
-      dbUser: null,
-    };
+    return { userId: null, email: null, isAuthenticated: false, dbUser: null };
   } catch (error) {
-    // JWKS unavailable = infrastructure issue, NOT an invalid token. Surface
-    // this as a 503 so clients retry instead of logging users out.
-    if (error instanceof JwksUnavailableError) {
-      authLogger.error(
-        {
-          error: { name: error.name, message: error.message },
-        },
-        'Auth verification failed — JWKS unavailable, returning 503'
-      );
-      throw new TRPCError({
-        code: 'INTERNAL_SERVER_ERROR',
-        message: 'Authentication service temporarily unavailable',
-        cause: error,
-      });
-    }
-
-    authLogger.error(
-      {
-        error:
-          error instanceof Error
-            ? { name: error.name, message: error.message, stack: error.stack }
-            : error,
-      },
-      'Auth verification error'
+    authLogger.warn(
+      { error: error instanceof Error ? error.message : String(error) },
+      'Better-Auth getSession failed'
     );
-    return {
-      userId: null,
-      email: null,
-      isAuthenticated: false,
-      dbUser: null,
-    };
+    return { userId: null, email: null, isAuthenticated: false, dbUser: null };
   }
 }
 
 /**
- * Middleware to ensure user is authenticated
- * Fetches dbUser from database if not already present in context
- * Creates user in database if they don't exist (new user)
+ * Middleware to ensure the request is authenticated + load the user's
+ * DB row. Better-Auth creates the row on signup, so the lookup here
+ * normally hits an existing user. If it doesn't (e.g. a stale session
+ * cookie whose user row was deleted), the request is rejected as
+ * UNAUTHORIZED rather than silently creating a ghost row.
  */
 export async function requireAuth(ctx: AuthContext) {
   if (!ctx.isAuthenticated || !ctx.userId) {
@@ -201,36 +62,16 @@ export async function requireAuth(ctx: AuthContext) {
     });
   }
 
-  // Fetch dbUser from database if not already in context
   let dbUser = ctx.dbUser;
   if (!dbUser) {
     try {
-      authLogger.debug({ userId: ctx.userId }, 'Fetching user from database');
       const [existingUser] = await db
         .select()
         .from(schema.users)
         .where(eq(schema.users.id, ctx.userId))
         .limit(1);
-
-      if (existingUser) {
-        dbUser = existingUser;
-      } else {
-        // User doesn't exist in our database - create them (new user registration).
-        // Require email at this point: empty-string fallbacks corrupt identity lookups.
-        if (!ctx.email) {
-          authLogger.warn({ userId: ctx.userId }, 'Cannot create user: JWT is missing email claim');
-          throw new TRPCError({
-            code: 'UNAUTHORIZED',
-            message: 'Authentication token is missing email',
-          });
-        }
-        authLogger.info({ userId: ctx.userId }, 'User not found in database, creating new user');
-        dbUser = await createUserIfNotExists(ctx.userId, ctx.email);
-      }
+      dbUser = existingUser ?? null;
     } catch (error) {
-      // Preserve intentional tRPC errors (e.g. the UNAUTHORIZED thrown above
-      // when the JWT has no email). Rewrapping them would turn a deliberate
-      // 401 into a 500 and defeat the check.
       if (error instanceof TRPCError) throw error;
       authLogger.error(
         {
@@ -240,7 +81,7 @@ export async function requireAuth(ctx: AuthContext) {
               ? { name: error.name, message: error.message, stack: error.stack }
               : error,
         },
-        'Error fetching or creating user'
+        'Error fetching user'
       );
       throw new TRPCError({
         code: 'INTERNAL_SERVER_ERROR',
@@ -251,6 +92,10 @@ export async function requireAuth(ctx: AuthContext) {
   }
 
   if (!dbUser) {
+    authLogger.warn(
+      { userId: ctx.userId },
+      'Valid session but no matching user row — stale session, forcing re-auth'
+    );
     throw new TRPCError({
       code: 'UNAUTHORIZED',
       message: 'User not found',

@@ -1,0 +1,49 @@
+app            = "scani-backend"
+primary_region = "sin"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  PORT              = "8080"
+  HOST              = "0.0.0.0"
+  NODE_ENV          = "production"
+  EXTERNAL_API_MODE = "direct"
+
+[http_service]
+  internal_port       = 8080
+  force_https         = true
+  auto_stop_machines  = "off"
+  auto_start_machines = true
+  min_machines_running = 1
+
+  # Single instance — WS pub/sub + rate-limiter state are in Redis (R3)
+  # but deploy strategy "immediate" avoids the rolling-swap gap.
+  max_machines_running = 1
+
+  [http_service.concurrency]
+    type       = "requests"
+    soft_limit = 80
+    hard_limit = 120
+
+  [[http_service.checks]]
+    interval      = "30s"
+    timeout       = "5s"
+    grace_period  = "30s"
+    method        = "GET"
+    path          = "/health"
+
+# Fly proxy idle_timeout must exceed the longest synchronous op. With the
+# BullMQ refactor, requests return quickly — but the WS connection itself
+# needs a generous idle timeout so browser tabs stay connected.
+[http_service.http_options]
+  idle_timeout = 240
+
+[[vm]]
+  size     = "shared-cpu-1x"
+  memory   = "512mb"
+  cpu_kind = "shared"
+  cpus     = 1
+
+[deploy]
+  strategy = "immediate"

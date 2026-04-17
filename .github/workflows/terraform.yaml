@@ -1,0 +1,84 @@
+name: Terraform
+
+on:
+  pull_request:
+    paths:
+      - "infra/terraform/**"
+      - ".github/workflows/terraform.yaml"
+  push:
+    branches: [main]
+    paths:
+      - "infra/terraform/**"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: write
+
+env:
+  # Provider credentials — read from env by each provider's SDK.
+  AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+  AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+  AWS_ENDPOINT_URL_S3: ${{ secrets.R2_S3_ENDPOINT }}
+  AWS_DEFAULT_REGION: auto
+  CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+  FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+  NEON_API_KEY: ${{ secrets.NEON_API_KEY }}
+  UPSTASH_EMAIL: ${{ secrets.UPSTASH_EMAIL }}
+  UPSTASH_API_KEY: ${{ secrets.UPSTASH_API_KEY }}
+  GITHUB_TOKEN: ${{ secrets.TF_GITHUB_TOKEN }}
+  # Input variables without defaults must be fed via TF_VAR_<name> — otherwise
+  # Terraform blocks on stdin waiting for input and the job hangs indefinitely.
+  TF_VAR_cloudflare_account_id: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+  TF_VAR_fly_api_token: ${{ secrets.FLY_API_TOKEN }}
+  # Fail fast on any missing interactive prompt.
+  TF_INPUT: "false"
+
+jobs:
+  plan:
+    name: Plan
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: infra/terraform
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.10.5
+      - run: terraform fmt -check -recursive
+      - run: terraform init -input=false
+      - run: terraform validate
+      - run: terraform plan -no-color -input=false -lock-timeout=60s -out=tfplan
+      - name: Comment plan on PR
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const { execSync } = require('child_process');
+            const out = execSync(
+              'terraform show -no-color tfplan',
+              { cwd: 'infra/terraform', encoding: 'utf8' }
+            ).slice(0, 60000);
+            await github.rest.issues.createComment({
+              ...context.repo,
+              issue_number: context.issue.number,
+              body: '```hcl\n' + out + '\n```',
+            });
+
+  apply:
+    name: Apply
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    needs: plan
+    runs-on: ubuntu-latest
+    environment: production
+    defaults:
+      run:
+        working-directory: infra/terraform
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.10.5
+      - run: terraform init -input=false
+      - run: terraform apply -auto-approve -input=false -lock-timeout=60s

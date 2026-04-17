@@ -1,7 +1,7 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { httpBatchLink, TRPCClientError } from '@trpc/client';
 import { useEffect, useState } from 'react';
-import { supabase } from './supabase';
+import { authClient } from './auth-client';
 import { trpc } from './trpc';
 import { getTrpcAuthHeaders } from './trpc-auth-headers';
 
@@ -60,8 +60,8 @@ export function TRPCProvider({ children }: TRPCProviderProps) {
         if (error.data?.code === 'UNAUTHORIZED') {
           console.warn('[Auth] Unauthorized request detected, redirecting to auth page');
 
-          // Sign out from Supabase to clear any stale session
-          supabase.auth.signOut().catch(console.error);
+          // Clear any stale session on the server + cookie
+          authClient.signOut().catch(console.error);
 
           // Redirect to auth page with return URL
           const currentPath = window.location.pathname + window.location.search;
@@ -93,6 +93,10 @@ export function TRPCProvider({ children }: TRPCProviderProps) {
       links: [
         httpBatchLink({
           url: `${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/trpc`,
+          // Send the Better-Auth session cookie on every tRPC call.
+          fetch(url, options) {
+            return fetch(url, { ...options, credentials: 'include' });
+          },
           async headers() {
             return getTrpcAuthHeaders();
           },

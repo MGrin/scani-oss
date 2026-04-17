@@ -1,0 +1,21 @@
+app            = "scani-worker"
+primary_region = "sin"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  NODE_ENV           = "production"
+  EXTERNAL_API_MODE  = "direct"
+  WORKER_CONCURRENCY = "2"
+
+# No [http_service] — worker is a background process; nothing to expose.
+
+[[vm]]
+  size     = "shared-cpu-1x"
+  memory   = "512mb"
+  cpu_kind = "shared"
+  cpus     = 1
+
+[deploy]
+  strategy = "immediate"

@@ -2,6 +2,12 @@
   "name": "@scani/cron",
   "private": true,
   "type": "module",
+  "exports": {
+    "./jobs/pricing": "./src/jobs/PricingCronJob.ts",
+    "./jobs/wallet-balances": "./src/jobs/WalletBalancesCronJob.ts",
+    "./jobs/exchange-balances": "./src/jobs/ExchangeBalancesCronJob.ts",
+    "./jobs/apy-payouts": "./src/jobs/ApyPayoutsCronJob.ts"
+  },
   "scripts": {
     "dev": "bun run src/index.ts --tasks=pricing,wallet-balances,exchange-balances",
     "start": "bun run src/index.ts",
@@ -13,7 +19,6 @@
     "@scani/core": "workspace:*",
     "@scani/integrations": "workspace:*",
     "@scani/shared": "workspace:*",
-    "@supabase/supabase-js": "^2.57.4",
     "decimal.js": "^10.6.0",
     "drizzle-orm": "^0.44.5",
     "pino": "^9.9.4",

@@ -1,0 +1,25 @@
+**/node_modules
+**/dist
+**/.turbo
+**/.next
+**/.cache
+**/coverage
+**/.env
+**/.env.local
+**/.env.*.local
+**/*.log
+**/.DS_Store
+
+# Other apps that don't belong in the backend image
+apps/frontendV2
+apps/mobile
+apps/cron/dist
+
+# Repo metadata
+.git
+.github
+.vscode
+.idea
+docs
+*.md
+!apps/backend/README.md

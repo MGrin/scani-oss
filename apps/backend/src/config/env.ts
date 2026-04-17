@@ -29,27 +29,54 @@ const envSchema = z.object({
     }),
   HOST: z.string().default('localhost'),
 
-  // Database
+  // Postgres. Direct connection string (no PgBouncer needed — Neon / Fly
+  // both provide direct connections).
   DATABASE_URL: urlSchema,
 
-  // Supabase auth
-  SUPABASE_URL: urlSchema,
-  SUPABASE_ANON_KEY: z.string().min(1, { message: 'SUPABASE_ANON_KEY is required' }),
-  SUPABASE_SERVICE_ROLE_KEY: z.string().optional(),
+  // Redis. Required — powers BullMQ enqueue, WS pub/sub fan-out across
+  // backend instances, and the rate limiter's shared bucket state.
+  REDIS_URL: urlSchema,
 
   // Frontend origin for CORS. Required in production, must be https://.
   FRONTEND_URL: isProduction ? httpsUrlInProduction : urlSchema.default('http://localhost:5173'),
 
-  // Credential encryption key. Required in production (never let the
-  // encryption module silently fall back to plaintext).
+  // This backend's own public URL — Better-Auth needs it to generate
+  // magic-link callback URLs that resolve to /api/auth/magic-link/verify.
+  BACKEND_URL: isProduction ? httpsUrlInProduction : urlSchema.default('http://localhost:3001'),
+
+  // Cookie domain shared by app.<domain> and api.<domain> so the session
+  // cookie reaches both hosts (e.g. `.scani.xyz`). Leave unset in dev
+  // where same-port cookies just work.
+  COOKIE_DOMAIN: z.string().optional(),
+
+  // Credential encryption key for integration credentials at rest.
+  // Required in production; optional in dev so tests can skip it.
   ENCRYPTION_KEY: isProduction
     ? z.string().min(32, { message: 'ENCRYPTION_KEY must be at least 32 chars in production' })
     : z.string().optional(),
 
-  // Optional services
+  // Better-Auth session signing secret. Required in production.
+  BETTER_AUTH_SECRET: isProduction
+    ? z.string().min(32, { message: 'BETTER_AUTH_SECRET must be at least 32 chars in production' })
+    : z.string().optional(),
+
+  // Email delivery: either SMTP (OSS self-hosters) or Fastmail's JMAP API
+  // (managed deployment — avoids needing a separate app-specific password
+  // when a Fastmail API token with mail/send scope is available).
+  SMTP_URL: z.string().optional(),
+  SMTP_FROM: z.string().email().optional(),
+  FASTMAIL_API_TOKEN: z.string().optional(),
+
+  // Optional external-API keys (used when EXTERNAL_API_MODE=direct).
   OPENAI_API_KEY: z.string().optional(),
   COINGECKO_API_KEY: z.string().optional(),
   FINNHUB_API_KEY: z.string().optional(),
+
+  // Route external-API calls either directly to the upstream providers
+  // (Tier 1 / Tier 3) or via the Scani-hosted proxy (Tier 2 — scani-cloud).
+  EXTERNAL_API_MODE: z.enum(['direct', 'scani-cloud']).default('direct'),
+  SCANI_CLOUD_API_URL: z.string().url().optional(),
+  SCANI_CLOUD_CLIENT_TOKEN: z.string().optional(),
 });
 
 export type Env = z.infer<typeof envSchema>;

@@ -1,1 +1,0 @@
-ALTER TABLE "institutions" ADD COLUMN "has_integration" boolean DEFAULT false NOT NULL;

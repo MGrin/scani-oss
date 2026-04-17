@@ -1,5 +1,6 @@
 import { EventEmitter } from 'node:events';
 import { logConfig, wsLogger } from '@scani/core/utils/logger';
+import type { Redis } from 'ioredis';
 import { Container, Service } from 'typedi';
 
 export type EntityType =
@@ -55,9 +56,47 @@ export class RealTimeUpdatesService extends EventEmitter {
   // biome-ignore lint/suspicious/noExplicitAny: Elysia type not well defined, using any for app instance
   private elysiaApp: any = null; // Store Elysia app instance for pub/sub
 
+  // Redis-backed cross-instance pub/sub (optional). When set by
+  // configureRedisPubSub(), broadcast() publishes to Redis instead of
+  // directly to the local Elysia topic, and a subscriber forwards
+  // inbound messages from Redis back to local connections.
+  private redisPublisher: Redis | null = null;
+  private readonly redisChannelPrefix = 'rt:user:';
+
   constructor() {
     super();
     this.setupEventHandlers();
+  }
+
+  /**
+   * Wire a Redis connection so entity changes fan out across backend
+   * instances. Both the producer (publish) and subscriber (consume) roles
+   * are handled here; the caller provides one connection for publishing and
+   * a second (via .duplicate()) for blocking subscribe.
+   */
+  configureRedisPubSub(publisher: Redis, subscriber: Redis): void {
+    this.redisPublisher = publisher;
+    const pattern = `${this.redisChannelPrefix}*`;
+    void subscriber.psubscribe(pattern, (err) => {
+      if (err) {
+        wsLogger.error({ error: err.message, pattern }, 'Failed to psubscribe to Redis WS channel');
+        return;
+      }
+      wsLogger.info({ pattern }, '✅ Subscribed to Redis WS fan-out');
+    });
+    subscriber.on('pmessage', (_p, channel, rawMessage) => {
+      // Channel format: rt:user:<userId>. Extract userId to build local topic.
+      const userId = channel.slice(this.redisChannelPrefix.length);
+      if (!userId) return;
+      this.publishLocal(userId, rawMessage);
+    });
+  }
+
+  private publishLocal(userId: string, payload: string): void {
+    const topic = `user:${userId}`;
+    if (this.elysiaApp?.server) {
+      this.elysiaApp.server.publish(topic, payload);
+    }
   }
 
   /**
@@ -288,28 +327,34 @@ export class RealTimeUpdatesService extends EventEmitter {
       return;
     }
 
-    // Use Elysia's pub/sub to broadcast to user's topic
-    // All connections for this user are subscribed to `user:${userId}`
+    // Deliver to all subscribers of this topic. In Redis mode, fan out via
+    // Redis so every backend instance that holds a WS client for this user
+    // gets the message. In memory mode, publish directly to the local
+    // Elysia topic.
     const topic = `user:${event.userId}`;
+    const payload = JSON.stringify(message);
 
-    if (this.elysiaApp?.server) {
-      // Publish to all subscribers of this topic
-      this.elysiaApp.server.publish(topic, JSON.stringify(message));
-
-      if (logConfig.logWebSocketMessages) {
-        wsLogger.info(
-          {
-            entityType: event.entityType,
-            operationType: event.operationType || event.type,
-            userId: event.userId,
-            topic,
-            connectionCount: userConnections.size,
-          },
-          'Broadcasted real-time event via pub/sub'
-        );
-      }
+    if (this.redisPublisher) {
+      void this.redisPublisher.publish(`${this.redisChannelPrefix}${event.userId}`, payload);
+    } else if (this.elysiaApp?.server) {
+      this.elysiaApp.server.publish(topic, payload);
     } else {
       wsLogger.warn('Elysia app not set, cannot broadcast');
+      return;
+    }
+
+    if (logConfig.logWebSocketMessages) {
+      wsLogger.info(
+        {
+          entityType: event.entityType,
+          operationType: event.operationType || event.type,
+          userId: event.userId,
+          topic,
+          connectionCount: userConnections.size,
+          transport: this.redisPublisher ? 'redis' : 'local',
+        },
+        'Broadcasted real-time event via pub/sub'
+      );
     }
   }
 

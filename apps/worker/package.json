@@ -1,0 +1,33 @@
+{
+  "name": "@scani/worker",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "bun run --watch src/index.ts",
+    "build": "bun build src/index.ts --outdir=dist --target=bun --sourcemap=linked",
+    "start": "bun run dist/index.js",
+    "clean": "rm -rf dist",
+    "lint": "biome check .",
+    "lint:fix": "biome check --write .",
+    "type-check": "tsgo --noEmit"
+  },
+  "dependencies": {
+    "@scani/core": "workspace:*",
+    "@scani/cron": "workspace:*",
+    "@scani/integrations": "workspace:*",
+    "@scani/shared": "workspace:*",
+    "bullmq": "^5.21.0",
+    "decimal.js": "^10.6.0",
+    "drizzle-orm": "^0.44.5",
+    "ioredis": "^5.4.1",
+    "pino": "^9.9.4",
+    "postgres": "^3.4.4",
+    "reflect-metadata": "^0.2.2",
+    "typedi": "^0.10.0",
+    "zod": "^3.22.4"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "typescript": "^5"
+  }
+}

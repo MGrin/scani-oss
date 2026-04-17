@@ -1,12 +1,34 @@
-import type { Session, User } from '@supabase/supabase-js';
 import type React from 'react';
 import { createContext, useContext, useEffect, useState } from 'react';
+import { authClient } from '@/lib/auth-client';
 import { isPWA, logPWAInfo } from '@/lib/pwa-utils';
-import { supabase } from '@/lib/supabase';
+
+/**
+ * Auth context wired to Better-Auth. Exposes the same surface the rest of
+ * the app already consumes (authenticate / verifyCode / signOut /
+ * resetPassword), but under the hood uses Better-Auth's magic-link +
+ * email-password flows instead of Supabase.
+ *
+ * The session lives in an HttpOnly cookie on api.scani.xyz. The client
+ * library's useSession() hook polls /api/auth/get-session under the hood
+ * so we mirror its state into our context.
+ */
+
+export interface AuthUser {
+  id: string;
+  email: string;
+  name?: string | null;
+  image?: string | null;
+}
+
+export interface AuthSession {
+  user: AuthUser;
+  token: string;
+}
 
 interface AuthContextType {
-  user: User | null;
-  session: Session | null;
+  user: AuthUser | null;
+  session: AuthSession | null;
   loading: boolean;
   authenticate: (email: string) => Promise<{ error?: string }>;
   verifyCode: (email: string, token: string) => Promise<{ error?: string }>;
@@ -17,111 +39,103 @@ interface AuthContextType {
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
-  const [user, setUser] = useState<User | null>(null);
-  const [session, setSession] = useState<Session | null>(null);
+  const [user, setUser] = useState<AuthUser | null>(null);
+  const [session, setSession] = useState<AuthSession | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // Get initial session
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setSession(session);
-      setUser(session?.user ?? null);
-      setLoading(false);
-    });
+    let mounted = true;
+    authClient
+      .getSession()
+      .then((res) => {
+        if (!mounted) return;
+        const s = res?.data;
+        if (s?.user) {
+          const u: AuthUser = {
+            id: s.user.id,
+            email: s.user.email,
+            name: s.user.name,
+            image: s.user.image ?? null,
+          };
+          setUser(u);
+          setSession({ user: u, token: s.session.token });
+        } else {
+          setUser(null);
+          setSession(null);
+        }
+      })
+      .catch((err) => {
+        console.error('[Auth] getSession failed:', err);
+      })
+      .finally(() => {
+        if (mounted) setLoading(false);
+      });
 
-    // Listen for auth changes
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, session) => {
-      setSession(session);
-      setUser(session?.user ?? null);
-      setLoading(false);
-    });
-
-    return () => subscription.unsubscribe();
+    // Re-check the session on window focus — covers "signed in via magic
+    // link in another tab" and long-running browser sessions.
+    const onFocus = () => {
+      authClient.getSession().then((res) => {
+        const s = res?.data;
+        if (s?.user) {
+          const u: AuthUser = {
+            id: s.user.id,
+            email: s.user.email,
+            name: s.user.name,
+            image: s.user.image ?? null,
+          };
+          setUser(u);
+          setSession({ user: u, token: s.session.token });
+        } else {
+          setUser(null);
+          setSession(null);
+        }
+      });
+    };
+    window.addEventListener('focus', onFocus);
+    return () => {
+      mounted = false;
+      window.removeEventListener('focus', onFocus);
+    };
   }, []);
 
   const authenticate = async (email: string) => {
-    // Check if running in PWA
     const runningAsPWA = isPWA();
-
-    // Log PWA detection info for debugging
     if (import.meta.env.DEV) {
       logPWAInfo();
       console.log(`[Auth] Running as PWA: ${runningAsPWA}`);
     }
 
-    if (runningAsPWA) {
-      // For PWA: Send magic CODE (no redirect needed)
-      console.log('[Auth] PWA detected: Sending magic code');
-      const { error } = await supabase.auth.signInWithOtp({
-        email,
-        options: {
-          shouldCreateUser: true,
-          data: {
-            email_type: 'otp',
-            EMailType: 'otp',
-          },
-        },
-      });
-
-      if (error) {
-        return { error: error.message };
-      }
-
-      return {};
-    }
-
-    // For browser: Send magic LINK with redirect
-    const redirectUrl = `${window.location.origin}/auth/callback`;
-    console.log(`[Auth] Browser detected: Sending magic link with redirect to: ${redirectUrl}`);
-
-    const { error } = await supabase.auth.signInWithOtp({
+    // Magic link is our sole auth flow. Better-Auth handles the email;
+    // callbackURL is where the user lands after clicking the link.
+    const callbackURL = `${window.location.origin}/auth/callback`;
+    const { error } = await authClient.signIn.magicLink({
       email,
-      options: {
-        emailRedirectTo: redirectUrl,
-        data: {
-          email_type: 'magic_link',
-          EMailType: 'magic_link',
-        },
-      },
+      callbackURL,
     });
-
     if (error) {
-      return { error: error.message };
+      return { error: error.message || 'Failed to send magic link' };
     }
-
     return {};
   };
 
-  const verifyCode = async (email: string, token: string) => {
-    const { error } = await supabase.auth.verifyOtp({
-      email,
-      token,
-      type: 'email',
-    });
-
-    if (error) {
-      return { error: error.message };
-    }
-
-    return {};
+  /**
+   * Legacy Supabase API kept for back-compat with existing components.
+   * Better-Auth's magic-link verification happens server-side on GET
+   * /api/auth/magic-link/verify, so client-side verifyCode is a no-op.
+   */
+  const verifyCode = async (_email: string, _code: string) => {
+    return { error: 'Codes are no longer supported — use the magic link from your email' };
   };
 
-  const signOut = async () => {
-    await supabase.auth.signOut();
+  const handleSignOut = async () => {
+    await authClient.signOut();
+    setUser(null);
+    setSession(null);
   };
 
-  const resetPassword = async (email: string) => {
-    const { error } = await supabase.auth.resetPasswordForEmail(email, {
-      redirectTo: `${window.location.origin}/reset-password`,
-    });
-
-    if (error) {
-      return { error: error.message };
-    }
-
-    return {};
+  const resetPassword = async (_email: string) => {
+    // Magic-link flow: there's no password to reset. Surface gracefully.
+    return { error: 'Password reset is not used; sign in with a magic link instead' };
   };
 
   const value = {
@@ -130,7 +144,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     loading,
     authenticate,
     verifyCode,
-    signOut,
+    signOut: handleSignOut,
     resetPassword,
   };
 

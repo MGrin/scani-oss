@@ -3,15 +3,12 @@ import { Container, Service } from 'typedi';
 import { db } from '../database/connection';
 import type { NewTokenPrice, Token } from '../domain/entities';
 import { PROVIDER_CONFIGS } from '../external-services/pricing/provider-config';
+import { buildPricingProviders } from '../external-services/pricing/provider-factory';
 import type {
   ConvertPriceFn,
   PricingProvider,
   ProviderExecutionContext,
 } from '../external-services/pricing/providers/base';
-import { CoinGeckoProvider } from '../external-services/pricing/providers/coingecko';
-import { DeFiLlamaProvider } from '../external-services/pricing/providers/defillama';
-import { ExchangeRateProvider } from '../external-services/pricing/providers/exchange-rate';
-import { FinnhubProvider } from '../external-services/pricing/providers/finnhub';
 import { GoogleSheetsProvider } from '../external-services/pricing/providers/google-sheets';
 import type {
   PricingProviderKey,
@@ -82,27 +79,26 @@ export class PricingService {
     const createFailureResultBound = this.createFailureResult.bind(this);
     const convertPriceBound: ConvertPriceFn = this.convertPrice.bind(this);
 
-    this.providers = {
-      exchangeRate: new ExchangeRateProvider({
-        createFailureResult: createFailureResultBound,
-      }),
-      coinGecko: new CoinGeckoProvider({
-        rateLimiter: this.coinGeckoRateLimiter,
-        convertPrice: convertPriceBound,
-        createFailureResult: createFailureResultBound,
-      }),
-      defiLlama: new DeFiLlamaProvider({
-        rateLimiter: this.defiLlamaRateLimiter,
-        convertPrice: convertPriceBound,
-        createFailureResult: createFailureResultBound,
-      }),
-      finnhub: new FinnhubProvider({
-        rateLimiter: this.finnhubRateLimiter,
-        convertPrice: convertPriceBound,
-        createFailureResult: createFailureResultBound,
-        logger: createComponentLogger('pricing:finnhub'),
-      }),
-    } satisfies ProviderRegistry;
+    const mode = (process.env.EXTERNAL_API_MODE ?? 'direct') as 'direct' | 'scani-cloud';
+    this.providers = buildPricingProviders({
+      mode,
+      rateLimiters: {
+        exchangeRate: this.exchangeRateRateLimiter,
+        coinGecko: this.coinGeckoRateLimiter,
+        defiLlama: this.defiLlamaRateLimiter,
+        finnhub: this.finnhubRateLimiter,
+      },
+      convertPrice: convertPriceBound,
+      createFailureResult: createFailureResultBound,
+      logger: (component) => createComponentLogger(component),
+      scaniCloud:
+        process.env.SCANI_CLOUD_API_URL && process.env.SCANI_CLOUD_CLIENT_TOKEN
+          ? {
+              baseUrl: process.env.SCANI_CLOUD_API_URL,
+              clientToken: process.env.SCANI_CLOUD_CLIENT_TOKEN,
+            }
+          : undefined,
+    });
 
     this.googleSheetsProvider = new GoogleSheetsProvider({
       db: db,

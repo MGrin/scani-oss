@@ -23,14 +23,14 @@
     "./external-services/blockchain": "./src/external-services/blockchain/index.ts",
     "./external-services/pricing": "./src/external-services/pricing/index.ts",
     "./external-services/file-import": "./src/external-services/file-import/index.ts",
+    "./queues": "./src/queues/index.ts",
     "./utils/logger": "./src/utils/logger.ts",
     "./utils/query-cache": "./src/utils/query-cache.ts",
     "./utils/request-cache": "./src/utils/request-cache.ts",
     "./utils/performance-monitor": "./src/utils/performance-monitor.ts",
     "./utils/retry": "./src/utils/retry.ts",
     "./utils/circuit-breaker": "./src/utils/circuit-breaker.ts",
-    "./utils/encryption": "./src/utils/encryption.ts",
-    "./lib/supabase": "./src/lib/supabase.ts"
+    "./utils/encryption": "./src/utils/encryption.ts"
   },
   "scripts": {
     "lint": "biome check .",
@@ -45,7 +45,6 @@
     "@scani/integrations": "workspace:*",
     "@scani/rate-limiter": "workspace:*",
     "@scani/shared": "workspace:*",
-    "@supabase/supabase-js": "^2.57.4",
     "bcryptjs": "^3.0.3",
     "decimal.js": "^10.6.0",
     "@noble/hashes": "^1.3.2",

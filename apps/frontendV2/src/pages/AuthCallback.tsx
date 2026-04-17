@@ -4,82 +4,71 @@ import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { supabase } from '@/lib/supabase';
+import { authClient } from '@/lib/auth-client';
 import { trpc } from '@/lib/trpc';
 
+/**
+ * Better-Auth magic-link callback.
+ *
+ * The backend's /api/auth/magic-link/verify handler validates the token,
+ * mints a session cookie, and 302-redirects here. By the time this
+ * component mounts, the cookie should already be set and
+ * authClient.getSession() should return a populated session — we just
+ * verify that's true and redirect onward.
+ */
 export function AuthCallback() {
   const location = useLocation();
-  const searchParams = new URLSearchParams(location.hash.replace(/^#/, '?'));
+  const searchParams = new URLSearchParams(location.search);
 
   const navigate = useNavigate();
   const [status, setStatus] = useState<'loading' | 'success' | 'error'>('loading');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  // Get return URL from location state or default to dashboard
   const returnTo = (location.state as { from?: { pathname: string } })?.from?.pathname || '/';
 
-  // This will trigger a user sync on the backend when the user is authenticated
+  // Warm the backend user cache when the session is valid.
   const getCurrentUser = trpc.users.getCurrent.useQuery(undefined, {
-    enabled: false, // We'll manually trigger this
+    enabled: false,
     retry: false,
   });
 
   useEffect(() => {
-    const handleAuthCallback = async () => {
+    const run = async () => {
       try {
-        // Check if there's an error in the URL params first
         const error = searchParams.get('error');
         const errorDescription = searchParams.get('error_description');
-
         if (error) {
           setStatus('error');
           setErrorMessage(errorDescription || 'Authentication failed');
           return;
         }
 
-        // Handle the auth callback by getting the session
-        const { data, error: sessionError } = await supabase.auth.getSession();
-
-        if (sessionError) {
-          setStatus('error');
-          setErrorMessage(sessionError.message);
-          return;
-        }
-
-        if (data.session) {
-          // Successfully authenticated - now sync user with backend
+        const session = await authClient.getSession();
+        if (session?.data?.user) {
           setStatus('success');
-
-          // Trigger user sync by making an API call
           try {
             await getCurrentUser.refetch();
           } catch (syncError) {
             console.warn('User sync failed, but authentication was successful:', syncError);
-            // Don't fail the login for sync issues
           }
-
           navigate(returnTo, { replace: true });
-        } else {
-          // No session found, try to refresh
-          const { error: refreshError } = await supabase.auth.refreshSession();
-          if (refreshError) {
-            setStatus('error');
-            setErrorMessage('Failed to authenticate. Please try again.');
-          } else {
-            setStatus('success');
-            setTimeout(() => {
-              navigate(returnTo, { replace: true });
-            }, 1500);
-          }
+          return;
         }
+
+        // No session — the magic link may have expired before the user
+        // landed here, or cookies were blocked.
+        setStatus('error');
+        setErrorMessage(
+          'Your sign-in link has expired or could not be verified. Please request a new one.'
+        );
       } catch (err) {
         setStatus('error');
         setErrorMessage(err instanceof Error ? err.message : 'Unknown error occurred');
       }
     };
-
-    handleAuthCallback();
-  }, [searchParams, navigate, returnTo, getCurrentUser.refetch]);
+    run();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [navigate, returnTo]);
 
   if (status === 'loading') {
     return (
@@ -135,7 +124,6 @@ export function AuthCallback() {
     );
   }
 
-  // Error state
   return (
     <div
       className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-950 py-12 px-4 sm:px-6 lg:px-8"

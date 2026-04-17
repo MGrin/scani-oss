@@ -7,18 +7,20 @@ const env = loadEnv();
 
 import { cors } from '@elysiajs/cors';
 import { trpc } from '@elysiajs/trpc';
-import { supabase } from '@scani/core/lib/supabase';
 import { createTimer, logger, sanitizeUrl, wsLogger } from '@scani/core/utils/logger';
 import { IntegrationManager } from '@scani/integrations';
 import { sql } from 'drizzle-orm';
 import { Elysia } from 'elysia';
+import { Redis } from 'ioredis';
 import { Container } from 'typedi';
 // CRITICAL: Initialize container BEFORE importing any routers
 // This must happen before any module that calls Container.get()
+import { createBetterAuth } from './auth/better-auth';
 import { initializeContainer } from './config/container';
 import { RealTimeUpdatesService } from './infrastructure/websocket/RealTimeUpdatesService';
 import { createStandardLimiter, createStrictLimiter } from './presentation/middleware/rate-limit';
-import { createContext } from './presentation/trpc';
+import { createContext, setBetterAuthForContext } from './presentation/trpc';
+import { closeQueue, initQueueClient } from './queues/client';
 
 initializeContainer();
 
@@ -57,8 +59,41 @@ logger.info(
     host: HOST,
     nodeEnv: env.NODE_ENV,
     frontendUrl: env.FRONTEND_URL,
+    externalApiMode: env.EXTERNAL_API_MODE,
   },
   '🚀 Starting Scani Backend Server'
+);
+
+// Shared ioredis connection — powers BullMQ (enqueue jobs), the rate
+// limiter (fairness across horizontally-scaled instances), and the WS
+// pub/sub (real-time fan-out across instances).
+const redisConnection = new Redis(env.REDIS_URL, { maxRetriesPerRequest: null });
+initQueueClient(redisConnection);
+
+// Better-Auth is the sole auth provider. BETTER_AUTH_SECRET is validated
+// in env.ts (required in prod), but we still guard with a clear runtime
+// error message if it's missing in dev for anyone running the backend
+// with partial config.
+if (!env.BETTER_AUTH_SECRET) {
+  throw new Error('BETTER_AUTH_SECRET is required');
+}
+const betterAuthInstance = createBetterAuth({
+  baseURL: env.BACKEND_URL,
+  secret: env.BETTER_AUTH_SECRET,
+  smtpUrl: env.SMTP_URL,
+  smtpFrom: env.SMTP_FROM,
+  fastmailApiToken: env.FASTMAIL_API_TOKEN,
+  cookieDomain: env.COOKIE_DOMAIN,
+  trustedOrigins: [env.FRONTEND_URL],
+});
+setBetterAuthForContext(betterAuthInstance);
+logger.info(
+  {
+    backendURL: env.BACKEND_URL,
+    trustedOrigin: env.FRONTEND_URL,
+    cookieDomain: env.COOKIE_DOMAIN,
+  },
+  '🔐 Better-Auth initialized'
 );
 
 // Extended request interface for tracking
@@ -67,13 +102,14 @@ interface RequestWithTracking extends Request {
   _requestId?: string;
 }
 
-// Create limiters
-const globalLimiter = createStandardLimiter(300, 500);
-const strictLimiter = createStrictLimiter(60, 90);
+// Rate limiters. Bucket state lives in Redis so horizontally-scaled
+// backend instances share fairness.
+const globalLimiter = createStandardLimiter(300, 500, redisConnection);
+const strictLimiter = createStrictLimiter(60, 90, redisConnection);
 // WebSocket connection limiter: max 30 auth attempts per minute per IP.
 // Prevents brute-forcing auth tokens over the ws endpoint, which bypasses
 // the HTTP limiters above.
-const wsAuthLimiter = createStrictLimiter(30, 40);
+const wsAuthLimiter = createStrictLimiter(30, 40, redisConnection);
 
 const app = new Elysia()
   .onBeforeHandle(({ request, set }) => {
@@ -106,8 +142,8 @@ const app = new Elysia()
     (request as RequestWithTracking)._timer = timer;
     (request as RequestWithTracking)._requestId = requestId;
   })
-  .onBeforeHandle(({ request, set }) => {
-    const res = globalLimiter.tryConsume(request);
+  .onBeforeHandle(async ({ request, set }) => {
+    const res = await globalLimiter.tryConsume(request);
     if ('ok' in res && res.ok) return;
     set.status = 429;
     set.headers = set.headers || {};
@@ -219,8 +255,29 @@ const app = new Elysia()
   );
 
 app
-  // Root path handler — prevents 404 errors from Render health probes during deploys
   .get('/', () => ({ status: 'ok', service: 'scani-backend' }))
+  // Better-Auth HTTP handler at /api/auth/*. The frontend hits
+  // /api/auth/sign-in/magic-link, /api/auth/get-session, etc.
+  // Elysia has already consumed the original request body stream, so we
+  // rebuild the Request from the parsed body before handing it off.
+  .all('/api/auth/*', async ({ request, body, headers }) => {
+    const cloneHeaders = new Headers();
+    for (const [k, v] of Object.entries(headers ?? {})) {
+      if (typeof v === 'string') cloneHeaders.set(k, v);
+    }
+    const init: RequestInit = {
+      method: request.method,
+      headers: cloneHeaders,
+    };
+    if (request.method !== 'GET' && request.method !== 'HEAD' && body !== undefined) {
+      init.body = typeof body === 'string' ? body : JSON.stringify(body);
+      if (!cloneHeaders.has('content-type')) {
+        cloneHeaders.set('content-type', 'application/json');
+      }
+    }
+    const cloned = new Request(request.url, init);
+    return betterAuthInstance.handler(cloned);
+  })
   .get('/health', () => ({
     status: 'ok',
     timestamp: new Date().toISOString(),
@@ -304,7 +361,7 @@ app
         method: 'GET',
         headers,
       });
-      const limit = wsAuthLimiter.tryConsume(wsPseudoRequest);
+      const limit = await wsAuthLimiter.tryConsume(wsPseudoRequest);
       if ('ok' in limit && !limit.ok) {
         connectionLogger.warn(
           { retryAfterSec: limit.retryAfterSec },
@@ -316,20 +373,16 @@ app
 
       let authenticatedUserId: string | null = null;
       try {
-        const query = ws.data.query as Record<string, string> | undefined;
-        const token = query?.token;
-        if (!token) {
-          connectionLogger.warn('No auth token provided');
+        // Session cookie is forwarded in the WS handshake headers
+        // (cookie: better-auth.session_token=...) when the frontend
+        // opens the socket. Validate it server-side.
+        const result = await betterAuthInstance.api.getSession({ headers });
+        if (!result?.user) {
+          connectionLogger.warn('No valid Better-Auth session cookie');
           ws.close(4401, 'Unauthorized');
           return;
         }
-        const { data, error } = await supabase.auth.getUser(token);
-        if (error || !data?.user) {
-          connectionLogger.warn({ error }, 'Invalid auth token');
-          ws.close(4401, 'Unauthorized');
-          return;
-        }
-        authenticatedUserId = data.user.id;
+        authenticatedUserId = result.user.id;
       } catch (err) {
         connectionLogger.error({ error: err }, 'Auth failure');
         ws.close(1011, 'Auth failure');
@@ -373,11 +426,11 @@ app
       }
     },
   })
-  .onBeforeHandle(({ request, set }) => {
+  .onBeforeHandle(async ({ request, set }) => {
     try {
       const url = new URL(request.url);
       if (url.pathname === '/trpc' && request.method === 'POST') {
-        const res = strictLimiter.tryConsume(request);
+        const res = await strictLimiter.tryConsume(request);
         if ('ok' in res && res.ok) return;
         set.status = 429;
         set.headers = set.headers || {};
@@ -410,6 +463,12 @@ const server = app.listen(PORT, () => {
 const realTimeUpdatesService = Container.get(RealTimeUpdatesService);
 realTimeUpdatesService.setElysiaApp(app);
 realTimeUpdatesService.initialize();
+
+// Cross-instance WS pub/sub. One connection pair: the shared
+// `redisConnection` is reused for publishing; a duplicated connection is
+// used for the subscriber because ioredis cannot multiplex pub/sub and
+// regular commands on the same socket.
+realTimeUpdatesService.configureRedisPubSub(redisConnection, redisConnection.duplicate());
 
 import { client as pgClient } from '@scani/core/database/connection';
 import { PricingService } from '@scani/core/services';
@@ -464,6 +523,16 @@ const gracefulShutdown = async (signal: string) => {
       logger.info({}, 'PostgreSQL pool closed');
     } catch (err) {
       logger.error({ err }, 'Error closing PG pool during shutdown');
+    }
+
+    // Close the BullMQ queue + its Redis connection (if configured).
+    try {
+      await closeQueue();
+      if (redisConnection) {
+        await redisConnection.quit();
+      }
+    } catch (err) {
+      logger.error({ err }, 'Error closing BullMQ/Redis during shutdown');
     }
 
     logger.info({}, '🏁 Graceful shutdown completed');

@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
 import { createContext, useContext, useEffect, useRef, useState } from 'react';
-import { supabase } from '@/lib/supabase';
+import { authClient } from '@/lib/auth-client';
 import { trpc } from '@/lib/trpc';
 import { invalidatePortfolioQueries } from '@/v2/hooks/invalidatePortfolioQueries';
 
@@ -180,16 +180,17 @@ export function RealtimeProvider({ children }: RealtimeProviderProps) {
       closeSocket();
       clearReconnectTimer();
 
-      const { data, error } = await supabase.auth.getSession();
-      if (error || !data.session) {
+      // Better-Auth: the session lives in a cookie on the api host and is
+      // sent automatically during the WS handshake. No token in the URL.
+      const sessionRes = await authClient.getSession();
+      if (!sessionRes?.data?.user) {
         setConnectionStatus('disconnected');
         return;
       }
 
-      const accessToken = data.session.access_token;
       const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:3001';
       // http:// → ws://, https:// → wss://
-      const wsUrl = `${apiUrl.replace(/^http/, 'ws')}/?token=${encodeURIComponent(accessToken)}`;
+      const wsUrl = `${apiUrl.replace(/^http/, 'ws')}/`;
 
       setConnectionStatus(reason === 'reconnect' ? 'reconnecting' : 'connecting');
 
@@ -255,25 +256,11 @@ export function RealtimeProvider({ children }: RealtimeProviderProps) {
 
     void connect('initial');
 
-    // Re-open the connection with the new token whenever Supabase rotates
-    // the session. TOKEN_REFRESHED fires periodically for long-lived tabs;
-    // SIGNED_IN / SIGNED_OUT handle explicit auth transitions.
-    const { data: authSub } = supabase.auth.onAuthStateChange((eventName) => {
-      if (isUnmounted) return;
-      if (
-        eventName === 'TOKEN_REFRESHED' ||
-        eventName === 'SIGNED_IN' ||
-        eventName === 'USER_UPDATED'
-      ) {
-        reconnectAttempts = 0;
-        void connect('token-refresh');
-      } else if (eventName === 'SIGNED_OUT') {
-        reconnectAttempts = 0;
-        closeSocket();
-        clearReconnectTimer();
-        setConnectionStatus('disconnected');
-      }
-    });
+    // Better-Auth doesn't ship an onAuthStateChange — the cookie just
+    // changes out-of-band. Keep an empty unsubscribe for compatibility
+    // and rely on the visibility/online handlers below plus the focus
+    // listener in AuthContext to reconnect after a cookie swap.
+    const authSub = { subscription: { unsubscribe: () => {} } };
 
     // Wake up the connection when the tab comes back to foreground or the
     // network comes back online. Mobile Safari and background tabs often
