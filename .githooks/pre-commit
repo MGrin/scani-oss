@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Pre-commit hook: lint + type-check + terraform fmt.
+# Pre-commit hook: lint + type-check + terraform fmt + syncpack.
 #
 # Installed automatically by the `prepare` script in the root package.json
 # (runs `git config core.hooksPath .githooks` on `bun install`).
@@ -41,7 +41,7 @@ staged_files() {
 biome_relevant=$(staged_files -- '*.ts' '*.tsx' '*.js' '*.jsx' '*.json' '*.jsonc' || true)
 if [ -n "$biome_relevant" ]; then
   note "biome check --staged"
-  if ! bunx --bun @biomejs/biome@2.2.2 check --staged --no-errors-on-unmatched; then
+  if ! bunx --bun @biomejs/biome@2.4.12 check --staged --no-errors-on-unmatched; then
     fail "biome check reported errors"
   fi
   ok "biome clean"
@@ -87,6 +87,24 @@ if [ -n "$tf_staged" ]; then
     fail "terraform fmt"
   fi
   ok "terraform fmt clean"
+fi
+
+# -------- 4. Syncpack (only when any package.json is staged) --------
+#
+# Catches version drift across the workspace: if two package.json files
+# ever declare different versions of the same external dependency,
+# syncpack fails here instead of at install time.
+
+pkg_staged=$(staged_files -- '**/package.json' 'package.json' || true)
+if [ -n "$pkg_staged" ]; then
+  note "syncpack lint"
+  if ! bun run deps:lint >/dev/null 2>&1; then
+    echo "${RED}syncpack output:${RESET}" >&2
+    bun run deps:lint >&2 || true
+    echo "  Run: bun run deps:fix && git add package.json **/package.json" >&2
+    fail "workspace dependencies out of sync"
+  fi
+  ok "dependencies in sync"
 fi
 
 echo "${GREEN}✓ pre-commit passed${RESET}"

@@ -27,6 +27,9 @@ jobs:
       - name: Type check
         run: bun run type-check
 
+      - name: Dependency versions in sync
+        run: bun run deps:lint
+
       - name: Test
         run: bun test --preload ./packages/core/test-preload.ts packages/ --timeout 30000
         env:

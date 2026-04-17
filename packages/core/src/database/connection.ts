@@ -101,7 +101,8 @@ dbLogger.info(
   },
   '🐘 Connected to PostgreSQL database'
 );
-export { db, client };
+
+export { client, db };
 
 // Type-safe database instance
 export type DbType = typeof db;

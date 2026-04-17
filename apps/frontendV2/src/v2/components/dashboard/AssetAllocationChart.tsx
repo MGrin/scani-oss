@@ -262,7 +262,10 @@ function DonutView({ data, currency }: { data: ChartEntry[]; currency: string })
             ))}
           </Pie>
           <Tooltip
-            formatter={(value: number) => [formatMoney(value, currency, { decimals: 0 }), 'Value']}
+            formatter={(value) => [
+              formatMoney(Number(value) || 0, currency, { decimals: 0 }),
+              'Value',
+            ]}
             contentStyle={{
               backgroundColor: 'hsl(var(--card))',
               border: '1px solid hsl(var(--border))',
@@ -299,7 +302,10 @@ function BarView({ data, currency }: { data: ChartEntry[]; currency: string }) {
             tickLine={false}
           />
           <Tooltip
-            formatter={(value: number) => [formatMoney(value, currency, { decimals: 0 }), 'Value']}
+            formatter={(value) => [
+              formatMoney(Number(value) || 0, currency, { decimals: 0 }),
+              'Value',
+            ]}
             contentStyle={{
               backgroundColor: 'hsl(var(--card))',
               border: '1px solid hsl(var(--border))',

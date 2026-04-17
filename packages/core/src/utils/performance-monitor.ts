@@ -193,7 +193,7 @@ class PerformanceMonitor {
 export const performanceMonitor = new PerformanceMonitor();
 
 // Export class for custom instances
-export { PerformanceMonitor, type PerformanceConfig, type OperationMetric };
+export { type OperationMetric, type PerformanceConfig, PerformanceMonitor };
 
 /**
  * Decorator-style helper for tracking class methods
