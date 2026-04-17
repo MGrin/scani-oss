@@ -12,6 +12,7 @@ COPY package.json bun.lock ./
 COPY apps/backend/package.json apps/backend/package.json
 COPY apps/cron/package.json apps/cron/package.json
 COPY apps/frontendV2/package.json apps/frontendV2/package.json
+COPY apps/landing/package.json apps/landing/package.json
 COPY apps/worker/package.json apps/worker/package.json
 COPY packages/core/package.json packages/core/package.json
 COPY packages/integrations/package.json packages/integrations/package.json
