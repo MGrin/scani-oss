@@ -21,7 +21,7 @@ import type { FetchHoldingsResult } from '@scani/integrations';
 import { IntegrationManager } from '@scani/integrations';
 import { isValidDecimalString } from '@scani/shared';
 import Decimal from 'decimal.js';
-import { and, asc, eq, gt } from 'drizzle-orm';
+import { and, asc, eq, gt, sql } from 'drizzle-orm';
 import { Container, Service } from 'typedi';
 import { db } from '../database/connection';
 import * as schema from '../database/schema';
@@ -80,6 +80,26 @@ export class SyncWalletBalancesUseCase {
   async execute(): Promise<SyncWalletBalancesResult> {
     const startTime = Date.now();
     logger.info('Starting wallet balance sync for all blockchain accounts');
+
+    // Fast-path: if no user has imported a wallet, skip the entire sync so
+    // the scheduled job does zero DB + Redis work. Keeps Upstash free-tier
+    // command count low while the app has only a handful of users.
+    const [walletCountRow] = await db
+      .select({ count: sql<number>`count(*)::int` })
+      .from(schema.userWallets);
+    if (!walletCountRow || walletCountRow.count === 0) {
+      logger.info({}, 'No user wallets found; skipping blockchain sync');
+      return {
+        accountsFound: 0,
+        accountsSynced: 0,
+        accountsFailed: 0,
+        holdingsUpdated: 0,
+        holdingsCreated: 0,
+        holdingsRemoved: 0,
+        errors: [],
+        durationMs: Date.now() - startTime,
+      };
+    }
 
     const errors: SyncWalletBalancesResult['errors'] = [];
     let accountsSynced = 0;

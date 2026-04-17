@@ -1,4 +1,4 @@
-import { magicLinkClient } from 'better-auth/client/plugins';
+import { emailOTPClient, magicLinkClient } from 'better-auth/client/plugins';
 import { createAuthClient } from 'better-auth/react';
 
 /**
@@ -18,7 +18,7 @@ export const authClient = createAuthClient({
   fetchOptions: {
     credentials: 'include',
   },
-  plugins: [magicLinkClient()],
+  plugins: [magicLinkClient(), emailOTPClient()],
 });
 
 // Re-exports so the rest of the app can import React hooks ergonomically.

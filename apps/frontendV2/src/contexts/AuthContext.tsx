@@ -98,6 +98,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     };
   }, []);
 
+  const refreshSession = async () => {
+    const res = await authClient.getSession();
+    const s = res?.data;
+    if (s?.user) {
+      const u: AuthUser = {
+        id: s.user.id,
+        email: s.user.email,
+        name: s.user.name,
+        image: s.user.image ?? null,
+      };
+      setUser(u);
+      setSession({ user: u, token: s.session.token });
+    }
+  };
+
   const authenticate = async (email: string) => {
     const runningAsPWA = isPWA();
     if (import.meta.env.DEV) {
@@ -105,8 +120,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       console.log(`[Auth] Running as PWA: ${runningAsPWA}`);
     }
 
-    // Magic link is our sole auth flow. Better-Auth handles the email;
-    // callbackURL is where the user lands after clicking the link.
+    // PWAs get a 6-digit code instead of a magic link: clicking a link in
+    // an installed standalone app bounces the user out to the system browser
+    // and breaks the session. Browsers keep the magic-link flow.
+    if (runningAsPWA) {
+      const { error } = await authClient.emailOtp.sendVerificationOtp({
+        email,
+        type: 'sign-in',
+      });
+      if (error) {
+        return { error: error.message || 'Failed to send code' };
+      }
+      return {};
+    }
+
     const callbackURL = `${window.location.origin}/auth/callback`;
     const { error } = await authClient.signIn.magicLink({
       email,
@@ -118,13 +145,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return {};
   };
 
-  /**
-   * Legacy Supabase API kept for back-compat with existing components.
-   * Better-Auth's magic-link verification happens server-side on GET
-   * /api/auth/magic-link/verify, so client-side verifyCode is a no-op.
-   */
-  const verifyCode = async (_email: string, _code: string) => {
-    return { error: 'Codes are no longer supported — use the magic link from your email' };
+  const verifyCode = async (email: string, code: string) => {
+    const { error } = await authClient.signIn.emailOtp({ email, otp: code });
+    if (error) {
+      return { error: error.message || 'Invalid code' };
+    }
+    await refreshSession();
+    return {};
   };
 
   const handleSignOut = async () => {

@@ -10,9 +10,10 @@ import {
 import { authLogger } from '@scani/core/utils/logger';
 import { betterAuth } from 'better-auth';
 import { drizzleAdapter } from 'better-auth/adapters/drizzle';
-import { magicLink } from 'better-auth/plugins';
+import { emailOTP, magicLink } from 'better-auth/plugins';
 import { and, eq, isNull } from 'drizzle-orm';
 import { createTransport } from 'nodemailer';
+import { type EmailContent, renderMagicLinkEmail, renderOtpEmail } from './email-templates';
 import { createFastmailSender } from './fastmail-jmap';
 
 /**
@@ -72,19 +73,14 @@ export function createBetterAuth(opts: {
 }) {
   const fastmailSender = opts.fastmailApiToken ? createFastmailSender(opts.fastmailApiToken) : null;
   const transporter = !fastmailSender && opts.smtpUrl ? createTransport(opts.smtpUrl) : null;
-  const fromAddress = opts.smtpFrom ?? 'no-reply@scani.xyz';
+  const fromAddress = opts.smtpFrom ?? '"Scani" <welcome@scani.xyz>';
 
-  const sendEmail = async (input: {
-    from: string;
-    to: string;
-    subject: string;
-    text: string;
-    html?: string;
-  }) => {
+  const sendRendered = async (to: string, msg: EmailContent) => {
+    const payload = { from: fromAddress, to, subject: msg.subject, text: msg.text, html: msg.html };
     if (fastmailSender) {
-      await fastmailSender.sendMail(input);
+      await fastmailSender.sendMail(payload);
     } else if (transporter) {
-      await transporter.sendMail(input);
+      await transporter.sendMail(payload);
     } else {
       throw new Error('No email transport configured (set FASTMAIL_API_TOKEN or SMTP_URL)');
     }
@@ -148,13 +144,7 @@ export function createBetterAuth(opts: {
     emailVerification: hasEmailTransport
       ? {
           sendVerificationEmail: async ({ user, url }) => {
-            await sendEmail({
-              from: fromAddress,
-              to: user.email,
-              subject: 'Verify your scani email',
-              text: `Click to verify: ${url}`,
-              html: `<p>Click <a href="${url}">here</a> to verify your scani email.</p>`,
-            });
+            await sendRendered(user.email, renderMagicLinkEmail({ url }));
             authLogger.info({ userId: user.id }, 'Sent email verification');
           },
           sendOnSignUp: true,
@@ -209,17 +199,7 @@ export function createBetterAuth(opts: {
             throw new Error('Email not configured');
           }
           try {
-            await sendEmail({
-              from: fromAddress,
-              to: email,
-              subject: 'Sign in to scani',
-              text: `Sign in by opening this link: ${url}\n\nIf you didn't request this, ignore this email.`,
-              html: `
-                <p>Sign in to scani by clicking the link below:</p>
-                <p><a href="${url}" style="display:inline-block;padding:12px 24px;background:#0066cc;color:#fff;border-radius:6px;text-decoration:none;">Sign in</a></p>
-                <p style="color:#666;font-size:12px;">If you didn't request this, ignore this email.</p>
-              `,
-            });
+            await sendRendered(email, renderMagicLinkEmail({ url }));
             authLogger.info({ email }, '✅ Magic link sent');
           } catch (err) {
             authLogger.error(
@@ -231,6 +211,32 @@ export function createBetterAuth(opts: {
         },
         // Session minted automatically after the recipient opens the link.
         expiresIn: 60 * 15, // 15 min
+      }),
+      // One-time-code sign-in. The frontend picks this flow for PWAs
+      // (installed standalone mode), where clicking a magic link bounces
+      // the user out of the PWA into Safari/Chrome and loses the standalone
+      // session. Instead the user receives a 6-digit code and pastes it
+      // back into the PWA.
+      emailOTP({
+        otpLength: 6,
+        expiresIn: 5 * 60, // 5 min
+        allowedAttempts: 5,
+        sendVerificationOTP: async ({ email, otp, type }) => {
+          if (!hasEmailTransport) {
+            authLogger.error({ email }, 'OTP requested but no email transport is configured');
+            throw new Error('Email not configured');
+          }
+          try {
+            await sendRendered(email, renderOtpEmail({ code: otp, type }));
+            authLogger.info({ email, type }, '✅ OTP sent');
+          } catch (err) {
+            authLogger.error(
+              { email, type, error: err instanceof Error ? err.message : String(err) },
+              '❌ Failed to send OTP'
+            );
+            throw err;
+          }
+        },
       }),
     ],
   });

@@ -14,7 +14,7 @@ import '@scani/core/repositories';
 import '@scani/core/services';
 import { createComponentLogger } from '@scani/core/utils/logger';
 import { IntegrationManager } from '@scani/integrations';
-import { type Job, Queue, QueueEvents, Worker } from 'bullmq';
+import { type Job, Queue, Worker } from 'bullmq';
 import { Redis } from 'ioredis';
 import { Container } from 'typedi';
 
@@ -56,7 +56,6 @@ async function main(): Promise<void> {
   });
 
   const queue = new Queue(SCANI_QUEUE, { connection });
-  const queueEvents = new QueueEvents(SCANI_QUEUE, { connection: connection.duplicate() });
 
   // Register repeatable jobs so BullMQ fires them on schedule. Using
   // upsertJobScheduler (BullMQ 5.x) is idempotent: redeploys don't create
@@ -88,6 +87,12 @@ async function main(): Promise<void> {
     {
       connection: connection.duplicate(),
       concurrency: env.WORKER_CONCURRENCY,
+      // Block on an empty queue for 30s instead of the BullMQ default of 5s.
+      // This cuts idle blocking-poll traffic 6× — critical on Upstash's
+      // 500k commands/month free tier. Trade-off: a newly-enqueued job
+      // waits up to 30s for pickup when the queue was empty. Nothing
+      // user-facing runs synchronously through BullMQ, so fine.
+      drainDelay: 30,
     }
   );
 
@@ -110,7 +115,6 @@ async function main(): Promise<void> {
     logger.warn({ signal }, '🛑 Shutdown signal received — draining worker');
     try {
       await worker.close();
-      await queueEvents.close();
       await queue.close();
       await connection.quit();
       logger.info({}, '✅ Worker drained cleanly');

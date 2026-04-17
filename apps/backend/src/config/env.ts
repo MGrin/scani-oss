@@ -64,7 +64,16 @@ const envSchema = z.object({
   // (managed deployment — avoids needing a separate app-specific password
   // when a Fastmail API token with mail/send scope is available).
   SMTP_URL: z.string().optional(),
-  SMTP_FROM: z.string().email().optional(),
+  // Accepts a bare `local@domain` or a display-name wrapper
+  // `"Name" <local@domain>`. The Fastmail JMAP sender (in apps/backend/src/
+  // auth/fastmail-jmap.ts on the auth-emails branch) parses the wrapper and
+  // picks the matching account identity, so both shapes need to validate.
+  SMTP_FROM: z
+    .string()
+    .refine((v) => /^(?:"[^"]*"\s*<[^>]+@[^>]+>|\S+@\S+)$/.test(v), {
+      message: 'SMTP_FROM must be "Name" <email> or a bare email',
+    })
+    .optional(),
   FASTMAIL_API_TOKEN: z.string().optional(),
 
   // Optional external-API keys (used when EXTERNAL_API_MODE=direct).

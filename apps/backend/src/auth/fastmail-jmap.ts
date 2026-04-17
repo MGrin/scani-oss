@@ -43,6 +43,39 @@ async function fetchWithTimeout(
   }
 }
 
+/**
+ * Parses an RFC 5322-ish address — accepts `"Name" <email@host>` or plain
+ * `email@host` — into the two parts we care about. Returns the raw string
+ * as the email if there's no `<…>` wrapper.
+ */
+function parseAddress(raw: string): { name?: string; email: string } {
+  const match = raw.match(/^\s*(?:"?([^"<]*?)"?\s+)?<([^>]+)>\s*$/);
+  if (match?.[2]) {
+    return { name: match[1]?.trim() || undefined, email: match[2].trim() };
+  }
+  return { email: raw.trim() };
+}
+
+/**
+ * Picks the Fastmail identity that authorizes sending as `fromEmail`.
+ * Fastmail accepts both exact-match identities (`nikita@scani.xyz`) and
+ * wildcard ones (`*@scani.xyz`). Falls back to the first identity.
+ */
+function pickIdentity(
+  identities: Array<{ id: string; email: string }>,
+  fromEmail: string
+): { id: string; email: string } {
+  const lower = fromEmail.toLowerCase();
+  const exact = identities.find((i) => i.email.toLowerCase() === lower);
+  if (exact) return exact;
+  const domain = lower.split('@')[1];
+  const wildcard = identities.find((i) => i.email.toLowerCase() === `*@${domain}`);
+  if (wildcard) return wildcard;
+  const first = identities[0];
+  if (!first) throw new Error('No Fastmail identities available');
+  return first;
+}
+
 export function createFastmailSender(apiToken: string): FastmailSender {
   const sessionUrl = 'https://api.fastmail.com/jmap/session';
   const authHeader = { Authorization: `Bearer ${apiToken}` };
@@ -50,8 +83,7 @@ export function createFastmailSender(apiToken: string): FastmailSender {
   type SessionInfo = {
     apiUrl: string;
     accountId: string;
-    identityId: string;
-    fromAddress: string;
+    identities: Array<{ id: string; email: string }>;
   };
 
   let cached: Promise<SessionInfo> | null = null;
@@ -71,7 +103,6 @@ export function createFastmailSender(apiToken: string): FastmailSender {
       const accountId = session.primaryAccounts['urn:ietf:params:jmap:submission'];
       if (!accountId) throw new Error('JMAP session has no submission account');
 
-      // Need to fetch Identity to get the identityId + verified from address.
       const identitiesRes = await fetchWithTimeout(apiUrl, {
         method: 'POST',
         headers: { ...authHeader, 'Content-Type': 'application/json' },
@@ -87,14 +118,8 @@ export function createFastmailSender(apiToken: string): FastmailSender {
         methodResponses: Array<[string, { list: Array<{ id: string; email: string }> }, string]>;
       };
       const identities = identitiesJson.methodResponses[0]?.[1]?.list ?? [];
-      const primary = identities[0];
-      if (!primary) throw new Error('No Fastmail identities available');
-      return {
-        apiUrl,
-        accountId,
-        identityId: primary.id,
-        fromAddress: primary.email,
-      };
+      if (identities.length === 0) throw new Error('No Fastmail identities available');
+      return { apiUrl, accountId, identities };
     })();
     return cached;
   };
@@ -102,7 +127,8 @@ export function createFastmailSender(apiToken: string): FastmailSender {
   return {
     async sendMail(input) {
       const session = await getSession();
-      const fromAddress = input.from || session.fromAddress;
+      const parsed = parseAddress(input.from);
+      const identity = pickIdentity(session.identities, parsed.email);
 
       const body = {
         using: [
@@ -117,7 +143,7 @@ export function createFastmailSender(apiToken: string): FastmailSender {
               accountId: session.accountId,
               create: {
                 e1: {
-                  from: [{ email: fromAddress }],
+                  from: [{ email: parsed.email, ...(parsed.name ? { name: parsed.name } : {}) }],
                   to: [{ email: input.to }],
                   subject: input.subject,
                   keywords: { $seen: true, $draft: true },
@@ -139,7 +165,7 @@ export function createFastmailSender(apiToken: string): FastmailSender {
               accountId: session.accountId,
               create: {
                 s1: {
-                  identityId: session.identityId,
+                  identityId: identity.id,
                   emailId: '#e1',
                 },
               },
