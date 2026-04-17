@@ -1,0 +1,45 @@
+name: "Setup Bun with cache"
+description: "Setup Bun runtime, cache ~/.bun/install/cache + workspace node_modules, run install."
+
+inputs:
+  bun-version:
+    description: "Bun version to install"
+    required: false
+    default: "1.3"
+  install:
+    description: "Whether to run `bun install --frozen-lockfile` after setup"
+    required: false
+    default: "true"
+
+outputs:
+  cache-hit:
+    description: "Whether the bun cache was restored (true/false)"
+    value: ${{ steps.cache.outputs.cache-hit }}
+
+runs:
+  using: "composite"
+  steps:
+    - uses: oven-sh/setup-bun@v2
+      with:
+        bun-version: ${{ inputs.bun-version }}
+
+    - name: Cache Bun install + node_modules
+      id: cache
+      uses: actions/cache@v5
+      with:
+        # ~/.bun/install/cache is Bun's global module cache; node_modules
+        # holds the resolved symlinks + hoisted deps after `bun install`.
+        path: |
+          ~/.bun/install/cache
+          node_modules
+          apps/*/node_modules
+          packages/*/node_modules
+        key: ${{ runner.os }}-bun-${{ inputs.bun-version }}-${{ hashFiles('bun.lock') }}
+        restore-keys: |
+          ${{ runner.os }}-bun-${{ inputs.bun-version }}-
+          ${{ runner.os }}-bun-
+
+    - name: bun install
+      if: ${{ inputs.install == 'true' }}
+      shell: bash
+      run: bun install --frozen-lockfile
