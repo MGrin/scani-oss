@@ -5,7 +5,7 @@
 
 import { db } from '@scani/core/database/connection';
 import * as schema from '@scani/core/database/schema';
-import { IntegrationCredentialsService } from '@scani/core/services';
+import { ExpiredCredentialsError, IntegrationCredentialsService } from '@scani/core/services';
 import { ImportExchangeAccountsUseCase, ImportIbkrAccountsUseCase } from '@scani/core/use-cases';
 import {
   validateBinanceCredentials,
@@ -28,6 +28,81 @@ import { eq } from 'drizzle-orm';
 import { Container } from 'typedi';
 import { z } from 'zod';
 import { protectedProcedure, router } from '../trpc';
+
+type TRPCErrorCode = ConstructorParameters<typeof TRPCError>[0]['code'];
+
+/**
+ * Map an arbitrary error thrown from a credential validation / import flow
+ * into the closest-matching tRPC error code. Keeps TRPCError pass-through,
+ * routes expired creds to UNAUTHORIZED, rate limits to TOO_MANY_REQUESTS,
+ * timeouts to TIMEOUT, and 5xx / network errors to INTERNAL_SERVER_ERROR.
+ * Anything else becomes the caller-provided fallback (usually BAD_REQUEST).
+ */
+function toTRPCError(
+  error: unknown,
+  context: { fallbackCode: TRPCErrorCode; fallbackMessage: string }
+): TRPCError {
+  if (error instanceof TRPCError) return error;
+
+  if (error instanceof ExpiredCredentialsError) {
+    return new TRPCError({
+      code: 'UNAUTHORIZED',
+      message: 'Integration credentials have expired — please reconnect',
+      cause: error,
+    });
+  }
+
+  const err = error as Error & { code?: string | number; status?: number };
+  const status = typeof err?.status === 'number' ? err.status : undefined;
+  const codeStr = typeof err?.code === 'string' ? err.code : undefined;
+  const msg = err?.message?.toLowerCase() ?? '';
+
+  if (status === 401 || status === 403 || msg.includes('unauthorized')) {
+    return new TRPCError({
+      code: 'UNAUTHORIZED',
+      message: context.fallbackMessage,
+      cause: error,
+    });
+  }
+  if (status === 429 || msg.includes('rate limit') || msg.includes('too many requests')) {
+    return new TRPCError({
+      code: 'TOO_MANY_REQUESTS',
+      message: 'Upstream provider rate limit hit — try again shortly',
+      cause: error,
+    });
+  }
+  if (
+    codeStr === 'ETIMEDOUT' ||
+    codeStr === 'UND_ERR_CONNECT_TIMEOUT' ||
+    msg.includes('timeout') ||
+    msg.includes('timed out')
+  ) {
+    return new TRPCError({
+      code: 'TIMEOUT',
+      message: 'Upstream provider timed out',
+      cause: error,
+    });
+  }
+  if (
+    (typeof status === 'number' && status >= 500) ||
+    codeStr === 'ECONNRESET' ||
+    codeStr === 'ECONNREFUSED' ||
+    msg.includes('econnreset') ||
+    msg.includes('econnrefused')
+  ) {
+    return new TRPCError({
+      code: 'INTERNAL_SERVER_ERROR',
+      message: 'Upstream provider unavailable',
+      cause: error,
+    });
+  }
+
+  return new TRPCError({
+    code: context.fallbackCode,
+    message: context.fallbackMessage,
+    cause: error,
+  });
+}
 
 /** All crypto exchanges use the generic ImportExchangeAccountsUseCase */
 function getExchangeImportUseCase() {
@@ -86,11 +161,9 @@ function createApiKeyOnlyRouter(
           throw new TRPCError({ code: 'BAD_REQUEST', message: `Invalid ${name} API credentials` });
         }
       } catch (error) {
-        if (error instanceof TRPCError) throw error;
-        throw new TRPCError({
-          code: 'BAD_REQUEST',
-          message: `Failed to validate ${name} credentials`,
-          cause: error,
+        throw toTRPCError(error, {
+          fallbackCode: 'BAD_REQUEST',
+          fallbackMessage: `Failed to validate ${name} credentials`,
         });
       }
 
@@ -114,11 +187,9 @@ function createApiKeyOnlyRouter(
           errors: importResult.errors,
         };
       } catch (error) {
-        if (error instanceof TRPCError) throw error;
-        throw new TRPCError({
-          code: 'INTERNAL_SERVER_ERROR',
-          message: 'Failed to store credentials and import accounts',
-          cause: error,
+        throw toTRPCError(error, {
+          fallbackCode: 'INTERNAL_SERVER_ERROR',
+          fallbackMessage: 'Failed to store credentials and import accounts',
         });
       }
     }),
@@ -151,11 +222,9 @@ function createPassphraseRouter(
             });
           }
         } catch (error) {
-          if (error instanceof TRPCError) throw error;
-          throw new TRPCError({
-            code: 'BAD_REQUEST',
-            message: `Failed to validate ${name} credentials`,
-            cause: error,
+          throw toTRPCError(error, {
+            fallbackCode: 'BAD_REQUEST',
+            fallbackMessage: `Failed to validate ${name} credentials`,
           });
         }
 
@@ -180,11 +249,9 @@ function createPassphraseRouter(
             errors: importResult.errors,
           };
         } catch (error) {
-          if (error instanceof TRPCError) throw error;
-          throw new TRPCError({
-            code: 'INTERNAL_SERVER_ERROR',
-            message: 'Failed to store credentials',
-            cause: error,
+          throw toTRPCError(error, {
+            fallbackCode: 'INTERNAL_SERVER_ERROR',
+            fallbackMessage: 'Failed to store credentials',
           });
         }
       }),
@@ -218,11 +285,9 @@ export const integrationsRouter = router({
             throw new TRPCError({ code: 'BAD_REQUEST', message: 'Invalid Wise API token' });
           }
         } catch (error) {
-          if (error instanceof TRPCError) throw error;
-          throw new TRPCError({
-            code: 'BAD_REQUEST',
-            message: 'Failed to validate Wise credentials',
-            cause: error,
+          throw toTRPCError(error, {
+            fallbackCode: 'BAD_REQUEST',
+            fallbackMessage: 'Failed to validate Wise credentials',
           });
         }
 
@@ -232,11 +297,9 @@ export const integrationsRouter = router({
           });
           return { success: true, message: 'Wise credentials validated and stored', institutionId };
         } catch (error) {
-          if (error instanceof TRPCError) throw error;
-          throw new TRPCError({
-            code: 'INTERNAL_SERVER_ERROR',
-            message: 'Failed to store credentials',
-            cause: error,
+          throw toTRPCError(error, {
+            fallbackCode: 'INTERNAL_SERVER_ERROR',
+            fallbackMessage: 'Failed to store credentials',
           });
         }
       }),
@@ -261,11 +324,9 @@ export const integrationsRouter = router({
             });
           }
         } catch (error) {
-          if (error instanceof TRPCError) throw error;
-          throw new TRPCError({
-            code: 'BAD_REQUEST',
-            message: 'Failed to validate IBKR credentials',
-            cause: error,
+          throw toTRPCError(error, {
+            fallbackCode: 'BAD_REQUEST',
+            fallbackMessage: 'Failed to validate IBKR credentials',
           });
         }
 
@@ -292,11 +353,9 @@ export const integrationsRouter = router({
             errors: importResult.errors,
           };
         } catch (error) {
-          if (error instanceof TRPCError) throw error;
-          throw new TRPCError({
-            code: 'INTERNAL_SERVER_ERROR',
-            message: 'Failed to store credentials and import accounts',
-            cause: error,
+          throw toTRPCError(error, {
+            fallbackCode: 'INTERNAL_SERVER_ERROR',
+            fallbackMessage: 'Failed to store credentials and import accounts',
           });
         }
       }),

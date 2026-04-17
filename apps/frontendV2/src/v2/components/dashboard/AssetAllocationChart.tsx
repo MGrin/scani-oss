@@ -16,6 +16,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { trpc } from '@/lib/trpc';
 import { useBaseCurrency } from '../../hooks/useBaseCurrency';
 import { STORAGE_KEYS } from '../../lib/constants';
+import { formatCompact, formatMoney } from '../../lib/format';
 
 const COLORS = [
   '#3b82f6',
@@ -71,35 +72,6 @@ function persistState(state: PersistedChartState) {
   } catch {
     // ignore quota exceeded
   }
-}
-
-function formatMoney(value: number, currency: string) {
-  return new Intl.NumberFormat('en-US', {
-    style: 'currency',
-    currency,
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 0,
-  }).format(value);
-}
-
-function formatCompact(value: number, currency: string) {
-  if (value >= 1_000_000) {
-    return new Intl.NumberFormat('en-US', {
-      style: 'currency',
-      currency,
-      notation: 'compact',
-      maximumFractionDigits: 1,
-    }).format(value);
-  }
-  if (value >= 1_000) {
-    return new Intl.NumberFormat('en-US', {
-      style: 'currency',
-      currency,
-      notation: 'compact',
-      maximumFractionDigits: 1,
-    }).format(value);
-  }
-  return formatMoney(value, currency);
 }
 
 interface ChartEntry {
@@ -263,7 +235,7 @@ function Legend({ data, currency }: { data: ChartEntry[]; currency: string }) {
             <span className="truncate">{entry.name}</span>
           </span>
           <span className="text-muted-foreground tabular-nums shrink-0 ml-2">
-            {formatMoney(entry.monetaryValue, currency)}
+            {formatMoney(entry.monetaryValue, currency, { decimals: 0 })}
           </span>
         </div>
       ))}
@@ -290,7 +262,7 @@ function DonutView({ data, currency }: { data: ChartEntry[]; currency: string })
             ))}
           </Pie>
           <Tooltip
-            formatter={(value: number) => [formatMoney(value, currency), 'Value']}
+            formatter={(value: number) => [formatMoney(value, currency, { decimals: 0 }), 'Value']}
             contentStyle={{
               backgroundColor: 'hsl(var(--card))',
               border: '1px solid hsl(var(--border))',
@@ -327,7 +299,7 @@ function BarView({ data, currency }: { data: ChartEntry[]; currency: string }) {
             tickLine={false}
           />
           <Tooltip
-            formatter={(value: number) => [formatMoney(value, currency), 'Value']}
+            formatter={(value: number) => [formatMoney(value, currency, { decimals: 0 }), 'Value']}
             contentStyle={{
               backgroundColor: 'hsl(var(--card))',
               border: '1px solid hsl(var(--border))',
@@ -362,7 +334,7 @@ function ListView({ data, currency }: { data: ChartEntry[]; currency: string }) 
               <span className="truncate">{entry.name}</span>
             </span>
             <span className="tabular-nums shrink-0 ml-2 font-medium">
-              {formatMoney(entry.monetaryValue, currency)}
+              {formatMoney(entry.monetaryValue, currency, { decimals: 0 })}
             </span>
           </div>
           <div className="h-1.5 rounded-full bg-muted overflow-hidden">

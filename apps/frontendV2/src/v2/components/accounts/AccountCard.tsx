@@ -4,6 +4,7 @@ import { CardInteractive } from '@/components/ui/card';
 import { Checkbox } from '@/components/ui/checkbox';
 import { cn } from '@/lib/utils';
 import { useBaseCurrency } from '../../hooks/useBaseCurrency';
+import { formatMoney } from '../../lib/format';
 
 interface AccountCardProps {
   item: AccountWihSumaryDTO;
@@ -12,15 +13,6 @@ interface AccountCardProps {
   institutionName?: string;
   typeName?: string;
   institutionFavicon?: string | null;
-}
-
-function formatMoney(value: number, currency = 'USD') {
-  return new Intl.NumberFormat('en-US', {
-    style: 'currency',
-    currency,
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  }).format(value);
 }
 
 export function AccountCard({

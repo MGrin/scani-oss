@@ -111,16 +111,16 @@ export { schema };
  * Useful for monitoring and debugging connection issues
  */
 export function getConnectionStats() {
-  // postgres.js doesn't expose pool stats directly, but we can provide config info
+  // postgres.js doesn't expose live pool metrics, but at minimum we should
+  // report the *actual* configuration we handed to the driver, not made-up
+  // numbers. Active/idle counts still require a pg_stat_activity query.
   return {
-    maxConnections: 20,
-    idleTimeout: 30,
-    connectTimeout: 10,
-    maxLifetime: 60 * 60,
-    fetchTypes: true,
-    prepare: true,
-    // Note: postgres.js doesn't expose active/idle connection counts
-    // For that, you'd need to query pg_stat_activity
+    maxConnections: connectionConfig.max,
+    idleTimeout: connectionConfig.idle_timeout,
+    connectTimeout: connectionConfig.connect_timeout,
+    maxLifetime: connectionConfig.max_lifetime,
+    fetchTypes: connectionConfig.fetch_types,
+    prepare: connectionConfig.prepare,
   };
 }
 

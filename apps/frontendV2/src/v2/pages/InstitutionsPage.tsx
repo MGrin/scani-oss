@@ -5,7 +5,9 @@ import { getFaviconUrl } from '@/lib/icons';
 import { trpc } from '@/lib/trpc';
 import { DataView as DataViewComponent } from '../components/data-view/DataView';
 import type { ColumnDef } from '../components/data-view/DataViewTable';
+import { FaviconImg } from '../components/shared/FaviconImg';
 import { useBaseCurrency } from '../hooks/useBaseCurrency';
+import { formatMoney } from '../lib/format';
 import { V2_ROUTES } from '../lib/routes';
 
 // Institution type from the query result
@@ -26,20 +28,11 @@ function InstitutionIcon({ name, website }: { name: string; website?: string | n
   if (favicon) {
     return (
       <div className="h-8 w-8 rounded-lg bg-muted flex items-center justify-center shrink-0 overflow-hidden">
-        <img
+        <FaviconImg
           src={favicon}
-          alt={`${name} logo`}
+          name={name}
           className="h-5 w-5 object-contain"
-          onError={(e) => {
-            (e.target as HTMLImageElement).style.display = 'none';
-            const parent = (e.target as HTMLImageElement).parentElement;
-            if (parent) {
-              const fallback = document.createElement('span');
-              fallback.className = 'text-xs font-bold text-muted-foreground';
-              fallback.textContent = name.charAt(0).toUpperCase();
-              parent.appendChild(fallback);
-            }
-          }}
+          fallbackClassName="text-xs font-bold text-muted-foreground"
         />
       </div>
     );
@@ -49,15 +42,6 @@ function InstitutionIcon({ name, website }: { name: string; website?: string | n
       <Building2 className="h-4 w-4 text-muted-foreground" />
     </div>
   );
-}
-
-function formatMoney(value: number, currency: string) {
-  return new Intl.NumberFormat('en-US', {
-    style: 'currency',
-    currency,
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 0,
-  }).format(value);
 }
 
 function InstitutionCard({
@@ -81,7 +65,7 @@ function InstitutionCard({
         </div>
         <div className="text-right shrink-0">
           <p className="text-sm font-semibold tabular-nums">
-            {formatMoney(Number(item.summary?.totalValue ?? 0), currency)}
+            {formatMoney(Number(item.summary?.totalValue ?? 0), currency, { decimals: 0 })}
           </p>
         </div>
       </div>
@@ -125,7 +109,7 @@ export function InstitutionsPage() {
       sortable: true,
       render: (item) => (
         <span className="font-medium tabular-nums">
-          {formatMoney(Number(item.summary?.totalValue ?? 0), currencySymbol)}
+          {formatMoney(Number(item.summary?.totalValue ?? 0), currencySymbol, { decimals: 0 })}
         </span>
       ),
     },

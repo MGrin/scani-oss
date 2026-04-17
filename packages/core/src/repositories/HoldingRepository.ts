@@ -32,6 +32,10 @@ export class HoldingRepository extends BaseRepository<Holding, NewHolding> {
   protected readonly table = schema.holdings;
   protected readonly tableName = 'holdings';
 
+  // Returns all visible (non-hidden, non-scam) holdings for the user —
+  // active AND inactive. Inactive holdings are visible but excluded from
+  // totals (see PortfolioValuationService, which filters isActive=true
+  // separately).
   async findByUser(
     userId: string,
     transaction?: DatabaseTransaction,
@@ -437,14 +441,24 @@ export class HoldingRepository extends BaseRepository<Holding, NewHolding> {
   }
 
   /**
-   * Get distinct token IDs from all holdings
+   * Get distinct token IDs from all holdings that we actually need prices for.
+   * Excludes hidden holdings and scam tokens; includes inactive holdings
+   * because inactive holdings are still displayed to the user (just not
+   * counted in totals) and therefore need prices.
    */
   async getDistinctTokenIds(transaction?: DatabaseTransaction): Promise<string[]> {
     try {
       const database = this.getDb(transaction);
       const results = await database
         .selectDistinct({ tokenId: schema.holdings.tokenId })
-        .from(schema.holdings);
+        .from(schema.holdings)
+        .innerJoin(schema.tokens, eq(schema.holdings.tokenId, schema.tokens.id))
+        .where(
+          and(
+            eq(schema.holdings.isHidden, false),
+            lt(schema.tokens.isScamProbability, SCAM_PROBABILITY_THRESHOLD)
+          )
+        );
 
       return results.map((row) => row.tokenId);
     } catch (error) {

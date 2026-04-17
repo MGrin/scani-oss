@@ -3,6 +3,7 @@ import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { getFaviconUrl } from '@/lib/icons';
 import { cn } from '@/lib/utils';
+import { formatMoney } from '../../lib/format';
 import { V2_ROUTES } from '../../lib/routes';
 
 interface TopHolding {
@@ -29,15 +30,6 @@ const TOKEN_TYPE_COLORS: Record<string, string> = {
   bond: 'bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200',
   commodity: 'bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-200',
 };
-
-function formatMoney(value: number, currency: string) {
-  return new Intl.NumberFormat('en-US', {
-    style: 'currency',
-    currency,
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  }).format(value);
-}
 
 export function TopHoldingsList({ holdings, totalValue, currency }: TopHoldingsListProps) {
   return (

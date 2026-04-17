@@ -29,7 +29,10 @@ import type { Holding } from '../domain/entities';
 import { TokenTypeRepository } from '../repositories/EnumRepositories';
 import { HoldingRepository, type HoldingWithFullDetails } from '../repositories/HoldingRepository';
 import { HoldingService } from '../services/HoldingService';
-import { IntegrationCredentialsService } from '../services/IntegrationCredentialsService';
+import {
+  ExpiredCredentialsError,
+  IntegrationCredentialsService,
+} from '../services/IntegrationCredentialsService';
 import { TokenService } from '../services/TokenService';
 import { createComponentLogger } from '../utils/logger';
 
@@ -220,12 +223,31 @@ export class SyncExchangeBalancesUseCase {
               'Syncing accounts for user'
             );
 
-            // Get decrypted credentials
-            const decryptedCredentials =
-              await this.integrationCredentialsService.getDecryptedCredentials(
-                userCredential.userId,
-                institutionId
-              );
+            // Get decrypted credentials. ExpiredCredentialsError must be
+            // caught here (per-user), not at the institution scope — otherwise
+            // one user's expired token aborts balance sync for every remaining
+            // user on the same institution for the rest of this cron run.
+            let decryptedCredentials: Record<string, unknown> | null;
+            try {
+              decryptedCredentials =
+                await this.integrationCredentialsService.getDecryptedCredentials(
+                  userCredential.userId,
+                  institutionId
+                );
+            } catch (error) {
+              if (error instanceof ExpiredCredentialsError) {
+                logger.warn(
+                  {
+                    userId: userCredential.userId,
+                    institutionId,
+                    expiresAt: error.expiresAt,
+                  },
+                  'Skipping user: integration credentials expired'
+                );
+                continue;
+              }
+              throw error;
+            }
 
             if (!decryptedCredentials) {
               logger.warn(

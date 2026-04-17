@@ -7,20 +7,12 @@ import { getFaviconUrl } from '@/lib/icons';
 import { trpc } from '@/lib/trpc';
 import { cn } from '@/lib/utils';
 import { useBaseCurrency } from '../../hooks/useBaseCurrency';
+import { formatMoney } from '../../lib/format';
 import { V2_ROUTES } from '../../lib/routes';
 
 interface InstitutionDetailContentProps {
   institutionId: string;
   mode?: 'panel' | 'fullPage';
-}
-
-function formatMoney(value: number, currency: string) {
-  return new Intl.NumberFormat('en-US', {
-    style: 'currency',
-    currency,
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  }).format(value);
 }
 
 export function InstitutionDetailContent({

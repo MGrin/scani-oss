@@ -65,6 +65,6 @@ export async function executeWalletBalancesCronJob(): Promise<void> {
       },
       '❌ Wallet balances sync cron job failed'
     );
-    // Don't throw - let the cron job continue on next schedule
+    throw error;
   }
 }

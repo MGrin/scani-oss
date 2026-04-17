@@ -302,6 +302,20 @@
       "when": 1776640000000,
       "tag": "0042_add_holding_apy_configs",
       "breakpoints": true
+    },
+    {
+      "idx": 43,
+      "version": "7",
+      "when": 1776900000000,
+      "tag": "0043_users_email_not_null",
+      "breakpoints": true
+    },
+    {
+      "idx": 44,
+      "version": "7",
+      "when": 1776900100000,
+      "tag": "0044_add_check_constraints",
+      "breakpoints": true
     }
   ]
 }

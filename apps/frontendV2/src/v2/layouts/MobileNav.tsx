@@ -25,6 +25,7 @@ interface MobileNavProps {
 export function MobileNav({ onMorePress }: MobileNavProps) {
   return (
     <nav
+      aria-label="Primary"
       className="lg:hidden flex items-center justify-around h-14 border-t border-border bg-background shrink-0"
       style={{
         paddingBottom: 'env(safe-area-inset-bottom, 0px)',
@@ -36,6 +37,7 @@ export function MobileNav({ onMorePress }: MobileNavProps) {
           key={item.path}
           to={item.path}
           end={item.end}
+          aria-label={item.label}
           className={({ isActive }) =>
             cn(
               'flex flex-col items-center justify-center gap-0.5 flex-1 h-full text-[10px]',
@@ -43,16 +45,17 @@ export function MobileNav({ onMorePress }: MobileNavProps) {
             )
           }
         >
-          <item.icon className="h-5 w-5" />
+          <item.icon className="h-5 w-5" aria-hidden="true" />
           <span>{item.label}</span>
         </NavLink>
       ))}
       <button
         type="button"
         onClick={onMorePress}
+        aria-label="More"
         className="flex flex-col items-center justify-center gap-0.5 flex-1 h-full text-[10px] text-muted-foreground"
       >
-        <Menu className="h-5 w-5" />
+        <Menu className="h-5 w-5" aria-hidden="true" />
         <span>More</span>
       </button>
     </nav>

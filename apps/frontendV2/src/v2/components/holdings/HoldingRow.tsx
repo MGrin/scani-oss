@@ -3,6 +3,7 @@ import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
 import { cn } from '@/lib/utils';
 import { useBaseCurrency } from '../../hooks/useBaseCurrency';
+import { formatMoney } from '../../lib/format';
 
 interface HoldingRowProps {
   item: HoldingWithDetails;
@@ -17,15 +18,6 @@ const TOKEN_TYPE_COLORS: Record<string, string> = {
   bond: 'bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200',
   commodity: 'bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-200',
 };
-
-function formatMoney(value: number, currency = 'USD') {
-  return new Intl.NumberFormat('en-US', {
-    style: 'currency',
-    currency,
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  }).format(value);
-}
 
 export function HoldingRow({ item, isSelected, onSelect }: HoldingRowProps) {
   const { symbol: currencySymbol } = useBaseCurrency();

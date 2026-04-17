@@ -40,7 +40,7 @@ async function createUserIfNotExists(
 
     const userData = {
       id: userId, // Use JWT user ID
-      email: email || '',
+      email,
       name: emailUsername, // Use email prefix as username
       avatar: null,
       baseCurrencyId: usdToken?.id || null, // Use USD token ID or null if not found
@@ -215,11 +215,23 @@ export async function requireAuth(ctx: AuthContext) {
       if (existingUser) {
         dbUser = existingUser;
       } else {
-        // User doesn't exist in our database - create them (new user registration)
+        // User doesn't exist in our database - create them (new user registration).
+        // Require email at this point: empty-string fallbacks corrupt identity lookups.
+        if (!ctx.email) {
+          authLogger.warn({ userId: ctx.userId }, 'Cannot create user: JWT is missing email claim');
+          throw new TRPCError({
+            code: 'UNAUTHORIZED',
+            message: 'Authentication token is missing email',
+          });
+        }
         authLogger.info({ userId: ctx.userId }, 'User not found in database, creating new user');
-        dbUser = await createUserIfNotExists(ctx.userId, ctx.email || '');
+        dbUser = await createUserIfNotExists(ctx.userId, ctx.email);
       }
     } catch (error) {
+      // Preserve intentional tRPC errors (e.g. the UNAUTHORIZED thrown above
+      // when the JWT has no email). Rewrapping them would turn a deliberate
+      // 401 into a 500 and defeat the check.
+      if (error instanceof TRPCError) throw error;
       authLogger.error(
         {
           userId: ctx.userId,

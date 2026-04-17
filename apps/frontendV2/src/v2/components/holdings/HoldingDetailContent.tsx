@@ -14,18 +14,10 @@ import { cn } from '@/lib/utils';
 import { invalidatePortfolioQueries } from '../../hooks/invalidatePortfolioQueries';
 import { useBaseCurrency } from '../../hooks/useBaseCurrency';
 import { useHoldingActions } from '../../hooks/useHoldingActions';
+import { formatMoney } from '../../lib/format';
 import { V2_ROUTES } from '../../lib/routes';
 import { ConfirmDialog } from '../shared/ConfirmDialog';
 import { ApyConfigDialog } from './ApyConfigDialog';
-
-function formatMoney(value: number, currency = 'USD') {
-  return new Intl.NumberFormat('en-US', {
-    style: 'currency',
-    currency,
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  }).format(value);
-}
 
 function formatRelativeTime(dateStr: string): string {
   const now = Date.now();

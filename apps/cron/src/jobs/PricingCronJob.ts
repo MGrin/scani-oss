@@ -60,6 +60,6 @@ export async function executePricingCronJob(): Promise<void> {
       },
       '❌ Pricing cron job failed'
     );
-    // Don't throw - let the cron job continue on next schedule
+    throw error;
   }
 }

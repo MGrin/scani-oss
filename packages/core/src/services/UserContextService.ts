@@ -83,11 +83,16 @@ export class UserContextService {
         return existingUser;
       }
 
-      // Create new user
+      // Create new user. Require an email — empty-string fallbacks corrupt identity
+      // lookups and break the NOT NULL constraint on users.email.
+      if (!supabaseUser.email) {
+        throw new Error('Cannot create user: Supabase user has no email');
+      }
+
       const now = new Date();
 
       // Extract username from email (everything before @)
-      const emailUsername = supabaseUser.email?.split('@')[0] || 'User';
+      const emailUsername = supabaseUser.email.split('@')[0] || 'User';
 
       // Get USD token ID as default base currency
       const [usdToken] = await db
@@ -98,7 +103,7 @@ export class UserContextService {
 
       const userData = {
         id: supabaseUser.id, // Use Supabase user ID
-        email: supabaseUser.email || '',
+        email: supabaseUser.email,
         name: emailUsername, // Use email prefix as username
         avatar: supabaseUser.user_metadata?.avatar_url || null,
         baseCurrencyId: usdToken?.id || null, // Use USD token ID or null if not found

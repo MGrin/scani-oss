@@ -13,16 +13,8 @@ import { AssignGroupsDialog } from '../components/groups/AssignGroupsDialog';
 import { ConfirmDialog } from '../components/shared/ConfirmDialog';
 import { useAccountActions } from '../hooks/useAccountActions';
 import { useBaseCurrency } from '../hooks/useBaseCurrency';
+import { formatMoney } from '../lib/format';
 import { V2_ROUTES } from '../lib/routes';
-
-function formatMoney(value: number, currency = 'USD') {
-  return new Intl.NumberFormat('en-US', {
-    style: 'currency',
-    currency,
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  }).format(value);
-}
 
 export function AccountsPage() {
   const { data: accountsData, isLoading } = trpc.accounts.getByUserIdWithSummary.useQuery();

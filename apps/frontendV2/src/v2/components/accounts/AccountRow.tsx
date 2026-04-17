@@ -2,6 +2,7 @@ import type { AccountWihSumaryDTO } from '@scani/shared';
 import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
 import { useBaseCurrency } from '../../hooks/useBaseCurrency';
+import { formatMoney } from '../../lib/format';
 
 interface AccountRowProps {
   item: AccountWihSumaryDTO;
@@ -9,15 +10,6 @@ interface AccountRowProps {
   onSelect: (id: string) => void;
   institutionName?: string;
   typeName?: string;
-}
-
-function formatMoney(value: number, currency = 'USD') {
-  return new Intl.NumberFormat('en-US', {
-    style: 'currency',
-    currency,
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  }).format(value);
 }
 
 export function AccountRow({

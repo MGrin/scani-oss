@@ -5,6 +5,8 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { getFaviconUrl } from '@/lib/icons';
 import { cn } from '@/lib/utils';
 import { useBaseCurrency } from '../../hooks/useBaseCurrency';
+import { formatMoney } from '../../lib/format';
+import { FaviconImg } from '../shared/FaviconImg';
 
 interface HoldingCardProps {
   item: HoldingWithDetails;
@@ -19,15 +21,6 @@ const TOKEN_TYPE_COLORS: Record<string, string> = {
   bond: 'bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200',
   commodity: 'bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-200',
 };
-
-function formatMoney(value: number, currency = 'USD') {
-  return new Intl.NumberFormat('en-US', {
-    style: 'currency',
-    currency,
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  }).format(value);
-}
 
 function formatRelativeTime(dateStr: string): string {
   const diffMs = Date.now() - new Date(dateStr).getTime();
@@ -98,16 +91,11 @@ export function HoldingCard({ item, isSelected, onSelect }: HoldingCardProps) {
       )}
       <div className="mt-3 pt-3 border-t border-border space-y-1">
         <p className="text-xs text-muted-foreground flex items-center gap-1">
-          {favicon && (
-            <img
-              src={favicon}
-              alt=""
-              className="h-3 w-3 rounded-sm object-contain"
-              onError={(e) => {
-                (e.target as HTMLImageElement).style.display = 'none';
-              }}
-            />
-          )}
+          <FaviconImg
+            src={favicon}
+            name={item.institution.name}
+            className="h-3 w-3 rounded-sm object-contain"
+          />
           {item.institution.name} / {item.account.name}
           {item.source && (
             <Badge variant="outline" className="text-[9px] px-1 py-0 ml-1">

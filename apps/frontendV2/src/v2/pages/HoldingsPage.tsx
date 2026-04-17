@@ -11,7 +11,9 @@ import type { ColumnDef } from '../components/data-view/DataViewTable';
 import { AssignGroupsDialog } from '../components/groups/AssignGroupsDialog';
 import { HoldingBulkActions } from '../components/holdings/HoldingBulkActions';
 import { HoldingCard } from '../components/holdings/HoldingCard';
+import { FaviconImg } from '../components/shared/FaviconImg';
 import { useHoldingActions } from '../hooks/useHoldingActions';
+import { formatMoney } from '../lib/format';
 import { V2_ROUTES } from '../lib/routes';
 
 const TOKEN_TYPE_COLORS: Record<string, string> = {
@@ -22,29 +24,11 @@ const TOKEN_TYPE_COLORS: Record<string, string> = {
   commodity: 'bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-200',
 };
 
-function formatMoney(value: number, currency = 'USD') {
-  return new Intl.NumberFormat('en-US', {
-    style: 'currency',
-    currency,
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  }).format(value);
-}
-
 function InstitutionIcon({ name, website }: { name: string; website?: string | null }) {
   const favicon = getFaviconUrl(website);
   return (
     <span className="inline-flex items-center gap-1.5 text-sm text-muted-foreground">
-      {favicon && (
-        <img
-          src={favicon}
-          alt=""
-          className="h-4 w-4 rounded-sm object-contain"
-          onError={(e) => {
-            (e.target as HTMLImageElement).style.display = 'none';
-          }}
-        />
-      )}
+      <FaviconImg src={favicon} name={name} className="h-4 w-4 rounded-sm object-contain" />
       {name}
     </span>
   );

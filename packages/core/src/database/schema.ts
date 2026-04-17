@@ -58,7 +58,7 @@ export const tokenTypes = pgTable('token_types', {
 // Users table
 export const users = pgTable('users', {
   id: uuid('id').defaultRandom().primaryKey(),
-  email: text('email'),
+  email: text('email').notNull(),
   name: text('name').notNull(),
   avatar: text('avatar'),
   baseCurrencyId: uuid('base_currency_id').references(() => tokens.id, {

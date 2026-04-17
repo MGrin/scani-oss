@@ -15,11 +15,8 @@ import { ConfirmDialog } from '../components/shared/ConfirmDialog';
 import { AttachHoldingDialog } from '../components/vaults/AttachHoldingDialog';
 import { VaultFormDialog } from '../components/vaults/VaultFormDialog';
 import { invalidatePortfolioQueries } from '../hooks/invalidatePortfolioQueries';
+import { formatMoney } from '../lib/format';
 import { V2_ROUTES } from '../lib/routes';
-
-function formatMoney(value: number | string, symbol: string) {
-  return `${symbol} ${Number(value).toLocaleString('en-US', { minimumFractionDigits: 2 })}`;
-}
 
 export function VaultDetailPage() {
   const { id } = useParams<{ id: string }>();

@@ -66,8 +66,13 @@ function SidebarNavLink({
     return (
       <Tooltip>
         <TooltipTrigger asChild>
-          <Link to={to} className={cn(collapsedItemBase, isActive ? activeClass : inactiveClass)}>
-            <Icon className="h-5 w-5 shrink-0" />
+          <Link
+            to={to}
+            aria-label={label}
+            aria-current={isActive ? 'page' : undefined}
+            className={cn(collapsedItemBase, isActive ? activeClass : inactiveClass)}
+          >
+            <Icon className="h-5 w-5 shrink-0" aria-hidden="true" />
           </Link>
         </TooltipTrigger>
         <TooltipContent side="right" sideOffset={8}>
@@ -83,7 +88,7 @@ function SidebarNavLink({
       end={end}
       className={({ isActive }) => cn(navItemBase, isActive ? activeClass : inactiveClass)}
     >
-      <Icon className="h-4 w-4 shrink-0" />
+      <Icon className="h-4 w-4 shrink-0" aria-hidden="true" />
       <span className="truncate">{label}</span>
     </NavLink>
   );
@@ -154,6 +159,7 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
 
   return (
     <aside
+      aria-label="Primary"
       className={cn(
         'hidden lg:flex flex-col border-r border-border bg-card transition-all duration-200',
         collapsed ? 'w-12' : 'w-60'

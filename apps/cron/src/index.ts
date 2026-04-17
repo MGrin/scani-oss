@@ -90,6 +90,39 @@ let shuttingDown = false;
 let currentJob: Promise<unknown> | null = null;
 const SHUTDOWN_HARD_CAP_MS = 30_000;
 
+// Per-task hard timeout. Lower than the 15-min cron tick interval so that a
+// hung external call (stuck RPC, misbehaving exchange API) can't block the
+// whole run indefinitely. The advisory lock will still prevent a subsequent
+// tick from double-running.
+const TASK_TIMEOUT_MS = 10 * 60 * 1000;
+
+class CronTaskTimeoutError extends Error {
+  constructor(taskName: string, timeoutMs: number) {
+    super(`Cron task '${taskName}' exceeded ${timeoutMs}ms timeout`);
+    this.name = 'CronTaskTimeoutError';
+  }
+}
+
+function withTaskTimeout<T>(taskName: string, fn: () => Promise<T>, timeoutMs: number): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => {
+      reject(new CronTaskTimeoutError(taskName, timeoutMs));
+    }, timeoutMs);
+    timer.unref?.();
+
+    fn().then(
+      (value) => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      (err) => {
+        clearTimeout(timer);
+        reject(err);
+      }
+    );
+  });
+}
+
 function installShutdownHandlers(): void {
   const handle = async (signal: NodeJS.Signals) => {
     if (shuttingDown) return;
@@ -187,8 +220,13 @@ async function main(): Promise<void> {
     try {
       logger.info({ taskName }, `Executing ${taskName}...`);
       // Wrap execution in a distributed advisory lock so two overlapping
-      // cron containers cannot run the same job concurrently.
-      const jobPromise = withJobLock(`cron:${taskName}`, () => job.execute());
+      // cron containers cannot run the same job concurrently, then enforce
+      // a hard per-task timeout so a hung external call can't block forever.
+      const jobPromise = withTaskTimeout(
+        taskName,
+        () => withJobLock(`cron:${taskName}`, () => job.execute()),
+        TASK_TIMEOUT_MS
+      );
       currentJob = jobPromise;
       const outcome = await jobPromise;
       if (outcome.ran) {
@@ -224,6 +262,19 @@ async function main(): Promise<void> {
     },
     '✨ Cron job execution completed'
   );
+
+  // Emit a grep-friendly marker so Render log drains / filters can alert on
+  // cron failures without needing an external exception tracker. Combined with
+  // the non-zero exit code, this gives the operator two independent signals.
+  if (failed > 0) {
+    const failedTasks = results
+      .filter((r) => !r.success)
+      .map((r) => ({ task: r.task, error: r.error?.message ?? 'unknown' }));
+    logger.error(
+      { failedCount: failed, failedTasks },
+      'CRON_FAILURE: one or more cron tasks failed'
+    );
+  }
 
   // Exit with appropriate code
   process.exit(failed > 0 ? 1 : 0);

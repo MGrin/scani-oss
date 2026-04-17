@@ -4,6 +4,20 @@ import { UserIntegrationCredentialsRepository } from '../repositories/UserIntegr
 import { decryptCredentials, encryptCredentials } from '../utils/encryption';
 import { BaseService } from './BaseService';
 
+export class ExpiredCredentialsError extends Error {
+  readonly userId: string;
+  readonly institutionId: string;
+  readonly expiresAt: Date;
+
+  constructor(userId: string, institutionId: string, expiresAt: Date) {
+    super(`Credentials for institution ${institutionId} expired at ${expiresAt.toISOString()}`);
+    this.name = 'ExpiredCredentialsError';
+    this.userId = userId;
+    this.institutionId = institutionId;
+    this.expiresAt = expiresAt;
+  }
+}
+
 /**
  * Service for managing user integration credentials with encryption
  * Handles OAuth tokens, API keys, and other sensitive credentials
@@ -48,7 +62,10 @@ export class IntegrationCredentialsService extends BaseService {
   }
 
   /**
-   * Get decrypted credentials for a specific user and institution
+   * Get decrypted credentials for a specific user and institution.
+   * Throws ExpiredCredentialsError when expiresAt is in the past, so callers
+   * get a clear signal to trigger a refresh flow instead of a cryptic 401
+   * from the upstream provider.
    */
   async getDecryptedCredentials(
     userId: string,
@@ -63,6 +80,10 @@ export class IntegrationCredentialsService extends BaseService {
 
       if (!credentials) {
         return null;
+      }
+
+      if (credentials.expiresAt && new Date() > new Date(credentials.expiresAt)) {
+        throw new ExpiredCredentialsError(userId, institutionId, new Date(credentials.expiresAt));
       }
 
       // Decrypt the credentials

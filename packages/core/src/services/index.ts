@@ -6,7 +6,10 @@ export { DashboardService } from './DashboardService';
 export { AccountTypeService, InstitutionTypeService } from './EnumServices';
 export { HoldingService } from './HoldingService';
 export { InstitutionService } from './InstitutionService';
-export { IntegrationCredentialsService } from './IntegrationCredentialsService';
+export {
+  ExpiredCredentialsError,
+  IntegrationCredentialsService,
+} from './IntegrationCredentialsService';
 export { PortfolioValuationService } from './PortfolioValuationService';
 export { PricingService } from './PricingService';
 export { TokenService } from './TokenService';

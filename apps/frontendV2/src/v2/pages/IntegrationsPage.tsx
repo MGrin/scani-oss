@@ -5,6 +5,7 @@ import { Badge } from '@/components/ui/badge';
 import { Card, CardContent } from '@/components/ui/card';
 import { getFaviconUrl } from '@/lib/icons';
 import { ExchangeConnectDialog } from '../components/integrations/ExchangeConnectDialog';
+import { FaviconImg } from '../components/shared/FaviconImg';
 import { V2_ROUTES } from '../lib/routes';
 
 type CredentialType = 'apiKey' | 'passphrase' | 'wise' | 'ibkr';
@@ -127,20 +128,12 @@ function ExchangeIcon({ name, website }: { name: string; website: string }) {
   const favicon = getFaviconUrl(website);
   return (
     <div className="h-9 w-9 rounded-lg bg-muted flex items-center justify-center shrink-0 overflow-hidden">
-      {favicon ? (
-        <img
-          src={favicon}
-          alt={`${name} logo`}
-          className="h-5 w-5 object-contain"
-          onError={(e) => {
-            (e.target as HTMLImageElement).style.display = 'none';
-          }}
-        />
-      ) : (
-        <span className="text-xs font-bold text-muted-foreground">
-          {name.charAt(0).toUpperCase()}
-        </span>
-      )}
+      <FaviconImg
+        src={favicon}
+        name={name}
+        className="h-5 w-5 object-contain"
+        fallbackClassName="text-xs font-bold text-muted-foreground"
+      />
     </div>
   );
 }

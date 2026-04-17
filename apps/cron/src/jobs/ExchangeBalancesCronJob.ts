@@ -65,6 +65,6 @@ export async function executeExchangeBalancesCronJob(): Promise<void> {
       },
       '❌ Exchange balances sync cron job failed'
     );
-    // Don't throw - let the cron job continue on next schedule
+    throw error;
   }
 }
