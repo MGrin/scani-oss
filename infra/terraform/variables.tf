@@ -56,9 +56,3 @@ variable "fly_api_token" {
   description = "Fly.io deploy token (mirrored into GH Secrets). Set via TF_VAR_fly_api_token."
   sensitive   = true
 }
-
-variable "attach_pages_domains" {
-  type        = bool
-  description = "Attach app.scani.xyz + scani.xyz to the Cloudflare Pages project. Keep false until the DNS cutover in Phase 5."
-  default     = false
-}

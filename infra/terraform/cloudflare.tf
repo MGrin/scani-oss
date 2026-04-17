@@ -1,4 +1,4 @@
-# Cloudflare: DNS zone, Pages project, R2 state bucket, DNS records.
+# Cloudflare: DNS zone, DNS records, Pages custom-domain attachments.
 
 data "cloudflare_zone" "primary" {
   name = var.domain
@@ -6,22 +6,17 @@ data "cloudflare_zone" "primary" {
 
 # R2 buckets (scani-tfstate for Terraform state, scani-backups for pg_dump
 # archives) were created manually during bootstrap and are intentionally
-# NOT managed by Terraform — doing so would create a chicken-and-egg
-# problem (state lives in the bucket that state would delete).
-
-# Cloudflare Pages (scani-frontend) is created manually in the Cloudflare
-# dashboard. The account-scoped API token provided does not carry
-# Pages:Edit permission, and creating the Pages project is a one-time
-# click-through ("Connect a repository" → MGrin/scani → main branch, build
-# command `cd apps/frontendV2 && bun install && bun run build`, output
-# `apps/frontendV2/dist`). Once created, DNS records below route
-# app.scani.xyz and scani.xyz to `scani-frontend.pages.dev` in Phase 5.
+# NOT managed by Terraform — state lives in one of them, so TF managing
+# the bucket is a chicken-and-egg trap.
 #
-# Pages custom-domain attachment is deferred to Phase 5; see DNS block
-# below for the actual cutover records.
+# Cloudflare Pages projects (scani-frontend, scani-landing) are created
+# via the CF API on first bootstrap; subsequent deploys are driven by
+# `wrangler pages deploy` from CI.
 
-# Backend: grey-cloud (DNS-only). Orange-cloud proxy has a 100s timeout +
-# inconsistent WS behavior; Fly terminates TLS itself.
+# ---------- DNS records ----------
+
+# Backend API: grey-cloud (DNS-only). Orange-cloud proxy has a 100s
+# request timeout + inconsistent WebSocket behavior; Fly terminates TLS.
 resource "cloudflare_record" "api" {
   zone_id = data.cloudflare_zone.primary.id
   name    = "api"
@@ -32,40 +27,59 @@ resource "cloudflare_record" "api" {
   comment = "Fly.io backend. Grey-cloud."
 }
 
-# ----------------------------------------------------------------------------
-# PHASE 5 CUTOVER RECORDS
-# ----------------------------------------------------------------------------
-# app.scani.xyz currently CNAMEs to scani-frontend.onrender.com (Render).
-# Flip `attach_pages_domains` to true to: (a) attach the custom domain to
-# Cloudflare Pages, and (b) replace the Render CNAME with a Pages CNAME.
-# This is the DNS cutover: once applied, app.scani.xyz serves from Pages,
-# not Render. Reversible in minutes: `terraform apply -var attach_pages_domains=false`
-# restores the Render CNAME.
+# The app itself (React SPA) → scani-frontend Pages project.
+resource "cloudflare_record" "app" {
+  zone_id = data.cloudflare_zone.primary.id
+  name    = "app"
+  content = "scani-frontend.pages.dev"
+  type    = "CNAME"
+  proxied = true
+  ttl     = 1
+  comment = "Cloudflare Pages — scani-frontend"
+}
+
+# Marketing / landing page (apex + www) → scani-landing Pages project.
+# Split from the app to keep build pipelines and release cadences
+# independent; landing can ship without reinstalling the app's 800-dep
+# node_modules.
+resource "cloudflare_record" "apex" {
+  zone_id = data.cloudflare_zone.primary.id
+  name    = "@"
+  content = "scani-landing.pages.dev"
+  type    = "CNAME"
+  proxied = true
+  ttl     = 1
+  comment = "Cloudflare Pages — scani-landing (apex)"
+}
+
+resource "cloudflare_record" "www" {
+  zone_id = data.cloudflare_zone.primary.id
+  name    = "www"
+  content = "scani-landing.pages.dev"
+  type    = "CNAME"
+  proxied = true
+  ttl     = 1
+  comment = "Cloudflare Pages — scani-landing (www)"
+}
+
+# ---------- Pages custom-domain attachments ----------
+# Tell each Pages project which hostnames it owns. Without this, Pages
+# returns a 404 "Domain not configured" even if the DNS resolves.
 
 resource "cloudflare_pages_domain" "app" {
-  count        = var.attach_pages_domains ? 1 : 0
   account_id   = var.cloudflare_account_id
   project_name = "scani-frontend"
   domain       = local.app_host
 }
 
-resource "cloudflare_pages_domain" "apex" {
-  count        = var.attach_pages_domains ? 1 : 0
+resource "cloudflare_pages_domain" "landing_apex" {
   account_id   = var.cloudflare_account_id
-  project_name = "scani-frontend"
+  project_name = "scani-landing"
   domain       = local.landing_host
 }
 
-# DNS for app.scani.xyz: imports and manages the existing record. When
-# attach_pages_domains=false, keeps pointing at Render. When true, swings
-# to Pages.
-resource "cloudflare_record" "app" {
-  count   = var.attach_pages_domains ? 1 : 0
-  zone_id = data.cloudflare_zone.primary.id
-  name    = "app"
-  content = "scani-frontend.pages.dev"
-  type    = "CNAME"
-  proxied = true # orange-cloud OK for static frontend; Pages handles TLS
-  ttl     = 1
-  comment = "Cloudflare Pages. Flip via attach_pages_domains."
+resource "cloudflare_pages_domain" "landing_www" {
+  account_id   = var.cloudflare_account_id
+  project_name = "scani-landing"
+  domain       = "www.${var.domain}"
 }

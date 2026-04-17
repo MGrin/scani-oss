@@ -6,9 +6,9 @@ on:
   workflow_dispatch:
     inputs:
       services:
-        description: "Which services to deploy (comma-separated: backend,worker,frontend). Ignored on push — that uses path filtering."
+        description: "Which services to deploy (comma-separated: backend,worker,frontend,landing). Ignored on push — that uses path filtering."
         required: false
-        default: "backend,worker,frontend"
+        default: "backend,worker,frontend,landing"
 
 concurrency:
   group: deploy-production
@@ -31,6 +31,7 @@ jobs:
       backend: ${{ steps.resolve.outputs.backend }}
       worker: ${{ steps.resolve.outputs.worker }}
       frontend: ${{ steps.resolve.outputs.frontend }}
+      landing: ${{ steps.resolve.outputs.landing }}
       migrations: ${{ steps.resolve.outputs.migrations }}
     steps:
       - uses: actions/checkout@v6
@@ -54,6 +55,8 @@ jobs:
             frontend:
               - 'apps/frontendV2/**'
               - 'packages/shared/**'
+            landing:
+              - 'apps/landing/**'
             migrations:
               - 'packages/core/src/database/migrations/**'
       - id: resolve
@@ -62,11 +65,13 @@ jobs:
             echo "backend=${{ contains(github.event.inputs.services, 'backend') }}" >> "$GITHUB_OUTPUT"
             echo "worker=${{ contains(github.event.inputs.services, 'worker') }}" >> "$GITHUB_OUTPUT"
             echo "frontend=${{ contains(github.event.inputs.services, 'frontend') }}" >> "$GITHUB_OUTPUT"
+            echo "landing=${{ contains(github.event.inputs.services, 'landing') }}" >> "$GITHUB_OUTPUT"
             echo "migrations=true" >> "$GITHUB_OUTPUT"
           else
             echo "backend=${{ steps.filter.outputs.backend }}" >> "$GITHUB_OUTPUT"
             echo "worker=${{ steps.filter.outputs.worker }}" >> "$GITHUB_OUTPUT"
             echo "frontend=${{ steps.filter.outputs.frontend }}" >> "$GITHUB_OUTPUT"
+            echo "landing=${{ steps.filter.outputs.landing }}" >> "$GITHUB_OUTPUT"
             echo "migrations=${{ steps.filter.outputs.migrations }}" >> "$GITHUB_OUTPUT"
           fi
 
@@ -147,6 +152,28 @@ jobs:
           cd apps/frontendV2
           bunx wrangler@latest pages deploy dist \
             --project-name=scani-frontend \
+            --branch=main \
+            --commit-dirty=true \
+            --commit-hash="${GITHUB_SHA}"
+
+  deploy-landing:
+    name: Deploy scani-landing (Cloudflare Pages)
+    runs-on: ubuntu-latest
+    needs: detect-changes
+    if: ${{ needs.detect-changes.outputs.landing == 'true' }}
+    environment: production
+    steps:
+      - uses: actions/checkout@v6
+      - uses: ./.github/actions/setup-bun
+      - run: cd apps/landing && bun run build
+      - name: Publish to Cloudflare Pages
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          cd apps/landing
+          bunx wrangler@latest pages deploy dist \
+            --project-name=scani-landing \
             --branch=main \
             --commit-dirty=true \
             --commit-hash="${GITHUB_SHA}"
