@@ -220,7 +220,7 @@ export class IntegrationCredentialsService extends BaseService {
         institutionId
       );
 
-      if (!credentials || !credentials.expiresAt) {
+      if (!credentials?.expiresAt) {
         return false;
       }
 

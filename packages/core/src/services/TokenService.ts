@@ -171,7 +171,7 @@ export class TokenService extends BaseService {
     }
 
     // Validate that we have provider metadata for external tokens
-    if (!data.providerMetadata || !data.providerMetadata.provider) {
+    if (!data.providerMetadata?.provider) {
       throw new Error('External tokens must include provider metadata with provider field');
     }
 

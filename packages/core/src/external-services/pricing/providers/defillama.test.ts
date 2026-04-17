@@ -185,7 +185,7 @@ describe('DeFiLlamaProvider', () => {
 
       const tokens: TokenWithProvider[] = [makeTokenWithProvider('tok-id', 'TOK', '1:0xabc')];
 
-      const { provider, failures } = makeDeFiLlamaProvider();
+      const { provider } = makeDeFiLlamaProvider();
       const results = await provider.fetchPrices(tokens, { baseCurrency, timestamp });
 
       expect(results).toHaveLength(1);

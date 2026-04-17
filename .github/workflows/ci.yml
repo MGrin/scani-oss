@@ -30,6 +30,9 @@ jobs:
       - name: Dependency versions in sync
         run: bun run deps:lint
 
+      - name: Unused code & dependencies (knip)
+        run: bun run deps:unused
+
       - name: Test
         run: bun test --preload ./packages/core/test-preload.ts packages/ --timeout 30000
         env:

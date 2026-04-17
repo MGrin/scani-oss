@@ -1,11 +1,10 @@
 # Scani - Personal Finance Management SaaS
 
-A comprehensive personal finance management platform built with modern TypeScript stack, featuring multi-platform support (web, mobile, Telegram bot) and extensive integrations with banks, brokerages, and cryptocurrency exchanges.
+A comprehensive personal finance management platform built with a modern TypeScript stack and extensive integrations with banks, brokerages, and cryptocurrency exchanges.
 
 ## 🌟 Features
 
 ### Core Capabilities
-- **Multi-platform Access** - Web app, React Native mobile app, and Telegram bot
 - **Real-time Portfolio Tracking** - WebSocket-powered live updates
 - **Bank & Brokerage Integration** - Plaid integration for automatic bank account sync
 - **Cryptocurrency Support** - Track holdings across multiple blockchains and exchanges
@@ -62,13 +61,6 @@ A comprehensive personal finance management platform built with modern TypeScrip
 - **Blockchain Explorers** - Ethereum, Bitcoin, and other blockchain data
 - **CoinGecko** - Cryptocurrency price data
 
-### Mobile
-
-- **React Native** - Core framework
-- **Ignite** - Battle-tested template for theming and internationalization
-- **tRPC** - Type-safe API communication
-- **WebSocket** - Real-time portfolio updates
-
 ### Landing
 
 - **React 18** - UI framework
@@ -99,18 +91,15 @@ scani/
 │   │   │   └── index.ts      # Application entry point
 │   │   └── package.json
 │   │
-│   ├── frontendV2/           # React web application (main frontend)
-│   │   ├── src/
-│   │   │   ├── components/   # Reusable UI components
-│   │   │   ├── contexts/     # React contexts (Auth, Theme)
-│   │   │   ├── hooks/        # Custom React hooks
-│   │   │   ├── lib/          # tRPC client setup
-│   │   │   ├── pages/        # Route pages
-│   │   │   └── main.tsx      # Application entry point
-│   │   └── package.json
-│   │
-│   └── mobile/               # React Native mobile app (Ignite)
-│       └── src/
+│   └── frontendV2/           # React web application (main frontend)
+│       ├── src/
+│       │   ├── components/   # Reusable UI components
+│       │   ├── contexts/     # React contexts (Auth, Theme)
+│       │   ├── hooks/        # Custom React hooks
+│       │   ├── lib/          # tRPC client setup
+│       │   ├── pages/        # Route pages
+│       │   └── main.tsx      # Application entry point
+│       └── package.json
 │
 ├── packages/
 │   ├── core/                 # Core business logic
@@ -297,20 +286,6 @@ scani/
    - API Server: `http://localhost:3001`
    - Landing Page: `http://localhost:5174`
 
-### Mobile Development
-
-```bash
-# iOS
-bun dev:mobile:ios
-
-# Android
-bun dev:mobile:android
-```
-
-Prerequisites:
-- iOS: macOS with Xcode installed
-- Android: Android Studio with Android SDK
-
 ## 🛠️ Development Commands
 
 ### General Commands (from root):
@@ -344,11 +319,6 @@ bun dev:quiet        # Start with minimal logging
 cd apps/frontendV2
 bun dev              # Start development server
 bun build            # Build for production
-
-# Mobile
-cd apps/mobile
-bun ios              # Run on iOS simulator
-bun android          # Run on Android emulator
 ```
 
 ## 🏛️ Architecture Overview
@@ -489,18 +459,6 @@ bun run db:studio      # Visual database management
 - Vite for fast development
 - Tailwind CSS + Shadcn UI components
 - Responsive design for desktop and mobile browsers
-
-### Mobile Application
-- React Native with Ignite template
-- iOS and Android support
-- Native navigation and theming
-- Shared tRPC API client with web
-
-### Telegram Bot
-- Portfolio tracking via Telegram
-- Daily digest notifications
-- Quick balance checks
-- Integration with main platform data
 
 ## 🧪 Testing Strategy
 

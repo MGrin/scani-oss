@@ -36,7 +36,6 @@ export function loadEnv(): WorkerEnv {
     const issues = parsed.error.issues
       .map((i) => `  - ${i.path.join('.') || '<root>'}: ${i.message}`)
       .join('\n');
-    // biome-ignore lint/suspicious/noConsole: startup error before logger available
     console.error(`\n❌ Invalid worker environment:\n${issues}\n`);
     process.exit(1);
   }

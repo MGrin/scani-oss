@@ -875,7 +875,7 @@ export const SettingsImplementations = {
     const tokenService = Container.get(TokenService);
 
     const dbUser = await userContextService.getUserById(context.userId);
-    if (!dbUser || !dbUser.baseCurrencyId) {
+    if (!dbUser?.baseCurrencyId) {
       return null;
     }
 

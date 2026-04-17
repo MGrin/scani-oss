@@ -42,7 +42,7 @@
 
 ### Key Architecture Patterns
 
-- **Monorepo Structure**: `apps/backend` (tRPC API), `apps/frontendV2` (React SPA), `apps/mobile` (React Native), `packages/*` (shared code)
+- **Monorepo Structure**: `apps/backend` (tRPC API), `apps/worker` (BullMQ consumer), `apps/cron` (scheduled jobs), `apps/frontendV2` (React SPA), `apps/landing` (marketing site), `packages/*` (shared code)
 - **End-to-End Type Safety**: All API communication uses tRPC with shared TypeScript types
 - **Database**: PostgreSQL with Drizzle ORM, dynamic enums stored in database tables (not TypeScript enums)
 - **Authentication**: Supabase Auth with JWT tokens, user sync to local PostgreSQL via middleware
@@ -63,8 +63,10 @@
 **Apps:**
 
 - `@scani/backend` - tRPC API server with Elysia
+- `@scani/worker` - BullMQ worker for background jobs
+- `@scani/cron` - Standalone cron entry for scheduled jobs
 - `@scani/frontend-v2` - React SPA with Vite
-- `@scani/mobile` - React Native mobile app (Ignite template)
+- `@scani/landing` - Marketing site (Vite + React)
 
 ### Import and Module Guidelines
 
@@ -153,8 +155,7 @@ await integration.validateCredentials({ apiKey, apiSecret });
 bun dev                    # Start backend + frontendV2
 bun dev:backend            # Start backend only
 bun dev:frontend           # Start frontendV2 only
-bun dev:mobile:ios         # Start mobile app (iOS)
-bun dev:mobile:android     # Start mobile app (Android)
+bun dev:cron               # Start cron app (manual trigger)
 
 # Database (from packages/core)
 cd packages/core

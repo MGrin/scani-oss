@@ -31,7 +31,7 @@ export class CircuitBreaker {
   /** Returns true if the provider is currently available (circuit closed or cooldown elapsed) */
   isAvailable(provider: string): boolean {
     const state = this.circuits.get(provider);
-    if (!state || !state.isOpen) return true;
+    if (!state?.isOpen) return true;
 
     // Check if cooldown has elapsed — enter half-open state
     if (Date.now() - state.lastFailure >= this.cooldownMs) {

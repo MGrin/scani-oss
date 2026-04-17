@@ -337,7 +337,6 @@ app
       };
     }
   })
-  // biome-ignore lint/suspicious/noExplicitAny: Elysia WebSocket types
   .ws('/', {
     // biome-ignore lint/suspicious/noExplicitAny: Elysia WebSocket types
     open: async (ws: any) => {

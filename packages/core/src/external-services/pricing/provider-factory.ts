@@ -32,7 +32,7 @@ export function buildPricingProviders(
 ): Record<PrimaryProviderKey, PricingProvider> {
   if (args.mode === 'scani-cloud') {
     const cfg = args.scaniCloud;
-    if (!cfg || !cfg.baseUrl || !cfg.clientToken) {
+    if (!cfg?.baseUrl || !cfg.clientToken) {
       throw new Error(
         'EXTERNAL_API_MODE=scani-cloud requires SCANI_CLOUD_API_URL and SCANI_CLOUD_CLIENT_TOKEN to be set.'
       );

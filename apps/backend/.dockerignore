@@ -12,7 +12,7 @@
 
 # Other apps that don't belong in the backend image
 apps/frontendV2
-apps/mobile
+apps/landing
 apps/cron/dist
 
 # Repo metadata

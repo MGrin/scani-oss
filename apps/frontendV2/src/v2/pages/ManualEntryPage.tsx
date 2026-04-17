@@ -21,10 +21,18 @@ import { V2_ROUTES } from '../lib/routes';
 // ── Types ──
 
 interface HoldingEntry {
+  uid: string;
   tokenId: string;
   tokenLabel: string;
   balance: string;
 }
+
+const newHolding = (): HoldingEntry => ({
+  uid: crypto.randomUUID(),
+  tokenId: '',
+  tokenLabel: '',
+  balance: '',
+});
 
 type InstitutionMode = 'select' | 'create';
 type AccountMode = 'select' | 'create';
@@ -321,9 +329,7 @@ export function ManualEntryPage() {
   const [newAccountTypeId, setNewAccountTypeId] = useState('');
 
   // Holdings state
-  const [holdings, setHoldings] = useState<HoldingEntry[]>([
-    { tokenId: '', tokenLabel: '', balance: '' },
-  ]);
+  const [holdings, setHoldings] = useState<HoldingEntry[]>(() => [newHolding()]);
 
   // OpenGraph metadata fetch
   const utils = trpc.useUtils();
@@ -392,7 +398,7 @@ export function ManualEntryPage() {
 
   // Holdings management
   const addHolding = () => {
-    setHoldings((prev) => [...prev, { tokenId: '', tokenLabel: '', balance: '' }]);
+    setHoldings((prev) => [...prev, newHolding()]);
   };
 
   const removeHolding = (index: number) => {
@@ -674,7 +680,7 @@ export function ManualEntryPage() {
         </CardHeader>
         <CardContent className="space-y-4">
           {holdings.map((entry, index) => (
-            <div key={`holding-${index}`} className="flex gap-2 items-start">
+            <div key={entry.uid} className="flex gap-2 items-start">
               <div className="flex-1 min-w-0">
                 <TokenSearchInput
                   value={entry.tokenId ? { id: entry.tokenId, label: entry.tokenLabel } : null}

@@ -58,7 +58,7 @@ export function normalizeSymbol(symbol: string): string {
  */
 export function formatInterval(interval: string): string {
   const match = interval.match(/^(\d+)(d|w|M|y)$/);
-  if (!match || !match[1] || !match[2]) return interval;
+  if (!match?.[1] || !match[2]) return interval;
 
   const value = match[1];
   const unit = match[2];

@@ -17,11 +17,8 @@
   "dependencies": {
     "@scani/core": "workspace:*",
     "@scani/rate-limiter": "workspace:*",
-    "@scani/shared": "workspace:*",
-    "decimal.js": "^10.6.0",
-    "reflect-metadata": "^0.2.2",
-    "typedi": "^0.10.0",
-    "zod": "^3.25.76"
+    "drizzle-orm": "^0.45.2",
+    "typedi": "^0.10.0"
   },
   "devDependencies": {
     "typescript": "^5"

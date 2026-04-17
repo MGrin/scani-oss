@@ -6,8 +6,8 @@ Core business logic, database schemas, and shared infrastructure for Scani Finan
 
 This package contains all reusable components that are shared across multiple Scani applications:
 - **Backend API** (`apps/backend`)
-- **Mobile App** (`apps/mobile`)
-- Future applications
+- **Worker** (`apps/worker`)
+- **Cron** (`apps/cron`)
 
 ## What's Inside
 

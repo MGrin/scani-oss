@@ -186,7 +186,7 @@ export class AIProviderManager {
 
     for (const providerName of providerOrder) {
       const provider = this.providers.get(providerName);
-      if (!provider || !provider.isConfigured()) continue;
+      if (!provider?.isConfigured()) continue;
 
       try {
         const info = provider.getProviderInfo();

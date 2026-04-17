@@ -229,7 +229,7 @@ export class SolanaChainService implements IBlockchainService {
       }
 
       // Check for missing result
-      if (!data.result || !data.result.value) {
+      if (!data.result?.value) {
         throw new Error('Invalid Solana RPC response: missing result.value');
       }
 

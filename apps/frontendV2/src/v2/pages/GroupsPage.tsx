@@ -8,6 +8,8 @@ import { trpc } from '@/lib/trpc';
 import { GroupFormDialog } from '../components/groups/GroupFormDialog';
 import { V2_ROUTES } from '../lib/routes';
 
+const GROUP_SKELETON_KEYS = ['a', 'b', 'c', 'd', 'e', 'f'];
+
 export function GroupsPage() {
   const { data: groups, isLoading } = trpc.groups.getAllWithCounts.useQuery();
   const [formOpen, setFormOpen] = useState(false);
@@ -33,8 +35,8 @@ export function GroupsPage() {
           <Skeleton className="h-9 w-28" />
         </div>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          {Array.from({ length: 6 }).map((_, i) => (
-            <Skeleton key={`skel-${i}`} className="h-24" />
+          {GROUP_SKELETON_KEYS.map((k) => (
+            <Skeleton key={`group-skel-${k}`} className="h-24" />
           ))}
         </div>
       </div>

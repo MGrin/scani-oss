@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it, mock } from 'bun:test';
 import type { Token } from '../../../database/schema';
 import type { ProviderPriceResult, TokenWithProvider } from '../types';
 import type { RateLimiter } from '../utils';
+import type { ConvertPriceFn } from './base';
 import { CoinGeckoProvider } from './coingecko';
 
 /**
@@ -63,9 +64,7 @@ function noopConvertPrice() {
   return async (_p: string, _f: string, _t: string, _ts: Date) => '0';
 }
 
-function makeCoinGeckoProvider(
-  overrides: { convertPrice?: (...args: unknown[]) => Promise<string> } = {}
-) {
+function makeCoinGeckoProvider(overrides: { convertPrice?: ConvertPriceFn } = {}) {
   const failures: ProviderPriceResult[] = [];
 
   const createFailureResult = (
@@ -88,7 +87,7 @@ function makeCoinGeckoProvider(
   return {
     provider: new CoinGeckoProvider({
       rateLimiter: noopRateLimiter(),
-      convertPrice: (overrides.convertPrice as any) || noopConvertPrice(),
+      convertPrice: overrides.convertPrice || noopConvertPrice(),
       createFailureResult,
     }),
     failures,
@@ -161,7 +160,7 @@ describe('CoinGeckoProvider', () => {
         makeTokenWithProvider('eth-id', 'ETH', 'ethereum'),
       ];
 
-      const { provider, failures } = makeCoinGeckoProvider();
+      const { provider } = makeCoinGeckoProvider();
       const results = await provider.fetchPrices(tokens, { baseCurrency, timestamp });
 
       // BTC should succeed
@@ -187,7 +186,7 @@ describe('CoinGeckoProvider', () => {
 
       const tokens: TokenWithProvider[] = [makeTokenWithProvider('btc-id', 'BTC', 'bitcoin')];
 
-      const { provider, failures } = makeCoinGeckoProvider();
+      const { provider } = makeCoinGeckoProvider();
       const results = await provider.fetchPrices(tokens, { baseCurrency, timestamp });
 
       // Should have failure results (either from handleFailure or error catch)
@@ -309,7 +308,7 @@ describe('CoinGeckoProvider', () => {
       expect(results[0].price).toBe('42');
 
       // Verify the URL used the custom ID
-      const callArgs = (fetchMock as any).mock.calls[0];
+      const callArgs = fetchMock.mock.calls[0];
       expect(callArgs[0]).toContain('my-custom-id');
     });
   });

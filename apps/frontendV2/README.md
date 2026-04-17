@@ -137,7 +137,7 @@ VITE_API_URL=http://localhost:3001
 ```typescript
 // lib/trpc.ts - TODO: Implement
 import { createTRPCReact } from "@trpc/react-query";
-import type { AppRouter } from "@scani/backend/router";
+import type { AppRouter } from "@scani/backend/types";
 
 export const trpc = createTRPCReact<AppRouter>();
 ```

@@ -32,6 +32,7 @@ export function AuthCallback() {
     retry: false,
   });
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: intentional mount-only effect; searchParams.get and refetch are stable
   useEffect(() => {
     const run = async () => {
       try {
@@ -67,7 +68,6 @@ export function AuthCallback() {
       }
     };
     run();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [navigate, returnTo]);
 
   if (status === 'loading') {

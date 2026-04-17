@@ -335,5 +335,3 @@ export const createTimer = () => {
     },
   };
 };
-
-export default logger;

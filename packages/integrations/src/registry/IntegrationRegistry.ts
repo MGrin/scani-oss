@@ -146,5 +146,3 @@ class IntegrationRegistry {
  * Global singleton registry instance
  */
 export const integrationRegistry = new IntegrationRegistry();
-
-export default integrationRegistry;

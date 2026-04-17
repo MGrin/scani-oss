@@ -40,20 +40,17 @@
     "type-check:cron": "cd apps/cron && bun run type-check",
     "type-check:frontend": "cd apps/frontendV2 && bun run type-check",
     "type-check:landing": "cd apps/landing && bun run type-check",
-    "type-check:mobile": "cd apps/mobile && bun run type-check",
     "type-check:shared": "cd packages/shared && bun run type-check",
     "type-check:core": "cd packages/core && bun run type-check",
     "type-check:integrations": "cd packages/integrations && bun run type-check"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.4.12",
-    "@testcontainers/postgresql": "^11.14.0",
     "@types/bun": "latest",
     "@typescript/native-preview": "^7.0.0-dev.20260416.2",
     "concurrently": "^8.2.2",
     "knip": "^6.4.1",
     "syncpack": "^14.3.0",
-    "testcontainers": "^11.14.0",
     "typescript": "^5"
   },
   "dependencies": {}

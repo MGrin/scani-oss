@@ -11,7 +11,7 @@
 **/.DS_Store
 
 apps/frontendV2
-apps/mobile
+apps/landing
 
 .git
 .github

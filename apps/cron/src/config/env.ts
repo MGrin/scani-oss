@@ -43,7 +43,6 @@ export function loadEnv(): Env {
     const issues = parsed.error.issues
       .map((i) => `  - ${i.path.join('.') || '<root>'}: ${i.message}`)
       .join('\n');
-    // biome-ignore lint/suspicious/noConsole: startup error before logger available
     console.error(
       `\n❌ Invalid environment configuration:\n${issues}\n\n` +
         `Fix the above variables in your environment or .env file and restart.`

@@ -92,7 +92,6 @@ export function loadEnv(): Env {
       .map((i) => `  - ${i.path.join('.') || '<root>'}: ${i.message}`)
       .join('\n');
     // Intentionally use console.error; logger may not be wired yet at boot.
-    // biome-ignore lint/suspicious/noConsole: startup error before logger available
     console.error(
       `\n❌ Invalid environment configuration:\n${issues}\n\n` +
         `Fix the above variables in your environment or .env file and restart.`

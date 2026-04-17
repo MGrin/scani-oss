@@ -36,8 +36,6 @@ report.[0-9]_.[0-9]_.[0-9]_.[0-9]_.json
 
 **/*.api-key.json
 
-# Keep mobile lockfile since mobile app is excluded from workspaces
-!apps/mobile/bun.lockapps/landing/src/App.tsx.backup
 .claude/worktrees/
 
 # Local Docker Compose overrides

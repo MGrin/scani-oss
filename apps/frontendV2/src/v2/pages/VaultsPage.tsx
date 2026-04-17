@@ -9,6 +9,8 @@ import { trpc } from '@/lib/trpc';
 import { VaultFormDialog } from '../components/vaults/VaultFormDialog';
 import { V2_ROUTES } from '../lib/routes';
 
+const VAULT_SKELETON_KEYS = ['a', 'b', 'c'];
+
 export function VaultsPage() {
   const navigate = useNavigate();
   const { data: vaults, isLoading } = trpc.vaults.getAll.useQuery();
@@ -22,8 +24,8 @@ export function VaultsPage() {
           <Skeleton className="h-9 w-28" />
         </div>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          {Array.from({ length: 3 }).map((_, i) => (
-            <Skeleton key={`skel-${i}`} className="h-36" />
+          {VAULT_SKELETON_KEYS.map((k) => (
+            <Skeleton key={`vault-skel-${k}`} className="h-36" />
           ))}
         </div>
       </div>

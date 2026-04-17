@@ -275,7 +275,7 @@ export class IntegrationManager {
     // This supports legacy chain-based integrations
     const mapping = await this.mappingRepository.findByInstitutionId(institutionId);
 
-    if (!mapping || !mapping.isActive) {
+    if (!mapping?.isActive) {
       return undefined;
     }
 

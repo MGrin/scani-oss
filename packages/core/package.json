@@ -25,7 +25,6 @@
     "./external-services/file-import": "./src/external-services/file-import/index.ts",
     "./queues": "./src/queues/index.ts",
     "./utils/logger": "./src/utils/logger.ts",
-    "./utils/query-cache": "./src/utils/query-cache.ts",
     "./utils/request-cache": "./src/utils/request-cache.ts",
     "./utils/performance-monitor": "./src/utils/performance-monitor.ts",
     "./utils/retry": "./src/utils/retry.ts",
