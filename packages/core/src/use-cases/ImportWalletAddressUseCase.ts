@@ -44,6 +44,13 @@ export interface ImportWalletInput {
   address: string;
   /** Optional display name override */
   displayName?: string;
+  /**
+   * Pre-detected institution IDs from the detectChains step.
+   * When provided, the import skips redundant chain re-detection,
+   * avoiding extra RPC calls that can trigger rate limits on
+   * public blockchain endpoints (e.g. Solana).
+   */
+  detectedInstitutionIds?: string[];
 }
 
 export interface ImportWalletResult {
@@ -151,25 +158,41 @@ export class ImportWalletAddressUseCase {
       'Starting wallet import with integrations'
     );
 
-    // STEP 1: Quick metadata queries (no long-running operations, no transaction)
-    logger.debug(
-      {
-        userId,
-        address: `${input.address.substring(0, 10)}...`,
-      },
-      'Detecting wallet chains with integrations'
-    );
+    // STEP 1: Use pre-detected institution IDs if available (from the detectChains
+    // step the frontend already ran), otherwise detect now. Skipping redundant
+    // detection avoids extra RPC calls that trigger rate limits on public
+    // blockchain endpoints (Solana, TON, etc.).
+    let detectedInstitutionIds: string[];
+    if (input.detectedInstitutionIds && input.detectedInstitutionIds.length > 0) {
+      detectedInstitutionIds = input.detectedInstitutionIds;
+      logger.info(
+        {
+          userId,
+          detectedInstitutionsCount: detectedInstitutionIds.length,
+          institutionIds: detectedInstitutionIds,
+        },
+        'Using pre-detected institution IDs (skipping redundant detection)'
+      );
+    } else {
+      logger.debug(
+        {
+          userId,
+          address: `${input.address.substring(0, 10)}...`,
+        },
+        'Detecting wallet chains with integrations'
+      );
 
-    const detectedInstitutionIds = await this.integrationManager.detectWalletChains(input.address);
+      detectedInstitutionIds = await this.integrationManager.detectWalletChains(input.address);
 
-    logger.info(
-      {
-        userId,
-        detectedInstitutionsCount: detectedInstitutionIds.length,
-        institutionIds: detectedInstitutionIds,
-      },
-      'Wallet chain detection completed'
-    );
+      logger.info(
+        {
+          userId,
+          detectedInstitutionsCount: detectedInstitutionIds.length,
+          institutionIds: detectedInstitutionIds,
+        },
+        'Wallet chain detection completed'
+      );
+    }
 
     if (detectedInstitutionIds.length === 0) {
       logger.warn(

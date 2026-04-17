@@ -101,6 +101,30 @@ describe('ScamTokenDetectionService', () => {
       expect(withoutPrice).toBeGreaterThan(withPrice);
     });
 
+    it('should not flag short legitimate symbols that happen to match TLDs', () => {
+      // Tokens like ME, IO, FUN, JTO, BIO are legitimate despite matching TLD suffixes
+      for (const [symbol, name] of [
+        ['ME', 'Magic Eden'],
+        ['IO', 'IO'],
+        ['FUN', 'FunFair'],
+        ['JTO', 'Jito'],
+        ['BIO', 'BIO'],
+      ] as const) {
+        const prob = service.calculateScamProbability(symbol, name, oldDate, true);
+        expect(prob).toBe(0);
+      }
+    });
+
+    it('should still flag obfuscated domains like GIVEAWAYSCOM', () => {
+      const prob = service.calculateScamProbability(
+        'GIVEAWAYSCOM',
+        'Giveaways Com',
+        recentDate,
+        false
+      );
+      expect(prob).toBeGreaterThan(0.5);
+    });
+
     it('should compound URL + suspicious word penalties', () => {
       const urlOnly = service.calculateScamProbability('TOKEN.COM', 'Token Com', oldDate, true);
       const urlAndSuspicious = service.calculateScamProbability(

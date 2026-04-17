@@ -17,6 +17,7 @@ import {
   GroupRepository,
   HoldingApyConfigRepository,
   HoldingRepository,
+  InstitutionBlockchainMappingRepository,
   InstitutionRepository,
   InstitutionTypeRepository,
   TokenRepository,
@@ -692,7 +693,7 @@ export const WalletImplementations = {
 
   async importAddress(
     context: FeatureExecutionContext,
-    input: { address: string; displayName?: string }
+    input: { address: string; displayName?: string; detectedInstitutionIds?: string[] }
   ) {
     const useCase = Container.get(ImportWalletAddressUseCase);
     return await useCase.execute(input, context.userId);
@@ -700,6 +701,7 @@ export const WalletImplementations = {
 
   async detectChains(_context: FeatureExecutionContext, input: { address: string }) {
     const blockchainService = Container.get(BlockchainServiceManager);
+    const mappingRepository = Container.get(InstitutionBlockchainMappingRepository);
 
     // Run chain detection and ENS resolution in parallel
     const [detectedChains, ensName] = await Promise.all([
@@ -717,11 +719,22 @@ export const WalletImplementations = {
         nativeSymbol: chain.nativeSymbol,
       }));
 
+    // Look up institution IDs for detected chains so the import step can
+    // skip redundant re-detection (avoids rate-limit hits on public RPCs).
+    const institutionIds: string[] = [];
+    for (const chain of detectedChainDetails) {
+      const mapping = await mappingRepository.findByChainId(String(chain.chainId));
+      if (mapping) {
+        institutionIds.push(mapping.institutionId);
+      }
+    }
+
     return {
       address: input.address,
       ensName: ensName ?? undefined,
       chainsDetected: detectedChainDetails,
       totalChains: detectedChainDetails.length,
+      institutionIds,
     };
   },
 };

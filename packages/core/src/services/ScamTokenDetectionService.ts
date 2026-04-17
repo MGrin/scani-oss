@@ -37,7 +37,9 @@ export class ScamTokenDetectionService extends BaseService {
     /(?:https?:\/\/|www\.|[\s˳.]com|[\s˳.]io|[\s˳.]net|[\s˳.]org|[\s˳.]xyz|[\s˳.]app|[\s˳.]gg|[\s˳.]me|[\s˳.]to|[\s˳.]pm|[\s˳.]fun)/i;
 
   // TLD pattern - catches things like "GIVEAWAYSCOM" or "GIVEAWAYS˳COM"
-  private readonly TLD_PATTERN = /(?:com|net|org|io|xyz|app|gg|me|to|pm|fun)$/i;
+  // Requires at least 4 chars before the TLD to avoid false positives on
+  // legitimate short symbols (ME, IO, FUN, BIO, JTO, etc.)
+  private readonly TLD_PATTERN = /^.{4,}(?:com|net|org|io|xyz|app|gg|me|to|pm|fun)$/i;
 
   // Emoji pattern regex (simplified - matches common emoji ranges)
   private readonly EMOJI_PATTERN =

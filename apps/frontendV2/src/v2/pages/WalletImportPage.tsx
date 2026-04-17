@@ -111,6 +111,7 @@ export function WalletImportPage() {
     importMutation.mutate({
       address: address.trim(),
       displayName: displayName.trim() || undefined,
+      detectedInstitutionIds: detectMutation.data?.institutionIds,
     });
   };
 

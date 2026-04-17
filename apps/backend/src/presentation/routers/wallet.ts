@@ -18,6 +18,7 @@ const logger = createComponentLogger('router:wallet');
 const ImportWalletSchema = z.object({
   address: z.string().min(1, 'Wallet address is required').max(200, 'Wallet address is too long'),
   displayName: z.string().max(100, 'Display name is too long').optional(),
+  detectedInstitutionIds: z.array(z.string().uuid()).optional(),
 });
 
 export const walletRouter = router({

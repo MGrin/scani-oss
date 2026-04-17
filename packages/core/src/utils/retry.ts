@@ -37,7 +37,9 @@ export function defaultIsTransient(error: unknown): boolean {
     message.includes('etimedout') ||
     message.includes('network') ||
     message.includes('fetch failed') ||
-    message.includes('socket hang up')
+    message.includes('socket hang up') ||
+    message.includes('too many requests') ||
+    message.includes('rate limit')
   ) {
     return true;
   }
