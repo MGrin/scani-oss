@@ -1,11 +1,46 @@
 import { db } from '@scani/core/database';
-import { userAccounts, userSessions, users, userVerifications } from '@scani/core/database/schema';
+import {
+  tokens,
+  tokenTypes,
+  userAccounts,
+  userSessions,
+  users,
+  userVerifications,
+} from '@scani/core/database/schema';
 import { authLogger } from '@scani/core/utils/logger';
 import { betterAuth } from 'better-auth';
 import { drizzleAdapter } from 'better-auth/adapters/drizzle';
 import { magicLink } from 'better-auth/plugins';
+import { and, eq, isNull } from 'drizzle-orm';
 import { createTransport } from 'nodemailer';
 import { createFastmailSender } from './fastmail-jmap';
+
+/**
+ * Default base currency for newly-created users. First time it's called,
+ * resolves USD's token id from the fiat seed and caches it for the life
+ * of the process.
+ */
+let cachedDefaultBaseCurrencyId: Promise<string | null> | null = null;
+async function getDefaultBaseCurrencyId(): Promise<string | null> {
+  if (cachedDefaultBaseCurrencyId) return cachedDefaultBaseCurrencyId;
+  cachedDefaultBaseCurrencyId = (async () => {
+    const [row] = await db
+      .select({ id: tokens.id })
+      .from(tokens)
+      .innerJoin(tokenTypes, eq(tokens.typeId, tokenTypes.id))
+      .where(and(eq(tokens.symbol, 'USD'), eq(tokenTypes.code, 'fiat')))
+      .limit(1);
+    if (!row) {
+      authLogger.error(
+        {},
+        'USD fiat token not found in DB — seed migrations may not have run. New users will have baseCurrencyId=null until seeds apply.'
+      );
+      return null;
+    }
+    return row.id;
+  })();
+  return cachedDefaultBaseCurrencyId;
+}
 
 /**
  * Better-Auth server instance. One per backend process, created at boot.
@@ -75,6 +110,40 @@ export function createBetterAuth(opts: {
       requireEmailVerification: false, // Flip to true once SMTP deliverability is confirmed.
       autoSignIn: true,
       minPasswordLength: 10,
+    },
+    // After Better-Auth inserts a new user row via the Drizzle adapter, back-
+    // fill `baseCurrencyId` to USD. Every downstream feature (dashboard,
+    // portfolio valuation, holdings) assumes the field is set — without this
+    // the first authenticated request 500s with "User not found or has no
+    // base currency set". Users can change it in Settings; this is just a
+    // sane default so sign-up → dashboard is seamless.
+    databaseHooks: {
+      user: {
+        create: {
+          after: async (user) => {
+            try {
+              const baseCurrencyId = await getDefaultBaseCurrencyId();
+              if (!baseCurrencyId) return;
+              await db
+                .update(users)
+                .set({ baseCurrencyId })
+                .where(and(eq(users.id, user.id), isNull(users.baseCurrencyId)));
+              authLogger.info(
+                { userId: user.id, baseCurrencyId },
+                'Set default base currency for new user'
+              );
+            } catch (err) {
+              authLogger.error(
+                {
+                  userId: user.id,
+                  error: err instanceof Error ? err.message : String(err),
+                },
+                'Failed to set default base currency — user will need to set it in Settings'
+              );
+            }
+          },
+        },
+      },
     },
     emailVerification: hasEmailTransport
       ? {
