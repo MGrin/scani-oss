@@ -1,6 +1,7 @@
 import type { ParseScreenshotResult } from '@scani/core/use-cases/ParseScreenshotUseCase';
 import { ParseScreenshotUseCase } from '@scani/core/use-cases/ParseScreenshotUseCase';
 import { createComponentLogger } from '@scani/core/utils/logger';
+import { TRPCError } from '@trpc/server';
 import { Container } from 'typedi';
 import { z } from 'zod';
 import { protectedProcedure, router } from '../trpc';
@@ -149,6 +150,21 @@ export const screenshotsRouter = router({
         },
         'Batch screenshot parsing completed'
       );
+
+      // If every single file failed, surface the underlying error to the
+      // caller instead of a 200 OK with an empty `results` array. Without
+      // this, the frontend can't tell "AI provider not configured" (nothing
+      // the user can fix by re-uploading) from "we detected zero holdings
+      // in your screenshot" (correct 200 OK, empty result). Throwing here
+      // lets the tRPC client's error handler show a real toast.
+      if (successCount === 0 && input.files.length > 0) {
+        const firstError = results.find((r) => r.error)?.error ?? 'Screenshot parsing failed';
+        const isConfigError = firstError.includes('No AI providers are configured');
+        throw new TRPCError({
+          code: isConfigError ? 'PRECONDITION_FAILED' : 'BAD_REQUEST',
+          message: firstError,
+        });
+      }
 
       return {
         results,
