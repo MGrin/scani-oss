@@ -18,7 +18,6 @@ import {
 function authorized(providedToken: string): boolean {
   const expected = process.env.ADMIN_BOOTSTRAP_TOKEN;
   if (!expected || expected.length < 16) return false;
-  // Timing-safe compare against a same-length buffer to avoid early-exit leaks.
   const a = new TextEncoder().encode(expected);
   const b = new TextEncoder().encode(providedToken);
   if (a.length !== b.length) return false;
@@ -27,36 +26,43 @@ function authorized(providedToken: string): boolean {
   return mismatch === 0;
 }
 
-function ensureBootstrapEnabled(token: string) {
+function checkBootstrap(token: string): string | null {
   const status = bootstrapStatus();
-  if (status.passkeyProvisioned)
-    throw new Error('Passkey already provisioned. Bootstrap is locked.');
-  if (!status.tokenConfigured) throw new Error('Bootstrap is not enabled.');
-  if (!authorized(token)) throw new Error('Invalid bootstrap token.');
+  if (status.passkeyProvisioned) return 'Passkey already provisioned. Bootstrap is locked.';
+  if (!status.tokenConfigured) return 'Bootstrap is not enabled.';
+  if (!authorized(token)) return 'Invalid bootstrap token.';
+  return null;
 }
 
-export async function beginBootstrapAction(
-  token: string
-): Promise<PublicKeyCredentialCreationOptionsJSON> {
-  ensureBootstrapEnabled(token);
-  const { rpId } = getRpIdAndOrigin();
+export type BeginResult =
+  | { ok: true; options: PublicKeyCredentialCreationOptionsJSON }
+  | { ok: false; error: string };
 
-  const userId = crypto.getRandomValues(new Uint8Array(16));
-  const options = await generateRegistrationOptions({
-    rpName: 'scani admin',
-    rpID: rpId,
-    userID: userId,
-    userName: 'admin',
-    attestationType: 'none',
-    authenticatorSelection: {
-      userVerification: 'preferred',
-      residentKey: 'preferred',
-    },
-  });
+export async function beginBootstrapAction(token: string): Promise<BeginResult> {
+  try {
+    const err = checkBootstrap(token);
+    if (err) return { ok: false, error: err };
 
-  const challengeToken = await signChallenge(options.challenge);
-  cookies().set(CHALLENGE_COOKIE, challengeToken, challengeCookieOpts());
-  return options;
+    const { rpId } = getRpIdAndOrigin();
+    const userId = crypto.getRandomValues(new Uint8Array(16));
+    const options = await generateRegistrationOptions({
+      rpName: 'scani admin',
+      rpID: rpId,
+      userID: userId,
+      userName: 'admin',
+      attestationType: 'none',
+      authenticatorSelection: {
+        userVerification: 'preferred',
+        residentKey: 'preferred',
+      },
+    });
+
+    const challengeToken = await signChallenge(options.challenge);
+    cookies().set(CHALLENGE_COOKIE, challengeToken, challengeCookieOpts());
+    return { ok: true, options };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : String(err) };
+  }
 }
 
 export async function completeBootstrapAction(
@@ -72,7 +78,8 @@ export async function completeBootstrapAction(
   | { ok: false; error: string }
 > {
   try {
-    ensureBootstrapEnabled(token);
+    const err = checkBootstrap(token);
+    if (err) return { ok: false, error: err };
 
     const challengeToken = cookies().get(CHALLENGE_COOKIE)?.value;
     if (!challengeToken) return { ok: false, error: 'No challenge in progress.' };

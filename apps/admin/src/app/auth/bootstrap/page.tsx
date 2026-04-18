@@ -30,8 +30,13 @@ function BootstrapInner() {
     setStatus('pending');
     setError(null);
     try {
-      const options = await beginBootstrapAction(token);
-      const response = await startRegistration({ optionsJSON: options });
+      const begin = await beginBootstrapAction(token);
+      if (!begin.ok) {
+        setStatus('error');
+        setError(begin.error);
+        return;
+      }
+      const response = await startRegistration({ optionsJSON: begin.options });
       const result = await completeBootstrapAction(token, response);
       if (!result.ok) {
         setStatus('error');

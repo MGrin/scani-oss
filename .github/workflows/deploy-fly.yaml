@@ -199,16 +199,21 @@ jobs:
 
       - name: Wait for scani-admin Pages project (Terraform-managed)
         run: |
-          # The project + domain binding are managed by cloudflare.tf.
-          # If the Terraform workflow is still running on the same push, give
-          # it up to 5 minutes to finish before deploying.
-          for i in $(seq 1 60); do
-            if bunx wrangler@latest pages project list 2>/dev/null | grep -q '^scani-admin '; then
+          # The project is managed by cloudflare.tf. If the Terraform workflow
+          # is still running on the same push, give it up to 5 minutes to
+          # finish. Hitting the Pages API directly for a single project: 200
+          # when it exists, 404 when it doesn't. Avoids wrangler's box-drawn
+          # table output and the ~10s bunx cold-start per iteration.
+          URL="https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/pages/projects/scani-admin"
+          for i in $(seq 1 30); do
+            code=$(curl -s -o /dev/null -w "%{http_code}" \
+              -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" "$URL")
+            if [ "$code" = "200" ]; then
               echo "scani-admin project is live"
               exit 0
             fi
-            echo "($i/60) waiting for Terraform to create scani-admin..."
-            sleep 5
+            echo "($i/30) waiting for Terraform to create scani-admin (got HTTP $code)..."
+            sleep 10
           done
           echo "Timed out waiting for scani-admin. Is the Terraform workflow healthy?" >&2
           exit 1
