@@ -139,6 +139,62 @@ export function renderMagicLinkEmail({ url }: { url: string }): EmailContent {
   };
 }
 
+/**
+ * Sent after sign-up when `emailVerification.sendOnSignUp` is enabled. The
+ * button leads to Better-Auth's `/api/auth/verify-email` endpoint, which
+ * marks the user as verified and redirects back to the app. Use a
+ * dedicated "Verify your email" subject + copy — reusing the magic-link
+ * template here mislabels the email as a sign-in and confuses users who
+ * just signed up.
+ */
+export function renderVerificationEmail({ url }: { url: string }): EmailContent {
+  const safeUrl = escapeHtml(url);
+  const subject = `Verify your email — ${BRAND.appName}`;
+  const text = [
+    `Welcome to ${BRAND.appName}.`,
+    ``,
+    `Click the link below to confirm ${BRAND.appName} can reach you at this address. The link works once.`,
+    ``,
+    url,
+    ``,
+    `Didn't sign up for ${BRAND.appName}? You can ignore this email safely.`,
+  ].join('\n');
+
+  const content = `
+    <h1 style="margin:0 0 12px 0;font-size:22px;line-height:28px;font-weight:600;letter-spacing:-0.01em;color:${BRAND.textPrimary};">
+      Confirm your email
+    </h1>
+    <p style="margin:0 0 24px 0;font-size:15px;line-height:22px;color:${BRAND.textMuted};">
+      You just signed up for ${escapeHtml(BRAND.appName)}. Tap the button
+      below to confirm we can reach you at this address.
+    </p>
+    <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 24px 0;">
+      <tr>
+        <td style="border-radius:10px;background:${BRAND.accent};">
+          <a href="${safeUrl}" style="display:inline-block;padding:13px 28px;font-size:15px;font-weight:600;color:${BRAND.accentText};text-decoration:none;border-radius:10px;">
+            Verify email
+          </a>
+        </td>
+      </tr>
+    </table>
+    <p style="margin:0 0 8px 0;font-size:13px;color:${BRAND.textMuted};">
+      Or copy and paste this URL into your browser:
+    </p>
+    <p style="margin:0;font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;font-size:12px;line-height:18px;color:${BRAND.textPrimary};word-break:break-all;background:#f5f6f8;border:1px solid ${BRAND.border};border-radius:8px;padding:10px 12px;">
+      ${safeUrl}
+    </p>
+  `;
+
+  return {
+    subject,
+    text,
+    html: layout({
+      preheader: `Confirm your email address for ${BRAND.appName}.`,
+      content,
+    }),
+  };
+}
+
 export function renderOtpEmail({
   code,
   type,

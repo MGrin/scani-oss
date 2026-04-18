@@ -13,7 +13,12 @@ import { drizzleAdapter } from 'better-auth/adapters/drizzle';
 import { emailOTP, magicLink } from 'better-auth/plugins';
 import { and, eq, isNull } from 'drizzle-orm';
 import { createTransport } from 'nodemailer';
-import { type EmailContent, renderMagicLinkEmail, renderOtpEmail } from './email-templates';
+import {
+  type EmailContent,
+  renderMagicLinkEmail,
+  renderOtpEmail,
+  renderVerificationEmail,
+} from './email-templates';
 import { createFastmailSender } from './fastmail-jmap';
 
 /**
@@ -86,6 +91,27 @@ export function createBetterAuth(opts: {
     }
   };
 
+  /**
+   * Fire-and-forget wrapper for emails that should *not* block the HTTP
+   * response. Used on sign-up: `requireEmailVerification: false` means the
+   * user is already signed in, so we shouldn't make them wait 5-10s on an
+   * SMTP round-trip just to ship them a confirmation email. Failures are
+   * logged but don't propagate.
+   *
+   * Not used for magic-link / OTP — those flows explicitly await the send
+   * because the user is literally waiting for the email to arrive.
+   */
+  const sendInBackground = (to: string, msg: EmailContent, context: Record<string, unknown>) => {
+    void sendRendered(to, msg)
+      .then(() => authLogger.info(context, '✅ Background email sent'))
+      .catch((err) =>
+        authLogger.error(
+          { ...context, error: err instanceof Error ? err.message : String(err) },
+          '❌ Background email failed'
+        )
+      );
+  };
+
   const hasEmailTransport = fastmailSender !== null || transporter !== null;
 
   return betterAuth({
@@ -143,9 +169,14 @@ export function createBetterAuth(opts: {
     },
     emailVerification: hasEmailTransport
       ? {
-          sendVerificationEmail: async ({ user, url }) => {
-            await sendRendered(user.email, renderMagicLinkEmail({ url }));
-            authLogger.info({ userId: user.id }, 'Sent email verification');
+          sendVerificationEmail: ({ user, url }) => {
+            sendInBackground(user.email, renderVerificationEmail({ url }), {
+              userId: user.id,
+              kind: 'verification',
+            });
+            // Return resolved promise so Better-Auth's await doesn't block;
+            // the actual SMTP send runs asynchronously.
+            return Promise.resolve();
           },
           sendOnSignUp: true,
           autoSignInAfterVerification: true,

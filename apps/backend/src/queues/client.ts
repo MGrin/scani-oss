@@ -1,5 +1,4 @@
-import type { ExchangeSyncPayload, WalletImportPayload } from '@scani/core/queues';
-import { JOB_NAMES, SCANI_QUEUE } from '@scani/core/queues';
+import { SCANI_QUEUE } from '@scani/core/queues';
 import { createComponentLogger } from '@scani/core/utils/logger';
 import { Queue } from 'bullmq';
 import type { Redis } from 'ioredis';
@@ -35,23 +34,4 @@ export async function closeQueue(): Promise<void> {
     await queue.close();
     queue = null;
   }
-}
-
-// --- Typed enqueue helpers --------------------------------------------------
-
-const JOB_OPTS = {
-  removeOnComplete: 100,
-  removeOnFail: 500,
-  attempts: 3,
-  backoff: { type: 'exponential' as const, delay: 5000 },
-};
-
-export async function enqueueWalletImport(payload: WalletImportPayload): Promise<string> {
-  const job = await getQueue().add(JOB_NAMES.walletImport, payload, JOB_OPTS);
-  return String(job.id ?? '');
-}
-
-export async function enqueueExchangeSync(payload: ExchangeSyncPayload): Promise<string> {
-  const job = await getQueue().add(JOB_NAMES.exchangeSync, payload, JOB_OPTS);
-  return String(job.id ?? '');
 }

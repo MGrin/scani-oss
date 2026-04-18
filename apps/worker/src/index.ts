@@ -27,15 +27,6 @@ const PROCESSORS: Record<string, Processor> = {
   [JOB_NAMES.walletBalances]: async () => executeWalletBalancesCronJob(),
   [JOB_NAMES.exchangeBalances]: async () => executeExchangeBalancesCronJob(),
   [JOB_NAMES.apyPayouts]: async () => executeApyPayoutsCronJob(),
-  // wallet-import and exchange-sync are on-demand placeholders — the backend
-  // will enqueue them as part of R2's request-handler refactor. For now the
-  // processors are no-ops that log an info so we can see them wired.
-  [JOB_NAMES.walletImport]: async (job) => {
-    logger.info({ jobId: job.id, data: job.data }, 'wallet-import job received (TODO: implement)');
-  },
-  [JOB_NAMES.exchangeSync]: async (job) => {
-    logger.info({ jobId: job.id, data: job.data }, 'exchange-sync job received (TODO: implement)');
-  },
 };
 
 async function main(): Promise<void> {

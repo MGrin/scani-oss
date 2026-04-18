@@ -17,10 +17,6 @@ export const JOB_NAMES = {
   exchangeBalances: 'exchange-balances',
   /** Scheduled by BullMQ repeatable jobs daily at midnight UTC. */
   apyPayouts: 'apy-payouts',
-  /** On-demand: triggered by the backend when a user adds a wallet. */
-  walletImport: 'wallet-import',
-  /** On-demand: triggered by the backend when a user connects an exchange. */
-  exchangeSync: 'exchange-sync',
 } as const;
 
 export type JobName = (typeof JOB_NAMES)[keyof typeof JOB_NAMES];

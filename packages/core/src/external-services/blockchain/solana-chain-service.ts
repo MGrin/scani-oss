@@ -1,7 +1,11 @@
 /**
  * Solana Chain Service
- * Handles balance fetching for Solana blockchain
- * Uses public Solana RPC endpoint
+ * Handles balance fetching for Solana blockchain.
+ *
+ * Picks Helius (with `HELIUS_API_KEY` env) when available, otherwise
+ * falls back to the public mainnet-beta endpoint — which is rate-limited
+ * tightly enough that any real workload will start failing within a few
+ * minutes.
  */
 
 import Decimal from 'decimal.js';
@@ -11,6 +15,31 @@ import type { ChainConfig } from './chain-config';
 import type { BlockchainServiceConfig, IBlockchainService, TokenBalance } from './types';
 
 const logger = createComponentLogger('solana-chain-service');
+
+/**
+ * Build the Solana RPC URL based on env. Prefers Helius, falls back to
+ * the public mainnet-beta endpoint. Logged once per process so ops can
+ * see which path is live in production.
+ */
+let loggedChoice = false;
+function resolveSolanaRpcUrl(): string {
+  const heliusKey = process.env.HELIUS_API_KEY;
+  if (heliusKey) {
+    if (!loggedChoice) {
+      logger.info({ provider: 'helius' }, 'Using Helius RPC for Solana');
+      loggedChoice = true;
+    }
+    return `https://mainnet.helius-rpc.com/?api-key=${heliusKey}`;
+  }
+  if (!loggedChoice) {
+    logger.warn(
+      { provider: 'public' },
+      'Using public Solana RPC — prone to 429 rate-limiting. Set HELIUS_API_KEY to use Helius.'
+    );
+    loggedChoice = true;
+  }
+  return 'https://api.mainnet-beta.solana.com';
+}
 
 /**
  * Solana RPC response types
@@ -57,8 +86,12 @@ export class SolanaChainService implements IBlockchainService {
   constructor(chainConfig: ChainConfig, config: BlockchainServiceConfig) {
     this.chainConfig = chainConfig;
     this.rateLimiter = config.rateLimiter;
-    // Use public Solana RPC endpoint
-    this.rpcUrl = config.baseUrl || 'https://api.mainnet-beta.solana.com';
+    // Prefer Helius (dedicated RPC, generous free-tier limits) over the
+    // public mainnet-beta endpoint, which throttles aggressively enough
+    // that a single wallet-balances cron cycle can exhaust the quota.
+    // Resolution order: explicit config.baseUrl > HELIUS_API_KEY env >
+    // public Solana RPC.
+    this.rpcUrl = config.baseUrl || resolveSolanaRpcUrl();
   }
 
   getChainId(): string | number {

@@ -5,6 +5,7 @@
 
 import { WalletImplementations } from '@scani/core/features/implementations';
 import { createComponentLogger } from '@scani/core/utils/logger';
+import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 import { emitEntityChange } from '../../infrastructure/websocket/RealTimeUpdatesService';
 import { requireAuth } from '../middleware/auth';
@@ -51,6 +52,21 @@ export const walletRouter = router({
       },
       'Wallet import completed - returning result to client'
     );
+
+    // If we couldn't pick up anything at all, surface that as a proper
+    // error rather than a silent 200 OK with empty arrays — otherwise the
+    // frontend toast reads "No chains" and the user has no way to tell
+    // whether the address is a mistyped hex string, an empty-but-valid
+    // wallet, or (most commonly) a missing Etherscan/Polygonscan API key
+    // causing every chain probe to 401-out. The message covers all three
+    // cases and nudges toward the real fix.
+    if (result.chainsDetected === 0 && result.accounts.length === 0) {
+      throw new TRPCError({
+        code: 'NOT_FOUND',
+        message:
+          'No wallet activity found on any supported chain. Check the address, or add blockchain-explorer API keys (ETHERSCAN_API_KEY, etc.) if the backend is missing them.',
+      });
+    }
 
     // Emit WebSocket events for created entities
     for (const account of result.accounts) {
@@ -110,6 +126,18 @@ export const walletRouter = router({
       })
     )
     .mutation(async ({ input, ctx }) => {
-      return await WalletImplementations.detectChains({ userId: ctx.userId }, input);
+      const result = await WalletImplementations.detectChains({ userId: ctx.userId }, input);
+      // Same pattern as importAddress: an empty chainsDetected is often a
+      // config-level error (missing explorer API keys) dressed up as a
+      // normal 200. Surface it so the UI can tell the user something
+      // actionable instead of "no chains found, good luck."
+      if (result.totalChains === 0) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message:
+            'No wallet activity found on any supported chain. Check the address, or add blockchain-explorer API keys (ETHERSCAN_API_KEY, etc.) if the backend is missing them.',
+        });
+      }
+      return result;
     }),
 });
