@@ -84,11 +84,9 @@ resource "cloudflare_pages_domain" "app" {
   domain       = local.app_host
 }
 
-resource "cloudflare_pages_domain" "admin" {
-  account_id   = var.cloudflare_account_id
-  project_name = "scani-admin"
-  domain       = local.admin_host
-}
+# scani-admin's pages-domain binding is managed by the deploy-admin CI job
+# because the project itself is bootstrapped by `wrangler pages project create`
+# in the same job — Terraform runs first and would see "Project not found".
 
 resource "cloudflare_pages_domain" "landing_apex" {
   account_id   = var.cloudflare_account_id

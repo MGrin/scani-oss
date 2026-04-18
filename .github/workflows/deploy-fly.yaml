@@ -209,6 +209,27 @@ jobs:
             echo "scani-admin already exists"
           fi
 
+      - name: Ensure admin.scani.xyz is bound to scani-admin
+        run: |
+          # Terraform can't own this because the project is bootstrapped in
+          # this same job. Call the Pages API directly; it 409s if the domain
+          # is already attached, which is the idempotent path.
+          code=$(curl -s -o /tmp/cf-domain.json -w "%{http_code}" \
+            -X POST \
+            -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+            -H "Content-Type: application/json" \
+            --data '{"name":"admin.scani.xyz"}' \
+            "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/pages/projects/scani-admin/domains")
+          if [ "$code" = "200" ] || [ "$code" = "201" ]; then
+            echo "Bound admin.scani.xyz → scani-admin"
+          elif grep -q '"code":8000020\|already associated\|already attached' /tmp/cf-domain.json; then
+            echo "admin.scani.xyz already bound to scani-admin"
+          else
+            echo "Failed to bind domain (HTTP $code):"
+            cat /tmp/cf-domain.json
+            exit 1
+          fi
+
       - name: Sync secrets from GitHub → Cloudflare Pages
         env:
           # Passkey + session (populated after bootstrap; skipped until set)
