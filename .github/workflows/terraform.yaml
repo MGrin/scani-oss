@@ -108,4 +108,23 @@ jobs:
           terraform_wrapper: false
 
       - run: terraform init -input=false
+
+      # Idempotent self-healing imports. When a resource is added to TF that
+      # already exists in the target system, `terraform apply` errors with
+      # "already exists". Importing it into state first makes the next apply
+      # a no-op refresh. Each `|| true` covers the steady-state case where
+      # the resource is already in state (no-op), and the case where it
+      # doesn't exist in the target yet (apply will create it).
+      - name: Import pre-existing resources into state (one-shot)
+        run: |
+          set +e
+          # scani-admin Pages project — created by the first deploy-admin run
+          # before TF managed it.
+          if ! terraform state list | grep -q '^cloudflare_pages_project\.admin$'; then
+            terraform import -input=false \
+              cloudflare_pages_project.admin \
+              "${TF_VAR_cloudflare_account_id}/scani-admin" || true
+          fi
+          exit 0
+
       - run: terraform apply -auto-approve -input=false -lock-timeout=60s

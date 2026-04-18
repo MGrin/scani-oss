@@ -197,38 +197,21 @@ jobs:
       - uses: ./.github/actions/setup-bun
       - run: cd apps/admin && bun run build:cf
 
-      - name: Ensure Cloudflare Pages project exists
+      - name: Wait for scani-admin Pages project (Terraform-managed)
         run: |
-          cd apps/admin
-          if ! bunx wrangler@latest pages project list 2>/dev/null | grep -q '^scani-admin '; then
-            bunx wrangler@latest pages project create scani-admin \
-              --production-branch=main \
-              --compatibility-date=2025-01-01 \
-              --compatibility-flags=nodejs_compat
-          else
-            echo "scani-admin already exists"
-          fi
-
-      - name: Ensure admin.scani.xyz is bound to scani-admin
-        run: |
-          # Terraform can't own this because the project is bootstrapped in
-          # this same job. Call the Pages API directly; it 409s if the domain
-          # is already attached, which is the idempotent path.
-          code=$(curl -s -o /tmp/cf-domain.json -w "%{http_code}" \
-            -X POST \
-            -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
-            -H "Content-Type: application/json" \
-            --data '{"name":"admin.scani.xyz"}' \
-            "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/pages/projects/scani-admin/domains")
-          if [ "$code" = "200" ] || [ "$code" = "201" ]; then
-            echo "Bound admin.scani.xyz → scani-admin"
-          elif grep -q '"code":8000020\|already associated\|already attached' /tmp/cf-domain.json; then
-            echo "admin.scani.xyz already bound to scani-admin"
-          else
-            echo "Failed to bind domain (HTTP $code):"
-            cat /tmp/cf-domain.json
-            exit 1
-          fi
+          # The project + domain binding are managed by cloudflare.tf.
+          # If the Terraform workflow is still running on the same push, give
+          # it up to 5 minutes to finish before deploying.
+          for i in $(seq 1 60); do
+            if bunx wrangler@latest pages project list 2>/dev/null | grep -q '^scani-admin '; then
+              echo "scani-admin project is live"
+              exit 0
+            fi
+            echo "($i/60) waiting for Terraform to create scani-admin..."
+            sleep 5
+          done
+          echo "Timed out waiting for scani-admin. Is the Terraform workflow healthy?" >&2
+          exit 1
 
       - name: Sync secrets from GitHub → Cloudflare Pages
         env:

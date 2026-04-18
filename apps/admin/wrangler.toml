@@ -1,10 +1,15 @@
 name = "scani-admin"
-compatibility_date = "2025-01-01"
-compatibility_flags = ["nodejs_compat"]
 pages_build_output_dir = ".vercel/output/static"
 
-# Secrets (passkey credentials, provider tokens, session HMAC key) are set via:
-#   wrangler pages secret put <KEY> --project-name scani-admin
+# compatibility_date / compatibility_flags live here for `wrangler pages dev`
+# (local preview) and must stay in sync with the authoritative values defined
+# on the cloudflare_pages_project.admin resource in infra/terraform/cloudflare.tf.
+compatibility_date = "2025-01-01"
+compatibility_flags = ["nodejs_compat"]
+
+# Secrets (passkey credentials, provider tokens, session HMAC key) are
+# synced to Pages by the deploy-admin job, sourced from GitHub Actions
+# secrets. Never set them here.
 #
 # Public env vars live below; they're safe to commit.
 [env.production.vars]

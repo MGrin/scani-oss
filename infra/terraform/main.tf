@@ -1,6 +1,7 @@
 locals {
   app_host     = "app.${var.domain}"
   api_host     = "api.${var.domain}"
+  admin_host   = "admin.${var.domain}"
   landing_host = var.domain
 }
 

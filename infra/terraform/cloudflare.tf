@@ -9,9 +9,13 @@ data "cloudflare_zone" "primary" {
 # NOT managed by Terraform — state lives in one of them, so TF managing
 # the bucket is a chicken-and-egg trap.
 #
-# Cloudflare Pages projects (scani-frontend, scani-landing) are created
-# via the CF API on first bootstrap; subsequent deploys are driven by
-# `wrangler pages deploy` from CI.
+# Cloudflare Pages projects:
+# - scani-frontend, scani-landing: created via the CF API on first bootstrap
+#   (pre-date Terraform); subsequent deploys are driven by `wrangler pages
+#   deploy` from CI. Their cloudflare_pages_domain bindings live below.
+# - scani-admin: managed here (resource "cloudflare_pages_project" "admin"),
+#   so both the project and its custom-domain binding live in Terraform.
+#   CI polls until the project exists, then `wrangler pages deploy`s to it.
 
 # ---------- DNS records ----------
 
@@ -84,9 +88,31 @@ resource "cloudflare_pages_domain" "app" {
   domain       = local.app_host
 }
 
-# scani-admin's pages-domain binding is managed by the deploy-admin CI job
-# because the project itself is bootstrapped by `wrangler pages project create`
-# in the same job — Terraform runs first and would see "Project not found".
+# scani-admin Pages project. Created and owned by Terraform (unlike
+# scani-frontend / scani-landing, which predate the TF setup). Compatibility
+# settings here are the authoritative values; wrangler.toml is advisory only.
+resource "cloudflare_pages_project" "admin" {
+  account_id        = var.cloudflare_account_id
+  name              = "scani-admin"
+  production_branch = "main"
+
+  deployment_configs {
+    preview {
+      compatibility_date  = "2025-01-01"
+      compatibility_flags = ["nodejs_compat"]
+    }
+    production {
+      compatibility_date  = "2025-01-01"
+      compatibility_flags = ["nodejs_compat"]
+    }
+  }
+}
+
+resource "cloudflare_pages_domain" "admin" {
+  account_id   = var.cloudflare_account_id
+  project_name = cloudflare_pages_project.admin.name
+  domain       = local.admin_host
+}
 
 resource "cloudflare_pages_domain" "landing_apex" {
   account_id   = var.cloudflare_account_id
