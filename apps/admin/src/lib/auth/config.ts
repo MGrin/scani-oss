@@ -1,27 +1,30 @@
-export interface AuthConfig {
+export interface PasskeyConfig {
   rpId: string;
   origin: string;
   credentialIdB64: string;
   publicKeyB64: string;
-  sessionSecret: string;
 }
 
-export function getAuthConfig(): AuthConfig {
+export function getPasskeyConfig(): PasskeyConfig {
   const rpId = process.env.ADMIN_RP_ID;
   const origin = process.env.ADMIN_ORIGIN;
   const credentialIdB64 = process.env.ADMIN_PASSKEY_CREDENTIAL_ID;
   const publicKeyB64 = process.env.ADMIN_PASSKEY_PUBLIC_KEY;
-  const sessionSecret = process.env.ADMIN_SESSION_SECRET;
 
   if (!rpId) throw new Error('ADMIN_RP_ID missing');
   if (!origin) throw new Error('ADMIN_ORIGIN missing');
   if (!credentialIdB64) throw new Error('ADMIN_PASSKEY_CREDENTIAL_ID missing');
   if (!publicKeyB64) throw new Error('ADMIN_PASSKEY_PUBLIC_KEY missing');
-  if (!sessionSecret || sessionSecret.length < 32) {
+
+  return { rpId, origin, credentialIdB64, publicKeyB64 };
+}
+
+export function getSessionSecret(): string {
+  const secret = process.env.ADMIN_SESSION_SECRET;
+  if (!secret || secret.length < 32) {
     throw new Error('ADMIN_SESSION_SECRET missing or <32 chars');
   }
-
-  return { rpId, origin, credentialIdB64, publicKeyB64, sessionSecret };
+  return secret;
 }
 
 export function devBypassEnabled(): boolean {

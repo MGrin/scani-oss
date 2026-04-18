@@ -17,7 +17,6 @@ export default function BootstrapPage() {
 interface Secrets {
   credentialId: string;
   publicKey: string;
-  sessionSecret: string;
 }
 
 function BootstrapInner() {
@@ -46,7 +45,6 @@ function BootstrapInner() {
       setSecrets({
         credentialId: result.credentialId,
         publicKey: result.publicKey,
-        sessionSecret: result.sessionSecret,
       });
       setStatus('done');
     } catch (err) {
@@ -99,13 +97,11 @@ function BootstrapInner() {
             </div>
             <SecretRow label="ADMIN_PASSKEY_CREDENTIAL_ID" value={secrets.credentialId} />
             <SecretRow label="ADMIN_PASSKEY_PUBLIC_KEY" value={secrets.publicKey} />
-            <SecretRow label="ADMIN_SESSION_SECRET" value={secrets.sessionSecret} />
             <div className="pt-2 text-xs text-neutral-400 space-y-2">
-              <p>Add all three as GitHub Actions secrets, then remove the bootstrap token:</p>
+              <p>Add these as GitHub Actions secrets, then remove the bootstrap token:</p>
               <pre className="rounded-md bg-neutral-950 border border-neutral-800 p-3 text-neutral-300 overflow-x-auto">
                 {`gh secret set ADMIN_PASSKEY_CREDENTIAL_ID --body "${secrets.credentialId}"
 gh secret set ADMIN_PASSKEY_PUBLIC_KEY --body "${secrets.publicKey}"
-gh secret set ADMIN_SESSION_SECRET --body "${secrets.sessionSecret}"
 gh secret delete ADMIN_BOOTSTRAP_TOKEN
 gh workflow run deploy-fly.yaml -f services=admin`}
               </pre>

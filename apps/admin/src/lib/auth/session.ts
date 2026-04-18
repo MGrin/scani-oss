@@ -1,5 +1,5 @@
 import { b64urlDecode, b64urlEncode } from './b64';
-import { getAuthConfig } from './config';
+import { getSessionSecret } from './config';
 
 const enc = new TextEncoder();
 const dec = new TextDecoder();
@@ -21,7 +21,7 @@ async function hmacKey(secret: string): Promise<CryptoKey> {
 }
 
 async function sign(payload: object, ttlSec: number): Promise<string> {
-  const { sessionSecret } = getAuthConfig();
+  const sessionSecret = getSessionSecret();
   const now = Math.floor(Date.now() / 1000);
   const full = { ...payload, iat: now, exp: now + ttlSec };
   const payloadB64 = b64urlEncode(enc.encode(JSON.stringify(full)));
@@ -31,7 +31,7 @@ async function sign(payload: object, ttlSec: number): Promise<string> {
 }
 
 async function verify<T extends { exp: number }>(token: string): Promise<T | null> {
-  const { sessionSecret } = getAuthConfig();
+  const sessionSecret = getSessionSecret();
   const [payloadB64, sigB64] = token.split('.');
   if (!payloadB64 || !sigB64) return null;
   const key = await hmacKey(sessionSecret);

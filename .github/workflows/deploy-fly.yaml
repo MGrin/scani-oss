@@ -220,10 +220,12 @@ jobs:
 
       - name: Sync secrets from GitHub → Cloudflare Pages
         env:
-          # Passkey + session (populated after bootstrap; skipped until set)
+          # Passkey (populated after bootstrap; skipped until set)
           ADMIN_BOOTSTRAP_TOKEN: ${{ secrets.ADMIN_BOOTSTRAP_TOKEN }}
           ADMIN_PASSKEY_CREDENTIAL_ID: ${{ secrets.ADMIN_PASSKEY_CREDENTIAL_ID }}
           ADMIN_PASSKEY_PUBLIC_KEY: ${{ secrets.ADMIN_PASSKEY_PUBLIC_KEY }}
+          # HMAC key for all auth cookies (challenge + session). Persistent —
+          # rotating it invalidates every logged-in session.
           ADMIN_SESSION_SECRET: ${{ secrets.ADMIN_SESSION_SECRET }}
           # Provider tokens (reused across services)
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
@@ -237,9 +239,6 @@ jobs:
         run: |
           cd apps/admin
           # Push every non-empty secret; Wrangler's `secret put` is upsert.
-          # ADMIN_BOOTSTRAP_TOKEN is treated specially: if the passkey is
-          # already provisioned we delete it (best-effort) so the bootstrap
-          # route auto-locks even if the GH secret was left behind.
           sync_secret () {
             local name="$1"
             local value="$2"
@@ -257,7 +256,8 @@ jobs:
 
           for n in FLY_API_TOKEN FLY_ORG NEON_API_KEY NEON_ORG_ID UPSTASH_EMAIL UPSTASH_API_KEY \
                    TF_GITHUB_TOKEN FASTMAIL_API_TOKEN \
-                   ADMIN_PASSKEY_CREDENTIAL_ID ADMIN_PASSKEY_PUBLIC_KEY ADMIN_SESSION_SECRET; do
+                   ADMIN_PASSKEY_CREDENTIAL_ID ADMIN_PASSKEY_PUBLIC_KEY \
+                   ADMIN_SESSION_SECRET; do
             sync_secret "$n" "${!n}"
           done
 

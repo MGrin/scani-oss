@@ -28,10 +28,16 @@ page.
 ### First-time steps (do once, before merging the PR)
 
 ```bash
-# 1. Pick a one-time bootstrap token (any ≥16-char string).
+# 1. One-time bootstrap token — gates the /auth/bootstrap route until a
+#    passkey is registered. Save this value; you'll paste it into the
+#    browser later.
 gh secret set ADMIN_BOOTSTRAP_TOKEN --body "$(openssl rand -hex 32)"
 
-# 2. Add the Fastmail token (only one not already in GH secrets; optional).
+# 2. Persistent HMAC key for session + challenge cookies. Never displayed,
+#    rotating it invalidates every login — only redo if compromised.
+gh secret set ADMIN_SESSION_SECRET --body "$(openssl rand -hex 32)"
+
+# 3. Fastmail token (the only provider token not already in GH secrets).
 gh secret set FASTMAIL_API_TOKEN --body "<paste from ~/.secrets>"
 ```
 
@@ -52,11 +58,15 @@ That's it — merge the PR.
 1. Open https://admin.scani.xyz/auth/bootstrap
 2. Paste the bootstrap token → click "Create passkey"
 3. 1Password prompts — save the passkey to your vault
-4. The page displays the 3 secrets exactly once. Run the printed
-   `gh secret set ... / gh secret delete / gh workflow run` block.
-5. Next deploy completes (~1 min). /auth/bootstrap now 404s, /auth/login
+4. The page displays two secrets exactly once (credential id + public key).
+   Run the printed gh secret set / gh secret delete / gh workflow run block.
+5. Next deploy completes (~1 min). /auth/bootstrap locks; /auth/login
    accepts your passkey.
 ```
+
+To rotate `ADMIN_SESSION_SECRET` later, generate a new one and re-set it as
+the GH secret, then redeploy. All existing sessions are invalidated and you
+re-authenticate via passkey.
 
 ### Locked-down state
 

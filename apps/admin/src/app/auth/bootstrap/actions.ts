@@ -73,7 +73,6 @@ export async function completeBootstrapAction(
       ok: true;
       credentialId: string;
       publicKey: string;
-      sessionSecret: string;
     }
   | { ok: false; error: string }
 > {
@@ -104,7 +103,6 @@ export async function completeBootstrapAction(
       ok: true,
       credentialId: info.credential.id,
       publicKey: b64urlEncode(info.credential.publicKey),
-      sessionSecret: b64urlEncode(crypto.getRandomValues(new Uint8Array(32))),
     };
   } catch (err) {
     return { ok: false, error: err instanceof Error ? err.message : String(err) };

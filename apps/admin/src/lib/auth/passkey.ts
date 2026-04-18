@@ -7,10 +7,10 @@ import type {
   PublicKeyCredentialRequestOptionsJSON,
 } from '@simplewebauthn/types';
 import { b64urlDecode } from './b64';
-import { getAuthConfig } from './config';
+import { getPasskeyConfig } from './config';
 
 export async function beginPasskeyLogin(): Promise<PublicKeyCredentialRequestOptionsJSON> {
-  const { rpId, credentialIdB64 } = getAuthConfig();
+  const { rpId, credentialIdB64 } = getPasskeyConfig();
   return generateAuthenticationOptions({
     rpID: rpId,
     allowCredentials: [{ id: credentialIdB64 }],
@@ -22,7 +22,7 @@ export async function verifyPasskeyLogin(
   response: AuthenticationResponseJSON,
   expectedChallenge: string
 ): Promise<boolean> {
-  const { rpId, origin, credentialIdB64, publicKeyB64 } = getAuthConfig();
+  const { rpId, origin, credentialIdB64, publicKeyB64 } = getPasskeyConfig();
   const result = await verifyAuthenticationResponse({
     response,
     expectedChallenge,
