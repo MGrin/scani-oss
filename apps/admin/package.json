@@ -1,0 +1,40 @@
+{
+  "name": "@scani/admin",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "next dev -H 127.0.0.1 --port 5175",
+    "build": "next build",
+    "build:cf": "next-on-pages",
+    "start": "next start -H 127.0.0.1 --port 5175",
+    "preview:cf": "wrangler pages dev .vercel/output/static --compatibility-date=2025-01-01 --compatibility-flag=nodejs_compat",
+    "clean": "rm -rf .next .vercel",
+    "lint": "biome check .",
+    "lint:fix": "biome check --write .",
+    "type-check": "tsgo --noEmit",
+    "register-passkey": "bun scripts/register-passkey.ts",
+    "sync-env": "./scripts/sync-env.sh"
+  },
+  "dependencies": {
+    "@neondatabase/serverless": "^0.10.4",
+    "@simplewebauthn/browser": "^11.0.0",
+    "@simplewebauthn/server": "^11.0.0",
+    "next": "^14.2.20",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "@cloudflare/next-on-pages": "^1.13.16",
+    "@simplewebauthn/types": "^11.0.0",
+    "@types/node": "^22.10.2",
+    "@types/react": "^18.3.28",
+    "@types/react-dom": "^18.3.7",
+    "autoprefixer": "^10.5.0",
+    "postcss": "^8.5.10",
+    "tailwindcss": "^3.4.19",
+    "typescript": "^5",
+    "vercel": "^39.2.0",
+    "wrangler": "^3.90.0"
+  }
+}

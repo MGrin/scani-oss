@@ -38,6 +38,18 @@ resource "cloudflare_record" "app" {
   comment = "Cloudflare Pages — scani-frontend"
 }
 
+# Internal admin dashboard → scani-admin Pages project. Not a public app —
+# protected by passkey auth at the application layer, nothing else runs here.
+resource "cloudflare_record" "admin" {
+  zone_id = data.cloudflare_zone.primary.id
+  name    = "admin"
+  content = "scani-admin.pages.dev"
+  type    = "CNAME"
+  proxied = true
+  ttl     = 1
+  comment = "Cloudflare Pages — scani-admin (passkey-gated)"
+}
+
 # Marketing / landing page (apex + www) → scani-landing Pages project.
 # Split from the app to keep build pipelines and release cadences
 # independent; landing can ship without reinstalling the app's 800-dep
@@ -70,6 +82,12 @@ resource "cloudflare_pages_domain" "app" {
   account_id   = var.cloudflare_account_id
   project_name = "scani-frontend"
   domain       = local.app_host
+}
+
+resource "cloudflare_pages_domain" "admin" {
+  account_id   = var.cloudflare_account_id
+  project_name = "scani-admin"
+  domain       = local.admin_host
 }
 
 resource "cloudflare_pages_domain" "landing_apex" {

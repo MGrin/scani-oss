@@ -1,0 +1,8 @@
+node_modules
+.next
+.vercel
+.turbo
+.wrangler
+next-env.d.ts.bak
+*.tsbuildinfo
+.env.local

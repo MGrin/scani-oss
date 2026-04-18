@@ -1,0 +1,12 @@
+name = "scani-admin"
+compatibility_date = "2025-01-01"
+compatibility_flags = ["nodejs_compat"]
+pages_build_output_dir = ".vercel/output/static"
+
+# Secrets (passkey credentials, provider tokens, session HMAC key) are set via:
+#   wrangler pages secret put <KEY> --project-name scani-admin
+#
+# Public env vars live below; they're safe to commit.
+[env.production.vars]
+ADMIN_RP_ID = "admin.scani.xyz"
+ADMIN_ORIGIN = "https://admin.scani.xyz"
