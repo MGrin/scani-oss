@@ -42,6 +42,10 @@ env:
   # Sentry auth token (`sntryu_...`) used by jianyuan/sentry to provision
   # projects + keys. Must be set as a GH secret before TF can plan/apply.
   TF_VAR_sentry_auth_token: ${{ secrets.SENTRY_AUTH_TOKEN }}
+  # Sentry org slug. Has a default in variables.tf, but the shell-level
+  # `terraform import` commands in the one-shot step can't read TF
+  # defaults, so we surface it here too.
+  TF_VAR_sentry_org: ${{ secrets.SENTRY_ORG }}
   # Fail fast on any missing interactive prompt.
   TF_INPUT: "false"
 
