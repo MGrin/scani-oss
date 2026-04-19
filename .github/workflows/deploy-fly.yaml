@@ -17,6 +17,7 @@ concurrency:
 permissions:
   contents: read
   actions: read
+  pull-requests: read
 
 jobs:
   # Skip re-validation when the merge commit's PR already passed CI.
@@ -34,21 +35,25 @@ jobs:
           REPO: ${{ github.repository }}
           SHA: ${{ github.sha }}
         run: |
-          set -euo pipefail
+          set -uo pipefail
           if [ "${{ github.event_name }}" != "push" ]; then
             echo "validated=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
-          prs=$(gh api "repos/$REPO/commits/$SHA/pulls" --jq '.[].number' || echo "")
+          prs_json=$(gh api "repos/$REPO/commits/$SHA/pulls" 2>/dev/null || echo "[]")
+          prs=$(echo "$prs_json" | jq -r '.[].number // empty')
           if [ -z "$prs" ]; then
             echo "No PR associated with $SHA — will run validation"
             echo "validated=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
           for pr in $prs; do
-            head_sha=$(gh api "repos/$REPO/pulls/$pr" --jq '.head.sha')
+            head_sha=$(gh api "repos/$REPO/pulls/$pr" --jq '.head.sha' 2>/dev/null || echo "")
+            if [ -z "$head_sha" ]; then
+              continue
+            fi
             success=$(gh api "repos/$REPO/actions/runs?head_sha=$head_sha&event=pull_request&status=success" \
-              --jq '[.workflow_runs[] | select(.name == "CI")] | length')
+              --jq '[.workflow_runs[] | select(.name == "CI")] | length' 2>/dev/null || echo 0)
             if [ "$success" -gt 0 ]; then
               echo "PR #$pr (head $head_sha) already has a successful CI run — skipping re-validation"
               echo "validated=true" >> "$GITHUB_OUTPUT"
