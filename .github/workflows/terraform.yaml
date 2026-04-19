@@ -107,6 +107,10 @@ jobs:
           terraform_version: ${{ env.TF_VERSION }}
           terraform_wrapper: false
 
+      # flyctl is invoked from the machine-count guardrail in fly.tf
+      # (terraform_data.*_machine_count) via local-exec during apply.
+      - uses: superfly/flyctl-actions/setup-flyctl@master
+
       - run: terraform init -input=false
 
       # Idempotent self-healing imports. When a resource is added to TF that
