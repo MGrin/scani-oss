@@ -4,7 +4,13 @@
 # Base: Debian (bookworm-slim) — not Alpine — so postgres.js native prepared-statement
 # paths don't trip on musl.
 
-ARG BUN_VERSION=1.3
+# Bun 1.3.12 has a decorator-emission regression: its bundler emits
+# `var _init = __decorate(...)` helpers that its own parser then rejects
+# with `Cannot declare a var variable that shadows a let/const/class
+# variable: '_init'` on `@Service()` classes (typedi DI). Pinned to 1.3.11
+# until the upstream fix lands; floating `1.3` brought 1.3.12 in and
+# crash-looped backend + worker on the 2026-04-19 stability deploy.
+ARG BUN_VERSION=1.3.11
 
 # ---------- deps ----------
 FROM oven/bun:${BUN_VERSION} AS deps

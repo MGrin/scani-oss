@@ -3,7 +3,9 @@
 # Multi-stage Bun image for scani-worker. Identical pattern to
 # apps/backend/Dockerfile so a given commit produces interchangeable images.
 
-ARG BUN_VERSION=1.3
+# Pinned to 1.3.11 — Bun 1.3.12 emits decorator helpers its own parser
+# rejects on @Service() classes. See apps/backend/Dockerfile for details.
+ARG BUN_VERSION=1.3.11
 
 FROM oven/bun:${BUN_VERSION} AS deps
 WORKDIR /app
