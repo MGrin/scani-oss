@@ -8,7 +8,17 @@ const env = loadEnv();
 import { cors } from '@elysiajs/cors';
 import { trpc } from '@elysiajs/trpc';
 import { createTimer, logger, sanitizeUrl, wsLogger } from '@scani/core/utils/logger';
+import {
+  flushSentry,
+  initSentry,
+  captureException as sentryCapture,
+} from '@scani/core/utils/sentry';
 import { IntegrationManager } from '@scani/integrations';
+
+// Sentry is the first thing we wire up so any subsequent boot-time failure
+// reaches the error tracker instead of being lost to stdout.
+await initSentry({ component: 'backend', release: env.SENTRY_RELEASE });
+
 import { sql } from 'drizzle-orm';
 import { Elysia } from 'elysia';
 import { Redis } from 'ioredis';
@@ -221,6 +231,14 @@ const app = new Elysia()
       `💥 HTTP Request failed: ${errorMessage}`
     );
 
+    // Mirror the unhandled error to Sentry so ops has a stack trace even
+    // when the user's browser only sees `{error, requestId}`.
+    sentryCapture(error, {
+      requestId: requestId || 'unknown',
+      method: request.method,
+      url: sanitizeUrl(request.url),
+    });
+
     set.status = 500;
 
     return {
@@ -339,6 +357,62 @@ app
         timestamp: new Date().toISOString(),
       };
     }
+  })
+  // Deep health: everything the three user flows depend on. Returns 200 iff
+  // DB + Redis + R2 + AI are all reachable; 503 with a per-check breakdown
+  // otherwise. Used by the deploy-time smoke test to catch silent breakage
+  // before traffic hits the new machine.
+  .get('/health/deep', async ({ set }: { set: { status: number } }) => {
+    const checks: Record<string, { ok: boolean; latencyMs?: number; error?: string }> = {};
+
+    try {
+      const t0 = performance.now();
+      await db.execute(sql`SELECT 1`);
+      checks.db = { ok: true, latencyMs: Math.round(performance.now() - t0) };
+    } catch (err) {
+      checks.db = { ok: false, error: err instanceof Error ? err.message : String(err) };
+    }
+
+    try {
+      const t0 = performance.now();
+      const reply = await redisConnection.ping();
+      checks.redis = {
+        ok: reply === 'PONG',
+        latencyMs: Math.round(performance.now() - t0),
+        ...(reply !== 'PONG' ? { error: `unexpected reply ${reply}` } : {}),
+      };
+    } catch (err) {
+      checks.redis = { ok: false, error: err instanceof Error ? err.message : String(err) };
+    }
+
+    try {
+      const { healthCheck: r2HealthCheck } = await import('@scani/core/external-services/storage');
+      checks.r2 = await r2HealthCheck();
+    } catch (err) {
+      checks.r2 = { ok: false, error: err instanceof Error ? err.message : String(err) };
+    }
+
+    try {
+      const { AIService } = await import('@scani/core/services');
+      const ai = Container.get(AIService);
+      const available = (
+        ai as unknown as { aiProviderManager?: { hasAvailableProvider: () => boolean } }
+      ).aiProviderManager?.hasAvailableProvider();
+      checks.ai = {
+        ok: Boolean(available),
+        ...(available ? {} : { error: 'no AI provider configured' }),
+      };
+    } catch (err) {
+      checks.ai = { ok: false, error: err instanceof Error ? err.message : String(err) };
+    }
+
+    const allOk = Object.values(checks).every((c) => c.ok);
+    if (!allOk) set.status = 503;
+    return {
+      status: allOk ? 'ok' : 'degraded',
+      timestamp: new Date().toISOString(),
+      checks,
+    };
   })
   .ws('/', {
     // biome-ignore lint/suspicious/noExplicitAny: Elysia WebSocket types
@@ -536,6 +610,10 @@ const gracefulShutdown = async (signal: string) => {
     } catch (err) {
       logger.error({ err }, 'Error closing BullMQ/Redis during shutdown');
     }
+
+    // Flush Sentry before exit so the shutdown-triggering error (if any)
+    // makes it to the dashboard. 2s is plenty over Fly's private net.
+    await flushSentry(2000);
 
     logger.info({}, '🏁 Graceful shutdown completed');
     process.exit(0);

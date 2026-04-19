@@ -76,7 +76,7 @@ function uriEncode(str: string, encodeSlash = true): string {
 
 function sign(
   cfg: R2Config,
-  method: 'GET' | 'PUT' | 'DELETE',
+  method: 'GET' | 'PUT' | 'DELETE' | 'HEAD',
   canonicalPath: string,
   canonicalQuery: string,
   payloadHash: string,
@@ -268,6 +268,43 @@ export async function readTempBlob(key: string): Promise<Buffer> {
     throw new Error(`R2 GET ${key} failed: ${res.status} ${await res.text()}`);
   }
   return Buffer.from(await res.arrayBuffer());
+}
+
+/**
+ * Verify R2 connectivity + credentials. Does a signed HEAD on a nonexistent
+ * key — a 404 or 200 means auth worked; a 401/403/timeout means config is
+ * wrong. Returns `{ ok: true, latencyMs }` on success, `{ ok: false, error }`
+ * otherwise. Never throws.
+ */
+export async function healthCheck(): Promise<
+  { ok: true; latencyMs: number } | { ok: false; error: string }
+> {
+  try {
+    const cfg = loadConfig();
+    const now = new Date();
+    const key = '__healthcheck__/nonexistent';
+    const payloadHash = sha256Hex('');
+    const canonicalPath = `/${cfg.bucket}/${uriEncode(key, false)}`;
+    const { authorization, amzDateStr } = sign(cfg, 'HEAD', canonicalPath, '', payloadHash, now);
+    const t0 = performance.now();
+    const res = await fetch(`${endpoint(cfg)}${canonicalPath}`, {
+      method: 'HEAD',
+      headers: {
+        host: host(cfg),
+        authorization,
+        'x-amz-date': amzDateStr,
+        'x-amz-content-sha256': payloadHash,
+      },
+      signal: AbortSignal.timeout(3_000),
+    });
+    const latencyMs = Math.round(performance.now() - t0);
+    if (res.status === 200 || res.status === 404) {
+      return { ok: true, latencyMs };
+    }
+    return { ok: false, error: `unexpected status ${res.status}` };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : String(err) };
+  }
 }
 
 /** Delete a temp blob from R2 (worker calls after successful processing). */

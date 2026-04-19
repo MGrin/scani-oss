@@ -50,6 +50,13 @@
       "when": 1776900100000,
       "tag": "0044_add_check_constraints",
       "breakpoints": true
+    },
+    {
+      "idx": 46,
+      "version": "7",
+      "when": 1777000000000,
+      "tag": "0046_credentials_import_status",
+      "breakpoints": true
     }
   ]
 }

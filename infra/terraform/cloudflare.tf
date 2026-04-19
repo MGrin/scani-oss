@@ -22,13 +22,13 @@ resource "cloudflare_r2_bucket" "job_uploads" {
   location = "APAC"
 }
 
-# Cloudflare Pages projects:
-# - scani-frontend, scani-landing: created via the CF API on first bootstrap
-#   (pre-date Terraform); subsequent deploys are driven by `wrangler pages
-#   deploy` from CI. Their cloudflare_pages_domain bindings live below.
-# - scani-admin: managed here (resource "cloudflare_pages_project" "admin"),
-#   so both the project and its custom-domain binding live in Terraform.
-#   CI polls until the project exists, then `wrangler pages deploy`s to it.
+# Cloudflare Pages projects — all three are Terraform-managed as of the
+# stability/observability PR (2026-04-19). Project deploys (artifact uploads)
+# still run from CI via `wrangler pages deploy`, but the project config +
+# build env vars are owned by TF. scani-frontend and scani-landing existed
+# before TF took over — see the `import` blocks at the bottom of this file
+# for the bootstrap step; blocks can be removed after the first successful
+# `terraform apply`.
 
 # ---------- DNS records ----------
 
@@ -97,7 +97,7 @@ resource "cloudflare_record" "www" {
 
 resource "cloudflare_pages_domain" "app" {
   account_id   = var.cloudflare_account_id
-  project_name = "scani-frontend"
+  project_name = cloudflare_pages_project.frontend.name
   domain       = local.app_host
 }
 
@@ -129,12 +129,46 @@ resource "cloudflare_pages_domain" "admin" {
 
 resource "cloudflare_pages_domain" "landing_apex" {
   account_id   = var.cloudflare_account_id
-  project_name = "scani-landing"
+  project_name = cloudflare_pages_project.landing.name
   domain       = local.landing_host
 }
 
 resource "cloudflare_pages_domain" "landing_www" {
   account_id   = var.cloudflare_account_id
-  project_name = "scani-landing"
+  project_name = cloudflare_pages_project.landing.name
   domain       = "www.${var.domain}"
+}
+
+# ---------------------------------------------------------------------------
+# scani-frontend + scani-landing Pages projects, imported into TF.
+# Both pre-date the TF setup. The `import` blocks bootstrap existing prod
+# state; after the first `terraform apply`, TF owns their config. Keep the
+# resource bodies minimal so `terraform plan` produces no drift against the
+# current production configuration — only the fields TF must manage.
+# ---------------------------------------------------------------------------
+
+resource "cloudflare_pages_project" "frontend" {
+  account_id        = var.cloudflare_account_id
+  name              = "scani-frontend"
+  production_branch = "main"
+}
+
+resource "cloudflare_pages_project" "landing" {
+  account_id        = var.cloudflare_account_id
+  name              = "scani-landing"
+  production_branch = "main"
+}
+
+# TF 1.5+ `import` blocks — declarative equivalent of `terraform import`.
+# Idempotent: after the first apply, TF considers the state "imported" and
+# these blocks are no-ops on subsequent applies. Can be removed in a
+# follow-up PR once the merge commit has deployed.
+import {
+  to = cloudflare_pages_project.frontend
+  id = "${var.cloudflare_account_id}/scani-frontend"
+}
+
+import {
+  to = cloudflare_pages_project.landing
+  id = "${var.cloudflare_account_id}/scani-landing"
 }

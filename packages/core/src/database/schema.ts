@@ -2,6 +2,7 @@ import { relations } from 'drizzle-orm';
 import {
   boolean,
   index,
+  integer,
   jsonb,
   pgTable,
   real,
@@ -317,6 +318,14 @@ export const userIntegrationCredentials = pgTable(
     isActive: boolean('is_active').notNull().default(true),
     lastUsedAt: timestamp('last_used_at', { withTimezone: true }),
     expiresAt: timestamp('expires_at', { withTimezone: true }), // For OAuth tokens with expiration
+    // Orphan-reconciliation tracking. See migration 0046. `pending_enqueue` =
+    // DB row committed but the BullMQ enqueue hasn't acknowledged; the
+    // reconciler job in apps/worker/src/schedulers/ picks up stale rows.
+    importStatus: text('import_status').notNull().default('enqueued'), // 'pending_enqueue' | 'enqueued' | 'failed'
+    importJobId: text('import_job_id'),
+    importEnqueuedAt: timestamp('import_enqueued_at', { withTimezone: true }),
+    importLastError: text('import_last_error'),
+    importRetryCount: integer('import_retry_count').notNull().default(0),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },

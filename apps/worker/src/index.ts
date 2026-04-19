@@ -4,12 +4,21 @@ import { loadEnv } from './config/env';
 
 const env = loadEnv();
 
-import { JOB_NAMES, REPEATABLE_SCHEDULES, SCANI_QUEUE } from '@scani/core/queues';
+import { JOB_NAMES, REPEATABLE_SCHEDULES, SCANI_DLQ, SCANI_QUEUE } from '@scani/core/queues';
 // Import DI-registered modules so Container.get() resolves.
 import '@scani/core/repositories';
 import '@scani/core/services';
 import { createComponentLogger } from '@scani/core/utils/logger';
+import {
+  flushSentry,
+  initSentry,
+  captureException as sentryCapture,
+} from '@scani/core/utils/sentry';
 import { IntegrationManager } from '@scani/integrations';
+
+// Sentry is the first thing we wire up so boot-time failures are tracked.
+await initSentry({ component: 'worker', release: env.SENTRY_RELEASE });
+
 import { type Job, Queue, Worker } from 'bullmq';
 import { Redis } from 'ioredis';
 import { Container } from 'typedi';
@@ -19,6 +28,7 @@ import { buildExchangeImportProcessor } from './processors/exchange-import';
 import { buildFileImportProcessor } from './processors/file-import';
 import { buildHoldingPriceUpdateProcessor } from './processors/holding-price-update';
 import { pricingProcessor } from './processors/pricing';
+import { buildReconcilePendingCredentialsProcessor } from './processors/reconcile-pending-credentials';
 import { buildScreenshotParseProcessor } from './processors/screenshot-parse';
 import { buildUserDataDeleteProcessor } from './processors/user-data-delete';
 import { walletBalancesProcessor } from './processors/wallet-balances';
@@ -50,6 +60,10 @@ async function main(): Promise<void> {
   const publisher = connection.duplicate();
 
   const queue = new Queue(SCANI_QUEUE, { connection });
+  // Dead-letter queue. Jobs that exhaust retries get copied here so we
+  // don't lose the failure context when BullMQ's removeOnFail lattice
+  // eventually drops the original job.
+  const deadLetterQueue = new Queue(SCANI_DLQ, { connection });
 
   // Register repeatable jobs so BullMQ fires them on schedule. Using
   // upsertJobScheduler (BullMQ 5.x) is idempotent: redeploys don't create
@@ -69,6 +83,7 @@ async function main(): Promise<void> {
     [JOB_NAMES.walletBalances]: walletBalancesProcessor,
     [JOB_NAMES.exchangeBalances]: exchangeBalancesProcessor,
     [JOB_NAMES.apyPayouts]: apyPayoutsProcessor,
+    [JOB_NAMES.reconcilePendingCredentials]: buildReconcilePendingCredentialsProcessor(queue),
     // User-initiated jobs (built with a Redis publisher for WS events).
     [JOB_NAMES.screenshotParse]: buildScreenshotParseProcessor(publisher),
     [JOB_NAMES.exchangeImport]: buildExchangeImportProcessor(publisher),
@@ -106,7 +121,7 @@ async function main(): Promise<void> {
     }
   );
 
-  worker.on('failed', (job, err) => {
+  worker.on('failed', async (job, err) => {
     logger.error(
       {
         jobId: job?.id,
@@ -115,6 +130,33 @@ async function main(): Promise<void> {
       },
       '❌ Job failed'
     );
+    // Mirror the failure to Sentry with the job name as a tag so dashboards
+    // can group by flow (screenshot-parse, wallet-import, exchange-import).
+    sentryCapture(err, { jobName: job?.name ?? 'unknown', jobId: String(job?.id ?? 'unknown') });
+
+    // DLQ push on terminal failure (all retry attempts exhausted). Without
+    // this, BullMQ's `removeOnFail: 500` eventually truncates the failure
+    // and the user-visible evidence is lost.
+    if (job && job.attemptsMade >= (job.opts.attempts ?? 1)) {
+      try {
+        await deadLetterQueue.add(
+          job.name,
+          {
+            originalJobId: job.id,
+            originalName: job.name,
+            data: job.data,
+            failedReason: err instanceof Error ? err.message : String(err),
+            stack: err instanceof Error ? err.stack : undefined,
+            attemptsMade: job.attemptsMade,
+            timestamp: Date.now(),
+          },
+          { removeOnComplete: false, removeOnFail: false }
+        );
+        logger.warn({ jobId: job.id, name: job.name }, '☠️ Job pushed to DLQ');
+      } catch (dlqErr) {
+        logger.error({ err: dlqErr }, '⚠️ Failed to write to DLQ');
+      }
+    }
   });
 
   // --- Graceful shutdown ---------------------------------------------------
@@ -126,12 +168,15 @@ async function main(): Promise<void> {
     try {
       await worker.close();
       await queue.close();
+      await deadLetterQueue.close();
       await publisher.quit();
       await connection.quit();
+      await flushSentry(2000);
       logger.info({}, '✅ Worker drained cleanly');
       process.exit(0);
     } catch (err) {
       logger.error({ error: err }, '❌ Error during shutdown');
+      await flushSentry(2000);
       process.exit(1);
     }
   };
@@ -144,7 +189,9 @@ async function main(): Promise<void> {
   );
 }
 
-main().catch((error) => {
+main().catch(async (error) => {
   logger.error({ error }, '💥 Unhandled error in worker');
+  sentryCapture(error);
+  await flushSentry(2000);
   process.exit(1);
 });

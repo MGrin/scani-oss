@@ -89,33 +89,42 @@ const DEFAULT_OPTS: Record<UserJobName, JobsOptions> = {
  * same jobId, giving us free idempotency on double-submits. Including
  * `requestId` (a client UUID) means a legitimate re-submission produces a
  * fresh id while accidental duplicates collapse.
+ *
+ * BullMQ rejects any custom job id containing ':' (used internally as a Redis
+ * key separator), so all parts are joined with '_' instead. UUIDs use '-',
+ * EVM addresses are hex, and our job names are kebab-case — none collide.
  */
-function computeJobId<Name extends UserJobName>(name: Name, data: UserJobDataMap[Name]): string {
+const JOB_ID_SEP = '_';
+
+export function computeJobId<Name extends UserJobName>(
+  name: Name,
+  data: UserJobDataMap[Name]
+): string {
   switch (name) {
     case JOB_NAMES.walletImport: {
       const d = data as WalletImportJob;
-      return `${name}:${d.userId}:${d.chain}:${d.address.toLowerCase()}:${d.requestId}`;
+      return [name, d.userId, d.chain, d.address.toLowerCase(), d.requestId].join(JOB_ID_SEP);
     }
     case JOB_NAMES.screenshotParse: {
       const d = data as ScreenshotParseJob;
       const keyDigest = createHash('sha256').update(d.r2Keys.join('|')).digest('hex').slice(0, 16);
-      return `${name}:${d.userId}:${keyDigest}:${d.requestId}`;
+      return [name, d.userId, keyDigest, d.requestId].join(JOB_ID_SEP);
     }
     case JOB_NAMES.exchangeImport: {
       const d = data as ExchangeImportJob;
-      return `${name}:${d.userId}:${d.institutionId}:${d.requestId}`;
+      return [name, d.userId, d.institutionId, d.requestId].join(JOB_ID_SEP);
     }
     case JOB_NAMES.fileImport: {
       const d = data as FileImportJob;
-      return `${name}:${d.userId}:${d.accountId}:${d.requestId}`;
+      return [name, d.userId, d.accountId, d.requestId].join(JOB_ID_SEP);
     }
     case JOB_NAMES.holdingPriceUpdate: {
       const d = data as HoldingPriceUpdateJob;
-      return `${name}:${d.userId}:${d.holdingId}:${d.requestId}`;
+      return [name, d.userId, d.holdingId, d.requestId].join(JOB_ID_SEP);
     }
     case JOB_NAMES.userDataDelete: {
       const d = data as UserDataDeleteJob;
-      return `${name}:${d.userId}:${d.requestId}`;
+      return [name, d.userId, d.requestId].join(JOB_ID_SEP);
     }
     default: {
       const _exhaustive: never = name;

@@ -106,29 +106,28 @@ function toTRPCError(
 }
 
 /**
- * Enqueue the post-validate import job and return a jobId. Runs on the
- * worker against the credentials we just persisted in `integration_credentials`.
+ * Store credentials + enqueue import as a single guarded operation.
+ *
+ * The write to `user_integration_credentials` and the enqueue to BullMQ are
+ * not naturally atomic (Postgres vs Redis). We bridge the gap via an
+ * `import_status` column:
+ *
+ *   1. Store credentials with `import_status = 'pending_enqueue'`.
+ *   2. Call `enqueueJob(...)`.
+ *   3. On success, write `import_status = 'enqueued'` and stamp `import_job_id`.
+ *   4. On enqueue failure, write `import_status = 'failed'` with the error
+ *      message and rethrow — the reconciler scheduler will retry later.
+ *
+ * If the backend process dies between steps 1 and 2, the row remains in
+ * `pending_enqueue` and the worker's reconciler (apps/worker/src/schedulers/
+ * reconcile-pending-credentials.ts) sweeps it up within ~5 minutes.
  */
-async function enqueueImport(
-  userId: string,
-  institutionId: string,
-  provider: string,
-  requestId: string
-): Promise<string> {
-  return enqueueJob(JOB_NAMES.exchangeImport, {
-    userId,
-    requestId,
-    institutionId,
-    provider,
-  });
-}
-
-/** Helper: look up institution by name and store credentials */
-async function storeExchangeCredentials(
+async function storeAndEnqueueImport(
   userId: string,
   institutionName: string,
-  credentials: Record<string, string>
-) {
+  credentials: Record<string, string>,
+  requestId: string
+): Promise<{ institutionId: string; jobId: string }> {
   const credentialsService = Container.get(IntegrationCredentialsService);
 
   const [institution] = await db
@@ -144,7 +143,8 @@ async function storeExchangeCredentials(
     });
   }
 
-  await credentialsService.storeCredentials(
+  // 1. Store with pending_enqueue
+  const stored = await credentialsService.storeCredentials(
     userId,
     institution.id,
     { ...credentials, storedAt: new Date().toISOString() },
@@ -152,7 +152,24 @@ async function storeExchangeCredentials(
     new Date(Date.now() + 365 * 24 * 60 * 60 * 1000)
   );
 
-  return institution.id;
+  // 2. Enqueue; on failure, mark the row failed so UI surfaces actionable error.
+  try {
+    const jobId = await enqueueJob(JOB_NAMES.exchangeImport, {
+      userId,
+      requestId,
+      institutionId: institution.id,
+      provider: institutionName,
+    });
+    // 3. Promote to enqueued.
+    await credentialsService.markImportEnqueued(stored.id, jobId);
+    return { institutionId: institution.id, jobId };
+  } catch (enqueueError) {
+    await credentialsService.markImportFailed(
+      stored.id,
+      enqueueError instanceof Error ? enqueueError.message : String(enqueueError)
+    );
+    throw enqueueError;
+  }
 }
 
 const apiKeyInput = z.object({
@@ -183,11 +200,12 @@ function createApiKeyOnlyRouter(
       }
 
       try {
-        const institutionId = await storeExchangeCredentials(userId, name, {
-          apiKey: input.apiKey,
-          apiSecret: input.apiSecret,
-        });
-        const jobId = await enqueueImport(userId, institutionId, name, input.requestId);
+        const { institutionId, jobId } = await storeAndEnqueueImport(
+          userId,
+          name,
+          { apiKey: input.apiKey, apiSecret: input.apiSecret },
+          input.requestId
+        );
         return {
           success: true,
           message: `${name} credentials validated and stored`,
@@ -238,12 +256,16 @@ function createPassphraseRouter(
         }
 
         try {
-          const institutionId = await storeExchangeCredentials(userId, name, {
-            apiKey: input.apiKey,
-            apiSecret: input.apiSecret,
-            passphrase: input.passphrase,
-          });
-          const jobId = await enqueueImport(userId, institutionId, name, input.requestId);
+          const { institutionId, jobId } = await storeAndEnqueueImport(
+            userId,
+            name,
+            {
+              apiKey: input.apiKey,
+              apiSecret: input.apiSecret,
+              passphrase: input.passphrase,
+            },
+            input.requestId
+          );
           return {
             success: true,
             message: `${name} credentials validated and stored`,
@@ -299,10 +321,12 @@ export const integrationsRouter = router({
         }
 
         try {
-          const institutionId = await storeExchangeCredentials(ctx.userId, 'Wise', {
-            apiToken: input.apiToken,
-          });
-          const jobId = await enqueueImport(ctx.userId, institutionId, 'Wise', input.requestId);
+          const { institutionId, jobId } = await storeAndEnqueueImport(
+            ctx.userId,
+            'Wise',
+            { apiToken: input.apiToken },
+            input.requestId
+          );
           return {
             success: true,
             message: 'Wise credentials validated and stored',
@@ -345,14 +369,10 @@ export const integrationsRouter = router({
         }
 
         try {
-          const institutionId = await storeExchangeCredentials(ctx.userId, 'Interactive Brokers', {
-            token: input.token,
-            queryId: input.queryId,
-          });
-          const jobId = await enqueueImport(
+          const { institutionId, jobId } = await storeAndEnqueueImport(
             ctx.userId,
-            institutionId,
             'Interactive Brokers',
+            { token: input.token, queryId: input.queryId },
             input.requestId
           );
           return {

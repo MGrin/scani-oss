@@ -8,6 +8,13 @@
 /** Single queue for all scani background work. */
 export const SCANI_QUEUE = 'scani-jobs';
 
+/**
+ * Dead-letter queue. Jobs that exhaust their retry attempts are pushed here
+ * so they don't vanish with BullMQ's `removeOnFail` truncation. The admin
+ * BullMQ dashboard surfaces them for inspection + manual replay.
+ */
+export const SCANI_DLQ = 'scani-dlq';
+
 export const JOB_NAMES = {
   /** Scheduled by BullMQ repeatable jobs hourly. */
   pricing: 'pricing',
@@ -17,6 +24,8 @@ export const JOB_NAMES = {
   exchangeBalances: 'exchange-balances',
   /** Scheduled by BullMQ repeatable jobs daily at midnight UTC. */
   apyPayouts: 'apy-payouts',
+  /** Scheduled every minute: reconcile credentials stuck in pending_enqueue. */
+  reconcilePendingCredentials: 'reconcile-pending-credentials',
   /** User-initiated: parse N screenshots via AI providers. */
   screenshotParse: 'screenshot-parse',
   /** User-initiated: import accounts and holdings from an exchange. */
@@ -45,4 +54,8 @@ export const REPEATABLE_SCHEDULES: Array<{ name: JobName; pattern: string }> = [
   { name: JOB_NAMES.walletBalances, pattern: '0 * * * *' },
   { name: JOB_NAMES.exchangeBalances, pattern: '0 * * * *' },
   { name: JOB_NAMES.apyPayouts, pattern: '0 0 * * *' },
+  // Reconcile credentials stuck in 'pending_enqueue' every minute — the
+  // backend marks rows pending_enqueue, calls BullMQ.add(), and promotes
+  // to 'enqueued'. If the backend dies in between, this sweeper re-enqueues.
+  { name: JOB_NAMES.reconcilePendingCredentials, pattern: '* * * * *' },
 ];

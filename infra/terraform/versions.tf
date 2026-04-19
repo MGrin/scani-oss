@@ -26,6 +26,10 @@ terraform {
       source  = "hashicorp/random"
       version = "~> 3.6"
     }
+    sentry = {
+      source  = "jianyuan/sentry"
+      version = "~> 0.12"
+    }
   }
 
   # Terraform state lives in a Cloudflare R2 bucket via the S3-compatible API.

@@ -65,3 +65,52 @@ resource "github_actions_secret" "r2_account_id" {
   secret_name     = "R2_ACCOUNT_ID"
   plaintext_value = var.cloudflare_account_id
 }
+
+# -----------------------------------------------------------------------
+# Sentry secrets — DSN per app plus the shared auth token used by CI for
+# sourcemap uploads. The deploy workflow stages these onto Fly secrets
+# (backend/worker) or passes them as Vite/Next build env (frontend/admin/
+# landing). See sentry.tf for project provisioning.
+# -----------------------------------------------------------------------
+
+resource "github_actions_secret" "sentry_dsn_backend" {
+  repository      = data.github_repository.scani.name
+  secret_name     = "SENTRY_DSN_BACKEND"
+  plaintext_value = data.sentry_key.backend.dsn.public
+}
+
+resource "github_actions_secret" "sentry_dsn_worker" {
+  repository      = data.github_repository.scani.name
+  secret_name     = "SENTRY_DSN_WORKER"
+  plaintext_value = data.sentry_key.worker.dsn.public
+}
+
+resource "github_actions_secret" "sentry_dsn_frontend" {
+  repository      = data.github_repository.scani.name
+  secret_name     = "VITE_SENTRY_DSN_FRONTEND"
+  plaintext_value = data.sentry_key.frontend.dsn.public
+}
+
+resource "github_actions_secret" "sentry_dsn_admin" {
+  repository      = data.github_repository.scani.name
+  secret_name     = "NEXT_PUBLIC_SENTRY_DSN_ADMIN"
+  plaintext_value = data.sentry_key.admin.dsn.public
+}
+
+resource "github_actions_secret" "sentry_dsn_landing" {
+  repository      = data.github_repository.scani.name
+  secret_name     = "VITE_SENTRY_DSN_LANDING"
+  plaintext_value = data.sentry_key.landing.dsn.public
+}
+
+resource "github_actions_secret" "sentry_auth_token" {
+  repository      = data.github_repository.scani.name
+  secret_name     = "SENTRY_AUTH_TOKEN"
+  plaintext_value = var.sentry_auth_token
+}
+
+resource "github_actions_secret" "sentry_org" {
+  repository      = data.github_repository.scani.name
+  secret_name     = "SENTRY_ORG"
+  plaintext_value = var.sentry_org
+}

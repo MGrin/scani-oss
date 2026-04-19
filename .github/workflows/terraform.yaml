@@ -39,6 +39,9 @@ env:
   # Terraform blocks on stdin waiting for input and the job hangs indefinitely.
   TF_VAR_cloudflare_account_id: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
   TF_VAR_fly_api_token: ${{ secrets.FLY_API_TOKEN }}
+  # Sentry auth token (`sntryu_...`) used by jianyuan/sentry to provision
+  # projects + keys. Must be set as a GH secret before TF can plan/apply.
+  TF_VAR_sentry_auth_token: ${{ secrets.SENTRY_AUTH_TOKEN }}
   # Fail fast on any missing interactive prompt.
   TF_INPUT: "false"
 

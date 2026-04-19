@@ -123,20 +123,27 @@ export class IntegrationCredentialsService extends BaseService {
       );
 
       if (existing) {
-        // Update existing credentials
+        // Update existing credentials. Reset import_status to pending_enqueue
+        // because the caller is about to try (re)enqueuing a fresh import job;
+        // leaving it 'enqueued' would mask orphaned rows from the reconciler.
         const updated = await this.credentialsRepository.update(existing.id, {
           encryptedCredentials: encrypted,
           credentialsType,
           expiresAt,
           lastUsedAt: new Date(),
           isActive: true,
+          importStatus: 'pending_enqueue',
+          importJobId: null,
+          importEnqueuedAt: null,
+          importLastError: null,
         });
         this.assertExists(updated, 'Failed to update credentials');
         this.logDebug('Credentials updated successfully', { credentialsId: updated.id });
         return updated;
       }
 
-      // Create new credentials
+      // Create new credentials. Default `import_status='pending_enqueue'` —
+      // the caller flips it to 'enqueued' once BullMQ accepts the job.
       const data: NewUserIntegrationCredentials = {
         userId,
         institutionId,
@@ -144,6 +151,7 @@ export class IntegrationCredentialsService extends BaseService {
         credentialsType,
         expiresAt,
         isActive: true,
+        importStatus: 'pending_enqueue',
       };
 
       const created = await this.credentialsRepository.create(data);
@@ -153,6 +161,51 @@ export class IntegrationCredentialsService extends BaseService {
       return created;
     } catch (error) {
       throw this.handleError(error, 'storeCredentials');
+    }
+  }
+
+  /**
+   * Promote a row from pending_enqueue → enqueued after BullMQ accepts the job.
+   */
+  async markImportEnqueued(id: string, jobId: string): Promise<void> {
+    try {
+      await this.credentialsRepository.markImportEnqueued(id, jobId);
+    } catch (error) {
+      throw this.handleError(error, 'markImportEnqueued');
+    }
+  }
+
+  /**
+   * Mark a row failed when enqueue throws. The row stays (so the UI can show
+   * the error); the reconciler may later reset it to pending_enqueue for retry.
+   */
+  async markImportFailed(id: string, errorMessage: string): Promise<void> {
+    try {
+      await this.credentialsRepository.markImportFailed(id, errorMessage);
+    } catch (error) {
+      throw this.handleError(error, 'markImportFailed');
+    }
+  }
+
+  /**
+   * Reconciler helper: find rows stuck in pending_enqueue beyond the cutoff.
+   */
+  async findPendingEnqueueOlderThan(cutoff: Date) {
+    try {
+      return await this.credentialsRepository.findPendingEnqueueOlderThan(cutoff);
+    } catch (error) {
+      throw this.handleError(error, 'findPendingEnqueueOlderThan');
+    }
+  }
+
+  /**
+   * Reset a row to pending_enqueue for a retry attempt (reconciler or admin UI).
+   */
+  async resetImportToPending(id: string): Promise<void> {
+    try {
+      await this.credentialsRepository.resetImportToPending(id);
+    } catch (error) {
+      throw this.handleError(error, 'resetImportToPending');
     }
   }
 

@@ -1,3 +1,4 @@
+import * as Sentry from '@sentry/react';
 import { useEffect, useRef, useState } from 'react';
 import type { JobEvent } from '@/contexts/RealtimeContext';
 import { useRealtimeConnection } from '@/contexts/RealtimeContext';
@@ -74,11 +75,28 @@ export function useJobStatus(jobId: string | null): UseJobStatusResult {
       applyEvent(event);
     });
 
+    // Count consecutive not_found replies. A one-off is fine (BullMQ may not
+    // have the row yet), but sustained 'not_found' signals an orphaned jobId —
+    // the backend accepted the request but the job never landed in Redis.
+    // Flag to Sentry once we've polled past the threshold so ops knows.
+    let notFoundStreak = 0;
+    const NOT_FOUND_SENTRY_THRESHOLD = 5; // ≈10s of missing-job before we flag
+
     const pollOnce = async () => {
       try {
         const status = await utils.jobs.status.fetch({ jobId });
         if (cancelled) return;
-        if (status.state === 'not_found') return;
+        if (status.state === 'not_found') {
+          notFoundStreak += 1;
+          if (notFoundStreak === NOT_FOUND_SENTRY_THRESHOLD) {
+            Sentry.captureMessage('job-tracking-orphaned', {
+              level: 'warning',
+              tags: { jobId },
+            });
+          }
+          return;
+        }
+        notFoundStreak = 0;
         setResult({
           state: mapBullState(status.state),
           progress: typeof status.progress === 'number' ? status.progress : null,

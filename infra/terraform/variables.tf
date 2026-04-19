@@ -56,3 +56,15 @@ variable "fly_api_token" {
   description = "Fly.io deploy token (mirrored into GH Secrets). Set via TF_VAR_fly_api_token."
   sensitive   = true
 }
+
+variable "sentry_auth_token" {
+  type        = string
+  description = "Sentry user auth token (sntryu_...). Set via TF_VAR_sentry_auth_token. Provisions projects + reads DSNs, then fans out to GH Actions secrets."
+  sensitive   = true
+}
+
+variable "sentry_org" {
+  type        = string
+  description = "Sentry organization slug (case-sensitive). Discovered via the Sentry API; value is 'scani'."
+  default     = "scani"
+}

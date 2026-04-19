@@ -1,3 +1,4 @@
+import * as Sentry from '@sentry/react';
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
@@ -7,6 +8,24 @@ import { ThemeProvider } from '@/contexts/ThemeContext';
 import { TRPCProvider } from '@/lib/trpc-provider';
 import App from './App.tsx';
 import './index.css';
+
+// Sentry init — DSN populated at build time from VITE_SENTRY_DSN
+// (GH Actions secret `VITE_SENTRY_DSN_FRONTEND`). No-op if unset.
+const SENTRY_DSN = import.meta.env.VITE_SENTRY_DSN;
+if (SENTRY_DSN) {
+  Sentry.init({
+    dsn: SENTRY_DSN,
+    environment: import.meta.env.VITE_SENTRY_ENVIRONMENT || import.meta.env.MODE,
+    release: import.meta.env.VITE_SENTRY_RELEASE || undefined,
+    integrations: [
+      Sentry.browserTracingIntegration(),
+      Sentry.replayIntegration({ maskAllText: true, blockAllMedia: true }),
+    ],
+    tracesSampleRate: 0.1,
+    replaysSessionSampleRate: 0.01,
+    replaysOnErrorSampleRate: 1.0,
+  });
+}
 
 const rootElement = document.getElementById('root');
 if (!rootElement) {
