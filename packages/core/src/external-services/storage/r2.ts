@@ -272,9 +272,11 @@ export async function readTempBlob(key: string): Promise<Buffer> {
 
 /**
  * Verify R2 connectivity + credentials. Does a signed HEAD on a nonexistent
- * key — a 404 or 200 means auth worked; a 401/403/timeout means config is
- * wrong. Returns `{ ok: true, latencyMs }` on success, `{ ok: false, error }`
- * otherwise. Never throws.
+ * key. Any of 200/403/404 means our signed request reached R2 and auth was
+ * evaluated — the key simply isn't there. 403 is R2's default response for
+ * HEAD/GET on a missing key when the access token lacks `s3:ListBucket`,
+ * which is the case for our object-scoped tokens — treat it as healthy.
+ * The true-negative signal is 401 (bad signature) or a network error.
  */
 export async function healthCheck(): Promise<
   { ok: true; latencyMs: number } | { ok: false; error: string }
@@ -298,7 +300,7 @@ export async function healthCheck(): Promise<
       signal: AbortSignal.timeout(3_000),
     });
     const latencyMs = Math.round(performance.now() - t0);
-    if (res.status === 200 || res.status === 404) {
+    if (res.status === 200 || res.status === 403 || res.status === 404) {
       return { ok: true, latencyMs };
     }
     return { ok: false, error: `unexpected status ${res.status}` };
