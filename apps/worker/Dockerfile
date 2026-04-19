@@ -9,6 +9,9 @@ FROM oven/bun:${BUN_VERSION} AS deps
 WORKDIR /app
 
 COPY package.json bun.lock ./
+# Every workspace declared in the root package.json must be present, or
+# `bun install` fails with `Workspace not found`.
+COPY apps/admin/package.json apps/admin/package.json
 COPY apps/backend/package.json apps/backend/package.json
 COPY apps/cron/package.json apps/cron/package.json
 COPY apps/frontendV2/package.json apps/frontendV2/package.json

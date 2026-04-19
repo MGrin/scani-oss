@@ -1,7 +1,17 @@
 name: Deploy
 
+# Triggered by the Terraform workflow's completion (which runs on every
+# main push). This sequencing guarantees that any GH Actions secrets
+# Terraform creates in that same push — e.g. the R2_* and
+# ADMIN_JOBS_HMAC_SECRET rows in github.tf — are visible to this workflow
+# when it stages them onto Fly. When both workflows triggered directly
+# from `push`, they ran in parallel and deploy-fly's secret context was
+# snapshotted before Terraform's `apply` created the new secrets, which
+# silently failed deploys.
 on:
-  push:
+  workflow_run:
+    workflows: ["Terraform"]
+    types: [completed]
     branches: [main]
   workflow_dispatch:
     inputs:
@@ -26,6 +36,10 @@ jobs:
   check-ci-status:
     name: Check if PR CI already passed
     runs-on: ubuntu-latest
+    # Abort the whole workflow if the upstream Terraform run failed.
+    # Skipping the first job makes every `needs:`-chained job skip too.
+    # workflow_dispatch bypasses this gate.
+    if: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success' }}
     outputs:
       validated: ${{ steps.check.outputs.validated }}
     steps:
@@ -33,10 +47,17 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
-          SHA: ${{ github.sha }}
+          # When triggered via workflow_run, github.sha and the parent's
+          # head_sha both point to the same commit, but be explicit so a
+          # future trigger change doesn't silently look up the wrong SHA.
+          SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
+          TRIGGER_EVENT: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.event || github.event_name }}
         run: |
           set -uo pipefail
-          if [ "${{ github.event_name }}" != "push" ]; then
+          # Only apply the skip-validation optimisation when the originating
+          # event was a push to main (i.e. a merged PR). workflow_dispatch
+          # and manual retriggers fall through to full validation.
+          if [ "$TRIGGER_EVENT" != "push" ]; then
             echo "validated=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi

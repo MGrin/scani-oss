@@ -5,10 +5,13 @@ on:
     paths:
       - "infra/terraform/**"
       - ".github/workflows/terraform.yaml"
+  # On main we run for EVERY push, not just infra/terraform/** changes.
+  # The deploy-fly workflow is chained via `workflow_run` and only fires
+  # once this workflow completes — so terraform must run every time or
+  # deploy-fly would never trigger. `terraform plan` on an unchanged
+  # state is a ~30s no-op, an acceptable tax for the sequencing guarantee.
   push:
     branches: [main]
-    paths:
-      - "infra/terraform/**"
   workflow_dispatch:
 
 permissions:
