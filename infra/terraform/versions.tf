@@ -22,6 +22,10 @@ terraform {
       source  = "integrations/github"
       version = "~> 6.0"
     }
+    random = {
+      source  = "hashicorp/random"
+      version = "~> 3.6"
+    }
   }
 
   # Terraform state lives in a Cloudflare R2 bucket via the S3-compatible API.

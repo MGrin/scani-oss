@@ -129,7 +129,7 @@ async function getRest(): Promise<{ url: string; token: string; dbId: string }> 
   return cachedRestFor;
 }
 
-async function redisCmd(...cmd: Array<string | number>): Promise<unknown> {
+export async function redisCmd(...cmd: Array<string | number>): Promise<unknown> {
   const rest = await getRest();
   const res = await fetch(rest.url, {
     method: 'POST',

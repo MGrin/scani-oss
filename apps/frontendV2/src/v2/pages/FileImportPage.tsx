@@ -12,6 +12,8 @@ import {
   type AccountSelectionResult,
   AccountSelectionStep,
 } from '../components/shared/AccountSelectionStep';
+import { useAwaitJob } from '../hooks/useAwaitJob';
+import { uploadToR2 } from '../lib/r2-upload';
 import { V2_ROUTES } from '../lib/routes';
 
 type Step = 'account' | 'upload' | 'processing' | 'review';
@@ -37,15 +39,6 @@ function nextClientId(): string {
 
 const IMAGE_EXTENSIONS = ['png', 'jpg', 'jpeg', 'gif', 'webp'];
 const PDF_EXTENSIONS = ['pdf'];
-
-function arrayBufferToBase64(buffer: ArrayBuffer): string {
-  const bytes = new Uint8Array(buffer);
-  let binary = '';
-  for (let i = 0; i < bytes.byteLength; i++) {
-    binary += String.fromCharCode(bytes[i]!);
-  }
-  return btoa(binary);
-}
 
 function isImageFile(filename: string): boolean {
   const ext = filename.split('.').pop()?.toLowerCase() || '';
@@ -73,6 +66,8 @@ export function FileImportPage() {
 
   const screenshotMutation = trpc.screenshots.parseScreenshots.useMutation();
   const fileEnrichMutation = trpc.fileImport.parseAndEnrich.useMutation();
+  const getUploadUrl = trpc.storage.getUploadUrl.useMutation();
+  const awaitJob = useAwaitJob();
   const utils = trpc.useUtils();
 
   const createMutation = trpc.batchOperations.createHoldingsWithDependencies.useMutation({
@@ -125,19 +120,43 @@ export function FileImportPage() {
       setStep('processing');
 
       try {
-        if (isImageFile(file.name)) {
-          // Screenshot path — AI extraction
-          setFileSource('screenshot');
-          const buffer = await file.arrayBuffer();
-          const base64 = arrayBufferToBase64(buffer);
+        const isImage = isImageFile(file.name);
+        const isPdf = isPdfFile(file.name);
+        const contentType = isImage
+          ? file.type || 'image/png'
+          : isPdf
+            ? 'application/pdf'
+            : file.type || 'text/plain';
 
-          const parsed = await screenshotMutation.mutateAsync({
-            files: [{ filename: file.name, data: base64 }],
+        // Upload to R2 first. BullMQ payloads live in Redis, so binary
+        // blobs go through R2 and the job carries only the storage key.
+        const upload = await getUploadUrl.mutateAsync({
+          purpose: isImage || isPdf ? 'screenshot' : 'file-import',
+          contentType,
+          filename: file.name,
+          sizeBytes: file.size,
+        });
+        await uploadToR2(file, {
+          uploadUrl: upload.uploadUrl,
+          requiredHeaders: upload.headers,
+        });
+
+        if (isImage || isPdf) {
+          setFileSource(isImage ? 'screenshot' : 'statement');
+          const { jobId } = await screenshotMutation.mutateAsync({
+            r2Keys: [upload.key],
             accountId: accountSelection.accountId || undefined,
+            requestId: crypto.randomUUID(),
+            minConfidence: 0.5,
           });
-
-          // biome-ignore lint/suspicious/noExplicitAny: dynamic API response
-          const firstResult = (parsed as any)?.results?.[0];
+          const outcome = await awaitJob(jobId);
+          if (!outcome.ok) {
+            showError(outcome.error ?? 'Screenshot parsing failed', 'Screenshot parsing');
+            setStep('upload');
+            return;
+          }
+          // biome-ignore lint/suspicious/noExplicitAny: worker return shape
+          const firstResult = (outcome.result as any)?.results?.[0];
           if (firstResult?.success && firstResult.data) {
             setExtractedHoldings(
               (firstResult.data.holdings || []).map((h: ExtractedHolding) => ({
@@ -152,56 +171,36 @@ export function FileImportPage() {
             showError(firstResult?.error || 'Failed to extract holdings', 'Screenshot parsing');
             setStep('upload');
           }
-        } else if (isPdfFile(file.name)) {
-          // PDF path — send as binary to screenshot AI pipeline
-          setFileSource('statement');
-          const buffer = await file.arrayBuffer();
-          const base64 = arrayBufferToBase64(buffer);
-
-          const parsed = await screenshotMutation.mutateAsync({
-            files: [{ filename: file.name, data: base64, contentType: 'application/pdf' }],
-            accountId: accountSelection.accountId || undefined,
-          });
-
-          // biome-ignore lint/suspicious/noExplicitAny: dynamic API response
-          const firstResult = (parsed as any)?.results?.[0];
-          if (firstResult?.success && firstResult.data) {
-            setExtractedHoldings(
-              (firstResult.data.holdings || []).map((h: ExtractedHolding) => ({
-                ...h,
-                removed: false,
-                clientId: nextClientId(),
-              }))
-            );
-            setOverallConfidence(firstResult.data.overallConfidence ?? null);
-            setStep('review');
-          } else {
-            showError(firstResult?.error || 'Failed to extract holdings from PDF', 'PDF parsing');
-            setStep('upload');
-          }
         } else {
-          // CSV/OFX/QIF path — parse and enrich with holdings
           setFileSource('statement');
-          const text = await file.text();
-          const base64 = btoa(unescape(encodeURIComponent(text)));
-
-          const enrichResult = await fileEnrichMutation.mutateAsync({
-            content: base64,
-            filename: file.name,
-            accountId: accountSelection.accountId || undefined,
+          const ext = file.name.split('.').pop()?.toLowerCase();
+          const fileType: 'csv' | 'ofx' | 'qif' =
+            ext === 'ofx' ? 'ofx' : ext === 'qif' ? 'qif' : 'csv';
+          const { jobId } = await fileEnrichMutation.mutateAsync({
+            r2Key: upload.key,
+            fileType,
+            accountId: accountSelection.accountId || '',
+            requestId: crypto.randomUUID(),
           });
-
+          const outcome = await awaitJob(jobId);
+          if (!outcome.ok) {
+            showError(outcome.error ?? 'File parsing failed', 'File parsing');
+            setStep('upload');
+            return;
+          }
+          // biome-ignore lint/suspicious/noExplicitAny: worker return shape
+          const enrichResult = outcome.result as any;
           const holdings = enrichResult?.holdings ?? [];
           if (holdings.length > 0) {
             setExtractedHoldings(
-              holdings.map((h) => ({
+              holdings.map((h: ExtractedHolding) => ({
                 symbol: h.symbol,
-                name: h.name ?? undefined,
+                name: h.name,
                 balance: h.balance,
                 confidence: h.confidence,
-                tokenId: h.tokenId ?? undefined,
-                holdingId: h.holdingId ?? undefined,
-                existingBalance: h.existingBalance ?? undefined,
+                tokenId: h.tokenId,
+                holdingId: h.holdingId,
+                existingBalance: h.existingBalance,
                 removed: false,
                 clientId: nextClientId(),
               }))
@@ -224,7 +223,7 @@ export function FileImportPage() {
         setStep('upload');
       }
     },
-    [screenshotMutation, fileEnrichMutation, accountSelection.accountId]
+    [screenshotMutation, fileEnrichMutation, getUploadUrl, awaitJob, accountSelection.accountId]
   );
 
   const activeHoldings = extractedHoldings.filter((h) => !h.removed);

@@ -18,11 +18,20 @@ const envSchema = z.object({
   SCANI_CLOUD_CLIENT_TOKEN: z.string().optional(),
 
   // Worker concurrency — how many jobs per processor run in parallel.
+  // Default 4 so user-initiated jobs don't queue up behind scheduled cron
+  // fire-ups. Bump higher on dedicated workers with Redis headroom.
   WORKER_CONCURRENCY: z
     .string()
     .optional()
-    .transform((v) => (v ? Number.parseInt(v, 10) : 2))
+    .transform((v) => (v ? Number.parseInt(v, 10) : 4))
     .refine((n) => Number.isFinite(n) && n > 0, { message: 'must be a positive integer' }),
+
+  // R2 (Cloudflare Object Storage) for large job payloads (screenshots,
+  // file-import blobs). Required whenever user-initiated jobs are enabled.
+  R2_ACCOUNT_ID: z.string().optional(),
+  R2_ACCESS_KEY_ID: z.string().optional(),
+  R2_SECRET_ACCESS_KEY: z.string().optional(),
+  R2_BUCKET: z.string().optional(),
 });
 
 export type WorkerEnv = z.infer<typeof envSchema>;

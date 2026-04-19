@@ -5,10 +5,6 @@ import { loadEnv } from './config/env';
 const env = loadEnv();
 
 import { JOB_NAMES, REPEATABLE_SCHEDULES, SCANI_QUEUE } from '@scani/core/queues';
-import { executeApyPayoutsCronJob } from '@scani/cron/jobs/apy-payouts';
-import { executeExchangeBalancesCronJob } from '@scani/cron/jobs/exchange-balances';
-import { executePricingCronJob } from '@scani/cron/jobs/pricing';
-import { executeWalletBalancesCronJob } from '@scani/cron/jobs/wallet-balances';
 // Import DI-registered modules so Container.get() resolves.
 import '@scani/core/repositories';
 import '@scani/core/services';
@@ -17,17 +13,20 @@ import { IntegrationManager } from '@scani/integrations';
 import { type Job, Queue, Worker } from 'bullmq';
 import { Redis } from 'ioredis';
 import { Container } from 'typedi';
+import { apyPayoutsProcessor } from './processors/apy-payouts';
+import { exchangeBalancesProcessor } from './processors/exchange-balances';
+import { buildExchangeImportProcessor } from './processors/exchange-import';
+import { buildFileImportProcessor } from './processors/file-import';
+import { buildHoldingPriceUpdateProcessor } from './processors/holding-price-update';
+import { pricingProcessor } from './processors/pricing';
+import { buildScreenshotParseProcessor } from './processors/screenshot-parse';
+import { buildUserDataDeleteProcessor } from './processors/user-data-delete';
+import { walletBalancesProcessor } from './processors/wallet-balances';
+import { buildWalletImportProcessor } from './processors/wallet-import';
 
 const logger = createComponentLogger('worker');
 
-type Processor = (job: Job) => Promise<void>;
-
-const PROCESSORS: Record<string, Processor> = {
-  [JOB_NAMES.pricing]: async () => executePricingCronJob(),
-  [JOB_NAMES.walletBalances]: async () => executeWalletBalancesCronJob(),
-  [JOB_NAMES.exchangeBalances]: async () => executeExchangeBalancesCronJob(),
-  [JOB_NAMES.apyPayouts]: async () => executeApyPayoutsCronJob(),
-};
+type Processor = (job: Job) => Promise<unknown>;
 
 async function main(): Promise<void> {
   logger.info({ nodeEnv: env.NODE_ENV }, '🚀 Starting Scani worker');
@@ -46,6 +45,10 @@ async function main(): Promise<void> {
     enableReadyCheck: true,
   });
 
+  // Separate publisher connection for WS job events so publishes don't
+  // interfere with BullMQ's blocking commands on `connection`.
+  const publisher = connection.duplicate();
+
   const queue = new Queue(SCANI_QUEUE, { connection });
 
   // Register repeatable jobs so BullMQ fires them on schedule. Using
@@ -60,6 +63,21 @@ async function main(): Promise<void> {
     logger.info({ name: schedule.name, pattern: schedule.pattern }, '📅 Scheduled repeatable job');
   }
 
+  const PROCESSORS: Record<string, Processor> = {
+    // Scheduled jobs (cron).
+    [JOB_NAMES.pricing]: pricingProcessor,
+    [JOB_NAMES.walletBalances]: walletBalancesProcessor,
+    [JOB_NAMES.exchangeBalances]: exchangeBalancesProcessor,
+    [JOB_NAMES.apyPayouts]: apyPayoutsProcessor,
+    // User-initiated jobs (built with a Redis publisher for WS events).
+    [JOB_NAMES.screenshotParse]: buildScreenshotParseProcessor(publisher),
+    [JOB_NAMES.exchangeImport]: buildExchangeImportProcessor(publisher),
+    [JOB_NAMES.walletImport]: buildWalletImportProcessor(publisher),
+    [JOB_NAMES.fileImport]: buildFileImportProcessor(publisher),
+    [JOB_NAMES.holdingPriceUpdate]: buildHoldingPriceUpdateProcessor(publisher),
+    [JOB_NAMES.userDataDelete]: buildUserDataDeleteProcessor(publisher),
+  };
+
   const worker = new Worker(
     SCANI_QUEUE,
     async (job) => {
@@ -69,21 +87,22 @@ async function main(): Promise<void> {
       }
       const start = Date.now();
       logger.info({ jobId: job.id, name: job.name }, '▶️ Processing job');
-      await processor(job);
+      const result = await processor(job);
       logger.info(
         { jobId: job.id, name: job.name, durationMs: Date.now() - start },
         '✅ Job completed'
       );
+      return result;
     },
     {
       connection: connection.duplicate(),
       concurrency: env.WORKER_CONCURRENCY,
-      // Block on an empty queue for 30s instead of the BullMQ default of 5s.
-      // This cuts idle blocking-poll traffic 6× — critical on Upstash's
-      // 500k commands/month free tier. Trade-off: a newly-enqueued job
-      // waits up to 30s for pickup when the queue was empty. Nothing
-      // user-facing runs synchronously through BullMQ, so fine.
-      drainDelay: 30,
+      // drainDelay: previously 30s to cut idle blocking-poll traffic on
+      // Upstash's free tier. Dropped to 5s because user-initiated jobs now
+      // flow through this queue — a 30s pickup delay on an idle queue
+      // would feel like a broken UI. Cost increase: ~6× idle polls, still
+      // well within free-tier headroom for current traffic.
+      drainDelay: 5,
     }
   );
 
@@ -107,6 +126,7 @@ async function main(): Promise<void> {
     try {
       await worker.close();
       await queue.close();
+      await publisher.quit();
       await connection.quit();
       logger.info({}, '✅ Worker drained cleanly');
       process.exit(0);

@@ -241,22 +241,23 @@ export function ExchangeConnectDialog({
       // `t[s] is not a function` that reproduced on every exchange
       // (Kraken, Binance, Coinbase, etc.) regardless of credentials.
 
+      const requestId = crypto.randomUUID();
       let input: Record<string, string>;
       switch (exchange.credentialType) {
         case 'apiKey':
-          input = { apiKey, apiSecret };
+          input = { apiKey, apiSecret, requestId };
           break;
         case 'passphrase':
-          input = { apiKey, apiSecret, passphrase };
+          input = { apiKey, apiSecret, passphrase, requestId };
           break;
         case 'wise':
-          input = { apiToken: token };
+          input = { apiToken: token, requestId };
           break;
         case 'ibkr':
-          input = { token, queryId };
+          input = { token, queryId, requestId };
           break;
         default:
-          input = { apiKey, apiSecret };
+          input = { apiKey, apiSecret, requestId };
       }
 
       // biome-ignore lint/suspicious/noExplicitAny: dynamic router path

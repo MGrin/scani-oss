@@ -1,200 +1,76 @@
-import type { ParseScreenshotResult } from '@scani/core/use-cases/ParseScreenshotUseCase';
-import { ParseScreenshotUseCase } from '@scani/core/use-cases/ParseScreenshotUseCase';
+import { JOB_NAMES } from '@scani/core/queues';
 import { createComponentLogger } from '@scani/core/utils/logger';
 import { TRPCError } from '@trpc/server';
-import { Container } from 'typedi';
 import { z } from 'zod';
+import { enqueueJob } from '../../queues/enqueue';
 import { protectedProcedure, router } from '../trpc';
 
 const screenshotsLogger = createComponentLogger('router:screenshots');
 
-// Supported file extensions (images + PDF for AI vision parsing)
-const SUPPORTED_EXTENSIONS = ['png', 'jpg', 'jpeg', 'gif', 'webp', 'pdf'] as const;
-type SupportedExtension = (typeof SUPPORTED_EXTENSIONS)[number];
-
-const parseScreenshotUseCase = Container.get(ParseScreenshotUseCase);
+/**
+ * R2 keys come from the client, but `storage.getUploadUrl` scopes them to
+ * `temp/{purpose}/{userId}/{uuid}.{ext}`. Without re-validating the prefix
+ * here, a caller could submit another user's leaked key (from logs, client
+ * telemetry, a replay attack) and have *that* user's screenshot parsed into
+ * the attacker's account. This guard enforces the invariant that the key
+ * belongs to the caller, and rejects any `..` segment defensively.
+ */
+function assertOwnedKey(key: string, userId: string, purpose: 'screenshot' | 'file-import'): void {
+  const expectedPrefix = `temp/${purpose}/${userId}/`;
+  if (!key.startsWith(expectedPrefix) || key.includes('..')) {
+    throw new TRPCError({
+      code: 'FORBIDDEN',
+      message: 'Upload key does not belong to the current user',
+    });
+  }
+}
 
 export const screenshotsRouter = router({
-  // Parse multiple screenshots using AI
+  /**
+   * Parse N screenshots asynchronously via BullMQ.
+   *
+   * The client uploads each image to R2 via a presigned URL from
+   * `storage.getUploadUrl`, then calls this mutation with the returned
+   * `r2Keys`. This mutation only enqueues the parse work and returns a
+   * jobId — the UI subscribes to job completion via WebSocket
+   * (`RealTimeUpdatesService`) or polls `jobs.status` as a fallback.
+   *
+   * Prior behaviour (inline AI calls in this mutation) is intentionally
+   * removed — per-file AI provider calls can take 3–10 seconds each and
+   * parallelizing 10 of them inside a request timed out in practice.
+   */
   parseScreenshots: protectedProcedure
     .input(
       z.object({
-        files: z
-          .array(
-            z.object({
-              filename: z.string().min(1, 'Filename is required'),
-              data: z
-                .string()
-                .min(1, 'File data is required')
-                .max(7_000_000, 'File too large (max ~5MB)'), // base64 encoded
-              contentType: z.string().optional(),
-            })
-          )
-          .min(1, 'At least one file is required')
-          .max(10, 'Maximum 10 files allowed'),
+        r2Keys: z.array(z.string().min(1)).min(1, 'At least one file is required').max(10),
         provider: z.enum(['openai', 'perplexity', 'deepseek']).optional(),
         accountType: z.string().optional(),
         expectedCurrency: z.string().optional(),
         context: z.string().optional(),
         minConfidence: z.number().min(0).max(1).default(0.5),
-        accountId: z.string().optional(), // Account ID for existing holdings lookup
+        accountId: z.string().optional(),
+        requestId: z.string().uuid(),
       })
     )
     .mutation(async ({ input, ctx }) => {
-      screenshotsLogger.info(
-        {
-          fileCount: input.files.length,
-          provider: input.provider,
-          minConfidence: input.minConfidence,
-        },
-        'Starting batch screenshot parsing'
-      );
-
-      // Process all screenshots in parallel
-      const filePromises = input.files.map(async (file) => {
-        const startTime = Date.now();
-        const result: {
-          filename: string;
-          success: boolean;
-          data?: ParseScreenshotResult;
-          error?: string;
-          processingTime: number;
-        } = {
-          filename: file.filename,
-          success: false,
-          processingTime: 0,
-        };
-
-        try {
-          // Validate file extension
-          const extension = getFileExtension(file.filename);
-          if (!isSupportedExtension(extension)) {
-            result.error = `Unsupported file extension: ${extension}. Supported: ${SUPPORTED_EXTENSIONS.join(
-              ', '
-            )}`;
-            screenshotsLogger.warn(
-              { filename: file.filename, extension },
-              'Unsupported file extension'
-            );
-            return result;
-          }
-
-          // Validate base64 data
-          if (!isValidBase64(file.data)) {
-            result.error = 'Invalid base64 data';
-            screenshotsLogger.warn({ filename: file.filename }, 'Invalid base64 data');
-            return result;
-          }
-
-          // Determine MIME type for PDF files
-          const mimeType = extension === 'pdf' ? 'application/pdf' : file.contentType || undefined;
-
-          // Parse screenshot using ParseScreenshotUseCase
-          const portfolio = await parseScreenshotUseCase.execute({
-            imageBase64: file.data,
-            mimeType,
-            provider: input.provider,
-            accountType: input.accountType,
-            expectedCurrency: input.expectedCurrency,
-            context: input.context,
-            minConfidence: input.minConfidence,
-            accountId: input.accountId,
-            userId: ctx.userId, // Get user ID from authenticated context
-          });
-
-          result.success = true;
-          result.data = portfolio;
-          result.processingTime = Date.now() - startTime;
-
-          screenshotsLogger.info(
-            {
-              filename: file.filename,
-              holdingsCount: portfolio.holdings.length,
-              overallConfidence: portfolio.overallConfidence,
-              processingTime: result.processingTime,
-            },
-            'Screenshot parsed successfully'
-          );
-
-          return result;
-        } catch (error) {
-          result.error = error instanceof Error ? error.message : 'Unknown error';
-          result.processingTime = Date.now() - startTime;
-
-          screenshotsLogger.error(
-            {
-              filename: file.filename,
-              error: result.error,
-              processingTime: result.processingTime,
-            },
-            'Screenshot parsing failed'
-          );
-
-          return result;
-        }
-      });
-
-      // Wait for all screenshots to be processed in parallel
-      const results = await Promise.all(filePromises);
-
-      const successCount = results.filter((r) => r.success).length;
-      const totalProcessingTime = results.reduce((sum, r) => sum + (r.processingTime || 0), 0);
-
-      screenshotsLogger.info(
-        {
-          totalFiles: input.files.length,
-          successCount,
-          failureCount: input.files.length - successCount,
-          totalProcessingTime,
-          averageProcessingTime: totalProcessingTime / input.files.length,
-        },
-        'Batch screenshot parsing completed'
-      );
-
-      // If every single file failed, surface the underlying error to the
-      // caller instead of a 200 OK with an empty `results` array. Without
-      // this, the frontend can't tell "AI provider not configured" (nothing
-      // the user can fix by re-uploading) from "we detected zero holdings
-      // in your screenshot" (correct 200 OK, empty result). Throwing here
-      // lets the tRPC client's error handler show a real toast.
-      if (successCount === 0 && input.files.length > 0) {
-        const firstError = results.find((r) => r.error)?.error ?? 'Screenshot parsing failed';
-        const isConfigError = firstError.includes('No AI providers are configured');
-        throw new TRPCError({
-          code: isConfigError ? 'PRECONDITION_FAILED' : 'BAD_REQUEST',
-          message: firstError,
-        });
+      for (const key of input.r2Keys) {
+        assertOwnedKey(key, ctx.userId, 'screenshot');
       }
-
-      return {
-        results,
-        summary: {
-          totalFiles: input.files.length,
-          successCount,
-          failureCount: input.files.length - successCount,
-          totalProcessingTime,
-          averageProcessingTime: Math.round(totalProcessingTime / input.files.length),
-        },
-      };
+      screenshotsLogger.info(
+        { fileCount: input.r2Keys.length, provider: input.provider, requestId: input.requestId },
+        'Enqueuing screenshot parse job'
+      );
+      const jobId = await enqueueJob(JOB_NAMES.screenshotParse, {
+        userId: ctx.userId,
+        requestId: input.requestId,
+        r2Keys: input.r2Keys,
+        provider: input.provider ?? 'openai',
+        accountType: input.accountType ?? 'unknown',
+        expectedCurrency: input.expectedCurrency ?? 'USD',
+        context: input.context,
+        minConfidence: input.minConfidence,
+        accountId: input.accountId,
+      });
+      return { jobId };
     }),
 });
-
-// Helper functions
-function getFileExtension(filename: string): string {
-  const parts = filename.toLowerCase().split('.');
-  return parts.length > 1 ? parts[parts.length - 1] || '' : '';
-}
-
-function isSupportedExtension(extension: string): extension is SupportedExtension {
-  return SUPPORTED_EXTENSIONS.includes(extension as SupportedExtension);
-}
-
-function isValidBase64(str: string): boolean {
-  try {
-    // Check if it's valid base64 by attempting to decode
-    atob(str);
-    return true;
-  } catch {
-    return false;
-  }
-}

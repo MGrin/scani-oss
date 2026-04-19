@@ -1,10 +1,12 @@
 import { HoldingImplementations } from '@scani/core/features/implementations';
+import { JOB_NAMES } from '@scani/core/queues';
 import { UpdateHoldingDto, UpsertHoldingApyConfigDto } from '@scani/shared';
 import { z } from 'zod';
 import {
   emitBulkEntityChanges,
   emitEntityChange,
 } from '../../infrastructure/websocket/RealTimeUpdatesService';
+import { enqueueJob } from '../../queues/enqueue';
 import { requireAuth } from '../middleware/auth';
 import { protectedProcedure, router } from '../trpc';
 
@@ -119,27 +121,30 @@ export const holdingsRouter = router({
       return result;
     }),
 
-  // Update holding price by forcing fresh fetch from pricing providers
+  /**
+   * Enqueue a holding price refresh. Fetches fresh price from pricing
+   * providers (1–3s), then cascades to vault recalculation on the worker.
+   * Returns a jobId for the UI to track.
+   */
   updatePrice: protectedProcedure
-    .input(z.object({ id: z.string().uuid() }))
+    .input(
+      z.object({
+        id: z.string().uuid(),
+        requestId: z.string().uuid(),
+      })
+    )
     .mutation(async ({ input, ctx }) => {
       const { dbUser } = await requireAuth(ctx);
-
-      const result = await HoldingImplementations.updatePrice(
-        { userId: dbUser.id, dbUser },
-        { id: input.id }
-      );
-
-      // Emit entity change event to trigger real-time updates
-      emitEntityChange({
-        type: 'entity_changed',
-        entityType: 'holding',
-        operationType: 'update',
-        entityId: input.id,
+      const jobId = await enqueueJob(JOB_NAMES.holdingPriceUpdate, {
         userId: dbUser.id,
+        requestId: input.requestId,
+        holdingId: input.id,
+        // The worker fetches fresh price from providers; these fields are
+        // placeholders for a future manual-override payload.
+        priceUsd: 0,
+        priceSource: 'fetch',
       });
-
-      return result;
+      return { jobId };
     }),
 
   bulkAssignGroups: protectedProcedure

@@ -512,6 +512,24 @@ export const holdingApyConfigs = pgTable(
   })
 );
 
+// Admin audit log: records operator-initiated mutations (e.g. BullMQ
+// retry/remove from the admin dashboard). See migration 0045.
+export const adminAuditLog = pgTable(
+  'admin_audit_log',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    actor: text('actor').notNull(),
+    action: text('action').notNull(),
+    resource: text('resource').notNull(),
+    result: text('result').notNull(),
+    details: jsonb('details'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => ({
+    createdAtIdx: index('admin_audit_log_created_at_idx').on(table.createdAt),
+  })
+);
+
 // =============================================================================
 // RELATIONS
 // =============================================================================
@@ -759,3 +777,6 @@ export type NewVaultHolding = typeof vaultHoldings.$inferInsert;
 
 export type HoldingApyConfig = typeof holdingApyConfigs.$inferSelect;
 export type NewHoldingApyConfig = typeof holdingApyConfigs.$inferInsert;
+
+export type AdminAuditLog = typeof adminAuditLog.$inferSelect;
+export type NewAdminAuditLog = typeof adminAuditLog.$inferInsert;

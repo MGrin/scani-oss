@@ -14,8 +14,9 @@ import {
 } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useAuth } from '@/contexts/AuthContext';
-import { showSuccess } from '@/hooks/use-toast';
+import { showError, showSuccess } from '@/hooks/use-toast';
 import { trpc } from '@/lib/trpc';
+import { JobProgressModal } from '../components/JobProgressModal';
 import { ConfirmDialog } from '../components/shared/ConfirmDialog';
 import { invalidatePortfolioQueries } from '../hooks/invalidatePortfolioQueries';
 import { V2_ROUTES } from '../lib/routes';
@@ -28,6 +29,7 @@ export function SettingsPage() {
   const { signOut } = useAuth();
 
   const [showDeleteAll, setShowDeleteAll] = useState(false);
+  const [deleteJobId, setDeleteJobId] = useState<string | null>(null);
 
   const handleSignOut = () => {
     // ProtectedRoute will redirect to /auth on session loss.
@@ -35,11 +37,9 @@ export function SettingsPage() {
   };
 
   const deleteAllDataMutation = trpc.users.deleteAllData.useMutation({
-    onSuccess: async () => {
-      await invalidatePortfolioQueries(utils);
+    onSuccess: ({ jobId }) => {
       setShowDeleteAll(false);
-      showSuccess('All data deleted successfully. Your account is now clean.');
-      navigate(V2_ROUTES.dashboard);
+      setDeleteJobId(jobId);
     },
   });
 
@@ -190,7 +190,24 @@ export function SettingsPage() {
         cancelLabel="Keep my data"
         variant="destructive"
         isPending={deleteAllDataMutation.isPending}
-        onConfirm={() => deleteAllDataMutation.mutate()}
+        onConfirm={() => deleteAllDataMutation.mutate({ requestId: crypto.randomUUID() })}
+      />
+
+      <JobProgressModal
+        jobId={deleteJobId}
+        title="Deleting all your data"
+        description="Removing accounts, holdings, wallets, integrations, groups, and vaults. This can take up to a minute."
+        onCompleted={async () => {
+          await invalidatePortfolioQueries(utils);
+          showSuccess('All data deleted. Your account is now clean.');
+          setDeleteJobId(null);
+          navigate(V2_ROUTES.dashboard);
+        }}
+        onFailed={(error) => {
+          showError(new Error(error), 'Deleting data');
+          setDeleteJobId(null);
+        }}
+        onDismiss={() => setDeleteJobId(null)}
       />
     </div>
   );

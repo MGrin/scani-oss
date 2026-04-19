@@ -1,6 +1,9 @@
 import { SettingsImplementations } from '@scani/core/features/implementations';
+import { JOB_NAMES } from '@scani/core/queues';
 import { createComponentLogger } from '@scani/core/utils/logger';
 import { UpdateUserDto } from '@scani/shared';
+import { z } from 'zod';
+import { enqueueJob } from '../../queues/enqueue';
 import { requireAuth } from '../middleware/auth';
 import { protectedProcedure, router } from '../trpc';
 
@@ -34,9 +37,21 @@ export const usersRouter = router({
     return await SettingsImplementations.getBaseCurrency({ userId: dbUser.id, dbUser }, {});
   }),
 
-  // Delete all user data (accounts, holdings, wallets, credentials, groups, vaults)
-  deleteAllData: protectedProcedure.mutation(async ({ ctx }) => {
-    const { dbUser } = await requireAuth(ctx);
-    return await SettingsImplementations.deleteAllData({ userId: dbUser.id, dbUser }, {});
-  }),
+  /**
+   * Enqueue deletion of all user data. The worker runs the large
+   * transaction (accounts, holdings, wallets, credentials, groups,
+   * vaults) off the request path so it doesn't time out for users
+   * with hundreds of holdings. `attempts: 1` — destructive, no retry.
+   */
+  deleteAllData: protectedProcedure
+    .input(z.object({ requestId: z.string().uuid() }))
+    .mutation(async ({ input, ctx }) => {
+      const { dbUser } = await requireAuth(ctx);
+      usersLogger.warn({ userId: dbUser.id }, 'Enqueuing delete-all-data job');
+      const jobId = await enqueueJob(JOB_NAMES.userDataDelete, {
+        userId: dbUser.id,
+        requestId: input.requestId,
+      });
+      return { jobId };
+    }),
 });

@@ -151,6 +151,38 @@ jobs:
     steps:
       - uses: actions/checkout@v6
       - uses: superfly/flyctl-actions/setup-flyctl@master
+
+      # Stage new secrets before the deploy. `--stage` writes to Fly's
+      # secret store without triggering a restart; the immediately-
+      # following `flyctl deploy` picks them up on the new machine.
+      # Pre-existing secrets (DATABASE_URL, REDIS_URL, ENCRYPTION_KEY,
+      # BETTER_AUTH_SECRET) are already on Fly and intentionally NOT
+      # re-staged here — this step only manages the new R2 + HMAC values
+      # that landed with the async-jobs PR. Fail loud if any is missing.
+      - name: Stage R2 + HMAC secrets on scani-backend
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+          R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
+          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          R2_BUCKET: ${{ secrets.R2_BUCKET }}
+          ADMIN_JOBS_HMAC_SECRET: ${{ secrets.ADMIN_JOBS_HMAC_SECRET }}
+        run: |
+          set -euo pipefail
+          for var in R2_ACCOUNT_ID R2_ACCESS_KEY_ID R2_SECRET_ACCESS_KEY \
+                     R2_BUCKET ADMIN_JOBS_HMAC_SECRET; do
+            if [ -z "${!var:-}" ]; then
+              echo "::error::Missing required secret: $var" >&2
+              exit 1
+            fi
+          done
+          flyctl secrets set --stage --app scani-backend \
+            R2_ACCOUNT_ID="$R2_ACCOUNT_ID" \
+            R2_ACCESS_KEY_ID="$R2_ACCESS_KEY_ID" \
+            R2_SECRET_ACCESS_KEY="$R2_SECRET_ACCESS_KEY" \
+            R2_BUCKET="$R2_BUCKET" \
+            ADMIN_JOBS_HMAC_SECRET="$ADMIN_JOBS_HMAC_SECRET"
+
       - run: |
           flyctl deploy --remote-only \
             --config apps/backend/fly.toml \
@@ -177,6 +209,32 @@ jobs:
     steps:
       - uses: actions/checkout@v6
       - uses: superfly/flyctl-actions/setup-flyctl@master
+
+      # Worker needs the same R2 creds as the backend to read temp blobs
+      # that the backend's presigned-URL uploads landed at. Only the new
+      # R2 vars are staged here — DATABASE_URL, REDIS_URL, ENCRYPTION_KEY
+      # are pre-existing on Fly and intentionally untouched.
+      - name: Stage R2 secrets on scani-worker
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+          R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
+          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          R2_BUCKET: ${{ secrets.R2_BUCKET }}
+        run: |
+          set -euo pipefail
+          for var in R2_ACCOUNT_ID R2_ACCESS_KEY_ID R2_SECRET_ACCESS_KEY R2_BUCKET; do
+            if [ -z "${!var:-}" ]; then
+              echo "::error::Missing required secret: $var" >&2
+              exit 1
+            fi
+          done
+          flyctl secrets set --stage --app scani-worker \
+            R2_ACCOUNT_ID="$R2_ACCOUNT_ID" \
+            R2_ACCESS_KEY_ID="$R2_ACCESS_KEY_ID" \
+            R2_SECRET_ACCESS_KEY="$R2_SECRET_ACCESS_KEY" \
+            R2_BUCKET="$R2_BUCKET"
+
       - run: |
           flyctl deploy --remote-only \
             --config apps/worker/fly.toml \
@@ -284,6 +342,13 @@ jobs:
           UPSTASH_API_KEY: ${{ secrets.UPSTASH_API_KEY }}
           TF_GITHUB_TOKEN: ${{ secrets.TF_GITHUB_TOKEN }}
           FASTMAIL_API_TOKEN: ${{ secrets.FASTMAIL_API_TOKEN }}
+          # BullMQ retry/remove: admin signs these → backend verifies with
+          # the matching secret. Must equal the backend's Fly secret.
+          ADMIN_JOBS_HMAC_SECRET: ${{ secrets.ADMIN_JOBS_HMAC_SECRET }}
+          # Where the admin proxy sends signed requests. Hardcoded to prod
+          # here; override per-env via GH environment secret if we ever
+          # add staging.
+          BACKEND_BASE_URL: https://api.scani.xyz
         run: |
           cd apps/admin
           # Push every non-empty secret; Wrangler's `secret put` is upsert.
@@ -305,7 +370,8 @@ jobs:
           for n in FLY_API_TOKEN FLY_ORG NEON_API_KEY NEON_ORG_ID UPSTASH_EMAIL UPSTASH_API_KEY \
                    TF_GITHUB_TOKEN FASTMAIL_API_TOKEN \
                    ADMIN_PASSKEY_CREDENTIAL_ID ADMIN_PASSKEY_PUBLIC_KEY \
-                   ADMIN_SESSION_SECRET; do
+                   ADMIN_SESSION_SECRET \
+                   ADMIN_JOBS_HMAC_SECRET BACKEND_BASE_URL; do
             sync_secret "$n" "${!n}"
           done
 

@@ -5,8 +5,8 @@
 
 import { db } from '@scani/core/database/connection';
 import * as schema from '@scani/core/database/schema';
+import { JOB_NAMES } from '@scani/core/queues';
 import { ExpiredCredentialsError, IntegrationCredentialsService } from '@scani/core/services';
-import { ImportExchangeAccountsUseCase, ImportIbkrAccountsUseCase } from '@scani/core/use-cases';
 import {
   validateBinanceCredentials,
   validateBitgetCredentials,
@@ -27,6 +27,7 @@ import { TRPCError } from '@trpc/server';
 import { eq } from 'drizzle-orm';
 import { Container } from 'typedi';
 import { z } from 'zod';
+import { enqueueJob } from '../../queues/enqueue';
 import { protectedProcedure, router } from '../trpc';
 
 type TRPCErrorCode = ConstructorParameters<typeof TRPCError>[0]['code'];
@@ -104,9 +105,22 @@ function toTRPCError(
   });
 }
 
-/** All crypto exchanges use the generic ImportExchangeAccountsUseCase */
-function getExchangeImportUseCase() {
-  return Container.get(ImportExchangeAccountsUseCase);
+/**
+ * Enqueue the post-validate import job and return a jobId. Runs on the
+ * worker against the credentials we just persisted in `integration_credentials`.
+ */
+async function enqueueImport(
+  userId: string,
+  institutionId: string,
+  provider: string,
+  requestId: string
+): Promise<string> {
+  return enqueueJob(JOB_NAMES.exchangeImport, {
+    userId,
+    requestId,
+    institutionId,
+    provider,
+  });
 }
 
 /** Helper: look up institution by name and store credentials */
@@ -144,9 +158,10 @@ async function storeExchangeCredentials(
 const apiKeyInput = z.object({
   apiKey: z.string().min(1, 'API Key is required'),
   apiSecret: z.string().min(1, 'API Secret is required'),
+  requestId: z.string().uuid(),
 });
 
-/** Create router for exchanges with apiKey+apiSecret — validates, stores, and auto-imports */
+/** Create router for exchanges with apiKey+apiSecret — validates, stores, and enqueues import. */
 function createApiKeyOnlyRouter(
   name: string,
   validate: (k: string, s: string) => Promise<boolean>
@@ -172,31 +187,24 @@ function createApiKeyOnlyRouter(
           apiKey: input.apiKey,
           apiSecret: input.apiSecret,
         });
-
-        const importUseCase = getExchangeImportUseCase();
-        const importResult = await importUseCase.execute({ userId, institutionId });
-
+        const jobId = await enqueueImport(userId, institutionId, name, input.requestId);
         return {
           success: true,
           message: `${name} credentials validated and stored`,
           institutionId,
-          accounts: importResult.accounts,
-          holdings: importResult.holdings,
-          accountsCreated: importResult.accountsCreated,
-          tokensImported: importResult.tokensImported,
-          errors: importResult.errors,
+          jobId,
         };
       } catch (error) {
         throw toTRPCError(error, {
           fallbackCode: 'INTERNAL_SERVER_ERROR',
-          fallbackMessage: 'Failed to store credentials and import accounts',
+          fallbackMessage: 'Failed to store credentials and enqueue import',
         });
       }
     }),
   });
 }
 
-/** Create router for exchanges needing apiKey+apiSecret+passphrase — validates, stores, and auto-imports */
+/** Create router for exchanges needing apiKey+apiSecret+passphrase — validates, stores, and enqueues import. */
 function createPassphraseRouter(
   name: string,
   validate: (k: string, s: string, p: string) => Promise<boolean>
@@ -208,6 +216,7 @@ function createPassphraseRouter(
           apiKey: z.string().min(1, 'API Key is required'),
           apiSecret: z.string().min(1, 'API Secret is required'),
           passphrase: z.string().min(1, 'Passphrase is required'),
+          requestId: z.string().uuid(),
         })
       )
       .mutation(async ({ input, ctx }) => {
@@ -234,24 +243,17 @@ function createPassphraseRouter(
             apiSecret: input.apiSecret,
             passphrase: input.passphrase,
           });
-
-          const importUseCase = getExchangeImportUseCase();
-          const importResult = await importUseCase.execute({ userId, institutionId });
-
+          const jobId = await enqueueImport(userId, institutionId, name, input.requestId);
           return {
             success: true,
             message: `${name} credentials validated and stored`,
             institutionId,
-            accounts: importResult.accounts,
-            holdings: importResult.holdings,
-            accountsCreated: importResult.accountsCreated,
-            tokensImported: importResult.tokensImported,
-            errors: importResult.errors,
+            jobId,
           };
         } catch (error) {
           throw toTRPCError(error, {
             fallbackCode: 'INTERNAL_SERVER_ERROR',
-            fallbackMessage: 'Failed to store credentials',
+            fallbackMessage: 'Failed to store credentials and enqueue import',
           });
         }
       }),
@@ -277,7 +279,12 @@ export const integrationsRouter = router({
   // Wise uses a single API token
   wise: router({
     validateKeys: protectedProcedure
-      .input(z.object({ apiToken: z.string().min(1, 'API Token is required') }))
+      .input(
+        z.object({
+          apiToken: z.string().min(1, 'API Token is required'),
+          requestId: z.string().uuid(),
+        })
+      )
       .mutation(async ({ input, ctx }) => {
         try {
           const isValid = await validateWiseCredentials(input.apiToken);
@@ -295,7 +302,13 @@ export const integrationsRouter = router({
           const institutionId = await storeExchangeCredentials(ctx.userId, 'Wise', {
             apiToken: input.apiToken,
           });
-          return { success: true, message: 'Wise credentials validated and stored', institutionId };
+          const jobId = await enqueueImport(ctx.userId, institutionId, 'Wise', input.requestId);
+          return {
+            success: true,
+            message: 'Wise credentials validated and stored',
+            institutionId,
+            jobId,
+          };
         } catch (error) {
           throw toTRPCError(error, {
             fallbackCode: 'INTERNAL_SERVER_ERROR',
@@ -312,6 +325,7 @@ export const integrationsRouter = router({
         z.object({
           token: z.string().min(1, 'Flex Web Service Token is required'),
           queryId: z.string().min(1, 'Flex Query ID is required'),
+          requestId: z.string().uuid(),
         })
       )
       .mutation(async ({ input, ctx }) => {
@@ -335,27 +349,22 @@ export const integrationsRouter = router({
             token: input.token,
             queryId: input.queryId,
           });
-
-          const importUseCase = Container.get(ImportIbkrAccountsUseCase);
-          const importResult = await importUseCase.execute({
-            userId: ctx.userId,
+          const jobId = await enqueueImport(
+            ctx.userId,
             institutionId,
-          });
-
+            'Interactive Brokers',
+            input.requestId
+          );
           return {
             success: true,
             message: 'Interactive Brokers credentials validated and stored',
             institutionId,
-            accounts: importResult.accounts,
-            holdings: importResult.holdings,
-            accountsCreated: importResult.accountsCreated,
-            tokensImported: importResult.tokensImported,
-            errors: importResult.errors,
+            jobId,
           };
         } catch (error) {
           throw toTRPCError(error, {
             fallbackCode: 'INTERNAL_SERVER_ERROR',
-            fallbackMessage: 'Failed to store credentials and import accounts',
+            fallbackMessage: 'Failed to store credentials and enqueue import',
           });
         }
       }),

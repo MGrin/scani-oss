@@ -17,6 +17,18 @@ export const JOB_NAMES = {
   exchangeBalances: 'exchange-balances',
   /** Scheduled by BullMQ repeatable jobs daily at midnight UTC. */
   apyPayouts: 'apy-payouts',
+  /** User-initiated: parse N screenshots via AI providers. */
+  screenshotParse: 'screenshot-parse',
+  /** User-initiated: import accounts and holdings from an exchange. */
+  exchangeImport: 'exchange-import',
+  /** User-initiated: import a wallet address (multi-chain detection + balance sync). */
+  walletImport: 'wallet-import',
+  /** User-initiated: parse a CSV/OFX/QIF file uploaded to R2. */
+  fileImport: 'file-import',
+  /** User-initiated: update a single holding price and recalculate dependent vaults. */
+  holdingPriceUpdate: 'holding-price-update',
+  /** User-initiated: delete all user data in a large DB transaction. */
+  userDataDelete: 'user-data-delete',
 } as const;
 
 export type JobName = (typeof JOB_NAMES)[keyof typeof JOB_NAMES];

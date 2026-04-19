@@ -112,6 +112,17 @@ services:
       SMTP_FROM: no-reply@scani.local
       PORT: "8080"
       HOST: "0.0.0.0"
+      # BullMQ admin retry/remove endpoints. Must match the admin app's
+      # ADMIN_JOBS_HMAC_SECRET. Dev-only placeholder — do NOT reuse in prod.
+      ADMIN_JOBS_HMAC_SECRET: dev_admin_hmac_change_me_not_prod_safe
+      # R2 (Cloudflare object storage) for large job payloads. Optional for
+      # local dev: screenshot/file-import flows will throw on first upload
+      # without real creds. Fill these from your R2 account to test the
+      # full async pipeline locally.
+      R2_ACCOUNT_ID: "${R2_ACCOUNT_ID:-}"
+      R2_ACCESS_KEY_ID: "${R2_ACCESS_KEY_ID:-}"
+      R2_SECRET_ACCESS_KEY: "${R2_SECRET_ACCESS_KEY:-}"
+      R2_BUCKET: "${R2_BUCKET:-scani-job-uploads-dev}"
 
   worker:
     profiles: ["full"]
@@ -131,9 +142,15 @@ services:
       DATABASE_URL: postgres://scani:scani@postgres:5432/scani?sslmode=disable
       REDIS_URL: redis://redis:6379
       NODE_ENV: development
+      # Must match the backend's ENCRYPTION_KEY so integration credentials
+      # persisted by the backend can be decrypted at job-run time.
       ENCRYPTION_KEY: 0123456789abcdef0123456789abcdef
       EXTERNAL_API_MODE: direct
-      WORKER_CONCURRENCY: "2"
+      WORKER_CONCURRENCY: "4"
+      R2_ACCOUNT_ID: "${R2_ACCOUNT_ID:-}"
+      R2_ACCESS_KEY_ID: "${R2_ACCESS_KEY_ID:-}"
+      R2_SECRET_ACCESS_KEY: "${R2_SECRET_ACCESS_KEY:-}"
+      R2_BUCKET: "${R2_BUCKET:-scani-job-uploads-dev}"
 
 volumes:
   postgres-data:

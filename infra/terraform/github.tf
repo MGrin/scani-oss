@@ -29,3 +29,39 @@ resource "github_actions_secret" "fly_api_token" {
   secret_name     = "FLY_API_TOKEN"
   plaintext_value = var.fly_api_token
 }
+
+# HMAC secret shared between the backend (verifies signed /admin/jobs/*
+# requests) and the admin Pages app (signs them). Generated once by TF so
+# the value is stable across redeploys; consumed by:
+#   - backend Fly secrets (pushed by deploy-fly.yaml before flyctl deploy)
+#   - admin Cloudflare Pages secrets (pushed by deploy-fly.yaml sync loop)
+# Rotate by tainting `random_password.admin_jobs_hmac_secret` + re-apply;
+# both sides pick up the new value on their next deploy.
+resource "random_password" "admin_jobs_hmac_secret" {
+  length  = 64
+  special = false
+}
+
+resource "github_actions_secret" "admin_jobs_hmac_secret" {
+  repository      = data.github_repository.scani.name
+  secret_name     = "ADMIN_JOBS_HMAC_SECRET"
+  plaintext_value = random_password.admin_jobs_hmac_secret.result
+}
+
+# R2 bucket name for temp job-payload storage (screenshot parsing, file
+# imports). Value is the Terraform-managed bucket above, mirrored into
+# GH Secrets so the deploy workflow can stage it onto Fly and Pages.
+resource "github_actions_secret" "r2_bucket" {
+  repository      = data.github_repository.scani.name
+  secret_name     = "R2_BUCKET"
+  plaintext_value = cloudflare_r2_bucket.job_uploads.name
+}
+
+# R2 account ID — same value as CLOUDFLARE_ACCOUNT_ID, but mirrored under
+# the R2_ prefix so the backend/worker env loaders (which read R2_*
+# explicitly) don't have to special-case the shared Cloudflare var.
+resource "github_actions_secret" "r2_account_id" {
+  repository      = data.github_repository.scani.name
+  secret_name     = "R2_ACCOUNT_ID"
+  plaintext_value = var.cloudflare_account_id
+}

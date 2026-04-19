@@ -18,6 +18,7 @@ import { Container } from 'typedi';
 import { createBetterAuth } from './auth/better-auth';
 import { initializeContainer } from './config/container';
 import { RealTimeUpdatesService } from './infrastructure/websocket/RealTimeUpdatesService';
+import { registerAdminJobsRoutes } from './presentation/http/admin-jobs';
 import { createStandardLimiter, createStrictLimiter } from './presentation/middleware/rate-limit';
 import { createContext, setBetterAuthForContext } from './presentation/trpc';
 import { closeQueue, initQueueClient } from './queues/client';
@@ -253,6 +254,8 @@ const app = new Elysia()
       endpoint: '/trpc',
     })
   );
+
+registerAdminJobsRoutes(app);
 
 app
   .get('/', () => ({ status: 'ok', service: 'scani-backend' }))

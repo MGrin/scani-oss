@@ -13,7 +13,9 @@ import { holdingsRouter } from './routers/holdings';
 import { institutionTypesRouter } from './routers/institution-types';
 import { institutionsRouter } from './routers/institutions';
 import { integrationsRouter } from './routers/integrations';
+import { jobsRouter } from './routers/jobs';
 import { screenshotsRouter } from './routers/screenshots';
+import { storageRouter } from './routers/storage';
 import { createTokensRouter } from './routers/tokens';
 import { usersRouter } from './routers/users';
 import { vaultsRouter } from './routers/vaults';
@@ -65,6 +67,10 @@ export const appRouter = router({
 
   // Client error reporting (public) - V2 ErrorBoundary posts here
   clientErrors: clientErrorsRouter,
+
+  // Background job status + uploads
+  jobs: jobsRouter,
+  storage: storageRouter,
 
   // Health check (public)
   health: router({

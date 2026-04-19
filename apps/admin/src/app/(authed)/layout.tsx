@@ -11,6 +11,7 @@ const nav: Array<{ href: string; label: string }> = [
   { href: '/services/fly', label: 'Fly' },
   { href: '/services/neon', label: 'Neon' },
   { href: '/services/upstash', label: 'Upstash' },
+  { href: '/services/bullmq', label: 'BullMQ' },
   { href: '/services/cloudflare', label: 'Cloudflare' },
   { href: '/services/github', label: 'GitHub' },
   { href: '/services/fastmail', label: 'Fastmail' },

@@ -4,11 +4,24 @@ data "cloudflare_zone" "primary" {
   name = var.domain
 }
 
-# R2 buckets (scani-tfstate for Terraform state, scani-backups for pg_dump
-# archives) were created manually during bootstrap and are intentionally
-# NOT managed by Terraform — state lives in one of them, so TF managing
-# the bucket is a chicken-and-egg trap.
+# R2 buckets for Terraform state (scani-tfstate) and pg_dump archives
+# (scani-backups) were created manually during bootstrap and are
+# intentionally NOT managed by Terraform — TF state lives in one of them,
+# so managing the bucket from TF is a chicken-and-egg trap.
 #
+# The job-upload bucket is new and unrelated to TF state, so TF owns it.
+# Lifecycle rules (24h purge on `temp/*`) are not yet exposed by the
+# cloudflare v4 provider — set them via `wrangler r2 bucket lifecycle`
+# or the Cloudflare API post-apply. The bucket is the source of truth
+# here; an orphaned object just eats storage, not correctness.
+resource "cloudflare_r2_bucket" "job_uploads" {
+  account_id = var.cloudflare_account_id
+  name       = "scani-job-uploads"
+  # APAC hint matches the Fly + Upstash + Neon ap-southeast-1 region.
+  # Valid values (v4 provider) are uppercase: WNAM, ENAM, WEUR, EEUR, APAC, OC.
+  location = "APAC"
+}
+
 # Cloudflare Pages projects:
 # - scani-frontend, scani-landing: created via the CF API on first bootstrap
 #   (pre-date Terraform); subsequent deploys are driven by `wrangler pages

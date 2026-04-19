@@ -29,11 +29,12 @@ export function useHoldingActions() {
     onError: (err) => showError(err, 'Updating holding'),
   });
 
+  // Price refresh runs async on the worker — the queued job emits a
+  // `holding.update` WS event on completion, so the RealtimeContext
+  // auto-invalidates. We toast immediately on enqueue.
   const refreshPriceMutation = trpc.holdings.updatePrice.useMutation({
-    onSuccess: async (result) => {
-      await invalidatePortfolioQueries(utils);
-      const priceInfo = result.price ? `Price: ${result.price}` : 'Price updated';
-      showSuccess(result.source ? `${priceInfo} (${result.source})` : priceInfo);
+    onSuccess: () => {
+      showSuccess('Price refresh queued');
     },
     onError: (err) => showError(err, 'Refreshing price'),
   });
@@ -45,7 +46,8 @@ export function useHoldingActions() {
       bulkDeleteMutation.mutate({ ids }, { onSuccess: options?.onSuccess }),
     updateHolding: (id: string, data: { balance?: string; isActive?: boolean }) =>
       updateMutation.mutate({ id, data }),
-    refreshPrice: (id: string) => refreshPriceMutation.mutate({ id }),
+    refreshPrice: (id: string) =>
+      refreshPriceMutation.mutate({ id, requestId: crypto.randomUUID() }),
     isDeleting: deleteMutation.isPending,
     isBulkDeleting: bulkDeleteMutation.isPending,
     isUpdating: updateMutation.isPending,

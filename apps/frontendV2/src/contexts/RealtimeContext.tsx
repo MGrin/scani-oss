@@ -56,9 +56,28 @@ import { invalidatePortfolioQueries } from '@/v2/hooks/invalidatePortfolioQuerie
  * - Cleans up the socket, reconnect timer, and ping timer on unmount.
  */
 
+export type JobLifecycleState = 'queued' | 'active' | 'progress' | 'completed' | 'failed';
+
+export interface JobEvent {
+  state: JobLifecycleState;
+  progress?: number;
+  result?: unknown;
+  error?: string;
+  attemptsMade?: number;
+  attemptsAllowed?: number;
+}
+
+export type JobEventListener = (jobId: string, event: JobEvent) => void;
+
 export interface RealtimeContextValue {
   isConnected: boolean;
   connectionStatus: 'disconnected' | 'connecting' | 'connected' | 'reconnecting';
+  /**
+   * Subscribe to job lifecycle updates streamed from the worker over
+   * Redis pub/sub → backend → WebSocket. Returns an unsubscribe fn.
+   * `jobId` is the BullMQ job id returned from the enqueue mutation.
+   */
+  subscribeToJob: (jobId: string, listener: JobEventListener) => () => void;
 }
 
 const RealtimeContext = createContext<RealtimeContextValue | null>(null);
@@ -94,6 +113,26 @@ export function RealtimeProvider({ children }: RealtimeProviderProps) {
   useEffect(() => {
     utilsRef.current = utils;
   }, [utils]);
+
+  // Per-jobId listener registry. Populated by useJobStatus consumers and
+  // dispatched from the WS message handler when entityType === 'job'.
+  const jobListenersRef = useRef<Map<string, Set<JobEventListener>>>(new Map());
+
+  const subscribeToJob = (jobId: string, listener: JobEventListener): (() => void) => {
+    const map = jobListenersRef.current;
+    let set = map.get(jobId);
+    if (!set) {
+      set = new Set();
+      map.set(jobId, set);
+    }
+    set.add(listener);
+    return () => {
+      const currentSet = map.get(jobId);
+      if (!currentSet) return;
+      currentSet.delete(listener);
+      if (currentSet.size === 0) map.delete(jobId);
+    };
+  };
 
   useEffect(() => {
     let isUnmounted = false;
@@ -143,11 +182,35 @@ export function RealtimeProvider({ children }: RealtimeProviderProps) {
       }
 
       if (!message || typeof message !== 'object') return;
-      const event = message as { type?: string; entityType?: string };
+      const event = message as {
+        type?: string;
+        entityType?: string;
+        entityId?: string;
+        data?: unknown;
+      };
 
       // The only broadcast that should drive UI refreshes. Other message
       // types (connected, pong, subscription_updated) are bookkeeping.
       if (event.type !== 'entity_changed') return;
+
+      // Job lifecycle events go to useJobStatus subscribers. They don't
+      // invalidate portfolio queries — the worker also emits entity
+      // changes for every created account/holding.
+      if (event.entityType === 'job' && event.entityId) {
+        const data = (event.data ?? {}) as JobEvent;
+        const listeners = jobListenersRef.current.get(event.entityId);
+        if (listeners) {
+          for (const listener of listeners) {
+            try {
+              listener(event.entityId, data);
+            } catch (err) {
+              console.warn('[realtime] job listener threw', err);
+            }
+          }
+        }
+        return;
+      }
+
       if (!event.entityType || !PORTFOLIO_ENTITY_TYPES.has(event.entityType)) return;
 
       // Fire-and-forget — React Query handles dedup internally.
@@ -305,6 +368,7 @@ export function RealtimeProvider({ children }: RealtimeProviderProps) {
   const value: RealtimeContextValue = {
     isConnected: connectionStatus === 'connected',
     connectionStatus,
+    subscribeToJob,
   };
 
   return <RealtimeContext.Provider value={value}>{children}</RealtimeContext.Provider>;

@@ -13,7 +13,8 @@ export type EntityType =
   | 'schedule'
   | 'schedule_step'
   | 'group'
-  | 'vault';
+  | 'vault'
+  | 'job';
 export type OperationType = 'create' | 'update' | 'delete' | 'sync';
 
 export interface RealTimeEvent {
