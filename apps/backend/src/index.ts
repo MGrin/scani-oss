@@ -8,16 +8,12 @@ const env = loadEnv();
 import { cors } from '@elysiajs/cors';
 import { trpc } from '@elysiajs/trpc';
 import { createTimer, logger, sanitizeUrl, wsLogger } from '@scani/core/utils/logger';
-import {
-  flushSentry,
-  initSentry,
-  captureException as sentryCapture,
-} from '@scani/core/utils/sentry';
 import { IntegrationManager } from '@scani/integrations';
+import { flushSentry, initSentry, captureException as sentryCapture } from './utils/sentry';
 
 // Sentry is the first thing we wire up so any subsequent boot-time failure
 // reaches the error tracker instead of being lost to stdout.
-await initSentry({ component: 'backend', release: env.SENTRY_RELEASE });
+initSentry({ release: env.SENTRY_RELEASE });
 
 import { sql } from 'drizzle-orm';
 import { Elysia } from 'elysia';

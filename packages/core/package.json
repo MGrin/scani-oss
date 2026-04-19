@@ -31,8 +31,7 @@
     "./utils/performance-monitor": "./src/utils/performance-monitor.ts",
     "./utils/retry": "./src/utils/retry.ts",
     "./utils/circuit-breaker": "./src/utils/circuit-breaker.ts",
-    "./utils/encryption": "./src/utils/encryption.ts",
-    "./utils/sentry": "./src/utils/sentry.ts"
+    "./utils/encryption": "./src/utils/encryption.ts"
   },
   "scripts": {
     "lint": "biome check .",
@@ -48,7 +47,6 @@
     "@scani/integrations": "workspace:*",
     "@scani/rate-limiter": "workspace:*",
     "@scani/shared": "workspace:*",
-    "@sentry/node": "^8.49.0",
     "decimal.js": "^10.6.0",
     "drizzle-orm": "^0.45.2",
     "googleapis": "^160.0.0",
