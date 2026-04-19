@@ -26,7 +26,7 @@
 - ✅ Follow clean architecture - Use Cases → Services → Repositories
 - ✅ Follow DRY, OOP, SOLID, and Onion Architecture principles
 - ✅ Initialize container before importing routers (see `apps/backend/src/index.ts`)
-- ✅ **Render PostgreSQL**: Direct connection with prepared statements enabled
+- ✅ **Neon PostgreSQL** (production) / local Postgres via docker-compose: direct connection with prepared statements enabled. BullMQ uses Upstash Redis in prod, local Redis in dev.
 - ❌ **NEVER use `require()` or `await import()` or any dynamic imports** - always use static ES6 imports
 - ❌ **NEVER add retry logic for database operations** - if queries fail, there's a fundamental issue
 - ❌ **NEVER increase query timeouts** - queries must be fast, system must fail fast
@@ -42,10 +42,11 @@
 
 ### Key Architecture Patterns
 
-- **Monorepo Structure**: `apps/backend` (tRPC API), `apps/worker` (BullMQ consumer), `apps/cron` (scheduled jobs), `apps/frontendV2` (React SPA), `apps/landing` (marketing site), `packages/*` (shared code)
+- **Monorepo Structure**: `apps/backend` (tRPC API + BullMQ producers), `apps/worker` (BullMQ consumer), `apps/cron` (scheduled jobs), `apps/frontendV2` (React SPA), `apps/admin` (Cloudflare Pages passkey-gated infra dashboard), `apps/landing` (marketing site), `packages/*` (shared code)
 - **End-to-End Type Safety**: All API communication uses tRPC with shared TypeScript types
-- **Database**: PostgreSQL with Drizzle ORM, dynamic enums stored in database tables (not TypeScript enums)
-- **Authentication**: Supabase Auth with JWT tokens, user sync to local PostgreSQL via middleware
+- **Database**: Neon PostgreSQL with Drizzle ORM; dynamic enums stored in database tables (not TypeScript enums)
+- **Authentication**: Better-Auth with sessions in Postgres; prior Supabase Auth has been removed
+- **Async Jobs**: BullMQ on Upstash Redis — producers in `apps/backend/src/queues/`, consumers in `apps/worker/src/processors/`, queue names at `packages/core/src/queues/queue-names.ts`
 - **Dependency Injection**: TypeDI Container for service management and dependency injection
 - **Clean Architecture**: Use Cases → Services → Repositories → Database
 - **Real-time Updates**: WebSocket server for live portfolio updates
@@ -62,10 +63,11 @@
 
 **Apps:**
 
-- `@scani/backend` - tRPC API server with Elysia
-- `@scani/worker` - BullMQ worker for background jobs
+- `@scani/backend` - tRPC API server with Elysia (hosts BullMQ producers)
+- `@scani/worker` - BullMQ worker for background jobs (Fly)
 - `@scani/cron` - Standalone cron entry for scheduled jobs
 - `@scani/frontend-v2` - React SPA with Vite
+- `@scani/admin` - Passkey-gated infra dashboard on Cloudflare Pages (Next.js; hosts BullMQ queue admin)
 - `@scani/landing` - Marketing site (Vite + React)
 
 ### Import and Module Guidelines
@@ -174,8 +176,9 @@ bun type-check            # Check TypeScript types
 ### Authentication Pattern
 
 - All protected routes use `protectedProcedure` from `apps/backend/src/trpc.ts`
-- User authentication via Supabase, but user data stored in local `users` table
-- Auth context provides `{ user, isAuthenticated, dbUser }` with automatic sync
+- Authentication is handled by **Better-Auth** with sessions stored in Postgres
+- Auth context provides `{ user, isAuthenticated, dbUser }` — user records live in the local `users` table, kept in sync by the auth middleware
+- Admin dashboard (`apps/admin`) uses a separate passkey flow gated by `ADMIN_SESSION_SECRET`; admin → backend job actions are HMAC-signed with `ADMIN_JOBS_HMAC_SECRET`
 
 ### Database Schema Design
 
@@ -300,12 +303,11 @@ const createAccount = trpc.accounts.create.useMutation();
 - ✅ Always use sequential numbering (check last migration number)
 - ✅ Use descriptive names for custom migrations
 
-### Render PostgreSQL Configuration
+### Neon PostgreSQL Configuration
 
 **Direct PostgreSQL connection (no connection pooler)**
 
 - **Connection Pool Size**: Use `max: 20` (appropriate for direct connections)
-  - Render PostgreSQL supports up to 97 connections on standard plans
   - Direct connections allow larger client pools
   - Pool size can be adjusted based on workload
 - **Timeouts**: Keep short to fail fast
@@ -417,8 +419,8 @@ When creating new documentation, select the folder based on content type:
 
 - **Never bypass authentication**: All user data access MUST use `protectedProcedure`
 - **Automatic user scoping**: Use `getUserId(ctx)` helper to filter queries by authenticated user
-- **Token validation**: Supabase JWT tokens validated on every request
-- **User sync**: User data automatically synced from Supabase to local `users` table
+- **Session validation**: Better-Auth sessions validated on every request
+- **User sync**: User records live in the local `users` table; the auth middleware keeps session ↔ user linkage in sync
 
 ### Data Protection
 
@@ -523,10 +525,10 @@ bun test --update-snapshots
 
 **Authentication Errors:**
 
-- Verify `.env` has correct Supabase keys
-- Check token expiration (tokens expire after 1 hour)
-- Ensure user exists in both Supabase and local `users` table
-- Verify JWT signature validation is working
+- Verify `.env` has correct Better-Auth config (`BETTER_AUTH_SECRET`, DB URL, email config)
+- Check session expiration (cookies/sessions handled by Better-Auth)
+- Ensure user row exists in the local `users` table and has an active Better-Auth session
+- For admin issues, verify `ADMIN_SESSION_SECRET` (passkey flow) and `ADMIN_JOBS_HMAC_SECRET` (admin→backend actions)
 
 ### Debugging Patterns
 

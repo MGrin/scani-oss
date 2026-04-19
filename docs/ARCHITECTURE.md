@@ -1,16 +1,17 @@
-# 🏗️ Scani - Technical Architecture
+# Scani - Technical Architecture
 
-**Last Updated:** October 14, 2025  
-**Version:** 1.1 (MVP + Clean Architecture)  
-**Status:** Production-ready with clean architecture refactoring complete
+**Last Updated:** April 2026
+**Version:** 1.2 (Clean architecture + async queue + managed infra)
+**Status:** Production
 
-> **Documentation:** This is one of three core documentation files in `/docs`:
+> **Documentation:** Core files in `/docs`:
 >
 > - `ARCHITECTURE.md` (this file) - Technical architecture and design patterns
-> - `EXECUTIVE_SUMMARY.md` - Project status and strategic overview
-> - `ROADMAP.md` - Development roadmap and feature tracking
+> - `IMPLEMENTATION_PLAN.md` - Current implementation plan
+> - `SELF_HOST.md` - Self-hosting guide
+> - `PUBLISHING.md` - Release / publishing notes
 >
-> **Supporting Documentation:** See `/docs/technical/`, `/docs/stability/`, `/docs/implementation/` for detailed guides
+> **Supporting Documentation:** See `/docs/technical/`, `/docs/stability/`, `/docs/implementation/` for detailed guides. Older planning/roadmap docs live in `/docs/archive/`.
 
 ---
 
@@ -22,9 +23,10 @@ Scani is a TypeScript monorepo personal finance SaaS built with modern web techn
 
 **Runtime & Server:**
 
-- Bun v1.2.9 (JavaScript/TypeScript runtime)
+- Bun (JavaScript/TypeScript runtime)
 - Elysia (HTTP server)
 - WebSocket (ws library) for real-time updates
+- BullMQ on Upstash Redis for async jobs
 
 **Frontend:**
 
@@ -37,14 +39,24 @@ Scani is a TypeScript monorepo personal finance SaaS built with modern web techn
 
 - tRPC (type-safe API layer)
 - Drizzle ORM (type-safe database queries)
-- Supabase Auth (JWT authentication)
+- Better-Auth (session-based auth; sessions stored in Postgres)
 
 **Database:**
 
-- PostgreSQL (all environments)
+- PostgreSQL on Neon (production) / local via docker-compose
 - Dynamic enum tables (no TypeScript enums)
 - UUID primary keys
 - Strategic indexing
+
+**Managed Infrastructure:**
+
+- Fly.io — backend + worker (Docker multi-stage Bun builds)
+- Cloudflare Pages — frontendV2, admin, landing
+- Neon — Postgres
+- Upstash — Redis (BullMQ)
+- Cloudflare R2 — object storage
+- Fastmail — email (JMAP / SMTP)
+- Terraform (`infra/terraform/`) — single source of truth for infra across Cloudflare / Fly / Neon / Upstash / GitHub
 
 **Key Libraries:**
 
@@ -81,7 +93,7 @@ Scani is a TypeScript monorepo personal finance SaaS built with modern web techn
 │  │ • Thin controllers, delegate to use cases        │  │
 │  │ • Input validation & response formatting         │  │
 │  │ • WebSocket Server (broadcast events)            │  │
-│  │ • Auth Middleware (Supabase JWT validation)      │  │
+│  │ • Auth Middleware (Better-Auth session validation)│ │
 │  └──────────────────────────────────────────────────┘  │
 │  ┌──────────────────────────────────────────────────┐  │
 │  │ Application Layer (Use Cases)                    │  │
@@ -113,137 +125,74 @@ Scani is a TypeScript monorepo personal finance SaaS built with modern web techn
 │  • Finnhub API (stock prices)                           │
 │  • CoinGecko API (crypto prices)                        │
 │  • Google Sheets API (private asset prices)             │
-│  • Gemini AI (screenshot parsing)                       │
-│  • Supabase Auth (user management)                      │
+│  • OpenAI (screenshot parsing, chat)                    │
+│  • Plaid (bank/brokerage linking)                       │
+│  • Fastmail (email JMAP/SMTP)                           │
+└─────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────┐
+│                   Async Job Pipeline                     │
+│                                                          │
+│   Backend producers ──► BullMQ (Upstash Redis) ──► Worker│
+│   apps/backend/src/queues/          apps/worker/        │
+│                                                          │
+│   Queues: screenshot-parse, exchange-import,             │
+│   wallet-import, file-import, holding-price-update,      │
+│   user-data-delete                                       │
+│                                                          │
+│   Admin dashboard (apps/admin) observes + retries jobs.  │
 └─────────────────────────────────────────────────────────┘
 ```
 
 ---
 
-## 📁 Project Structure
+## Project Structure
 
 ```
 scani/
 ├── apps/
-│   ├── backend/               # Backend application (Clean Architecture)
-│   │   ├── src/
-│   │   │   ├── index.ts       # Entry point
-│   │   │   ├── presentation/  # Presentation Layer
-│   │   │   │   ├── router.ts      # Main tRPC router assembly
-│   │   │   │   ├── trpc.ts        # tRPC setup
-│   │   │   │   └── routers/       # Thin controllers (51-91% smaller)
-│   │   │   │       ├── accounts.ts
-│   │   │   │       ├── holdings.ts      # 397 → 192 lines (-51.6%)
-│   │   │   │       ├── institutions.ts
-│   │   │   │       ├── tokens.ts        # ~450 → ~120 lines (-73%)
-│   │   │   │       ├── transactions.ts  # 675 → 629 lines (-6.8%)
-│   │   │   │       ├── wallet.ts
-│   │   │   │       └── batch-operations.ts
-│   │   │   ├── application/  # Application Layer ✨ NEW
-│   │   │   │   ├── use-cases/     # Business logic (11 use cases)
-│   │   │   │   │   ├── CreateTransactionUseCase.ts
-│   │   │   │   │   ├── UpdateTransactionUseCase.ts
-│   │   │   │   │   ├── DeleteTransactionUseCase.ts
-│   │   │   │   │   ├── RecalculateHoldingBalanceUseCase.ts
-│   │   │   │   │   ├── ValidateTokenUseCase.ts
-│   │   │   │   │   ├── CreateTokenUseCase.ts
-│   │   │   │   │   ├── UpdateTokenUseCase.ts
-│   │   │   │   │   ├── CreateHoldingUseCase.ts
-│   │   │   │   │   ├── UpdateHoldingUseCase.ts
-│   │   │   │   │   ├── DeleteHoldingUseCase.ts
-│   │   │   │   │   ├── ImportWalletAddressUseCase.ts
-│   │   │   │   │   └── index.ts       # Central exports
-│   │   │   │   └── services/      # Infrastructure services
-│   │   │   │       ├── PricingService.ts
-│   │   │   │       ├── PortfolioValuationService.ts
-│   │   │   │       ├── ScreenshotParsingService.ts
-│   │   │   │       ├── RealTimeUpdatesService.ts
-│   │   │   │       ├── UserContextService.ts
-│   │   │   │       ├── WalletService.ts     # 657 → 60 lines (-91%)
-│   │   │   │       └── chain-services/  # Multi-chain integration
-│   │   │   ├── infrastructure/  # Infrastructure Layer
-│   │   │   │   ├── database/
-│   │   │   │   │   ├── schema.ts      # Database schema (Drizzle)
-│   │   │   │   │   ├── connection.ts
-│   │   │   │   │   └── migrations/
-│   │   │   │   ├── repositories/  # Data access patterns
-│   │   │   │   │   ├── AccountRepository.ts
-│   │   │   │   │   ├── HoldingRepository.ts
-│   │   │   │   │   ├── TokenRepository.ts
-│   │   │   │   │   ├── TransactionRepository.ts
-│   │   │   │   │   └── ...
-│   │   │   │   └── websocket/
-│   │   │   │       └── RealTimeUpdatesService.ts
-│   │   │   ├── middleware/
-│   │   │   │   ├── auth.ts        # Supabase JWT validation
-│   │   │   │   └── rate-limit.ts
-│   │   │   ├── config/            # Configuration
-│   │   │   └── utils/
-│   │   │       └── logger.ts
-│   │   └── drizzle.config.ts
-│   │
-│   └── frontend/              # Frontend application
-│       ├── src/
-│       │   ├── main.tsx       # Entry point
-│       │   ├── App.tsx        # Main app component
-│       │   ├── components/
-│       │   │   ├── onboarding/
-│       │   │   │   └── OnboardingWizard.tsx
-│       │   │   ├── ui/
-│       │   │   │   ├── empty-state.tsx
-│       │   │   │   ├── enhanced-theme-toggle.tsx
-│       │   │   │   └── ...
-│       │   │   ├── help/
-│       │   │   │   └── HelpWidget.tsx
-│       │   │   ├── forms/
-│       │   │   │   └── FormField.tsx
-│       │   │   └── ...
-│       │   ├── contexts/
-│       │   │   ├── AuthContext.tsx
-│       │   │   ├── EntityDataContext.tsx
-│       │   │   ├── RealtimeContext.tsx
-│       │   │   ├── ThemeContext.tsx
-│       │   │   └── UnpriceableTokensContext.tsx
-│       │   ├── hooks/
-│       │   │   ├── use-enhanced-toast.ts
-│       │   │   ├── useRealtimeEntitySync.ts  # UPDATED: Async invalidations
-│       │   │   └── ...
-│       │   ├── lib/
-│       │   │   ├── accessibility.tsx
-│       │   │   ├── validation.ts
-│       │   │   ├── trpc.ts
-│       │   │   ├── trpc-provider.tsx  # UPDATED: Optimized cache config
-│       │   │   └── cache/
-│       │   │       ├── invalidation.ts  # UPDATED: All async
-│       │   │       └── optimistic/
-│       │   │           └── entityManager.ts  # UPDATED: Null handling
-│       │   └── pages/
-│       │       ├── Dashboard.tsx
-│       │       ├── Holdings.tsx    # UPDATED: mutateAsync
-│       │       ├── Accounts.tsx    # UPDATED: mutateAsync
-│       │       ├── Institutions.tsx  # UPDATED: mutateAsync
-│       │       ├── Transactions.tsx  # UPDATED: mutateAsync
-│       │       ├── AddData.tsx     # UPDATED: Cache settlement
-│       │       └── ...
-│       └── vite.config.ts
+│   ├── backend/              # tRPC API on Elysia; hosts BullMQ producers
+│   │   └── src/
+│   │       ├── presentation/      # tRPC routers (thin controllers)
+│   │       ├── queues/            # BullMQ client + enqueue helpers
+│   │       ├── middleware/        # Auth (Better-Auth), rate-limit
+│   │       └── config/            # TypeDI container setup
+│   ├── worker/               # BullMQ consumer (deployed to Fly)
+│   │   └── src/processors/        # One processor per queue
+│   ├── cron/                 # Scheduled jobs
+│   ├── frontendV2/           # React + Vite SPA (main frontend, code under src/v2/)
+│   ├── admin/                # Next.js passkey-gated infra dashboard (Cloudflare Pages)
+│   │   └── src/app/services/      # Per-service dashboards incl. BullMQ queue admin
+│   └── landing/              # Marketing site at scani.xyz (Vite + React)
 │
 ├── packages/
-│   └── shared/                # Shared types and utilities
-│       └── src/
-│           ├── types/
-│           │   └── finance.ts # Zod schemas, validation
-│           └── utils/
+│   ├── core/                 # Business logic, database, services, use cases, repositories
+│   │   └── src/
+│   │       ├── database/          # Drizzle schema + migrations + journal
+│   │       ├── queues/            # Queue name constants
+│   │       ├── use-cases/         # Business logic
+│   │       ├── services/          # Infrastructure services
+│   │       ├── repositories/      # Data access
+│   │       ├── entities/          # Domain models
+│   │       └── external-services/ # AI, file-import, chain explorers, ...
+│   ├── integrations/         # Plaid, Binance, Kraken, DefiLlama, chain explorers
+│   ├── rate-limiter/         # Shared rate-limiter utility
+│   └── shared/               # Zod schemas, Decimal helpers
 │
-└── docs/                      # Documentation (REORGANIZED)
-    ├── ARCHITECTURE.md        # This file
-    ├── EXECUTIVE_SUMMARY.md   # Project status
-    ├── ROADMAP.md             # Development roadmap
+├── infra/terraform/          # Source of truth for Cloudflare / Fly / Neon / Upstash / GitHub
+├── .github/workflows/        # ci.yml, deploy-fly.yaml, terraform.yaml, backup-db.yaml
+├── docker-compose.yml        # Local Postgres (5433) + Redis (6380) + Mailpit (1026)
+└── docs/
+    ├── ARCHITECTURE.md       # This file
+    ├── IMPLEMENTATION_PLAN.md
+    ├── SELF_HOST.md
+    ├── PUBLISHING.md
     ├── features/              # Feature specifications
     ├── technical/             # Technical documentation
     ├── stability/             # Stability fixes and analysis
     ├── implementation/        # Implementation summaries
     ├── backend-fixes/         # Backend-specific fixes
-    └── archive/               # Historical documentation
+    └── archive/               # Historical docs (EXECUTIVE_SUMMARY, ROADMAP, etc.)
 ```
 
 ---
@@ -456,14 +405,15 @@ export function createHoldingsRouter(
 ### Authentication Flow
 
 ```
-1. User signs up/in → Supabase Auth
-2. Supabase returns JWT token
-3. Frontend stores token in memory + cookie
-4. All tRPC requests include JWT in Authorization header
-5. Backend validates JWT via Supabase client
-6. User record synced to local PostgreSQL database
-7. User context available in all protected procedures
+1. User signs up/in → Better-Auth (Postgres-backed sessions)
+2. Better-Auth issues a session cookie
+3. Frontend sends cookie automatically on every request
+4. Backend middleware validates the session via Better-Auth
+5. User context (user, dbUser) is attached to the tRPC context
+6. All protected procedures enforce user scoping via getUserId(ctx)
 ```
+
+Admin dashboard (`apps/admin`) uses a separate passkey-gated flow with `ADMIN_SESSION_SECRET`; admin → backend job actions are HMAC-signed with `ADMIN_JOBS_HMAC_SECRET`.
 
 ### Authorization Pattern
 
@@ -729,7 +679,7 @@ class RealTimeUpdatesService {
 
 **Connection Flow:**
 
-1. User authenticates via Supabase
+1. User authenticates via Better-Auth
 2. Frontend establishes WebSocket connection with userId
 3. Backend validates user and registers subscriptions
 4. On data change, backend broadcasts to relevant users
@@ -803,51 +753,54 @@ describe('Onboarding Flow', () => {
 
 ---
 
-## 📦 Deployment Architecture
+## Deployment Architecture
 
-### Current Deployment
+### Production Targets
 
-**Hosting:** Not specified (likely Render/Railway/Vercel)
+- **apps/backend, apps/worker** → Fly.io (Docker multi-stage Bun builds; `apps/*/fly.toml`)
+- **apps/frontendV2, apps/admin, apps/landing** → Cloudflare Pages
+- **Postgres** → Neon (serverless)
+- **Redis** → Upstash (BullMQ backing store)
+- **Object storage** → Cloudflare R2
+- **Email** → Fastmail (JMAP / SMTP)
 
-**Environment:**
+Terraform at `infra/terraform/` is the single source of truth for Cloudflare / Fly / Neon / Upstash / GitHub configuration. Dashboards should be read-only.
 
-- Backend: Single Bun process
-- Database: PostgreSQL (Supabase or hosted)
-- Frontend: Static files on CDN
+### CI / CD
 
-**Configuration:**
+Workflows in `.github/workflows/`:
 
-```bash
-# Backend (.env)
-DATABASE_URL=postgresql://...
-SUPABASE_URL=https://...
-SUPABASE_ANON_KEY=...
-SUPABASE_SERVICE_ROLE_KEY=...
-FINNHUB_API_KEY=...
-COINGECKO_API_KEY=...
-GEMINI_API_KEY=...
+- `ci.yml` — lint, type-check, tests, secret scan on every PR
+- `deploy-fly.yaml` — path-based change detection; runs DB migrations; deploys backend + worker to Fly and frontend + landing + admin to Cloudflare Pages. A `check-ci-status` job skips redundant deploy-time validation when the PR CI already passed.
+- `terraform.yaml` — plan/apply for managed infra
+- `backup-db.yaml` — scheduled DB backup
 
-# Frontend (.env)
-VITE_SUPABASE_URL=https://...
-VITE_SUPABASE_ANON_KEY=...
-```
+### Key Environment Variables
 
-**Build Process:**
+`.env.example` at the repo root documents every variable across the three deployment tiers (self-hosted, scani-cloud proxy, SaaS on Fly+Neon+Upstash). Highlights:
 
 ```bash
-# Backend
-cd apps/backend
-bun install
-bun run db:migrate    # Run migrations
-bun run build         # Compile TypeScript
-bun run start         # Start server
-
-# Frontend
-cd apps/frontend
-bun install
-bun run build         # Vite production build
-# Deploy dist/ to CDN
+# Database / Queue / Mail
+DATABASE_URL=postgres://...
+REDIS_URL=redis://...
+SMTP_URL=smtp://...            # or FASTMAIL_JMAP_TOKEN
+# Auth
+BETTER_AUTH_SECRET=...
+# External APIs
+OPENAI_API_KEY=...
+PLAID_CLIENT_ID=...
+PLAID_SECRET=...
+# Object storage
+R2_ACCOUNT_ID=...
+R2_ACCESS_KEY_ID=...
+R2_SECRET_ACCESS_KEY=...
+R2_BUCKET=...
+# Admin
+ADMIN_SESSION_SECRET=...
+ADMIN_JOBS_HMAC_SECRET=...
 ```
+
+Infrastructure secrets for local development live at `/Users/mgrin/.secrets` (developer machine only, never committed).
 
 ---
 
@@ -882,7 +835,7 @@ bun run build         # Vite production build
 
 **4. Security (9/10)**
 
-- Industry-standard auth (Supabase)
+- Session-based auth (Better-Auth) with sessions in Postgres
 - Proper user scoping
 - Input validation
 - SQL injection protection
@@ -1009,8 +962,9 @@ bun run build         # Vite production build
 **Related Documentation:**
 
 - **Core Files:**
-  - `EXECUTIVE_SUMMARY.md` - Project status and strategic overview
-  - `ROADMAP.md` - Development roadmap and feature tracking
+  - `IMPLEMENTATION_PLAN.md` - Current implementation plan
+  - `SELF_HOST.md` - Self-hosting guide
+  - `PUBLISHING.md` - Release / publishing notes
 - **Technical Details:**
   - `/docs/technical/SUPPORTED_CHAINS.md` - Multi-chain integration
   - `/docs/technical/CHAIN_SUPPORT_IMPLEMENTATION_SUMMARY.md` - Chain services
@@ -1036,12 +990,12 @@ bun run build         # Vite production build
 - [Bun Documentation](https://bun.sh/docs)
 - [tRPC Documentation](https://trpc.io/docs)
 - [Drizzle ORM Documentation](https://orm.drizzle.team/docs)
-- [Supabase Auth Documentation](https://supabase.com/docs/guides/auth)
+- [Better-Auth Documentation](https://better-auth.com/)
 
 ---
 
-**Last Review:** October 14, 2025  
-**Architecture Score:** 9.7/10 (Excellent - Clean architecture + Stability fixes)  
+**Last Review:** April 2026
+**Architecture Score:** 9.7/10 (Excellent - Clean architecture + Stability fixes + Managed-infra migration)  
 **Status:** ✅ Production-ready for beta launch
 
 ---

@@ -19,7 +19,7 @@ A comprehensive personal finance management platform built with a modern TypeScr
 - **Clean Architecture** - Use Cases → Services → Repositories pattern
 - **Dependency Injection** - TypeDI for service management
 - **Real-time Updates** - WebSocket server for instant portfolio changes
-- **Error Tracking** - Sentry integration for both frontend and backend
+- **Async Jobs** - BullMQ on Redis for screenshot parsing, imports, pricing, and user data deletion
 - **Rate Limiting** - Smart rate limiting for external API calls
 - **Database Migrations** - Drizzle ORM with automatic migration generation
 
@@ -45,10 +45,10 @@ A comprehensive personal finance management platform built with a modern TypeScr
 - **TypeDI** - Dependency injection container
 - **Zod** - Schema validation
 - **Drizzle ORM** - Type-safe database queries
-- **PostgreSQL** - Primary database
-- **Supabase** - Authentication and user management
+- **PostgreSQL (Neon)** - Primary database
+- **Better-Auth** - Authentication (sessions in Postgres)
+- **BullMQ + Redis (Upstash)** - Async job queue
 - **WebSocket** - Real-time updates via custom WebSocket server
-- **Sentry** - Error tracking and performance monitoring
 - **Pino** - Structured logging
 - **OpenAI** - AI integration for screenshot parsing and chat
 
@@ -83,60 +83,34 @@ A comprehensive personal finance management platform built with a modern TypeScr
 ```
 scani/
 ├── apps/
-│   ├── backend/              # tRPC API server with Elysia
-│   │   ├── src/
-│   │   │   ├── config/       # Container and configuration
-│   │   │   ├── infrastructure/ # Cron jobs, Telegram, WebSocket
-│   │   │   ├── presentation/  # tRPC routers and middleware
-│   │   │   └── index.ts      # Application entry point
-│   │   └── package.json
-│   │
-│   └── frontendV2/           # React web application (main frontend)
-│       ├── src/
-│       │   ├── components/   # Reusable UI components
-│       │   ├── contexts/     # React contexts (Auth, Theme)
-│       │   ├── hooks/        # Custom React hooks
-│       │   ├── lib/          # tRPC client setup
-│       │   ├── pages/        # Route pages
-│       │   └── main.tsx      # Application entry point
-│       └── package.json
+│   ├── backend/              # tRPC API server with Elysia (hosts BullMQ producers)
+│   ├── worker/               # BullMQ consumer for async jobs (Fly)
+│   ├── cron/                 # Scheduled jobs
+│   ├── frontendV2/           # React + Vite SPA, main frontend (code under src/v2/)
+│   ├── admin/                # Passkey-gated infra dashboard on Cloudflare Pages (Next.js)
+│   └── landing/              # Marketing site at scani.xyz (Vite + React, Cloudflare Pages)
 │
 ├── packages/
 │   ├── core/                 # Core business logic
-│   │   ├── src/
-│   │   │   ├── database/     # Drizzle schema and connection
-│   │   │   ├── use-cases/    # Business logic (18 use cases)
-│   │   │   ├── services/     # Infrastructure services
-│   │   │   ├── repositories/ # Data access layer
-│   │   │   ├── entities/     # Domain entities
-│   │   │   ├── features/     # Feature implementations
-│   │   │   └── external-services/ # External API clients
-│   │   └── package.json
-│   │
-│   ├── integrations/         # Integration framework
-│   │   ├── src/
-│   │   │   ├── implementations/ # Plaid, Binance, Kraken, etc.
-│   │   │   ├── services/     # Integration API clients
-│   │   │   └── IntegrationManager.ts
-│   │   └── package.json
-│   │
-│   ├── rate-limiter/         # Rate limiting utilities
-│   │   └── package.json
-│   │
-│   └── shared/               # Shared types and utilities
-│       ├── src/
-│       │   └── index.ts      # Zod schemas, Decimal.js helpers
-│       └── package.json
+│   │   └── src/
+│   │       ├── database/          # Drizzle schema and connection
+│   │       ├── queues/            # Queue name constants
+│   │       ├── use-cases/         # Business logic
+│   │       ├── services/          # Infrastructure services
+│   │       ├── repositories/      # Data access layer
+│   │       ├── entities/          # Domain entities
+│   │       └── external-services/ # External API clients (AI, file import, ...)
+│   ├── integrations/         # Plaid, Binance, Kraken, DefiLlama, chain explorers
+│   ├── rate-limiter/         # Shared rate-limiter utility
+│   └── shared/               # Zod schemas, Decimal.js helpers
 │
-├── docs/                     # Documentation
-│   ├── ARCHITECTURE.md       # Technical architecture
-│   ├── EXECUTIVE_SUMMARY.md  # Project status
-│   ├── ROADMAP.md           # Development roadmap
-│   ├── features/            # Feature documentation
-│   ├── technical/           # Technical deep-dives
-│   └── stability/           # Stability fixes and analysis
+├── infra/
+│   └── terraform/            # Source of truth for Cloudflare/Fly/Neon/Upstash/GitHub
 │
-└── package.json             # Workspace root configuration
+├── docs/                     # See "Documentation" section below
+├── .github/workflows/        # CI + deploy + terraform + backup workflows
+├── docker-compose.yml        # Local Postgres + Redis + Mailpit
+└── package.json              # Bun workspace root
 ```
 
 ## 🚀 Getting Started
@@ -144,7 +118,8 @@ scani/
 ### Prerequisites
 
 - [Bun](https://bun.sh/) (latest version recommended)
-- PostgreSQL database (can use Supabase or local instance)
+- PostgreSQL database (Neon, or local — see `docker-compose.yml`)
+- Redis (Upstash, or local — see `docker-compose.yml`)
 - Node.js 18+ (for compatibility with some tools)
 
 ### Installation
@@ -166,86 +141,40 @@ scani/
    cp apps/backend/.env.example apps/backend/.env.local
    ```
 
-   Edit `apps/backend/.env.local` with your actual values:
+   The root `.env.example` documents every variable for all three deployment tiers (self-hosted, scani-cloud proxy, SaaS on Fly+Neon+Upstash). Copy and fill in the values you need:
 
    ```bash
-   # Supabase Configuration (Required)
-   SUPABASE_URL=https://your-project.supabase.co
-   SUPABASE_ANON_KEY=your_supabase_anon_key_here
-   SUPABASE_SERVICE_ROLE_KEY=your_supabase_service_role_key_here
-
-   # Database Configuration (Required)
-   # Use Supabase PostgreSQL or local PostgreSQL instance
-   DATABASE_URL=postgresql://username:password@localhost:5432/scani_dev
-
-   # Server Configuration (Optional)
-   PORT=3001
-   FRONTEND_URL=http://localhost:5173
-
-   # External API Keys (Optional - for specific features)
-   OPENAI_API_KEY=your_openai_api_key_here
-   PLAID_CLIENT_ID=your_plaid_client_id
-   PLAID_SECRET=your_plaid_secret
+   # At the repo root
+   cp .env.example .env.local
    ```
 
-   **Frontend Environment Variables:**
+   Minimum for local dev:
 
    ```bash
-   # Copy the example file and customize
-   cp apps/frontendV2/.env.example apps/frontendV2/.env.local
+   DATABASE_URL=postgres://scani:scani@localhost:5433/scani?sslmode=disable
+   REDIS_URL=redis://localhost:6380
+   SMTP_URL=smtp://localhost:1026
+   BETTER_AUTH_SECRET=<generate with: openssl rand -base64 32>
+   OPENAI_API_KEY=<optional, for AI features>
+   PLAID_CLIENT_ID=<optional, for Plaid>
+   PLAID_SECRET=<optional, for Plaid>
    ```
 
-   Edit `apps/frontendV2/.env.local` with your actual values:
+3. **Start local infrastructure**
+
+   The easiest path is docker-compose — it brings up Postgres (`localhost:5433`), Redis (`localhost:6380`), and Mailpit (SMTP `localhost:1026`, UI `http://localhost:8026`):
 
    ```bash
-   # Supabase Configuration (Required)
-   VITE_SUPABASE_URL=https://your-project.supabase.co
-   VITE_SUPABASE_ANON_KEY=your_supabase_anon_key_here
-
-   # API Configuration (Optional)
-   VITE_API_URL=http://localhost:3001
-   VITE_WS_URL=ws://localhost:3002
-
-   # Sentry Configuration (Optional)
-   VITE_SENTRY_DSN=your_sentry_dsn_here
+   docker compose up -d postgres redis mailpit
    ```
 
-3. **Set up Supabase Authentication**
-
-   - Create a [Supabase](https://supabase.com) account and project
-   - Enable Email/Password authentication in Supabase Dashboard
-   - Copy your project URL and keys to the environment files
-   - Configure your site URL in Supabase (e.g., `http://localhost:5173` for development)
-
-4. **Set up the database**
-
-   The application uses PostgreSQL for all data storage. You have two options:
-
-   **Option A: Use Supabase PostgreSQL (Recommended)**
+   For full-stack containerized testing (backend + worker inside Docker):
 
    ```bash
-   # Use your Supabase database URL in the environment file
-   # DATABASE_URL=postgresql://postgres:[PASSWORD]@db.[PROJECT_ID].supabase.co:5432/postgres
+   docker compose --profile full up -d --build
    ```
 
-   **Option B: Local PostgreSQL**
-
-   ```bash
-   # macOS with Homebrew
-   brew install postgresql@15
-   brew services start postgresql@15
-   createdb scani_dev
-
-   # Ubuntu/Debian
-   sudo apt install postgresql
-   sudo systemctl start postgresql
-   sudo -u postgres createdb scani_dev
-
-   # Set DATABASE_URL in your .env.local file
-   # DATABASE_URL=postgresql://username:password@localhost:5432/scani_dev
-   ```
-
-   **Apply database migrations:**
+4. **Apply database migrations**
 
    ```bash
    # Generate migrations (only needed if schema changed)
@@ -405,18 +334,17 @@ bun run db:studio      # Visual database management
 ## 🔐 Authentication & Security
 
 ### Authentication Flow
-- **Supabase Auth** - JWT-based authentication
-- **User Sync** - Automatic sync from Supabase to local PostgreSQL
+- **Better-Auth** - session-based authentication with sessions stored in Postgres
 - **Protected Procedures** - All user data access via `protectedProcedure`
 - **User Scoping** - Automatic filtering of all queries by authenticated user
+- **Admin Dashboard** - `apps/admin` uses a separate passkey flow gated by `ADMIN_SESSION_SECRET`; admin → backend actions are HMAC-signed with `ADMIN_JOBS_HMAC_SECRET`
 
 ### Security Measures
-- **Environment Variables** - All secrets stored in `.env.local` files
+- **Environment Variables** - All secrets stored in `.env.local` files (never committed)
 - **Input Validation** - Zod schemas for all API inputs
 - **SQL Injection Prevention** - Drizzle ORM parameterized queries only
 - **Rate Limiting** - Per-endpoint and per-user rate limits
 - **Error Sanitization** - Sensitive data removed from error responses
-- **Sentry Integration** - Error tracking without exposing secrets
 
 ## 🔌 Integrations
 
@@ -472,38 +400,45 @@ bun run db:studio      # Visual database management
 
 ## 🚀 Deployment
 
-### Production Build
+Scani ships to a managed stack defined in code at `infra/terraform/` — that's the source of truth for Cloudflare / Fly / Neon / Upstash / GitHub. Don't click-configure in vendor dashboards.
 
-```bash
-# Build all packages
-bun build
+### Production Targets
 
-# Build specific package
-cd apps/backend && bun run build
-cd apps/frontendV2 && bun run build
-```
+- **Backend + worker** → Fly.io (Docker multi-stage Bun builds; `apps/backend/fly.toml`, `apps/worker/fly.toml`)
+- **frontendV2, admin, landing** → Cloudflare Pages
+- **Postgres** → Neon (serverless)
+- **Redis** → Upstash (BullMQ)
+- **Object storage** → Cloudflare R2
+- **Email** → Fastmail (JMAP / SMTP)
+- **Auth** → Better-Auth (sessions in Postgres)
+
+CI/CD lives in `.github/workflows/`:
+- `ci.yml` — lint, type-check, tests, secret scan
+- `deploy-fly.yaml` — path-based change detection, DB migrations, deploys backend/worker to Fly and frontend/landing/admin to Cloudflare Pages. A `check-ci-status` job skips re-validation when the PR CI already passed.
+- `terraform.yaml` — plan/apply for infra
+- `backup-db.yaml` — scheduled DB backup
 
 ### Environment Variables
 
-Production requires the following environment variables:
-- `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`
-- `DATABASE_URL` - PostgreSQL connection string
-- `OPENAI_API_KEY` - For AI features
-- `PLAID_CLIENT_ID`, `PLAID_SECRET` - For bank integrations
-- `SENTRY_DSN` - For error tracking
+`.env.example` at the repo root documents all required variables for the three deployment tiers (self-hosted, scani-cloud proxy, SaaS on Fly+Neon+Upstash). Key groups:
 
-### Deployment Platforms
+- `DATABASE_URL` — Neon (prod) or local Postgres
+- `REDIS_URL` — Upstash (prod) or local Redis
+- `BETTER_AUTH_SECRET`, email config — auth
+- `OPENAI_API_KEY`, `PLAID_CLIENT_ID`, `PLAID_SECRET` — AI + Plaid
+- `R2_*` — Cloudflare R2 (object storage)
+- `ADMIN_SESSION_SECRET` (admin passkey), `ADMIN_JOBS_HMAC_SECRET` (admin→backend actions)
 
-Recommended platforms:
-- **Backend** - Fly.io, Railway, or any Node.js/Bun hosting
-- **Frontend** - Vercel, Netlify, or Cloudflare Pages
-- **Database** - Supabase, Neon, or managed PostgreSQL
+### Self-Hosting
+
+See [`docs/SELF_HOST.md`](./docs/SELF_HOST.md) for the self-hosted deployment guide.
 
 ## 📖 Documentation
 
 - [`ARCHITECTURE.md`](./docs/ARCHITECTURE.md) - Technical architecture details
-- [`EXECUTIVE_SUMMARY.md`](./docs/EXECUTIVE_SUMMARY.md) - Project status and overview
-- [`ROADMAP.md`](./docs/ROADMAP.md) - Development roadmap and planned features
+- [`IMPLEMENTATION_PLAN.md`](./docs/IMPLEMENTATION_PLAN.md) - Current implementation plan
+- [`SELF_HOST.md`](./docs/SELF_HOST.md) - Self-hosting guide
+- [`PUBLISHING.md`](./docs/PUBLISHING.md) - Release / publishing notes
 - [`/docs/features/`](./docs/features/) - Feature-specific documentation
 - [`/docs/technical/`](./docs/technical/) - Technical deep-dives
 
@@ -538,6 +473,7 @@ Built with:
 - [tRPC](https://trpc.io/) - End-to-end type safety
 - [Drizzle ORM](https://orm.drizzle.team/) - TypeScript ORM
 - [React](https://react.dev/) - UI framework
-- [Supabase](https://supabase.com/) - Authentication and database
+- [Better-Auth](https://better-auth.com/) - Authentication
+- [BullMQ](https://bullmq.io/) - Async job queue
 - [TypeDI](https://github.com/typestack/typedi) - Dependency injection
 
