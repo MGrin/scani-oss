@@ -135,6 +135,26 @@ jobs:
               cloudflare_pages_project.admin \
               "${TF_VAR_cloudflare_account_id}/scani-admin" || true
           fi
+          # scani-frontend and scani-landing Pages projects — existed before
+          # Terraform took ownership (2026-04-19 stability PR).
+          if ! terraform state list | grep -q '^cloudflare_pages_project\.frontend$'; then
+            terraform import -input=false \
+              cloudflare_pages_project.frontend \
+              "${TF_VAR_cloudflare_account_id}/scani-frontend" || true
+          fi
+          if ! terraform state list | grep -q '^cloudflare_pages_project\.landing$'; then
+            terraform import -input=false \
+              cloudflare_pages_project.landing \
+              "${TF_VAR_cloudflare_account_id}/scani-landing" || true
+          fi
+          # Sentry `scani` team — auto-created with the Sentry org, so we
+          # adopt it instead of trying to CREATE a duplicate. Import ID
+          # format for jianyuan/sentry is `<org-slug>/<team-slug>`.
+          if ! terraform state list | grep -q '^sentry_team\.scani$'; then
+            terraform import -input=false \
+              sentry_team.scani \
+              "${TF_VAR_sentry_org}/scani" || true
+          fi
           exit 0
 
       - run: terraform apply -auto-approve -input=false -lock-timeout=60s
