@@ -285,6 +285,25 @@ jobs:
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
 
+      # Worker has no HTTP service for Fly to health-check, so `flyctl deploy`
+      # doesn't automatically wait for the machine to reach `started`. If a
+      # prior crash-loop exhausted the machine's restart budget, Fly leaves it
+      # in `stopped` and the deploy returns success while no worker is
+      # actually processing jobs. Force-start after every deploy as a
+      # belt-and-braces step; it's a no-op when the machine is already up.
+      - name: Ensure worker machine is running
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+        run: |
+          set -euo pipefail
+          for mid in $(flyctl machine list --app scani-worker --json | jq -r '.[].id'); do
+            state=$(flyctl machine status "$mid" --app scani-worker --json | jq -r '.state')
+            echo "machine $mid state=$state"
+            if [ "$state" != "started" ]; then
+              flyctl machine start "$mid" --app scani-worker
+            fi
+          done
+
   deploy-frontend:
     name: Deploy scani-frontend (Cloudflare Pages)
     runs-on: ubuntu-latest
