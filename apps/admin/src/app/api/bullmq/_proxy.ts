@@ -19,6 +19,7 @@
 
 import { getPasskeyConfig } from '@/lib/auth/config';
 import { SESSION_COOKIE, verifySession } from '@/lib/auth/session';
+import { invalidateCache } from '@/lib/cache';
 import { getEnv } from '@/lib/env';
 
 function cookieHeaderValue(headerValue: string | null, name: string): string | undefined {
@@ -94,6 +95,18 @@ export async function proxyJobAction(
       'x-admin-actor': actor,
     },
   });
+
+  // The retry / remove action just changed which BullMQ set this job
+  // lives in. Drop the cached overview + per-job view so the next page
+  // load reflects reality instead of waiting out the 10s TTL. Per-state
+  // lists have their own 5s TTL, which is tight enough not to bother.
+  if (res.ok) {
+    await Promise.all([
+      invalidateCache('bullmq:overview'),
+      invalidateCache(`bullmq:job:${jobId}`),
+      invalidateCache('upstash:queue-depths'),
+    ]);
+  }
 
   const responseBody = await res.text();
   return new Response(responseBody, {

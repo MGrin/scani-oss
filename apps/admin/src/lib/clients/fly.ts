@@ -1,3 +1,4 @@
+import { cached } from '../cache';
 import { getEnv } from '../env';
 import { type Result, tryCatch } from '../result';
 
@@ -46,25 +47,26 @@ export interface FlyOrgOverview {
 }
 
 export async function getFlyOverview(): Promise<Result<FlyOrgOverview>> {
-  return tryCatch(async () => {
-    const { org } = auth();
-    const data = await gql<{
-      organization: {
-        slug: string;
-        name: string;
-        billingStatus: string | null;
-        viewerRole: string | null;
-        apps: {
-          nodes: Array<{
-            name: string;
-            status: string;
-            deployed: boolean;
-            currentRelease: { version: number; createdAt: string } | null;
-          }>;
-        };
-      } | null;
-    }>(
-      `query($slug: String!) {
+  return tryCatch(() =>
+    cached('fly:overview', 30, async () => {
+      const { org } = auth();
+      const data = await gql<{
+        organization: {
+          slug: string;
+          name: string;
+          billingStatus: string | null;
+          viewerRole: string | null;
+          apps: {
+            nodes: Array<{
+              name: string;
+              status: string;
+              deployed: boolean;
+              currentRelease: { version: number; createdAt: string } | null;
+            }>;
+          };
+        } | null;
+      }>(
+        `query($slug: String!) {
         organization(slug: $slug) {
           slug
           name
@@ -80,19 +82,20 @@ export async function getFlyOverview(): Promise<Result<FlyOrgOverview>> {
           }
         }
       }`,
-      { slug: org }
-    );
+        { slug: org }
+      );
 
-    if (!data.organization) throw new Error(`Fly org '${org}' not found`);
+      if (!data.organization) throw new Error(`Fly org '${org}' not found`);
 
-    return {
-      slug: data.organization.slug,
-      name: data.organization.name,
-      billingStatus: data.organization.billingStatus,
-      viewerRole: data.organization.viewerRole,
-      apps: data.organization.apps.nodes,
-    };
-  });
+      return {
+        slug: data.organization.slug,
+        name: data.organization.name,
+        billingStatus: data.organization.billingStatus,
+        viewerRole: data.organization.viewerRole,
+        apps: data.organization.apps.nodes,
+      };
+    })
+  );
 }
 
 export interface FlyMachine {
@@ -105,30 +108,32 @@ export interface FlyMachine {
 }
 
 export async function getFlyMachines(app: string): Promise<Result<FlyMachine[]>> {
-  return tryCatch(async () => {
-    const { token } = auth();
-    const res = await fetch(`${MACHINES}/apps/${app}/machines`, {
-      headers: { authorization: `Bearer ${token}` },
-      cache: 'no-store',
-    });
-    if (!res.ok) throw new Error(`Fly machines ${res.status}: ${await res.text()}`);
-    const raw = (await res.json()) as Array<{
-      id: string;
-      name: string;
-      state: string;
-      region: string;
-      image_ref?: { repository?: string; tag?: string };
-      created_at: string;
-    }>;
-    return raw.map((m) => ({
-      id: m.id,
-      name: m.name,
-      state: m.state,
-      region: m.region,
-      image: m.image_ref?.repository
-        ? `${m.image_ref.repository}:${m.image_ref.tag ?? 'latest'}`
-        : 'unknown',
-      createdAt: m.created_at,
-    }));
-  });
+  return tryCatch(() =>
+    cached(`fly:machines:${app}`, 30, async () => {
+      const { token } = auth();
+      const res = await fetch(`${MACHINES}/apps/${app}/machines`, {
+        headers: { authorization: `Bearer ${token}` },
+        cache: 'no-store',
+      });
+      if (!res.ok) throw new Error(`Fly machines ${res.status}: ${await res.text()}`);
+      const raw = (await res.json()) as Array<{
+        id: string;
+        name: string;
+        state: string;
+        region: string;
+        image_ref?: { repository?: string; tag?: string };
+        created_at: string;
+      }>;
+      return raw.map((m) => ({
+        id: m.id,
+        name: m.name,
+        state: m.state,
+        region: m.region,
+        image: m.image_ref?.repository
+          ? `${m.image_ref.repository}:${m.image_ref.tag ?? 'latest'}`
+          : 'unknown',
+        createdAt: m.created_at,
+      }));
+    })
+  );
 }

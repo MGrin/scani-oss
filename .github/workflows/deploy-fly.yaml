@@ -582,9 +582,12 @@ jobs:
           # here; override per-env via GH environment secret if we ever
           # add staging.
           BACKEND_BASE_URL: https://api.scani.xyz
-          # Sentry (admin runs as Next.js / @sentry/nextjs)
+          # Sentry (admin runs as Next.js / @sentry/nextjs). `SENTRY_ORG`
+          # is also needed at runtime by /services/sentry to query the
+          # Sentry REST API from within Cloudflare Pages.
           NEXT_PUBLIC_SENTRY_DSN: ${{ secrets.NEXT_PUBLIC_SENTRY_DSN_ADMIN }}
           SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+          SENTRY_ORG: ${{ secrets.SENTRY_ORG }}
           SENTRY_RELEASE: ${{ github.sha }}
           SENTRY_ENVIRONMENT: production
         run: |
@@ -610,7 +613,8 @@ jobs:
                    ADMIN_PASSKEY_CREDENTIAL_ID ADMIN_PASSKEY_PUBLIC_KEY \
                    ADMIN_SESSION_SECRET \
                    ADMIN_JOBS_HMAC_SECRET BACKEND_BASE_URL \
-                   NEXT_PUBLIC_SENTRY_DSN SENTRY_AUTH_TOKEN SENTRY_RELEASE SENTRY_ENVIRONMENT; do
+                   NEXT_PUBLIC_SENTRY_DSN SENTRY_AUTH_TOKEN SENTRY_ORG \
+                   SENTRY_RELEASE SENTRY_ENVIRONMENT; do
             sync_secret "$n" "${!n}"
           done
 

@@ -1,3 +1,4 @@
+import { cached } from '../cache';
 import { getEnv } from '../env';
 import { type Result, tryCatch } from '../result';
 
@@ -47,42 +48,44 @@ export interface NeonProject {
 }
 
 export async function getNeonProjects(): Promise<Result<NeonProject[]>> {
-  return tryCatch(async () => {
-    const list = await req<{ projects: Array<Record<string, unknown>> }>(
-      `/projects?org_id=${encodeURIComponent(orgId())}`
-    );
+  return tryCatch(() =>
+    cached('neon:projects', 60, async () => {
+      const list = await req<{ projects: Array<Record<string, unknown>> }>(
+        `/projects?org_id=${encodeURIComponent(orgId())}`
+      );
 
-    return Promise.all(
-      list.projects.map(async (p) => {
-        const id = p.id as string;
-        const branches = await req<{ branches: unknown[] }>(`/projects/${id}/branches`).catch(
-          () => ({
-            branches: [],
-          })
-        );
+      return Promise.all(
+        list.projects.map(async (p) => {
+          const id = p.id as string;
+          const branches = await req<{ branches: unknown[] }>(`/projects/${id}/branches`).catch(
+            () => ({
+              branches: [],
+            })
+          );
 
-        return {
-          id,
-          name: (p.name as string) ?? id,
-          platformId: (p.platform_id as string) ?? 'unknown',
-          regionId: (p.region_id as string) ?? 'unknown',
-          pgVersion: (p.pg_version as number) ?? 0,
-          storeBytes: (p.store_bytes as number) ?? 0,
-          syntheticStorageSize: (p.synthetic_storage_size as number | null) ?? null,
-          cpuUsedSec: (p.cpu_used_sec as number) ?? 0,
-          computeHours: Math.round((((p.cpu_used_sec as number) ?? 0) / 3600) * 100) / 100,
-          dataTransferBytes: (p.data_transfer_bytes as number) ?? 0,
-          writtenDataBytes: (p.written_data_bytes as number) ?? 0,
-          branchCount: branches.branches.length,
-          createdAt: (p.created_at as string) ?? '',
-          plan:
-            ((p.owner as Record<string, unknown> | undefined)?.plan as string | undefined) ??
-            (p.plan as string | undefined) ??
-            'unknown',
-        };
-      })
-    );
-  });
+          return {
+            id,
+            name: (p.name as string) ?? id,
+            platformId: (p.platform_id as string) ?? 'unknown',
+            regionId: (p.region_id as string) ?? 'unknown',
+            pgVersion: (p.pg_version as number) ?? 0,
+            storeBytes: (p.store_bytes as number) ?? 0,
+            syntheticStorageSize: (p.synthetic_storage_size as number | null) ?? null,
+            cpuUsedSec: (p.cpu_used_sec as number) ?? 0,
+            computeHours: Math.round((((p.cpu_used_sec as number) ?? 0) / 3600) * 100) / 100,
+            dataTransferBytes: (p.data_transfer_bytes as number) ?? 0,
+            writtenDataBytes: (p.written_data_bytes as number) ?? 0,
+            branchCount: branches.branches.length,
+            createdAt: (p.created_at as string) ?? '',
+            plan:
+              ((p.owner as Record<string, unknown> | undefined)?.plan as string | undefined) ??
+              (p.plan as string | undefined) ??
+              'unknown',
+          };
+        })
+      );
+    })
+  );
 }
 
 export interface NeonConnectionUri {

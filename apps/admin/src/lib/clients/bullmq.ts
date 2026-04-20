@@ -5,10 +5,16 @@
  * using the `scani-jobs` queue's on-disk layout. Writes (retry, remove)
  * go through HMAC-gated endpoints on the backend so BullMQ's state
  * machine stays authoritative.
+ *
+ * Everything here uses `redisPipeline()` where possible: the admin
+ * dashboard is not on the hot path but it used to issue ~215 sequential
+ * REST calls per page load (sample 50 × 4 states × HGETALL), which made
+ * the UI feel irresponsive. Batch-and-cache brings it to 2 round-trips.
  */
 
+import { cached } from '../cache';
 import { type Result, tryCatch } from '../result';
-import { redisCmd } from './upstash';
+import { redisPipeline } from './upstash';
 
 const QUEUE = 'scani-jobs';
 const bkey = (suffix: string) => `bull:${QUEUE}:${suffix}`;
@@ -41,20 +47,21 @@ export interface JobDetail extends JobSummary {
   progress: number | null;
 }
 
-async function listIds(state: JobState, offset: number, limit: number): Promise<string[]> {
+/** Build the Redis command to range-scan a state's id list/set. */
+function rangeCmd(state: JobState, offset: number, limit: number): Array<string | number> {
   const end = offset + limit - 1;
   if (state === 'waiting' || state === 'active') {
-    const result = (await redisCmd(
-      'LRANGE',
-      bkey(state === 'waiting' ? 'wait' : 'active'),
-      offset,
-      end
-    )) as string[] | null;
-    return result ?? [];
+    return ['LRANGE', bkey(state === 'waiting' ? 'wait' : 'active'), offset, end];
   }
-  // delayed, failed, completed are sorted sets, most-recent last.
-  const result = (await redisCmd('ZRANGE', bkey(state), offset, end, 'REV')) as string[] | null;
-  return result ?? [];
+  return ['ZRANGE', bkey(state), offset, end, 'REV'];
+}
+
+/** Build the Redis command for counting a state's entries. */
+function countCmd(state: JobState): Array<string | number> {
+  if (state === 'waiting' || state === 'active') {
+    return ['LLEN', bkey(state === 'waiting' ? 'wait' : state)];
+  }
+  return ['ZCARD', bkey(state)];
 }
 
 function normalizeHash(raw: unknown): Record<string, string> | null {
@@ -118,66 +125,94 @@ function parseJobHash(id: string, hash: Record<string, string>): JobDetail {
 }
 
 export async function getQueueOverview(): Promise<Result<QueueOverview>> {
-  return tryCatch(async () => {
-    const [waiting, active, delayed, failed, completed] = await Promise.all([
-      redisCmd('LLEN', bkey('wait')),
-      redisCmd('LLEN', bkey('active')),
-      redisCmd('ZCARD', bkey('delayed')),
-      redisCmd('ZCARD', bkey('failed')),
-      redisCmd('ZCARD', bkey('completed')),
-    ]);
+  return tryCatch(() =>
+    cached('bullmq:overview', 10, async () => {
+      // Round-trip 1: counts for all states + recent-failures range +
+      // per-state sample ranges, all in one pipeline.
+      const SAMPLE_LIMIT = 50;
+      const FAIL_SAMPLE = 10;
+      const countCmds = [
+        countCmd('waiting'),
+        countCmd('active'),
+        countCmd('delayed'),
+        countCmd('failed'),
+        countCmd('completed'),
+      ];
+      const rangeCmds = [
+        rangeCmd('failed', 0, FAIL_SAMPLE),
+        rangeCmd('waiting', 0, SAMPLE_LIMIT),
+        rangeCmd('active', 0, SAMPLE_LIMIT),
+        rangeCmd('failed', 0, SAMPLE_LIMIT),
+        rangeCmd('completed', 0, SAMPLE_LIMIT),
+      ];
+      const firstBatch = await redisPipeline([...countCmds, ...rangeCmds]);
+      const [waiting, active, delayed, failed, completed] = firstBatch.slice(0, 5);
+      const [failedIdsForDetail, waitingIds, activeIds, failedIdsSample, completedIds] = firstBatch
+        .slice(5)
+        .map((r) => (Array.isArray(r) ? (r as string[]) : [])) as string[][];
 
-    // Sample recent failures so the overview surfaces what's broken.
-    const failedIds = await listIds('failed', 0, 10);
-    const recentFailures: JobSummary[] = [];
-    for (const id of failedIds) {
-      const hash = normalizeHash(await redisCmd('HGETALL', bkey(id)));
-      if (!hash) continue;
-      const detail = parseJobHash(id, hash);
-      recentFailures.push({
-        id: detail.id,
-        name: detail.name,
-        state: 'failed',
-        timestamp: detail.timestamp,
-        processedOn: detail.processedOn,
-        finishedOn: detail.finishedOn,
-        attemptsMade: detail.attemptsMade,
-        failedReason: detail.failedReason,
+      // Dedup across samples so we never HGETALL the same id twice.
+      const sampledIds = Array.from(
+        new Set([
+          ...failedIdsForDetail,
+          ...waitingIds,
+          ...activeIds,
+          ...failedIdsSample,
+          ...completedIds,
+        ])
+      );
+
+      // Round-trip 2: fetch every sampled job's hash in one pipeline.
+      const hashes = sampledIds.length
+        ? await redisPipeline(sampledIds.map((id) => ['HGETALL', bkey(id)]))
+        : [];
+      const hashById = new Map<string, Record<string, string> | null>();
+      sampledIds.forEach((id, i) => {
+        hashById.set(id, normalizeHash(hashes[i]));
       });
-    }
 
-    // Group a small sample of recent jobs by name so the overview shows
-    // which job families are most active. We pull at most 200 ids per
-    // state — enough to spot trends, cheap on Upstash commands.
-    const byNameMap = new Map<string, number>();
-    const sampleLimit = 50;
-    const allSampled: string[] = [];
-    for (const state of ['waiting', 'active', 'failed', 'completed'] as const) {
-      const ids = await listIds(state, 0, sampleLimit);
-      allSampled.push(...ids);
-    }
-    for (const id of allSampled) {
-      const hash = normalizeHash(await redisCmd('HGETALL', bkey(id)));
-      const name = hash?.name ?? 'unknown';
-      byNameMap.set(name, (byNameMap.get(name) ?? 0) + 1);
-    }
-    const byName = Array.from(byNameMap.entries())
-      .map(([name, count]) => ({ name, count }))
-      .sort((a, b) => b.count - a.count);
+      const recentFailures: JobSummary[] = [];
+      for (const id of failedIdsForDetail) {
+        const hash = hashById.get(id);
+        if (!hash) continue;
+        const detail = parseJobHash(id, hash);
+        recentFailures.push({
+          id: detail.id,
+          name: detail.name,
+          state: 'failed',
+          timestamp: detail.timestamp,
+          processedOn: detail.processedOn,
+          finishedOn: detail.finishedOn,
+          attemptsMade: detail.attemptsMade,
+          failedReason: detail.failedReason,
+        });
+      }
 
-    return {
-      queue: QUEUE,
-      counts: {
-        waiting: Number(waiting) || 0,
-        active: Number(active) || 0,
-        delayed: Number(delayed) || 0,
-        failed: Number(failed) || 0,
-        completed: Number(completed) || 0,
-      },
-      byName,
-      recentFailures,
-    };
-  });
+      // "Jobs by name" sampled across all four states — shows which
+      // families are most active without scanning the entire history.
+      const byNameMap = new Map<string, number>();
+      for (const id of [...waitingIds, ...activeIds, ...failedIdsSample, ...completedIds]) {
+        const name = hashById.get(id)?.name ?? 'unknown';
+        byNameMap.set(name, (byNameMap.get(name) ?? 0) + 1);
+      }
+      const byName = Array.from(byNameMap.entries())
+        .map(([name, count]) => ({ name, count }))
+        .sort((a, b) => b.count - a.count);
+
+      return {
+        queue: QUEUE,
+        counts: {
+          waiting: Number(waiting) || 0,
+          active: Number(active) || 0,
+          delayed: Number(delayed) || 0,
+          failed: Number(failed) || 0,
+          completed: Number(completed) || 0,
+        },
+        byName,
+        recentFailures,
+      };
+    })
+  );
 }
 
 export async function listJobs(
@@ -185,65 +220,75 @@ export async function listJobs(
   offset: number,
   limit: number
 ): Promise<Result<{ total: number; items: JobSummary[] }>> {
-  return tryCatch(async () => {
-    const totalRaw =
-      state === 'waiting' || state === 'active'
-        ? await redisCmd('LLEN', bkey(state === 'waiting' ? 'wait' : state))
-        : await redisCmd('ZCARD', bkey(state));
-    const total = Number(totalRaw) || 0;
-    const ids = await listIds(state, offset, limit);
-    const items: JobSummary[] = [];
-    for (const id of ids) {
-      const hash = normalizeHash(await redisCmd('HGETALL', bkey(id)));
-      if (!hash) continue;
-      const detail = parseJobHash(id, hash);
-      items.push({
-        id: detail.id,
-        name: detail.name,
-        state,
-        timestamp: detail.timestamp,
-        processedOn: detail.processedOn,
-        finishedOn: detail.finishedOn,
-        attemptsMade: detail.attemptsMade,
-        failedReason: detail.failedReason,
+  return tryCatch(() =>
+    cached(`bullmq:list:${state}:${offset}:${limit}`, 5, async () => {
+      // Round-trip 1: total + id range in one batch.
+      const [totalRaw, idsRaw] = await redisPipeline([
+        countCmd(state),
+        rangeCmd(state, offset, limit),
+      ]);
+      const total = Number(totalRaw) || 0;
+      const ids = Array.isArray(idsRaw) ? (idsRaw as string[]) : [];
+      if (ids.length === 0) return { total, items: [] };
+
+      // Round-trip 2: fetch all job hashes in one pipelined batch.
+      const hashes = await redisPipeline(ids.map((id) => ['HGETALL', bkey(id)]));
+      const items: JobSummary[] = [];
+      ids.forEach((id, i) => {
+        const hash = normalizeHash(hashes[i]);
+        if (!hash) return;
+        const detail = parseJobHash(id, hash);
+        items.push({
+          id: detail.id,
+          name: detail.name,
+          state,
+          timestamp: detail.timestamp,
+          processedOn: detail.processedOn,
+          finishedOn: detail.finishedOn,
+          attemptsMade: detail.attemptsMade,
+          failedReason: detail.failedReason,
+        });
       });
-    }
-    return { total, items };
-  });
+      return { total, items };
+    })
+  );
 }
 
 export async function getJobDetail(id: string): Promise<Result<JobDetail | null>> {
-  return tryCatch(async () => {
-    const hash = normalizeHash(await redisCmd('HGETALL', bkey(id)));
-    if (!hash || Object.keys(hash).length === 0) return null;
-    const detail = parseJobHash(id, hash);
+  return tryCatch(() =>
+    cached(`bullmq:job:${id}`, 5, async () => {
+      // One pipelined round-trip for HGETALL + all five membership checks.
+      const checks: Array<[JobState, string, 'list' | 'zset']> = [
+        ['active', 'active', 'list'],
+        ['waiting', 'wait', 'list'],
+        ['delayed', 'delayed', 'zset'],
+        ['failed', 'failed', 'zset'],
+        ['completed', 'completed', 'zset'],
+      ];
+      const batch = await redisPipeline([
+        ['HGETALL', bkey(id)],
+        ...checks.map(([, suffix, kind]) =>
+          kind === 'list' ? ['LPOS', bkey(suffix), id] : ['ZSCORE', bkey(suffix), id]
+        ),
+      ]);
+      const hash = normalizeHash(batch[0]);
+      if (!hash || Object.keys(hash).length === 0) return null;
+      const detail = parseJobHash(id, hash);
 
-    // Determine state by checking membership in each set/list. Cheap and
-    // avoids stale state guesses based on timestamps alone.
-    const checks: Array<[JobState, string]> = [
-      ['active', 'active'],
-      ['waiting', 'wait'],
-      ['delayed', 'delayed'],
-      ['failed', 'failed'],
-      ['completed', 'completed'],
-    ];
-    for (const [state, suffix] of checks) {
-      const cmd =
-        state === 'active' || state === 'waiting'
-          ? await redisCmd('LPOS', bkey(suffix), id)
-          : await redisCmd('ZSCORE', bkey(suffix), id);
-      if (cmd != null) {
-        detail.state = state;
-        break;
+      const membershipResults = batch.slice(1);
+      for (let i = 0; i < checks.length; i++) {
+        if (membershipResults[i] != null) {
+          detail.state = checks[i][0];
+          break;
+        }
       }
-    }
 
-    // Redact credential-looking fields from the payload preview.
-    if (detail.data) {
-      detail.data = redactSensitive(detail.data);
-    }
-    return detail;
-  });
+      if (detail.data) {
+        detail.data = redactSensitive(detail.data);
+      }
+      return detail;
+    })
+  );
 }
 
 function redactSensitive(data: Record<string, unknown>): Record<string, unknown> {

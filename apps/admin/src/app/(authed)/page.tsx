@@ -6,6 +6,7 @@ import { getFastmailStatus } from '@/lib/clients/fastmail';
 import { getFlyOverview } from '@/lib/clients/fly';
 import { getRecentRuns } from '@/lib/clients/github';
 import { getNeonProjects } from '@/lib/clients/neon';
+import { getSentryOverview } from '@/lib/clients/sentry';
 import { getQueueDepths, getUpstashDatabases } from '@/lib/clients/upstash';
 import { formatBytes, formatNumber, formatRelative } from '@/lib/format';
 
@@ -13,20 +14,33 @@ export const runtime = 'edge';
 export const dynamic = 'force-dynamic';
 
 export default async function OverviewPage() {
-  const [backend, fly, neon, upstashDbs, queue, pages, r2, cfBilling, runs, fastmail, appDb] =
-    await Promise.all([
-      getBackendHealth(),
-      getFlyOverview(),
-      getNeonProjects(),
-      getUpstashDatabases(),
-      getQueueDepths(),
-      getPagesProjects(),
-      getR2Buckets(),
-      getBillingProfile(),
-      getRecentRuns(5),
-      getFastmailStatus(),
-      getAppDbStats(),
-    ]);
+  const [
+    backend,
+    fly,
+    neon,
+    upstashDbs,
+    queue,
+    pages,
+    r2,
+    cfBilling,
+    runs,
+    fastmail,
+    appDb,
+    sentry,
+  ] = await Promise.all([
+    getBackendHealth(),
+    getFlyOverview(),
+    getNeonProjects(),
+    getUpstashDatabases(),
+    getQueueDepths(),
+    getPagesProjects(),
+    getR2Buckets(),
+    getBillingProfile(),
+    getRecentRuns(5),
+    getFastmailStatus(),
+    getAppDbStats(),
+    getSentryOverview(),
+  ]);
 
   const backendStatus: ServiceStatus = backend.ok && backend.data.ok ? 'ok' : 'error';
 
@@ -214,6 +228,40 @@ export default async function OverviewPage() {
             )
           ) : (
             <div className="text-red-300">{fastmail.error}</div>
+          )}
+        </ServiceCard>
+
+        <ServiceCard
+          title="Sentry"
+          href="/services/sentry"
+          status={
+            sentry.ok
+              ? sentry.data.reduce((acc, p) => acc + p.unresolvedIssues, 0) > 0
+                ? 'warn'
+                : 'ok'
+              : 'error'
+          }
+          statusLabel={
+            sentry.ok
+              ? `${sentry.data.reduce((acc, p) => acc + p.unresolvedIssues, 0)} unresolved`
+              : 'error'
+          }
+        >
+          {sentry.ok ? (
+            <>
+              <div>
+                {sentry.data.length} project{sentry.data.length === 1 ? '' : 's'} ·{' '}
+                {formatNumber(sentry.data.reduce((acc, p) => acc + p.events7d, 0))} events 7d
+              </div>
+              <div className="text-neutral-400">
+                {sentry.data
+                  .filter((p) => p.unresolvedIssues > 0)
+                  .map((p) => `${p.slug} (${p.unresolvedIssues})`)
+                  .join(' · ') || 'no open issues'}
+              </div>
+            </>
+          ) : (
+            <div className="text-red-300">{sentry.error}</div>
           )}
         </ServiceCard>
 
