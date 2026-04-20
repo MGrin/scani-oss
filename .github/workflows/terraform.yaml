@@ -4,6 +4,7 @@ on:
   pull_request:
     paths:
       - "infra/terraform/**"
+      - "infra/r2/**"
       - ".github/workflows/terraform.yaml"
   # On main we run for EVERY push, not just infra/terraform/** changes.
   # The deploy-fly workflow is chained via `workflow_run` and only fires
@@ -162,3 +163,19 @@ jobs:
           exit 0
 
       - run: terraform apply -auto-approve -input=false -lock-timeout=60s
+
+      # R2 bucket CORS. The cloudflare v4 Terraform provider does not yet
+      # expose a CORS resource for R2 (same story as the bucket lifecycle
+      # rules noted in cloudflare.tf), so the JSON at infra/r2/ is the
+      # source of truth and we apply it post-TF via wrangler. Idempotent:
+      # wrangler overwrites the existing rule set each run. Fixing this
+      # in CI means manual `wrangler cors set` runs can't silently drift
+      # from what's checked in.
+      - name: Apply R2 bucket CORS policies
+        working-directory: infra/r2
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          npx -y wrangler@3 r2 bucket cors set scani-job-uploads \
+            --file scani-job-uploads-cors.json -y

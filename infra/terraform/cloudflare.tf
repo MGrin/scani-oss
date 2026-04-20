@@ -10,10 +10,12 @@ data "cloudflare_zone" "primary" {
 # so managing the bucket from TF is a chicken-and-egg trap.
 #
 # The job-upload bucket is new and unrelated to TF state, so TF owns it.
-# Lifecycle rules (24h purge on `temp/*`) are not yet exposed by the
-# cloudflare v4 provider — set them via `wrangler r2 bucket lifecycle`
-# or the Cloudflare API post-apply. The bucket is the source of truth
-# here; an orphaned object just eats storage, not correctness.
+# Lifecycle rules (24h purge on `temp/*`) and CORS policies are not yet
+# exposed by the cloudflare v4 provider — lifecycle is set via
+# `wrangler r2 bucket lifecycle` and CORS lives at
+# `infra/r2/scani-job-uploads-cors.json`, applied by the Apply job in
+# .github/workflows/terraform.yaml after `terraform apply`. The JSON is
+# the source of truth; manual `wrangler cors set` runs drift from it.
 resource "cloudflare_r2_bucket" "job_uploads" {
   account_id = var.cloudflare_account_id
   name       = "scani-job-uploads"
