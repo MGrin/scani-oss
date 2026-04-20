@@ -178,12 +178,22 @@ export async function deleteTempBlob(key: string): Promise<void> {
 }
 
 /**
- * Verify R2 connectivity + credentials. Does a signed HEAD on a nonexistent
- * key. Any of 200/403/404 means our signed request reached R2 and auth was
- * evaluated — the key simply isn't there. 403 is R2's default response for
- * HEAD/GET on a missing key when the access token lacks `s3:ListBucket`,
- * which is the case for our object-scoped tokens — treat it as healthy.
- * The true-negative signal is 401 (bad signature) or a network error.
+ * Verify R2 connectivity + credentials. Uses Bun's `presign` to build a
+ * signed HEAD URL against a nonexistent key, then does the HEAD via
+ * `fetch` so we can inspect the raw HTTP status.
+ *
+ * Healthy statuses: 200/403/404.
+ *   - 200: shouldn't happen (key is non-existent by design), but fine.
+ *   - 404: token has `s3:ListBucket`, server confirms missing key.
+ *   - 403: R2 default for HEAD on a missing key when the access token is
+ *     object-scoped (no `s3:ListBucket`). Our production token is — so
+ *     403 means auth reached R2 and the signed request was accepted.
+ * Everything else (401 bad signature, network error, 5xx) is unhealthy.
+ *
+ * Why not `S3File.exists()`: Bun's wrapper throws a generic
+ * "an unexpected error has occurred" on any non-200/404 status and
+ * doesn't expose the real HTTP code, so we can't distinguish 403 from a
+ * true failure. The signed-HEAD path gives us the status directly.
  *
  * Never throws.
  */
@@ -192,20 +202,18 @@ export async function healthCheck(): Promise<
 > {
   try {
     const { client } = getServerClient();
+    const url = client.file('__healthcheck__/nonexistent').presign({
+      method: 'HEAD',
+      expiresIn: 60,
+    });
     const t0 = performance.now();
-    await client.file('__healthcheck__/nonexistent').exists();
+    const res = await fetch(url, { method: 'HEAD', signal: AbortSignal.timeout(3_000) });
     const latencyMs = Math.round(performance.now() - t0);
-    return { ok: true, latencyMs };
-  } catch (err) {
-    // Bun's S3Client surfaces a 403-on-missing-key as an error string that
-    // includes either the status (`403`) or the S3 code (`AccessDenied`).
-    // For object-scoped R2 tokens (no ListBucket), that's expected and
-    // means auth reached R2 — flag it healthy. Any other error is a real
-    // misconfiguration.
-    const msg = err instanceof Error ? err.message : String(err);
-    if (/\b403\b|AccessDenied/i.test(msg)) {
-      return { ok: true, latencyMs: 0 };
+    if (res.status === 200 || res.status === 403 || res.status === 404) {
+      return { ok: true, latencyMs };
     }
-    return { ok: false, error: msg };
+    return { ok: false, error: `unexpected status ${res.status}` };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : String(err) };
   }
 }

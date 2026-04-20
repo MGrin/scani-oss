@@ -395,14 +395,17 @@ app
     }
 
     try {
+      // Use the public `getProviderStatus()` API exposed by AIService —
+      // the previous `aiProviderManager` private-field dig broke when
+      // the refactor split AIService into separate provider / CSV /
+      // screenshot services, and the private member was silently
+      // renamed. Public status is the stable contract.
       const { AIService } = await import('@scani/domain/services');
       const ai = Container.get(AIService);
-      const available = (
-        ai as unknown as { aiProviderManager?: { hasAvailableProvider: () => boolean } }
-      ).aiProviderManager?.hasAvailableProvider();
+      const status = ai.getProviderStatus();
       checks.ai = {
-        ok: Boolean(available),
-        ...(available ? {} : { error: 'no AI provider configured' }),
+        ok: status.hasAvailableProvider,
+        ...(status.hasAvailableProvider ? {} : { error: 'no AI provider configured' }),
       };
     } catch (err) {
       checks.ai = { ok: false, error: err instanceof Error ? err.message : String(err) };
