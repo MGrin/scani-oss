@@ -105,6 +105,16 @@ export function FileImportPage() {
               : undefined,
           });
           accountId = created.accountId;
+          // Cache the resolved id so a retry after a later-step failure
+          // (R2 upload, parse enqueue) doesn't call ensureAccount again
+          // and trip the (userId, institutionId, name) unique constraint
+          // on `accounts`.
+          setAccountSelection((prev) => ({
+            ...prev,
+            accountId: created.accountId,
+            newAccount: undefined,
+            newInstitution: undefined,
+          }));
         }
 
         // 2. Upload file to R2.

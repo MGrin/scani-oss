@@ -9,6 +9,35 @@ export class AccountRepository extends BaseRepository<Account, NewAccount> {
   protected readonly table = schema.accounts;
   protected readonly tableName = 'accounts';
 
+  async findByUserInstitutionName(
+    userId: string,
+    institutionId: string,
+    name: string,
+    transaction?: DatabaseTransaction
+  ): Promise<Account | null> {
+    try {
+      const database = this.getDb(transaction);
+      const [account] = await database
+        .select()
+        .from(schema.accounts)
+        .where(
+          and(
+            eq(schema.accounts.userId, userId),
+            eq(schema.accounts.institutionId, institutionId),
+            eq(schema.accounts.name, name)
+          )
+        )
+        .limit(1);
+      return account ?? null;
+    } catch (error) {
+      this.logger.error(
+        { userId, institutionId, name, error },
+        'Failed to find account by user/institution/name'
+      );
+      throw error;
+    }
+  }
+
   async findByUser(userId: string, transaction?: DatabaseTransaction): Promise<Account[]> {
     try {
       const database = this.getDb(transaction);

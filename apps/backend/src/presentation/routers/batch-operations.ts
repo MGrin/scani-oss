@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { BatchOperationImplementations } from '@scani/domain/features';
+import { AccountRepository } from '@scani/domain/repositories';
 import { JOB_NAMES } from '@scani/queue';
 import { emitBulkEntityChanges, emitEntityChange } from '@scani/realtime';
 import {
@@ -8,6 +9,7 @@ import {
   type CreateHoldingsWithDependenciesResponseDto,
   CreateInstitutionDto,
 } from '@scani/shared';
+import Container from 'typedi';
 import { z } from 'zod';
 import { withIdempotency } from '../../lib/idempotency';
 import { enqueueJob } from '../../queues/enqueue';
@@ -150,6 +152,30 @@ export const batchOperationsRouter = router({
           createdAccount: false,
           createdInstitution: false,
         };
+      }
+      // Idempotent lookup: if the user already has an account with this
+      // (institutionId, name) on an existing institution, return it
+      // instead of attempting a duplicate insert. The file-import flow
+      // calls `ensureAccount` on every file-select; if an earlier attempt
+      // succeeded and a later step (R2 upload, parse enqueue) failed, the
+      // user retrying would otherwise trip the
+      // `uniqueUserInstitutionAccountName` constraint and see an opaque
+      // "undefined:undefined" DB error.
+      if (input.account?.institutionId && input.account.name) {
+        const accountRepository = Container.get(AccountRepository);
+        const existing = await accountRepository.findByUserInstitutionName(
+          dbUser.id,
+          input.account.institutionId,
+          input.account.name
+        );
+        if (existing) {
+          return {
+            accountId: existing.id,
+            institutionId: existing.institutionId,
+            createdAccount: false,
+            createdInstitution: false,
+          };
+        }
       }
       const result = await BatchOperationImplementations.createHoldingsWithDependencies(
         { userId: dbUser.id, dbUser },
