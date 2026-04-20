@@ -96,7 +96,7 @@ function JobBody({
   }
   switch (jobName) {
     case 'wallet-import':
-      return <WalletImportResult result={result} />;
+      return <WalletImportResult result={result} jobId={jobId} actionTakenAt={actionTakenAt} />;
     case 'exchange-import':
       return <ExchangeImportResult result={result} />;
     case 'screenshot-parse':

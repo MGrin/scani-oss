@@ -1,15 +1,20 @@
 import type { HoldingWithDetails } from '@scani/shared';
-import { Trash2 } from 'lucide-react';
+import { CheckCircle2, Loader2, Trash2 } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { showError, showSuccess } from '@/hooks/use-toast';
 import { trpc } from '@/lib/trpc';
+import { invalidatePortfolioQueries } from '@/v2/hooks/invalidatePortfolioQueries';
 import { useBaseCurrency } from '@/v2/hooks/useBaseCurrency';
 import { formatMoney } from '@/v2/lib/format';
+import { V2_ROUTES } from '@/v2/lib/routes';
 import { ScamBadge } from '../ScamBadge';
 
 interface WalletImportResultProps {
   result: unknown;
+  jobId?: string;
+  actionTakenAt?: Date | string | null;
 }
 
 function asRecord(v: unknown): Record<string, unknown> {
@@ -31,7 +36,7 @@ function asRecord(v: unknown): Record<string, unknown> {
  * Falls back to a counts-only summary when the job had no `holdingIds`
  * field (older completed jobs predating this feature).
  */
-export function WalletImportResult({ result }: WalletImportResultProps) {
+export function WalletImportResult({ result, jobId, actionTakenAt }: WalletImportResultProps) {
   const r = asRecord(result);
   const holdingIds = Array.isArray(r.holdingIds) ? (r.holdingIds as string[]) : null;
   const accountsCreated = Number(r.accountsCreated ?? 0);
@@ -62,7 +67,11 @@ export function WalletImportResult({ result }: WalletImportResultProps) {
       </CardHeader>
       <CardContent className="space-y-3">
         {holdingIds && holdingIds.length > 0 ? (
-          <HoldingsReviewTable holdingIds={holdingIds} />
+          <HoldingsReviewTable
+            holdingIds={holdingIds}
+            jobId={jobId}
+            actionTakenAt={actionTakenAt}
+          />
         ) : (
           <EmptyImportState chainsCount={chainsCount} accountsCreated={accountsCreated} />
         )}
@@ -138,7 +147,16 @@ function groupByInstitution(
   return Array.from(groups.entries());
 }
 
-function HoldingsReviewTable({ holdingIds }: { holdingIds: string[] }) {
+function HoldingsReviewTable({
+  holdingIds,
+  jobId,
+  actionTakenAt,
+}: {
+  holdingIds: string[];
+  jobId?: string;
+  actionTakenAt?: Date | string | null;
+}) {
+  const navigate = useNavigate();
   const utils = trpc.useUtils();
   const { symbol: currency } = useBaseCurrency();
   const query = trpc.holdings.getWithDetails.useQuery();
@@ -149,6 +167,25 @@ function HoldingsReviewTable({ holdingIds }: { holdingIds: string[] }) {
     },
     onError: (err) => showError(err, 'delete holding'),
   });
+  const markActionTakenMutation = trpc.jobs.markActionTaken.useMutation();
+
+  const alreadyActed = Boolean(actionTakenAt);
+
+  const finishReview = async () => {
+    if (jobId) {
+      try {
+        await markActionTakenMutation.mutateAsync({ jobId });
+        await Promise.all([
+          utils.jobs.getMine.invalidate({ jobId }),
+          utils.jobs.listMine.invalidate(),
+        ]);
+      } catch {
+        // UX guard only — stamp failures shouldn't block navigation.
+      }
+    }
+    await invalidatePortfolioQueries(utils);
+    navigate(V2_ROUTES.holdings);
+  };
 
   const ids = new Set(holdingIds);
   const allHoldings = (query.data?.holdings ?? []) as HoldingWithDetails[];
@@ -163,6 +200,25 @@ function HoldingsReviewTable({ holdingIds }: { holdingIds: string[] }) {
         None of the imported holdings are currently visible (they may have been deleted or marked as
         scam).
       </p>
+    );
+  }
+
+  if (alreadyActed) {
+    const when = actionTakenAt instanceof Date ? actionTakenAt : new Date(String(actionTakenAt));
+    const whenLabel = Number.isNaN(when.getTime()) ? '' : when.toLocaleString();
+    return (
+      <div className="flex items-start gap-2 rounded-md border bg-muted/20 p-3">
+        <CheckCircle2 className="h-4 w-4 text-emerald-500 mt-0.5 shrink-0" />
+        <div className="space-y-2 text-xs text-muted-foreground">
+          <p>
+            Review finished{whenLabel ? ` on ${whenLabel}` : ''}. The imported holdings are live in
+            your portfolio. You can still delete them from the holdings page.
+          </p>
+          <Button variant="outline" size="sm" asChild className="h-7 text-xs">
+            <a href={V2_ROUTES.holdings}>View holdings</a>
+          </Button>
+        </div>
+      </div>
     );
   }
 
@@ -227,6 +283,33 @@ function HoldingsReviewTable({ holdingIds }: { holdingIds: string[] }) {
           </div>
         );
       })}
+
+      {jobId && (
+        <div className="flex items-center justify-between gap-3 pt-2 border-t border-border">
+          <p className="text-xs text-muted-foreground">
+            Prune unwanted rows above, then confirm. Until you finish reviewing, this job stays in
+            your Jobs list as needing action.
+          </p>
+          <Button
+            type="button"
+            size="sm"
+            className="shrink-0"
+            disabled={markActionTakenMutation.isPending}
+            onClick={() => {
+              void finishReview();
+            }}
+          >
+            {markActionTakenMutation.isPending ? (
+              <>
+                <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" />
+                Finishing…
+              </>
+            ) : (
+              'Done reviewing'
+            )}
+          </Button>
+        </div>
+      )}
     </div>
   );
 }

@@ -14,8 +14,8 @@ const ACTIVE = new Set(['queued', 'active', 'progress']);
 
 // Keep this aligned with ACTION_REQUIRED_JOB_NAMES in useUserJobs —
 // these are the job types whose result requires a follow-up user
-// confirmation before anything lands in the portfolio.
-const ACTION_REQUIRED_JOB_NAMES = new Set(['screenshot-parse', 'file-import']);
+// confirmation before the holdings count toward the portfolio.
+const ACTION_REQUIRED_JOB_NAMES = new Set(['screenshot-parse', 'file-import', 'wallet-import']);
 
 function needsAction(job: { state: string; jobName: string; actionTakenAt: unknown }): boolean {
   return (

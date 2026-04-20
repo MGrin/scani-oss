@@ -5,10 +5,12 @@ import { type RouterOutputs, trpc } from '@/lib/trpc';
 const ACTIVE_STATES = new Set(['queued', 'active', 'progress']);
 
 // Action-required = job finished successfully, it's a type that
-// produces extracted holdings the user still has to confirm, and the
-// user hasn't stamped `action_taken_at` yet. These are the rows we want
-// to nag the user about from the nav bar.
-const ACTION_REQUIRED_JOB_NAMES = new Set(['screenshot-parse', 'file-import']);
+// produces holdings the user still has to confirm/prune, and the
+// user hasn't stamped `action_taken_at` yet. `wallet-import` belongs
+// here too: the worker writes holdings directly, but chain-sweep can
+// pull in dust / scam tokens the user wants to drop before they start
+// counting toward portfolio totals.
+const ACTION_REQUIRED_JOB_NAMES = new Set(['screenshot-parse', 'file-import', 'wallet-import']);
 
 export type UserJobRow = RouterOutputs['jobs']['listMine'][number];
 
