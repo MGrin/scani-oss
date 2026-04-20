@@ -156,18 +156,28 @@ export function AppShell() {
         <TopBar
           onMobileMenuOpen={() => setMobileOpen(true)}
           onCommandPaletteOpen={() => setCommandOpen(true)}
+          actionRequiredCount={actionRequiredCount}
         />
         <div className="flex-1 min-h-0">
           <PullToRefresh onRefresh={handleRefresh}>
             <main data-scrollable="true">
-              <div className="mx-auto max-w-7xl px-4 sm:px-6 py-4 sm:py-6">
+              <div className="mx-auto max-w-7xl px-4 sm:px-6 pt-4 sm:pt-6 pb-4 sm:pb-6">
                 <Outlet />
               </div>
+              {/* Spacer for fixed MobileNav on mobile - matches its height + safe-area inset */}
+              <div
+                aria-hidden="true"
+                className="lg:hidden"
+                style={{ height: 'calc(3.5rem + env(safe-area-inset-bottom, 0px))' }}
+              />
             </main>
           </PullToRefresh>
         </div>
-        {/* Mobile bottom nav */}
-        <MobileNav onMorePress={() => setMobileOpen(true)} />
+        {/* Mobile bottom nav - fixed to the viewport so it never drifts with dvh shifts (keyboard focus/blur, PWA scroll anchoring) */}
+        <MobileNav
+          onMorePress={() => setMobileOpen(true)}
+          actionRequiredCount={actionRequiredCount}
+        />
       </div>
 
       {/* Command palette */}

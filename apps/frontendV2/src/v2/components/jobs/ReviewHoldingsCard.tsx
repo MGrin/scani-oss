@@ -257,25 +257,25 @@ export function ReviewHoldingsCard({
           return (
             <div
               key={h.clientId}
-              className={`flex items-center gap-2 text-sm p-2.5 rounded-md border transition-opacity ${
+              className={`flex flex-col sm:flex-row sm:items-center gap-2 text-sm p-2.5 rounded-md border transition-opacity ${
                 h.removed ? 'border-border/50 opacity-40' : 'border-border'
               }`}
             >
               <div className="min-w-0 flex-1">
-                <div className="flex items-center gap-1.5">
+                <div className="flex items-center gap-1.5 flex-wrap">
                   {isMatched && !h.removed ? (
                     <Check className="h-3.5 w-3.5 text-green-500 shrink-0" />
                   ) : (
                     <span className="h-3.5 w-3.5 rounded-full border border-muted-foreground/30 shrink-0" />
                   )}
-                  <span className="font-medium">{h.symbol}</span>
+                  <span className="font-medium shrink-0">{h.symbol}</span>
                   {h.name && h.name !== h.symbol && (
-                    <span className="text-muted-foreground text-xs truncate">{h.name}</span>
+                    <span className="text-muted-foreground text-xs truncate min-w-0">{h.name}</span>
                   )}
                   {isUpdate && !h.removed && (
                     <Badge
                       variant="outline"
-                      className="text-[9px] px-1 py-0 border-blue-500 text-blue-500"
+                      className="text-[9px] px-1 py-0 border-blue-500 text-blue-500 shrink-0"
                     >
                       update
                     </Badge>
@@ -283,7 +283,7 @@ export function ReviewHoldingsCard({
                   {isMatched && !isUpdate && !h.removed && (
                     <Badge
                       variant="outline"
-                      className="text-[9px] px-1 py-0 border-green-500 text-green-500"
+                      className="text-[9px] px-1 py-0 border-green-500 text-green-500 shrink-0"
                     >
                       new
                     </Badge>
@@ -296,39 +296,41 @@ export function ReviewHoldingsCard({
                 )}
               </div>
 
-              {!h.removed && (
-                <NumericFormat
-                  value={h.balance}
-                  onValueChange={(v) => setBalance(h.clientId, v.value)}
-                  customInput={Input}
-                  className="h-7 w-24 text-xs text-right"
-                  thousandSeparator=","
-                  decimalScale={8}
-                  allowNegative={false}
-                  disabled={isSaving}
-                />
-              )}
-
-              {typeof h.confidence === 'number' && (
-                <span className="text-[10px] text-muted-foreground w-8 text-right shrink-0">
-                  {Math.round(h.confidence * 100)}%
-                </span>
-              )}
-
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-7 w-7 shrink-0"
-                onClick={() => toggleRemove(h.clientId)}
-                title={h.removed ? 'Restore' : 'Remove'}
-                disabled={isSaving}
-              >
-                {h.removed ? (
-                  <ArrowLeft className="h-3.5 w-3.5" />
-                ) : (
-                  <Trash2 className="h-3.5 w-3.5 text-muted-foreground" />
+              <div className="flex items-center gap-2 shrink-0">
+                {!h.removed && (
+                  <NumericFormat
+                    value={h.balance}
+                    onValueChange={(v) => setBalance(h.clientId, v.value)}
+                    customInput={Input}
+                    className="h-9 flex-1 sm:flex-none sm:w-28 text-xs text-right"
+                    thousandSeparator=","
+                    decimalScale={8}
+                    allowNegative={false}
+                    disabled={isSaving}
+                  />
                 )}
-              </Button>
+
+                {typeof h.confidence === 'number' && (
+                  <span className="text-[10px] text-muted-foreground w-8 text-right shrink-0">
+                    {Math.round(h.confidence * 100)}%
+                  </span>
+                )}
+
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-7 w-7 shrink-0"
+                  onClick={() => toggleRemove(h.clientId)}
+                  title={h.removed ? 'Restore' : 'Remove'}
+                  disabled={isSaving}
+                >
+                  {h.removed ? (
+                    <ArrowLeft className="h-3.5 w-3.5" />
+                  ) : (
+                    <Trash2 className="h-3.5 w-3.5 text-muted-foreground" />
+                  )}
+                </Button>
+              </div>
             </div>
           );
         })}

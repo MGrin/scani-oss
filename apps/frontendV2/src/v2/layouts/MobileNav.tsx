@@ -20,13 +20,16 @@ const items: MobileNavItem[] = [
 
 interface MobileNavProps {
   onMorePress: () => void;
+  /** When > 0, renders an amber dot over the More button to signal jobs awaiting review. */
+  actionRequiredCount?: number;
 }
 
-export function MobileNav({ onMorePress }: MobileNavProps) {
+export function MobileNav({ onMorePress, actionRequiredCount = 0 }: MobileNavProps) {
+  const hasActionRequired = actionRequiredCount > 0;
   return (
     <nav
       aria-label="Primary"
-      className="lg:hidden flex items-center justify-around h-14 border-t border-border bg-background shrink-0"
+      className="lg:hidden fixed bottom-0 inset-x-0 z-40 flex items-center justify-around h-14 border-t border-border bg-background"
       style={{
         paddingBottom: 'env(safe-area-inset-bottom, 0px)',
         height: 'calc(3.5rem + env(safe-area-inset-bottom, 0px))',
@@ -52,10 +55,22 @@ export function MobileNav({ onMorePress }: MobileNavProps) {
       <button
         type="button"
         onClick={onMorePress}
-        aria-label="More"
+        aria-label={
+          hasActionRequired
+            ? `More — ${actionRequiredCount} job${actionRequiredCount === 1 ? '' : 's'} need review`
+            : 'More'
+        }
         className="flex flex-col items-center justify-center gap-0.5 flex-1 h-full text-[10px] text-muted-foreground"
       >
-        <Menu className="h-5 w-5" aria-hidden="true" />
+        <span className="relative inline-flex">
+          <Menu className="h-5 w-5" aria-hidden="true" />
+          {hasActionRequired && (
+            <span
+              aria-hidden="true"
+              className="absolute -top-0.5 -right-0.5 h-2 w-2 rounded-full bg-amber-500 ring-2 ring-background"
+            />
+          )}
+        </span>
         <span>More</span>
       </button>
     </nav>

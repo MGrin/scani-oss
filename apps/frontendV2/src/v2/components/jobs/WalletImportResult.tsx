@@ -243,38 +243,38 @@ function HoldingsReviewTable({
             </div>
             <div className="border rounded-md divide-y">
               {chainRows.map((h) => (
-                <div key={h.id} className="flex items-center justify-between gap-3 p-2.5 text-sm">
+                <div key={h.id} className="flex items-start gap-2 p-2.5 text-sm">
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-1.5 min-w-0">
-                      <span className="font-medium truncate">{h.token.symbol}</span>
-                      <span className="text-muted-foreground truncate">{h.token.name}</span>
+                      <span className="font-medium shrink-0">{h.token.symbol}</span>
+                      <span className="text-muted-foreground truncate text-xs">{h.token.name}</span>
                       <ScamBadge probability={h.token.isScamProbability} />
                     </div>
-                    <div className="text-[11px] text-muted-foreground truncate">
-                      {h.amount} {h.token.symbol} · {h.account.name}
+                    <div className="text-[11px] text-muted-foreground mt-0.5 truncate tabular-nums">
+                      {h.amount} · {h.account.name}
                     </div>
                   </div>
-                  <div className="flex items-center gap-3 shrink-0">
+                  <div className="flex items-start gap-1 shrink-0">
                     <div className="text-right leading-tight">
-                      <div className="text-sm font-medium tabular-nums">
+                      <div className="text-sm font-medium tabular-nums whitespace-nowrap">
                         {formatMoney(h.value, currency)}
                       </div>
-                      <div className="text-[11px] text-muted-foreground tabular-nums">
-                        {h.price
-                          ? `@ ${formatMoney(h.price.value, currency, { decimals: 4 })}`
-                          : '—'}
-                      </div>
+                      {h.price && (
+                        <div className="text-[10px] text-muted-foreground tabular-nums whitespace-nowrap">
+                          @ {formatMoney(h.price.value, currency, { decimals: 4 })}
+                        </div>
+                      )}
                     </div>
                     <Button
                       type="button"
                       variant="ghost"
-                      size="sm"
-                      className="h-7 text-xs gap-1 text-destructive hover:bg-destructive/10 hover:text-destructive"
+                      size="icon"
+                      aria-label="Delete holding"
+                      className="h-7 w-7 shrink-0 text-destructive hover:bg-destructive/10 hover:text-destructive"
                       disabled={deleteMutation.isLoading}
                       onClick={() => deleteMutation.mutate({ id: h.id })}
                     >
                       <Trash2 className="h-3.5 w-3.5" />
-                      Delete
                     </Button>
                   </div>
                 </div>
@@ -285,7 +285,7 @@ function HoldingsReviewTable({
       })}
 
       {jobId && (
-        <div className="flex items-center justify-between gap-3 pt-2 border-t border-border">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 pt-2 border-t border-border">
           <p className="text-xs text-muted-foreground">
             Prune unwanted rows above, then confirm. Until you finish reviewing, this job stays in
             your Jobs list as needing action.
@@ -293,7 +293,7 @@ function HoldingsReviewTable({
           <Button
             type="button"
             size="sm"
-            className="shrink-0"
+            className="shrink-0 w-full sm:w-auto"
             disabled={markActionTakenMutation.isPending}
             onClick={() => {
               void finishReview();

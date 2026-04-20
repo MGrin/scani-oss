@@ -7,6 +7,9 @@ import { V2_ROUTES } from '../lib/routes';
 interface TopBarProps {
   onMobileMenuOpen: () => void;
   onCommandPaletteOpen: () => void;
+  /** When > 0, renders an amber dot over the mobile hamburger so users who
+   * only see the bottom-nav + top bar still notice pending review jobs. */
+  actionRequiredCount?: number;
 }
 
 /** Derive page title from URL path */
@@ -36,10 +39,15 @@ function getAddLink(pathname: string): { href: string; label: string } | null {
   return { href: V2_ROUTES.addData, label: 'Add Data' };
 }
 
-export function TopBar({ onMobileMenuOpen, onCommandPaletteOpen }: TopBarProps) {
+export function TopBar({
+  onMobileMenuOpen,
+  onCommandPaletteOpen,
+  actionRequiredCount = 0,
+}: TopBarProps) {
   const { pathname } = useLocation();
   const title = getPageTitle(pathname);
   const addLink = getAddLink(pathname);
+  const hasActionRequired = actionRequiredCount > 0;
 
   return (
     <header
@@ -53,11 +61,21 @@ export function TopBar({ onMobileMenuOpen, onCommandPaletteOpen }: TopBarProps) 
       <Button
         variant="ghost"
         size="icon"
-        className="lg:hidden h-8 w-8"
+        className="lg:hidden h-8 w-8 relative"
         onClick={onMobileMenuOpen}
-        aria-label="Open menu"
+        aria-label={
+          hasActionRequired
+            ? `Open menu — ${actionRequiredCount} job${actionRequiredCount === 1 ? '' : 's'} need review`
+            : 'Open menu'
+        }
       >
         <Menu className="h-4 w-4" />
+        {hasActionRequired && (
+          <span
+            aria-hidden="true"
+            className="absolute top-1 right-1 h-2 w-2 rounded-full bg-amber-500 ring-2 ring-background"
+          />
+        )}
       </Button>
 
       {/* Page title */}
