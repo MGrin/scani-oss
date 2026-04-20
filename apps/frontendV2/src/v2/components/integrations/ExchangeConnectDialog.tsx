@@ -388,8 +388,9 @@ export function ExchangeConnectDialog({
           </div>
         )}
 
-        {/* Help section */}
-        {help && (
+        {/* Help section — hidden while a job is in flight to free vertical
+            space for the import progress indicator below. */}
+        {help && !isBusy && (
           <div className="rounded-md bg-muted/50 p-3 space-y-1.5">
             <p className="text-xs font-medium text-muted-foreground">
               How to get your{' '}

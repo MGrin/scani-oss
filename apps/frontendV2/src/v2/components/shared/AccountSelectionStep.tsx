@@ -134,9 +134,19 @@ export function AccountSelectionStep({
 
   const accountItems = useMemo(() => {
     const accs = accounts ?? [];
-    const filtered = institutionId ? accs.filter((a) => a.institutionId === institutionId) : accs;
+    // When creating a new institution, the institution doesn't exist yet, so
+    // no existing accounts can belong to it — show an empty list.
+    // When an existing institution is picked, filter to its accounts.
+    // When nothing is picked yet, show all accounts so the user can select
+    // one and have the institution auto-derived.
+    const filtered =
+      institutionMode === 'create'
+        ? []
+        : institutionId
+          ? accs.filter((a) => a.institutionId === institutionId)
+          : accs;
     return filtered.map((acc) => ({ id: acc.id, label: acc.name, icon: null as string | null }));
-  }, [accounts, institutionId]);
+  }, [accounts, institutionId, institutionMode]);
 
   const handleFetchOG = async () => {
     if (!newInstWebsite.trim()) return;
@@ -172,6 +182,12 @@ export function AccountSelectionStep({
     } else {
       setAccountMode('select');
       setAccountId(id);
+      // If no institution is selected yet, auto-select the one this account
+      // belongs to so the two selections stay consistent.
+      if (!institutionId && institutionMode === 'select') {
+        const acc = (accounts ?? []).find((a) => a.id === id);
+        if (acc) setInstitutionId(acc.institutionId);
+      }
     }
   };
 

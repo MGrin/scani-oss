@@ -124,12 +124,17 @@ export function DataView<T>({
         ? Array.from(dv.groupedData.entries()).map(([label, items]) => renderContent(items, label))
         : !isEmpty && renderContent(dv.filteredData)}
 
-      {/* Bulk action bar */}
+      {/* Bulk action bar — pinned above the mobile bottom nav via fixed
+          positioning so it stays put when iOS toggles the visual viewport
+          (keyboard open/close). On desktop (no MobileNav), it sticks at
+          the bottom of the content area. */}
       {dv.selectedIds.size > 0 && renderBulkActions && (
-        <div className="sticky bottom-0 z-10 rounded-lg border bg-background p-3 shadow-lg">
-          <div className="flex items-center justify-between">
-            <span className="text-sm font-medium">{dv.selectedIds.size} selected</span>
-            {renderBulkActions(dv.selectedIds, dv.clearSelection)}
+        <div className="fixed inset-x-0 z-30 px-4 bottom-[calc(3.5rem+env(safe-area-inset-bottom,0px))] lg:sticky lg:inset-x-auto lg:bottom-0 lg:px-0">
+          <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border bg-background p-3 shadow-lg">
+            <span className="text-sm font-medium shrink-0">{dv.selectedIds.size} selected</span>
+            <div className="flex flex-wrap items-center justify-end gap-2">
+              {renderBulkActions(dv.selectedIds, dv.clearSelection)}
+            </div>
           </div>
         </div>
       )}

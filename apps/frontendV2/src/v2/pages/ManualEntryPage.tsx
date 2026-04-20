@@ -376,17 +376,26 @@ export function ManualEntryPage() {
     [institutions]
   );
 
-  // Account items filtered by selected institution
+  // Account items filtered by selected institution.
+  // When creating a new institution, the institution doesn't exist yet, so
+  // no existing accounts can belong to it — show an empty list.
+  // When nothing is picked yet, show all accounts so the user can select
+  // one and have the institution auto-derived.
   const accountItems = useMemo(() => {
     const accs = accounts ?? [];
-    const filtered = institutionId ? accs.filter((a) => a.institutionId === institutionId) : accs;
+    const filtered =
+      institutionMode === 'create'
+        ? []
+        : institutionId
+          ? accs.filter((a) => a.institutionId === institutionId)
+          : accs;
     return filtered.map((acc) => ({
       id: acc.id,
       label: acc.name,
       subtitle: undefined as string | undefined,
       icon: null as string | null,
     }));
-  }, [accounts, institutionId]);
+  }, [accounts, institutionId, institutionMode]);
 
   // Holdings management
   const addHolding = () => {
@@ -417,6 +426,12 @@ export function ManualEntryPage() {
     } else {
       setAccountMode('select');
       setAccountId(id);
+      // If no institution is selected yet, auto-select the one this account
+      // belongs to so the two selections stay consistent.
+      if (!institutionId && institutionMode === 'select') {
+        const acc = (accounts ?? []).find((a) => a.id === id);
+        if (acc) setInstitutionId(acc.institutionId);
+      }
     }
   };
 

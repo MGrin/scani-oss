@@ -14,7 +14,7 @@ import {
   Vault,
   Wallet,
 } from 'lucide-react';
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { NavLink, Outlet } from 'react-router-dom';
 import { PullToRefresh } from '@/components/PullToRefresh';
 import { Sheet, SheetContent } from '@/components/ui/sheet';
@@ -49,6 +49,18 @@ export function AppShell() {
   const utils = trpc.useUtils();
   const { signOut } = useAuth();
   const { actionRequiredCount } = useUserJobs();
+  const jobsNavRef = useRef<HTMLAnchorElement>(null);
+
+  // When the mobile sidebar opens and there are jobs needing attention,
+  // scroll the Jobs nav item into view — on short viewports it can sit
+  // below the fold.
+  useEffect(() => {
+    if (!mobileOpen || actionRequiredCount === 0) return;
+    const id = window.setTimeout(() => {
+      jobsNavRef.current?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    }, 150);
+    return () => window.clearTimeout(id);
+  }, [mobileOpen, actionRequiredCount]);
 
   const handleRefresh = async () => {
     await utils.invalidate();
@@ -90,10 +102,12 @@ export function AppShell() {
                         item.path === V2_ROUTES.jobs && actionRequiredCount > 0
                           ? actionRequiredCount
                           : undefined;
+                      const isJobs = item.path === V2_ROUTES.jobs;
                       return (
                         <NavLink
                           key={item.path}
                           to={item.path}
+                          ref={isJobs ? jobsNavRef : undefined}
                           end={item.path === V2_ROUTES.dashboard}
                           onClick={() => setMobileOpen(false)}
                           className={({ isActive }) =>
