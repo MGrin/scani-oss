@@ -78,7 +78,11 @@ export const institutionsRouter = router({
       }
 
       try {
-        const { result } = await ogs({ url: input.url });
+        const { result } = await ogs({
+          url: input.url,
+          timeout: 5,
+          fetchOptions: { signal: AbortSignal.timeout(5000) },
+        });
 
         const data = {
           title: result.ogTitle || result.twitterTitle || result.dcTitle || '',
