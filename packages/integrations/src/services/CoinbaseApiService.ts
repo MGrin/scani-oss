@@ -7,6 +7,8 @@
  */
 
 import crypto from 'node:crypto';
+import { credentialBucketKey } from '@scani/rate-limiter';
+
 import type { RateLimiter } from '../types';
 
 /**
@@ -97,20 +99,19 @@ export class CoinbaseApiService {
    * This tests authentication without affecting the account
    */
   async validateApiKey(apiKey: string, apiSecret: string): Promise<boolean> {
-    try {
-      const requestPath = '/v2/accounts?limit=1';
-      const headers = this.createAuthHeaders(apiKey, apiSecret, 'GET', requestPath);
-
-      const response = await this.executeWithRateLimit(() =>
-        fetch(`${this.baseUrl}${requestPath}`, {
-          headers,
-        })
-      );
-
-      return response.ok;
-    } catch (_error) {
-      return false;
+    const subKey = credentialBucketKey(apiKey);
+    const requestPath = '/v2/accounts?limit=1';
+    const headers = this.createAuthHeaders(apiKey, apiSecret, 'GET', requestPath);
+    const response = await this.executeWithRateLimit(
+      () => fetch(`${this.baseUrl}${requestPath}`, { headers }),
+      subKey
+    );
+    if (response.status === 401 || response.status === 403) return false;
+    if (!response.ok) {
+      const body = await response.text().catch(() => '');
+      throw new Error(`Coinbase HTTP ${response.status}${body ? `: ${body.slice(0, 200)}` : ''}`);
     }
+    return true;
   }
 
   /**
@@ -128,6 +129,7 @@ export class CoinbaseApiService {
       type: string;
     }>
   > {
+    const subKey = credentialBucketKey(apiKey);
     try {
       const allAccounts: CoinbaseAccount[] = [];
       let nextUri: string | null = '/v2/accounts?limit=100';
@@ -136,10 +138,12 @@ export class CoinbaseApiService {
         const requestPath = nextUri;
         const headers = this.createAuthHeaders(apiKey, apiSecret, 'GET', requestPath);
 
-        const response = await this.executeWithRateLimit(() =>
-          fetch(`${this.baseUrl}${requestPath}`, {
-            headers,
-          })
+        const response = await this.executeWithRateLimit(
+          () =>
+            fetch(`${this.baseUrl}${requestPath}`, {
+              headers,
+            }),
+          subKey
         );
 
         if (!response.ok) {
@@ -169,11 +173,12 @@ export class CoinbaseApiService {
   }
 
   /**
-   * Execute function with rate limiting if configured
+   * Execute function with rate limiting if configured. `subKey`
+   * partitions the provider-wide bucket by credential hash.
    */
-  private async executeWithRateLimit<T>(fn: () => Promise<T>): Promise<T> {
+  private async executeWithRateLimit<T>(fn: () => Promise<T>, subKey?: string): Promise<T> {
     if (this.rateLimiter) {
-      return this.rateLimiter.execute(fn);
+      return this.rateLimiter.execute(fn, subKey);
     }
     return fn();
   }

@@ -11,4 +11,4 @@ import { RateLimiter } from '@scani/rate-limiter';
  * Singleton rate limiter for Bitget API
  * 10 calls per second
  */
-export const bitgetRateLimiter = new RateLimiter(10, 1000);
+export const bitgetRateLimiter = new RateLimiter(10, 1000, { namespace: 'bitget' });

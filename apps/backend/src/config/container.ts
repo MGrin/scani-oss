@@ -1,14 +1,14 @@
 import 'reflect-metadata';
-import { createComponentLogger } from '@scani/core';
+import { createComponentLogger } from '@scani/logging';
 import { Container } from 'typedi';
 
 // Import all repositories to ensure they're registered with TypeDI
 // This loads all @Service() decorated classes from the core package
-import '@scani/core/repositories';
+import '@scani/domain/repositories';
 
 // Import all services to ensure they're registered with TypeDI
 // This loads all @Service() decorated classes from the core package
-import '@scani/core/services';
+import '@scani/domain/services';
 
 const containerLogger = createComponentLogger('container');
 
@@ -22,20 +22,20 @@ const containerLogger = createComponentLogger('container');
  * - Once loaded, TypeDI can inject them via Container.get()
  * - The @Service() decorator makes classes singleton by default
  *
- * Registered Services (from @scani/core/services):
+ * Registered Services (from @scani/domain/services):
  * - AccountService, AIService, BaseService, DashboardService
  * - HoldingService, InstitutionService, PortfolioValuationService
  * - PricingService, TokenService, TokenValidationService
  * - UserContextService, UserService
  * - AccountTypeService, InstitutionTypeService (EnumServices)
  *
- * Registered Repositories (from @scani/core/repositories):
+ * Registered Repositories (from @scani/domain/repositories):
  * - AccountRepository, BaseRepository, HoldingRepository
  * - InstitutionRepository, TokenRepository
  * - TokenPriceRepository, UserRepository
  * - AccountTypeRepository, InstitutionTypeRepository, TokenTypeRepository (Enums)
  *
- * Registered Use Cases (from @scani/core/use-cases):
+ * Registered Use Cases (from @scani/domain/use-cases):
  * - All use cases are also @Service() decorated and auto-registered
  */
 export function initializeContainer(): void {
@@ -45,7 +45,7 @@ export function initializeContainer(): void {
 
   containerLogger.info(
     {},
-    '✅ DI Container initialized with all services and repositories from @scani/core'
+    '✅ DI Container initialized with all services and repositories from @scani/domain'
   );
 }
 

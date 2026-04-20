@@ -45,9 +45,17 @@
       "dependencies": {
         "@elysiajs/cors": "^1.4.1",
         "@elysiajs/trpc": "^1.1.0",
-        "@scani/core": "workspace:*",
+        "@scani/config": "workspace:*",
+        "@scani/db": "workspace:*",
+        "@scani/domain": "workspace:*",
+        "@scani/email": "workspace:*",
         "@scani/integrations": "workspace:*",
+        "@scani/logging": "workspace:*",
+        "@scani/queue": "workspace:*",
+        "@scani/rate-limiter": "workspace:*",
+        "@scani/realtime": "workspace:*",
         "@scani/shared": "workspace:*",
+        "@scani/storage": "workspace:*",
         "@sentry/node": "^8.49.0",
         "@trpc/server": "^10.45.4",
         "better-auth": "^1.6.5",
@@ -71,8 +79,10 @@
     "apps/cron": {
       "name": "@scani/cron",
       "dependencies": {
-        "@scani/core": "workspace:*",
+        "@scani/db": "workspace:*",
+        "@scani/domain": "workspace:*",
         "@scani/integrations": "workspace:*",
+        "@scani/logging": "workspace:*",
         "reflect-metadata": "^0.2.2",
         "typedi": "^0.10.0",
         "zod": "^3.25.76",
@@ -154,9 +164,16 @@
     "apps/worker": {
       "name": "@scani/worker",
       "dependencies": {
-        "@scani/core": "workspace:*",
+        "@scani/config": "workspace:*",
         "@scani/cron": "workspace:*",
+        "@scani/db": "workspace:*",
+        "@scani/domain": "workspace:*",
         "@scani/integrations": "workspace:*",
+        "@scani/logging": "workspace:*",
+        "@scani/queue": "workspace:*",
+        "@scani/rate-limiter": "workspace:*",
+        "@scani/realtime": "workspace:*",
+        "@scani/storage": "workspace:*",
         "@sentry/node": "^8.49.0",
         "bullmq": "^5.74.1",
         "drizzle-orm": "^0.45.2",
@@ -170,28 +187,71 @@
         "typescript": "^5",
       },
     },
-    "packages/core": {
-      "name": "@scani/core",
+    "packages/ai-providers": {
+      "name": "@scani/ai-providers",
       "version": "1.0.0",
       "dependencies": {
-        "@noble/hashes": "^1.8.0",
-        "@scani/integrations": "workspace:*",
-        "@scani/rate-limiter": "workspace:*",
-        "@scani/shared": "workspace:*",
-        "decimal.js": "^10.6.0",
-        "drizzle-orm": "^0.45.2",
-        "googleapis": "^160.0.0",
-        "ofx-js": "^0.2.0",
-        "papaparse": "^5.5.3",
-        "pino": "^9.14.0",
-        "postgres": "^3.4.9",
-        "reflect-metadata": "^0.2.2",
-        "typedi": "^0.10.0",
+        "@scani/logging": "workspace:*",
+      },
+      "devDependencies": {
+        "typescript": "^5",
+      },
+    },
+    "packages/config": {
+      "name": "@scani/config",
+      "version": "1.0.0",
+      "dependencies": {
         "zod": "^3.25.76",
       },
       "devDependencies": {
-        "@types/papaparse": "^5.5.2",
+        "typescript": "^5",
+      },
+    },
+    "packages/db": {
+      "name": "@scani/db",
+      "version": "1.0.0",
+      "dependencies": {
+        "@scani/logging": "workspace:*",
+        "drizzle-orm": "^0.45.2",
+        "postgres": "^3.4.9",
+        "typedi": "^0.10.0",
+      },
+      "devDependencies": {
         "drizzle-kit": "^0.31.10",
+        "typescript": "^5",
+      },
+    },
+    "packages/domain": {
+      "name": "@scani/domain",
+      "version": "1.0.0",
+      "dependencies": {
+        "@scani/ai-providers": "workspace:*",
+        "@scani/db": "workspace:*",
+        "@scani/integrations": "workspace:*",
+        "@scani/logging": "workspace:*",
+        "@scani/pricing-providers": "workspace:*",
+        "@scani/shared": "workspace:*",
+        "decimal.js": "^10.6.0",
+        "drizzle-orm": "^0.45.2",
+        "ofx-js": "^0.2.0",
+        "papaparse": "^5.5.3",
+        "pdf-parse": "^1.1.1",
+        "postgres": "^3.4.9",
+        "typedi": "^0.10.0",
+      },
+      "devDependencies": {
+        "@types/papaparse": "^5.5.2",
+        "@types/pdf-parse": "^1.1.5",
+        "typescript": "^5",
+      },
+    },
+    "packages/email": {
+      "name": "@scani/email",
+      "version": "1.0.0",
+      "dependencies": {
+        "@scani/logging": "workspace:*",
+      },
+      "devDependencies": {
         "typescript": "^5",
       },
     },
@@ -199,8 +259,12 @@
       "name": "@scani/integrations",
       "version": "1.0.0",
       "dependencies": {
-        "@scani/core": "workspace:*",
+        "@noble/hashes": "^1.8.0",
+        "@scani/db": "workspace:*",
+        "@scani/logging": "workspace:*",
+        "@scani/pricing-providers": "workspace:*",
         "@scani/rate-limiter": "workspace:*",
+        "decimal.js": "^10.6.0",
         "drizzle-orm": "^0.45.2",
         "typedi": "^0.10.0",
       },
@@ -208,10 +272,60 @@
         "typescript": "^5",
       },
     },
+    "packages/logging": {
+      "name": "@scani/logging",
+      "version": "1.0.0",
+      "dependencies": {
+        "pino": "^9.14.0",
+      },
+      "devDependencies": {
+        "@sentry/node": "^8.49.0",
+        "typescript": "^5",
+      },
+    },
+    "packages/pricing-providers": {
+      "name": "@scani/pricing-providers",
+      "version": "1.0.0",
+      "dependencies": {
+        "@scani/db": "workspace:*",
+        "@scani/logging": "workspace:*",
+        "@scani/rate-limiter": "workspace:*",
+        "decimal.js": "^10.6.0",
+        "drizzle-orm": "^0.45.2",
+        "googleapis": "^160.0.0",
+        "pino": "^9.14.0",
+      },
+      "devDependencies": {
+        "typescript": "^5",
+      },
+    },
+    "packages/queue": {
+      "name": "@scani/queue",
+      "version": "1.0.0",
+      "devDependencies": {
+        "bullmq": "^5.74.1",
+        "ioredis": "^5.10.1",
+        "typescript": "^5",
+        "zod": "^3.25.76",
+      },
+    },
     "packages/rate-limiter": {
       "name": "@scani/rate-limiter",
       "version": "1.0.0",
       "devDependencies": {
+        "ioredis": "^5.10.1",
+        "typescript": "^5",
+      },
+    },
+    "packages/realtime": {
+      "name": "@scani/realtime",
+      "version": "1.0.0",
+      "dependencies": {
+        "@scani/logging": "workspace:*",
+      },
+      "devDependencies": {
+        "ioredis": "^5.10.1",
+        "typedi": "^0.10.0",
         "typescript": "^5",
       },
     },
@@ -221,6 +335,13 @@
         "decimal.js": "^10.6.0",
         "zod": "^3.25.76",
       },
+      "devDependencies": {
+        "typescript": "^5",
+      },
+    },
+    "packages/storage": {
+      "name": "@scani/storage",
+      "version": "1.0.0",
       "devDependencies": {
         "typescript": "^5",
       },
@@ -831,11 +952,19 @@
 
     "@scani/admin": ["@scani/admin@workspace:apps/admin"],
 
+    "@scani/ai-providers": ["@scani/ai-providers@workspace:packages/ai-providers"],
+
     "@scani/backend": ["@scani/backend@workspace:apps/backend"],
 
-    "@scani/core": ["@scani/core@workspace:packages/core"],
+    "@scani/config": ["@scani/config@workspace:packages/config"],
 
     "@scani/cron": ["@scani/cron@workspace:apps/cron"],
+
+    "@scani/db": ["@scani/db@workspace:packages/db"],
+
+    "@scani/domain": ["@scani/domain@workspace:packages/domain"],
+
+    "@scani/email": ["@scani/email@workspace:packages/email"],
 
     "@scani/frontend-v2": ["@scani/frontend-v2@workspace:apps/frontendV2"],
 
@@ -843,9 +972,19 @@
 
     "@scani/landing": ["@scani/landing@workspace:apps/landing"],
 
+    "@scani/logging": ["@scani/logging@workspace:packages/logging"],
+
+    "@scani/pricing-providers": ["@scani/pricing-providers@workspace:packages/pricing-providers"],
+
+    "@scani/queue": ["@scani/queue@workspace:packages/queue"],
+
     "@scani/rate-limiter": ["@scani/rate-limiter@workspace:packages/rate-limiter"],
 
+    "@scani/realtime": ["@scani/realtime@workspace:packages/realtime"],
+
     "@scani/shared": ["@scani/shared@workspace:packages/shared"],
+
+    "@scani/storage": ["@scani/storage@workspace:packages/storage"],
 
     "@scani/worker": ["@scani/worker@workspace:apps/worker"],
 
@@ -1006,6 +1145,8 @@
     "@types/nodemailer": ["@types/nodemailer@6.4.23", "", { "dependencies": { "@types/node": "*" } }, "sha512-aFV3/NsYFLSx9mbb5gtirBSXJnAlrusoKNuPbxsASWc7vrKLmIrTQRpdcxNcSFL3VW2A2XpeLEavwb2qMi6nlQ=="],
 
     "@types/papaparse": ["@types/papaparse@5.5.2", "", { "dependencies": { "@types/node": "*" } }, "sha512-gFnFp/JMzLHCwRf7tQHrNnfhN4eYBVYYI897CGX4MY1tzY9l2aLkVyx2IlKZ/SAqDbB3I1AOZW5gTMGGsqWliA=="],
+
+    "@types/pdf-parse": ["@types/pdf-parse@1.1.5", "", { "dependencies": { "@types/node": "*" } }, "sha512-kBfrSXsloMnUJOKi25s3+hRmkycHfLK6A09eRGqF/N8BkQoPUmaCr+q8Cli5FnfohEz/rsv82zAiPz/LXtOGhA=="],
 
     "@types/pg": ["@types/pg@8.11.6", "", { "dependencies": { "@types/node": "*", "pg-protocol": "*", "pg-types": "^4.0.1" } }, "sha512-/2WmmBXHLsfRqzfHW7BNZ8SbYzE8OSk7i3WjFYvfgRHj7S1xj+16Je5fUKv3lVdVzk/zn9TXOqf+avFCFIE0yQ=="],
 
@@ -1719,6 +1860,8 @@
 
     "node-domexception": ["node-domexception@1.0.0", "", {}, "sha512-/jKZoMpw0F8GRwl4/eLROPA3cfcXtLApP0QzLmUT/HuPCZWyB7IY9ZrMeKw2O/nFIqPQB3PVM9aYm0F312AXDQ=="],
 
+    "node-ensure": ["node-ensure@0.0.0", "", {}, "sha512-DRI60hzo2oKN1ma0ckc6nQWlHU69RH6xN0sjQTjMpChPfTYvKZdcQFfdYK2RWbJcKyUizSIy/l8OTGxMAM1QDw=="],
+
     "node-fetch": ["node-fetch@2.6.7", "", { "dependencies": { "whatwg-url": "^5.0.0" }, "peerDependencies": { "encoding": "^0.1.0" }, "optionalPeers": ["encoding"] }, "sha512-ZjMPFEfVx5j+y2yF35Kzx5sF7kDzxuDj6ziH4FFbOp87zKDZNx8yExJIb05OGF4Nlt9IHFIMBkRl41VdvcNdbQ=="],
 
     "node-gyp-build": ["node-gyp-build@4.8.4", "", { "bin": { "node-gyp-build": "bin.js", "node-gyp-build-optional": "optional.js", "node-gyp-build-test": "build-test.js" } }, "sha512-LA4ZjwlnUblHVgq0oBF3Jl/6h/Nvs5fzBLwdEF4nuxnFdsfajde4WfxtJr3CaiH+F6ewcIB/q4jQ4UzPyid+CQ=="],
@@ -1812,6 +1955,8 @@
     "pathe": ["pathe@2.0.3", "", {}, "sha512-WUjGcAqP1gQacoQe+OBJsFA7Ld4DyXuUIjZ5cc75cLHvJ7dtNsTugphxIADwspS+AraAUePCKrSVtPLFj/F88w=="],
 
     "pcre-to-regexp": ["pcre-to-regexp@1.1.0", "", {}, "sha512-KF9XxmUQJ2DIlMj3TqNqY1AWvyvTuIuq11CuuekxyaYMiFuMKGgQrePYMX5bXKLhLG3sDI4CsGAYHPaT7VV7+g=="],
+
+    "pdf-parse": ["pdf-parse@1.1.4", "", { "dependencies": { "node-ensure": "^0.0.0" } }, "sha512-XRIRcLgk6ZnUbsHsYXExMw+krrPE81hJ6FQPLdBNhhBefqIQKXu/WeTgNBGSwPrfU0v+UCEwn7AoAUOsVKHFvQ=="],
 
     "pend": ["pend@1.2.0", "", {}, "sha512-F3asv42UuXchdzt+xXqfW1OGlVBe+mxa2mqI0pg5yAHZPvFmY3Y6drSf/GQ1A86WgWEN9Kzh/WrgKa6iGcHXLg=="],
 

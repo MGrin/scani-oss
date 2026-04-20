@@ -1,128 +1,71 @@
 /**
- * Shared wrapper for user-initiated BullMQ processors.
+ * Composition root for user-job processors — pairs the generic
+ * `createUserJobProcessor` (in `@scani/queue`) with the worker's
+ * `UserJobRepository` lifecycle writes.
  *
- * Handles the parts that every user-job processor needs:
- *   - zod parse the payload (typed + validated at the boundary),
- *   - publish `active` / `progress` / `completed` / `failed` events over
- *     Redis pub/sub so the frontend's job-status hook updates the modal,
- *   - timing + structured logs,
- *   - rethrow on failure so BullMQ honours the retry policy.
- *
- * Scheduled jobs (no `userId` in payload) do not use this wrapper — they
- * run via plain functions from `@scani/cron`.
+ * The wrapper in `@scani/queue` handles payload validation, WS publishes,
+ * structured logs, and retry rethrow. The `onLifecycle` hook here is the
+ * only domain-specific piece — it mirrors every state transition into the
+ * `user_jobs` table so the `/jobs` UI has durable history.
  */
 
-import type { JobLifecycleState } from '@scani/core/queues/job-events';
-import { publishJobEvent } from '@scani/core/queues/job-events';
-import { createComponentLogger } from '@scani/core/utils/logger';
+import { UserJobRepository } from '@scani/domain/repositories';
+import { createComponentLogger } from '@scani/logging';
+import {
+  createUserJobProcessor,
+  type ProcessorContext,
+  type CreateProcessorOptions as QueueCreateProcessorOptions,
+} from '@scani/queue/processor-wrapper';
 import type { Job } from 'bullmq';
 import type { Redis } from 'ioredis';
+import Container from 'typedi';
 import type { ZodType } from 'zod';
 
 const logger = createComponentLogger('worker:processor');
 
-export interface ProcessorContext {
-  job: Job;
-  /** Publish a progress update (0..1). Best-effort. */
-  reportProgress: (progress: number) => Promise<void>;
+function userJobRepo(): UserJobRepository {
+  return Container.get(UserJobRepository);
 }
 
-export interface CreateProcessorOptions<T extends { userId: string }, R> {
-  name: string;
-  schema: ZodType<T>;
-  publisher: Redis;
-  handler: (data: T, ctx: ProcessorContext) => Promise<R>;
-}
+export type { ProcessorContext };
 
-export function createUserJobProcessor<T extends { userId: string }, R>(
+export interface CreateProcessorOptions<T extends { userId: string }, R>
+  extends Omit<QueueCreateProcessorOptions<T, R>, 'onLifecycle' | 'logger'> {}
+
+export function createUserJobProcessorForWorker<T extends { userId: string }, R>(
   options: CreateProcessorOptions<T, R>
 ): (job: Job) => Promise<R> {
-  const { name, schema, publisher, handler } = options;
-
-  return async (job: Job): Promise<R> => {
-    const started = Date.now();
-    const parseResult = schema.safeParse(job.data);
-    if (!parseResult.success) {
-      const issues = parseResult.error.issues
-        .map((i) => `${i.path.join('.') || '<root>'}: ${i.message}`)
-        .join('; ');
-      const errMessage = `Invalid payload for job '${name}' (id=${job.id}): ${issues}`;
-      logger.error({ jobId: job.id, name, issues }, '❌ Payload validation failed');
-      // Can't publish — we don't have a userId.
-      throw new Error(errMessage);
-    }
-    const data = parseResult.data;
-
-    await publishIgnoringErrors(publisher, data.userId, String(job.id), {
-      state: 'active',
-      attemptsMade: job.attemptsMade + 1,
-      attemptsAllowed: job.opts.attempts ?? 1,
-    });
-
-    const ctx: ProcessorContext = {
-      job,
-      reportProgress: async (progress: number) => {
-        const clamped = Math.min(1, Math.max(0, progress));
-        await job.updateProgress(clamped);
-        await publishIgnoringErrors(publisher, data.userId, String(job.id), {
-          state: 'progress',
-          progress: clamped,
-        });
-      },
-    };
-
-    try {
-      const result = await handler(data, ctx);
-      await publishIgnoringErrors(publisher, data.userId, String(job.id), {
-        state: 'completed',
-        result,
-      });
-      logger.info(
-        { jobId: job.id, name, durationMs: Date.now() - started },
-        '✅ User job completed'
-      );
-      return result;
-    } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : String(err);
-      await publishIgnoringErrors(publisher, data.userId, String(job.id), {
-        state: 'failed',
-        error: errorMessage,
-        attemptsMade: job.attemptsMade + 1,
-        attemptsAllowed: job.opts.attempts ?? 1,
-      });
-      logger.error(
-        {
-          jobId: job.id,
-          name,
-          error: errorMessage,
-          durationMs: Date.now() - started,
-        },
-        '❌ User job failed'
-      );
-      throw err;
-    }
-  };
+  return createUserJobProcessor<T, R>({
+    ...options,
+    logger,
+    onLifecycle: async (event) => {
+      switch (event.type) {
+        case 'active':
+          await userJobRepo().markActive(event.jobId, event.attemptsMade);
+          return;
+        case 'progress':
+          await userJobRepo().updateProgress(event.jobId, event.progress);
+          return;
+        case 'completed':
+          await userJobRepo().markCompleted(event.jobId, event.result);
+          return;
+        case 'failed':
+          await userJobRepo().markFailed(event.jobId, event.error, {
+            attemptsMade: event.attemptsMade,
+            attemptsAllowed: event.attemptsAllowed,
+          });
+          return;
+      }
+    },
+  });
 }
 
-async function publishIgnoringErrors(
-  publisher: Redis,
-  userId: string,
-  jobId: string,
-  payload: {
-    state: JobLifecycleState;
-    progress?: number;
-    result?: unknown;
-    error?: string;
-    attemptsMade?: number;
-    attemptsAllowed?: number;
-  }
-): Promise<void> {
-  try {
-    await publishJobEvent(publisher, userId, jobId, payload);
-  } catch (err) {
-    logger.warn(
-      { jobId, userId, error: err instanceof Error ? err.message : String(err) },
-      'Failed to publish job event — best-effort, continuing'
-    );
-  }
-}
+/**
+ * Back-compat alias so existing worker processors don't need to change
+ * their imports.
+ */
+export { createUserJobProcessorForWorker as createUserJobProcessor };
+
+/** Keep a parallel helper for schemas/types used by worker processors. */
+export type ProcessorSchema<T> = ZodType<T>;
+export type ProcessorPublisher = Redis;

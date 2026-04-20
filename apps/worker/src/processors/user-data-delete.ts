@@ -1,9 +1,9 @@
-import { SettingsImplementations } from '@scani/core/features/implementations';
-import type { UserDataDeleteJob } from '@scani/core/queues';
+import { SettingsImplementations } from '@scani/domain/features';
+import type { UserDataDeleteJob } from '@scani/queue';
+import { emitEntityChangeFromWorker } from '@scani/realtime/publish';
 import type { Job } from 'bullmq';
 import type { Redis } from 'ioredis';
 import { z } from 'zod';
-import { emitEntityChangeFromWorker } from '../lib/emit-entity-change';
 import { createUserJobProcessor } from '../lib/processor-wrapper';
 
 const payloadSchema: z.ZodType<UserDataDeleteJob> = z.object({

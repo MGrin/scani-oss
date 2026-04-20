@@ -5,6 +5,7 @@ import {
   FileUp,
   Keyboard,
   LayoutDashboard,
+  ListChecks,
   LogOut,
   type LucideIcon,
   Menu,
@@ -22,6 +23,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { useAuth } from '@/contexts/AuthContext';
 import { useTheme } from '@/contexts/ThemeContext';
 import { cn } from '@/lib/utils';
+import { useUserJobs } from '../hooks/useUserJobs';
 import { SIDEBAR_COLLAPSED_WIDTH, SIDEBAR_WIDTH } from '../lib/constants';
 import { NAV_SECTIONS, V2_ROUTES } from '../lib/routes';
 
@@ -36,6 +38,7 @@ const ICON_MAP: Record<string, LucideIcon> = {
   FileUp,
   Keyboard,
   Coins,
+  ListChecks,
 };
 
 const navItemBase =
@@ -52,14 +55,19 @@ function SidebarNavLink({
   label,
   collapsed,
   end,
+  badgeCount,
 }: {
   to: string;
   icon: LucideIcon;
   label: string;
   collapsed: boolean;
   end?: boolean;
+  /** Optional numeric badge (e.g. action-required jobs count). Renders
+   * in amber to draw attention; hidden when 0 or undefined. */
+  badgeCount?: number;
 }) {
   const { pathname } = useLocation();
+  const hasBadge = typeof badgeCount === 'number' && badgeCount > 0;
 
   if (collapsed) {
     const isActive = end ? pathname === to : pathname.startsWith(to);
@@ -68,15 +76,24 @@ function SidebarNavLink({
         <TooltipTrigger asChild>
           <Link
             to={to}
-            aria-label={label}
+            aria-label={hasBadge ? `${label} (${badgeCount} pending)` : label}
             aria-current={isActive ? 'page' : undefined}
-            className={cn(collapsedItemBase, isActive ? activeClass : inactiveClass)}
+            className={cn(collapsedItemBase, isActive ? activeClass : inactiveClass, 'relative')}
           >
             <Icon className="h-5 w-5 shrink-0" aria-hidden="true" />
+            {hasBadge && (
+              <span
+                // Amber dot in the upper-right corner of the collapsed
+                // icon — no room for a number but the dot alone signals
+                // "you have pending reviews".
+                className="absolute top-0 right-0 h-2 w-2 rounded-full bg-amber-500 ring-2 ring-card"
+                aria-hidden="true"
+              />
+            )}
           </Link>
         </TooltipTrigger>
         <TooltipContent side="right" sideOffset={8}>
-          {label}
+          {hasBadge ? `${label} · ${badgeCount} to review` : label}
         </TooltipContent>
       </Tooltip>
     );
@@ -90,6 +107,15 @@ function SidebarNavLink({
     >
       <Icon className="h-4 w-4 shrink-0" aria-hidden="true" />
       <span className="truncate">{label}</span>
+      {hasBadge && (
+        <span
+          role="status"
+          aria-label={`${badgeCount} pending`}
+          className="ml-auto inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-amber-500/20 px-1 text-[10px] font-medium text-amber-700 dark:text-amber-300"
+        >
+          {badgeCount}
+        </span>
+      )}
     </NavLink>
   );
 }
@@ -150,6 +176,7 @@ interface SidebarProps {
 export function Sidebar({ collapsed, onToggle }: SidebarProps) {
   const { resolvedTheme, toggleTheme } = useTheme();
   const { signOut } = useAuth();
+  const { actionRequiredCount } = useUserJobs();
 
   const handleSignOut = () => {
     // Fire and forget. ProtectedRoute will redirect to /auth when the
@@ -210,6 +237,7 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
                       label={item.label}
                       collapsed={collapsed}
                       end={item.path === V2_ROUTES.dashboard}
+                      badgeCount={item.path === V2_ROUTES.jobs ? actionRequiredCount : undefined}
                     />
                   );
                 })}

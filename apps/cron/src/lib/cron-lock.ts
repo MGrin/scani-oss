@@ -1,5 +1,5 @@
-import { client } from '@scani/core/database/connection';
-import { createComponentLogger } from '@scani/core/utils/logger';
+import { client } from '@scani/db/connection';
+import { createComponentLogger } from '@scani/logging';
 
 const logger = createComponentLogger('cron:lock');
 

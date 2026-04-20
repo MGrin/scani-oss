@@ -1,22 +1,21 @@
-# Local development stack for scani.
+# Local development stack for scani — fully self-contained.
 #
-# Usage:
-#   Infra only (default — great for running `bun dev` against it):
-#     docker compose up -d postgres redis mailpit
+# Quick start:
+#   cp .env.example .env
+#   bun run dev:stack          # or: docker compose --profile full up -d --build
 #
-#   Full stack with backend + worker running inside containers:
-#     docker compose --profile full up -d --build
+# No production dependencies: Postgres, Redis, SMTP (Mailpit), and S3-compatible
+# object storage (MinIO) all run in containers.
 #
 # Default ports (host-side offsets to avoid clashing with other local services):
-#   Postgres : localhost:5433
-#   Redis    : localhost:6380
-#   Backend  : localhost:3002
-#   Mailpit  : SMTP localhost:1026, UI http://localhost:8026
-#
-# Env contract (same for local, Fly, and self-hosters):
-#   DATABASE_URL=postgres://scani:scani@postgres:5432/scani?sslmode=disable
-#   REDIS_URL=redis://redis:6379
-#   SMTP_URL=smtp://mailpit:1025
+#   Postgres    : localhost:5433
+#   Redis       : localhost:6380
+#   Backend     : localhost:3001
+#   Frontend    : localhost:5173   (apps/frontendV2 — the user-facing SPA)
+#   Landing     : localhost:5174   (apps/landing — marketing site)
+#   Admin       : localhost:5175   (apps/admin — BullMQ + ops dashboard)
+#   Mailpit     : SMTP localhost:1026, UI http://localhost:8026
+#   MinIO       : S3 API localhost:9000, console http://localhost:9001 (minioadmin/minioadmin)
 
 services:
   postgres:
@@ -64,6 +63,73 @@ services:
       MP_SMTP_AUTH_ACCEPT_ANY: 1
       MP_SMTP_AUTH_ALLOW_INSECURE: 1
 
+  # S3-compatible object storage. Stands in for Cloudflare R2 in local dev
+  # so screenshot + file-import flows work without a cloud account. Data
+  # persists in the named volume; reset with `docker compose down -v`.
+  minio:
+    image: minio/minio:latest
+    container_name: scani-minio
+    restart: unless-stopped
+    command: ["server", "/data", "--console-address", ":9001"]
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    ports:
+      - "9000:9000"   # S3 API
+      - "9001:9001"   # Web console
+    volumes:
+      - minio-data:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # One-shot bucket creator. Exits as soon as the dev bucket exists.
+  minio-init:
+    image: minio/mc:latest
+    container_name: scani-minio-init
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint:
+      - sh
+      - -c
+      - |
+        mc alias set local http://minio:9000 minioadmin minioadmin &&
+        mc mb --ignore-existing local/scani-job-uploads-dev &&
+        mc anonymous set public local/scani-job-uploads-dev &&
+        echo "✅ MinIO bucket scani-job-uploads-dev ready"
+    restart: "no"
+
+  # Materializes per-app .env files from the root .env. Consumers run
+  # `bun dev` on the host against those files; the compose services below
+  # receive env via the compose file directly, so this step is not on
+  # their critical path — but it makes the "one root .env" contract work
+  # for both docker and host-side dev.
+  env-sync:
+    image: oven/bun:1.3.2
+    container_name: scani-env-sync
+    working_dir: /app
+    volumes:
+      - .:/app
+    command: ["bun", "scripts/sync-env.ts"]
+    restart: "no"
+
+  # Populates the shared node_modules volume once so frontend / admin /
+  # landing can all read from it without each running their own install.
+  # `bun install --frozen-lockfile` is a verified no-op on subsequent
+  # boots — the volume persists across `compose up` calls.
+  deps:
+    image: oven/bun:1.3.2
+    container_name: scani-deps
+    working_dir: /app
+    volumes:
+      - .:/app
+      - workspace-node-modules:/app/node_modules
+    command: ["bun", "install", "--frozen-lockfile"]
+    restart: "no"
+
   # Schema + seed runner. One-shot container that applies the migrations
   # against postgres, then exits. `docker compose --profile full up` runs it
   # automatically before the backend starts; run manually with
@@ -81,7 +147,7 @@ services:
     environment:
       DATABASE_URL: postgres://scani:scani@postgres:5432/scani?sslmode=disable
     command:
-      ["bun", "run", "/app/packages/core/src/database/migrate.ts"]
+      ["bun", "run", "/app/packages/db/src/migrate.ts"]
     restart: "no"
 
   backend:
@@ -98,31 +164,43 @@ services:
         condition: service_healthy
       migrate:
         condition: service_completed_successfully
+      minio-init:
+        condition: service_completed_successfully
+      env-sync:
+        condition: service_completed_successfully
     ports:
-      - "3002:8080"
+      - "3001:8080"
+    # Root .env flows through — the `environment:` block below overrides any
+    # key that needs a container-network URL instead of the host-side default
+    # (DATABASE_URL, REDIS_URL, SMTP_URL, R2_ENDPOINT, …). Everything else —
+    # API keys, feature flags — is read straight from the root .env.
+    env_file:
+      - path: ./.env
+        required: false
     environment:
-      DATABASE_URL: postgres://scani:scani@postgres:5432/scani?sslmode=disable
-      REDIS_URL: redis://redis:6379
-      FRONTEND_URL: http://localhost:5173
-      BACKEND_URL: http://localhost:3002
       NODE_ENV: development
-      ENCRYPTION_KEY: 0123456789abcdef0123456789abcdef
-      BETTER_AUTH_SECRET: dev_secret_change_me_this_is_not_production_safe
-      SMTP_URL: smtp://mailpit:1025
-      SMTP_FROM: no-reply@scani.local
       PORT: "8080"
       HOST: "0.0.0.0"
-      # BullMQ admin retry/remove endpoints. Must match the admin app's
-      # ADMIN_JOBS_HMAC_SECRET. Dev-only placeholder — do NOT reuse in prod.
+      # Service-to-service URLs (compose network hostnames).
+      DATABASE_URL: postgres://scani:scani@postgres:5432/scani?sslmode=disable
+      REDIS_URL: redis://redis:6379
+      SMTP_URL: smtp://mailpit:1025
+      SMTP_FROM: no-reply@scani.local
+      # Browser-reachable URLs.
+      FRONTEND_URL: http://localhost:5173
+      BACKEND_URL: http://localhost:3001
+      # Secrets — dev placeholders only.
+      ENCRYPTION_KEY: 0123456789abcdef0123456789abcdef
+      BETTER_AUTH_SECRET: dev_secret_change_me_this_is_not_production_safe
       ADMIN_JOBS_HMAC_SECRET: dev_admin_hmac_change_me_not_prod_safe
-      # R2 (Cloudflare object storage) for large job payloads. Optional for
-      # local dev: screenshot/file-import flows will throw on first upload
-      # without real creds. Fill these from your R2 account to test the
-      # full async pipeline locally.
-      R2_ACCOUNT_ID: "${R2_ACCOUNT_ID:-}"
-      R2_ACCESS_KEY_ID: "${R2_ACCESS_KEY_ID:-}"
-      R2_SECRET_ACCESS_KEY: "${R2_SECRET_ACCESS_KEY:-}"
-      R2_BUCKET: "${R2_BUCKET:-scani-job-uploads-dev}"
+      # Object storage → MinIO. R2_ENDPOINT is what server code hits;
+      # R2_PUBLIC_ENDPOINT is what the backend bakes into presigned URLs
+      # for the browser (which can't resolve `minio:9000`).
+      R2_ENDPOINT: http://minio:9000
+      R2_PUBLIC_ENDPOINT: http://localhost:9000
+      R2_ACCESS_KEY_ID: minioadmin
+      R2_SECRET_ACCESS_KEY: minioadmin
+      R2_BUCKET: scani-job-uploads-dev
 
   worker:
     profiles: ["full"]
@@ -138,20 +216,103 @@ services:
         condition: service_healthy
       migrate:
         condition: service_completed_successfully
+      minio-init:
+        condition: service_completed_successfully
+      env-sync:
+        condition: service_completed_successfully
+    # Root .env flows through; the `environment:` block overrides keys that
+    # need container-network URLs (DATABASE_URL, REDIS_URL, R2_ENDPOINT).
+    env_file:
+      - path: ./.env
+        required: false
     environment:
+      NODE_ENV: development
       DATABASE_URL: postgres://scani:scani@postgres:5432/scani?sslmode=disable
       REDIS_URL: redis://redis:6379
-      NODE_ENV: development
       # Must match the backend's ENCRYPTION_KEY so integration credentials
       # persisted by the backend can be decrypted at job-run time.
       ENCRYPTION_KEY: 0123456789abcdef0123456789abcdef
       EXTERNAL_API_MODE: direct
       WORKER_CONCURRENCY: "4"
-      R2_ACCOUNT_ID: "${R2_ACCOUNT_ID:-}"
-      R2_ACCESS_KEY_ID: "${R2_ACCESS_KEY_ID:-}"
-      R2_SECRET_ACCESS_KEY: "${R2_SECRET_ACCESS_KEY:-}"
-      R2_BUCKET: "${R2_BUCKET:-scani-job-uploads-dev}"
+      R2_ENDPOINT: http://minio:9000
+      R2_PUBLIC_ENDPOINT: http://localhost:9000
+      R2_ACCESS_KEY_ID: minioadmin
+      R2_SECRET_ACCESS_KEY: minioadmin
+      R2_BUCKET: scani-job-uploads-dev
+
+  # --- JS apps -----------------------------------------------------------------
+  # All three JS apps share a single node_modules volume populated by the
+  # `deps` init container. Source is mounted read-write so edits on the
+  # host trigger HMR inside the container. `--host 0.0.0.0` is required
+  # for the port forwarding to reach the browser.
+  # -----------------------------------------------------------------------------
+
+  frontend:
+    profiles: ["full"]
+    image: oven/bun:1.3.2
+    container_name: scani-frontend
+    working_dir: /app/apps/frontendV2
+    depends_on:
+      backend:
+        condition: service_started
+      env-sync:
+        condition: service_completed_successfully
+      deps:
+        condition: service_completed_successfully
+    environment:
+      VITE_API_URL: http://localhost:3001
+    ports:
+      - "5173:5173"
+    volumes:
+      - .:/app
+      - workspace-node-modules:/app/node_modules
+    command: ["bun", "run", "vite", "--host", "0.0.0.0"]
+
+  landing:
+    profiles: ["full"]
+    image: oven/bun:1.3.2
+    container_name: scani-landing
+    working_dir: /app/apps/landing
+    depends_on:
+      env-sync:
+        condition: service_completed_successfully
+      deps:
+        condition: service_completed_successfully
+    ports:
+      - "5174:5174"
+    volumes:
+      - .:/app
+      - workspace-node-modules:/app/node_modules
+    command: ["bun", "run", "vite", "--host", "0.0.0.0", "--port", "5174"]
+
+  admin:
+    profiles: ["full"]
+    image: oven/bun:1.3.2
+    container_name: scani-admin
+    working_dir: /app/apps/admin
+    depends_on:
+      backend:
+        condition: service_started
+      env-sync:
+        condition: service_completed_successfully
+      deps:
+        condition: service_completed_successfully
+    environment:
+      NODE_ENV: development
+      # Admin reaches the backend over the compose network for HMAC-signed
+      # BullMQ actions. The browser still hits the public localhost URL.
+      BACKEND_BASE_URL: http://backend:8080
+      ADMIN_JOBS_HMAC_SECRET: dev_admin_hmac_change_me_not_prod_safe
+      ADMIN_DEV_BYPASS: "1"
+    ports:
+      - "5175:5175"
+    volumes:
+      - .:/app
+      - workspace-node-modules:/app/node_modules
+    command: ["bun", "run", "next", "dev", "-H", "0.0.0.0", "--port", "5175"]
 
 volumes:
   postgres-data:
   redis-data:
+  minio-data:
+  workspace-node-modules:

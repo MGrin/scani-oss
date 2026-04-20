@@ -11,4 +11,4 @@ import { RateLimiter } from '@scani/rate-limiter';
  * Singleton rate limiter for Coinbase API
  * 10 calls per second
  */
-export const coinbaseRateLimiter = new RateLimiter(10, 1000);
+export const coinbaseRateLimiter = new RateLimiter(10, 1000, { namespace: 'coinbase' });

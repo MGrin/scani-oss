@@ -260,13 +260,11 @@ export class BinanceIntegration extends ScaniIntegration {
       return false;
     }
 
-    try {
-      const apiKey = credentials.apiKey as string;
-      const apiSecret = credentials.apiSecret as string;
-      return await this.binanceService.validateApiKey(apiKey, apiSecret);
-    } catch (_error) {
-      return false;
-    }
+    // Let the service-level throw propagate so callers surface the real
+    // provider error instead of collapsing it to an opaque `false`.
+    const apiKey = credentials.apiKey as string;
+    const apiSecret = credentials.apiSecret as string;
+    return await this.binanceService.validateApiKey(apiKey, apiSecret);
   }
 
   async refreshAuthentication(_refreshToken: string): Promise<Record<string, unknown>> {

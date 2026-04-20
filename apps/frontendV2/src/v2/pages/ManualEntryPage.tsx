@@ -16,6 +16,7 @@ import {
 import { showError, showSuccess } from '@/hooks/use-toast';
 import { getFaviconUrl } from '@/lib/icons';
 import { trpc } from '@/lib/trpc';
+import { invalidatePortfolioQueries } from '../hooks/invalidatePortfolioQueries';
 import { V2_ROUTES } from '../lib/routes';
 
 // ── Types ──
@@ -353,20 +354,11 @@ export function ManualEntryPage() {
   const createMutation = trpc.batchOperations.createHoldingsWithDependencies.useMutation({
     onSuccess: async () => {
       showSuccess('Holdings created successfully');
-      // Force-invalidate every list/aggregate the new holding can appear on.
-      // `refetchType: 'all'` is critical: without it, inactive observers
-      // (the Holdings list page we're about to navigate to) are only marked
-      // stale and never refetched — React Query's `refetchOnMount: false`
-      // then serves the pre-mutation cache on arrival.
-      await Promise.all([
-        utils.holdings.getWithDetails.invalidate(undefined, { refetchType: 'all' }),
-        utils.accounts.getAll.invalidate(undefined, { refetchType: 'all' }),
-        utils.accounts.getByUserIdWithSummary.invalidate(undefined, { refetchType: 'all' }),
-        utils.institutions.getByUserId.invalidate(undefined, { refetchType: 'all' }),
-        utils.institutions.getByUserIdWithSummary.invalidate(undefined, { refetchType: 'all' }),
-        utils.dashboard.getOverview.invalidate(undefined, { refetchType: 'all' }),
-        utils.dashboard.getAssetAllocation.invalidate(undefined, { refetchType: 'all' }),
-      ]);
+      // Force-invalidate every portfolio-visible query (`refetchType: 'all'`
+      // so the navigation-target page refetches instead of serving stale
+      // cache). `invalidatePortfolioQueries` is the centralized set; see
+      // its jsdoc for why call sites must go through it.
+      await invalidatePortfolioQueries(utils);
       navigate(V2_ROUTES.holdings);
     },
     onError: (err) => showError(err, 'Creating holdings'),

@@ -1,4 +1,4 @@
-import { TypeImplementations } from '@scani/core/features/implementations';
+import { TypeImplementations } from '@scani/domain/features';
 import { publicProcedure, router } from '../trpc';
 
 export const institutionTypesRouter = router({

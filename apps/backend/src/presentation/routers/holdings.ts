@@ -1,11 +1,8 @@
-import { HoldingImplementations } from '@scani/core/features/implementations';
-import { JOB_NAMES } from '@scani/core/queues';
+import { HoldingImplementations } from '@scani/domain/features';
+import { JOB_NAMES } from '@scani/queue';
+import { emitBulkEntityChanges, emitEntityChange } from '@scani/realtime';
 import { UpdateHoldingDto, UpsertHoldingApyConfigDto } from '@scani/shared';
 import { z } from 'zod';
-import {
-  emitBulkEntityChanges,
-  emitEntityChange,
-} from '../../infrastructure/websocket/RealTimeUpdatesService';
 import { enqueueJob } from '../../queues/enqueue';
 import { requireAuth } from '../middleware/auth';
 import { protectedProcedure, router } from '../trpc';

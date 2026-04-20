@@ -102,23 +102,21 @@ describe('BybitApiService', () => {
       globalThis.fetch = originalFetch;
     });
 
-    it('should return false for invalid credentials (401)', async () => {
+    it('should throw for invalid credentials (401)', async () => {
       globalThis.fetch = mock(() => Promise.resolve(new Response('Unauthorized', { status: 401 })));
 
-      const result = await service.validateApiKey('bad-key', 'bad-secret');
-      expect(result).toBe(false);
+      await expect(service.validateApiKey('bad-key', 'bad-secret')).rejects.toThrow();
       globalThis.fetch = originalFetch;
     });
 
-    it('should return false on network error', async () => {
+    it('should throw on network error', async () => {
       globalThis.fetch = mock(() => Promise.reject(new Error('Network error')));
 
-      const result = await service.validateApiKey('any-key', 'any-secret');
-      expect(result).toBe(false);
+      await expect(service.validateApiKey('any-key', 'any-secret')).rejects.toThrow();
       globalThis.fetch = originalFetch;
     });
 
-    it('should return false when retCode is non-zero', async () => {
+    it('should throw when retCode is non-zero', async () => {
       const mockResponse = {
         retCode: 10003,
         retMsg: 'Invalid API key',
@@ -129,8 +127,7 @@ describe('BybitApiService', () => {
         Promise.resolve(new Response(JSON.stringify(mockResponse), { status: 200 }))
       );
 
-      const result = await service.validateApiKey('bad-key', 'bad-secret');
-      expect(result).toBe(false);
+      await expect(service.validateApiKey('bad-key', 'bad-secret')).rejects.toThrow();
       globalThis.fetch = originalFetch;
     });
   });

@@ -100,11 +100,10 @@ export class HuobiApiService {
   }
 
   async validateCredentials(apiKey: string, apiSecret: string): Promise<boolean> {
-    try {
-      const accounts = await this.getAccounts(apiKey, apiSecret);
-      return accounts.length > 0;
-    } catch {
-      return false;
+    const accounts = await this.getAccounts(apiKey, apiSecret);
+    if (accounts.length === 0) {
+      throw new Error('Huobi returned no accounts for these credentials');
     }
+    return true;
   }
 }

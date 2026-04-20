@@ -38,7 +38,8 @@ function mockNetworkError() {
 }
 
 describe('Exchange credential validators', () => {
-  // All validators should return false on network error
+  // All validators should throw on network error (un-swallowed so UI can
+  // surface the real upstream reason).
   const validators = [
     { name: 'Binance', fn: () => validateBinanceCredentials('key', 'secret') },
     { name: 'Kraken', fn: () => validateKrakenCredentials('key', 'secret') },
@@ -57,10 +58,9 @@ describe('Exchange credential validators', () => {
   ];
 
   for (const { name, fn } of validators) {
-    it(`${name}: should return false on network error`, async () => {
+    it(`${name}: should throw on network error`, async () => {
       mockNetworkError();
-      const result = await fn();
-      expect(result).toBe(false);
+      await expect(fn()).rejects.toThrow();
     });
   }
 });

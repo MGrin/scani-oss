@@ -37,6 +37,15 @@ export const trpcVanilla = createTRPCProxyClient<AppRouter>({
   links: [
     httpBatchLink({
       url: `${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/trpc`,
+      // Must mirror the React client's fetch wrapper: without
+      // `credentials: 'include'` the browser never sends the Better-Auth
+      // session cookie cross-origin, so every procedure resolves as
+      // anonymous → protectedProcedure rejects with "Authentication
+      // required". This bit the Kraken/Binance integration dialog,
+      // which is the only consumer of the vanilla client today.
+      fetch(url, options) {
+        return fetch(url, { ...options, credentials: 'include' });
+      },
       async headers() {
         return getTrpcAuthHeaders();
       },

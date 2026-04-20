@@ -11,4 +11,4 @@ import { RateLimiter } from '@scani/rate-limiter';
  * Singleton rate limiter for Bybit API
  * 10 calls per second
  */
-export const bybitRateLimiter = new RateLimiter(10, 1000);
+export const bybitRateLimiter = new RateLimiter(10, 1000, { namespace: 'bybit' });

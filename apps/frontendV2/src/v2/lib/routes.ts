@@ -16,6 +16,8 @@ export const V2_ROUTES = {
   manualEntry: '/manual-entry',
   addData: '/add-data',
   settings: '/settings',
+  jobs: '/jobs',
+  jobDetail: (jobId: string) => `/jobs/${jobId}`,
 } as const;
 
 /** Sidebar navigation structure */
@@ -56,5 +58,9 @@ export const NAV_SECTIONS: NavSection[] = [
       { label: 'Crypto Wallet', icon: 'Coins', path: V2_ROUTES.walletImport },
       { label: 'Integration', icon: 'Plug', path: V2_ROUTES.integrations },
     ],
+  },
+  {
+    title: 'Activity',
+    items: [{ label: 'Jobs', icon: 'ListChecks', path: V2_ROUTES.jobs }],
   },
 ];

@@ -1,5 +1,5 @@
-import { JOB_NAMES } from '@scani/core/queues';
-import { createComponentLogger } from '@scani/core/utils/logger';
+import { createComponentLogger } from '@scani/logging';
+import { JOB_NAMES } from '@scani/queue';
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 import { enqueueJob } from '../../queues/enqueue';

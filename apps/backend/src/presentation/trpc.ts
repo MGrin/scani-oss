@@ -1,10 +1,4 @@
-import {
-  createTimer,
-  generateRequestId,
-  logConfig,
-  sanitizeUrl,
-  trpcLogger,
-} from '@scani/core/utils/logger';
+import { createTimer, generateRequestId, logConfig, sanitizeUrl, trpcLogger } from '@scani/logging';
 import { initTRPC, TRPCError } from '@trpc/server';
 import type { FetchCreateContextFnOptions } from '@trpc/server/adapters/fetch';
 import type { BetterAuthInstance } from '../auth/better-auth';
@@ -217,3 +211,52 @@ export const protectedProcedure = t.procedure.use(loggingMiddleware).use(async (
 
 // Create router
 export const router = t.router;
+
+// ---- Mutation helpers --------------------------------------------------
+
+/**
+ * Authenticated-procedure wrapper that bundles the `requireAuth` boilerplate
+ * every router mutation was repeating (`const { dbUser } = await requireAuth(ctx)` +
+ * mapping `dbUser.id` into the feature context).
+ *
+ * The entity-change emission (`emitEntityChange`) stays at the call site —
+ * the shape varies enough per router that forcing a single signature here
+ * would hide the bits reviewers actually need to see. This helper handles
+ * just the auth + context-forwarding ritual, not the WS fan-out.
+ *
+ * Import the helper as `authedMutation` and compose with a zod input:
+ *
+ *   authedMutation(MyInput, async ({ ctx, input }) => {
+ *     const { dbUser } = ctx;           // already required + resolved
+ *     return FooImplementations.do(dbUser.id, input);
+ *   })
+ */
+type AuthedContext = Context & {
+  dbUser: NonNullable<
+    Awaited<ReturnType<typeof import('./middleware/auth').requireAuth>>['dbUser']
+  >;
+  userId: string;
+};
+
+import type { ZodTypeAny, z as zRuntime } from 'zod';
+import { requireAuth } from './middleware/auth';
+
+export function authedMutation<TSchema extends ZodTypeAny, TOutput>(
+  input: TSchema,
+  handler: (args: { ctx: AuthedContext; input: zRuntime.infer<TSchema> }) => Promise<TOutput>
+) {
+  return protectedProcedure.input(input).mutation(async ({ ctx, input: parsedInput }) => {
+    const { dbUser } = await requireAuth(ctx);
+    return handler({ ctx: { ...ctx, dbUser, userId: dbUser.id }, input: parsedInput });
+  });
+}
+
+export function authedQuery<TSchema extends ZodTypeAny, TOutput>(
+  input: TSchema,
+  handler: (args: { ctx: AuthedContext; input: zRuntime.infer<TSchema> }) => Promise<TOutput>
+) {
+  return protectedProcedure.input(input).query(async ({ ctx, input: parsedInput }) => {
+    const { dbUser } = await requireAuth(ctx);
+    return handler({ ctx: { ...ctx, dbUser, userId: dbUser.id }, input: parsedInput });
+  });
+}

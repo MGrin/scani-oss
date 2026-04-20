@@ -5,8 +5,8 @@
  * Tron uses TronGrid API for querying blockchain data.
  */
 
-import type { ChainConfig } from '@scani/core/external-services/blockchain';
-import { TronChainService } from '@scani/core/external-services/blockchain';
+import type { ChainConfig } from '../blockchain-services';
+import { TronChainService } from '../blockchain-services';
 import type {
   ICredentialManager,
   IntegrationAuthType,

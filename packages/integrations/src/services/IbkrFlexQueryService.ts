@@ -9,7 +9,8 @@
  * Flex Query API docs: https://www.interactivebrokers.com/en/software/am/am/reports/flex_web_service_version_3.htm
  */
 
-import { fetchWithTimeout } from '@scani/core/external-services/pricing';
+import { fetchWithTimeout } from '@scani/pricing-providers';
+import { credentialBucketKey } from '@scani/rate-limiter';
 
 import type { RateLimiter } from '../types';
 
@@ -69,17 +70,23 @@ export class IbkrFlexQueryService {
   async requestReport(token: string, queryId: string): Promise<string> {
     const body = new URLSearchParams({ t: token, q: queryId, v: '3' });
 
-    const response = await this.executeWithRateLimit(() =>
-      fetchWithTimeout(
-        `${FLEX_BASE_URL}.SendRequest`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-          body: body.toString(),
-        },
-        15000, // 15s timeout - IBKR can be slow
-        0 // No automatic retries - we handle polling ourselves
-      )
+    // IBKR's per-token rate limit (error 1018) is enforced server-side
+    // per Flex token — partition our bucket by token so one user can't
+    // starve another's IBKR traffic.
+    const subKey = credentialBucketKey(token);
+    const response = await this.executeWithRateLimit(
+      () =>
+        fetchWithTimeout(
+          `${FLEX_BASE_URL}.SendRequest`,
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+            body: body.toString(),
+          },
+          15000, // 15s timeout - IBKR can be slow
+          0 // No automatic retries - we handle polling ourselves
+        ),
+      subKey
     );
 
     if (!response.ok) {
@@ -112,19 +119,22 @@ export class IbkrFlexQueryService {
    */
   async fetchReport(token: string, referenceCode: string): Promise<string> {
     const body = new URLSearchParams({ t: token, q: referenceCode, v: '3' });
+    const subKey = credentialBucketKey(token);
 
     for (let attempt = 0; attempt < MAX_POLL_RETRIES; attempt++) {
-      const response = await this.executeWithRateLimit(() =>
-        fetchWithTimeout(
-          `${FLEX_BASE_URL}.GetStatement`,
-          {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-            body: body.toString(),
-          },
-          30000, // 30s timeout - reports can be large
-          0
-        )
+      const response = await this.executeWithRateLimit(
+        () =>
+          fetchWithTimeout(
+            `${FLEX_BASE_URL}.GetStatement`,
+            {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+              body: body.toString(),
+            },
+            30000, // 30s timeout - reports can be large
+            0
+          ),
+        subKey
       );
 
       if (!response.ok) {
@@ -171,12 +181,13 @@ export class IbkrFlexQueryService {
    * If the SendRequest succeeds and returns a reference code, credentials are valid.
    */
   async validateCredentials(token: string, queryId: string): Promise<boolean> {
-    try {
-      await this.requestReport(token, queryId);
-      return true;
-    } catch (_error) {
-      return false;
-    }
+    // Let errors bubble up with their real message (e.g. IBKR's
+    // "Invalid request or unable to validate request" vs. a network
+    // timeout). The router factory wraps thrown messages into the UI
+    // error; a generic "return false" hides the cause and leaves the
+    // user with no path forward.
+    await this.requestReport(token, queryId);
+    return true;
   }
 
   /**
@@ -265,11 +276,12 @@ export class IbkrFlexQueryService {
   }
 
   /**
-   * Execute function with rate limiting if configured
+   * Execute function with rate limiting if configured. `subKey`
+   * partitions the provider-wide bucket by credential hash.
    */
-  private async executeWithRateLimit<T>(fn: () => Promise<T>): Promise<T> {
+  private async executeWithRateLimit<T>(fn: () => Promise<T>, subKey?: string): Promise<T> {
     if (this.rateLimiter) {
-      return this.rateLimiter.execute(fn);
+      return this.rateLimiter.execute(fn, subKey);
     }
     return fn();
   }

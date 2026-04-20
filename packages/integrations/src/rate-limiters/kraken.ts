@@ -12,4 +12,4 @@ import { RateLimiter } from '@scani/rate-limiter';
  * Singleton rate limiter for Kraken API
  * 15 calls per second (conservative limit for private endpoints)
  */
-export const krakenRateLimiter = new RateLimiter(15, 1000);
+export const krakenRateLimiter = new RateLimiter(15, 1000, { namespace: 'kraken' });

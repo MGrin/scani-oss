@@ -1,6 +1,6 @@
-import { db } from '@scani/core/database/connection';
-import * as schema from '@scani/core/database/schema';
-import { authLogger } from '@scani/core/utils/logger';
+import { db } from '@scani/db/connection';
+import * as schema from '@scani/db/schema';
+import { authLogger } from '@scani/logging';
 import { TRPCError } from '@trpc/server';
 import { eq } from 'drizzle-orm';
 import type { BetterAuthInstance } from '../../auth/better-auth';
@@ -39,8 +39,15 @@ export async function createAuthContext(opts: CreateContextOptions): Promise<Aut
     }
     return { userId: null, email: null, isAuthenticated: false, dbUser: null };
   } catch (error) {
-    authLogger.warn(
-      { error: error instanceof Error ? error.message : String(error) },
+    // Error (not warn): a thrown `getSession` points at infra degradation
+    // (session table locked, DB slow, Better-Auth misconfigured). A spike
+    // here silently logs everyone out, so we want dashboards to page.
+    authLogger.error(
+      {
+        error: error instanceof Error ? error.message : String(error),
+        // Tag for the Sentry/alerting layer to slice on.
+        auth_failure_category: 'session_resolution',
+      },
       'Better-Auth getSession failed'
     );
     return { userId: null, email: null, isAuthenticated: false, dbUser: null };

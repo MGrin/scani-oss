@@ -1,4 +1,5 @@
-import { VaultImplementations } from '@scani/core/features/implementations';
+import { VaultImplementations } from '@scani/domain/features';
+import { emitBulkEntityChanges, emitEntityChange } from '@scani/realtime';
 import {
   AttachHoldingToVaultDto,
   CreateVaultDto,
@@ -8,10 +9,6 @@ import {
   UpdateVaultHoldingDto,
 } from '@scani/shared';
 import { z } from 'zod';
-import {
-  emitBulkEntityChanges,
-  emitEntityChange,
-} from '../../infrastructure/websocket/RealTimeUpdatesService';
 import { requireAuth } from '../middleware/auth';
 import { protectedProcedure, router } from '../trpc';
 

@@ -16,9 +16,8 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { useAuth } from '@/contexts/AuthContext';
 import { showError, showSuccess } from '@/hooks/use-toast';
 import { trpc } from '@/lib/trpc';
-import { JobProgressModal } from '../components/JobProgressModal';
 import { ConfirmDialog } from '../components/shared/ConfirmDialog';
-import { invalidatePortfolioQueries } from '../hooks/invalidatePortfolioQueries';
+import { useJobStatus } from '../hooks/useJobStatus';
 import { V2_ROUTES } from '../lib/routes';
 
 export function SettingsPage() {
@@ -29,6 +28,10 @@ export function SettingsPage() {
   const { signOut } = useAuth();
 
   const [showDeleteAll, setShowDeleteAll] = useState(false);
+  // Tracked job id for the in-flight user-data-delete request. While this
+  // is set, the Delete button stays disabled and we subscribe to the job's
+  // WS updates. On completion we toast + redirect to the dashboard; on
+  // failure we surface the error and release the button.
   const [deleteJobId, setDeleteJobId] = useState<string | null>(null);
 
   const handleSignOut = () => {
@@ -41,7 +44,23 @@ export function SettingsPage() {
       setShowDeleteAll(false);
       setDeleteJobId(jobId);
     },
+    onError: (err) => showError(err, 'Deleting data'),
   });
+
+  const deleteJobStatus = useJobStatus(deleteJobId);
+  useEffect(() => {
+    if (!deleteJobId) return;
+    if (deleteJobStatus.state === 'completed') {
+      showSuccess('All your data has been deleted');
+      setDeleteJobId(null);
+      navigate(V2_ROUTES.dashboard);
+    } else if (deleteJobStatus.state === 'failed') {
+      showError(new Error(deleteJobStatus.error ?? 'Delete job failed'), 'Deleting data');
+      setDeleteJobId(null);
+    }
+  }, [deleteJobId, deleteJobStatus.state, deleteJobStatus.error, navigate]);
+
+  const isDeleting = deleteAllDataMutation.isPending || deleteJobId !== null;
 
   const updateMutation = trpc.users.updateCurrent.useMutation({
     onSuccess: () => {
@@ -173,10 +192,10 @@ export function SettingsPage() {
             type="button"
             variant="destructive"
             onClick={() => setShowDeleteAll(true)}
-            disabled={deleteAllDataMutation.isPending}
+            disabled={isDeleting}
           >
             <Trash2 className="h-4 w-4 mr-2" />
-            {deleteAllDataMutation.isPending ? 'Deleting...' : 'Delete all my data'}
+            {isDeleting ? 'Deleting...' : 'Delete all my data'}
           </Button>
         </CardContent>
       </Card>
@@ -189,25 +208,8 @@ export function SettingsPage() {
         confirmLabel="Delete everything"
         cancelLabel="Keep my data"
         variant="destructive"
-        isPending={deleteAllDataMutation.isPending}
+        isPending={isDeleting}
         onConfirm={() => deleteAllDataMutation.mutate({ requestId: crypto.randomUUID() })}
-      />
-
-      <JobProgressModal
-        jobId={deleteJobId}
-        title="Deleting all your data"
-        description="Removing accounts, holdings, wallets, integrations, groups, and vaults. This can take up to a minute."
-        onCompleted={async () => {
-          await invalidatePortfolioQueries(utils);
-          showSuccess('All data deleted. Your account is now clean.');
-          setDeleteJobId(null);
-          navigate(V2_ROUTES.dashboard);
-        }}
-        onFailed={(error) => {
-          showError(new Error(error), 'Deleting data');
-          setDeleteJobId(null);
-        }}
-        onDismiss={() => setDeleteJobId(null)}
       />
     </div>
   );

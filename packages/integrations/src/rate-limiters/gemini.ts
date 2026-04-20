@@ -11,4 +11,4 @@ import { RateLimiter } from '@scani/rate-limiter';
  * Singleton rate limiter for Gemini API
  * 5 calls per second
  */
-export const geminiRateLimiter = new RateLimiter(5, 1000);
+export const geminiRateLimiter = new RateLimiter(5, 1000, { namespace: 'gemini' });

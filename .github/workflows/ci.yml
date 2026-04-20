@@ -16,6 +16,27 @@ jobs:
   validate:
     name: Lint, Type Check & Test
     runs-on: ubuntu-latest
+    # The repository test suite under packages/ uses `withTestDb` which
+    # opens a real Postgres connection + wraps each test in a rolled-back
+    # transaction. Locally the compose stack (`bun run dev:stack`)
+    # provides Postgres on :5433; CI boots the same image + port here so
+    # the same preload defaults work unchanged. Redis isn't required —
+    # the rate-limiter falls through to its in-memory queue when
+    # `sharedRedis` is unset, which is the case during tests.
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: scani
+          POSTGRES_PASSWORD: scani
+          POSTGRES_DB: scani
+        ports:
+          - 5433:5432
+        options: >-
+          --health-cmd "pg_isready -U scani -d scani"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
     steps:
       - uses: actions/checkout@v6
 
@@ -33,10 +54,19 @@ jobs:
       - name: Unused code & dependencies (knip)
         run: bun run deps:unused
 
+      - name: Run DB migrations
+        # Seeds the schema + all required lookup rows (institutions,
+        # institution_blockchain_mappings, token types) that repository
+        # tests assume are present.
+        run: bun run db:migrate
+        env:
+          DATABASE_URL: postgres://scani:scani@localhost:5433/scani?sslmode=disable
+
       - name: Test
-        run: bun test --preload ./packages/core/test-preload.ts packages/ --timeout 30000
+        run: bun test --preload ./packages/domain/test-preload.ts packages/ --timeout 30000
         env:
           NODE_ENV: test
+          DATABASE_URL: postgres://scani:scani@localhost:5433/scani?sslmode=disable
 
       - name: Secret scan
         run: |

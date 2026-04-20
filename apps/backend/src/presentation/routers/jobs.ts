@@ -1,58 +1,113 @@
 /**
  * Job status tRPC router.
  *
- * The primary status channel for user-initiated jobs is the WebSocket
- * `job` entity stream (see `RealTimeUpdatesService` + worker's
- * `publishJobEvent`). This router exists for two fallback cases:
+ * The `user_jobs` DB table is the authoritative source for job state +
+ * history — the backend's enqueue helper inserts a row before calling
+ * `queue.add`, and the worker's processor wrapper writes through every
+ * lifecycle transition (active / progress / completed / failed) before
+ * publishing the WS event. Redis is the transport, not the record.
  *
- *   1. WebSocket connection is down / delayed — the frontend hook polls
- *      `jobs.status` every 2s.
+ * `status` here merges: DB row (authoritative state + result + error) +
+ * live BullMQ progress (only consulted while the row is non-terminal, so
+ * the UI's progress bar stays smooth). For terminal states and evicted
+ * jobs we never touch Redis — the DB is always complete.
+ *
+ * This router exists for two fallback cases vs. the preferred WS channel:
+ *   1. WS is down / delayed — the frontend hook polls `jobs.status` every 2s.
  *   2. Page reload after a job was enqueued — the frontend looks up the
  *      jobId stored in local state to resume the modal.
- *
- * We return only the minimal shape the frontend needs — state, progress,
- * returnvalue (result), failedReason (error).
  */
 
+import { UserJobRepository } from '@scani/domain/repositories';
 import { TRPCError } from '@trpc/server';
+import Container from 'typedi';
 import { z } from 'zod';
 import { getQueue } from '../../queues/client';
 import { protectedProcedure, router } from '../trpc';
+
+const JOB_STATE_ENUM = z.enum(['queued', 'active', 'progress', 'completed', 'failed']);
+const NON_TERMINAL = new Set(['queued', 'active', 'progress']);
 
 export const jobsRouter = router({
   status: protectedProcedure
     .input(z.object({ jobId: z.string().min(1) }))
     .query(async ({ input, ctx }) => {
-      const queue = getQueue();
-      const job = await queue.getJob(input.jobId);
-      if (!job) {
-        return { state: 'not_found' as const };
+      const repo = Container.get(UserJobRepository);
+      const row = await repo.findOneMine(ctx.userId, input.jobId);
+      if (!row) return { state: 'not_found' as const };
+
+      // Overlay live BullMQ progress on still-running jobs so the progress
+      // bar reflects sub-second changes that haven't been mirrored to the
+      // DB yet. Terminal-state jobs are served entirely from the DB; Redis
+      // is never consulted for them (it may have evicted the job entirely).
+      let liveProgress: number | null = null;
+      if (NON_TERMINAL.has(row.state)) {
+        const job = await getQueue().getJob(input.jobId);
+        if (job && typeof job.progress === 'number') {
+          liveProgress = job.progress;
+        }
       }
-      // Default-deny ownership check. Every user-initiated payload carries
-      // `userId` (see packages/core/src/queues/types.ts `UserJobBase`), so
-      // the absence of a string userId means either (a) a scheduled cron
-      // job (empty payload) or (b) a legacy/malformed entry. Either way
-      // the caller has no legitimate reason to read it — without this
-      // default-deny stance, `jobs.status` leaks cron job failedReason /
-      // timestamps to any authenticated client.
-      const payloadUserId =
-        typeof job.data === 'object' && job.data !== null && 'userId' in job.data
-          ? (job.data as { userId?: unknown }).userId
-          : undefined;
-      if (typeof payloadUserId !== 'string' || payloadUserId !== ctx.userId) {
-        throw new TRPCError({ code: 'FORBIDDEN', message: 'Not your job' });
-      }
-      const state = await job.getState();
+
       return {
-        state,
-        progress: typeof job.progress === 'number' ? job.progress : null,
-        returnvalue: job.returnvalue ?? null,
-        failedReason: job.failedReason ?? null,
-        attemptsMade: job.attemptsMade,
-        attemptsAllowed: job.opts.attempts ?? 1,
-        timestamp: job.timestamp,
-        processedOn: job.processedOn ?? null,
-        finishedOn: job.finishedOn ?? null,
+        state: row.state,
+        progress:
+          liveProgress !== null && liveProgress > row.progress ? liveProgress : row.progress,
+        returnvalue: row.result,
+        failedReason: row.error,
+        attemptsMade: row.attemptsMade,
+        attemptsAllowed: row.attemptsAllowed,
+        timestamp: row.createdAt.getTime(),
+        processedOn: row.startedAt?.getTime() ?? null,
+        finishedOn: row.finishedAt?.getTime() ?? null,
       };
+    }),
+
+  /**
+   * List the caller's jobs from the durable `user_jobs` mirror. Newest first.
+   * Powers the top-nav badge count, the /jobs list page, and — via
+   * `invalidate` on WS events — a near-live feed without extra server work.
+   */
+  listMine: protectedProcedure
+    .input(
+      z
+        .object({
+          state: JOB_STATE_ENUM.optional(),
+          limit: z.number().int().min(1).max(100).default(50),
+          offset: z.number().int().min(0).default(0),
+        })
+        .optional()
+    )
+    .query(({ ctx, input }) => {
+      const repo = Container.get(UserJobRepository);
+      return repo.findMine(ctx.userId, input ?? {});
+    }),
+
+  /** Single job by id. Ownership-gated via `userId` column. */
+  getMine: protectedProcedure
+    .input(z.object({ jobId: z.string().min(1) }))
+    .query(async ({ ctx, input }) => {
+      const repo = Container.get(UserJobRepository);
+      const row = await repo.findOneMine(ctx.userId, input.jobId);
+      if (!row) throw new TRPCError({ code: 'NOT_FOUND', message: 'Job not found' });
+      return row;
+    }),
+
+  /**
+   * One-shot stamp: "I took the follow-up action this job asked me to."
+   * Called by review cards on screenshot-parse / file-import job detail
+   * pages after a successful batch-create. Server-side idempotent (the
+   * repo's `action_taken_at IS NULL` guard makes double-clicks a no-op),
+   * so even with network retries we can't double-import the same
+   * extracted holdings.
+   */
+  markActionTaken: protectedProcedure
+    .input(z.object({ jobId: z.string().min(1) }))
+    .mutation(async ({ ctx, input }) => {
+      const repo = Container.get(UserJobRepository);
+      const stamp = await repo.markActionTaken(ctx.userId, input.jobId);
+      if (!stamp) {
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'Job not found' });
+      }
+      return { actionTakenAt: stamp };
     }),
 });

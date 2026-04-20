@@ -1,5 +1,5 @@
-import { SCANI_QUEUE } from '@scani/core/queues';
-import { createComponentLogger } from '@scani/core/utils/logger';
+import { createComponentLogger } from '@scani/logging';
+import { SCANI_QUEUE } from '@scani/queue';
 import { Queue } from 'bullmq';
 import type { Redis } from 'ioredis';
 

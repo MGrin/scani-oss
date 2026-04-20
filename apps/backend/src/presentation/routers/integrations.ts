@@ -3,10 +3,9 @@
  * Handles credential validation and storage for exchange integrations
  */
 
-import { db } from '@scani/core/database/connection';
-import * as schema from '@scani/core/database/schema';
-import { JOB_NAMES } from '@scani/core/queues';
-import { ExpiredCredentialsError, IntegrationCredentialsService } from '@scani/core/services';
+import { db } from '@scani/db/connection';
+import * as schema from '@scani/db/schema';
+import { IntegrationCredentialsService } from '@scani/domain/services';
 import {
   validateBinanceCredentials,
   validateBitgetCredentials,
@@ -16,94 +15,20 @@ import {
   validateGateioCredentials,
   validateGeminiCredentials,
   validateHuobiCredentials,
-  validateIbkrCredentials,
   validateKrakenCredentials,
   validateKucoinCredentials,
   validateMexcCredentials,
   validateOkxCredentials,
   validateWiseCredentials,
 } from '@scani/integrations';
+import { JOB_NAMES } from '@scani/queue';
 import { TRPCError } from '@trpc/server';
 import { eq } from 'drizzle-orm';
 import { Container } from 'typedi';
 import { z } from 'zod';
 import { enqueueJob } from '../../queues/enqueue';
+import { toTRPCError } from '../../utils/error-mapping';
 import { protectedProcedure, router } from '../trpc';
-
-type TRPCErrorCode = ConstructorParameters<typeof TRPCError>[0]['code'];
-
-/**
- * Map an arbitrary error thrown from a credential validation / import flow
- * into the closest-matching tRPC error code. Keeps TRPCError pass-through,
- * routes expired creds to UNAUTHORIZED, rate limits to TOO_MANY_REQUESTS,
- * timeouts to TIMEOUT, and 5xx / network errors to INTERNAL_SERVER_ERROR.
- * Anything else becomes the caller-provided fallback (usually BAD_REQUEST).
- */
-function toTRPCError(
-  error: unknown,
-  context: { fallbackCode: TRPCErrorCode; fallbackMessage: string }
-): TRPCError {
-  if (error instanceof TRPCError) return error;
-
-  if (error instanceof ExpiredCredentialsError) {
-    return new TRPCError({
-      code: 'UNAUTHORIZED',
-      message: 'Integration credentials have expired — please reconnect',
-      cause: error,
-    });
-  }
-
-  const err = error as Error & { code?: string | number; status?: number };
-  const status = typeof err?.status === 'number' ? err.status : undefined;
-  const codeStr = typeof err?.code === 'string' ? err.code : undefined;
-  const msg = err?.message?.toLowerCase() ?? '';
-
-  if (status === 401 || status === 403 || msg.includes('unauthorized')) {
-    return new TRPCError({
-      code: 'UNAUTHORIZED',
-      message: context.fallbackMessage,
-      cause: error,
-    });
-  }
-  if (status === 429 || msg.includes('rate limit') || msg.includes('too many requests')) {
-    return new TRPCError({
-      code: 'TOO_MANY_REQUESTS',
-      message: 'Upstream provider rate limit hit — try again shortly',
-      cause: error,
-    });
-  }
-  if (
-    codeStr === 'ETIMEDOUT' ||
-    codeStr === 'UND_ERR_CONNECT_TIMEOUT' ||
-    msg.includes('timeout') ||
-    msg.includes('timed out')
-  ) {
-    return new TRPCError({
-      code: 'TIMEOUT',
-      message: 'Upstream provider timed out',
-      cause: error,
-    });
-  }
-  if (
-    (typeof status === 'number' && status >= 500) ||
-    codeStr === 'ECONNRESET' ||
-    codeStr === 'ECONNREFUSED' ||
-    msg.includes('econnreset') ||
-    msg.includes('econnrefused')
-  ) {
-    return new TRPCError({
-      code: 'INTERNAL_SERVER_ERROR',
-      message: 'Upstream provider unavailable',
-      cause: error,
-    });
-  }
-
-  return new TRPCError({
-    code: context.fallbackCode,
-    message: context.fallbackMessage,
-    cause: error,
-  });
-}
 
 /**
  * Store credentials + enqueue import as a single guarded operation.
@@ -178,24 +103,62 @@ const apiKeyInput = z.object({
   requestId: z.string().uuid(),
 });
 
-/** Create router for exchanges with apiKey+apiSecret — validates, stores, and enqueues import. */
-function createApiKeyOnlyRouter(
-  name: string,
-  validate: (k: string, s: string) => Promise<boolean>
-) {
+const passphraseInput = apiKeyInput.extend({
+  passphrase: z.string().min(1, 'Passphrase is required'),
+});
+
+/**
+ * Generic exchange-credentials router factory.
+ *
+ * Consolidates the previous `createApiKeyOnlyRouter` and
+ * `createPassphraseRouter` (which shared identical structure — validate →
+ * store → enqueue → return — and only differed by the input schema + the
+ * arity of the validator fn). Parameterised on:
+ *
+ *   - `input`: zod schema the procedure parses.
+ *   - `extractCredentials`: pulls the credential fields off the parsed input
+ *     so the stored blob has only the fields that validate used.
+ *   - `validate`: the provider's validator, called with the same fields.
+ *
+ * All exchange routers below go through this one factory.
+ */
+interface ParsedCredentialInput {
+  requestId: string;
+  apiKey: string;
+  apiSecret: string;
+  passphrase?: string;
+}
+
+function createCredentialsRouter<TCreds extends Record<string, string>>(opts: {
+  name: string;
+  input: z.ZodTypeAny;
+  extractCredentials: (parsed: ParsedCredentialInput) => TCreds;
+  validate: (creds: TCreds) => Promise<boolean>;
+}) {
+  const { name, input, extractCredentials, validate } = opts;
   return router({
-    validateKeys: protectedProcedure.input(apiKeyInput).mutation(async ({ input, ctx }) => {
+    validateKeys: protectedProcedure.input(input).mutation(async ({ input: rawInput, ctx }) => {
+      const parsed = rawInput as ParsedCredentialInput;
       const userId = ctx.userId;
+      const credentials = extractCredentials(parsed);
 
       try {
-        const isValid = await validate(input.apiKey, input.apiSecret);
+        const isValid = await validate(credentials);
         if (!isValid) {
-          throw new TRPCError({ code: 'BAD_REQUEST', message: `Invalid ${name} API credentials` });
+          throw new TRPCError({
+            code: 'BAD_REQUEST',
+            message: `Invalid ${name} API credentials`,
+          });
         }
       } catch (error) {
+        if (error instanceof TRPCError) throw error;
+        // Preserve the upstream provider's message (e.g. Kraken's
+        // "EAPI:Invalid signature") so the UI shows the actual cause
+        // rather than a generic "Failed to validate" wrapper.
+        const upstream = error instanceof Error && error.message ? error.message : String(error);
         throw toTRPCError(error, {
           fallbackCode: 'BAD_REQUEST',
-          fallbackMessage: `Failed to validate ${name} credentials`,
+          fallbackMessage: `${name}: ${upstream}`,
         });
       }
 
@@ -203,8 +166,8 @@ function createApiKeyOnlyRouter(
         const { institutionId, jobId } = await storeAndEnqueueImport(
           userId,
           name,
-          { apiKey: input.apiKey, apiSecret: input.apiSecret },
-          input.requestId
+          credentials,
+          parsed.requestId
         );
         return {
           success: true,
@@ -222,63 +185,34 @@ function createApiKeyOnlyRouter(
   });
 }
 
-/** Create router for exchanges needing apiKey+apiSecret+passphrase — validates, stores, and enqueues import. */
+/** Thin presets over `createCredentialsRouter` for the two schema shapes
+ * used by every exchange in this repo. Callers pass just the provider
+ * name + their validator — no more copy-pasted boilerplate per exchange. */
+function createApiKeyOnlyRouter(
+  name: string,
+  validate: (k: string, s: string) => Promise<boolean>
+) {
+  return createCredentialsRouter({
+    name,
+    input: apiKeyInput,
+    extractCredentials: (p) => ({ apiKey: p.apiKey, apiSecret: p.apiSecret }),
+    validate: (c) => validate(c.apiKey, c.apiSecret),
+  });
+}
+
 function createPassphraseRouter(
   name: string,
   validate: (k: string, s: string, p: string) => Promise<boolean>
 ) {
-  return router({
-    validateKeys: protectedProcedure
-      .input(
-        z.object({
-          apiKey: z.string().min(1, 'API Key is required'),
-          apiSecret: z.string().min(1, 'API Secret is required'),
-          passphrase: z.string().min(1, 'Passphrase is required'),
-          requestId: z.string().uuid(),
-        })
-      )
-      .mutation(async ({ input, ctx }) => {
-        const userId = ctx.userId;
-
-        try {
-          const isValid = await validate(input.apiKey, input.apiSecret, input.passphrase);
-          if (!isValid) {
-            throw new TRPCError({
-              code: 'BAD_REQUEST',
-              message: `Invalid ${name} API credentials`,
-            });
-          }
-        } catch (error) {
-          throw toTRPCError(error, {
-            fallbackCode: 'BAD_REQUEST',
-            fallbackMessage: `Failed to validate ${name} credentials`,
-          });
-        }
-
-        try {
-          const { institutionId, jobId } = await storeAndEnqueueImport(
-            userId,
-            name,
-            {
-              apiKey: input.apiKey,
-              apiSecret: input.apiSecret,
-              passphrase: input.passphrase,
-            },
-            input.requestId
-          );
-          return {
-            success: true,
-            message: `${name} credentials validated and stored`,
-            institutionId,
-            jobId,
-          };
-        } catch (error) {
-          throw toTRPCError(error, {
-            fallbackCode: 'INTERNAL_SERVER_ERROR',
-            fallbackMessage: 'Failed to store credentials and enqueue import',
-          });
-        }
-      }),
+  return createCredentialsRouter({
+    name,
+    input: passphraseInput,
+    extractCredentials: (p) => ({
+      apiKey: p.apiKey,
+      apiSecret: p.apiSecret,
+      passphrase: p.passphrase ?? '',
+    }),
+    validate: (c) => validate(c.apiKey, c.apiSecret, c.passphrase),
   });
 }
 
@@ -353,21 +287,16 @@ export const integrationsRouter = router({
         })
       )
       .mutation(async ({ input, ctx }) => {
-        try {
-          const isValid = await validateIbkrCredentials(input.token, input.queryId);
-          if (!isValid) {
-            throw new TRPCError({
-              code: 'BAD_REQUEST',
-              message: 'Invalid IBKR Flex Query credentials',
-            });
-          }
-        } catch (error) {
-          throw toTRPCError(error, {
-            fallbackCode: 'BAD_REQUEST',
-            fallbackMessage: 'Failed to validate IBKR credentials',
-          });
-        }
-
+        // NOTE: we do NOT pre-validate the token here. IBKR's Flex Web
+        // Service rejects a second SendRequest on the same token within a
+        // short window (error 1018 "Too many requests have been made from
+        // this token"). If we validate at the router *and* the worker
+        // fetches the report, that's two SendRequests within seconds of
+        // each other — the second trips 1018 on every connect attempt.
+        // Defer validation to the worker: it makes exactly one Flex call
+        // and surfaces the real error (invalid token, expired, rate
+        // limited, etc.) on the job page. The redirect → job page flow
+        // gives the user the same visibility as a router-level error.
         try {
           const { institutionId, jobId } = await storeAndEnqueueImport(
             ctx.userId,
@@ -377,7 +306,7 @@ export const integrationsRouter = router({
           );
           return {
             success: true,
-            message: 'Interactive Brokers credentials validated and stored',
+            message: 'Interactive Brokers credentials stored — running import',
             institutionId,
             jobId,
           };

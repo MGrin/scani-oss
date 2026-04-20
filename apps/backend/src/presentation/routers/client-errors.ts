@@ -1,5 +1,6 @@
-import { createComponentLogger } from '@scani/core/utils/logger';
+import { createComponentLogger } from '@scani/logging';
 import { z } from 'zod';
+import { CLIENT_ERROR_LIMITS } from '../../config/limits';
 import { publicProcedure, router } from '../trpc';
 
 const logger = createComponentLogger('router:client-errors');
@@ -14,9 +15,8 @@ const logger = createComponentLogger('router:client-errors');
  * we still want the error report.
  */
 
-const MAX_MESSAGE_LEN = 2000;
-const MAX_STACK_LEN = 8000;
-const MAX_COMPONENT_STACK_LEN = 8000;
+const { MESSAGE_LEN: MAX_MESSAGE_LEN, STACK_LEN: MAX_STACK_LEN } = CLIENT_ERROR_LIMITS;
+const MAX_COMPONENT_STACK_LEN = MAX_STACK_LEN;
 const MAX_ROUTE_LEN = 500;
 const MAX_USER_AGENT_LEN = 500;
 const MAX_APP_VERSION_LEN = 50;

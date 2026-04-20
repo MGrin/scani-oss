@@ -169,14 +169,16 @@ export abstract class ScaniIntegration {
   }
 
   /**
-   * Execute a function with rate limiting if configured
+   * Execute a function with rate limiting if configured.
    *
-   * @param fn - Function to execute
-   * @returns Promise resolving to function result
+   * `subKey` partitions the provider-level bucket so two credentials
+   * don't starve each other. Callers should pass a short, stable, non-
+   * reversible identifier derived from the API key (use
+   * `credentialBucketKey(apiKey)` from `@scani/rate-limiter`).
    */
-  protected async executeWithRateLimit<T>(fn: () => Promise<T>): Promise<T> {
+  protected async executeWithRateLimit<T>(fn: () => Promise<T>, subKey?: string): Promise<T> {
     if (this.rateLimiter) {
-      return this.rateLimiter.execute(fn);
+      return this.rateLimiter.execute(fn, subKey);
     }
     return fn();
   }

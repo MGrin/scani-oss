@@ -13,8 +13,8 @@
  * Schedule: Every 15 minutes
  */
 
-import { SyncExchangeBalancesUseCase } from '@scani/core/use-cases';
-import { createComponentLogger } from '@scani/core/utils/logger';
+import { SyncExchangeBalancesUseCase } from '@scani/domain/use-cases';
+import { createComponentLogger } from '@scani/logging';
 import { Container } from 'typedi';
 
 const logger = createComponentLogger('cron:exchange-balances');

@@ -63,19 +63,17 @@ describe('WiseApiService', () => {
       globalThis.fetch = originalFetch;
     });
 
-    it('should return false for invalid token (401)', async () => {
+    it('should throw for invalid token (401)', async () => {
       globalThis.fetch = mock(() => Promise.resolve(new Response('Unauthorized', { status: 401 })));
 
-      const result = await service.validateApiToken('bad-token');
-      expect(result).toBe(false);
+      await expect(service.validateApiToken('bad-token')).rejects.toThrow();
       globalThis.fetch = originalFetch;
     });
 
-    it('should return false on network error', async () => {
+    it('should throw on network error', async () => {
       globalThis.fetch = mock(() => Promise.reject(new Error('Network error')));
 
-      const result = await service.validateApiToken('any-token');
-      expect(result).toBe(false);
+      await expect(service.validateApiToken('any-token')).rejects.toThrow();
       globalThis.fetch = originalFetch;
     });
   });

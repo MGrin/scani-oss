@@ -1,7 +1,7 @@
-import { deleteTempBlob, readTempBlob } from '@scani/core/external-services/storage';
-import type { ScreenshotParseJob } from '@scani/core/queues';
-import { ParseScreenshotUseCase } from '@scani/core/use-cases/ParseScreenshotUseCase';
-import { createComponentLogger } from '@scani/core/utils/logger';
+import { ParseScreenshotUseCase } from '@scani/domain/use-cases/ParseScreenshotUseCase';
+import { createComponentLogger } from '@scani/logging';
+import type { ScreenshotParseJob } from '@scani/queue';
+import { deleteTempBlob, readTempBlob } from '@scani/storage';
 import type { Job } from 'bullmq';
 import type { Redis } from 'ioredis';
 import { Container } from 'typedi';
@@ -74,6 +74,12 @@ export function buildScreenshotParseProcessor(publisher: Redis): (job: Job) => P
       const successCount = results.filter((r) => r.success).length;
       return {
         results,
+        // Echo accountId from the payload so the job detail page can
+        // render the review-and-save card against the same account the
+        // user picked at upload time. Without this, a user who
+        // navigated away mid-parse would have no way to resume the
+        // import.
+        accountId: data.accountId ?? null,
         summary: {
           totalFiles: data.r2Keys.length,
           successCount,

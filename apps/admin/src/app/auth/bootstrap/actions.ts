@@ -26,11 +26,38 @@ function authorized(providedToken: string): boolean {
   return mismatch === 0;
 }
 
+/**
+ * In-memory lock flipped on after a successful `completeBootstrapAction`.
+ *
+ * Closes the window between "passkey just provisioned" and "operator sets
+ * `ADMIN_PASSKEY_CREDENTIAL_ID` + `ADMIN_PASSKEY_PUBLIC_KEY` env vars +
+ * redeploys". During that interval `bootstrapStatus().passkeyProvisioned`
+ * reads as `false` (env var not yet set), so without this flag a second
+ * call with the same token could re-register a different passkey.
+ *
+ * The lock is per-process: a deploy restart wipes it, which is fine
+ * because the env-based check takes over once the operator rotates.
+ */
+let provisionedInThisProcess = false;
+
 function checkBootstrap(token: string): string | null {
+  if (provisionedInThisProcess) {
+    console.warn('[admin][bootstrap] attempt after in-process provision — denied');
+    return 'Passkey already provisioned in this process. Rotate ADMIN_BOOTSTRAP_TOKEN and redeploy.';
+  }
   const status = bootstrapStatus();
-  if (status.passkeyProvisioned) return 'Passkey already provisioned. Bootstrap is locked.';
+  if (status.passkeyProvisioned) {
+    // Loud audit trail — anyone hitting this endpoint after provision is
+    // either re-deploying with stale env or attempting a passkey swap.
+    // Log the attempt so dashboards can alert on spikes.
+    console.warn('[admin][bootstrap] attempt while passkey already provisioned — denied');
+    return 'Passkey already provisioned. Bootstrap is locked.';
+  }
   if (!status.tokenConfigured) return 'Bootstrap is not enabled.';
-  if (!authorized(token)) return 'Invalid bootstrap token.';
+  if (!authorized(token)) {
+    console.warn('[admin][bootstrap] invalid bootstrap token — denied');
+    return 'Invalid bootstrap token.';
+  }
   return null;
 }
 
@@ -99,6 +126,18 @@ export async function completeBootstrapAction(
     }
 
     const info = verification.registrationInfo;
+    // Flip the in-process lock before we return, so any subsequent call
+    // with the (still-valid) ADMIN_BOOTSTRAP_TOKEN is rejected even if
+    // the operator hasn't yet set the env vars + redeployed. Closes the
+    // "window between provision and lockdown" gap.
+    provisionedInThisProcess = true;
+    // Loud log at successful provision so operators can confirm the
+    // one-shot happened and know to invalidate `ADMIN_BOOTSTRAP_TOKEN`.
+    // Dashboards should page on any subsequent `admin][bootstrap` log line
+    // after this event — it means someone's trying to re-provision.
+    console.warn(
+      '[admin][bootstrap] 🔐 passkey provisioned — set ADMIN_PASSKEY_CREDENTIAL_ID / ADMIN_PASSKEY_PUBLIC_KEY env vars and ROTATE ADMIN_BOOTSTRAP_TOKEN immediately'
+    );
     return {
       ok: true,
       credentialId: info.credential.id,

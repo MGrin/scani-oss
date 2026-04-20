@@ -11,4 +11,4 @@ import { RateLimiter } from '@scani/rate-limiter';
  * Singleton rate limiter for Bitstamp API
  * 8 calls per 10 seconds
  */
-export const bitstampRateLimiter = new RateLimiter(8, 10000);
+export const bitstampRateLimiter = new RateLimiter(8, 10000, { namespace: 'bitstamp' });

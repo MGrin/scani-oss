@@ -1,7 +1,7 @@
 import { describe, expect, it, mock } from 'bun:test';
 import { IbkrFlexQueryService } from './IbkrFlexQueryService';
 
-// The IBKR service uses fetchWithTimeout from @scani/core, which internally calls fetch.
+// The IBKR service uses fetchWithTimeout from @scani/domain, which internally calls fetch.
 // We mock globalThis.fetch so fetchWithTimeout's underlying fetch is mocked.
 const originalFetch = globalThis.fetch;
 
@@ -197,7 +197,7 @@ describe('IbkrFlexQueryService', () => {
       globalThis.fetch = originalFetch;
     });
 
-    it('should return false when requestReport fails (error code)', async () => {
+    it('should throw when requestReport fails (error code)', async () => {
       const xmlResponse = `
         <FlexStatementResponse>
           <ErrorCode>1018</ErrorCode>
@@ -207,16 +207,14 @@ describe('IbkrFlexQueryService', () => {
 
       globalThis.fetch = mock(() => Promise.resolve(new Response(xmlResponse, { status: 200 })));
 
-      const result = await service.validateCredentials('bad-token', 'query-123');
-      expect(result).toBe(false);
+      await expect(service.validateCredentials('bad-token', 'query-123')).rejects.toThrow();
       globalThis.fetch = originalFetch;
     });
 
-    it('should return false on network error', async () => {
+    it('should throw on network error', async () => {
       globalThis.fetch = mock(() => Promise.reject(new Error('Network error')));
 
-      const result = await service.validateCredentials('any-token', 'any-query');
-      expect(result).toBe(false);
+      await expect(service.validateCredentials('any-token', 'any-query')).rejects.toThrow();
       globalThis.fetch = originalFetch;
     });
   });

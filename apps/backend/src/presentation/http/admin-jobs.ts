@@ -24,9 +24,9 @@
  */
 
 import { createHash, createHmac, timingSafeEqual } from 'node:crypto';
-import { db } from '@scani/core/database/connection';
-import { adminAuditLog } from '@scani/core/database/schema';
-import { createComponentLogger } from '@scani/core/utils/logger';
+import { db } from '@scani/db/connection';
+import { adminAuditLog } from '@scani/db/schema';
+import { createComponentLogger } from '@scani/logging';
 import { getQueue } from '../../queues/client';
 
 const logger = createComponentLogger('admin-jobs');

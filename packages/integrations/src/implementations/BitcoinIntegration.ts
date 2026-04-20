@@ -6,8 +6,8 @@
  * a dedicated RPC endpoint.
  */
 
-import type { ChainConfig } from '@scani/core/external-services/blockchain';
-import { BitcoinChainService } from '@scani/core/external-services/blockchain';
+import type { ChainConfig } from '../blockchain-services';
+import { BitcoinChainService } from '../blockchain-services';
 import type {
   ICredentialManager,
   IntegrationAuthType,

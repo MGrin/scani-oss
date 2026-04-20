@@ -1,55 +1,57 @@
-import { ArrowLeft, Check, Loader2, Search } from 'lucide-react';
-import { useState } from 'react';
+import { ArrowLeft, Loader2 } from 'lucide-react';
+import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
-import { showError, showSuccess } from '@/hooks/use-toast';
+import { showError } from '@/hooks/use-toast';
 import { trpc } from '@/lib/trpc';
-import { JobProgressModal } from '../components/JobProgressModal';
+import { useJobStatus } from '../hooks/useJobStatus';
 import { V2_ROUTES } from '../lib/routes';
 
-type Step = 'input' | 'detecting' | 'detected';
+/**
+ * Crypto wallet import entry.
+ *
+ * The old two-step UX (sync detect → review detected chains → import)
+ * forced the user to wait on the detection page, and leaving mid-detect
+ * lost the work. The worker's `wallet-import` job already runs the full
+ * chain-detection + balance-fetch pipeline, so we skip the separate
+ * detect step entirely. Single form → enqueue → job page.
+ */
+type Step = 'input' | 'submitting' | 'importing';
 
 export function WalletImportPage() {
   const [address, setAddress] = useState('');
   const [displayName, setDisplayName] = useState('');
   const [step, setStep] = useState<Step>('input');
-  const [importJobId, setImportJobId] = useState<string | null>(null);
+  const [activeJobId, setActiveJobId] = useState<string | null>(null);
   const navigate = useNavigate();
-  const utils = trpc.useUtils();
 
-  const detectMutation = trpc.wallet.detectChains.useMutation({
-    onSuccess: (data) => {
-      if (data.ensName && !displayName.trim()) {
-        setDisplayName(data.ensName);
-      }
-      setStep('detected');
+  const importMutation = trpc.wallet.importAddress.useMutation({
+    onSuccess: ({ jobId }) => {
+      setActiveJobId(jobId);
+      setStep('importing');
     },
     onError: (err) => {
-      showError(err, 'Detecting chains');
+      showError(err, 'Importing wallet');
       setStep('input');
     },
   });
 
-  const importMutation = trpc.wallet.importAddress.useMutation({
-    onSuccess: ({ jobId }) => {
-      setImportJobId(jobId);
-    },
-    onError: (err) => {
-      showError(err, 'Importing wallet');
-      setStep('detected');
-    },
-  });
-
-  const handleDetect = () => {
-    if (!address.trim()) return;
-    setStep('detecting');
-    detectMutation.mutate({ address: address.trim() });
-  };
+  const jobStatus = useJobStatus(activeJobId);
+  // Both terminal outcomes land on the job detail page: completed shows
+  // the grouped-by-chain review (WalletImportResult), failed shows the
+  // worker error. Consistent with exchange/IBKR flows.
+  useEffect(() => {
+    if (step !== 'importing' || !activeJobId) return;
+    if (jobStatus.state === 'completed' || jobStatus.state === 'failed') {
+      navigate(V2_ROUTES.jobDetail(activeJobId));
+    }
+  }, [step, activeJobId, jobStatus.state, navigate]);
 
   const handleImport = () => {
+    if (!address.trim()) return;
+    setStep('submitting');
     importMutation.mutate({
       address: address.trim(),
       displayName: displayName.trim() || undefined,
@@ -57,6 +59,8 @@ export function WalletImportPage() {
       requestId: crypto.randomUUID(),
     });
   };
+
+  const isBusy = step === 'submitting' || step === 'importing';
 
   return (
     <div className="max-w-2xl space-y-6">
@@ -69,7 +73,8 @@ export function WalletImportPage() {
         </Button>
         <h2 className="text-2xl font-bold tracking-tight">Import Crypto Wallet</h2>
         <p className="text-sm text-muted-foreground mt-1">
-          Enter a wallet address to auto-detect chains and import balances
+          Enter a wallet address. We'll auto-detect every supported chain, fetch balances, and drop
+          you on the review screen — you can navigate away while it runs.
         </p>
       </div>
 
@@ -82,106 +87,53 @@ export function WalletImportPage() {
             <Input
               value={address}
               onChange={(e) => setAddress(e.target.value)}
-              placeholder="0x... or bc1... or any blockchain address"
+              placeholder="0x… or bc1… or any supported blockchain address"
               className="font-mono text-sm"
               onKeyDown={(e) => {
-                if (e.key === 'Enter') handleDetect();
+                if (e.key === 'Enter') handleImport();
               }}
+              disabled={isBusy}
             />
             <Input
               value={displayName}
               onChange={(e) => setDisplayName(e.target.value)}
               placeholder="Display name (optional)"
+              disabled={isBusy}
             />
-            <Button onClick={handleDetect} disabled={!address.trim()}>
-              <Search className="h-4 w-4 mr-2" />
-              Detect Chains
+            <Button onClick={handleImport} disabled={!address.trim() || isBusy} className="w-full">
+              Import wallet
             </Button>
           </CardContent>
         </Card>
       )}
 
-      {step === 'detecting' && (
+      {(step === 'submitting' || step === 'importing') && (
         <Card>
-          <CardContent className="p-12 flex flex-col items-center justify-center text-center">
-            <Loader2 className="h-8 w-8 animate-spin text-primary mb-4" />
-            <p className="font-medium">Detecting blockchain chains...</p>
+          <CardContent className="p-10 space-y-4">
+            <div className="space-y-1 text-center">
+              <p className="font-medium">
+                {step === 'submitting'
+                  ? 'Starting import…'
+                  : 'Detecting chains & fetching balances…'}
+              </p>
+              <p className="text-xs text-muted-foreground">
+                This usually takes 10–30 seconds. You'll land on the review page when it's done, or
+                see the error if anything failed.
+              </p>
+            </div>
+            {step === 'submitting' ? (
+              <div className="flex justify-center">
+                <Loader2 className="h-5 w-5 animate-spin text-primary" />
+              </div>
+            ) : (
+              // Indeterminate bouncing bar — same pattern as ExchangeConnectDialog + JobHeader.
+              <div className="relative h-1.5 w-full overflow-hidden rounded-full bg-primary/20">
+                <div className="absolute inset-y-0 left-0 w-1/3 rounded-full bg-primary animate-loading-bar" />
+              </div>
+            )}
           </CardContent>
         </Card>
       )}
-
-      {step === 'detected' && detectMutation.data && (
-        <div className="space-y-4">
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-base">Detected Chains</CardTitle>
-            </CardHeader>
-            <CardContent>
-              {detectMutation.data.chainsDetected?.length > 0 ? (
-                <div className="space-y-2">
-                  {detectMutation.data.ensName && (
-                    <p className="text-sm text-muted-foreground">
-                      ENS name resolved:{' '}
-                      <span className="font-medium text-foreground">
-                        {detectMutation.data.ensName}
-                      </span>
-                    </p>
-                  )}
-                  {detectMutation.data.chainsDetected.map((chain) => (
-                    <div
-                      key={String(chain.chainId)}
-                      className="flex items-center gap-2 p-2 rounded-md border border-border"
-                    >
-                      <Check className="h-4 w-4 text-green-500 shrink-0" />
-                      <span className="font-medium text-sm">{chain.name}</span>
-                      <Badge variant="secondary" className="text-[10px] ml-auto">
-                        {chain.type}
-                      </Badge>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <p className="text-sm text-muted-foreground">
-                  No supported chains detected for this address.
-                </p>
-              )}
-            </CardContent>
-          </Card>
-
-          <div className="flex gap-3">
-            <Button onClick={handleImport} disabled={!detectMutation.data.chainsDetected?.length}>
-              Import Balances
-            </Button>
-            <Button variant="outline" onClick={() => setStep('input')}>
-              Change Address
-            </Button>
-          </div>
-        </div>
-      )}
-
-      <JobProgressModal
-        jobId={importJobId}
-        title="Importing wallet"
-        description="Detecting chains, fetching balances, and warming prices. This can take up to a minute."
-        onCompleted={async (result) => {
-          const summary = result as {
-            accountsCreated?: number;
-            holdingsCreated?: number;
-            chainsDetected?: number;
-          } | null;
-          await utils.invalidate();
-          const accounts = summary?.accountsCreated ?? 0;
-          const holdings = summary?.holdingsCreated ?? 0;
-          showSuccess(`Imported ${holdings} holdings across ${accounts} accounts`);
-          setImportJobId(null);
-          navigate(V2_ROUTES.holdings);
-        }}
-        onFailed={(error) => {
-          showError(new Error(error), 'Wallet import');
-          setImportJobId(null);
-        }}
-        onDismiss={() => setImportJobId(null)}
-      />
     </div>
   );
 }

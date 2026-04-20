@@ -1,4 +1,4 @@
-import { TypeImplementations } from '@scani/core/features/implementations';
+import { TypeImplementations } from '@scani/domain/features';
 import { protectedProcedure, router } from '../trpc';
 
 export const accountTypesRouter = router({

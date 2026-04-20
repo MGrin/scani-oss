@@ -11,4 +11,4 @@ import { RateLimiter } from '@scani/rate-limiter';
  * Singleton rate limiter for Binance API
  * 10 calls per second (conservative limit)
  */
-export const binanceRateLimiter = new RateLimiter(10, 1000);
+export const binanceRateLimiter = new RateLimiter(10, 1000, { namespace: 'binance' });

@@ -9,8 +9,8 @@
  * - And 30+ other EVM chains supported by Etherscan V2 API
  */
 
-import type { ChainConfig } from '@scani/core/external-services/blockchain';
-import { EvmChainService } from '@scani/core/external-services/blockchain';
+import type { ChainConfig } from '../blockchain-services';
+import { EvmChainService } from '../blockchain-services';
 import type {
   ICredentialManager,
   IntegrationAuthType,

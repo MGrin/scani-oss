@@ -1,12 +1,12 @@
-import type { DbType } from '@scani/core/database/connection';
-import type * as schema from '@scani/core/database/schema';
-import { TokenService } from '@scani/core/services/TokenService';
-import type { TokenValidationService } from '@scani/core/services/TokenValidationService';
-import { createComponentLogger } from '@scani/core/utils/logger';
+import type { DbType } from '@scani/db/connection';
+import type * as schema from '@scani/db/schema';
+import { TokenService } from '@scani/domain/services/TokenService';
+import type { TokenValidationService } from '@scani/domain/services/TokenValidationService';
+import { createComponentLogger } from '@scani/logging';
+import { emitEntityChange } from '@scani/realtime';
 import { and, eq, lt, sql } from 'drizzle-orm';
 import Container from 'typedi';
 import { z } from 'zod';
-import { emitEntityChange } from '../../infrastructure/websocket/RealTimeUpdatesService';
 import { requireAuth } from '../middleware/auth';
 import { protectedProcedure, router } from '../trpc';
 
@@ -15,7 +15,7 @@ const tokenService = Container.get(TokenService);
 
 // Scam token probability threshold - tokens above this are filtered from UI
 // Import the shared threshold from core config
-import { SCAM_PROBABILITY_THRESHOLD } from '@scani/core/config/tokens';
+import { SCAM_PROBABILITY_THRESHOLD } from '@scani/domain/config/tokens';
 
 // Cache for external provider search results (avoids hammering CoinGecko/Finnhub)
 const searchCache = new Map<string, { results: unknown[]; expiresAt: number }>();
@@ -339,47 +339,22 @@ export function createTokensRouter(
       }),
 
     /**
-     * Flag a crypto token as a scam, contributing to the global scam detection.
+     * Flag a token as a scam (global). Sets `is_scam_probability = 1.0` on
+     * the token row; the token then falls out of `tokens.getAll`/`search`
+     * (which filter < SCAM_PROBABILITY_THRESHOLD) and the frontend renders
+     * a scam badge wherever it's still shown (owned holdings, job result
+     * pages, etc.).
      *
-     * Authorization rule: the caller must have held this token in one of their
-     * own accounts at some point (hidden or visible). This is an anti-abuse
-     * measure — without it, any authenticated user could poison the catalog
-     * by marking arbitrary legitimate tokens as scam.
-     *
-     * Side effect: bumps `is_scam_probability` to 1.0 on the token row. Once
-     * a token crosses SCAM_PROBABILITY_THRESHOLD it is filtered out of the
-     * getAll / search endpoints everywhere in the app.
-     *
-     * Scope: crypto tokens only. Fiat / stock markings don't make sense here.
+     * Authorization: any authenticated user. Scoped this broadly by product
+     * decision — it's a small-user-base trust model. Abuse is surfaced via
+     * the audit-style log line below + the existing token entity-change WS
+     * event.
      */
     markAsScam: protectedProcedure
       .input(z.object({ tokenId: z.string().uuid() }))
       .mutation(async ({ input, ctx }) => {
         const { dbUser } = await requireAuth(ctx);
 
-        // Verify the user has (or has had) a holding of this token.
-        const userHasHeldThisToken = await db
-          .select({ id: schemaObj.holdings.id })
-          .from(schemaObj.holdings)
-          .where(
-            and(
-              eq(schemaObj.holdings.userId, dbUser.id),
-              eq(schemaObj.holdings.tokenId, input.tokenId)
-            )
-          )
-          .limit(1);
-
-        if (userHasHeldThisToken.length === 0) {
-          tokensLogger.warn(
-            { userId: dbUser.id, tokenId: input.tokenId },
-            'Rejected markAsScam: user has never held this token'
-          );
-          throw new Error(
-            'You can only mark a token as scam if you have held it in one of your accounts'
-          );
-        }
-
-        // Verify the token is crypto. We don't flag fiat / stocks this way.
         const [token] = await db
           .select({
             id: schemaObj.tokens.id,
@@ -395,17 +370,9 @@ export function createTokensRouter(
           throw new Error('Token not found');
         }
 
-        if (token.typeCode !== 'crypto') {
-          throw new Error('Only crypto tokens can be marked as scam');
-        }
-
-        // Bump scam probability to 1.0 — definitively over the threshold.
         await db
           .update(schemaObj.tokens)
-          .set({
-            isScamProbability: 1.0,
-            updatedAt: new Date(),
-          })
+          .set({ isScamProbability: 1.0, updatedAt: new Date() })
           .where(eq(schemaObj.tokens.id, input.tokenId));
 
         tokensLogger.info(
@@ -413,6 +380,7 @@ export function createTokensRouter(
             userId: dbUser.id,
             tokenId: token.id,
             symbol: token.symbol,
+            type: token.typeCode,
           },
           'Token marked as scam by user'
         );
@@ -424,6 +392,48 @@ export function createTokensRouter(
           entityId: token.id,
           userId: dbUser.id,
           data: { scamProbability: 1.0 },
+        });
+
+        return { success: true as const, tokenId: token.id };
+      }),
+
+    /**
+     * Reverse `markAsScam` — resets `is_scam_probability` to 0. Same
+     * authorization: any authenticated user. Used by the undo path in the
+     * ScamActionButton confirmation dialog.
+     */
+    unmarkAsScam: protectedProcedure
+      .input(z.object({ tokenId: z.string().uuid() }))
+      .mutation(async ({ input, ctx }) => {
+        const { dbUser } = await requireAuth(ctx);
+
+        const [token] = await db
+          .select({ id: schemaObj.tokens.id, symbol: schemaObj.tokens.symbol })
+          .from(schemaObj.tokens)
+          .where(eq(schemaObj.tokens.id, input.tokenId))
+          .limit(1);
+
+        if (!token) {
+          throw new Error('Token not found');
+        }
+
+        await db
+          .update(schemaObj.tokens)
+          .set({ isScamProbability: 0, updatedAt: new Date() })
+          .where(eq(schemaObj.tokens.id, input.tokenId));
+
+        tokensLogger.info(
+          { userId: dbUser.id, tokenId: token.id, symbol: token.symbol },
+          'Token unmarked as scam by user'
+        );
+
+        emitEntityChange({
+          type: 'entity_changed',
+          entityType: 'token',
+          operationType: 'update',
+          entityId: token.id,
+          userId: dbUser.id,
+          data: { scamProbability: 0 },
         });
 
         return { success: true as const, tokenId: token.id };

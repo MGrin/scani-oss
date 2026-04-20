@@ -101,15 +101,14 @@ describe('KrakenApiService', () => {
       globalThis.fetch = originalFetch;
     });
 
-    it('should return false for invalid credentials (401)', async () => {
+    it('should throw for invalid credentials (401)', async () => {
       globalThis.fetch = mock(() => Promise.resolve(new Response('Unauthorized', { status: 401 })));
 
-      const result = await service.validateApiKey('bad-key', 'dGVzdC1zZWNyZXQ=');
-      expect(result).toBe(false);
+      await expect(service.validateApiKey('bad-key', 'dGVzdC1zZWNyZXQ=')).rejects.toThrow();
       globalThis.fetch = originalFetch;
     });
 
-    it('should return false when error array is non-empty', async () => {
+    it('should throw when error array is non-empty', async () => {
       const mockResponse = {
         error: ['EAPI:Invalid key'],
       };
@@ -118,16 +117,14 @@ describe('KrakenApiService', () => {
         Promise.resolve(new Response(JSON.stringify(mockResponse), { status: 200 }))
       );
 
-      const result = await service.validateApiKey('bad-key', 'dGVzdC1zZWNyZXQ=');
-      expect(result).toBe(false);
+      await expect(service.validateApiKey('bad-key', 'dGVzdC1zZWNyZXQ=')).rejects.toThrow();
       globalThis.fetch = originalFetch;
     });
 
-    it('should return false on network error', async () => {
+    it('should throw on network error', async () => {
       globalThis.fetch = mock(() => Promise.reject(new Error('Network error')));
 
-      const result = await service.validateApiKey('any-key', 'dGVzdC1zZWNyZXQ=');
-      expect(result).toBe(false);
+      await expect(service.validateApiKey('any-key', 'dGVzdC1zZWNyZXQ=')).rejects.toThrow();
       globalThis.fetch = originalFetch;
     });
   });

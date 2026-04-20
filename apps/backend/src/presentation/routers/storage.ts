@@ -9,11 +9,12 @@
  * orphans from failed jobs.
  */
 
-import { presignUpload } from '@scani/core/external-services/storage';
+import { presignUpload } from '@scani/storage';
 import { z } from 'zod';
+import { UPLOAD_LIMITS } from '../../config/limits';
 import { protectedProcedure, router } from '../trpc';
 
-const MAX_SIZE_BYTES = 8 * 1024 * 1024; // 8 MB hard cap per upload.
+const MAX_SIZE_BYTES = UPLOAD_LIMITS.PRESIGN_UPLOAD_BYTES;
 
 export const storageRouter = router({
   getUploadUrl: protectedProcedure

@@ -15,6 +15,8 @@ import { HoldingsPage } from './pages/HoldingsPage';
 import { InstitutionDetailPage } from './pages/InstitutionDetailPage';
 import { InstitutionsPage } from './pages/InstitutionsPage';
 import { IntegrationsPage } from './pages/IntegrationsPage';
+import { JobDetailPage } from './pages/JobDetailPage';
+import { JobsPage } from './pages/JobsPage';
 import { ManualEntryPage } from './pages/ManualEntryPage';
 import { SettingsPage } from './pages/SettingsPage';
 import { VaultDetailPage } from './pages/VaultDetailPage';
@@ -44,6 +46,8 @@ export function V2App() {
                 <Route path="wallet-import" element={<WalletImportPage />} />
                 <Route path="manual-entry" element={<ManualEntryPage />} />
                 <Route path="add-data" element={<AddDataPage />} />
+                <Route path="jobs" element={<JobsPage />} />
+                <Route path="jobs/:jobId" element={<JobDetailPage />} />
                 <Route path="settings" element={<SettingsPage />} />
               </Route>
             </Routes>

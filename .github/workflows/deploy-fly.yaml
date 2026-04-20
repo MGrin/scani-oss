@@ -112,16 +112,35 @@ jobs:
           filters: |
             backend:
               - 'apps/backend/**'
-              - 'packages/core/**'
-              - 'packages/shared/**'
+              - 'packages/ai-providers/**'
+              - 'packages/config/**'
+              - 'packages/db/**'
+              - 'packages/domain/**'
+              - 'packages/email/**'
               - 'packages/integrations/**'
+              - 'packages/logging/**'
+              - 'packages/pricing-providers/**'
+              - 'packages/queue/**'
               - 'packages/rate-limiter/**'
+              - 'packages/realtime/**'
+              - 'packages/shared/**'
+              - 'packages/storage/**'
             worker:
               - 'apps/worker/**'
               - 'apps/cron/**'
-              - 'packages/core/**'
-              - 'packages/shared/**'
+              - 'packages/ai-providers/**'
+              - 'packages/config/**'
+              - 'packages/db/**'
+              - 'packages/domain/**'
+              - 'packages/email/**'
               - 'packages/integrations/**'
+              - 'packages/logging/**'
+              - 'packages/pricing-providers/**'
+              - 'packages/queue/**'
+              - 'packages/rate-limiter/**'
+              - 'packages/realtime/**'
+              - 'packages/shared/**'
+              - 'packages/storage/**'
             frontend:
               - 'apps/frontendV2/**'
               - 'packages/shared/**'
@@ -130,7 +149,7 @@ jobs:
             admin:
               - 'apps/admin/**'
             migrations:
-              - 'packages/core/src/database/migrations/**'
+              - 'packages/db/src/migrations/**'
       - id: resolve
         run: |
           if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
@@ -178,8 +197,7 @@ jobs:
       # following `flyctl deploy` picks them up on the new machine.
       # Pre-existing secrets (DATABASE_URL, REDIS_URL, ENCRYPTION_KEY,
       # BETTER_AUTH_SECRET) are already on Fly and intentionally NOT
-      # re-staged here — this step only manages the new R2 + HMAC values
-      # that landed with the async-jobs PR. Fail loud if any is missing.
+      # re-staged here. Fail loud if any R2 / HMAC / Sentry is missing.
       - name: Stage R2 + HMAC + Sentry secrets on scani-backend
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
@@ -207,6 +225,51 @@ jobs:
             SENTRY_DSN="$SENTRY_DSN_BACKEND" \
             SENTRY_ENVIRONMENT="production" \
             SENTRY_RELEASE="${GITHUB_SHA}"
+
+      # Runtime provider keys — AI, blockchain, pricing, email. Soft-staged:
+      # each var is pushed only when the GH secret is set, so missing secrets
+      # don't fail the deploy AND Fly retains any existing value from prior
+      # manual `flyctl secrets set`. Once a key is added to GH Secrets,
+      # that becomes the single source of truth on subsequent deploys —
+      # rotating in GH auto-propagates. Required-in-prod validation still
+      # happens at backend boot (apps/backend/src/config/env.ts).
+      - name: Stage provider API keys on scani-backend
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          OPENAI_VISION_MODEL: ${{ secrets.OPENAI_VISION_MODEL }}
+          PERPLEXITY_API_KEY: ${{ secrets.PERPLEXITY_API_KEY }}
+          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+          DEEPSEEK_VISION_MODEL: ${{ secrets.DEEPSEEK_VISION_MODEL }}
+          ETHERSCAN_API_KEY: ${{ secrets.ETHERSCAN_API_KEY }}
+          HELIUS_API_KEY: ${{ secrets.HELIUS_API_KEY }}
+          COINGECKO_API_KEY: ${{ secrets.COINGECKO_API_KEY }}
+          FINNHUB_API_KEY: ${{ secrets.FINNHUB_API_KEY }}
+          GOOGLE_SERVICE_ACCOUNT_KEY: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_KEY }}
+          GOOGLE_SHEETS_ID: ${{ secrets.GOOGLE_SHEETS_ID }}
+          FASTMAIL_API_TOKEN: ${{ secrets.FASTMAIL_API_TOKEN }}
+        run: |
+          set -euo pipefail
+          args=()
+          for var in OPENAI_API_KEY OPENAI_VISION_MODEL \
+                     PERPLEXITY_API_KEY \
+                     DEEPSEEK_API_KEY DEEPSEEK_VISION_MODEL \
+                     ETHERSCAN_API_KEY HELIUS_API_KEY \
+                     COINGECKO_API_KEY FINNHUB_API_KEY \
+                     GOOGLE_SERVICE_ACCOUNT_KEY GOOGLE_SHEETS_ID \
+                     FASTMAIL_API_TOKEN; do
+            if [ -n "${!var:-}" ]; then
+              args+=("$var=${!var}")
+              echo "  → staging $var"
+            else
+              echo "  ⊘ $var not set in GitHub Secrets — skipping (existing Fly value retained)"
+            fi
+          done
+          if [ ${#args[@]} -eq 0 ]; then
+            echo "No provider secrets to stage."
+          else
+            flyctl secrets set --stage --app scani-backend "${args[@]}"
+          fi
 
       - run: |
           flyctl deploy --remote-only \
@@ -242,9 +305,9 @@ jobs:
       - uses: superfly/flyctl-actions/setup-flyctl@master
 
       # Worker needs the same R2 creds as the backend to read temp blobs
-      # that the backend's presigned-URL uploads landed at. Only the new
-      # R2 + Sentry vars are staged here — DATABASE_URL, REDIS_URL,
-      # ENCRYPTION_KEY are pre-existing on Fly and intentionally untouched.
+      # that the backend's presigned-URL uploads landed at.
+      # DATABASE_URL, REDIS_URL, ENCRYPTION_KEY are pre-existing on Fly
+      # and intentionally untouched.
       - name: Stage R2 + Sentry secrets on scani-worker
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
@@ -269,6 +332,46 @@ jobs:
             SENTRY_DSN="$SENTRY_DSN_WORKER" \
             SENTRY_ENVIRONMENT="production" \
             SENTRY_RELEASE="${GITHUB_SHA}"
+
+      # Same soft-stage pattern as the backend: missing GH secret → skip +
+      # retain existing Fly value; present GH secret → GH becomes source
+      # of truth. FASTMAIL is backend-only (magic-link email) so omitted
+      # from the worker list.
+      - name: Stage provider API keys on scani-worker
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          OPENAI_VISION_MODEL: ${{ secrets.OPENAI_VISION_MODEL }}
+          PERPLEXITY_API_KEY: ${{ secrets.PERPLEXITY_API_KEY }}
+          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+          DEEPSEEK_VISION_MODEL: ${{ secrets.DEEPSEEK_VISION_MODEL }}
+          ETHERSCAN_API_KEY: ${{ secrets.ETHERSCAN_API_KEY }}
+          HELIUS_API_KEY: ${{ secrets.HELIUS_API_KEY }}
+          COINGECKO_API_KEY: ${{ secrets.COINGECKO_API_KEY }}
+          FINNHUB_API_KEY: ${{ secrets.FINNHUB_API_KEY }}
+          GOOGLE_SERVICE_ACCOUNT_KEY: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_KEY }}
+          GOOGLE_SHEETS_ID: ${{ secrets.GOOGLE_SHEETS_ID }}
+        run: |
+          set -euo pipefail
+          args=()
+          for var in OPENAI_API_KEY OPENAI_VISION_MODEL \
+                     PERPLEXITY_API_KEY \
+                     DEEPSEEK_API_KEY DEEPSEEK_VISION_MODEL \
+                     ETHERSCAN_API_KEY HELIUS_API_KEY \
+                     COINGECKO_API_KEY FINNHUB_API_KEY \
+                     GOOGLE_SERVICE_ACCOUNT_KEY GOOGLE_SHEETS_ID; do
+            if [ -n "${!var:-}" ]; then
+              args+=("$var=${!var}")
+              echo "  → staging $var"
+            else
+              echo "  ⊘ $var not set in GitHub Secrets — skipping (existing Fly value retained)"
+            fi
+          done
+          if [ ${#args[@]} -eq 0 ]; then
+            echo "No provider secrets to stage."
+          else
+            flyctl secrets set --stage --app scani-worker "${args[@]}"
+          fi
 
       # `--ha=false` keeps a single primary machine — without it, fly.io
       # deploys a primary+standby pair. When the Terraform `scale count 1`

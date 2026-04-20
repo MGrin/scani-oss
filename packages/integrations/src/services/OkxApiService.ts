@@ -9,6 +9,8 @@
  */
 
 import crypto from 'node:crypto';
+import { credentialBucketKey } from '@scani/rate-limiter';
+
 import type { RateLimiter } from '../types';
 
 /**
@@ -92,27 +94,23 @@ export class OkxApiService {
    * This tests authentication without affecting the account
    */
   async validateApiKey(apiKey: string, apiSecret: string, passphrase: string): Promise<boolean> {
-    try {
-      const requestPath = '/api/v5/account/balance';
-      const headers = this.createAuthHeaders(apiKey, apiSecret, passphrase, 'GET', requestPath);
+    const subKey = credentialBucketKey(apiKey);
+    const requestPath = '/api/v5/account/balance';
+    const headers = this.createAuthHeaders(apiKey, apiSecret, passphrase, 'GET', requestPath);
+    const response = await this.executeWithRateLimit(
+      () => fetch(`${this.baseUrl}${requestPath}`, { headers }),
+      subKey
+    );
 
-      const response = await this.executeWithRateLimit(() =>
-        fetch(`${this.baseUrl}${requestPath}`, {
-          headers,
-        })
-      );
-
-      if (!response.ok) {
-        return false;
-      }
-
-      const data = (await response.json()) as OkxBalanceResponse;
-
-      // code '0' means success
-      return data.code === '0';
-    } catch (_error) {
-      return false;
+    if (!response.ok) {
+      const body = await response.text().catch(() => '');
+      throw new Error(`OKX HTTP ${response.status}${body ? `: ${body.slice(0, 200)}` : ''}`);
     }
+    const data = (await response.json()) as OkxBalanceResponse & { msg?: string };
+    if (data.code !== '0') {
+      throw new Error(`OKX rejected request: ${data.code}${data.msg ? ` ${data.msg}` : ''}`);
+    }
+    return true;
   }
 
   /**
@@ -124,14 +122,17 @@ export class OkxApiService {
     apiSecret: string,
     passphrase: string
   ): Promise<Array<{ ccy: string; cashBal: string; eqUsd: string }>> {
+    const subKey = credentialBucketKey(apiKey);
     try {
       const requestPath = '/api/v5/account/balance';
       const headers = this.createAuthHeaders(apiKey, apiSecret, passphrase, 'GET', requestPath);
 
-      const response = await this.executeWithRateLimit(() =>
-        fetch(`${this.baseUrl}${requestPath}`, {
-          headers,
-        })
+      const response = await this.executeWithRateLimit(
+        () =>
+          fetch(`${this.baseUrl}${requestPath}`, {
+            headers,
+          }),
+        subKey
       );
 
       if (!response.ok) {
@@ -161,11 +162,12 @@ export class OkxApiService {
   }
 
   /**
-   * Execute function with rate limiting if configured
+   * Execute function with rate limiting if configured. `subKey`
+   * partitions the provider-wide bucket by credential hash.
    */
-  private async executeWithRateLimit<T>(fn: () => Promise<T>): Promise<T> {
+  private async executeWithRateLimit<T>(fn: () => Promise<T>, subKey?: string): Promise<T> {
     if (this.rateLimiter) {
-      return this.rateLimiter.execute(fn);
+      return this.rateLimiter.execute(fn, subKey);
     }
     return fn();
   }

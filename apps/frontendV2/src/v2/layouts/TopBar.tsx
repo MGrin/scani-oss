@@ -1,6 +1,7 @@
 import { Menu, Plus, Search } from 'lucide-react';
 import { Link, useLocation } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
+import { JobsBadge } from '../components/JobsBadge';
 import { V2_ROUTES } from '../lib/routes';
 
 interface TopBarProps {
@@ -15,24 +16,24 @@ function getPageTitle(pathname: string): string {
   return segment.charAt(0).toUpperCase() + segment.slice(1).replace(/-/g, ' ');
 }
 
-/** Get context-aware add link based on current page */
+/** Context-aware "Add" link. Returns null only on the Add Data page
+ * itself (no point linking back to where you are). Everywhere else
+ * gets the button — some routes pre-fill context (account/institution
+ * detail), the rest get the plain "Add Data" entry. */
 function getAddLink(pathname: string): { href: string; label: string } | null {
-  // Account detail page → add data with account preselected
+  // Hide on the Add Data page itself + its sub-flows to avoid a link
+  // that navigates to where the user already is.
+  if (pathname.startsWith(V2_ROUTES.addData)) return null;
+
   const accountMatch = pathname.match(/^\/accounts\/([^/]+)$/);
   if (accountMatch) {
     return { href: `${V2_ROUTES.addData}?accountId=${accountMatch[1]}`, label: 'Add' };
   }
-  // Institution detail → add data with institution preselected
   const instMatch = pathname.match(/^\/institutions\/([^/]+)$/);
   if (instMatch) {
     return { href: `${V2_ROUTES.addData}?institutionId=${instMatch[1]}`, label: 'Add' };
   }
-  // Holdings list, Accounts list, Dashboard
-  if (pathname === '/holdings' || pathname === '/' || pathname === '/accounts') {
-    return { href: V2_ROUTES.addData, label: 'Add Data' };
-  }
-
-  return null;
+  return { href: V2_ROUTES.addData, label: 'Add Data' };
 }
 
 export function TopBar({ onMobileMenuOpen, onCommandPaletteOpen }: TopBarProps) {
@@ -63,6 +64,12 @@ export function TopBar({ onMobileMenuOpen, onCommandPaletteOpen }: TopBarProps) 
       <h1 className="text-sm font-medium text-foreground">{title}</h1>
 
       <div className="flex-1" />
+
+      {/* Background-jobs activity indicator. Hidden below the sidebar
+          breakpoint — mobile users reach Jobs via the sidebar (rendered
+          in the "More" drawer) + MobileNav, so duplicating the badge in
+          the top row just eats width. */}
+      <JobsBadge className="hidden lg:inline-flex" />
 
       {/* Context-aware Add button */}
       {addLink && (

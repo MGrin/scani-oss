@@ -7,6 +7,8 @@
  */
 
 import crypto from 'node:crypto';
+import { credentialBucketKey } from '@scani/rate-limiter';
+
 import type { RateLimiter } from '../types';
 
 /**
@@ -95,27 +97,25 @@ export class BybitApiService {
    * This tests authentication without affecting the account
    */
   async validateApiKey(apiKey: string, apiSecret: string): Promise<boolean> {
-    try {
-      const queryString = 'accountType=UNIFIED';
-      const headers = this.createAuthHeaders(apiKey, apiSecret, queryString);
+    const subKey = credentialBucketKey(apiKey);
+    const queryString = 'accountType=UNIFIED';
+    const headers = this.createAuthHeaders(apiKey, apiSecret, queryString);
+    const response = await this.executeWithRateLimit(
+      () => fetch(`${this.baseUrl}/v5/account/wallet-balance?${queryString}`, { headers }),
+      subKey
+    );
 
-      const response = await this.executeWithRateLimit(() =>
-        fetch(`${this.baseUrl}/v5/account/wallet-balance?${queryString}`, {
-          headers,
-        })
-      );
-
-      if (!response.ok) {
-        return false;
-      }
-
-      const data = (await response.json()) as BybitWalletBalanceResponse;
-
-      // retCode 0 means success
-      return data.retCode === 0;
-    } catch (_error) {
-      return false;
+    if (!response.ok) {
+      const body = await response.text().catch(() => '');
+      throw new Error(`Bybit HTTP ${response.status}${body ? `: ${body.slice(0, 200)}` : ''}`);
     }
+    const data = (await response.json()) as BybitWalletBalanceResponse & { retMsg?: string };
+    if (data.retCode !== 0) {
+      throw new Error(
+        `Bybit rejected request: retCode ${data.retCode}${data.retMsg ? ` (${data.retMsg})` : ''}`
+      );
+    }
+    return true;
   }
 
   /**
@@ -126,14 +126,17 @@ export class BybitApiService {
     apiKey: string,
     apiSecret: string
   ): Promise<Array<{ coin: string; walletBalance: string; usdValue: string }>> {
+    const subKey = credentialBucketKey(apiKey);
     try {
       const queryString = 'accountType=UNIFIED';
       const headers = this.createAuthHeaders(apiKey, apiSecret, queryString);
 
-      const response = await this.executeWithRateLimit(() =>
-        fetch(`${this.baseUrl}/v5/account/wallet-balance?${queryString}`, {
-          headers,
-        })
+      const response = await this.executeWithRateLimit(
+        () =>
+          fetch(`${this.baseUrl}/v5/account/wallet-balance?${queryString}`, {
+            headers,
+          }),
+        subKey
       );
 
       if (!response.ok) {
@@ -163,11 +166,12 @@ export class BybitApiService {
   }
 
   /**
-   * Execute function with rate limiting if configured
+   * Execute function with rate limiting if configured. `subKey`
+   * partitions the provider-wide bucket by credential hash.
    */
-  private async executeWithRateLimit<T>(fn: () => Promise<T>): Promise<T> {
+  private async executeWithRateLimit<T>(fn: () => Promise<T>, subKey?: string): Promise<T> {
     if (this.rateLimiter) {
-      return this.rateLimiter.execute(fn);
+      return this.rateLimiter.execute(fn, subKey);
     }
     return fn();
   }

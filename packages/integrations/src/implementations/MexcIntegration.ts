@@ -184,13 +184,9 @@ export class MexcIntegration extends ScaniIntegration {
       return false;
     }
 
-    try {
-      const apiKey = credentials.apiKey as string;
-      const apiSecret = credentials.apiSecret as string;
-      return await this.mexcService.validateApiKey(apiKey, apiSecret);
-    } catch (_error) {
-      return false;
-    }
+    const apiKey = credentials.apiKey as string;
+    const apiSecret = credentials.apiSecret as string;
+    return await this.mexcService.validateApiKey(apiKey, apiSecret);
   }
 
   async refreshAuthentication(_refreshToken: string): Promise<Record<string, unknown>> {

@@ -40,11 +40,10 @@ describe('BinanceApiService', () => {
       globalThis.fetch = originalFetch;
     });
 
-    it('should return false on network error', async () => {
+    it('should throw on network error', async () => {
       globalThis.fetch = mock(() => Promise.reject(new Error('Network error')));
 
-      const result = await service.validateApiKey('any-key', 'any-secret');
-      expect(result).toBe(false);
+      await expect(service.validateApiKey('any-key', 'any-secret')).rejects.toThrow();
       globalThis.fetch = originalFetch;
     });
   });

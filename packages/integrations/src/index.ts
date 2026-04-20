@@ -42,6 +42,13 @@
  */
 
 export { ScaniIntegration } from './base';
+// Export per-chain clients (raw IBlockchainService implementations) + chain config.
+export * from './blockchain-services';
+export {
+  CHAIN_MAPPING_PROVIDER,
+  type ChainMappingRecord,
+  type IChainMappingProvider,
+} from './chain-mapping-provider';
 export { allIntegrationConfigs, exchangeConfigs } from './config/integrationConfigs';
 // Export factory functions
 export {

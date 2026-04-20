@@ -1,4 +1,4 @@
-import { db } from '@scani/core/database';
+import { db } from '@scani/db';
 import {
   tokens,
   tokenTypes,
@@ -6,8 +6,9 @@ import {
   userSessions,
   users,
   userVerifications,
-} from '@scani/core/database/schema';
-import { authLogger } from '@scani/core/utils/logger';
+} from '@scani/db/schema';
+import { createFastmailSender } from '@scani/email';
+import { authLogger } from '@scani/logging';
 import { betterAuth } from 'better-auth';
 import { drizzleAdapter } from 'better-auth/adapters/drizzle';
 import { emailOTP, magicLink } from 'better-auth/plugins';
@@ -19,7 +20,6 @@ import {
   renderOtpEmail,
   renderVerificationEmail,
 } from './email-templates';
-import { createFastmailSender } from './fastmail-jmap';
 
 /**
  * Default base currency for newly-created users. First time it's called,

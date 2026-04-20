@@ -1,6 +1,6 @@
-import { deleteTempBlob, readTempBlob } from '@scani/core/external-services/storage';
-import type { FileImportJob } from '@scani/core/queues';
-import { ParseFileUseCase } from '@scani/core/use-cases/ParseFileUseCase';
+import { ParseFileUseCase } from '@scani/domain/use-cases/ParseFileUseCase';
+import type { FileImportJob } from '@scani/queue';
+import { deleteTempBlob, readTempBlob } from '@scani/storage';
 import type { Job } from 'bullmq';
 import type { Redis } from 'ioredis';
 import { Container } from 'typedi';
@@ -42,6 +42,9 @@ export function buildFileImportProcessor(publisher: Redis): (job: Job) => Promis
             holdingId: h.holdingId ?? null,
             existingBalance: h.existingBalance ?? null,
           })),
+          // Echo accountId so the job detail page can bind the review-
+          // and-save card to the same account chosen at submit time.
+          accountId: data.accountId,
           format: result.format,
           warnings: result.warnings,
         };

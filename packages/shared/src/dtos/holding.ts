@@ -11,6 +11,28 @@ export type Holding = {
   lastUpdated: Date;
 };
 
+/**
+ * A holding extracted from a file or screenshot — the shape the
+ * file-import pipeline (csv/ofx/qif parsers + AI screenshot parsing)
+ * produces before the review screen turns it into a real `Holding`.
+ *
+ * Lives in shared so the worker's return value and the frontend's
+ * review page agree on fields. The frontend extends this with
+ * `tokenId`, `holdingId`, `clientId` etc. for its own state.
+ */
+export interface ExtractedHolding {
+  /** Currency code (USD, EUR) or stock ticker (AAPL) */
+  symbol: string;
+  /** Human-readable name */
+  name?: string;
+  /** Balance as string for decimal precision */
+  balance: string;
+  /** Confidence 0-1 */
+  confidence: number;
+  /** Extra context */
+  notes?: string;
+}
+
 export const CreateHoldingDto = z.object({
   accountId: z.string().uuid(),
   tokenId: z.string().uuid(),
@@ -51,6 +73,8 @@ export type HoldingWithDetails = {
     type: string;
     typeCode: string;
     iconUrl?: string | null;
+    /** 0..1. `>= SCAM_PROBABILITY_THRESHOLD` → rendered with the scam badge. */
+    isScamProbability: number;
   };
   amount: number;
   value: number;

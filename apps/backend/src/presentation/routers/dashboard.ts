@@ -1,4 +1,4 @@
-import { DashboardImplementations } from '@scani/core/features/implementations';
+import { DashboardImplementations } from '@scani/domain/features';
 import { GetAssetAllocationInputDto } from '@scani/shared';
 import { requireAuth } from '../middleware/auth';
 import { protectedProcedure, router } from '../trpc';

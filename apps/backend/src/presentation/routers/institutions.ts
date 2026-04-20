@@ -1,5 +1,5 @@
-import { InstitutionImplementations } from '@scani/core/features/implementations';
-import { createComponentLogger } from '@scani/core/utils/logger';
+import { InstitutionImplementations } from '@scani/domain/features';
+import { createComponentLogger } from '@scani/logging';
 import ogs from 'open-graph-scraper';
 import { z } from 'zod';
 import { requireAuth } from '../middleware/auth';

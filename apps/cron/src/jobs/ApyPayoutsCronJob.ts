@@ -8,8 +8,8 @@
  * Schedule: Daily at midnight UTC
  */
 
-import { ApplyApyPayoutsUseCase } from '@scani/core/use-cases';
-import { createComponentLogger } from '@scani/core/utils/logger';
+import { ApplyApyPayoutsUseCase } from '@scani/domain/use-cases';
+import { createComponentLogger } from '@scani/logging';
 import { Container } from 'typedi';
 
 const logger = createComponentLogger('cron:apy-payouts');

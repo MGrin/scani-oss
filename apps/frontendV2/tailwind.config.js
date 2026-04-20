@@ -81,11 +81,15 @@ export default {
           },
         },
         'loading-bar': {
+          // Bar element is w-1/3 (= 33.33% of container), translateX is % of
+          // the bar's own width. So to make the right edge touch the right
+          // container edge, the bar's left must sit at 66.67% of container —
+          // that's 200% of the bar's own width.
           '0%': {
             transform: 'translateX(-100%)',
           },
           '50%': {
-            transform: 'translateX(150%)',
+            transform: 'translateX(200%)',
           },
           '100%': {
             transform: 'translateX(-100%)',
@@ -139,7 +143,7 @@ export default {
       animation: {
         'accordion-down': 'accordion-down 0.2s ease-out',
         'accordion-up': 'accordion-up 0.2s ease-out',
-        'loading-bar': 'loading-bar 1.5s ease-in-out infinite',
+        'loading-bar': 'loading-bar 2.8s ease-in-out infinite',
         'fade-in': 'fade-in 0.2s ease-out',
         'fade-in-up': 'fade-in-up 0.3s ease-out',
         'scale-in': 'scale-in 0.2s ease-out',

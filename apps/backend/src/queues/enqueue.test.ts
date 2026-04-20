@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { JOB_NAMES } from '@scani/core/queues';
+import { JOB_NAMES } from '@scani/queue';
 import { computeJobId } from './enqueue';
 
 const USER = '11111111-2222-3333-4444-555555555555';

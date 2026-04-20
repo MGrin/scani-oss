@@ -1,5 +1,5 @@
 import { ExternalLink } from 'lucide-react';
-import { useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import {
@@ -15,6 +15,7 @@ import { Label } from '@/components/ui/label';
 import { trpc } from '@/lib/trpc';
 import { trpcVanilla } from '@/lib/trpc-vanilla';
 import { invalidatePortfolioQueries } from '@/v2/hooks/invalidatePortfolioQueries';
+import { useJobStatus } from '@/v2/hooks/useJobStatus';
 import { V2_ROUTES } from '@/v2/lib/routes';
 
 interface ExchangeConfig {
@@ -207,18 +208,79 @@ export function ExchangeConnectDialog({
   const [passphrase, setPassphrase] = useState('');
   const [token, setToken] = useState('');
   const [queryId, setQueryId] = useState('');
-  const [status, setStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
+  // Status progression:
+  //   idle → submitting (tRPC call running) → importing (job is running on
+  //   the worker) → (closes + navigates on success/failure).
+  //   `error` is reached only when the tRPC `validateKeys` call itself
+  //   fails (e.g. bad signature, connectivity). Job-level failures flip to
+  //   `importing` → navigate to /jobs/:id so the detail page shows the
+  //   error from the worker.
+  const [status, setStatus] = useState<'idle' | 'submitting' | 'importing' | 'error'>('idle');
   const [errorMsg, setErrorMsg] = useState('');
+  const [activeJobId, setActiveJobId] = useState<string | null>(null);
+  const [activeInstitutionId, setActiveInstitutionId] = useState<string | null>(null);
 
   const utils = trpc.useUtils();
   const navigate = useNavigate();
 
   const help = API_KEY_HELP[exchange.key];
   const isMobile = isMobileDevice();
-  const isLoading = status === 'loading';
+  const isBusy = status === 'submitting' || status === 'importing';
+
+  const jobStatus = useJobStatus(activeJobId);
+
+  // Memoised so the job-terminated effect's dependency list is stable —
+  // a fresh reference every render would re-run the effect on every
+  // parent re-render and could trigger a redirect loop. Declared before
+  // the effect so it's in scope when React validates hook deps.
+  const resetForm = useCallback(() => {
+    setApiKey('');
+    setApiSecret('');
+    setPassphrase('');
+    setToken('');
+    setQueryId('');
+    setStatus('idle');
+    setErrorMsg('');
+    setActiveJobId(null);
+    setActiveInstitutionId(null);
+  }, []);
+
+  // When the import job terminates, close the modal and navigate — to
+  // holdings filtered by this institution on success, or to the job
+  // detail page on failure so the user can read the provider error.
+  useEffect(() => {
+    if (status !== 'importing' || !activeJobId) return;
+    if (jobStatus.state === 'completed') {
+      void (async () => {
+        await invalidatePortfolioQueries(utils);
+        resetForm();
+        onOpenChange(false);
+        if (activeInstitutionId) {
+          navigate(`${V2_ROUTES.holdings}?institution=${activeInstitutionId}`);
+        } else {
+          navigate(V2_ROUTES.holdings);
+        }
+      })();
+    } else if (jobStatus.state === 'failed') {
+      resetForm();
+      onOpenChange(false);
+      navigate(V2_ROUTES.jobDetail(activeJobId));
+    }
+    // `utils` is stable from trpc.useUtils(); navigate/onOpenChange are
+    // stable references; `resetForm` is wrapped in useCallback.
+  }, [
+    status,
+    activeJobId,
+    activeInstitutionId,
+    jobStatus.state,
+    navigate,
+    onOpenChange,
+    utils,
+    resetForm,
+  ]);
 
   const handleSubmit = async () => {
-    setStatus('loading');
+    setStatus('submitting');
     setErrorMsg('');
 
     try {
@@ -272,36 +334,16 @@ export function ExchangeConnectDialog({
         throw new Error(`No integration client for "${exchange.key}"`);
       }
       const result = await router.validateKeys.mutate(input);
-      setStatus('success');
-      // Invalidate everything — connecting an exchange creates accounts
-      // and holdings, which roll up into institutions, dashboard totals,
-      // vaults, and the asset-allocation chart.
-      await invalidatePortfolioQueries(utils);
-
-      // Navigate to holdings filtered by institution after a brief delay
-      // so the user sees the success state before navigating away.
-      const institutionId = result?.institutionId;
-      if (institutionId) {
-        setTimeout(() => {
-          resetForm();
-          onOpenChange(false);
-          navigate(`${V2_ROUTES.holdings}?institution=${institutionId}`);
-        }, 800);
-      }
+      // Transition into "importing" — the tRPC call succeeded (creds
+      // stored + job enqueued), now we watch the worker job. The useEffect
+      // above handles completed/failed transitions.
+      setActiveJobId(result?.jobId ?? null);
+      setActiveInstitutionId(result?.institutionId ?? null);
+      setStatus('importing');
     } catch (err) {
       setErrorMsg(err instanceof Error ? err.message : 'Connection failed');
       setStatus('error');
     }
-  };
-
-  const resetForm = () => {
-    setApiKey('');
-    setApiSecret('');
-    setPassphrase('');
-    setToken('');
-    setQueryId('');
-    setStatus('idle');
-    setErrorMsg('');
   };
 
   const isValid = () => {
@@ -321,7 +363,10 @@ export function ExchangeConnectDialog({
     <Dialog
       open={open}
       onOpenChange={(v) => {
-        if (isLoading) return;
+        // Don't let the user close the modal mid-flight — we want them to
+        // wait for the job to complete so the redirect lands them on the
+        // right page. The job-terminated effect above closes it cleanly.
+        if (isBusy) return;
         if (!v) resetForm();
         onOpenChange(v);
       }}
@@ -385,7 +430,7 @@ export function ExchangeConnectDialog({
                   onChange={(e) => setApiKey(e.target.value)}
                   placeholder="Enter API key"
                   type="password"
-                  disabled={isLoading}
+                  disabled={isBusy}
                 />
               </div>
               <div className="space-y-2">
@@ -396,7 +441,7 @@ export function ExchangeConnectDialog({
                   onChange={(e) => setApiSecret(e.target.value)}
                   placeholder="Enter API secret"
                   type="password"
-                  disabled={isLoading}
+                  disabled={isBusy}
                 />
               </div>
             </>
@@ -411,7 +456,7 @@ export function ExchangeConnectDialog({
                 onChange={(e) => setPassphrase(e.target.value)}
                 placeholder="Enter passphrase"
                 type="password"
-                disabled={isLoading}
+                disabled={isBusy}
               />
             </div>
           )}
@@ -425,7 +470,7 @@ export function ExchangeConnectDialog({
                 onChange={(e) => setToken(e.target.value)}
                 placeholder="Enter Wise API token"
                 type="password"
-                disabled={isLoading}
+                disabled={isBusy}
               />
             </div>
           )}
@@ -440,7 +485,7 @@ export function ExchangeConnectDialog({
                   onChange={(e) => setToken(e.target.value)}
                   placeholder="Enter token"
                   type="password"
-                  disabled={isLoading}
+                  disabled={isBusy}
                 />
               </div>
               <div className="space-y-2">
@@ -450,16 +495,26 @@ export function ExchangeConnectDialog({
                   value={queryId}
                   onChange={(e) => setQueryId(e.target.value)}
                   placeholder="Enter query ID"
-                  disabled={isLoading}
+                  disabled={isBusy}
                 />
               </div>
             </>
           )}
 
-          {status === 'success' && (
-            <p className="text-sm text-green-600 font-medium">
-              Connected successfully! Balances will sync automatically.
-            </p>
+          {status === 'importing' && (
+            <div className="space-y-2">
+              <p className="text-sm font-medium">
+                Credentials accepted — importing your {exchange.name} data.
+              </p>
+              <p className="text-xs text-muted-foreground">
+                This usually takes a few seconds. You'll land on your holdings when it finishes.
+              </p>
+              {/* Indeterminate progress bar — reuses the animate-loading-bar
+                  keyframe defined in tailwind.config.js. */}
+              <div className="relative h-1.5 w-full overflow-hidden rounded-full bg-primary/20">
+                <div className="absolute inset-y-0 left-0 w-1/3 rounded-full bg-primary animate-loading-bar" />
+              </div>
+            </div>
           )}
 
           {status === 'error' && <p className="text-sm text-destructive">{errorMsg}</p>}
@@ -472,15 +527,15 @@ export function ExchangeConnectDialog({
               resetForm();
               onOpenChange(false);
             }}
-            disabled={isLoading}
+            disabled={isBusy}
           >
             Cancel
           </Button>
-          <Button onClick={handleSubmit} disabled={!isValid() || isLoading || status === 'success'}>
-            {status === 'loading'
-              ? 'Connecting...'
-              : status === 'success'
-                ? 'Connected'
+          <Button onClick={handleSubmit} disabled={!isValid() || isBusy}>
+            {status === 'submitting'
+              ? 'Connecting…'
+              : status === 'importing'
+                ? 'Importing…'
                 : 'Connect'}
           </Button>
         </DialogFooter>

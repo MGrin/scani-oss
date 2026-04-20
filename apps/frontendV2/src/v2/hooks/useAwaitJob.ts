@@ -11,8 +11,11 @@ import { trpc } from '@/lib/trpc';
  * screens after screenshot parsing) use this helper to wait for the
  * worker without bypassing BullMQ's retry/backoff logic.
  *
- * Prefer the `JobProgressModal` where the UX allows — this helper only
- * exists for flows that genuinely need the inline result.
+ * For flows where the user can navigate away while the job runs, prefer
+ * handing off to the generic `/jobs/:id` detail page (see
+ * `V2_ROUTES.jobDetail`). This helper is for pages that need to render
+ * the next step (e.g. file-import review) as soon as the worker produces
+ * a result.
  */
 export function useAwaitJob(): (jobId: string) => Promise<{
   ok: boolean;

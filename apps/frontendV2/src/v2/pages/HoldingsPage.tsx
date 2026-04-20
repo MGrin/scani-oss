@@ -134,6 +134,13 @@ export function HoldingsPage() {
   const { data: holdingsData, isLoading } = trpc.holdings.getWithDetails.useQuery();
   const { data: groupsData } = trpc.groups.getAll.useQuery();
   const { data: baseCurrency } = trpc.users.getBaseCurrency.useQuery();
+  // Fetch the full institution + account list independently of holdings so
+  // filter chips can resolve UUIDs → human names even when the filtered
+  // institution/account has zero holdings (e.g. freshly-created IBKR
+  // integration that imported nothing — the URL carries the institutionId
+  // but `holdings` contains no matching entry to source the name from).
+  const { data: institutionsData } = trpc.institutions.getAll.useQuery();
+  const { data: accountsData } = trpc.accounts.getAll.useQuery();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
 
@@ -171,11 +178,19 @@ export function HoldingsPage() {
   const tokenTypeOptions = Array.from(new Set(holdings.map((h) => h.token.typeCode))).map(
     (code) => ({ label: code, value: code })
   );
-  const institutionOptions = Array.from(
-    new Map(holdings.map((h) => [h.institution.id, h.institution])).values()
+  // Prefer the full institution/account list for filter-chip labels so a
+  // freshly-created integration with zero holdings still renders its name
+  // rather than the raw UUID. Fall back to what's in `holdings` only when
+  // the separate queries haven't landed yet.
+  const institutionOptions = (
+    institutionsData && institutionsData.length > 0
+      ? institutionsData.map((inst) => ({ id: inst.id, name: inst.name }))
+      : Array.from(new Map(holdings.map((h) => [h.institution.id, h.institution])).values())
   ).map((inst) => ({ label: inst.name, value: inst.id }));
-  const accountOptions = Array.from(
-    new Map(holdings.map((h) => [h.account.id, h.account])).values()
+  const accountOptions = (
+    accountsData && accountsData.length > 0
+      ? accountsData.map((acc) => ({ id: acc.id, name: acc.name }))
+      : Array.from(new Map(holdings.map((h) => [h.account.id, h.account])).values())
   ).map((acc) => ({ label: acc.name, value: acc.id }));
   const groupOptions = groups.map((g) => ({ label: g.name, value: g.id }));
 

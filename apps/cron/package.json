@@ -16,8 +16,10 @@
     "type-check": "tsc --noEmit"
   },
   "dependencies": {
-    "@scani/core": "workspace:*",
+    "@scani/domain": "workspace:*",
+    "@scani/db": "workspace:*",
     "@scani/integrations": "workspace:*",
+    "@scani/logging": "workspace:*",
     "reflect-metadata": "^0.2.2",
     "typedi": "^0.10.0",
     "zod": "^3.25.76"

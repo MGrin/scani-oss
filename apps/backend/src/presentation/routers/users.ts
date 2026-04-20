@@ -1,6 +1,6 @@
-import { SettingsImplementations } from '@scani/core/features/implementations';
-import { JOB_NAMES } from '@scani/core/queues';
-import { createComponentLogger } from '@scani/core/utils/logger';
+import { SettingsImplementations } from '@scani/domain/features';
+import { createComponentLogger } from '@scani/logging';
+import { JOB_NAMES } from '@scani/queue';
 import { UpdateUserDto } from '@scani/shared';
 import { z } from 'zod';
 import { enqueueJob } from '../../queues/enqueue';

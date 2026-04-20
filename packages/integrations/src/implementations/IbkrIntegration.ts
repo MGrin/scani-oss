@@ -56,17 +56,12 @@ export class IbkrIntegration extends ScaniIntegration {
         };
       }
 
-      const token = credentials.token as string;
-      const queryId = credentials.queryId as string;
-      const isValid = await this.validateCredentials({ token, queryId });
-      if (!isValid) {
-        return {
-          accounts: [],
-          total: 0,
-          errors: ['Invalid Flex Web Service Token or Query ID'],
-        };
-      }
-
+      // IBKR Flex Query is heavily rate-limited per token (code 1018 if
+      // you fire two SendRequests too close together). We deliberately do
+      // NOT validate credentials here — the subsequent fetchHoldings call
+      // goes through getFlexQueryData → SendRequest, which is the single
+      // Flex round-trip we need, and whose error surface is rich enough
+      // (code 1010/1012/1018/etc.) to tell the user what went wrong.
       const accounts = [
         {
           externalId: 'ibkr-flex-portfolio',
@@ -238,14 +233,13 @@ export class IbkrIntegration extends ScaniIntegration {
     if (!credentials?.token || !credentials?.queryId) {
       return false;
     }
-
-    try {
-      const token = credentials.token as string;
-      const queryId = credentials.queryId as string;
-      return await this.ibkrService.validateCredentials(token, queryId);
-    } catch (_error) {
-      return false;
-    }
+    // Let the service-level throw propagate so callers (fetchAccounts /
+    // fetchHoldings outer catch) surface the real IBKR Flex Query error
+    // (e.g. "IBKR Flex Query error (code 1012): Token expired") rather
+    // than collapsing everything to an opaque `false`.
+    const token = credentials.token as string;
+    const queryId = credentials.queryId as string;
+    return await this.ibkrService.validateCredentials(token, queryId);
   }
 
   async checkHealth(): Promise<IntegrationStatus> {

@@ -1,7 +1,5 @@
+import { isProduction, requiredInProd } from '@scani/config';
 import { z } from 'zod';
-
-const isProduction = process.env.NODE_ENV === 'production';
-const requiredInProd = (schema: z.ZodString) => (isProduction ? schema : schema.optional());
 
 const envSchema = z
   .object({
@@ -27,7 +25,7 @@ const envSchema = z
     FINNHUB_API_KEY: z.string().optional(),
 
     // EVM chains via Etherscan V2 (one key all chainIds). Non-EVM use public RPCs.
-    ETHERSCAN_API_KEY: requiredInProd(z.string().min(1)),
+    ETHERSCAN_API_KEY: requiredInProd(z.string().min(1), 'ETHERSCAN_API_KEY'),
 
     EXTERNAL_API_MODE: z.enum(['direct', 'scani-cloud']).default('direct'),
     SCANI_CLOUD_API_URL: z.string().url().optional(),
@@ -42,12 +40,15 @@ const envSchema = z
       .transform((v) => (v ? Number.parseInt(v, 10) : 4))
       .refine((n) => Number.isFinite(n) && n > 0, { message: 'must be a positive integer' }),
 
-    // R2 (Cloudflare Object Storage) for reading blobs the backend uploaded.
-    // Required in prod.
-    R2_ACCOUNT_ID: requiredInProd(z.string().min(1)),
-    R2_ACCESS_KEY_ID: requiredInProd(z.string().min(1)),
-    R2_SECRET_ACCESS_KEY: requiredInProd(z.string().min(1)),
-    R2_BUCKET: requiredInProd(z.string().min(1)),
+    // Object storage (R2 in prod, MinIO in dev) for reading blobs the
+    // backend uploaded. Required in prod. See backend env.ts for the
+    // full contract.
+    R2_ENDPOINT: z.string().url().optional(),
+    R2_PUBLIC_ENDPOINT: z.string().url().optional(),
+    R2_ACCOUNT_ID: z.string().optional(),
+    R2_ACCESS_KEY_ID: requiredInProd(z.string().min(1), 'R2_ACCESS_KEY_ID'),
+    R2_SECRET_ACCESS_KEY: requiredInProd(z.string().min(1), 'R2_SECRET_ACCESS_KEY'),
+    R2_BUCKET: requiredInProd(z.string().min(1), 'R2_BUCKET'),
 
     // Sentry — optional at schema level; SDK init gates on DSN presence.
     SENTRY_DSN: z.string().url().optional(),

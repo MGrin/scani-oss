@@ -13,6 +13,7 @@
     "type-check": "tsgo --noEmit"
   },
   "devDependencies": {
+    "ioredis": "^5.10.1",
     "typescript": "^5"
   }
 }

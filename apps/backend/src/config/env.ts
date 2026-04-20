@@ -1,3 +1,4 @@
+import { httpsUrlInProduction, isProduction, requiredInProd, urlSchema } from '@scani/config';
 import { z } from 'zod';
 
 /**
@@ -6,19 +7,11 @@ import { z } from 'zod';
  * This schema is parsed once at boot. Missing or malformed environment
  * variables cause the process to exit with a clear error listing every
  * failing variable, instead of producing obscure runtime errors later.
+ *
+ * Shared helpers (`isProduction`, `urlSchema`, `httpsUrlInProduction`,
+ * `requiredInProd`) live in `@scani/config` so the worker's schema can
+ * reuse them without duplication.
  */
-
-const isProduction = process.env.NODE_ENV === 'production';
-
-const urlSchema = z.string().url({ message: 'must be a valid URL' });
-
-const httpsUrlInProduction = isProduction
-  ? urlSchema.refine((v) => v.startsWith('https://'), {
-      message: 'must use https:// in production',
-    })
-  : urlSchema;
-
-const requiredInProd = (schema: z.ZodString) => (isProduction ? schema : schema.optional());
 
 const envSchema = z
   .object({
@@ -101,13 +94,18 @@ const envSchema = z
       z.string().min(1, { message: 'ETHERSCAN_API_KEY is required for EVM wallet detection' })
     ),
 
-    // R2 (Cloudflare Object Storage) for screenshot + file-import blobs.
-    // Required in prod; the presign route and worker R2 reads both throw
-    // lazily if unset, making symptoms look like a code bug.
-    R2_ACCOUNT_ID: requiredInProd(z.string().min(1)),
-    R2_ACCESS_KEY_ID: requiredInProd(z.string().min(1)),
-    R2_SECRET_ACCESS_KEY: requiredInProd(z.string().min(1)),
-    R2_BUCKET: requiredInProd(z.string().min(1)),
+    // Object storage (Cloudflare R2 in prod, MinIO in dev) for screenshot
+    // + file-import blobs. Required in prod; the presign route and worker
+    // reads both throw lazily if unset, making symptoms look like a code bug.
+    // Either R2_ENDPOINT (full URL) or R2_ACCOUNT_ID (derives the Cloudflare
+    // URL) must be set. R2_PUBLIC_ENDPOINT baked into presigned URLs for
+    // the browser; defaults to R2_ENDPOINT when omitted.
+    R2_ENDPOINT: z.string().url().optional(),
+    R2_PUBLIC_ENDPOINT: z.string().url().optional(),
+    R2_ACCOUNT_ID: z.string().optional(),
+    R2_ACCESS_KEY_ID: requiredInProd(z.string().min(1), 'R2_ACCESS_KEY_ID'),
+    R2_SECRET_ACCESS_KEY: requiredInProd(z.string().min(1), 'R2_SECRET_ACCESS_KEY'),
+    R2_BUCKET: requiredInProd(z.string().min(1), 'R2_BUCKET'),
 
     // Sentry — required in prod once the Terraform provision lands. Left
     // optional at the schema level so dev boots without it; the SDK init
@@ -118,7 +116,7 @@ const envSchema = z
 
     // HMAC shared secret for admin → backend actions (BullMQ retry/remove,
     // DLQ replay). Required in prod.
-    ADMIN_JOBS_HMAC_SECRET: requiredInProd(z.string().min(32)),
+    ADMIN_JOBS_HMAC_SECRET: requiredInProd(z.string().min(32), 'ADMIN_JOBS_HMAC_SECRET'),
 
     // Route external-API calls either directly to the upstream providers
     // (Tier 1 / Tier 3) or via the Scani-hosted proxy (Tier 2 — scani-cloud).

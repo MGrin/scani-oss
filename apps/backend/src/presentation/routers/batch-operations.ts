@@ -1,14 +1,16 @@
-import { BatchOperationImplementations } from '@scani/core/features/implementations';
+import { randomUUID } from 'node:crypto';
+import { BatchOperationImplementations } from '@scani/domain/features';
+import { JOB_NAMES } from '@scani/queue';
+import { emitBulkEntityChanges, emitEntityChange } from '@scani/realtime';
 import {
+  CreateAccountDto,
   CreateHoldingsWithDependenciesDto,
   type CreateHoldingsWithDependenciesResponseDto,
+  CreateInstitutionDto,
 } from '@scani/shared';
 import { z } from 'zod';
-import {
-  emitBulkEntityChanges,
-  emitEntityChange,
-} from '../../infrastructure/websocket/RealTimeUpdatesService';
 import { withIdempotency } from '../../lib/idempotency';
+import { enqueueJob } from '../../queues/enqueue';
 import { requireAuth } from '../middleware/auth';
 import { protectedProcedure, router } from '../trpc';
 
@@ -93,7 +95,96 @@ export const batchOperationsRouter = router({
         });
       }
 
+      // Kick off async price fetch for every new non-base-currency holding.
+      // PortfolioValuationService only reads cached prices; without this the
+      // token_prices row never gets written and the holding shows unpriced
+      // until the user hits the manual refresh button.
+      const baseCurrencyId = dbUser.baseCurrencyId;
+      for (const holding of result.holdings) {
+        if (baseCurrencyId && holding.tokenId === baseCurrencyId) continue;
+        await enqueueJob(JOB_NAMES.holdingPriceUpdate, {
+          userId: dbUser.id,
+          requestId: randomUUID(),
+          holdingId: holding.id,
+          priceUsd: 0,
+          priceSource: 'fetch',
+        });
+      }
+
       return result;
+    }),
+
+  /**
+   * Create an account (and optionally an institution) up front, WITHOUT
+   * requiring any holdings. Used by the async file/screenshot import
+   * flow: if the user picks "new account" in AccountSelectionStep, we
+   * need a real accountId before enqueuing the parse job so the job
+   * result page can bind the review card to that account.
+   *
+   * Backed by `createHoldingsWithDependencies` with an empty holdings
+   * array — the use case already handles the no-holdings case, so we
+   * just bypass the Zod `.min(1)` guard on the public DTO by taking a
+   * slimmer input here.
+   */
+  ensureAccount: protectedProcedure
+    .input(
+      z
+        .object({
+          accountId: z.string().uuid().optional(),
+          institution: CreateInstitutionDto.optional(),
+          account: CreateAccountDto.optional(),
+        })
+        .refine(
+          (v) => Boolean(v.accountId || v.account),
+          'Either accountId or account must be provided'
+        )
+    )
+    .mutation(async ({ input, ctx }) => {
+      const { dbUser } = await requireAuth(ctx);
+      // Short-circuit when the client already has a real accountId —
+      // avoids an unnecessary no-op transaction.
+      if (input.accountId) {
+        return {
+          accountId: input.accountId,
+          institutionId: null as string | null,
+          createdAccount: false,
+          createdInstitution: false,
+        };
+      }
+      const result = await BatchOperationImplementations.createHoldingsWithDependencies(
+        { userId: dbUser.id, dbUser },
+        {
+          institution: input.institution,
+          account: input.account,
+          holdings: [],
+        }
+      );
+      if (result.createdInstitution && result.institutionId) {
+        emitEntityChange({
+          type: 'entity_changed',
+          entityType: 'institution',
+          operationType: 'create',
+          entityId: result.institutionId,
+          userId: dbUser.id,
+          data: {},
+        });
+      }
+      if (result.createdAccount && result.accountId) {
+        emitEntityChange({
+          type: 'entity_changed',
+          entityType: 'account',
+          operationType: 'create',
+          entityId: result.accountId,
+          userId: dbUser.id,
+          data: { institutionId: result.institutionId },
+        });
+      }
+      return {
+        accountId: result.accountId,
+        institutionId: result.institutionId,
+        createdAccount: result.createdAccount,
+        createdInstitution: result.createdInstitution,
+      };
     }),
 
   updateHoldingsBatch: protectedProcedure

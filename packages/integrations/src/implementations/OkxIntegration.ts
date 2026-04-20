@@ -183,14 +183,10 @@ export class OkxIntegration extends ScaniIntegration {
       return false;
     }
 
-    try {
-      const apiKey = credentials.apiKey as string;
-      const apiSecret = credentials.apiSecret as string;
-      const passphrase = credentials.passphrase as string;
-      return await this.okxService.validateApiKey(apiKey, apiSecret, passphrase);
-    } catch (_error) {
-      return false;
-    }
+    const apiKey = credentials.apiKey as string;
+    const apiSecret = credentials.apiSecret as string;
+    const passphrase = credentials.passphrase as string;
+    return await this.okxService.validateApiKey(apiKey, apiSecret, passphrase);
   }
 
   async refreshAuthentication(_refreshToken: string): Promise<Record<string, unknown>> {

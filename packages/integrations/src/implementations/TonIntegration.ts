@@ -5,8 +5,8 @@
  * TON uses Toncenter API for querying blockchain data.
  */
 
-import type { ChainConfig } from '@scani/core/external-services/blockchain';
-import { TonChainService } from '@scani/core/external-services/blockchain';
+import type { ChainConfig } from '../blockchain-services';
+import { TonChainService } from '../blockchain-services';
 import type {
   ICredentialManager,
   IntegrationAuthType,

@@ -11,4 +11,4 @@ import { RateLimiter } from '@scani/rate-limiter';
  * Singleton rate limiter for KuCoin API
  * 10 calls per second (conservative limit)
  */
-export const kucoinRateLimiter = new RateLimiter(10, 1000);
+export const kucoinRateLimiter = new RateLimiter(10, 1000, { namespace: 'kucoin' });

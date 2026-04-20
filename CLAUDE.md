@@ -12,7 +12,7 @@ bun run type-check
 bun lint:fix
 
 # Tests
-bun test --preload ./packages/core/test-preload.ts packages/ --timeout 30000
+bun test --preload ./packages/domain/test-preload.ts packages/ --timeout 30000
 ```
 
 ## Working in Conductor

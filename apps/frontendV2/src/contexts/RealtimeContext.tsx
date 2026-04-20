@@ -78,6 +78,13 @@ export interface RealtimeContextValue {
    * `jobId` is the BullMQ job id returned from the enqueue mutation.
    */
   subscribeToJob: (jobId: string, listener: JobEventListener) => () => void;
+  /**
+   * Subscribe to lifecycle events for ANY job belonging to the signed-in
+   * user. Used by the top-nav badge + /jobs list so they can invalidate
+   * their list query on every transition without needing to know each
+   * active jobId. Returns an unsubscribe fn.
+   */
+  subscribeToAllJobsForUser: (listener: JobEventListener) => () => void;
 }
 
 const RealtimeContext = createContext<RealtimeContextValue | null>(null);
@@ -117,6 +124,10 @@ export function RealtimeProvider({ children }: RealtimeProviderProps) {
   // Per-jobId listener registry. Populated by useJobStatus consumers and
   // dispatched from the WS message handler when entityType === 'job'.
   const jobListenersRef = useRef<Map<string, Set<JobEventListener>>>(new Map());
+  // Global job listener registry — fires for every job event the user
+  // receives. Used by the top-nav badge and the /jobs list to keep their
+  // list queries live without each knowing the individual jobIds.
+  const allJobsListenersRef = useRef<Set<JobEventListener>>(new Set());
 
   const subscribeToJob = (jobId: string, listener: JobEventListener): (() => void) => {
     const map = jobListenersRef.current;
@@ -131,6 +142,13 @@ export function RealtimeProvider({ children }: RealtimeProviderProps) {
       if (!currentSet) return;
       currentSet.delete(listener);
       if (currentSet.size === 0) map.delete(jobId);
+    };
+  };
+
+  const subscribeToAllJobsForUser = (listener: JobEventListener): (() => void) => {
+    allJobsListenersRef.current.add(listener);
+    return () => {
+      allJobsListenersRef.current.delete(listener);
     };
   };
 
@@ -198,14 +216,22 @@ export function RealtimeProvider({ children }: RealtimeProviderProps) {
       // changes for every created account/holding.
       if (event.entityType === 'job' && event.entityId) {
         const data = (event.data ?? {}) as JobEvent;
-        const listeners = jobListenersRef.current.get(event.entityId);
-        if (listeners) {
-          for (const listener of listeners) {
+        const perJobListeners = jobListenersRef.current.get(event.entityId);
+        if (perJobListeners) {
+          for (const listener of perJobListeners) {
             try {
               listener(event.entityId, data);
             } catch (err) {
               console.warn('[realtime] job listener threw', err);
             }
+          }
+        }
+        // Also fire the global listeners (badge + /jobs list).
+        for (const listener of allJobsListenersRef.current) {
+          try {
+            listener(event.entityId, data);
+          } catch (err) {
+            console.warn('[realtime] global job listener threw', err);
           }
         }
         return;
@@ -369,6 +395,7 @@ export function RealtimeProvider({ children }: RealtimeProviderProps) {
     isConnected: connectionStatus === 'connected',
     connectionStatus,
     subscribeToJob,
+    subscribeToAllJobsForUser,
   };
 
   return <RealtimeContext.Provider value={value}>{children}</RealtimeContext.Provider>;

@@ -7,14 +7,17 @@ const env = loadEnv();
 
 import { cors } from '@elysiajs/cors';
 import { trpc } from '@elysiajs/trpc';
-import { createTimer, logger, sanitizeUrl, wsLogger } from '@scani/core/utils/logger';
 import { IntegrationManager } from '@scani/integrations';
-import { flushSentry, initSentry, captureException as sentryCapture } from './utils/sentry';
+import { createTimer, logger, sanitizeUrl, wsLogger } from '@scani/logging';
+import { flushSentry, initSentry, captureException as sentryCapture } from '@scani/logging/sentry';
+import { initializeRateLimiterRedis } from '@scani/rate-limiter';
 
 // Sentry is the first thing we wire up so any subsequent boot-time failure
 // reaches the error tracker instead of being lost to stdout.
-initSentry({ release: env.SENTRY_RELEASE });
+initSentry({ component: 'backend', release: env.SENTRY_RELEASE });
 
+import { createStandardLimiter, createStrictLimiter } from '@scani/rate-limiter';
+import { RealTimeUpdatesService } from '@scani/realtime';
 import { sql } from 'drizzle-orm';
 import { Elysia } from 'elysia';
 import { Redis } from 'ioredis';
@@ -23,9 +26,7 @@ import { Container } from 'typedi';
 // This must happen before any module that calls Container.get()
 import { createBetterAuth } from './auth/better-auth';
 import { initializeContainer } from './config/container';
-import { RealTimeUpdatesService } from './infrastructure/websocket/RealTimeUpdatesService';
 import { registerAdminJobsRoutes } from './presentation/http/admin-jobs';
-import { createStandardLimiter, createStrictLimiter } from './presentation/middleware/rate-limit';
 import { createContext, setBetterAuthForContext } from './presentation/trpc';
 import { closeQueue, initQueueClient } from './queues/client';
 
@@ -52,7 +53,7 @@ import {
   getConnectionMonitoringStats,
   getConnectionStats,
   startConnectionTracking,
-} from '@scani/core/database';
+} from '@scani/db';
 // Import router AFTER container is initialized
 import { appRouter } from './presentation/router';
 
@@ -76,6 +77,11 @@ logger.info(
 // pub/sub (real-time fan-out across instances).
 const redisConnection = new Redis(env.REDIS_URL, { maxRetriesPerRequest: null });
 initQueueClient(redisConnection);
+// Make the Redis-backed rate limiter the default for every `new
+// RateLimiter(..., { namespace })` in the process. Without this call,
+// limiters fall back to per-process in-memory and N backend replicas
+// each get their own full upstream-API budget.
+initializeRateLimiterRedis(redisConnection);
 
 // Better-Auth is the sole auth provider. BETTER_AUTH_SECRET is validated
 // in env.ts (required in prod), but we still guard with a clear runtime
@@ -111,12 +117,12 @@ interface RequestWithTracking extends Request {
 
 // Rate limiters. Bucket state lives in Redis so horizontally-scaled
 // backend instances share fairness.
-const globalLimiter = createStandardLimiter(300, 500, redisConnection);
-const strictLimiter = createStrictLimiter(60, 90, redisConnection);
+const globalLimiter = createStandardLimiter(redisConnection, 300);
+const strictLimiter = createStrictLimiter(redisConnection, 60);
 // WebSocket connection limiter: max 30 auth attempts per minute per IP.
 // Prevents brute-forcing auth tokens over the ws endpoint, which bypasses
 // the HTTP limiters above.
-const wsAuthLimiter = createStrictLimiter(30, 40, redisConnection);
+const wsAuthLimiter = createStrictLimiter(redisConnection, 30);
 
 const app = new Elysia()
   .onBeforeHandle(({ request, set }) => {
@@ -382,14 +388,14 @@ app
     }
 
     try {
-      const { healthCheck: r2HealthCheck } = await import('@scani/core/external-services/storage');
+      const { healthCheck: r2HealthCheck } = await import('@scani/storage');
       checks.r2 = await r2HealthCheck();
     } catch (err) {
       checks.r2 = { ok: false, error: err instanceof Error ? err.message : String(err) };
     }
 
     try {
-      const { AIService } = await import('@scani/core/services');
+      const { AIService } = await import('@scani/domain/services');
       const ai = Container.get(AIService);
       const available = (
         ai as unknown as { aiProviderManager?: { hasAvailableProvider: () => boolean } }
@@ -542,8 +548,8 @@ realTimeUpdatesService.initialize();
 // regular commands on the same socket.
 realTimeUpdatesService.configureRedisPubSub(redisConnection, redisConnection.duplicate());
 
-import { client as pgClient } from '@scani/core/database/connection';
-import { PricingService } from '@scani/core/services';
+import { client as pgClient } from '@scani/db/connection';
+import { PricingService } from '@scani/domain/services';
 
 // Pre-warm the currency-conversion cache in the background. Errors here are
 // NOT fatal, but the promise MUST be `.catch`-ed so Node's

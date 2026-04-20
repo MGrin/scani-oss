@@ -5,8 +5,8 @@
  * Solana uses public RPC endpoints for querying blockchain data.
  */
 
-import type { ChainConfig } from '@scani/core/external-services/blockchain';
-import { SolanaChainService } from '@scani/core/external-services/blockchain';
+import type { ChainConfig } from '../blockchain-services';
+import { SolanaChainService } from '../blockchain-services';
 import type {
   ICredentialManager,
   IntegrationAuthType,

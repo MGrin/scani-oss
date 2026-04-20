@@ -4,13 +4,13 @@ import { loadEnv } from './config/env';
 
 const env = loadEnv();
 
-import { createComponentLogger } from '@scani/core/utils/logger';
 import { IntegrationManager } from '@scani/integrations';
+import { createComponentLogger } from '@scani/logging';
 import { Container } from 'typedi';
 
 // Import all repositories and services to ensure they're registered with TypeDI
-import '@scani/core/repositories';
-import '@scani/core/services';
+import '@scani/domain/repositories';
+import '@scani/domain/services';
 
 // Import all cron jobs
 import { executeApyPayoutsCronJob } from './jobs/ApyPayoutsCronJob';
@@ -27,7 +27,7 @@ const logger = createComponentLogger('cron:main');
 function initializeContainer(): void {
   logger.info(
     {},
-    '✅ DI Container initialized with all services and repositories from @scani/core'
+    '✅ DI Container initialized with all services and repositories from @scani/domain'
   );
 }
 

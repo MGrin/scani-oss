@@ -4,16 +4,17 @@ import { loadEnv } from './config/env';
 
 const env = loadEnv();
 
-import { JOB_NAMES, REPEATABLE_SCHEDULES, SCANI_DLQ, SCANI_QUEUE } from '@scani/core/queues';
+import { JOB_NAMES, REPEATABLE_SCHEDULES, SCANI_DLQ, SCANI_QUEUE } from '@scani/queue';
 // Import DI-registered modules so Container.get() resolves.
-import '@scani/core/repositories';
-import '@scani/core/services';
-import { createComponentLogger } from '@scani/core/utils/logger';
+import '@scani/domain/repositories';
+import '@scani/domain/services';
 import { IntegrationManager } from '@scani/integrations';
-import { flushSentry, initSentry, captureException as sentryCapture } from './utils/sentry';
+import { createComponentLogger } from '@scani/logging';
+import { flushSentry, initSentry, captureException as sentryCapture } from '@scani/logging/sentry';
+import { initializeRateLimiterRedis } from '@scani/rate-limiter';
 
 // Sentry is the first thing we wire up so boot-time failures are tracked.
-initSentry({ release: env.SENTRY_RELEASE });
+initSentry({ component: 'worker', release: env.SENTRY_RELEASE });
 
 import { type Job, Queue, Worker } from 'bullmq';
 import { Redis } from 'ioredis';
@@ -24,6 +25,7 @@ import { buildExchangeImportProcessor } from './processors/exchange-import';
 import { buildFileImportProcessor } from './processors/file-import';
 import { buildHoldingPriceUpdateProcessor } from './processors/holding-price-update';
 import { pricingProcessor } from './processors/pricing';
+import { buildReconcileOrphanedUserJobsProcessor } from './processors/reconcile-orphaned-user-jobs';
 import { buildReconcilePendingCredentialsProcessor } from './processors/reconcile-pending-credentials';
 import { buildScreenshotParseProcessor } from './processors/screenshot-parse';
 import { buildUserDataDeleteProcessor } from './processors/user-data-delete';
@@ -55,6 +57,11 @@ async function main(): Promise<void> {
   // interfere with BullMQ's blocking commands on `connection`.
   const publisher = connection.duplicate();
 
+  // Wire Redis into the rate-limiter module so every `new RateLimiter(...,
+  // { namespace })` in integrations + pricing delegates to Redis instead
+  // of running an isolated in-memory bucket per worker process.
+  initializeRateLimiterRedis(connection);
+
   const queue = new Queue(SCANI_QUEUE, { connection });
   // Dead-letter queue. Jobs that exhaust retries get copied here so we
   // don't lose the failure context when BullMQ's removeOnFail lattice
@@ -80,6 +87,7 @@ async function main(): Promise<void> {
     [JOB_NAMES.exchangeBalances]: exchangeBalancesProcessor,
     [JOB_NAMES.apyPayouts]: apyPayoutsProcessor,
     [JOB_NAMES.reconcilePendingCredentials]: buildReconcilePendingCredentialsProcessor(queue),
+    [JOB_NAMES.reconcileOrphanedUserJobs]: buildReconcileOrphanedUserJobsProcessor(queue),
     // User-initiated jobs (built with a Redis publisher for WS events).
     [JOB_NAMES.screenshotParse]: buildScreenshotParseProcessor(publisher),
     [JOB_NAMES.exchangeImport]: buildExchangeImportProcessor(publisher),

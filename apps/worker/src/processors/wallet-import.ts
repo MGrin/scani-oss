@@ -1,9 +1,9 @@
-import { WalletImplementations } from '@scani/core/features/implementations';
-import type { WalletImportJob } from '@scani/core/queues';
+import { WalletImplementations } from '@scani/domain/features';
+import type { WalletImportJob } from '@scani/queue';
+import { emitEntityChangeFromWorker } from '@scani/realtime/publish';
 import type { Job } from 'bullmq';
 import type { Redis } from 'ioredis';
 import { z } from 'zod';
-import { emitEntityChangeFromWorker } from '../lib/emit-entity-change';
 import { createUserJobProcessor } from '../lib/processor-wrapper';
 
 const payloadSchema: z.ZodType<WalletImportJob> = z.object({
@@ -12,6 +12,7 @@ const payloadSchema: z.ZodType<WalletImportJob> = z.object({
   chain: z.string().min(1),
   address: z.string().min(1),
   label: z.string().optional(),
+  detectedInstitutionIds: z.array(z.string()).optional(),
 });
 
 export function buildWalletImportProcessor(publisher: Redis): (job: Job) => Promise<unknown> {
@@ -22,7 +23,11 @@ export function buildWalletImportProcessor(publisher: Redis): (job: Job) => Prom
     handler: async (data) => {
       const result = await WalletImplementations.importAddress(
         { userId: data.userId },
-        { address: data.address, displayName: data.label }
+        {
+          address: data.address,
+          displayName: data.label,
+          detectedInstitutionIds: data.detectedInstitutionIds,
+        }
       );
 
       for (const account of result.accounts) {
@@ -59,6 +64,12 @@ export function buildWalletImportProcessor(publisher: Redis): (job: Job) => Prom
         accountsCreated: result.accounts.length,
         holdingsCreated: result.holdings.length,
         chainsDetected: result.chainsDetected,
+        // IDs are needed by the /jobs/:jobId detail page's wallet-import body
+        // to render a review table without introducing a bespoke "what did
+        // this job create" endpoint. Kept alongside the existing count
+        // fields so `JobProgressModal` consumers still work.
+        accountIds: result.accounts.map((a) => a.id),
+        holdingIds: result.holdings.map((h) => h.id),
         errors: result.errors,
       };
     },

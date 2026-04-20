@@ -10,6 +10,8 @@
  */
 
 import crypto from 'node:crypto';
+import { credentialBucketKey } from '@scani/rate-limiter';
+
 import type { RateLimiter } from '../types';
 
 /**
@@ -79,32 +81,24 @@ export class GateioApiService {
    * This tests authentication without affecting the account
    */
   async validateApiKey(apiKey: string, apiSecret: string): Promise<boolean> {
-    try {
-      const url = '/spot/accounts';
-      const headers = this.buildHeaders(apiKey, apiSecret, 'GET', url);
+    const subKey = credentialBucketKey(apiKey);
+    const url = '/spot/accounts';
+    const headers = this.buildHeaders(apiKey, apiSecret, 'GET', url);
+    const response = await this.executeWithRateLimit(
+      () => fetch(`${this.baseUrl}${url}`, { method: 'GET', headers }),
+      subKey
+    );
 
-      const response = await this.executeWithRateLimit(() =>
-        fetch(`${this.baseUrl}${url}`, {
-          method: 'GET',
-          headers,
-        })
-      );
-
-      // 200 means valid, 401/403 means invalid
-      if (response.status === 401 || response.status === 403) {
-        return false;
-      }
-
-      if (!response.ok) {
-        return false;
-      }
-
-      // If we can parse the response as an array, credentials are valid
-      const data = (await response.json()) as unknown;
-      return Array.isArray(data);
-    } catch (_error) {
-      return false;
+    if (response.status === 401 || response.status === 403) return false;
+    if (!response.ok) {
+      const body = await response.text().catch(() => '');
+      throw new Error(`Gate.io HTTP ${response.status}${body ? `: ${body.slice(0, 200)}` : ''}`);
     }
+    const data = (await response.json()) as unknown;
+    if (!Array.isArray(data)) {
+      throw new Error('Gate.io returned unexpected payload shape (expected array)');
+    }
+    return true;
   }
 
   /**
@@ -115,15 +109,18 @@ export class GateioApiService {
     apiKey: string,
     apiSecret: string
   ): Promise<Array<{ currency: string; available: string; locked: string }>> {
+    const subKey = credentialBucketKey(apiKey);
     try {
       const url = '/spot/accounts';
       const headers = this.buildHeaders(apiKey, apiSecret, 'GET', url);
 
-      const response = await this.executeWithRateLimit(() =>
-        fetch(`${this.baseUrl}${url}`, {
-          method: 'GET',
-          headers,
-        })
+      const response = await this.executeWithRateLimit(
+        () =>
+          fetch(`${this.baseUrl}${url}`, {
+            method: 'GET',
+            headers,
+          }),
+        subKey
       );
 
       if (!response.ok) {
@@ -153,11 +150,12 @@ export class GateioApiService {
   }
 
   /**
-   * Execute function with rate limiting if configured
+   * Execute function with rate limiting if configured. `subKey`
+   * partitions the provider-wide bucket by credential hash.
    */
-  private async executeWithRateLimit<T>(fn: () => Promise<T>): Promise<T> {
+  private async executeWithRateLimit<T>(fn: () => Promise<T>, subKey?: string): Promise<T> {
     if (this.rateLimiter) {
-      return this.rateLimiter.execute(fn);
+      return this.rateLimiter.execute(fn, subKey);
     }
     return fn();
   }

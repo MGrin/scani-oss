@@ -19,10 +19,19 @@ COPY apps/cron/package.json apps/cron/package.json
 COPY apps/frontendV2/package.json apps/frontendV2/package.json
 COPY apps/landing/package.json apps/landing/package.json
 COPY apps/worker/package.json apps/worker/package.json
-COPY packages/core/package.json packages/core/package.json
+COPY packages/ai-providers/package.json packages/ai-providers/package.json
+COPY packages/config/package.json packages/config/package.json
+COPY packages/domain/package.json packages/domain/package.json
+COPY packages/db/package.json packages/db/package.json
+COPY packages/email/package.json packages/email/package.json
 COPY packages/integrations/package.json packages/integrations/package.json
+COPY packages/logging/package.json packages/logging/package.json
+COPY packages/pricing-providers/package.json packages/pricing-providers/package.json
+COPY packages/queue/package.json packages/queue/package.json
 COPY packages/rate-limiter/package.json packages/rate-limiter/package.json
+COPY packages/realtime/package.json packages/realtime/package.json
 COPY packages/shared/package.json packages/shared/package.json
+COPY packages/storage/package.json packages/storage/package.json
 
 RUN bun install --frozen-lockfile
 

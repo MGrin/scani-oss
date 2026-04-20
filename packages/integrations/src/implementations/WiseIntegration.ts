@@ -202,12 +202,8 @@ export class WiseIntegration extends ScaniIntegration {
       return false;
     }
 
-    try {
-      const apiToken = credentials.apiKey as string;
-      return await this.wiseService.validateApiToken(apiToken);
-    } catch (_error) {
-      return false;
-    }
+    const apiToken = credentials.apiKey as string;
+    return await this.wiseService.validateApiToken(apiToken);
   }
 
   async checkHealth(): Promise<IntegrationStatus> {

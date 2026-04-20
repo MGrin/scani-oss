@@ -61,14 +61,25 @@ export function useJobStatus(jobId: string | null): UseJobStatusResult {
 
     const applyEvent = (event: JobEvent) => {
       lastEventAtRef.current = Date.now();
-      setResult((prev) => ({
-        state: event.state ?? prev.state,
-        progress: event.progress ?? prev.progress,
-        result: event.result ?? prev.result,
-        error: event.error ?? null,
-        attemptsMade: event.attemptsMade ?? prev.attemptsMade,
-        attemptsAllowed: event.attemptsAllowed ?? prev.attemptsAllowed,
-      }));
+      setResult((prev) => {
+        // Once we've observed a terminal state (completed/failed), ignore
+        // any subsequent non-terminal WS event. Redis pub/sub preserves
+        // order within a publisher but BullMQ's retry semantics + the
+        // lifecycle-publisher setup can re-emit an `active` or `queued`
+        // event after the run already closed — without this guard the UI
+        // flips "Completed" back to "Running" until the next refresh.
+        if (TERMINAL_STATES.has(prev.state) && event.state && !TERMINAL_STATES.has(event.state)) {
+          return prev;
+        }
+        return {
+          state: event.state ?? prev.state,
+          progress: event.progress ?? prev.progress,
+          result: event.result ?? prev.result,
+          error: event.error ?? null,
+          attemptsMade: event.attemptsMade ?? prev.attemptsMade,
+          attemptsAllowed: event.attemptsAllowed ?? prev.attemptsAllowed,
+        };
+      });
     };
 
     const unsubscribe = subscribeToJob(jobId, (_id, event) => {
@@ -97,13 +108,22 @@ export function useJobStatus(jobId: string | null): UseJobStatusResult {
           return;
         }
         notFoundStreak = 0;
-        setResult({
-          state: mapBullState(status.state),
-          progress: typeof status.progress === 'number' ? status.progress : null,
-          result: status.returnvalue ?? null,
-          error: status.failedReason ?? null,
-          attemptsMade: status.attemptsMade ?? null,
-          attemptsAllowed: status.attemptsAllowed ?? null,
+        const nextState = mapBullState(status.state);
+        setResult((prev) => {
+          // Same terminal-latch guard as WS path — BullMQ's `jobs.status`
+          // can briefly return `waiting` for the follow-up price-warm job
+          // on the same queue, which could flip us off a terminal state.
+          if (TERMINAL_STATES.has(prev.state) && !TERMINAL_STATES.has(nextState)) {
+            return prev;
+          }
+          return {
+            state: nextState,
+            progress: typeof status.progress === 'number' ? status.progress : null,
+            result: status.returnvalue ?? null,
+            error: status.failedReason ?? null,
+            attemptsMade: status.attemptsMade ?? null,
+            attemptsAllowed: status.attemptsAllowed ?? null,
+          };
         });
       } catch {
         // Network hiccup — next tick tries again.

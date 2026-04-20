@@ -26,10 +26,19 @@ COPY apps/cron/package.json apps/cron/package.json
 COPY apps/frontendV2/package.json apps/frontendV2/package.json
 COPY apps/landing/package.json apps/landing/package.json
 COPY apps/worker/package.json apps/worker/package.json
-COPY packages/core/package.json packages/core/package.json
+COPY packages/ai-providers/package.json packages/ai-providers/package.json
+COPY packages/config/package.json packages/config/package.json
+COPY packages/domain/package.json packages/domain/package.json
+COPY packages/db/package.json packages/db/package.json
+COPY packages/email/package.json packages/email/package.json
 COPY packages/integrations/package.json packages/integrations/package.json
+COPY packages/logging/package.json packages/logging/package.json
+COPY packages/pricing-providers/package.json packages/pricing-providers/package.json
+COPY packages/queue/package.json packages/queue/package.json
 COPY packages/rate-limiter/package.json packages/rate-limiter/package.json
+COPY packages/realtime/package.json packages/realtime/package.json
 COPY packages/shared/package.json packages/shared/package.json
+COPY packages/storage/package.json packages/storage/package.json
 
 RUN bun install --frozen-lockfile
 
@@ -57,8 +66,9 @@ ENV NODE_ENV=production \
 USER bun
 
 # Runtime needs: workspace node_modules (postgres.js, elysia, etc.),
-# the bundled backend dist, and packages/core (DI container + db schema live
-# here and are resolved at runtime, not bundled into dist).
+# the bundled backend dist, and packages/ (DI container + db schema live
+# in @scani/domain and @scani/db and are resolved at runtime, not bundled
+# into dist).
 COPY --from=build --chown=bun:bun /app/node_modules /app/node_modules
 COPY --from=build --chown=bun:bun /app/apps/backend/dist /app/apps/backend/dist
 COPY --from=build --chown=bun:bun /app/apps/backend/package.json /app/apps/backend/package.json
@@ -68,6 +78,6 @@ COPY --from=build --chown=bun:bun /app/package.json /app/package.json
 EXPOSE 8080
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
-  CMD wget -qO- http://localhost:8080/health >/dev/null 2>&1 || exit 1
+  CMD bun -e "fetch('http://localhost:8080/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
 
 CMD ["bun", "run", "apps/backend/dist/index.js"]

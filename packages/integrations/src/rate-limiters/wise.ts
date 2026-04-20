@@ -12,4 +12,4 @@ import { RateLimiter } from '@scani/rate-limiter';
  * Singleton rate limiter for Wise API
  * ~1.5 calls per second (conservative limit for ~100/min)
  */
-export const wiseRateLimiter = new RateLimiter(2, 1000);
+export const wiseRateLimiter = new RateLimiter(2, 1000, { namespace: 'wise' });

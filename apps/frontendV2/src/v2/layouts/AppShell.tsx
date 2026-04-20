@@ -4,6 +4,7 @@ import {
   FileUp,
   Keyboard,
   LayoutDashboard,
+  ListChecks,
   LogOut,
   type LucideIcon,
   PieChart,
@@ -22,6 +23,7 @@ import { trpc } from '@/lib/trpc';
 import { cn } from '@/lib/utils';
 import { CommandPalette } from '../components/command-palette/CommandPalette';
 import { useSidebarState } from '../hooks/useSidebarState';
+import { useUserJobs } from '../hooks/useUserJobs';
 import { NAV_SECTIONS, V2_ROUTES } from '../lib/routes';
 import { MobileNav } from './MobileNav';
 import { Sidebar } from './Sidebar';
@@ -38,6 +40,7 @@ const ICON_MAP: Record<string, LucideIcon> = {
   FileUp,
   Keyboard,
   Coins,
+  ListChecks,
 };
 
 export function AppShell() {
@@ -45,6 +48,7 @@ export function AppShell() {
   const [commandOpen, setCommandOpen] = useState(false);
   const utils = trpc.useUtils();
   const { signOut } = useAuth();
+  const { actionRequiredCount } = useUserJobs();
 
   const handleRefresh = async () => {
     await utils.invalidate();
@@ -82,6 +86,10 @@ export function AppShell() {
                   <div className="space-y-0.5">
                     {section.items.map((item) => {
                       const Icon = ICON_MAP[item.icon] || PieChart;
+                      const badgeCount =
+                        item.path === V2_ROUTES.jobs && actionRequiredCount > 0
+                          ? actionRequiredCount
+                          : undefined;
                       return (
                         <NavLink
                           key={item.path}
@@ -99,6 +107,11 @@ export function AppShell() {
                         >
                           <Icon className="h-4 w-4 shrink-0" />
                           <span>{item.label}</span>
+                          {badgeCount && (
+                            <span className="ml-auto inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-amber-500/20 px-1 text-[10px] font-medium text-amber-700 dark:text-amber-300">
+                              {badgeCount}
+                            </span>
+                          )}
                         </NavLink>
                       );
                     })}

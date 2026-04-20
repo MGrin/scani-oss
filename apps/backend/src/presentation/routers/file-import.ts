@@ -3,28 +3,23 @@
  * Handles bank statement file parsing and preview
  */
 
-import { BANK_TEMPLATES, parseStatement } from '@scani/core/external-services/file-import';
-import { JOB_NAMES } from '@scani/core/queues';
-import { createComponentLogger } from '@scani/core/utils/logger';
+import { BANK_TEMPLATES, parseStatement } from '@scani/domain/external-services/file-import';
+import { createComponentLogger } from '@scani/logging';
+import { JOB_NAMES } from '@scani/queue';
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
+import { UPLOAD_LIMITS } from '../../config/limits';
 import { enqueueJob } from '../../queues/enqueue';
 import { protectedProcedure, router } from '../trpc';
 
 const fileImportLogger = createComponentLogger('router:file-import');
 
-/**
- * File parsing safety caps.
- *
- * Base64 inputs up to ~4 MB decode to ~3 MB of raw bytes, which in turn can
- * expand into much more heap (papaparse keeps multiple copies of each row
- * during parsing). Without post-parse limits, an adversarial CSV can still
- * push memory far beyond the input size. These caps are enforced AFTER
- * parsing to bound the final result regardless of how compressible the input
- * was.
- */
-const MAX_PARSED_TRANSACTIONS = 10_000;
-const MAX_DECODED_BYTES = 4 * 1024 * 1024; // 4 MB
+// Safety caps — centralised in `@/config/limits.ts` so audit is one diff.
+// Base64 inputs up to ~4 MB decode to ~3 MB of raw bytes, which expands
+// into much more heap during parsing. Post-parse caps bound the result
+// regardless of how compressible the input was.
+const MAX_PARSED_TRANSACTIONS = UPLOAD_LIMITS.PARSED_TRANSACTIONS;
+const MAX_DECODED_BYTES = UPLOAD_LIMITS.INLINE_DECODED_BYTES;
 
 export const fileImportRouter = router({
   /** Get available bank templates for CSV parsing */

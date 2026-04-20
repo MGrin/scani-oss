@@ -4,7 +4,7 @@
   "type": "module",
   "scripts": {
     "dev": "bun run --watch src/index.ts",
-    "build": "bun build src/index.ts --outdir=dist --target=bun --sourcemap=linked --external @sentry/* --external @opentelemetry/*",
+    "build": "bun build src/index.ts --outdir=dist --target=bun --sourcemap=linked --external pdf-parse --external @sentry/* --external @opentelemetry/*",
     "start": "bun run dist/index.js",
     "clean": "rm -rf dist",
     "lint": "biome check .",
@@ -12,9 +12,16 @@
     "type-check": "tsgo --noEmit"
   },
   "dependencies": {
-    "@scani/core": "workspace:*",
+    "@scani/config": "workspace:*",
     "@scani/cron": "workspace:*",
+    "@scani/db": "workspace:*",
+    "@scani/domain": "workspace:*",
     "@scani/integrations": "workspace:*",
+    "@scani/logging": "workspace:*",
+    "@scani/queue": "workspace:*",
+    "@scani/rate-limiter": "workspace:*",
+    "@scani/realtime": "workspace:*",
+    "@scani/storage": "workspace:*",
     "@sentry/node": "^8.49.0",
     "bullmq": "^5.74.1",
     "drizzle-orm": "^0.45.2",

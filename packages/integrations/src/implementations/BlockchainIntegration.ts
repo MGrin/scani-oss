@@ -10,8 +10,8 @@
  * - Non-EVM chains (Bitcoin, Solana, etc.) use RPC authentication
  */
 
-import type { IBlockchainService, TokenBalance } from '@scani/core/external-services/blockchain';
 import { ScaniIntegration } from '../base';
+import type { IBlockchainService, TokenBalance } from '../blockchain-services';
 import type {
   AuthConfig,
   FetchAccountsResult,

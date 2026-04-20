@@ -7,6 +7,8 @@
  */
 
 import crypto from 'node:crypto';
+import { credentialBucketKey } from '@scani/rate-limiter';
+
 import type { RateLimiter } from '../types';
 
 /**
@@ -105,21 +107,19 @@ export class BitstampApiService {
    * This tests authentication without affecting the account
    */
   async validateApiKey(apiKey: string, apiSecret: string): Promise<boolean> {
-    try {
-      const path = '/api/v2/balance/';
-      const headers = this.createAuthHeaders(apiKey, apiSecret, 'POST', path);
-
-      const response = await this.executeWithRateLimit(() =>
-        fetch(`${this.baseUrl}/balance/`, {
-          method: 'POST',
-          headers,
-        })
-      );
-
-      return response.ok;
-    } catch (_error) {
-      return false;
+    const subKey = credentialBucketKey(apiKey);
+    const path = '/api/v2/balance/';
+    const headers = this.createAuthHeaders(apiKey, apiSecret, 'POST', path);
+    const response = await this.executeWithRateLimit(
+      () => fetch(`${this.baseUrl}/balance/`, { method: 'POST', headers }),
+      subKey
+    );
+    if (response.status === 401 || response.status === 403) return false;
+    if (!response.ok) {
+      const body = await response.text().catch(() => '');
+      throw new Error(`Bitstamp HTTP ${response.status}${body ? `: ${body.slice(0, 200)}` : ''}`);
     }
+    return true;
   }
 
   /**
@@ -130,15 +130,18 @@ export class BitstampApiService {
     apiKey: string,
     apiSecret: string
   ): Promise<Array<{ currency: string; balance: string }>> {
+    const subKey = credentialBucketKey(apiKey);
     try {
       const path = '/api/v2/balance/';
       const headers = this.createAuthHeaders(apiKey, apiSecret, 'POST', path);
 
-      const response = await this.executeWithRateLimit(() =>
-        fetch(`${this.baseUrl}/balance/`, {
-          method: 'POST',
-          headers,
-        })
+      const response = await this.executeWithRateLimit(
+        () =>
+          fetch(`${this.baseUrl}/balance/`, {
+            method: 'POST',
+            headers,
+          }),
+        subKey
       );
 
       if (!response.ok) {
@@ -170,11 +173,12 @@ export class BitstampApiService {
   }
 
   /**
-   * Execute function with rate limiting if configured
+   * Execute function with rate limiting if configured. `subKey`
+   * partitions the provider-wide bucket by credential hash.
    */
-  private async executeWithRateLimit<T>(fn: () => Promise<T>): Promise<T> {
+  private async executeWithRateLimit<T>(fn: () => Promise<T>, subKey?: string): Promise<T> {
     if (this.rateLimiter) {
-      return this.rateLimiter.execute(fn);
+      return this.rateLimiter.execute(fn, subKey);
     }
     return fn();
   }

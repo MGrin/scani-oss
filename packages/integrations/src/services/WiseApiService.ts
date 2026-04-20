@@ -9,6 +9,8 @@
  * API docs: https://docs.wise.com/api-docs
  */
 
+import { credentialBucketKey } from '@scani/rate-limiter';
+
 import type { RateLimiter } from '../types';
 
 /**
@@ -56,12 +58,11 @@ export class WiseApiService {
    * A successful profiles response means the token is valid
    */
   async validateApiToken(apiToken: string): Promise<boolean> {
-    try {
-      const profiles = await this.getProfiles(apiToken);
-      return profiles.length > 0;
-    } catch (_error) {
-      return false;
+    const profiles = await this.getProfiles(apiToken);
+    if (profiles.length === 0) {
+      throw new Error('Wise returned zero profiles for this token');
     }
+    return true;
   }
 
   /**
@@ -69,13 +70,16 @@ export class WiseApiService {
    * GET /v2/profiles
    */
   async getProfiles(apiToken: string): Promise<WiseProfile[]> {
+    const subKey = credentialBucketKey(apiToken);
     try {
-      const response = await this.executeWithRateLimit(() =>
-        fetch(`${this.baseUrl}/v2/profiles`, {
-          headers: {
-            Authorization: `Bearer ${apiToken}`,
-          },
-        })
+      const response = await this.executeWithRateLimit(
+        () =>
+          fetch(`${this.baseUrl}/v2/profiles`, {
+            headers: {
+              Authorization: `Bearer ${apiToken}`,
+            },
+          }),
+        subKey
       );
 
       if (!response.ok) {
@@ -101,13 +105,16 @@ export class WiseApiService {
    * GET /v4/profiles/{profileId}/balances?types=STANDARD
    */
   async getBalances(apiToken: string, profileId: number): Promise<WiseBalance[]> {
+    const subKey = credentialBucketKey(apiToken);
     try {
-      const response = await this.executeWithRateLimit(() =>
-        fetch(`${this.baseUrl}/v4/profiles/${profileId}/balances?types=STANDARD`, {
-          headers: {
-            Authorization: `Bearer ${apiToken}`,
-          },
-        })
+      const response = await this.executeWithRateLimit(
+        () =>
+          fetch(`${this.baseUrl}/v4/profiles/${profileId}/balances?types=STANDARD`, {
+            headers: {
+              Authorization: `Bearer ${apiToken}`,
+            },
+          }),
+        subKey
       );
 
       if (!response.ok) {
@@ -129,11 +136,12 @@ export class WiseApiService {
   }
 
   /**
-   * Execute function with rate limiting if configured
+   * Execute function with rate limiting if configured. `subKey`
+   * partitions the provider-wide bucket by credential hash.
    */
-  private async executeWithRateLimit<T>(fn: () => Promise<T>): Promise<T> {
+  private async executeWithRateLimit<T>(fn: () => Promise<T>, subKey?: string): Promise<T> {
     if (this.rateLimiter) {
-      return this.rateLimiter.execute(fn);
+      return this.rateLimiter.execute(fn, subKey);
     }
     return fn();
   }

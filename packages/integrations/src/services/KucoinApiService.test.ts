@@ -118,19 +118,21 @@ describe('KucoinApiService', () => {
       globalThis.fetch = originalFetch;
     });
 
-    it('should return false for invalid credentials (401)', async () => {
+    it('should throw for invalid credentials (401)', async () => {
       globalThis.fetch = mock(() => Promise.resolve(new Response('Unauthorized', { status: 401 })));
 
-      const result = await service.validateApiKey('bad-key', 'bad-secret', 'bad-passphrase');
-      expect(result).toBe(false);
+      await expect(
+        service.validateApiKey('bad-key', 'bad-secret', 'bad-passphrase')
+      ).rejects.toThrow();
       globalThis.fetch = originalFetch;
     });
 
-    it('should return false on network error', async () => {
+    it('should throw on network error', async () => {
       globalThis.fetch = mock(() => Promise.reject(new Error('Network error')));
 
-      const result = await service.validateApiKey('any-key', 'any-secret', 'any-passphrase');
-      expect(result).toBe(false);
+      await expect(
+        service.validateApiKey('any-key', 'any-secret', 'any-passphrase')
+      ).rejects.toThrow();
       globalThis.fetch = originalFetch;
     });
   });

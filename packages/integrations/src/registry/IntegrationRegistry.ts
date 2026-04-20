@@ -5,7 +5,7 @@
  * Provides a clean, extensible way to register and retrieve integrations.
  */
 
-import { createComponentLogger } from '@scani/core/utils/logger';
+import { createComponentLogger } from '@scani/logging';
 
 import type { ScaniIntegration } from '../base';
 

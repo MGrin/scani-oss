@@ -1,8 +1,8 @@
-import { db } from '@scani/core/database/connection';
-import * as schema from '@scani/core/database/schema';
-import { JOB_NAMES } from '@scani/core/queues';
-import { IntegrationCredentialsService } from '@scani/core/services';
-import { createComponentLogger } from '@scani/core/utils/logger';
+import { db } from '@scani/db/connection';
+import * as schema from '@scani/db/schema';
+import { IntegrationCredentialsService } from '@scani/domain/services';
+import { createComponentLogger } from '@scani/logging';
+import { JOB_NAMES } from '@scani/queue';
 import type { Job, Queue } from 'bullmq';
 import { eq } from 'drizzle-orm';
 import { Container } from 'typedi';

@@ -2,7 +2,7 @@
  * Types for the institution integration system
  */
 
-import type { NewToken } from '@scani/core';
+import type { NewToken } from '@scani/db/schema';
 import type { IRateLimiter } from '@scani/rate-limiter';
 
 /**
@@ -127,7 +127,7 @@ export interface FetchHoldingsResult {
 
 /**
  * Token mapping result from institution to Scani representation
- * Uses NewToken from @scani/core for type safety
+ * Uses NewToken from @scani/domain for type safety
  */
 export interface TokenMappingResult {
   /** Successfully mapped token - uses NewToken type for creation/matching */

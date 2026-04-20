@@ -10,6 +10,8 @@
  */
 
 import crypto from 'node:crypto';
+import { credentialBucketKey } from '@scani/rate-limiter';
+
 import type { RateLimiter } from '../types';
 
 /**
@@ -91,28 +93,23 @@ export class KucoinApiService {
    * This tests authentication without affecting the account
    */
   async validateApiKey(apiKey: string, apiSecret: string, passphrase: string): Promise<boolean> {
-    try {
-      const endpoint = '/api/v1/accounts';
-      const headers = this.buildHeaders(apiKey, apiSecret, passphrase, 'GET', endpoint);
+    const subKey = credentialBucketKey(apiKey);
+    const endpoint = '/api/v1/accounts';
+    const headers = this.buildHeaders(apiKey, apiSecret, passphrase, 'GET', endpoint);
+    const response = await this.executeWithRateLimit(
+      () => fetch(`${this.baseUrl}${endpoint}`, { method: 'GET', headers }),
+      subKey
+    );
 
-      const response = await this.executeWithRateLimit(() =>
-        fetch(`${this.baseUrl}${endpoint}`, {
-          method: 'GET',
-          headers,
-        })
-      );
-
-      if (!response.ok) {
-        return false;
-      }
-
-      const data = (await response.json()) as { code?: string };
-
-      // KuCoin returns code "200000" for success
-      return data.code === '200000';
-    } catch (_error) {
-      return false;
+    if (!response.ok) {
+      const body = await response.text().catch(() => '');
+      throw new Error(`KuCoin HTTP ${response.status}${body ? `: ${body.slice(0, 200)}` : ''}`);
     }
+    const data = (await response.json()) as { code?: string; msg?: string };
+    if (data.code !== '200000') {
+      throw new Error(`KuCoin rejected request: ${data.code}${data.msg ? ` ${data.msg}` : ''}`);
+    }
+    return true;
   }
 
   /**
@@ -124,15 +121,18 @@ export class KucoinApiService {
     apiSecret: string,
     passphrase: string
   ): Promise<Array<{ currency: string; balance: string; type: string }>> {
+    const subKey = credentialBucketKey(apiKey);
     try {
       const endpoint = '/api/v1/accounts';
       const headers = this.buildHeaders(apiKey, apiSecret, passphrase, 'GET', endpoint);
 
-      const response = await this.executeWithRateLimit(() =>
-        fetch(`${this.baseUrl}${endpoint}`, {
-          method: 'GET',
-          headers,
-        })
+      const response = await this.executeWithRateLimit(
+        () =>
+          fetch(`${this.baseUrl}${endpoint}`, {
+            method: 'GET',
+            headers,
+          }),
+        subKey
       );
 
       if (!response.ok) {
@@ -166,11 +166,12 @@ export class KucoinApiService {
   }
 
   /**
-   * Execute function with rate limiting if configured
+   * Execute function with rate limiting if configured. `subKey`
+   * partitions the provider-wide bucket by credential hash.
    */
-  private async executeWithRateLimit<T>(fn: () => Promise<T>): Promise<T> {
+  private async executeWithRateLimit<T>(fn: () => Promise<T>, subKey?: string): Promise<T> {
     if (this.rateLimiter) {
-      return this.rateLimiter.execute(fn);
+      return this.rateLimiter.execute(fn, subKey);
     }
     return fn();
   }

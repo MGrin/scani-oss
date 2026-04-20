@@ -3,9 +3,9 @@
  * Handles crypto wallet import operations (async via BullMQ).
  */
 
-import { WalletImplementations } from '@scani/core/features/implementations';
-import { JOB_NAMES } from '@scani/core/queues';
-import { createComponentLogger } from '@scani/core/utils/logger';
+import { WalletImplementations } from '@scani/domain/features';
+import { createComponentLogger } from '@scani/logging';
+import { JOB_NAMES } from '@scani/queue';
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 import { enqueueJob } from '../../queues/enqueue';
@@ -19,6 +19,10 @@ const ImportWalletSchema = z.object({
   displayName: z.string().max(100, 'Display name is too long').optional(),
   chain: z.string().min(1).default('auto'),
   requestId: z.string().uuid(),
+  // When the frontend already ran `wallet.detectChains`, it passes the
+  // institution IDs here so the worker skips re-detection — avoids a
+  // second 30+ second chain-by-chain RPC sweep on the worker side.
+  detectedInstitutionIds: z.array(z.string().uuid()).optional(),
 });
 
 export const walletRouter = router({
@@ -44,6 +48,7 @@ export const walletRouter = router({
       chain: input.chain,
       address: input.address,
       label: input.displayName,
+      detectedInstitutionIds: input.detectedInstitutionIds,
     });
     return { jobId };
   }),

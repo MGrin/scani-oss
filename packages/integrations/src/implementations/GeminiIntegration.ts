@@ -180,13 +180,9 @@ export class GeminiIntegration extends ScaniIntegration {
       return false;
     }
 
-    try {
-      const apiKey = credentials.apiKey as string;
-      const apiSecret = credentials.apiSecret as string;
-      return await this.geminiService.validateApiKey(apiKey, apiSecret);
-    } catch (_error) {
-      return false;
-    }
+    const apiKey = credentials.apiKey as string;
+    const apiSecret = credentials.apiSecret as string;
+    return await this.geminiService.validateApiKey(apiKey, apiSecret);
   }
 
   async refreshAuthentication(_refreshToken: string): Promise<Record<string, unknown>> {

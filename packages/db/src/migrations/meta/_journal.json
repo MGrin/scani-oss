@@ -1,0 +1,90 @@
+{
+  "version": "7",
+  "dialect": "postgresql",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "7",
+      "when": 1776398451195,
+      "tag": "0000_init_schema",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1776398462140,
+      "tag": "0001_seed_type_enums",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1776398463489,
+      "tag": "0002_seed_fiat_tokens",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1776398464846,
+      "tag": "0003_seed_institutions",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1776398466198,
+      "tag": "0004_seed_evm_chains",
+      "breakpoints": true
+    },
+    {
+      "idx": 43,
+      "version": "7",
+      "when": 1776900000000,
+      "tag": "0043_users_email_not_null",
+      "breakpoints": true
+    },
+    {
+      "idx": 44,
+      "version": "7",
+      "when": 1776900100000,
+      "tag": "0044_add_check_constraints",
+      "breakpoints": true
+    },
+    {
+      "idx": 45,
+      "version": "7",
+      "when": 1776950000000,
+      "tag": "0045_admin_audit_log",
+      "breakpoints": true
+    },
+    {
+      "idx": 46,
+      "version": "7",
+      "when": 1777000000000,
+      "tag": "0046_credentials_import_status",
+      "breakpoints": true
+    },
+    {
+      "idx": 47,
+      "version": "7",
+      "when": 1777100000000,
+      "tag": "0047_user_jobs",
+      "breakpoints": true
+    },
+    {
+      "idx": 48,
+      "version": "7",
+      "when": 1777200000000,
+      "tag": "0048_seed_blockchain_mappings",
+      "breakpoints": true
+    },
+    {
+      "idx": 49,
+      "version": "7",
+      "when": 1777300000000,
+      "tag": "0049_user_jobs_action_taken_at",
+      "breakpoints": true
+    }
+  ]
+}

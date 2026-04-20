@@ -1,4 +1,5 @@
-import { GroupImplementations } from '@scani/core/features/implementations';
+import { GroupImplementations } from '@scani/domain/features';
+import { emitBulkEntityChanges, emitEntityChange } from '@scani/realtime';
 import {
   AssignAccountGroupsDto,
   AssignHoldingGroupsDto,
@@ -7,10 +8,6 @@ import {
   UpdateGroupDto,
 } from '@scani/shared';
 import { z } from 'zod';
-import {
-  emitBulkEntityChanges,
-  emitEntityChange,
-} from '../../infrastructure/websocket/RealTimeUpdatesService';
 import { requireAuth } from '../middleware/auth';
 import { protectedProcedure, router } from '../trpc';
 

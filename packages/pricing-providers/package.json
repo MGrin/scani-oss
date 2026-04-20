@@ -1,0 +1,28 @@
+{
+  "name": "@scani/pricing-providers",
+  "private": true,
+  "type": "module",
+  "version": "1.0.0",
+  "description": "HTTP clients for pricing providers: CoinGecko, Finnhub, DeFiLlama, Google Sheets, ExchangeRate, ScaniCloud.",
+  "exports": {
+    ".": "./src/index.ts",
+    "./utils": "./src/utils.ts"
+  },
+  "scripts": {
+    "lint": "biome check .",
+    "lint:fix": "biome check --write .",
+    "type-check": "tsgo --noEmit"
+  },
+  "dependencies": {
+    "@scani/db": "workspace:*",
+    "@scani/logging": "workspace:*",
+    "@scani/rate-limiter": "workspace:*",
+    "decimal.js": "^10.6.0",
+    "drizzle-orm": "^0.45.2",
+    "googleapis": "^160.0.0",
+    "pino": "^9.14.0"
+  },
+  "devDependencies": {
+    "typescript": "^5"
+  }
+}
