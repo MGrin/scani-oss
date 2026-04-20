@@ -16,7 +16,7 @@ import { initializeRateLimiterRedis } from '@scani/rate-limiter';
 // Sentry is the first thing we wire up so boot-time failures are tracked.
 initSentry({ component: 'worker', release: env.SENTRY_RELEASE });
 
-import { type Job, Queue, Worker } from 'bullmq';
+import { type Job, Queue, UnrecoverableError, Worker } from 'bullmq';
 import { Redis } from 'ioredis';
 import { Container } from 'typedi';
 import { apyPayoutsProcessor } from './processors/apy-payouts';
@@ -136,7 +136,16 @@ async function main(): Promise<void> {
     );
     // Mirror the failure to Sentry with the job name as a tag so dashboards
     // can group by flow (screenshot-parse, wallet-import, exchange-import).
-    sentryCapture(err, { jobName: job?.name ?? 'unknown', jobId: String(job?.id ?? 'unknown') });
+    // `UnrecoverableError` is BullMQ's signal for a classified, by-design
+    // terminal failure (bad creds, rate-limited, wrong-import-path routing).
+    // Those are surfaced to the user via the failed-job UI; paging Sentry
+    // for them buries real bugs in noise, so we skip the capture here.
+    if (!(err instanceof UnrecoverableError)) {
+      sentryCapture(err, {
+        jobName: job?.name ?? 'unknown',
+        jobId: String(job?.id ?? 'unknown'),
+      });
+    }
 
     // DLQ push on terminal failure (all retry attempts exhausted). Without
     // this, BullMQ's `removeOnFail: 500` eventually truncates the failure

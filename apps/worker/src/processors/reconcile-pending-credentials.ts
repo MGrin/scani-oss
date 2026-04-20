@@ -1,6 +1,7 @@
 import { db } from '@scani/db/connection';
 import * as schema from '@scani/db/schema';
 import { IntegrationCredentialsService } from '@scani/domain/services';
+import { BlockchainIntegration, IntegrationManager } from '@scani/integrations';
 import { createComponentLogger } from '@scani/logging';
 import { JOB_NAMES } from '@scani/queue';
 import type { Job, Queue } from 'bullmq';
@@ -31,6 +32,7 @@ const PENDING_CUTOFF_MS = 5 * 60 * 1000; // 5 min
 export function buildReconcilePendingCredentialsProcessor(queue: Queue) {
   return async function processReconcilePendingCredentials(_job: Job): Promise<void> {
     const credentialsService = Container.get(IntegrationCredentialsService);
+    const integrationManager = Container.get(IntegrationManager);
 
     const cutoff = new Date(Date.now() - PENDING_CUTOFF_MS);
     const orphans = await credentialsService.findPendingEnqueueOlderThan(cutoff);
@@ -68,6 +70,26 @@ export function buildReconcilePendingCredentialsProcessor(queue: Queue) {
           await credentialsService.markImportFailed(
             row.id,
             `Institution ${row.institutionId} no longer exists — cannot reconcile.`
+          );
+          continue;
+        }
+
+        // Don't enqueue exchange-import for blockchain-typed institutions.
+        // The wallet-import flow is the right producer for those (different
+        // payload shape — needs walletManager + credentials.userId), and
+        // re-running them through exchange-import is guaranteed to fail in
+        // ImportExchangeAccountsUseCase's type-guard. Mark the row failed
+        // with a clear next-step so the user can retry via wallet-import,
+        // and so the reconciler stops sweeping it on every cron tick.
+        const integration = await integrationManager.getIntegration(row.institutionId);
+        if (integration instanceof BlockchainIntegration) {
+          await credentialsService.markImportFailed(
+            row.id,
+            `Blockchain-type credentials cannot be reconciled via exchange-import. Re-trigger the wallet-import flow from the institution's page.`
+          );
+          logger.warn(
+            { credentialsId: row.id, institution: institution.name },
+            '⏭️  Skipped reconcile for blockchain-type institution'
           );
           continue;
         }
