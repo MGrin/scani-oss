@@ -229,28 +229,30 @@ export function renderOtpEmail({
     `This code works once and expires in 5 minutes. If you didn't request it, ignore this email.`,
   ].join('\n');
 
-  // Space out the digits so clients that auto-hide "long numbers"
-  // (and the "123 456" Gmail OTP UI) both render it well.
-  const spacedCode = escapeHtml(code.split('').join(' '));
+  // Render the code as a single contiguous string so:
+  //  - it fits on one line on narrow phones (literal spaces between digits
+  //    used to overflow at ~320px viewports),
+  //  - tapping it on mobile selects the whole code in one gesture
+  //    (`user-select: all`), and the clipboard gets `123456` not `1 2 3 4 5 6`.
+  // Visual spacing comes from `letter-spacing` instead of literal spaces.
+  const safeCode = escapeHtml(code);
 
   const content = `
     <h1 style="margin:0 0 12px 0;font-size:22px;line-height:28px;font-weight:600;letter-spacing:-0.01em;color:${BRAND.textPrimary};">
       ${escapeHtml(headline)}
     </h1>
     <p style="margin:0 0 24px 0;font-size:15px;line-height:22px;color:${BRAND.textMuted};">
-      ${escapeHtml(purpose)} The code works once and expires in 5 minutes.
+      ${escapeHtml(purpose)} It works once and expires in 5 minutes.
     </p>
-    <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="margin:0 0 24px 0;">
+    <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="margin:0 0 20px 0;">
       <tr>
         <td align="center" style="background:#f5f6f8;border:1px solid ${BRAND.border};border-radius:12px;padding:22px 16px;">
-          <div style="font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;font-size:34px;line-height:40px;font-weight:600;letter-spacing:0.12em;color:${BRAND.textPrimary};">
-            ${spacedCode}
-          </div>
+          <div style="font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;font-size:34px;line-height:40px;font-weight:700;letter-spacing:0.32em;color:${BRAND.textPrimary};white-space:nowrap;-webkit-user-select:all;-moz-user-select:all;-ms-user-select:all;user-select:all;cursor:pointer;">${safeCode}</div>
         </td>
       </tr>
     </table>
     <p style="margin:0;font-size:13px;line-height:20px;color:${BRAND.textMuted};">
-      Copy the code and paste it back into the ${escapeHtml(BRAND.appName)} app on the device you started from.
+      Tap the code to select it, then paste it into ${escapeHtml(BRAND.appName)} on the device you started from.
     </p>
   `;
 
