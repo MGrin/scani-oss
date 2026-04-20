@@ -403,13 +403,17 @@ jobs:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
         run: |
           set -euo pipefail
-          for mid in $(flyctl machine list --app scani-worker --json | jq -r '.[].id'); do
-            state=$(flyctl machine status "$mid" --app scani-worker --json | jq -r '.state')
-            echo "machine $mid state=$state"
-            if [ "$state" != "started" ]; then
-              flyctl machine start "$mid" --app scani-worker
-            fi
-          done
+          # `flyctl machine status --json` was removed in recent flyctl — the
+          # list endpoint already includes `state`, so pair id+state from one
+          # call instead of a per-machine status lookup.
+          flyctl machine list --app scani-worker --json \
+            | jq -r '.[] | "\(.id) \(.state)"' \
+            | while read -r mid state; do
+                echo "machine $mid state=$state"
+                if [ "$state" != "started" ]; then
+                  flyctl machine start "$mid" --app scani-worker
+                fi
+              done
 
   deploy-frontend:
     name: Deploy scani-frontend (Cloudflare Pages)
