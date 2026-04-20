@@ -628,11 +628,17 @@ export class ImportWalletAddressUseCase {
               );
 
               if (!existingCredentials) {
+                // Pass importStatus='enqueued' so the orphan-credentials
+                // reconciler doesn't sweep this row and try to re-enqueue
+                // it as exchange-import — the row is a public-RPC marker,
+                // not a pending enqueue.
                 await this.integrationCredentialsService.storeCredentials(
                   userId,
                   institution.id,
                   { type: 'public_rpc' },
-                  'rpc'
+                  'rpc',
+                  undefined,
+                  'enqueued'
                 );
 
                 logger.debug(

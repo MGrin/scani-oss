@@ -101,14 +101,24 @@ export class IntegrationCredentialsService extends BaseService {
   }
 
   /**
-   * Store encrypted credentials
+   * Store encrypted credentials.
+   *
+   * `importStatus` defaults to 'pending_enqueue' because the typical caller
+   * (exchange credentials router) stores the row *before* enqueuing an
+   * exchange-import job, and the reconciler depends on that status to pick
+   * up orphaned rows if the enqueue crashes mid-flight. Callers that are
+   * NOT about to enqueue an exchange-import job — e.g. wallet-import
+   * storing a public-RPC marker — must pass 'enqueued' so the reconciler
+   * doesn't sweep the row and re-enqueue it as exchange-import (which
+   * would fail its blockchain-type guard every 5 minutes).
    */
   async storeCredentials(
     userId: string,
     institutionId: string,
     credentials: Record<string, unknown>,
     credentialsType: string,
-    expiresAt?: Date
+    expiresAt?: Date,
+    importStatus: 'pending_enqueue' | 'enqueued' = 'pending_enqueue'
   ): Promise<UserIntegrationCredentials> {
     try {
       this.logDebug('Storing credentials', { userId, institutionId, credentialsType });
@@ -123,16 +133,17 @@ export class IntegrationCredentialsService extends BaseService {
       );
 
       if (existing) {
-        // Update existing credentials. Reset import_status to pending_enqueue
-        // because the caller is about to try (re)enqueuing a fresh import job;
-        // leaving it 'enqueued' would mask orphaned rows from the reconciler.
+        // Update existing credentials. Status resets to match `importStatus`
+        // so a re-enqueue attempt (default 'pending_enqueue') is visible to
+        // the reconciler, while wallet-import's 'enqueued' keeps the row
+        // out of the reconciler's sweep.
         const updated = await this.credentialsRepository.update(existing.id, {
           encryptedCredentials: encrypted,
           credentialsType,
           expiresAt,
           lastUsedAt: new Date(),
           isActive: true,
-          importStatus: 'pending_enqueue',
+          importStatus,
           importJobId: null,
           importEnqueuedAt: null,
           importLastError: null,
@@ -142,8 +153,7 @@ export class IntegrationCredentialsService extends BaseService {
         return updated;
       }
 
-      // Create new credentials. Default `import_status='pending_enqueue'` —
-      // the caller flips it to 'enqueued' once BullMQ accepts the job.
+      // Create new credentials with the requested `importStatus`.
       const data: NewUserIntegrationCredentials = {
         userId,
         institutionId,
@@ -151,7 +161,7 @@ export class IntegrationCredentialsService extends BaseService {
         credentialsType,
         expiresAt,
         isActive: true,
-        importStatus: 'pending_enqueue',
+        importStatus,
       };
 
       const created = await this.credentialsRepository.create(data);
