@@ -5,6 +5,15 @@ on:
     branches: [main]
   workflow_call:
 
+# `dorny/paths-filter@v4` reads the PR's changed files via the GitHub
+# `listFiles` API, which needs `pull-requests: read`. The repo default
+# token only grants `contents/metadata/packages: read`, so without this
+# block the detect-changes job fails with "Resource not accessible by
+# integration".
+permissions:
+  contents: read
+  pull-requests: read
+
 # Cancel in-flight CI runs for the same ref when a new push lands.
 # Intentionally not applied to workflow_call — deploy depends on CI
 # completing; cancelling mid-flight would race the deploy.
@@ -13,16 +22,141 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
-  validate:
-    name: Lint, Type Check & Test
+  # Path-filter up front so downstream jobs only run when relevant.
+  # `code` = anything that could affect runtime behaviour (source files
+  # under apps/ or packages/, plus scripts/). `deps` = lockfile or any
+  # manifest / linter-config change. Each package has its own filter so
+  # the test job can scope `bun test` to just the touched packages.
+  detect-changes:
+    name: Detect changes
     runs-on: ubuntu-latest
-    # The repository test suite under packages/ uses `withTestDb` which
-    # opens a real Postgres connection + wraps each test in a rolled-back
-    # transaction. Locally the compose stack (`bun run dev:stack`)
-    # provides Postgres on :5433; CI boots the same image + port here so
-    # the same preload defaults work unchanged. Redis isn't required —
-    # the rate-limiter falls through to its in-memory queue when
-    # `sharedRedis` is unset, which is the case during tests.
+    outputs:
+      code: ${{ steps.filter.outputs.code }}
+      deps: ${{ steps.filter.outputs.deps }}
+      test-paths: ${{ steps.test-paths.outputs.paths }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 2
+      - uses: dorny/paths-filter@v4
+        id: filter
+        with:
+          list-files: none
+          filters: |
+            code:
+              - 'apps/**/*.ts'
+              - 'apps/**/*.tsx'
+              - 'apps/**/*.js'
+              - 'apps/**/*.jsx'
+              - 'apps/**/*.mjs'
+              - 'apps/**/*.cjs'
+              - 'apps/**/*.json'
+              - 'apps/**/*.css'
+              - 'apps/**/*.html'
+              - 'packages/**/*.ts'
+              - 'packages/**/*.tsx'
+              - 'packages/**/*.js'
+              - 'packages/**/*.mjs'
+              - 'packages/**/*.cjs'
+              - 'packages/**/*.json'
+              - 'packages/**/*.sql'
+              - 'scripts/**'
+              - 'tsconfig*.json'
+            deps:
+              - 'package.json'
+              - 'bun.lock'
+              - 'apps/*/package.json'
+              - 'packages/*/package.json'
+              - 'biome.json'
+              - 'biome.jsonc'
+              - 'knip.json'
+              - 'knip.jsonc'
+              - 'knip.ts'
+            ai-providers:
+              - 'packages/ai-providers/**'
+            config:
+              - 'packages/config/**'
+            db:
+              - 'packages/db/**'
+            domain:
+              - 'packages/domain/**'
+            email:
+              - 'packages/email/**'
+            integrations:
+              - 'packages/integrations/**'
+            logging:
+              - 'packages/logging/**'
+            pricing-providers:
+              - 'packages/pricing-providers/**'
+            queue:
+              - 'packages/queue/**'
+            rate-limiter:
+              - 'packages/rate-limiter/**'
+            realtime:
+              - 'packages/realtime/**'
+            shared:
+              - 'packages/shared/**'
+            storage:
+              - 'packages/storage/**'
+      - id: test-paths
+        # Collapse per-package filter outputs into a space-separated list
+        # that `bun test` accepts as positional args. If `deps` changed
+        # and no specific package matched, widen to the full package
+        # tree — a lockfile bump can break any test.
+        env:
+          FILTER_JSON: ${{ toJSON(steps.filter.outputs) }}
+          DEPS: ${{ steps.filter.outputs.deps }}
+        run: |
+          set -euo pipefail
+          paths=""
+          for p in ai-providers config db domain email integrations logging pricing-providers queue rate-limiter realtime shared storage; do
+            changed=$(echo "$FILTER_JSON" | jq -r --arg p "$p" '.[$p] // "false"')
+            if [ "$changed" = "true" ]; then
+              paths="$paths packages/$p"
+            fi
+          done
+          if [ -z "$paths" ] && [ "$DEPS" = "true" ]; then
+            paths="packages/"
+          fi
+          paths=$(echo $paths | xargs)
+          echo "paths=$paths" >> "$GITHUB_OUTPUT"
+          echo "test-paths: '$paths'"
+
+  validate-code:
+    name: Lint & Type Check
+    needs: detect-changes
+    if: ${{ needs.detect-changes.outputs.code == 'true' || needs.detect-changes.outputs.deps == 'true' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: ./.github/actions/setup-bun
+      - name: Lint
+        run: bun run lint
+      - name: Type check
+        run: bun run type-check
+
+  validate-deps:
+    name: Deps sync & knip
+    needs: detect-changes
+    if: ${{ needs.detect-changes.outputs.deps == 'true' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: ./.github/actions/setup-bun
+      - name: Dependency versions in sync
+        run: bun run deps:lint
+      - name: Unused code & dependencies (knip)
+        run: bun run deps:unused
+
+  test:
+    name: Test
+    needs: detect-changes
+    if: ${{ needs.detect-changes.outputs.test-paths != '' }}
+    runs-on: ubuntu-latest
+    # Postgres is only booted when this job runs. `withTestDb` wraps each
+    # test in a rolled-back transaction so tests share the schema but not
+    # state. Redis is not needed — the rate-limiter falls through to its
+    # in-memory queue when `sharedRedis` is unset.
     services:
       postgres:
         image: postgres:16
@@ -39,21 +173,7 @@ jobs:
           --health-retries 10
     steps:
       - uses: actions/checkout@v6
-
       - uses: ./.github/actions/setup-bun
-
-      - name: Lint
-        run: bun run lint
-
-      - name: Type check
-        run: bun run type-check
-
-      - name: Dependency versions in sync
-        run: bun run deps:lint
-
-      - name: Unused code & dependencies (knip)
-        run: bun run deps:unused
-
       - name: Run DB migrations
         # Seeds the schema + all required lookup rows (institutions,
         # institution_blockchain_mappings, token types) that repository
@@ -61,13 +181,19 @@ jobs:
         run: bun run db:migrate
         env:
           DATABASE_URL: postgres://scani:scani@localhost:5433/scani?sslmode=disable
-
       - name: Test
-        run: bun test --preload ./packages/domain/test-preload.ts packages/ --timeout 30000
+        run: bun test --preload ./packages/domain/test-preload.ts ${{ needs.detect-changes.outputs.test-paths }} --timeout 30000
         env:
           NODE_ENV: test
           DATABASE_URL: postgres://scani:scani@localhost:5433/scani?sslmode=disable
 
+  secret-scan:
+    # Cheap + high-value: always runs so docs / workflow-only PRs can't
+    # slip a leaked key through unchecked.
+    name: Secret scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
       - name: Secret scan
         run: |
           set -euo pipefail
