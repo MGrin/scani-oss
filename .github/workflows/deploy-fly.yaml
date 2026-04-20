@@ -105,10 +105,19 @@ jobs:
       migrations: ${{ steps.resolve.outputs.migrations }}
     steps:
       - uses: actions/checkout@v6
-        with: { fetch-depth: 2 }
+        with:
+          fetch-depth: 2
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+      # paths-filter can't read `before` from a workflow_run payload and
+      # otherwise only diffs the last commit, missing earlier commits in
+      # a multi-commit push. Resolve HEAD~1 explicitly as the diff base.
+      - id: base
+        run: echo "sha=$(git rev-parse HEAD~1)" >> "$GITHUB_OUTPUT"
       - uses: dorny/paths-filter@v4
         id: filter
         with:
+          base: ${{ steps.base.outputs.sha }}
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
           filters: |
             backend:
               - 'apps/backend/**'
