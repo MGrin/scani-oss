@@ -36,7 +36,10 @@ report.[0-9]_.[0-9]_.[0-9]_.[0-9]_.json
 
 **/*.api-key.json
 
-.claude/worktrees/
+# Claude Code local state (worktrees, scheduled-task locks, etc.).
+# Nothing under this directory is source — it's all per-checkout tooling
+# artifacts that would pollute the repo if committed.
+.claude/
 
 # Local Docker Compose overrides
 docker-compose.override.yml
