@@ -28,7 +28,13 @@ function isUnrecoverableExchangeError(err: unknown): boolean {
     /HTTP 40[13]/.test(msg) ||
     // Signature / nonce / key errors from the exchange services.
     /EAPI:Invalid (signature|nonce|key)/.test(msg) ||
-    /rejected request: retCode (10003|10004|10005|10006|33004)/.test(msg)
+    /rejected request: retCode (10003|10004|10005|10006|33004)/.test(msg) ||
+    // Exchange-import targeted a blockchain-type institution. The
+    // BlockchainIntegration path requires the wallet-import flow
+    // (which supplies userId + walletManager); retrying the exchange
+    // job is guaranteed to keep failing identically.
+    /No wallet manager available or missing userId in credentials/.test(msg) ||
+    /Exchange-import targeted a blockchain-type institution/.test(msg)
   );
 }
 

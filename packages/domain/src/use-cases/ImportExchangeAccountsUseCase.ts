@@ -13,7 +13,7 @@
 import { db } from '@scani/db/connection';
 import * as schema from '@scani/db/schema';
 import { withTransaction } from '@scani/db/transaction';
-import { IntegrationManager } from '@scani/integrations';
+import { BlockchainIntegration, IntegrationManager } from '@scani/integrations';
 import { createComponentLogger } from '@scani/logging';
 import { isValidDecimalString } from '@scani/shared';
 import { and, eq } from 'drizzle-orm';
@@ -106,6 +106,18 @@ export class ImportExchangeAccountsUseCase {
       const integration = await this.integrationManager.getIntegration(input.institutionId);
       if (!integration) {
         throw new Error(`Integration not found for institution: ${input.institutionId}`);
+      }
+
+      // Exchange-import only knows how to talk to exchange/broker integrations.
+      // When `institution_blockchain_mappings` resolves the same institutionId
+      // to a BlockchainIntegration, the fetchAccounts contract (needs
+      // walletManager + `credentials.userId`) can't be satisfied from this
+      // path — wallet-import is the correct producer. Fail fast with a
+      // classified-unrecoverable message so BullMQ doesn't retry.
+      if (integration instanceof BlockchainIntegration) {
+        throw new Error(
+          `Exchange-import targeted a blockchain-type institution (${input.institutionId}). Use wallet-import to sync on-chain holdings.`
+        );
       }
 
       const accountsResult = await integration.fetchAccounts(credentials);
