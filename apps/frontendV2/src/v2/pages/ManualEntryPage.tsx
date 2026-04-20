@@ -336,6 +336,7 @@ export function ManualEntryPage() {
   const utils = trpc.useUtils();
 
   const handleFetchOG = async () => {
+    if (fetchingOG) return;
     if (!newInstWebsite.trim()) return;
     setFetchingOG(true);
     try {

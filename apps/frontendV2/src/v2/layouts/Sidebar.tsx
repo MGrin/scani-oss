@@ -108,13 +108,12 @@ function SidebarNavLink({
       <Icon className="h-4 w-4 shrink-0" aria-hidden="true" />
       <span className="truncate">{label}</span>
       {hasBadge && (
-        <span
-          role="status"
+        <output
           aria-label={`${badgeCount} pending`}
           className="ml-auto inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-amber-500/20 px-1 text-[10px] font-medium text-amber-700 dark:text-amber-300"
         >
           {badgeCount}
-        </span>
+        </output>
       )}
     </NavLink>
   );

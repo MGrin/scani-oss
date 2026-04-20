@@ -149,6 +149,7 @@ export function AccountSelectionStep({
   }, [accounts, institutionId, institutionMode]);
 
   const handleFetchOG = async () => {
+    if (fetchingOG) return;
     if (!newInstWebsite.trim()) return;
     setFetchingOG(true);
     try {
