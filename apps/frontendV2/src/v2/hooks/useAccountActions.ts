@@ -11,26 +11,29 @@ import { invalidatePortfolioQueries } from './invalidatePortfolioQueries';
 export function useAccountActions() {
   const utils = trpc.useUtils();
 
+  // All three mutations fire invalidation in the background so callers
+  // (the bulk-action bar, the detail page, etc.) don't wait for every
+  // portfolio query to refetch before showing the success toast.
   const deleteMutation = trpc.accounts.delete.useMutation({
-    onSuccess: async () => {
-      await invalidatePortfolioQueries(utils);
+    onSuccess: () => {
       showSuccess('Account deleted successfully');
+      void invalidatePortfolioQueries(utils);
     },
     onError: (error) => showError(error, 'Failed to delete account'),
   });
 
   const bulkDeleteMutation = trpc.accounts.bulkDelete.useMutation({
-    onSuccess: async (_data, variables) => {
-      await invalidatePortfolioQueries(utils);
+    onSuccess: (_data, variables) => {
       showSuccess(`${variables.ids.length} account(s) deleted successfully`);
+      void invalidatePortfolioQueries(utils);
     },
     onError: (error) => showError(error, 'Failed to delete accounts'),
   });
 
   const updateMutation = trpc.accounts.update.useMutation({
-    onSuccess: async () => {
-      await invalidatePortfolioQueries(utils);
+    onSuccess: () => {
       showSuccess('Account updated successfully');
+      void invalidatePortfolioQueries(utils);
     },
     onError: (error) => showError(error, 'Failed to update account'),
   });

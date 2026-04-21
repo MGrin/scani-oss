@@ -119,7 +119,7 @@ export function ReviewHoldingsCard({
         // swallow — UI guard only.
       }
     }
-    await invalidatePortfolioQueries(utils);
+    await invalidatePortfolioQueries(utils, { refetchType: 'all' });
     navigate(V2_ROUTES.holdings);
   };
 

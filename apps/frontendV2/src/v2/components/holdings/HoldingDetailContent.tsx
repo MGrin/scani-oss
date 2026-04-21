@@ -95,10 +95,10 @@ export function HoldingDetailContent({ holdingId, mode = 'panel' }: HoldingDetai
   const [showApyDeleteConfirm, setShowApyDeleteConfirm] = useState(false);
 
   const deleteApyMutation = trpc.holdings.deleteApyConfig.useMutation({
-    onSuccess: async () => {
-      await invalidatePortfolioQueries(utils);
+    onSuccess: () => {
       setShowApyDeleteConfirm(false);
       showSuccess('APY configuration removed');
+      void invalidatePortfolioQueries(utils);
     },
     onError: (err) => showError(err, 'Failed to remove APY configuration'),
   });

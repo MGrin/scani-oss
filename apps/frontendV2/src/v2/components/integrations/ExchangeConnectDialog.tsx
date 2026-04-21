@@ -252,7 +252,7 @@ export function ExchangeConnectDialog({
     if (status !== 'importing' || !activeJobId) return;
     if (jobStatus.state === 'completed') {
       void (async () => {
-        await invalidatePortfolioQueries(utils);
+        await invalidatePortfolioQueries(utils, { refetchType: 'all' });
         resetForm();
         onOpenChange(false);
         if (activeInstitutionId) {

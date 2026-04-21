@@ -134,10 +134,14 @@ export function GroupFormDialog({ open, onOpenChange, groupId }: GroupFormDialog
   };
 
   const createMutation = trpc.groups.create.useMutation({
-    onSuccess: async (newGroup) => {
+    onSuccess: (newGroup) => {
       // The new group doesn't exist on any entity yet, so the save is
       // pure add — every selected entity gets the new group added,
-      // nothing is removed.
+      // nothing is removed. Fire these assignment mutations in the
+      // background so the dialog can close immediately; they'll each
+      // trigger their own invalidation on success. Don't await the
+      // portfolio invalidation either — that refetches up to a dozen
+      // queries and was the main source of perceived slowness.
       if (selectedHoldingIds.size > 0) {
         assignHoldingsMutation.mutate({
           holdingIds: Array.from(selectedHoldingIds),
@@ -152,9 +156,9 @@ export function GroupFormDialog({ open, onOpenChange, groupId }: GroupFormDialog
           removedGroupIds: [],
         });
       }
-      await invalidatePortfolioQueries(utils);
       onOpenChange(false);
       showSuccess('Group created');
+      void invalidatePortfolioQueries(utils);
     },
     onError: (error) => showError(error, 'Creating group'),
   });
@@ -214,19 +218,19 @@ export function GroupFormDialog({ open, onOpenChange, groupId }: GroupFormDialog
           });
         }
       }
-      await invalidatePortfolioQueries(utils);
       onOpenChange(false);
       showSuccess('Group updated');
+      void invalidatePortfolioQueries(utils);
     },
     onError: (error) => showError(error, 'Updating group'),
   });
 
   const deleteMutation = trpc.groups.delete.useMutation({
-    onSuccess: async () => {
-      await invalidatePortfolioQueries(utils);
+    onSuccess: () => {
       setShowDeleteConfirm(false);
       onOpenChange(false);
       showSuccess('Group deleted');
+      void invalidatePortfolioQueries(utils);
     },
     onError: (error) => showError(error, 'Deleting group'),
   });

@@ -5,26 +5,29 @@ import { invalidatePortfolioQueries } from './invalidatePortfolioQueries';
 export function useHoldingActions() {
   const utils = trpc.useUtils();
 
+  // All three mutations fire invalidation in the background so callers
+  // (e.g. dialogs, bulk-action bars) don't wait for every portfolio
+  // query to refetch before showing the success toast / closing.
   const deleteMutation = trpc.holdings.delete.useMutation({
-    onSuccess: async () => {
-      await invalidatePortfolioQueries(utils);
+    onSuccess: () => {
       showSuccess('Holding deleted');
+      void invalidatePortfolioQueries(utils);
     },
     onError: (err) => showError(err, 'Deleting holding'),
   });
 
   const bulkDeleteMutation = trpc.holdings.bulkDelete.useMutation({
-    onSuccess: async (result) => {
-      await invalidatePortfolioQueries(utils);
+    onSuccess: (result) => {
       showSuccess(`${result.deletedIds.length} holding(s) deleted`);
+      void invalidatePortfolioQueries(utils);
     },
     onError: (err) => showError(err, 'Deleting holdings'),
   });
 
   const updateMutation = trpc.holdings.update.useMutation({
-    onSuccess: async () => {
-      await invalidatePortfolioQueries(utils);
+    onSuccess: () => {
       showSuccess('Holding updated');
+      void invalidatePortfolioQueries(utils);
     },
     onError: (err) => showError(err, 'Updating holding'),
   });

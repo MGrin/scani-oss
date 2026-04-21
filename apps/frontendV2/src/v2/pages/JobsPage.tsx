@@ -37,7 +37,7 @@ export function JobsPage() {
   const failed = jobs.filter((j) => j.state === 'failed');
 
   return (
-    <div className="max-w-4xl mx-auto w-full p-4 space-y-4">
+    <div className="max-w-4xl mx-auto w-full px-0 sm:px-4 py-2 sm:py-4 space-y-4">
       {pendingAction.length > 0 && (
         <JobSection title="Needs your review" jobs={pendingAction} emptyText="" accent="warning" />
       )}
@@ -93,12 +93,12 @@ function JobRow({ job }: { job: Job }) {
   return (
     <Link
       to={V2_ROUTES.jobDetail(job.jobId)}
-      className="flex items-center gap-3 py-2.5 hover:bg-accent/50 -mx-2 px-2 rounded-md"
+      className="flex items-start gap-2.5 py-2.5 hover:bg-accent/50 -mx-2 px-2 rounded-md"
     >
-      <Icon className="h-4 w-4 text-muted-foreground shrink-0" />
-      <div className="min-w-0 flex-1">
-        <div className="text-sm font-medium truncate flex items-center gap-1.5">
-          {label}
+      <Icon className="h-4 w-4 text-muted-foreground shrink-0 mt-0.5" />
+      <div className="min-w-0 flex-1 space-y-0.5">
+        <div className="flex items-center gap-1.5 flex-wrap">
+          <span className="text-sm font-medium truncate">{label}</span>
           {pending && (
             <Badge
               variant="outline"
@@ -110,8 +110,14 @@ function JobRow({ job }: { job: Job }) {
           )}
         </div>
         <JobSummary jobName={job.jobName} payloadSummary={job.payloadSummary} />
+        {/* Meta row wraps under the label on narrow screens so nothing
+            gets clipped when both a state chip and timestamp are present. */}
+        <div className="flex items-center gap-2 pt-0.5 sm:hidden">
+          <JobStateChip state={job.state} />
+          <span className="text-[10px] text-muted-foreground">{relativeTime(job.createdAt)}</span>
+        </div>
       </div>
-      <div className="shrink-0 flex items-center gap-2">
+      <div className="shrink-0 hidden sm:flex items-center gap-2">
         <span className="text-[10px] text-muted-foreground">{relativeTime(job.createdAt)}</span>
         <JobStateChip state={job.state} />
       </div>

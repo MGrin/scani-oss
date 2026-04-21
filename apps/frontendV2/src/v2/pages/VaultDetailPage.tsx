@@ -31,28 +31,34 @@ export function VaultDetailPage() {
   const [percentageInput, setPercentageInput] = useState('');
 
   const deleteMutation = trpc.vaults.delete.useMutation({
-    onSuccess: async () => {
-      await invalidatePortfolioQueries(utils);
+    onSuccess: () => {
+      // Navigate first, invalidate in background with `'all'` so the
+      // destination page refetches. Awaiting here blocked the toast +
+      // navigation behind a dozen portfolio refetches.
       setShowDeleteConfirm(false);
       showSuccess('Vault deleted successfully');
       navigate(V2_ROUTES.vaults);
+      void invalidatePortfolioQueries(utils, { refetchType: 'all' });
     },
     onError: (error) => showError(error, 'Failed to delete vault'),
   });
 
   const detachMutation = trpc.vaults.detachHolding.useMutation({
-    onSuccess: async () => {
-      await invalidatePortfolioQueries(utils);
+    onSuccess: () => {
+      // Fire-and-forget invalidation: the detail page stays mounted and
+      // its own active queries will refetch; blocking the toast on the
+      // full portfolio refetch made the action feel sluggish.
       showSuccess('Holding removed from vault');
+      void invalidatePortfolioQueries(utils);
     },
     onError: (error) => showError(error, 'Failed to remove holding'),
   });
 
   const updatePercentageMutation = trpc.vaults.updateHoldingPercentage.useMutation({
-    onSuccess: async () => {
-      await invalidatePortfolioQueries(utils);
+    onSuccess: () => {
       setEditingPercentage(null);
       showSuccess('Percentage updated');
+      void invalidatePortfolioQueries(utils);
     },
     onError: (error) => showError(error, 'Failed to update percentage'),
   });

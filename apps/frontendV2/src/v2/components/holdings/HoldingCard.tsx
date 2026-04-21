@@ -53,12 +53,29 @@ export function HoldingCard({ item, isSelected, onSelect }: HoldingCardProps) {
             {item.token.typeCode}
           </Badge>
         </div>
-        <Checkbox
-          checked={isSelected}
-          onCheckedChange={() => onSelect(item.id)}
-          onClick={(e) => e.stopPropagation()}
-          className="h-4 w-4"
-        />
+        {/* Padded tap target — keeps the checkbox easy to hit on mobile
+            without accidentally navigating to the detail page. <label>
+            semantics expand the click area without nesting a button
+            inside the DataViewCards <button> wrapper. */}
+        {/* biome-ignore lint/a11y/noLabelWithoutControl: label expands hit area for the nested Checkbox; click handler delegates selection. */}
+        <label
+          aria-label="Toggle selection"
+          onClick={(e) => {
+            e.stopPropagation();
+            e.preventDefault();
+            onSelect(item.id);
+          }}
+          onKeyDown={(e) => {
+            if (e.key === ' ' || e.key === 'Enter') {
+              e.stopPropagation();
+              e.preventDefault();
+              onSelect(item.id);
+            }
+          }}
+          className="-m-2 p-2 rounded-md hover:bg-accent/70 cursor-pointer"
+        >
+          <Checkbox checked={isSelected} onClick={(e) => e.stopPropagation()} className="h-4 w-4" />
+        </label>
       </div>
       <p className="text-xs text-muted-foreground truncate mb-3">{item.token.name}</p>
       <p className="text-xl font-bold tabular-nums">{formatMoney(item.value, currencySymbol)}</p>

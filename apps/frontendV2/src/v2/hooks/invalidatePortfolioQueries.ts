@@ -22,28 +22,35 @@ type TrpcUtils = ReturnType<typeof trpc.useUtils>;
  *   2. Every mutation behaves identically w.r.t. freshness, so bugs can't hide
  *      behind "this one dialog forgot to invalidate dashboard.getAssetAllocation".
  *   3. It's easy to audit: any mutation that affects the portfolio should
- *      `await invalidatePortfolioQueries(utils)` in its `onSuccess`.
+ *      call `invalidatePortfolioQueries(utils)` in its `onSuccess`.
  *
  * `refetchType` semantics
  * -----------------------
- * - `'all'` (default): force a refetch even for inactive observers. Use this
- *   after a mutation that will navigate to a new page — the destination
- *   isn't mounted yet at invalidation time, so the default `'active'` would
- *   just mark the cache stale and never refetch it.
+ * - `'active'` (default): only refetch queries currently visible to the user.
+ *   This is the right default for same-page mutations — we don't need to
+ *   eagerly refetch pages the user can't see. Each of the six routers covers
+ *   many queries; with `'all'` a single mutation can fan out into a dozen
+ *   refetches, which was making dialogs feel sluggish because they blocked
+ *   on the full invalidation before closing.
  *
- * - `'active'`: only refetch queries currently visible to the user. Use this
- *   when the caller is a real-time update from the backend (WebSocket event)
- *   — we don't need to eagerly refetch pages the user can't see, and doing
- *   so would hammer the backend for every broadcast.
+ * - `'all'`: force a refetch even for inactive observers. Use this after a
+ *   mutation that will navigate to a new page — the destination isn't mounted
+ *   yet at invalidation time, so the default `'active'` would just mark the
+ *   cache stale and never refetch it.
  *
- * Await the result before navigating so the destination page renders with
- * fresh data instead of a stale flash.
+ * Fire-and-forget pattern
+ * -----------------------
+ * Dialogs should NOT await this helper before closing — the user shouldn't
+ * have to wait for every portfolio query to refetch just to see their action
+ * acknowledged. Close the dialog first, then invalidate in the background.
+ * Only await when the next render truly depends on fresh data (e.g. before
+ * navigating to a detail page that would otherwise flash stale content).
  */
 export async function invalidatePortfolioQueries(
   utils: TrpcUtils,
   options: { refetchType?: 'all' | 'active' } = {}
 ): Promise<void> {
-  const { refetchType = 'all' } = options;
+  const { refetchType = 'active' } = options;
   await Promise.all([
     utils.accounts.invalidate(undefined, { refetchType }),
     utils.holdings.invalidate(undefined, { refetchType }),

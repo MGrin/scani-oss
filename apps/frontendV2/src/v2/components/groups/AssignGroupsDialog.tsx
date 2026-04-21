@@ -150,9 +150,11 @@ export function AssignGroupsDialog({
 
     try {
       await applyGroupDiff(addedGroupIds, removedGroupIds);
-      await invalidatePortfolioQueries(utils);
+      // Close + toast immediately; invalidate in the background so the
+      // dialog doesn't block on every portfolio query refetching.
       showSuccess('Groups assigned');
       onOpenChange(false);
+      void invalidatePortfolioQueries(utils);
     } catch {
       // onError toast already fired
     }
@@ -174,9 +176,9 @@ export function AssignGroupsDialog({
       });
       await utils.groups.getAll.invalidate();
       await applyGroupDiff([created.id], []);
-      await invalidatePortfolioQueries(utils);
       showSuccess(`Group "${created.name}" created and assigned`);
       onOpenChange(false);
+      void invalidatePortfolioQueries(utils);
     } catch {
       // onError toasts already fired
     }

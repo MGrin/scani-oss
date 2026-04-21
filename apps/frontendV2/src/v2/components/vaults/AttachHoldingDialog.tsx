@@ -44,11 +44,11 @@ export function AttachHoldingDialog({ open, onOpenChange, vaultId }: AttachHoldi
   }, [holdingsData, search]);
 
   const attachMutation = trpc.vaults.attachHolding.useMutation({
-    onSuccess: async () => {
-      await invalidatePortfolioQueries(utils);
+    onSuccess: () => {
       showSuccess('Holding attached to vault');
       onOpenChange(false);
       resetForm();
+      void invalidatePortfolioQueries(utils);
     },
     onError: (error) => showError(error, 'Failed to attach holding'),
   });

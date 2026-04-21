@@ -100,10 +100,10 @@ export function ApyConfigDialog({
   }, [existingConfig]);
 
   const upsertMutation = trpc.holdings.upsertApyConfig.useMutation({
-    onSuccess: async () => {
-      await invalidatePortfolioQueries(utils);
+    onSuccess: () => {
       onOpenChange(false);
       showSuccess(isEditMode ? 'APY configuration updated' : 'APY configuration created');
+      void invalidatePortfolioQueries(utils);
     },
     onError: (error) => showError(error, 'Failed to save APY configuration'),
   });

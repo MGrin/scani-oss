@@ -359,7 +359,7 @@ export function ManualEntryPage() {
       // so the navigation-target page refetches instead of serving stale
       // cache). `invalidatePortfolioQueries` is the centralized set; see
       // its jsdoc for why call sites must go through it.
-      await invalidatePortfolioQueries(utils);
+      await invalidatePortfolioQueries(utils, { refetchType: 'all' });
       navigate(V2_ROUTES.holdings);
     },
     onError: (err) => showError(err, 'Creating holdings'),

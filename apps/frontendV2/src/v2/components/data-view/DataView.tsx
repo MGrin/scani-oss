@@ -124,6 +124,14 @@ export function DataView<T>({
         ? Array.from(dv.groupedData.entries()).map(([label, items]) => renderContent(items, label))
         : !isEmpty && renderContent(dv.filteredData)}
 
+      {/* Bottom spacer reserves space under the (fixed) selection bar so
+          the last rows aren't hidden behind it — otherwise the user can't
+          scroll far enough to reach/select them on mobile. ~7rem covers
+          the bar's height (~4rem) plus breathing room. */}
+      {dv.selectedIds.size > 0 && renderBulkActions && (
+        <div aria-hidden="true" className="h-28 lg:h-20" />
+      )}
+
       {/* Bulk action bar — pinned above the mobile bottom nav via fixed
           positioning so it stays put when iOS toggles the visual viewport
           (keyboard open/close). On desktop (no MobileNav), it sticks at

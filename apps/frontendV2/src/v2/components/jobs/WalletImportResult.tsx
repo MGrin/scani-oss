@@ -183,7 +183,7 @@ function HoldingsReviewTable({
         // UX guard only — stamp failures shouldn't block navigation.
       }
     }
-    await invalidatePortfolioQueries(utils);
+    await invalidatePortfolioQueries(utils, { refetchType: 'all' });
     navigate(V2_ROUTES.holdings);
   };
 

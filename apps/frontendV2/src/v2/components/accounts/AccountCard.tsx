@@ -45,12 +45,31 @@ export function AccountCard({
             {typeName && <span className="ml-2 text-muted-foreground/60">{typeName}</span>}
           </p>
         </div>
-        <Checkbox
-          checked={isSelected}
-          onCheckedChange={() => onSelect(item.id)}
-          onClick={(e) => e.stopPropagation()}
-          className="h-4 w-4"
-        />
+        {/* Padded tap target keeps the checkbox easy to hit on mobile
+            without accidentally navigating to the detail page. <label>
+            semantics expand the click area naturally and side-steps the
+            nested-button issue (DataViewCards wraps each card in a
+            <button>). stopPropagation/preventDefault on the handler
+            keeps the row-level navigation from firing on checkbox taps. */}
+        {/* biome-ignore lint/a11y/noLabelWithoutControl: label expands hit area for the nested Checkbox; click handler delegates selection. */}
+        <label
+          aria-label="Toggle selection"
+          onClick={(e) => {
+            e.stopPropagation();
+            e.preventDefault();
+            onSelect(item.id);
+          }}
+          onKeyDown={(e) => {
+            if (e.key === ' ' || e.key === 'Enter') {
+              e.stopPropagation();
+              e.preventDefault();
+              onSelect(item.id);
+            }
+          }}
+          className="-m-2 p-2 rounded-md hover:bg-accent/70 cursor-pointer"
+        >
+          <Checkbox checked={isSelected} onClick={(e) => e.stopPropagation()} className="h-4 w-4" />
+        </label>
       </div>
 
       <p className="text-xl font-bold tabular-nums mt-3">

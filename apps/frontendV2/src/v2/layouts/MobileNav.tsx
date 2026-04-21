@@ -1,5 +1,6 @@
 import type { LucideIcon } from 'lucide-react';
 import { LayoutDashboard, Menu, PieChart, PlusCircle, Wallet } from 'lucide-react';
+import { useEffect, useState } from 'react';
 import { NavLink } from 'react-router-dom';
 import { cn } from '@/lib/utils';
 import { V2_ROUTES } from '../lib/routes';
@@ -24,12 +25,54 @@ interface MobileNavProps {
   actionRequiredCount?: number;
 }
 
+/**
+ * iOS PWA softkeyboards shrink the visual viewport while leaving the
+ * layout viewport unchanged. That means a `position: fixed` nav pinned
+ * to the layout-viewport bottom ends up floating *above* the keyboard,
+ * and on dismissal iOS animates the visual viewport back to full height
+ * with a brief delay — making the nav appear to "jump up" for a frame
+ * or two. Hiding the nav while the keyboard is open sidesteps both
+ * problems: users can't see the nav (so no overlap on inputs) and
+ * there's nothing to jump.
+ *
+ * Threshold of 150px covers keyboard heights on every iOS device
+ * (~260-340px) while ignoring minor viewport changes like the URL bar
+ * collapse in browser tabs.
+ */
+function useKeyboardOpen(): boolean {
+  const [open, setOpen] = useState(false);
+
+  useEffect(() => {
+    const vv = typeof window !== 'undefined' ? window.visualViewport : null;
+    if (!vv) return;
+
+    const check = () => {
+      const heightDiff = window.innerHeight - vv.height;
+      setOpen(heightDiff > 150);
+    };
+    check();
+    vv.addEventListener('resize', check);
+    vv.addEventListener('scroll', check);
+    return () => {
+      vv.removeEventListener('resize', check);
+      vv.removeEventListener('scroll', check);
+    };
+  }, []);
+
+  return open;
+}
+
 export function MobileNav({ onMorePress, actionRequiredCount = 0 }: MobileNavProps) {
   const hasActionRequired = actionRequiredCount > 0;
+  const keyboardOpen = useKeyboardOpen();
   return (
     <nav
       aria-label="Primary"
-      className="lg:hidden fixed bottom-0 inset-x-0 z-40 flex items-center justify-around h-14 border-t border-border bg-background"
+      aria-hidden={keyboardOpen}
+      className={cn(
+        'lg:hidden fixed bottom-0 inset-x-0 z-40 flex items-center justify-around h-14 border-t border-border bg-background transition-transform duration-150',
+        keyboardOpen && 'translate-y-full pointer-events-none'
+      )}
       style={{
         paddingBottom: 'env(safe-area-inset-bottom, 0px)',
         height: 'calc(3.5rem + env(safe-area-inset-bottom, 0px))',

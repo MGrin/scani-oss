@@ -125,7 +125,18 @@ export function DataViewTable<T>({
                   className={cn(onRowClick && 'cursor-pointer')}
                   onClick={() => onRowClick?.(item)}
                 >
-                  <TableCell>
+                  {/* The whole cell is a hit target for selection, not
+                      just the ~16px checkbox. Stopping propagation on the
+                      cell (and padding it out) prevents the common
+                      mis-tap where the user aims at the checkbox and
+                      instead triggers the row-level navigation. */}
+                  <TableCell
+                    className="cursor-pointer"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onToggleSelect(id);
+                    }}
+                  >
                     <Checkbox
                       checked={isSelected}
                       onCheckedChange={() => onToggleSelect(id)}
