@@ -49,8 +49,10 @@ export function AccountCard({
             without accidentally navigating to the detail page. <label>
             semantics expand the click area naturally and side-steps the
             nested-button issue (DataViewCards wraps each card in a
-            <button>). stopPropagation/preventDefault on the handler
-            keeps the row-level navigation from firing on checkbox taps. */}
+            <button>). The Checkbox is purely visual
+            (`pointer-events-none`) so every click — direct on the box
+            or in the padding — is handled by the <label>, which then
+            stops propagation to the outer card button. */}
         {/* biome-ignore lint/a11y/noLabelWithoutControl: label expands hit area for the nested Checkbox; click handler delegates selection. */}
         <label
           aria-label="Toggle selection"
@@ -68,7 +70,7 @@ export function AccountCard({
           }}
           className="-m-2 p-2 rounded-md hover:bg-accent/70 cursor-pointer"
         >
-          <Checkbox checked={isSelected} onClick={(e) => e.stopPropagation()} className="h-4 w-4" />
+          <Checkbox checked={isSelected} className="h-4 w-4 pointer-events-none" />
         </label>
       </div>
 

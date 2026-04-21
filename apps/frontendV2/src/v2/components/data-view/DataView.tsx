@@ -109,6 +109,21 @@ export function DataView<T>({
         />
       </div>
 
+      {/* Bulk action bar — rendered inline as a banner right above the
+          list, not as a floating/fixed overlay. The previous fixed-at-
+          bottom placement obscured rows the user was trying to select
+          and was especially bad on short viewports where it covered 2-3
+          rows at once. Inline keeps it out of the way; scrolling back
+          up shows it again. */}
+      {dv.selectedIds.size > 0 && renderBulkActions && (
+        <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border bg-background p-3 shadow-sm">
+          <span className="text-sm font-medium shrink-0">{dv.selectedIds.size} selected</span>
+          <div className="flex flex-wrap items-center justify-end gap-2">
+            {renderBulkActions(dv.selectedIds, dv.clearSelection)}
+          </div>
+        </div>
+      )}
+
       {isEmpty &&
         (emptyState ?? (
           <EmptyState
@@ -123,29 +138,6 @@ export function DataView<T>({
       {!isEmpty && dv.groupedData
         ? Array.from(dv.groupedData.entries()).map(([label, items]) => renderContent(items, label))
         : !isEmpty && renderContent(dv.filteredData)}
-
-      {/* Bottom spacer reserves space under the (fixed) selection bar so
-          the last rows aren't hidden behind it — otherwise the user can't
-          scroll far enough to reach/select them on mobile. ~7rem covers
-          the bar's height (~4rem) plus breathing room. */}
-      {dv.selectedIds.size > 0 && renderBulkActions && (
-        <div aria-hidden="true" className="h-28 lg:h-20" />
-      )}
-
-      {/* Bulk action bar — pinned above the mobile bottom nav via fixed
-          positioning so it stays put when iOS toggles the visual viewport
-          (keyboard open/close). On desktop (no MobileNav), it sticks at
-          the bottom of the content area. */}
-      {dv.selectedIds.size > 0 && renderBulkActions && (
-        <div className="fixed inset-x-0 z-30 px-4 bottom-[calc(3.5rem+env(safe-area-inset-bottom,0px))] lg:sticky lg:inset-x-auto lg:bottom-0 lg:px-0">
-          <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border bg-background p-3 shadow-lg">
-            <span className="text-sm font-medium shrink-0">{dv.selectedIds.size} selected</span>
-            <div className="flex flex-wrap items-center justify-end gap-2">
-              {renderBulkActions(dv.selectedIds, dv.clearSelection)}
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

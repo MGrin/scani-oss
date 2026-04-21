@@ -55,8 +55,10 @@ export function HoldingCard({ item, isSelected, onSelect }: HoldingCardProps) {
         </div>
         {/* Padded tap target — keeps the checkbox easy to hit on mobile
             without accidentally navigating to the detail page. <label>
-            semantics expand the click area without nesting a button
-            inside the DataViewCards <button> wrapper. */}
+            expands the click area without nesting a button inside the
+            DataViewCards <button> wrapper. Checkbox is pointer-events-
+            none so every click inside the label is funneled through the
+            label's onClick (which stops propagation to the card). */}
         {/* biome-ignore lint/a11y/noLabelWithoutControl: label expands hit area for the nested Checkbox; click handler delegates selection. */}
         <label
           aria-label="Toggle selection"
@@ -74,7 +76,7 @@ export function HoldingCard({ item, isSelected, onSelect }: HoldingCardProps) {
           }}
           className="-m-2 p-2 rounded-md hover:bg-accent/70 cursor-pointer"
         >
-          <Checkbox checked={isSelected} onClick={(e) => e.stopPropagation()} className="h-4 w-4" />
+          <Checkbox checked={isSelected} className="h-4 w-4 pointer-events-none" />
         </label>
       </div>
       <p className="text-xs text-muted-foreground truncate mb-3">{item.token.name}</p>
