@@ -114,6 +114,18 @@ resource "terraform_data" "data_provider_machine_count" {
     command     = <<-EOT
       set -euo pipefail
       app="${fly_app.data_provider.name}"
+      # On the very first apply the Fly app has been freshly created
+      # but deploy-fly hasn't run yet, so there are zero machines.
+      # `flyctl scale count` needs at least one existing machine to
+      # use as a template ("could not create a fly.toml from any
+      # machines"), so skip both the standby purge and the scale on
+      # the empty case — the next apply (after deploy-fly creates
+      # the first machine) will enforce the count.
+      machine_count=$(flyctl machine list --app "$app" --json | jq 'length')
+      if [ "$machine_count" -eq 0 ]; then
+        echo "No machines on $app yet — skipping count enforcement (deploy-fly will create them)"
+        exit 0
+      fi
       for mid in $(flyctl machine list --app "$app" --json \
           | jq -r '.[] | select(.config.standbys != null and (.config.standbys | length) > 0) | .id'); do
         echo "Destroying standby machine $mid on $app"
