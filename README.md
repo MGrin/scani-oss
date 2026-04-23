@@ -162,17 +162,20 @@ scani/
 
 3. **Start local infrastructure**
 
-   The easiest path is docker-compose — it brings up Postgres (`localhost:5433`), Redis (`localhost:6380`), and Mailpit (SMTP `localhost:1026`, UI `http://localhost:8026`):
+   The easiest path is docker-compose — it brings up Postgres (`localhost:5433`), Redis (`localhost:6380`), Mailpit (SMTP `localhost:1026`, UI `http://localhost:8026`), and MinIO (`localhost:9000`, console `http://localhost:9001`):
 
    ```bash
-   docker compose up -d postgres redis mailpit
+   docker compose up -d postgres redis mailpit minio
    ```
 
-   For full-stack containerized testing (backend + worker inside Docker):
+   For full-stack containerized testing (backend + worker + frontends + data-provider inside Docker):
 
    ```bash
-   docker compose --profile full up -d --build
+   bun dev:stack          # syncs per-app .env, then `docker compose --profile full up -d --build`
+   bun dev:stack:down     # stops + removes containers (volumes preserved)
    ```
+
+   Auth emails (magic-link, OTP, verification) land in Mailpit at `http://localhost:8026`.
 
 4. **Apply database migrations**
 
@@ -192,10 +195,8 @@ scani/
    bun dev
    ```
    This starts:
-   - Backend API server on `http://localhost:3001`
-   - WebSocket server on `ws://localhost:3002`
+   - Backend API on `http://localhost:3001` (HTTP + WebSocket on the same port)
    - Frontend web app on `http://localhost:5173`
-   - Landing page on `http://localhost:5174`
 
    **Option 2: Start servers individually**
    ```bash

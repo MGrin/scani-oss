@@ -111,22 +111,68 @@ Admin → backend actions are HMAC-signed with `ADMIN_JOBS_HMAC_SECRET`.
 
 `docker-compose.yml` uses non-default host ports to avoid clashes:
 
-- Postgres `localhost:5433`
-- Redis `localhost:6380`
-- Backend (full-stack profile) `localhost:3002`
-- Mailpit SMTP `localhost:1026`, UI `http://localhost:8026`
+| Service | Host port | Notes |
+|---|---|---|
+| Postgres | `localhost:5433` | `scani-postgres` container |
+| Redis | `localhost:6380` | `scani-redis` container |
+| Mailpit SMTP | `localhost:1026` | Submit mail here |
+| Mailpit UI | `http://localhost:8026` | Inspect dev emails |
+| MinIO (S3) | `localhost:9000` | R2 replacement |
+| MinIO console | `http://localhost:9001` | `minioadmin` / `minioadmin` |
+| data-provider | `localhost:8082` | Tier-1 sidecar (incl. email.send tRPC) |
+| backend | `localhost:3001` | Elysia API |
+| frontendV2 | `http://localhost:5173` | Main SPA |
+| landing | `http://localhost:5174` | |
+| admin | `http://localhost:5175` | Passkey-gated; `ADMIN_DEV_BYPASS=1` in dev |
+| cloud-frontend | `http://localhost:5176` | Tier-2 console |
 
-Infra only (recommended — run `bun dev` against it):
+### Starting the stack
+
+Full stack (`backend` + `worker` + all frontends in containers, recommended):
 
 ```bash
-docker compose up -d postgres redis mailpit
+bun dev:stack          # runs scripts/sync-env.ts, then `docker compose --profile full up -d --build`
+bun dev:stack:down     # stops and removes compose containers (volumes preserved)
 ```
 
-Full stack (backend + worker inside containers):
+Infra only (run `bun dev` for apps on the host against containerized services):
 
 ```bash
-docker compose --profile full up -d --build
+docker compose up -d postgres redis mailpit minio
+bun install
+bun dev                # backend + frontendV2 concurrently; other apps via bun dev:admin / dev:cron / dev:data-provider
 ```
+
+### Mail in dev
+
+All auth emails (magic-link, OTP, verification) land in Mailpit at
+`http://localhost:8026`. Flow: `backend → email.send tRPC → data-provider → SMTP → mailpit:1025`.
+
+The `data-provider` service hardcodes `FASTMAIL_API_TOKEN: ""` in compose
+to force SMTP even when your shell / root `.env` has a real Fastmail
+token. To test Fastmail in dev, comment out that line in
+`docker-compose.yml`. For host-side `bun dev`, add
+`SMTP_URL=smtp://localhost:1026` and `SMTP_FROM=no-reply@scani.local`
+to the root `.env` and re-run `bun scripts/sync-env.ts`.
+
+### Gotchas
+
+- **Container name conflicts across Conductor workspaces.** Every workspace's
+  `docker-compose.yml` hardcodes `container_name: scani-*`, so starting the
+  stack in workspace A and then again in workspace B fails with
+  `"The container name /scani-env-sync is already in use"`. Fix: run
+  `bun dev:stack:down` in the workspace that previously booted the stack,
+  OR `docker rm $(docker ps -aq --filter "name=scani-")` to nuke all stopped
+  scani containers. Named volumes (`postgres-data`, `redis-data`, `minio-data`)
+  survive `down`, so no data loss.
+- **One-shot containers linger after clean exit.** `env-sync`, `deps`,
+  `migrate`, `minio-init` all `restart: "no"` and keep their names reserved
+  after exiting. `bun dev:stack:down` removes them; `compose up` without
+  prior `down` will hit the same name-conflict error.
+- **Host-side `bun dev` needs SMTP in root `.env`.** The containerized stack
+  overrides `SMTP_URL` via compose environment; host-side backend reads
+  `apps/backend/.env` (generated from root `.env` by `scripts/sync-env.ts`),
+  which will have no SMTP config unless you add it to root `.env` first.
 
 ## Documentation Layout
 

@@ -25,11 +25,11 @@ Services will come up in this order:
 1. `postgres`, `redis`, `mailpit` (wait for healthcheck)
 2. `migrate` — runs `bun run db:migrate` against an empty database; creates
    the 21 tables + seeds type enums, fiat tokens, institutions, and EVM chains.
-3. `backend` — Elysia HTTP server on `localhost:3002`
+3. `backend` — Elysia HTTP server on `localhost:3001`
 4. `worker` — BullMQ consumer registering 4 repeatable jobs
 
-Hit `http://localhost:3002/health/db` to confirm the backend is talking to the
-database. Then sign up at `http://localhost:3002/api/auth/sign-up/email`.
+Hit `http://localhost:3001/health/db` to confirm the backend is talking to the
+database. Then sign up at `http://localhost:3001/api/auth/sign-up/email`.
 
 ## Configuration
 
@@ -97,11 +97,16 @@ If you'd rather run the backend in `bun dev` mode and only use Docker for
 infra:
 
 ```bash
-docker compose up -d postgres redis mailpit  # no --profile flag
+docker compose up -d postgres redis mailpit minio  # no --profile flag
 bun install
 bun run db:migrate
 bun run dev
 ```
+
+Auth emails land in Mailpit at `http://localhost:8026`. Ensure the root
+`.env` has `SMTP_URL=smtp://localhost:1026` and
+`SMTP_FROM=no-reply@scani.local` before running `bun dev`, then re-run
+`bun scripts/sync-env.ts` so `apps/backend/.env` picks up the values.
 
 ## Updates
 

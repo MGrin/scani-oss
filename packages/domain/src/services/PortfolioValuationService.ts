@@ -29,6 +29,7 @@ type PortfolioValueResult = {
     value?: string;
     priceTimestamp?: Date;
     priceSource?: string;
+    isActive: boolean;
   }>;
 };
 
@@ -130,13 +131,16 @@ export class PortfolioValuationService {
     // Apply filters:
     // 1. User ownership
     // 2. Exclude hidden holdings (completely hidden from queries)
-    // 3. Exclude inactive holdings (visible but not in totals)
-    // 4. Filter out scam tokens to match HoldingRepository behavior
+    // 3. Filter out scam tokens to match HoldingRepository behavior
     // Optionally filter by account ID if provided
+    //
+    // Inactive holdings are intentionally INCLUDED here so their tokens
+    // get priced and their per-holding `value` can be displayed in
+    // lists. They're excluded only from the aggregated `totalValue` sum
+    // further down.
     const conditions = [
       eq(schema.holdings.userId, userId),
       eq(schema.holdings.isHidden, false),
-      eq(schema.holdings.isActive, true),
       lt(schema.tokens.isScamProbability, SCAM_PROBABILITY_THRESHOLD),
     ];
     if (accountId) {
@@ -149,6 +153,7 @@ export class PortfolioValuationService {
         holdingId: schema.holdings.id,
         accountId: schema.holdings.accountId,
         balance: schema.holdings.balance,
+        isActive: schema.holdings.isActive,
         tokenId: schema.tokens.id,
         tokenSymbol: schema.tokens.symbol,
         tokenName: schema.tokens.name,
@@ -194,12 +199,29 @@ export class PortfolioValuationService {
       `Pricing complete: ${priceResults.size}/${tokensToPrice.length} prices retrieved`
     );
 
-    // Fetch price metadata (timestamp and source) from database
+    // Fetch price metadata (timestamp and source) from database.
+    // The strict base-currency query misses manual prices recorded
+    // under a different base (e.g. a custom token priced in EUR while
+    // the user views in USD — `getCachedTokenPrices` converts the
+    // value on the fly via `findLatestManualPricesForTokensAnyBase`,
+    // but the metadata lookup below has to follow the same fallback
+    // or the holding comes back with `priceTimestamp`/`priceSource`
+    // undefined and the UI renders the price column as "-".
     const tokenIds = Array.from(new Set(holdings.map((h) => h.tokenId)));
     const priceMetadata = await this.tokenPriceRepository.findLatestPricesForTokens(
       tokenIds,
       baseCurrency.id
     );
+    const tokensWithoutMetadata = tokenIds.filter((id) => !priceMetadata.has(id));
+    if (tokensWithoutMetadata.length > 0) {
+      const manualAnyBase =
+        await this.tokenPriceRepository.findLatestManualPricesForTokensAnyBase(
+          tokensWithoutMetadata
+        );
+      for (const [tokenId, price] of manualAnyBase.entries()) {
+        priceMetadata.set(tokenId, price);
+      }
+    }
 
     // HIGH PRIORITY FIX: Process holdings with pure map() transformation
     // This prevents accidental N+1 queries and makes it clear this is data transformation only
@@ -225,6 +247,7 @@ export class PortfolioValuationService {
           value,
           priceTimestamp: priceInfo?.timestamp,
           priceSource: priceInfo?.source || undefined,
+          isActive: holding.isActive,
         };
       } catch (error) {
         this.logger.warn(
@@ -245,13 +268,16 @@ export class PortfolioValuationService {
           value: '0',
           priceTimestamp: undefined,
           priceSource: undefined,
+          isActive: holding.isActive,
         };
       }
     });
 
-    // Calculate total value separately (pure aggregation)
+    // Total value aggregates only active holdings. Inactive holdings
+    // are returned above (with prices, so lists can display their
+    // per-holding value), but excluded from the summed portfolio total.
     const totalValue = portfolioHoldings.reduce(
-      (sum, holding) => sum.add(new Decimal(holding.value)),
+      (sum, holding) => (holding.isActive ? sum.add(new Decimal(holding.value)) : sum),
       new Decimal(0)
     );
 

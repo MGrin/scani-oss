@@ -196,10 +196,15 @@ services:
       BETTER_AUTH_SECRET: dev_cloud_better_auth_secret_change_me_not_prod_safe
       BETTER_AUTH_URL: http://localhost:8082
       CLOUD_FRONTEND_ORIGIN: http://localhost:5176
-      # Fastmail — optional in dev. When unset, the cloud-frontend's
-      # Better-Auth flow logs OTPs / magic links to the data-provider's
-      # stdout (see apps/data-provider/src/auth/better-auth.ts:43).
-      FASTMAIL_API_TOKEN: ${FASTMAIL_API_TOKEN:-}
+      # Fastmail is intentionally disabled in dev so magic-link / OTP /
+      # verification emails from BOTH the cloud-frontend's own Better-Auth
+      # flow AND the backend's email.send tRPC land in Mailpit (SMTP_URL
+      # below). Root .env / shell FASTMAIL_API_TOKEN is overridden to an
+      # empty string here — the data-provider's email router treats empty
+      # as "not configured" and falls through to SMTP_URL. To test
+      # Fastmail in dev, comment this line out and ensure FASTMAIL_API_TOKEN
+      # is set in root .env or your shell.
+      FASTMAIL_API_TOKEN: ""
       # Backend's Better-Auth ships every email through the data-provider
       # via @scani/cloud-client/adapters/email → email.send tRPC. With no
       # Fastmail token and no SMTP_URL set, that mutation throws and the
