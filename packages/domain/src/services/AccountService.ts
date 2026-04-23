@@ -131,8 +131,6 @@ export class AccountService extends BaseService {
     }
 
     const holdings = await this.holdingRepository.findByUser(userId);
-    // Filter out inactive holdings from calculations
-    const activeHoldings = holdings.filter((h) => h.isActive);
 
     // Get portfolio value for ALL holdings to get prices
     const portfolioValue = await this.portfolioService.getUserPortfolioValue(
@@ -146,8 +144,12 @@ export class AccountService extends BaseService {
     const accountIds = accounts.map((a) => a.id);
     const groupsMap = await this.groupRepository.findGroupsForAccounts(accountIds);
 
-    const holdingsByAccount = new Map<string, typeof activeHoldings>();
-    for (const holding of activeHoldings) {
+    // Group ALL holdings (active + inactive) by account so inactive
+    // holdings still contribute to holdingsCount and keep accounts with
+    // only inactive holdings from being hidden as "empty" in the UI.
+    // Active-only filtering is applied to totalValue below.
+    const holdingsByAccount = new Map<string, typeof holdings>();
+    for (const holding of holdings) {
       if (!holdingsByAccount.has(holding.accountId)) {
         holdingsByAccount.set(holding.accountId, []);
       }
@@ -155,7 +157,7 @@ export class AccountService extends BaseService {
     }
 
     // Extract token prices using helper method
-    const tokenIds = [...new Set(activeHoldings.map((h) => h.tokenId))];
+    const tokenIds = [...new Set(holdings.map((h) => h.tokenId))];
     const tokens = await this.tokenRepository.findByIds(tokenIds);
     const tokenMap = new Map(tokens.map((t) => [t.id, t]));
 
@@ -165,9 +167,11 @@ export class AccountService extends BaseService {
       const accountHoldings = holdingsByAccount.get(account.id) || [];
       const holdingsCount = accountHoldings.length;
 
-      // Calculate total value across all holdings in this account
+      // Total value sums only active holdings — inactive ones are
+      // visible in lists but excluded from aggregated portfolio value.
       let totalValue = new Decimal(0);
       for (const holding of accountHoldings) {
+        if (!holding.isActive) continue;
         const token = tokenMap.get(holding.tokenId);
         if (token) {
           const price = priceMap.get(token.symbol) || '0';

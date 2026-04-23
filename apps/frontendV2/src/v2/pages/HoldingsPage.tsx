@@ -55,6 +55,11 @@ function getHoldingColumns(currency: string): ColumnDef<HoldingWithDetails>[] {
           >
             {item.token.typeCode}
           </Badge>
+          {item.isActive === false && (
+            <Badge variant="secondary" className="text-[10px] px-1.5 py-0">
+              inactive
+            </Badge>
+          )}
         </div>
       ),
     },

@@ -52,6 +52,11 @@ export function HoldingCard({ item, isSelected, onSelect }: HoldingCardProps) {
           >
             {item.token.typeCode}
           </Badge>
+          {item.isActive === false && (
+            <Badge variant="secondary" className="text-[10px] px-1.5 py-0">
+              inactive
+            </Badge>
+          )}
         </div>
         {/* Padded tap target — keeps the checkbox easy to hit on mobile
             without accidentally navigating to the detail page. <label>
