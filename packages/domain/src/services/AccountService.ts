@@ -167,11 +167,15 @@ export class AccountService extends BaseService {
       const accountHoldings = holdingsByAccount.get(account.id) || [];
       const holdingsCount = accountHoldings.length;
 
-      // Total value sums only active holdings — inactive ones are
-      // visible in lists but excluded from aggregated portfolio value.
+      // Account-level totalValue sums ALL holdings (active + inactive).
+      // Rationale: the account card answers "what's in this account" —
+      // users expect the value of an inactive private-equity holding to
+      // still show up against its account. The portfolio-wide aggregated
+      // totals (dashboard, asset allocation) remain active-only via
+      // PortfolioValuationService, which is the "liquid portfolio value"
+      // number that inactive holdings are designed to exclude.
       let totalValue = new Decimal(0);
       for (const holding of accountHoldings) {
-        if (!holding.isActive) continue;
         const token = tokenMap.get(holding.tokenId);
         if (token) {
           const price = priceMap.get(token.symbol) || '0';

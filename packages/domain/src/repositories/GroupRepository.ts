@@ -470,13 +470,18 @@ export class GroupRepository extends BaseRepository<Group, NewGroup> {
         accountIds.map((id) => sql`${id}::uuid`),
         sql`, `
       );
+      // "Visible" here means non-hidden only. Inactive holdings are still
+      // user-visible (they're just excluded from the aggregated portfolio
+      // value) so they must count toward the "every visible holding is in
+      // this group" rule — otherwise an account whose sole holding is
+      // inactive could never be added to a group, because the account
+      // would appear to have zero countable holdings after the filter.
       await database.execute(sql`
         INSERT INTO account_groups (account_id, group_id)
         SELECT h.account_id, hg.group_id
         FROM holding_groups hg
         INNER JOIN holdings h
           ON h.id = hg.holding_id
-         AND h.is_active = true
          AND h.is_hidden = false
         WHERE h.account_id IN (${accountIdsLiteral})
         GROUP BY h.account_id, hg.group_id
@@ -484,7 +489,6 @@ export class GroupRepository extends BaseRepository<Group, NewGroup> {
           SELECT COUNT(*)
           FROM holdings sub
           WHERE sub.account_id = h.account_id
-            AND sub.is_active = true
             AND sub.is_hidden = false
         )
       `);
@@ -520,7 +524,11 @@ export class GroupRepository extends BaseRepository<Group, NewGroup> {
   /**
    * Find all visible holding IDs that belong to a set of accounts.
    * Used when the caller wants to propagate an account-level group
-   * operation down to the underlying holdings.
+   * operation down to the underlying holdings. "Visible" here means
+   * non-hidden — inactive holdings are still visible in the UI (they
+   * just don't contribute to the aggregated portfolio value) so they
+   * must be included, otherwise assigning a group to an account that
+   * only has inactive holdings would be a silent no-op.
    */
   async findVisibleHoldingIdsForAccounts(
     accountIds: string[],
@@ -533,11 +541,7 @@ export class GroupRepository extends BaseRepository<Group, NewGroup> {
         .select({ id: schema.holdings.id })
         .from(schema.holdings)
         .where(
-          and(
-            inArray(schema.holdings.accountId, accountIds),
-            eq(schema.holdings.isActive, true),
-            eq(schema.holdings.isHidden, false)
-          )
+          and(inArray(schema.holdings.accountId, accountIds), eq(schema.holdings.isHidden, false))
         );
       return rows.map((r) => r.id);
     } catch (error) {
