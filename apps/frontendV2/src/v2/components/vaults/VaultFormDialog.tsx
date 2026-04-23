@@ -12,15 +12,9 @@ import {
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
 import { showError, showSuccess } from '@/hooks/use-toast';
 import { trpc } from '@/lib/trpc';
+import { FiatCurrencySelect } from '@/v2/components/shared/FiatCurrencySelect';
 import { invalidatePortfolioQueries } from '@/v2/hooks/invalidatePortfolioQueries';
 
 const COLORS = [
@@ -261,22 +255,13 @@ export function VaultFormDialog({ open, onOpenChange, vaultId }: VaultFormDialog
                   allowNegative={false}
                   disabled={isPending}
                 />
-                <Select
+                <FiatCurrencySelect
                   value={currencyId}
-                  onValueChange={setCurrencyId}
+                  onChange={setCurrencyId}
+                  variant="compact"
+                  placeholder="—"
                   disabled={isPending || currencyOptions.length === 0}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="—" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {currencyOptions.map((c) => (
-                      <SelectItem key={c.id} value={c.id}>
-                        {c.symbol}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                />
               </div>
               {isEditMode && vault && currencyId !== vault.currencyId && (
                 <p className="text-[11px] text-amber-600 dark:text-amber-400">

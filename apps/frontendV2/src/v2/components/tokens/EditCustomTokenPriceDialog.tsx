@@ -12,17 +12,11 @@ import {
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
 import { showError, showSuccess } from '@/hooks/use-toast';
 import { trpc } from '@/lib/trpc';
 import { invalidatePortfolioQueries } from '../../hooks/invalidatePortfolioQueries';
+import { FiatCurrencySelect } from '../shared/FiatCurrencySelect';
 
 interface EditCustomTokenPriceDialogProps {
   open: boolean;
@@ -55,7 +49,6 @@ export function EditCustomTokenPriceDialog({
   currentBaseCurrency,
 }: EditCustomTokenPriceDialogProps) {
   const utils = trpc.useUtils();
-  const { data: supportedCurrencies } = trpc.users.getSupportedCurrencies.useQuery();
   const { data: userBaseCurrency } = trpc.users.getBaseCurrency.useQuery();
   const [newPrice, setNewPrice] = useState('');
   const [baseCurrencyCode, setBaseCurrencyCode] = useState('');
@@ -149,18 +142,13 @@ export function EditCustomTokenPriceDialog({
             </div>
             <div>
               <Label className="text-xs">Currency</Label>
-              <Select value={baseCurrencyCode} onValueChange={setBaseCurrencyCode}>
-                <SelectTrigger>
-                  <SelectValue placeholder="—" />
-                </SelectTrigger>
-                <SelectContent>
-                  {(supportedCurrencies ?? []).map((c) => (
-                    <SelectItem key={c.id} value={c.symbol}>
-                      {c.symbol}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <FiatCurrencySelect
+                value={baseCurrencyCode}
+                onChange={setBaseCurrencyCode}
+                valueField="symbol"
+                variant="compact"
+                placeholder="—"
+              />
             </div>
           </div>
 

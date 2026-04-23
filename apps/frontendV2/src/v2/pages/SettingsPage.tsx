@@ -5,24 +5,17 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useAuth } from '@/contexts/AuthContext';
 import { showError, showSuccess } from '@/hooks/use-toast';
 import { trpc } from '@/lib/trpc';
 import { ConfirmDialog } from '../components/shared/ConfirmDialog';
+import { FiatCurrencySelect } from '../components/shared/FiatCurrencySelect';
 import { useJobStatus } from '../hooks/useJobStatus';
 import { V2_ROUTES } from '../lib/routes';
 
 export function SettingsPage() {
   const { data: user, isLoading: userLoading } = trpc.users.getCurrent.useQuery();
-  const { data: currencies } = trpc.users.getSupportedCurrencies.useQuery();
   const utils = trpc.useUtils();
   const navigate = useNavigate();
   const { signOut } = useAuth();
@@ -141,18 +134,7 @@ export function SettingsPage() {
         <CardContent className="space-y-4">
           <div className="space-y-2">
             <Label htmlFor="currency">Base Currency</Label>
-            <Select value={baseCurrencyId} onValueChange={setBaseCurrencyId}>
-              <SelectTrigger id="currency">
-                <SelectValue placeholder="Select currency" />
-              </SelectTrigger>
-              <SelectContent>
-                {currencies?.map((c) => (
-                  <SelectItem key={c.id} value={c.id}>
-                    {c.symbol} — {c.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <FiatCurrencySelect id="currency" value={baseCurrencyId} onChange={setBaseCurrencyId} />
           </div>
         </CardContent>
       </Card>

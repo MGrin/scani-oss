@@ -21,6 +21,7 @@ import {
 import { Textarea } from '@/components/ui/textarea';
 import { showError, showSuccess } from '@/hooks/use-toast';
 import { trpc } from '@/lib/trpc';
+import { FiatCurrencySelect } from '../shared/FiatCurrencySelect';
 
 type CustomToken = Awaited<
   ReturnType<ReturnType<typeof trpc.tokens.createCustom.useMutation>['mutateAsync']>
@@ -45,7 +46,6 @@ export function CreateCustomTokenDialog({
   initialSymbol,
 }: CreateCustomTokenDialogProps) {
   const utils = trpc.useUtils();
-  const { data: supportedCurrencies } = trpc.users.getSupportedCurrencies.useQuery();
   const { data: userBaseCurrency } = trpc.users.getBaseCurrency.useQuery();
   const [symbol, setSymbol] = useState(initialSymbol ?? '');
   const [name, setName] = useState('');
@@ -180,18 +180,13 @@ export function CreateCustomTokenDialog({
             </div>
             <div>
               <Label className="text-xs">Currency</Label>
-              <Select value={baseCurrencyCode} onValueChange={setBaseCurrencyCode}>
-                <SelectTrigger>
-                  <SelectValue placeholder="—" />
-                </SelectTrigger>
-                <SelectContent>
-                  {(supportedCurrencies ?? []).map((c) => (
-                    <SelectItem key={c.id} value={c.symbol}>
-                      {c.symbol}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <FiatCurrencySelect
+                value={baseCurrencyCode}
+                onChange={setBaseCurrencyCode}
+                valueField="symbol"
+                variant="compact"
+                placeholder="—"
+              />
             </div>
           </div>
 
