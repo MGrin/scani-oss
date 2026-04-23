@@ -1,4 +1,4 @@
-import { LogOut, Trash2 } from 'lucide-react';
+import { LogOut, Monitor, Trash2 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
@@ -179,6 +179,8 @@ export function SettingsPage() {
         </CardContent>
       </Card>
 
+      <SessionsCard />
+
       <Card className="border-destructive/50">
         <CardHeader>
           <CardTitle className="text-base text-destructive">Danger Zone</CardTitle>
@@ -213,4 +215,150 @@ export function SettingsPage() {
       />
     </div>
   );
+}
+
+/**
+ * "Devices & sessions" card.
+ *
+ * Surfaces the user's active Better-Auth sessions so they can audit
+ * other devices and revoke any they don't recognize. The current device
+ * is flagged and its revoke control disabled (the standard Sign out
+ * button above already covers logging out *here*).
+ */
+function SessionsCard() {
+  const utils = trpc.useUtils();
+  const sessionsQuery = trpc.sessions.list.useQuery(undefined, {
+    refetchOnWindowFocus: true,
+  });
+  const revokeMutation = trpc.sessions.revoke.useMutation({
+    onSuccess: () => {
+      showSuccess('Session revoked');
+      utils.sessions.list.invalidate();
+    },
+    onError: (err) => showError(err, 'Revoking session'),
+  });
+  const revokeOthersMutation = trpc.sessions.revokeOthers.useMutation({
+    onSuccess: () => {
+      showSuccess('Signed out of all other sessions');
+      utils.sessions.list.invalidate();
+    },
+    onError: (err) => showError(err, 'Signing out other sessions'),
+  });
+
+  const sessions = sessionsQuery.data ?? [];
+  const otherCount = sessions.filter((s) => !s.isCurrent).length;
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-base">Devices &amp; sessions</CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <p className="text-sm text-muted-foreground">
+          Active sign-ins on your account. Revoke any device you don't recognize.
+        </p>
+
+        {sessionsQuery.isLoading ? (
+          <div className="space-y-2">
+            <Skeleton className="h-12 w-full" />
+            <Skeleton className="h-12 w-full" />
+          </div>
+        ) : sessions.length === 0 ? (
+          <p className="text-sm text-muted-foreground">No active sessions.</p>
+        ) : (
+          <ul className="space-y-2">
+            {sessions.map((s) => (
+              <li
+                key={s.id}
+                className="flex items-center justify-between gap-3 rounded-md border border-border/60 bg-muted/30 px-3 py-2"
+              >
+                <div className="flex min-w-0 items-start gap-3">
+                  <Monitor className="h-4 w-4 mt-1 shrink-0 text-muted-foreground" />
+                  <div className="min-w-0">
+                    <div className="text-sm font-medium truncate">
+                      {summarizeUserAgent(s.userAgent)}
+                      {s.isCurrent && (
+                        <span className="ml-2 text-xs font-normal text-muted-foreground">
+                          (this device)
+                        </span>
+                      )}
+                    </div>
+                    <div className="text-xs text-muted-foreground">
+                      {s.ipAddress ?? 'unknown IP'} · last active {formatRelative(s.updatedAt)}
+                    </div>
+                  </div>
+                </div>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="text-destructive hover:text-destructive"
+                  disabled={s.isCurrent || revokeMutation.isPending}
+                  onClick={() => revokeMutation.mutate({ token: s.token })}
+                >
+                  Revoke
+                </Button>
+              </li>
+            ))}
+          </ul>
+        )}
+
+        {otherCount > 0 && (
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            disabled={revokeOthersMutation.isPending}
+            onClick={() => revokeOthersMutation.mutate()}
+          >
+            {revokeOthersMutation.isPending
+              ? 'Signing out…'
+              : `Sign out everywhere else (${otherCount})`}
+          </Button>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+/**
+ * Cheap user-agent → "Browser on OS" summary. Avoids pulling in a real
+ * UA parser dependency for what's essentially a 6-pattern decision.
+ */
+function summarizeUserAgent(ua: string | null): string {
+  if (!ua) return 'Unknown device';
+  const browser = /Edg\//.test(ua)
+    ? 'Edge'
+    : /Chrome\//.test(ua)
+      ? 'Chrome'
+      : /Firefox\//.test(ua)
+        ? 'Firefox'
+        : /Safari\//.test(ua)
+          ? 'Safari'
+          : 'Browser';
+  const os = /iPhone|iPad/.test(ua)
+    ? 'iOS'
+    : /Android/.test(ua)
+      ? 'Android'
+      : /Mac OS X/.test(ua)
+        ? 'macOS'
+        : /Windows/.test(ua)
+          ? 'Windows'
+          : /Linux/.test(ua)
+            ? 'Linux'
+            : 'Unknown OS';
+  return `${browser} on ${os}`;
+}
+
+function formatRelative(d: string | Date): string {
+  const date = typeof d === 'string' ? new Date(d) : d;
+  const diff = Date.now() - date.getTime();
+  const min = Math.floor(diff / 60_000);
+  if (min < 1) return 'just now';
+  if (min < 60) return `${min} min ago`;
+  const hr = Math.floor(min / 60);
+  if (hr < 24) return `${hr} hr ago`;
+  const day = Math.floor(hr / 24);
+  if (day < 30) return `${day} d ago`;
+  return date.toLocaleDateString();
 }

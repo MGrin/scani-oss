@@ -7,6 +7,7 @@ const env = loadEnv();
 
 import { cors } from '@elysiajs/cors';
 import { trpc } from '@elysiajs/trpc';
+import { probeDataProvider } from '@scani/cloud-client/health-probe';
 import { IntegrationManager } from '@scani/integrations';
 import { createTimer, logger, sanitizeUrl, wsLogger } from '@scani/logging';
 import { flushSentry, initSentry, captureException as sentryCapture } from '@scani/logging/sentry';
@@ -15,6 +16,28 @@ import { initializeRateLimiterRedis } from '@scani/rate-limiter';
 // Sentry is the first thing we wire up so any subsequent boot-time failure
 // reaches the error tracker instead of being lost to stdout.
 initSentry({ component: 'backend', release: env.SENTRY_RELEASE });
+
+// Fail fast if SCANI_CLOUD_URL is set but the data-provider is unreachable.
+// Otherwise misconfigs (typo, network split, dead VM) let the backend boot
+// healthy and only fail at the first user request — much harder to debug.
+// In dev (URL unset) this is a no-op.
+{
+  const probe = await probeDataProvider({ url: env.SCANI_CLOUD_URL });
+  if (!probe.ok) {
+    console.error(
+      `\n❌ Data-provider unreachable at ${env.SCANI_CLOUD_URL} after ${probe.attempts} attempt(s): ${probe.error ?? `HTTP ${probe.status}`}\n` +
+        `Backend cannot start in cloud mode without a healthy data-provider.\n` +
+        `Either fix SCANI_CLOUD_URL, restore the data-provider, or unset the env to fall back to local providers.`
+    );
+    process.exit(1);
+  }
+  if (env.SCANI_CLOUD_URL) {
+    logger.info(
+      { url: env.SCANI_CLOUD_URL, attempts: probe.attempts },
+      '☁️  Data-provider reachable'
+    );
+  }
+}
 
 import { createStandardLimiter, createStrictLimiter } from '@scani/rate-limiter';
 import { RealTimeUpdatesService } from '@scani/realtime';
@@ -67,7 +90,7 @@ logger.info(
     host: HOST,
     nodeEnv: env.NODE_ENV,
     frontendUrl: env.FRONTEND_URL,
-    externalApiMode: env.EXTERNAL_API_MODE,
+    scaniCloudUrl: env.SCANI_CLOUD_URL ?? '(local fallback)',
   },
   '🚀 Starting Scani Backend Server'
 );
@@ -388,8 +411,39 @@ app
     }
 
     try {
-      const { healthCheck: r2HealthCheck } = await import('@scani/storage');
-      checks.r2 = await r2HealthCheck();
+      // In cloud mode R2 credentials live on the data-provider, not here.
+      // Proxy the check through `${SCANI_CLOUD_URL}/health/r2` so a real
+      // storage outage shows up as `r2.ok=false` instead of being masked
+      // by a hard-coded ok. Otherwise run the legacy in-process HEAD probe.
+      if (env.SCANI_CLOUD_URL) {
+        const t0 = performance.now();
+        const ctrl = new AbortController();
+        const timer = setTimeout(() => ctrl.abort(), 3_000);
+        try {
+          const res = await fetch(`${env.SCANI_CLOUD_URL.replace(/\/$/, '')}/health/r2`, {
+            signal: ctrl.signal,
+            headers: { accept: 'application/json' },
+          });
+          const latencyMs = Math.round(performance.now() - t0);
+          if (res.ok) {
+            const upstream = (await res.json().catch(() => ({}))) as {
+              ok?: boolean;
+              latencyMs?: number;
+              error?: string;
+            };
+            checks.r2 = upstream.ok
+              ? { ok: true, latencyMs: upstream.latencyMs ?? latencyMs }
+              : { ok: false, error: upstream.error ?? 'data-provider reported r2 unhealthy' };
+          } else {
+            checks.r2 = { ok: false, error: `data-provider /health/r2 returned ${res.status}` };
+          }
+        } finally {
+          clearTimeout(timer);
+        }
+      } else {
+        const { healthCheck: r2HealthCheck } = await import('@scani/storage');
+        checks.r2 = await r2HealthCheck();
+      }
     } catch (err) {
       checks.r2 = { ok: false, error: err instanceof Error ? err.message : String(err) };
     }

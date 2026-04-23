@@ -1,3 +1,5 @@
+import { CloudPricingProvider } from '@scani/cloud-client/adapters/pricing';
+import { getCloudClient } from '@scani/cloud-client/runtime';
 import { db } from '@scani/db/connection';
 import type { NewTokenPrice, Token } from '@scani/db/schema';
 import { createComponentLogger, logger } from '@scani/logging';
@@ -114,26 +116,53 @@ export class PricingService {
     const createFailureResultBound = this.createFailureResult.bind(this);
     const convertPriceBound: ConvertPriceFn = this.convertPrice.bind(this);
 
-    const mode = (process.env.EXTERNAL_API_MODE ?? 'direct') as 'direct' | 'scani-cloud';
-    this.providers = buildPricingProviders({
-      mode,
-      rateLimiters: {
-        exchangeRate: this.exchangeRateRateLimiter,
-        coinGecko: this.coinGeckoRateLimiter,
-        defiLlama: this.defiLlamaRateLimiter,
-        finnhub: this.finnhubRateLimiter,
-      },
-      convertPrice: convertPriceBound,
-      createFailureResult: createFailureResultBound,
-      logger: (component) => createComponentLogger(component),
-      scaniCloud:
-        process.env.SCANI_CLOUD_API_URL && process.env.SCANI_CLOUD_CLIENT_TOKEN
-          ? {
-              baseUrl: process.env.SCANI_CLOUD_API_URL,
-              clientToken: process.env.SCANI_CLOUD_CLIENT_TOKEN,
-            }
-          : undefined,
-    });
+    // Route every primary provider call through the data-provider service
+    // when SCANI_CLOUD_URL is configured. This is the default across all
+    // three tiers (OSS self-hosted, semi-managed, SaaS). Direct mode is
+    // retained only as a dev escape hatch for contributors running the
+    // backend without a data-provider sidecar; production deployments set
+    // SCANI_CLOUD_URL + SCANI_CLOUD_API_KEY (validated in env.ts).
+    const cloudClient = getCloudClient();
+
+    if (cloudClient) {
+      const makeCloud = (key: Exclude<PricingProviderKey, 'googleSheets'>) =>
+        new CloudPricingProvider({ providerKey: key, client: cloudClient });
+      this.providers = buildPricingProviders({
+        mode: 'cloud',
+        rateLimiters: {
+          exchangeRate: this.exchangeRateRateLimiter,
+          coinGecko: this.coinGeckoRateLimiter,
+          defiLlama: this.defiLlamaRateLimiter,
+          finnhub: this.finnhubRateLimiter,
+        },
+        convertPrice: convertPriceBound,
+        createFailureResult: createFailureResultBound,
+        logger: (component) => createComponentLogger(component),
+        cloudProviders: {
+          exchangeRate: makeCloud('exchangeRate'),
+          coinGecko: makeCloud('coinGecko'),
+          defiLlama: makeCloud('defiLlama'),
+          finnhub: makeCloud('finnhub'),
+        },
+      });
+      pricingLogger.info(
+        { cloudUrl: process.env.SCANI_CLOUD_URL },
+        '💰 Pricing providers using data-provider (cloud mode)'
+      );
+    } else {
+      this.providers = buildPricingProviders({
+        mode: 'direct',
+        rateLimiters: {
+          exchangeRate: this.exchangeRateRateLimiter,
+          coinGecko: this.coinGeckoRateLimiter,
+          defiLlama: this.defiLlamaRateLimiter,
+          finnhub: this.finnhubRateLimiter,
+        },
+        convertPrice: convertPriceBound,
+        createFailureResult: createFailureResultBound,
+        logger: (component) => createComponentLogger(component),
+      });
+    }
 
     this.googleSheetsProvider = new GoogleSheetsProvider({
       db: db,

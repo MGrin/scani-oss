@@ -43,7 +43,8 @@ The stack reads config from `.env`. The important variables:
 | `BETTER_AUTH_SECRET` | Session cookie signing (32+ chars) |
 | `SMTP_URL` | SMTP URL for email verification |
 | `FRONTEND_URL` | Frontend origin (CORS + Better-Auth cookie scope) |
-| `EXTERNAL_API_MODE` | `direct` (your own API keys) or `scani-cloud` (Tier 2) |
+| `SCANI_CLOUD_URL` | Data-provider endpoint — self-hosted container in Tier 1, `https://api.cloud.scani.xyz` in Tier 2/3 |
+| `SCANI_CLOUD_API_KEY` | Bearer token backend/worker use to authenticate against the data-provider |
 | `AUTH_PROVIDER` | `better-auth` for self-host; `supabase` for legacy |
 | `USE_BULLMQ` | `true` for containerized worker; `false` to run everything in one process |
 | `STATE_BACKEND` | `redis` (recommended for self-host) or `memory` |
@@ -52,18 +53,43 @@ Reference all variables in `.env.example`.
 
 ## Tier 2 — cloud-assisted self-host
 
-By default you bring your own API keys for CoinGecko, Finnhub, Etherscan, etc.
-If you'd rather have Scani's cloud service proxy those calls on your behalf
-(so you don't pay for upstream API plans), set:
+By default Tier 1 self-hosts its own `data-provider` container and you bring
+your own provider API keys (CoinGecko, Finnhub, Etherscan, OpenAI, …) for
+that container to use. If you'd rather have Scani's hosted data-provider
+answer those calls for you — no provider API keys on your machine, billed
+per request — point the backend and worker at `cloud.scani.xyz`:
 
 ```
-EXTERNAL_API_MODE=scani-cloud
-SCANI_CLOUD_API_URL=https://cloud.scani.xyz
-SCANI_CLOUD_CLIENT_TOKEN=<token from https://scani.xyz/cloud/signup>
+SCANI_CLOUD_URL=https://api.cloud.scani.xyz
+SCANI_CLOUD_API_KEY=<token from https://cloud.scani.xyz/keys>
 ```
 
-*Tier 2 is not live yet.* This seam is landed so it'll drop in when the cloud
-service ships.
+Your Tier 2 stack now runs just the backend + worker (and Postgres +
+Redis). Don't deploy the `data-provider` container; it would sit idle.
+
+### Boot-time health probe
+
+When `SCANI_CLOUD_URL` is set, both the backend and the worker call
+`<url>/health` (3 attempts, 3 s timeout each) before they accept any
+traffic. If the data-provider is unreachable they exit non-zero with a
+descriptive message instead of letting every user request 5xx. Common
+causes for a probe failure:
+
+- Typo'd `SCANI_CLOUD_URL` — must be the full https URL, no trailing slash.
+- Network egress blocked from your container — open outbound 443 to
+  `api.cloud.scani.xyz`.
+- The Tier 2/3 service is down — check
+  [status.scani.xyz](https://status.scani.xyz) before chasing your config.
+
+### Local-fallback (dev only)
+
+When **both** env vars are unset, backend + worker fall back to
+in-process providers using whatever keys are present in the env
+(`OPENAI_API_KEY`, `R2_*`, `ETHERSCAN_API_KEY`, …). This is intended
+only for contributors running the backend without booting the
+`data-provider` sidecar. Production deployments must set
+`SCANI_CLOUD_URL` (validated at boot in
+`apps/backend/src/config/env.ts` + `apps/worker/src/config/env.ts`).
 
 ## Local development without Docker
 

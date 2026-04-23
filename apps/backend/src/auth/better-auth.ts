@@ -1,3 +1,5 @@
+import { createCloudEmailSender } from '@scani/cloud-client/adapters/email';
+import { getCloudClient } from '@scani/cloud-client/runtime';
 import { db } from '@scani/db';
 import {
   tokens,
@@ -76,18 +78,30 @@ export function createBetterAuth(opts: {
    */
   trustedOrigins?: string[];
 }) {
-  const fastmailSender = opts.fastmailApiToken ? createFastmailSender(opts.fastmailApiToken) : null;
-  const transporter = !fastmailSender && opts.smtpUrl ? createTransport(opts.smtpUrl) : null;
+  // Priority order: cloud > fastmail > SMTP. Cloud mode centralizes the
+  // outbound-mail secret on the data-provider (Tier 2/3 deployments),
+  // the middle tier (direct Fastmail) is what we use in production today,
+  // SMTP is the OSS self-host fallback.
+  const cloudClient = getCloudClient();
+  const cloudSender = cloudClient ? createCloudEmailSender(cloudClient) : null;
+  const fastmailSender =
+    !cloudSender && opts.fastmailApiToken ? createFastmailSender(opts.fastmailApiToken) : null;
+  const transporter =
+    !cloudSender && !fastmailSender && opts.smtpUrl ? createTransport(opts.smtpUrl) : null;
   const fromAddress = opts.smtpFrom ?? '"Scani" <welcome@scani.xyz>';
 
   const sendRendered = async (to: string, msg: EmailContent) => {
     const payload = { from: fromAddress, to, subject: msg.subject, text: msg.text, html: msg.html };
-    if (fastmailSender) {
+    if (cloudSender) {
+      await cloudSender.sendMail(payload);
+    } else if (fastmailSender) {
       await fastmailSender.sendMail(payload);
     } else if (transporter) {
       await transporter.sendMail(payload);
     } else {
-      throw new Error('No email transport configured (set FASTMAIL_API_TOKEN or SMTP_URL)');
+      throw new Error(
+        'No email transport configured (set SCANI_CLOUD_URL+SCANI_CLOUD_API_KEY, FASTMAIL_API_TOKEN, or SMTP_URL)'
+      );
     }
   };
 
@@ -112,7 +126,7 @@ export function createBetterAuth(opts: {
       );
   };
 
-  const hasEmailTransport = fastmailSender !== null || transporter !== null;
+  const hasEmailTransport = cloudSender !== null || fastmailSender !== null || transporter !== null;
 
   return betterAuth({
     baseURL: opts.baseURL,
@@ -199,6 +213,12 @@ export function createBetterAuth(opts: {
       database: {
         generateId: () => crypto.randomUUID(),
       },
+      // Distinct cookie name so this session cookie doesn't collide with
+      // the data-provider's Better-Auth cookie when both apps run on
+      // `localhost` in dev (browsers ignore port for cookie scope, so the
+      // default `better-auth.session_token` from both servers would stomp
+      // on each other and signing into one would log the other out).
+      cookiePrefix: 'scani-app',
       // Share the session cookie across app.scani.xyz ↔ api.scani.xyz.
       // SameSite=lax lets the browser forward the cookie on top-level
       // navigations (magic-link click) but not on cross-site XHR from

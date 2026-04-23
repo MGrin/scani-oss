@@ -36,6 +36,14 @@ resource "sentry_project" "worker" {
   platform     = "node"
 }
 
+resource "sentry_project" "data_provider" {
+  organization = data.sentry_organization.scani.slug
+  teams        = [sentry_team.scani.slug]
+  name         = "scani-data-provider"
+  slug         = "scani-data-provider"
+  platform     = "node"
+}
+
 resource "sentry_project" "frontend" {
   organization = data.sentry_organization.scani.slug
   teams        = [sentry_team.scani.slug]
@@ -73,6 +81,12 @@ data "sentry_key" "backend" {
 data "sentry_key" "worker" {
   organization = data.sentry_organization.scani.slug
   project      = sentry_project.worker.slug
+  first        = true
+}
+
+data "sentry_key" "data_provider" {
+  organization = data.sentry_organization.scani.slug
+  project      = sentry_project.data_provider.slug
   first        = true
 }
 

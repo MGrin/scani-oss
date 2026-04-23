@@ -1,3 +1,5 @@
+import { createCloudOGClient } from '@scani/cloud-client/adapters/og';
+import { getCloudClient } from '@scani/cloud-client/runtime';
 import { InstitutionImplementations } from '@scani/domain/features';
 import { createComponentLogger } from '@scani/logging';
 import ogs from 'open-graph-scraper';
@@ -126,7 +128,32 @@ function checkUserRateLimit(userId: string): boolean {
   return true;
 }
 
+// When the cloud client is configured, delegate the actual HTTP fetch
+// (and `open-graph-scraper` parse) to the data-provider so the SSRF
+// guard + OOM cap live next to every other outbound call. The backend
+// keeps its per-user rate gate and in-process cache — those need
+// authenticated context the data-provider doesn't have. Resolved
+// lazily so tests can swap the client via @scani/cloud-client/runtime.
+let cloudOG: ReturnType<typeof createCloudOGClient> | null | undefined;
+function resolveCloudOG(): ReturnType<typeof createCloudOGClient> | null {
+  if (cloudOG !== undefined) return cloudOG;
+  const client = getCloudClient();
+  cloudOG = client ? createCloudOGClient(client) : null;
+  return cloudOG;
+}
+
 async function extractOG(url: string): Promise<OGData> {
+  const cloud = resolveCloudOG();
+  if (cloud) {
+    const m = await cloud.fetchMetadata(url);
+    return {
+      title: m.title,
+      description: m.description,
+      siteName: m.siteName,
+      image: m.image,
+      type: m.type,
+    };
+  }
   const { html } = await fetchHtmlBounded(url);
   if (!html) return EMPTY_OG;
   const { result } = await ogs({ html });

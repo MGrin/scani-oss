@@ -12,6 +12,19 @@ export function setBetterAuthForContext(instance: BetterAuthInstance) {
   betterAuthRef = instance;
 }
 
+/**
+ * Resolved Better-Auth instance for routers that need to call the server
+ * API directly (e.g. `sessions.list` wrapping `betterAuth.api.listSessions`).
+ * Throws if the boot ordering is wrong; that's a configuration bug, not a
+ * recoverable runtime condition.
+ */
+export function getBetterAuth(): BetterAuthInstance {
+  if (!betterAuthRef) {
+    throw new Error('Better-Auth not initialized — setBetterAuthForContext must be called at boot');
+  }
+  return betterAuthRef;
+}
+
 // Request-scoped cache that lives in context - shared across all procedures in a batch
 type RequestCache = Map<string, unknown>;
 
@@ -20,6 +33,11 @@ export type Context = {
   requestId: string;
   startTime: number;
   requestCache: RequestCache; // Shared cache for all procedures in this request
+  // Raw request headers — threaded through so routers that wrap Better-
+  // Auth server APIs (e.g. sessions.list, sessions.revoke) can pass the
+  // caller's cookies straight back to `betterAuth.api.*`. Null for the
+  // synthetic context used in tests / out-of-request code paths.
+  headers: Headers | null;
 } & AuthContext;
 
 export const createContext = async (opts?: FetchCreateContextFnOptions): Promise<Context> => {
@@ -59,6 +77,7 @@ export const createContext = async (opts?: FetchCreateContextFnOptions): Promise
     requestId,
     startTime,
     requestCache, // Pass the cache to all procedures
+    headers: opts?.req?.headers ?? null,
     ...authContext,
   };
 };

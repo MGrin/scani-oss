@@ -1,0 +1,65 @@
+{
+  "name": "@scani/frontend-shared",
+  "private": true,
+  "version": "0.0.0",
+  "description": "Shared React primitives for apps/frontendV2 (main app) and apps/cloud-frontend (Tier 2 key/usage UI). Ships the Tailwind preset + CSS variables, shadcn UI components, ThemeContext, ErrorBoundary, UpdateBanner, PWA helpers, and auth/tRPC client factories — everything that wants to look and behave identically across both SPAs.",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./tailwind-preset": "./tailwind-preset.js",
+    "./styles/globals.css": "./src/styles/globals.css",
+    "./lib/cn": "./src/lib/cn.ts",
+    "./lib/pwa-utils": "./src/lib/pwa-utils.ts",
+    "./lib/create-auth-client": "./src/lib/create-auth-client.ts",
+    "./lib/create-trpc-react": "./src/lib/create-trpc-react.tsx",
+    "./contexts/ThemeContext": "./src/contexts/ThemeContext.tsx",
+    "./components/ErrorBoundary": "./src/components/ErrorBoundary.tsx",
+    "./components/UpdateBanner": "./src/components/UpdateBanner.tsx",
+    "./hooks/useAppUpdate": "./src/hooks/useAppUpdate.ts",
+    "./ui/button": "./src/ui/button.tsx",
+    "./ui/card": "./src/ui/card.tsx",
+    "./ui/input": "./src/ui/input.tsx",
+    "./ui/label": "./src/ui/label.tsx",
+    "./ui/dialog": "./src/ui/dialog.tsx",
+    "./ui/alert": "./src/ui/alert.tsx",
+    "./ui/badge": "./src/ui/badge.tsx",
+    "./ui/separator": "./src/ui/separator.tsx",
+    "./ui/skeleton": "./src/ui/skeleton.tsx",
+    "./ui/toast": "./src/ui/toast.tsx",
+    "./ui/toaster": "./src/ui/toaster.tsx",
+    "./ui/use-toast": "./src/ui/use-toast.tsx",
+    "./ui/tooltip": "./src/ui/tooltip.tsx"
+  },
+  "scripts": {
+    "lint": "biome check .",
+    "lint:fix": "biome check --write .",
+    "type-check": "tsgo --noEmit"
+  },
+  "peerDependencies": {
+    "@tanstack/react-query": "^4.44.0",
+    "@trpc/client": "^10.45.4",
+    "@trpc/react-query": "^10.45.4",
+    "better-auth": "^1.6.5",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "dependencies": {
+    "@radix-ui/react-dialog": "^1.1.15",
+    "@radix-ui/react-label": "^2.1.8",
+    "@radix-ui/react-separator": "^1.1.8",
+    "@radix-ui/react-slot": "^1.2.4",
+    "@radix-ui/react-toast": "^1.2.15",
+    "@radix-ui/react-tooltip": "^1.2.8",
+    "class-variance-authority": "^0.7.1",
+    "clsx": "^2.1.1",
+    "lucide-react": "^0.577.0",
+    "tailwind-merge": "^3.5.0"
+  },
+  "devDependencies": {
+    "@types/react": "^18.3.28",
+    "@types/react-dom": "^18.3.7",
+    "tailwindcss": "^3.4.19",
+    "tailwindcss-animate": "^1.0.7",
+    "typescript": "^5"
+  }
+}

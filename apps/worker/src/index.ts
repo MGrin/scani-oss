@@ -4,6 +4,7 @@ import { loadEnv } from './config/env';
 
 const env = loadEnv();
 
+import { probeDataProvider } from '@scani/cloud-client/health-probe';
 import { JOB_NAMES, REPEATABLE_SCHEDULES, SCANI_DLQ, SCANI_QUEUE } from '@scani/queue';
 // Import DI-registered modules so Container.get() resolves.
 import '@scani/domain/repositories';
@@ -15,6 +16,22 @@ import { initializeRateLimiterRedis } from '@scani/rate-limiter';
 
 // Sentry is the first thing we wire up so boot-time failures are tracked.
 initSentry({ component: 'worker', release: env.SENTRY_RELEASE });
+
+// Fail fast if SCANI_CLOUD_URL is set but the data-provider is unreachable.
+// Otherwise misconfigs let the worker start consuming jobs that then 5xx
+// on every chain/AI/storage call — corrupts retry budgets fast. In dev
+// (URL unset) this is a no-op.
+{
+  const probe = await probeDataProvider({ url: env.SCANI_CLOUD_URL });
+  if (!probe.ok) {
+    console.error(
+      `\n❌ Data-provider unreachable at ${env.SCANI_CLOUD_URL} after ${probe.attempts} attempt(s): ${probe.error ?? `HTTP ${probe.status}`}\n` +
+        `Worker cannot start in cloud mode without a healthy data-provider.\n` +
+        `Either fix SCANI_CLOUD_URL, restore the data-provider, or unset the env to fall back to local providers.`
+    );
+    process.exit(1);
+  }
+}
 
 import { type Job, Queue, UnrecoverableError, Worker } from 'bullmq';
 import { Redis } from 'ioredis';
@@ -37,7 +54,13 @@ const logger = createComponentLogger('worker');
 type Processor = (job: Job) => Promise<unknown>;
 
 async function main(): Promise<void> {
-  logger.info({ nodeEnv: env.NODE_ENV }, '🚀 Starting Scani worker');
+  logger.info(
+    {
+      nodeEnv: env.NODE_ENV,
+      scaniCloudUrl: env.SCANI_CLOUD_URL ?? '(local fallback)',
+    },
+    '🚀 Starting Scani worker'
+  );
 
   // DI container setup (same pattern as apps/cron and apps/backend).
   logger.info({}, '✅ DI Container initialized');

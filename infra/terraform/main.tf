@@ -1,8 +1,14 @@
 locals {
-  app_host     = "app.${var.domain}"
-  api_host     = "api.${var.domain}"
-  admin_host   = "admin.${var.domain}"
-  landing_host = var.domain
+  app_host   = "app.${var.domain}"
+  api_host   = "api.${var.domain}"
+  admin_host = "admin.${var.domain}"
+  cloud_host = "cloud.${var.domain}"
+  # Data-provider's public origin — browsers on `cloud_host` hit this
+  # subdomain for `/trpc` + `/api/auth/*`. Kept under `cloud.*` so it
+  # reads as part of the cloud-management surface, and so future tenant-
+  # scoped subdomains (e.g. `acme.cloud.scani.xyz`) can sit alongside it.
+  api_cloud_host = "api.cloud.${var.domain}"
+  landing_host   = var.domain
 }
 
 # Provider configs read tokens from environment variables; Terraform never

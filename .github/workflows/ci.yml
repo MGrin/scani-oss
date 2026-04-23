@@ -98,6 +98,8 @@ jobs:
               - 'packages/shared/**'
             storage:
               - 'packages/storage/**'
+            data-provider:
+              - 'apps/data-provider/**'
       - id: test-paths
         # Collapse per-package filter outputs into a space-separated list
         # that `bun test` accepts as positional args. If `deps` changed
@@ -115,8 +117,15 @@ jobs:
               paths="$paths packages/$p"
             fi
           done
+          # apps/data-provider has its own unit tests (auth + usage). Use
+          # its local test-preload so the @scani/db connection guard sees
+          # a usable DATABASE_URL even when the test only hashes a string.
+          dp_changed=$(echo "$FILTER_JSON" | jq -r '.["data-provider"] // "false"')
+          if [ "$dp_changed" = "true" ]; then
+            paths="$paths apps/data-provider"
+          fi
           if [ -z "$paths" ] && [ "$DEPS" = "true" ]; then
-            paths="packages/"
+            paths="packages/ apps/data-provider"
           fi
           paths=$(echo $paths | xargs)
           echo "paths=$paths" >> "$GITHUB_OUTPUT"

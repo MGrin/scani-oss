@@ -8,6 +8,5 @@ export * from './providers/defillama';
 export * from './providers/exchange-rate';
 export * from './providers/finnhub';
 export * from './providers/google-sheets';
-export * from './providers/scani-cloud';
 export * from './types';
 export * from './utils';

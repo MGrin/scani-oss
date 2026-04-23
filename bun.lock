@@ -45,6 +45,7 @@
       "dependencies": {
         "@elysiajs/cors": "^1.4.1",
         "@elysiajs/trpc": "^1.1.0",
+        "@scani/cloud-client": "workspace:*",
         "@scani/config": "workspace:*",
         "@scani/db": "workspace:*",
         "@scani/domain": "workspace:*",
@@ -76,6 +77,35 @@
         "typescript": "^5",
       },
     },
+    "apps/cloud-frontend": {
+      "name": "@scani/cloud-frontend",
+      "version": "0.0.0",
+      "dependencies": {
+        "@scani/data-provider": "workspace:*",
+        "@scani/frontend-shared": "workspace:*",
+        "@tanstack/react-query": "^4.44.0",
+        "@trpc/client": "^10.45.4",
+        "@trpc/react-query": "^10.45.4",
+        "@trpc/server": "^10.45.4",
+        "better-auth": "^1.6.5",
+        "lucide-react": "^0.577.0",
+        "react": "^18.3.1",
+        "react-dom": "^18.3.1",
+        "react-router-dom": "^6.30.3",
+        "recharts": "^3.8.1",
+        "tailwindcss-animate": "^1.0.7",
+      },
+      "devDependencies": {
+        "@types/react": "^18.3.28",
+        "@types/react-dom": "^18.3.7",
+        "@vitejs/plugin-react": "^4.7.0",
+        "autoprefixer": "^10.5.0",
+        "postcss": "^8.5.10",
+        "tailwindcss": "^3.4.19",
+        "typescript": "^5",
+        "vite": "^5.4.21",
+      },
+    },
     "apps/cron": {
       "name": "@scani/cron",
       "dependencies": {
@@ -89,6 +119,36 @@
       },
       "devDependencies": {
         "@types/bun": "latest",
+        "typescript": "^5",
+      },
+    },
+    "apps/data-provider": {
+      "name": "@scani/data-provider",
+      "dependencies": {
+        "@elysiajs/cors": "^1.4.1",
+        "@elysiajs/trpc": "^1.1.0",
+        "@scani/ai-providers": "workspace:*",
+        "@scani/config": "workspace:*",
+        "@scani/db": "workspace:*",
+        "@scani/email": "workspace:*",
+        "@scani/integrations": "workspace:*",
+        "@scani/logging": "workspace:*",
+        "@scani/pricing-providers": "workspace:*",
+        "@scani/rate-limiter": "workspace:*",
+        "@scani/storage": "workspace:*",
+        "@sentry/node": "^8.49.0",
+        "@trpc/server": "^10.45.4",
+        "better-auth": "^1.6.5",
+        "drizzle-orm": "^0.45.2",
+        "elysia": "^1.4.28",
+        "ioredis": "^5.10.1",
+        "nodemailer": "^6",
+        "open-graph-scraper": "^6.11.0",
+        "postgres": "^3.4.9",
+        "zod": "^3.25.76",
+      },
+      "devDependencies": {
+        "@types/nodemailer": "^6",
         "typescript": "^5",
       },
     },
@@ -108,6 +168,7 @@
         "@radix-ui/react-toast": "^1.2.15",
         "@radix-ui/react-tooltip": "^1.2.8",
         "@scani/backend": "workspace:*",
+        "@scani/frontend-shared": "workspace:*",
         "@scani/shared": "workspace:*",
         "@sentry/react": "^8.49.0",
         "@tanstack/react-query": "^4.44.0",
@@ -164,6 +225,7 @@
     "apps/worker": {
       "name": "@scani/worker",
       "dependencies": {
+        "@scani/cloud-client": "workspace:*",
         "@scani/config": "workspace:*",
         "@scani/cron": "workspace:*",
         "@scani/db": "workspace:*",
@@ -173,7 +235,6 @@
         "@scani/queue": "workspace:*",
         "@scani/rate-limiter": "workspace:*",
         "@scani/realtime": "workspace:*",
-        "@scani/storage": "workspace:*",
         "@sentry/node": "^8.49.0",
         "bullmq": "^5.74.1",
         "drizzle-orm": "^0.45.2",
@@ -192,6 +253,22 @@
       "version": "1.0.0",
       "dependencies": {
         "@scani/logging": "workspace:*",
+      },
+      "devDependencies": {
+        "typescript": "^5",
+      },
+    },
+    "packages/cloud-client": {
+      "name": "@scani/cloud-client",
+      "version": "1.0.0",
+      "dependencies": {
+        "@scani/ai-providers": "workspace:*",
+        "@scani/data-provider": "workspace:*",
+        "@scani/integrations": "workspace:*",
+        "@scani/logging": "workspace:*",
+        "@scani/pricing-providers": "workspace:*",
+        "@scani/storage": "workspace:*",
+        "@trpc/client": "^10.45.4",
       },
       "devDependencies": {
         "typescript": "^5",
@@ -226,6 +303,7 @@
       "version": "1.0.0",
       "dependencies": {
         "@scani/ai-providers": "workspace:*",
+        "@scani/cloud-client": "workspace:*",
         "@scani/db": "workspace:*",
         "@scani/integrations": "workspace:*",
         "@scani/logging": "workspace:*",
@@ -255,11 +333,43 @@
         "typescript": "^5",
       },
     },
+    "packages/frontend-shared": {
+      "name": "@scani/frontend-shared",
+      "version": "0.0.0",
+      "dependencies": {
+        "@radix-ui/react-dialog": "^1.1.15",
+        "@radix-ui/react-label": "^2.1.8",
+        "@radix-ui/react-separator": "^1.1.8",
+        "@radix-ui/react-slot": "^1.2.4",
+        "@radix-ui/react-toast": "^1.2.15",
+        "@radix-ui/react-tooltip": "^1.2.8",
+        "class-variance-authority": "^0.7.1",
+        "clsx": "^2.1.1",
+        "lucide-react": "^0.577.0",
+        "tailwind-merge": "^3.5.0",
+      },
+      "devDependencies": {
+        "@types/react": "^18.3.28",
+        "@types/react-dom": "^18.3.7",
+        "tailwindcss": "^3.4.19",
+        "tailwindcss-animate": "^1.0.7",
+        "typescript": "^5",
+      },
+      "peerDependencies": {
+        "@tanstack/react-query": "^4.44.0",
+        "@trpc/client": "^10.45.4",
+        "@trpc/react-query": "^10.45.4",
+        "better-auth": "^1.6.5",
+        "react": "^18.3.1",
+        "react-dom": "^18.3.1",
+      },
+    },
     "packages/integrations": {
       "name": "@scani/integrations",
       "version": "1.0.0",
       "dependencies": {
         "@noble/hashes": "^1.8.0",
+        "@scani/cloud-client": "workspace:*",
         "@scani/db": "workspace:*",
         "@scani/logging": "workspace:*",
         "@scani/pricing-providers": "workspace:*",
@@ -288,7 +398,6 @@
       "version": "1.0.0",
       "dependencies": {
         "@scani/db": "workspace:*",
-        "@scani/logging": "workspace:*",
         "@scani/rate-limiter": "workspace:*",
         "decimal.js": "^10.6.0",
         "drizzle-orm": "^0.45.2",
@@ -956,15 +1065,23 @@
 
     "@scani/backend": ["@scani/backend@workspace:apps/backend"],
 
+    "@scani/cloud-client": ["@scani/cloud-client@workspace:packages/cloud-client"],
+
+    "@scani/cloud-frontend": ["@scani/cloud-frontend@workspace:apps/cloud-frontend"],
+
     "@scani/config": ["@scani/config@workspace:packages/config"],
 
     "@scani/cron": ["@scani/cron@workspace:apps/cron"],
+
+    "@scani/data-provider": ["@scani/data-provider@workspace:apps/data-provider"],
 
     "@scani/db": ["@scani/db@workspace:packages/db"],
 
     "@scani/domain": ["@scani/domain@workspace:packages/domain"],
 
     "@scani/email": ["@scani/email@workspace:packages/email"],
+
+    "@scani/frontend-shared": ["@scani/frontend-shared@workspace:packages/frontend-shared"],
 
     "@scani/frontend-v2": ["@scani/frontend-v2@workspace:apps/frontendV2"],
 

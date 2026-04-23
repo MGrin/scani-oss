@@ -141,7 +141,7 @@ scani/
    cp apps/backend/.env.example apps/backend/.env.local
    ```
 
-   The root `.env.example` documents every variable for all three deployment tiers (self-hosted, scani-cloud proxy, SaaS on Fly+Neon+Upstash). Copy and fill in the values you need:
+   The root `.env.example` documents every variable for all three deployment tiers (OSS self-hosted with a local data-provider, semi-managed with Scani's hosted data-provider, and fully-managed SaaS on Fly+Neon+Upstash). Copy and fill in the values you need:
 
    ```bash
    # At the repo root
@@ -420,13 +420,13 @@ CI/CD lives in `.github/workflows/`:
 
 ### Environment Variables
 
-`.env.example` at the repo root documents all required variables for the three deployment tiers (self-hosted, scani-cloud proxy, SaaS on Fly+Neon+Upstash). Key groups:
+`.env.example` at the repo root documents all required variables for the three deployment tiers (OSS self-hosted with a local data-provider, semi-managed with Scani's hosted data-provider, and fully-managed SaaS on Fly+Neon+Upstash). Key groups:
 
 - `DATABASE_URL` — Neon (prod) or local Postgres
 - `REDIS_URL` — Upstash (prod) or local Redis
+- `SCANI_CLOUD_URL` + `SCANI_CLOUD_API_KEY` — where backend+worker reach the data-provider (`apps/data-provider`) that owns every outbound third-party call
 - `BETTER_AUTH_SECRET`, email config — auth
-- `OPENAI_API_KEY`, `PLAID_CLIENT_ID`, `PLAID_SECRET` — AI + Plaid
-- `R2_*` — Cloudflare R2 (object storage)
+- Provider keys (`OPENAI_API_KEY`, `ETHERSCAN_API_KEY`, `COINGECKO_API_KEY`, `R2_*`, …) — live on the data-provider, not on backend/worker
 - `ADMIN_SESSION_SECRET` (admin passkey), `ADMIN_JOBS_HMAC_SECRET` (admin→backend actions)
 
 ### Self-Hosting

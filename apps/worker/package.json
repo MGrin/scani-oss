@@ -12,6 +12,7 @@
     "type-check": "tsgo --noEmit"
   },
   "dependencies": {
+    "@scani/cloud-client": "workspace:*",
     "@scani/config": "workspace:*",
     "@scani/cron": "workspace:*",
     "@scani/db": "workspace:*",
@@ -21,7 +22,6 @@
     "@scani/queue": "workspace:*",
     "@scani/rate-limiter": "workspace:*",
     "@scani/realtime": "workspace:*",
-    "@scani/storage": "workspace:*",
     "@sentry/node": "^8.49.0",
     "bullmq": "^5.74.1",
     "drizzle-orm": "^0.45.2",

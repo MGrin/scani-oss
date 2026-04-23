@@ -19,8 +19,8 @@ import * as Sentry from '@sentry/node';
 let initialized = false;
 
 export function initSentry(opts: {
-  /** Tag emitted events so a shared Sentry project can filter backend vs worker. */
-  component?: 'backend' | 'worker';
+  /** Tag emitted events so a shared Sentry project can filter backend vs worker vs data-provider. */
+  component?: 'backend' | 'worker' | 'data-provider';
   release?: string;
 }): void {
   const dsn = process.env.SENTRY_DSN;
@@ -57,6 +57,35 @@ export function captureException(err: unknown, tags?: Record<string, string>): v
     Sentry.captureException(err, { tags });
   } catch {
     // Never let a Sentry capture failure fail the caller's error path.
+  }
+}
+
+/**
+ * Drop a breadcrumb on the active Sentry scope.
+ *
+ * Used by the cloud-client tRPC instrumentation to leave a trail of
+ * data-provider calls (route + status + duration) so when the backend
+ * later throws, the Sentry event carries the cloud-hop context.
+ *
+ * No-op when Sentry isn't initialized (dev / OSS without a DSN).
+ */
+export function addBreadcrumb(crumb: {
+  category: string;
+  message?: string;
+  level?: 'info' | 'warning' | 'error';
+  data?: Record<string, unknown>;
+}): void {
+  if (!initialized) return;
+  try {
+    Sentry.addBreadcrumb({
+      category: crumb.category,
+      message: crumb.message,
+      level: crumb.level ?? 'info',
+      data: crumb.data,
+      timestamp: Date.now() / 1000,
+    });
+  } catch {
+    // Never let a breadcrumb failure fail the caller.
   }
 }
 

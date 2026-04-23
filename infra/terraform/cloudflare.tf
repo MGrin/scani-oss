@@ -43,6 +43,20 @@ resource "cloudflare_record" "api" {
   type    = "CNAME"
   proxied = false
   ttl     = 1 # auto
+}
+
+# api.cloud.scani.xyz → scani-data-provider.fly.dev. Browsers on
+# cloud.scani.xyz call `/trpc` + `/api/auth/*` against this origin.
+# DNS-only (not proxied) so Fly terminates TLS itself via the matching
+# `fly_cert` resource; proxying through Cloudflare would require
+# re-issuing origin certs and adds an extra TLS hop for no benefit.
+resource "cloudflare_record" "api_cloud" {
+  zone_id = data.cloudflare_zone.primary.id
+  name    = "api.cloud"
+  content = "scani-data-provider.fly.dev"
+  type    = "CNAME"
+  proxied = false
+  ttl     = 1 # auto
   comment = "Fly.io backend. Grey-cloud."
 }
 
@@ -59,6 +73,18 @@ resource "cloudflare_record" "app" {
 
 # Internal admin dashboard → scani-admin Pages project. Not a public app —
 # protected by passkey auth at the application layer, nothing else runs here.
+# Cloud console (Tier 2 SaaS) → scani-cloud Pages project. Owns cloud API
+# key management + usage dashboards for semi-managed deployments.
+resource "cloudflare_record" "cloud" {
+  zone_id = data.cloudflare_zone.primary.id
+  name    = "cloud"
+  content = "scani-cloud.pages.dev"
+  type    = "CNAME"
+  proxied = true
+  ttl     = 1
+  comment = "Cloudflare Pages — scani-cloud (tier-2 console)"
+}
+
 resource "cloudflare_record" "admin" {
   zone_id = data.cloudflare_zone.primary.id
   name    = "admin"
@@ -127,6 +153,33 @@ resource "cloudflare_pages_domain" "admin" {
   account_id   = var.cloudflare_account_id
   project_name = cloudflare_pages_project.admin.name
   domain       = local.admin_host
+}
+
+# scani-cloud Pages project. Hosts cloud-frontend SPA at cloud.scani.xyz
+# for Tier 2 semi-managed customers to manage their Cloud API keys +
+# monitor per-request usage. Static build only — all dynamic calls go to
+# the data-provider (api.scani.xyz/trpc + /api/auth/*) with cookies.
+resource "cloudflare_pages_project" "cloud" {
+  account_id        = var.cloudflare_account_id
+  name              = "scani-cloud"
+  production_branch = "main"
+
+  deployment_configs {
+    preview {
+      compatibility_date  = "2025-01-01"
+      compatibility_flags = ["nodejs_compat"]
+    }
+    production {
+      compatibility_date  = "2025-01-01"
+      compatibility_flags = ["nodejs_compat"]
+    }
+  }
+}
+
+resource "cloudflare_pages_domain" "cloud" {
+  account_id   = var.cloudflare_account_id
+  project_name = cloudflare_pages_project.cloud.name
+  domain       = local.cloud_host
 }
 
 resource "cloudflare_pages_domain" "landing_apex" {

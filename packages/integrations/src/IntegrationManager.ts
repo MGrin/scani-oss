@@ -15,6 +15,9 @@
  * - Integrates with TypeDI for dependency injection
  */
 
+import type { CloudClient } from '@scani/cloud-client';
+import { CloudChainService } from '@scani/cloud-client/adapters/chains';
+import { getCloudClient } from '@scani/cloud-client/runtime';
 import { db } from '@scani/db/connection';
 import * as schema from '@scani/db/schema';
 import { createComponentLogger } from '@scani/logging';
@@ -278,9 +281,25 @@ export class IntegrationManager {
    */
   private readonly blockchainServices = new Map<string | number, IBlockchainService>();
   private initialized = false;
+  private readonly cloudClient: CloudClient | null;
 
   constructor() {
+    // Cloud routing: when SCANI_CLOUD_URL + SCANI_CLOUD_API_KEY are set
+    // every async blockchain call hops through the data-provider via
+    // CloudChainService. Local chain services still handle address
+    // validation + chain metadata (they're cheap, sync, and don't need
+    // upstream creds). Resolution lives in @scani/cloud-client/runtime
+    // so tests can swap the client via `setCloudClient(stub)` without
+    // mutating process.env.
+    this.cloudClient = getCloudClient();
+
     this.initializeBlockchainServices();
+  }
+
+  /** Wrap an inner chain service in CloudChainService when running in cloud mode. */
+  private maybeWrap(inner: IBlockchainService): IBlockchainService {
+    if (!this.cloudClient) return inner;
+    return new CloudChainService({ inner, client: this.cloudClient });
   }
 
   /**
@@ -311,7 +330,7 @@ export class IntegrationManager {
           apiKey: pricingConfig.etherscan.apiKey,
           rateLimiter: etherscanLimiter,
         });
-        this.blockchainServices.set(chainConfig.chainId, service);
+        this.blockchainServices.set(chainConfig.chainId, this.maybeWrap(service));
         logger.debug({ chain: key, chainId: chainConfig.chainId }, 'Initialized EVM chain service');
       }
     }
@@ -320,9 +339,11 @@ export class IntegrationManager {
     if (bitcoinChain?.isActive) {
       this.blockchainServices.set(
         bitcoinChain.chainId,
-        new BitcoinChainService(bitcoinChain, {
-          rateLimiter: GLOBAL_INTEGRATION_RATE_LIMITERS.bitcoin,
-        })
+        this.maybeWrap(
+          new BitcoinChainService(bitcoinChain, {
+            rateLimiter: GLOBAL_INTEGRATION_RATE_LIMITERS.bitcoin,
+          })
+        )
       );
     }
 
@@ -330,9 +351,11 @@ export class IntegrationManager {
     if (solanaChain?.isActive) {
       this.blockchainServices.set(
         solanaChain.chainId,
-        new SolanaChainService(solanaChain, {
-          rateLimiter: GLOBAL_INTEGRATION_RATE_LIMITERS.solana,
-        })
+        this.maybeWrap(
+          new SolanaChainService(solanaChain, {
+            rateLimiter: GLOBAL_INTEGRATION_RATE_LIMITERS.solana,
+          })
+        )
       );
     }
 
@@ -340,9 +363,11 @@ export class IntegrationManager {
     if (tronChain?.isActive) {
       this.blockchainServices.set(
         tronChain.chainId,
-        new TronChainService(tronChain, {
-          rateLimiter: GLOBAL_INTEGRATION_RATE_LIMITERS.tron,
-        })
+        this.maybeWrap(
+          new TronChainService(tronChain, {
+            rateLimiter: GLOBAL_INTEGRATION_RATE_LIMITERS.tron,
+          })
+        )
       );
     }
 
@@ -350,9 +375,11 @@ export class IntegrationManager {
     if (tonChain?.isActive) {
       this.blockchainServices.set(
         tonChain.chainId,
-        new TonChainService(tonChain, {
-          rateLimiter: GLOBAL_INTEGRATION_RATE_LIMITERS.ton,
-        })
+        this.maybeWrap(
+          new TonChainService(tonChain, {
+            rateLimiter: GLOBAL_INTEGRATION_RATE_LIMITERS.ton,
+          })
+        )
       );
     }
 

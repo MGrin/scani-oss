@@ -1,7 +1,7 @@
+import { deleteTempBlob, readTempBlob } from '@scani/cloud-client/storage-facade';
 import { ParseScreenshotUseCase } from '@scani/domain/use-cases/ParseScreenshotUseCase';
 import { createComponentLogger } from '@scani/logging';
 import type { ScreenshotParseJob } from '@scani/queue';
-import { deleteTempBlob, readTempBlob } from '@scani/storage';
 import type { Job } from 'bullmq';
 import type { Redis } from 'ioredis';
 import { Container } from 'typedi';

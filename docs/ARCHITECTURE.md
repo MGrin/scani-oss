@@ -67,6 +67,37 @@ Scani is a TypeScript monorepo personal finance SaaS built with modern web techn
 
 ---
 
+## 🌐 Three-Tier Deployment Model
+
+The same backend + worker binaries run across three tiers, distinguished
+only by where the data-provider lives and how it authenticates calls.
+
+| Tier | Data-provider host | `SCANI_CLOUD_URL` | `SCANI_CLOUD_API_KEY` |
+|------|-------------------|-------------------|-----------------------|
+| **1 — OSS self-hosted** | user's box (docker-compose) | `http://data-provider:8082` | user-picked shared secret |
+| **2 — Semi-managed** | `api.cloud.scani.xyz` (Scani-hosted) | `https://api.cloud.scani.xyz` | per-customer key issued via `cloud.scani.xyz` |
+| **3 — SaaS** | `api.cloud.scani.xyz` (Scani-hosted) | `https://api.cloud.scani.xyz` | Scani-internal zero-billing key |
+
+`SCANI_CLOUD_URL` and `SCANI_CLOUD_API_KEY` are **required in production**
+on backend + worker. Both apps run a boot-time `/health` probe of the
+URL (`packages/cloud-client/src/health-probe.ts`) and exit non-zero on
+failure — misconfigured deploys (typo, network split, dead VM) crash
+fast instead of silently 5xx-ing every user request.
+
+When both env vars are unset (dev / OSS without a sidecar) backend +
+worker fall back to in-process providers using whatever local creds
+are present (`@scani/storage`, `@scani/ai-providers`, etc.) — that's
+the "local-fallback" path called out in `apps/*/src/config/env.ts`.
+
+The cloud-management plane (`apps/cloud-frontend` at `cloud.scani.xyz`)
+only exists in Tier 2/3. It uses Better-Auth cookie sessions issued by
+the data-provider (`/api/auth/*`) to let customers manage API keys + see
+usage. All adapters live in `packages/cloud-client/src/adapters/` and
+implement the same interfaces the in-process providers expose, so the
+domain layer never branches on tier.
+
+---
+
 ## 🎯 Architecture Diagram
 
 ### Current Architecture (v1.0 - MVP)
@@ -121,13 +152,21 @@ Scani is a TypeScript monorepo personal finance SaaS built with modern web techn
 └─────────────────────────────────────────────────────────┘
 
 ┌─────────────────────────────────────────────────────────┐
-│                   External Services                      │
-│  • Finnhub API (stock prices)                           │
-│  • CoinGecko API (crypto prices)                        │
-│  • Google Sheets API (private asset prices)             │
-│  • OpenAI (screenshot parsing, chat)                    │
-│  • Plaid (bank/brokerage linking)                       │
-│  • Fastmail (email JMAP/SMTP)                           │
+│         apps/data-provider (single outbound hop)         │
+│                                                          │
+│  Backend + worker call this over tRPC instead of hitting │
+│  third parties directly. Owns every Scani-managed key:   │
+│   • Finnhub / CoinGecko / DeFiLlama (pricing)            │
+│   • OpenAI / Perplexity / DeepSeek (AI)                  │
+│   • Etherscan / Helius / public RPCs (chains)            │
+│   • Cloudflare R2 (object storage)                       │
+│   • Fastmail JMAP / SMTP (email)                         │
+│   • SSRF-hardened OG metadata fetcher                    │
+│                                                          │
+│  Per-call usage metering written to cloud_usage_events.  │
+│  Bearer token auth (env-key for OSS, hashed cloud_api_   │
+│  keys for Tier 2/3). Per-tenant exchange/brokerage creds │
+│  (Binance, Kraken, Plaid, IBKR …) stay on the backend.   │
 └─────────────────────────────────────────────────────────┘
 
 ┌─────────────────────────────────────────────────────────┐
@@ -777,7 +816,7 @@ Workflows in `.github/workflows/`:
 
 ### Key Environment Variables
 
-`.env.example` at the repo root documents every variable across the three deployment tiers (self-hosted, scani-cloud proxy, SaaS on Fly+Neon+Upstash). Highlights:
+`.env.example` at the repo root documents every variable across the three deployment tiers (OSS self-hosted with a local data-provider, semi-managed with Scani's hosted data-provider, and fully-managed SaaS on Fly+Neon+Upstash). Highlights:
 
 ```bash
 # Database / Queue / Mail

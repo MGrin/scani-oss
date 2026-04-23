@@ -1,0 +1,45 @@
+{
+  "name": "@scani/data-provider",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./types": "./src/presentation/router.ts"
+  },
+  "scripts": {
+    "dev": "bun run --watch src/index.ts",
+    "build": "bun build src/index.ts --outdir=dist --target=bun --sourcemap=linked --external @sentry/* --external @opentelemetry/*",
+    "start": "bun run dist/index.js",
+    "clean": "rm -rf dist",
+    "lint": "biome check .",
+    "lint:fix": "biome check --write .",
+    "type-check": "tsgo --noEmit",
+    "test": "bun test --preload ./test-preload.ts src/"
+  },
+  "dependencies": {
+    "@elysiajs/cors": "^1.4.1",
+    "@elysiajs/trpc": "^1.1.0",
+    "@scani/ai-providers": "workspace:*",
+    "@scani/config": "workspace:*",
+    "@scani/db": "workspace:*",
+    "@scani/email": "workspace:*",
+    "@scani/integrations": "workspace:*",
+    "@scani/logging": "workspace:*",
+    "@scani/pricing-providers": "workspace:*",
+    "@scani/rate-limiter": "workspace:*",
+    "@scani/storage": "workspace:*",
+    "@sentry/node": "^8.49.0",
+    "@trpc/server": "^10.45.4",
+    "better-auth": "^1.6.5",
+    "drizzle-orm": "^0.45.2",
+    "elysia": "^1.4.28",
+    "ioredis": "^5.10.1",
+    "nodemailer": "^6",
+    "open-graph-scraper": "^6.11.0",
+    "postgres": "^3.4.9",
+    "zod": "^3.25.76"
+  },
+  "devDependencies": {
+    "@types/nodemailer": "^6",
+    "typescript": "^5"
+  }
+}

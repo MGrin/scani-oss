@@ -5,10 +5,9 @@ primary_region = "sin"
   dockerfile = "Dockerfile"
 
 [env]
-  PORT              = "8080"
-  HOST              = "0.0.0.0"
-  NODE_ENV          = "production"
-  EXTERNAL_API_MODE = "direct"
+  PORT     = "8080"
+  HOST     = "0.0.0.0"
+  NODE_ENV = "production"
 
 [http_service]
   internal_port       = 8080

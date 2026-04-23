@@ -1,6 +1,6 @@
+import { deleteTempBlob, readTempBlob } from '@scani/cloud-client/storage-facade';
 import { ParseFileUseCase } from '@scani/domain/use-cases/ParseFileUseCase';
 import type { FileImportJob } from '@scani/queue';
-import { deleteTempBlob, readTempBlob } from '@scani/storage';
 import type { Job } from 'bullmq';
 import type { Redis } from 'ioredis';
 import { Container } from 'typedi';

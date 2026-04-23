@@ -23,6 +23,7 @@
   },
   "dependencies": {
     "@scani/ai-providers": "workspace:*",
+    "@scani/cloud-client": "workspace:*",
     "@scani/db": "workspace:*",
     "@scani/integrations": "workspace:*",
     "@scani/logging": "workspace:*",

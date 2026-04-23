@@ -8,14 +8,16 @@
 # object storage (MinIO) all run in containers.
 #
 # Default ports (host-side offsets to avoid clashing with other local services):
-#   Postgres    : localhost:5433
-#   Redis       : localhost:6380
-#   Backend     : localhost:3001
-#   Frontend    : localhost:5173   (apps/frontendV2 — the user-facing SPA)
-#   Landing     : localhost:5174   (apps/landing — marketing site)
-#   Admin       : localhost:5175   (apps/admin — BullMQ + ops dashboard)
-#   Mailpit     : SMTP localhost:1026, UI http://localhost:8026
-#   MinIO       : S3 API localhost:9000, console http://localhost:9001 (minioadmin/minioadmin)
+#   Postgres        : localhost:5433
+#   Redis           : localhost:6380
+#   Backend         : localhost:3001
+#   Frontend        : localhost:5173   (apps/frontendV2 — the user-facing SPA)
+#   Landing         : localhost:5174   (apps/landing — marketing site)
+#   Admin           : localhost:5175   (apps/admin — BullMQ + ops dashboard)
+#   Cloud frontend  : localhost:5176   (apps/cloud-frontend — Tier 2 console, api.cloud.scani.xyz in prod)
+#   Data-provider   : localhost:8082   (apps/data-provider — tRPC + Better-Auth)
+#   Mailpit         : SMTP localhost:1026, UI http://localhost:8026
+#   MinIO           : S3 API localhost:9000, console http://localhost:9001 (minioadmin/minioadmin)
 
 services:
   postgres:
@@ -150,6 +152,75 @@ services:
       ["bun", "run", "/app/packages/db/src/migrate.ts"]
     restart: "no"
 
+  # Data-provider owns every outbound Scani-managed third-party API call
+  # (pricing, AI, public-chain RPCs, email, object storage, OG fetch).
+  # Backend + worker reach it over the compose network via SCANI_CLOUD_URL.
+  # In managed tiers this binary runs on Fly (cloud.scani.xyz) instead; the
+  # contract (tRPC over HTTP + Bearer) is identical.
+  data-provider:
+    profiles: ["full"]
+    build:
+      context: .
+      dockerfile: apps/data-provider/Dockerfile
+    image: scani-data-provider:dev
+    container_name: scani-data-provider
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+      env-sync:
+        condition: service_completed_successfully
+    ports:
+      - "8082:8082"
+    env_file:
+      - path: ./.env
+        required: false
+    environment:
+      NODE_ENV: development
+      PORT: "8082"
+      HOST: "0.0.0.0"
+      REDIS_URL: redis://redis:6379
+      # Dev-only shared secret. Backend + worker below use the same value
+      # for SCANI_CLOUD_API_KEY so the bearer check on the receiving end
+      # matches. Prod uses a real Scani-issued key.
+      DATA_PROVIDER_API_KEY: dev_data_provider_key_change_me_not_prod_safe
+      # Cloud-management (Tier 2/3) wiring — enabled in dev so the cloud-
+      # frontend console at http://localhost:5176 works out of the box.
+      # `cloud_*` tables live alongside the backend's tables in the same
+      # Postgres; migration 0050 creates them during the `migrate` step.
+      CLOUD_MANAGEMENT_ENABLED: "true"
+      DATABASE_URL: postgres://scani:scani@postgres:5432/scani?sslmode=disable
+      BETTER_AUTH_SECRET: dev_cloud_better_auth_secret_change_me_not_prod_safe
+      BETTER_AUTH_URL: http://localhost:8082
+      CLOUD_FRONTEND_ORIGIN: http://localhost:5176
+      # Fastmail — optional in dev. When unset, the cloud-frontend's
+      # Better-Auth flow logs OTPs / magic links to the data-provider's
+      # stdout (see apps/data-provider/src/auth/better-auth.ts:43).
+      FASTMAIL_API_TOKEN: ${FASTMAIL_API_TOKEN:-}
+      # Backend's Better-Auth ships every email through the data-provider
+      # via @scani/cloud-client/adapters/email → email.send tRPC. With no
+      # Fastmail token and no SMTP_URL set, that mutation throws and the
+      # backend surfaces it as "Failed to send magic link". Point it at
+      # Mailpit so dev emails (auth, verification, magic links) land in
+      # the inspector at http://localhost:8026.
+      SMTP_URL: smtp://mailpit:1025
+      SMTP_FROM: '"Scani Cloud" <cloud@scani.local>'
+      # Object storage → MinIO. R2_ENDPOINT is the in-network URL the
+      # data-provider hits; R2_PUBLIC_ENDPOINT is what gets baked into
+      # presigned URLs for the browser (which can't resolve `minio:9000`).
+      # Same shape as the backend service below — both override the
+      # `localhost`-flavoured defaults coming from the root .env so the
+      # data-provider can actually reach MinIO from inside the compose
+      # network and the backend's /health/r2 probe stops returning 503.
+      R2_ENDPOINT: http://minio:9000
+      R2_PUBLIC_ENDPOINT: http://localhost:9000
+      R2_ACCESS_KEY_ID: minioadmin
+      R2_SECRET_ACCESS_KEY: minioadmin
+      R2_BUCKET: scani-job-uploads-dev
+
   backend:
     profiles: ["full"]
     build:
@@ -168,6 +239,8 @@ services:
         condition: service_completed_successfully
       env-sync:
         condition: service_completed_successfully
+      data-provider:
+        condition: service_started
     ports:
       - "3001:8080"
     # Root .env flows through — the `environment:` block below overrides any
@@ -201,6 +274,11 @@ services:
       R2_ACCESS_KEY_ID: minioadmin
       R2_SECRET_ACCESS_KEY: minioadmin
       R2_BUCKET: scani-job-uploads-dev
+      # Data-provider wiring. Once phase 1+ land, backend drops its direct
+      # provider keys (COINGECKO_*, ETHERSCAN_*, ...) and reads them from
+      # the data-provider over this URL instead.
+      SCANI_CLOUD_URL: http://data-provider:8082
+      SCANI_CLOUD_API_KEY: dev_data_provider_key_change_me_not_prod_safe
 
   worker:
     profiles: ["full"]
@@ -220,6 +298,8 @@ services:
         condition: service_completed_successfully
       env-sync:
         condition: service_completed_successfully
+      data-provider:
+        condition: service_started
     # Root .env flows through; the `environment:` block overrides keys that
     # need container-network URLs (DATABASE_URL, REDIS_URL, R2_ENDPOINT).
     env_file:
@@ -232,13 +312,14 @@ services:
       # Must match the backend's ENCRYPTION_KEY so integration credentials
       # persisted by the backend can be decrypted at job-run time.
       ENCRYPTION_KEY: 0123456789abcdef0123456789abcdef
-      EXTERNAL_API_MODE: direct
       WORKER_CONCURRENCY: "4"
       R2_ENDPOINT: http://minio:9000
       R2_PUBLIC_ENDPOINT: http://localhost:9000
       R2_ACCESS_KEY_ID: minioadmin
       R2_SECRET_ACCESS_KEY: minioadmin
       R2_BUCKET: scani-job-uploads-dev
+      SCANI_CLOUD_URL: http://data-provider:8082
+      SCANI_CLOUD_API_KEY: dev_data_provider_key_change_me_not_prod_safe
 
   # --- JS apps -----------------------------------------------------------------
   # All three JS apps share a single node_modules volume populated by the
@@ -284,6 +365,35 @@ services:
       - .:/app
       - workspace-node-modules:/app/node_modules
     command: ["bun", "run", "vite", "--host", "0.0.0.0", "--port", "5174"]
+
+  # Tier 2 console. Same shape as `admin` / `landing` — a plain Vite dev
+  # server against the mounted source tree. Proxies `/trpc` + `/api/auth`
+  # to the data-provider container so Better-Auth cookies stay scoped to
+  # the same host the browser is hitting (localhost:5176).
+  cloud-frontend:
+    profiles: ["full"]
+    image: oven/bun:1.3.2
+    container_name: scani-cloud-frontend
+    working_dir: /app/apps/cloud-frontend
+    depends_on:
+      data-provider:
+        condition: service_started
+      env-sync:
+        condition: service_completed_successfully
+      deps:
+        condition: service_completed_successfully
+    environment:
+      # Server-only — Vite dev-server uses this for the /trpc + /api/auth
+      # proxy target. The browser sends relative URLs (VITE_DATA_PROVIDER_URL
+      # stays unset here on purpose) so the session cookie ends up scoped
+      # to localhost:5176 and the whole stack looks same-origin.
+      DATA_PROVIDER_PROXY_TARGET: http://data-provider:8082
+    ports:
+      - "5176:5176"
+    volumes:
+      - .:/app
+      - workspace-node-modules:/app/node_modules
+    command: ["bun", "run", "vite", "--host", "0.0.0.0", "--port", "5176"]
 
   admin:
     profiles: ["full"]

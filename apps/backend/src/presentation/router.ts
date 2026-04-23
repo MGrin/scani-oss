@@ -15,6 +15,7 @@ import { institutionsRouter } from './routers/institutions';
 import { integrationsRouter } from './routers/integrations';
 import { jobsRouter } from './routers/jobs';
 import { screenshotsRouter } from './routers/screenshots';
+import { sessionsRouter } from './routers/sessions';
 import { storageRouter } from './routers/storage';
 import { createTokensRouter } from './routers/tokens';
 import { usersRouter } from './routers/users';
@@ -71,6 +72,10 @@ export const appRouter = router({
   // Background job status + uploads
   jobs: jobsRouter,
   storage: storageRouter,
+
+  // Active session management (protected) - list/revoke for the
+  // signed-in user, backing the Settings → Devices section.
+  sessions: sessionsRouter,
 
   // Health check (public)
   health: router({

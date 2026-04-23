@@ -16,9 +16,9 @@ on:
   workflow_dispatch:
     inputs:
       services:
-        description: "Which services to deploy (comma-separated: backend,worker,frontend,landing,admin). Ignored on push — that uses path filtering."
+        description: "Which services to deploy (comma-separated: backend,worker,data-provider,frontend,cloud-frontend,landing,admin). Ignored on push — that uses path filtering."
         required: false
-        default: "backend,worker,frontend,landing,admin"
+        default: "backend,worker,data-provider,frontend,cloud-frontend,landing,admin"
 
 concurrency:
   group: deploy-production
@@ -99,7 +99,9 @@ jobs:
     outputs:
       backend: ${{ steps.resolve.outputs.backend }}
       worker: ${{ steps.resolve.outputs.worker }}
+      data_provider: ${{ steps.resolve.outputs.data_provider }}
       frontend: ${{ steps.resolve.outputs.frontend }}
+      cloud_frontend: ${{ steps.resolve.outputs.cloud_frontend }}
       landing: ${{ steps.resolve.outputs.landing }}
       admin: ${{ steps.resolve.outputs.admin }}
       migrations: ${{ steps.resolve.outputs.migrations }}
@@ -122,6 +124,7 @@ jobs:
             backend:
               - 'apps/backend/**'
               - 'packages/ai-providers/**'
+              - 'packages/cloud-client/**'
               - 'packages/config/**'
               - 'packages/db/**'
               - 'packages/domain/**'
@@ -138,6 +141,7 @@ jobs:
               - 'apps/worker/**'
               - 'apps/cron/**'
               - 'packages/ai-providers/**'
+              - 'packages/cloud-client/**'
               - 'packages/config/**'
               - 'packages/db/**'
               - 'packages/domain/**'
@@ -150,9 +154,24 @@ jobs:
               - 'packages/realtime/**'
               - 'packages/shared/**'
               - 'packages/storage/**'
+            data_provider:
+              - 'apps/data-provider/**'
+              - 'packages/ai-providers/**'
+              - 'packages/config/**'
+              - 'packages/email/**'
+              - 'packages/integrations/**'
+              - 'packages/logging/**'
+              - 'packages/pricing-providers/**'
+              - 'packages/rate-limiter/**'
+              - 'packages/storage/**'
             frontend:
               - 'apps/frontendV2/**'
+              - 'packages/frontend-shared/**'
               - 'packages/shared/**'
+            cloud_frontend:
+              - 'apps/cloud-frontend/**'
+              - 'apps/data-provider/**'
+              - 'packages/frontend-shared/**'
             landing:
               - 'apps/landing/**'
             admin:
@@ -164,14 +183,18 @@ jobs:
           if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
             echo "backend=${{ contains(github.event.inputs.services, 'backend') }}" >> "$GITHUB_OUTPUT"
             echo "worker=${{ contains(github.event.inputs.services, 'worker') }}" >> "$GITHUB_OUTPUT"
+            echo "data_provider=${{ contains(github.event.inputs.services, 'data-provider') }}" >> "$GITHUB_OUTPUT"
             echo "frontend=${{ contains(github.event.inputs.services, 'frontend') }}" >> "$GITHUB_OUTPUT"
+            echo "cloud_frontend=${{ contains(github.event.inputs.services, 'cloud-frontend') }}" >> "$GITHUB_OUTPUT"
             echo "landing=${{ contains(github.event.inputs.services, 'landing') }}" >> "$GITHUB_OUTPUT"
             echo "admin=${{ contains(github.event.inputs.services, 'admin') }}" >> "$GITHUB_OUTPUT"
             echo "migrations=true" >> "$GITHUB_OUTPUT"
           else
             echo "backend=${{ steps.filter.outputs.backend }}" >> "$GITHUB_OUTPUT"
             echo "worker=${{ steps.filter.outputs.worker }}" >> "$GITHUB_OUTPUT"
+            echo "data_provider=${{ steps.filter.outputs.data_provider }}" >> "$GITHUB_OUTPUT"
             echo "frontend=${{ steps.filter.outputs.frontend }}" >> "$GITHUB_OUTPUT"
+            echo "cloud_frontend=${{ steps.filter.outputs.cloud_frontend }}" >> "$GITHUB_OUTPUT"
             echo "landing=${{ steps.filter.outputs.landing }}" >> "$GITHUB_OUTPUT"
             echo "admin=${{ steps.filter.outputs.admin }}" >> "$GITHUB_OUTPUT"
             echo "migrations=${{ steps.filter.outputs.migrations }}" >> "$GITHUB_OUTPUT"
@@ -195,11 +218,124 @@ jobs:
           DATABASE_URL: ${{ secrets.DATABASE_URL_DIRECT }}
         run: bun run db:migrate
 
+  deploy-data-provider:
+    name: Deploy scani-data-provider
+    runs-on: ubuntu-latest
+    needs: [detect-changes, migrate]
+    if: ${{ always() && needs.detect-changes.outputs.data_provider == 'true' && !failure() }}
+    environment: production
+    steps:
+      - uses: actions/checkout@v6
+      - uses: superfly/flyctl-actions/setup-flyctl@master
+
+      # The data-provider is the only service that holds provider API keys
+      # for AI, blockchain, pricing, email, storage + the tenant-scoped
+      # DATA_PROVIDER_API_KEY the backend/worker authenticate with.
+      - name: Stage secrets on scani-data-provider
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+          DATA_PROVIDER_API_KEY: ${{ secrets.DATA_PROVIDER_API_KEY }}
+          SENTRY_DSN_DATA_PROVIDER: ${{ secrets.SENTRY_DSN_DATA_PROVIDER }}
+          REDIS_URL: ${{ secrets.REDIS_URL }}
+          # AI
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          OPENAI_VISION_MODEL: ${{ secrets.OPENAI_VISION_MODEL }}
+          PERPLEXITY_API_KEY: ${{ secrets.PERPLEXITY_API_KEY }}
+          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+          DEEPSEEK_VISION_MODEL: ${{ secrets.DEEPSEEK_VISION_MODEL }}
+          # Blockchain
+          ETHERSCAN_API_KEY: ${{ secrets.ETHERSCAN_API_KEY }}
+          HELIUS_API_KEY: ${{ secrets.HELIUS_API_KEY }}
+          # Pricing
+          COINGECKO_API_KEY: ${{ secrets.COINGECKO_API_KEY }}
+          FINNHUB_API_KEY: ${{ secrets.FINNHUB_API_KEY }}
+          GOOGLE_SERVICE_ACCOUNT_KEY: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_KEY }}
+          GOOGLE_SHEETS_ID: ${{ secrets.GOOGLE_SHEETS_ID }}
+          # Email
+          FASTMAIL_API_TOKEN: ${{ secrets.FASTMAIL_API_TOKEN }}
+          # Cloud management (Tier 2/3 only): enables cloud_api_keys DB
+          # lookup, Postgres-backed `cloud_usage_events` metering, and
+          # Better-Auth cookie sessions for cloud-frontend. DATABASE_URL
+          # here is Neon's pooled URL (provisioned in
+          # infra/terraform/github.tf as the `database_url` GH secret) —
+          # the data-provider serves every backend+worker request and the
+          # pooler avoids saturating Postgres connection slots.
+          CLOUD_MANAGEMENT_ENABLED: "true"
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          BETTER_AUTH_SECRET: ${{ secrets.CLOUD_BETTER_AUTH_SECRET }}
+          BETTER_AUTH_URL: https://api.cloud.scani.xyz
+          CLOUD_FRONTEND_ORIGIN: https://cloud.scani.xyz
+          # Storage (R2)
+          R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
+          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          R2_BUCKET: ${{ secrets.R2_BUCKET }}
+        run: |
+          set -euo pipefail
+          for var in DATA_PROVIDER_API_KEY SENTRY_DSN_DATA_PROVIDER REDIS_URL \
+                     R2_ACCOUNT_ID R2_ACCESS_KEY_ID R2_SECRET_ACCESS_KEY R2_BUCKET; do
+            if [ -z "${!var:-}" ]; then
+              echo "::error::Missing required secret: $var" >&2
+              exit 1
+            fi
+          done
+          args=(
+            DATA_PROVIDER_API_KEY="$DATA_PROVIDER_API_KEY"
+            SENTRY_DSN="$SENTRY_DSN_DATA_PROVIDER"
+            SENTRY_ENVIRONMENT="production"
+            SENTRY_RELEASE="${GITHUB_SHA}"
+            REDIS_URL="$REDIS_URL"
+            R2_ACCOUNT_ID="$R2_ACCOUNT_ID"
+            R2_ACCESS_KEY_ID="$R2_ACCESS_KEY_ID"
+            R2_SECRET_ACCESS_KEY="$R2_SECRET_ACCESS_KEY"
+            R2_BUCKET="$R2_BUCKET"
+          )
+          for var in OPENAI_API_KEY OPENAI_VISION_MODEL \
+                     PERPLEXITY_API_KEY \
+                     DEEPSEEK_API_KEY DEEPSEEK_VISION_MODEL \
+                     ETHERSCAN_API_KEY HELIUS_API_KEY \
+                     COINGECKO_API_KEY FINNHUB_API_KEY \
+                     GOOGLE_SERVICE_ACCOUNT_KEY GOOGLE_SHEETS_ID \
+                     FASTMAIL_API_TOKEN \
+                     CLOUD_MANAGEMENT_ENABLED DATABASE_URL \
+                     BETTER_AUTH_SECRET BETTER_AUTH_URL CLOUD_FRONTEND_ORIGIN; do
+            if [ -n "${!var:-}" ]; then
+              args+=("$var=${!var}")
+              echo "  → staging $var"
+            else
+              echo "  ⊘ $var not set in GitHub Secrets — skipping"
+            fi
+          done
+          flyctl secrets set --stage --app scani-data-provider "${args[@]}"
+
+      - run: |
+          # Strategy lives in fly.toml (rolling, max_unavailable=1) so
+          # the two-machine replica set can swap one at a time without
+          # blackholing backend + worker calls. Avoid passing --strategy
+          # here — the CLI flag overrides the toml.
+          flyctl deploy --remote-only \
+            --config apps/data-provider/fly.toml \
+            --dockerfile apps/data-provider/Dockerfile .
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+
+      - name: Smoke test /health
+        run: |
+          for i in 1 2 3 4 5; do
+            if curl -fsS https://scani-data-provider.fly.dev/health | jq -e '.status == "ok"' > /dev/null; then
+              echo "data-provider healthy"; exit 0
+            fi
+            sleep 5
+          done
+          echo "data-provider /health smoke test failed:" >&2
+          curl -s https://scani-data-provider.fly.dev/health || true
+          exit 1
+
   deploy-backend:
     name: Deploy scani-backend
     runs-on: ubuntu-latest
-    needs: [detect-changes, migrate]
-    if: ${{ always() && needs.detect-changes.outputs.backend == 'true' && !failure() }}
+    needs: [detect-changes, migrate, deploy-data-provider]
+    if: ${{ always() && needs.detect-changes.outputs.backend == 'true' && needs.migrate.result != 'failure' && (needs.deploy-data-provider.result == 'success' || needs.deploy-data-provider.result == 'skipped') }}
     environment: production
     steps:
       - uses: actions/checkout@v6
@@ -211,78 +347,41 @@ jobs:
       # Pre-existing secrets (DATABASE_URL, REDIS_URL, ENCRYPTION_KEY,
       # BETTER_AUTH_SECRET) are already on Fly and intentionally NOT
       # re-staged here. Fail loud if any R2 / HMAC / Sentry is missing.
-      - name: Stage R2 + HMAC + Sentry secrets on scani-backend
+      # With the data-provider split, the backend only needs Scani-internal
+      # secrets: DB, Redis, Better-Auth, HMAC, Sentry, and the two cloud
+      # envs it uses to reach the data-provider. R2 creds stay here for
+      # now as a belt-and-braces fallback if SCANI_CLOUD_URL is unset; the
+      # env.ts guard makes them optional in cloud mode.
+      - name: Stage core + cloud-client + Sentry secrets on scani-backend
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
-          R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
-          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
-          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
-          R2_BUCKET: ${{ secrets.R2_BUCKET }}
           ADMIN_JOBS_HMAC_SECRET: ${{ secrets.ADMIN_JOBS_HMAC_SECRET }}
           SENTRY_DSN_BACKEND: ${{ secrets.SENTRY_DSN_BACKEND }}
+          # Reuse DATA_PROVIDER_API_KEY as backend's bearer — backend +
+          # worker authenticate against the data-provider as Scani's own
+          # internal infra (no per-tenant metering, hits the env-key
+          # superuser path). Customers self-hosting Tier 2 set their own
+          # `sk_live_*` key locally; this is the prod equivalent.
+          SCANI_CLOUD_API_KEY: ${{ secrets.DATA_PROVIDER_API_KEY }}
         run: |
           set -euo pipefail
-          for var in R2_ACCOUNT_ID R2_ACCESS_KEY_ID R2_SECRET_ACCESS_KEY \
-                     R2_BUCKET ADMIN_JOBS_HMAC_SECRET SENTRY_DSN_BACKEND; do
+          # SCANI_CLOUD_URL is a public URL, hardcoded here so it doesn't
+          # need to be a managed secret. Matches infra/terraform/main.tf's
+          # `api_cloud_host` local + cloudflare.tf's `api_cloud` CNAME.
+          SCANI_CLOUD_URL="https://api.cloud.scani.xyz"
+          for var in ADMIN_JOBS_HMAC_SECRET SENTRY_DSN_BACKEND SCANI_CLOUD_API_KEY; do
             if [ -z "${!var:-}" ]; then
               echo "::error::Missing required secret: $var" >&2
               exit 1
             fi
           done
           flyctl secrets set --stage --app scani-backend \
-            R2_ACCOUNT_ID="$R2_ACCOUNT_ID" \
-            R2_ACCESS_KEY_ID="$R2_ACCESS_KEY_ID" \
-            R2_SECRET_ACCESS_KEY="$R2_SECRET_ACCESS_KEY" \
-            R2_BUCKET="$R2_BUCKET" \
             ADMIN_JOBS_HMAC_SECRET="$ADMIN_JOBS_HMAC_SECRET" \
             SENTRY_DSN="$SENTRY_DSN_BACKEND" \
             SENTRY_ENVIRONMENT="production" \
-            SENTRY_RELEASE="${GITHUB_SHA}"
-
-      # Runtime provider keys — AI, blockchain, pricing, email. Soft-staged:
-      # each var is pushed only when the GH secret is set, so missing secrets
-      # don't fail the deploy AND Fly retains any existing value from prior
-      # manual `flyctl secrets set`. Once a key is added to GH Secrets,
-      # that becomes the single source of truth on subsequent deploys —
-      # rotating in GH auto-propagates. Required-in-prod validation still
-      # happens at backend boot (apps/backend/src/config/env.ts).
-      - name: Stage provider API keys on scani-backend
-        env:
-          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-          OPENAI_VISION_MODEL: ${{ secrets.OPENAI_VISION_MODEL }}
-          PERPLEXITY_API_KEY: ${{ secrets.PERPLEXITY_API_KEY }}
-          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
-          DEEPSEEK_VISION_MODEL: ${{ secrets.DEEPSEEK_VISION_MODEL }}
-          ETHERSCAN_API_KEY: ${{ secrets.ETHERSCAN_API_KEY }}
-          HELIUS_API_KEY: ${{ secrets.HELIUS_API_KEY }}
-          COINGECKO_API_KEY: ${{ secrets.COINGECKO_API_KEY }}
-          FINNHUB_API_KEY: ${{ secrets.FINNHUB_API_KEY }}
-          GOOGLE_SERVICE_ACCOUNT_KEY: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_KEY }}
-          GOOGLE_SHEETS_ID: ${{ secrets.GOOGLE_SHEETS_ID }}
-          FASTMAIL_API_TOKEN: ${{ secrets.FASTMAIL_API_TOKEN }}
-        run: |
-          set -euo pipefail
-          args=()
-          for var in OPENAI_API_KEY OPENAI_VISION_MODEL \
-                     PERPLEXITY_API_KEY \
-                     DEEPSEEK_API_KEY DEEPSEEK_VISION_MODEL \
-                     ETHERSCAN_API_KEY HELIUS_API_KEY \
-                     COINGECKO_API_KEY FINNHUB_API_KEY \
-                     GOOGLE_SERVICE_ACCOUNT_KEY GOOGLE_SHEETS_ID \
-                     FASTMAIL_API_TOKEN; do
-            if [ -n "${!var:-}" ]; then
-              args+=("$var=${!var}")
-              echo "  → staging $var"
-            else
-              echo "  ⊘ $var not set in GitHub Secrets — skipping (existing Fly value retained)"
-            fi
-          done
-          if [ ${#args[@]} -eq 0 ]; then
-            echo "No provider secrets to stage."
-          else
-            flyctl secrets set --stage --app scani-backend "${args[@]}"
-          fi
+            SENTRY_RELEASE="${GITHUB_SHA}" \
+            SCANI_CLOUD_URL="$SCANI_CLOUD_URL" \
+            SCANI_CLOUD_API_KEY="$SCANI_CLOUD_API_KEY"
 
       - run: |
           flyctl deploy --remote-only \
@@ -310,81 +409,41 @@ jobs:
   deploy-worker:
     name: Deploy scani-worker
     runs-on: ubuntu-latest
-    needs: [detect-changes, migrate]
-    if: ${{ always() && needs.detect-changes.outputs.worker == 'true' && !failure() }}
+    needs: [detect-changes, migrate, deploy-data-provider]
+    if: ${{ always() && needs.detect-changes.outputs.worker == 'true' && needs.migrate.result != 'failure' && (needs.deploy-data-provider.result == 'success' || needs.deploy-data-provider.result == 'skipped') }}
     environment: production
     steps:
       - uses: actions/checkout@v6
       - uses: superfly/flyctl-actions/setup-flyctl@master
 
-      # Worker needs the same R2 creds as the backend to read temp blobs
-      # that the backend's presigned-URL uploads landed at.
-      # DATABASE_URL, REDIS_URL, ENCRYPTION_KEY are pre-existing on Fly
+      # With the data-provider split, the worker no longer holds provider
+      # API keys; all outbound calls (AI parse, chain RPC, pricing, R2,
+      # email) route through the data-provider via the cloud-client.
+      # DATABASE_URL, REDIS_URL, ENCRYPTION_KEY remain pre-existing on Fly
       # and intentionally untouched.
-      - name: Stage R2 + Sentry secrets on scani-worker
+      - name: Stage core + cloud-client + Sentry secrets on scani-worker
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
-          R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
-          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
-          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
-          R2_BUCKET: ${{ secrets.R2_BUCKET }}
           SENTRY_DSN_WORKER: ${{ secrets.SENTRY_DSN_WORKER }}
+          # Same shape as backend — reuses DATA_PROVIDER_API_KEY so we
+          # only manage one secret. SCANI_CLOUD_URL is hardcoded since
+          # it's a public hostname (api.cloud.scani.xyz).
+          SCANI_CLOUD_API_KEY: ${{ secrets.DATA_PROVIDER_API_KEY }}
         run: |
           set -euo pipefail
-          for var in R2_ACCOUNT_ID R2_ACCESS_KEY_ID R2_SECRET_ACCESS_KEY R2_BUCKET SENTRY_DSN_WORKER; do
+          SCANI_CLOUD_URL="https://api.cloud.scani.xyz"
+          for var in SENTRY_DSN_WORKER SCANI_CLOUD_API_KEY; do
             if [ -z "${!var:-}" ]; then
               echo "::error::Missing required secret: $var" >&2
               exit 1
             fi
           done
           flyctl secrets set --stage --app scani-worker \
-            R2_ACCOUNT_ID="$R2_ACCOUNT_ID" \
-            R2_ACCESS_KEY_ID="$R2_ACCESS_KEY_ID" \
-            R2_SECRET_ACCESS_KEY="$R2_SECRET_ACCESS_KEY" \
-            R2_BUCKET="$R2_BUCKET" \
             SENTRY_DSN="$SENTRY_DSN_WORKER" \
             SENTRY_ENVIRONMENT="production" \
-            SENTRY_RELEASE="${GITHUB_SHA}"
-
-      # Same soft-stage pattern as the backend: missing GH secret → skip +
-      # retain existing Fly value; present GH secret → GH becomes source
-      # of truth. FASTMAIL is backend-only (magic-link email) so omitted
-      # from the worker list.
-      - name: Stage provider API keys on scani-worker
-        env:
-          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-          OPENAI_VISION_MODEL: ${{ secrets.OPENAI_VISION_MODEL }}
-          PERPLEXITY_API_KEY: ${{ secrets.PERPLEXITY_API_KEY }}
-          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
-          DEEPSEEK_VISION_MODEL: ${{ secrets.DEEPSEEK_VISION_MODEL }}
-          ETHERSCAN_API_KEY: ${{ secrets.ETHERSCAN_API_KEY }}
-          HELIUS_API_KEY: ${{ secrets.HELIUS_API_KEY }}
-          COINGECKO_API_KEY: ${{ secrets.COINGECKO_API_KEY }}
-          FINNHUB_API_KEY: ${{ secrets.FINNHUB_API_KEY }}
-          GOOGLE_SERVICE_ACCOUNT_KEY: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_KEY }}
-          GOOGLE_SHEETS_ID: ${{ secrets.GOOGLE_SHEETS_ID }}
-        run: |
-          set -euo pipefail
-          args=()
-          for var in OPENAI_API_KEY OPENAI_VISION_MODEL \
-                     PERPLEXITY_API_KEY \
-                     DEEPSEEK_API_KEY DEEPSEEK_VISION_MODEL \
-                     ETHERSCAN_API_KEY HELIUS_API_KEY \
-                     COINGECKO_API_KEY FINNHUB_API_KEY \
-                     GOOGLE_SERVICE_ACCOUNT_KEY GOOGLE_SHEETS_ID; do
-            if [ -n "${!var:-}" ]; then
-              args+=("$var=${!var}")
-              echo "  → staging $var"
-            else
-              echo "  ⊘ $var not set in GitHub Secrets — skipping (existing Fly value retained)"
-            fi
-          done
-          if [ ${#args[@]} -eq 0 ]; then
-            echo "No provider secrets to stage."
-          else
-            flyctl secrets set --stage --app scani-worker "${args[@]}"
-          fi
+            SENTRY_RELEASE="${GITHUB_SHA}" \
+            SCANI_CLOUD_URL="$SCANI_CLOUD_URL" \
+            SCANI_CLOUD_API_KEY="$SCANI_CLOUD_API_KEY"
 
       # `--ha=false` keeps a single primary machine — without it, fly.io
       # deploys a primary+standby pair. When the Terraform `scale count 1`
@@ -518,6 +577,54 @@ jobs:
           cd apps/landing
           bunx wrangler@latest pages deploy dist \
             --project-name=scani-landing \
+            --branch=main \
+            --commit-dirty=true \
+            --commit-hash="${GITHUB_SHA}"
+
+  deploy-cloud-frontend:
+    name: Deploy scani-cloud (Cloudflare Pages)
+    runs-on: ubuntu-latest
+    needs: detect-changes
+    if: ${{ always() && needs.detect-changes.result == 'success' && needs.detect-changes.outputs.cloud_frontend == 'true' }}
+    environment: production
+    steps:
+      - uses: actions/checkout@v6
+      - uses: ./.github/actions/setup-bun
+      - name: Wait for scani-cloud Pages project (Terraform-managed)
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          URL="https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/pages/projects/scani-cloud"
+          for i in $(seq 1 30); do
+            code=$(curl -s -o /dev/null -w '%{http_code}' \
+              -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" "$URL")
+            if [ "$code" = "200" ]; then
+              echo "scani-cloud project is live"
+              exit 0
+            fi
+            echo "($i/30) waiting for Terraform to create scani-cloud (got HTTP $code)..."
+            sleep 10
+          done
+          echo "Timed out waiting for scani-cloud. Is the Terraform workflow healthy?" >&2
+          exit 1
+      - run: cd apps/cloud-frontend && bun run build
+        env:
+          # Cloud-frontend hits the data-provider at its dedicated
+          # subdomain. Using the public origin directly (rather than a
+          # same-origin rewrite through Pages) keeps the Better-Auth
+          # session cookie scoped to api.cloud.scani.xyz, and both
+          # hosts share the `scani.xyz` registrable domain so the
+          # browser treats fetches as same-site for SameSite=Lax.
+          VITE_DATA_PROVIDER_URL: https://api.cloud.scani.xyz
+      - name: Publish to Cloudflare Pages
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          cd apps/cloud-frontend
+          bunx wrangler@latest pages deploy dist \
+            --project-name=scani-cloud \
             --branch=main \
             --commit-dirty=true \
             --commit-hash="${GITHUB_SHA}"

@@ -6,11 +6,21 @@
       "project": ["src/**/*.ts"],
       "ignoreDependencies": ["@sentry/node"]
     },
+    "apps/cloud-frontend": {
+      "project": ["src/**/*.{ts,tsx}"],
+      "ignoreDependencies": ["tailwindcss-animate"]
+    },
     "apps/cron": {
       "project": ["src/**/*.ts"]
     },
+    "apps/data-provider": {
+      "entry": ["src/index.ts"],
+      "project": ["src/**/*.ts"],
+      "ignoreDependencies": ["@sentry/node"]
+    },
     "apps/frontendV2": {
-      "project": ["src/**/*.{ts,tsx}"]
+      "project": ["src/**/*.{ts,tsx}"],
+      "ignoreDependencies": ["tailwindcss-animate"]
     },
     "apps/landing": {
       "project": ["src/**/*.{ts,tsx}"]
@@ -23,8 +33,14 @@
     "packages/ai-providers": {
       "project": ["src/**/*.ts"]
     },
+    "packages/cloud-client": {
+      "project": ["src/**/*.ts"]
+    },
     "packages/config": {
       "project": ["src/**/*.ts"]
+    },
+    "packages/frontend-shared": {
+      "project": ["src/**/*.{ts,tsx}"]
     },
     "packages/db": {
       "project": ["src/**/*.ts"]

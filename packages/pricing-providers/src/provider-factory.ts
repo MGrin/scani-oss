@@ -3,11 +3,13 @@ import { CoinGeckoProvider } from './providers/coingecko';
 import { DeFiLlamaProvider } from './providers/defillama';
 import { ExchangeRateProvider } from './providers/exchange-rate';
 import { FinnhubProvider } from './providers/finnhub';
-import { ScaniCloudPricingProvider } from './providers/scani-cloud';
 import type { PricingProviderKey } from './types';
 import type { RateLimiter } from './utils';
 
-export type ExternalApiMode = 'direct' | 'scani-cloud';
+// 'direct' = in-process calls to third-party APIs (local fallback / OSS dev).
+// 'cloud'  = delegate to the data-provider service via @scani/cloud-client.
+// The legacy 'scani-cloud' mode was removed along with EXTERNAL_API_MODE.
+export type ExternalApiMode = 'direct' | 'cloud';
 
 type PrimaryProviderKey = Exclude<PricingProviderKey, 'googleSheets'>;
 
@@ -17,41 +19,33 @@ export interface BuildPricingProvidersArgs {
   convertPrice: ConvertPriceFn;
   createFailureResult: CreateFailureResultFn;
   logger: (componentName: string) => import('pino').Logger;
-  scaniCloud?: { baseUrl: string; clientToken: string };
+  /**
+   * Pre-built CloudPricingProvider instances (one per primary key). Used
+   * when `mode === 'cloud'`; supplied by the caller's DI container so this
+   * package stays free of the @scani/cloud-client dependency (which would
+   * create a ballast cycle via @scani/data-provider -> @scani/pricing-providers).
+   */
+  cloudProviders?: Record<PrimaryProviderKey, PricingProvider>;
 }
 
 /**
  * Build the registry of pricing providers for each primary key. In `direct`
- * mode (Tier 1 / Tier 3) we return the historical provider classes that hit
- * third-party APIs directly. In `scani-cloud` mode (Tier 2), each slot is
- * served by the ScaniCloudPricingProvider which forwards requests through
- * the Scani-hosted proxy.
+ * mode we return the historical provider classes that hit third-party APIs
+ * directly (used as a dev fallback). In `cloud` mode every slot is served
+ * by a CloudPricingProvider that forwards requests to the data-provider.
  */
 export function buildPricingProviders(
   args: BuildPricingProvidersArgs
 ): Record<PrimaryProviderKey, PricingProvider> {
-  if (args.mode === 'scani-cloud') {
-    const cfg = args.scaniCloud;
-    if (!cfg?.baseUrl || !cfg.clientToken) {
+  if (args.mode === 'cloud') {
+    if (!args.cloudProviders) {
       throw new Error(
-        'EXTERNAL_API_MODE=scani-cloud requires SCANI_CLOUD_API_URL and SCANI_CLOUD_CLIENT_TOKEN to be set.'
+        'buildPricingProviders: mode=cloud requires `cloudProviders` to be supplied by the caller.'
       );
     }
-    const make = (key: PrimaryProviderKey): PricingProvider =>
-      new ScaniCloudPricingProvider({
-        providerKey: key,
-        baseUrl: cfg.baseUrl,
-        clientToken: cfg.clientToken,
-      });
-    return {
-      exchangeRate: make('exchangeRate'),
-      coinGecko: make('coinGecko'),
-      defiLlama: make('defiLlama'),
-      finnhub: make('finnhub'),
-    };
+    return args.cloudProviders;
   }
 
-  // Direct mode (default).
   return {
     exchangeRate: new ExchangeRateProvider({
       createFailureResult: args.createFailureResult,

@@ -199,9 +199,11 @@ export function createPWADeepLink(path: string = '/'): string {
 }
 
 /**
- * Logs PWA detection information for debugging
+ * Logs PWA detection information for debugging.
+ * Dev-only — gated to avoid noise in production browser consoles.
  */
 export function logPWAInfo(): void {
-  const info = getPWAInfo();
-  console.log('🔍 PWA Detection Info:', info);
+  if (typeof import.meta !== 'undefined' && (import.meta as { env?: { DEV?: boolean } }).env?.DEV) {
+    console.log('PWA detection info:', getPWAInfo());
+  }
 }

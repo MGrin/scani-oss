@@ -85,6 +85,61 @@ resource "github_actions_secret" "sentry_dsn_worker" {
   plaintext_value = data.sentry_key.worker.dsn.public
 }
 
+resource "github_actions_secret" "sentry_dsn_data_provider" {
+  repository      = data.github_repository.scani.name
+  secret_name     = "SENTRY_DSN_DATA_PROVIDER"
+  plaintext_value = data.sentry_key.data_provider.dsn.public
+}
+
+# Tenant-shared API key the data-provider validates and that the backend +
+# worker present as `Authorization: Bearer` to the data-provider. Generated
+# once by TF; the same value lands as DATA_PROVIDER_API_KEY on the data-
+# provider Fly app and as SCANI_CLOUD_API_KEY on backend + worker. Rotate
+# by tainting `random_password.scani_cloud_api_key` and re-running
+# terraform apply, then redeploying all three services.
+resource "random_password" "scani_cloud_api_key" {
+  length  = 48
+  special = false
+}
+
+resource "github_actions_secret" "data_provider_api_key" {
+  repository      = data.github_repository.scani.name
+  secret_name     = "DATA_PROVIDER_API_KEY"
+  plaintext_value = random_password.scani_cloud_api_key.result
+}
+
+# The deploy-fly workflow used to consume two separate secrets here —
+# SCANI_CLOUD_API_KEY (backend+worker bearer) and SCANI_CLOUD_URL
+# (backend+worker base URL). Both are gone now: the API key is sourced
+# from DATA_PROVIDER_API_KEY directly (one secret to manage instead of a
+# mirror pair), and the URL is hardcoded to https://api.cloud.scani.xyz
+# in the workflow since it's a public hostname owned by terraform's
+# `cloudflare_record.api_cloud`.
+
+# Signing secret for Better-Auth cookie sessions on cloud.scani.xyz (Tier 2
+# console). Generated once by TF; rotating invalidates every existing
+# session, so coordinate with users before tainting.
+resource "random_password" "cloud_better_auth_secret" {
+  length  = 48
+  special = false
+}
+
+resource "github_actions_secret" "cloud_better_auth_secret" {
+  repository      = data.github_repository.scani.name
+  secret_name     = "CLOUD_BETTER_AUTH_SECRET"
+  plaintext_value = random_password.cloud_better_auth_secret.result
+}
+
+# DATABASE_URL for the data-provider's cloud_* tables (cloud_users,
+# cloud_api_keys + Better-Auth session tables + cloud_usage_events). Same
+# Neon project as the backend; per-request usage rows live in
+# `cloud_usage_events` in this database.
+resource "github_actions_secret" "database_url" {
+  repository      = data.github_repository.scani.name
+  secret_name     = "DATABASE_URL"
+  plaintext_value = neon_project.scani.connection_uri_pooler
+}
+
 resource "github_actions_secret" "sentry_dsn_frontend" {
   repository      = data.github_repository.scani.name
   secret_name     = "VITE_SENTRY_DSN_FRONTEND"

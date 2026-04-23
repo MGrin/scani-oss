@@ -6,7 +6,6 @@ primary_region = "sin"
 
 [env]
   NODE_ENV           = "production"
-  EXTERNAL_API_MODE  = "direct"
   WORKER_CONCURRENCY = "2"
 
 # No [http_service] — worker is a background process; nothing to expose.

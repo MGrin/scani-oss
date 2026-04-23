@@ -9,7 +9,7 @@
  * orphans from failed jobs.
  */
 
-import { presignUpload } from '@scani/storage';
+import { presignUpload } from '@scani/cloud-client/storage-facade';
 import { z } from 'zod';
 import { UPLOAD_LIMITS } from '../../config/limits';
 import { protectedProcedure, router } from '../trpc';
@@ -28,7 +28,7 @@ export const storageRouter = router({
     )
     .mutation(async ({ input, ctx }) => {
       const ext = (input.filename.split('.').pop() ?? 'bin').toLowerCase();
-      const { uploadUrl, key, expiresAt, requiredHeaders } = presignUpload({
+      const { uploadUrl, key, expiresAt, requiredHeaders } = await presignUpload({
         keyPrefix: `${input.purpose}/${ctx.userId}`,
         extension: ext,
         contentType: input.contentType,
