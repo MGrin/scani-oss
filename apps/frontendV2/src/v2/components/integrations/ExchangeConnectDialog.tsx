@@ -17,11 +17,12 @@ import { trpcVanilla } from '@/lib/trpc-vanilla';
 import { invalidatePortfolioQueries } from '@/v2/hooks/invalidatePortfolioQueries';
 import { useJobStatus } from '@/v2/hooks/useJobStatus';
 import { V2_ROUTES } from '@/v2/lib/routes';
+import { RsaKeypairField } from './RsaKeypairField';
 
 interface ExchangeConfig {
   key: string;
   name: string;
-  credentialType: 'apiKey' | 'passphrase' | 'wise' | 'ibkr';
+  credentialType: 'apiKey' | 'passphrase' | 'wise' | 'ibkr' | 'token' | 'rsa' | 'zerodha';
   website?: string;
 }
 
@@ -169,6 +170,140 @@ const API_KEY_HELP: Record<string, ExchangeHelp> = {
     docsUrl: 'https://www.htx.com/support/360000203002',
     mobileNote: 'Use a desktop browser to create API keys on HTX.',
   },
+  independent_reserve: {
+    steps: [
+      'Log in to Independent Reserve → Settings → API Keys',
+      'Click "Create new API Key" and enter a name',
+      'Set the key type to "Read Only"',
+      'Complete 2FA verification',
+      'Copy the API Key and Secret (shown only once)',
+    ],
+    docsUrl: 'https://www.independentreserve.com/features/api',
+    mobileNote: 'Use a desktop browser to create API keys on Independent Reserve.',
+  },
+  btc_markets: {
+    steps: [
+      'Log in to BTC Markets → Account → API Keys',
+      'Click "New API Key" and enter a name',
+      'Select the "Read" permission set only',
+      'Complete 2FA verification',
+      'Copy the Public Key and Private Key (private key shown only once)',
+    ],
+    docsUrl: 'https://docs.btcmarkets.net/',
+    mobileNote: 'Use a desktop browser to create API keys on BTC Markets.',
+  },
+  bitfinex: {
+    steps: [
+      'Log in to Bitfinex → Account icon → API',
+      'Click "Create New Key"',
+      'Under "Permissions", enable only "Read" for Wallets / Account Info / Orders / Margin',
+      'Do NOT enable any Write permissions',
+      'Copy API Key and Secret (secret shown only once)',
+    ],
+    docsUrl: 'https://docs.bitfinex.com/docs/rest-auth',
+    mobileNote: 'Use a desktop browser to create API keys on Bitfinex.',
+  },
+  bitpanda: {
+    steps: [
+      'Log in to Bitpanda → Profile icon → API Key',
+      'Select scope: "Balances" (and optionally "Trades" for history)',
+      'Complete 2FA verification',
+      'Copy the API key (shown only once — it acts as a bearer token)',
+    ],
+    docsUrl: 'https://developers.bitpanda.com/',
+    mobileNote: 'Use a desktop browser to create API keys on Bitpanda.',
+  },
+  bitflyer: {
+    steps: [
+      'Log in to bitFlyer → Account icon → API',
+      'Click "New API Key" and give it a label',
+      'Enable only "Get balance" and "Get positions" permissions',
+      'Complete 2FA verification',
+      'Copy API Key and Secret (secret shown only once)',
+    ],
+    docsUrl: 'https://lightning.bitflyer.com/docs?lang=en',
+    mobileNote: 'Use a desktop browser to create API keys on bitFlyer.',
+  },
+  coincheck: {
+    steps: [
+      'Log in to Coincheck → Account → Settings → API',
+      'Click "Create new API key" and name it',
+      'Enable only "View balance" and "View transaction history"',
+      'Complete 2FA verification',
+      'Copy API Key and Secret (secret shown only once)',
+    ],
+    docsUrl: 'https://coincheck.com/documents/exchange/api',
+    mobileNote: 'Use a desktop browser to create API keys on Coincheck.',
+  },
+  bitbank: {
+    steps: [
+      'Log in to bitbank → Account → API',
+      'Click "Issue new API key"',
+      'Enable only "参照" (Read) permissions — do NOT enable trading',
+      'Complete 2FA verification',
+      'Copy API Key and Secret (secret shown only once)',
+    ],
+    docsUrl: 'https://github.com/bitbankinc/bitbank-api-docs',
+    mobileNote: 'Use a desktop browser to create API keys on bitbank.',
+  },
+  alpaca: {
+    steps: [
+      'Log in to Alpaca → Dashboard → Your API Keys (live account)',
+      'Click "Generate New Key"',
+      'Keys for Live account include view/trade by default — treat as read-only and only use the key + secret below',
+      'Copy the API Key ID and Secret Key (secret shown only once)',
+    ],
+    docsUrl: 'https://docs.alpaca.markets/docs/authentication',
+    mobileNote: 'Use a desktop browser to create API keys on Alpaca.',
+  },
+  tinkoff: {
+    steps: [
+      'Log in to T-Bank Invest → Settings → T-Invest API',
+      'Create a "Полный доступ" (full access) or "Только чтение" (read-only) token',
+      'Prefer read-only to limit exposure',
+      'Copy the token (shown only once) — it acts as a bearer token',
+    ],
+    docsUrl: 'https://www.tbank.ru/invest/open-api/',
+    mobileNote: 'Use a desktop browser to create API tokens on T-Bank.',
+  },
+  tiger_brokers: {
+    steps: [
+      'Log in to the Tiger Open Platform → Create a new application to get your Tiger ID',
+      'Click "Generate keypair in browser" below (or generate one yourself with openssl — see the dropdown)',
+      'Copy the public key shown below and paste it into your Tiger application\'s "Public Key" field',
+      'The matching private key is already filled in — it never leaves this browser until encrypted on our backend',
+    ],
+    docsUrl: 'https://quant.itigerup.com/openapi/en/',
+    mobileNote: 'Use a desktop browser to configure the Tiger Open Platform.',
+  },
+  zerodha: {
+    steps: [
+      'In the Kite developer console → create a new app to get your api_key and api_secret',
+      'In your Zerodha account → Settings → 2FA → switch to TOTP (Authenticator app); copy the base32 secret shown during setup',
+      'Paste api_key, api_secret, your Zerodha user_id, password, and the TOTP secret below',
+      "Scani regenerates the daily Kite access_token automatically using these fields — you won't need to re-auth every day",
+    ],
+    docsUrl: 'https://kite.trade/docs/connect/v3/',
+    mobileNote: 'Use a desktop browser to configure Kite Connect.',
+  },
+  mercury: {
+    steps: [
+      'Log in to Mercury → Settings → API Tokens',
+      'Click "Generate new token" and choose "Read only" token type',
+      'Copy the token — it acts as a bearer token and is shown only once',
+    ],
+    docsUrl: 'https://docs.mercury.com/docs/getting-started',
+    mobileNote: 'Use a desktop browser to create API tokens on Mercury.',
+  },
+  brex: {
+    steps: [
+      'Log in to Brex → Settings → Developer',
+      'Click "Create Token" and choose read-only scopes for /accounts',
+      'Copy the token — format starts with `bxt_`',
+    ],
+    docsUrl: 'https://developer.brex.com/guides/authentication',
+    mobileNote: 'Use a desktop browser to create API tokens on Brex.',
+  },
   wise: {
     steps: [
       'Log in to your Wise Business account at wise.com',
@@ -208,6 +343,12 @@ export function ExchangeConnectDialog({
   const [passphrase, setPassphrase] = useState('');
   const [token, setToken] = useState('');
   const [queryId, setQueryId] = useState('');
+  // Zerodha requires five fields (api_key, api_secret, userId, password,
+  // totpSecret). `apiKey`/`apiSecret` above cover the first two; these
+  // three cover the daily-login inputs.
+  const [userId, setUserId] = useState('');
+  const [password, setPassword] = useState('');
+  const [totpSecret, setTotpSecret] = useState('');
   // Status progression:
   //   idle → submitting (tRPC call running) → importing (job is running on
   //   the worker) → (closes + navigates on success/failure).
@@ -239,6 +380,9 @@ export function ExchangeConnectDialog({
     setPassphrase('');
     setToken('');
     setQueryId('');
+    setUserId('');
+    setPassword('');
+    setTotpSecret('');
     setStatus('idle');
     setErrorMsg('');
     setActiveJobId(null);
@@ -307,16 +451,21 @@ export function ExchangeConnectDialog({
       let input: Record<string, string>;
       switch (exchange.credentialType) {
         case 'apiKey':
+        case 'rsa':
           input = { apiKey, apiSecret, requestId };
           break;
         case 'passphrase':
           input = { apiKey, apiSecret, passphrase, requestId };
           break;
         case 'wise':
+        case 'token':
           input = { apiToken: token, requestId };
           break;
         case 'ibkr':
           input = { token, queryId, requestId };
+          break;
+        case 'zerodha':
+          input = { apiKey, apiSecret, userId, password, totpSecret, requestId };
           break;
         default:
           input = { apiKey, apiSecret, requestId };
@@ -350,12 +499,25 @@ export function ExchangeConnectDialog({
     switch (exchange.credentialType) {
       case 'apiKey':
         return apiKey.length > 0 && apiSecret.length > 0;
+      case 'rsa':
+        // RSA private keys are ~1.6 kB — a simple non-empty check would
+        // accept obviously-wrong pastes, so gate on the PEM header too.
+        return apiKey.length > 0 && apiSecret.includes('BEGIN') && apiSecret.includes('PRIVATE');
       case 'passphrase':
         return apiKey.length > 0 && apiSecret.length > 0 && passphrase.length > 0;
       case 'wise':
+      case 'token':
         return token.length > 0;
       case 'ibkr':
         return token.length > 0 && queryId.length > 0;
+      case 'zerodha':
+        return (
+          apiKey.length > 0 &&
+          apiSecret.length > 0 &&
+          userId.length > 0 &&
+          password.length > 0 &&
+          totpSecret.length > 0
+        );
     }
   };
 
@@ -371,7 +533,7 @@ export function ExchangeConnectDialog({
         onOpenChange(v);
       }}
     >
-      <DialogContent className="sm:max-w-md">
+      <DialogContent className={exchange.credentialType === 'rsa' ? 'sm:max-w-xl' : 'sm:max-w-md'}>
         <DialogHeader>
           <DialogTitle>Connect {exchange.name}</DialogTitle>
           <DialogDescription>
@@ -394,11 +556,15 @@ export function ExchangeConnectDialog({
           <div className="rounded-md bg-muted/50 p-3 space-y-1.5">
             <p className="text-xs font-medium text-muted-foreground">
               How to get your{' '}
-              {exchange.credentialType === 'wise'
+              {exchange.credentialType === 'wise' || exchange.credentialType === 'token'
                 ? 'API token'
                 : exchange.credentialType === 'ibkr'
                   ? 'Flex Query credentials'
-                  : 'API keys'}
+                  : exchange.credentialType === 'rsa'
+                    ? 'Tiger ID + RSA keypair'
+                    : exchange.credentialType === 'zerodha'
+                      ? 'Kite + login credentials'
+                      : 'API keys'}
               :
             </p>
             <ol className="text-xs text-muted-foreground space-y-1 list-decimal list-inside">
@@ -448,6 +614,90 @@ export function ExchangeConnectDialog({
             </>
           )}
 
+          {exchange.credentialType === 'rsa' && (
+            <>
+              <div className="space-y-2">
+                <Label htmlFor="rsa-tiger-id">Tiger ID</Label>
+                <Input
+                  id="rsa-tiger-id"
+                  value={apiKey}
+                  onChange={(e) => setApiKey(e.target.value)}
+                  placeholder="Enter your Tiger Developer ID"
+                  disabled={isBusy}
+                />
+              </div>
+              <RsaKeypairField
+                privateKey={apiSecret}
+                onPrivateKeyChange={setApiSecret}
+                disabled={isBusy}
+              />
+            </>
+          )}
+
+          {exchange.credentialType === 'zerodha' && (
+            <>
+              <div className="space-y-2">
+                <Label htmlFor="zerodha-api-key">Kite API Key</Label>
+                <Input
+                  id="zerodha-api-key"
+                  value={apiKey}
+                  onChange={(e) => setApiKey(e.target.value)}
+                  placeholder="Kite Connect app api_key"
+                  type="password"
+                  disabled={isBusy}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="zerodha-api-secret">Kite API Secret</Label>
+                <Input
+                  id="zerodha-api-secret"
+                  value={apiSecret}
+                  onChange={(e) => setApiSecret(e.target.value)}
+                  placeholder="Kite Connect app api_secret"
+                  type="password"
+                  disabled={isBusy}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="zerodha-user-id">Zerodha Client ID</Label>
+                <Input
+                  id="zerodha-user-id"
+                  value={userId}
+                  onChange={(e) => setUserId(e.target.value.toUpperCase())}
+                  placeholder="e.g. AB1234"
+                  disabled={isBusy}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="zerodha-password">Zerodha Password</Label>
+                <Input
+                  id="zerodha-password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder="Your Zerodha login password"
+                  type="password"
+                  disabled={isBusy}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="zerodha-totp-secret">TOTP Secret (Base32)</Label>
+                <Input
+                  id="zerodha-totp-secret"
+                  value={totpSecret}
+                  onChange={(e) => setTotpSecret(e.target.value.replace(/\s+/g, '').toUpperCase())}
+                  placeholder="Base32 secret from your Authenticator app"
+                  type="password"
+                  disabled={isBusy}
+                />
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Why this much? Kite's access_token expires daily. Storing your user_id, password,
+                and TOTP secret lets us regenerate it automatically — the alternative is
+                re-authenticating every morning.
+              </p>
+            </>
+          )}
+
           {exchange.credentialType === 'passphrase' && (
             <div className="space-y-2">
               <Label htmlFor="passphrase">Passphrase</Label>
@@ -462,14 +712,14 @@ export function ExchangeConnectDialog({
             </div>
           )}
 
-          {exchange.credentialType === 'wise' && (
+          {(exchange.credentialType === 'wise' || exchange.credentialType === 'token') && (
             <div className="space-y-2">
-              <Label htmlFor="wise-token">API Token</Label>
+              <Label htmlFor="api-token">API Token</Label>
               <Input
-                id="wise-token"
+                id="api-token"
                 value={token}
                 onChange={(e) => setToken(e.target.value)}
-                placeholder="Enter Wise API token"
+                placeholder={`Enter ${exchange.name} API token`}
                 type="password"
                 disabled={isBusy}
               />

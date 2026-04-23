@@ -52,18 +52,46 @@ export {
 export { allIntegrationConfigs, exchangeConfigs } from './config/integrationConfigs';
 // Export factory functions
 export {
+  createAlpacaApiService,
+  validateAlpacaCredentials,
+} from './factories/alpacaFactory';
+export {
   createBinanceApiService,
   detectBinanceAccountTypes,
   validateBinanceCredentials,
 } from './factories/binanceFactory';
 export {
+  createBitbankApiService,
+  validateBitbankCredentials,
+} from './factories/bitbankFactory';
+export {
+  createBitfinexApiService,
+  validateBitfinexCredentials,
+} from './factories/bitfinexFactory';
+export {
+  createBitflyerApiService,
+  validateBitflyerCredentials,
+} from './factories/bitflyerFactory';
+export {
   createBitgetApiService,
   validateBitgetCredentials,
 } from './factories/bitgetFactory';
 export {
+  createBitpandaApiService,
+  validateBitpandaCredentials,
+} from './factories/bitpandaFactory';
+export {
   createBitstampApiService,
   validateBitstampCredentials,
 } from './factories/bitstampFactory';
+export {
+  createBrexApiService,
+  validateBrexCredentials,
+} from './factories/brexFactory';
+export {
+  createBtcMarketsApiService,
+  validateBtcMarketsCredentials,
+} from './factories/btcMarketsFactory';
 export {
   createBybitApiService,
   validateBybitCredentials,
@@ -72,6 +100,10 @@ export {
   createCoinbaseApiService,
   validateCoinbaseCredentials,
 } from './factories/coinbaseFactory';
+export {
+  createCoincheckApiService,
+  validateCoincheckCredentials,
+} from './factories/coincheckFactory';
 export {
   createGateioApiService,
   validateGateioCredentials,
@@ -89,6 +121,10 @@ export {
   validateIbkrCredentials,
 } from './factories/ibkrFactory';
 export {
+  createIndependentReserveApiService,
+  validateIndependentReserveCredentials,
+} from './factories/independentReserveFactory';
+export {
   createKrakenApiService,
   validateKrakenCredentials,
 } from './factories/krakenFactory';
@@ -96,6 +132,10 @@ export {
   createKucoinApiService,
   validateKucoinCredentials,
 } from './factories/kucoinFactory';
+export {
+  createMercuryApiService,
+  validateMercuryCredentials,
+} from './factories/mercuryFactory';
 export {
   createMexcApiService,
   validateMexcCredentials,
@@ -105,9 +145,21 @@ export {
   validateOkxCredentials,
 } from './factories/okxFactory';
 export {
+  createTigerApiService,
+  validateTigerCredentials,
+} from './factories/tigerFactory';
+export {
+  createTinkoffApiService,
+  validateTinkoffCredentials,
+} from './factories/tinkoffFactory';
+export {
   createWiseApiService,
   validateWiseCredentials,
 } from './factories/wiseFactory';
+export {
+  createZerodhaApiService,
+  validateZerodhaCredentials,
+} from './factories/zerodhaFactory';
 export { IntegrationManager } from './IntegrationManager';
 // Export blockchain integration implementations
 export * from './implementations';

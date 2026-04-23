@@ -29,6 +29,23 @@ function isUnrecoverableExchangeError(err: unknown): boolean {
     // Signature / nonce / key errors from the exchange services.
     /EAPI:Invalid (signature|nonce|key)/.test(msg) ||
     /rejected request: retCode (10003|10004|10005|10006|33004)/.test(msg) ||
+    // Bitfinex rejects invalid keys with HTTP 500 + ["error",10100,
+    // "apikey: invalid"] body. The HTTP 5xx would otherwise look
+    // transient; match the body phrase to short-circuit retries.
+    /apikey: invalid/i.test(msg) ||
+    // bitbank returns 200 + {"success":0,"data":{"code":2000x}} on
+    // auth problems — service surfaces them as "bitbank error code X".
+    /bitbank error code/.test(msg) ||
+    // Tiger Brokers gateway returns 200 + non-zero `code` for signing
+    // / auth / inactive-account issues.
+    /Tiger Brokers error/.test(msg) ||
+    // Zerodha auto-login flow: envelope-level errors that aren't
+    // plain HTTP 4xx (the login/2FA endpoints can return 200 with a
+    // JSON error, or "no request_token after N hops" on silent OAuth
+    // failures). All are permanent until the user rotates creds.
+    /Zerodha (login|2FA|session\/token|OAuth) (failed|did not produce)/.test(msg) ||
+    /Zerodha OAuth redirect produced no request_token/.test(msg) ||
+    /Zerodha: (Invalid|Expired|Token|Input|User)/.test(msg) ||
     // Exchange-import targeted a blockchain-type institution. The
     // BlockchainIntegration path requires the wallet-import flow
     // (which supplies userId + walletManager); retrying the exchange
@@ -37,6 +54,9 @@ function isUnrecoverableExchangeError(err: unknown): boolean {
     /Exchange-import targeted a blockchain-type institution/.test(msg)
   );
 }
+
+// Exported for unit tests.
+export const __test_isUnrecoverableExchangeError = isUnrecoverableExchangeError;
 
 const payloadSchema: z.ZodType<ExchangeImportJob> = z.object({
   userId: z.string().min(1),

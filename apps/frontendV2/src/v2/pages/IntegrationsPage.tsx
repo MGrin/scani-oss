@@ -8,7 +8,7 @@ import { ExchangeConnectDialog } from '../components/integrations/ExchangeConnec
 import { FaviconImg } from '../components/shared/FaviconImg';
 import { V2_ROUTES } from '../lib/routes';
 
-type CredentialType = 'apiKey' | 'passphrase' | 'wise' | 'ibkr';
+type CredentialType = 'apiKey' | 'passphrase' | 'wise' | 'ibkr' | 'token' | 'rsa' | 'zerodha';
 
 interface ExchangeConfig {
   key: string;
@@ -104,6 +104,55 @@ const EXCHANGES: ExchangeConfig[] = [
     credentialType: 'apiKey',
     website: 'https://www.huobi.com',
   },
+  {
+    key: 'independent_reserve',
+    name: 'Independent Reserve',
+    category: 'crypto_exchange',
+    credentialType: 'apiKey',
+    website: 'https://www.independentreserve.com',
+  },
+  {
+    key: 'btc_markets',
+    name: 'BTC Markets',
+    category: 'crypto_exchange',
+    credentialType: 'apiKey',
+    website: 'https://www.btcmarkets.net',
+  },
+  {
+    key: 'bitfinex',
+    name: 'Bitfinex',
+    category: 'crypto_exchange',
+    credentialType: 'apiKey',
+    website: 'https://www.bitfinex.com',
+  },
+  {
+    key: 'bitpanda',
+    name: 'Bitpanda',
+    category: 'crypto_exchange',
+    credentialType: 'token',
+    website: 'https://www.bitpanda.com',
+  },
+  {
+    key: 'bitflyer',
+    name: 'bitFlyer',
+    category: 'crypto_exchange',
+    credentialType: 'apiKey',
+    website: 'https://bitflyer.com',
+  },
+  {
+    key: 'coincheck',
+    name: 'Coincheck',
+    category: 'crypto_exchange',
+    credentialType: 'apiKey',
+    website: 'https://coincheck.com',
+  },
+  {
+    key: 'bitbank',
+    name: 'bitbank',
+    category: 'crypto_exchange',
+    credentialType: 'apiKey',
+    website: 'https://bitbank.cc',
+  },
 
   // Banks
   {
@@ -113,6 +162,20 @@ const EXCHANGES: ExchangeConfig[] = [
     credentialType: 'wise',
     website: 'https://wise.com',
   },
+  {
+    key: 'mercury',
+    name: 'Mercury',
+    category: 'bank',
+    credentialType: 'token',
+    website: 'https://mercury.com',
+  },
+  {
+    key: 'brex',
+    name: 'Brex',
+    category: 'bank',
+    credentialType: 'token',
+    website: 'https://www.brex.com',
+  },
 
   // Brokers
   {
@@ -121,6 +184,34 @@ const EXCHANGES: ExchangeConfig[] = [
     category: 'broker',
     credentialType: 'ibkr',
     website: 'https://www.interactivebrokers.com',
+  },
+  {
+    key: 'alpaca',
+    name: 'Alpaca',
+    category: 'broker',
+    credentialType: 'apiKey',
+    website: 'https://alpaca.markets',
+  },
+  {
+    key: 'tinkoff',
+    name: 'T-Bank (Tinkoff)',
+    category: 'broker',
+    credentialType: 'token',
+    website: 'https://www.tbank.ru/invest/',
+  },
+  {
+    key: 'tiger_brokers',
+    name: 'Tiger Brokers',
+    category: 'broker',
+    credentialType: 'rsa',
+    website: 'https://www.tigerbrokers.com',
+  },
+  {
+    key: 'zerodha',
+    name: 'Zerodha',
+    category: 'broker',
+    credentialType: 'zerodha',
+    website: 'https://zerodha.com',
   },
 ];
 
@@ -148,6 +239,12 @@ function credentialLabel(type: CredentialType): string {
       return 'API Token';
     case 'ibkr':
       return 'Flex Query';
+    case 'token':
+      return 'API Token';
+    case 'rsa':
+      return 'ID + RSA Key';
+    case 'zerodha':
+      return 'Kite + Login';
   }
 }
 

@@ -106,6 +106,20 @@
       "when": 1777600000000,
       "tag": "0052_token_price_edit_history",
       "breakpoints": true
+    },
+    {
+      "idx": 53,
+      "version": "7",
+      "when": 1777700000000,
+      "tag": "0053_seed_independent_reserve",
+      "breakpoints": true
+    },
+    {
+      "idx": 54,
+      "version": "7",
+      "when": 1777800000000,
+      "tag": "0054_seed_new_integrations",
+      "breakpoints": true
     }
   ]
 }

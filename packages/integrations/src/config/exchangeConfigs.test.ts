@@ -2,8 +2,8 @@ import { describe, expect, it } from 'bun:test';
 import { exchangeConfigs } from './exchangeConfigs';
 
 describe('exchangeConfigs', () => {
-  it('should have 14 exchange configurations', () => {
-    expect(exchangeConfigs).toHaveLength(14);
+  it('should have 27 exchange configurations', () => {
+    expect(exchangeConfigs).toHaveLength(27);
   });
 
   it('should include all expected exchanges', () => {
@@ -22,6 +22,19 @@ describe('exchangeConfigs', () => {
     expect(names).toContain('MEXC');
     expect(names).toContain('Bitget');
     expect(names).toContain('Huobi');
+    expect(names).toContain('Independent Reserve');
+    expect(names).toContain('BTC Markets');
+    expect(names).toContain('Bitfinex');
+    expect(names).toContain('Bitpanda');
+    expect(names).toContain('bitFlyer');
+    expect(names).toContain('Coincheck');
+    expect(names).toContain('bitbank');
+    expect(names).toContain('Alpaca');
+    expect(names).toContain('T-Bank (Tinkoff)');
+    expect(names).toContain('Tiger Brokers');
+    expect(names).toContain('Zerodha');
+    expect(names).toContain('Mercury');
+    expect(names).toContain('Brex');
   });
 
   it('each config should have required fields', () => {

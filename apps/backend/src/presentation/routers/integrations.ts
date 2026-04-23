@@ -7,19 +7,32 @@ import { db } from '@scani/db/connection';
 import * as schema from '@scani/db/schema';
 import { IntegrationCredentialsService } from '@scani/domain/services';
 import {
+  validateAlpacaCredentials,
   validateBinanceCredentials,
+  validateBitbankCredentials,
+  validateBitfinexCredentials,
+  validateBitflyerCredentials,
   validateBitgetCredentials,
+  validateBitpandaCredentials,
   validateBitstampCredentials,
+  validateBrexCredentials,
+  validateBtcMarketsCredentials,
   validateBybitCredentials,
   validateCoinbaseCredentials,
+  validateCoincheckCredentials,
   validateGateioCredentials,
   validateGeminiCredentials,
   validateHuobiCredentials,
+  validateIndependentReserveCredentials,
   validateKrakenCredentials,
   validateKucoinCredentials,
+  validateMercuryCredentials,
   validateMexcCredentials,
   validateOkxCredentials,
+  validateTigerCredentials,
+  validateTinkoffCredentials,
   validateWiseCredentials,
+  validateZerodhaCredentials,
 } from '@scani/integrations';
 import { JOB_NAMES } from '@scani/queue';
 import { TRPCError } from '@trpc/server';
@@ -216,6 +229,58 @@ function createPassphraseRouter(
   });
 }
 
+/**
+ * Single-token providers (Bitpanda, Tinkoff, Mercury, Brex). The token
+ * lands in the stored credential blob as `apiToken`, which every
+ * corresponding integration reads from that slot.
+ */
+function createTokenRouter(name: string, validate: (token: string) => Promise<boolean>) {
+  const tokenInput = z.object({
+    apiToken: z.string().min(1, 'API Token is required'),
+    requestId: z.string().uuid(),
+  });
+  return router({
+    validateKeys: protectedProcedure.input(tokenInput).mutation(async ({ input, ctx }) => {
+      try {
+        const isValid = await validate(input.apiToken);
+        if (!isValid) {
+          throw new TRPCError({
+            code: 'BAD_REQUEST',
+            message: `Invalid ${name} API token`,
+          });
+        }
+      } catch (error) {
+        if (error instanceof TRPCError) throw error;
+        const upstream = error instanceof Error && error.message ? error.message : String(error);
+        throw toTRPCError(error, {
+          fallbackCode: 'BAD_REQUEST',
+          fallbackMessage: `${name}: ${upstream}`,
+        });
+      }
+
+      try {
+        const { institutionId, jobId } = await storeAndEnqueueImport(
+          ctx.userId,
+          name,
+          { apiToken: input.apiToken },
+          input.requestId
+        );
+        return {
+          success: true,
+          message: `${name} credentials validated and stored`,
+          institutionId,
+          jobId,
+        };
+      } catch (error) {
+        throw toTRPCError(error, {
+          fallbackCode: 'INTERNAL_SERVER_ERROR',
+          fallbackMessage: 'Failed to store credentials and enqueue import',
+        });
+      }
+    }),
+  });
+}
+
 export const integrationsRouter = router({
   // All crypto exchanges: validate credentials, store, and auto-import immediately
   binance: createApiKeyOnlyRouter('Binance', validateBinanceCredentials),
@@ -227,6 +292,87 @@ export const integrationsRouter = router({
   mexc: createApiKeyOnlyRouter('MEXC', validateMexcCredentials),
   gateio: createApiKeyOnlyRouter('Gate.io', validateGateioCredentials),
   huobi: createApiKeyOnlyRouter('Huobi', validateHuobiCredentials),
+  independent_reserve: createApiKeyOnlyRouter(
+    'Independent Reserve',
+    validateIndependentReserveCredentials
+  ),
+  btc_markets: createApiKeyOnlyRouter('BTC Markets', validateBtcMarketsCredentials),
+  bitfinex: createApiKeyOnlyRouter('Bitfinex', validateBitfinexCredentials),
+  bitflyer: createApiKeyOnlyRouter('bitFlyer', validateBitflyerCredentials),
+  coincheck: createApiKeyOnlyRouter('Coincheck', validateCoincheckCredentials),
+  bitbank: createApiKeyOnlyRouter('bitbank', validateBitbankCredentials),
+  alpaca: createApiKeyOnlyRouter('Alpaca', validateAlpacaCredentials),
+  tiger_brokers: createApiKeyOnlyRouter('Tiger Brokers', validateTigerCredentials),
+
+  // Kite Connect: we auto-refresh the access_token from the user's
+  // Kite client ID + password + TOTP secret every sync. That's more
+  // credential surface than a typical integration, but it's what it
+  // takes to cover Kite's once-a-day token expiry without pestering
+  // users to re-auth daily.
+  zerodha: router({
+    validateKeys: protectedProcedure
+      .input(
+        z.object({
+          apiKey: z.string().min(1, 'Kite api_key is required'),
+          apiSecret: z.string().min(1, 'Kite api_secret is required'),
+          userId: z.string().min(1, 'Kite user_id is required'),
+          password: z.string().min(1, 'Kite password is required'),
+          totpSecret: z.string().min(1, 'TOTP secret is required'),
+          requestId: z.string().uuid(),
+        })
+      )
+      .mutation(async ({ input, ctx }) => {
+        const creds = {
+          apiKey: input.apiKey,
+          apiSecret: input.apiSecret,
+          userId: input.userId,
+          password: input.password,
+          totpSecret: input.totpSecret,
+        };
+        try {
+          const isValid = await validateZerodhaCredentials(creds);
+          if (!isValid) {
+            throw new TRPCError({
+              code: 'BAD_REQUEST',
+              message: 'Invalid Zerodha credentials — check user_id, password, and TOTP secret',
+            });
+          }
+        } catch (error) {
+          if (error instanceof TRPCError) throw error;
+          const upstream = error instanceof Error && error.message ? error.message : String(error);
+          throw toTRPCError(error, {
+            fallbackCode: 'BAD_REQUEST',
+            fallbackMessage: `Zerodha: ${upstream}`,
+          });
+        }
+
+        try {
+          const { institutionId, jobId } = await storeAndEnqueueImport(
+            ctx.userId,
+            'Zerodha',
+            creds,
+            input.requestId
+          );
+          return {
+            success: true,
+            message: 'Zerodha credentials validated and stored',
+            institutionId,
+            jobId,
+          };
+        } catch (error) {
+          throw toTRPCError(error, {
+            fallbackCode: 'INTERNAL_SERVER_ERROR',
+            fallbackMessage: 'Failed to store credentials and enqueue import',
+          });
+        }
+      }),
+  }),
+
+  // Single-token providers
+  bitpanda: createTokenRouter('Bitpanda', validateBitpandaCredentials),
+  tinkoff: createTokenRouter('T-Bank (Tinkoff)', validateTinkoffCredentials),
+  mercury: createTokenRouter('Mercury', validateMercuryCredentials),
+  brex: createTokenRouter('Brex', validateBrexCredentials),
 
   okx: createPassphraseRouter('OKX', validateOkxCredentials),
   kucoin: createPassphraseRouter('KuCoin', validateKucoinCredentials),
