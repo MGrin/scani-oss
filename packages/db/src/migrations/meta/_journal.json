@@ -99,6 +99,13 @@
       "when": 1777500000000,
       "tag": "0051_cloud_usage_events",
       "breakpoints": true
+    },
+    {
+      "idx": 52,
+      "version": "7",
+      "when": 1777600000000,
+      "tag": "0052_token_price_edit_history",
+      "breakpoints": true
     }
   ]
 }

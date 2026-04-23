@@ -3,6 +3,7 @@ import {
   CHAIN_ID_TO_DEFILLAMA,
   config,
   DEFILLAMA_MIN_CONFIDENCE,
+  detectFinnhubExchangeInfo,
   fetchWithTimeout,
   PROVIDER_CONFIGS,
 } from '@scani/pricing-providers';
@@ -353,11 +354,16 @@ export class TokenValidationService {
         return [];
       }
 
-      // Use Finnhub's symbol lookup endpoint
+      // Use Finnhub's symbol lookup endpoint. Tight timeout (3s) + no
+      // retries because this sits on the user-facing search hot path —
+      // the router tolerates one provider failing, so a slow Finnhub
+      // shouldn't gate the whole search response.
       const searchUrl = `${
         config.finnhub.baseUrl
       }/search?q=${encodeURIComponent(query)}&token=${apiKey}`;
-      const response = await this.pricingService.finnhubRateLimiter.execute(() => fetch(searchUrl));
+      const response = await this.pricingService.finnhubRateLimiter.execute(() =>
+        fetchWithTimeout(searchUrl, undefined, 3000, 0)
+      );
 
       if (!response.ok) {
         this.logger.warn(
@@ -403,15 +409,22 @@ export class TokenValidationService {
           }
         }
 
+        const finalSymbol = item.displaySymbol || item.symbol;
+        // Non-US listings (e.g. XEQT.TO, VOD.L) can't be priced by
+        // Finnhub's free tier. Tag them with exchangeInfo so the router
+        // can send them to Google Sheets instead.
+        const exchangeInfo = detectFinnhubExchangeInfo(finalSymbol);
         const metadata: TokenMetadata = {
-          symbol: item.displaySymbol || item.symbol,
+          symbol: finalSymbol,
           name: item.description,
           type: tokenType,
-          currency: 'USD', // Default currency for Finnhub
+          currency: exchangeInfo?.currency ?? 'USD',
+          exchange: exchangeInfo?.exchange,
           provider: 'finnhub',
           providerMetadata: {
             searchResult: item,
             validatedAt: new Date().toISOString(),
+            ...(exchangeInfo ? { exchangeInfo } : {}),
           },
         };
 
@@ -447,9 +460,12 @@ export class TokenValidationService {
         headers['x-cg-pro-api-key'] = config.coinGecko.apiKey;
       }
 
+      // Tight timeout (3s) + no retries — the router's allSettled
+      // handling lets a slow CoinGecko fall through without blocking
+      // Finnhub / DB results.
       const searchUrl = `${config.coinGecko.baseUrl}/search?query=${encodeURIComponent(query)}`;
       const response = await this.pricingService.coinGeckoRateLimiter.execute(() =>
-        fetch(searchUrl, { headers })
+        fetchWithTimeout(searchUrl, { headers }, 3000, 0)
       );
 
       if (!response.ok) {

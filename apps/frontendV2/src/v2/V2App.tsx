@@ -19,6 +19,7 @@ import { JobDetailPage } from './pages/JobDetailPage';
 import { JobsPage } from './pages/JobsPage';
 import { ManualEntryPage } from './pages/ManualEntryPage';
 import { SettingsPage } from './pages/SettingsPage';
+import { TokensPage } from './pages/TokensPage';
 import { VaultDetailPage } from './pages/VaultDetailPage';
 import { VaultsPage } from './pages/VaultsPage';
 import { WalletImportPage } from './pages/WalletImportPage';
@@ -48,6 +49,7 @@ export function V2App() {
                 <Route path="add-data" element={<AddDataPage />} />
                 <Route path="jobs" element={<JobsPage />} />
                 <Route path="jobs/:jobId" element={<JobDetailPage />} />
+                <Route path="tokens" element={<TokensPage />} />
                 <Route path="settings" element={<SettingsPage />} />
               </Route>
             </Routes>

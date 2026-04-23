@@ -23,6 +23,8 @@ export { HoldingApyConfigRepository } from './HoldingApyConfigRepository';
 export { HoldingRepository } from './HoldingRepository';
 export { InstitutionBlockchainMappingRepository } from './InstitutionBlockchainMappingRepository';
 export { InstitutionRepository } from './InstitutionRepository';
+export type { TokenPriceEditHistoryWithEditor } from './TokenPriceEditHistoryRepository';
+export { TokenPriceEditHistoryRepository } from './TokenPriceEditHistoryRepository';
 export { TokenPriceRepository } from './TokenPriceRepository';
 export { TokenRepository } from './TokenRepository';
 export { UserIntegrationCredentialsRepository } from './UserIntegrationCredentialsRepository';

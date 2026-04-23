@@ -17,7 +17,10 @@ import { useHoldingActions } from '../../hooks/useHoldingActions';
 import { formatMoney } from '../../lib/format';
 import { V2_ROUTES } from '../../lib/routes';
 import { ConfirmDialog } from '../shared/ConfirmDialog';
+import { EditCustomTokenPriceDialog } from '../tokens/EditCustomTokenPriceDialog';
 import { ApyConfigDialog } from './ApyConfigDialog';
+
+const CUSTOM_TOKEN_TYPE_CODES = new Set(['private-company', 'other']);
 
 function formatRelativeTime(dateStr: string): string {
   const now = Date.now();
@@ -93,6 +96,7 @@ export function HoldingDetailContent({ holdingId, mode = 'panel' }: HoldingDetai
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [showApyDialog, setShowApyDialog] = useState(false);
   const [showApyDeleteConfirm, setShowApyDeleteConfirm] = useState(false);
+  const [showEditPrice, setShowEditPrice] = useState(false);
 
   const deleteApyMutation = trpc.holdings.deleteApyConfig.useMutation({
     onSuccess: () => {
@@ -258,17 +262,29 @@ export function HoldingDetailContent({ holdingId, mode = 'panel' }: HoldingDetai
         <DetailRow
           label="Price"
           value={
-            holding.price?.value ? (
-              <span className="flex flex-col items-end gap-0.5">
-                <span>{formatMoney(Number(holding.price.value), currencySymbol)}</span>
-                <span className="text-[10px] text-muted-foreground/70">
-                  {holding.price.timestamp ? formatRelativeTime(holding.price.timestamp) : ''}
-                  {holding.price.source ? ` · ${holding.price.source}` : ''}
+            <span className="flex items-center gap-1.5">
+              {holding.price?.value ? (
+                <span className="flex flex-col items-end gap-0.5">
+                  <span>{formatMoney(Number(holding.price.value), currencySymbol)}</span>
+                  <span className="text-[10px] text-muted-foreground/70">
+                    {holding.price.timestamp ? formatRelativeTime(holding.price.timestamp) : ''}
+                    {holding.price.source ? ` · ${holding.price.source}` : ''}
+                  </span>
                 </span>
-              </span>
-            ) : (
-              'N/A'
-            )
+              ) : (
+                <span>N/A</span>
+              )}
+              {CUSTOM_TOKEN_TYPE_CODES.has(holding.token.typeCode) && (
+                <button
+                  type="button"
+                  onClick={() => setShowEditPrice(true)}
+                  className="text-muted-foreground hover:text-foreground shrink-0"
+                  title="Edit manual price"
+                >
+                  <Pencil className="h-3.5 w-3.5" />
+                </button>
+              )}
+            </span>
           }
         />
         <DetailRow label="Account" value={holding.account?.name || '-'} />
@@ -413,6 +429,17 @@ export function HoldingDetailContent({ holdingId, mode = 'panel' }: HoldingDetai
         holdingId={holdingId}
         existingConfig={holding.apyConfig ?? undefined}
       />
+
+      {CUSTOM_TOKEN_TYPE_CODES.has(holding.token.typeCode) && (
+        <EditCustomTokenPriceDialog
+          open={showEditPrice}
+          onOpenChange={setShowEditPrice}
+          tokenId={holding.token.id}
+          tokenSymbol={holding.token.symbol}
+          currentPrice={holding.price?.value ?? null}
+          currentBaseCurrency={currencySymbol}
+        />
+      )}
 
       <ConfirmDialog
         open={showApyDeleteConfirm}

@@ -1,10 +1,12 @@
 import type { DbType } from '@scani/db/connection';
 import type * as schema from '@scani/db/schema';
+import { TokenPriceRepository } from '@scani/domain/repositories/TokenPriceRepository';
 import { TokenService } from '@scani/domain/services/TokenService';
 import type { TokenValidationService } from '@scani/domain/services/TokenValidationService';
 import { createComponentLogger } from '@scani/logging';
 import { emitEntityChange } from '@scani/realtime';
-import { and, eq, lt, sql } from 'drizzle-orm';
+import { TRPCError } from '@trpc/server';
+import { and, eq, inArray, lt, sql } from 'drizzle-orm';
 import Container from 'typedi';
 import { z } from 'zod';
 import { requireAuth } from '../middleware/auth';
@@ -12,6 +14,9 @@ import { protectedProcedure, router } from '../trpc';
 
 const tokensLogger = createComponentLogger('router:tokens');
 const tokenService = Container.get(TokenService);
+const tokenPriceRepository = Container.get(TokenPriceRepository);
+
+const CUSTOM_TOKEN_TYPE_CODES = ['private-company', 'other'] as const;
 
 // Scam token probability threshold - tokens above this are filtered from UI
 // Import the shared threshold from core config
@@ -145,11 +150,31 @@ export function createTokensRouter(
               return results;
             }
 
-            // Search both Finnhub and CoinGecko concurrently
-            const [finnhubResults, coinGeckoResults] = await Promise.all([
+            // Search both Finnhub and CoinGecko concurrently. Use
+            // `allSettled` so one provider timing out or throwing
+            // (no API key, rate limit, network hiccup) doesn't block
+            // the other. Each provider also has a 3s fetch timeout
+            // internally, so this promise resolves in ≤3s worst case.
+            const [finnhubSettled, coinGeckoSettled] = await Promise.allSettled([
               tokenValidationService.searchFinnhubTokens(query),
               tokenValidationService.searchCoinGeckoTokens(query),
             ]);
+            const finnhubResults =
+              finnhubSettled.status === 'fulfilled' ? finnhubSettled.value : [];
+            const coinGeckoResults =
+              coinGeckoSettled.status === 'fulfilled' ? coinGeckoSettled.value : [];
+            if (finnhubSettled.status === 'rejected') {
+              tokensLogger.warn(
+                { query, reason: String(finnhubSettled.reason) },
+                'Finnhub search failed — continuing with other results'
+              );
+            }
+            if (coinGeckoSettled.status === 'rejected') {
+              tokensLogger.warn(
+                { query, reason: String(coinGeckoSettled.reason) },
+                'CoinGecko search failed — continuing with other results'
+              );
+            }
 
             // Combine and prioritize results: crypto tokens first for exact symbol matches
             const allProviderResults = [
@@ -438,5 +463,218 @@ export function createTokensRouter(
 
         return { success: true as const, tokenId: token.id };
       }),
+
+    /**
+     * Create a custom token (private-company / other) with an initial
+     * manual price in the base currency the user chose. Custom tokens
+     * are shared globally (any user can see them) and any user can edit
+     * the price later via `updateCustomPrice`. The initial price is
+     * recorded in both `token_prices` and `token_price_edit_history`.
+     */
+    createCustom: protectedProcedure
+      .input(
+        z.object({
+          symbol: z
+            .string()
+            .min(1)
+            .max(20)
+            .transform((val) => val.toUpperCase()),
+          name: z.string().min(1).max(200),
+          typeCode: z.enum(CUSTOM_TOKEN_TYPE_CODES),
+          manualPrice: z.number().positive(),
+          baseCurrencyCode: z
+            .string()
+            .min(1)
+            .max(10)
+            .transform((val) => val.toUpperCase()),
+          priceDescription: z.string().max(500).optional(),
+          description: z.string().max(2000).optional(),
+          decimals: z.number().int().min(0).max(18).default(2),
+          iconUrl: z.string().url().optional(),
+        })
+      )
+      .mutation(async ({ input, ctx }) => {
+        const { dbUser } = await requireAuth(ctx);
+
+        try {
+          const createdToken = await tokenService.createCustomToken(
+            {
+              symbol: input.symbol,
+              name: input.name,
+              typeCode: input.typeCode,
+              manualPrice: input.manualPrice,
+              baseCurrencyCode: input.baseCurrencyCode,
+              priceDescription: input.priceDescription,
+              description: input.description,
+              decimals: input.decimals,
+              iconUrl: input.iconUrl ?? null,
+            },
+            dbUser.id
+          );
+
+          emitEntityChange({
+            type: 'entity_changed',
+            entityType: 'token',
+            operationType: 'create',
+            entityId: createdToken.id,
+            userId: dbUser.id,
+            data: {
+              symbol: createdToken.symbol,
+              typeId: createdToken.typeId,
+              custom: true,
+            },
+          });
+
+          return createdToken;
+        } catch (error) {
+          const message = error instanceof Error ? error.message : 'Unknown error';
+          if (message.toLowerCase().includes('already exists')) {
+            throw new TRPCError({ code: 'CONFLICT', message });
+          }
+          throw error;
+        }
+      }),
+
+    /**
+     * Append a manual price update to a custom token. Writes a new row to
+     * `token_prices` (source='manual') and a row to
+     * `token_price_edit_history` atomically. Rejects non-custom tokens.
+     */
+    updateCustomPrice: protectedProcedure
+      .input(
+        z.object({
+          tokenId: z.string().uuid(),
+          newPrice: z.number().positive(),
+          baseCurrencyCode: z
+            .string()
+            .min(1)
+            .max(10)
+            .transform((val) => val.toUpperCase()),
+          reason: z.string().min(1).max(500).optional(),
+        })
+      )
+      .mutation(async ({ input, ctx }) => {
+        const { dbUser } = await requireAuth(ctx);
+
+        try {
+          const result = await tokenService.updateCustomTokenPrice({
+            tokenId: input.tokenId,
+            newPrice: input.newPrice,
+            baseCurrencyCode: input.baseCurrencyCode,
+            reason: input.reason,
+            userId: dbUser.id,
+          });
+
+          emitEntityChange({
+            type: 'entity_changed',
+            entityType: 'token',
+            operationType: 'update',
+            entityId: result.token.id,
+            userId: dbUser.id,
+            data: {
+              symbol: result.token.symbol,
+              previousPrice: result.previousPrice,
+              newPrice: result.newPrice,
+              manualPriceUpdate: true,
+            },
+          });
+
+          return result;
+        } catch (error) {
+          const message = error instanceof Error ? error.message : 'Unknown error';
+          if (message.includes('not a custom token')) {
+            throw new TRPCError({ code: 'BAD_REQUEST', message });
+          }
+          if (message.includes('not found')) {
+            throw new TRPCError({ code: 'NOT_FOUND', message });
+          }
+          throw error;
+        }
+      }),
+
+    /**
+     * Return the edit history of a custom token's price, with the
+     * editor's email/name for display.
+     */
+    getPriceEditHistory: protectedProcedure
+      .input(
+        z.object({
+          tokenId: z.string().uuid(),
+          limit: z.number().int().min(1).max(200).default(50),
+        })
+      )
+      .query(async ({ input }) => {
+        return await tokenService.getPriceEditHistory(input.tokenId, input.limit);
+      }),
+
+    /**
+     * List custom tokens (types private-company and other) with their
+     * latest manual price and the base currency that price was recorded
+     * in. Used by the /tokens catalog page.
+     */
+    listCustom: protectedProcedure.query(async () => {
+      const customTypes = await db
+        .select({ id: schemaObj.tokenTypes.id, code: schemaObj.tokenTypes.code })
+        .from(schemaObj.tokenTypes)
+        .where(inArray(schemaObj.tokenTypes.code, CUSTOM_TOKEN_TYPE_CODES as unknown as string[]));
+
+      if (customTypes.length === 0) return [];
+
+      const customTypeIds = customTypes.map((t) => t.id);
+      const customTypeCodeById = new Map(customTypes.map((t) => [t.id, t.code]));
+
+      const tokenRows = await db
+        .select({
+          id: schemaObj.tokens.id,
+          symbol: schemaObj.tokens.symbol,
+          name: schemaObj.tokens.name,
+          typeId: schemaObj.tokens.typeId,
+          decimals: schemaObj.tokens.decimals,
+          iconUrl: schemaObj.tokens.iconUrl,
+          isActive: schemaObj.tokens.isActive,
+          createdAt: schemaObj.tokens.createdAt,
+          updatedAt: schemaObj.tokens.updatedAt,
+        })
+        .from(schemaObj.tokens)
+        .where(
+          and(inArray(schemaObj.tokens.typeId, customTypeIds), eq(schemaObj.tokens.isActive, true))
+        )
+        .orderBy(schemaObj.tokens.symbol);
+
+      if (tokenRows.length === 0) return [];
+
+      const priceMap = await tokenPriceRepository.findLatestManualPricesForTokensAnyBase(
+        tokenRows.map((t) => t.id)
+      );
+
+      const baseTokenIds = Array.from(
+        new Set(
+          Array.from(priceMap.values())
+            .map((p) => p.baseTokenId)
+            .filter((id): id is string => !!id)
+        )
+      );
+      const baseTokenSymbolMap = new Map<string, string>();
+      if (baseTokenIds.length > 0) {
+        const baseTokens = await db
+          .select({ id: schemaObj.tokens.id, symbol: schemaObj.tokens.symbol })
+          .from(schemaObj.tokens)
+          .where(inArray(schemaObj.tokens.id, baseTokenIds));
+        for (const b of baseTokens) baseTokenSymbolMap.set(b.id, b.symbol);
+      }
+
+      return tokenRows.map((t) => {
+        const latest = priceMap.get(t.id);
+        return {
+          ...t,
+          typeCode: customTypeCodeById.get(t.typeId) ?? null,
+          latestPrice: latest?.price ?? null,
+          latestPriceAt: latest?.timestamp ?? null,
+          latestPriceBaseCurrency: latest?.baseTokenId
+            ? (baseTokenSymbolMap.get(latest.baseTokenId) ?? null)
+            : null,
+        };
+      });
+    }),
   });
 }

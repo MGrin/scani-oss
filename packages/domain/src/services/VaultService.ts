@@ -181,12 +181,26 @@ export class VaultService extends BaseService {
       if (token.id === vaultCurrency.id) {
         price = '1';
       } else {
+        // Strict lookup first; if it misses, fall back to PricingService
+        // so custom tokens priced in a different fiat are converted to
+        // the vault's currency. This mirrors `recalculateVaultAmount`
+        // so the detail view matches the stored aggregate.
         const latestPrice = await this.tokenPriceRepository.findLatestPrice(
           token.id,
           vaultCurrency.id
         );
         if (latestPrice) {
           price = latestPrice.price;
+        } else {
+          try {
+            price = await this.pricingService.getTokenPrice(
+              token,
+              vaultCurrency.symbol,
+              new Date()
+            );
+          } catch {
+            price = '0';
+          }
         }
       }
 

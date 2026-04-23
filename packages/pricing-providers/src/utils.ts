@@ -181,5 +181,95 @@ export function normalizeForFinnhubSymbol(raw: string): string {
   return s;
 }
 
+/**
+ * Map Finnhub/Yahoo-style symbol suffixes to exchange + quoted-currency.
+ * Finnhub's free tier only prices US-listed symbols — anything with a
+ * non-US suffix needs to route through Google Sheets (GOOGLEFINANCE).
+ * The currency is used by the Google Sheets provider to convert the
+ * returned price into the user's base currency.
+ *
+ * US share classes (`BRK.A`, `BF.B`, …) deliberately aren't in this map
+ * so they stay on Finnhub.
+ */
+export const NON_US_EXCHANGE_SUFFIX_MAP: Record<string, { exchange: string; currency: string }> = {
+  // Canada
+  TO: { exchange: 'TSX', currency: 'CAD' },
+  V: { exchange: 'TSXV', currency: 'CAD' },
+  NE: { exchange: 'NEO', currency: 'CAD' },
+  CN: { exchange: 'CSE', currency: 'CAD' },
+  // UK
+  L: { exchange: 'LSE', currency: 'GBP' },
+  IL: { exchange: 'LSE', currency: 'USD' },
+  AQ: { exchange: 'AQSE', currency: 'GBP' },
+  // Euronext / continental Europe
+  PA: { exchange: 'PAR', currency: 'EUR' },
+  AS: { exchange: 'AMS', currency: 'EUR' },
+  BR: { exchange: 'BRU', currency: 'EUR' },
+  LS: { exchange: 'LIS', currency: 'EUR' },
+  MI: { exchange: 'MIL', currency: 'EUR' },
+  MC: { exchange: 'MAD', currency: 'EUR' },
+  VI: { exchange: 'VIE', currency: 'EUR' },
+  DE: { exchange: 'XETRA', currency: 'EUR' },
+  F: { exchange: 'FRA', currency: 'EUR' },
+  MU: { exchange: 'MUN', currency: 'EUR' },
+  BE: { exchange: 'BER', currency: 'EUR' },
+  SG: { exchange: 'STU', currency: 'EUR' },
+  HM: { exchange: 'HAM', currency: 'EUR' },
+  HA: { exchange: 'HAN', currency: 'EUR' },
+  HE: { exchange: 'HEL', currency: 'EUR' },
+  IR: { exchange: 'ISE', currency: 'EUR' },
+  // Nordic / Switzerland
+  SW: { exchange: 'SIX', currency: 'CHF' },
+  ST: { exchange: 'STO', currency: 'SEK' },
+  OL: { exchange: 'OSL', currency: 'NOK' },
+  CO: { exchange: 'CPH', currency: 'DKK' },
+  IC: { exchange: 'ICE', currency: 'ISK' },
+  // Asia
+  T: { exchange: 'TYO', currency: 'JPY' },
+  HK: { exchange: 'HKG', currency: 'HKD' },
+  SS: { exchange: 'SHA', currency: 'CNY' },
+  SZ: { exchange: 'SHE', currency: 'CNY' },
+  KS: { exchange: 'KRX', currency: 'KRW' },
+  KQ: { exchange: 'KOSDAQ', currency: 'KRW' },
+  SI: { exchange: 'SGX', currency: 'SGD' },
+  BK: { exchange: 'SET', currency: 'THB' },
+  TW: { exchange: 'TPE', currency: 'TWD' },
+  TWO: { exchange: 'TPEX', currency: 'TWD' },
+  JK: { exchange: 'IDX', currency: 'IDR' },
+  NS: { exchange: 'NSE', currency: 'INR' },
+  BO: { exchange: 'BSE', currency: 'INR' },
+  // Pacific
+  AX: { exchange: 'ASX', currency: 'AUD' },
+  NZ: { exchange: 'NZX', currency: 'NZD' },
+  // LatAm
+  SA: { exchange: 'B3', currency: 'BRL' },
+  MX: { exchange: 'BMV', currency: 'MXN' },
+  BA: { exchange: 'BCBA', currency: 'ARS' },
+  CL: { exchange: 'BCS', currency: 'CLP' },
+  // Africa / MENA
+  JO: { exchange: 'JSE', currency: 'ZAR' },
+  CA: { exchange: 'EGX', currency: 'EGP' },
+  // CIS / CEE / Middle East
+  ME: { exchange: 'MOEX', currency: 'RUB' },
+  IS: { exchange: 'BIST', currency: 'TRY' },
+  WA: { exchange: 'WSE', currency: 'PLN' },
+  TA: { exchange: 'TASE', currency: 'ILS' },
+  SR: { exchange: 'TADAWUL', currency: 'SAR' },
+};
+
+/**
+ * Extract exchange + currency info from a Finnhub/Yahoo-style symbol.
+ * Returns null for US listings (no suffix, or share-class suffix only).
+ */
+export function detectFinnhubExchangeInfo(
+  symbol: string
+): { exchange: string; currency: string } | null {
+  if (!symbol) return null;
+  const dotIdx = symbol.lastIndexOf('.');
+  if (dotIdx < 0) return null;
+  const suffix = symbol.slice(dotIdx + 1).toUpperCase();
+  return NON_US_EXCHANGE_SUFFIX_MAP[suffix] ?? null;
+}
+
 // Re-export RateLimiter from @scani/rate-limiter package
 export { type IRateLimiter, RateLimiter } from '@scani/rate-limiter';

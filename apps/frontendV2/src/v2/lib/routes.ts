@@ -15,6 +15,7 @@ export const V2_ROUTES = {
   walletImport: '/wallet-import',
   manualEntry: '/manual-entry',
   addData: '/add-data',
+  tokens: '/tokens',
   settings: '/settings',
   jobs: '/jobs',
   jobDetail: (jobId: string) => `/jobs/${jobId}`,
@@ -48,6 +49,7 @@ export const NAV_SECTIONS: NavSection[] = [
     items: [
       { label: 'Groups', icon: 'Tags', path: V2_ROUTES.groups },
       { label: 'Vaults', icon: 'Vault', path: V2_ROUTES.vaults },
+      { label: 'Custom Tokens', icon: 'Coins', path: V2_ROUTES.tokens },
     ],
   },
   {

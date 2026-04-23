@@ -602,6 +602,40 @@ export const adminAuditLog = pgTable(
   })
 );
 
+// Append-only log of manual price edits on custom tokens (types
+// 'private-company' and 'other'). `previousPrice` is null on the creation
+// entry. Unlocks future abuse-detection / user-flagging without schema
+// changes. See migration 0052.
+export const tokenPriceEditHistory = pgTable(
+  'token_price_edit_history',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    tokenId: uuid('token_id')
+      .notNull()
+      .references(() => tokens.id, { onDelete: 'cascade' }),
+    baseTokenId: uuid('base_token_id')
+      .notNull()
+      .references(() => tokens.id, { onDelete: 'restrict' }),
+    previousPrice: text('previous_price'),
+    newPrice: text('new_price').notNull(),
+    editedByUserId: uuid('edited_by_user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'restrict' }),
+    reason: text('reason'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => ({
+    tokenCreatedIdx: index('idx_token_price_edit_history_token_created').on(
+      table.tokenId,
+      table.createdAt.desc()
+    ),
+    userCreatedIdx: index('idx_token_price_edit_history_user_created').on(
+      table.editedByUserId,
+      table.createdAt.desc()
+    ),
+  })
+);
+
 // =============================================================================
 // RELATIONS
 // =============================================================================
@@ -856,6 +890,9 @@ export type NewHoldingApyConfig = typeof holdingApyConfigs.$inferInsert;
 
 export type AdminAuditLog = typeof adminAuditLog.$inferSelect;
 export type NewAdminAuditLog = typeof adminAuditLog.$inferInsert;
+
+export type TokenPriceEditHistory = typeof tokenPriceEditHistory.$inferSelect;
+export type NewTokenPriceEditHistory = typeof tokenPriceEditHistory.$inferInsert;
 
 // =============================================================================
 // CLOUD (data-provider service) — Better-Auth user store + API key registry

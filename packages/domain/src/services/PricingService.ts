@@ -609,6 +609,34 @@ export class PricingService {
       };
     }
 
+    // Manual prices for custom tokens are recorded in whatever fiat the
+    // creator chose. When a user queries for a different base currency,
+    // the strict baseCurrencyId filter above misses them — fall back to
+    // the latest manual price in ANY base, and let the caller convert
+    // via the standard cachedPrice conversion path.
+    const manualAnyBase = await this.tokenPriceRepository.findLatestManualPricesForTokensAnyBase([
+      tokenId,
+    ]);
+    const manual = manualAnyBase.get(tokenId);
+    if (manual) {
+      pricingLogger.debug(
+        {
+          tokenId,
+          requestedBaseCurrency: baseCurrencyId,
+          priceBaseCurrency: manual.baseTokenId,
+          source: manual.source,
+          timestamp: manual.timestamp,
+        },
+        'Found manual price in alternate base — will be converted to requested currency'
+      );
+      return {
+        price: manual.price,
+        timestamp: manual.timestamp,
+        source: manual.source ?? 'manual',
+        baseTokenId: manual.baseTokenId,
+      };
+    }
+
     return null;
   }
 
@@ -725,6 +753,34 @@ export class PricingService {
           price: price.price,
           timestamp: price.timestamp,
           source: price.source || 'cached',
+          baseTokenId: price.baseTokenId,
+        });
+      }
+    }
+
+    // Fallback: for tokens without a price in the requested base currency,
+    // look up the latest manual price in ANY base currency. Custom tokens
+    // may be priced in EUR / GBP / etc. — the caller's conversion path
+    // (see getTokenPrices, line ~335) will convert to the requested base
+    // when `baseTokenId !== baseCurrencyToken.id`.
+    const missingIds = uniqueTokenIds.filter((id) => !results.has(id));
+    if (missingIds.length > 0) {
+      const manualAnyBase =
+        await this.tokenPriceRepository.findLatestManualPricesForTokensAnyBase(missingIds);
+      for (const [tokenId, price] of manualAnyBase.entries()) {
+        pricingLogger.debug(
+          {
+            tokenId,
+            requestedBaseCurrency: baseCurrencyId,
+            priceBaseCurrency: price.baseTokenId,
+            source: price.source,
+          },
+          'Using manual price in alternate base — caller will convert'
+        );
+        results.set(tokenId, {
+          price: price.price,
+          timestamp: price.timestamp,
+          source: price.source ?? 'manual',
           baseTokenId: price.baseTokenId,
         });
       }
@@ -1056,17 +1112,43 @@ export class PricingService {
         const metadata = JSON.parse(token.providerMetadata || '{}');
 
         if (metadata.finnhub?.symbol) {
-          provider = 'finnhub';
-          providerTokenId = metadata.finnhub.symbol;
-          logger.info(
-            {
-              tokenId: token.id,
-              symbol: token.symbol,
-              typeCode,
-              finnhubSymbol: metadata.finnhub.symbol,
-            },
-            'Assigning token to Finnhub based on provider metadata (overriding type-based assignment)'
-          );
+          // Non-US Finnhub listings can't be priced by the free tier —
+          // route them to Google Sheets (GOOGLEFINANCE). US listings and
+          // anything without exchangeInfo stay on Finnhub.
+          const finnhubExchangeInfo = metadata.exchangeInfo as
+            | { exchange?: string; currency?: string }
+            | undefined;
+          if (
+            finnhubExchangeInfo &&
+            !this.isUSExchange(finnhubExchangeInfo) &&
+            typeCode.toLowerCase() === 'stock'
+          ) {
+            provider = 'googleSheets';
+            providerTokenId = metadata.finnhub.symbol;
+            logger.info(
+              {
+                tokenId: token.id,
+                symbol: token.symbol,
+                typeCode,
+                finnhubSymbol: metadata.finnhub.symbol,
+                exchange: finnhubExchangeInfo.exchange,
+                currency: finnhubExchangeInfo.currency,
+              },
+              'Routing non-US Finnhub stock to Google Sheets (free-tier limitation)'
+            );
+          } else {
+            provider = 'finnhub';
+            providerTokenId = metadata.finnhub.symbol;
+            logger.info(
+              {
+                tokenId: token.id,
+                symbol: token.symbol,
+                typeCode,
+                finnhubSymbol: metadata.finnhub.symbol,
+              },
+              'Assigning token to Finnhub based on provider metadata (overriding type-based assignment)'
+            );
+          }
         } else if (metadata.coingecko?.id || metadata.coinGeckoId) {
           provider = 'coinGecko';
           providerTokenId = metadata.coingecko?.id || metadata.coinGeckoId;

@@ -16,6 +16,7 @@ import {
 import { showError, showSuccess } from '@/hooks/use-toast';
 import { getFaviconUrl } from '@/lib/icons';
 import { trpc } from '@/lib/trpc';
+import { TokenSearchInput } from '../components/tokens/TokenSearchInput';
 import { invalidatePortfolioQueries } from '../hooks/invalidatePortfolioQueries';
 import { V2_ROUTES } from '../lib/routes';
 
@@ -171,105 +172,6 @@ function SearchableDropdown({
           ))}
           {filtered.length === 0 && (
             <p className="px-3 py-2 text-xs text-muted-foreground">No results found</p>
-          )}
-        </div>
-      )}
-    </div>
-  );
-}
-
-// ── Token Search ──
-
-function TokenSearchInput({
-  value,
-  label,
-  onSelect,
-  onClear,
-  disabled,
-}: {
-  value: { id: string; label: string } | null;
-  label?: string;
-  onSelect: (id: string, label: string) => void;
-  onClear: () => void;
-  disabled?: boolean;
-}) {
-  const [search, setSearch] = useState('');
-  const [open, setOpen] = useState(false);
-  const containerRef = useRef<HTMLDivElement>(null);
-  const { data: tokens } = trpc.tokens.getAll.useQuery();
-
-  useEffect(() => {
-    if (!open) return;
-    const handleClick = (e: MouseEvent) => {
-      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
-        setOpen(false);
-      }
-    };
-    document.addEventListener('mousedown', handleClick);
-    return () => document.removeEventListener('mousedown', handleClick);
-  }, [open]);
-
-  const filtered = useMemo(() => {
-    if (!tokens || !search) return [];
-    const q = search.toLowerCase();
-    return tokens
-      .filter((t) => t.symbol.toLowerCase().includes(q) || t.name.toLowerCase().includes(q))
-      .slice(0, 12);
-  }, [tokens, search]);
-
-  if (value) {
-    return (
-      <div className="flex items-center gap-2">
-        <span className="text-sm font-medium px-3 py-2 border rounded-md flex-1 bg-muted truncate">
-          {value.label}
-        </span>
-        <Button
-          variant="ghost"
-          size="sm"
-          className="h-8 text-xs shrink-0"
-          onClick={onClear}
-          disabled={disabled}
-        >
-          Change
-        </Button>
-      </div>
-    );
-  }
-
-  return (
-    <div className="relative" ref={containerRef}>
-      {label && <Label className="text-xs mb-1 block">{label}</Label>}
-      <Input
-        value={search}
-        onChange={(e) => {
-          setSearch(e.target.value);
-          setOpen(true);
-        }}
-        onFocus={() => search.length > 0 && setOpen(true)}
-        placeholder="Search tokens (BTC, USD, AAPL...)"
-        disabled={disabled}
-      />
-      {open && search.length > 0 && (
-        <div className="absolute z-20 mt-1 w-full bg-popover border rounded-md shadow-lg max-h-[200px] overflow-y-auto">
-          {filtered.map((t) => (
-            <button
-              type="button"
-              key={t.id}
-              className="w-full text-left px-3 py-2 text-sm hover:bg-accent flex items-center gap-2"
-              onClick={() => {
-                onSelect(t.id, `${t.symbol} — ${t.name}`);
-                setSearch('');
-                setOpen(false);
-              }}
-            >
-              <span className="font-medium w-14">{t.symbol}</span>
-              <span className="text-muted-foreground text-xs truncate">{t.name}</span>
-            </button>
-          ))}
-          {filtered.length === 0 && (
-            <p className="px-3 py-2 text-xs text-muted-foreground">
-              No tokens found for "{search}"
-            </p>
           )}
         </div>
       )}

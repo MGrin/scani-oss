@@ -12,6 +12,13 @@ import {
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { showError, showSuccess } from '@/hooks/use-toast';
 import { trpc } from '@/lib/trpc';
 import { invalidatePortfolioQueries } from '@/v2/hooks/invalidatePortfolioQueries';
@@ -47,6 +54,7 @@ type Step = 1 | 2;
 export function VaultFormDialog({ open, onOpenChange, vaultId }: VaultFormDialogProps) {
   const utils = trpc.useUtils();
   const { data: baseCurrency } = trpc.users.getBaseCurrency.useQuery();
+  const { data: supportedCurrencies } = trpc.users.getSupportedCurrencies.useQuery();
   const { data: vault } = trpc.vaults.getById.useQuery({ id: vaultId! }, { enabled: !!vaultId });
   const { data: holdingsData } = trpc.holdings.getWithDetails.useQuery(undefined, {
     enabled: open && !vaultId,
@@ -57,9 +65,17 @@ export function VaultFormDialog({ open, onOpenChange, vaultId }: VaultFormDialog
   const [step, setStep] = useState<Step>(1);
   const [name, setName] = useState('');
   const [targetAmount, setTargetAmount] = useState('');
+  const [currencyId, setCurrencyId] = useState<string>('');
   const [color, setColor] = useState(COLORS[0]!);
   const [holdingSearch, setHoldingSearch] = useState('');
   const [selectedHoldingIds, setSelectedHoldingIds] = useState<Set<string>>(new Set());
+
+  const currencyOptions = supportedCurrencies ?? [];
+  const selectedCurrency = useMemo(
+    () => currencyOptions.find((c) => c.id === currencyId) ?? null,
+    [currencyOptions, currencyId]
+  );
+  const displaySymbol = selectedCurrency?.symbol ?? baseCurrency?.symbol ?? 'USD';
 
   const holdings = useMemo(() => {
     const list = Array.isArray(holdingsData) ? holdingsData : (holdingsData?.holdings ?? []);
@@ -83,16 +99,18 @@ export function VaultFormDialog({ open, onOpenChange, vaultId }: VaultFormDialog
     if (vault && isEditMode) {
       setName(vault.name);
       setTargetAmount(vault.targetAmount);
+      setCurrencyId(vault.currencyId);
       setColor(vault.color);
     } else if (!isEditMode) {
       setName('');
       setTargetAmount('');
+      setCurrencyId(baseCurrency?.id ?? '');
       setColor(COLORS[0]!);
       setSelectedHoldingIds(new Set());
       setHoldingSearch('');
     }
     setStep(1);
-  }, [open, vault, isEditMode]);
+  }, [open, vault, isEditMode, baseCurrency?.id]);
 
   const toggleHolding = (id: string) => {
     setSelectedHoldingIds((prev) => {
@@ -149,7 +167,7 @@ export function VaultFormDialog({ open, onOpenChange, vaultId }: VaultFormDialog
   });
 
   const handleSubmit = () => {
-    if (!name.trim() || !targetAmount) return;
+    if (!name.trim() || !targetAmount || !currencyId) return;
 
     if (isEditMode && vaultId) {
       updateMutation.mutate({
@@ -157,15 +175,15 @@ export function VaultFormDialog({ open, onOpenChange, vaultId }: VaultFormDialog
         data: {
           name: name.trim(),
           targetAmount,
+          currencyId,
           color,
         },
       });
     } else {
-      if (!baseCurrency?.id) return;
       createMutation.mutate({
         name: name.trim(),
         targetAmount,
-        currencyId: baseCurrency.id,
+        currencyId,
         color,
       });
     }
@@ -174,7 +192,7 @@ export function VaultFormDialog({ open, onOpenChange, vaultId }: VaultFormDialog
   const isPending =
     createMutation.isPending || updateMutation.isPending || attachMutation.isPending;
 
-  const canGoNext = name.trim().length > 0 && !!targetAmount;
+  const canGoNext = name.trim().length > 0 && !!targetAmount && !!currencyId;
 
   const formatValue = (value: number, symbol?: string) =>
     `${symbol ?? baseCurrency?.symbol ?? '$'}${Number(value).toLocaleString('en-US', {
@@ -229,19 +247,42 @@ export function VaultFormDialog({ open, onOpenChange, vaultId }: VaultFormDialog
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="vault-target">Target Amount ({baseCurrency?.symbol || 'USD'})</Label>
-              <NumericFormat
-                id="vault-target"
-                value={targetAmount}
-                onValueChange={(values) => setTargetAmount(values.value)}
-                customInput={Input}
-                placeholder="10,000"
-                thousandSeparator=","
-                decimalSeparator="."
-                decimalScale={2}
-                allowNegative={false}
-                disabled={isPending}
-              />
+              <Label htmlFor="vault-target">Target Amount ({displaySymbol})</Label>
+              <div className="grid grid-cols-[1fr_120px] gap-2">
+                <NumericFormat
+                  id="vault-target"
+                  value={targetAmount}
+                  onValueChange={(values) => setTargetAmount(values.value)}
+                  customInput={Input}
+                  placeholder="10,000"
+                  thousandSeparator=","
+                  decimalSeparator="."
+                  decimalScale={2}
+                  allowNegative={false}
+                  disabled={isPending}
+                />
+                <Select
+                  value={currencyId}
+                  onValueChange={setCurrencyId}
+                  disabled={isPending || currencyOptions.length === 0}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="—" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {currencyOptions.map((c) => (
+                      <SelectItem key={c.id} value={c.id}>
+                        {c.symbol}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              {isEditMode && vault && currencyId !== vault.currencyId && (
+                <p className="text-[11px] text-amber-600 dark:text-amber-400">
+                  Changing currency will recompute the vault's current amount.
+                </p>
+              )}
             </div>
 
             <div className="space-y-2">

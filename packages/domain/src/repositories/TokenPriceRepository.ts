@@ -1,7 +1,7 @@
 import { BaseRepository, type DatabaseTransaction } from '@scani/db';
 import type { NewTokenPrice, TokenPrice } from '@scani/db/schema';
 import * as schema from '@scani/db/schema';
-import { and, desc, eq, gte, inArray, lte, sql } from 'drizzle-orm';
+import { and, desc, eq, gte, inArray, like, lte, sql } from 'drizzle-orm';
 import { Service } from 'typedi';
 
 @Service()
@@ -71,6 +71,50 @@ export class TokenPriceRepository extends BaseRepository<TokenPrice, NewTokenPri
       this.logger.error(
         { tokenIds, baseTokenId, error },
         'Failed to find latest prices for tokens'
+      );
+      throw error;
+    }
+  }
+
+  /**
+   * Return the latest manual price per tokenId regardless of baseTokenId.
+   * Used by pricing cache fallback: if a custom token was priced in EUR
+   * and a user queries with base=USD, the strict baseTokenId match fails.
+   * This lookup retrieves whichever base the manual price was recorded
+   * under, so the caller can convert to the requested currency.
+   */
+  async findLatestManualPricesForTokensAnyBase(
+    tokenIds: string[],
+    transaction?: DatabaseTransaction
+  ): Promise<Map<string, TokenPrice>> {
+    try {
+      if (tokenIds.length === 0) return new Map();
+
+      const database = this.getDb(transaction);
+
+      const results = await database
+        .select()
+        .from(schema.tokenPrices)
+        .where(
+          and(
+            inArray(schema.tokenPrices.tokenId, tokenIds),
+            like(schema.tokenPrices.source, 'manual%')
+          )
+        )
+        .orderBy(desc(schema.tokenPrices.timestamp));
+
+      const priceMap = new Map<string, TokenPrice>();
+      for (const price of results) {
+        if (!priceMap.has(price.tokenId)) {
+          priceMap.set(price.tokenId, price);
+        }
+      }
+
+      return priceMap;
+    } catch (error) {
+      this.logger.error(
+        { tokenIds, error },
+        'Failed to find latest manual prices for tokens (any base)'
       );
       throw error;
     }
