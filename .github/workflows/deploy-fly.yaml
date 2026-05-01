@@ -200,13 +200,18 @@ jobs:
       # into a single 0000. The matching cleanup (delete the sentinel) is
       # a follow-up PR — leaving it in place will re-wipe prod on every
       # subsequent migration-touching deploy.
-      - name: Bootstrap wipe (public schema)
+      - name: Bootstrap wipe (public + drizzle schemas)
         if: ${{ hashFiles('packages/infra/db/.bootstrap-wipe') != '' }}
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL_DIRECT }}
         run: |
-          echo "::warning::bootstrap-wipe sentinel detected — dropping public schema on production"
+          echo "::warning::bootstrap-wipe sentinel detected — dropping public + drizzle schemas on production"
           sudo apt-get update -qq && sudo apt-get install -y -qq postgresql-client
+          # Drop BOTH `public` and `drizzle`. The `drizzle` schema holds
+          # `__drizzle_migrations` — drizzle-orm's per-migration hash
+          # tracker. If we leave it intact, the migrator on the next run
+          # sees the old (squashed-away) migration hashes and decides
+          # nothing needs applying, leaving public empty with no tables.
           # Neon doesn't expose a `postgres` role; the connecting user owns
           # whatever it CREATEs, so an explicit GRANT to that role isn't
           # needed. GRANT TO PUBLIC restores the historical default that
@@ -214,6 +219,7 @@ jobs:
           psql "$DATABASE_URL" \
             -v ON_ERROR_STOP=1 \
             -c "DROP SCHEMA IF EXISTS public CASCADE;" \
+            -c "DROP SCHEMA IF EXISTS drizzle CASCADE;" \
             -c "CREATE SCHEMA public;" \
             -c "GRANT ALL ON SCHEMA public TO PUBLIC;"
       - name: Run migrations against Neon
