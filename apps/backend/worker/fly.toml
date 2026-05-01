@@ -7,6 +7,9 @@ primary_region = "sin"
 [env]
   NODE_ENV           = "production"
   WORKER_CONCURRENCY = "2"
+  # Identifies this process for cross-service routing (e.g. realtime
+  # picks RedisRealtimeUpdatesService when SERVICE_NAME != scani-backend).
+  SERVICE_NAME       = "scani-worker"
 
 # No [http_service] — worker is a background process; nothing to expose.
 

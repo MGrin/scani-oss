@@ -5,9 +5,13 @@ primary_region = "sin"
   dockerfile = "Dockerfile"
 
 [env]
-  PORT     = "8080"
-  HOST     = "0.0.0.0"
-  NODE_ENV = "production"
+  PORT         = "8080"
+  HOST         = "0.0.0.0"
+  NODE_ENV     = "production"
+  # `WebSocketRealtimeUpdatesService` (api-only — owns local WS state)
+  # refuses to construct unless SERVICE_NAME=scani-backend at boot. Worker
+  # / data-provider use the Redis-pub/sub fallback and set their own value.
+  SERVICE_NAME = "scani-backend"
 
 [http_service]
   internal_port       = 8080
