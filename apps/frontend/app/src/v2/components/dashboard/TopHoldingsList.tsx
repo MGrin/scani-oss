@@ -33,7 +33,7 @@ const TOKEN_TYPE_COLORS: Record<string, string> = {
 
 export function TopHoldingsList({ holdings, totalValue, currency }: TopHoldingsListProps) {
   return (
-    <Card className="h-full">
+    <Card>
       <CardHeader>
         <CardTitle>Top Holdings</CardTitle>
       </CardHeader>

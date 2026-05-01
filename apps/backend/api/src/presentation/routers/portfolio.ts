@@ -3,8 +3,6 @@
  *
  * Exposes the historical-balance + PnL surface area to the frontend:
  *  - getNetWorthSeries: the daily-granularity chart data
- *  - getCoverage: per-account/token coverage metadata (solid vs dashed
- *    vs gap segments + data-quality panel content)
  *  - getHoldingHistory: per-holding balance/value series (Phase 3)
  *
  * Reads `portfolio_value_daily` by default. Falls back to live
@@ -214,32 +212,6 @@ export const portfolioRouter = router({
     }));
 
     return { series, baseCurrencyId: baseId, granularity };
-  }),
-
-  getCoverage: protectedProcedure.query(async ({ ctx }) => {
-    const { dbUser } = await requireAuth(ctx);
-    // Join coverage → holdings so the response carries accountId/tokenId
-    // alongside holdingId. The DataQualityPanel groups by account, so
-    // doing the join server-side keeps the client simple. A separate
-    // repo method would be tidier, but the query is scoped to the user's
-    // own rows and won't outgrow a single query in practice.
-    const rows = await db
-      .select({
-        holdingId: schema.holdingCoverage.holdingId,
-        accountId: schema.holdings.accountId,
-        tokenId: schema.holdings.tokenId,
-        firstTxAt: schema.holdingCoverage.firstTxAt,
-        lastTxAt: schema.holdingCoverage.lastTxAt,
-        firstObservationAt: schema.holdingCoverage.firstObservationAt,
-        lastObservationAt: schema.holdingCoverage.lastObservationAt,
-        txSources: schema.holdingCoverage.txSources,
-        hasCompleteTxHistory: schema.holdingCoverage.hasCompleteTxHistory,
-        openingBalanceQuantity: schema.holdingCoverage.openingBalanceQuantity,
-      })
-      .from(schema.holdingCoverage)
-      .innerJoin(schema.holdings, eq(schema.holdingCoverage.holdingId, schema.holdings.id))
-      .where(eq(schema.holdings.userId, dbUser.id));
-    return { rows };
   }),
 
   // Phase-3 surface: per-holding balance-over-time. Kept in the router

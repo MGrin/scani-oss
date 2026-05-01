@@ -9,8 +9,6 @@
  *   - `detectWalletInstitutions(address)` — same but resolves to
  *      Scani `institutionId`s via `institution_blockchain_mappings`.
  *      Used by `ImportWalletAddressUseCase`.
- *   - `resolveEnsName(address)` — Ethereum-mainnet ENS reverse lookup
- *      via the Etherscan provider's `AddressValidatorProvider.resolveAddressName`.
  *   - `getAllSupportedChains()` — UI-facing catalog of every chain
  *      Scani knows about. Inlined here so the registry doesn't have
  *      to expose chain metadata it otherwise doesn't need.
@@ -440,27 +438,6 @@ export class WalletDiscoveryService {
    */
   getAllSupportedChains(): SupportedChain[] {
     return [...EVM_CHAINS, ...NON_EVM_CHAINS];
-  }
-
-  /**
-   * Reverse-resolve an Ethereum address (or any name) to an ENS
-   * label. Routes via the registered `AddressValidatorProvider` for
-   * the `ethereum` institution code (the Etherscan provider). Returns
-   * null when ENS is unsupported, the address has no name, or the
-   * RPC call fails.
-   */
-  async resolveEnsName(address: string): Promise<string | null> {
-    const validator = this.registry.getAddressValidator('ethereum');
-    if (!validator?.resolveAddressName) return null;
-    try {
-      return await validator.resolveAddressName(address, this.makeContext());
-    } catch (err) {
-      this.logger.debug(
-        { address: `${address.substring(0, 10)}...`, error: err },
-        'ENS resolution threw; returning null'
-      );
-      return null;
-    }
   }
 
   /**

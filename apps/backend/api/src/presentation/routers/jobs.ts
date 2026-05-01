@@ -220,4 +220,40 @@ export const jobsRouter = router({
 
       return { ok: true as const };
     }),
+
+  /**
+   * Permanently drop a failed job's mirror row. Lets the user clear a
+   * job out of the failed list once they've decided not to retry; the
+   * underlying BullMQ entry (if still in Redis) is removed too so it
+   * can't be retried later.
+   */
+  remove: protectedProcedure
+    .input(z.object({ jobId: z.string().min(1) }))
+    .mutation(async ({ ctx, input }) => {
+      const repo = Container.get(UserJobRepository);
+      const row = await repo.findOneMine(ctx.userId, input.jobId);
+      if (!row) throw new TRPCError({ code: 'NOT_FOUND', message: 'Job not found' });
+      if (row.state !== 'failed') {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: `Only failed jobs can be removed; this job is ${row.state}.`,
+        });
+      }
+      const ok = await repo.deleteFailed(ctx.userId, input.jobId);
+      if (!ok) {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: 'Job is no longer in failed state.',
+        });
+      }
+      const job = await getQueue().getJob(input.jobId);
+      if (job) {
+        try {
+          await job.remove();
+        } catch {
+          // Already evicted from Redis — DB row deletion is enough.
+        }
+      }
+      return { ok: true as const };
+    }),
 });

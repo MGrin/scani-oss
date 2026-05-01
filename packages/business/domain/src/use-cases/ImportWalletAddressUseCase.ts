@@ -170,18 +170,6 @@ export class ImportWalletAddressUseCase {
       .limit(1);
     if (!cryptoTokenType) throw new Error('Token type "crypto" not found');
 
-    if (!input.displayName) {
-      try {
-        const ensName = await this.walletDiscovery.resolveEnsName(input.address);
-        if (ensName) {
-          input.displayName = ensName;
-          logger.info({ ensName }, 'Resolved ENS name on backend for wallet import');
-        }
-      } catch {
-        // Non-critical — account names will use shortened address.
-      }
-    }
-
     const errors: ImportWalletResult['errors'] = [];
     const chains = await this.fetchChainData(input, userId, detectedInstitutionIds, errors);
 
@@ -338,15 +326,6 @@ export class ImportWalletAddressUseCase {
       .where(eq(schema.tokenTypes.code, 'crypto'))
       .limit(1);
     if (!cryptoTokenType) throw new Error('Token type "crypto" not found');
-
-    if (!input.displayName) {
-      try {
-        const ensName = await this.walletDiscovery.resolveEnsName(input.address);
-        if (ensName) input.displayName = ensName;
-      } catch {
-        /* non-critical */
-      }
-    }
 
     const errors: ImportWalletResult['errors'] = [];
     const prepared = await this.fetchChainData(input, userId, detectedInstitutionIds, errors);

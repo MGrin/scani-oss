@@ -2,8 +2,10 @@ import { formatRelative } from '@scani/shared';
 import { Button } from '@scani/ui/ui/button';
 import { Card, CardContent } from '@scani/ui/ui/card';
 import { showError, showSuccess } from '@scani/ui/ui/use-toast';
-import { RotateCcw, X } from 'lucide-react';
+import { RotateCcw, Trash2, X } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import { trpc } from '@/lib/trpc';
+import { V2_ROUTES } from '../../lib/routes';
 import { JobStateChip } from './JobStateChip';
 import { JobSummary } from './JobSummary';
 import { jobLabelFor } from './jobLabels';
@@ -25,6 +27,7 @@ export interface JobHeaderJob {
 export function JobHeader({ job }: { job: JobHeaderJob }) {
   const { label, icon: Icon } = jobLabelFor(job.jobName);
   const isRunning = job.state === 'active' || job.state === 'progress' || job.state === 'queued';
+  const navigate = useNavigate();
   const utils = trpc.useUtils();
   const retryMutation = trpc.jobs.retry.useMutation({
     onSuccess: () => {
@@ -41,6 +44,14 @@ export function JobHeader({ job }: { job: JobHeaderJob }) {
       utils.jobs.listMine.invalidate();
     },
     onError: (err) => showError(err, 'Cancelling job'),
+  });
+  const removeMutation = trpc.jobs.remove.useMutation({
+    onSuccess: () => {
+      showSuccess('Job removed');
+      utils.jobs.listMine.invalidate();
+      navigate(V2_ROUTES.jobs);
+    },
+    onError: (err) => showError(err, 'Removing job'),
   });
 
   return (
@@ -98,17 +109,30 @@ export function JobHeader({ job }: { job: JobHeaderJob }) {
                 {job.error}
               </div>
             )}
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              className="h-7 gap-1.5"
-              disabled={retryMutation.isPending}
-              onClick={() => retryMutation.mutate({ jobId: job.jobId })}
-            >
-              <RotateCcw className="h-3.5 w-3.5" />
-              {retryMutation.isPending ? 'Re-queueing…' : 'Retry'}
-            </Button>
+            <div className="flex items-center gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="h-7 gap-1.5"
+                disabled={retryMutation.isPending}
+                onClick={() => retryMutation.mutate({ jobId: job.jobId })}
+              >
+                <RotateCcw className="h-3.5 w-3.5" />
+                {retryMutation.isPending ? 'Re-queueing…' : 'Retry'}
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="h-7 gap-1.5"
+                disabled={removeMutation.isPending}
+                onClick={() => removeMutation.mutate({ jobId: job.jobId })}
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+                {removeMutation.isPending ? 'Removing…' : 'Remove'}
+              </Button>
+            </div>
           </div>
         )}
       </CardContent>

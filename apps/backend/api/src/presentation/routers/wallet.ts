@@ -266,13 +266,7 @@ export const walletRouter = router({
       const discovery = Container.get(WalletDiscoveryService);
       const mappingRepository = Container.get(InstitutionBlockchainMappingRepository);
 
-      // Run chain detection and ENS resolution in parallel via
-      // WalletDiscoveryService — wraps `@scani/providers` registry's
-      // AddressValidatorProvider capability across every registered chain.
-      const [detectedInstitutionCodes, ensName] = await Promise.all([
-        discovery.detectWalletChains(input.address),
-        discovery.resolveEnsName(input.address),
-      ]);
+      const detectedInstitutionCodes = await discovery.detectWalletChains(input.address);
 
       // Translate institutionCodes back to chain detail rows for the UI.
       // The chain catalog still lives in WalletDiscoveryService for
@@ -306,7 +300,6 @@ export const walletRouter = router({
 
       const result = {
         address: input.address,
-        ensName: ensName ?? undefined,
         chainsDetected: detectedChainDetails,
         totalChains: detectedChainDetails.length,
         institutionIds,

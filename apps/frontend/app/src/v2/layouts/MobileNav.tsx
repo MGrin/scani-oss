@@ -26,23 +26,13 @@ interface MobileNavProps {
 }
 
 /**
- * Pin the nav to the *visual* viewport bottom, not the layout viewport
- * bottom.
- *
- * On iOS PWA the software keyboard shrinks the visual viewport while
- * leaving the layout viewport unchanged. A plain `position: fixed;
- * bottom: 0` anchors to the layout viewport, so during keyboard
- * transitions (especially on dismiss, which iOS animates over several
- * hundred ms) the visual viewport catches up slowly — and until it
- * does, the fixed nav is visually positioned above the real viewport
- * bottom, producing the "nav floating too high" bug the user reported
- * after dismissing the keyboard from a searchable dropdown.
- *
- * The fix applies a transform that exactly cancels the gap between the
- * layout and visual viewport bottoms every frame the viewport changes.
- * When the keyboard is fully open (gap > 100px) we slide the nav
- * entirely off-screen so it doesn't float above the keyboard or
- * compete with the focused input.
+ * Hide the nav whenever the visual viewport shrinks meaningfully below
+ * the layout viewport — i.e. the iOS software keyboard is up (or
+ * mid-animation). Trying to float the nav above the keyboard makes it
+ * appear to "jump higher than it should" during the multi-hundred-ms
+ * dismiss animation, which the user explicitly disliked. So instead of
+ * tracking the keyboard, we just slide off until the keyboard is fully
+ * down.
  */
 function useVisualViewportPin(ref: React.RefObject<HTMLElement | null>) {
   useEffect(() => {
@@ -55,18 +45,16 @@ function useVisualViewportPin(ref: React.RefObject<HTMLElement | null>) {
 
     const apply = () => {
       raf = 0;
+      // Threshold absorbs the small residual gap iOS reports during
+      // URL-bar collapse / minor visual-viewport jitter (typically
+      // <30px) without flickering the nav off-screen.
       const gap = window.innerHeight - (vv.offsetTop + vv.height);
-      if (gap > 100) {
+      if (gap > 50) {
         nav.style.transform = 'translate3d(0, 100%, 0)';
         nav.style.pointerEvents = 'none';
         nav.setAttribute('aria-hidden', 'true');
       } else {
-        // Small residual gaps (browser URL-bar collapse, keyboard-
-        // dismiss transitions) get cancelled so the nav lines up with
-        // the real bottom edge the user sees instead of drifting up
-        // by a few dozen px for the duration of the animation.
-        const offset = Math.max(0, gap);
-        nav.style.transform = offset > 0 ? `translate3d(0, ${-offset}px, 0)` : '';
+        nav.style.transform = '';
         nav.style.pointerEvents = '';
         nav.removeAttribute('aria-hidden');
       }

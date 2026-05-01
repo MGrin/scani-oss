@@ -272,6 +272,32 @@ export class UserJobRepository {
       .where(eq(schema.userJobs.jobId, jobId));
   }
 
+  /**
+   * Delete a failed job's mirror row. The /jobs UI exposes this so a
+   * permanently-failing job can be cleared off the list rather than
+   * just retried. Ownership-gated and limited to `state='failed'` so a
+   * stray click can't drop an active job's row out from under the
+   * worker's lifecycle writes.
+   */
+  async deleteFailed(
+    userId: string,
+    jobId: string,
+    transaction?: DatabaseTransaction
+  ): Promise<boolean> {
+    const db = this.getDb(transaction);
+    const deleted = await db
+      .delete(schema.userJobs)
+      .where(
+        and(
+          eq(schema.userJobs.jobId, jobId),
+          eq(schema.userJobs.userId, userId),
+          eq(schema.userJobs.state, 'failed')
+        )
+      )
+      .returning({ jobId: schema.userJobs.jobId });
+    return deleted.length > 0;
+  }
+
   /** Count of in-flight jobs for the top-nav badge. */
   async countActive(userId: string, transaction?: DatabaseTransaction): Promise<number> {
     const db = this.getDb(transaction);

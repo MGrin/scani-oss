@@ -4,7 +4,7 @@ import { Button } from '@scani/ui/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@scani/ui/ui/card';
 import { LoadingSpinner } from '@scani/ui/ui/loading';
 import { showError, showSuccess } from '@scani/ui/ui/use-toast';
-import { AlertCircle, RotateCcw } from 'lucide-react';
+import { AlertCircle, RotateCcw, Trash2 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { trpc } from '@/lib/trpc';
 import { JobStateChip } from '../components/jobs/JobStateChip';
@@ -121,10 +121,12 @@ function JobRow({ job }: { job: Job }) {
           <JobStateChip state={job.state} />
           <span className="text-[10px] text-muted-foreground">{formatRelative(job.createdAt)}</span>
           {isFailed && <RetryButton jobId={job.jobId} />}
+          {isFailed && <RemoveButton jobId={job.jobId} />}
         </div>
       </div>
       <div className="shrink-0 hidden sm:flex items-center gap-2">
         {isFailed && <RetryButton jobId={job.jobId} />}
+        {isFailed && <RemoveButton jobId={job.jobId} />}
         <span className="text-[10px] text-muted-foreground">{formatRelative(job.createdAt)}</span>
         <JobStateChip state={job.state} />
       </div>
@@ -165,6 +167,34 @@ function RetryButton({ jobId }: { jobId: string }) {
     >
       <RotateCcw className="h-3 w-3" />
       Retry
+    </Button>
+  );
+}
+
+function RemoveButton({ jobId }: { jobId: string }) {
+  const utils = trpc.useUtils();
+  const removeMutation = trpc.jobs.remove.useMutation({
+    onSuccess: () => {
+      showSuccess('Job removed');
+      utils.jobs.listMine.invalidate();
+    },
+    onError: (err) => showError(err, 'Removing job'),
+  });
+  return (
+    <Button
+      type="button"
+      variant="outline"
+      size="sm"
+      className="h-6 gap-1 text-[11px] px-2"
+      disabled={removeMutation.isPending}
+      onClick={(e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        removeMutation.mutate({ jobId });
+      }}
+    >
+      <Trash2 className="h-3 w-3" />
+      Remove
     </Button>
   );
 }

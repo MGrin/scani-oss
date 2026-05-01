@@ -4,7 +4,6 @@ import { Building2, PieChart, Wallet } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { trpc } from '@/lib/trpc';
 import { AssetAllocationChart } from '../components/dashboard/AssetAllocationChart';
-import { DataQualityPanel } from '../components/dashboard/DataQualityPanel';
 import { NetWorthChart } from '../components/dashboard/NetWorthChart';
 import { PortfolioSummary } from '../components/dashboard/PortfolioSummary';
 import { StatCard } from '../components/dashboard/StatCard';
@@ -84,7 +83,6 @@ export function DashboardPage() {
             totalValue={totalValue}
             currency={currency}
           />
-          <DataQualityPanel />
         </div>
       </div>
     </div>
