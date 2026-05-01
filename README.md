@@ -1,6 +1,6 @@
 # Scani - Personal Finance Management SaaS
 
-[![Coverage](https://img.shields.io/endpoint?url=https://gist.githubusercontent.com/MGrin/REPLACE_WITH_GIST_ID/raw/scani-coverage.json)](#-testing--coverage)
+[![Coverage](https://img.shields.io/endpoint?url=https://gist.githubusercontent.com/MGrin/0ecce2153b44eedf13ad350eacb3193d/raw/scani-coverage.json)](#-testing--coverage)
 
 A comprehensive personal finance management platform built with a modern TypeScript stack and extensive integrations with banks, brokerages, and cryptocurrency exchanges.
 
