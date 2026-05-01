@@ -207,12 +207,15 @@ jobs:
         run: |
           echo "::warning::bootstrap-wipe sentinel detected — dropping public schema on production"
           sudo apt-get update -qq && sudo apt-get install -y -qq postgresql-client
+          # Neon doesn't expose a `postgres` role; the connecting user owns
+          # whatever it CREATEs, so an explicit GRANT to that role isn't
+          # needed. GRANT TO PUBLIC restores the historical default that
+          # `public` schema is usable by all DB users.
           psql "$DATABASE_URL" \
             -v ON_ERROR_STOP=1 \
             -c "DROP SCHEMA IF EXISTS public CASCADE;" \
             -c "CREATE SCHEMA public;" \
-            -c "GRANT ALL ON SCHEMA public TO postgres;" \
-            -c "GRANT ALL ON SCHEMA public TO public;"
+            -c "GRANT ALL ON SCHEMA public TO PUBLIC;"
       - name: Run migrations against Neon
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL_DIRECT }}
@@ -550,7 +553,7 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: |
           cd apps/frontend/app
-          bunx wrangler@latest pages deploy dist \
+          bunx wrangler@3 pages deploy dist \
             --project-name=scani-frontend \
             --branch=main \
             --commit-dirty=true \
@@ -586,7 +589,7 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: |
           cd apps/frontend/landing
-          bunx wrangler@latest pages deploy dist \
+          bunx wrangler@3 pages deploy dist \
             --project-name=scani-landing \
             --branch=main \
             --commit-dirty=true \
@@ -634,7 +637,7 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: |
           cd apps/frontend/cloud
-          bunx wrangler@latest pages deploy dist \
+          bunx wrangler@3 pages deploy dist \
             --project-name=scani-cloud \
             --branch=main \
             --commit-dirty=true \
@@ -716,14 +719,14 @@ jobs:
             local value="$2"
             if [ -n "$value" ]; then
               echo "  → $name"
-              printf '%s' "$value" | bunx wrangler@latest pages secret put "$name" --project-name=scani-admin
+              printf '%s' "$value" | bunx wrangler@3 pages secret put "$name" --project-name=scani-admin
             else
               echo "  ⊘ $name (not set in GitHub, skipping)"
             fi
           }
           delete_secret_if_present () {
             local name="$1"
-            bunx wrangler@latest pages secret delete "$name" --project-name=scani-admin --force 2>/dev/null || true
+            bunx wrangler@3 pages secret delete "$name" --project-name=scani-admin --force 2>/dev/null || true
           }
 
           for n in FLY_API_TOKEN FLY_ORG NEON_API_KEY NEON_ORG_ID UPSTASH_EMAIL UPSTASH_API_KEY \
@@ -762,7 +765,7 @@ jobs:
       - name: Publish to Cloudflare Pages
         run: |
           cd apps/frontend/admin
-          bunx wrangler@latest pages deploy .vercel/output/static \
+          bunx wrangler@3 pages deploy .vercel/output/static \
             --project-name=scani-admin \
             --branch=main \
             --commit-dirty=true \
