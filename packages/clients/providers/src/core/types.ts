@@ -56,6 +56,14 @@ export interface ProviderContext {
     userId: string;
     institutionId: string;
   }) => Promise<DecryptedCredentials>;
+  /**
+   * Optional phase-message sink for long-running provider calls. The
+   * caller (a use case running inside a BullMQ processor) passes a
+   * function that pipes to `ProcessorContext.reportStatus`, so the UI
+   * can show "Waiting for IBKR — attempt N/24" instead of an opaque
+   * indeterminate spinner. Best-effort: providers may invoke or ignore.
+   */
+  onStatus?: (message: string) => void | Promise<void>;
 }
 
 /**

@@ -23,6 +23,7 @@ import type {
   WithUserCreds,
 } from '../../core/types';
 import { enforceSign, inferCounterSign, negateFee } from '../../core/utils/enforce-tx-sign';
+import { tokenTypeForCexAsset } from '../../core/utils/fiat-codes';
 import { splitConcatenatedPair } from '../../core/utils/symbol-splitter';
 import { mexcManifest } from './manifest';
 
@@ -150,6 +151,7 @@ export class MexcProvider
         tokenIdentity,
         balance: total.toString(),
         capturedAt: new Date(),
+        tokenType: tokenTypeForCexAsset(b.asset),
       });
     }
     return out;

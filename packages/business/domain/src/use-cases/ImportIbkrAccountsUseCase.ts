@@ -25,12 +25,20 @@ import {
   PriceWarmupService,
   WalletDiscoveryService,
 } from '../services';
+import { resolveSnapshotTokenType } from './lib/resolveSnapshotTokenType';
+import { safeStatus } from './lib/safeStatus';
 
 const logger = createComponentLogger('use-case:import-ibkr-accounts');
 
 export interface ImportIbkrAccountsInput {
   userId: string;
   institutionId: string;
+  /**
+   * Optional progress sink wired by the BullMQ processor so the UI can
+   * surface "Waiting for IBKR — generating report (attempt N/24)…" while
+   * the Flex Query report is being prepared upstream.
+   */
+  onStatus?: (message: string) => void | Promise<void>;
 }
 
 export interface ImportIbkrAccountsResult {
@@ -104,6 +112,7 @@ export class ImportIbkrAccountsUseCase {
       institutionId: input.institutionId,
       institutionCode,
       resolveCredentials: async () => credentials,
+      onStatus: input.onStatus,
     });
 
     const discoveredAccounts = accountDiscoverer
@@ -139,6 +148,11 @@ export class ImportIbkrAccountsUseCase {
     for (const accountInfo of discoveredAccountInfos) {
       let snapshots: HoldingSnapshot[] = [];
       try {
+        // The provider emits its own per-retry status messages during
+        // the long Flex Query poll. The use-case-level message here
+        // marks the boundary so the user sees we've moved past account
+        // discovery.
+        await safeStatus(input.onStatus, 'Requesting Flex Query report from IBKR…');
         snapshots = await provider.fetchBalances(ctx);
       } catch (err) {
         result.errors.push({
@@ -187,6 +201,7 @@ export class ImportIbkrAccountsUseCase {
       accountTypeId: investmentAccountType.id,
     }));
 
+    await safeStatus(input.onStatus, 'Saving accounts and holdings…');
     const importResult = await this.integrationImportService.import(targets, {
       userId: input.userId,
       baseCurrencyId: user.baseCurrencyId,
@@ -196,7 +211,13 @@ export class ImportIbkrAccountsUseCase {
       cryptoTokenTypeId: stockTokenType.id,
       tokenTypeMap,
       defaultDecimals: () => 2,
-      resolveTokenTypeId: (_snapshot, _fallback) => stockTokenType.id,
+      // IBKR Flex Query returns equity positions AND per-currency cash
+      // balances in the same statement. Cash legs are tagged
+      // `tokenType: 'fiat'` by the provider so they resolve to the
+      // existing fiat USD/EUR/… rows; everything else (equities, ETFs)
+      // falls through to stock.
+      resolveTokenTypeId: (snapshot, _fallback) =>
+        resolveSnapshotTokenType(snapshot, tokenTypeMap, stockTokenType.id),
       // IBKR provides bare symbols (e.g., "XEQT") but the DB may already
       // carry a suffixed variant (e.g., "XEQT.TO"). Try a fuzzy match
       // before find-or-create so we dedup against the existing token.

@@ -1,11 +1,32 @@
 import { describe, expect, it } from 'bun:test';
-import { __test_isUnrecoverableExchangeError as classify } from './exchange-import';
+import { __test_isUnrecoverableExchangeError as classify } from '../../src/processors/exchange-import';
 
 describe('isUnrecoverableExchangeError', () => {
   it('classifies IBKR Flex bad-token codes', () => {
     expect(classify(new Error('IBKR Flex Query error (code 1010): Invalid token'))).toBe(true);
     expect(classify(new Error('IBKR Flex Query error (code 1012): Expired token'))).toBe(true);
     expect(classify(new Error('IBKR Flex Query error (code 1018): Too many requests'))).toBe(true);
+  });
+
+  it('classifies IBKR Flex retry-exhausted transients as unrecoverable', () => {
+    // 1001 surviving the provider's in-job poll budget means the Flex
+    // Query template is structurally too heavy or IBKR's queue is stuck —
+    // BullMQ-level retries would just re-issue SendRequest and worsen
+    // the upstream backlog. Surface as terminal so the user can adjust
+    // the query scope.
+    expect(
+      classify(
+        new Error(
+          'IBKR import failed: IBKR Flex Query error (code 1001): Statement could not be generated at this time. Please try again shortly.'
+        )
+      )
+    ).toBe(true);
+    expect(classify(new Error('IBKR report still generating after 24 retries (last: 1001)'))).toBe(
+      true
+    );
+    expect(
+      classify(new Error('IBKR SendRequest still transient after 6 retries (last: 1001)'))
+    ).toBe(true);
   });
 
   it('classifies generic HTTP 401/403 across providers', () => {

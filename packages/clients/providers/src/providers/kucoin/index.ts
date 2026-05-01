@@ -22,6 +22,7 @@ import type {
   TransactionEvent,
   WithUserCreds,
 } from '../../core/types';
+import { tokenTypeForCexAsset } from '../../core/utils/fiat-codes';
 import { mapKucoinBizType } from './biz-types';
 import { kucoinManifest } from './manifest';
 
@@ -214,6 +215,7 @@ export class KucoinProvider
         tokenIdentity: tokenIdentity(currency),
         balance: total.toString(),
         capturedAt: new Date(),
+        tokenType: tokenTypeForCexAsset(currency),
       });
     }
     return out;

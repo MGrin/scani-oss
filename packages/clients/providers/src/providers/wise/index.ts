@@ -161,6 +161,11 @@ export class WiseProvider implements BalanceProvider, TransactionsProvider, Cred
         tokenIdentity: tokenIdentity(currency),
         balance: total.toString(),
         capturedAt: new Date(),
+        // Wise is fiat-only by design — every balance is a real currency,
+        // so the import resolver routes to the existing fiat token row
+        // instead of spawning a crypto duplicate that has no Frankfurter
+        // pricing pipeline.
+        tokenType: 'fiat',
       });
     }
     return out;

@@ -61,6 +61,12 @@ export type JobLifecycleState = 'queued' | 'active' | 'progress' | 'completed' |
 export interface JobEvent {
   state: JobLifecycleState;
   progress?: number;
+  /**
+   * Free-form phase message from inside the worker. Optional. Surfaced
+   * by JobHeader during long polls (e.g. IBKR Flex generation: "Waiting
+   * for IBKR — generating report (attempt 3/24)…").
+   */
+  statusMessage?: string;
   result?: unknown;
   error?: string;
   attemptsMade?: number;

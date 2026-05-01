@@ -22,12 +22,16 @@ export class ScreenshotParseProcessor extends UserJobProcessor<ScreenshotParseJo
       error?: string;
     }> = [];
 
-    for (let i = 0; i < data.r2Keys.length; i++) {
+    const total = data.r2Keys.length;
+    for (let i = 0; i < total; i++) {
       const key = data.r2Keys[i];
       if (!key) continue;
+      const fileLabel = total > 1 ? ` (${i + 1}/${total})` : '';
       try {
+        await ctx.reportStatus(`Reading file${fileLabel}…`);
         const buf = await storage.read(key);
         const mimeType = inferMime(key);
+        await ctx.reportStatus(`Extracting holdings with AI${fileLabel}…`);
         const parsed = await useCase.execute({
           imageBase64: buf.toString('base64'),
           mimeType,
@@ -38,6 +42,7 @@ export class ScreenshotParseProcessor extends UserJobProcessor<ScreenshotParseJo
           minConfidence: data.minConfidence,
           accountId: data.accountId,
           userId: data.userId,
+          onStatus: (msg) => ctx.reportStatus(msg),
         });
         results.push({ r2Key: key, success: true, data: parsed });
       } catch (err) {

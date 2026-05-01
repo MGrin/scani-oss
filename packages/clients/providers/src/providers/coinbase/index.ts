@@ -23,6 +23,7 @@ import type {
   WithUserCreds,
 } from '../../core/types';
 import { enforceSign } from '../../core/utils/enforce-tx-sign';
+import { tokenTypeForCexAsset } from '../../core/utils/fiat-codes';
 import { coinbaseManifest } from './manifest';
 
 export { coinbaseManifest } from './manifest';
@@ -124,6 +125,7 @@ export class CoinbaseProvider
         tokenIdentity: this.tokenIdentity(code),
         balance: total.toString(),
         capturedAt: new Date(),
+        tokenType: tokenTypeForCexAsset(code),
       });
     }
     return out;

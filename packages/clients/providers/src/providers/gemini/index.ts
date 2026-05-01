@@ -23,6 +23,7 @@ import type {
   WithUserCreds,
 } from '../../core/types';
 import { enforceSign, inferCounterSign, negateFee } from '../../core/utils/enforce-tx-sign';
+import { tokenTypeForCexAsset } from '../../core/utils/fiat-codes';
 import { geminiManifest } from './manifest';
 
 export { geminiManifest } from './manifest';
@@ -166,6 +167,7 @@ export class GeminiProvider
         tokenIdentity: tokenIdentity(b.currency),
         balance: b.amount,
         capturedAt: new Date(),
+        tokenType: tokenTypeForCexAsset(b.currency),
       }));
   }
 

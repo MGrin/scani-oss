@@ -8,12 +8,10 @@ import {
   DialogTitle,
 } from '@scani/ui/ui/dialog';
 import { ExternalLink } from 'lucide-react';
-import { useCallback, useEffect, useState } from 'react';
+import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import type { RouterOutputs } from '@/lib/trpc';
 import { trpc } from '@/lib/trpc';
-import { invalidatePortfolioQueries } from '@/v2/hooks/invalidatePortfolioQueries';
-import { useJobStatus } from '@/v2/hooks/useJobStatus';
 import { V2_ROUTES } from '@/v2/lib/routes';
 import { GenericCredentialForm } from './GenericCredentialForm';
 
@@ -36,18 +34,14 @@ export function ExchangeConnectDialog({
   integration,
 }: ExchangeConnectDialogProps) {
   const [values, setValues] = useState<Record<string, string>>({});
-  // Status progression:
-  //   idle → submitting (tRPC call running) → importing (job is running on
-  //   the worker) → (closes + navigates on success/failure).
-  //   `error` is reached only when the tRPC `validateKeys` call itself
-  //   fails. Job-level failures flip to `importing` → navigate to /jobs/:id
-  //   so the detail page shows the worker-side error.
-  const [status, setStatus] = useState<'idle' | 'submitting' | 'importing' | 'error'>('idle');
+  // Submitting = waiting for the validateKeys mutation to enqueue. Once
+  // it returns a jobId we hand off to /jobs/:jobId — the unified
+  // JobDetailPage owns all in-flight feedback (progress bar, attempt
+  // counter, status messages, cancel/retry). Same pattern as
+  // FileImportPage / ManualEntryPage / WalletImportPage.
+  const [status, setStatus] = useState<'idle' | 'submitting' | 'error'>('idle');
   const [errorMsg, setErrorMsg] = useState('');
-  const [activeJobId, setActiveJobId] = useState<string | null>(null);
-  const [activeInstitutionId, setActiveInstitutionId] = useState<string | null>(null);
 
-  const utils = trpc.useUtils();
   const navigate = useNavigate();
   const validateKeys = trpc.integrations.validateKeys.useMutation();
 
@@ -55,48 +49,13 @@ export function ExchangeConnectDialog({
   const { name: institutionName } = integration.institution;
 
   const isMobile = isMobileDevice();
-  const isBusy = status === 'submitting' || status === 'importing';
-  const jobStatus = useJobStatus(activeJobId);
+  const isBusy = status === 'submitting';
 
-  // Memoised so the job-terminated effect's dependency list is stable —
-  // a fresh reference every render would re-run the effect on every
-  // parent re-render and could trigger a redirect loop.
-  const resetForm = useCallback(() => {
+  const resetForm = () => {
     setValues({});
     setStatus('idle');
     setErrorMsg('');
-    setActiveJobId(null);
-    setActiveInstitutionId(null);
-  }, []);
-
-  useEffect(() => {
-    if (status !== 'importing' || !activeJobId) return;
-    if (jobStatus.state === 'completed') {
-      void (async () => {
-        await invalidatePortfolioQueries(utils, { refetchType: 'all' });
-        resetForm();
-        onOpenChange(false);
-        if (activeInstitutionId) {
-          navigate(`${V2_ROUTES.holdings}?institution=${activeInstitutionId}`);
-        } else {
-          navigate(V2_ROUTES.holdings);
-        }
-      })();
-    } else if (jobStatus.state === 'failed') {
-      resetForm();
-      onOpenChange(false);
-      navigate(V2_ROUTES.jobDetail(activeJobId));
-    }
-  }, [
-    status,
-    activeJobId,
-    activeInstitutionId,
-    jobStatus.state,
-    navigate,
-    onOpenChange,
-    utils,
-    resetForm,
-  ]);
+  };
 
   const isValid = credentialFields.every((field) => {
     if (!field.required) return true;
@@ -119,9 +78,14 @@ export function ExchangeConnectDialog({
         credentials,
         requestId,
       });
-      setActiveJobId(result.jobId ?? null);
-      setActiveInstitutionId(result.institutionId ?? null);
-      setStatus('importing');
+      const jobId = result.jobId;
+      resetForm();
+      onOpenChange(false);
+      if (jobId) {
+        navigate(V2_ROUTES.jobDetail(jobId));
+      } else {
+        navigate(V2_ROUTES.holdings);
+      }
     } catch (err) {
       setErrorMsg(err instanceof Error ? err.message : 'Connection failed');
       setStatus('error');
@@ -132,9 +96,6 @@ export function ExchangeConnectDialog({
     <Dialog
       open={open}
       onOpenChange={(v) => {
-        // Don't let the user close the modal mid-flight — we want them to
-        // wait for the job to complete so the redirect lands them on the
-        // right page. The job-terminated effect above closes it cleanly.
         if (isBusy) return;
         if (!v) resetForm();
         onOpenChange(v);
@@ -188,20 +149,6 @@ export function ExchangeConnectDialog({
             disabled={isBusy}
           />
 
-          {status === 'importing' && (
-            <div className="space-y-2">
-              <p className="text-sm font-medium">
-                Credentials accepted — importing your {institutionName} data.
-              </p>
-              <p className="text-xs text-muted-foreground">
-                This usually takes a few seconds. You'll land on your holdings when it finishes.
-              </p>
-              <div className="relative h-1.5 w-full overflow-hidden rounded-full bg-primary/20">
-                <div className="absolute inset-y-0 left-0 w-1/3 rounded-full bg-primary animate-loading-bar" />
-              </div>
-            </div>
-          )}
-
           {status === 'error' && <p className="text-sm text-destructive">{errorMsg}</p>}
         </div>
 
@@ -217,11 +164,7 @@ export function ExchangeConnectDialog({
             Cancel
           </Button>
           <Button onClick={handleSubmit} disabled={!isValid || isBusy}>
-            {status === 'submitting'
-              ? 'Connecting…'
-              : status === 'importing'
-                ? 'Importing…'
-                : 'Connect'}
+            {status === 'submitting' ? 'Connecting…' : 'Connect'}
           </Button>
         </DialogFooter>
       </DialogContent>

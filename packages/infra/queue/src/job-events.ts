@@ -20,6 +20,8 @@ export type JobLifecycleState = 'queued' | 'active' | 'progress' | 'completed' |
 export interface JobEventPayload {
   state: JobLifecycleState;
   progress?: number;
+  /** See `ProcessorContext.reportStatus` — free-form phase message. */
+  statusMessage?: string;
   result?: unknown;
   error?: string;
   attemptsMade?: number;

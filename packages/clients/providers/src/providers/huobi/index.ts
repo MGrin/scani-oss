@@ -23,6 +23,7 @@ import type {
   WithUserCreds,
 } from '../../core/types';
 import { enforceSign, inferCounterSign, negateFee } from '../../core/utils/enforce-tx-sign';
+import { tokenTypeForCexAsset } from '../../core/utils/fiat-codes';
 import { splitConcatenatedPair } from '../../core/utils/symbol-splitter';
 import { huobiManifest } from './manifest';
 
@@ -164,6 +165,7 @@ export class HuobiProvider
         tokenIdentity: tokenIdentity(currency),
         balance: total.toString(),
         capturedAt: new Date(),
+        tokenType: tokenTypeForCexAsset(currency),
       });
     }
     return out;

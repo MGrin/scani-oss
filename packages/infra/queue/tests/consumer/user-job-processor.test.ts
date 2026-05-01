@@ -110,6 +110,24 @@ describe('UserJobProcessor — orchestration', () => {
     expect(progressEvent.progress).toBe(0.5);
   });
 
+  test('reportStatus emits a progress event with statusMessage + publishes', async () => {
+    const proc = new StubProcessor(async (_d, ctx) => {
+      await ctx.reportStatus('Waiting for IBKR — attempt 3/24');
+      return { handled: 'ok' };
+    });
+    await proc.process(makeJob({ userId: 'u1', requestId: 'r1', value: 'v' }));
+    const types = mirrorEvents.map((e) => e.type);
+    expect(types).toEqual(['active', 'progress', 'completed']);
+    const progressEvent = mirrorEvents[1] as Extract<LifecycleEvent, { type: 'progress' }>;
+    expect(progressEvent.statusMessage).toBe('Waiting for IBKR — attempt 3/24');
+    const wsPayload = publisherCalls[1]?.payload as {
+      state: string;
+      statusMessage?: string;
+    };
+    expect(wsPayload.state).toBe('progress');
+    expect(wsPayload.statusMessage).toBe('Waiting for IBKR — attempt 3/24');
+  });
+
   test('re-throws errors WITHOUT wrapping (preserves UnrecoverableError instanceof)', async () => {
     class CustomError extends Error {}
     const customErr = new CustomError('classified');

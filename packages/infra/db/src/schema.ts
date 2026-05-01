@@ -689,7 +689,7 @@ export const credentialPoolBorrowLog = pgTable(
 // so the "/jobs" UI reads from here for historical listings and falls back to
 // here for `jobs.status` when Redis no longer has the job. The backend's
 // enqueue helper inserts a row before calling `queue.add`; the worker's
-// processor-wrapper updates state+progress+result on every lifecycle event.
+// UserJobProcessor updates state+progress+result on every lifecycle event.
 export const userJobs = pgTable(
   'user_jobs',
   {

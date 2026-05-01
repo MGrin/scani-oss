@@ -30,6 +30,7 @@ export function makeProviderContext(input: {
   institutionId: string;
   institutionCode: string;
   resolveCredentials: () => Promise<Record<string, unknown>>;
+  onStatus?: (message: string) => void | Promise<void>;
 }): SelfCredentialedProviderContext {
   return {
     baseCurrency: SYNTHETIC_BASE_CURRENCY,
@@ -41,5 +42,6 @@ export function makeProviderContext(input: {
       (await input.resolveCredentials()) as Awaited<
         ReturnType<NonNullable<ProviderContext['resolveCredentials']>>
       >,
+    onStatus: input.onStatus,
   };
 }

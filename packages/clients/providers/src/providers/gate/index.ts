@@ -23,6 +23,7 @@ import type {
   WithUserCreds,
 } from '../../core/types';
 import { enforceSign, inferCounterSign, negateFee } from '../../core/utils/enforce-tx-sign';
+import { tokenTypeForCexAsset } from '../../core/utils/fiat-codes';
 import { gateManifest } from './manifest';
 
 export { gateManifest } from './manifest';
@@ -149,6 +150,7 @@ export class GateProvider
         tokenIdentity: this.assetIdentity(b.currency),
         balance: total.toString(),
         capturedAt: new Date(),
+        tokenType: tokenTypeForCexAsset(b.currency),
       });
     }
     return out;

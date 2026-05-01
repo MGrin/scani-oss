@@ -19,6 +19,7 @@ import { trpc } from '@/lib/trpc';
 export interface UseJobStatusResult {
   state: 'queued' | 'active' | 'progress' | 'completed' | 'failed' | 'unknown';
   progress: number | null;
+  statusMessage: string | null;
   result: unknown;
   error: string | null;
   attemptsMade: number | null;
@@ -35,6 +36,7 @@ export function useJobStatus(jobId: string | null): UseJobStatusResult {
   const [result, setResult] = useState<UseJobStatusResult>({
     state: 'unknown',
     progress: null,
+    statusMessage: null,
     result: null,
     error: null,
     attemptsMade: null,
@@ -48,6 +50,7 @@ export function useJobStatus(jobId: string | null): UseJobStatusResult {
       setResult({
         state: 'unknown',
         progress: null,
+        statusMessage: null,
         result: null,
         error: null,
         attemptsMade: null,
@@ -74,6 +77,12 @@ export function useJobStatus(jobId: string | null): UseJobStatusResult {
         return {
           state: event.state ?? prev.state,
           progress: event.progress ?? prev.progress,
+          // Latch the latest worker-emitted phase message. Cleared when
+          // the run reaches a terminal state below (handled implicitly:
+          // terminal events typically don't carry statusMessage and
+          // we keep `prev.statusMessage` if absent — that's fine because
+          // JobHeader only renders it for in-flight states).
+          statusMessage: event.statusMessage ?? prev.statusMessage,
           result: event.result ?? prev.result,
           error: event.error ?? null,
           attemptsMade: event.attemptsMade ?? prev.attemptsMade,
@@ -119,6 +128,10 @@ export function useJobStatus(jobId: string | null): UseJobStatusResult {
           return {
             state: nextState,
             progress: typeof status.progress === 'number' ? status.progress : null,
+            // Polling fallback can't see WS-only `statusMessage`, but we
+            // keep the latched value so the message persists across
+            // brief WS drops while the job is still active.
+            statusMessage: prev.statusMessage,
             result: status.returnvalue ?? null,
             error: status.failedReason ?? null,
             attemptsMade: status.attemptsMade ?? null,

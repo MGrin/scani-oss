@@ -15,6 +15,7 @@
 
 import { afterAll, afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { randomUUID } from 'node:crypto';
+import { withAdvisoryLock } from '@scani/db';
 import { db } from '@scani/db/connection';
 import * as schema from '@scani/db/schema';
 import { eq, inArray } from 'drizzle-orm';
@@ -196,6 +197,40 @@ describe('RollupPortfolioValueDailyUseCase', () => {
     // The non-failing fixture user got processed normally.
     const goodCalls = valuationCalls.filter((c) => c.userId === f.userIds[1]);
     expect(goodCalls.length).toBeGreaterThanOrEqual(1);
+  });
+
+  test('skips a user whose per-user advisory lock is already held', async () => {
+    const f = fixture!;
+    const targetUser = f.userIds[0]!;
+
+    // Hold the per-user lock from another async context to simulate a
+    // concurrent run (cron sweep + user-initiated backfill, or two cron
+    // containers overlapping). The use case should see lock-held and
+    // increment `usersSkipped` instead of running the rollup.
+    let releaseLock: () => void = () => {};
+    const lockReleased = new Promise<void>((resolve) => {
+      releaseLock = resolve;
+    });
+    const lockAcquired = new Promise<void>((resolveAcquired) => {
+      void withAdvisoryLock(`portfolio-value-rollup:${targetUser}`, async () => {
+        resolveAcquired();
+        await lockReleased;
+      });
+    });
+    await lockAcquired;
+
+    try {
+      const summary = await Container.get(RollupPortfolioValueDailyUseCase).execute({
+        userId: targetUser,
+        lookbackDays: 1,
+      });
+      expect(summary.usersSkipped).toBe(1);
+      expect(summary.usersProcessed).toBe(0);
+      // Critical: the valuation service was NOT called for the skipped user.
+      expect(valuationCalls.some((c) => c.userId === targetUser)).toBe(false);
+    } finally {
+      releaseLock();
+    }
   });
 
   test('uses today + earlier days; today snapshot uses the runStart timestamp directly', async () => {

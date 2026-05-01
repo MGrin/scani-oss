@@ -24,6 +24,7 @@ import {
   UserWalletService,
   WalletDiscoveryService,
 } from '../services';
+import { safeStatus } from './lib/safeStatus';
 
 const logger = createComponentLogger('use-case:import-wallet');
 
@@ -297,7 +298,8 @@ export class ImportWalletAddressUseCase {
    */
   async prepareReview(
     input: ImportWalletInput,
-    userId: string
+    userId: string,
+    onStatus?: (message: string) => void | Promise<void>
   ): Promise<PrepareWalletReviewResult> {
     logger.info(
       { userId, address: `${input.address.substring(0, 10)}...` },
@@ -307,6 +309,7 @@ export class ImportWalletAddressUseCase {
     const [user] = await db.select().from(schema.users).where(eq(schema.users.id, userId)).limit(1);
     if (!user) throw new Error('User not found');
 
+    await safeStatus(onStatus, 'Detecting blockchain networks…');
     const detectedInstitutionIds = await this.resolveDetectedInstitutionIds(input, userId);
     const userWallet =
       detectedInstitutionIds.length > 0
@@ -328,7 +331,15 @@ export class ImportWalletAddressUseCase {
     if (!cryptoTokenType) throw new Error('Token type "crypto" not found');
 
     const errors: ImportWalletResult['errors'] = [];
-    const prepared = await this.fetchChainData(input, userId, detectedInstitutionIds, errors);
+    const prepared = await this.fetchChainData(
+      input,
+      userId,
+      detectedInstitutionIds,
+      errors,
+      onStatus
+    );
+
+    await safeStatus(onStatus, 'Preparing review…');
 
     const chains: WalletReviewChain[] = prepared.map((c) => ({
       institutionId: c.institution.id,
@@ -578,12 +589,16 @@ export class ImportWalletAddressUseCase {
     input: ImportWalletInput,
     userId: string,
     detectedInstitutionIds: string[],
-    errors: ImportWalletResult['errors']
+    errors: ImportWalletResult['errors'],
+    onStatus?: (message: string) => void | Promise<void>
   ): Promise<PreparedChain[]> {
     const chains: PreparedChain[] = [];
     const registry = Container.get(ProviderRegistry);
 
+    let chainIndex = 0;
+    const total = detectedInstitutionIds.length;
     for (const institutionId of detectedInstitutionIds) {
+      chainIndex++;
       try {
         const institutionCode = await this.walletDiscovery.resolveInstitutionCode(institutionId);
         const provider = institutionCode ? registry.getBalanceFetcher(institutionCode) : null;
@@ -642,8 +657,13 @@ export class ImportWalletAddressUseCase {
           institutionId,
           institutionCode,
           resolveCredentials: async () => ({ walletAddress: input.address }),
+          onStatus,
         });
 
+        await safeStatus(
+          onStatus,
+          `Fetching balances on ${institution.name} (${chainIndex}/${total})…`
+        );
         const snapshots = await provider.fetchBalances(ctx);
         chains.push({
           institution,

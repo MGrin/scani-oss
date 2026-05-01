@@ -6,11 +6,44 @@ import {
 } from '@scani/domain/use-cases';
 import { PORTFOLIO_HISTORY_BACKFILL, type PortfolioHistoryBackfillJob } from '@scani/jobs';
 import { createComponentLogger } from '@scani/logging';
-import { type ProcessorContext, UserJobProcessor } from '@scani/queue';
+import { BullMqEnqueueService, type ProcessorContext, UserJobProcessor } from '@scani/queue';
 import { emitEntityChange } from '@scani/realtime';
 import { eq } from 'drizzle-orm';
 import { Container, Service } from 'typedi';
 import { withJobLock } from '../lib/cron-lock';
+
+// When the per-user advisory lock is held by an in-flight backfill, a
+// freshly-enqueued one would silently skip — leaving any data inserted
+// AFTER the in-flight backfill's snapshot was taken (e.g., wallet add
+// followed by integration add) un-rolled until the next nightly cron.
+// Re-enqueuing with a fixed `lock-held-retry` requestId means at most
+// one pending retry per user (BullMQ jobId dedup), so a flurry of
+// skipped runs collapses into a single delayed tick.
+export const LOCK_HELD_RETRY_REQUEST_ID = 'lock-held-retry';
+export const LOCK_HELD_RETRY_DELAY_MS = 90_000;
+
+interface EnqueueServiceLike {
+  add: (typeof BullMqEnqueueService)['prototype']['add'];
+}
+
+export async function scheduleLockHeldRetry(
+  userId: string,
+  enqueueService: EnqueueServiceLike
+): Promise<void> {
+  await enqueueService.add(
+    PORTFOLIO_HISTORY_BACKFILL,
+    {
+      userId,
+      requestId: LOCK_HELD_RETRY_REQUEST_ID,
+      // Empty tokenIds + max lookback so the retry catches everything
+      // the original triggers were meant to cover, regardless of who
+      // first hit the lock.
+      tokenIds: [],
+      lookbackDays: 365,
+    },
+    { delay: LOCK_HELD_RETRY_DELAY_MS }
+  );
+}
 
 const logger = createComponentLogger('processor:portfolio-history-backfill');
 
@@ -41,10 +74,33 @@ export class PortfolioHistoryBackfillProcessor extends UserJobProcessor<
     const lockKey = `portfolio-history-backfill:${data.userId}`;
     const outcome = await withJobLock(lockKey, () => this.runBackfill(data, ctx));
     if (outcome.ran) return outcome.result;
-    logger.info(
-      { jobId: ctx.job.id, userId: data.userId },
-      'Backfill skipped — another instance is already running for this user'
-    );
+
+    // Lock held by another in-flight backfill. The in-flight run took its
+    // holdings/transactions snapshot before our trigger landed, so any
+    // data the current job was supposed to roll up may be missing. Queue
+    // a delayed retry (fixed requestId → at most one pending per user)
+    // so the work is picked up the moment the lock clears.
+    try {
+      await scheduleLockHeldRetry(data.userId, Container.get(BullMqEnqueueService));
+      logger.info(
+        {
+          jobId: ctx.job.id,
+          userId: data.userId,
+          retryDelayMs: LOCK_HELD_RETRY_DELAY_MS,
+          skipIsRetry: data.requestId === LOCK_HELD_RETRY_REQUEST_ID,
+        },
+        'Backfill skipped (lock held) — delayed retry enqueued'
+      );
+    } catch (err) {
+      logger.warn(
+        {
+          jobId: ctx.job.id,
+          userId: data.userId,
+          error: err instanceof Error ? err.message : String(err),
+        },
+        'Backfill skipped (lock held) — failed to enqueue delayed retry'
+      );
+    }
     return {
       tokenCount: data.tokenIds.length,
       lookbackDays: data.lookbackDays,

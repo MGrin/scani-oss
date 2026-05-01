@@ -67,6 +67,7 @@ export function JobDetailPage() {
           startedAt: job.startedAt,
           finishedAt: job.finishedAt,
           error: job.error,
+          statusMessage: live.statusMessage,
         }}
       />
       <JobBody

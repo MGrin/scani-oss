@@ -8,6 +8,7 @@ import Container, { Service } from 'typedi';
 import { extractText, getDocumentProxy } from 'unpdf';
 import { EnrichHoldingsService, ScreenshotParsingService } from '../services';
 import type { EnrichedParsedHolding } from '../services/holdings/EnrichHoldingsService';
+import { safeStatus } from './lib/safeStatus';
 
 const logger = createComponentLogger('use-case:parse-screenshot');
 
@@ -23,6 +24,7 @@ export interface ParseScreenshotInput {
   minConfidence?: number;
   accountId?: string;
   userId: string;
+  onStatus?: (message: string) => void | Promise<void>;
 }
 
 export interface ParseScreenshotResult {
@@ -61,6 +63,10 @@ export class ParseScreenshotUseCase {
     // PDFs still fail with a "couldn't parse" message — those need
     // OCR which isn't worth the dependency weight right now.
     const isPdf = input.mimeType === 'application/pdf';
+    await safeStatus(
+      input.onStatus,
+      isPdf ? 'Reading PDF text…' : 'Sending image to AI for extraction…'
+    );
     const portfolio = isPdf
       ? await this.parsePdfText(input)
       : await this.screenshotService.parseScreenshot(input.imageBase64, {
@@ -80,7 +86,7 @@ export class ParseScreenshotUseCase {
       'AI parsing completed, enriching with token and holding data'
     );
 
-    // Enrich holdings with token IDs and existing holding IDs
+    await safeStatus(input.onStatus, 'Matching extracted holdings against your tokens…');
     const enrichedHoldings = await this.enrichHoldingsService.enrich({
       holdings: portfolio.holdings,
       accountId: input.accountId,

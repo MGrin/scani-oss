@@ -65,6 +65,21 @@ export abstract class UserJobProcessor<TPayload extends UserJobBase, TResult = u
         });
         await this.publish(data.userId, jobId, { state: 'progress', progress: clamped });
       },
+      reportStatus: async (message: string) => {
+        // BullMQ `updateProgress` accepts string|object as well as
+        // number; passing the message through means the queue admin
+        // dashboard also surfaces the latest phase.
+        await job.updateProgress({ statusMessage: message });
+        await this.fire({
+          type: 'progress',
+          jobId,
+          userId: data.userId,
+          jobName: this.descriptor.name,
+          progress: 0,
+          statusMessage: message,
+        });
+        await this.publish(data.userId, jobId, { state: 'progress', statusMessage: message });
+      },
     };
 
     try {

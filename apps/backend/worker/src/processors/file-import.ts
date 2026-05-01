@@ -67,6 +67,7 @@ export class FileImportProcessor extends UserJobProcessor<FileImportJob, FileImp
     const obsRepo = Container.get(HoldingBalanceObservationRepository);
     const ingester = Container.get(StatementTransactionIngester);
 
+    await ctx.reportStatus('Reading uploaded file…');
     const buf = await storage.read(data.r2Key);
     // R2 keys are uploaded under `temp/file-import/{userId}/` which the
     // bucket lifecycle rule (24h) cleans up. We never delete the file
@@ -76,6 +77,7 @@ export class FileImportProcessor extends UserJobProcessor<FileImportJob, FileImp
     // the user clicks Apply twice (e.g. via browser back), each call
     // is idempotent at the DB layer (txns/observations dedup) and the
     // file stays alive until R2 sweeps it.
+    await ctx.reportStatus(`Parsing ${data.fileType.toUpperCase()} statement…`);
     const parsed = await parseStatement(buf.toString('utf-8'), `import.${data.fileType}`, {
       aiColumnDetector: (headers, sampleRows) =>
         csvColumnDetection.detectColumns(headers, sampleRows),
@@ -140,6 +142,11 @@ export class FileImportProcessor extends UserJobProcessor<FileImportJob, FileImp
       if (cur) uniqueCurrencies.add(cur);
     }
 
+    if (uniqueCurrencies.size > 0) {
+      await ctx.reportStatus(
+        `Resolving ${uniqueCurrencies.size} ${uniqueCurrencies.size === 1 ? 'currency' : 'currencies'}…`
+      );
+    }
     const holdingByCurrency = new Map<
       string,
       { holdingId: string; tokenId: string; symbol: string; name: string }
@@ -191,6 +198,9 @@ export class FileImportProcessor extends UserJobProcessor<FileImportJob, FileImp
       holdingsCreated.push(created.id);
     }
 
+    await ctx.reportStatus(
+      `Ingesting ${parsed.transactions.length} ${parsed.transactions.length === 1 ? 'transaction' : 'transactions'}…`
+    );
     const ingestResult = await ingester.ingest({
       userId: data.userId,
       accountId: data.accountId,
@@ -208,6 +218,7 @@ export class FileImportProcessor extends UserJobProcessor<FileImportJob, FileImp
     // Write transactions + observations to the DB. Both are idempotent —
     // dedup keys are (holdingId, source, externalId) for transactions
     // and (holdingId, observedAt, source) for observations.
+    await ctx.reportStatus('Saving transactions to your account…');
     await txRepo.bulkUpsert(ingestResult.transactions);
     await obsRepo.bulkAppend(ingestResult.observations);
 

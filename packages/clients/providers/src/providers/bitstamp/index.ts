@@ -23,6 +23,7 @@ import type {
   WithUserCreds,
 } from '../../core/types';
 import { enforceSign, inferCounterSign, negateFee } from '../../core/utils/enforce-tx-sign';
+import { tokenTypeForCexAsset } from '../../core/utils/fiat-codes';
 import { bitstampManifest } from './manifest';
 import { resolvePair, resolveSingleAsset } from './pair-resolver';
 
@@ -243,6 +244,7 @@ export class BitstampProvider
         tokenIdentity: identity,
         balance: amount.toString(),
         capturedAt: new Date(),
+        tokenType: tokenTypeForCexAsset(currency),
       });
     }
     return out;

@@ -23,6 +23,7 @@ import type {
   TransactionEvent,
   WithUserCreds,
 } from '../../core/types';
+import { tokenTypeForCexAsset } from '../../core/utils/fiat-codes';
 import { mapOkxBillToEvent, type OkxBill, type OkxBillsResponse } from './bill-mapper';
 import { okxManifest } from './manifest';
 import {
@@ -130,6 +131,7 @@ export class OkxProvider
         tokenIdentity,
         balance: cash.toString(),
         capturedAt: new Date(),
+        tokenType: tokenTypeForCexAsset(d.ccy),
       });
     }
     return out;

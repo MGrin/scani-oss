@@ -70,6 +70,7 @@ export class ManualHoldingsCreateProcessor extends UserJobProcessor<
     const baseCurrencySymbol = await this.resolveBaseCurrencySymbol(data.baseCurrencyId);
 
     await ctx.reportProgress(0.05);
+    await ctx.reportStatus('Saving institution, account and holdings…');
 
     // Phase 1: institution + account + new holdings + balance updates,
     // all atomic inside a single transaction owned by the use case.
@@ -182,6 +183,11 @@ export class ManualHoldingsCreateProcessor extends UserJobProcessor<
     for (const h of dbResult.holdings) initialBalanceById.set(h.id, h.balance);
     for (const u of data.updateHoldings) initialBalanceById.set(u.holdingId, u.balance);
 
+    if (allAffectedHoldingIds.length > 0) {
+      await ctx.reportStatus(
+        `Fetching prices for ${allAffectedHoldingIds.length} ${allAffectedHoldingIds.length === 1 ? 'holding' : 'holdings'}…`
+      );
+    }
     const updatePriceUseCase = Container.get(UpdateHoldingPriceUseCase);
     const settlements = await Promise.all(
       allAffectedHoldingIds.map(async (holdingId, index): Promise<SettlementRow> => {
@@ -239,6 +245,7 @@ export class ManualHoldingsCreateProcessor extends UserJobProcessor<
 
     // Phase 4: portfolio valuation (best-effort — failure here doesn't
     // invalidate the holdings the user just created).
+    await ctx.reportStatus('Recomputing portfolio value…');
     try {
       await Container.get(PortfolioValuationService).getUserPortfolioValue(
         data.userId,

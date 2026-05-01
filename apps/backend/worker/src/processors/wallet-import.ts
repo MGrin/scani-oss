@@ -23,14 +23,15 @@ export class WalletImportProcessor extends UserJobProcessor<WalletImportJob, unk
    * the user has already kept — review only applies to user-initiated
    * imports.
    */
-  protected async handle(data: WalletImportJob, _ctx: ProcessorContext): Promise<unknown> {
+  protected async handle(data: WalletImportJob, ctx: ProcessorContext): Promise<unknown> {
     const review = await Container.get(ImportWalletAddressUseCase).prepareReview(
       {
         address: data.address,
         displayName: data.label,
         detectedInstitutionIds: data.detectedInstitutionIds,
       },
-      data.userId
+      data.userId,
+      (message) => ctx.reportStatus(message)
     );
 
     const totalSnapshots = review.chains.reduce((acc, c) => acc + c.snapshots.length, 0);

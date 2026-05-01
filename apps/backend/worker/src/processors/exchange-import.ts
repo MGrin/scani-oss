@@ -47,7 +47,9 @@ function sourceForProvider(provider: string): string | null {
 function isUnrecoverableExchangeError(err: unknown): boolean {
   const msg = err instanceof Error ? err.message : String(err);
   return (
-    /IBKR Flex Query error \(code 10(10|12|18)\)/.test(msg) ||
+    /IBKR Flex Query error \(code 10(01|10|12|18)\)/.test(msg) ||
+    /IBKR report still generating after \d+ retries/.test(msg) ||
+    /IBKR SendRequest still transient after \d+ retries/.test(msg) ||
     /HTTP 40[13]/.test(msg) ||
     /EAPI:Invalid (signature|nonce|key)/.test(msg) ||
     /rejected request: retCode (10003|10004|10005|10006|33004)/.test(msg) ||
@@ -70,7 +72,7 @@ export class ExchangeImportProcessor extends UserJobProcessor<ExchangeImportJob,
   readonly descriptor = EXCHANGE_IMPORT;
   private readonly enqueueService = Container.get(BullMqEnqueueService);
 
-  protected async handle(data: ExchangeImportJob, _ctx: ProcessorContext): Promise<unknown> {
+  protected async handle(data: ExchangeImportJob, ctx: ProcessorContext): Promise<unknown> {
     const useCase =
       data.provider.toLowerCase() === 'interactive brokers' ||
       data.provider.toLowerCase() === 'ibkr'
@@ -82,6 +84,7 @@ export class ExchangeImportProcessor extends UserJobProcessor<ExchangeImportJob,
       result = await useCase.execute({
         userId: data.userId,
         institutionId: data.institutionId,
+        onStatus: (message) => ctx.reportStatus(message),
       });
     } catch (error) {
       if (isUnrecoverableExchangeError(error)) {

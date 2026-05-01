@@ -25,12 +25,21 @@ import {
   PriceWarmupService,
   WalletDiscoveryService,
 } from '../services';
+import { resolveSnapshotTokenType } from './lib/resolveSnapshotTokenType';
+import { safeStatus } from './lib/safeStatus';
 
 const logger = createComponentLogger('use-case:import-exchange-accounts');
 
 export interface ImportExchangeAccountsInput {
   userId: string;
   institutionId: string;
+  /**
+   * Optional progress sink wired by the BullMQ processor. Most CEX
+   * providers complete in a few seconds and don't emit phase messages,
+   * but the option is in place so future providers (or instrumentation)
+   * can surface mid-flight status without another plumbing pass.
+   */
+  onStatus?: (message: string) => void | Promise<void>;
 }
 
 export interface ImportExchangeAccountsResult {
@@ -107,8 +116,10 @@ export class ImportExchangeAccountsUseCase {
       institutionId: input.institutionId,
       institutionCode,
       resolveCredentials: async () => credentials,
+      onStatus: input.onStatus,
     });
 
+    await safeStatus(input.onStatus, `Discovering accounts on ${institutionCode}…`);
     const accountDiscoverer = registry.getAccountDiscoverer(institutionCode);
     const discoveredAccounts = accountDiscoverer
       ? await accountDiscoverer.fetchAccounts(ctx)
@@ -134,7 +145,13 @@ export class ImportExchangeAccountsUseCase {
 
     const targetsRaw: Array<{ accountInfo: DiscoveredAccountInfo; snapshots: HoldingSnapshot[] }> =
       [];
+    let accountIndex = 0;
     for (const accountInfo of discoveredAccountInfos) {
+      accountIndex++;
+      await safeStatus(
+        input.onStatus,
+        `Fetching balances for ${accountInfo.name} (${accountIndex}/${discoveredAccountInfos.length})…`
+      );
       let snapshots: HoldingSnapshot[] = [];
       try {
         snapshots = await provider.fetchBalances(ctx);
@@ -187,6 +204,7 @@ export class ImportExchangeAccountsUseCase {
       accountTypeId: cryptoAccountType.id,
     }));
 
+    await safeStatus(input.onStatus, 'Saving accounts and holdings…');
     const importResult = await this.integrationImportService.import(targets, {
       userId: input.userId,
       baseCurrencyId: user.baseCurrencyId,
@@ -196,14 +214,8 @@ export class ImportExchangeAccountsUseCase {
       cryptoTokenTypeId: cryptoTokenType.id,
       tokenTypeMap,
       defaultDecimals: (_snapshot, tokenType) => (tokenType === 'fiat' ? 2 : 8),
-      resolveTokenTypeId: (_snapshot, fallbackCryptoTypeId) => {
-        // The current HoldingSnapshot shape doesn't carry tokenType
-        // metadata — until upstream providers populate it, we fall back
-        // to the crypto type. Future provider work will pass tokenType
-        // through and this resolver becomes the place that flips
-        // crypto/fiat/stock per-row.
-        return fallbackCryptoTypeId;
-      },
+      resolveTokenTypeId: (snapshot, fallbackCryptoTypeId) =>
+        resolveSnapshotTokenType(snapshot, tokenTypeMap, fallbackCryptoTypeId),
       transactionName: 'importExchangeAccounts',
     });
 

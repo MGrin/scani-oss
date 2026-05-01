@@ -21,6 +21,12 @@ export interface JobHeaderJob {
   startedAt: string | Date | null;
   finishedAt: string | Date | null;
   error: string | null;
+  /**
+   * Latest worker-emitted phase message. Optional. Surfaced above the
+   * indeterminate bar so long polls (IBKR Flex Query generation) can
+   * communicate "Waiting for IBKR — generating report (attempt N/24)…".
+   */
+  statusMessage?: string | null;
 }
 
 /** Generic top-of-page block for /jobs/:jobId. The job-type-specific body renders below. */
@@ -70,6 +76,9 @@ export function JobHeader({ job }: { job: JobHeaderJob }) {
 
         {isRunning && (
           <div className="space-y-2">
+            {job.statusMessage && (
+              <p className="text-xs text-muted-foreground">{job.statusMessage}</p>
+            )}
             {/* Indeterminate bar: our worker pipeline doesn't emit progress
                 percentages, so a 1/3-width filler slides back and forth to
                 signal "still working". `animate-loading-bar` is defined in
