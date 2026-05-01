@@ -7,15 +7,23 @@ poll.
 
 ## Upstream
 
-- Base: `https://gdcdyn.interactivebrokers.com/Universal/servlet`
+- Base: `https://ndcdyn.interactivebrokers.com/AccountManagement/FlexWebService`
+  (SendRequest); GetStatement runs against whatever `<Url>` the SendRequest
+  response carries, typically `https://gdcdyn.interactivebrokers.com/AccountManagement/FlexWebService`.
 - Setup docs: <https://guides.interactivebrokers.com/cp/cp.htm#am/reports/flex_queries.htm>.
-- Two endpoints:
-  - `POST FlexStatementService.SendRequest?t=<token>&q=<queryId>&v=3` →
-    returns a `ReferenceCode` (synchronous; the report runs in IBKR's
+- Two endpoints (both **GET** with query-string params, v=3):
+  - `GET .../FlexWebService/SendRequest?t=<token>&q=<queryId>&v=3` →
+    returns `<Status>Success</Status>` + a `<ReferenceCode>` and a
+    `<Url>` for GetStatement (synchronous; the report runs in IBKR's
     queue).
-  - `GET FlexStatementService.GetStatement?t=<token>&q=<refCode>&v=3` →
-    returns the XML report once ready (or `<Status>Warn</Status>` while
-    still queued).
+  - `GET <Url>?t=<token>&q=<refCode>&v=3` → returns the XML report once
+    ready, or a `<FlexStatementResponse>` with error code `1019`/`1001`
+    while still queued.
+
+Note: the legacy `Universal/servlet/FlexStatementService.{SendRequest,GetStatement}`
+endpoints over POST silently return error code `1001` even on
+token+query pairs whose templates run successfully in Account Management.
+Don't use them.
 
 ## Capabilities
 
@@ -124,7 +132,7 @@ circuits to `{ valid: false }` on 1019 / 1018 / 1009.
 
 IBKR exposes paper-trading accounts on the same prod URL — paper
 Flex tokens work against
-`https://ndcdyn.interactivebrokers.com/Universal/servlet/FlexStatementService`
+`https://ndcdyn.interactivebrokers.com/AccountManagement/FlexWebService`
 without any URL switch. The live test in `tests/providers/ibkr.test.ts`
 is gated on `SCANI_LIVE=1` and reads `SCANI_TESTNET_IBKR_FLEX_TOKEN` +
 `SCANI_TESTNET_IBKR_FLEX_QUERY_ID` from the environment.

@@ -95,6 +95,7 @@ const CEX_SOURCE_TO_INSTITUTION: Record<string, string> = {
   'mexc-api': 'mexc',
   'bitstamp-api': 'bitstamp',
   'gemini-api': 'gemini',
+  'ibkr-api': 'ibkr',
 };
 
 /**

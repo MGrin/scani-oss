@@ -1,11 +1,18 @@
 /**
  * `IbkrProvider` — Interactive Brokers via Flex Query API.
  *
- * Two-step flow per Flex Query docs:
- *   1. POST `.../FlexStatementService.SendRequest` with `t=<token>&q=<queryId>&v=3`
+ * Two-step flow per Flex Web Service v3 docs:
+ *   1. GET `.../AccountManagement/FlexWebService/SendRequest?t=<token>&q=<queryId>&v=3`
  *      → returns `<ReferenceCode>...</ReferenceCode>`.
- *   2. POST `.../FlexStatementService.GetStatement` with `t=<token>&q=<refCode>&v=3`
+ *   2. GET `.../AccountManagement/FlexWebService/GetStatement?t=<token>&q=<refCode>&v=3`
  *      → returns the XML statement (positions + cash balances + trades + cash txs).
+ *
+ * The legacy `Universal/servlet/FlexStatementService.{SendRequest,GetStatement}`
+ * endpoints over POST silently fast-fail with a 1001 ("Statement could not
+ * be generated") even on perfectly valid token+query pairs whose templates
+ * succeed when run interactively in Account Management. Use the v3 path
+ * with GET parameters; SendRequest's response carries the GetStatement URL
+ * IBKR wants us to hit (typically `gdcdyn`).
  *
  * Error code map:
  *   - 1010, 1012  → auth-failed
@@ -47,8 +54,12 @@ import { ibkrManifest } from './manifest';
 export { ibkrManifest } from './manifest';
 
 const IBKR_INSTITUTION_CODE = 'ibkr';
-const FLEX_BASE_URL =
-  'https://ndcdyn.interactivebrokers.com/Universal/servlet/FlexStatementService';
+const FLEX_SEND_URL =
+  'https://ndcdyn.interactivebrokers.com/AccountManagement/FlexWebService/SendRequest';
+// Default fallback if SendRequest's response doesn't include a <Url>; in
+// practice IBKR always returns one, pointing at gdcdyn.
+const FLEX_GET_URL_DEFAULT =
+  'https://gdcdyn.interactivebrokers.com/AccountManagement/FlexWebService/GetStatement';
 // SendRequest just enqueues the report on IBKR's side; 1001 here is the
 // "previous request still in queue" hiccup and clears in tens of seconds.
 const MAX_SEND_RETRIES = 6;
@@ -525,21 +536,22 @@ export class IbkrProvider
     queryId: string,
     onStatus?: (message: string) => void | Promise<void>
   ): Promise<string> {
-    const ref = await this.requestReport(token, queryId, onStatus);
+    const sent = await this.requestReport(token, queryId, onStatus);
     await delay(FETCH_DELAY_MS);
-    return this.fetchReport(token, ref, onStatus);
+    return this.fetchReport(token, sent.referenceCode, sent.getStatementUrl, onStatus);
   }
 
   private async requestReport(
     token: string,
     queryId: string,
     onStatus?: (message: string) => void | Promise<void>
-  ): Promise<string> {
+  ): Promise<{ referenceCode: string; getStatementUrl: string }> {
     const subKey = credentialBucketKey(token);
-    const body = new URLSearchParams({ t: token, q: queryId, v: '3' });
+    const params = new URLSearchParams({ t: token, q: queryId, v: '3' });
+    const url = `${FLEX_SEND_URL}?${params.toString()}`;
     const tokenSuffix = token.length > 4 ? `…${token.slice(-4)}` : '****';
     logger.info(
-      { tokenSuffix, queryId, url: `${FLEX_BASE_URL}.SendRequest`, version: '3' },
+      { tokenSuffix, queryId, url: FLEX_SEND_URL, version: '3' },
       'IBKR SendRequest: starting'
     );
     // IBKR's Flex Web Service serializes requests per (token, queryId).
@@ -556,17 +568,7 @@ export class IbkrProvider
       let response: Response;
       try {
         response = await this.limiter.execute(
-          async () =>
-            fetchWithTimeout(
-              `${FLEX_BASE_URL}.SendRequest`,
-              {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-                body: body.toString(),
-              },
-              FLEX_REQUEST_TIMEOUT_MS,
-              0
-            ),
+          async () => fetchWithTimeout(url, { method: 'GET' }, FLEX_REQUEST_TIMEOUT_MS, 0),
           subKey
         );
       } catch (err) {
@@ -638,11 +640,16 @@ export class IbkrProvider
         );
         throw new Error('IBKR SendRequest response missing ReferenceCode');
       }
+      // IBKR routes us to a specific data center for GetStatement
+      // (typically gdcdyn). Honor it — calling the wrong DC works for
+      // SendRequest but can stale-cache GetStatement.
+      const urlMatch = xml.match(/<Url>([^<]+)<\/Url>/);
+      const getStatementUrl = urlMatch?.[1]?.trim() || FLEX_GET_URL_DEFAULT;
       logger.info(
-        { tokenSuffix, queryId, referenceCode: refMatch[1], attempt },
+        { tokenSuffix, queryId, referenceCode: refMatch[1], getStatementUrl, attempt },
         'IBKR SendRequest: succeeded'
       );
-      return refMatch[1];
+      return { referenceCode: refMatch[1], getStatementUrl };
     }
     throw new Error(
       `IBKR SendRequest still transient after ${MAX_SEND_RETRIES} retries (last: ${lastErrorMsg})`
@@ -652,13 +659,15 @@ export class IbkrProvider
   private async fetchReport(
     token: string,
     referenceCode: string,
+    getStatementUrl: string,
     onStatus?: (message: string) => void | Promise<void>
   ): Promise<string> {
     const subKey = credentialBucketKey(token);
-    const body = new URLSearchParams({ t: token, q: referenceCode, v: '3' });
+    const params = new URLSearchParams({ t: token, q: referenceCode, v: '3' });
+    const url = `${getStatementUrl}?${params.toString()}`;
     const tokenSuffix = token.length > 4 ? `…${token.slice(-4)}` : '****';
     logger.info(
-      { tokenSuffix, referenceCode, url: `${FLEX_BASE_URL}.GetStatement` },
+      { tokenSuffix, referenceCode, url: getStatementUrl },
       'IBKR GetStatement: starting'
     );
     let lastErrorMsg = 'unknown';
@@ -669,17 +678,7 @@ export class IbkrProvider
       let response: Response;
       try {
         response = await this.limiter.execute(
-          async () =>
-            fetchWithTimeout(
-              `${FLEX_BASE_URL}.GetStatement`,
-              {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-                body: body.toString(),
-              },
-              FLEX_REQUEST_TIMEOUT_MS,
-              0
-            ),
+          async () => fetchWithTimeout(url, { method: 'GET' }, FLEX_REQUEST_TIMEOUT_MS, 0),
           subKey
         );
       } catch (err) {

@@ -34,6 +34,8 @@ function sourceForProvider(provider: string): string | null {
     mexc: 'mexc-api',
     bitstamp: 'bitstamp-api',
     gemini: 'gemini-api',
+    ibkr: 'ibkr-api',
+    'interactive brokers': 'ibkr-api',
   };
   return map[p] ?? null;
 }

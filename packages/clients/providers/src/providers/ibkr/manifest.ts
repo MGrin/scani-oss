@@ -23,7 +23,8 @@ export const ibkrManifest: IntegrationManifest = {
     steps: [
       'Log in to IBKR Client Portal → Performance & Reports → Flex Queries',
       'Under "Activity Flex Queries", click "+" to create a new query',
-      'In the query editor, add these sections: "Open Positions" (check all fields) and "Cash Report" (enable "Ending Cash" or "Ending Settled Cash")',
+      'Add ALL FOUR sections (each with the default "All" field selection): "Open Positions", "Cash Report", "Trades", and "Cash Transactions"',
+      'Set "Period" to "Last 365 Calendar Days" so balance + transaction history both load',
       'Save the query and note the Query ID (shown next to the query name)',
       'Scroll down to "Flex Web Service", enable it, and click "Generate New Token"',
       'Copy the token (shown only once) and paste it below along with the Query ID',
