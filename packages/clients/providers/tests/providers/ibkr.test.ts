@@ -61,6 +61,14 @@ describe('IbkrProvider', () => {
       const usd = out.find((h) => h.tokenIdentity.symbol === 'USD');
       expect(aapl?.balance).toBe('10');
       expect(usd?.balance).toBe('500.5');
+      // externalId must equal the bare symbol/currency. The
+      // IntegrationImportService keys snapshotsByExternalId on this
+      // value and back-matches via extractExternalTokenId() (which
+      // reads providerMetadata.ibkr.symbol or .currency). Any prefix
+      // ("TTWO-NASDAQ", "cash-USD") breaks the lookup and silently
+      // drops every holding — see the bug fixed alongside this test.
+      expect(aapl?.externalId).toBe('AAPL');
+      expect(usd?.externalId).toBe('USD');
       // Zero-quantity GOOG is skipped, BASE_SUMMARY skipped, EUR=0 skipped
       expect(out.find((h) => h.tokenIdentity.symbol === 'GOOG')).toBeUndefined();
       expect(out.find((h) => h.tokenIdentity.symbol === 'EUR')).toBeUndefined();

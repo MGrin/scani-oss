@@ -447,7 +447,13 @@ export class IbkrProvider
         },
       };
       out.push({
-        externalId: `${p.symbol}-${p.listingExchange || 'US'}`,
+        // externalId must match what HoldingSnapshotProjection's
+        // extractExternalTokenId() produces from providerMetadata —
+        // ibkr.symbol here. Otherwise the import service can't
+        // back-match the projected holding to its source snapshot
+        // and silently drops every position with "provider returned
+        // inconsistent shape".
+        externalId: p.symbol,
         tokenIdentity,
         balance: p.position,
         capturedAt: new Date(),
@@ -465,7 +471,10 @@ export class IbkrProvider
         providerMetadata: { ibkr: { currency: c.currency } },
       };
       out.push({
-        externalId: `cash-${c.currency}`,
+        // Same constraint as above — ibkr.currency drives
+        // extractExternalTokenId, so the snapshot key must be the bare
+        // currency code (no "cash-" prefix).
+        externalId: c.currency,
         tokenIdentity,
         balance: new Decimal(c.endingCash).toString(),
         capturedAt: new Date(),
