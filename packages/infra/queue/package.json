@@ -1,0 +1,25 @@
+{
+  "name": "@scani/queue",
+  "private": true,
+  "type": "module",
+  "version": "1.0.0",
+  "description": "BullMQ-based async-coordination framework. Abstract bases (UserJobProcessor, ScheduledJobProcessor, EnqueueService, JobLock, ResourceLock, LifecyclePublisher) plus concrete @Service() impls (QueueClient, WorkerClient, JobScheduler, BullMqEnqueueService, RedisLifecyclePublisher, RedisResourceLock). Domain-free.",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "lint": "biome check .",
+    "lint:fix": "biome check --write .",
+    "type-check": "tsgo --noEmit"
+  },
+  "dependencies": {
+    "@scani/logging": "workspace:*",
+    "bullmq": "^5.74.1",
+    "ioredis": "^5.10.1",
+    "typedi": "^0.10.0",
+    "zod": "^3.25.76"
+  },
+  "devDependencies": {
+    "typescript": "^5"
+  }
+}

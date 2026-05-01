@@ -1,0 +1,202 @@
+import { EmailFacade } from '@scani/cloud-client/facades/email-facade';
+import { db } from '@scani/db';
+import {
+  tokens,
+  tokenTypes,
+  userAccounts,
+  userSessions,
+  users,
+  userVerifications,
+} from '@scani/db/schema';
+import { createComponentLogger } from '@scani/logging';
+import { betterAuth } from 'better-auth';
+import { drizzleAdapter } from 'better-auth/adapters/drizzle';
+import { emailOTP, magicLink } from 'better-auth/plugins';
+import { and, eq, isNull } from 'drizzle-orm';
+import { Container } from 'typedi';
+
+const authLogger = createComponentLogger('auth');
+
+// First time it's called, resolves USD's token id from the fiat seed and
+// caches it for the life of the process. Every downstream feature
+// (dashboard, portfolio valuation, holdings) assumes the field is set —
+// without this the first authenticated request 500s with "User not found
+// or has no base currency set". Users can change it in Settings; this is
+// just a sane default so sign-up → dashboard is seamless.
+let cachedDefaultBaseCurrencyId: Promise<string | null> | null = null;
+async function getDefaultBaseCurrencyId(): Promise<string | null> {
+  if (cachedDefaultBaseCurrencyId) return cachedDefaultBaseCurrencyId;
+  cachedDefaultBaseCurrencyId = (async () => {
+    const [row] = await db
+      .select({ id: tokens.id })
+      .from(tokens)
+      .innerJoin(tokenTypes, eq(tokens.typeId, tokenTypes.id))
+      .where(and(eq(tokens.symbol, 'USD'), eq(tokenTypes.code, 'fiat')))
+      .limit(1);
+    if (!row) {
+      authLogger.error(
+        {},
+        'USD fiat token not found in DB — seed migrations may not have run. New users will have baseCurrencyId=null until seeds apply.'
+      );
+      return null;
+    }
+    return row.id;
+  })();
+  return cachedDefaultBaseCurrencyId;
+}
+
+export function createBetterAuth(opts: {
+  baseURL: string;
+  secret: string;
+  cookieDomain?: string;
+  trustedOrigins?: string[];
+}) {
+  const email = Container.get(EmailFacade);
+
+  // Fire-and-forget wrapper for emails that should *not* block the HTTP
+  // response. Used on sign-up: `requireEmailVerification: false` means the
+  // user is already signed in, so we shouldn't make them wait 5-10s on an
+  // SMTP round-trip just to ship them a confirmation email. Failures are
+  // logged but don't propagate. Magic-link / OTP flows explicitly await
+  // because the user is literally waiting for the email to arrive.
+  const sendInBackground = (op: () => Promise<void>, context: Record<string, unknown>): void => {
+    void op()
+      .then(() => authLogger.info(context, '✅ Background email sent'))
+      .catch((err) =>
+        authLogger.error(
+          { ...context, error: err instanceof Error ? err.message : String(err) },
+          '❌ Background email failed'
+        )
+      );
+  };
+
+  return betterAuth({
+    baseURL: opts.baseURL,
+    secret: opts.secret,
+    trustedOrigins: opts.trustedOrigins ?? [],
+    database: drizzleAdapter(db, {
+      provider: 'pg',
+      schema: {
+        user: users,
+        session: userSessions,
+        account: userAccounts,
+        verification: userVerifications,
+      },
+    }),
+    emailAndPassword: {
+      enabled: true,
+      requireEmailVerification: false, // Flip to true once SMTP deliverability is confirmed.
+      autoSignIn: true,
+      minPasswordLength: 10,
+    },
+    databaseHooks: {
+      user: {
+        create: {
+          after: async (user) => {
+            try {
+              const baseCurrencyId = await getDefaultBaseCurrencyId();
+              if (!baseCurrencyId) return;
+              await db
+                .update(users)
+                .set({ baseCurrencyId })
+                .where(and(eq(users.id, user.id), isNull(users.baseCurrencyId)));
+              authLogger.info(
+                { userId: user.id, baseCurrencyId },
+                'Set default base currency for new user'
+              );
+            } catch (err) {
+              authLogger.error(
+                {
+                  userId: user.id,
+                  error: err instanceof Error ? err.message : String(err),
+                },
+                'Failed to set default base currency — user will need to set it in Settings'
+              );
+            }
+          },
+        },
+      },
+    },
+    emailVerification: {
+      sendVerificationEmail: ({ user, url }) => {
+        sendInBackground(() => email.sendVerificationEmail({ to: user.email, url }), {
+          userId: user.id,
+          kind: 'verification',
+        });
+        return Promise.resolve();
+      },
+      sendOnSignUp: true,
+      autoSignInAfterVerification: true,
+    },
+    session: {
+      expiresIn: 60 * 60 * 24 * 7, // 7 days
+      updateAge: 60 * 60 * 24, // extend at most once per day
+      cookieCache: {
+        enabled: true,
+        maxAge: 5 * 60, // 5 min in-memory cache to avoid DB hit on every request
+      },
+    },
+    advanced: {
+      useSecureCookies: opts.baseURL.startsWith('https://'),
+      database: {
+        // users.id is a uuid column; override Better-Auth's default nanoid
+        // so both tables agree on format.
+        generateId: () => crypto.randomUUID(),
+      },
+      // Distinct cookie name so this session cookie doesn't collide with
+      // the data-provider's Better-Auth cookie when both apps run on
+      // `localhost` in dev (browsers ignore port for cookie scope, so the
+      // default `better-auth.session_token` from both servers would stomp
+      // on each other and signing into one would log the other out).
+      cookiePrefix: 'scani-app',
+      defaultCookieAttributes: opts.cookieDomain
+        ? {
+            domain: opts.cookieDomain,
+            sameSite: 'lax',
+            secure: opts.baseURL.startsWith('https://'),
+          }
+        : undefined,
+    },
+    plugins: [
+      magicLink({
+        sendMagicLink: async ({ email: to, url }) => {
+          authLogger.info({ email: to }, '🪄 Magic-link callback fired');
+          try {
+            await email.sendMagicLink({ to, url });
+            authLogger.info({ email: to }, '✅ Magic link sent');
+          } catch (err) {
+            authLogger.error(
+              { email: to, error: err instanceof Error ? err.message : String(err) },
+              '❌ Failed to send magic link'
+            );
+            throw err;
+          }
+        },
+        expiresIn: 60 * 15, // 15 min
+      }),
+      // The frontend picks the OTP flow for PWAs (installed standalone
+      // mode), where clicking a magic link bounces the user out of the PWA
+      // into Safari/Chrome and loses the standalone session. Instead the
+      // user receives a 6-digit code and pastes it back into the PWA.
+      emailOTP({
+        otpLength: 6,
+        expiresIn: 5 * 60, // 5 min
+        allowedAttempts: 5,
+        sendVerificationOTP: async ({ email: to, otp, type }) => {
+          try {
+            await email.sendOtp({ to, code: otp, type });
+            authLogger.info({ email: to, type }, '✅ OTP sent');
+          } catch (err) {
+            authLogger.error(
+              { email: to, type, error: err instanceof Error ? err.message : String(err) },
+              '❌ Failed to send OTP'
+            );
+            throw err;
+          }
+        },
+      }),
+    ],
+  });
+}
+
+export type BetterAuthInstance = ReturnType<typeof createBetterAuth>;

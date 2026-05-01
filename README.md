@@ -1,5 +1,7 @@
 # Scani - Personal Finance Management SaaS
 
+[![Coverage](https://img.shields.io/endpoint?url=https://gist.githubusercontent.com/MGrin/REPLACE_WITH_GIST_ID/raw/scani-coverage.json)](#-testing--coverage)
+
 A comprehensive personal finance management platform built with a modern TypeScript stack and extensive integrations with banks, brokerages, and cryptocurrency exchanges.
 
 ## 🌟 Features
@@ -83,33 +85,41 @@ A comprehensive personal finance management platform built with a modern TypeScr
 ```
 scani/
 ├── apps/
-│   ├── backend/              # tRPC API server with Elysia (hosts BullMQ producers)
-│   ├── worker/               # BullMQ consumer for async jobs (Fly)
-│   ├── cron/                 # Scheduled jobs
-│   ├── frontendV2/           # React + Vite SPA, main frontend (code under src/v2/)
-│   ├── admin/                # Passkey-gated infra dashboard on Cloudflare Pages (Next.js)
-│   └── landing/              # Marketing site at scani.xyz (Vite + React, Cloudflare Pages)
+│   ├── backend/
+│   │   ├── api/              # tRPC API server with Elysia (BullMQ producer)
+│   │   ├── worker/           # BullMQ consumer; runs scheduled + user-initiated jobs
+│   │   └── data-provider/    # tRPC service that owns Scani-managed third-party calls
+│   └── frontend/
+│       ├── app/              # React + Vite SPA, main frontend (code under src/v2/)
+│       ├── cloud/            # cloud.scani.xyz Tier 2 console
+│       ├── admin/            # Passkey-gated infra dashboard (Next.js, Cloudflare Pages)
+│       └── landing/          # Marketing site at scani.xyz (Vite + React, Cloudflare Pages)
 │
 ├── packages/
-│   ├── core/                 # Core business logic
-│   │   └── src/
-│   │       ├── database/          # Drizzle schema and connection
-│   │       ├── queues/            # Queue name constants
-│   │       ├── use-cases/         # Business logic
-│   │       ├── services/          # Infrastructure services
-│   │       ├── repositories/      # Data access layer
-│   │       ├── entities/          # Domain entities
-│   │       └── external-services/ # External API clients (AI, file import, ...)
-│   ├── integrations/         # Plaid, Binance, Kraken, DefiLlama, chain explorers
-│   ├── rate-limiter/         # Shared rate-limiter utility
-│   └── shared/               # Zod schemas, Decimal.js helpers
+│   ├── business/             # Domain logic + the wire contract
+│   │   ├── domain/           # Services, repositories, use cases (most business logic)
+│   │   └── shared/           # Zod schemas, Decimal helpers, cross-cutting types
+│   ├── infra/                # Pure system concerns (no business knowledge)
+│   │   ├── db/               # Drizzle schema, migrations, postgres.js connection
+│   │   ├── queue/            # BullMQ job names, repeatable schedules, enqueue helpers
+│   │   ├── email/            # Email sending (Fastmail JMAP / SMTP)
+│   │   ├── logging/          # Structured logging (pino)
+│   │   ├── storage/          # Object storage abstraction (Cloudflare R2)
+│   │   ├── realtime/         # Realtime / SSE updates
+│   │   ├── rate-limiter/     # Token-bucket rate limiter (Redis-backed)
+│   │   └── config/           # Shared env-validation primitives
+│   ├── clients/              # Outbound network adapters
+│   │   ├── providers/        # Unified 3rd-party integrations (pricing, balances, AI, …)
+│   │   └── cloud-client/     # tRPC client for backend/data-provider
+│   └── frontend/             # Browser-only
+│       └── ui/               # @scani/ui — design system + shared client plumbing
 │
 ├── infra/
 │   └── terraform/            # Source of truth for Cloudflare/Fly/Neon/Upstash/GitHub
 │
 ├── docs/                     # See "Documentation" section below
 ├── .github/workflows/        # CI + deploy + terraform + backup workflows
-├── docker-compose.yml        # Local Postgres + Redis + Mailpit
+├── docker-compose.yml        # Local Postgres + Redis + Mailpit + MinIO
 └── package.json              # Bun workspace root
 ```
 
@@ -138,7 +148,7 @@ scani/
 
    ```bash
    # Copy the example file and customize
-   cp apps/backend/.env.example apps/backend/.env.local
+   cp apps/backend/api/.env.example apps/backend/api/.env.local
    ```
 
    The root `.env.example` documents every variable for all three deployment tiers (OSS self-hosted with a local data-provider, semi-managed with Scani's hosted data-provider, and fully-managed SaaS on Fly+Neon+Upstash). Copy and fill in the values you need:
@@ -195,19 +205,27 @@ scani/
    bun dev
    ```
    This starts:
-   - Backend API on `http://localhost:3001` (HTTP + WebSocket on the same port)
-   - Frontend web app on `http://localhost:5173`
+   - API on `http://localhost:3001` (HTTP + WebSocket on the same port)
+   - Frontend SPA on `http://localhost:5173`
 
    **Option 2: Start servers individually**
    ```bash
-   # Terminal 1 - Backend
-   bun dev:backend
+   # Terminal 1 — API
+   bun dev:api
 
-   # Terminal 2 - Frontend
-   bun dev:frontend
+   # Terminal 2 — Frontend SPA
+   bun dev:app
 
-   # Terminal 3 - Landing page (optional)
-   bun dev:landing
+   # Terminal 3 — Worker (needed for any async jobs)
+   bun dev:worker
+
+   # Terminal 4 — Data-provider (needed if SCANI_CLOUD_URL is set)
+   bun dev:data-provider
+
+   # Other apps
+   bun dev:landing       # Marketing site
+   bun dev:cloud         # Tier 2 console
+   bun dev:admin         # Admin dashboard
    ```
 
 6. **Access the application**
@@ -219,12 +237,14 @@ scani/
 ## 🛠️ Development Commands
 
 ### General Commands (from root):
-- `bun dev` - Start all development servers (backend + frontendV2 + landing)
-- `bun dev:backend` - Start backend server only
-- `bun dev:frontend` - Start frontend web app only
-- `bun dev:landing` - Start landing page only
-- `bun build` - Build all packages for production
-- `bun clean` - Clean all build artifacts
+- `bun dev` - Start API + frontend SPA concurrently
+- `bun dev:api` - Start tRPC API server only
+- `bun dev:app` - Start main frontend SPA only
+- `bun dev:worker` - Start BullMQ worker only
+- `bun dev:data-provider` - Start data-provider sidecar only
+- `bun dev:landing` / `bun dev:cloud` / `bun dev:admin` - Other frontends
+- `bun build` - Build api + main frontend for production
+- `bun clean` - Clean build artifacts
 
 ### Code Quality Commands:
 - `bun lint` - Run Biome linter across all packages
@@ -239,14 +259,12 @@ scani/
 
 ### Package-Specific Commands:
 ```bash
-# Backend
-cd apps/backend
+# API
+cd apps/backend/api
 bun dev              # Start with debug logging
-bun dev:verbose      # Start with trace logging (includes SQL queries)
-bun dev:quiet        # Start with minimal logging
 
-# Frontend
-cd apps/frontendV2
+# Frontend SPA
+cd apps/frontend/app
 bun dev              # Start development server
 bun build            # Build for production
 ```
@@ -257,29 +275,28 @@ bun build            # Build for production
 
 Scani follows clean architecture with clear separation of concerns:
 
-1. **Presentation Layer** (`apps/backend/src/presentation/`)
+1. **Presentation Layer** (`apps/backend/api/src/presentation/`)
    - tRPC routers - Thin controllers that handle HTTP/WebSocket
    - Middleware - Authentication, rate limiting, logging
    - Type definitions and validation
 
-2. **Use Case Layer** (`packages/core/src/use-cases/`)
-   - Business logic encapsulation (18 use cases)
+2. **Use Case Layer** (`packages/business/domain/src/use-cases/`)
+   - Business logic encapsulation
    - Single responsibility per use case
    - Reusable across different entry points
 
-3. **Service Layer** (`packages/core/src/services/`)
+3. **Service Layer** (`packages/business/domain/src/services/`)
    - Infrastructure services (Pricing, Portfolio Valuation, AI)
    - External API integrations
    - Complex calculations and aggregations
 
-4. **Repository Layer** (`packages/core/src/repositories/`)
+4. **Repository Layer** (`packages/business/domain/src/repositories/`)
    - Data access abstraction
    - Database operations via Drizzle ORM
    - Query optimization
 
-5. **Domain Layer** (`packages/core/src/entities/`)
-   - Domain models and entities
-   - Business rules and validations
+5. **Schema** (`packages/infra/db/src/schema.ts`)
+   - Drizzle schema, migrations, and the postgres.js connection
 
 ### Dependency Injection
 
@@ -325,8 +342,8 @@ The application uses **dynamic enums** stored in database tables instead of Type
 ### Database Migrations
 
 ```bash
-# After schema changes in packages/core/src/database/schema.ts
-cd packages/core
+# After schema changes in packages/infra/db/src/schema.ts
+cd packages/infra/db
 bun run db:generate    # Generate migration files
 bun run db:migrate     # Apply migrations to database
 bun run db:studio      # Visual database management
@@ -338,7 +355,7 @@ bun run db:studio      # Visual database management
 - **Better-Auth** - session-based authentication with sessions stored in Postgres
 - **Protected Procedures** - All user data access via `protectedProcedure`
 - **User Scoping** - Automatic filtering of all queries by authenticated user
-- **Admin Dashboard** - `apps/admin` uses a separate passkey flow gated by `ADMIN_SESSION_SECRET`; admin → backend actions are HMAC-signed with `ADMIN_JOBS_HMAC_SECRET`
+- **Admin Dashboard** - `apps/frontend/admin` uses a separate passkey flow gated by `ADMIN_SESSION_SECRET`; admin → api actions are HMAC-signed with `ADMIN_JOBS_HMAC_SECRET`
 
 ### Security Measures
 - **Environment Variables** - All secrets stored in `.env.local` files (never committed)
@@ -389,15 +406,22 @@ bun run db:studio      # Visual database management
 - Tailwind CSS + Shadcn UI components
 - Responsive design for desktop and mobile browsers
 
-## 🧪 Testing Strategy
+## 🧪 Testing & Coverage
 
-**Note:** The project currently does not require tests. Testing scripts can be created for development purposes but should be removed before final submission.
+```bash
+bun run test       # full repo suite — packages/ + apps/ via bunfig.toml preload
+bun run coverage   # full suite + lcov.info + HTML report at coverage/html/index.html
+```
 
-### Test Coverage (when tests exist)
-- Backend routers and use cases
-- Financial calculations (Decimal.js precision)
-- Database operations (Drizzle ORM)
-- Type validation (Zod schemas)
+Tests live in `tests/` next to `src/`, mirroring the source tree. The runner is `bun test`; preload is wired via root `bunfig.toml` (loads `reflect-metadata` + a default `DATABASE_URL` for repository tests). Repository tests wrap each body in a Postgres transaction via `withTestDb` and roll back on exit, so suites parallelize cleanly.
+
+The coverage badge above is updated on every push to `main` by `.github/workflows/coverage.yml`, which uploads the line-coverage % to a GitHub Gist via [`Schneegans/dynamic-badges-action`](https://github.com/Schneegans/dynamic-badges-action). One-time setup:
+
+1. Create a public gist (any starting filename) and copy its ID from the URL.
+2. Generate a fine-grained GitHub PAT with the `gist` scope only.
+3. Add it as repo **secret** `GIST_SECRET`.
+4. Add the gist ID as repo **variable** `COVERAGE_GIST_ID`.
+5. Replace `REPLACE_WITH_GIST_ID` in this README with the actual gist ID.
 
 ## 🚀 Deployment
 
@@ -405,8 +429,8 @@ Scani ships to a managed stack defined in code at `infra/terraform/` — that's 
 
 ### Production Targets
 
-- **Backend + worker** → Fly.io (Docker multi-stage Bun builds; `apps/backend/fly.toml`, `apps/worker/fly.toml`)
-- **frontendV2, admin, landing** → Cloudflare Pages
+- **api + worker + data-provider** → Fly.io (Docker multi-stage Bun builds; `apps/backend/{api,worker,data-provider}/fly.toml`)
+- **frontend/app, frontend/cloud, frontend/admin, frontend/landing** → Cloudflare Pages
 - **Postgres** → Neon (serverless)
 - **Redis** → Upstash (BullMQ)
 - **Object storage** → Cloudflare R2
@@ -415,7 +439,7 @@ Scani ships to a managed stack defined in code at `infra/terraform/` — that's 
 
 CI/CD lives in `.github/workflows/`:
 - `ci.yml` — lint, type-check, tests, secret scan
-- `deploy-fly.yaml` — path-based change detection, DB migrations, deploys backend/worker to Fly and frontend/landing/admin to Cloudflare Pages. A `check-ci-status` job skips re-validation when the PR CI already passed.
+- `deploy-fly.yaml` — path-based change detection, DB migrations, deploys api/worker/data-provider to Fly and the four frontends to Cloudflare Pages. A `check-ci-status` job skips re-validation when the PR CI already passed.
 - `terraform.yaml` — plan/apply for infra
 - `backup-db.yaml` — scheduled DB backup
 
@@ -425,10 +449,10 @@ CI/CD lives in `.github/workflows/`:
 
 - `DATABASE_URL` — Neon (prod) or local Postgres
 - `REDIS_URL` — Upstash (prod) or local Redis
-- `SCANI_CLOUD_URL` + `SCANI_CLOUD_API_KEY` — where backend+worker reach the data-provider (`apps/data-provider`) that owns every outbound third-party call
+- `SCANI_CLOUD_URL` + `SCANI_CLOUD_API_KEY` — where api+worker reach the data-provider (`apps/backend/data-provider`) that owns every outbound third-party call
 - `BETTER_AUTH_SECRET`, email config — auth
-- Provider keys (`OPENAI_API_KEY`, `ETHERSCAN_API_KEY`, `COINGECKO_API_KEY`, `R2_*`, …) — live on the data-provider, not on backend/worker
-- `ADMIN_SESSION_SECRET` (admin passkey), `ADMIN_JOBS_HMAC_SECRET` (admin→backend actions)
+- Provider keys (`OPENAI_API_KEY`, `ETHERSCAN_API_KEY`, `COINGECKO_API_KEY`, `R2_*`, …) — live on the data-provider, not on api/worker
+- `ADMIN_SESSION_SECRET` (admin passkey), `ADMIN_JOBS_HMAC_SECRET` (admin→api actions)
 
 ### Self-Hosting
 

@@ -10,12 +10,12 @@
 # Default ports (host-side offsets to avoid clashing with other local services):
 #   Postgres        : localhost:5433
 #   Redis           : localhost:6380
-#   Backend         : localhost:3001
-#   Frontend        : localhost:5173   (apps/frontendV2 — the user-facing SPA)
-#   Landing         : localhost:5174   (apps/landing — marketing site)
-#   Admin           : localhost:5175   (apps/admin — BullMQ + ops dashboard)
-#   Cloud frontend  : localhost:5176   (apps/cloud-frontend — Tier 2 console, api.cloud.scani.xyz in prod)
-#   Data-provider   : localhost:8082   (apps/data-provider — tRPC + Better-Auth)
+#   Backend         : localhost:3011
+#   Frontend        : localhost:5173   (apps/frontend/app — the user-facing SPA)
+#   Landing         : localhost:5174   (apps/frontend/landing — marketing site)
+#   Admin           : localhost:5175   (apps/frontend/admin — BullMQ + ops dashboard)
+#   Cloud frontend  : localhost:5176   (apps/frontend/cloud — Tier 2 console, api.cloud.scani.xyz in prod)
+#   Data-provider   : localhost:8082   (apps/backend/data-provider — tRPC + Better-Auth)
 #   Mailpit         : SMTP localhost:1026, UI http://localhost:8026
 #   MinIO           : S3 API localhost:9000, console http://localhost:9001 (minioadmin/minioadmin)
 
@@ -110,7 +110,7 @@ services:
   # their critical path — but it makes the "one root .env" contract work
   # for both docker and host-side dev.
   env-sync:
-    image: oven/bun:1.3.2
+    image: oven/bun:1.3.13
     container_name: scani-env-sync
     working_dir: /app
     volumes:
@@ -123,7 +123,7 @@ services:
   # `bun install --frozen-lockfile` is a verified no-op on subsequent
   # boots — the volume persists across `compose up` calls.
   deps:
-    image: oven/bun:1.3.2
+    image: oven/bun:1.3.13
     container_name: scani-deps
     working_dir: /app
     volumes:
@@ -133,23 +133,26 @@ services:
     restart: "no"
 
   # Schema + seed runner. One-shot container that applies the migrations
-  # against postgres, then exits. `docker compose --profile full up` runs it
-  # automatically before the backend starts; run manually with
-  # `docker compose run --rm migrate`.
+  # against postgres, then exits. Decoupled from the app runtime images
+  # (which are debian:slim + a compiled binary, no bun) — runs migrations
+  # via the bun base image with the workspace mounted, same pattern as
+  # the `deps` service above.
   migrate:
     profiles: ["full", "migrate"]
-    build:
-      context: .
-      dockerfile: apps/backend/Dockerfile
-    image: scani-backend:dev
+    image: oven/bun:1.3.13
     container_name: scani-migrate
+    working_dir: /app
+    volumes:
+      - .:/app
+      - workspace-node-modules:/app/node_modules
     depends_on:
       postgres:
         condition: service_healthy
+      deps:
+        condition: service_completed_successfully
     environment:
       DATABASE_URL: postgres://scani:scani@postgres:5432/scani?sslmode=disable
-    command:
-      ["bun", "run", "/app/packages/db/src/migrate.ts"]
+    command: ["bun", "run", "packages/infra/db/src/migrate.ts"]
     restart: "no"
 
   # Data-provider owns every outbound Scani-managed third-party API call
@@ -161,7 +164,7 @@ services:
     profiles: ["full"]
     build:
       context: .
-      dockerfile: apps/data-provider/Dockerfile
+      dockerfile: apps/backend/data-provider/Dockerfile
     image: scani-data-provider:dev
     container_name: scani-data-provider
     depends_on:
@@ -182,6 +185,7 @@ services:
       NODE_ENV: development
       PORT: "8082"
       HOST: "0.0.0.0"
+      SERVICE_NAME: scani-data-provider
       REDIS_URL: redis://redis:6379
       # Dev-only shared secret. Backend + worker below use the same value
       # for SCANI_CLOUD_API_KEY so the bearer check on the receiving end
@@ -213,24 +217,24 @@ services:
       # the inspector at http://localhost:8026.
       SMTP_URL: smtp://mailpit:1025
       SMTP_FROM: '"Scani Cloud" <cloud@scani.local>'
-      # Object storage → MinIO. R2_ENDPOINT is the in-network URL the
-      # data-provider hits; R2_PUBLIC_ENDPOINT is what gets baked into
+      # Object storage → MinIO. S3_ENDPOINT is the in-network URL the
+      # data-provider hits; S3_PUBLIC_ENDPOINT is what gets baked into
       # presigned URLs for the browser (which can't resolve `minio:9000`).
       # Same shape as the backend service below — both override the
       # `localhost`-flavoured defaults coming from the root .env so the
       # data-provider can actually reach MinIO from inside the compose
       # network and the backend's /health/r2 probe stops returning 503.
-      R2_ENDPOINT: http://minio:9000
-      R2_PUBLIC_ENDPOINT: http://localhost:9000
-      R2_ACCESS_KEY_ID: minioadmin
-      R2_SECRET_ACCESS_KEY: minioadmin
-      R2_BUCKET: scani-job-uploads-dev
+      S3_ENDPOINT: http://minio:9000
+      S3_PUBLIC_ENDPOINT: http://localhost:9000
+      S3_ACCESS_KEY_ID: minioadmin
+      S3_SECRET_ACCESS_KEY: minioadmin
+      S3_BUCKET: scani-job-uploads-dev
 
   backend:
     profiles: ["full"]
     build:
       context: .
-      dockerfile: apps/backend/Dockerfile
+      dockerfile: apps/backend/api/Dockerfile
     image: scani-backend:dev
     container_name: scani-backend
     depends_on:
@@ -247,10 +251,10 @@ services:
       data-provider:
         condition: service_started
     ports:
-      - "3001:8080"
+      - "3011:8080"
     # Root .env flows through — the `environment:` block below overrides any
     # key that needs a container-network URL instead of the host-side default
-    # (DATABASE_URL, REDIS_URL, SMTP_URL, R2_ENDPOINT, …). Everything else —
+    # (DATABASE_URL, REDIS_URL, SMTP_URL, S3_ENDPOINT, …). Everything else —
     # API keys, feature flags — is read straight from the root .env.
     env_file:
       - path: ./.env
@@ -259,6 +263,7 @@ services:
       NODE_ENV: development
       PORT: "8080"
       HOST: "0.0.0.0"
+      SERVICE_NAME: scani-backend
       # Service-to-service URLs (compose network hostnames).
       DATABASE_URL: postgres://scani:scani@postgres:5432/scani?sslmode=disable
       REDIS_URL: redis://redis:6379
@@ -266,19 +271,19 @@ services:
       SMTP_FROM: no-reply@scani.local
       # Browser-reachable URLs.
       FRONTEND_URL: http://localhost:5173
-      BACKEND_URL: http://localhost:3001
+      BACKEND_URL: http://localhost:3011
       # Secrets — dev placeholders only.
       ENCRYPTION_KEY: 0123456789abcdef0123456789abcdef
       BETTER_AUTH_SECRET: dev_secret_change_me_this_is_not_production_safe
       ADMIN_JOBS_HMAC_SECRET: dev_admin_hmac_change_me_not_prod_safe
-      # Object storage → MinIO. R2_ENDPOINT is what server code hits;
-      # R2_PUBLIC_ENDPOINT is what the backend bakes into presigned URLs
+      # Object storage → MinIO. S3_ENDPOINT is what server code hits;
+      # S3_PUBLIC_ENDPOINT is what the backend bakes into presigned URLs
       # for the browser (which can't resolve `minio:9000`).
-      R2_ENDPOINT: http://minio:9000
-      R2_PUBLIC_ENDPOINT: http://localhost:9000
-      R2_ACCESS_KEY_ID: minioadmin
-      R2_SECRET_ACCESS_KEY: minioadmin
-      R2_BUCKET: scani-job-uploads-dev
+      S3_ENDPOINT: http://minio:9000
+      S3_PUBLIC_ENDPOINT: http://localhost:9000
+      S3_ACCESS_KEY_ID: minioadmin
+      S3_SECRET_ACCESS_KEY: minioadmin
+      S3_BUCKET: scani-job-uploads-dev
       # Data-provider wiring. Once phase 1+ land, backend drops its direct
       # provider keys (COINGECKO_*, ETHERSCAN_*, ...) and reads them from
       # the data-provider over this URL instead.
@@ -289,7 +294,7 @@ services:
     profiles: ["full"]
     build:
       context: .
-      dockerfile: apps/worker/Dockerfile
+      dockerfile: apps/backend/worker/Dockerfile
     image: scani-worker:dev
     container_name: scani-worker
     depends_on:
@@ -306,23 +311,24 @@ services:
       data-provider:
         condition: service_started
     # Root .env flows through; the `environment:` block overrides keys that
-    # need container-network URLs (DATABASE_URL, REDIS_URL, R2_ENDPOINT).
+    # need container-network URLs (DATABASE_URL, REDIS_URL, S3_ENDPOINT).
     env_file:
       - path: ./.env
         required: false
     environment:
       NODE_ENV: development
+      SERVICE_NAME: scani-worker
       DATABASE_URL: postgres://scani:scani@postgres:5432/scani?sslmode=disable
       REDIS_URL: redis://redis:6379
       # Must match the backend's ENCRYPTION_KEY so integration credentials
       # persisted by the backend can be decrypted at job-run time.
       ENCRYPTION_KEY: 0123456789abcdef0123456789abcdef
       WORKER_CONCURRENCY: "4"
-      R2_ENDPOINT: http://minio:9000
-      R2_PUBLIC_ENDPOINT: http://localhost:9000
-      R2_ACCESS_KEY_ID: minioadmin
-      R2_SECRET_ACCESS_KEY: minioadmin
-      R2_BUCKET: scani-job-uploads-dev
+      S3_ENDPOINT: http://minio:9000
+      S3_PUBLIC_ENDPOINT: http://localhost:9000
+      S3_ACCESS_KEY_ID: minioadmin
+      S3_SECRET_ACCESS_KEY: minioadmin
+      S3_BUCKET: scani-job-uploads-dev
       SCANI_CLOUD_URL: http://data-provider:8082
       SCANI_CLOUD_API_KEY: dev_data_provider_key_change_me_not_prod_safe
 
@@ -335,9 +341,9 @@ services:
 
   frontend:
     profiles: ["full"]
-    image: oven/bun:1.3.2
+    image: oven/bun:1.3.13
     container_name: scani-frontend
-    working_dir: /app/apps/frontendV2
+    working_dir: /app/apps/frontend/app
     depends_on:
       backend:
         condition: service_started
@@ -346,7 +352,7 @@ services:
       deps:
         condition: service_completed_successfully
     environment:
-      VITE_API_URL: http://localhost:3001
+      VITE_API_URL: http://localhost:3011
     ports:
       - "5173:5173"
     volumes:
@@ -356,9 +362,9 @@ services:
 
   landing:
     profiles: ["full"]
-    image: oven/bun:1.3.2
+    image: oven/bun:1.3.13
     container_name: scani-landing
-    working_dir: /app/apps/landing
+    working_dir: /app/apps/frontend/landing
     depends_on:
       env-sync:
         condition: service_completed_successfully
@@ -377,9 +383,9 @@ services:
   # the same host the browser is hitting (localhost:5176).
   cloud-frontend:
     profiles: ["full"]
-    image: oven/bun:1.3.2
+    image: oven/bun:1.3.13
     container_name: scani-cloud-frontend
-    working_dir: /app/apps/cloud-frontend
+    working_dir: /app/apps/frontend/cloud
     depends_on:
       data-provider:
         condition: service_started
@@ -402,9 +408,9 @@ services:
 
   admin:
     profiles: ["full"]
-    image: oven/bun:1.3.2
+    image: oven/bun:1.3.13
     container_name: scani-admin
-    working_dir: /app/apps/admin
+    working_dir: /app/apps/frontend/admin
     depends_on:
       backend:
         condition: service_started

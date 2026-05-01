@@ -1,0 +1,22 @@
+{
+  "name": "@scani/rate-limiter",
+  "private": true,
+  "type": "module",
+  "version": "1.0.0",
+  "description": "Resilience primitives for upstream calls: outflow + inflow rate limiters, circuit breakers, retry-with-backoff. Abstract base classes with in-memory and Redis backends where applicable.",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "lint": "biome check .",
+    "lint:fix": "biome check --write .",
+    "type-check": "tsgo --noEmit"
+  },
+  "dependencies": {
+    "typedi": "^0.10.0"
+  },
+  "devDependencies": {
+    "ioredis": "^5.10.1",
+    "typescript": "^5"
+  }
+}

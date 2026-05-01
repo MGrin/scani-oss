@@ -1,0 +1,22 @@
+{
+  "name": "@scani/security",
+  "private": true,
+  "type": "module",
+  "version": "1.0.0",
+  "description": "Secret-handling primitives: AES-256-GCM credential encryption with scrypt-derived keys. ENCRYPTION_KEY env-self-loaded; refuses to start in production without a key.",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "lint": "biome check .",
+    "lint:fix": "biome check --write .",
+    "type-check": "tsgo --noEmit"
+  },
+  "dependencies": {
+    "@scani/config": "workspace:*",
+    "zod": "^3.25.76"
+  },
+  "devDependencies": {
+    "typescript": "^5"
+  }
+}

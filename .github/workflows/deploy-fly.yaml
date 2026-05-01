@@ -2,7 +2,7 @@ name: Deploy
 
 # Triggered by the Terraform workflow's completion (which runs on every
 # main push). This sequencing guarantees that any GH Actions secrets
-# Terraform creates in that same push — e.g. the R2_* and
+# Terraform creates in that same push — e.g. the S3_* and
 # ADMIN_JOBS_HMAC_SECRET rows in github.tf — are visible to this workflow
 # when it stages them onto Fly. When both workflows triggered directly
 # from `push`, they ran in parallel and deploy-fly's secret context was
@@ -122,62 +122,43 @@ jobs:
           ref: ${{ github.event.workflow_run.head_sha || github.sha }}
           filters: |
             backend:
-              - 'apps/backend/**'
-              - 'packages/ai-providers/**'
-              - 'packages/cloud-client/**'
-              - 'packages/config/**'
-              - 'packages/db/**'
-              - 'packages/domain/**'
-              - 'packages/email/**'
-              - 'packages/integrations/**'
-              - 'packages/logging/**'
-              - 'packages/pricing-providers/**'
-              - 'packages/queue/**'
-              - 'packages/rate-limiter/**'
-              - 'packages/realtime/**'
-              - 'packages/shared/**'
-              - 'packages/storage/**'
+              - 'apps/backend/api/**'
+              - 'packages/business/**'
+              - 'packages/clients/**'
+              - 'packages/infra/**'
             worker:
-              - 'apps/worker/**'
-              - 'apps/cron/**'
-              - 'packages/ai-providers/**'
-              - 'packages/cloud-client/**'
-              - 'packages/config/**'
-              - 'packages/db/**'
-              - 'packages/domain/**'
-              - 'packages/email/**'
-              - 'packages/integrations/**'
-              - 'packages/logging/**'
-              - 'packages/pricing-providers/**'
-              - 'packages/queue/**'
-              - 'packages/rate-limiter/**'
-              - 'packages/realtime/**'
-              - 'packages/shared/**'
-              - 'packages/storage/**'
+              - 'apps/backend/worker/**'
+              - 'packages/business/**'
+              - 'packages/clients/**'
+              - 'packages/infra/**'
             data_provider:
-              - 'apps/data-provider/**'
-              - 'packages/ai-providers/**'
-              - 'packages/config/**'
-              - 'packages/email/**'
-              - 'packages/integrations/**'
-              - 'packages/logging/**'
-              - 'packages/pricing-providers/**'
-              - 'packages/rate-limiter/**'
-              - 'packages/storage/**'
+              - 'apps/backend/data-provider/**'
+              - 'packages/business/shared/**'
+              - 'packages/clients/providers/**'
+              - 'packages/infra/config/**'
+              - 'packages/infra/email/**'
+              - 'packages/infra/logging/**'
+              - 'packages/infra/rate-limiter/**'
+              - 'packages/infra/storage/**'
             frontend:
-              - 'apps/frontendV2/**'
-              - 'packages/frontend-shared/**'
-              - 'packages/shared/**'
+              - 'apps/frontend/app/**'
+              - 'packages/frontend/ui/**'
+              - 'packages/business/shared/**'
             cloud_frontend:
-              - 'apps/cloud-frontend/**'
-              - 'apps/data-provider/**'
-              - 'packages/frontend-shared/**'
+              - 'apps/frontend/cloud/**'
+              - 'apps/backend/data-provider/**'
+              - 'packages/frontend/ui/**'
             landing:
-              - 'apps/landing/**'
+              - 'apps/frontend/landing/**'
             admin:
-              - 'apps/admin/**'
+              - 'apps/frontend/admin/**'
             migrations:
-              - 'packages/db/src/migrations/**'
+              - 'packages/infra/db/src/migrations/**'
+              # Bootstrap-wipe sentinel — its add/remove must trigger the
+              # migrate job so the wipe runs (on add) and the cleanup PR
+              # is verified end-to-end (on remove, migrate runs with no
+              # wipe and a no-op apply).
+              - 'packages/infra/db/.bootstrap-wipe'
       - id: resolve
         run: |
           if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
@@ -213,6 +194,25 @@ jobs:
     steps:
       - uses: actions/checkout@v6
       - uses: ./.github/actions/setup-bun
+      # Bootstrap-wipe gate: when packages/infra/db/.bootstrap-wipe exists,
+      # drop+recreate the public schema BEFORE running migrations. Used
+      # exactly once to reset prod after squashing the migration history
+      # into a single 0000. The matching cleanup (delete the sentinel) is
+      # a follow-up PR — leaving it in place will re-wipe prod on every
+      # subsequent migration-touching deploy.
+      - name: Bootstrap wipe (public schema)
+        if: ${{ hashFiles('packages/infra/db/.bootstrap-wipe') != '' }}
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL_DIRECT }}
+        run: |
+          echo "::warning::bootstrap-wipe sentinel detected — dropping public schema on production"
+          sudo apt-get update -qq && sudo apt-get install -y -qq postgresql-client
+          psql "$DATABASE_URL" \
+            -v ON_ERROR_STOP=1 \
+            -c "DROP SCHEMA IF EXISTS public CASCADE;" \
+            -c "CREATE SCHEMA public;" \
+            -c "GRANT ALL ON SCHEMA public TO postgres;" \
+            -c "GRANT ALL ON SCHEMA public TO public;"
       - name: Run migrations against Neon
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL_DIRECT }}
@@ -265,7 +265,9 @@ jobs:
           BETTER_AUTH_SECRET: ${{ secrets.CLOUD_BETTER_AUTH_SECRET }}
           BETTER_AUTH_URL: https://api.cloud.scani.xyz
           CLOUD_FRONTEND_ORIGIN: https://cloud.scani.xyz
-          # Storage (R2)
+          # Storage — staged as S3_* (the @scani/storage env shape).
+          # GitHub secrets are stored under R2_* names; we alias here so
+          # ops doesn't have to recreate them.
           R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
           R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
           R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
@@ -284,11 +286,12 @@ jobs:
             SENTRY_DSN="$SENTRY_DSN_DATA_PROVIDER"
             SENTRY_ENVIRONMENT="production"
             SENTRY_RELEASE="${GITHUB_SHA}"
+            SERVICE_VERSION="${GITHUB_SHA}"
             REDIS_URL="$REDIS_URL"
-            R2_ACCOUNT_ID="$R2_ACCOUNT_ID"
-            R2_ACCESS_KEY_ID="$R2_ACCESS_KEY_ID"
-            R2_SECRET_ACCESS_KEY="$R2_SECRET_ACCESS_KEY"
-            R2_BUCKET="$R2_BUCKET"
+            S3_ENDPOINT="https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com"
+            S3_ACCESS_KEY_ID="$R2_ACCESS_KEY_ID"
+            S3_SECRET_ACCESS_KEY="$R2_SECRET_ACCESS_KEY"
+            S3_BUCKET="$R2_BUCKET"
           )
           for var in OPENAI_API_KEY OPENAI_VISION_MODEL \
                      PERPLEXITY_API_KEY \
@@ -314,8 +317,8 @@ jobs:
           # blackholing backend + worker calls. Avoid passing --strategy
           # here — the CLI flag overrides the toml.
           flyctl deploy --remote-only \
-            --config apps/data-provider/fly.toml \
-            --dockerfile apps/data-provider/Dockerfile .
+            --config apps/backend/data-provider/fly.toml \
+            --dockerfile apps/backend/data-provider/Dockerfile .
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
 
@@ -380,13 +383,14 @@ jobs:
             SENTRY_DSN="$SENTRY_DSN_BACKEND" \
             SENTRY_ENVIRONMENT="production" \
             SENTRY_RELEASE="${GITHUB_SHA}" \
+            SERVICE_VERSION="${GITHUB_SHA}" \
             SCANI_CLOUD_URL="$SCANI_CLOUD_URL" \
             SCANI_CLOUD_API_KEY="$SCANI_CLOUD_API_KEY"
 
       - run: |
           flyctl deploy --remote-only \
-            --config apps/backend/fly.toml \
-            --dockerfile apps/backend/Dockerfile \
+            --config apps/backend/api/fly.toml \
+            --dockerfile apps/backend/api/Dockerfile \
             --strategy immediate .
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
@@ -442,6 +446,7 @@ jobs:
             SENTRY_DSN="$SENTRY_DSN_WORKER" \
             SENTRY_ENVIRONMENT="production" \
             SENTRY_RELEASE="${GITHUB_SHA}" \
+            SERVICE_VERSION="${GITHUB_SHA}" \
             SCANI_CLOUD_URL="$SCANI_CLOUD_URL" \
             SCANI_CLOUD_API_KEY="$SCANI_CLOUD_API_KEY"
 
@@ -453,8 +458,8 @@ jobs:
       # April 2026. Keep --ha=false for the worker.
       - run: |
           flyctl deploy --remote-only \
-            --config apps/worker/fly.toml \
-            --dockerfile apps/worker/Dockerfile \
+            --config apps/backend/worker/fly.toml \
+            --dockerfile apps/backend/worker/Dockerfile \
             --ha=false \
             --strategy immediate .
         env:
@@ -523,7 +528,7 @@ jobs:
     steps:
       - uses: actions/checkout@v6
       - uses: ./.github/actions/setup-bun
-      - run: cd apps/frontendV2 && bun run build
+      - run: cd apps/frontend/app && bun run build
         env:
           VITE_API_URL: https://api.scani.xyz
           VITE_SENTRY_DSN: ${{ secrets.VITE_SENTRY_DSN_FRONTEND }}
@@ -536,7 +541,7 @@ jobs:
           SENTRY_ORG: ${{ secrets.SENTRY_ORG }}
           SENTRY_PROJECT: scani-frontend
         run: |
-          cd apps/frontendV2
+          cd apps/frontend/app
           bunx @sentry/cli sourcemaps inject --release "${GITHUB_SHA}" ./dist
           bunx @sentry/cli sourcemaps upload --release "${GITHUB_SHA}" ./dist
       - name: Publish to Cloudflare Pages
@@ -544,7 +549,7 @@ jobs:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: |
-          cd apps/frontendV2
+          cd apps/frontend/app
           bunx wrangler@latest pages deploy dist \
             --project-name=scani-frontend \
             --branch=main \
@@ -560,7 +565,7 @@ jobs:
     steps:
       - uses: actions/checkout@v6
       - uses: ./.github/actions/setup-bun
-      - run: cd apps/landing && bun run build
+      - run: cd apps/frontend/landing && bun run build
         env:
           VITE_SENTRY_DSN: ${{ secrets.VITE_SENTRY_DSN_LANDING }}
           VITE_SENTRY_ENVIRONMENT: production
@@ -572,7 +577,7 @@ jobs:
           SENTRY_ORG: ${{ secrets.SENTRY_ORG }}
           SENTRY_PROJECT: scani-landing
         run: |
-          cd apps/landing
+          cd apps/frontend/landing
           bunx @sentry/cli sourcemaps inject --release "${GITHUB_SHA}" ./dist
           bunx @sentry/cli sourcemaps upload --release "${GITHUB_SHA}" ./dist
       - name: Publish to Cloudflare Pages
@@ -580,7 +585,7 @@ jobs:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: |
-          cd apps/landing
+          cd apps/frontend/landing
           bunx wrangler@latest pages deploy dist \
             --project-name=scani-landing \
             --branch=main \
@@ -614,7 +619,7 @@ jobs:
           done
           echo "Timed out waiting for scani-cloud. Is the Terraform workflow healthy?" >&2
           exit 1
-      - run: cd apps/cloud-frontend && bun run build
+      - run: cd apps/frontend/cloud && bun run build
         env:
           # Cloud-frontend hits the data-provider at its dedicated
           # subdomain. Using the public origin directly (rather than a
@@ -628,7 +633,7 @@ jobs:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: |
-          cd apps/cloud-frontend
+          cd apps/frontend/cloud
           bunx wrangler@latest pages deploy dist \
             --project-name=scani-cloud \
             --branch=main \
@@ -647,7 +652,7 @@ jobs:
     steps:
       - uses: actions/checkout@v6
       - uses: ./.github/actions/setup-bun
-      - run: cd apps/admin && bun run build:cf
+      - run: cd apps/frontend/admin && bun run build:cf
 
       - name: Wait for scani-admin Pages project (Terraform-managed)
         run: |
@@ -704,7 +709,7 @@ jobs:
           SENTRY_RELEASE: ${{ github.sha }}
           SENTRY_ENVIRONMENT: production
         run: |
-          cd apps/admin
+          cd apps/frontend/admin
           # Push every non-empty secret; Wrangler's `secret put` is upsert.
           sync_secret () {
             local name="$1"
@@ -750,13 +755,13 @@ jobs:
           SENTRY_ORG: ${{ secrets.SENTRY_ORG }}
           SENTRY_PROJECT: scani-admin
         run: |
-          cd apps/admin
+          cd apps/frontend/admin
           bunx @sentry/cli sourcemaps inject --release "${GITHUB_SHA}" .vercel/output/static
           bunx @sentry/cli sourcemaps upload --release "${GITHUB_SHA}" .vercel/output/static
 
       - name: Publish to Cloudflare Pages
         run: |
-          cd apps/admin
+          cd apps/frontend/admin
           bunx wrangler@latest pages deploy .vercel/output/static \
             --project-name=scani-admin \
             --branch=main \

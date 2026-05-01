@@ -1,0 +1,25 @@
+{
+  "name": "@scani/email",
+  "private": true,
+  "type": "module",
+  "version": "1.0.0",
+  "description": "Transactional email: brand-aware templates + Fastmail JMAP / SMTP / logging transports behind one EmailService abstract.",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "lint": "biome check .",
+    "lint:fix": "biome check --write .",
+    "type-check": "tsgo --noEmit"
+  },
+  "dependencies": {
+    "@scani/logging": "workspace:*",
+    "nodemailer": "^6",
+    "typedi": "^0.10.0",
+    "zod": "^3.25.76"
+  },
+  "devDependencies": {
+    "@types/nodemailer": "^6",
+    "typescript": "^5"
+  }
+}

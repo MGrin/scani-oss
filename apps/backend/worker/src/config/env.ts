@@ -1,0 +1,61 @@
+import { isProduction } from '@scani/config';
+import { z } from 'zod';
+
+const envSchema = z.object({
+  NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
+  DATABASE_URL: z.string().url(),
+  REDIS_URL: z.string().url(),
+
+  // ENCRYPTION_KEY is owned by @scani/security's own env schema. The worker
+  // and api both depend on @scani/security; the package validates the key
+  // on first encrypt/decrypt call. Both sides MUST share the same key —
+  // else stored credentials become unreadable on the worker side.
+
+  // Per-provider API keys (OPENAI / COINGECKO /
+  // FINNHUB / ETHERSCAN / HELIUS / GOOGLE_*) are owned by @scani/providers'
+  // env schema; only required on whichever host boots in `direct` mode.
+
+  // SCANI_CLOUD_URL + SCANI_CLOUD_API_KEY are owned by @scani/cloud-client's
+  // own env schema. Required in prod; optional in dev (local fallback).
+
+  // Worker concurrency — how many jobs per processor run in parallel.
+  // Default 4 so user-initiated jobs don't queue up behind scheduled cron
+  // fire-ups. Bump higher on dedicated workers with Redis headroom.
+  WORKER_CONCURRENCY: z
+    .string()
+    .optional()
+    .transform((v) => (v ? Number.parseInt(v, 10) : 4))
+    .refine((n) => Number.isFinite(n) && n > 0, { message: 'must be a positive integer' }),
+
+  // Object storage (S3_*) is owned by @scani/storage's own env schema; the
+  // worker only sees it via the cloud-client storage-facade's local-mode
+  // fallback when SCANI_CLOUD_URL is unset.
+
+  // Sentry — optional at schema level; SDK init gates on DSN presence.
+  SENTRY_DSN: z.string().url().optional(),
+  SENTRY_ENVIRONMENT: z.string().optional(),
+  SENTRY_RELEASE: z.string().optional(),
+});
+
+export type WorkerEnv = z.infer<typeof envSchema>;
+
+let cached: WorkerEnv | undefined;
+
+export function loadEnv(): WorkerEnv {
+  if (cached) return cached;
+  const parsed = envSchema.safeParse(process.env);
+  if (!parsed.success) {
+    const issues = parsed.error.issues
+      .map((i) => `  - ${i.path.join('.') || '<root>'}: ${i.message}`)
+      .join('\n');
+    console.error(`\n❌ Invalid worker environment:\n${issues}\n`);
+    process.exit(1);
+  }
+  cached = parsed.data;
+
+  if (isProduction && !cached.SENTRY_DSN) {
+    console.warn('⚠️  env: SENTRY_DSN unset — errors will not be reported to Sentry.');
+  }
+
+  return cached;
+}

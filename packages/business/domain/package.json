@@ -1,0 +1,41 @@
+{
+  "name": "@scani/domain",
+  "private": true,
+  "type": "module",
+  "version": "1.0.0",
+  "description": "Domain layer: services, repositories, use cases. Sits on top of @scani/db + the adapter packages (@scani/queue, @scani/providers, @scani/storage, @scani/email, @scani/realtime).",
+  "exports": {
+    ".": "./src/index.ts",
+    "./lib/*": "./src/lib/*.ts",
+    "./repositories": "./src/repositories/index.ts",
+    "./repositories/*": "./src/repositories/*.ts",
+    "./services": "./src/services/index.ts",
+    "./services/*": "./src/services/*.ts",
+    "./use-cases": "./src/use-cases/index.ts",
+    "./use-cases/*": "./src/use-cases/*.ts"
+  },
+  "scripts": {
+    "lint": "biome check .",
+    "lint:fix": "biome check --write .",
+    "type-check": "tsgo --noEmit"
+  },
+  "dependencies": {
+    "@scani/cloud-client": "workspace:*",
+    "@scani/db": "workspace:*",
+    "@scani/file-import": "workspace:*",
+    "@scani/logging": "workspace:*",
+    "@scani/providers": "workspace:*",
+    "@scani/rate-limiter": "workspace:*",
+    "@scani/security": "workspace:*",
+    "@scani/shared": "workspace:*",
+    "decimal.js": "^10.6.0",
+    "drizzle-orm": "^0.45.2",
+    "postgres": "^3.4.9",
+    "typedi": "^0.10.0",
+    "unpdf": "^1.6.2"
+  },
+  "devDependencies": {
+    "reflect-metadata": "^0.2.2",
+    "typescript": "^5"
+  }
+}

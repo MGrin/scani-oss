@@ -1,0 +1,94 @@
+name: Coverage
+
+# Runs on every push to main. Generates lcov.info via `bun test --coverage`,
+# computes line coverage %, and writes the result to a public gist via
+# Schneegans/dynamic-badges-action. The README badge points at that gist
+# through shields.io's `?url=https://gist.../...json` endpoint.
+#
+# One-time setup outside this workflow:
+#   1. Create a public gist (any filename) and copy its ID from the URL.
+#   2. Generate a fine-grained PAT with the `gist` scope only.
+#   3. Add the PAT as repo secret `GIST_SECRET`.
+#   4. Add the gist ID as repo variable `COVERAGE_GIST_ID`.
+#
+# PRs are intentionally excluded — fork PRs cannot read repo secrets, and
+# updating the badge from a PR would clobber main's coverage number.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: coverage-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  coverage:
+    name: Compute + publish coverage
+    runs-on: ubuntu-latest
+    # Mirror secrets to job-level env so step-level `if:` can compare. GitHub
+    # disallows referencing `secrets.X` directly inside `if:`.
+    env:
+      GIST_SECRET: ${{ secrets.GIST_SECRET }}
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: scani
+          POSTGRES_PASSWORD: scani
+          POSTGRES_DB: scani
+        ports:
+          - 5433:5432
+        options: >-
+          --health-cmd "pg_isready -U scani -d scani"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v6
+      - uses: ./.github/actions/setup-bun
+
+      - name: Run DB migrations
+        run: bun run db:migrate
+        env:
+          DATABASE_URL: postgres://scani:scani@localhost:5433/scani?sslmode=disable
+
+      - name: Test with coverage
+        # `bun test --coverage` emits coverage/lcov.info; HTML render is
+        # local-only and skipped in CI.
+        run: bun run test --coverage --coverage-reporter=lcov --coverage-dir=coverage
+        env:
+          NODE_ENV: test
+          DATABASE_URL: postgres://scani:scani@localhost:5433/scani?sslmode=disable
+
+      - name: Generate badge JSON
+        run: bun scripts/coverage-badge.ts
+
+      - name: Read badge fields
+        # Surfaces `message` and `color` to subsequent steps without
+        # making them parse JSON inline.
+        id: badge
+        run: |
+          set -eu
+          message=$(jq -r '.message' coverage/badge.json)
+          color=$(jq -r '.color' coverage/badge.json)
+          echo "message=$message" >> "$GITHUB_OUTPUT"
+          echo "color=$color" >> "$GITHUB_OUTPUT"
+
+      - name: Upload badge to gist
+        # Skipped when secret/var aren't configured yet, so the workflow
+        # stays green before the one-time setup is done.
+        if: ${{ env.GIST_SECRET != '' && vars.COVERAGE_GIST_ID != '' }}
+        uses: Schneegans/dynamic-badges-action@v1.7.0
+        with:
+          auth: ${{ secrets.GIST_SECRET }}
+          gistID: ${{ vars.COVERAGE_GIST_ID }}
+          filename: scani-coverage.json
+          label: coverage
+          message: ${{ steps.badge.outputs.message }}
+          color: ${{ steps.badge.outputs.color }}
+          forceUpdate: true

@@ -107,4 +107,24 @@ if [ -n "$pkg_staged" ]; then
   ok "dependencies in sync"
 fi
 
+# -------- 5. CI per-package filter list in sync with workspaces --------
+#
+# Triggered when any workspace package.json or the codegen-managed CI
+# workflow changed. The auto:filters block in `.github/workflows/ci.yml`
+# is generated from `packages/*/*/package.json`; staging drift fails CI
+# server-side, so catch it here. Also runs when the codegen script itself
+# is touched.
+
+ci_relevant=$(staged_files -- 'packages/*/*/package.json' '.github/workflows/ci.yml' 'scripts/generate-ci-filters.ts' || true)
+if [ -n "$ci_relevant" ]; then
+  note "ci:gen:check"
+  if ! bun run ci:gen:check >/dev/null 2>&1; then
+    echo "${RED}ci:gen:check output:${RESET}" >&2
+    bun run ci:gen:check >&2 || true
+    echo "  Run: bun run ci:gen && git add .github/workflows/ci.yml" >&2
+    fail "CI filter list out of sync with packages/*/*"
+  fi
+  ok "CI filters in sync"
+fi
+
 echo "${GREEN}✓ pre-commit passed${RESET}"

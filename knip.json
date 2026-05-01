@@ -1,83 +1,89 @@
 {
   "$schema": "https://unpkg.com/knip@latest/schema.json",
   "workspaces": {
-    "apps/backend": {
+    "apps/backend/api": {
       "entry": ["src/index.ts"],
       "project": ["src/**/*.ts"],
       "ignoreDependencies": ["@sentry/node"]
     },
-    "apps/cloud-frontend": {
+    "apps/backend/worker": {
+      "entry": ["src/index.ts"],
+      "project": ["src/**/*.ts"],
+      "ignoreDependencies": ["@sentry/node"]
+    },
+    "apps/backend/data-provider": {
+      "entry": ["src/index.ts"],
+      "project": ["src/**/*.ts"],
+      "ignoreDependencies": ["@sentry/node"]
+    },
+    "apps/frontend/app": {
       "project": ["src/**/*.{ts,tsx}"],
       "ignoreDependencies": ["tailwindcss-animate"]
     },
-    "apps/cron": {
-      "project": ["src/**/*.ts"]
-    },
-    "apps/data-provider": {
-      "entry": ["src/index.ts"],
-      "project": ["src/**/*.ts"],
-      "ignoreDependencies": ["@sentry/node"]
-    },
-    "apps/frontendV2": {
+    "apps/frontend/cloud": {
       "project": ["src/**/*.{ts,tsx}"],
       "ignoreDependencies": ["tailwindcss-animate"]
     },
-    "apps/landing": {
+    "apps/frontend/admin": {
       "project": ["src/**/*.{ts,tsx}"]
     },
-    "apps/worker": {
-      "entry": ["src/index.ts"],
-      "project": ["src/**/*.ts"],
-      "ignoreDependencies": ["@sentry/node"]
-    },
-    "packages/ai-providers": {
-      "project": ["src/**/*.ts"]
-    },
-    "packages/cloud-client": {
-      "project": ["src/**/*.ts"]
-    },
-    "packages/config": {
-      "project": ["src/**/*.ts"]
-    },
-    "packages/frontend-shared": {
+    "apps/frontend/landing": {
       "project": ["src/**/*.{ts,tsx}"]
     },
-    "packages/db": {
+    "packages/business/domain": {
       "project": ["src/**/*.ts"]
     },
-    "packages/domain": {
+    "packages/business/file-import": {
       "project": ["src/**/*.ts"]
     },
-    "packages/email": {
+    "packages/business/ingesters": {
       "project": ["src/**/*.ts"]
     },
-    "packages/integrations": {
-      "entry": ["src/IntegrationManager.ts"],
+    "packages/business/jobs": {
       "project": ["src/**/*.ts"]
     },
-    "packages/logging": {
+    "packages/business/shared": {
       "project": ["src/**/*.ts"]
     },
-    "packages/pricing-providers": {
+    "packages/clients/cloud-client": {
       "project": ["src/**/*.ts"]
     },
-    "packages/queue": {
+    "packages/clients/providers": {
       "project": ["src/**/*.ts"]
     },
-    "packages/rate-limiter": {
+    "packages/frontend/ui": {
+      "project": ["src/**/*.{ts,tsx}"]
+    },
+    "packages/infra/config": {
       "project": ["src/**/*.ts"]
     },
-    "packages/realtime": {
+    "packages/infra/db": {
       "project": ["src/**/*.ts"]
     },
-    "packages/shared": {
+    "packages/infra/email": {
       "project": ["src/**/*.ts"]
     },
-    "packages/storage": {
+    "packages/infra/logging": {
+      "project": ["src/**/*.ts"]
+    },
+    "packages/infra/queue": {
+      "project": ["src/**/*.ts"]
+    },
+    "packages/infra/rate-limiter": {
+      "project": ["src/**/*.ts"]
+    },
+    "packages/infra/realtime": {
+      "project": ["src/**/*.ts"]
+    },
+    "packages/infra/security": {
+      "project": ["src/**/*.ts"]
+    },
+    "packages/infra/storage": {
       "project": ["src/**/*.ts"]
     }
   },
   "ignore": ["**/*.test.ts"],
+  "ignoreUnresolved": ["./packages/business/domain/test-preload.ts"],
   "rules": {
     "exports": "off",
     "types": "off",

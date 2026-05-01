@@ -80,7 +80,7 @@ only by where the data-provider lives and how it authenticates calls.
 
 `SCANI_CLOUD_URL` and `SCANI_CLOUD_API_KEY` are **required in production**
 on backend + worker. Both apps run a boot-time `/health` probe of the
-URL (`packages/cloud-client/src/health-probe.ts`) and exit non-zero on
+URL (`packages/clients/cloud-client/src/health-probe.ts`) and exit non-zero on
 failure — misconfigured deploys (typo, network split, dead VM) crash
 fast instead of silently 5xx-ing every user request.
 
@@ -92,7 +92,7 @@ the "local-fallback" path called out in `apps/*/src/config/env.ts`.
 The cloud-management plane (`apps/cloud-frontend` at `cloud.scani.xyz`)
 only exists in Tier 2/3. It uses Better-Auth cookie sessions issued by
 the data-provider (`/api/auth/*`) to let customers manage API keys + see
-usage. All adapters live in `packages/cloud-client/src/adapters/` and
+usage. All adapters live in `packages/clients/cloud-client/src/adapters/` and
 implement the same interfaces the in-process providers expose, so the
 domain layer never branches on tier.
 
@@ -1019,7 +1019,7 @@ Infrastructure secrets for local development live at `/Users/mgrin/.secrets` (de
   - `/docs/backend-fixes/` - Various backend-specific bug fixes
 - **Code:**
   - `apps/backend/src/db/schema.ts` - Complete database schema
-  - `packages/shared/src/types/finance.ts` - Validation schemas
+  - `packages/business/shared/src/types/finance.ts` - Validation schemas
   - `apps/backend/src/middleware/auth.ts` - Authentication logic
   - `apps/backend/src/router.ts` - Main tRPC router assembly
   - `apps/frontend/src/lib/trpc-provider.tsx` - Frontend tRPC client

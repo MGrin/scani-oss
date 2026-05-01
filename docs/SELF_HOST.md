@@ -45,7 +45,6 @@ The stack reads config from `.env`. The important variables:
 | `FRONTEND_URL` | Frontend origin (CORS + Better-Auth cookie scope) |
 | `SCANI_CLOUD_URL` | Data-provider endpoint — self-hosted container in Tier 1, `https://api.cloud.scani.xyz` in Tier 2/3 |
 | `SCANI_CLOUD_API_KEY` | Bearer token backend/worker use to authenticate against the data-provider |
-| `AUTH_PROVIDER` | `better-auth` for self-host; `supabase` for legacy |
 | `USE_BULLMQ` | `true` for containerized worker; `false` to run everything in one process |
 | `STATE_BACKEND` | `redis` (recommended for self-host) or `memory` |
 

@@ -93,18 +93,31 @@ function render(keys: string[]): string {
   return lines.join('\n');
 }
 
-// Per-app output filename override. Next.js (apps/admin) reads `.env.local`
-// with higher priority than `.env` and our existing docs tell operators to
-// put values there — stick with that. Everyone else gets plain `.env`.
+// Per-app output filename override. Next.js (apps/frontend/admin) reads
+// `.env.local` with higher priority than `.env` and our existing docs tell
+// operators to put values there — stick with that. Everyone else gets `.env`.
 const OUTPUT_FILENAME: Record<string, string> = {
   admin: '.env.local',
 };
 
+// Apps live at `apps/<category>/<name>/` (category = `backend` or
+// `frontend`). Walk both levels and collect every leaf with `.env.example`.
 const appsDir = resolve(repoRoot, 'apps');
-const apps = readdirSync(appsDir, { withFileTypes: true })
-  .filter((d) => d.isDirectory())
-  .map((d) => d.name)
-  .filter((name) => existsSync(resolve(appsDir, name, '.env.example')));
+const apps: { relative: string; absolute: string; name: string }[] = [];
+for (const category of readdirSync(appsDir, { withFileTypes: true })) {
+  if (!category.isDirectory()) continue;
+  const categoryPath = resolve(appsDir, category.name);
+  for (const app of readdirSync(categoryPath, { withFileTypes: true })) {
+    if (!app.isDirectory()) continue;
+    const appPath = resolve(categoryPath, app.name);
+    if (!existsSync(resolve(appPath, '.env.example'))) continue;
+    apps.push({
+      relative: `${category.name}/${app.name}`,
+      absolute: appPath,
+      name: app.name,
+    });
+  }
+}
 
 if (apps.length === 0) {
   console.warn('⚠️  No apps with .env.example found under apps/ — nothing to do.');
@@ -112,10 +125,10 @@ if (apps.length === 0) {
 }
 
 for (const app of apps) {
-  const examplePath = resolve(appsDir, app, '.env.example');
+  const examplePath = resolve(app.absolute, '.env.example');
   const allowedKeys = parseAllowedKeys(readFileSync(examplePath, 'utf8'));
-  const outputName = OUTPUT_FILENAME[app] ?? '.env';
-  const outPath = resolve(appsDir, app, outputName);
+  const outputName = OUTPUT_FILENAME[app.name] ?? '.env';
+  const outPath = resolve(app.absolute, outputName);
   mkdirSync(dirname(outPath), { recursive: true });
   const rendered = render(allowedKeys);
   // Skip the write when content is unchanged. Vite's dotenv watcher
@@ -127,13 +140,13 @@ for (const app of apps) {
   if (current === rendered) {
     const resolved = allowedKeys.filter((k) => root[k] !== undefined).length;
     console.log(
-      `↻ apps/${app}/${outputName} unchanged — ${resolved}/${allowedKeys.length} vars resolved (skipped)`
+      `↻ apps/${app.relative}/${outputName} unchanged — ${resolved}/${allowedKeys.length} vars resolved (skipped)`
     );
     continue;
   }
   writeFileSync(outPath, rendered, { mode: 0o600 });
   const resolved = allowedKeys.filter((k) => root[k] !== undefined).length;
   console.log(
-    `✅ wrote apps/${app}/${outputName} — ${resolved}/${allowedKeys.length} vars resolved from root .env`
+    `✅ wrote apps/${app.relative}/${outputName} — ${resolved}/${allowedKeys.length} vars resolved from root .env`
   );
 }
