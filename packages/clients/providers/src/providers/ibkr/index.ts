@@ -89,6 +89,32 @@ const TRANSIENT_GENERATION_ERROR_CODES = new Set(['1001', '1019']);
 // don't implement yet (see README "Asset class diversity" note).
 const SUPPORTED_TRADE_CATEGORIES = new Set(['STK', 'ETF']);
 
+// IBKR's `listingExchange` field uses venue codes (TSE, NASDAQ, …).
+// Yahoo/Finnhub-style symbols use suffixes (.TO, .L, …) and the
+// pricing router keys non-US routing on a Finnhub-shaped
+// `providerMetadata.exchangeInfo`. This table maps the IBKR venue to
+// (Finnhub suffix, exchange display name, native currency) so a
+// Toronto-listed XEQT becomes `XEQT.TO` for finnhub.symbol with
+// exchangeInfo `{ exchange: 'TSX', currency: 'CAD' }` — that combo
+// flips PricingProviderRouter to Google Sheets and the GOOGLEFINANCE
+// formula renders `TSE:XEQT`. US venues stay null/null/USD so
+// Finnhub free-tier prices them directly.
+const IBKR_LISTING_EXCHANGE_TO_FINNHUB: Record<
+  string,
+  { suffix: string | null; exchange: string | null; currency: string }
+> = {
+  NASDAQ: { suffix: null, exchange: null, currency: 'USD' },
+  NYSE: { suffix: null, exchange: null, currency: 'USD' },
+  ARCA: { suffix: null, exchange: null, currency: 'USD' },
+  AMEX: { suffix: null, exchange: null, currency: 'USD' },
+  BATS: { suffix: null, exchange: null, currency: 'USD' },
+  TSE: { suffix: '.TO', exchange: 'TSX', currency: 'CAD' },
+  TSX: { suffix: '.TO', exchange: 'TSX', currency: 'CAD' },
+  LSE: { suffix: '.L', exchange: 'LSE', currency: 'GBP' },
+  LSEETF: { suffix: '.L', exchange: 'LSE', currency: 'GBP' },
+  ASX: { suffix: '.AX', exchange: 'ASX', currency: 'AUD' },
+};
+
 interface OpenPosition {
   symbol: string;
   description: string;
@@ -434,6 +460,14 @@ export class IbkrProvider
     // AAPL US vs AAPL.L correctly.
     for (const p of positions) {
       const marketSegment = mapListingExchangeToSegment(p.listingExchange);
+      const lx = (p.listingExchange || '').toUpperCase();
+      const finnhubMap = IBKR_LISTING_EXCHANGE_TO_FINNHUB[lx];
+      const finnhubSymbol = finnhubMap?.suffix
+        ? `${p.symbol.toUpperCase()}${finnhubMap.suffix}`
+        : p.symbol.toUpperCase();
+      const exchangeInfo = finnhubMap?.exchange
+        ? { exchange: finnhubMap.exchange, currency: finnhubMap.currency }
+        : undefined;
       const tokenIdentity: Partial<NewToken> = {
         symbol: p.symbol.toUpperCase(),
         name: p.description || p.symbol,
@@ -444,6 +478,13 @@ export class IbkrProvider
             assetCategory: p.assetCategory,
             listingExchange: p.listingExchange,
           },
+          // Pre-seed finnhub.symbol with the Yahoo-style suffix so the
+          // pricing router's `metadata.finnhub?.symbol` branch fires
+          // straight from the IBKR snapshot (no nightly identity
+          // backfill required), and so non-US listings carry the
+          // `exchangeInfo` that flips routing to Google Sheets.
+          finnhub: { symbol: finnhubSymbol },
+          ...(exchangeInfo ? { exchangeInfo } : {}),
         },
       };
       out.push({

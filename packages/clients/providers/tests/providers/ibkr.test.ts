@@ -36,6 +36,7 @@ describe('IbkrProvider', () => {
     const xml = `
       <FlexQueryResponse>
         <OpenPosition symbol="AAPL" description="Apple Inc." position="10" currency="USD" assetCategory="STK" listingExchange="NASDAQ" />
+        <OpenPosition symbol="XEQT" description="iShares Core Equity ETF Portfolio" position="100" currency="CAD" assetCategory="STK" listingExchange="TSE" />
         <OpenPosition symbol="GOOG" description="Alphabet" position="0" currency="USD" assetCategory="STK" listingExchange="NASDAQ" />
         <CashReportCurrency currency="USD" endingCash="500.50" />
         <CashReportCurrency currency="EUR" endingCash="0" />
@@ -69,6 +70,32 @@ describe('IbkrProvider', () => {
       // drops every holding — see the bug fixed alongside this test.
       expect(aapl?.externalId).toBe('AAPL');
       expect(usd?.externalId).toBe('USD');
+      // Toronto-listed XEQT must be stamped with `.TO` in
+      // providerMetadata.finnhub.symbol AND carry an `exchangeInfo`
+      // hint so PricingProviderRouter recognizes a non-US exchange and
+      // routes to Google Sheets (GOOGLEFINANCE) instead of Finnhub
+      // (which returns finnhub_no_data for bare TSE symbols).
+      const xeqt = out.find((h) => h.tokenIdentity.symbol === 'XEQT');
+      expect(xeqt?.balance).toBe('100');
+      const xeqtMeta = xeqt?.tokenIdentity.providerMetadata as
+        | {
+            finnhub?: { symbol?: string };
+            exchangeInfo?: { exchange?: string; currency?: string };
+          }
+        | undefined;
+      expect(xeqtMeta?.finnhub?.symbol).toBe('XEQT.TO');
+      expect(xeqtMeta?.exchangeInfo?.exchange).toBe('TSX');
+      expect(xeqtMeta?.exchangeInfo?.currency).toBe('CAD');
+      // US listings stay bare (no suffix, no exchangeInfo) so Finnhub
+      // free-tier prices them directly.
+      const aaplMeta = aapl?.tokenIdentity.providerMetadata as
+        | {
+            finnhub?: { symbol?: string };
+            exchangeInfo?: { exchange?: string; currency?: string };
+          }
+        | undefined;
+      expect(aaplMeta?.finnhub?.symbol).toBe('AAPL');
+      expect(aaplMeta?.exchangeInfo).toBeUndefined();
       // Zero-quantity GOOG is skipped, BASE_SUMMARY skipped, EUR=0 skipped
       expect(out.find((h) => h.tokenIdentity.symbol === 'GOOG')).toBeUndefined();
       expect(out.find((h) => h.tokenIdentity.symbol === 'EUR')).toBeUndefined();

@@ -1,6 +1,11 @@
 import crypto from 'node:crypto';
 import { ImportExchangeAccountsUseCase, ImportIbkrAccountsUseCase } from '@scani/domain/use-cases';
-import { EXCHANGE_IMPORT, type ExchangeImportJob, TRANSACTION_IMPORT } from '@scani/jobs';
+import {
+  EXCHANGE_IMPORT,
+  type ExchangeImportJob,
+  PORTFOLIO_HISTORY_BACKFILL,
+  TRANSACTION_IMPORT,
+} from '@scani/jobs';
 import { createComponentLogger } from '@scani/logging';
 import {
   BullMqEnqueueService,
@@ -12,6 +17,12 @@ import { emitEntityChange } from '@scani/realtime';
 import { Container, Service } from 'typedi';
 
 const logger = createComponentLogger('processor:exchange-import');
+
+// Coalesce concurrent backfill triggers within a 30s window so a flurry
+// of user-initiated imports collapses to one job (matches the value used
+// in the transaction-import processor; both feed the same per-user
+// advisory lock inside PortfolioHistoryBackfillProcessor).
+const BACKFILL_COALESCE_WINDOW_MS = 30_000;
 
 // Pick a stable `source` tag for an exchange provider. These match the
 // `readonly source = '…'` fields on the CEX TransactionIngester classes.
@@ -148,6 +159,35 @@ export class ExchangeImportProcessor extends UserJobProcessor<ExchangeImportJob,
             'Failed to chain-enqueue transaction-import'
           );
         }
+      }
+    }
+
+    // Also enqueue portfolio-history-backfill so the net-worth chart
+    // fills in immediately after a balance import — even when the
+    // chained transaction-import returns 0 events (e.g., IBKR Flex
+    // Query templates without Trades/CashTransactions sections, or
+    // brand-new exchange accounts with no trade history). The backfill
+    // pulls historical prices for the new tokens and rolls daily
+    // portfolio values; the per-user advisory lock inside the
+    // processor de-dupes against any concurrent trigger from
+    // ingest-transactions, so this is safe to fire alongside.
+    if (result.accounts.length > 0) {
+      const bucket = Math.floor(Date.now() / BACKFILL_COALESCE_WINDOW_MS);
+      try {
+        await this.enqueueService.add(PORTFOLIO_HISTORY_BACKFILL, {
+          userId: data.userId,
+          requestId: `exchange-import-${bucket}`,
+          tokenIds: [],
+          lookbackDays: 365,
+        });
+      } catch (error) {
+        logger.warn(
+          {
+            userId: data.userId,
+            error: error instanceof Error ? error.message : String(error),
+          },
+          'Failed to chain-enqueue portfolio-history-backfill'
+        );
       }
     }
 

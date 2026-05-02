@@ -1,0 +1,13 @@
+SENTINEL — DO NOT MERGE FUTURE PRs WITH THIS FILE PRESENT.
+
+When this file exists, the deploy-fly.yaml `migrate` job drops + recreates
+the `public` and `drizzle` schemas on production BEFORE applying migrations.
+It exists in this PR to reset prod after a stretch of bad IBKR import data
+(empty accounts from the externalId mismatch, half-imported holdings without
+prices, transaction-import history with 0-event runs) so the next IBKR
+re-import lands into a clean DB.
+
+Mandatory cleanup: open a follow-up PR deleting this file the moment the
+deploy that consumes it has succeeded. Otherwise any future PR that touches
+`packages/infra/db/src/migrations/**` (the path filter that gates the
+migrate job) will re-wipe production.
