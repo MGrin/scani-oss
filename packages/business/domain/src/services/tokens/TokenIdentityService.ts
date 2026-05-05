@@ -8,6 +8,26 @@ import { TokenRepository } from '../../repositories/TokenRepository';
 import { BaseService } from '../BaseService';
 import { ScamTokenDetectionService } from './ScamTokenDetectionService';
 
+// Thrown by `findOrCreateByIdentity` when the supplied symbol+name
+// matches the obvious-scam heuristics (score ≥ 0.95). Wallet- and
+// transaction-import callers catch this, log a warning, and skip
+// the offending event so a single phishing airdrop in a wallet's
+// history doesn't abort the entire import.
+export class ScamTokenRejectedError extends Error {
+  readonly symbol: string;
+  readonly tokenName: string;
+  readonly scamProbability: number;
+  constructor(symbol: string, tokenName: string, scamProbability: number) {
+    super(
+      `Refusing to materialize obvious-scam token (symbol=${symbol}, name=${tokenName}, score=${scamProbability.toFixed(2)})`
+    );
+    this.name = 'ScamTokenRejectedError';
+    this.symbol = symbol;
+    this.tokenName = tokenName;
+    this.scamProbability = scamProbability;
+  }
+}
+
 // TokenIdentityService — federated find-or-create-by-identity flow.
 // Mutations of arbitrary token state live in TokenService; this class
 // owns only the provider-fanout identity resolution path.
@@ -190,6 +210,22 @@ export class TokenIdentityService extends BaseService {
         new Date(),
         false
       );
+    }
+
+    // Hard-reject obvious scams (URL-laden symbols / phishing payloads
+    // like `T.ME/S/US_POOL`, Cyrillic-spoofed `UЅDС`, ✅TRUMP AIRDROP).
+    // Threshold 0.95 keeps the false-positive rate at zero — observed
+    // bucket-90 contains some genuine memecoins (LOOKS, MATIC) that we
+    // do NOT want to silently swallow. ScamTokenRejectedError is
+    // typed so the wallet/transaction-import pipelines can catch it
+    // and skip the offending event without aborting the whole import.
+    if (scamProbability >= 0.95) {
+      this.logDebug('Refusing to create obvious-scam token', {
+        symbol,
+        name: partial.name,
+        scamProbability,
+      });
+      throw new ScamTokenRejectedError(symbol, partial.name ?? symbol, scamProbability);
     }
 
     const created = await this.tokenRepository.create(

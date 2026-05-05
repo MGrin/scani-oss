@@ -37,6 +37,7 @@ import type {
 } from '../../core/capabilities';
 import type { PriceQuote, ProviderContext } from '../../core/types';
 import { fetchWithTimeout } from '../../core/utils/fetch';
+import { isFiatCode } from '../../core/utils/fiat-codes';
 import type { CurrencyConverter } from '../coingecko';
 import { detectExchangeInfo, normalizeForFinnhubSymbol } from './symbol';
 
@@ -217,6 +218,14 @@ export class FinnhubProvider implements HistoricalPriceProvider, TokenIdentityPr
     if (isChainNativeToken(meta)) return null;
     const sym = partial.symbol;
     if (!sym) return null;
+    // Fiat ISO-4217 codes (USD, EUR, GBP, …) collide with US-listed
+    // equity tickers Finnhub indexes (USD = ProShares Ultra
+    // Semiconductors, EUR = ProShares Ultra Euro, …). Stamping
+    // finnhub.symbol on a fiat token routes its pricing through the
+    // equity pipeline and pollutes the screenshot-parse review UI.
+    // Skip enrichment for fiat codes — Frankfurter / ExchangeRate-API
+    // own the fiat-pricing path.
+    if (isFiatCode(sym)) return null;
     const normalized = normalizeForFinnhubSymbol(sym);
     if (!normalized) return null;
     const exchangeInfo = detectExchangeInfo(sym);

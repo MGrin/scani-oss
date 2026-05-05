@@ -100,6 +100,34 @@ describe('FinnhubProvider', () => {
     expect(result?.finnhub?.symbol).toBe('AAPL');
   });
 
+  test('enrichTokenIdentity skips fiat ISO-4217 codes', async () => {
+    const p = new FinnhubProvider(passthroughLimiter(), { apiKey: 'k' });
+    // Each of these has a Finnhub equity look-alike (USD = ProShares
+    // Ultra Semiconductors, EUR = ProShares Ultra Euro, etc.) — we
+    // must not stamp finnhub.symbol on the fiat row.
+    expect(await p.enrichTokenIdentity({ symbol: 'USD' })).toBeNull();
+    expect(await p.enrichTokenIdentity({ symbol: 'EUR' })).toBeNull();
+    expect(await p.enrichTokenIdentity({ symbol: 'GBP' })).toBeNull();
+    expect(await p.enrichTokenIdentity({ symbol: 'CHF' })).toBeNull();
+    expect(await p.enrichTokenIdentity({ symbol: 'RUB' })).toBeNull();
+  });
+
+  test('enrichTokenIdentity still skips chain-native tokens', async () => {
+    const p = new FinnhubProvider(passthroughLimiter(), { apiKey: 'k' });
+    expect(
+      await p.enrichTokenIdentity({
+        symbol: 'EPJFWDD5',
+        providerMetadata: { solana: { mint: 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v' } },
+      })
+    ).toBeNull();
+    expect(
+      await p.enrichTokenIdentity({
+        symbol: 'USDC',
+        providerMetadata: { etherscan: { chainId: 1, contractAddress: '0xabc' } },
+      })
+    ).toBeNull();
+  });
+
   test('fetchHistoricalPrice picks closest bar from /stock/candle response', async () => {
     const p = new FinnhubProvider(passthroughLimiter(), { apiKey: 'test-key' });
     const aapl = makeMockToken({ id: 'aapl', symbol: 'AAPL' });

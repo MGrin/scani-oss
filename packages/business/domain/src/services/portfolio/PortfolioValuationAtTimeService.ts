@@ -30,10 +30,18 @@ export interface PortfolioValueAtTimeResult {
 }
 
 // Heuristic thresholds for coverage_quality:
-//   full      = every holding had a known value AND anchor=='holdings'|'observation-after'
-//   partial   = every holding had a known value but some via older anchor
-//   estimated = some holdings missing value, but ≥ 50% known
-//   unknown   = fewer than 50% of holdings resolved
+//   full      = ≥ 95% of holdings priced and anchor=='holdings'|'observation-after'
+//   partial   = ≥ 95% priced but some via stale anchor
+//   estimated = 50%–95% priced
+//   unknown   = < 50% priced
+//
+// 95% (not 100%) because real-world portfolios always include a long
+// tail of pump.fun memecoins / wallet-airdrop dust that no provider
+// indexes. Requiring 100% means coverage_quality is permanently
+// "estimated" for any user with a Solana wallet, which the user
+// fairly called out as misleading — those 1–3 unpriced micro-balances
+// barely affect the total but tank the chart's quality badge.
+const COVERAGE_FULL_THRESHOLD = 0.95;
 const COVERAGE_PARTIAL_THRESHOLD = 0.5;
 
 // Computes portfolio value for a user at any past time T, in any display
@@ -183,12 +191,15 @@ export class PortfolioValuationAtTimeService {
       // No holdings at all — not "unknown" (we know it was empty), but
       // there's nothing to chart either. 'full' is correct: zero is zero.
       coverageQuality = 'full';
-    } else if (knownCount === holdingsTotal) {
-      coverageQuality = anyStaleAnchor ? 'partial' : 'full';
-    } else if (knownCount / holdingsTotal >= COVERAGE_PARTIAL_THRESHOLD) {
-      coverageQuality = 'estimated';
     } else {
-      coverageQuality = 'unknown';
+      const knownRatio = knownCount / holdingsTotal;
+      if (knownRatio >= COVERAGE_FULL_THRESHOLD) {
+        coverageQuality = anyStaleAnchor ? 'partial' : 'full';
+      } else if (knownRatio >= COVERAGE_PARTIAL_THRESHOLD) {
+        coverageQuality = 'estimated';
+      } else {
+        coverageQuality = 'unknown';
+      }
     }
 
     return {
