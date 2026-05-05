@@ -1,5 +1,6 @@
 import { getCloudClient } from '@scani/cloud-client/runtime';
 import { createComponentLogger } from '@scani/logging';
+import { isFiatCode } from '@scani/providers/core/utils/fiat-codes';
 import { Service } from 'typedi';
 
 // Service-local result types kept stable for `ScreenshotParsingService`,
@@ -80,12 +81,26 @@ export class TokenValidationService {
 
     const symbolUpper = symbol.toUpperCase();
     // Bias by tokenTypeCode when the caller knows what it's looking
-    // for: 'crypto' prefers CoinGecko, anything else prefers Finnhub.
+    // for: 'crypto' prefers CoinGecko, 'fiat' prefers DB-backed fiat,
+    // anything else prefers Finnhub.
+    //
+    // Fiat ISO-4217 override: when the symbol is a known fiat code
+    // (USD, EUR, GBP, CHF, …), pick the fiat-typed result regardless
+    // of the caller's hint. Without this, Finnhub's USD = "ProShares
+    // Ultra Semiconductors ETF" wins the tie-break against the DB's
+    // fiat USD, and a user uploading a screenshot of cash gets shown
+    // an obscure 2x leveraged equity instead of dollars.
     const wantsCrypto = tokenTypeCode === 'crypto';
+    const wantsFiat = tokenTypeCode === 'fiat' || isFiatCode(symbolUpper);
     const sorted = [...results].sort((a, b) => {
       const aHit = a.symbol.toUpperCase() === symbolUpper ? 0 : 1;
       const bHit = b.symbol.toUpperCase() === symbolUpper ? 0 : 1;
       if (aHit !== bHit) return aHit - bHit;
+      if (wantsFiat) {
+        const aFiat = isFiatTypedResult(a) ? 0 : 1;
+        const bFiat = isFiatTypedResult(b) ? 0 : 1;
+        if (aFiat !== bFiat) return aFiat - bFiat;
+      }
       const rank = (provider: string) =>
         wantsCrypto ? (provider === 'coingecko' ? 0 : 1) : provider === 'finnhub' ? 0 : 1;
       return rank(a.provider) - rank(b.provider);
@@ -112,4 +127,13 @@ export class TokenValidationService {
       },
     };
   }
+}
+
+// `tokens.search` returns a union of DB rows (typeName='Fiat Currency')
+// and external upstream rows (type='Fiat'/'Equity'/'Crypto'/...). Treat
+// either shape as fiat for ranking purposes.
+function isFiatTypedResult(r: { type?: string | null; typeName?: string | null }): boolean {
+  const a = (r.type ?? '').toLowerCase();
+  const b = (r.typeName ?? '').toLowerCase();
+  return a === 'fiat' || b.includes('fiat');
 }

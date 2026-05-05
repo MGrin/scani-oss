@@ -4,6 +4,7 @@ import type * as schema from '@scani/db/schema';
 import { TokenPriceRepository } from '@scani/domain/repositories/TokenPriceRepository';
 import { TokenPriceHistoryService, TokenService } from '@scani/domain/services';
 import { createComponentLogger } from '@scani/logging';
+import { isFiatCode } from '@scani/providers/core/utils/fiat-codes';
 import { emitEntityChange } from '@scani/realtime';
 import { TRPCError } from '@trpc/server';
 import { and, eq, inArray, lt, sql } from 'drizzle-orm';
@@ -138,10 +139,23 @@ export function createTokensRouter(db: DbType, schemaObj: typeof schema) {
           metadata?: Record<string, unknown>;
         }> = [...dbTokens];
 
+        // Fiat ISO-4217 short-circuit: when the query is a fiat code
+        // (USD, EUR, GBP, …) and the DB already has the canonical
+        // fiat row for it, skip Finnhub. Without this, Finnhub returns
+        // niche US-listed equities whose ticker happens to be a 3-letter
+        // currency code (USD = ProShares Ultra Semiconductors,
+        // EUR = ProShares Ultra Euro, …) and they pollute the search
+        // results — the screenshot-parse + manual-token-add UIs were
+        // showing "USD ProShares Ultra Semiconductors" instead of cash.
+        const isFiatQuery = isFiatCode(query);
+        const dbHasFiatHit =
+          isFiatQuery &&
+          dbTokens.some((t) => t.symbol.toUpperCase() === query && t.type === 'fiat');
+
         // External providers — delegated to data-provider's tokens.search
         // tRPC procedure. The api app holds zero upstream API keys; all
         // Finnhub / CoinGecko credentials live on data-provider only.
-        if (dbTokens.length < input.limit) {
+        if (dbTokens.length < input.limit && !dbHasFiatHit) {
           try {
             const cached = searchCache.get(query);
             if (cached && cached.expiresAt > Date.now()) {
@@ -161,12 +175,19 @@ export function createTokensRouter(db: DbType, schemaObj: typeof schema) {
               limit: input.limit,
             });
 
-            // Sort: exact symbol matches first, crypto before stocks, then
-            // by upstream order. Matches the prior priority heuristic.
+            // Sort: exact symbol matches first, then for fiat-coded
+            // queries push non-fiat external hits down (Finnhub's
+            // USD/EUR/GBP equities don't deserve top billing on a fiat
+            // search), then crypto before stocks.
             const sorted = [...externalResults].sort((a, b) => {
               const aExact = a.symbol.toLowerCase() === query.toLowerCase() ? 0 : 1;
               const bExact = b.symbol.toLowerCase() === query.toLowerCase() ? 0 : 1;
               if (aExact !== bExact) return aExact - bExact;
+              if (isFiatQuery) {
+                const aFiat = (a.type ?? '').toLowerCase() === 'fiat' ? 0 : 1;
+                const bFiat = (b.type ?? '').toLowerCase() === 'fiat' ? 0 : 1;
+                if (aFiat !== bFiat) return aFiat - bFiat;
+              }
               const cryptoRank = (p: string) => (p === 'coingecko' ? 0 : 1);
               return cryptoRank(a.provider) - cryptoRank(b.provider);
             });
