@@ -2,11 +2,10 @@
  * `RollupPortfolioValueDailyUseCase` integration tests.
  *
  * The use case iterates every user with a baseCurrencyId set and, for
- * each, calls `PortfolioValuationAtTimeService.getPortfolioValue` per
- * day in the lookback window. We stub the valuation service to avoid
- * pricing dependencies and assert the use case correctly fans out
- * across users + days, persists rollup rows, and isolates per-user
- * failures.
+ * each, calls `PnLAtTimeService.getPnL` per day in the lookback
+ * window. We stub the PnL service to avoid pricing + cost-basis
+ * dependencies and assert the use case correctly fans out across
+ * users + days, persists rollup rows, and isolates per-user failures.
  *
  * Isolation: same as the other use-case tests — the use case calls
  * the global `db` directly, so we use unique test users + cascade
@@ -18,10 +17,11 @@ import { randomUUID } from 'node:crypto';
 import { withAdvisoryLock } from '@scani/db';
 import { db } from '@scani/db/connection';
 import * as schema from '@scani/db/schema';
+import Decimal from 'decimal.js';
 import { eq, inArray } from 'drizzle-orm';
 import { Container } from 'typedi';
 import { PortfolioValueDailyRepository } from '../../src/repositories/PortfolioValueDailyRepository';
-import { PortfolioValuationAtTimeService } from '../../src/services/portfolio/PortfolioValuationAtTimeService';
+import { PnLAtTimeService } from '../../src/services/portfolio/PnLAtTimeService';
 import { RollupPortfolioValueDailyUseCase } from '../../src/use-cases/RollupPortfolioValueDailyUseCase';
 
 interface Fixture {
@@ -39,15 +39,25 @@ let nextValuation: (
   at: Date,
   baseCurrencyId: string
 ) => {
-  totalValueInBase: { toString(): string };
+  totalValueInBase: Decimal;
+  totalCostBasis: Decimal;
+  totalRealizedPnl: Decimal;
+  totalUnrealizedPnl: Decimal;
+  totalPnl: Decimal;
   coverageQuality: 'full' | 'partial' | 'estimated' | 'unknown';
   holdingsWithKnownValue: number;
   holdingsTotal: number;
+  perHolding: never[];
 } = () => ({
-  totalValueInBase: { toString: () => '100' },
+  totalValueInBase: new Decimal(100),
+  totalCostBasis: new Decimal(0),
+  totalRealizedPnl: new Decimal(0),
+  totalUnrealizedPnl: new Decimal(100),
+  totalPnl: new Decimal(100),
   coverageQuality: 'full' as const,
   holdingsWithKnownValue: 1,
   holdingsTotal: 1,
+  perHolding: [],
 });
 
 async function setupFixture(): Promise<Fixture> {
@@ -112,13 +122,21 @@ beforeEach(async () => {
   fixture = await setupFixture();
   valuationCalls = [];
 
-  // Stub PortfolioValuationAtTimeService to avoid pricing dependencies.
-  Container.set(PortfolioValuationAtTimeService, {
-    getPortfolioValue: async (userId: string, at: Date, baseCurrencyId: string) => {
+  // Stub PnLAtTimeService — the rollup calls this directly, and it
+  // internally chains to PortfolioValuationAtTimeService + CostBasisService.
+  // Stubbing the seam closer to the use case bypasses both pricing and
+  // cost-basis lookups in one shot.
+  Container.set(PnLAtTimeService, {
+    getPnL: async (userId: string, at: Date, baseCurrencyId: string) => {
       valuationCalls.push({ userId, at, baseCurrencyId });
-      return nextValuation(userId, at, baseCurrencyId);
+      return {
+        userId,
+        at,
+        baseCurrencyId,
+        ...nextValuation(userId, at, baseCurrencyId),
+      };
     },
-  } as unknown as PortfolioValuationAtTimeService);
+  } as unknown as PnLAtTimeService);
 
   // Reset the use case so its class-field initializer captures the stub.
   Container.set(RollupPortfolioValueDailyUseCase, new RollupPortfolioValueDailyUseCase());
@@ -132,7 +150,7 @@ afterEach(async () => {
 // Restore real @Service() instances so a later repo/service test sharing
 // the process-global typedi Container doesn't pick up our stub.
 afterAll(() => {
-  Container.set(PortfolioValuationAtTimeService, new PortfolioValuationAtTimeService());
+  Container.set(PnLAtTimeService, new PnLAtTimeService());
   Container.set(RollupPortfolioValueDailyUseCase, new RollupPortfolioValueDailyUseCase());
 });
 
@@ -182,10 +200,15 @@ describe('RollupPortfolioValueDailyUseCase', () => {
     nextValuation = (userId) => {
       if (userId === failingUserId) throw new Error('valuation blew up');
       return {
-        totalValueInBase: { toString: () => '50' },
+        totalValueInBase: new Decimal(50),
+        totalCostBasis: new Decimal(0),
+        totalRealizedPnl: new Decimal(0),
+        totalUnrealizedPnl: new Decimal(50),
+        totalPnl: new Decimal(50),
         coverageQuality: 'full' as const,
         holdingsWithKnownValue: 1,
         holdingsTotal: 1,
+        perHolding: [],
       };
     };
     const summary = await Container.get(RollupPortfolioValueDailyUseCase).execute({

@@ -4,7 +4,7 @@ import { Building2, PieChart, Wallet } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { trpc } from '@/lib/trpc';
 import { AssetAllocationChart } from '../components/dashboard/AssetAllocationChart';
-import { NetWorthChart } from '../components/dashboard/NetWorthChart';
+import { PortfolioCharts } from '../components/dashboard/PortfolioCharts';
 import { PortfolioSummary } from '../components/dashboard/PortfolioSummary';
 import { StatCard } from '../components/dashboard/StatCard';
 import { TopHoldingsList } from '../components/dashboard/TopHoldingsList';
@@ -68,8 +68,8 @@ export function DashboardPage() {
         )}
       </div>
 
-      {/* Net worth history — full width above asset allocation */}
-      <NetWorthChart />
+      {/* Portfolio charts — Net worth + PnL tabs above asset allocation */}
+      <PortfolioCharts />
 
       {/* Charts + Lists */}
       <div className="grid gap-4 lg:grid-cols-2">

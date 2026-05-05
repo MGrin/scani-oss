@@ -15,6 +15,7 @@ import { db } from '@scani/db/connection';
 import * as schema from '@scani/db/schema';
 import { PortfolioValueDailyRepository } from '@scani/domain/repositories';
 import { TRPCError } from '@trpc/server';
+import Decimal from 'decimal.js';
 import { and, eq } from 'drizzle-orm';
 import { Container } from 'typedi';
 import { z } from 'zod';
@@ -273,6 +274,76 @@ export const portfolioRouter = router({
       holdingsTotal: p.raw.holdingsTotal,
     }));
 
+    return { series, baseCurrencyId: baseId, granularity };
+  }),
+
+  // PnL series: same shape as getNetWorthSeries plus cost_basis +
+  // realized + unrealized columns. Reads the PnL columns added in
+  // migration 0002 and populated by RollupPortfolioValueDailyUseCase
+  // (which now calls PnLAtTimeService for each (scope, day) tuple).
+  getPnLSeries: protectedProcedure.input(NetWorthSeriesInput).query(async ({ ctx, input }) => {
+    const { dbUser } = await requireAuth(ctx);
+    const baseId = input.baseCurrencyId ?? dbUser.baseCurrencyId ?? null;
+    if (!baseId) {
+      return { series: [], baseCurrencyId: null, granularity: 'daily' as Granularity };
+    }
+    const dailyRepo = Container.get(PortfolioValueDailyRepository);
+    if (input.scope) {
+      await assertScopeOwnership(dbUser.id, input.scope);
+    }
+    const granularity: Granularity =
+      input.granularity === 'auto' ? pickGranularity(input.from, input.to) : input.granularity;
+    const scopeFilter = input.scope ?? { kind: 'user' as const, id: dbUser.id };
+    const cached = await dailyRepo.findRange(
+      dbUser.id,
+      baseId,
+      input.from,
+      input.to,
+      undefined,
+      scopeFilter
+    );
+    type PnLPoint = {
+      date: string;
+      totalValue: string;
+      costBasis: string | null;
+      realizedPnl: string | null;
+      unrealizedPnl: string | null;
+      totalPnl: string | null;
+      coverageQuality: string;
+      holdingsWithKnownValue: number;
+      holdingsTotal: number;
+    };
+    const points: LttbPoint<(typeof cached)[number]>[] = cached.map((row) => ({
+      x: new Date(row.snapshotDate as unknown as string).getTime(),
+      // Downsample on totalPnl when present, falling back to total
+      // value (unpopulated rows from before the rollup re-runs).
+      // Keeps the LTTB silhouette meaningful for either chart.
+      y:
+        row.realizedPnl != null && row.unrealizedPnl != null
+          ? Number(row.realizedPnl) + Number(row.unrealizedPnl)
+          : Number(row.totalValue),
+      raw: row,
+    }));
+    const sampled = lttbDownsample(points, LTTB_TARGET_POINTS);
+    const series: PnLPoint[] = sampled.map((p) => {
+      const realized = p.raw.realizedPnl;
+      const unrealized = p.raw.unrealizedPnl;
+      const totalPnl =
+        realized != null && unrealized != null
+          ? new Decimal(realized).add(new Decimal(unrealized)).toString()
+          : null;
+      return {
+        date: String(p.raw.snapshotDate).slice(0, 10),
+        totalValue: p.raw.totalValue,
+        costBasis: p.raw.costBasis ?? null,
+        realizedPnl: realized ?? null,
+        unrealizedPnl: unrealized ?? null,
+        totalPnl,
+        coverageQuality: p.raw.coverageQuality,
+        holdingsWithKnownValue: p.raw.holdingsWithKnownValue,
+        holdingsTotal: p.raw.holdingsTotal,
+      };
+    });
     return { series, baseCurrencyId: baseId, granularity };
   }),
 

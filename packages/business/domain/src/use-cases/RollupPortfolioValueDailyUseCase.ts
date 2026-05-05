@@ -24,7 +24,7 @@ import { HoldingRepository } from '../repositories/HoldingRepository';
 import { PortfolioValueDailyRepository } from '../repositories/PortfolioValueDailyRepository';
 import { TokenPriceRepository } from '../repositories/TokenPriceRepository';
 import { TokenRepository } from '../repositories/TokenRepository';
-import { PortfolioValuationAtTimeService } from '../services';
+import { PnLAtTimeService } from '../services';
 import type { PortfolioValueScope } from '../services/portfolio/PortfolioValuationAtTimeService';
 import { PriceLookup } from '../services/pricing/PriceLookup';
 
@@ -58,7 +58,7 @@ export class RollupPortfolioValueDailyUseCase {
   // used `= Container.get(Dep)` as constructor-param defaults, but
   // typedi overrode the default with a ContainerInstance because Bun
   // lacks reflect-metadata emit.
-  private readonly valuationService = Container.get(PortfolioValuationAtTimeService);
+  private readonly pnlService = Container.get(PnLAtTimeService);
   private readonly dailyRepository = Container.get(PortfolioValueDailyRepository);
   private readonly holdingRepository = Container.get(HoldingRepository);
   private readonly accountRepository = Container.get(AccountRepository);
@@ -160,12 +160,14 @@ export class RollupPortfolioValueDailyUseCase {
             let daysForUser = 0;
             for (const { at, snapshotDate } of days) {
               for (const { scope, scopeKind, scopeId } of scopes) {
-                const result = await this.valuationService.getPortfolioValue(
-                  user.id,
-                  at,
-                  baseCurrencyId,
-                  { priceLookup, scope }
-                );
+                // PnLAtTimeService internally calls getPortfolioValue
+                // (same scope filter, same priceLookup), then layers
+                // CostBasisService on top per-holding. The result
+                // re-exposes valuation fields so we don't double-run.
+                const result = await this.pnlService.getPnL(user.id, at, baseCurrencyId, {
+                  priceLookup,
+                  scope,
+                });
                 await this.dailyRepository.upsert({
                   userId: user.id,
                   scopeKind,
@@ -176,6 +178,9 @@ export class RollupPortfolioValueDailyUseCase {
                   coverageQuality: result.coverageQuality,
                   holdingsWithKnownValue: result.holdingsWithKnownValue,
                   holdingsTotal: result.holdingsTotal,
+                  costBasis: result.totalCostBasis.toString(),
+                  realizedPnl: result.totalRealizedPnl.toString(),
+                  unrealizedPnl: result.totalUnrealizedPnl.toString(),
                 });
               }
               daysForUser++;

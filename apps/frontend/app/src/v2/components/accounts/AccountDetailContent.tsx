@@ -12,7 +12,7 @@ import { cn } from '@/lib/utils';
 import { useAccountActions } from '../../hooks/useAccountActions';
 import { useBaseCurrency } from '../../hooks/useBaseCurrency';
 import { V2_ROUTES } from '../../lib/routes';
-import { NetWorthChart } from '../dashboard/NetWorthChart';
+import { PortfolioCharts } from '../dashboard/PortfolioCharts';
 
 interface AccountDetailContentProps {
   accountId: string;
@@ -151,7 +151,11 @@ export function AccountDetailContent({ accountId, mode = 'panel' }: AccountDetai
 
       <Separator />
 
-      <NetWorthChart scope={{ kind: 'account', id: accountId }} title="Account value over time" />
+      <PortfolioCharts
+        scope={{ kind: 'account', id: accountId }}
+        netWorthTitle="Account value over time"
+        pnlTitle="Account PnL over time"
+      />
 
       <Separator />
 

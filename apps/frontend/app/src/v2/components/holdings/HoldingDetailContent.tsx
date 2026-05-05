@@ -17,7 +17,7 @@ import { invalidatePortfolioQueries } from '../../hooks/invalidatePortfolioQueri
 import { useBaseCurrency } from '../../hooks/useBaseCurrency';
 import { useHoldingActions } from '../../hooks/useHoldingActions';
 import { V2_ROUTES } from '../../lib/routes';
-import { NetWorthChart } from '../dashboard/NetWorthChart';
+import { PortfolioCharts } from '../dashboard/PortfolioCharts';
 import { EditCustomTokenPriceDialog } from '../tokens/EditCustomTokenPriceDialog';
 import { ApyConfigDialog } from './ApyConfigDialog';
 
@@ -260,9 +260,10 @@ export function HoldingDetailContent({ holdingId, mode = 'panel' }: HoldingDetai
 
       <Separator />
 
-      <NetWorthChart
+      <PortfolioCharts
         scope={{ kind: 'holding', id: holdingId }}
-        title={`${holding.token.symbol} value over time`}
+        netWorthTitle={`${holding.token.symbol} value over time`}
+        pnlTitle={`${holding.token.symbol} PnL over time`}
       />
 
       <Separator />

@@ -46,9 +46,15 @@ export {
 export { AssetAllocationService } from './portfolio/AssetAllocationService';
 export { DashboardService } from './portfolio/DashboardService';
 export {
+  type PnLAtTimePerHolding,
+  type PnLAtTimeResult,
+  PnLAtTimeService,
+} from './portfolio/PnLAtTimeService';
+export {
   PortfolioValuationAtTimeService,
   type PortfolioValueAtTimePerHolding,
   type PortfolioValueAtTimeResult,
+  type PortfolioValueScope,
 } from './portfolio/PortfolioValuationAtTimeService';
 export { PortfolioValuationService } from './portfolio/PortfolioValuationService';
 // pricing/
@@ -56,6 +62,11 @@ export {
   type BalanceAtTimeResult,
   BalanceAtTimeService,
 } from './pricing/BalanceAtTimeService';
+export {
+  type CostBasisAtTime,
+  CostBasisService,
+  type CostLot,
+} from './pricing/CostBasisService';
 export { CurrencyConverter } from './pricing/CurrencyConverter';
 export {
   type BackfillManyRequest,

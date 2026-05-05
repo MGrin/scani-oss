@@ -129,6 +129,37 @@ export class HoldingTransactionRepository extends BaseRepository<
 
   // Returns every tx for a given holding in (from, to] ordered by time.
   // Used by BalanceAtTimeService.getBalance to walk backward from an anchor.
+  // All transactions for a holding occurring on or before `until`,
+  // chronologically ordered. The cost-basis FIFO walker reads this
+  // (the `from` parameter on findForHoldingInRange is `gt`-exclusive,
+  // which would skip a tx at exactly the lower bound).
+  async findForHoldingUpTo(
+    holdingId: string,
+    until: Date,
+    transaction?: DatabaseTransaction
+  ): Promise<HoldingTransaction[]> {
+    try {
+      const database = this.getDb(transaction);
+      const results = await database
+        .select()
+        .from(schema.holdingTransactions)
+        .where(
+          and(
+            eq(schema.holdingTransactions.holdingId, holdingId),
+            lte(schema.holdingTransactions.occurredAt, until)
+          )
+        )
+        .orderBy(asc(schema.holdingTransactions.occurredAt));
+      return results as HoldingTransaction[];
+    } catch (error) {
+      this.logger.error(
+        { holdingId, until, error: error instanceof Error ? error.message : error },
+        'Failed to find transactions for holding up to date'
+      );
+      throw error;
+    }
+  }
+
   async findForHoldingInRange(
     holdingId: string,
     from: Date,

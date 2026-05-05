@@ -15,6 +15,13 @@
       "when": 1777999999999,
       "tag": "0001_per_scope_portfolio_value",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1778000099999,
+      "tag": "0002_pnl_columns",
+      "breakpoints": true
     }
   ]
 }

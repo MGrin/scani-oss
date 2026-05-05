@@ -36,6 +36,15 @@ export const portfolioValueDaily = pgTable(
     coverageQuality: text('coverage_quality').notNull(),
     holdingsWithKnownValue: integer('holdings_with_known_value').notNull(),
     holdingsTotal: integer('holdings_total').notNull(),
+    // PnL columns: nullable until the rollup runs (back-compat with
+    // pre-C3 rows). cost_basis is the sum of remaining open lots'
+    // cost in the row's base currency (FX-converted at purchase
+    // time). realized_pnl is cumulative gain/loss from closed
+    // positions up to snapshot_date. unrealized_pnl =
+    // total_value - cost_basis. All decimal strings.
+    costBasis: text('cost_basis'),
+    realizedPnl: text('realized_pnl'),
+    unrealizedPnl: text('unrealized_pnl'),
     computedAt: timestamp('computed_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => ({
