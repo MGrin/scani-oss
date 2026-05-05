@@ -132,6 +132,32 @@ export class PortfolioValueDailyRepository {
     }
   }
 
+  // Most recent snapshot the rollup has *any* row for, regardless of
+  // base currency. Used by the tx-import path to size `lookbackDays`
+  // adaptively — most days, the gap is 0–1, so we don't recompute a
+  // full year of history on every transaction-import.
+  async findLatestSnapshotDate(
+    userId: string,
+    transaction?: DatabaseTransaction
+  ): Promise<string | null> {
+    try {
+      const db = this.getDb(transaction);
+      const results = await db
+        .select({ snapshotDate: schema.portfolioValueDaily.snapshotDate })
+        .from(schema.portfolioValueDaily)
+        .where(eq(schema.portfolioValueDaily.userId, userId))
+        .orderBy(desc(schema.portfolioValueDaily.snapshotDate))
+        .limit(1);
+      return results[0]?.snapshotDate ?? null;
+    } catch (error) {
+      this.logger.error(
+        { userId, error: error instanceof Error ? error.message : error },
+        'Failed to find latest portfolio_value_daily snapshot date'
+      );
+      throw error;
+    }
+  }
+
   async upsert(
     row: NewPortfolioValueDaily,
     transaction?: DatabaseTransaction

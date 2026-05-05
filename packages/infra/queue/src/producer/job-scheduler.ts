@@ -22,6 +22,14 @@ export class JobScheduler {
     const wantedKeys = new Set(descriptors.map((d) => SCHEDULER_KEY_PREFIX + d.name));
 
     // Upsert every wanted schedule first.
+    //
+    // Default keep policy: 100 completed (count cap), 24 h failed (age
+    // cap). The previous absolute `removeOnFail: 500` produced
+    // pathological states — once 500 failures piled up (e.g. an
+    // every-minute reconciler crashing for ~6 h after a botched
+    // deploy), the failed set silently truncated and lost the older
+    // records. Age-based capping self-heals without ever deleting
+    // recent failures.
     for (const d of descriptors) {
       await queue.upsertJobScheduler(
         SCHEDULER_KEY_PREFIX + d.name,
@@ -29,7 +37,10 @@ export class JobScheduler {
         {
           name: d.name,
           data: {},
-          opts: d.defaultOpts ?? { removeOnComplete: 100, removeOnFail: 500 },
+          opts: d.defaultOpts ?? {
+            removeOnComplete: 100,
+            removeOnFail: { age: 24 * 60 * 60 },
+          },
         }
       );
       log.info({ name: d.name, pattern: d.cron, tz: d.timezone ?? 'UTC' }, '📅 Scheduled');

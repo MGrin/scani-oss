@@ -34,20 +34,23 @@ type ElysiaLike = { server?: { publish: (topic: string, payload: string) => any 
 
 @Service()
 export class WebSocketRealtimeUpdatesService extends RealtimeUpdatesService {
+  // The transport guard used to live in the constructor but typedi's
+  // class-field DI lazily constructs services on first Container.get,
+  // and that timing isn't deterministic relative to env loading. The
+  // old guard fired ~50 spurious Sentry events on backend boot
+  // (SERVICE_NAME='<unset>' even though fly.toml set it). The check
+  // is now in the api-only entry points (setElysiaApp / initialize /
+  // pipeFromRedis); construction itself is inert.
   private clients = new Map<string, ClientConnection>();
   private userConnections = new Map<string, Set<string>>();
   private heartbeat: NodeJS.Timeout | null = null;
   private elysiaApp: ElysiaLike = null;
 
-  constructor() {
-    super();
-    // The WS transport piggy-backs on the api's HTTP server; instantiating
-    // it from any other process is almost certainly a wiring mistake.
+  private assertInBackend(method: string): void {
     if (process.env.SERVICE_NAME !== REQUIRED_SERVICE_NAME) {
       throw new Error(
-        `WebSocketRealtimeUpdatesService can only run in '${REQUIRED_SERVICE_NAME}', ` +
-          `got SERVICE_NAME='${process.env.SERVICE_NAME ?? '<unset>'}'. ` +
-          `Use RedisRealtimeUpdatesService for cross-process broadcasts.`
+        `WebSocketRealtimeUpdatesService.${method}() called in SERVICE_NAME='${process.env.SERVICE_NAME ?? '<unset>'}' ` +
+          `(expected '${REQUIRED_SERVICE_NAME}'). Use RedisRealtimeUpdatesService for cross-process broadcasts.`
       );
     }
   }
@@ -55,10 +58,12 @@ export class WebSocketRealtimeUpdatesService extends RealtimeUpdatesService {
   // Accept anything that exposes `server.publish` — typically an Elysia
   // instance, but the package doesn't depend on Elysia's types.
   setElysiaApp(app: unknown): void {
+    this.assertInBackend('setElysiaApp');
     this.elysiaApp = app as ElysiaLike;
   }
 
   initialize(): void {
+    this.assertInBackend('initialize');
     if (this.heartbeat) return;
     this.heartbeat = setInterval(() => this.cleanupStaleConnections(), HEARTBEAT_INTERVAL_MS);
   }
@@ -77,6 +82,7 @@ export class WebSocketRealtimeUpdatesService extends RealtimeUpdatesService {
   // payloads to local WS clients. This is the fan-in side that lets a
   // worker (or another api machine) reach this machine's WS subscribers.
   pipeFromRedis(subscriber: Redis): void {
+    this.assertInBackend('pipeFromRedis');
     void subscriber.psubscribe(REDIS_CHANNEL_PATTERN, (err) => {
       if (err) {
         log.error(

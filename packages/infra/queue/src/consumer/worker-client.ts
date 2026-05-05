@@ -126,6 +126,13 @@ export class WorkerClient {
 
       // DLQ push — generic infra; preserves the failure for later replay
       // even after BullMQ's removeOnFail truncates the original.
+      //
+      // 14-day age cap on both completed + failed: prod hit a 1671-row
+      // DLQ in two weeks under `removeOnComplete:false, removeOnFail:false`
+      // (one busted reconciler firing every minute), which made the
+      // admin UI unusable and saturated Upstash storage. The DLQ is for
+      // post-mortem of recent failures, not historical archival — older
+      // entries are noise.
       if (this.dlq) {
         try {
           await this.dlq.add(
@@ -139,7 +146,10 @@ export class WorkerClient {
               attemptsMade: job.attemptsMade,
               timestamp: Date.now(),
             },
-            { removeOnComplete: false, removeOnFail: false }
+            {
+              removeOnComplete: { age: 14 * 24 * 60 * 60 },
+              removeOnFail: { age: 14 * 24 * 60 * 60 },
+            }
           );
           log.warn({ jobId: job.id, name: job.name }, '☠️ Job pushed to DLQ');
         } catch (dlqErr) {

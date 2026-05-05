@@ -18,11 +18,10 @@ import { Container, Service } from 'typedi';
 
 const logger = createComponentLogger('processor:exchange-import');
 
-// Coalesce concurrent backfill triggers within a 30s window so a flurry
-// of user-initiated imports collapses to one job (matches the value used
-// in the transaction-import processor; both feed the same per-user
-// advisory lock inside PortfolioHistoryBackfillProcessor).
-const BACKFILL_COALESCE_WINDOW_MS = 30_000;
+// 5 minutes — see ingest-transactions.ts for the rationale (an import
+// wave easily spans more than 30s; the coarser bucket collapses the
+// session to a single backfill).
+const BACKFILL_COALESCE_WINDOW_MS = 5 * 60_000;
 
 // Pick a stable `source` tag for an exchange provider. These match the
 // `readonly source = '…'` fields on the CEX TransactionIngester classes.

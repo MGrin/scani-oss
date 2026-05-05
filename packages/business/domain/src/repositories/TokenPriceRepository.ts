@@ -306,6 +306,68 @@ export class TokenPriceRepository extends BaseRepository<TokenPrice, NewTokenPri
   // 'tx-exact' when pricing a known trade, or 'daily' when rendering a
   // chart, while still allowing fallthrough to other granularities when
   // the preferred one is missing.
+  // Bulk fetch every price row for the given (tokenId, baseTokenId)
+  // pairs whose timestamp is on or before `until`. One query, one
+  // round-trip — used by the rollup hot-path to replace 80k+
+  // per-(day, holding) lookups with one prefetch.
+  //
+  // The pair set is folded into a single WHERE using a tuple-IN
+  // expression: `(token_id, base_token_id) IN ((t1,b1), (t2,b2), …)`.
+  // Postgres treats it as an indexable equality on the composite, so
+  // even with ~500 pairs the planner walks the existing
+  // `idx_token_prices_lookup (token_id, base_token_id, timestamp DESC)`
+  // index per pair and concatenates results.
+  async findManyForPairsUpTo(
+    pairs: ReadonlyArray<{ tokenId: string; baseTokenId: string }>,
+    until: Date,
+    transaction?: DatabaseTransaction
+  ): Promise<TokenPrice[]> {
+    if (pairs.length === 0) return [];
+    try {
+      const database = this.getDb(transaction);
+      // Dedup pairs to avoid the planner doing useless duplicate scans.
+      const seen = new Set<string>();
+      const unique: Array<{ tokenId: string; baseTokenId: string }> = [];
+      for (const p of pairs) {
+        const k = `${p.tokenId}|${p.baseTokenId}`;
+        if (seen.has(k)) continue;
+        seen.add(k);
+        unique.push(p);
+      }
+      const tokenIds = unique.map((p) => p.tokenId);
+      const baseIds = unique.map((p) => p.baseTokenId);
+      // Use ANY($1::uuid[]) for both columns and filter in memory by
+      // pair set — this is N+M queries collapsed to 1 with a small
+      // post-filter, far simpler than the SQL tuple-IN dance and
+      // hits the same composite index plan.
+      const rows = await database
+        .select()
+        .from(schema.tokenPrices)
+        .where(
+          and(
+            inArray(schema.tokenPrices.tokenId, tokenIds),
+            inArray(schema.tokenPrices.baseTokenId, baseIds),
+            lte(schema.tokenPrices.timestamp, until)
+          )
+        )
+        .orderBy(
+          asc(schema.tokenPrices.tokenId),
+          asc(schema.tokenPrices.baseTokenId),
+          desc(schema.tokenPrices.timestamp)
+        );
+      // Strip rows that don't match a wanted pair (the cross-product
+      // expansion can include unwanted (tokenA, baseB) combinations).
+      const wanted = new Set(unique.map((p) => `${p.tokenId}|${p.baseTokenId}`));
+      return rows.filter((r) => wanted.has(`${r.tokenId}|${r.baseTokenId}`));
+    } catch (error) {
+      this.logger.error(
+        { pairCount: pairs.length, until, error },
+        'Failed to bulk fetch prices for pairs'
+      );
+      throw error;
+    }
+  }
+
   async findClosestPriceByGranularity(
     tokenId: string,
     baseTokenId: string,

@@ -1,6 +1,7 @@
 import type { NewToken, Token, TokenMetadata } from '@scani/db/schema';
 import type { DatabaseTransaction } from '@scani/db/transaction';
 import { ProviderRegistry } from '@scani/providers/core/registry';
+import { isFiatCode } from '@scani/providers/core/utils/fiat-codes';
 import { Container, Service } from 'typedi';
 import { TokenTypeRepository } from '../../repositories/EnumRepositories';
 import { TokenRepository } from '../../repositories/TokenRepository';
@@ -67,6 +68,27 @@ export class TokenIdentityService extends BaseService {
     const symbol = partial.symbol.toUpperCase();
     const inboundMetadata = (partial.providerMetadata ?? {}) as TokenMetadata;
 
+    // Fiat ISO-4217 invariant. The Kraken transaction-import path used
+    // to default `typeId` to the crypto type id whenever a transaction
+    // event didn't carry one, which led to USD/EUR/GBP/CHF being
+    // duplicated as crypto-typed tokens (one row per fiat for every
+    // user with a Kraken account). Pricing then routed those rows
+    // through Finnhub/CoinGecko, which either 403'd or returned a
+    // scam-token quote. Any token whose symbol matches the canonical
+    // fiat ISO-4217 set MUST be type=fiat — fail-loud override.
+    let effectiveTypeId = partial.typeId;
+    if (isFiatCode(symbol)) {
+      const fiatType = await this.tokenTypeRepository.findByCode('fiat', transaction);
+      if (fiatType && fiatType.id !== partial.typeId) {
+        this.logDebug('Fiat ISO-4217 invariant: forcing typeId=fiat for fiat-coded symbol', {
+          symbol,
+          suppliedTypeId: partial.typeId,
+          fiatTypeId: fiatType.id,
+        });
+        effectiveTypeId = fiatType.id;
+      }
+    }
+
     // 1. EVM contract lookup — most precise identity. Far stronger
     //    fingerprint than `(symbol, typeId)` for ERC-20s; multiple
     //    chains can have a `USDC` token but only one has the
@@ -103,7 +125,7 @@ export class TokenIdentityService extends BaseService {
     //    stocks) marketSegment stays null and behaves as before.
     const byTuple = await this.tokenRepository.findByIdentityTuple(
       symbol,
-      partial.typeId,
+      effectiveTypeId,
       marketSegment,
       transaction
     );
@@ -160,7 +182,7 @@ export class TokenIdentityService extends BaseService {
     //    Symbol/name heuristics drive the score at create time;
     //    price-volatility detection runs later when a price arrives.
     let scamProbability = 0;
-    const tokenType = await this.tokenTypeRepository.findById(partial.typeId, transaction);
+    const tokenType = await this.tokenTypeRepository.findById(effectiveTypeId, transaction);
     if (tokenType?.code === 'crypto') {
       scamProbability = this.scamDetectionService.calculateScamProbability(
         symbol,
@@ -174,7 +196,7 @@ export class TokenIdentityService extends BaseService {
       {
         symbol,
         name: partial.name ?? symbol,
-        typeId: partial.typeId,
+        typeId: effectiveTypeId,
         decimals: partial.decimals ?? 18,
         marketSegment,
         iconUrl: partial.iconUrl ?? null,

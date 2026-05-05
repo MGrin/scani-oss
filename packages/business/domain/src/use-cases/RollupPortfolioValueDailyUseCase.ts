@@ -19,8 +19,12 @@ import * as schema from '@scani/db/schema';
 import { createComponentLogger } from '@scani/logging';
 import { and, eq, sql } from 'drizzle-orm';
 import { Container, Service } from 'typedi';
+import { HoldingRepository } from '../repositories/HoldingRepository';
 import { PortfolioValueDailyRepository } from '../repositories/PortfolioValueDailyRepository';
+import { TokenPriceRepository } from '../repositories/TokenPriceRepository';
+import { TokenRepository } from '../repositories/TokenRepository';
 import { PortfolioValuationAtTimeService } from '../services';
+import { PriceLookup } from '../services/pricing/PriceLookup';
 
 const logger = createComponentLogger('use-case:rollup-portfolio-value-daily');
 
@@ -41,6 +45,11 @@ export interface RollupSummary {
   durationMs: number;
 }
 
+// Hub symbols PriceGraphService walks when no direct edge exists.
+// Mirrored here so the prefetch knows which (token, hub) pairs to
+// preload — keep in sync with PriceGraphService.resolveHubTokenIds.
+const PRICE_HUB_SYMBOLS = ['USD', 'USDT', 'EUR'] as const;
+
 @Service()
 export class RollupPortfolioValueDailyUseCase {
   // Class-field DI — see note in BalanceAtTimeService.ts. Previously
@@ -49,6 +58,9 @@ export class RollupPortfolioValueDailyUseCase {
   // lacks reflect-metadata emit.
   private readonly valuationService = Container.get(PortfolioValuationAtTimeService);
   private readonly dailyRepository = Container.get(PortfolioValueDailyRepository);
+  private readonly holdingRepository = Container.get(HoldingRepository);
+  private readonly tokenPriceRepository = Container.get(TokenPriceRepository);
+  private readonly tokenRepository = Container.get(TokenRepository);
 
   // Compute rollup rows for every active user for every day in
   // `lookbackDays` that isn't already cached. Defaults to 30 days
@@ -126,12 +138,20 @@ export class RollupPortfolioValueDailyUseCase {
           // on a redeploy, …). Lock-held users are skipped — the holder
           // is producing fresh rows; we'll catch this user the next tick.
           const outcome = await withAdvisoryLock(rollupLockKey(user.id), async () => {
+            // Prefetch all the prices the inner per-(day, holding)
+            // loop is about to ask for — single query instead of
+            // ~80k. Falls through silently to the per-call DB path
+            // for any pair the prefetch missed (defensive; should be
+            // a no-op in practice).
+            const priceLookup = await this.buildPriceLookup(user.id, baseCurrencyId, runStart);
+
             let daysForUser = 0;
             for (const { at, snapshotDate } of days) {
               const result = await this.valuationService.getPortfolioValue(
                 user.id,
                 at,
-                baseCurrencyId
+                baseCurrencyId,
+                { priceLookup }
               );
               await this.dailyRepository.upsert({
                 userId: user.id,
@@ -178,5 +198,55 @@ export class RollupPortfolioValueDailyUseCase {
     summary.durationMs = Date.now() - start;
     logger.info({ summary }, 'Portfolio value daily rollup complete');
     return summary;
+  }
+
+  // Build the per-user price index used by the inner per-(day, holding)
+  // loop. Pulls every row matching (heldToken | hub, base | hub, ts <=
+  // runStart) — this is the union of every (from, to) tuple
+  // PriceGraphService.tryDirect could ask for during the rollup pass.
+  private async buildPriceLookup(
+    userId: string,
+    baseCurrencyId: string,
+    until: Date
+  ): Promise<PriceLookup> {
+    const [holdings, hubIds] = await Promise.all([
+      this.holdingRepository.findByUser(userId),
+      this.resolveHubIds(),
+    ]);
+    const heldTokenIds = new Set(holdings.map((h) => h.tokenId));
+    const baseAndHubs = new Set<string>([baseCurrencyId, ...hubIds]);
+    // Pairs we'll query: every held token quoted in base + each hub,
+    // plus every reverse leg (base -> heldToken, hub -> heldToken)
+    // because PriceGraphService.tryDirect inverts when forward misses.
+    // Plus base ↔ hub legs for the multi-hop conversions.
+    const pairs: Array<{ tokenId: string; baseTokenId: string }> = [];
+    const pushPair = (a: string, b: string): void => {
+      if (a === b) return;
+      pairs.push({ tokenId: a, baseTokenId: b });
+    };
+    for (const t of heldTokenIds) {
+      for (const b of baseAndHubs) {
+        pushPair(t, b);
+        pushPair(b, t);
+      }
+    }
+    // Hub ↔ hub legs (incl base ↔ hub).
+    const hubArr = [...baseAndHubs];
+    for (const a of hubArr) {
+      for (const b of hubArr) {
+        pushPair(a, b);
+      }
+    }
+    const rows = await this.tokenPriceRepository.findManyForPairsUpTo(pairs, until);
+    return new PriceLookup(rows);
+  }
+
+  private async resolveHubIds(): Promise<string[]> {
+    const out: string[] = [];
+    for (const symbol of PRICE_HUB_SYMBOLS) {
+      const t = await this.tokenRepository.findBySymbol(symbol);
+      if (t) out.push(t.id);
+    }
+    return out;
   }
 }

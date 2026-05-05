@@ -1,6 +1,7 @@
-import { describe, expect, test } from 'bun:test';
+import { beforeEach, describe, expect, test } from 'bun:test';
 import type { OutflowRateLimiter } from '@scani/rate-limiter';
 import { SolanaProvider } from '../../src/providers/solana';
+import { __resetJupiterCacheForTests } from '../../src/providers/solana/jupiter';
 
 function passthroughLimiter(): OutflowRateLimiter {
   return {
@@ -19,6 +20,14 @@ const ctx = {
 };
 
 describe('SolanaProvider', () => {
+  // Per-test isolation: the Jupiter mint resolver caches results in a
+  // module-level Map for production efficiency. Tests that exercise
+  // fetchBalances / fetchTransactions need a fresh cache each run so
+  // mocks are re-invoked.
+  beforeEach(() => {
+    __resetJupiterCacheForTests();
+  });
+
   test('canFetchBalances / canValidate gate on solana', () => {
     const p = new SolanaProvider(passthroughLimiter(), 'http://rpc');
     expect(p.canFetchBalances('solana')).toBe(true);
@@ -32,13 +41,31 @@ describe('SolanaProvider', () => {
     expect(p.isValidAddress('short')).toBe(false);
   });
 
-  test('fetchBalances converts lamports to SOL and emits SPL holdings', async () => {
+  test('fetchBalances converts lamports to SOL and resolves SPL via Jupiter', async () => {
     const p = new SolanaProvider(passthroughLimiter(), 'http://rpc');
     const originalFetch = globalThis.fetch;
-    let calls = 0;
-    globalThis.fetch = (async (_url: string, init: RequestInit) => {
-      calls += 1;
-      const body = JSON.parse(init.body as string);
+    let rpcCalls = 0;
+    let jupiterCalls = 0;
+    globalThis.fetch = (async (url: string, init?: RequestInit) => {
+      const urlStr = url.toString();
+      // Jupiter resolver: GET request, no body
+      if (urlStr.includes('lite-api.jup.ag')) {
+        jupiterCalls += 1;
+        return new Response(
+          JSON.stringify([
+            {
+              id: 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v',
+              symbol: 'USDC',
+              name: 'USD Coin',
+              decimals: 6,
+              isVerified: true,
+            },
+          ]),
+          { status: 200 }
+        );
+      }
+      rpcCalls += 1;
+      const body = JSON.parse((init?.body as string) ?? '{}');
       if (body.method === 'getBalance') {
         return new Response(
           JSON.stringify({ jsonrpc: '2.0', id: 1, result: { value: 1_000_000_000 } }),
@@ -75,10 +102,15 @@ describe('SolanaProvider', () => {
     }) as typeof fetch;
     try {
       const out = await p.fetchBalances(ctx as never);
-      expect(calls).toBe(2);
+      expect(rpcCalls).toBe(2);
+      expect(jupiterCalls).toBe(1);
       const sol = out.find((h) => h.tokenIdentity.symbol === 'SOL');
       expect(sol?.balance).toBe('1');
       const spl = out.find((h) => h.externalId === 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v');
+      // Jupiter resolves the mint to USDC instead of the legacy
+      // first-8-chars-of-mint prefix.
+      expect(spl?.tokenIdentity.symbol).toBe('USDC');
+      expect(spl?.tokenIdentity.name).toBe('USD Coin');
       expect(spl?.balance).toBe('5');
     } finally {
       globalThis.fetch = originalFetch;
@@ -159,13 +191,20 @@ describe('SolanaProvider', () => {
     };
 
     const originalFetch = globalThis.fetch;
-    let calls = 0;
+    let heliusCalls = 0;
     const captured: string[] = [];
     globalThis.fetch = (async (url: string) => {
-      calls += 1;
-      captured.push(url);
+      const urlStr = url.toString();
+      // Jupiter mint resolver runs once per unique mint per page;
+      // returning [] means the mint stays as the legacy 8-char prefix
+      // and the existing `mint` assertions below still pass.
+      if (urlStr.includes('lite-api.jup.ag')) {
+        return new Response('[]', { status: 200 });
+      }
+      heliusCalls += 1;
+      captured.push(urlStr);
       // First page returns one tx; second page returns []
-      if (calls === 1) return new Response(JSON.stringify([tx]), { status: 200 });
+      if (heliusCalls === 1) return new Response(JSON.stringify([tx]), { status: 200 });
       return new Response('[]', { status: 200 });
     }) as typeof fetch;
 
@@ -173,7 +212,7 @@ describe('SolanaProvider', () => {
       const events = await p.fetchTransactions(ctx as never);
       // single page (length < HELIUS_PAGE_LIMIT) → loop exits without
       // a follow-up `before` page
-      expect(calls).toBe(1);
+      expect(heliusCalls).toBe(1);
       expect(captured[0]).toContain('https://api.helius.xyz/v0/addresses/');
       expect(captured[0]).toContain(`/${VALID_SOL}/transactions`);
       expect(captured[0]).toContain('api-key=test-key');

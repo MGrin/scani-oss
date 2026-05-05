@@ -48,6 +48,7 @@
     "./core/utils/exchange-suffix": "./src/core/utils/exchange-suffix.ts",
     "./core/utils/enforce-tx-sign": "./src/core/utils/enforce-tx-sign.ts",
     "./core/utils/symbol-splitter": "./src/core/utils/symbol-splitter.ts",
+    "./core/utils/fiat-codes": "./src/core/utils/fiat-codes.ts",
     "./providers/ai-openai": "./src/providers/ai-openai/index.ts"
   },
   "scripts": {

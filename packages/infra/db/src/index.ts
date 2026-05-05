@@ -31,4 +31,5 @@ export {
   startConnectionTracking,
 } from './connection-monitor';
 export * from './schema';
+export { awaitSchemaReady, type SchemaReadyOptions } from './schema-ready';
 export * from './transaction';

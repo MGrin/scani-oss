@@ -5,6 +5,7 @@ import { HoldingRepository } from '../../repositories/HoldingRepository';
 import { UserRepository } from '../../repositories/UserRepository';
 import { BalanceAtTimeService } from '../pricing/BalanceAtTimeService';
 import { PriceGraphService } from '../pricing/PriceGraphService';
+import type { PriceLookup } from '../pricing/PriceLookup';
 
 export interface PortfolioValueAtTimePerHolding {
   holdingId: string;
@@ -53,7 +54,8 @@ export class PortfolioValuationAtTimeService {
   async getPortfolioValue(
     userId: string,
     at: Date,
-    baseCurrencyId?: string
+    baseCurrencyId?: string,
+    opts: { priceLookup?: PriceLookup } = {}
   ): Promise<PortfolioValueAtTimeResult> {
     // Resolve display base. Fall back to user's configured base_currency_id
     // when caller didn't specify — mirrors the current dashboard convention.
@@ -135,7 +137,10 @@ export class PortfolioValuationAtTimeService {
         h.tokenId,
         effectiveBaseId,
         at,
-        isRecent ? {} : { preferGranularity: 'daily' }
+        {
+          ...(isRecent ? {} : { preferGranularity: 'daily' as const }),
+          ...(opts.priceLookup ? { priceLookup: opts.priceLookup } : {}),
+        }
       );
 
       if (!priced) {

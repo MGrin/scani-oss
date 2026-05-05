@@ -61,19 +61,39 @@ function stubSubscriber(): SubscriberStub {
 }
 
 describe('SERVICE_NAME guard', () => {
-  test('throws when SERVICE_NAME is unset', () => {
+  // The guard moved out of the constructor (typedi class-field DI
+  // races env loading and was firing ~50 spurious Sentry events on
+  // backend boot). The check now lives on the api-only entry points
+  // — construction itself is inert in any process.
+
+  test('construction is inert when SERVICE_NAME is unset', () => {
     delete process.env.SERVICE_NAME;
-    expect(() => new WebSocketRealtimeUpdatesService()).toThrow(/can only run in 'scani-backend'/);
-  });
-
-  test('throws when SERVICE_NAME is some other value', () => {
-    process.env.SERVICE_NAME = 'scani-worker';
-    expect(() => new WebSocketRealtimeUpdatesService()).toThrow(/SERVICE_NAME='scani-worker'/);
-  });
-
-  test('constructs cleanly when SERVICE_NAME=scani-backend', () => {
-    process.env.SERVICE_NAME = 'scani-backend';
     expect(() => new WebSocketRealtimeUpdatesService()).not.toThrow();
+  });
+
+  test('construction is inert when SERVICE_NAME is some other value', () => {
+    process.env.SERVICE_NAME = 'scani-worker';
+    expect(() => new WebSocketRealtimeUpdatesService()).not.toThrow();
+  });
+
+  test('setElysiaApp throws when SERVICE_NAME is wrong', () => {
+    process.env.SERVICE_NAME = 'scani-worker';
+    const svc = new WebSocketRealtimeUpdatesService();
+    expect(() => svc.setElysiaApp({})).toThrow(/scani-worker/);
+  });
+
+  test('initialize throws when SERVICE_NAME is unset', () => {
+    delete process.env.SERVICE_NAME;
+    const svc = new WebSocketRealtimeUpdatesService();
+    expect(() => svc.initialize()).toThrow(/<unset>/);
+  });
+
+  test('setElysiaApp + initialize succeed when SERVICE_NAME=scani-backend', () => {
+    process.env.SERVICE_NAME = 'scani-backend';
+    const svc = new WebSocketRealtimeUpdatesService();
+    expect(() => svc.setElysiaApp({})).not.toThrow();
+    expect(() => svc.initialize()).not.toThrow();
+    svc.shutdown();
   });
 });
 

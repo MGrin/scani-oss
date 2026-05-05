@@ -1,4 +1,5 @@
 import { TransactionImportCoordinator, TransactionImportUnrecoverableError } from '@scani/domain';
+import { PortfolioValueDailyRepository } from '@scani/domain/repositories';
 import {
   PORTFOLIO_HISTORY_BACKFILL,
   TRANSACTION_IMPORT,
@@ -13,12 +14,24 @@ import {
 import { emitEntityChange } from '@scani/realtime';
 import { Container, Service } from 'typedi';
 
-// Match the holdings router's coalesce — last tx-import in a wallet
-// import wave (typically 4 EVM accounts running ~30s each) ends up
-// enqueueing a single backfill that everyone falls behind on, since
-// concurrent ones dedupe to the same jobId and the per-user advisory
-// lock skips duplicates anyway.
-const ROLLUP_COALESCE_WINDOW_MS = 30_000;
+// 5 minutes: an import wave (4 EVM accounts × ~30s each + the kraken
+// /Ledgers paginator at ~2.2s/page × ~20 pages) easily spans more than
+// 30s. The previous 30s window meant every account-finish enqueued a
+// new full-history backfill jobId, all of which got de-duped
+// downstream — but only after each one had already paid the cost of
+// scheduling and crash-recovery bookkeeping. 5 min collapses an
+// import session to one backfill.
+const ROLLUP_COALESCE_WINDOW_MS = 5 * 60_000;
+
+// Safety pad on top of the gap-since-last-rollup, so a fresh
+// transaction whose date barely predates the last rollup row still
+// gets re-priced.
+const LOOKBACK_SAFETY_PAD_DAYS = 7;
+// Hard ceiling; a fresh user (no rollup rows yet) still backfills a
+// year by default. Worker can override via PORTFOLIO_HISTORY_LOOKBACK
+// env if the user wants longer history.
+const LOOKBACK_DEFAULT_DAYS = 365;
+const LOOKBACK_MIN_DAYS = 1;
 
 // Dispatches a single transaction-import to TransactionImportCoordinator,
 // then kicks off downstream price-backfill + portfolio-rollup so the
@@ -61,12 +74,13 @@ export class IngestTransactionsProcessor extends UserJobProcessor<TransactionImp
     // any concurrent runs.
     if (result.transactions > 0) {
       const bucket = Math.floor(Date.now() / ROLLUP_COALESCE_WINDOW_MS);
+      const lookbackDays = await computeLookbackDays(data.userId);
       try {
         await Container.get(BullMqEnqueueService).add(PORTFOLIO_HISTORY_BACKFILL, {
           userId: data.userId,
           requestId: `tx-import-${bucket}`,
           tokenIds: [],
-          lookbackDays: 365,
+          lookbackDays,
         });
       } catch (error) {
         result.warnings.push(
@@ -88,5 +102,27 @@ export class IngestTransactionsProcessor extends UserJobProcessor<TransactionImp
     }
 
     return result;
+  }
+}
+
+// Adaptive lookback. First-ever rollup for a user → full year. Steady
+// state → days-since-last-rollup + safety pad. This collapses the
+// post-import backfill from 365 days × 107 holdings × ~3 DB queries
+// (the 35h prod incident on 2026-05-02) down to ~1-7 days × … on
+// every subsequent tx-import.
+async function computeLookbackDays(userId: string): Promise<number> {
+  try {
+    const repo = Container.get(PortfolioValueDailyRepository);
+    const latest = await repo.findLatestSnapshotDate(userId);
+    if (!latest) return LOOKBACK_DEFAULT_DAYS;
+    const latestDate = new Date(`${latest}T00:00:00Z`);
+    const today = new Date();
+    const ageDays = Math.floor((today.getTime() - latestDate.getTime()) / (24 * 60 * 60 * 1000));
+    const adaptive = Math.max(ageDays + LOOKBACK_SAFETY_PAD_DAYS, LOOKBACK_MIN_DAYS);
+    return Math.min(adaptive, LOOKBACK_DEFAULT_DAYS);
+  } catch {
+    // If the lookup itself fails, fall back to the safe default rather
+    // than skipping the backfill.
+    return LOOKBACK_DEFAULT_DAYS;
   }
 }

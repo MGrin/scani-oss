@@ -201,6 +201,12 @@ export class FinnhubProvider implements HistoricalPriceProvider, TokenIdentityPr
    * Build the `finnhub.symbol` metadata entry from a partial token.
    * Cheap — no network call, just symbol normalization. The
    * `exchange` field is derived from the suffix when present.
+   *
+   * Skip chain-native tokens (Solana mints, EVM contracts, BTC UTXO
+   * tokens, etc.) — Finnhub indexes US-listed equities; stamping
+   * `finnhub.symbol = 'EPJFWDD5'` on a Solana SPL token both pollutes
+   * `provider_metadata` and burns Finnhub's free-tier quota on
+   * guaranteed-403 lookups during pricing.
    */
   async enrichTokenIdentity(
     partial: Partial<NewToken>,
@@ -208,6 +214,7 @@ export class FinnhubProvider implements HistoricalPriceProvider, TokenIdentityPr
   ): Promise<Partial<TokenMetadata> | null> {
     const meta = partial.providerMetadata as TokenMetadata | undefined;
     if (meta?.finnhub?.symbol && !opts?.force) return null;
+    if (isChainNativeToken(meta)) return null;
     const sym = partial.symbol;
     if (!sym) return null;
     const normalized = normalizeForFinnhubSymbol(sym);
@@ -374,6 +381,21 @@ export class FinnhubProvider implements HistoricalPriceProvider, TokenIdentityPr
       source: `${sourceTag}_converted`,
     };
   }
+}
+
+// True when the token already has metadata indicating it's a
+// chain-native asset (Solana mint, EVM contract, BTC UTXO, etc.).
+// These never have meaningful Finnhub representations — the equity
+// market doesn't index them.
+function isChainNativeToken(meta: TokenMetadata | undefined): boolean {
+  if (!meta) return false;
+  const m = meta as Record<string, unknown>;
+  if (m.solana && typeof m.solana === 'object') return true;
+  if (m.etherscan && typeof m.etherscan === 'object') return true;
+  if (m.bitcoin && typeof m.bitcoin === 'object') return true;
+  if (m.tron && typeof m.tron === 'object') return true;
+  if (m.ton && typeof m.ton === 'object') return true;
+  return false;
 }
 
 function pickClosestBar(bars: CandleBar[], targetSec: number): CandleBar | null {

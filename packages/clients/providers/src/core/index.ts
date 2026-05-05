@@ -14,3 +14,4 @@ export * from './registry';
 export * from './testing';
 export * from './types';
 export * from './utils/fetch';
+export * from './utils/fiat-codes';

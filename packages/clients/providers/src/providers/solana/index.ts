@@ -34,6 +34,7 @@ import type {
   WithUserCreds,
 } from '../../core/types';
 import { fetchWithTimeout } from '../../core/utils/fetch';
+import { resolveJupiterMint } from './jupiter';
 
 const SOL_INSTITUTION_CODE = 'solana';
 const LAMPORTS_PER_SOL = 1_000_000_000;
@@ -242,8 +243,13 @@ export class SolanaProvider
       }
       const page = (await response.json()) as HeliusEnhancedTx[];
       if (!Array.isArray(page) || page.length === 0) break;
+      // Pre-resolve every unique mint on this page in parallel, then
+      // pass the resolved Map into the synchronous event projection.
+      // Without this, projection would have to be async and serialize
+      // ~30 Jupiter lookups per tx.
+      const mintMap = await collectMintIdentities(page);
       for (const tx of page) {
-        events.push(...this.toTransactionEvents(tx, address));
+        events.push(...this.toTransactionEvents(tx, address, mintMap));
       }
       const last = page[page.length - 1];
       if (!last?.signature || page.length < HELIUS_PAGE_LIMIT) break;
@@ -319,28 +325,26 @@ export class SolanaProvider
     }
     const accounts = data.result?.value ?? [];
 
+    // Resolve every mint to its real symbol via Jupiter in parallel.
+    // The cache means subsequent syncs are free; the first sync of a
+    // wallet pays one HTTP round-trip per unique mint. Jupiter's lite
+    // endpoint is unauthenticated and tolerant of bursts.
+    const resolved = await Promise.all(
+      accounts.map(async (acct) => {
+        const info = acct.account.data.parsed.info;
+        const jup = await resolveJupiterMint(info.mint);
+        return { info, jup };
+      })
+    );
+
     const out: HoldingSnapshot[] = [];
-    for (const acct of accounts) {
-      const info = acct.account.data.parsed.info;
+    for (const { info, jup } of resolved) {
       const amount = info.tokenAmount.amount;
-      const decimals = info.tokenAmount.decimals;
+      const decimals = jup?.decimals ?? info.tokenAmount.decimals;
       const balance = new Decimal(amount).div(new Decimal(10).pow(decimals)).toString();
-      const tokenIdentity: Partial<NewToken> = {
-        symbol: info.mint.slice(0, 8).toUpperCase(),
-        name: `SPL ${info.mint.slice(0, 6)}`,
-        decimals,
-        providerMetadata: {
-          // Reuse etherscan namespace would be wrong (different chain
-          // semantics). SPL tokens get their own future namespace —
-          // for now record the mint under a generic provider key.
-          // The federated identity flow's CoinGecko/DeFiLlama
-          // probes can match on symbol when the token's well-known.
-          solana: { mint: info.mint },
-        },
-      };
       out.push({
         externalId: info.mint,
-        tokenIdentity,
+        tokenIdentity: splIdentity(info.mint, decimals, jup),
         balance,
         capturedAt: new Date(),
       });
@@ -381,7 +385,11 @@ export class SolanaProvider
     );
   }
 
-  private toTransactionEvents(tx: HeliusEnhancedTx, wallet: string): TransactionEvent[] {
+  private toTransactionEvents(
+    tx: HeliusEnhancedTx,
+    wallet: string,
+    mintMap: Map<string, Partial<NewToken>>
+  ): TransactionEvent[] {
     const events: TransactionEvent[] = [];
     const occurredAt = new Date(tx.timestamp * 1000);
 
@@ -412,7 +420,7 @@ export class SolanaProvider
       const t = tokenTransfers[i];
       if (!t) continue;
       const qty = new Decimal(t.tokenAmount);
-      const tokenId = mintIdentity(t.mint, t.decimals);
+      const tokenId = lookupMintIdentity(mintMap, t.mint, t.decimals);
       if (t.fromUserAccount === wallet) {
         events.push({
           externalId: `${tx.signature}-token-${i}`,
@@ -432,7 +440,7 @@ export class SolanaProvider
 
     const swap = tx.events?.swap;
     if (swap) {
-      const outLeg = pickSwapLeg(swap, wallet, 'out');
+      const outLeg = pickSwapLeg(swap, wallet, 'out', mintMap);
       if (outLeg) {
         events.push({
           externalId: `${tx.signature}-swap-0`,
@@ -444,7 +452,7 @@ export class SolanaProvider
           },
         });
       }
-      const inLeg = pickSwapLeg(swap, wallet, 'in');
+      const inLeg = pickSwapLeg(swap, wallet, 'in', mintMap);
       if (inLeg) {
         events.push({
           externalId: `${tx.signature}-swap-1`,
@@ -471,21 +479,79 @@ function solIdentity(): Partial<NewToken> {
   };
 }
 
-function mintIdentity(mint: string, decimals?: number): Partial<NewToken> {
+// Build a Partial<NewToken> for an SPL mint. Jupiter's metadata is
+// preferred when present; the mint-prefix fallback only fires when
+// Jupiter has no record of the mint (brand-new launches, scam tokens
+// outside the verified set, or a Jupiter outage during the sync).
+function splIdentity(
+  mint: string,
+  decimals: number,
+  jup: { symbol: string; name: string; decimals: number; isVerified: boolean } | null
+): Partial<NewToken> {
+  if (jup) {
+    return {
+      symbol: jup.symbol,
+      name: jup.name,
+      decimals: jup.decimals,
+      providerMetadata: {
+        solana: { mint },
+      },
+    };
+  }
   return {
     symbol: mint.slice(0, 8).toUpperCase(),
     name: `SPL ${mint.slice(0, 6)}`,
-    decimals: decimals ?? 0,
+    decimals,
     providerMetadata: {
       solana: { mint },
     },
   };
 }
 
+// Pre-resolve all unique mints on a page of Helius txs so the
+// synchronous projection function can look them up without awaiting.
+// Concurrent Jupiter lookups; per-mint cache means subsequent pages
+// touching the same mint are free.
+async function collectMintIdentities(
+  txs: HeliusEnhancedTx[]
+): Promise<Map<string, Partial<NewToken>>> {
+  const mints = new Set<string>();
+  for (const tx of txs) {
+    for (const t of tx.tokenTransfers ?? []) {
+      if (t.mint) mints.add(t.mint);
+    }
+    const swap = tx.events?.swap;
+    if (swap) {
+      for (const leg of swap.tokenInputs ?? []) if (leg.mint) mints.add(leg.mint);
+      for (const leg of swap.tokenOutputs ?? []) if (leg.mint) mints.add(leg.mint);
+    }
+  }
+  const entries = await Promise.all(
+    Array.from(mints).map(async (mint) => {
+      const jup = await resolveJupiterMint(mint);
+      return [mint, splIdentity(mint, jup?.decimals ?? 0, jup)] as const;
+    })
+  );
+  return new Map(entries);
+}
+
+function lookupMintIdentity(
+  mintMap: Map<string, Partial<NewToken>>,
+  mint: string,
+  decimalsHint?: number
+): Partial<NewToken> {
+  const cached = mintMap.get(mint);
+  if (cached) return cached;
+  // Fallback when the mint wasn't pre-resolved (defensive — should not
+  // happen because collectMintIdentities scans every tx).
+  return splIdentity(mint, decimalsHint ?? 0, null);
+}
+
 function pickSwapLeg(
   swap: HeliusSwapEvent,
   wallet: string,
-  direction: 'in' | 'out'
+  direction: 'in' | 'out',
+  mintMap: Map<string, Partial<NewToken>>
 ): { tokenIdentity: Partial<NewToken>; quantity: Decimal } | null {
   const nativeLeg = direction === 'out' ? swap.nativeInput : swap.nativeOutput;
   if (nativeLeg && nativeLeg.account === wallet) {
@@ -502,7 +568,7 @@ function pickSwapLeg(
     if (!raw) continue;
     const qty = new Decimal(raw.tokenAmount).div(new Decimal(10).pow(raw.decimals));
     return {
-      tokenIdentity: mintIdentity(leg.mint, raw.decimals),
+      tokenIdentity: lookupMintIdentity(mintMap, leg.mint, raw.decimals),
       quantity: qty,
     };
   }

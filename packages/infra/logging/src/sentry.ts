@@ -2,6 +2,25 @@ import * as Sentry from '@sentry/node';
 
 let initialized = false;
 
+// Bot scans for `/.env`, `/.git/config`, `/favicon.ico`, etc. land on
+// every public host. Sentry recorded ~50 such NOT_FOUND events across
+// backend + data-provider in 2 weeks, drowning real errors. Drop them
+// before they reach Sentry — they are background internet noise, not
+// application bugs.
+const BOT_SCAN_PATH =
+  /\/(\.env|\.git|favicon|\.aws|\.well-known|wp-|wordpress|admin\.php|phpmyadmin)/i;
+
+function isBotScanEvent(event: Sentry.Event): boolean {
+  const url = event.request?.url || (event.tags as Record<string, string> | undefined)?.url || '';
+  if (!url) return false;
+  try {
+    const path = url.startsWith('http') ? new URL(url).pathname : url;
+    return BOT_SCAN_PATH.test(path);
+  } catch {
+    return BOT_SCAN_PATH.test(url);
+  }
+}
+
 export function initSentry(opts: {
   component?: 'backend' | 'worker' | 'data-provider';
   release?: string;
@@ -15,6 +34,10 @@ export function initSentry(opts: {
     tracesSampleRate: 0.1,
     initialScope: opts.component ? { tags: { component: opts.component } } : undefined,
     integrations: (defaults) => defaults,
+    beforeSend(event) {
+      if (isBotScanEvent(event)) return null;
+      return event;
+    },
   });
   initialized = true;
 }

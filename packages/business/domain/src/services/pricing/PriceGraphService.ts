@@ -4,6 +4,7 @@ import Decimal from 'decimal.js';
 import { Container, Service } from 'typedi';
 import { TokenPriceRepository } from '../../repositories/TokenPriceRepository';
 import { TokenRepository } from '../../repositories/TokenRepository';
+import type { PriceLookup } from './PriceLookup';
 
 export interface PriceGraphConversion {
   // The resulting amount, already denominated in toTokenId.
@@ -27,6 +28,11 @@ export interface PriceGraphOptions {
   // Max path depth. 1 = direct only. 2 = allow one hub (recommended).
   // 3 = allow two hubs; rarely useful, costs extra lookups.
   maxDepth?: 1 | 2 | 3;
+  // Optional pre-fetched price index. When set, tryDirect reads from
+  // the in-memory dataset instead of the DB; falls back to the repo
+  // only for pairs the lookup didn't preload (defensive). Used by the
+  // rollup hot-path to avoid 80k DB round-trips per backfill.
+  priceLookup?: PriceLookup;
 }
 
 // Conversion token-to-token across time via the price graph implied by
@@ -71,9 +77,10 @@ export class PriceGraphService {
 
     const prefer = options.preferGranularity ?? null;
     const maxDepth = options.maxDepth ?? 2;
+    const lookup = options.priceLookup ?? null;
 
     // Depth 1 — direct.
-    const direct = await this.tryDirect(fromTokenId, toTokenId, at, prefer);
+    const direct = await this.tryDirect(fromTokenId, toTokenId, at, prefer, lookup);
     if (direct) {
       return {
         amount: amt.mul(direct.rate),
@@ -94,9 +101,9 @@ export class PriceGraphService {
     const hubIds = [...new Set(await this.resolveHubTokenIds(options.hubSymbols))];
     for (const hubId of hubIds) {
       if (hubId === fromTokenId || hubId === toTokenId) continue;
-      const legA = await this.tryDirect(fromTokenId, hubId, at, prefer);
+      const legA = await this.tryDirect(fromTokenId, hubId, at, prefer, lookup);
       if (!legA) continue;
-      const legB = await this.tryDirect(hubId, toTokenId, at, prefer);
+      const legB = await this.tryDirect(hubId, toTokenId, at, prefer, lookup);
       if (!legB) continue;
       const rate = legA.rate.mul(legB.rate);
       // "Binding" leg is whichever has the older (more stale) timestamp —
@@ -117,14 +124,14 @@ export class PriceGraphService {
     // avoid blowup.
     for (const hubA of hubIds) {
       if (hubA === fromTokenId || hubA === toTokenId) continue;
-      const legA = await this.tryDirect(fromTokenId, hubA, at, prefer);
+      const legA = await this.tryDirect(fromTokenId, hubA, at, prefer, lookup);
       if (!legA) continue;
       for (const hubB of hubIds) {
         if (hubB === hubA) continue;
         if (hubB === fromTokenId || hubB === toTokenId) continue;
-        const legB = await this.tryDirect(hubA, hubB, at, prefer);
+        const legB = await this.tryDirect(hubA, hubB, at, prefer, lookup);
         if (!legB) continue;
-        const legC = await this.tryDirect(hubB, toTokenId, at, prefer);
+        const legC = await this.tryDirect(hubB, toTokenId, at, prefer, lookup);
         if (!legC) continue;
         const rate = legA.rate.mul(legB.rate).mul(legC.rate);
         const effectiveAt = [legA.at, legB.at, legC.at].reduce((a, b) => (a < b ? a : b));
@@ -146,28 +153,34 @@ export class PriceGraphService {
 
   // Try a direct edge between two tokens. Uses the forward price if
   // available; otherwise inverts a reverse price. Returns null when
-  // neither exists.
+  // neither exists. When a `priceLookup` is supplied (rollup hot-path
+  // only), reads from the in-memory index instead of the DB.
   private async tryDirect(
     fromTokenId: string,
     toTokenId: string,
     at: Date,
-    prefer: TokenPriceGranularity | null
+    prefer: TokenPriceGranularity | null,
+    lookup: PriceLookup | null
   ): Promise<{ rate: Decimal; at: Date } | null> {
-    const forward = await this.tokenPriceRepository.findClosestPriceByGranularity(
-      fromTokenId,
-      toTokenId,
-      at,
-      prefer
-    );
+    const forward = lookup
+      ? lookup.findClosestByGranularity(fromTokenId, toTokenId, at, prefer)
+      : await this.tokenPriceRepository.findClosestPriceByGranularity(
+          fromTokenId,
+          toTokenId,
+          at,
+          prefer
+        );
     if (forward) {
       return { rate: new Decimal(forward.price), at: forward.timestamp };
     }
-    const reverse = await this.tokenPriceRepository.findClosestPriceByGranularity(
-      toTokenId,
-      fromTokenId,
-      at,
-      prefer
-    );
+    const reverse = lookup
+      ? lookup.findClosestByGranularity(toTokenId, fromTokenId, at, prefer)
+      : await this.tokenPriceRepository.findClosestPriceByGranularity(
+          toTokenId,
+          fromTokenId,
+          at,
+          prefer
+        );
     if (reverse) {
       const rp = new Decimal(reverse.price);
       if (rp.isZero()) return null;

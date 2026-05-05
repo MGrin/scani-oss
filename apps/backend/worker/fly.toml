@@ -15,9 +15,13 @@ primary_region = "sin"
 
 [[vm]]
   size     = "shared-cpu-1x"
-  memory   = "512mb"
+  memory   = "1024mb"
   cpu_kind = "shared"
   cpus     = 1
+  # 512MB was tight for the Bun monolith (typedi + Drizzle + every
+  # provider + BullMQ); the 35h portfolio-history-backfill on May 2-3
+  # was a plausible OOM trigger. 1024MB gives headroom without going
+  # to performance-class cpus.
 
 [deploy]
   strategy = "immediate"

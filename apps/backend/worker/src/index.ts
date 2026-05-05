@@ -13,7 +13,7 @@ import '@scani/domain/services';
 // Import @scani/jobs so its @Service-decorated mirrors + lock register against
 // the framework's tokens BEFORE WorkerClient.start resolves them.
 import '@scani/jobs';
-import { db } from '@scani/db';
+import { awaitSchemaReady, db } from '@scani/db';
 import { SCHEDULED_JOB_DESCRIPTORS } from '@scani/jobs';
 import { createComponentLogger } from '@scani/logging';
 import { flushSentry, initSentry, captureException as sentryCapture } from '@scani/logging/sentry';
@@ -252,6 +252,16 @@ async function main(): Promise<void> {
   for (const processor of resolveProcessors()) {
     workerClient.register(processor);
   }
+
+  // Block scheduler registration until the canary tables are visible.
+  // CI's migrate job runs before this deploy step, but Neon's
+  // autoscaling-from-zero compute can lag — so the worker would fire
+  // its * * * * * reconcilers against an empty schema and pile up DLQ
+  // entries. Polling for to_regclass(...) waits for the migration to
+  // become visible without needing migration files in the binary.
+  logger.info({}, '⏳ Awaiting schema readiness before scheduler registration');
+  await awaitSchemaReady();
+  logger.info({}, '✅ Schema ready');
 
   // Reconcile repeatable schedules (upsert wanted, remove orphans).
   // Without orphan removal, deleted descriptors keep firing forever.
