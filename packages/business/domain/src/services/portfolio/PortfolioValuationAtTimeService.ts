@@ -81,7 +81,19 @@ export class PortfolioValuationAtTimeService {
     // Pull all of the user's holdings. We value each against `at` regardless
     // of its current visibility flags — the history chart shouldn't change
     // retroactively when a holding is later hidden.
-    const holdings = await this.holdingRepository.findByUser(userId);
+    const allHoldings = await this.holdingRepository.findByUser(userId);
+
+    // Exclude holdings that didn't exist on the snapshot date. A
+    // manual / screenshot holding created today shouldn't pad
+    // `holdings_total` for past dates — that distorts the
+    // `holdings_with_known_value / holdings_total` ratio and pushes
+    // the coverage_quality badge into 'estimated' / 'unknown' for
+    // dates where every holding that DID exist was priced just fine.
+    // BalanceAtTimeService still propagates the current balance
+    // backward via the "holdings current" anchor for holdings whose
+    // first activity was after `at`; we explicitly skip those here so
+    // they neither contribute value nor inflate the denominator.
+    const holdings = allHoldings.filter((h) => h.createdAt.getTime() <= at.getTime());
 
     const perHolding: PortfolioValueAtTimePerHolding[] = [];
     let total = new Decimal(0);

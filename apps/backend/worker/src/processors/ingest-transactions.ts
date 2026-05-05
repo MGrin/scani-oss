@@ -1,5 +1,5 @@
 import { TransactionImportCoordinator, TransactionImportUnrecoverableError } from '@scani/domain';
-import { PortfolioValueDailyRepository } from '@scani/domain/repositories';
+import { HoldingRepository, PortfolioValueDailyRepository } from '@scani/domain/repositories';
 import {
   PORTFOLIO_HISTORY_BACKFILL,
   TRANSACTION_IMPORT,
@@ -110,14 +110,36 @@ export class IngestTransactionsProcessor extends UserJobProcessor<TransactionImp
 // post-import backfill from 365 days × 107 holdings × ~3 DB queries
 // (the 35h prod incident on 2026-05-02) down to ~1-7 days × … on
 // every subsequent tx-import.
+//
+// HOWEVER — if a tx-import discovered a NEW holding (Etherscan found
+// a token-transfer to the user's address that minted a fresh
+// `holdings` row) whose `created_at > lastSnapshotDate`, the
+// adaptive 7-day rollup wouldn't include the new holding's value in
+// past dates. Past `portfolio_value_daily` rows would stay at the
+// pre-discovery total. Force a full 365-day backfill in that case
+// so the chart correctly reflects the holding's
+// current-balance-propagated-backward value.
 async function computeLookbackDays(userId: string): Promise<number> {
   try {
     const repo = Container.get(PortfolioValueDailyRepository);
     const latest = await repo.findLatestSnapshotDate(userId);
     if (!latest) return LOOKBACK_DEFAULT_DAYS;
+
     const latestDate = new Date(`${latest}T00:00:00Z`);
     const today = new Date();
     const ageDays = Math.floor((today.getTime() - latestDate.getTime()) / (24 * 60 * 60 * 1000));
+
+    // New-holding detection: any holding created after the last
+    // rollup snapshot date forces a full backfill. This covers the
+    // tx-import-discovers-new-token path that the api-side mutation
+    // hooks (enqueuePortfolioRollup) don't intercept.
+    const holdingRepo = Container.get(HoldingRepository);
+    const allHoldings = await holdingRepo.findByUser(userId);
+    const hasNewHoldingSinceRollup = allHoldings.some(
+      (h) => h.createdAt.getTime() > latestDate.getTime()
+    );
+    if (hasNewHoldingSinceRollup) return LOOKBACK_DEFAULT_DAYS;
+
     const adaptive = Math.max(ageDays + LOOKBACK_SAFETY_PAD_DAYS, LOOKBACK_MIN_DAYS);
     return Math.min(adaptive, LOOKBACK_DEFAULT_DAYS);
   } catch {

@@ -124,6 +124,24 @@ export function NetWorthChart() {
     };
   }, [chartData]);
 
+  // Pad the YAxis domain by 5% on both sides of the data range so the
+  // curve doesn't kiss the top/bottom edges. Falls back to ['auto',
+  // 'auto'] when the dataset is empty (Recharts handles the empty
+  // case fine, but a tuple keeps the prop type stable).
+  const yAxisDomain = useMemo<[number | string, number | string]>(() => {
+    if (chartData.length === 0) return ['auto', 'auto'];
+    let min = Number.POSITIVE_INFINITY;
+    let max = Number.NEGATIVE_INFINITY;
+    for (const p of chartData) {
+      if (p.value < min) min = p.value;
+      if (p.value > max) max = p.value;
+    }
+    if (!Number.isFinite(min) || !Number.isFinite(max)) return ['auto', 'auto'];
+    const span = max - min || Math.abs(max) || 1;
+    const pad = span * 0.05;
+    return [Math.max(0, min - pad), max + pad];
+  }, [chartData]);
+
   const isEmpty = !isLoading && chartData.length === 0;
 
   return (
@@ -195,6 +213,13 @@ export function NetWorthChart() {
                   tick={{ fontSize: 11 }}
                   tickFormatter={(v: number) => formatCompact(v, baseSymbol)}
                   width={72}
+                  // Auto-scale to data range instead of anchoring at 0.
+                  // For a portfolio fluctuating between 100k-150k the
+                  // 0-baseline default flattened the curve and made
+                  // movements invisible. 5% padding keeps the line off
+                  // the chart edges so peaks/troughs aren't clipped.
+                  domain={yAxisDomain}
+                  allowDataOverflow={false}
                 />
                 <Tooltip
                   formatter={(v) =>
@@ -229,6 +254,11 @@ export function NetWorthChart() {
                   fillOpacity={0.15}
                   strokeWidth={2}
                   isAnimationActive={false}
+                  // Anchor the fill to the chart's data minimum, not y=0.
+                  // Without this Recharts fills all the way down to
+                  // y=0 even when the YAxis domain starts at 100k,
+                  // producing a giant solid block under the curve.
+                  baseValue="dataMin"
                 />
               </AreaChart>
             </ResponsiveContainer>
