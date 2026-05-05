@@ -1,11 +1,21 @@
 import type { CoverageQuality } from '@scani/db/schema';
 import Decimal from 'decimal.js';
 import { Container, Service } from 'typedi';
+import { AccountRepository } from '../../repositories/AccountRepository';
 import { HoldingRepository } from '../../repositories/HoldingRepository';
 import { UserRepository } from '../../repositories/UserRepository';
 import { BalanceAtTimeService } from '../pricing/BalanceAtTimeService';
 import { PriceGraphService } from '../pricing/PriceGraphService';
 import type { PriceLookup } from '../pricing/PriceLookup';
+
+// Scope for per-entity portfolio queries — the same valuation
+// pipeline used for the user-wide chart now also drives the
+// institution / account / holding detail-page charts.
+export type PortfolioValueScope =
+  | { kind: 'user' }
+  | { kind: 'institution'; id: string }
+  | { kind: 'account'; id: string }
+  | { kind: 'holding'; id: string };
 
 export interface PortfolioValueAtTimePerHolding {
   holdingId: string;
@@ -55,6 +65,7 @@ const COVERAGE_PARTIAL_THRESHOLD = 0.5;
 export class PortfolioValuationAtTimeService {
   // Class-field DI — see note in BalanceAtTimeService.ts.
   private readonly holdingRepository = Container.get(HoldingRepository);
+  private readonly accountRepository = Container.get(AccountRepository);
   private readonly balanceAtTimeService = Container.get(BalanceAtTimeService);
   private readonly priceGraphService = Container.get(PriceGraphService);
   private readonly userRepository = Container.get(UserRepository);
@@ -63,7 +74,7 @@ export class PortfolioValuationAtTimeService {
     userId: string,
     at: Date,
     baseCurrencyId?: string,
-    opts: { priceLookup?: PriceLookup } = {}
+    opts: { priceLookup?: PriceLookup; scope?: PortfolioValueScope } = {}
   ): Promise<PortfolioValueAtTimeResult> {
     // Resolve display base. Fall back to user's configured base_currency_id
     // when caller didn't specify — mirrors the current dashboard convention.
@@ -83,6 +94,12 @@ export class PortfolioValuationAtTimeService {
     // retroactively when a holding is later hidden.
     const allHoldings = await this.holdingRepository.findByUser(userId);
 
+    // Apply the per-entity scope filter (institution / account /
+    // holding) BEFORE the date filter, so an empty per-entity result
+    // is reported as 0 holdings (and coverage='full' as a degenerate
+    // case) instead of falling through with an out-of-scope total.
+    const scopedHoldings = await this.applyScope(allHoldings, opts.scope, userId);
+
     // Exclude holdings that didn't exist on the snapshot date. A
     // manual / screenshot holding created today shouldn't pad
     // `holdings_total` for past dates — that distorts the
@@ -93,7 +110,7 @@ export class PortfolioValuationAtTimeService {
     // backward via the "holdings current" anchor for holdings whose
     // first activity was after `at`; we explicitly skip those here so
     // they neither contribute value nor inflate the denominator.
-    const holdings = allHoldings.filter((h) => h.createdAt.getTime() <= at.getTime());
+    const holdings = scopedHoldings.filter((h) => h.createdAt.getTime() <= at.getTime());
 
     const perHolding: PortfolioValueAtTimePerHolding[] = [];
     let total = new Decimal(0);
@@ -224,5 +241,29 @@ export class PortfolioValuationAtTimeService {
       holdingsTotal,
       perHolding,
     };
+  }
+
+  // Filter the user's holdings down to a single entity scope.
+  // Institution scope requires loading the user's accounts to map
+  // institution_id → account_id list (cheap; one query). Generic so
+  // the caller's Holding row type (with all its columns) survives.
+  private async applyScope<H extends { id: string; accountId: string }>(
+    holdings: H[],
+    scope: PortfolioValueScope | undefined,
+    userId: string
+  ): Promise<H[]> {
+    if (!scope || scope.kind === 'user') return holdings;
+    if (scope.kind === 'holding') {
+      return holdings.filter((h) => h.id === scope.id);
+    }
+    if (scope.kind === 'account') {
+      return holdings.filter((h) => h.accountId === scope.id);
+    }
+    // institution: resolve member account ids via AccountRepository
+    const accounts = await this.accountRepository.findByUser(userId);
+    const accountIdsForInstitution = new Set(
+      accounts.filter((a) => a.institutionId === scope.id).map((a) => a.id)
+    );
+    return holdings.filter((h) => accountIdsForInstitution.has(h.accountId));
   }
 }

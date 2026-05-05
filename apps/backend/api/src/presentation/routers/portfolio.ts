@@ -137,6 +137,15 @@ const NetWorthSeriesInput = z
     to: z.coerce.date(),
     baseCurrencyId: z.string().uuid().optional(),
     granularity: z.enum(['auto', 'daily', 'weekly', 'monthly']).default('auto'),
+    // Optional per-entity scope. Omitted = user-wide (the existing
+    // dashboard chart). The handler validates that the entity belongs
+    // to the calling user before reading the per-scope rollup row.
+    scope: z
+      .object({
+        kind: z.enum(['institution', 'account', 'holding']),
+        id: z.string().uuid(),
+      })
+      .optional(),
   })
   .refine((v) => v.to.getTime() >= v.from.getTime(), {
     message: '`to` must be greater than or equal to `from`',
@@ -159,6 +168,43 @@ const HoldingHistoryInput = z
     (v) => (v.to.getTime() - v.from.getTime()) / (24 * 60 * 60 * 1000) <= MAX_NET_WORTH_SPAN_DAYS,
     { message: `Date span must be ≤ ${MAX_NET_WORTH_SPAN_DAYS} days` }
   );
+
+// Per-entity scope ownership check. Throws TRPCError NOT_FOUND when
+// the entity doesn't exist or doesn't belong to `userId`. Returns
+// silently when the scope is valid. Mirrors the pattern used by
+// `getHoldingHistory` further down the file.
+async function assertScopeOwnership(
+  userId: string,
+  scope: { kind: 'institution' | 'account' | 'holding'; id: string }
+): Promise<void> {
+  if (scope.kind === 'holding') {
+    const row = await db
+      .select({ id: schema.holdings.id })
+      .from(schema.holdings)
+      .where(and(eq(schema.holdings.id, scope.id), eq(schema.holdings.userId, userId)))
+      .limit(1);
+    if (!row[0]) throw new TRPCError({ code: 'NOT_FOUND', message: 'Holding not found' });
+    return;
+  }
+  if (scope.kind === 'account') {
+    const row = await db
+      .select({ id: schema.accounts.id })
+      .from(schema.accounts)
+      .where(and(eq(schema.accounts.id, scope.id), eq(schema.accounts.userId, userId)))
+      .limit(1);
+    if (!row[0]) throw new TRPCError({ code: 'NOT_FOUND', message: 'Account not found' });
+    return;
+  }
+  // institution: validated by membership — the user must own at least
+  // one account in this institution. Stops a probe for institutions
+  // the user has never added.
+  const row = await db
+    .select({ id: schema.accounts.id })
+    .from(schema.accounts)
+    .where(and(eq(schema.accounts.institutionId, scope.id), eq(schema.accounts.userId, userId)))
+    .limit(1);
+  if (!row[0]) throw new TRPCError({ code: 'NOT_FOUND', message: 'Institution not found' });
+}
 
 export const portfolioRouter = router({
   getNetWorthSeries: protectedProcedure.input(NetWorthSeriesInput).query(async ({ ctx, input }) => {
@@ -187,9 +233,25 @@ export const portfolioRouter = router({
       holdingsTotal: number;
     };
 
+    // Per-entity scope ownership guard. The detail-page charts
+    // pass scope: { kind: 'institution' | 'account' | 'holding', id }
+    // and the handler validates that entity belongs to the calling
+    // user before reading the scoped rollup. Absent scope = user-wide.
+    if (input.scope) {
+      await assertScopeOwnership(dbUser.id, input.scope);
+    }
+
     // Pure cache read — no live-fallback (see prior commit history;
     // live valuation OOM-killed the backend under chart click-spam).
-    const cached = await dailyRepo.findRange(dbUser.id, baseId, input.from, input.to);
+    const scopeFilter = input.scope ?? { kind: 'user' as const, id: dbUser.id };
+    const cached = await dailyRepo.findRange(
+      dbUser.id,
+      baseId,
+      input.from,
+      input.to,
+      undefined,
+      scopeFilter
+    );
 
     // LTTB on the raw daily rows. For ranges <= 200 days the threshold
     // is a no-op and we ship every daily row; for longer ranges the

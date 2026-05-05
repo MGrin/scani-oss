@@ -11,6 +11,8 @@ import { Service } from 'typedi';
 
 export interface PortfolioValueDailyRow {
   userId: string;
+  scopeKind: 'user' | 'institution' | 'account' | 'holding';
+  scopeId: string;
   snapshotDate: string; // 'YYYY-MM-DD' — Postgres `date` round-trips as string
   baseCurrencyId: string;
   totalValue: string;
@@ -18,6 +20,11 @@ export interface PortfolioValueDailyRow {
   holdingsWithKnownValue: number;
   holdingsTotal: number;
   computedAt: Date;
+}
+
+export interface ScopeFilter {
+  kind: 'user' | 'institution' | 'account' | 'holding';
+  id: string;
 }
 
 // Composite primary key (user_id, snapshot_date, base_currency_id); can't use
@@ -35,19 +42,23 @@ export class PortfolioValueDailyRepository {
     baseCurrencyId: string,
     from: Date,
     to: Date,
-    transaction?: DatabaseTransaction
+    transaction?: DatabaseTransaction,
+    scope?: ScopeFilter
   ): Promise<PortfolioValueDaily[]> {
     try {
       const db = this.getDb(transaction);
       // Cast the Date boundaries to 'YYYY-MM-DD' to match the `date` column type.
       const fromStr = from.toISOString().slice(0, 10);
       const toStr = to.toISOString().slice(0, 10);
+      const effectiveScope = scope ?? { kind: 'user' as const, id: userId };
       const results = await db
         .select()
         .from(schema.portfolioValueDaily)
         .where(
           and(
             eq(schema.portfolioValueDaily.userId, userId),
+            eq(schema.portfolioValueDaily.scopeKind, effectiveScope.kind),
+            eq(schema.portfolioValueDaily.scopeId, effectiveScope.id),
             eq(schema.portfolioValueDaily.baseCurrencyId, baseCurrencyId),
             gte(schema.portfolioValueDaily.snapshotDate, fromStr),
             lte(schema.portfolioValueDaily.snapshotDate, toStr)
@@ -142,10 +153,19 @@ export class PortfolioValueDailyRepository {
   ): Promise<string | null> {
     try {
       const db = this.getDb(transaction);
+      // Scope to 'user' rows so per-entity rollups (which are written
+      // alongside the user-scope row in the same loop) don't shift
+      // the latest-snapshot signal that the adaptive-lookback path
+      // relies on.
       const results = await db
         .select({ snapshotDate: schema.portfolioValueDaily.snapshotDate })
         .from(schema.portfolioValueDaily)
-        .where(eq(schema.portfolioValueDaily.userId, userId))
+        .where(
+          and(
+            eq(schema.portfolioValueDaily.userId, userId),
+            eq(schema.portfolioValueDaily.scopeKind, 'user')
+          )
+        )
         .orderBy(desc(schema.portfolioValueDaily.snapshotDate))
         .limit(1);
       return results[0]?.snapshotDate ?? null;
@@ -171,6 +191,8 @@ export class PortfolioValueDailyRepository {
         .onConflictDoUpdate({
           target: [
             schema.portfolioValueDaily.userId,
+            schema.portfolioValueDaily.scopeKind,
+            schema.portfolioValueDaily.scopeId,
             schema.portfolioValueDaily.snapshotDate,
             schema.portfolioValueDaily.baseCurrencyId,
           ],
@@ -212,6 +234,8 @@ export class PortfolioValueDailyRepository {
         .onConflictDoUpdate({
           target: [
             schema.portfolioValueDaily.userId,
+            schema.portfolioValueDaily.scopeKind,
+            schema.portfolioValueDaily.scopeId,
             schema.portfolioValueDaily.snapshotDate,
             schema.portfolioValueDaily.baseCurrencyId,
           ],

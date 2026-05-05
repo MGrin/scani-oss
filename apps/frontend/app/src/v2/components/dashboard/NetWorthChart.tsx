@@ -66,7 +66,24 @@ function formatTick(iso: string, granularity: Granularity): string {
   return `${month} ${d}`;
 }
 
-export function NetWorthChart() {
+// Per-entity scope for the chart. Omitted = user-wide. The same
+// component renders all four scope variants — the dashboard uses
+// no scope, while institution / account / holding detail pages pass
+// the appropriate scope object through.
+export type NetWorthChartScope =
+  | { kind: 'institution'; id: string }
+  | { kind: 'account'; id: string }
+  | { kind: 'holding'; id: string };
+
+export interface NetWorthChartProps {
+  scope?: NetWorthChartScope;
+  // Title override — defaults to "Net worth over time" but the
+  // detail-page embeds want shorter labels (e.g., "Value over time"
+  // when the parent header already says "AAPL holding").
+  title?: string;
+}
+
+export function NetWorthChart({ scope, title }: NetWorthChartProps = {}) {
   const { symbol: baseSymbol, isLoading: baseLoading } = useBaseCurrency();
   // Surface backfill / tx-import progress to the chart. While any
   // chart-affecting job is running, the curve we render is stale —
@@ -90,7 +107,7 @@ export function NetWorthChart() {
   }, [windowDays]);
 
   const { data, isLoading, isFetching } = trpc.portfolio.getNetWorthSeries.useQuery(
-    { from, to, granularity: 'auto' },
+    { from, to, granularity: 'auto', ...(scope ? { scope } : {}) },
     { enabled: !baseLoading }
   );
 
@@ -143,12 +160,13 @@ export function NetWorthChart() {
   }, [chartData]);
 
   const isEmpty = !isLoading && chartData.length === 0;
+  const headerTitle = title ?? 'Net worth over time';
 
   return (
     <Card>
       <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-3 flex-wrap">
         <div className="flex items-center gap-2 min-w-0">
-          <CardTitle className="text-sm font-medium">Net worth over time</CardTitle>
+          <CardTitle className="text-sm font-medium">{headerTitle}</CardTitle>
           {(isFetching && !isLoading) || chartAffectingActive ? (
             <Loader2 className="h-3 w-3 animate-spin text-muted-foreground shrink-0" />
           ) : null}

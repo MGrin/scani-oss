@@ -8,6 +8,13 @@
       "when": 1777622194899,
       "tag": "0000_clean_start",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1777999999999,
+      "tag": "0001_per_scope_portfolio_value",
+      "breakpoints": true
     }
   ]
 }

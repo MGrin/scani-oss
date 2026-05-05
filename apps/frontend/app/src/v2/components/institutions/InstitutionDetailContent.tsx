@@ -9,6 +9,7 @@ import { trpc } from '@/lib/trpc';
 import { cn } from '@/lib/utils';
 import { useBaseCurrency } from '../../hooks/useBaseCurrency';
 import { V2_ROUTES } from '../../lib/routes';
+import { NetWorthChart } from '../dashboard/NetWorthChart';
 
 interface InstitutionDetailContentProps {
   institutionId: string;
@@ -95,6 +96,12 @@ export function InstitutionDetailContent({
           </p>
         </div>
       </div>
+
+      <Separator />
+      <NetWorthChart
+        scope={{ kind: 'institution', id: institutionId }}
+        title={`${institution.name} value over time`}
+      />
 
       {institutionAccounts.length > 0 && (
         <>

@@ -7,13 +7,26 @@ import { makeToken } from '../../test/helpers/factories-extra';
 
 const repo = () => Container.get(PortfolioValueDailyRepository);
 
+// Default scope for tests = user-wide (the existing behavior). The
+// per-entity scope is exercised separately in the rollup integration
+// tests; this repository test focuses on the upsert + range read
+// surface, where scope is just a tagged tuple.
+function userScopeRow<T extends { userId: string }>(
+  row: T
+): T & {
+  scopeKind: 'user';
+  scopeId: string;
+} {
+  return { ...row, scopeKind: 'user' as const, scopeId: row.userId };
+}
+
 describe('PortfolioValueDailyRepository', () => {
   test('upsert inserts a fresh row and returns it', async () => {
     await withTestDb(async (tx) => {
       const user = await makeUser(tx);
       const usd = await makeToken(tx);
       const row = await repo().upsert(
-        {
+        userScopeRow({
           userId: user.id,
           snapshotDate: '2024-06-01',
           baseCurrencyId: usd.id,
@@ -21,7 +34,7 @@ describe('PortfolioValueDailyRepository', () => {
           coverageQuality: 'full',
           holdingsWithKnownValue: 5,
           holdingsTotal: 5,
-        },
+        }),
         tx
       );
       expect(row.userId).toBe(user.id);
@@ -36,7 +49,7 @@ describe('PortfolioValueDailyRepository', () => {
       const user = await makeUser(tx);
       const usd = await makeToken(tx);
       await repo().upsert(
-        {
+        userScopeRow({
           userId: user.id,
           snapshotDate: '2024-06-01',
           baseCurrencyId: usd.id,
@@ -44,11 +57,11 @@ describe('PortfolioValueDailyRepository', () => {
           coverageQuality: 'partial',
           holdingsWithKnownValue: 3,
           holdingsTotal: 5,
-        },
+        }),
         tx
       );
       const after = await repo().upsert(
-        {
+        userScopeRow({
           userId: user.id,
           snapshotDate: '2024-06-01',
           baseCurrencyId: usd.id,
@@ -56,7 +69,7 @@ describe('PortfolioValueDailyRepository', () => {
           coverageQuality: 'full',
           holdingsWithKnownValue: 5,
           holdingsTotal: 5,
-        },
+        }),
         tx
       );
       expect(after.totalValue).toBe('200');
@@ -91,7 +104,7 @@ describe('PortfolioValueDailyRepository', () => {
             holdingsWithKnownValue: 1,
             holdingsTotal: 1,
           },
-        ],
+        ].map(userScopeRow),
         tx
       );
       expect(inserted).toHaveLength(2);
@@ -140,7 +153,7 @@ describe('PortfolioValueDailyRepository', () => {
             holdingsWithKnownValue: 1,
             holdingsTotal: 1,
           },
-        ],
+        ].map(userScopeRow),
         tx
       );
       const rows = await repo().findRange(
@@ -190,7 +203,7 @@ describe('PortfolioValueDailyRepository', () => {
             holdingsWithKnownValue: 1,
             holdingsTotal: 1,
           },
-        ],
+        ].map(userScopeRow),
         tx
       );
       const latest = await repo().findLatest(user.id, usd.id, tx);
@@ -233,7 +246,7 @@ describe('PortfolioValueDailyRepository', () => {
             holdingsWithKnownValue: 1,
             holdingsTotal: 1,
           },
-        ],
+        ].map(userScopeRow),
         tx
       );
       const usdDeleted = await repo().deleteForUser(user.id, usd.id, tx);

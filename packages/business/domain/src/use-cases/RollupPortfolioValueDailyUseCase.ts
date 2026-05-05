@@ -19,11 +19,13 @@ import * as schema from '@scani/db/schema';
 import { createComponentLogger } from '@scani/logging';
 import { and, eq, sql } from 'drizzle-orm';
 import { Container, Service } from 'typedi';
+import { AccountRepository } from '../repositories/AccountRepository';
 import { HoldingRepository } from '../repositories/HoldingRepository';
 import { PortfolioValueDailyRepository } from '../repositories/PortfolioValueDailyRepository';
 import { TokenPriceRepository } from '../repositories/TokenPriceRepository';
 import { TokenRepository } from '../repositories/TokenRepository';
 import { PortfolioValuationAtTimeService } from '../services';
+import type { PortfolioValueScope } from '../services/portfolio/PortfolioValuationAtTimeService';
 import { PriceLookup } from '../services/pricing/PriceLookup';
 
 const logger = createComponentLogger('use-case:rollup-portfolio-value-daily');
@@ -59,6 +61,7 @@ export class RollupPortfolioValueDailyUseCase {
   private readonly valuationService = Container.get(PortfolioValuationAtTimeService);
   private readonly dailyRepository = Container.get(PortfolioValueDailyRepository);
   private readonly holdingRepository = Container.get(HoldingRepository);
+  private readonly accountRepository = Container.get(AccountRepository);
   private readonly tokenPriceRepository = Container.get(TokenPriceRepository);
   private readonly tokenRepository = Container.get(TokenRepository);
 
@@ -145,23 +148,36 @@ export class RollupPortfolioValueDailyUseCase {
             // a no-op in practice).
             const priceLookup = await this.buildPriceLookup(user.id, baseCurrencyId, runStart);
 
+            // Build the per-scope iteration plan once: user-wide,
+            // each institution, each account, each holding. Each
+            // scope produces one row per day in the lookback window.
+            // Per-entity rows let detail-page charts read the same
+            // table (one indexed query per page-load) instead of
+            // recomputing the per-entity rollup from raw transactions
+            // on demand.
+            const scopes = await this.collectScopes(user.id);
+
             let daysForUser = 0;
             for (const { at, snapshotDate } of days) {
-              const result = await this.valuationService.getPortfolioValue(
-                user.id,
-                at,
-                baseCurrencyId,
-                { priceLookup }
-              );
-              await this.dailyRepository.upsert({
-                userId: user.id,
-                snapshotDate,
-                baseCurrencyId,
-                totalValue: result.totalValueInBase.toString(),
-                coverageQuality: result.coverageQuality,
-                holdingsWithKnownValue: result.holdingsWithKnownValue,
-                holdingsTotal: result.holdingsTotal,
-              });
+              for (const { scope, scopeKind, scopeId } of scopes) {
+                const result = await this.valuationService.getPortfolioValue(
+                  user.id,
+                  at,
+                  baseCurrencyId,
+                  { priceLookup, scope }
+                );
+                await this.dailyRepository.upsert({
+                  userId: user.id,
+                  scopeKind,
+                  scopeId,
+                  snapshotDate,
+                  baseCurrencyId,
+                  totalValue: result.totalValueInBase.toString(),
+                  coverageQuality: result.coverageQuality,
+                  holdingsWithKnownValue: result.holdingsWithKnownValue,
+                  holdingsTotal: result.holdingsTotal,
+                });
+              }
               daysForUser++;
             }
             return daysForUser;
@@ -246,6 +262,43 @@ export class RollupPortfolioValueDailyUseCase {
     for (const symbol of PRICE_HUB_SYMBOLS) {
       const t = await this.tokenRepository.findBySymbol(symbol);
       if (t) out.push(t.id);
+    }
+    return out;
+  }
+
+  // Build the iteration plan: { user, each institution, each
+  // account, each holding }. Each entry carries both a typed scope
+  // (for valuationService.getPortfolioValue) and the
+  // (scopeKind, scopeId) tuple to write into portfolio_value_daily.
+  // For the user scope, `scopeId = userId` is a sentinel — Postgres
+  // composite PKs treat NULL as not-equal, so a non-null sentinel
+  // keeps the unique constraint usable.
+  private async collectScopes(userId: string): Promise<
+    Array<{
+      scope: PortfolioValueScope;
+      scopeKind: 'user' | 'institution' | 'account' | 'holding';
+      scopeId: string;
+    }>
+  > {
+    const [accounts, holdings] = await Promise.all([
+      this.accountRepository.findByUser(userId),
+      this.holdingRepository.findByUser(userId),
+    ]);
+    const institutionIds = [...new Set(accounts.map((a) => a.institutionId))];
+
+    const out: Array<{
+      scope: PortfolioValueScope;
+      scopeKind: 'user' | 'institution' | 'account' | 'holding';
+      scopeId: string;
+    }> = [{ scope: { kind: 'user' }, scopeKind: 'user', scopeId: userId }];
+    for (const id of institutionIds) {
+      out.push({ scope: { kind: 'institution', id }, scopeKind: 'institution', scopeId: id });
+    }
+    for (const a of accounts) {
+      out.push({ scope: { kind: 'account', id: a.id }, scopeKind: 'account', scopeId: a.id });
+    }
+    for (const h of holdings) {
+      out.push({ scope: { kind: 'holding', id: h.id }, scopeKind: 'holding', scopeId: h.id });
     }
     return out;
   }
