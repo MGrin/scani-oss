@@ -176,7 +176,13 @@ export class YahooFinanceProvider implements HistoricalPriceProvider {
       return this.fetchFiatRange(t, ctx, from, to, baseSymbol);
     }
 
-    const resolved = resolveYahooStockSymbol(t.symbol);
+    // Prefer the Finnhub-style symbol from token metadata when set —
+    // it carries the exchange suffix the orchestrator already resolved
+    // (e.g. `XEQT.TO` for TSX listings, `BMW.DE` for Xetra). The bare
+    // `t.symbol` field strips this suffix during dedup, so falling back
+    // to it would query Yahoo for a US-listing look-alike or 404.
+    const symbolForYahoo = readFinnhubSymbol(t) ?? t.symbol;
+    const resolved = resolveYahooStockSymbol(symbolForYahoo);
     if (!resolved) return [];
 
     const stockBars = await this.fetchChartRange(resolved.yahooSymbol, from, to);
@@ -337,3 +343,13 @@ export const yahooFinanceFactory: ProviderFactory = async (deps) => {
   });
   return new YahooFinanceProvider(registered);
 };
+
+// Pull the Finnhub-style ticker from token metadata when present —
+// it carries the exchange suffix (`.TO`, `.NEO`, `.L`, …) the
+// orchestrator already resolved for non-US listings. The bare
+// `t.symbol` field strips this suffix during dedup.
+function readFinnhubSymbol(t: Token): string | null {
+  const meta = t.providerMetadata as { finnhub?: { symbol?: string } } | null;
+  const sym = meta?.finnhub?.symbol;
+  return typeof sym === 'string' && sym.trim() !== '' ? sym : null;
+}
