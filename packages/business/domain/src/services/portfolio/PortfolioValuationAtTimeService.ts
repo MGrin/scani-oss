@@ -4,7 +4,7 @@ import { Container, Service } from 'typedi';
 import { AccountRepository } from '../../repositories/AccountRepository';
 import { HoldingRepository } from '../../repositories/HoldingRepository';
 import { UserRepository } from '../../repositories/UserRepository';
-import { BalanceAtTimeService } from '../pricing/BalanceAtTimeService';
+import { type BalanceAtTimeCaches, BalanceAtTimeService } from '../pricing/BalanceAtTimeService';
 import { PriceGraphService } from '../pricing/PriceGraphService';
 import type { PriceLookup } from '../pricing/PriceLookup';
 
@@ -74,7 +74,14 @@ export class PortfolioValuationAtTimeService {
     userId: string,
     at: Date,
     baseCurrencyId?: string,
-    opts: { priceLookup?: PriceLookup; scope?: PortfolioValueScope } = {}
+    opts: {
+      priceLookup?: PriceLookup;
+      scope?: PortfolioValueScope;
+      // Pre-loaded per-user caches that BalanceAtTimeService can use
+      // instead of per-call DB reads. Threaded through from the
+      // rollup loop; ad-hoc callers omit and pay the DB cost.
+      caches?: BalanceAtTimeCaches;
+    } = {}
   ): Promise<PortfolioValueAtTimeResult> {
     // Resolve display base. Fall back to user's configured base_currency_id
     // when caller didn't specify — mirrors the current dashboard convention.
@@ -110,7 +117,7 @@ export class PortfolioValuationAtTimeService {
     let anyStaleAnchor = false;
 
     for (const h of holdings) {
-      const result = await this.balanceAtTimeService.getBalance(h.id, at);
+      const result = await this.balanceAtTimeService.getBalance(h.id, at, opts.caches);
 
       if (!result.balance) {
         perHolding.push({

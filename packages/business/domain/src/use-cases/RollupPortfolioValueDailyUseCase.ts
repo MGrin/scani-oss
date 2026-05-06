@@ -15,19 +15,31 @@
 
 import { withAdvisoryLock } from '@scani/db';
 import { db } from '@scani/db/connection';
+import type { CoverageQuality } from '@scani/db/schema';
 import * as schema from '@scani/db/schema';
 import { createComponentLogger } from '@scani/logging';
+import Decimal from 'decimal.js';
 import { and, eq, sql } from 'drizzle-orm';
 import { Container, Service } from 'typedi';
 import { AccountRepository } from '../repositories/AccountRepository';
+import { HoldingBalanceObservationRepository } from '../repositories/HoldingBalanceObservationRepository';
 import { HoldingRepository } from '../repositories/HoldingRepository';
 import { HoldingTransactionRepository } from '../repositories/HoldingTransactionRepository';
 import { PortfolioValueDailyRepository } from '../repositories/PortfolioValueDailyRepository';
 import { TokenPriceRepository } from '../repositories/TokenPriceRepository';
 import { TokenRepository } from '../repositories/TokenRepository';
 import { PnLAtTimeService } from '../services';
-import type { PortfolioValueScope } from '../services/portfolio/PortfolioValuationAtTimeService';
+import type { PnLAtTimePerHolding } from '../services/portfolio/PnLAtTimeService';
+import type { BalanceAtTimeCaches } from '../services/pricing/BalanceAtTimeService';
 import { PriceLookup } from '../services/pricing/PriceLookup';
+
+// Coverage thresholds — keep in sync with
+// PortfolioValuationAtTimeService. Aggregation logic mirrors that
+// service's per-day pass so per-entity scope rows match what the
+// `scope='institution'/'account'/'holding'` valuation calls would
+// have produced.
+const COVERAGE_FULL_THRESHOLD = 0.95;
+const COVERAGE_PARTIAL_THRESHOLD = 0.5;
 
 const logger = createComponentLogger('use-case:rollup-portfolio-value-daily');
 
@@ -66,6 +78,7 @@ export class RollupPortfolioValueDailyUseCase {
   private readonly tokenPriceRepository = Container.get(TokenPriceRepository);
   private readonly tokenRepository = Container.get(TokenRepository);
   private readonly txRepository = Container.get(HoldingTransactionRepository);
+  private readonly observationRepository = Container.get(HoldingBalanceObservationRepository);
 
   // Compute rollup rows for every active user for every day in
   // `lookbackDays` that isn't already cached. Defaults to 30 days
@@ -150,51 +163,94 @@ export class RollupPortfolioValueDailyUseCase {
             // a no-op in practice).
             const priceLookup = await this.buildPriceLookup(user.id, baseCurrencyId, runStart);
 
-            // Build the per-scope iteration plan once: user-wide,
-            // each institution, each account, each holding. Each
-            // scope produces one row per day in the lookback window.
-            // Per-entity rows let detail-page charts read the same
-            // table (one indexed query per page-load) instead of
-            // recomputing the per-entity rollup from raw transactions
-            // on demand.
-            const scopes = await this.collectScopes(user.id);
-
-            // Pre-load every transaction for every holding the user
-            // has, ONE bulk query per user. CostBasisService will
-            // slice each holding's array to events ≤ at per call —
-            // converting ~46k DB reads (per-holding × per-day ×
-            // per-scope) into a single up-front query.
+            // Pre-load every per-user state BalanceAtTimeService and
+            // CostBasisService would otherwise hit the DB for —
+            // holdings (anchor 2), observations (anchors 1 and 3),
+            // and transactions (every walk). Three bulk queries up
+            // front replace ~350k per-(holding, day) DB reads. Falls
+            // through silently to the per-call DB path for anything
+            // a future code path needs but the prefetch missed.
             const userHoldings = await this.holdingRepository.findByUser(user.id);
-            const txHistory = await this.txRepository.findForHoldingsAll(
-              userHoldings.map((h) => h.id)
-            );
+            const holdingIds = userHoldings.map((h) => h.id);
+            const [txHistory, observations] = await Promise.all([
+              this.txRepository.findForHoldingsAll(holdingIds),
+              this.observationRepository.findForHoldingsAll(holdingIds),
+            ]);
+            const caches: BalanceAtTimeCaches = {
+              holdings: new Map(userHoldings.map((h) => [h.id, h])),
+              observations,
+              transactions: txHistory,
+            };
+
+            // Resolve institution membership once: each account → its
+            // institution_id. Drives the per-scope aggregation below.
+            const accounts = await this.accountRepository.findByUser(user.id);
+            const accountIdToInstitution = new Map(accounts.map((a) => [a.id, a.institutionId]));
+            const institutionIds = [...new Set(accounts.map((a) => a.institutionId))];
 
             let daysForUser = 0;
             for (const { at, snapshotDate } of days) {
-              for (const { scope, scopeKind, scopeId } of scopes) {
-                // PnLAtTimeService internally calls getPortfolioValue
-                // (same scope filter, same priceLookup), then layers
-                // CostBasisService on top per-holding. The result
-                // re-exposes valuation fields so we don't double-run.
-                const result = await this.pnlService.getPnL(user.id, at, baseCurrencyId, {
-                  priceLookup,
-                  scope,
-                  txHistory,
-                });
-                await this.dailyRepository.upsert({
-                  userId: user.id,
-                  scopeKind,
-                  scopeId,
-                  snapshotDate,
+              // ONE getPnL call per day at the user (broadest) scope.
+              // The result's perHolding[] gives us everything we need
+              // to derive every smaller scope below by filtering and
+              // aggregating in-memory — no extra DB or pricing work.
+              const userResult = await this.pnlService.getPnL(user.id, at, baseCurrencyId, {
+                priceLookup,
+                caches,
+              });
+
+              // Write the user-scope row directly from the result.
+              await this.dailyRepository.upsert({
+                userId: user.id,
+                scopeKind: 'user',
+                scopeId: user.id,
+                snapshotDate,
+                baseCurrencyId,
+                totalValue: userResult.totalValueInBase.toString(),
+                coverageQuality: userResult.coverageQuality,
+                holdingsWithKnownValue: userResult.holdingsWithKnownValue,
+                holdingsTotal: userResult.holdingsTotal,
+                costBasis: userResult.totalCostBasis.toString(),
+                realizedPnl: userResult.totalRealizedPnl.toString(),
+                unrealizedPnl: userResult.totalUnrealizedPnl.toString(),
+              });
+
+              // Now derive per-institution / per-account / per-holding
+              // rows by filtering the same perHolding[] and aggregating.
+              for (const institutionId of institutionIds) {
+                const slice = userResult.perHolding.filter(
+                  (ph) => accountIdToInstitution.get(ph.accountId) === institutionId
+                );
+                await this.upsertScopeRow(
+                  user.id,
                   baseCurrencyId,
-                  totalValue: result.totalValueInBase.toString(),
-                  coverageQuality: result.coverageQuality,
-                  holdingsWithKnownValue: result.holdingsWithKnownValue,
-                  holdingsTotal: result.holdingsTotal,
-                  costBasis: result.totalCostBasis.toString(),
-                  realizedPnl: result.totalRealizedPnl.toString(),
-                  unrealizedPnl: result.totalUnrealizedPnl.toString(),
-                });
+                  snapshotDate,
+                  'institution',
+                  institutionId,
+                  slice
+                );
+              }
+              for (const account of accounts) {
+                const slice = userResult.perHolding.filter((ph) => ph.accountId === account.id);
+                await this.upsertScopeRow(
+                  user.id,
+                  baseCurrencyId,
+                  snapshotDate,
+                  'account',
+                  account.id,
+                  slice
+                );
+              }
+              for (const h of userHoldings) {
+                const slice = userResult.perHolding.filter((ph) => ph.holdingId === h.id);
+                await this.upsertScopeRow(
+                  user.id,
+                  baseCurrencyId,
+                  snapshotDate,
+                  'holding',
+                  h.id,
+                  slice
+                );
               }
               daysForUser++;
             }
@@ -284,40 +340,55 @@ export class RollupPortfolioValueDailyUseCase {
     return out;
   }
 
-  // Build the iteration plan: { user, each institution, each
-  // account, each holding }. Each entry carries both a typed scope
-  // (for valuationService.getPortfolioValue) and the
-  // (scopeKind, scopeId) tuple to write into portfolio_value_daily.
-  // For the user scope, `scopeId = userId` is a sentinel — Postgres
-  // composite PKs treat NULL as not-equal, so a non-null sentinel
-  // keeps the unique constraint usable.
-  private async collectScopes(userId: string): Promise<
-    Array<{
-      scope: PortfolioValueScope;
-      scopeKind: 'user' | 'institution' | 'account' | 'holding';
-      scopeId: string;
-    }>
-  > {
-    const [accounts, holdings] = await Promise.all([
-      this.accountRepository.findByUser(userId),
-      this.holdingRepository.findByUser(userId),
-    ]);
-    const institutionIds = [...new Set(accounts.map((a) => a.institutionId))];
-
-    const out: Array<{
-      scope: PortfolioValueScope;
-      scopeKind: 'user' | 'institution' | 'account' | 'holding';
-      scopeId: string;
-    }> = [{ scope: { kind: 'user' }, scopeKind: 'user', scopeId: userId }];
-    for (const id of institutionIds) {
-      out.push({ scope: { kind: 'institution', id }, scopeKind: 'institution', scopeId: id });
+  // Aggregate a slice of `perHolding` (institution / account / holding
+  // subset) into a single rollup row and upsert it. Mirrors the
+  // totals + coverage_quality logic in PortfolioValuationAtTimeService
+  // — keep them in sync. Empty slice → zeroed row with coverage='full'
+  // (matches the "no holdings in scope" degenerate case).
+  private async upsertScopeRow(
+    userId: string,
+    baseCurrencyId: string,
+    snapshotDate: string,
+    scopeKind: 'institution' | 'account' | 'holding',
+    scopeId: string,
+    slice: PnLAtTimePerHolding[]
+  ): Promise<void> {
+    let totalValue = new Decimal(0);
+    let totalCost = new Decimal(0);
+    let totalRealized = new Decimal(0);
+    let knownCount = 0;
+    for (const ph of slice) {
+      if (ph.value !== null) {
+        totalValue = totalValue.add(ph.value);
+        knownCount++;
+      }
+      totalCost = totalCost.add(ph.costBasis);
+      totalRealized = totalRealized.add(ph.realizedPnl);
     }
-    for (const a of accounts) {
-      out.push({ scope: { kind: 'account', id: a.id }, scopeKind: 'account', scopeId: a.id });
+    const totalUnrealized = totalValue.minus(totalCost);
+    const holdingsTotal = slice.length;
+    let coverageQuality: CoverageQuality;
+    if (holdingsTotal === 0) {
+      coverageQuality = 'full';
+    } else {
+      const knownRatio = knownCount / holdingsTotal;
+      if (knownRatio >= COVERAGE_FULL_THRESHOLD) coverageQuality = 'full';
+      else if (knownRatio >= COVERAGE_PARTIAL_THRESHOLD) coverageQuality = 'estimated';
+      else coverageQuality = 'unknown';
     }
-    for (const h of holdings) {
-      out.push({ scope: { kind: 'holding', id: h.id }, scopeKind: 'holding', scopeId: h.id });
-    }
-    return out;
+    await this.dailyRepository.upsert({
+      userId,
+      scopeKind,
+      scopeId,
+      snapshotDate,
+      baseCurrencyId,
+      totalValue: totalValue.toString(),
+      coverageQuality,
+      holdingsWithKnownValue: knownCount,
+      holdingsTotal,
+      costBasis: totalCost.toString(),
+      realizedPnl: totalRealized.toString(),
+      unrealizedPnl: totalUnrealized.toString(),
+    });
   }
 }

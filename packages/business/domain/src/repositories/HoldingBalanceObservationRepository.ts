@@ -1,7 +1,7 @@
 import { BaseRepository, type DatabaseTransaction } from '@scani/db';
 import type { HoldingBalanceObservation, NewHoldingBalanceObservation } from '@scani/db/schema';
 import * as schema from '@scani/db/schema';
-import { and, asc, desc, eq, gte, lte, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, gte, inArray, lte, sql } from 'drizzle-orm';
 import { Service } from 'typedi';
 
 @Service()
@@ -127,6 +127,38 @@ export class HoldingBalanceObservationRepository extends BaseRepository<
       this.logger.error(
         { holdingId, at, error: error instanceof Error ? error.message : error },
         'Failed to find observation at or before'
+      );
+      throw error;
+    }
+  }
+
+  // Bulk fetch — every observation for ANY of `holdingIds`, all times,
+  // chronologically ordered, grouped by holdingId. Used by the rollup
+  // pre-fetch so BalanceAtTimeService can do its anchor lookups
+  // in-memory instead of one DB query per (holding, day, scope).
+  async findForHoldingsAll(
+    holdingIds: string[],
+    transaction?: DatabaseTransaction
+  ): Promise<Map<string, HoldingBalanceObservation[]>> {
+    const out = new Map<string, HoldingBalanceObservation[]>();
+    if (holdingIds.length === 0) return out;
+    try {
+      const database = this.getDb(transaction);
+      const results = await database
+        .select()
+        .from(schema.holdingBalanceObservations)
+        .where(inArray(schema.holdingBalanceObservations.holdingId, holdingIds))
+        .orderBy(asc(schema.holdingBalanceObservations.observedAt));
+      for (const id of holdingIds) out.set(id, []);
+      for (const row of results as HoldingBalanceObservation[]) {
+        const bucket = out.get(row.holdingId);
+        if (bucket) bucket.push(row);
+      }
+      return out;
+    } catch (error) {
+      this.logger.error(
+        { count: holdingIds.length, error: error instanceof Error ? error.message : error },
+        'Failed bulk-fetch observations for holdings'
       );
       throw error;
     }

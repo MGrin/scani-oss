@@ -1,6 +1,7 @@
-import type { CoverageQuality, HoldingTransaction } from '@scani/db/schema';
+import type { CoverageQuality } from '@scani/db/schema';
 import Decimal from 'decimal.js';
 import { Container, Service } from 'typedi';
+import type { BalanceAtTimeCaches } from '../pricing/BalanceAtTimeService';
 import { CostBasisService } from '../pricing/CostBasisService';
 import type { PriceLookup } from '../pricing/PriceLookup';
 import {
@@ -8,14 +9,13 @@ import {
   type PortfolioValueScope,
 } from './PortfolioValuationAtTimeService';
 
-// Pre-loaded transaction history keyed by holdingId. Lets the rollup
-// pay one DB read per holding per user instead of one per (holding,
-// day, scope). CostBasisService slices the array down to events ≤
-// `at` per call.
-export type TxHistoryByHolding = ReadonlyMap<string, ReadonlyArray<HoldingTransaction>>;
-
 export interface PnLAtTimePerHolding {
   holdingId: string;
+  // Mirror PortfolioValueAtTimePerHolding so callers can re-aggregate
+  // by scope (institution / account) without re-fetching the holding
+  // metadata.
+  accountId: string;
+  tokenId: string;
   value: Decimal | null; // current value (balance × price at `at`, in base)
   costBasis: Decimal; // remaining open lots' cost in base at purchase time
   realizedPnl: Decimal; // cumulative realized PnL through `at`
@@ -57,7 +57,9 @@ export class PnLAtTimeService {
     opts: {
       scope?: PortfolioValueScope;
       priceLookup?: PriceLookup;
-      txHistory?: TxHistoryByHolding;
+      // Pre-loaded per-user caches that BalanceAtTimeService and
+      // CostBasisService can use instead of per-call DB reads.
+      caches?: BalanceAtTimeCaches;
     } = {}
   ): Promise<PnLAtTimeResult> {
     const valuation = await this.valuationService.getPortfolioValue(
@@ -72,7 +74,7 @@ export class PnLAtTimeService {
     let totalRealized = new Decimal(0);
 
     for (const ph of valuation.perHolding) {
-      const txs = opts.txHistory?.get(ph.holdingId);
+      const txs = opts.caches?.transactions?.get(ph.holdingId);
       const cost = await this.costBasisService.getCostBasis(ph.holdingId, at, baseCurrencyId, {
         heldTokenId: ph.tokenId,
         ...(opts.priceLookup ? { priceLookup: opts.priceLookup } : {}),
@@ -82,6 +84,8 @@ export class PnLAtTimeService {
       totalRealized = totalRealized.add(cost.realizedPnl);
       perHolding.push({
         holdingId: ph.holdingId,
+        accountId: ph.accountId,
+        tokenId: ph.tokenId,
         value: ph.valueInBase,
         costBasis: cost.costBasis,
         realizedPnl: cost.realizedPnl,
