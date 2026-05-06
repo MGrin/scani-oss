@@ -1,4 +1,4 @@
-import type { CoverageQuality } from '@scani/db/schema';
+import type { CoverageQuality, HoldingTransaction } from '@scani/db/schema';
 import Decimal from 'decimal.js';
 import { Container, Service } from 'typedi';
 import { CostBasisService } from '../pricing/CostBasisService';
@@ -7,6 +7,12 @@ import {
   PortfolioValuationAtTimeService,
   type PortfolioValueScope,
 } from './PortfolioValuationAtTimeService';
+
+// Pre-loaded transaction history keyed by holdingId. Lets the rollup
+// pay one DB read per holding per user instead of one per (holding,
+// day, scope). CostBasisService slices the array down to events ≤
+// `at` per call.
+export type TxHistoryByHolding = ReadonlyMap<string, ReadonlyArray<HoldingTransaction>>;
 
 export interface PnLAtTimePerHolding {
   holdingId: string;
@@ -48,7 +54,11 @@ export class PnLAtTimeService {
     userId: string,
     at: Date,
     baseCurrencyId: string,
-    opts: { scope?: PortfolioValueScope; priceLookup?: PriceLookup } = {}
+    opts: {
+      scope?: PortfolioValueScope;
+      priceLookup?: PriceLookup;
+      txHistory?: TxHistoryByHolding;
+    } = {}
   ): Promise<PnLAtTimeResult> {
     const valuation = await this.valuationService.getPortfolioValue(
       userId,
@@ -62,9 +72,11 @@ export class PnLAtTimeService {
     let totalRealized = new Decimal(0);
 
     for (const ph of valuation.perHolding) {
+      const txs = opts.txHistory?.get(ph.holdingId);
       const cost = await this.costBasisService.getCostBasis(ph.holdingId, at, baseCurrencyId, {
         heldTokenId: ph.tokenId,
         ...(opts.priceLookup ? { priceLookup: opts.priceLookup } : {}),
+        ...(txs ? { txs } : {}),
       });
       totalCost = totalCost.add(cost.costBasis);
       totalRealized = totalRealized.add(cost.realizedPnl);

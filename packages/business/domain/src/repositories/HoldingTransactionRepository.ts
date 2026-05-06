@@ -160,6 +160,38 @@ export class HoldingTransactionRepository extends BaseRepository<
     }
   }
 
+  // Bulk fetch — every transaction for ANY of `holdingIds`, all times,
+  // chronologically ordered, grouped by holdingId. Used by the rollup
+  // pre-fetch so the inner per-(scope, day) loop can call walkLots on
+  // already-loaded txs instead of one DB read per (holding, day).
+  async findForHoldingsAll(
+    holdingIds: string[],
+    transaction?: DatabaseTransaction
+  ): Promise<Map<string, HoldingTransaction[]>> {
+    const out = new Map<string, HoldingTransaction[]>();
+    if (holdingIds.length === 0) return out;
+    try {
+      const database = this.getDb(transaction);
+      const results = await database
+        .select()
+        .from(schema.holdingTransactions)
+        .where(inArray(schema.holdingTransactions.holdingId, holdingIds))
+        .orderBy(asc(schema.holdingTransactions.occurredAt));
+      for (const id of holdingIds) out.set(id, []);
+      for (const row of results as HoldingTransaction[]) {
+        const bucket = out.get(row.holdingId);
+        if (bucket) bucket.push(row);
+      }
+      return out;
+    } catch (error) {
+      this.logger.error(
+        { count: holdingIds.length, error: error instanceof Error ? error.message : error },
+        'Failed bulk-fetch transactions for holdings'
+      );
+      throw error;
+    }
+  }
+
   async findForHoldingInRange(
     holdingId: string,
     from: Date,

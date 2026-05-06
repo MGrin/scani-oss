@@ -85,10 +85,19 @@ export class CostBasisService {
     holdingId: string,
     at: Date,
     baseCurrencyId: string,
-    opts: { priceLookup?: PriceLookup; heldTokenId?: string } = {}
+    opts: {
+      priceLookup?: PriceLookup;
+      heldTokenId?: string;
+      // Pre-loaded full tx history for this holding (sorted by
+      // occurredAt ASC). Lets the rollup loop pay one DB read per
+      // holding instead of one per (holding, day, scope).
+      txs?: ReadonlyArray<HoldingTransaction>;
+    } = {}
   ): Promise<CostBasisAtTime> {
     const [txs, heldTokenId] = await Promise.all([
-      this.txRepository.findForHoldingUpTo(holdingId, at),
+      opts.txs
+        ? Promise.resolve(filterTxsUpTo(opts.txs, at))
+        : this.txRepository.findForHoldingUpTo(holdingId, at),
       opts.heldTokenId
         ? Promise.resolve(opts.heldTokenId)
         : this.holdingRepository.findById(holdingId).then((h) => h?.tokenId ?? null),
@@ -194,6 +203,17 @@ export class CostBasisService {
 
     return null;
   }
+}
+
+// Slice a pre-loaded full tx history down to events at or before
+// `at`. Avoids repeating the per-day DB read in the rollup hot path
+// when the caller hands in the whole history once.
+function filterTxsUpTo(
+  txs: ReadonlyArray<HoldingTransaction>,
+  at: Date
+): ReadonlyArray<HoldingTransaction> {
+  const cutoff = at.getTime();
+  return txs.filter((t) => t.occurredAt.getTime() <= cutoff);
 }
 
 // Pop lots FIFO until `wantQty` is satisfied. Returns the total

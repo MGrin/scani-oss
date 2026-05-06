@@ -6,6 +6,14 @@ import { Container, Service } from 'typedi';
 import { TokenPriceRepository } from '../../repositories/TokenPriceRepository';
 import { TokenRepository } from '../../repositories/TokenRepository';
 
+// Providers whose universe is equities + fiat — they MUST NOT be
+// asked to price crypto tokens. Yahoo Finance and Finnhub both
+// return ETF / equity look-alikes when fed a crypto ticker (Yahoo
+// returns the ProShares ETH ETF for "ETH", giving ~$22 instead of
+// ~$2300 — see prod incident 2026-05-06). Crypto tickers route to
+// CoinGecko / DeFiLlama / Kraken / Binance instead.
+const EQUITY_ONLY_PROVIDER_KEYS = new Set(['yahoo-finance', 'finnhub']);
+
 export interface BackfillOneResult {
   tokenId: string;
   baseTokenId: string;
@@ -53,7 +61,7 @@ export class HistoricalPriceBackfillService {
   // provider returned a value. Idempotent across re-runs for the same
   // (token, base, provider-timestamp) — the DB unique constraint wins.
   async backfillOne(tokenId: string, at: Date, baseTokenId: string): Promise<BackfillOneResult> {
-    const token = await this.tokenRepository.findById(tokenId);
+    const token = await this.tokenRepository.findWithType(tokenId);
     const baseToken = await this.tokenRepository.findById(baseTokenId);
     if (!token || !baseToken) {
       return {
@@ -84,7 +92,7 @@ export class HistoricalPriceBackfillService {
 
     const ctx: ProviderContext = { baseCurrency: baseToken, timestamp: at };
     const registry = Container.get(ProviderRegistry);
-    const providers: readonly HistoricalPriceProvider[] = registry.getHistoricalPricers(token);
+    const providers = filterEquityOnly(registry.getHistoricalPricers(token), token.typeCode);
 
     if (providers.length === 0) {
       return {
@@ -188,7 +196,7 @@ export class HistoricalPriceBackfillService {
     const empty = { inserted: 0, alreadyHad: 0, providerMissing: 0, providerUsed: null };
     if (neededDays.length === 0) return empty;
 
-    const token = await this.tokenRepository.findById(tokenId);
+    const token = await this.tokenRepository.findWithType(tokenId);
     const baseToken = await this.tokenRepository.findById(baseTokenId);
     if (!token || !baseToken) {
       return { ...empty, providerMissing: neededDays.length };
@@ -204,7 +212,7 @@ export class HistoricalPriceBackfillService {
 
     const ctx: ProviderContext = { baseCurrency: baseToken, timestamp: to };
     const registry = Container.get(ProviderRegistry);
-    const providers: readonly HistoricalPriceProvider[] = registry.getHistoricalPricers(token);
+    const providers = filterEquityOnly(registry.getHistoricalPricers(token), token.typeCode);
     if (providers.length === 0) {
       return { ...empty, providerMissing: neededDays.length };
     }
@@ -296,4 +304,19 @@ export class HistoricalPriceBackfillService {
     }
     return out;
   }
+}
+
+// Drop equity-only providers (Yahoo, Finnhub) when the token is
+// crypto. Their `canPrice` regexes can't tell ETH-the-coin from
+// ETH-the-ETF, and Finnhub/Yahoo will happily return ~$22 for
+// "ETH" because some Ethereum-themed equity matches the ticker.
+// Only the price-backfill site has cheap access to typeCode (the
+// service does a `findWithType` lookup right before this call), so
+// the filter lives here rather than in each provider's canPrice.
+function filterEquityOnly<P extends { providerKey: string }>(
+  providers: readonly P[],
+  typeCode: string | null | undefined
+): readonly P[] {
+  if (typeCode !== 'crypto') return providers;
+  return providers.filter((p) => !EQUITY_ONLY_PROVIDER_KEYS.has(p.providerKey));
 }

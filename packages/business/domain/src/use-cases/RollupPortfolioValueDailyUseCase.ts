@@ -21,6 +21,7 @@ import { and, eq, sql } from 'drizzle-orm';
 import { Container, Service } from 'typedi';
 import { AccountRepository } from '../repositories/AccountRepository';
 import { HoldingRepository } from '../repositories/HoldingRepository';
+import { HoldingTransactionRepository } from '../repositories/HoldingTransactionRepository';
 import { PortfolioValueDailyRepository } from '../repositories/PortfolioValueDailyRepository';
 import { TokenPriceRepository } from '../repositories/TokenPriceRepository';
 import { TokenRepository } from '../repositories/TokenRepository';
@@ -64,6 +65,7 @@ export class RollupPortfolioValueDailyUseCase {
   private readonly accountRepository = Container.get(AccountRepository);
   private readonly tokenPriceRepository = Container.get(TokenPriceRepository);
   private readonly tokenRepository = Container.get(TokenRepository);
+  private readonly txRepository = Container.get(HoldingTransactionRepository);
 
   // Compute rollup rows for every active user for every day in
   // `lookbackDays` that isn't already cached. Defaults to 30 days
@@ -157,6 +159,16 @@ export class RollupPortfolioValueDailyUseCase {
             // on demand.
             const scopes = await this.collectScopes(user.id);
 
+            // Pre-load every transaction for every holding the user
+            // has, ONE bulk query per user. CostBasisService will
+            // slice each holding's array to events ≤ at per call —
+            // converting ~46k DB reads (per-holding × per-day ×
+            // per-scope) into a single up-front query.
+            const userHoldings = await this.holdingRepository.findByUser(user.id);
+            const txHistory = await this.txRepository.findForHoldingsAll(
+              userHoldings.map((h) => h.id)
+            );
+
             let daysForUser = 0;
             for (const { at, snapshotDate } of days) {
               for (const { scope, scopeKind, scopeId } of scopes) {
@@ -167,6 +179,7 @@ export class RollupPortfolioValueDailyUseCase {
                 const result = await this.pnlService.getPnL(user.id, at, baseCurrencyId, {
                   priceLookup,
                   scope,
+                  txHistory,
                 });
                 await this.dailyRepository.upsert({
                   userId: user.id,

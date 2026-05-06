@@ -64,6 +64,13 @@ function makeService(opts: {
 
   Container.set(TokenRepository, {
     findById: async (id: string) => (opts.tokens.get(id) as never) ?? null,
+    // findWithType is what backfill actually uses for the token-being-priced
+    // (so the equity-only-provider filter can read typeCode). Tests don't
+    // need a real type here — null typeCode keeps every provider in scope.
+    findWithType: async (id: string) => {
+      const t = opts.tokens.get(id);
+      return t ? ({ ...t, typeCode: null } as never) : null;
+    },
   } as unknown as TokenRepository);
 
   Container.set(TokenPriceRepository, {
