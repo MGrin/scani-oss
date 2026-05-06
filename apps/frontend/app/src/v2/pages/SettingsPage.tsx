@@ -5,7 +5,7 @@ import { Input } from '@scani/ui/ui/input';
 import { Label } from '@scani/ui/ui/label';
 import { Skeleton } from '@scani/ui/ui/skeleton';
 import { showError, showSuccess } from '@scani/ui/ui/use-toast';
-import { LogOut, Monitor, Trash2 } from 'lucide-react';
+import { Loader2, LogOut, Monitor, RefreshCw, Trash2 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
@@ -26,6 +26,7 @@ export function SettingsPage() {
   // WS updates. On completion we toast + redirect to the dashboard; on
   // failure we surface the error and release the button.
   const [deleteJobId, setDeleteJobId] = useState<string | null>(null);
+  const [recomputeJobId, setRecomputeJobId] = useState<string | null>(null);
 
   const handleSignOut = () => {
     // ProtectedRoute will redirect to /auth on session loss.
@@ -60,6 +61,32 @@ export function SettingsPage() {
   }, [deleteJobId, deleteJobStatus.state, deleteJobStatus.error, navigate, utils]);
 
   const isDeleting = deleteAllDataMutation.isPending || deleteJobId !== null;
+
+  // Manual "rebuild the chart cache" trigger — runs the same job the
+  // 04:00 UTC cron runs (portfolio-history-backfill, lookback 365),
+  // but on demand. Useful after an import or any time the chart looks
+  // off; on completion we invalidate the chart queries so the curve
+  // reflects the rebuilt rows immediately.
+  const recomputeMutation = trpc.portfolio.recomputeHistory.useMutation({
+    onSuccess: ({ jobId }) => setRecomputeJobId(jobId),
+    onError: (err) => showError(err, 'Recomputing portfolio history'),
+  });
+  const recomputeJobStatus = useJobStatus(recomputeJobId);
+  useEffect(() => {
+    if (!recomputeJobId) return;
+    if (recomputeJobStatus.state === 'completed') {
+      showSuccess('Portfolio history rebuilt');
+      setRecomputeJobId(null);
+      utils.portfolio.invalidate();
+    } else if (recomputeJobStatus.state === 'failed') {
+      showError(
+        new Error(recomputeJobStatus.error ?? 'Recompute job failed'),
+        'Recomputing portfolio history'
+      );
+      setRecomputeJobId(null);
+    }
+  }, [recomputeJobId, recomputeJobStatus.state, recomputeJobStatus.error, utils]);
+  const isRecomputing = recomputeMutation.isPending || recomputeJobId !== null;
 
   const updateMutation = trpc.users.updateCurrent.useMutation({
     onSuccess: () => {
@@ -168,6 +195,31 @@ export function SettingsPage() {
       </Card>
 
       <SessionsCard />
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Portfolio history</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <p className="text-sm text-muted-foreground">
+            Rebuild the cached daily values that feed the Net worth and PnL charts. Runs the same
+            365-day backfill as the nightly cron — useful after an import or if a chart looks off.
+          </p>
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => recomputeMutation.mutate()}
+            disabled={isRecomputing}
+          >
+            {isRecomputing ? (
+              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+            ) : (
+              <RefreshCw className="h-4 w-4 mr-2" />
+            )}
+            {isRecomputing ? 'Rebuilding…' : 'Recompute portfolio history'}
+          </Button>
+        </CardContent>
+      </Card>
 
       <Card className="border-destructive/50">
         <CardHeader>

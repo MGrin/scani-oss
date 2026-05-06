@@ -11,9 +11,12 @@
  * case cleanly).
  */
 
+import { randomUUID } from 'node:crypto';
 import { db } from '@scani/db/connection';
 import * as schema from '@scani/db/schema';
 import { PortfolioValueDailyRepository } from '@scani/domain/repositories';
+import { PORTFOLIO_HISTORY_BACKFILL } from '@scani/jobs';
+import { BullMqEnqueueService } from '@scani/queue';
 import { TRPCError } from '@trpc/server';
 import Decimal from 'decimal.js';
 import { and, eq } from 'drizzle-orm';
@@ -369,5 +372,23 @@ export const portfolioRouter = router({
     // the holding using BalanceAtTimeService-backed logic. Full cost-
     // basis plumbing lands with Phase 3.
     return { holdingId: input.holdingId, series: [] as unknown[] };
+  }),
+
+  // Manual trigger for the portfolio-history-backfill job — same job
+  // the nightly cron runs, but on demand. Wired up to a "Recompute
+  // portfolio history" button in Settings so users can rebuild the
+  // chart cache after import / data fixes without waiting for 04:00
+  // UTC. Always passes lookbackDays=365 (the deepest the rollup is
+  // configured to handle) so a single click rebuilds everything,
+  // not just the recent tail.
+  recomputeHistory: protectedProcedure.mutation(async ({ ctx }) => {
+    const { dbUser } = await requireAuth(ctx);
+    const jobId = await Container.get(BullMqEnqueueService).add(PORTFOLIO_HISTORY_BACKFILL, {
+      userId: dbUser.id,
+      requestId: randomUUID(),
+      tokenIds: [],
+      lookbackDays: 365,
+    });
+    return { jobId };
   }),
 });
