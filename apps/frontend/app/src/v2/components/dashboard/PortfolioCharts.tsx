@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useUserJobs } from '../../hooks/useUserJobs';
 import { NetWorthChart, type NetWorthChartScope } from './NetWorthChart';
 import { PnLChart } from './PnLChart';
 
@@ -12,8 +13,15 @@ export interface PortfolioChartsProps {
 // PnL views without managing two separate chart cards. Same surface
 // renders on the dashboard + each detail page (institution, account,
 // holding) — the optional `scope` flows through to both children.
+//
+// `useUserJobs` is hoisted here (not duplicated in each child) so a
+// page with two charts mounted only ever runs ONE `jobs.listMine`
+// query + WS subscription. The active-tab child still re-renders on
+// job updates via prop changes; the inactive (unmounted) child pays
+// nothing.
 export function PortfolioCharts({ scope, netWorthTitle, pnlTitle }: PortfolioChartsProps = {}) {
   const [tab, setTab] = useState<'net-worth' | 'pnl'>('net-worth');
+  const { chartAffectingActive, chartAffectingFailure } = useUserJobs();
 
   return (
     <div className="space-y-2">
@@ -43,11 +51,18 @@ export function PortfolioCharts({ scope, netWorthTitle, pnlTitle }: PortfolioCha
       </div>
       {tab === 'net-worth' ? (
         <NetWorthChart
+          chartAffectingActive={chartAffectingActive}
+          chartAffectingFailure={chartAffectingFailure}
           {...(scope ? { scope } : {})}
           {...(netWorthTitle ? { title: netWorthTitle } : {})}
         />
       ) : (
-        <PnLChart {...(scope ? { scope } : {})} {...(pnlTitle ? { title: pnlTitle } : {})} />
+        <PnLChart
+          chartAffectingActive={chartAffectingActive}
+          chartAffectingFailure={chartAffectingFailure}
+          {...(scope ? { scope } : {})}
+          {...(pnlTitle ? { title: pnlTitle } : {})}
+        />
       )}
     </div>
   );

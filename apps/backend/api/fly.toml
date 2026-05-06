@@ -44,12 +44,14 @@ primary_region = "sin"
 
 [[vm]]
   size     = "shared-cpu-1x"
-  memory   = "768mb"
+  memory   = "1024mb"
   cpu_kind = "shared"
   cpus     = 1
-  # 512MB → 768MB: api owns WS state + tRPC + every provider client
-  # via @scani/cloud-client. Headroom for occasional spikes during
-  # multi-account imports without bumping to a paid tier.
+  # 512MB → 768MB → 1024MB: api OOM-killed (exit 137) under combined
+  # load of in-flight portfolio-history-backfill + concurrent
+  # institution/account live-valuation queries (each loads ~110
+  # holdings + token prices into memory). Bump to match the worker
+  # so the same load shape doesn't trip again on the next backfill.
 
 [deploy]
   strategy = "immediate"

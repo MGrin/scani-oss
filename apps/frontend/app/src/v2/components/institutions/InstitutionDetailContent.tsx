@@ -20,11 +20,16 @@ export function InstitutionDetailContent({
   institutionId,
   mode = 'panel',
 }: InstitutionDetailContentProps) {
-  const { data: institutions, isLoading } = trpc.institutions.getByUserIdWithSummary.useQuery();
+  // Single-institution + filtered-account fetches: skip the
+  // full-list `getByUserIdWithSummary` calls — those load all 14
+  // institutions / 19 accounts just for this page's `.find()` and
+  // .filter(). Each was reading the rollup once per row → 33 round
+  // trips. Two scoped lookups instead.
+  const { data: institution, isLoading } = trpc.institutions.getByIdWithSummary.useQuery({
+    id: institutionId,
+  });
   const { data: accountsData } = trpc.accounts.getByUserIdWithSummary.useQuery();
   const { symbol: currencySymbol } = useBaseCurrency();
-
-  const institution = institutions?.find((i: { id: string }) => i.id === institutionId);
 
   const institutionAccounts = useMemo(
     () =>

@@ -19,10 +19,12 @@ export const accountsRouter = router({
 
   getByUserIdWithSummary: protectedProcedure.query(async ({ ctx }) => {
     const { dbUser } = await requireAuth(ctx);
-    return await Container.get(AccountService).getAccountsByUserIdWithSummary(
-      dbUser.id,
-      ctx.requestCache
-    );
+    return await Container.get(AccountService).getAccountsByUserIdWithSummary(dbUser.id);
+  }),
+
+  getByIdWithSummary: protectedProcedure.input(IdInputDto).query(async ({ input, ctx }) => {
+    const { dbUser } = await requireAuth(ctx);
+    return await Container.get(AccountService).getAccountByIdWithSummary(dbUser.id, input.id);
   }),
 
   getById: protectedProcedure.input(IdInputDto).query(async ({ input, ctx }) => {

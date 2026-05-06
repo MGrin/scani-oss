@@ -1,17 +1,15 @@
 import type { DatabaseTransaction } from '@scani/db';
 import type { Account } from '@scani/db/schema';
 import type { AccountWihSumaryDTO, CreateAccountInput } from '@scani/shared';
-import Decimal from 'decimal.js';
 import { Container, Service } from 'typedi';
-import { extractPriceMap } from '../../lib/price-map';
 import { AccountRepository } from '../../repositories/AccountRepository';
 import { AccountTypeRepository } from '../../repositories/EnumRepositories';
 import { GroupRepository } from '../../repositories/GroupRepository';
 import { HoldingRepository } from '../../repositories/HoldingRepository';
 import { InstitutionRepository } from '../../repositories/InstitutionRepository';
-import { TokenRepository } from '../../repositories/TokenRepository';
+import { PortfolioValueDailyRepository } from '../../repositories/PortfolioValueDailyRepository';
+import { UserRepository } from '../../repositories/UserRepository';
 import { BaseService } from '../BaseService';
-import { PortfolioValuationService } from '../portfolio/PortfolioValuationService';
 import { UserWalletService } from '../users/UserWalletService';
 
 @Service()
@@ -19,12 +17,11 @@ export class AccountService extends BaseService {
   private readonly holdingRepository = Container.get(HoldingRepository);
   private readonly accountRepository = Container.get(AccountRepository);
   private readonly accountTypeRepository = Container.get(AccountTypeRepository);
-  private readonly tokenRepository = Container.get(TokenRepository);
   private readonly institutionRepository = Container.get(InstitutionRepository);
   private readonly groupRepository = Container.get(GroupRepository);
   private readonly userWalletService = Container.get(UserWalletService);
-
-  private readonly portfolioService = Container.get(PortfolioValuationService);
+  private readonly userRepository = Container.get(UserRepository);
+  private readonly dailyRepository = Container.get(PortfolioValueDailyRepository);
 
   constructor() {
     super('AccountService');
@@ -94,89 +91,89 @@ export class AccountService extends BaseService {
     }
   }
 
-  async getAccountsByUserIdWithSummary(
-    userId: string,
-    requestCache?: Map<string, unknown>
-  ): Promise<AccountWihSumaryDTO[]> {
-    // Get user's accounts
-    const accounts = await this.getAccountsByUserId(userId);
+  /**
+   * Accounts for a user, each annotated with `summary.holdingsCount`
+   * + `summary.totalValue`.
+   *
+   * Reads `totalValue` from `portfolio_value_daily` (per-account
+   * scope) instead of running a live valuation. Same OOM-driven
+   * rewrite as InstitutionService.getInstitutionsByUserIdWithSummary.
+   */
+  async getAccountsByUserIdWithSummary(userId: string): Promise<AccountWihSumaryDTO[]> {
+    const [accounts, user] = await Promise.all([
+      this.accountRepository.findByUser(userId),
+      this.userRepository.findById(userId),
+    ]);
+    if (accounts.length === 0) return [];
 
-    if (accounts.length === 0) {
-      return [];
-    }
-
-    const holdings = await this.holdingRepository.findByUser(userId);
-
-    // Get portfolio value for ALL holdings to get prices
-    const portfolioValue = await this.portfolioService.getUserPortfolioValue(
-      userId,
-      undefined,
-      undefined,
-      requestCache
-    );
-
-    // Fetch groups for all accounts
     const accountIds = accounts.map((a) => a.id);
-    const groupsMap = await this.groupRepository.findGroupsForAccounts(accountIds);
+    const [holdings, groupsMap, latestByScope] = await Promise.all([
+      this.holdingRepository.findByUser(userId),
+      this.groupRepository.findGroupsForAccounts(accountIds),
+      user?.baseCurrencyId
+        ? this.dailyRepository.findLatestForScopes(
+            userId,
+            user.baseCurrencyId,
+            accounts.map((a) => ({ kind: 'account' as const, id: a.id }))
+          )
+        : Promise.resolve(new Map()),
+    ]);
 
-    // Group ALL holdings (active + inactive) by account so inactive
-    // holdings still contribute to holdingsCount and keep accounts with
-    // only inactive holdings from being hidden as "empty" in the UI.
-    // Active-only filtering is applied to totalValue below.
-    const holdingsByAccount = new Map<string, typeof holdings>();
+    const holdingsCountByAccount = new Map<string, number>();
     for (const holding of holdings) {
-      if (!holdingsByAccount.has(holding.accountId)) {
-        holdingsByAccount.set(holding.accountId, []);
-      }
-      holdingsByAccount.get(holding.accountId)!.push(holding);
+      holdingsCountByAccount.set(
+        holding.accountId,
+        (holdingsCountByAccount.get(holding.accountId) ?? 0) + 1
+      );
     }
 
-    const tokenIds = [...new Set(holdings.map((h) => h.tokenId))];
-    const tokens = await this.tokenRepository.findByIds(tokenIds);
-    const tokenMap = new Map(tokens.map((t) => [t.id, t]));
-
-    const priceMap = extractPriceMap(portfolioValue);
-
-    const accountsWithSummary = accounts.map((account) => {
-      const accountHoldings = holdingsByAccount.get(account.id) || [];
-      const holdingsCount = accountHoldings.length;
-
-      // Account-level totalValue sums ALL holdings (active + inactive).
-      // Rationale: the account card answers "what's in this account" —
-      // users expect the value of an inactive private-equity holding to
-      // still show up against its account. The portfolio-wide aggregated
-      // totals (dashboard, asset allocation) remain active-only via
-      // PortfolioValuationService, which is the "liquid portfolio value"
-      // number that inactive holdings are designed to exclude.
-      let totalValue = new Decimal(0);
-      for (const holding of accountHoldings) {
-        const token = tokenMap.get(holding.tokenId);
-        if (token) {
-          const price = priceMap.get(token.symbol) || '0';
-          const balance = new Decimal(holding.balance);
-          const holdingValue = balance.mul(new Decimal(price));
-          totalValue = totalValue.add(holdingValue);
-        }
-      }
-
-      // Get groups for this account
+    return accounts.map((account) => {
       const accountGroups = groupsMap.get(account.id) || [];
-
       return {
         ...account,
         summary: {
-          holdingsCount,
-          totalValue: totalValue.toString(),
+          holdingsCount: holdingsCountByAccount.get(account.id) ?? 0,
+          totalValue: latestByScope.get(`account:${account.id}`)?.totalValue ?? '0',
         },
-        groups: accountGroups.map((g) => ({
-          id: g.id,
-          name: g.name,
-          color: g.color,
-        })),
+        groups: accountGroups.map((g) => ({ id: g.id, name: g.name, color: g.color })),
       };
     });
+  }
 
-    return accountsWithSummary;
+  /**
+   * Single-account variant. Detail pages call this instead of paying
+   * for the full list when they only render one account.
+   */
+  async getAccountByIdWithSummary(
+    userId: string,
+    accountId: string
+  ): Promise<AccountWihSumaryDTO | null> {
+    const [account, user] = await Promise.all([
+      this.accountRepository.findById(accountId),
+      this.userRepository.findById(userId),
+    ]);
+    if (!account || account.userId !== userId) return null;
+
+    const [holdings, groupsMap, latestByScope] = await Promise.all([
+      this.holdingRepository.findByUser(userId),
+      this.groupRepository.findGroupsForAccounts([accountId]),
+      user?.baseCurrencyId
+        ? this.dailyRepository.findLatestForScopes(userId, user.baseCurrencyId, [
+            { kind: 'account', id: accountId },
+          ])
+        : Promise.resolve(new Map()),
+    ]);
+
+    const holdingsCount = holdings.filter((h) => h.accountId === accountId).length;
+    const accountGroups = groupsMap.get(accountId) || [];
+    return {
+      ...account,
+      summary: {
+        holdingsCount,
+        totalValue: latestByScope.get(`account:${accountId}`)?.totalValue ?? '0',
+      },
+      groups: accountGroups.map((g) => ({ id: g.id, name: g.name, color: g.color })),
+    };
   }
 
   async deleteAccount(accountId: string, _userId: string): Promise<boolean> {

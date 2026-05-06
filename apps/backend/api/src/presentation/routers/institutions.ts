@@ -180,11 +180,18 @@ export const institutionsRouter = router({
 
   getByUserIdWithSummary: protectedProcedure.query(async ({ ctx }) => {
     const { dbUser } = await requireAuth(ctx);
-    return await Container.get(InstitutionService).getInstitutionsByUserIdWithSummary(
-      dbUser.id,
-      ctx.requestCache
-    );
+    return await Container.get(InstitutionService).getInstitutionsByUserIdWithSummary(dbUser.id);
   }),
+
+  getByIdWithSummary: protectedProcedure
+    .input(z.object({ id: z.string() }))
+    .query(async ({ input, ctx }) => {
+      const { dbUser } = await requireAuth(ctx);
+      return await Container.get(InstitutionService).getInstitutionByIdWithSummary(
+        dbUser.id,
+        input.id
+      );
+    }),
 
   getById: protectedProcedure.input(z.object({ id: z.string() })).query(async ({ input }) => {
     return await Container.get(InstitutionRepository).findById(input.id);

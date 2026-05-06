@@ -68,6 +68,13 @@ export const jobsRouter = router({
    * List the caller's jobs from the durable `user_jobs` mirror. Newest first.
    * Powers the top-nav badge count, the /jobs list page, and — via
    * `invalidate` on WS events — a near-live feed without extra server work.
+   *
+   * The full job `result` payload is stripped here — it can be 20+ KB
+   * for some wallet-import / screenshot-parse jobs, and the list view
+   * (badge count, jobs page row) doesn't render it. Per-job detail
+   * pages fetch the full row via `getMine` instead. Without this trim,
+   * every WS event during a recompute invalidates `listMine` and
+   * re-fetches ~95 KB.
    */
   listMine: protectedProcedure
     .input(
@@ -79,9 +86,10 @@ export const jobsRouter = router({
         })
         .optional()
     )
-    .query(({ ctx, input }) => {
+    .query(async ({ ctx, input }) => {
       const repo = Container.get(UserJobRepository);
-      return repo.findMine(ctx.userId, input ?? {});
+      const rows = await repo.findMine(ctx.userId, input ?? {});
+      return rows.map(({ result: _result, ...rest }) => rest);
     }),
 
   /** Single job by id. Ownership-gated via `userId` column. */

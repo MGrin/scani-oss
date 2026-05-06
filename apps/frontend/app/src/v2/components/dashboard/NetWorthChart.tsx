@@ -15,7 +15,7 @@ import {
 } from 'recharts';
 import { trpc } from '@/lib/trpc';
 import { useBaseCurrency } from '../../hooks/useBaseCurrency';
-import { useUserJobs } from '../../hooks/useUserJobs';
+import type { useUserJobs } from '../../hooks/useUserJobs';
 import { V2_ROUTES } from '../../lib/routes';
 
 type Granularity = 'daily' | 'weekly' | 'monthly';
@@ -81,15 +81,20 @@ export interface NetWorthChartProps {
   // detail-page embeds want shorter labels (e.g., "Value over time"
   // when the parent header already says "AAPL holding").
   title?: string;
+  // Hoisted from the parent (PortfolioCharts) so a tabbed layout
+  // only runs ONE `jobs.listMine` query + WS subscription per page,
+  // not one per chart card.
+  chartAffectingActive: boolean;
+  chartAffectingFailure: ReturnType<typeof useUserJobs>['chartAffectingFailure'];
 }
 
-export function NetWorthChart({ scope, title }: NetWorthChartProps = {}) {
+export function NetWorthChart({
+  scope,
+  title,
+  chartAffectingActive,
+  chartAffectingFailure,
+}: NetWorthChartProps) {
   const { symbol: baseSymbol, isLoading: baseLoading } = useBaseCurrency();
-  // Surface backfill / tx-import progress to the chart. While any
-  // chart-affecting job is running, the curve we render is stale —
-  // signal that with the inline spinner; on a recent failure, show a
-  // warning banner so the user knows the curve is incomplete.
-  const { chartAffectingActive, chartAffectingFailure } = useUserJobs();
 
   // Static range — no zoom, no pan, no drag. The previous version
   // wired wheel/drag/touch handlers to scroll and zoom the chart, but

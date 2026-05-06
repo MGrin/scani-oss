@@ -16,7 +16,7 @@ import {
 } from 'recharts';
 import { trpc } from '@/lib/trpc';
 import { useBaseCurrency } from '../../hooks/useBaseCurrency';
-import { useUserJobs } from '../../hooks/useUserJobs';
+import type { useUserJobs } from '../../hooks/useUserJobs';
 import { V2_ROUTES } from '../../lib/routes';
 import type { NetWorthChartScope } from './NetWorthChart';
 
@@ -70,11 +70,19 @@ function formatTick(iso: string, granularity: Granularity): string {
 export interface PnLChartProps {
   scope?: NetWorthChartScope;
   title?: string;
+  // Hoisted from PortfolioCharts — see NetWorthChartProps for the
+  // rationale (one `jobs.listMine` query per page, not per chart).
+  chartAffectingActive: boolean;
+  chartAffectingFailure: ReturnType<typeof useUserJobs>['chartAffectingFailure'];
 }
 
-export function PnLChart({ scope, title }: PnLChartProps = {}) {
+export function PnLChart({
+  scope,
+  title,
+  chartAffectingActive,
+  chartAffectingFailure,
+}: PnLChartProps) {
   const { symbol: baseSymbol, isLoading: baseLoading } = useBaseCurrency();
-  const { chartAffectingActive, chartAffectingFailure } = useUserJobs();
   const [windowDays, setWindowDays] = useState(DEFAULT_DAYS);
 
   const { from, to } = useMemo(() => {
