@@ -63,6 +63,7 @@ export class PnLAtTimeService {
 
     for (const ph of valuation.perHolding) {
       const cost = await this.costBasisService.getCostBasis(ph.holdingId, at, baseCurrencyId, {
+        heldTokenId: ph.tokenId,
         ...(opts.priceLookup ? { priceLookup: opts.priceLookup } : {}),
       });
       totalCost = totalCost.add(cost.costBasis);

@@ -95,22 +95,14 @@ export class PortfolioValuationAtTimeService {
     const allHoldings = await this.holdingRepository.findByUser(userId);
 
     // Apply the per-entity scope filter (institution / account /
-    // holding) BEFORE the date filter, so an empty per-entity result
-    // is reported as 0 holdings (and coverage='full' as a degenerate
-    // case) instead of falling through with an out-of-scope total.
-    const scopedHoldings = await this.applyScope(allHoldings, opts.scope, userId);
-
-    // Exclude holdings that didn't exist on the snapshot date. A
-    // manual / screenshot holding created today shouldn't pad
-    // `holdings_total` for past dates — that distorts the
-    // `holdings_with_known_value / holdings_total` ratio and pushes
-    // the coverage_quality badge into 'estimated' / 'unknown' for
-    // dates where every holding that DID exist was priced just fine.
-    // BalanceAtTimeService still propagates the current balance
-    // backward via the "holdings current" anchor for holdings whose
-    // first activity was after `at`; we explicitly skip those here so
-    // they neither contribute value nor inflate the denominator.
-    const holdings = scopedHoldings.filter((h) => h.createdAt.getTime() <= at.getTime());
+    // holding). Holdings created after `at` are kept in the pool —
+    // BalanceAtTimeService's "holdings current" anchor propagates
+    // their present balance backward (with at-time FX), which is the
+    // intended behaviour for the history chart. An earlier revision
+    // dropped them here to keep the coverage denominator honest, but
+    // that produced an empty chart for users whose holdings were all
+    // created in the last day or two (the typical onboarding case).
+    const holdings = await this.applyScope(allHoldings, opts.scope, userId);
 
     const perHolding: PortfolioValueAtTimePerHolding[] = [];
     let total = new Decimal(0);
