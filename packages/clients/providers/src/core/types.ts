@@ -168,16 +168,20 @@ export interface TransactionEvent {
     | 'unknown';
   /** Primary token + signed quantity. Outflows negative; inflows
       positive. Sign-enforcement happens at the base-class boundary,
-      not in concrete providers. */
-  primary: { tokenIdentity: Partial<NewToken>; quantity: string };
+      not in concrete providers. `tokenType` ('crypto' | 'fiat' |
+      'stock' | …) hints the orchestrator at the right `tokenTypes`
+      row when it has to find-or-create the underlying `Token`.
+      Mixed-asset providers (IBKR equity vs cash, Kraken USD vs BTC)
+      MUST set this; pure-crypto providers can omit it. */
+  primary: { tokenIdentity: Partial<NewToken>; quantity: string; tokenType?: string };
   /** Other side of a trade or swap. Optional. */
-  counter?: { tokenIdentity: Partial<NewToken>; quantity: string };
+  counter?: { tokenIdentity: Partial<NewToken>; quantity: string; tokenType?: string };
   /** Fee leg, in its own native token (often distinct from primary). */
-  fee?: { tokenIdentity: Partial<NewToken>; quantity: string };
+  fee?: { tokenIdentity: Partial<NewToken>; quantity: string; tokenType?: string };
   /** Per-unit price at the time the tx happened, denominated in its
       native quote currency (a Kraken BTC/EUR trade has
       `quoteIdentity` = EUR). Stored as-is so cost basis stays
       currency-correct without round-tripping through USD. */
-  priceNative?: { value: string; quoteIdentity: Partial<NewToken> };
+  priceNative?: { value: string; quoteIdentity: Partial<NewToken>; tokenType?: string };
   rawPayload?: unknown;
 }

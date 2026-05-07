@@ -5,6 +5,7 @@ import Decimal from 'decimal.js';
 import { Container, Service } from 'typedi';
 import { GroupRepository } from '../../repositories/GroupRepository';
 import { HoldingApyConfigRepository } from '../../repositories/HoldingApyConfigRepository';
+import { HoldingCoverageRepository } from '../../repositories/HoldingCoverageRepository';
 import { HoldingRepository } from '../../repositories/HoldingRepository';
 import { BaseService } from '../BaseService';
 import { PortfolioValuationService } from '../portfolio/PortfolioValuationService';
@@ -17,6 +18,7 @@ export class HoldingQueryService extends BaseService {
   private readonly holdingRepository = Container.get(HoldingRepository);
   private readonly groupRepository = Container.get(GroupRepository);
   private readonly holdingApyConfigRepository = Container.get(HoldingApyConfigRepository);
+  private readonly holdingCoverageRepository = Container.get(HoldingCoverageRepository);
   private readonly portfolioValuationService = Container.get(PortfolioValuationService);
 
   constructor() {
@@ -58,7 +60,7 @@ export class HoldingQueryService extends BaseService {
     }
 
     const holdingIds = holdingsWithFullDetails.map(({ holding }) => holding.id);
-    const [groupsMap, apyConfigsMap] = await Promise.all([
+    const [groupsMap, apyConfigsMap, coverageMap] = await Promise.all([
       this.groupRepository.findGroupsForHoldings(
         holdingsWithFullDetails.map(({ holding, account }) => ({
           id: holding.id,
@@ -66,6 +68,7 @@ export class HoldingQueryService extends BaseService {
         }))
       ),
       this.holdingApyConfigRepository.findByHoldingIds(holdingIds),
+      this.holdingCoverageRepository.findManyByHoldingIds(holdingIds),
     ]);
 
     const portfolioPriceMap = new Map(
@@ -163,6 +166,23 @@ export class HoldingQueryService extends BaseService {
             lastPayoutAt: apyConfig.lastPayoutAt?.toISOString() ?? null,
             isActive: apyConfig.isActive,
           };
+        }
+
+        // Surface the reconciliation gap stamped by the import flow:
+        // a synthesized negative `opening_balance_quantity` means the
+        // ledger doesn't reach back far enough to explain the user's
+        // current balance. The chart's `BalanceAtTimeService.clamp`
+        // hides this by flooring at zero — the badge tells the user.
+        const coverage = coverageMap.get(holding.id);
+        if (coverage?.openingBalanceQuantity != null) {
+          const opening = new Decimal(coverage.openingBalanceQuantity);
+          if (opening.lt(0)) {
+            result.dataIntegrity = {
+              incompleteHistory: true,
+              missingQuantity: opening.toString(),
+              ...(coverage.reconciliationNotes ? { note: coverage.reconciliationNotes } : {}),
+            };
+          }
         }
 
         return result;

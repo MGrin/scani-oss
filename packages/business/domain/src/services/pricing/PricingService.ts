@@ -300,48 +300,58 @@ export class PricingService {
             'Fetching prices from external providers'
           );
 
-          const MAX_PROVIDER_RETRIES = 3;
-          let lastError: Error | null = null;
+          // First pass — fetch all needed tokens in one batch, fanning
+          // out per-provider inside routeAndFetch. Each provider has its
+          // own rate limiter + circuit breaker; per-provider transient
+          // errors are caught inside fetchFromAllProviders and surface
+          // as failure rows rather than throwing.
+          //
+          // The previous incarnation slept 2/4/8 s between three full
+          // retries of the whole batch on any retryable error — a
+          // single CoinGecko 429 stalled every other token's pricing
+          // for up to 14 s. We now retry ONLY the tokens that came
+          // back missing or zero, once, with no sleep — providers'
+          // own limiters pace the second pass.
+          try {
+            const freshPrices = await this.providerRouter.routeAndFetch(
+              tokensNeedingPrices,
+              baseCurrencyToken,
+              timestamp
+            );
+            for (const priceResult of freshPrices) {
+              results.set(priceResult.tokenId, priceResult.price);
+            }
+          } catch (error) {
+            const err = error instanceof Error ? error : new Error(String(error));
+            logger.warn(
+              { error: err.message, tokenCount: tokensNeedingPrices.length },
+              'Provider batch threw — retrying once for tokens still missing'
+            );
+          }
 
-          for (let retryAttempt = 0; retryAttempt <= MAX_PROVIDER_RETRIES; retryAttempt++) {
+          const stillMissing = tokensNeedingPrices.filter(
+            (t) => !results.has(t.id) || results.get(t.id) === '0'
+          );
+          if (stillMissing.length > 0 && stillMissing.length < tokensNeedingPrices.length) {
             try {
-              const freshPrices = await this.providerRouter.routeAndFetch(
-                tokensNeedingPrices,
+              const retryPrices = await this.providerRouter.routeAndFetch(
+                stillMissing,
                 baseCurrencyToken,
                 timestamp
               );
-
-              for (const priceResult of freshPrices) {
-                results.set(priceResult.tokenId, priceResult.price);
+              for (const priceResult of retryPrices) {
+                if (priceResult.price !== '0') {
+                  results.set(priceResult.tokenId, priceResult.price);
+                }
               }
-
-              lastError = null;
-              break;
             } catch (error) {
-              lastError = error instanceof Error ? error : new Error(String(error));
-
-              const isRetryable =
-                lastError.message.includes('retryable_error') ||
-                lastError.message.includes('CoinGecko retryable_error') ||
-                lastError.message.includes('Finnhub retryable_error') ||
-                lastError.message.includes('DeFiLlama retryable_error');
-
-              if (!isRetryable || retryAttempt >= MAX_PROVIDER_RETRIES) {
-                throw lastError;
-              }
-
-              const backoffMs = 2 ** retryAttempt * 2000;
               logger.warn(
                 {
-                  error: lastError.message,
-                  attempt: retryAttempt + 1,
-                  maxRetries: MAX_PROVIDER_RETRIES + 1,
-                  backoffMs,
+                  error: error instanceof Error ? error.message : String(error),
+                  tokenCount: stillMissing.length,
                 },
-                'Provider request failed with retryable error, retrying with backoff'
+                'Per-token retry pass failed — falling back to cached prices'
               );
-
-              await new Promise((resolve) => setTimeout(resolve, backoffMs));
             }
           }
 

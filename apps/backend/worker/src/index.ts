@@ -291,6 +291,45 @@ async function main(): Promise<void> {
   };
   process.on('SIGTERM', () => void shutdown('SIGTERM'));
   process.on('SIGINT', () => void shutdown('SIGINT'));
+
+  // Survive transient postgres.js socket drops. Neon's pooled endpoint
+  // closes idle TCP connections on its own clock; the driver then
+  // tries to write Sync to a half-closed socket and dereferences a
+  // null `write` (`TypeError: null is not an object (evaluating
+  // 'v.write')` — Sentry, 2026-05-07 03:31 UTC). Bubbled all the way
+  // up, that took down the worker mid-cron.
+  //
+  // postgres.js auto-reconnects on the next query, so logging+swallowing
+  // here lets the next BullMQ job re-acquire a fresh connection from
+  // the pool. We still report to Sentry so a rising error rate is
+  // visible, and we still exit on truly fatal errors (any non-Postgres
+  // / non-write-after-close TypeError) so we don't paper over real bugs.
+  const POSTGRES_TRANSIENT_ERROR =
+    /CONNECTION_CLOSED|null is not an object \(evaluating 'v\.write'\)|write after end/i;
+  process.on('uncaughtException', (error: Error) => {
+    if (POSTGRES_TRANSIENT_ERROR.test(error.message)) {
+      logger.warn(
+        { error: error.message },
+        '⚠️ Transient postgres connection error — driver will reconnect'
+      );
+      sentryCapture(error);
+      return;
+    }
+    logger.error({ error }, '💥 Unhandled exception in worker — exiting');
+    sentryCapture(error);
+    void flushSentry(2000).then(() => process.exit(1));
+  });
+  process.on('unhandledRejection', (reason: unknown) => {
+    const err = reason instanceof Error ? reason : new Error(String(reason));
+    if (POSTGRES_TRANSIENT_ERROR.test(err.message)) {
+      logger.warn({ error: err.message }, '⚠️ Transient postgres rejection — driver will reconnect');
+      sentryCapture(err);
+      return;
+    }
+    logger.error({ error: err }, '💥 Unhandled rejection in worker — exiting');
+    sentryCapture(err);
+    void flushSentry(2000).then(() => process.exit(1));
+  });
 }
 
 main().catch(async (error) => {

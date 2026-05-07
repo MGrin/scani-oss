@@ -177,26 +177,41 @@ export class TransactionRouter {
     const tokenCache = new Map<string, string>();
     const holdingCache = new Map<string, string>();
 
-    const cryptoTokenType = await this.tokenTypeRepository.findByCode('crypto');
-    const fiatTokenType = await this.tokenTypeRepository.findByCode('fiat');
-    const defaultTypeId = cryptoTokenType?.id ?? fiatTokenType?.id;
+    // Pre-resolve every token-type code we might map against per-leg
+    // `tokenType` hints. IBKR equity legs declare `tokenType: 'stock'`
+    // (otherwise they'd default to crypto and silently route Yahoo →
+    // ETF look-alike pricing — see prod incident 2026-05-06 where
+    // AAPL/MSFT/NVDA/AMZN/PLTR/VOO ended up `crypto`-typed).
+    const seededTypes = await this.tokenTypeRepository.findByCodes([
+      'crypto',
+      'fiat',
+      'stock',
+      'private-company',
+      'other',
+    ]);
+    const tokenTypeIdByCode = new Map<string, string>(seededTypes.map((t) => [t.code, t.id]));
+    const defaultTypeId = tokenTypeIdByCode.get('crypto') ?? tokenTypeIdByCode.get('fiat');
     if (!defaultTypeId) {
       throw new Error('TransactionRouter: neither crypto nor fiat token type seeded');
     }
 
-    const resolveTokenId = async (identity: Partial<NewToken>): Promise<string | null> => {
+    const resolveTokenId = async (
+      identity: Partial<NewToken>,
+      tokenType?: string
+    ): Promise<string | null> => {
       const cacheKey = this.identityCacheKey(identity);
       const cached = tokenCache.get(cacheKey);
       if (cached) return cached;
       try {
+        // Per-leg `tokenType` hint takes precedence over the default;
+        // identity.typeId (rare, usually unset by providers) wins over
+        // both. The findOrCreateByIdentity lookup-by-tuple still finds
+        // existing rows regardless of the supplied typeId, so this only
+        // matters for newly-created tokens.
+        const hintedTypeId = tokenType ? tokenTypeIdByCode.get(tokenType) : undefined;
         const partial: Partial<NewToken> = {
           ...identity,
-          // Default to crypto for tx-history events when the provider
-          // didn't tag a typeId. Fiat exchange-leg tokens (USD, EUR)
-          // are seeded with fiat typeId already and the
-          // findOrCreateByIdentity lookup-by-tuple finds them
-          // regardless of the supplied typeId.
-          typeId: identity.typeId ?? defaultTypeId,
+          typeId: identity.typeId ?? hintedTypeId ?? defaultTypeId,
         };
         const token = await this.tokenIdentityService.findOrCreateByIdentity(partial);
         tokenCache.set(cacheKey, token.id);
@@ -251,17 +266,22 @@ export class TransactionRouter {
     };
 
     for (const event of events) {
-      const primaryTokenId = await resolveTokenId(event.primary.tokenIdentity);
+      const primaryTokenId = await resolveTokenId(
+        event.primary.tokenIdentity,
+        event.primary.tokenType
+      );
       if (!primaryTokenId) continue;
       const primaryHoldingId = await resolveHoldingId(primaryTokenId);
       if (!primaryHoldingId) continue;
 
       const counterTokenId = event.counter
-        ? await resolveTokenId(event.counter.tokenIdentity)
+        ? await resolveTokenId(event.counter.tokenIdentity, event.counter.tokenType)
         : null;
-      const feeTokenId = event.fee ? await resolveTokenId(event.fee.tokenIdentity) : null;
+      const feeTokenId = event.fee
+        ? await resolveTokenId(event.fee.tokenIdentity, event.fee.tokenType)
+        : null;
       const priceNativeTokenId = event.priceNative
-        ? await resolveTokenId(event.priceNative.quoteIdentity)
+        ? await resolveTokenId(event.priceNative.quoteIdentity, event.priceNative.tokenType)
         : null;
 
       if (!accumulator.first || event.occurredAt < accumulator.first) {

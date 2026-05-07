@@ -329,6 +329,8 @@ const SYNTHETIC_USD_TOKEN: Token = {
   isScamProbability: 0,
   isActive: true,
   marketSegment: null,
+  unpriceableUntil: null,
+  lastPricingAttemptAt: null,
   createdAt: new Date(0),
   updatedAt: new Date(0),
 };

@@ -119,6 +119,8 @@ export function makeMockToken(over: Partial<Token> = {}): Token {
     providerMetadata: {},
     isScamProbability: 0,
     isActive: true,
+    unpriceableUntil: null,
+    lastPricingAttemptAt: null,
     createdAt: now,
     updatedAt: now,
     ...over,

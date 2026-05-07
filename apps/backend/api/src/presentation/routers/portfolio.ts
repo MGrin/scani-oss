@@ -14,7 +14,7 @@
 import { randomUUID } from 'node:crypto';
 import { db } from '@scani/db/connection';
 import * as schema from '@scani/db/schema';
-import { PortfolioValueDailyRepository } from '@scani/domain/repositories';
+import { PortfolioValueDailyRepository, UserJobRepository } from '@scani/domain/repositories';
 import { PORTFOLIO_HISTORY_BACKFILL } from '@scani/jobs';
 import { BullMqEnqueueService } from '@scani/queue';
 import { TRPCError } from '@trpc/server';
@@ -380,15 +380,23 @@ export const portfolioRouter = router({
   // chart cache after import / data fixes without waiting for 04:00
   // UTC. Always passes lookbackDays=365 (the deepest the rollup is
   // configured to handle) so a single click rebuilds everything,
-  // not just the recent tail.
+  // not just the recent tail. If a backfill is already in flight for
+  // this user we return that jobId instead of stacking duplicates —
+  // each run is heavy (16K+ provider lookups) and the worker advisory
+  // lock would skip the duplicate anyway.
   recomputeHistory: protectedProcedure.mutation(async ({ ctx }) => {
     const { dbUser } = await requireAuth(ctx);
+    const userJobs = Container.get(UserJobRepository);
+    const inFlight = await userJobs.findInFlightByName(dbUser.id, PORTFOLIO_HISTORY_BACKFILL.name);
+    if (inFlight) {
+      return { jobId: inFlight.jobId, deduplicated: true } as const;
+    }
     const jobId = await Container.get(BullMqEnqueueService).add(PORTFOLIO_HISTORY_BACKFILL, {
       userId: dbUser.id,
       requestId: randomUUID(),
       tokenIds: [],
       lookbackDays: 365,
     });
-    return { jobId };
+    return { jobId, deduplicated: false } as const;
   }),
 });

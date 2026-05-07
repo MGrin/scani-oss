@@ -12,20 +12,41 @@
  *    ingester populates new tx occurred_at dates)
  */
 
+import { withAdvisoryLock } from '@scani/db';
 import { db } from '@scani/db/connection';
 import * as schema from '@scani/db/schema';
 import { createComponentLogger } from '@scani/logging';
 import { and, eq, gte, ne, sql } from 'drizzle-orm';
 import { Container, Service } from 'typedi';
+import { TokenRepository } from '../repositories/TokenRepository';
 import { HistoricalPriceBackfillService } from '../services';
+import { rollupLockKey } from './RollupPortfolioValueDailyUseCase';
 
 const logger = createComponentLogger('use-case:backfill-historical-prices');
+
+// Cooldown applied when a token's entire requested backfill range comes
+// back empty. 7 days balances "stop hammering providers" against "give
+// a newly-listed token a chance to start showing up." Tunable here.
+const UNPRICEABLE_COOLDOWN_MS = 7 * 24 * 60 * 60 * 1000;
+
+// Don't apply the cooldown for short ranges — a 5-day backfill that
+// happens to land on a holiday weekend should not blocklist a stock for
+// a week. 30 days of consecutive misses is the floor.
+const UNPRICEABLE_MIN_RANGE_DAYS = 30;
 
 export interface BackfillSummary {
   attempted: number;
   inserted: number;
   alreadyHad: number;
   providerMissing: number;
+  // Tokens we skipped entirely because they're inside an unpriceable
+  // cooldown window from a previous failed backfill.
+  skippedUnpriceable: number;
+  // True when the per-user advisory lock was already held — another
+  // backfill or rollup is in flight for this user, so we no-oped.
+  // Caller (typically the user job processor) can re-queue a delayed
+  // retry rather than reporting an empty success.
+  skippedDueToLock?: boolean;
   durationMs: number;
 }
 
@@ -33,6 +54,7 @@ export interface BackfillSummary {
 export class BackfillHistoricalPricesUseCase {
   // Class-field DI — see note in BalanceAtTimeService.ts.
   private readonly backfillService = Container.get(HistoricalPriceBackfillService);
+  private readonly tokenRepository = Container.get(TokenRepository);
 
   // Walks every user's held tokens, identifies dates where we have a
   // transaction but no nearby daily price, and runs the backfill.
@@ -53,10 +75,42 @@ export class BackfillHistoricalPricesUseCase {
       tokenIds?: string[];
     } = { usdTokenId: '' }
   ): Promise<BackfillSummary> {
-    const start = Date.now();
     if (!opts.usdTokenId) {
       throw new Error('BackfillHistoricalPricesUseCase.execute requires opts.usdTokenId');
     }
+    // Per-user mode: take the same advisory lock the rollup uses, so a
+    // manual "Recompute" click during the 04:00 cron rollup or the 03:00
+    // historical-price-backfill cron no-ops cleanly instead of racing
+    // on the same token_prices rows.
+    if (opts.userId) {
+      const outcome = await withAdvisoryLock(rollupLockKey(opts.userId), () =>
+        this.executeLocked(opts)
+      );
+      if (outcome.ran) return outcome.result;
+      logger.info(
+        { userId: opts.userId },
+        'Backfill skipped — rollup/backfill already in flight for this user'
+      );
+      return {
+        attempted: 0,
+        inserted: 0,
+        alreadyHad: 0,
+        providerMissing: 0,
+        skippedUnpriceable: 0,
+        skippedDueToLock: true,
+        durationMs: 0,
+      };
+    }
+    return this.executeLocked(opts);
+  }
+
+  private async executeLocked(opts: {
+    usdTokenId: string;
+    lookbackDays?: number;
+    userId?: string;
+    tokenIds?: string[];
+  }): Promise<BackfillSummary> {
+    const start = Date.now();
     const lookback = opts.lookbackDays ?? 365 * 5;
     const since = new Date(Date.now() - lookback * 24 * 60 * 60 * 1000);
 
@@ -91,6 +145,43 @@ export class BackfillHistoricalPricesUseCase {
     //   2. Existing daily-granularity price rows in the lookback
     //      window (so we can skip candidates we already priced).
     //   3. generate_series in JS for the date list.
+    // Per-token lifetime, derived from `holding_coverage`. Lets the
+    // cross-product below walk only the days where the user actually
+    // held the token — for closed positions, we don't need to keep
+    // pricing them through to today. Tokens whose holding_coverage
+    // row hasn't been populated (~22 % of prod holdings as of 2026-05)
+    // fall through to the lookback default.
+    const lifetimeRows = await db
+      .select({
+        tokenId: schema.holdings.tokenId,
+        firstTxAt: sql<Date | null>`MIN(${schema.holdingCoverage.firstTxAt})`,
+        lastTxAt: sql<Date | null>`MAX(${schema.holdingCoverage.lastTxAt})`,
+        stillHeld: sql<boolean>`BOOL_OR(${schema.holdings.balance}::numeric > 0)`,
+      })
+      .from(schema.holdings)
+      .leftJoin(schema.holdingCoverage, eq(schema.holdingCoverage.holdingId, schema.holdings.id))
+      .where(opts.userId ? eq(schema.holdings.userId, opts.userId) : undefined)
+      .groupBy(schema.holdings.tokenId);
+    const tokenLifetime = new Map<
+      string,
+      { firstTxAt: Date | null; lastTxAt: Date | null; stillHeld: boolean }
+    >();
+    for (const row of lifetimeRows) {
+      const firstTxAt =
+        row.firstTxAt instanceof Date
+          ? row.firstTxAt
+          : row.firstTxAt
+            ? new Date(row.firstTxAt)
+            : null;
+      const lastTxAt =
+        row.lastTxAt instanceof Date ? row.lastTxAt : row.lastTxAt ? new Date(row.lastTxAt) : null;
+      tokenLifetime.set(row.tokenId, {
+        firstTxAt,
+        lastTxAt,
+        stillHeld: row.stillHeld === true,
+      });
+    }
+
     const heldTokens = await db
       .select({ tokenId: schema.holdings.tokenId })
       .from(schema.holdings)
@@ -119,19 +210,38 @@ export class BackfillHistoricalPricesUseCase {
       }
     }
 
+    // Drop tokens still inside an unpriceable cooldown — a previous
+    // backfill couldn't get prices, no provider has changed since, no
+    // point asking again. Cooldown is cleared on the next successful
+    // backfill (e.g. a new provider added, or the token started trading).
+    const now = new Date();
+    const unpriceable = await this.tokenRepository.findUnpriceableTokenIds(now);
+    let skippedUnpriceable = 0;
+    for (const id of [...userTokenSet]) {
+      if (unpriceable.has(id)) {
+        userTokenSet.delete(id);
+        skippedUnpriceable++;
+      }
+    }
+
     const existing = await db
       .select({
         tokenId: schema.tokenPrices.tokenId,
         // Bucket to day in SQL so the JS set key matches the series
         // format. `date_trunc('day', ts)` returns midnight UTC of the
         // row's day, which mirrors how we construct `dayAt` below.
+        // We accept ANY granularity here ('daily' OR 'intraday' OR
+        // 'tx-exact') — if some other path already wrote a price for
+        // (token, day), there's no point hitting the provider again.
+        // The previous version filtered to granularity='daily' only,
+        // which let intraday rows from the hourly pricing job slip
+        // past the dedup and forced redundant provider lookups.
         day: sql<Date>`date_trunc('day', ${schema.tokenPrices.timestamp})`,
       })
       .from(schema.tokenPrices)
       .where(
         and(
           eq(schema.tokenPrices.baseTokenId, opts.usdTokenId),
-          eq(schema.tokenPrices.granularity, 'daily'),
           gte(schema.tokenPrices.timestamp, since),
           ne(schema.tokenPrices.tokenId, opts.usdTokenId)
         )
@@ -153,25 +263,56 @@ export class BackfillHistoricalPricesUseCase {
     );
     const dayMs = 86_400_000;
     const normalized: Array<{ tokenId: string; day: Date }> = [];
+    let alreadyHadCount = 0;
     for (const tokenId of userTokenSet) {
-      for (let t = sinceDay.getTime(); t <= todayDay.getTime(); t += dayMs) {
+      const lifetime = tokenLifetime.get(tokenId);
+      // Bound per-token range by the holding's actual lifetime. UTC-day
+      // floor on first_tx_at lines up with the candidate keys.
+      let tokenStart = sinceDay.getTime();
+      let tokenEnd = todayDay.getTime();
+      if (lifetime?.firstTxAt) {
+        const firstDay = Date.UTC(
+          lifetime.firstTxAt.getUTCFullYear(),
+          lifetime.firstTxAt.getUTCMonth(),
+          lifetime.firstTxAt.getUTCDate()
+        );
+        tokenStart = Math.max(tokenStart, firstDay);
+      }
+      if (!lifetime?.stillHeld && lifetime?.lastTxAt) {
+        const lastDay = Date.UTC(
+          lifetime.lastTxAt.getUTCFullYear(),
+          lifetime.lastTxAt.getUTCMonth(),
+          lifetime.lastTxAt.getUTCDate()
+        );
+        tokenEnd = Math.min(tokenEnd, lastDay);
+      }
+      for (let t = tokenStart; t <= tokenEnd; t += dayMs) {
         const dayAt = new Date(t);
         const key = `${tokenId}:${dayAt.toISOString().slice(0, 10)}`;
-        if (havePriced.has(key)) continue;
+        if (havePriced.has(key)) {
+          alreadyHadCount++;
+          continue;
+        }
         normalized.push({ tokenId, day: dayAt });
       }
     }
 
     logger.info(
-      { pending: normalized.length, lookbackDays: lookback },
+      {
+        pending: normalized.length,
+        alreadyHad: alreadyHadCount,
+        skippedUnpriceable,
+        lookbackDays: lookback,
+      },
       'Historical price backfill candidates identified'
     );
 
     const summary: BackfillSummary = {
       attempted: normalized.length,
       inserted: 0,
-      alreadyHad: 0,
+      alreadyHad: alreadyHadCount,
       providerMissing: 0,
+      skippedUnpriceable,
       durationMs: 0,
     };
 
@@ -199,6 +340,8 @@ export class BackfillHistoricalPricesUseCase {
     // covers the typical 5-10 distinct holdings without DOS-ing
     // any single provider.
     const TOKEN_CONCURRENCY = 10;
+    const markUnpriceable: string[] = [];
+    const clearUnpriceable: string[] = [];
     for (let i = 0; i < tokenIds.length; i += TOKEN_CONCURRENCY) {
       const batch = tokenIds.slice(i, i + TOKEN_CONCURRENCY);
       const settled = await Promise.allSettled(
@@ -209,12 +352,19 @@ export class BackfillHistoricalPricesUseCase {
       );
       for (let j = 0; j < settled.length; j++) {
         const result = settled[j];
+        const tokenId = batch[j];
         if (result?.status === 'fulfilled') {
           summary.inserted += result.value.inserted;
-          summary.alreadyHad += result.value.alreadyHad;
           summary.providerMissing += result.value.providerMissing;
+          if (tokenId) {
+            const requested = daysByToken.get(tokenId)?.length ?? 0;
+            if (result.value.inserted > 0) {
+              clearUnpriceable.push(tokenId);
+            } else if (requested >= UNPRICEABLE_MIN_RANGE_DAYS) {
+              markUnpriceable.push(tokenId);
+            }
+          }
         } else if (result?.status === 'rejected') {
-          const tokenId = batch[j];
           const days = daysByToken.get(tokenId ?? '') ?? [];
           summary.providerMissing += days.length;
           logger.warn(
@@ -225,8 +375,20 @@ export class BackfillHistoricalPricesUseCase {
       }
     }
 
+    if (markUnpriceable.length > 0 || clearUnpriceable.length > 0) {
+      await this.tokenRepository.applyPricingResults({
+        markUnpriceable,
+        clearUnpriceable,
+        cooldownMs: UNPRICEABLE_COOLDOWN_MS,
+        now,
+      });
+    }
+
     summary.durationMs = Date.now() - start;
-    logger.info({ summary }, 'Historical price backfill complete');
+    logger.info(
+      { summary, markedUnpriceable: markUnpriceable.length, cleared: clearUnpriceable.length },
+      'Historical price backfill complete'
+    );
     return summary;
   }
 }

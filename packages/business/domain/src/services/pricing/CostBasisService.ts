@@ -163,6 +163,13 @@ export class CostBasisService {
   //      can be inferred from spot pricing of the held token.
   // Returns null only when neither path resolves — caller treats null
   // as a zero-cost lot.
+  //
+  // SWAPS are special: a 10 BTC → 100 ETH swap has proceeds in ETH,
+  // not in BTC, so the held-token fallback would wrongly value the
+  // BTC leg at BTC's spot price (silently understating realized PnL
+  // — see prod evidence: 30 swap_out vs 25 swap_in rows in the user's
+  // ledger). For swap_in/swap_out we therefore require `priceNative`
+  // and refuse to guess.
   private async txValueInBase(
     tx: HoldingTransaction,
     qtyAbs: Decimal,
@@ -187,6 +194,16 @@ export class CostBasisService {
       if (converted) return converted.amount;
       // priceNative recorded but no FX route: continue to the
       // held-token fallback below rather than returning null.
+    }
+
+    const isSwap = tx.kind === 'swap_in' || tx.kind === 'swap_out';
+    if (isSwap) {
+      // No held-token fallback for swaps — pricing the BTC leg of a
+      // BTC→ETH swap at BTC's spot would imply zero realized PnL on
+      // the swap, which is wrong. Return null and let the caller treat
+      // the swap as a zero-cost lot, surfacing the gap rather than
+      // hiding it.
+      return null;
     }
 
     if (heldTokenId) {

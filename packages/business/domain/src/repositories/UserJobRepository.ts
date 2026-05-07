@@ -314,6 +314,31 @@ export class UserJobRepository {
     return row?.count ?? 0;
   }
 
+  // Most recent in-flight job (queued / active / progress) of the given
+  // name for a user. Lets the API endpoints dedup repeated user clicks
+  // by returning the existing jobId instead of enqueuing a duplicate
+  // when one is already running for the same purpose.
+  async findInFlightByName(
+    userId: string,
+    jobName: string,
+    transaction?: DatabaseTransaction
+  ): Promise<UserJob | null> {
+    const db = this.getDb(transaction);
+    const [row] = await db
+      .select()
+      .from(schema.userJobs)
+      .where(
+        and(
+          eq(schema.userJobs.userId, userId),
+          eq(schema.userJobs.jobName, jobName),
+          sql`${schema.userJobs.state} IN ('queued','active','progress')`
+        )
+      )
+      .orderBy(desc(schema.userJobs.createdAt))
+      .limit(1);
+    return (row as UserJob | undefined) ?? null;
+  }
+
   /**
    * Find rows that have been `queued` longer than `olderThan`. Used by
    * the orphan reconciler: if the backend crashed between

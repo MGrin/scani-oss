@@ -50,6 +50,10 @@ export const holdings = pgTable(
       table.tokenId
     ),
     userTokenIdx: index('idx_holdings_user_token').on(table.userId, table.tokenId),
+    userCreatedAtIdx: index('idx_holdings_user_created_at').on(
+      table.userId,
+      table.createdAt.desc()
+    ),
     isHiddenIdx: index('idx_holdings_is_hidden').on(table.isHidden),
     isActiveIdx: index('idx_holdings_is_active').on(table.isActive),
     // Sync matching index: (account_id, token_id, external_id)

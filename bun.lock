@@ -38,6 +38,7 @@
         "@sentry/node": "^8.49.0",
         "@trpc/server": "^10.45.4",
         "better-auth": "^1.6.5",
+        "decimal.js": "^10.6.0",
         "drizzle-orm": "^0.45.2",
         "elysia": "^1.4.28",
         "ioredis": "^5.10.1",

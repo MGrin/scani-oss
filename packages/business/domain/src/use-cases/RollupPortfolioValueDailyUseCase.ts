@@ -43,11 +43,15 @@ const COVERAGE_PARTIAL_THRESHOLD = 0.5;
 
 const logger = createComponentLogger('use-case:rollup-portfolio-value-daily');
 
-// Per-user lock key. Both call paths (the `portfolio-value-rollup` cron
-// and the `portfolio-history-backfill` user job) wrap their per-user
-// rollup work in this same key, so concurrent runs for the SAME user
-// serialize cleanly — the second one no-ops while the first finishes.
-function rollupLockKey(userId: string): string {
+// Per-user lock key. Every per-user rollup-or-backfill path takes this
+// SAME advisory lock so they serialize cleanly:
+//   * `portfolio-value-rollup` cron (this file)
+//   * `historical-price-backfill` cron (BackfillHistoricalPricesUseCase)
+//   * `portfolio-history-backfill` user job (which calls both)
+// The lock is non-blocking — if another holder is doing the work, the
+// late arrival no-ops in milliseconds and the user re-queries get fresh
+// rows the moment the holder releases.
+export function rollupLockKey(userId: string): string {
   return `portfolio-value-rollup:${userId}`;
 }
 

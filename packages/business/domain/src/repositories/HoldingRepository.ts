@@ -1,7 +1,7 @@
 import { BaseRepository, type DatabaseTransaction } from '@scani/db';
 import type { Holding, NewHolding, Token } from '@scani/db/schema';
 import * as schema from '@scani/db/schema';
-import { and, eq, lt, ne } from 'drizzle-orm';
+import { and, eq, gt, lt, ne } from 'drizzle-orm';
 import { Service } from 'typedi';
 import { SCAM_PROBABILITY_THRESHOLD } from '../lib/constants';
 
@@ -67,6 +67,24 @@ export class HoldingRepository extends BaseRepository<Holding, NewHolding> {
       this.logger.error({ userId, error }, 'Failed to find holdings by user');
       throw error;
     }
+  }
+
+  // Cheap probe used by ingest-transactions to detect new holdings
+  // created after the last portfolio_value_daily snapshot. Uses a
+  // single SQL `LIMIT 1` instead of loading every holding into memory.
+  // Backed by `idx_holdings_user_created_at` (migration 0005).
+  async hasHoldingCreatedAfter(
+    userId: string,
+    after: Date,
+    transaction?: DatabaseTransaction
+  ): Promise<boolean> {
+    const database = this.getDb(transaction);
+    const [row] = await database
+      .select({ id: schema.holdings.id })
+      .from(schema.holdings)
+      .where(and(eq(schema.holdings.userId, userId), gt(schema.holdings.createdAt, after)))
+      .limit(1);
+    return Boolean(row);
   }
 
   async findByAccountAndToken(

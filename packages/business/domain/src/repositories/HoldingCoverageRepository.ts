@@ -2,7 +2,7 @@ import { type DatabaseTransaction, getDb } from '@scani/db';
 import type { HoldingCoverage, NewHoldingCoverage } from '@scani/db/schema';
 import * as schema from '@scani/db/schema';
 import { createComponentLogger } from '@scani/logging';
-import { eq, sql } from 'drizzle-orm';
+import { eq, inArray, sql } from 'drizzle-orm';
 import { Service } from 'typedi';
 
 // Primary key is holding_id since migration 0054. We don't extend
@@ -184,6 +184,27 @@ export class HoldingCoverageRepository {
     transaction?: DatabaseTransaction
   ): Promise<HoldingCoverage> {
     return this.upsertFromIngester(row, transaction);
+  }
+
+  // Bulk fetch keyed by the holdingIds the caller already has in hand.
+  // Used by the holdings list view to surface a "missing earlier
+  // history" badge for holdings whose import couldn't reach back far
+  // enough (Helius truncation, mid-history CSV exports). Returns a Map
+  // keyed by holding_id; missing keys mean no coverage row was written
+  // for that holding (~22% of prod holdings as of 2026-05).
+  async findManyByHoldingIds(
+    holdingIds: string[],
+    transaction?: DatabaseTransaction
+  ): Promise<Map<string, HoldingCoverage>> {
+    if (holdingIds.length === 0) return new Map();
+    const db = this.getDb(transaction);
+    const rows = await db
+      .select()
+      .from(schema.holdingCoverage)
+      .where(inArray(schema.holdingCoverage.holdingId, holdingIds));
+    const out = new Map<string, HoldingCoverage>();
+    for (const row of rows as HoldingCoverage[]) out.set(row.holdingId, row);
+    return out;
   }
 
   async findByUser(userId: string, transaction?: DatabaseTransaction): Promise<HoldingCoverage[]> {

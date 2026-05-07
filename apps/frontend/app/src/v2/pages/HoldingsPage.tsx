@@ -60,6 +60,18 @@ function getHoldingColumns(currency: string): ColumnDef<HoldingWithDetails>[] {
               inactive
             </Badge>
           )}
+          {item.dataIntegrity?.incompleteHistory && (
+            <Badge
+              variant="outline"
+              className="text-[10px] px-1.5 py-0 border-amber-400 text-amber-700"
+              title={
+                item.dataIntegrity.note ??
+                `Incomplete history — ${item.dataIntegrity.missingQuantity ?? '?'} units of inflows are missing from the import. Chart shows clamped values.`
+              }
+            >
+              ⚠ history
+            </Badge>
+          )}
         </div>
       ),
     },

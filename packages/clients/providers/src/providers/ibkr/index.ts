@@ -352,10 +352,12 @@ function tradeToEvent(t: TradeRow): TransactionEvent | null {
     primary: {
       tokenIdentity: buildEquityIdentity(t),
       quantity: primaryQty,
+      tokenType: 'stock',
     },
     counter: {
       tokenIdentity: buildCurrencyIdentity(t.currency),
       quantity: counterQty,
+      tokenType: 'fiat',
     },
     rawPayload: t,
   };
@@ -364,6 +366,7 @@ function tradeToEvent(t: TradeRow): TransactionEvent | null {
     event.priceNative = {
       value: t.tradePrice,
       quoteIdentity: buildCurrencyIdentity(t.currency),
+      tokenType: 'fiat',
     };
   }
 
@@ -371,6 +374,7 @@ function tradeToEvent(t: TradeRow): TransactionEvent | null {
     event.fee = {
       tokenIdentity: buildCurrencyIdentity(t.ibCommissionCurrency),
       quantity: negateFee(t.ibCommission),
+      tokenType: 'fiat',
     };
   }
 
@@ -389,6 +393,7 @@ function cashTxToEvent(c: CashTransactionRow): TransactionEvent | null {
     primary: {
       tokenIdentity: buildCurrencyIdentity(c.currency),
       quantity: enforceSign(c.amount, kind),
+      tokenType: 'fiat',
     },
     rawPayload: c,
   };

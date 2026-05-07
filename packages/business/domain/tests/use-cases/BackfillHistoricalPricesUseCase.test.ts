@@ -271,36 +271,133 @@ describe('BackfillHistoricalPricesUseCase', () => {
       usdTokenId: f.usdTokenId,
       lookbackDays: 3,
     });
-    // 4 candidate days minus one already covered → 3 attempts.
+    // 4 candidate days minus one already covered → 3 attempts and 1 already-had.
     expect(summary.attempted).toBe(3);
+    expect(summary.alreadyHad).toBe(1);
     expect(backfillCalls).toHaveLength(3);
   });
 
   test('classifies the result by status — counts inserted / already-had / provider-missing separately', async () => {
     const f = fixture!;
+    // Pre-seed one day's price so the use-case-level dedup picks it up.
+    const today = new Date();
+    today.setUTCHours(0, 0, 0, 0);
+    await db.insert(schema.tokenPrices).values({
+      tokenId: f.btcTokenId,
+      baseTokenId: f.usdTokenId,
+      price: '42000',
+      timestamp: today,
+      source: 'preseeded',
+      granularity: 'daily',
+    });
     let counter = 0;
     nextResult = (tokenId, at, baseTokenId) => {
       counter += 1;
-      // Cycle through 4 results to cover the 4 candidate days.
+      // 3 days will reach the stub (today is pre-seeded). One returns
+      // provider-missing, the rest insert.
       if (counter === 1) {
-        return { tokenId, baseTokenId, at, status: 'inserted', priceStored: '1' };
-      }
-      if (counter === 2) {
-        return { tokenId, baseTokenId, at, status: 'already-have' };
-      }
-      if (counter === 3) {
         return { tokenId, baseTokenId, at, status: 'provider-missing' };
       }
-      return { tokenId, baseTokenId, at, status: 'inserted', priceStored: '2' };
+      return { tokenId, baseTokenId, at, status: 'inserted', priceStored: '1' };
     };
     const summary = await Container.get(BackfillHistoricalPricesUseCase).execute({
       usdTokenId: f.usdTokenId,
       lookbackDays: 3,
     });
-    expect(summary.attempted).toBe(4);
-    expect(summary.inserted).toBe(2);
+    expect(summary.attempted).toBe(3); // 4 candidates - 1 pre-seeded
     expect(summary.alreadyHad).toBe(1);
+    expect(summary.inserted).toBe(2);
     expect(summary.providerMissing).toBe(1);
+  });
+
+  test('skips tokens still inside an unpriceable cooldown', async () => {
+    const f = fixture!;
+    // Mark BTC as unpriceable until far in the future.
+    const farFuture = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+    await db
+      .update(schema.tokens)
+      .set({ unpriceableUntil: farFuture })
+      .where(eq(schema.tokens.id, f.btcTokenId));
+
+    const summary = await Container.get(BackfillHistoricalPricesUseCase).execute({
+      usdTokenId: f.usdTokenId,
+      lookbackDays: 3,
+    });
+
+    expect(summary.skippedUnpriceable).toBe(1);
+    expect(summary.attempted).toBe(0);
+    expect(backfillCalls).toHaveLength(0);
+  });
+
+  test('marks a token unpriceable when its full range returns no quotes', async () => {
+    const f = fixture!;
+    // Lookback of 60 days is above the UNPRICEABLE_MIN_RANGE_DAYS floor (30).
+    nextResult = (tokenId, at, baseTokenId) => ({
+      tokenId,
+      baseTokenId,
+      at,
+      status: 'provider-missing',
+    });
+    const summary = await Container.get(BackfillHistoricalPricesUseCase).execute({
+      usdTokenId: f.usdTokenId,
+      lookbackDays: 60,
+    });
+    expect(summary.inserted).toBe(0);
+    expect(summary.providerMissing).toBeGreaterThan(0);
+    const [token] = await db
+      .select({ unpriceableUntil: schema.tokens.unpriceableUntil })
+      .from(schema.tokens)
+      .where(eq(schema.tokens.id, f.btcTokenId));
+    expect(token?.unpriceableUntil).toBeInstanceOf(Date);
+    expect(token!.unpriceableUntil!.getTime()).toBeGreaterThan(Date.now());
+  });
+
+  test('does NOT mark a token unpriceable when the range is shorter than the floor', async () => {
+    const f = fixture!;
+    nextResult = (tokenId, at, baseTokenId) => ({
+      tokenId,
+      baseTokenId,
+      at,
+      status: 'provider-missing',
+    });
+    // 5 days < 30-day floor, so even with 0 inserted we don't blocklist.
+    await Container.get(BackfillHistoricalPricesUseCase).execute({
+      usdTokenId: f.usdTokenId,
+      lookbackDays: 5,
+    });
+    const [token] = await db
+      .select({ unpriceableUntil: schema.tokens.unpriceableUntil })
+      .from(schema.tokens)
+      .where(eq(schema.tokens.id, f.btcTokenId));
+    expect(token?.unpriceableUntil).toBeNull();
+  });
+
+  test('clears unpriceable cooldown on a successful backfill', async () => {
+    const f = fixture!;
+    // Pre-mark as unpriceable but with an already-elapsed cooldown so
+    // the use case still considers the token (otherwise it would just
+    // skip and we'd never test the clear path).
+    const past = new Date(Date.now() - 1000);
+    await db
+      .update(schema.tokens)
+      .set({ unpriceableUntil: past })
+      .where(eq(schema.tokens.id, f.btcTokenId));
+    nextResult = (tokenId, at, baseTokenId) => ({
+      tokenId,
+      baseTokenId,
+      at,
+      status: 'inserted',
+      priceStored: '1',
+    });
+    await Container.get(BackfillHistoricalPricesUseCase).execute({
+      usdTokenId: f.usdTokenId,
+      lookbackDays: 3,
+    });
+    const [token] = await db
+      .select({ unpriceableUntil: schema.tokens.unpriceableUntil })
+      .from(schema.tokens)
+      .where(eq(schema.tokens.id, f.btcTokenId));
+    expect(token?.unpriceableUntil).toBeNull();
   });
 
   test('continues past per-candidate exceptions (counts them as provider-missing)', async () => {

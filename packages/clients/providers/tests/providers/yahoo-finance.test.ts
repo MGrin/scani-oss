@@ -45,10 +45,15 @@ describe('YahooFinanceProvider symbol helpers', () => {
 describe('YahooFinanceProvider canPrice', () => {
   const p = new YahooFinanceProvider(passthroughLimiter());
 
-  test('accepts ISO fiat in our supported list', () => {
+  test('accepts only fiat NOT covered by Frankfurter (RUB / KZT) — duplicates dropped', () => {
+    // Frankfurter is the canonical historical-FX source for the major
+    // fiats it publishes (AUD/EUR/GBP/JPY/...). Yahoo would otherwise
+    // also satisfy canPrice and write duplicate token_prices rows.
     expect(p.canPrice(makeMockToken({ id: '1', symbol: 'RUB' }))).toBe(true);
-    expect(p.canPrice(makeMockToken({ id: '2', symbol: 'GBP' }))).toBe(true);
-    expect(p.canPrice(makeMockToken({ id: '3', symbol: 'KZT' }))).toBe(true);
+    expect(p.canPrice(makeMockToken({ id: '2', symbol: 'KZT' }))).toBe(true);
+    expect(p.canPrice(makeMockToken({ id: '3', symbol: 'GBP' }))).toBe(false);
+    expect(p.canPrice(makeMockToken({ id: '4', symbol: 'EUR' }))).toBe(false);
+    expect(p.canPrice(makeMockToken({ id: '5', symbol: 'JPY' }))).toBe(false);
   });
 
   test('accepts stock-style tickers with and without exchange suffixes', () => {

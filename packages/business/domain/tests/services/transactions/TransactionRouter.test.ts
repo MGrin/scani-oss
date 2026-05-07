@@ -90,6 +90,11 @@ function setup(opts: SetupOpts): {
   Container.set(TokenTypeRepository, {
     findByCode: async (code: string) =>
       code === 'crypto' ? ({ id: 'crypto-type-id' } as never) : ({ id: 'fiat-type-id' } as never),
+    findByCodes: async (codes: string[]) =>
+      codes.map((code) => ({
+        id: code === 'crypto' ? 'crypto-type-id' : `${code}-type-id`,
+        code,
+      })) as never,
   } as unknown as TokenTypeRepository);
 
   const router = new TransactionRouter();

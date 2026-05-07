@@ -119,14 +119,20 @@ export class PriceGraphService {
 
     if (maxDepth < 3) return null;
 
-    // Depth 3 — two hops (bridging two hubs). Rare; only runs when the hub
-    // list can't directly bridge. Cap overall iterations at hubCount^2 to
-    // avoid blowup.
-    for (const hubA of hubIds) {
+    // Depth 3 — two hops (bridging two hubs). Rare; only runs when the
+    // hub list can't directly bridge. Hard cap on iterations so a
+    // future expansion of `PRICE_HUB_SYMBOLS` (today: USD, USDT, EUR)
+    // doesn't quietly turn this into an O(hubCount^2) hot-loop in
+    // the rollup. At 3 hubs we walk ≤6 (hubA,hubB) pairs; 10 leaves
+    // headroom for going up to ~5 hubs without a config change.
+    const TWO_HOP_ITERATION_CAP = 10;
+    let iterations = 0;
+    twoHopOuter: for (const hubA of hubIds) {
       if (hubA === fromTokenId || hubA === toTokenId) continue;
       const legA = await this.tryDirect(fromTokenId, hubA, at, prefer, lookup);
       if (!legA) continue;
       for (const hubB of hubIds) {
+        if (++iterations > TWO_HOP_ITERATION_CAP) break twoHopOuter;
         if (hubB === hubA) continue;
         if (hubB === fromTokenId || hubB === toTokenId) continue;
         const legB = await this.tryDirect(hubA, hubB, at, prefer, lookup);

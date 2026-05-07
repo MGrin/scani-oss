@@ -22,6 +22,27 @@
       "when": 1778000099999,
       "tag": "0002_pnl_columns",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1778147300000,
+      "tag": "0003_token_unpriceable_cooldown",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1778147400000,
+      "tag": "0004_merge_mistyped_equity_dupes",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1778147500000,
+      "tag": "0005_holdings_user_created_idx",
+      "breakpoints": true
     }
   ]
 }

@@ -132,12 +132,12 @@ async function computeLookbackDays(userId: string): Promise<number> {
     // New-holding detection: any holding created after the last
     // rollup snapshot date forces a full backfill. This covers the
     // tx-import-discovers-new-token path that the api-side mutation
-    // hooks (enqueuePortfolioRollup) don't intercept.
+    // hooks (enqueuePortfolioRollup) don't intercept. Probe via
+    // indexed SQL `LIMIT 1` instead of loading every holding into
+    // memory — the previous `findByUser + .some()` allocated O(N)
+    // rows on every tx-import.
     const holdingRepo = Container.get(HoldingRepository);
-    const allHoldings = await holdingRepo.findByUser(userId);
-    const hasNewHoldingSinceRollup = allHoldings.some(
-      (h) => h.createdAt.getTime() > latestDate.getTime()
-    );
+    const hasNewHoldingSinceRollup = await holdingRepo.hasHoldingCreatedAfter(userId, latestDate);
     if (hasNewHoldingSinceRollup) return LOOKBACK_DEFAULT_DAYS;
 
     const adaptive = Math.max(ageDays + LOOKBACK_SAFETY_PAD_DAYS, LOOKBACK_MIN_DAYS);

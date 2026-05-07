@@ -129,6 +129,45 @@ const SUPPORTED_FIAT = new Set([
   'ZAR',
 ]);
 
+// Mirrors Frankfurter's published-currency list (see frankfurter/index.ts).
+// Yahoo skips these to avoid duplicate token_prices rows — Frankfurter
+// is registered first and serves them. Updates here must stay in sync
+// with the Frankfurter side; cross-importing would create a cyclic
+// provider→provider dep we don't want.
+const FRANKFURTER_COVERED_FIAT = new Set([
+  'AUD',
+  'BGN',
+  'BRL',
+  'CAD',
+  'CHF',
+  'CNY',
+  'CZK',
+  'DKK',
+  'EUR',
+  'GBP',
+  'HKD',
+  'HUF',
+  'IDR',
+  'ILS',
+  'INR',
+  'ISK',
+  'JPY',
+  'KRW',
+  'MXN',
+  'MYR',
+  'NOK',
+  'NZD',
+  'PHP',
+  'PLN',
+  'RON',
+  'SEK',
+  'SGD',
+  'THB',
+  'TRY',
+  'USD',
+  'ZAR',
+]);
+
 export class YahooFinanceProvider implements HistoricalPriceProvider {
   readonly providerKey = 'yahoo-finance';
   readonly capabilities: readonly Capability[] = ['current-price', 'historical-price'];
@@ -142,13 +181,20 @@ export class YahooFinanceProvider implements HistoricalPriceProvider {
   /**
    * Accept any non-US-listed equity (suffix-detected via Finnhub's
    * shared exchange map), any US-listed equity (Yahoo handles them too,
-   * though Finnhub will be tried first by registration order), and any
-   * ISO-4217 fiat in our SUPPORTED_FIAT set. Crypto is intentionally
-   * left to CoinGecko / DeFiLlama.
+   * though Finnhub will be tried first by registration order), and
+   * exotic fiat that Frankfurter doesn't cover (RUB / KZT / GEL / …).
+   *
+   * Crypto is intentionally left to CoinGecko / DeFiLlama. Frankfurter-
+   * covered fiat is also skipped so we don't write duplicate rows: as
+   * of 2026-05 prod has 5,126 `frankfurter_historical` rows and 1,302
+   * `yahoo-finance_fx_historical` rows for the same major pairs.
+   * Frankfurter (ECB-sourced, no auth, no rate limit) wins when it
+   * covers the fiat; Yahoo stays the fallback for everything else.
    */
   canPrice(t: Token): boolean {
     const sym = (t.symbol ?? '').toUpperCase();
     if (!sym) return false;
+    if (FRANKFURTER_COVERED_FIAT.has(sym)) return false;
     if (SUPPORTED_FIAT.has(sym)) return true;
     // Stock-style symbol: 1-5 chars, optionally followed by .SUFFIX or .CLASS.
     return /^[A-Z]{1,5}([.-][A-Z0-9]{1,4})?$/.test(sym);

@@ -102,12 +102,19 @@ export const tokens = pgTable(
       .default({}),
     isScamProbability: real('is_scam_probability').notNull().default(0),
     isActive: boolean('is_active').notNull().default(true),
+    // Cooldown gate consulted by the historical-price backfill: when set
+    // and in the future, the backfill skips the token instead of asking
+    // providers for prices we've already established they can't supply.
+    // Cleared on the next successful price write.
+    unpriceableUntil: timestamp('unpriceable_until', { withTimezone: true }),
+    lastPricingAttemptAt: timestamp('last_pricing_attempt_at', { withTimezone: true }),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => ({
     symbolIdx: index('idx_tokens_symbol').on(table.symbol),
     typeIdIdx: index('idx_tokens_type_id').on(table.typeId),
+    unpriceableUntilIdx: index('idx_tokens_unpriceable_until').on(table.unpriceableUntil),
     // Note: the 3-tuple unique constraint and EVM contract jsonb index
     // are created in migration 0055 directly — Drizzle's `unique()` /
     // `index()` builders can't express `COALESCE(...)` or expression

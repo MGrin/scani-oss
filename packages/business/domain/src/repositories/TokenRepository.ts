@@ -1,7 +1,7 @@
 import { BaseRepository, type DatabaseTransaction } from '@scani/db';
 import type { NewToken, Token } from '@scani/db/schema';
 import * as schema from '@scani/db/schema';
-import { and, asc, desc, eq, inArray, like, or, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, gt, inArray, isNotNull, like, or, sql } from 'drizzle-orm';
 import { Service } from 'typedi';
 
 @Service()
@@ -239,5 +239,50 @@ export class TokenRepository extends BaseRepository<Token, NewToken> {
     const database = this.getDb(transaction);
     const results = await database.insert(schema.tokens).values(tokensData).returning();
     return results;
+  }
+
+  // Token IDs whose `unpriceable_until` is still in the future. The
+  // historical-price-backfill skips these so we don't re-ask providers
+  // for tokens (typically obscure SPL memes, low-liquidity custom
+  // tokens) that have repeatedly returned no data.
+  async findUnpriceableTokenIds(at: Date, transaction?: DatabaseTransaction): Promise<Set<string>> {
+    const database = this.getDb(transaction);
+    const rows = await database
+      .select({ id: schema.tokens.id })
+      .from(schema.tokens)
+      .where(
+        and(isNotNull(schema.tokens.unpriceableUntil), gt(schema.tokens.unpriceableUntil, at))
+      );
+    return new Set(rows.map((r) => r.id));
+  }
+
+  // Apply the result of a backfill pass: tokens whose entire requested
+  // range came back empty get an `unpriceable_until` cooldown; tokens
+  // that returned at least one quote have any prior cooldown cleared.
+  // Both lists also bump `last_pricing_attempt_at`.
+  async applyPricingResults(
+    opts: {
+      markUnpriceable: string[];
+      clearUnpriceable: string[];
+      cooldownMs: number;
+      now?: Date;
+    },
+    transaction?: DatabaseTransaction
+  ): Promise<void> {
+    const database = this.getDb(transaction);
+    const now = opts.now ?? new Date();
+    const cooldownUntil = new Date(now.getTime() + opts.cooldownMs);
+    if (opts.markUnpriceable.length > 0) {
+      await database
+        .update(schema.tokens)
+        .set({ unpriceableUntil: cooldownUntil, lastPricingAttemptAt: now })
+        .where(inArray(schema.tokens.id, opts.markUnpriceable));
+    }
+    if (opts.clearUnpriceable.length > 0) {
+      await database
+        .update(schema.tokens)
+        .set({ unpriceableUntil: null, lastPricingAttemptAt: now })
+        .where(inArray(schema.tokens.id, opts.clearUnpriceable));
+    }
   }
 }

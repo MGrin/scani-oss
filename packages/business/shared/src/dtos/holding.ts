@@ -118,6 +118,26 @@ export type HoldingWithDetails = {
     lastPayoutAt: string | null;
     isActive: boolean;
   };
+  /**
+   * Set when the import flow couldn't gather a complete tx history for
+   * this holding (e.g. Helius's parsed-tx index truncates older Solana
+   * transactions, an exchange CSV starts mid-history, an API token
+   * lacks deep-history scope). The `BalanceAtTimeService` clamps the
+   * resulting negative reconstructed balance at zero on the chart, so
+   * without this flag the user sees a clean curve that hides a known
+   * reconciliation gap. Surface it in the UI as a "missing earlier
+   * history" badge so the user can re-import or accept.
+   *
+   * `missingQuantity` is the absolute opening-balance shortfall from
+   * `holding_coverage.opening_balance_quantity` (a negative value
+   * means the synthesized opening balance was negative, i.e. the
+   * import implies inflows we never saw).
+   */
+  dataIntegrity?: {
+    incompleteHistory: boolean;
+    missingQuantity?: string;
+    note?: string;
+  };
 };
 
 export type HoldingsWithSummary = {
