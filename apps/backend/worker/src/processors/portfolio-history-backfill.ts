@@ -1,5 +1,6 @@
 import { db } from '@scani/db/connection';
 import * as schema from '@scani/db/schema';
+import { OpeningBalanceReconciliationService } from '@scani/domain/services';
 import {
   BackfillHistoricalPricesUseCase,
   RollupPortfolioValueDailyUseCase,
@@ -50,6 +51,7 @@ const logger = createComponentLogger('processor:portfolio-history-backfill');
 interface PortfolioHistoryBackfillResult {
   tokenCount: number;
   lookbackDays: number;
+  reconciliation: { holdingsTouched: number; openingsSynthesized: number };
   prices: { attempted: number; inserted: number; alreadyHad: number; providerMissing: number };
   rollup: { usersProcessed: number; daysComputed: number; errorCount: number };
 }
@@ -104,6 +106,7 @@ export class PortfolioHistoryBackfillProcessor extends UserJobProcessor<
     return {
       tokenCount: data.tokenIds.length,
       lookbackDays: data.lookbackDays,
+      reconciliation: { holdingsTouched: 0, openingsSynthesized: 0 },
       prices: { attempted: 0, inserted: 0, alreadyHad: 0, providerMissing: 0 },
       rollup: { usersProcessed: 0, daysComputed: 0, errorCount: 0 },
     };
@@ -115,6 +118,16 @@ export class PortfolioHistoryBackfillProcessor extends UserJobProcessor<
   ): Promise<PortfolioHistoryBackfillResult> {
     const usdTokenId = await this.resolveUsdTokenId();
     await ctx.reportProgress(0.05);
+
+    // Re-reconcile every holding's opening balance BEFORE pricing/rollup.
+    // The reconciler is now self-aware (excludes its own past output
+    // from the sum), so this pass cleans up any stale synthesized
+    // opening rows left behind by token-merge migrations or by an
+    // import that landed mid-flight. Without this, cost basis stays
+    // anchored to the bogus opening and PnL stays wrong even after a
+    // fresh price backfill.
+    const reconcileSummary = await this.reconcileUser(data.userId);
+    await ctx.reportProgress(0.15);
 
     const priceSummary = await Container.get(BackfillHistoricalPricesUseCase).execute({
       usdTokenId,
@@ -150,6 +163,7 @@ export class PortfolioHistoryBackfillProcessor extends UserJobProcessor<
     return {
       tokenCount: data.tokenIds.length,
       lookbackDays: data.lookbackDays,
+      reconciliation: reconcileSummary,
       prices: {
         attempted: priceSummary.attempted,
         inserted: priceSummary.inserted,
@@ -162,6 +176,24 @@ export class PortfolioHistoryBackfillProcessor extends UserJobProcessor<
         errorCount: rollupSummary.errors.length,
       },
     };
+  }
+
+  private async reconcileUser(
+    userId: string
+  ): Promise<{ holdingsTouched: number; openingsSynthesized: number }> {
+    try {
+      const results = await Container.get(OpeningBalanceReconciliationService).reconcileUser(
+        userId
+      );
+      const synthesized = results.filter((r) => r.openingBalanceSynthesized).length;
+      return { holdingsTouched: results.length, openingsSynthesized: synthesized };
+    } catch (error) {
+      logger.warn(
+        { userId, error: error instanceof Error ? error.message : error },
+        'Reconciliation pass threw; continuing with backfill'
+      );
+      return { holdingsTouched: 0, openingsSynthesized: 0 };
+    }
   }
 
   // BackfillHistoricalPricesUseCase requires the USD token id as the

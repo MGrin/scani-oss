@@ -57,6 +57,13 @@
       "when": 1778240100000,
       "tag": "0007_merge_chain_spread_crypto",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1778250000000,
+      "tag": "0008_clear_bogus_reconciliation_openings",
+      "breakpoints": true
     }
   ]
 }

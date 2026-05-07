@@ -65,6 +65,7 @@ function makeService(opts: {
     findByUser: async () => [] as never,
   } as unknown as HoldingRepository);
 
+  let deletedReconciliationOpenings = 0;
   Container.set(HoldingTransactionRepository, {
     findExtremesForHolding: async () =>
       ({
@@ -76,7 +77,12 @@ function makeService(opts: {
       capturedTxs.push(...rows);
       return rows as never;
     },
+    deleteReconciliationOpening: async () => {
+      deletedReconciliationOpenings++;
+      return 0;
+    },
   } as unknown as HoldingTransactionRepository);
+  void deletedReconciliationOpenings;
 
   Container.set(HoldingCoverageRepository, {
     upsertReconciliation: async (row: CapturedReconciliation) => {

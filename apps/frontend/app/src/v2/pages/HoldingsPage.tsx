@@ -41,7 +41,23 @@ function getHoldingColumns(currency: string): ColumnDef<HoldingWithDetails>[] {
       label: 'Token',
       sortable: true,
       render: (item) => (
-        <div className="flex items-center gap-2">
+        <div
+          className="flex items-center gap-2"
+          // The "incomplete history" warning lives in the row's tooltip
+          // rather than as a visible badge — the badge previously
+          // rendered for ~half the holdings (every IBKR position
+          // synthesizes a negative opening balance because Flex Query
+          // doesn't return tx history before the user's account-open
+          // date), which made the list look broken instead of merely
+          // partial. Hover for context; the chart's coverage chip
+          // surfaces the aggregate signal.
+          title={
+            item.dataIntegrity?.incompleteHistory
+              ? (item.dataIntegrity.note ??
+                `Incomplete history — ${item.dataIntegrity.missingQuantity ?? '?'} units of pre-import inflows aren’t in the ledger. Chart values before the first imported tx are clamped.`)
+              : undefined
+          }
+        >
           <span className="font-medium text-sm">{item.token.symbol}</span>
           <span className="text-xs text-muted-foreground truncate max-w-[120px]">
             {item.token.name}
@@ -58,18 +74,6 @@ function getHoldingColumns(currency: string): ColumnDef<HoldingWithDetails>[] {
           {item.isActive === false && (
             <Badge variant="secondary" className="text-[10px] px-1.5 py-0">
               inactive
-            </Badge>
-          )}
-          {item.dataIntegrity?.incompleteHistory && (
-            <Badge
-              variant="outline"
-              className="text-[10px] px-1.5 py-0 border-amber-400 text-amber-700"
-              title={
-                item.dataIntegrity.note ??
-                `Incomplete history — ${item.dataIntegrity.missingQuantity ?? '?'} units of inflows are missing from the import. Chart shows clamped values.`
-              }
-            >
-              ⚠ history
             </Badge>
           )}
         </div>

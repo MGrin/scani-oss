@@ -62,6 +62,14 @@ export class OpeningBalanceReconciliationService {
       return null;
     }
 
+    // Sum REAL transactions only — synthesized `reconciliation-opening`
+    // rows are excluded so re-running the reconciler doesn't fold its
+    // own previous output back into the gap calculation. Without this,
+    // every other run flips the synthesized opening's sign (a +25 PLTR
+    // opening becomes a 0 sum becomes a -25 opening on the next pass),
+    // which is exactly what happened when migration 0006 merged the
+    // duplicate IBKR holdings — the inherited synthesized row turned
+    // every IBKR equity's cost basis to 0 and inflated PnL.
     const txSumAllTime = new Decimal(
       await this.transactionRepository.sumQuantityForHoldingUntil(
         holdingId,
@@ -69,16 +77,22 @@ export class OpeningBalanceReconciliationService {
         // payouts, and clock-skew future timestamps are all included.
         // A 24h cap accidentally drops any tx whose occurred_at sits in
         // the future, producing a spurious opening_balance row.
-        new Date('9999-12-31T23:59:59Z')
+        new Date('9999-12-31T23:59:59Z'),
+        // The 3rd positional accepts either a DB transaction (legacy
+        // callers) or the new options object — duck-typed inside.
+        { excludeReconciliationOpening: true }
       )
     );
     const holdingsBalance = new Decimal(holding.balance);
     const computedOpening = holdingsBalance.sub(txSumAllTime);
 
     if (computedOpening.abs().lte(epsilon)) {
-      // Tx history perfectly explains the current balance — mark coverage
-      // as fully reconciled and clear any prior opening row if it has
-      // drifted to zero (rare but possible after re-ingest).
+      // Tx history perfectly explains the current balance — clear any
+      // stale reconciliation-opening row left over from a prior pass
+      // (e.g. after migration 0006/0007 rewired holdings, or after the
+      // user manually backfills missing inflows) and mark coverage as
+      // fully reconciled.
+      await this.transactionRepository.deleteReconciliationOpening(holdingId);
       await this.coverageRepository.upsertReconciliation({
         holdingId,
         lastReconciledAt: new Date(),

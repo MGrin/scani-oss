@@ -129,20 +129,30 @@ export function NetWorthChart({
     }));
   }, [data]);
 
-  // Coverage summary surfaced in a single chip + tooltip — replaces
-  // the previous solid-blue-vs-dashed-grey two-line approach, which
-  // users found confusing (the grey segments looked like errors but
-  // were merely "≥ 1 holding has no historical price").
+  // Coverage chip — averages the per-day "holdings priced / holdings
+  // total" ratio across the visible window. The previous version
+  // counted only days that crossed the rollup's 95% "full" threshold,
+  // which produced a punishing "0% of days at full coverage" red chip
+  // when the user had even a handful of always-unpriced dust tokens.
+  // The average tells the user what they actually want to know:
+  // "what fraction of my positions are being priced on a typical day."
   const coverage = useMemo(() => {
     if (chartData.length === 0) return null;
-    const fullCount = chartData.filter((p) => p.coverageQuality === 'full').length;
-    const total = chartData.length;
-    const ratio = fullCount / total;
+    let totalKnown = 0;
+    let totalSeen = 0;
+    for (const p of chartData) {
+      if (p.holdingsTotal && p.holdingsKnown != null) {
+        totalKnown += p.holdingsKnown;
+        totalSeen += p.holdingsTotal;
+      }
+    }
+    if (totalSeen === 0) return null;
+    const ratio = totalKnown / totalSeen;
+    const pct = Math.round(ratio * 100);
     return {
-      fullCount,
-      total,
       ratio,
-      label: ratio === 1 ? 'Full coverage' : `${Math.round(ratio * 100)}% of days at full coverage`,
+      label: ratio >= 0.99 ? 'Full coverage' : `${pct}% of holdings priced`,
+      tooltip: `Average ${pct}% of holdings have a historical price across the window (${totalKnown.toLocaleString()} of ${totalSeen.toLocaleString()} holding-days).`,
     };
   }, [chartData]);
 
@@ -181,13 +191,15 @@ export function NetWorthChart({
           {coverage && (
             <span
               className={`ml-2 inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium ${
-                coverage.ratio === 1
+                coverage.ratio >= 0.99
                   ? 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400'
-                  : coverage.ratio >= 0.8
-                    ? 'bg-amber-500/15 text-amber-600 dark:text-amber-400'
-                    : 'bg-rose-500/15 text-rose-600 dark:text-rose-400'
+                  : coverage.ratio >= 0.85
+                    ? 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-500'
+                    : coverage.ratio >= 0.5
+                      ? 'bg-amber-500/15 text-amber-600 dark:text-amber-400'
+                      : 'bg-rose-500/15 text-rose-600 dark:text-rose-400'
               }`}
-              title={`${coverage.fullCount}/${coverage.total} days have prices for every holding`}
+              title={coverage.tooltip}
             >
               {coverage.label}
             </span>

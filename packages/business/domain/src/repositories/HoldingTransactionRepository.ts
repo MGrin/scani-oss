@@ -1,7 +1,7 @@
 import { BaseRepository, type DatabaseTransaction } from '@scani/db';
 import type { HoldingTransaction, NewHoldingTransaction } from '@scani/db/schema';
 import * as schema from '@scani/db/schema';
-import { and, asc, desc, eq, gt, gte, inArray, lt, lte, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, gt, gte, inArray, lt, lte, ne, sql } from 'drizzle-orm';
 import { Service } from 'typedi';
 
 export interface TransactionRangeOptions {
@@ -285,24 +285,47 @@ export class HoldingTransactionRepository extends BaseRepository<
   // Full sum over all-time (or up to a cutoff). Used by
   // OpeningBalanceReconciliationService to compute sum(txs) vs current
   // holdings.balance.
+  //
+  // When `excludeReconciliationOpening` is true, the synthesized
+  // `source='reconciliation-opening'` rows are filtered out. The
+  // reconciler MUST pass true — including its own past synthesis in
+  // the sum makes computedOpening oscillate (a +N opening on one run
+  // becomes a 0 sum on the next, regenerating an opposite-signed N
+  // every other reconcile pass). All other callers default to the
+  // raw sum because they want every ledger row.
   async sumQuantityForHoldingUntil(
     holdingId: string,
     until: Date,
-    transaction?: DatabaseTransaction
+    transactionOrOptions?: DatabaseTransaction | { excludeReconciliationOpening?: boolean },
+    options?: { excludeReconciliationOpening?: boolean }
   ): Promise<string> {
+    // Preserve the (holdingId, until, transaction?) call shape every
+    // existing caller uses; a fourth arg adds the new options. Detect
+    // the third positional via duck-typing — Drizzle transaction objects
+    // expose a `.transaction()` method, plain options never do.
+    let transaction: DatabaseTransaction | undefined;
+    let opts: { excludeReconciliationOpening?: boolean } = {};
+    if (transactionOrOptions && 'transaction' in transactionOrOptions) {
+      transaction = transactionOrOptions as DatabaseTransaction;
+      if (options) opts = options;
+    } else if (transactionOrOptions) {
+      opts = transactionOrOptions as { excludeReconciliationOpening?: boolean };
+    }
     try {
       const database = this.getDb(transaction);
+      const conditions = [
+        eq(schema.holdingTransactions.holdingId, holdingId),
+        lte(schema.holdingTransactions.occurredAt, until),
+      ];
+      if (opts.excludeReconciliationOpening) {
+        conditions.push(ne(schema.holdingTransactions.source, 'reconciliation-opening'));
+      }
       const rows = await database
         .select({
           total: sql<string>`COALESCE(SUM(${schema.holdingTransactions.quantity}::numeric), 0)::text`,
         })
         .from(schema.holdingTransactions)
-        .where(
-          and(
-            eq(schema.holdingTransactions.holdingId, holdingId),
-            lte(schema.holdingTransactions.occurredAt, until)
-          )
-        );
+        .where(and(...conditions));
       return rows[0]?.total ?? '0';
     } catch (error) {
       this.logger.error(
@@ -390,6 +413,20 @@ export class HoldingTransactionRepository extends BaseRepository<
       );
       throw error;
     }
+  }
+
+  // Drop the synthesized `reconciliation-opening` row for a holding.
+  // OpeningBalanceReconciliationService calls this when the real tx
+  // chain perfectly explains the current balance, so a stale opening
+  // row from a previous reconciliation pass (or inherited from a
+  // duplicate that was merged into this canonical holding by migration
+  // 0006/0007) doesn't keep distorting cost basis. Returns the count
+  // deleted; 0 means there was nothing to clean up.
+  async deleteReconciliationOpening(
+    holdingId: string,
+    transaction?: DatabaseTransaction
+  ): Promise<number> {
+    return this.deleteForHoldingBySource(holdingId, 'reconciliation-opening', transaction);
   }
 
   // Delete all txs from a given source for a holding. Used when re-running
