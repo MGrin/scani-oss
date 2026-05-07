@@ -25,6 +25,7 @@ export const JOB_NAMES = {
   holdingPriceUpdate: 'holding-price-update',
   userDataDelete: 'user-data-delete',
   transactionImport: 'transaction-import',
+  hideClosedHoldings: 'hide-closed-holdings',
 } as const;
 
 export type JobName = (typeof JOB_NAMES)[keyof typeof JOB_NAMES];

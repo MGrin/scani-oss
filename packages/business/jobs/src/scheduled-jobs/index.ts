@@ -2,6 +2,7 @@ export { APY_PAYOUTS_SCHEDULE } from './apy-payouts';
 export { BACKFILL_TOKEN_IDENTITY_SCHEDULE } from './backfill-token-identity';
 export { EXCHANGE_BALANCES_SCHEDULE } from './exchange-balances';
 export { FOREX_BACKFILL_SCHEDULE } from './forex-backfill';
+export { HIDE_CLOSED_HOLDINGS_SCHEDULE } from './hide-closed-holdings';
 export { HISTORICAL_PRICE_BACKFILL_SCHEDULE } from './historical-price-backfill';
 export { PORTFOLIO_VALUE_ROLLUP_SCHEDULE } from './portfolio-value-rollup';
 export { PRICING_SCHEDULE } from './pricing';
@@ -14,6 +15,7 @@ import { APY_PAYOUTS_SCHEDULE } from './apy-payouts';
 import { BACKFILL_TOKEN_IDENTITY_SCHEDULE } from './backfill-token-identity';
 import { EXCHANGE_BALANCES_SCHEDULE } from './exchange-balances';
 import { FOREX_BACKFILL_SCHEDULE } from './forex-backfill';
+import { HIDE_CLOSED_HOLDINGS_SCHEDULE } from './hide-closed-holdings';
 import { HISTORICAL_PRICE_BACKFILL_SCHEDULE } from './historical-price-backfill';
 import { PORTFOLIO_VALUE_ROLLUP_SCHEDULE } from './portfolio-value-rollup';
 import { PRICING_SCHEDULE } from './pricing';
@@ -34,4 +36,5 @@ export const SCHEDULED_JOB_DESCRIPTORS = [
   PORTFOLIO_VALUE_ROLLUP_SCHEDULE,
   TRANSFER_LINKING_SCHEDULE,
   BACKFILL_TOKEN_IDENTITY_SCHEDULE,
+  HIDE_CLOSED_HOLDINGS_SCHEDULE,
 ] as const;

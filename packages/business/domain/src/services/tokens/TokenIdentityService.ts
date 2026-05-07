@@ -151,6 +151,39 @@ export class TokenIdentityService extends BaseService {
     );
     if (byTuple) return byTuple;
 
+    // 2b. Self-healing fallback for stocks: when an exact tuple match
+    // misses but the symbol exists with `market_segment IS NULL` (legacy
+    // rows from before IBKR balance sync started stamping segments),
+    // promote the existing row's segment in place rather than creating
+    // a fresh duplicate. Migration 0006 cleared the historical mess;
+    // this prevents the next un-segmented import from re-creating it.
+    // Scoped to stocks because chain-spread crypto rows intentionally
+    // coexist by `evm:<chain>:<contract>` segment — collapsing them
+    // there would defeat federated identity.
+    if (marketSegment !== null) {
+      const stockType = await this.tokenTypeRepository.findByCode('stock', transaction);
+      if (stockType?.id === effectiveTypeId) {
+        const byNullSegment = await this.tokenRepository.findByIdentityTuple(
+          symbol,
+          effectiveTypeId,
+          null,
+          transaction
+        );
+        if (byNullSegment) {
+          this.logDebug('Self-healing: promoting (symbol, type, NULL) → segmented', {
+            symbol,
+            tokenId: byNullSegment.id,
+            newSegment: marketSegment,
+          });
+          return await this.tokenRepository.updateMarketSegment(
+            byNullSegment.id,
+            marketSegment,
+            transaction
+          );
+        }
+      }
+    }
+
     // 3. Federated enrichment. Every TokenIdentityProvider runs in
     //    parallel — each owns its own namespace key in providerMetadata
     //    and contributes only that key. First-writer-wins per namespace

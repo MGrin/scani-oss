@@ -15,11 +15,12 @@ import { randomUUID } from 'node:crypto';
 import { db } from '@scani/db/connection';
 import * as schema from '@scani/db/schema';
 import { PortfolioValueDailyRepository, UserJobRepository } from '@scani/domain/repositories';
+import { HIDE_CLOSED_HOLDINGS_STALE_DAYS } from '@scani/domain/use-cases';
 import { PORTFOLIO_HISTORY_BACKFILL } from '@scani/jobs';
 import { BullMqEnqueueService } from '@scani/queue';
 import { TRPCError } from '@trpc/server';
 import Decimal from 'decimal.js';
-import { and, eq } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 import { Container } from 'typedi';
 import { z } from 'zod';
 import { requireAuth } from '../middleware/auth';
@@ -398,5 +399,91 @@ export const portfolioRouter = router({
       lookbackDays: 365,
     });
     return { jobId, deduplicated: false } as const;
+  }),
+
+  // Snapshot of every data-quality counter the user-facing system
+  // currently degrades on. Counts are scoped to the user's holdings,
+  // tokens are global (one user in prod). The Settings page renders
+  // this as a sanity card so duplicates / unpriced holdings / negative
+  // openings show up before they break the chart, instead of after.
+  getDataQualityReport: protectedProcedure.query(async ({ ctx }) => {
+    const { dbUser } = await requireAuth(ctx);
+    const userId = dbUser.id;
+
+    const dupRows = (await db.execute<{ symbol: string; n: number }>(sql`
+      SELECT symbol, COUNT(*)::int AS n FROM tokens
+      GROUP BY symbol HAVING COUNT(*) > 1 ORDER BY n DESC, symbol
+    `)) as unknown as Array<{ symbol: string; n: number }>;
+
+    const staleInterval = sql.raw(`'${HIDE_CLOSED_HOLDINGS_STALE_DAYS} days'`);
+    const countsRows = (await db.execute<{
+      total: number;
+      visible: number;
+      zero_visible: number;
+      stale_zero: number;
+      unpriced_visible: number;
+      negative_opening: number;
+      no_coverage: number;
+    }>(sql`
+      WITH user_h AS (SELECT * FROM holdings WHERE user_id = ${userId})
+      SELECT
+        (SELECT COUNT(*) FROM user_h)::int AS total,
+        (SELECT COUNT(*) FROM user_h WHERE is_hidden = false AND is_active = true)::int AS visible,
+        (SELECT COUNT(*) FROM user_h WHERE is_hidden = false AND balance::numeric = 0)::int AS zero_visible,
+        (SELECT COUNT(*) FROM user_h h WHERE h.is_hidden = false AND h.balance::numeric = 0
+           AND COALESCE(
+             (SELECT MAX(occurred_at) FROM holding_transactions WHERE holding_id = h.id),
+             '1970-01-01'::timestamptz
+           ) < NOW() - INTERVAL ${staleInterval}
+        )::int AS stale_zero,
+        (SELECT COUNT(*) FROM user_h h
+          WHERE h.is_hidden = false AND h.balance::numeric > 0
+            AND NOT EXISTS (
+              SELECT 1 FROM token_prices p
+              WHERE p.token_id = h.token_id AND p.timestamp > NOW() - INTERVAL '7 days'
+            )
+        )::int AS unpriced_visible,
+        (SELECT COUNT(*) FROM user_h h
+          JOIN holding_coverage c ON c.holding_id = h.id
+          WHERE c.opening_balance_quantity::numeric < 0
+        )::int AS negative_opening,
+        (SELECT COUNT(*) FROM user_h h
+          WHERE NOT EXISTS (SELECT 1 FROM holding_coverage WHERE holding_id = h.id)
+        )::int AS no_coverage
+    `)) as unknown as Array<{
+      total: number;
+      visible: number;
+      zero_visible: number;
+      stale_zero: number;
+      unpriced_visible: number;
+      negative_opening: number;
+      no_coverage: number;
+    }>;
+
+    const counts = countsRows[0] ?? {
+      total: 0,
+      visible: 0,
+      zero_visible: 0,
+      stale_zero: 0,
+      unpriced_visible: 0,
+      negative_opening: 0,
+      no_coverage: 0,
+    };
+
+    return {
+      duplicateTokens: dupRows.map((r) => ({ symbol: r.symbol, count: r.n })),
+      holdings: {
+        total: counts.total,
+        visible: counts.visible,
+        zeroVisible: counts.zero_visible,
+        zeroVisibleStale: counts.stale_zero,
+        unpricedVisible: counts.unpriced_visible,
+        negativeOpening: counts.negative_opening,
+        missingCoverage: counts.no_coverage,
+      },
+      thresholds: {
+        staleClosedDays: HIDE_CLOSED_HOLDINGS_STALE_DAYS,
+      },
+    };
   }),
 });

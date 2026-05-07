@@ -241,6 +241,26 @@ export class TokenRepository extends BaseRepository<Token, NewToken> {
     return results;
   }
 
+  // Promote a (symbol, type, NULL) row's marketSegment in place when a
+  // segmented import would otherwise create a duplicate. Used by
+  // TokenIdentityService's self-healing path. Returns the updated row.
+  async updateMarketSegment(
+    tokenId: string,
+    marketSegment: string,
+    transaction?: DatabaseTransaction
+  ): Promise<Token> {
+    const database = this.getDb(transaction);
+    const [updated] = await database
+      .update(schema.tokens)
+      .set({ marketSegment, updatedAt: new Date() })
+      .where(eq(schema.tokens.id, tokenId))
+      .returning();
+    if (!updated) {
+      throw new Error(`updateMarketSegment: token ${tokenId} not found`);
+    }
+    return updated as Token;
+  }
+
   // Token IDs whose `unpriceable_until` is still in the future. The
   // historical-price-backfill skips these so we don't re-ask providers
   // for tokens (typically obscure SPL memes, low-liquidity custom

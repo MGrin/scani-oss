@@ -82,6 +82,7 @@ import { ExchangeBalancesProcessor } from './processors/exchange-balances';
 import { ExchangeImportProcessor } from './processors/exchange-import';
 import { FileImportProcessor } from './processors/file-import';
 import { ForexBackfillProcessor } from './processors/forex-backfill';
+import { HideClosedHoldingsProcessor } from './processors/hide-closed-holdings';
 import { HistoricalPriceBackfillProcessor } from './processors/historical-price-backfill';
 import { HoldingPriceUpdateProcessor } from './processors/holding-price-update';
 import { IngestTransactionsProcessor } from './processors/ingest-transactions';
@@ -115,6 +116,7 @@ function resolveProcessors() {
     Container.get(PortfolioValueRollupProcessor),
     Container.get(TransferLinkingProcessor),
     Container.get(BackfillTokenIdentityProcessor),
+    Container.get(HideClosedHoldingsProcessor),
     Container.get(ReconcilePendingCredentialsProcessor),
     Container.get(ReconcileOrphanedUserJobsProcessor),
     // User-initiated (payload via UserJobDescriptor schema).

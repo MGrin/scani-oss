@@ -39,6 +39,11 @@ export {
   type DetachHoldingFromVaultInput,
   DetachHoldingFromVaultUseCase,
 } from './DetachHoldingFromVaultUseCase';
+export {
+  HIDE_CLOSED_HOLDINGS_STALE_DAYS,
+  type HideClosedHoldingsSummary,
+  HideClosedHoldingsUseCase,
+} from './HideClosedHoldingsUseCase';
 // Exchange/Broker Import Use Cases
 export {
   type ImportExchangeAccountsInput,

@@ -43,6 +43,20 @@
       "when": 1778147500000,
       "tag": "0005_holdings_user_created_idx",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1778240000000,
+      "tag": "0006_generalized_stock_dedup",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1778240100000,
+      "tag": "0007_merge_chain_spread_crypto",
+      "breakpoints": true
     }
   ]
 }

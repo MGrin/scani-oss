@@ -221,6 +221,8 @@ export function SettingsPage() {
         </CardContent>
       </Card>
 
+      <DataQualityCard />
+
       <Card className="border-destructive/50">
         <CardHeader>
           <CardTitle className="text-base text-destructive">Danger Zone</CardTitle>
@@ -401,4 +403,115 @@ function formatRelative(d: string | Date): string {
   const day = Math.floor(hr / 24);
   if (day < 30) return `${day} d ago`;
   return date.toLocaleDateString();
+}
+
+// Surfaces the data-quality counters that historically only showed up
+// in Sentry / DB queries: duplicate token rows, zero-balance visible
+// holdings (the cluttered list), unpriced positives, holdings whose
+// import flow synthesized a negative opening balance. Lets the user
+// spot regressions before the chart goes wrong.
+function DataQualityCard() {
+  const reportQuery = trpc.portfolio.getDataQualityReport.useQuery(undefined, {
+    refetchOnWindowFocus: false,
+    staleTime: 60_000,
+  });
+
+  if (reportQuery.isLoading) {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Data quality</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <Skeleton className="h-32 w-full" />
+        </CardContent>
+      </Card>
+    );
+  }
+
+  const r = reportQuery.data;
+  if (!r) {
+    return null;
+  }
+
+  const dupCount = r.duplicateTokens.length;
+  const rows: Array<{ label: string; value: number; warn: boolean; hint?: string }> = [
+    {
+      label: 'Duplicate token rows',
+      value: dupCount,
+      warn: dupCount > 0,
+      hint:
+        dupCount > 0
+          ? r.duplicateTokens
+              .slice(0, 5)
+              .map((d) => `${d.symbol}×${d.count}`)
+              .join(', ')
+          : undefined,
+    },
+    {
+      label: 'Holdings (visible / total)',
+      value: r.holdings.visible,
+      warn: false,
+      hint: `${r.holdings.total} total`,
+    },
+    {
+      label: 'Zero-balance visible holdings',
+      value: r.holdings.zeroVisible,
+      warn: r.holdings.zeroVisible > 5,
+    },
+    {
+      label: `Stale-zero (will hide on next ${r.thresholds.staleClosedDays}d sweep)`,
+      value: r.holdings.zeroVisibleStale,
+      warn: false,
+    },
+    {
+      label: 'Visible positions with no recent price',
+      value: r.holdings.unpricedVisible,
+      warn: r.holdings.unpricedVisible > 0,
+    },
+    {
+      label: 'Negative synthesized opening balance',
+      value: r.holdings.negativeOpening,
+      warn: r.holdings.negativeOpening > 0,
+      hint: 'Import didn’t reach back to before the user’s trades',
+    },
+    {
+      label: 'Holdings with no coverage row',
+      value: r.holdings.missingCoverage,
+      warn: r.holdings.missingCoverage > 0,
+    },
+  ];
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-base">Data quality</CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-2">
+        <p className="text-xs text-muted-foreground">
+          Counters update on every page load. Anything in amber is a regression worth investigating.
+        </p>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+          {rows.map((row) => (
+            <div
+              key={row.label}
+              className="flex items-baseline justify-between rounded-md border border-border/50 px-3 py-2"
+            >
+              <div className="flex flex-col">
+                <span className="text-xs text-muted-foreground">{row.label}</span>
+                {row.hint ? (
+                  <span className="text-[10px] text-muted-foreground/70">{row.hint}</span>
+                ) : null}
+              </div>
+              <span
+                className={`tabular-nums text-sm font-medium ${row.warn ? 'text-amber-600' : ''}`}
+              >
+                {row.value}
+              </span>
+            </div>
+          ))}
+        </div>
+      </CardContent>
+    </Card>
+  );
 }
