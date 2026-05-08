@@ -6,7 +6,7 @@ import { Input } from '@scani/ui/ui/input';
 import { Separator } from '@scani/ui/ui/separator';
 import { Skeleton } from '@scani/ui/ui/skeleton';
 import { showError, showSuccess } from '@scani/ui/ui/use-toast';
-import { Pencil, RefreshCw, Settings, Trash2 } from 'lucide-react';
+import { Pencil, RefreshCw, Settings, Trash2, Wallet } from 'lucide-react';
 import { useState } from 'react';
 import { NumericFormat } from 'react-number-format';
 import { useNavigate } from 'react-router-dom';
@@ -86,8 +86,15 @@ export function HoldingDetailContent({ holdingId, mode = 'panel' }: HoldingDetai
   const { symbol: currencySymbol } = useBaseCurrency();
   const { data: holdingsData, isLoading } = trpc.holdings.getWithDetails.useQuery();
   const holding = holdingsData?.holdings?.find((h: { id: string }) => h.id === holdingId);
-  const { deleteHolding, updateHolding, refreshPrice, isDeleting, isRefreshingPrice } =
-    useHoldingActions();
+  const {
+    deleteHolding,
+    updateHolding,
+    refreshPrice,
+    refreshBalance,
+    isDeleting,
+    isRefreshingPrice,
+    isRefreshingBalance,
+  } = useHoldingActions();
   const navigate = useNavigate();
 
   const utils = trpc.useUtils();
@@ -172,6 +179,18 @@ export function HoldingDetailContent({ holdingId, mode = 'panel' }: HoldingDetai
           >
             <RefreshCw className={cn('h-4 w-4', isRefreshingPrice && 'animate-spin')} />
           </Button>
+          {holding.source && holding.source !== 'manual' && (
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-8 w-8"
+              onClick={() => refreshBalance(holdingId)}
+              disabled={isRefreshingBalance}
+              title={`Refresh balance from ${holding.source}`}
+            >
+              <Wallet className={cn('h-4 w-4', isRefreshingBalance && 'animate-pulse')} />
+            </Button>
+          )}
           <Button
             variant="ghost"
             size="icon"

@@ -42,6 +42,16 @@ export function useHoldingActions() {
     onError: (err) => showError(err, 'Refreshing price'),
   });
 
+  // Balance refresh hits the underlying integration (wallet RPC, CEX
+  // API, broker Flex Query) and re-syncs the account this holding sits
+  // on. Same async + WS-event pattern as price refresh.
+  const refreshBalanceMutation = trpc.holdings.refreshBalance.useMutation({
+    onSuccess: () => {
+      showSuccess('Balance refresh queued');
+    },
+    onError: (err) => showError(err, 'Refreshing balance'),
+  });
+
   return {
     deleteHolding: (id: string, options?: { onSuccess?: () => void }) =>
       deleteMutation.mutate({ id }, { onSuccess: options?.onSuccess }),
@@ -51,9 +61,12 @@ export function useHoldingActions() {
       updateMutation.mutate({ id, data }),
     refreshPrice: (id: string) =>
       refreshPriceMutation.mutate({ id, requestId: crypto.randomUUID() }),
+    refreshBalance: (holdingId: string) =>
+      refreshBalanceMutation.mutate({ holdingId, requestId: crypto.randomUUID() }),
     isDeleting: deleteMutation.isPending,
     isBulkDeleting: bulkDeleteMutation.isPending,
     isUpdating: updateMutation.isPending,
     isRefreshingPrice: refreshPriceMutation.isPending,
+    isRefreshingBalance: refreshBalanceMutation.isPending,
   };
 }

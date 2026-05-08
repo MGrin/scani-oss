@@ -92,6 +92,7 @@ import { PortfolioValueRollupProcessor } from './processors/portfolio-value-roll
 import { PricingProcessor } from './processors/pricing';
 import { ReconcileOrphanedUserJobsProcessor } from './processors/reconcile-orphaned-user-jobs';
 import { ReconcilePendingCredentialsProcessor } from './processors/reconcile-pending-credentials';
+import { RefreshAccountBalanceProcessor } from './processors/refresh-account-balance';
 import { ScreenshotParseProcessor } from './processors/screenshot-parse';
 import { TransferLinkingProcessor } from './processors/transfer-linking';
 import { UserDataDeleteProcessor } from './processors/user-data-delete';
@@ -127,6 +128,7 @@ function resolveProcessors() {
     Container.get(ManualHoldingsCreateProcessor),
     Container.get(PortfolioHistoryBackfillProcessor),
     Container.get(HoldingPriceUpdateProcessor),
+    Container.get(RefreshAccountBalanceProcessor),
     Container.get(UserDataDeleteProcessor),
     Container.get(IngestTransactionsProcessor),
   ];

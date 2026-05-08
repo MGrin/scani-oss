@@ -16,6 +16,11 @@ export {
   portfolioHistoryBackfillSchema,
 } from './portfolio-history-backfill';
 export {
+  REFRESH_ACCOUNT_BALANCE,
+  type RefreshAccountBalanceJob,
+  refreshAccountBalanceSchema,
+} from './refresh-account-balance';
+export {
   SCREENSHOT_PARSE,
   type ScreenshotParseJob,
   screenshotParseSchema,
@@ -33,6 +38,7 @@ import { FILE_IMPORT } from './file-import';
 import { HOLDING_PRICE_UPDATE } from './holding-price-update';
 import { MANUAL_HOLDINGS_CREATE } from './manual-holdings-create';
 import { PORTFOLIO_HISTORY_BACKFILL } from './portfolio-history-backfill';
+import { REFRESH_ACCOUNT_BALANCE } from './refresh-account-balance';
 import { SCREENSHOT_PARSE } from './screenshot-parse';
 import { TRANSACTION_IMPORT } from './transaction-import';
 import { USER_DATA_DELETE } from './user-data-delete';
@@ -46,6 +52,7 @@ export const USER_JOB_DESCRIPTORS = [
   MANUAL_HOLDINGS_CREATE,
   PORTFOLIO_HISTORY_BACKFILL,
   HOLDING_PRICE_UPDATE,
+  REFRESH_ACCOUNT_BALANCE,
   USER_DATA_DELETE,
   TRANSACTION_IMPORT,
 ] as const;

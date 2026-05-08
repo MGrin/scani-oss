@@ -23,6 +23,7 @@ export const JOB_NAMES = {
   manualHoldingsCreate: 'manual-holdings-create',
   portfolioHistoryBackfill: 'portfolio-history-backfill',
   holdingPriceUpdate: 'holding-price-update',
+  refreshAccountBalance: 'refresh-account-balance',
   userDataDelete: 'user-data-delete',
   transactionImport: 'transaction-import',
   hideClosedHoldings: 'hide-closed-holdings',

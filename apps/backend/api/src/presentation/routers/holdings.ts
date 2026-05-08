@@ -12,10 +12,11 @@ import {
   DeleteHoldingUseCase,
   UpdateHoldingUseCase,
 } from '@scani/domain/use-cases';
-import { HOLDING_PRICE_UPDATE } from '@scani/jobs';
+import { HOLDING_PRICE_UPDATE, REFRESH_ACCOUNT_BALANCE } from '@scani/jobs';
 import { BullMqEnqueueService } from '@scani/queue';
 import { emitBulkEntityChanges, emitEntityChange } from '@scani/realtime';
 import { UpdateHoldingDto, UpsertHoldingApyConfigDto } from '@scani/shared';
+import { TRPCError } from '@trpc/server';
 import { Container } from 'typedi';
 import { z } from 'zod';
 import { executeBulkOperation } from '../lib/bulk-operation';
@@ -170,6 +171,44 @@ export const holdingsRouter = router({
         // placeholders for a future manual-override payload.
         priceUsd: 0,
         priceSource: 'fetch',
+      });
+      return { jobId };
+    }),
+
+  // Per-holding "Refresh balance" trigger. Looks up the holding, finds
+  // the underlying account, and enqueues a balance refresh that hits
+  // the same chain / CEX / brokerage provider the hourly cron does.
+  // Manual-source holdings have no integration to refresh — the
+  // endpoint rejects them with PRECONDITION_FAILED so the frontend can
+  // surface a clean "edit the balance manually" message instead of
+  // queuing a no-op job. The job's BullMQ id is per-(user, account)
+  // so a flurry of clicks collapses to one in-flight refresh.
+  refreshBalance: protectedProcedure
+    .input(
+      z.object({
+        holdingId: z.string().uuid(),
+        requestId: z.string().uuid(),
+      })
+    )
+    .mutation(async ({ input, ctx }) => {
+      const { dbUser } = await requireAuth(ctx);
+      const holdingRepo = Container.get(HoldingRepository);
+      const holding = await holdingRepo.findById(input.holdingId);
+      if (!holding || holding.userId !== dbUser.id) {
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'Holding not found' });
+      }
+      if (!holding.source || holding.source === 'manual') {
+        throw new TRPCError({
+          code: 'PRECONDITION_FAILED',
+          message:
+            'This holding is manual — edit the balance directly. Refresh is only for wallet / exchange / broker holdings.',
+        });
+      }
+      const jobId = await Container.get(BullMqEnqueueService).add(REFRESH_ACCOUNT_BALANCE, {
+        userId: dbUser.id,
+        requestId: input.requestId,
+        holdingId: holding.id,
+        accountId: holding.accountId,
       });
       return { jobId };
     }),

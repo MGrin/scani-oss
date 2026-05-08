@@ -72,6 +72,11 @@ export {
   ParseScreenshotUseCase,
 } from './ParseScreenshotUseCase';
 export {
+  type RefreshAccountBalanceInput,
+  type RefreshAccountBalanceResult,
+  RefreshAccountBalanceUseCase,
+} from './RefreshAccountBalanceUseCase';
+export {
   RollupPortfolioValueDailyUseCase,
   type RollupSummary,
 } from './RollupPortfolioValueDailyUseCase';
