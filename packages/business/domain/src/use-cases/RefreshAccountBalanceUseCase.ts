@@ -5,6 +5,7 @@ import { ProviderRegistry } from '@scani/providers/core/registry';
 import type { ProviderContext } from '@scani/providers/core/types';
 import { and, eq } from 'drizzle-orm';
 import { Container, Service } from 'typedi';
+import { SCAM_PROBABILITY_THRESHOLD } from '../lib/constants';
 import { TokenTypeRepository } from '../repositories/EnumRepositories';
 import { HoldingRepository } from '../repositories/HoldingRepository';
 import { HoldingsSyncHelper } from '../services/holdings/HoldingsSyncHelper';
@@ -177,6 +178,8 @@ export class RefreshAccountBalanceUseCase {
     let holdingsCreated = 0;
     let holdingsRemoved = 0;
 
+    const isWallet = source === 'wallet';
+
     await withTransaction(async (tx) => {
       const userBaseCurrencyId = await this.fetchUserBaseCurrency(input.userId, tx);
       const result = await this.holdingsSyncHelper.processSnapshotsForAccount({
@@ -187,28 +190,26 @@ export class RefreshAccountBalanceUseCase {
         cryptoTokenTypeId: cryptoTokenType.id,
         tokenTypeMap,
         existingHoldings: holdingsForAccount,
-        // SAFE: 'preserve' refuses to zero holdings whose tokens
-        // weren't in the provider response. This matches cron
-        // behavior because Etherscan's `tokentx` discovery is
-        // unreliable (10k-row pagination cap, periodic key throttling)
-        // — verified case: user holds 4,250 USDC on-chain but the
-        // discovery query didn't return USDC for several syncs in a
-        // row, so 'zero' would have wiped the row. The user-facing
-        // result below ALSO carries the per-symbol diff so the UI
-        // can warn when the holding the button was clicked from
-        // wasn't actually included in the provider response.
+        // 'preserve' refuses to zero holdings whose tokens weren't
+        // in the provider response — Etherscan's `tokentx` discovery
+        // is unreliable (10k-row pagination cap, rate limiting) and
+        // 'zero' would wipe legitimate balances on a discovery glitch.
         staleStrategy: 'preserve',
-        dedupStrategy: 'tokenId',
-        sourceTag: source === 'wallet' ? 'blockchain' : 'sync_exchange_balances',
-        defaultDecimals: 8,
-        respectHiddenForCounts: false,
-        // Always touch `last_updated` so the UI's "last synced" badge
-        // moves every time the user clicks the button, even on
-        // unchanged balances.
+        // Mirror the per-source cron settings exactly so refresh ==
+        // "trigger this account's cron once." Wallet path uses
+        // externalId dedup + 18 decimals; exchange path uses tokenId
+        // dedup + 8 decimals.
+        dedupStrategy: isWallet ? 'externalId' : 'tokenId',
+        sourceTag: isWallet ? 'blockchain' : 'sync_exchange_balances',
+        defaultDecimals: isWallet ? 18 : 8,
+        respectHiddenForCounts: isWallet,
         skipUnchangedUpdates: false,
-        // Auto-create snapshots for tokens we don't have a holding
-        // for yet — a fresh deposit / swap should appear immediately.
-        updateOnly: false,
+        // Wallet refresh refuses to auto-create holdings: chain
+        // discovery surfaces every airdropped scam-dust contract,
+        // and the user's curated set must not be silently re-expanded.
+        // Exchange refresh allows auto-create so a fresh deposit on
+        // the CEX appears immediately, matching exchange-cron behavior.
+        updateOnly: isWallet,
         tx,
       });
       holdingsUpdated = result.updated;
@@ -293,16 +294,29 @@ export class RefreshAccountBalanceUseCase {
       throw new Error(`Account ${accountId} not found or not owned by user`);
     }
 
+    // Include hidden + scam-flagged rows so the dedup map sees every
+    // existing holding. Without this, refresh creates duplicates for
+    // tokens the user hid (or that were auto-flagged as scam dust)
+    // because the snapshot can't find the existing row to update.
     const holdingsWithDetails = await this.holdingRepository.findByUserWithFullDetails(
       input.userId,
       account.id,
       undefined,
+      true,
       true
     );
     const holdingsForAccount = holdingsWithDetails.map((h) => h.holding);
+    // existingSymbols feeds the user-facing "X wasn't returned by the
+    // provider" toast, so derive it from the visible set only — the
+    // user shouldn't get warnings about scam dust they don't see.
     const existingSymbols = Array.from(
       new Set(
         holdingsWithDetails
+          .filter(
+            (h) =>
+              !h.holding.isHidden &&
+              Number(h.token.isScamProbability ?? 0) < SCAM_PROBABILITY_THRESHOLD
+          )
           .map((h) => (h.token.symbol ?? '').toUpperCase())
           .filter((s) => s.length > 0)
       )
