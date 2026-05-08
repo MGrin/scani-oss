@@ -44,14 +44,18 @@ primary_region = "sin"
 
 [[vm]]
   size     = "shared-cpu-1x"
-  memory   = "1024mb"
+  memory   = "2048mb"
   cpu_kind = "shared"
   cpus     = 1
-  # 512MB → 768MB → 1024MB: api OOM-killed (exit 137) under combined
-  # load of in-flight portfolio-history-backfill + concurrent
-  # institution/account live-valuation queries (each loads ~110
-  # holdings + token prices into memory). Bump to match the worker
-  # so the same load shape doesn't trip again on the next backfill.
+  # 512MB → 768MB → 1024MB → 2048MB. Latest bump after the backend was
+  # OOM-killed at 07:30:18 UTC on 2026-05-08 (exit_code=137,
+  # oom_killed=true) ~18 hours after the previous deploy. Pair this with
+  # the connection-monitor leak fix in commit b23e21db ↦ that commit
+  # closes the obvious paired-cleanup bug (`endConnectionTracking` was
+  # only called in `onAfterHandle`, never in `onError`); 2 GB gives
+  # headroom for any remaining slow growth (Sentry breadcrumb queue,
+  # postgres.js prepared-statement cache, …) without paging us at the
+  # cgroup boundary.
 
 [deploy]
   strategy = "immediate"

@@ -318,6 +318,16 @@ const app = new Elysia()
     const timer = trackedRequest._timer;
     const duration = timer ? timer.end() : undefined;
 
+    // Mirror the cleanup in `onAfterHandle` so failed requests don't
+    // leak entries in connection-monitor's `requestMetrics` Map. Every
+    // unhandled error otherwise added another row to a Map that
+    // shrinks only on the success path; over ~18h of idle traffic + an
+    // occasional 401/500 the backend OOM-killed at the 1 GB cgroup
+    // boundary (Fly machine event 2026-05-08 07:30:18, exit_code=137).
+    if (requestId) {
+      endConnectionTracking(requestId);
+    }
+
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
     const errorName = error instanceof Error ? error.name : 'UnknownError';
     const errorStack = error instanceof Error ? error.stack : undefined;
