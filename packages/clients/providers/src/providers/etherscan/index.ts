@@ -24,7 +24,7 @@
 
 import type { NewToken, TokenMetadata } from '@scani/db/schema';
 import type { OutflowRateLimiter } from '@scani/rate-limiter';
-import { createOutflowLimiter } from '@scani/rate-limiter';
+import { createOutflowLimiter, withRetry } from '@scani/rate-limiter';
 import Decimal from 'decimal.js';
 import {
   BaseEvmProvider,
@@ -311,7 +311,10 @@ export class EtherscanProvider
   ): Promise<HoldingSnapshot[]> {
     // Discovery: pull the most recent page of tokentx and dedup
     // contracts. Etherscan caps at 10,000 rows; descending sort puts
-    // the freshest activity first.
+    // the freshest activity first. Retry transient rate-limit /
+    // upstream-error responses so a single 429 doesn't blank the
+    // whole discovery (which then makes every ERC-20 silently absent
+    // from the snapshots).
     const discoverUrl = this.buildUrl(chain.chainId, {
       module: 'account',
       action: 'tokentx',
@@ -321,7 +324,10 @@ export class EtherscanProvider
       sort: 'desc',
       apikey: apiKey,
     });
-    const discoverData = await this.callJson<EtherscanResponse<TokenTxResultRow[]>>(discoverUrl);
+    const discoverData = await withRetry(
+      () => this.callJson<EtherscanResponse<TokenTxResultRow[]>>(discoverUrl),
+      { attempts: 3, baseDelayMs: 500, maxDelayMs: 4000 }
+    );
     if (!discoverData || discoverData.status !== '1') return [];
 
     const uniqueTokens = new Map<string, { name: string; symbol: string; decimals: number }>();
@@ -337,9 +343,12 @@ export class EtherscanProvider
       uniqueTokens.set(contract, info);
     }
 
-    // Per-token current balance. Etherscan's tokenbalance is one
-    // call per (contract, address); parallel issuance is fine
-    // because the rate-limiter is the gate.
+    // Per-token current balance. Etherscan's tokenbalance is one call
+    // per (contract, address). Each call is wrapped in `withRetry` so
+    // a transient `Max calls per sec rate limit reached` (HTTP 200
+    // body, not a 429) bounces back instead of silently null'ing the
+    // snapshot — which used to drop the legitimate USDC for users
+    // with many ERC-20s in their tokentx history.
     const tasks = [...uniqueTokens.entries()].map(async ([contract, info]) => {
       const balanceUrl = this.buildUrl(chain.chainId, {
         module: 'account',
@@ -349,7 +358,20 @@ export class EtherscanProvider
         tag: 'latest',
         apikey: apiKey,
       });
-      const balanceData = await this.callJson<EtherscanResponse<string>>(balanceUrl);
+      let balanceData: EtherscanResponse<string> | null;
+      try {
+        balanceData = await withRetry(() => this.callJson<EtherscanResponse<string>>(balanceUrl), {
+          attempts: 3,
+          baseDelayMs: 500,
+          maxDelayMs: 4000,
+        });
+      } catch {
+        // Even after retries the balance endpoint is unreachable —
+        // returning null falls through to the legacy contract (skip
+        // this contract this pass; the user's other holdings still
+        // resolve, and the next refresh / cron re-checks).
+        return null;
+      }
       if (!balanceData || balanceData.status !== '1') return null;
       const raw = new Decimal(balanceData.result);
       if (raw.isZero()) return null;
@@ -385,8 +407,47 @@ export class EtherscanProvider
 
   private async callJson<T>(url: string): Promise<T | null> {
     const response = await this.limiter.execute(async () => fetchWithTimeout(url));
-    if (!response.ok) return null;
-    return (await response.json()) as T;
+    if (!response.ok) {
+      // Map 429 and 5xx HTTP-level failures to a thrown error so
+      // upstream callers wrapped in `withRetry` can recover. Other
+      // non-2xx responses still resolve to null (the legacy contract).
+      if (response.status === 429 || response.status >= 500) {
+        throw new Error(`Etherscan HTTP ${response.status} (rate limit / upstream error)`);
+      }
+      return null;
+    }
+    const parsed = (await response.json()) as
+      | T
+      | { status?: string; message?: string; result?: unknown };
+    // Etherscan v2 returns HTTP 200 with `{status:"0", message:"NOTOK",
+    // result:"Max calls per sec rate limit reached"}` when the rate
+    // limit is breached. The previous shape `Promise<T | null>` lost
+    // that distinction — every "NOTOK" looked indistinguishable from a
+    // legitimate empty result. The discovery + balance loops then
+    // silently dropped the contract; a wallet with 100+ ERC-20s would
+    // get the legitimate USDC dropped because the rate limiter and
+    // Etherscan disagreed about what's allowed.
+    //
+    // Now: if the response is a rate-limit / NOTOK shape, throw so the
+    // `withRetry` wrappers retry with backoff. Other status='0' shapes
+    // (e.g. "No transactions found") continue to flow through untouched
+    // — the caller already handles status checks downstream.
+    if (
+      parsed &&
+      typeof parsed === 'object' &&
+      'message' in parsed &&
+      typeof parsed.message === 'string' &&
+      parsed.message === 'NOTOK'
+    ) {
+      const result = (parsed as { result?: unknown }).result;
+      const text = typeof result === 'string' ? result : '';
+      if (
+        /rate limit|max calls per sec|too many|invalid api key|missing\/invalid api key/i.test(text)
+      ) {
+        throw new Error(`Etherscan rate limit / auth: ${text}`);
+      }
+    }
+    return parsed as T;
   }
 }
 

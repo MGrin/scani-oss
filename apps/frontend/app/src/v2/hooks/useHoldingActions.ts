@@ -63,6 +63,14 @@ export function useHoldingActions() {
       refreshPriceMutation.mutate({ id, requestId: crypto.randomUUID() }),
     refreshBalance: (holdingId: string) =>
       refreshBalanceMutation.mutate({ holdingId, requestId: crypto.randomUUID() }),
+    /**
+     * The raw mutation handle is exposed so the holding detail page can
+     * read `data.jobId` from the latest call and subscribe via
+     * `useJobStatus`. The toast in the hook only confirms enqueue —
+     * downstream feedback ("we synced ETH but USDC wasn't in the
+     * wallet response") needs the per-call jobId from this handle.
+     */
+    refreshBalanceMutation,
     isDeleting: deleteMutation.isPending,
     isBulkDeleting: bulkDeleteMutation.isPending,
     isUpdating: updateMutation.isPending,

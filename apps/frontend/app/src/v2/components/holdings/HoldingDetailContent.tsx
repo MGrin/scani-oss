@@ -7,7 +7,7 @@ import { Separator } from '@scani/ui/ui/separator';
 import { Skeleton } from '@scani/ui/ui/skeleton';
 import { showError, showSuccess } from '@scani/ui/ui/use-toast';
 import { Pencil, RefreshCw, Settings, Trash2, Wallet } from 'lucide-react';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { NumericFormat } from 'react-number-format';
 import { useNavigate } from 'react-router-dom';
 import { getFaviconUrl } from '@/lib/icons';
@@ -16,6 +16,7 @@ import { cn } from '@/lib/utils';
 import { invalidatePortfolioQueries } from '../../hooks/invalidatePortfolioQueries';
 import { useBaseCurrency } from '../../hooks/useBaseCurrency';
 import { useHoldingActions } from '../../hooks/useHoldingActions';
+import { useJobStatus } from '../../hooks/useJobStatus';
 import { V2_ROUTES } from '../../lib/routes';
 import { PortfolioCharts } from '../dashboard/PortfolioCharts';
 import { EditCustomTokenPriceDialog } from '../tokens/EditCustomTokenPriceDialog';
@@ -91,6 +92,7 @@ export function HoldingDetailContent({ holdingId, mode = 'panel' }: HoldingDetai
     updateHolding,
     refreshPrice,
     refreshBalance,
+    refreshBalanceMutation,
     isDeleting,
     isRefreshingPrice,
     isRefreshingBalance,
@@ -114,6 +116,62 @@ export function HoldingDetailContent({ holdingId, mode = 'panel' }: HoldingDetai
     },
     onError: (err) => showError(err, 'Failed to remove APY configuration'),
   });
+
+  // Track the most recent refresh-balance job so we can show a
+  // contextual toast when it finishes — success when the symbol the
+  // user clicked was actually returned by the provider, warning when
+  // the wallet/exchange response didn't include it (Etherscan's
+  // tokentx-based discovery has periodic blind spots).
+  const [refreshBalanceJobId, setRefreshBalanceJobId] = useState<string | null>(null);
+  const refreshBalanceJobStatus = useJobStatus(refreshBalanceJobId);
+  const refreshBalanceJobIdFromMutation = refreshBalanceMutation.data?.jobId ?? null;
+  useEffect(() => {
+    if (refreshBalanceJobIdFromMutation) {
+      setRefreshBalanceJobId(refreshBalanceJobIdFromMutation);
+    }
+  }, [refreshBalanceJobIdFromMutation]);
+  const clickedSymbol = (
+    holdingsData?.holdings?.find((h: { id: string }) => h.id === holdingId)?.token?.symbol ?? ''
+  ).toUpperCase();
+  useEffect(() => {
+    if (!refreshBalanceJobId) return;
+    if (refreshBalanceJobStatus.state === 'completed') {
+      const result = refreshBalanceJobStatus.result as
+        | { syncedSymbols?: string[]; missingSymbols?: string[]; holdingsUpdated?: number }
+        | null
+        | undefined;
+      const synced = (result?.syncedSymbols ?? []).map((s) => s.toUpperCase());
+      const missing = (result?.missingSymbols ?? []).map((s) => s.toUpperCase());
+      if (clickedSymbol && missing.includes(clickedSymbol) && !synced.includes(clickedSymbol)) {
+        showError(
+          new Error(
+            `${clickedSymbol} wasn't returned by the provider — your other ${synced.length} balance(s) refreshed. Try again in a minute or re-import the wallet if this keeps happening.`
+          ),
+          'Balance refresh — partial'
+        );
+      } else if (clickedSymbol && synced.includes(clickedSymbol)) {
+        showSuccess(`${clickedSymbol} balance refreshed`);
+      } else {
+        showSuccess(`Refreshed ${synced.length} balance(s) on this account`);
+      }
+      setRefreshBalanceJobId(null);
+      void invalidatePortfolioQueries(utils);
+    } else if (refreshBalanceJobStatus.state === 'failed') {
+      showError(
+        new Error(refreshBalanceJobStatus.error ?? 'Refresh job failed'),
+        'Refreshing balance'
+      );
+      setRefreshBalanceJobId(null);
+    }
+  }, [
+    refreshBalanceJobId,
+    refreshBalanceJobStatus.state,
+    refreshBalanceJobStatus.result,
+    refreshBalanceJobStatus.error,
+    clickedSymbol,
+    utils,
+  ]);
+  const refreshBalanceBusy = isRefreshingBalance || refreshBalanceJobId !== null;
 
   if (isLoading) {
     return (
@@ -185,10 +243,10 @@ export function HoldingDetailContent({ holdingId, mode = 'panel' }: HoldingDetai
               size="icon"
               className="h-8 w-8"
               onClick={() => refreshBalance(holdingId)}
-              disabled={isRefreshingBalance}
+              disabled={refreshBalanceBusy}
               title={`Refresh balance from ${holding.source}`}
             >
-              <Wallet className={cn('h-4 w-4', isRefreshingBalance && 'animate-pulse')} />
+              <Wallet className={cn('h-4 w-4', refreshBalanceBusy && 'animate-pulse')} />
             </Button>
           )}
           <Button

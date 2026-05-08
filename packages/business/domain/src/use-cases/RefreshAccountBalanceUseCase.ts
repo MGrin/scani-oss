@@ -26,6 +26,16 @@ export interface RefreshAccountBalanceResult {
   holdingsUpdated: number;
   holdingsCreated: number;
   holdingsRemoved: number;
+  /** Symbols (uppercased) the provider returned a snapshot for. */
+  syncedSymbols: string[];
+  /**
+   * Symbols of existing holdings whose token wasn't in the provider
+   * response. The UI uses this to warn the user when the holding they
+   * clicked Refresh on wasn't actually re-checked — e.g. Etherscan's
+   * `tokentx`-based discovery silently drops tokens that fall outside
+   * its 10k-row pagination window.
+   */
+  missingSymbols: string[];
   durationMs: number;
 }
 
@@ -50,7 +60,7 @@ export class RefreshAccountBalanceUseCase {
   async execute(input: RefreshAccountBalanceInput): Promise<RefreshAccountBalanceResult> {
     const start = Date.now();
 
-    const { account, holdingsForAccount } = await this.resolveAccount(input);
+    const { account, holdingsForAccount, existingSymbols } = await this.resolveAccount(input);
 
     const institutionId = account.institutionId;
     const institutionCode =
@@ -124,6 +134,33 @@ export class RefreshAccountBalanceUseCase {
     // External fetch happens outside the DB transaction below.
     const snapshots = await provider.fetchBalances(ctx);
 
+    // If the provider returned ZERO snapshots, treat it as a transient
+    // failure rather than "user moved everything out." Without this
+    // guard, a 5xx from Etherscan / Helius / Kraken would zero out
+    // every holding on the account on the user's next click. For a
+    // genuine "wallet emptied" case the provider still returns at
+    // least the native-coin row (etherscan returns 0-ETH only when
+    // balance > 0, but this is rare in practice and the cost of
+    // false-zeroing is high).
+    if (snapshots.length === 0) {
+      logger.warn(
+        { accountId: account.id, source: userWalletId ? 'wallet' : 'exchange' },
+        'Provider returned no snapshots — refusing to zero existing holdings'
+      );
+      return {
+        accountId: account.id,
+        source: userWalletId ? 'wallet' : 'exchange',
+        holdingsUpdated: 0,
+        holdingsCreated: 0,
+        holdingsRemoved: 0,
+        syncedSymbols: [],
+        // Provider failed to return anything → from the user's POV
+        // every existing holding on this account was "not refreshed."
+        missingSymbols: existingSymbols,
+        durationMs: Date.now() - start,
+      };
+    }
+
     const cryptoTokenType = await this.tokenTypeRepository.findByCode('crypto');
     const fiatTokenType = await this.tokenTypeRepository.findByCode('fiat');
     const stockTokenType = await this.tokenTypeRepository.findByCode('stock');
@@ -150,20 +187,28 @@ export class RefreshAccountBalanceUseCase {
         cryptoTokenTypeId: cryptoTokenType.id,
         tokenTypeMap,
         existingHoldings: holdingsForAccount,
-        // Wallet-style: preserve user-hidden state across refreshes
-        // (wallet-style 'preserve' for chains, exchange-style 'zero'
-        // for CEX/brokerage — same convention the cron uses).
-        staleStrategy: source === 'wallet' ? 'preserve' : 'zero',
+        // SAFE: 'preserve' refuses to zero holdings whose tokens
+        // weren't in the provider response. This matches cron
+        // behavior because Etherscan's `tokentx` discovery is
+        // unreliable (10k-row pagination cap, periodic key throttling)
+        // — verified case: user holds 4,250 USDC on-chain but the
+        // discovery query didn't return USDC for several syncs in a
+        // row, so 'zero' would have wiped the row. The user-facing
+        // result below ALSO carries the per-symbol diff so the UI
+        // can warn when the holding the button was clicked from
+        // wasn't actually included in the provider response.
+        staleStrategy: 'preserve',
         dedupStrategy: 'tokenId',
         sourceTag: source === 'wallet' ? 'blockchain' : 'sync_exchange_balances',
         defaultDecimals: 8,
-        respectHiddenForCounts: source === 'wallet',
-        skipUnchangedUpdates: source === 'exchange',
-        // Manual one-off refresh — same auto-create-on-discovery
-        // behavior as the corresponding cron path. Wallet preserves
-        // user choice (won't re-create explicitly excluded tokens);
-        // exchange creates new tokens to mirror new deposits.
-        updateOnly: source === 'wallet',
+        respectHiddenForCounts: false,
+        // Always touch `last_updated` so the UI's "last synced" badge
+        // moves every time the user clicks the button, even on
+        // unchanged balances.
+        skipUnchangedUpdates: false,
+        // Auto-create snapshots for tokens we don't have a holding
+        // for yet — a fresh deposit / swap should appear immediately.
+        updateOnly: false,
         tx,
       });
       holdingsUpdated = result.updated;
@@ -182,6 +227,20 @@ export class RefreshAccountBalanceUseCase {
         .where(eq(schema.accounts.id, account.id));
     });
 
+    // Per-symbol diff: what the provider returned vs what already
+    // existed on the account. Lets the UI tell the user "you clicked
+    // Refresh on USDC but USDC wasn't in the wallet response" instead
+    // of leaving them wondering whether the click did anything.
+    const syncedSymbols = Array.from(
+      new Set(
+        snapshots
+          .map((s) => (s.tokenIdentity?.symbol ?? '').toString().toUpperCase())
+          .filter((s) => s.length > 0)
+      )
+    );
+    const syncedSet = new Set(syncedSymbols);
+    const missingSymbols = existingSymbols.filter((s) => !syncedSet.has(s));
+
     const durationMs = Date.now() - start;
     logger.info(
       {
@@ -190,6 +249,8 @@ export class RefreshAccountBalanceUseCase {
         holdingsUpdated,
         holdingsCreated,
         holdingsRemoved,
+        syncedSymbols,
+        missingSymbols,
         durationMs,
       },
       'Refresh-balance complete'
@@ -200,6 +261,8 @@ export class RefreshAccountBalanceUseCase {
       holdingsUpdated,
       holdingsCreated,
       holdingsRemoved,
+      syncedSymbols,
+      missingSymbols,
       durationMs,
     };
   }
@@ -237,7 +300,14 @@ export class RefreshAccountBalanceUseCase {
       true
     );
     const holdingsForAccount = holdingsWithDetails.map((h) => h.holding);
-    return { account, holdingsForAccount };
+    const existingSymbols = Array.from(
+      new Set(
+        holdingsWithDetails
+          .map((h) => (h.token.symbol ?? '').toUpperCase())
+          .filter((s) => s.length > 0)
+      )
+    );
+    return { account, holdingsForAccount, existingSymbols };
   }
 
   private async fetchUserBaseCurrency(
@@ -259,6 +329,8 @@ export class RefreshAccountBalanceUseCase {
       holdingsUpdated: 0,
       holdingsCreated: 0,
       holdingsRemoved: 0,
+      syncedSymbols: [],
+      missingSymbols: [],
       durationMs: Date.now() - start,
     };
   }
