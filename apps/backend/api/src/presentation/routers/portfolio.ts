@@ -416,6 +416,17 @@ export const portfolioRouter = router({
     `)) as unknown as Array<{ symbol: string; n: number }>;
 
     const staleInterval = sql.raw(`'${HIDE_CLOSED_HOLDINGS_STALE_DAYS} days'`);
+    // The previous version had a correlated `MAX(occurred_at) FROM
+    // holding_transactions WHERE holding_id = h.id` subquery in the
+    // stale_zero branch, executed once per qualifying row. For users
+    // with thousands of zero-balance holdings this dominated the
+    // query's runtime.
+    //
+    // Pre-aggregate `last_tx_at` per holding via LEFT JOIN +
+    // GROUP BY in a CTE, then derive every count from the joined
+    // CTE in a single SELECT with COUNT(*) FILTER (WHERE ...). One
+    // pass over user holdings + one pass over their transactions,
+    // independent of holding count.
     const countsRows = (await db.execute<{
       total: number;
       visible: number;
@@ -425,31 +436,58 @@ export const portfolioRouter = router({
       negative_opening: number;
       no_coverage: number;
     }>(sql`
-      WITH user_h AS (SELECT * FROM holdings WHERE user_id = ${userId})
+      WITH user_h AS (
+        SELECT id, token_id, balance::numeric AS balance_n, is_hidden, is_active
+        FROM holdings
+        WHERE user_id = ${userId}
+      ),
+      h_last_tx AS (
+        SELECT h.id AS holding_id, MAX(t.occurred_at) AS last_tx_at
+        FROM user_h h
+        LEFT JOIN holding_transactions t ON t.holding_id = h.id
+        GROUP BY h.id
+      ),
+      h_coverage AS (
+        SELECT h.id AS holding_id,
+               c.opening_balance_quantity::numeric AS opening_balance_n,
+               (c.holding_id IS NOT NULL) AS has_coverage
+        FROM user_h h
+        LEFT JOIN holding_coverage c ON c.holding_id = h.id
+      ),
+      h_priced AS (
+        SELECT h.id AS holding_id,
+               EXISTS (
+                 SELECT 1 FROM token_prices p
+                 WHERE p.token_id = h.token_id
+                   AND p.timestamp > NOW() - INTERVAL '7 days'
+               ) AS is_priced
+        FROM user_h h
+      )
       SELECT
-        (SELECT COUNT(*) FROM user_h)::int AS total,
-        (SELECT COUNT(*) FROM user_h WHERE is_hidden = false AND is_active = true)::int AS visible,
-        (SELECT COUNT(*) FROM user_h WHERE is_hidden = false AND balance::numeric = 0)::int AS zero_visible,
-        (SELECT COUNT(*) FROM user_h h WHERE h.is_hidden = false AND h.balance::numeric = 0
-           AND COALESCE(
-             (SELECT MAX(occurred_at) FROM holding_transactions WHERE holding_id = h.id),
-             '1970-01-01'::timestamptz
-           ) < NOW() - INTERVAL ${staleInterval}
+        COUNT(*)::int AS total,
+        COUNT(*) FILTER (WHERE h.is_hidden = false AND h.is_active = true)::int AS visible,
+        COUNT(*) FILTER (WHERE h.is_hidden = false AND h.balance_n = 0)::int AS zero_visible,
+        COUNT(*) FILTER (
+          WHERE h.is_hidden = false
+            AND h.balance_n = 0
+            AND COALESCE(lt.last_tx_at, '1970-01-01'::timestamptz)
+                < NOW() - INTERVAL ${staleInterval}
         )::int AS stale_zero,
-        (SELECT COUNT(*) FROM user_h h
-          WHERE h.is_hidden = false AND h.balance::numeric > 0
-            AND NOT EXISTS (
-              SELECT 1 FROM token_prices p
-              WHERE p.token_id = h.token_id AND p.timestamp > NOW() - INTERVAL '7 days'
-            )
+        COUNT(*) FILTER (
+          WHERE h.is_hidden = false
+            AND h.balance_n > 0
+            AND p.is_priced = false
         )::int AS unpriced_visible,
-        (SELECT COUNT(*) FROM user_h h
-          JOIN holding_coverage c ON c.holding_id = h.id
-          WHERE c.opening_balance_quantity::numeric < 0
+        COUNT(*) FILTER (
+          WHERE c.opening_balance_n < 0
         )::int AS negative_opening,
-        (SELECT COUNT(*) FROM user_h h
-          WHERE NOT EXISTS (SELECT 1 FROM holding_coverage WHERE holding_id = h.id)
+        COUNT(*) FILTER (
+          WHERE c.has_coverage = false
         )::int AS no_coverage
+      FROM user_h h
+      LEFT JOIN h_last_tx lt ON lt.holding_id = h.id
+      LEFT JOIN h_coverage c ON c.holding_id = h.id
+      LEFT JOIN h_priced p ON p.holding_id = h.id
     `)) as unknown as Array<{
       total: number;
       visible: number;

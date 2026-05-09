@@ -102,6 +102,82 @@ export class GroupRepository extends BaseRepository<Group, NewGroup> {
     }
   }
 
+  /**
+   * Batch lookup of groups for many holdings, with ownership-scoped
+   * filtering. Replaces N sequential `findGroupsByHoldingId` calls
+   * with one indexed query.
+   *
+   * Joins through `holdings` so we can require `holdings.user_id =
+   * userId` in the same statement — callers don't need a pre-flight
+   * ownership check. Holdings the user doesn't own are silently
+   * absent from the returned map; callers can detect that as
+   * `result.has(id) === false`.
+   *
+   * Returns a `Map<holdingId, Group[]>`. Holdings with no groups
+   * still appear in the map with an empty array, so the caller can
+   * distinguish "no groups" from "unknown holding".
+   */
+  async findGroupsByHoldingIds(
+    userId: string,
+    holdingIds: string[],
+    transaction?: DatabaseTransaction
+  ): Promise<Map<string, Group[]>> {
+    const out = new Map<string, Group[]>();
+    if (holdingIds.length === 0) return out;
+    try {
+      const database = this.getDb(transaction);
+      const rows = await database
+        .select({
+          holdingId: schema.holdingGroups.holdingId,
+          group: schema.groups,
+        })
+        .from(schema.holdingGroups)
+        .innerJoin(schema.groups, eq(schema.holdingGroups.groupId, schema.groups.id))
+        .innerJoin(schema.holdings, eq(schema.holdingGroups.holdingId, schema.holdings.id))
+        .where(
+          and(
+            inArray(schema.holdingGroups.holdingId, holdingIds),
+            eq(schema.holdings.userId, userId)
+          )
+        );
+
+      // Seed the map so caller can distinguish "owned holding with
+      // zero groups" (key present, empty array) from "unknown /
+      // unauthorized holding" (key absent).
+      for (const row of rows) {
+        const ownedId = row.holdingId;
+        const bucket = out.get(ownedId);
+        if (bucket) {
+          bucket.push(row.group);
+        } else {
+          out.set(ownedId, [row.group]);
+        }
+      }
+      // Any input id NOT seen in rows could be either unowned OR
+      // owned-with-no-groups. Re-check ownership for the missing
+      // ones so we can correctly insert empty arrays for owned
+      // holdings.
+      const seenIds = new Set(out.keys());
+      const unseen = holdingIds.filter((id) => !seenIds.has(id));
+      if (unseen.length > 0) {
+        const ownedRows = await database
+          .select({ id: schema.holdings.id })
+          .from(schema.holdings)
+          .where(and(eq(schema.holdings.userId, userId), inArray(schema.holdings.id, unseen)));
+        for (const row of ownedRows) {
+          out.set(row.id, []);
+        }
+      }
+      return out;
+    } catch (error) {
+      this.logger.error(
+        { userId, count: holdingIds.length, error },
+        'Failed to batch-find groups by holdings'
+      );
+      throw error;
+    }
+  }
+
   async findGroupsByAccountId(
     accountId: string,
     transaction?: DatabaseTransaction

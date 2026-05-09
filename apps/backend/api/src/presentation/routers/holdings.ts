@@ -261,11 +261,16 @@ export const holdingsRouter = router({
 
       if (input.holdingIds.length === 0) return [];
 
+      // Single batch query that joins through holdings + filters by
+      // user_id. Replaces N sequential findGroupsByHoldingId calls
+      // (one DB roundtrip per holding) plus the pre-flight
+      // findByUserWithFullDetails (5-table join just for ownership
+      // validation). For 100 holdings this dropped from ~101 DB
+      // roundtrips to 2 (1 batch + 1 ownership backfill for owned
+      // holdings with zero groups).
       const groupRepository = Container.get(GroupRepository);
-      const holdingRepository = Container.get(HoldingRepository);
-      const userHoldings = await holdingRepository.findByUserWithFullDetails(dbUser.id);
-      const userHoldingIds = new Set(userHoldings.map((h) => h.holding.id));
-      const invalidHoldingIds = input.holdingIds.filter((id) => !userHoldingIds.has(id));
+      const groupsMap = await groupRepository.findGroupsByHoldingIds(dbUser.id, input.holdingIds);
+      const invalidHoldingIds = input.holdingIds.filter((id) => !groupsMap.has(id));
       if (invalidHoldingIds.length > 0) {
         throw new Error(
           `Unauthorized: Cannot access groups for holdings that don't belong to you: ${invalidHoldingIds.join(
@@ -274,16 +279,13 @@ export const holdingsRouter = router({
         );
       }
 
-      const allHoldingGroups = await Promise.all(
-        input.holdingIds.map((holdingId) => groupRepository.findGroupsByHoldingId(holdingId))
-      );
-      if (allHoldingGroups.length === 0) return [];
-      return allHoldingGroups.reduce(
-        (common: (typeof allHoldingGroups)[0], holdingGroups: (typeof allHoldingGroups)[0]) => {
-          const holdingGroupIds = new Set(holdingGroups.map((g) => g.id));
-          return common.filter((group) => holdingGroupIds.has(group.id));
-        }
-      );
+      // Intersect the per-holding group lists.
+      const perHolding = input.holdingIds.map((id) => groupsMap.get(id) ?? []);
+      if (perHolding.length === 0) return [];
+      return perHolding.reduce((common, holdingGroups) => {
+        const holdingGroupIds = new Set(holdingGroups.map((g) => g.id));
+        return common.filter((group) => holdingGroupIds.has(group.id));
+      });
     }),
 
   // APY Config endpoints

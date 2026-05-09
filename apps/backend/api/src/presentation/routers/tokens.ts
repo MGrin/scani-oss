@@ -10,6 +10,7 @@ import { TRPCError } from '@trpc/server';
 import { and, eq, inArray, lt, sql } from 'drizzle-orm';
 import Container from 'typedi';
 import { z } from 'zod';
+import { LruCache } from '../../lib/lru-cache';
 import { requireAuth } from '../middleware/auth';
 import { protectedProcedure, router } from '../trpc';
 
@@ -22,9 +23,16 @@ const CUSTOM_TOKEN_TYPE_CODES = ['private-company', 'other'] as const;
 
 import { SCAM_PROBABILITY_THRESHOLD } from '@scani/domain/lib/constants';
 
-// Cache for external provider search results (avoids hammering CoinGecko/Finnhub)
-const searchCache = new Map<string, { results: unknown[]; expiresAt: number }>();
-const SEARCH_CACHE_TTL_MS = 60 * 60 * 1000; // 1 hour
+// Cache for external provider search results (avoids hammering
+// CoinGecko/Finnhub). LRU + TTL — type-ahead users churn the cache
+// continuously; LRU keeps the hot 100 queries warm rather than
+// FIFO-evicting them as new typeahead chars come in. 1-hour TTL is
+// long enough that "USDC", "ETH", "BTC" etc. stay cached across an
+// entire user session.
+const searchCache = new LruCache<string, unknown[]>({
+  maxEntries: 100,
+  ttlMs: 60 * 60 * 1000,
+});
 
 // Helper function to map provider token types to database token types
 // Note: 'stock' type covers Stock/ETF/Equity/Commodity as per seed data
@@ -158,10 +166,8 @@ export function createTokensRouter(db: DbType, schemaObj: typeof schema) {
         if (dbTokens.length < input.limit && !dbHasFiatHit) {
           try {
             const cached = searchCache.get(query);
-            if (cached && cached.expiresAt > Date.now()) {
-              results.push(
-                ...(cached.results as typeof results).slice(0, input.limit - dbTokens.length)
-              );
+            if (cached) {
+              results.push(...(cached as typeof results).slice(0, input.limit - dbTokens.length));
               return results;
             }
 
@@ -220,14 +226,8 @@ export function createTokensRouter(db: DbType, schemaObj: typeof schema) {
 
             const externalCacheable = results.filter((r) => r.source === 'external');
             if (externalCacheable.length > 0) {
-              searchCache.set(query, {
-                results: externalCacheable,
-                expiresAt: Date.now() + SEARCH_CACHE_TTL_MS,
-              });
-              if (searchCache.size > 500) {
-                const firstKey = searchCache.keys().next().value;
-                if (firstKey) searchCache.delete(firstKey);
-              }
+              // LruCache handles size cap + LRU eviction internally.
+              searchCache.set(query, externalCacheable);
             }
           } catch (error) {
             tokensLogger.warn(
