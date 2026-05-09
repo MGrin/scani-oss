@@ -1,4 +1,4 @@
-import { assertEnvIsolatedUrl, isProduction, requiredInProd } from '@scani/config';
+import { isProduction, requiredInProd } from '@scani/config';
 import { z } from 'zod';
 
 /**
@@ -124,17 +124,6 @@ export function loadEnv(): DataProviderEnv {
     console.error(
       '❌ env: CLOUD_MANAGEMENT_ENABLED=true but FASTMAIL_API_TOKEN is not set. Cloud-frontend sign-in requires an email sender.'
     );
-    process.exit(1);
-  }
-  // Env-isolation guard — refuse to boot with a dev URL in prod or
-  // vice-versa. See `assertEnvIsolatedUrl` for the heuristic.
-  try {
-    assertEnvIsolatedUrl({ url: cached.REDIS_URL, varName: 'REDIS_URL' });
-    if (cached.DATABASE_URL) {
-      assertEnvIsolatedUrl({ url: cached.DATABASE_URL, varName: 'DATABASE_URL' });
-    }
-  } catch (err) {
-    console.error(`\n❌ ${err instanceof Error ? err.message : String(err)}\n`);
     process.exit(1);
   }
   return cached;

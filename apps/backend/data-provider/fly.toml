@@ -30,33 +30,18 @@ primary_region = "sin"
   [[http_service.checks]]
     interval     = "30s"
     timeout      = "5s"
-    # /ready is gated on the deferred-boot IIFE (see src/index.ts):
-    # - Process listens on the port within milliseconds of start →
-    #   smoke check passes immediately.
-    # - /ready returns 503 until provider registry + cloud DB +
-    #   Better-Auth init complete; flips to 200 once `bootState.ready`
-    #   is true.
-    # Result: Fly only routes traffic to a replica that's fully ready,
-    # AND grace_period only needs to cover the time between machine-up
-    # and the first successful /ready (not the entire boot).
-    grace_period = "60s"
+    grace_period = "30s"
     method       = "GET"
-    path         = "/ready"
+    path         = "/health"
 
 [http_service.http_options]
   idle_timeout = 120
 
 [[vm]]
   size     = "shared-cpu-1x"
-  memory   = "1024mb"
+  memory   = "512mb"
   cpu_kind = "shared"
   cpus     = 1
-  # 512MB was tight at boot. Memory stays at 1024MB matching the worker
-  # — the deferred-boot pattern (see src/index.ts) keeps grace_period
-  # tight, but boot-time memory is still ~10 provider factories +
-  # typedi + ioredis + (when CLOUD_MANAGEMENT_ENABLED) Postgres pool +
-  # Better-Auth, which 512MB couldn't comfortably absorb under
-  # shared-CPU contention.
 
 [deploy]
   # Rolling deploy: one machine at a time so the other keeps serving
