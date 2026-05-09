@@ -1,4 +1,5 @@
 import { PullToRefresh } from '@scani/ui/components/PullToRefresh';
+import { ThemeToggle } from '@scani/ui/components/ThemeToggle';
 import { Sheet, SheetContent } from '@scani/ui/ui/sheet';
 import {
   Building2,
@@ -152,6 +153,7 @@ export function AppShell() {
                 <Settings className="h-4 w-4 shrink-0" />
                 <span>Settings</span>
               </NavLink>
+              <ThemeToggle variant="row" side="top" align="start" className="px-2 py-2 text-sm" />
               <button
                 type="button"
                 onClick={handleSignOut}

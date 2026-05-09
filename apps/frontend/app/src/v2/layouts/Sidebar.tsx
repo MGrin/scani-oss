@@ -1,4 +1,4 @@
-import { useTheme } from '@scani/ui/contexts/ThemeContext';
+import { ThemeToggle } from '@scani/ui/components/ThemeToggle';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@scani/ui/ui/tooltip';
 import {
   Building2,
@@ -11,11 +11,9 @@ import {
   LogOut,
   type LucideIcon,
   Menu,
-  Moon,
   PieChart,
   Plug,
   Settings,
-  Sun,
   Tags,
   Vault,
   Wallet,
@@ -173,7 +171,6 @@ interface SidebarProps {
 }
 
 export function Sidebar({ collapsed, onToggle }: SidebarProps) {
-  const { resolvedTheme, toggleTheme } = useTheme();
   const { signOut } = useAuth();
   const { actionRequiredCount } = useUserJobs();
 
@@ -254,12 +251,20 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
           label="Settings"
           collapsed={collapsed}
         />
-        <SidebarButton
-          icon={resolvedTheme === 'dark' ? Sun : Moon}
-          label={resolvedTheme === 'dark' ? 'Light mode' : 'Dark mode'}
-          collapsed={collapsed}
-          onClick={toggleTheme}
-        />
+        {collapsed ? (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <div>
+                <ThemeToggle variant="icon" side="right" align="end" />
+              </div>
+            </TooltipTrigger>
+            <TooltipContent side="right" sideOffset={8}>
+              Theme
+            </TooltipContent>
+          </Tooltip>
+        ) : (
+          <ThemeToggle variant="row" side="top" align="start" />
+        )}
         <SidebarButton
           icon={LogOut}
           label="Sign out"

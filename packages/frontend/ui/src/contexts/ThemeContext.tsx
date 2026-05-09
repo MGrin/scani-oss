@@ -93,7 +93,7 @@ export function ThemeProvider({ children, storageKey = DEFAULT_STORAGE_KEY }: Th
     } else if (theme === 'light') {
       setTheme('dark');
     } else {
-      setTheme('light');
+      setTheme('system');
     }
   }, [theme, setTheme]);
 

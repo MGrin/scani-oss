@@ -20,6 +20,7 @@
     "./components/ConfirmDialog": "./src/components/ConfirmDialog.tsx",
     "./components/FaviconImg": "./src/components/FaviconImg.tsx",
     "./components/PullToRefresh": "./src/components/PullToRefresh.tsx",
+    "./components/ThemeToggle": "./src/components/ThemeToggle.tsx",
     "./hooks/useAppUpdate": "./src/hooks/useAppUpdate.ts",
     "./hooks/useDebouncedValue": "./src/hooks/useDebouncedValue.ts",
     "./ui/alert": "./src/ui/alert.tsx",

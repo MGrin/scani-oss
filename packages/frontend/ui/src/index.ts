@@ -17,6 +17,7 @@ export { ErrorBoundary } from './components/ErrorBoundary';
 export { FaviconImg } from './components/FaviconImg';
 export { MagicCodeInput } from './components/MagicCodeInput';
 export { PullToRefresh } from './components/PullToRefresh';
+export { ThemeToggle, type ThemeToggleProps } from './components/ThemeToggle';
 export { UpdateBanner } from './components/UpdateBanner';
 export { type ResolvedTheme, type Theme, ThemeProvider, useTheme } from './contexts/ThemeContext';
 export { useAppUpdate } from './hooks/useAppUpdate';

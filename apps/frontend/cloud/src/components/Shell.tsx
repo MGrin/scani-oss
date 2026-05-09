@@ -1,6 +1,5 @@
-import { useTheme } from '@scani/ui';
-import { Button } from '@scani/ui/ui/button';
-import { BarChart3, KeyRound, LogOut, Moon, Sun } from 'lucide-react';
+import { ThemeToggle } from '@scani/ui';
+import { BarChart3, KeyRound, LogOut } from 'lucide-react';
 import { Link, Outlet, useLocation } from 'react-router-dom';
 import { authClient } from '../lib/auth-client';
 
@@ -12,7 +11,6 @@ import { authClient } from '../lib/auth-client';
  */
 export function Shell() {
   const location = useLocation();
-  const { theme, setTheme, resolvedTheme } = useTheme();
   const { data } = authClient.useSession();
 
   const navItem = (to: string, label: string, Icon: typeof KeyRound) => {
@@ -43,35 +41,22 @@ export function Shell() {
           {navItem('/keys', 'API keys', KeyRound)}
           {navItem('/usage', 'Usage', BarChart3)}
         </nav>
-        <div className="border-t px-3 py-3">
-          <div className="mb-2 truncate px-2 text-xs text-muted-foreground">
+        <div className="border-t px-3 py-3 space-y-px">
+          <div className="mb-1 truncate px-2 text-xs text-muted-foreground">
             {data?.user?.email}
           </div>
-          <div className="flex items-center justify-between gap-2">
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
-              title={`Switch to ${resolvedTheme === 'dark' ? 'light' : 'dark'} mode`}
-            >
-              {resolvedTheme === 'dark' ? (
-                <Sun className="h-4 w-4" />
-              ) : (
-                <Moon className="h-4 w-4" />
-              )}
-            </Button>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={async () => {
-                await authClient.signOut();
-                window.location.href = '/auth';
-              }}
-              title="Sign out"
-            >
-              <LogOut className="h-4 w-4" />
-            </Button>
-          </div>
+          <ThemeToggle variant="row" side="top" align="start" />
+          <button
+            type="button"
+            onClick={async () => {
+              await authClient.signOut();
+              window.location.href = '/auth';
+            }}
+            className="flex items-center gap-2.5 rounded-md px-2 py-1.5 text-[13px] text-red-600 hover:bg-red-600/10 transition-colors w-full"
+          >
+            <LogOut className="h-4 w-4 shrink-0" />
+            <span className="truncate">Sign out</span>
+          </button>
         </div>
       </aside>
       <main className="flex-1 overflow-y-auto">
