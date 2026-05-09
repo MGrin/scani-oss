@@ -1,4 +1,4 @@
-import { requiredInProd } from '@scani/config';
+import { checkEnvIsolatedUrl, requiredInProd } from '@scani/config';
 import { z } from 'zod';
 
 const envSchema = z.object({
@@ -81,7 +81,15 @@ export function loadEnv(): WorkerEnv {
     process.exit(1);
   }
   cached = parsed.data;
-  // Env-isolation guard removed — see api/data-provider env.ts for the
-  // rationale. Re-introduce once the NODE_ENV pipeline is verified.
+  // Env-isolation check: warn-only, never exit. See api/data-provider
+  // env.ts for the full rationale.
+  const redisCheck = checkEnvIsolatedUrl({ url: cached.REDIS_URL, varName: 'REDIS_URL' });
+  if (!redisCheck.ok) {
+    console.warn(`⚠️  env-isolation: ${redisCheck.reason}`);
+  }
+  const dbCheck = checkEnvIsolatedUrl({ url: cached.DATABASE_URL, varName: 'DATABASE_URL' });
+  if (!dbCheck.ok) {
+    console.warn(`⚠️  env-isolation: ${dbCheck.reason}`);
+  }
   return cached;
 }

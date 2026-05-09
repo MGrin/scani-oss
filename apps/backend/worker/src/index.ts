@@ -55,18 +55,28 @@ import { setSharedRedis } from '@scani/rate-limiter';
 
 initSentry({ component: 'worker', release: env.SENTRY_RELEASE });
 
-// Fail fast if SCANI_CLOUD_URL is set but the data-provider is unreachable.
-// Otherwise misconfigs let the worker start consuming jobs that then 5xx
-// on every chain/AI/storage call — corrupts retry budgets fast.
+// Probe the data-provider at boot. The previous version exited on
+// failure; the 2026-05-09 outage taught us that a transient
+// dependency unreachability turns into a hard-down when the worker
+// crashes on a rolling deploy of data-provider. We now warn + log +
+// Sentry, leaving boot to proceed; user/cron jobs that need cloud
+// providers will surface their own retries via BullMQ if data-provider
+// is still down at processing time. A background re-probe (registered
+// further down) tracks recovery.
+let dataProviderReachable = true;
 {
   const probe = await probeDataProvider();
   if (!probe.ok) {
-    console.error(
-      `\n❌ Data-provider unreachable at ${probe.url} after ${probe.attempts} attempt(s): ${probe.error ?? `HTTP ${probe.status}`}\n` +
-        'Worker cannot start in cloud mode without a healthy data-provider.\n' +
-        'Either fix SCANI_CLOUD_URL, restore the data-provider, or unset the env to fall back to local providers.'
-    );
-    process.exit(1);
+    dataProviderReachable = false;
+    const message = `Data-provider unreachable at ${probe.url} after ${probe.attempts} attempt(s): ${probe.error ?? `HTTP ${probe.status}`}`;
+    console.warn(`⚠️  ${message}`);
+    // Sentry init has happened above; capture immediately so the
+    // alert fires even if the worker process is killed before the
+    // re-probe loop runs.
+    sentryCapture(new Error(message), {
+      component: 'worker',
+      kind: 'data-provider-boot-unreachable',
+    });
   }
 }
 
@@ -282,6 +292,48 @@ async function main(): Promise<void> {
   await Container.get(JobScheduler).upsertAll(SCHEDULED_JOB_DESCRIPTORS);
 
   await workerClient.start();
+
+  // --- Data-provider re-probe ----------------------------------------------
+  // Background re-probe so a transient unavailability at boot doesn't
+  // latch the worker into a degraded state forever. Logs recovery once
+  // the data-provider goes green again.
+  {
+    const REPROBE_INTERVAL_MS = 60_000;
+    const probeTimer = setInterval(() => {
+      void (async () => {
+        try {
+          const probe = await probeDataProvider();
+          if (probe.ok) {
+            if (!dataProviderReachable) {
+              logger.info(
+                { url: probe.url, attempts: probe.attempts },
+                '☁️  Data-provider reachable (recovered)'
+              );
+              dataProviderReachable = true;
+            }
+            return;
+          }
+          if (dataProviderReachable) {
+            logger.warn(
+              { url: probe.url, error: probe.error, status: probe.status },
+              '⚠️  Data-provider unreachable (in re-probe)'
+            );
+            sentryCapture(
+              new Error(`data-provider re-probe failed: ${probe.error ?? probe.status}`),
+              {
+                component: 'worker',
+                kind: 'data-provider-reprobe-failed',
+              }
+            );
+            dataProviderReachable = false;
+          }
+        } catch (err) {
+          logger.warn({ err }, '⚠️  Data-provider re-probe threw');
+        }
+      })();
+    }, REPROBE_INTERVAL_MS);
+    probeTimer.unref?.();
+  }
 
   // --- Redis liveness monitor ----------------------------------------------
   // ioredis retries forever on Redis loss by default; the worker process

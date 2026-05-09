@@ -19,20 +19,24 @@ initSentry({ component: 'backend', release: env.SENTRY_RELEASE });
 
 const wsLogger = createComponentLogger('websocket');
 
-// Fail fast if SCANI_CLOUD_URL is set but the data-provider is unreachable.
-// Otherwise misconfigs let the backend boot healthy and only fail at the
-// first user request. No-op in dev when SCANI_CLOUD_URL is unset.
+// Probe the data-provider at boot. The previous version exited on
+// failure; the 2026-05-09 outage taught us that a transient
+// dependency unreachability turns into a hard-down when the api
+// crashes on a rolling deploy of data-provider. We now warn + log +
+// Sentry, leaving `app.listen()` to proceed; cloud-mode tRPC calls
+// will surface their own 503 if data-provider is still down at
+// request time. A background re-probe updates the flag so
+// recovery is visible.
+let dataProviderReachable = true;
 {
   const probe = await probeDataProvider();
   if (!probe.ok) {
-    console.error(
-      `\n❌ Data-provider unreachable at ${probe.url} after ${probe.attempts} attempt(s): ${probe.error ?? `HTTP ${probe.status}`}\n` +
-        `Backend cannot start in cloud mode without a healthy data-provider.\n` +
-        `Either fix SCANI_CLOUD_URL, restore the data-provider, or unset the env to fall back to local providers.`
-    );
-    process.exit(1);
-  }
-  if (probe.url) {
+    dataProviderReachable = false;
+    const message = `Data-provider unreachable at ${probe.url} after ${probe.attempts} attempt(s): ${probe.error ?? `HTTP ${probe.status}`}`;
+    logger.warn({ url: probe.url, attempts: probe.attempts }, `⚠️  ${message}`);
+    // Sentry import is staged later in the boot chain; hold capture
+    // for now and surface via the periodic re-probe below.
+  } else if (probe.url) {
     logger.info({ url: probe.url, attempts: probe.attempts }, '☁️  Data-provider reachable');
   }
 }
@@ -734,6 +738,58 @@ wsRealtime.setElysiaApp(app);
 wsRealtime.initialize();
 Container.get(RedisRealtimeUpdatesService).configure(redisConnection);
 wsRealtime.pipeFromRedis(redisConnection.duplicate());
+
+// Background re-probe of the data-provider so a transient
+// unavailability at boot doesn't latch the api into "degraded"
+// forever. Logs + captures the first failure, then logs recovery
+// once it goes green again.
+{
+  const REPROBE_INTERVAL_MS = 60_000;
+  let everReportedDown = !dataProviderReachable;
+  if (!dataProviderReachable) {
+    sentryCapture(
+      new Error('data-provider unreachable at boot — api running with cloud-mode degraded'),
+      { component: 'api', kind: 'data-provider-boot-unreachable' }
+    );
+  }
+  const probeTimer = setInterval(() => {
+    void (async () => {
+      try {
+        const probe = await probeDataProvider();
+        if (probe.ok) {
+          if (!dataProviderReachable) {
+            logger.info(
+              { url: probe.url, attempts: probe.attempts },
+              '☁️  Data-provider reachable (recovered)'
+            );
+            dataProviderReachable = true;
+          }
+          return;
+        }
+        if (dataProviderReachable) {
+          logger.warn(
+            { url: probe.url, error: probe.error, status: probe.status },
+            '⚠️  Data-provider unreachable (in re-probe)'
+          );
+          if (!everReportedDown) {
+            sentryCapture(
+              new Error(`data-provider re-probe failed: ${probe.error ?? probe.status}`),
+              {
+                component: 'api',
+                kind: 'data-provider-reprobe-failed',
+              }
+            );
+            everReportedDown = true;
+          }
+          dataProviderReachable = false;
+        }
+      } catch (err) {
+        logger.warn({ err }, '⚠️  Data-provider re-probe threw');
+      }
+    })();
+  }, REPROBE_INTERVAL_MS);
+  probeTimer.unref?.();
+}
 
 import { client as pgClient } from '@scani/db/connection';
 import { AIRouter, PricingService } from '@scani/domain/services';

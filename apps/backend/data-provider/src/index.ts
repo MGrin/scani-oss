@@ -280,100 +280,132 @@ const server = app.listen({ port: PORT, hostname: HOST }, () => {
 // the process should keep accepting traffic.
 void (async () => {
   const bootStart = Date.now();
-  try {
-    // Stand up the @scani/providers registry. The data-provider runs in
-    // `direct` mode — it holds the platform-credentialed provider
-    // instances and exposes them to backend/worker via the tRPC routers.
-    await buildProviderRegistry({
-      mode: 'direct',
-      redis: redisConnection,
-      env: process.env,
-      providers: [
-        defillamaFactory,
-        frankfurterFactory,
-        coingeckoFactory,
-        finnhubFactory,
-        // Yahoo runs after Finnhub: covers non-US equities (.TO,
-        // .NE/.NEO, .L, .DE, …) and Frankfurter-unsupported fiat
-        // (RUB, KZT, GEL, AED, …).
-        yahooFinanceFactory,
-        // Chain providers — public-endpoint balance + address-validator
-        // dispatch. ENV vars (ETHERSCAN_API_KEY, HELIUS_API_KEY,
-        // TRON_API_URL, TON_API_URL) are read inside each factory.
-        etherscanFactory,
-        bitcoinFactory,
-        solanaFactory,
-        tronFactory,
-        tonFactory,
-        // AI: OpenAI is the only AI provider.
-        aiOpenAIFactory,
-      ],
-    });
-    logger.info({}, '✅ @scani/providers registry initialized');
+  // Retry the heavy init with exponential backoff before giving up.
+  // The previous version called process.exit(1) on the first failure,
+  // which turned a transient CoinGecko / Postgres / Upstash hiccup at
+  // boot into a Fly crash-loop. With max-restart-count=10 on Fly,
+  // ten transient failures = machine `stopped` indefinitely.
+  //
+  // Backoff: 5s, 15s, 30s, 60s (cap), 60s, 60s, 60s, 60s, 60s. After
+  // 10 attempts (~8 minutes total) we exit so Fly's restart restarts
+  // the process from clean state — at that point a real bug, not
+  // transient flake.
+  const MAX_BOOT_ATTEMPTS = 10;
+  const backoffMs = (attempt: number) => Math.min(60_000, 5_000 * 2 ** Math.min(attempt, 4));
+  for (let attempt = 1; attempt <= MAX_BOOT_ATTEMPTS; attempt++) {
+    try {
+      // Stand up the @scani/providers registry. The data-provider
+      // runs in `direct` mode — it holds the platform-credentialed
+      // provider instances and exposes them to backend/worker via
+      // the tRPC routers.
+      await buildProviderRegistry({
+        mode: 'direct',
+        redis: redisConnection,
+        env: process.env,
+        providers: [
+          defillamaFactory,
+          frankfurterFactory,
+          coingeckoFactory,
+          finnhubFactory,
+          // Yahoo runs after Finnhub: covers non-US equities (.TO,
+          // .NE/.NEO, .L, .DE, …) and Frankfurter-unsupported fiat
+          // (RUB, KZT, GEL, AED, …).
+          yahooFinanceFactory,
+          // Chain providers — public-endpoint balance + address-validator
+          // dispatch. ENV vars (ETHERSCAN_API_KEY, HELIUS_API_KEY,
+          // TRON_API_URL, TON_API_URL) are read inside each factory.
+          etherscanFactory,
+          bitcoinFactory,
+          solanaFactory,
+          tronFactory,
+          tonFactory,
+          // AI: OpenAI is the only AI provider.
+          aiOpenAIFactory,
+        ],
+      });
+      logger.info({ attempt }, '✅ @scani/providers registry initialized');
 
-    // Tier 2/3 only: open the Postgres pool for `cloud_*` (api keys +
-    // users) + `cloud_usage_events`, enable Postgres-backed per-request
-    // metering, and bootstrap Better-Auth for cloud-frontend cookie
-    // sessions. Tier 1 OSS boots with no DB and a NoopUsageSink.
-    let usageSink: UsageSink = new NoopUsageSink();
-    if (env.CLOUD_MANAGEMENT_ENABLED && env.DATABASE_URL) {
-      const cloudDb = getCloudDb(env.DATABASE_URL);
-      bootState.cloudDb = cloudDb;
-      usageSink = new PostgresUsageSink({ db: cloudDb });
-      logger.info({}, 'usage-sink: Postgres enabled for per-request metering');
-      if (env.BETTER_AUTH_SECRET && env.BETTER_AUTH_URL) {
-        bootState.betterAuth = createCloudBetterAuth({
-          db: cloudDb,
-          baseURL: env.BETTER_AUTH_URL,
-          secret: env.BETTER_AUTH_SECRET,
-          trustedOrigins: env.CLOUD_FRONTEND_ORIGIN ? [env.CLOUD_FRONTEND_ORIGIN] : [],
-        });
+      // Tier 2/3 only: open the Postgres pool for `cloud_*` (api keys
+      // + users) + `cloud_usage_events`, enable Postgres-backed
+      // per-request metering, and bootstrap Better-Auth for
+      // cloud-frontend cookie sessions. Tier 1 OSS boots with no DB
+      // and a NoopUsageSink.
+      let usageSink: UsageSink = new NoopUsageSink();
+      if (env.CLOUD_MANAGEMENT_ENABLED && env.DATABASE_URL) {
+        const cloudDb = getCloudDb(env.DATABASE_URL);
+        bootState.cloudDb = cloudDb;
+        usageSink = new PostgresUsageSink({ db: cloudDb });
+        logger.info({}, 'usage-sink: Postgres enabled for per-request metering');
+        if (env.BETTER_AUTH_SECRET && env.BETTER_AUTH_URL) {
+          bootState.betterAuth = createCloudBetterAuth({
+            db: cloudDb,
+            baseURL: env.BETTER_AUTH_URL,
+            secret: env.BETTER_AUTH_SECRET,
+            trustedOrigins: env.CLOUD_FRONTEND_ORIGIN ? [env.CLOUD_FRONTEND_ORIGIN] : [],
+          });
+          logger.info(
+            { cloudFrontendOrigin: env.CLOUD_FRONTEND_ORIGIN },
+            'cloud-auth: Better-Auth enabled for cloud-frontend sessions'
+          );
+        }
+        installCloudDb(cloudDb);
+        installUsageDeps({ db: cloudDb });
+        logger.info({}, 'cloud management enabled: DB-backed api keys + usage log');
+      }
+      installUsageSink(usageSink);
+
+      // Per-API-key hourly quota. Disabled when CLOUD_QUOTA_HOURLY_DEFAULT
+      // is 0 / unset (OSS / dev). The limiter is keyed by apiKeyId so
+      // each of a tenant's keys carries an independent budget;
+      // future per-tier overrides can swap in a multi-tier registry
+      // without changing the middleware contract.
+      if (env.CLOUD_QUOTA_HOURLY_DEFAULT > 0) {
+        installQuotaLimiter(
+          createOutflowLimiter({
+            maxRequests: env.CLOUD_QUOTA_HOURLY_DEFAULT,
+            windowMs: 60 * 60 * 1000,
+            redis: redisConnection,
+            namespace: 'quota:hourly',
+          })
+        );
         logger.info(
-          { cloudFrontendOrigin: env.CLOUD_FRONTEND_ORIGIN },
-          'cloud-auth: Better-Auth enabled for cloud-frontend sessions'
+          { hourlyDefault: env.CLOUD_QUOTA_HOURLY_DEFAULT },
+          'quota: per-API-key hourly budget enabled'
         );
       }
-      installCloudDb(cloudDb);
-      installUsageDeps({ db: cloudDb });
-      logger.info({}, 'cloud management enabled: DB-backed api keys + usage log');
-    }
-    installUsageSink(usageSink);
 
-    // Per-API-key hourly quota. Disabled when CLOUD_QUOTA_HOURLY_DEFAULT
-    // is 0 / unset (OSS / dev). The limiter is keyed by apiKeyId so each
-    // of a tenant's keys carries an independent budget; future per-tier
-    // overrides can swap in a multi-tier registry without changing the
-    // middleware contract.
-    if (env.CLOUD_QUOTA_HOURLY_DEFAULT > 0) {
-      installQuotaLimiter(
-        createOutflowLimiter({
-          maxRequests: env.CLOUD_QUOTA_HOURLY_DEFAULT,
-          windowMs: 60 * 60 * 1000,
-          redis: redisConnection,
-          namespace: 'quota:hourly',
-        })
-      );
+      bootState.ready = true;
       logger.info(
-        { hourlyDefault: env.CLOUD_QUOTA_HOURLY_DEFAULT },
-        'quota: per-API-key hourly budget enabled'
+        { bootDurationMs: Date.now() - bootStart, attempt },
+        '🎯 Boot complete — /ready now returns 200'
       );
+      return;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      const wait = backoffMs(attempt);
+      if (attempt < MAX_BOOT_ATTEMPTS) {
+        logger.warn(
+          { err: message, attempt, nextDelayMs: wait },
+          `⚠️  Deferred boot attempt ${attempt}/${MAX_BOOT_ATTEMPTS} failed — retrying`
+        );
+        sentryCapture(err instanceof Error ? err : new Error(message), {
+          kind: 'data-provider-boot-retry',
+          attempt: String(attempt),
+        });
+        await new Promise((resolve) => setTimeout(resolve, wait));
+        continue;
+      }
+      logger.fatal(
+        { err: message, attempt, bootDurationMs: Date.now() - bootStart },
+        `💀 Deferred boot failed after ${MAX_BOOT_ATTEMPTS} attempts — exiting`
+      );
+      sentryCapture(err instanceof Error ? err : new Error(message), {
+        kind: 'data-provider-boot-exhausted',
+        attempts: String(MAX_BOOT_ATTEMPTS),
+      });
+      await flushSentry(2000);
+      process.exit(1);
     }
-
-    bootState.ready = true;
-    logger.info(
-      { bootDurationMs: Date.now() - bootStart },
-      '🎯 Boot complete — /ready now returns 200'
-    );
-  } catch (err) {
-    logger.fatal(
-      { err, bootDurationMs: Date.now() - bootStart },
-      '💀 Deferred boot failed — exiting so Fly restarts'
-    );
-    sentryCapture(err instanceof Error ? err : new Error(String(err)), {
-      kind: 'data-provider-boot-failed',
-    });
-    await flushSentry(2000);
-    process.exit(1);
   }
 })();
 

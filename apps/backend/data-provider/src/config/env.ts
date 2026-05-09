@@ -1,4 +1,4 @@
-import { isProduction, requiredInProd } from '@scani/config';
+import { checkEnvIsolatedUrl, isProduction, requiredInProd } from '@scani/config';
 import { z } from 'zod';
 
 /**
@@ -126,11 +126,21 @@ export function loadEnv(): DataProviderEnv {
     );
     process.exit(1);
   }
-  // Env-isolation guard removed — the guard was throwing in production
-  // because NODE_ENV was reading as `development` despite being set to
-  // `production` in fly.toml [env] AND staged as a Fly secret. Root
-  // cause TBD; until then the guard does more harm than good. The
-  // helper still ships in @scani/config; re-introduce here once the
-  // NODE_ENV pipeline is verified.
+  // Env-isolation check: warn-only, never exit. The previous version
+  // called `assertEnvIsolatedUrl` which threw + process.exit(1) at
+  // boot, and a stale NODE_ENV during the 2026-05-09 outage made
+  // every machine crash-loop. The check is still useful to surface
+  // a real env-misconfig (dev URL leaking into prod), but it must
+  // not be load-bearing for boot.
+  const redisCheck = checkEnvIsolatedUrl({ url: cached.REDIS_URL, varName: 'REDIS_URL' });
+  if (!redisCheck.ok) {
+    console.warn(`⚠️  env-isolation: ${redisCheck.reason}`);
+  }
+  if (cached.DATABASE_URL) {
+    const dbCheck = checkEnvIsolatedUrl({ url: cached.DATABASE_URL, varName: 'DATABASE_URL' });
+    if (!dbCheck.ok) {
+      console.warn(`⚠️  env-isolation: ${dbCheck.reason}`);
+    }
+  }
   return cached;
 }

@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { z } from 'zod';
 import {
   assertEnvIsolatedUrl,
+  checkEnvIsolatedUrl,
   httpsUrlInProduction,
   isProduction,
   requiredInProd,
@@ -176,7 +177,56 @@ describe('requiredInProd (production mode)', () => {
   });
 });
 
-describe('assertEnvIsolatedUrl', () => {
+describe('checkEnvIsolatedUrl', () => {
+  test('production flags localhost-style URLs as not-ok', () => {
+    const cases = [
+      'redis://localhost:6379',
+      'redis://127.0.0.1:6379',
+      'postgres://0.0.0.0:5432/scani',
+      'redis://host.docker.internal:6379',
+    ];
+    for (const url of cases) {
+      const result = checkEnvIsolatedUrl({ url, varName: 'REDIS_URL', isProduction: true });
+      expect(result.ok).toBe(false);
+      expect(result.reason).toMatch(/REDIS_URL/);
+    }
+  });
+
+  test('production accepts remote vendor URLs (incl. port 6379)', () => {
+    const cases = [
+      'redis://default:secret@scani-prod.upstash.io:6380',
+      'rediss://default:secret@scani-prod.upstash.io:6379',
+      'postgresql://scani:pw@ep-cool-noise-1.us-east-2.aws.neon.tech/scani',
+    ];
+    for (const url of cases) {
+      expect(checkEnvIsolatedUrl({ url, varName: 'X', isProduction: true })).toEqual({ ok: true });
+    }
+  });
+
+  test('reasons redact embedded credentials', () => {
+    const result = checkEnvIsolatedUrl({
+      url: 'redis://user:supersecret@localhost:6379',
+      varName: 'REDIS_URL',
+      isProduction: true,
+    });
+    expect(result.ok).toBe(false);
+    expect(result.reason).not.toContain('supersecret');
+    expect(result.reason).toContain('<redacted>');
+  });
+
+  test('allowCrossEnv opts out of the check', () => {
+    expect(
+      checkEnvIsolatedUrl({
+        url: 'redis://default:secret@scani-prod.upstash.io:6380',
+        varName: 'REDIS_URL',
+        isProduction: false,
+        allowCrossEnv: true,
+      })
+    ).toEqual({ ok: true });
+  });
+});
+
+describe('assertEnvIsolatedUrl (deprecated throwing wrapper)', () => {
   test('production rejects localhost / 127.0.0.1 / docker-host URLs', () => {
     const cases = [
       'redis://localhost:6379',

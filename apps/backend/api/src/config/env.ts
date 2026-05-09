@@ -1,4 +1,10 @@
-import { httpsUrlInProduction, isProduction, requiredInProd, urlSchema } from '@scani/config';
+import {
+  checkEnvIsolatedUrl,
+  httpsUrlInProduction,
+  isProduction,
+  requiredInProd,
+  urlSchema,
+} from '@scani/config';
 import { z } from 'zod';
 
 /**
@@ -109,10 +115,15 @@ export function loadEnv(): Env {
   }
 
   cached = parsed.data;
-  // Env-isolation guard removed — was throwing in production because
-  // NODE_ENV read as `development` despite [env] saying production.
-  // Root cause TBD; until then the guard does more harm than good.
-  // The helper still ships in @scani/config; re-introduce here once
-  // the NODE_ENV pipeline is verified.
+  // Env-isolation check: warn-only, never exit. See data-provider's
+  // env.ts for the full rationale.
+  const redisCheck = checkEnvIsolatedUrl({ url: cached.REDIS_URL, varName: 'REDIS_URL' });
+  if (!redisCheck.ok) {
+    console.warn(`⚠️  env-isolation: ${redisCheck.reason}`);
+  }
+  const dbCheck = checkEnvIsolatedUrl({ url: cached.DATABASE_URL, varName: 'DATABASE_URL' });
+  if (!dbCheck.ok) {
+    console.warn(`⚠️  env-isolation: ${dbCheck.reason}`);
+  }
   return cached;
 }
