@@ -35,7 +35,12 @@ initSentry({ component: 'data-provider', release: env.SENTRY_RELEASE });
 import { type CloudBetterAuthInstance, createCloudBetterAuth } from './auth/better-auth';
 import { type CloudDb, closeCloudDb, getCloudDb } from './db/connection';
 import { appRouter, installCloudDb, installUsageDeps } from './presentation/router';
-import { buildCreateContext, installQuotaLimiter, installUsageSink } from './presentation/trpc';
+import {
+  buildCreateContext,
+  getActiveUsageSink,
+  installQuotaLimiter,
+  installUsageSink,
+} from './presentation/trpc';
 import { NoopUsageSink, PostgresUsageSink, type UsageSink } from './usage/sink';
 
 const PORT = env.PORT;
@@ -51,83 +56,28 @@ setSharedRedis(redisConnection);
 
 // Object storage self-loads from S3_* env vars (see @scani/storage).
 
-// Stand up the @scani/providers registry. The data-provider runs in
-// `direct` mode — it holds the platform-credentialed provider instances
-// and exposes them to backend/worker via the tRPC routers below.
-await buildProviderRegistry({
-  mode: 'direct',
-  redis: redisConnection,
-  env: process.env,
-  providers: [
-    defillamaFactory,
-    frankfurterFactory,
-    coingeckoFactory,
-    finnhubFactory,
-    // Yahoo runs after Finnhub: covers non-US equities (.TO, .NE/.NEO,
-    // .L, .DE, …) and Frankfurter-unsupported fiat (RUB, KZT, GEL, AED, …).
-    yahooFinanceFactory,
-    // Chain providers — public-endpoint balance + address-validator
-    // dispatch. ENV vars (ETHERSCAN_API_KEY, HELIUS_API_KEY,
-    // TRON_API_URL, TON_API_URL) are read inside each factory.
-    etherscanFactory,
-    bitcoinFactory,
-    solanaFactory,
-    tronFactory,
-    tonFactory,
-    // AI: OpenAI is the only AI provider.
-    aiOpenAIFactory,
-  ],
-});
-logger.info({}, '✅ @scani/providers registry initialized');
-
-// Tier 2/3 only: open the Postgres pool for `cloud_*` (api keys + users)
-// + `cloud_usage_events`, enable Postgres-backed per-request metering, and
-// bootstrap Better-Auth for cloud-frontend cookie sessions. Tier 1 OSS boots
-// with no DB and a NoopUsageSink.
-let cloudDb: CloudDb | null = null;
-let betterAuth: CloudBetterAuthInstance | null = null;
-let usageSink: UsageSink = new NoopUsageSink();
-if (env.CLOUD_MANAGEMENT_ENABLED && env.DATABASE_URL) {
-  cloudDb = getCloudDb(env.DATABASE_URL);
-  usageSink = new PostgresUsageSink({ db: cloudDb });
-  logger.info({}, 'usage-sink: Postgres enabled for per-request metering');
-  if (env.BETTER_AUTH_SECRET && env.BETTER_AUTH_URL) {
-    betterAuth = createCloudBetterAuth({
-      db: cloudDb,
-      baseURL: env.BETTER_AUTH_URL,
-      secret: env.BETTER_AUTH_SECRET,
-      trustedOrigins: env.CLOUD_FRONTEND_ORIGIN ? [env.CLOUD_FRONTEND_ORIGIN] : [],
-    });
-    logger.info(
-      { cloudFrontendOrigin: env.CLOUD_FRONTEND_ORIGIN },
-      'cloud-auth: Better-Auth enabled for cloud-frontend sessions'
-    );
-  }
-  logger.info({}, 'cloud management enabled: DB-backed api keys + usage log');
+// Boot state — deliberately mutated post-listen() so the server can bind
+// to its port BEFORE provider-registry / cloud-management init runs.
+// Without this split, the heavy init can hold the event loop long enough
+// that Fly's HTTP health check trips its grace_period before the server
+// is even listening. The /ready endpoint reads `bootState.ready` so Fly
+// only routes traffic once init has completed.
+interface DataProviderBootState {
+  ready: boolean;
+  cloudDb: CloudDb | null;
+  betterAuth: CloudBetterAuthInstance | null;
 }
-installUsageSink(usageSink);
-installCloudDb(cloudDb);
-installUsageDeps({ db: cloudDb });
+const bootState: DataProviderBootState = {
+  ready: false,
+  cloudDb: null,
+  betterAuth: null,
+};
 
-// Per-API-key hourly quota. Disabled when CLOUD_QUOTA_HOURLY_DEFAULT
-// is 0 / unset (OSS / dev). The limiter is keyed by apiKeyId so each
-// of a tenant's keys carries an independent budget; future per-tier
-// overrides can swap in a multi-tier registry without changing the
-// middleware contract.
-if (env.CLOUD_QUOTA_HOURLY_DEFAULT > 0) {
-  installQuotaLimiter(
-    createOutflowLimiter({
-      maxRequests: env.CLOUD_QUOTA_HOURLY_DEFAULT,
-      windowMs: 60 * 60 * 1000,
-      redis: redisConnection,
-      namespace: 'quota:hourly',
-    })
-  );
-  logger.info(
-    { hourlyDefault: env.CLOUD_QUOTA_HOURLY_DEFAULT },
-    'quota: per-API-key hourly budget enabled'
-  );
-}
+// Pre-install no-op deps so any request that races boot completion
+// finds a sensible default (rather than NPE-ing on a null sink).
+installUsageSink(new NoopUsageSink());
+installCloudDb(null);
+installUsageDeps({ db: null });
 
 interface RequestWithTracking extends Request {
   _timer?: { end: () => number };
@@ -230,8 +180,12 @@ const app = new Elysia()
   )
   .use(
     trpc(appRouter, {
-      // biome-ignore lint/suspicious/noExplicitAny: elysia trpc types
-      createContext: buildCreateContext({ env, cloudDb, betterAuth }) as any,
+      createContext: buildCreateContext({
+        env,
+        getCloudDb: () => bootState.cloudDb,
+        getBetterAuth: () => bootState.betterAuth,
+        // biome-ignore lint/suspicious/noExplicitAny: elysia trpc types
+      }) as any,
       endpoint: '/trpc',
     })
   )
@@ -253,15 +207,22 @@ const app = new Elysia()
   .onRequest(async ({ request }) => {
     const url = new URL(request.url);
     if (!url.pathname.startsWith('/api/auth')) return;
-    if (!betterAuth) {
-      return new Response(JSON.stringify({ error: 'cloud_management_disabled' }), {
+    const auth = bootState.betterAuth;
+    if (!auth) {
+      // Either CLOUD_MANAGEMENT_ENABLED=false (legitimate) or boot
+      // hasn't finished yet (transient). Same response either way —
+      // /ready will tell the caller which case applies.
+      return new Response(JSON.stringify({ error: 'cloud_management_unavailable' }), {
         status: 503,
         headers: { 'content-type': 'application/json' },
       });
     }
-    return betterAuth.handler(request);
+    return auth.handler(request);
   })
   .get('/', () => ({ status: 'ok', service: 'scani-data-provider' }))
+  // Liveness — process is alive. Returns 200 from the moment Elysia
+  // starts listening, even before init finishes. Useful for app-level
+  // deep-health probes; NOT what Fly's machine check uses (see /ready).
   .get('/health', () => ({
     status: 'ok',
     timestamp: new Date().toISOString(),
@@ -270,6 +231,22 @@ const app = new Elysia()
   .head('/health', ({ set }: { set: { status: number; headers: Record<string, string> } }) => {
     set.status = 200;
     set.headers['Content-Type'] = 'application/json';
+    return;
+  })
+  // Readiness — only 200 once boot is fully complete (provider registry
+  // built, cloud DB pool open if enabled, Better-Auth wired if enabled).
+  // Fly's machine check probes this so traffic isn't routed to a freshly
+  // started replica that's still constructing its registry. Returns 503
+  // with `{ status: 'starting' }` until the boot IIFE flips the flag.
+  .get('/ready', ({ set }: { set: { status: number } }) => {
+    if (!bootState.ready) {
+      set.status = 503;
+      return { status: 'starting', timestamp: new Date().toISOString() };
+    }
+    return { status: 'ok', ready: true, timestamp: new Date().toISOString() };
+  })
+  .head('/ready', ({ set }: { set: { status: number } }) => {
+    set.status = bootState.ready ? 200 : 503;
     return;
   })
   // Probe of the R2 bucket the data-provider holds credentials for.
@@ -290,9 +267,115 @@ const app = new Elysia()
 const server = app.listen({ port: PORT, hostname: HOST }, () => {
   logger.info(
     { httpUrl: `http://${HOST}:${PORT}`, environment: process.env.NODE_ENV || 'development' },
-    '🎉 Scani Data-Provider started'
+    '🎉 Scani Data-Provider listening — running deferred init'
   );
 });
+
+// Deferred boot: heavy work (provider registry, cloud DB pool, Better-Auth
+// instance) runs AFTER the HTTP listener is up so Fly's health probe can
+// reach the process while init is still in flight. /ready returns 503
+// throughout this phase, then 200 once `bootState.ready` flips.
+//
+// On boot failure we exit hard — there's no partial-success state where
+// the process should keep accepting traffic.
+void (async () => {
+  const bootStart = Date.now();
+  try {
+    // Stand up the @scani/providers registry. The data-provider runs in
+    // `direct` mode — it holds the platform-credentialed provider
+    // instances and exposes them to backend/worker via the tRPC routers.
+    await buildProviderRegistry({
+      mode: 'direct',
+      redis: redisConnection,
+      env: process.env,
+      providers: [
+        defillamaFactory,
+        frankfurterFactory,
+        coingeckoFactory,
+        finnhubFactory,
+        // Yahoo runs after Finnhub: covers non-US equities (.TO,
+        // .NE/.NEO, .L, .DE, …) and Frankfurter-unsupported fiat
+        // (RUB, KZT, GEL, AED, …).
+        yahooFinanceFactory,
+        // Chain providers — public-endpoint balance + address-validator
+        // dispatch. ENV vars (ETHERSCAN_API_KEY, HELIUS_API_KEY,
+        // TRON_API_URL, TON_API_URL) are read inside each factory.
+        etherscanFactory,
+        bitcoinFactory,
+        solanaFactory,
+        tronFactory,
+        tonFactory,
+        // AI: OpenAI is the only AI provider.
+        aiOpenAIFactory,
+      ],
+    });
+    logger.info({}, '✅ @scani/providers registry initialized');
+
+    // Tier 2/3 only: open the Postgres pool for `cloud_*` (api keys +
+    // users) + `cloud_usage_events`, enable Postgres-backed per-request
+    // metering, and bootstrap Better-Auth for cloud-frontend cookie
+    // sessions. Tier 1 OSS boots with no DB and a NoopUsageSink.
+    let usageSink: UsageSink = new NoopUsageSink();
+    if (env.CLOUD_MANAGEMENT_ENABLED && env.DATABASE_URL) {
+      const cloudDb = getCloudDb(env.DATABASE_URL);
+      bootState.cloudDb = cloudDb;
+      usageSink = new PostgresUsageSink({ db: cloudDb });
+      logger.info({}, 'usage-sink: Postgres enabled for per-request metering');
+      if (env.BETTER_AUTH_SECRET && env.BETTER_AUTH_URL) {
+        bootState.betterAuth = createCloudBetterAuth({
+          db: cloudDb,
+          baseURL: env.BETTER_AUTH_URL,
+          secret: env.BETTER_AUTH_SECRET,
+          trustedOrigins: env.CLOUD_FRONTEND_ORIGIN ? [env.CLOUD_FRONTEND_ORIGIN] : [],
+        });
+        logger.info(
+          { cloudFrontendOrigin: env.CLOUD_FRONTEND_ORIGIN },
+          'cloud-auth: Better-Auth enabled for cloud-frontend sessions'
+        );
+      }
+      installCloudDb(cloudDb);
+      installUsageDeps({ db: cloudDb });
+      logger.info({}, 'cloud management enabled: DB-backed api keys + usage log');
+    }
+    installUsageSink(usageSink);
+
+    // Per-API-key hourly quota. Disabled when CLOUD_QUOTA_HOURLY_DEFAULT
+    // is 0 / unset (OSS / dev). The limiter is keyed by apiKeyId so each
+    // of a tenant's keys carries an independent budget; future per-tier
+    // overrides can swap in a multi-tier registry without changing the
+    // middleware contract.
+    if (env.CLOUD_QUOTA_HOURLY_DEFAULT > 0) {
+      installQuotaLimiter(
+        createOutflowLimiter({
+          maxRequests: env.CLOUD_QUOTA_HOURLY_DEFAULT,
+          windowMs: 60 * 60 * 1000,
+          redis: redisConnection,
+          namespace: 'quota:hourly',
+        })
+      );
+      logger.info(
+        { hourlyDefault: env.CLOUD_QUOTA_HOURLY_DEFAULT },
+        'quota: per-API-key hourly budget enabled'
+      );
+    }
+
+    bootState.ready = true;
+    logger.info(
+      { bootDurationMs: Date.now() - bootStart },
+      '🎯 Boot complete — /ready now returns 200'
+    );
+  } catch (err) {
+    logger.fatal(
+      { err, bootDurationMs: Date.now() - bootStart },
+      '💀 Deferred boot failed — exiting so Fly restarts'
+    );
+    sentryCapture(err instanceof Error ? err : new Error(String(err)), {
+      kind: 'data-provider-boot-failed',
+    });
+    await flushSentry(2000);
+    process.exit(1);
+  }
+})();
 
 const SHUTDOWN_HARD_CAP_MS = 10_000;
 let isShuttingDown = false;
@@ -308,8 +391,13 @@ const gracefulShutdown = async (signal: string) => {
   hardTimer.unref?.();
   try {
     server.stop();
-    // Drain buffered usage events before the process exits.
-    await usageSink.flush().catch(() => undefined);
+    // Drain buffered usage events before the process exits. Read via
+    // the trpc module's getter — the active sink is swapped in the
+    // deferred boot IIFE, so this picks up whichever one is current
+    // (NoopUsageSink if shutdown fires before boot completed).
+    await getActiveUsageSink()
+      .flush()
+      .catch(() => undefined);
     await closeCloudDb();
     await redisConnection.quit().catch(() => undefined);
     await flushSentry(2000);
