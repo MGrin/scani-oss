@@ -1,0 +1,77 @@
+name: Fly diagnostics
+
+# Manually-triggered diagnostic dump for the three Fly apps. Spits out
+# `flyctl status` + recent `flyctl logs` for each so we can see what's
+# actually running / crashing without needing terminal access.
+#
+# Trigger from the Actions UI ("Run workflow"). The output appears in
+# the workflow log — the diagnose step echoes it as plaintext so you
+# can copy it into Claude.
+#
+# This workflow is intentionally a no-op for production state — it
+# only reads. Safe to run any time.
+
+on:
+  workflow_dispatch:
+    inputs:
+      apps:
+        description: "Comma-separated app names (or 'all' for the default trio)"
+        required: false
+        default: "all"
+      log_minutes:
+        description: "How many minutes of logs to pull"
+        required: false
+        default: "30"
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    name: Dump Fly status + logs
+    runs-on: ubuntu-latest
+    steps:
+      - uses: superfly/flyctl-actions/setup-flyctl@master
+
+      - name: Resolve apps
+        id: resolve
+        run: |
+          if [[ "${{ inputs.apps }}" == "all" ]]; then
+            echo "apps=scani-data-provider scani-backend scani-worker" >> "$GITHUB_OUTPUT"
+          else
+            echo "apps=$(echo '${{ inputs.apps }}' | tr ',' ' ')" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Status (machines + recent deploys)
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+        run: |
+          for app in ${{ steps.resolve.outputs.apps }}; do
+            echo "============================================================"
+            echo "===== ${app} :: flyctl status ====="
+            echo "============================================================"
+            flyctl status -a "${app}" || true
+            echo
+            echo "===== ${app} :: machine list (machines API) ====="
+            flyctl machines list -a "${app}" --json 2>/dev/null | jq '[.[] | {id, name, state, region, image_ref: .image_ref.tag, checks: [.checks[]?.status], created_at, updated_at}]' || true
+            echo
+            echo "===== ${app} :: releases (last 5) ====="
+            flyctl releases list -a "${app}" --json 2>/dev/null | jq '.[0:5] | [.[] | {version, status, description, created_at, deployment_status: .deployment_status, machines_strategy: .machines_strategy}]' || true
+            echo
+          done
+
+      - name: Recent logs
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+        run: |
+          # Pull the last N minutes of logs across all machines for each
+          # app. flyctl logs has no time filter; we use the streaming
+          # subcommand with a deadline. Output is bounded so a chatty app
+          # doesn't blow up the workflow log.
+          for app in ${{ steps.resolve.outputs.apps }}; do
+            echo "============================================================"
+            echo "===== ${app} :: recent logs (~${{ inputs.log_minutes }}m) ====="
+            echo "============================================================"
+            timeout 30s flyctl logs -a "${app}" --no-tail 2>&1 | tail -n 400 || true
+            echo
+          done
