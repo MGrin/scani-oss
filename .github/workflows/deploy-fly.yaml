@@ -25,7 +25,12 @@ concurrency:
   cancel-in-progress: false
 
 permissions:
-  contents: read
+  # `contents: write` is needed by the post-smoke-test steps that
+  # update the per-app `prod-<app>-last-known-good` git tags. Without
+  # it, `git push origin <tag> --force` fails with 403 "Write access
+  # to repository not granted". Other token capabilities stay
+  # read-only.
+  contents: write
   actions: read
   pull-requests: read
 
