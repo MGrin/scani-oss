@@ -340,6 +340,11 @@ jobs:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
 
       - name: Smoke test /health
+        # Step-level cap so a hung edge proxy or runaway curl loop
+        # can't melt CI minutes the way the 2026-05-09 outage did.
+        # Combined with `--max-time 10` per curl, this loop is at most
+        # ~75s of wallclock time.
+        timeout-minutes: 5
         run: |
           # --max-time bounds each curl so a hung edge proxy (502/503
           # storm) doesn't burn the GitHub Actions minute budget. Without
@@ -354,6 +359,17 @@ jobs:
           echo "data-provider /health smoke test failed:" >&2
           curl -s --max-time 10 https://scani-data-provider.fly.dev/health || true
           exit 1
+
+      # Mark this commit as the last-known-good for data-provider. The
+      # rollback workflow (.github/workflows/rollback.yaml) reads these
+      # tags to redeploy a known-healthy image without needing the
+      # operator to chase the right SHA in git log.
+      - name: Tag last-known-good for data-provider
+        run: |
+          git tag -f prod-data-provider-last-known-good "$GITHUB_SHA"
+          git push origin "prod-data-provider-last-known-good" --force
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   deploy-backend:
     name: Deploy scani-backend
@@ -421,6 +437,8 @@ jobs:
       # fast if anything's silently broken (like the R2-env-missing /
       # AI-keys-missing classes that took prod down in April 2026).
       - name: Smoke test /health/deep
+        # Same rationale as the data-provider smoke test above.
+        timeout-minutes: 5
         run: |
           # --max-time bounds each curl; same rationale as the
           # data-provider smoke test above.
@@ -433,6 +451,13 @@ jobs:
           echo "Backend failed /health/deep smoke test:" >&2
           curl -s --max-time 10 https://api.scani.xyz/health/deep || true
           exit 1
+
+      - name: Tag last-known-good for backend
+        run: |
+          git tag -f prod-backend-last-known-good "$GITHUB_SHA"
+          git push origin "prod-backend-last-known-good" --force
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   deploy-worker:
     name: Deploy scani-worker
@@ -497,6 +522,10 @@ jobs:
       # actually processing jobs. Force-start after every deploy as a
       # belt-and-braces step; it's a no-op when the machine is already up.
       - name: Ensure worker machine is running
+        # Cap the poll loop. Internal deadline is 300s; this gives a 60s
+        # buffer for cleanup. Without the cap, a Fly API hang during
+        # the rolling deploy could leave this step running indefinitely.
+        timeout-minutes: 6
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
         run: |
@@ -543,6 +572,13 @@ jobs:
           echo "::error::worker machine(s) stuck in transient state after 5 min"
           flyctl machine list --app scani-worker
           exit 1
+
+      - name: Tag last-known-good for worker
+        run: |
+          git tag -f prod-worker-last-known-good "$GITHUB_SHA"
+          git push origin "prod-worker-last-known-good" --force
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   deploy-frontend:
     name: Deploy scani-frontend (Cloudflare Pages)
@@ -627,13 +663,16 @@ jobs:
       - uses: actions/checkout@v6
       - uses: ./.github/actions/setup-bun
       - name: Wait for scani-cloud Pages project (Terraform-managed)
+        # Internal deadline is 30 × 10s = 5min; step cap gives a 1min
+        # buffer for the Cloudflare API call jitter.
+        timeout-minutes: 6
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: |
           URL="https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/pages/projects/scani-cloud"
           for i in $(seq 1 30); do
-            code=$(curl -s -o /dev/null -w '%{http_code}' \
+            code=$(curl -s --max-time 10 -o /dev/null -w '%{http_code}' \
               -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" "$URL")
             if [ "$code" = "200" ]; then
               echo "scani-cloud project is live"
@@ -680,6 +719,9 @@ jobs:
       - run: cd apps/frontend/admin && bun run build:cf
 
       - name: Wait for scani-admin Pages project (Terraform-managed)
+        # Internal deadline is 30 × 10s = 5min; step cap gives a 1min
+        # buffer.
+        timeout-minutes: 6
         run: |
           # The project is managed by cloudflare.tf. If the Terraform workflow
           # is still running on the same push, give it up to 5 minutes to
@@ -688,7 +730,7 @@ jobs:
           # table output and the ~10s bunx cold-start per iteration.
           URL="https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/pages/projects/scani-admin"
           for i in $(seq 1 30); do
-            code=$(curl -s -o /dev/null -w "%{http_code}" \
+            code=$(curl -s --max-time 10 -o /dev/null -w "%{http_code}" \
               -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" "$URL")
             if [ "$code" = "200" ]; then
               echo "scani-admin project is live"

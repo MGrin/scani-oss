@@ -1,0 +1,148 @@
+name: Rollback
+
+# Manually-triggered rollback of one or more Fly apps to a known-good
+# commit. Inputs accept either a specific commit SHA or "last-known-good"
+# (default), which resolves to the per-app `prod-<app>-last-known-good`
+# tag updated by deploy-fly.yaml after every successful smoke test.
+#
+# Usage from the Actions UI:
+#   1. Open the Rollback workflow.
+#   2. Click "Run workflow".
+#   3. Pick which apps to roll back (default: all three Fly apps).
+#   4. Pick the rollback target:
+#      - "last-known-good" (default): use the per-app tag.
+#      - A specific SHA: paste it in the `commit_sha` input.
+#   5. Run.
+#
+# This workflow rebuilds the image from the chosen SHA and deploys it.
+# Existing Fly secrets are left as-is — only the image swaps. A
+# misconfigured secret can't be fixed by a rollback; that needs a
+# `flyctl secrets set` or a Terraform reapply.
+#
+# Born from the 2026-05-09 outage, where finding the right rollback
+# commit took 30+ minutes of the incident.
+
+on:
+  workflow_dispatch:
+    inputs:
+      commit_sha:
+        description: "Commit SHA to roll back to. Leave blank to use the per-app last-known-good tag."
+        required: false
+        default: ""
+      apps:
+        description: "Comma-separated app list. Default rolls back all three Fly apps."
+        required: false
+        default: "scani-data-provider,scani-backend,scani-worker"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rollback-production
+  cancel-in-progress: false
+
+jobs:
+  rollback:
+    name: Roll back ${{ inputs.apps }}
+    runs-on: ubuntu-latest
+    environment: production
+    timeout-minutes: 20
+    steps:
+      - name: Resolve target SHA per app
+        id: resolve
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          INPUT_SHA: ${{ inputs.commit_sha }}
+          INPUT_APPS: ${{ inputs.apps }}
+        run: |
+          set -euo pipefail
+          # Convert comma-separated apps → newline-separated.
+          apps_list=$(echo "$INPUT_APPS" | tr ',' '\n' | sed '/^\s*$/d')
+          declare -A app_to_sha
+          for app in $apps_list; do
+            if [ -n "$INPUT_SHA" ]; then
+              app_to_sha["$app"]="$INPUT_SHA"
+            else
+              # Fetch the corresponding tag.
+              tag_name="prod-${app#scani-}-last-known-good"
+              sha=$(git ls-remote --tags origin "refs/tags/${tag_name}" \
+                | awk '{print $1}' | head -n1)
+              if [ -z "$sha" ]; then
+                echo "::error::No last-known-good tag for $app (looked for refs/tags/${tag_name}). Pass commit_sha explicitly." >&2
+                exit 1
+              fi
+              app_to_sha["$app"]="$sha"
+            fi
+            echo "$app → ${app_to_sha[$app]}"
+          done
+          # Emit a JSON map for the next step.
+          echo -n '{' > /tmp/app_to_sha.json
+          first=1
+          for k in "${!app_to_sha[@]}"; do
+            if [ "$first" -eq 0 ]; then echo -n ',' >> /tmp/app_to_sha.json; fi
+            printf '"%s":"%s"' "$k" "${app_to_sha[$k]}" >> /tmp/app_to_sha.json
+            first=0
+          done
+          echo -n '}' >> /tmp/app_to_sha.json
+          cat /tmp/app_to_sha.json
+          echo
+          echo "json=$(cat /tmp/app_to_sha.json)" >> "$GITHUB_OUTPUT"
+
+      - uses: superfly/flyctl-actions/setup-flyctl@master
+
+      - name: Deploy each app at its target SHA
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+          APP_TO_SHA: ${{ steps.resolve.outputs.json }}
+        run: |
+          set -euo pipefail
+          for app in $(echo "$APP_TO_SHA" | jq -r 'keys[]'); do
+            sha=$(echo "$APP_TO_SHA" | jq -r --arg a "$app" '.[$a]')
+            echo "============================================================"
+            echo "Rolling back $app to $sha"
+            echo "============================================================"
+            git fetch origin "$sha" --depth=1 || true
+            git checkout "$sha"
+            case "$app" in
+              scani-data-provider)
+                flyctl deploy --remote-only \
+                  --config apps/backend/data-provider/fly.toml \
+                  --dockerfile apps/backend/data-provider/Dockerfile .
+                ;;
+              scani-backend)
+                flyctl deploy --remote-only \
+                  --config apps/backend/api/fly.toml \
+                  --dockerfile apps/backend/api/Dockerfile .
+                ;;
+              scani-worker)
+                flyctl deploy --remote-only \
+                  --config apps/backend/worker/fly.toml \
+                  --dockerfile apps/backend/worker/Dockerfile \
+                  --ha=false \
+                  --strategy immediate .
+                ;;
+              *)
+                echo "::error::Unknown app: $app" >&2
+                exit 1
+                ;;
+            esac
+          done
+
+      - name: Smoke check rolled-back apps
+        timeout-minutes: 5
+        run: |
+          set +e
+          for url in \
+            https://scani-data-provider.fly.dev/health \
+            https://api.scani.xyz/health/deep
+          do
+            echo "Checking $url"
+            for i in 1 2 3 4 5; do
+              if curl -fsS --max-time 10 "$url" > /dev/null; then
+                echo "  ✓ $url responded OK"
+                continue 2
+              fi
+              sleep 5
+            done
+            echo "::warning::$url did not respond OK after rollback. Investigate."
+          done
