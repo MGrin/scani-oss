@@ -292,6 +292,14 @@ jobs:
           done
           args=(
             DATA_PROVIDER_API_KEY="$DATA_PROVIDER_API_KEY"
+            # Fly secrets override `[env]` in fly.toml, so we stage
+            # NODE_ENV explicitly to defend against any stale or
+            # incorrectly-set secret value carrying through. Without
+            # this, machines were observed booting with
+            # NODE_ENV=development and crashing on the env-isolation
+            # guard (assertEnvIsolatedUrl rejects "remote URL but
+            # NODE_ENV != production").
+            NODE_ENV="production"
             SENTRY_DSN="$SENTRY_DSN_DATA_PROVIDER"
             SENTRY_ENVIRONMENT="production"
             SENTRY_RELEASE="${GITHUB_SHA}"
@@ -393,6 +401,7 @@ jobs:
           done
           flyctl secrets set --stage --app scani-backend \
             ADMIN_JOBS_HMAC_SECRET="$ADMIN_JOBS_HMAC_SECRET" \
+            NODE_ENV="production" \
             SENTRY_DSN="$SENTRY_DSN_BACKEND" \
             SENTRY_ENVIRONMENT="production" \
             SENTRY_RELEASE="${GITHUB_SHA}" \
@@ -458,6 +467,7 @@ jobs:
             fi
           done
           flyctl secrets set --stage --app scani-worker \
+            NODE_ENV="production" \
             SENTRY_DSN="$SENTRY_DSN_WORKER" \
             SENTRY_ENVIRONMENT="production" \
             SENTRY_RELEASE="${GITHUB_SHA}" \
