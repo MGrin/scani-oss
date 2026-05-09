@@ -34,15 +34,15 @@ export function UsagePage() {
   const breakdown = trpc.usage.breakdown.useQuery({ from });
 
   return (
-    <div className="mx-auto max-w-6xl p-8">
-      <div className="mb-6 flex items-center justify-between">
+    <div className="mx-auto max-w-6xl p-4 sm:p-8">
+      <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-2xl font-semibold">Usage</h1>
           <p className="text-sm text-muted-foreground">
             Per-request metering across your API keys.
           </p>
         </div>
-        <div className="inline-flex rounded-lg border bg-card p-1">
+        <div className="inline-flex self-start rounded-lg border bg-card p-1 sm:self-auto">
           {RANGES.map((r) => (
             <button
               key={r.label}
@@ -60,7 +60,7 @@ export function UsagePage() {
         </div>
       </div>
 
-      <div className="grid gap-4 md:grid-cols-3">
+      <div className="grid gap-4 sm:grid-cols-3">
         <Stat label="Requests" value={summary.data?.totalRequests ?? 0} />
         <Stat label="Upstream cost" value={`$${(summary.data?.totalCostUsd ?? 0).toFixed(2)}`} />
         <Stat label="Error rate" value={`${((summary.data?.errorRate ?? 0) * 100).toFixed(2)}%`} />
@@ -70,7 +70,7 @@ export function UsagePage() {
         <CardHeader>
           <CardTitle>Requests over time</CardTitle>
         </CardHeader>
-        <CardContent className="h-72">
+        <CardContent className="h-64 sm:h-72">
           {daily.data && daily.data.length > 0 ? (
             <ResponsiveContainer>
               <BarChart data={daily.data}>
@@ -91,7 +91,7 @@ export function UsagePage() {
         </CardContent>
       </Card>
 
-      <div className="mt-6 grid gap-4 md:grid-cols-2">
+      <div className="mt-6 grid gap-4 sm:grid-cols-2">
         <Card>
           <CardHeader>
             <CardTitle>Top routes</CardTitle>
@@ -100,9 +100,14 @@ export function UsagePage() {
             {breakdown.data && breakdown.data.byRoute.length > 0 ? (
               <div className="divide-y">
                 {breakdown.data.byRoute.slice(0, 10).map((r) => (
-                  <div key={r.route} className="flex items-center justify-between py-2 text-sm">
-                    <span className="font-mono">{r.route}</span>
-                    <span className="text-muted-foreground">{r.requests.toLocaleString()} req</span>
+                  <div
+                    key={r.route}
+                    className="flex items-center justify-between gap-3 py-2 text-sm"
+                  >
+                    <span className="min-w-0 truncate font-mono">{r.route}</span>
+                    <span className="shrink-0 text-muted-foreground">
+                      {r.requests.toLocaleString()} req
+                    </span>
                   </div>
                 ))}
               </div>
@@ -121,10 +126,10 @@ export function UsagePage() {
                 {breakdown.data.byProvider.slice(0, 10).map((p) => (
                   <div
                     key={p.provider ?? 'unknown'}
-                    className="flex items-center justify-between py-2 text-sm"
+                    className="flex items-center justify-between gap-3 py-2 text-sm"
                   >
-                    <span className="font-mono">{p.provider ?? 'unknown'}</span>
-                    <span className="text-muted-foreground">${p.costUsd.toFixed(2)}</span>
+                    <span className="min-w-0 truncate font-mono">{p.provider ?? 'unknown'}</span>
+                    <span className="shrink-0 text-muted-foreground">${p.costUsd.toFixed(2)}</span>
                   </div>
                 ))}
               </div>

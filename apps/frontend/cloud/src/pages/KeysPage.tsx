@@ -65,15 +65,15 @@ export function KeysPage() {
   };
 
   return (
-    <div className="mx-auto max-w-5xl p-8">
-      <div className="mb-6 flex items-center justify-between">
+    <div className="mx-auto max-w-5xl p-4 sm:p-8">
+      <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-2xl font-semibold">API keys</h1>
           <p className="text-sm text-muted-foreground">
             Keys authenticate your self-hosted backend/worker against Scani Cloud.
           </p>
         </div>
-        <Button onClick={() => setCreating(true)}>
+        <Button onClick={() => setCreating(true)} className="w-full sm:w-auto">
           <Plus className="mr-2 h-4 w-4" /> New key
         </Button>
       </div>
@@ -90,9 +90,12 @@ export function KeysPage() {
           ) : list.data && list.data.length > 0 ? (
             <div className="divide-y">
               {list.data.map((k) => (
-                <div key={k.id} className="flex items-center justify-between py-3">
+                <div
+                  key={k.id}
+                  className="flex flex-col gap-2 py-3 sm:flex-row sm:items-center sm:justify-between sm:gap-3"
+                >
                   <div className="min-w-0">
-                    <div className="flex items-center gap-2">
+                    <div className="flex flex-wrap items-center gap-2">
                       <div className="font-medium">{k.name}</div>
                       <Badge variant="outline" className="text-[10px]">
                         {k.tier}
@@ -103,7 +106,7 @@ export function KeysPage() {
                         </Badge>
                       )}
                     </div>
-                    <div className="mt-0.5 font-mono text-xs text-muted-foreground">
+                    <div className="mt-0.5 font-mono text-xs text-muted-foreground break-all">
                       {k.keyPrefix}… · last used {rel(k.lastUsedAt)}
                     </div>
                   </div>
@@ -111,6 +114,7 @@ export function KeysPage() {
                     <Button
                       variant="ghost"
                       size="sm"
+                      className="self-start sm:self-auto sm:shrink-0"
                       onClick={() => {
                         if (confirm(`Revoke key "${k.name}"? This cannot be undone.`)) {
                           revoke.mutate({ id: k.id });
