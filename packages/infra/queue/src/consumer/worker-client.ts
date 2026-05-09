@@ -3,7 +3,9 @@ import { type Job, Queue, UnrecoverableError, Worker } from 'bullmq';
 import type { Redis } from 'ioredis';
 import { Service } from 'typedi';
 import { DEFAULT_DLQ_NAME, DEFAULT_QUEUE_NAME } from '../core/default-names';
+import { isScheduledJobDescriptor } from '../core/job-descriptor';
 import type { ScheduledJobProcessor } from './scheduled-job-processor';
+import { Semaphore } from './semaphore';
 import type { UserJobProcessor } from './user-job-processor';
 
 const log = createComponentLogger('queue:worker-client');
@@ -12,7 +14,17 @@ export interface WorkerClientConfig {
   connection: Redis;
   queueName?: string;
   dlqName?: string;
+  /** Total in-flight job slots across the worker. */
   concurrency?: number;
+  /**
+   * Optional cap on how many scheduled (cron-triggered) jobs run in
+   * parallel. When unset, scheduled jobs share the global pool, which
+   * means the hourly tide (pricing + wallet-balances + exchange-
+   * balances all firing at minute 0) can starve user-initiated jobs of
+   * concurrency slots. Set this to a value < `concurrency` to reserve
+   * slack for user work.
+   */
+  cronConcurrency?: number;
   drainDelay?: number;
 }
 
@@ -35,6 +47,11 @@ export class WorkerClient {
   private dlq: Queue | null = null;
   private config: WorkerClientConfig | null = null;
   private readonly processors = new Map<string, (job: Job) => Promise<unknown>>();
+  // Names of processors that came from a ScheduledJobDescriptor. Used
+  // to gate scheduled jobs through the cron semaphore at dispatch time
+  // without leaking the descriptor type into the runtime hot path.
+  private readonly scheduledNames = new Set<string>();
+  private cronSemaphore: Semaphore | null = null;
   private readonly terminalFailureHooks: TerminalFailureHook[] = [];
 
   configure(config: WorkerClientConfig): void {
@@ -43,6 +60,10 @@ export class WorkerClient {
     }
     this.config = config;
     this.dlq = new Queue(config.dlqName ?? DEFAULT_DLQ_NAME, { connection: config.connection });
+    this.cronSemaphore =
+      typeof config.cronConcurrency === 'number' && config.cronConcurrency > 0
+        ? new Semaphore(config.cronConcurrency)
+        : null;
   }
 
   register(processor: ProcessorClass): void {
@@ -56,6 +77,9 @@ export class WorkerClient {
       throw new Error(`Processor for job '${name}' already registered`);
     }
     this.processors.set(name, (job) => processor.process(job));
+    if (isScheduledJobDescriptor(processor.descriptor)) {
+      this.scheduledNames.add(name);
+    }
     log.info({ name }, '🔧 Registered processor');
   }
 
@@ -79,14 +103,27 @@ export class WorkerClient {
       async (job) => {
         const processor = this.processors.get(job.name);
         if (!processor) throw new Error(`No processor registered for job '${job.name}'`);
+        // Gate scheduled jobs through the cron semaphore (when one was
+        // configured) so the hourly cron tide can't pin the entire
+        // worker concurrency budget. The slot is held in BullMQ either
+        // way — the semaphore just stalls the actual handler invocation
+        // until a cron-budget slot frees up.
+        const release =
+          this.cronSemaphore && this.scheduledNames.has(job.name)
+            ? await this.cronSemaphore.acquire()
+            : null;
         const start = Date.now();
         log.info({ jobId: job.id, name: job.name }, '▶️ Processing job');
-        const result = await processor(job);
-        log.info(
-          { jobId: job.id, name: job.name, durationMs: Date.now() - start },
-          '✅ Job completed'
-        );
-        return result;
+        try {
+          const result = await processor(job);
+          log.info(
+            { jobId: job.id, name: job.name, durationMs: Date.now() - start },
+            '✅ Job completed'
+          );
+          return result;
+        } finally {
+          if (release) release();
+        }
       },
       {
         connection: cfg.connection.duplicate(),
@@ -159,7 +196,13 @@ export class WorkerClient {
     });
 
     log.info(
-      { queue: queueName, concurrency: cfg.concurrency ?? 1, processors: this.processors.size },
+      {
+        queue: queueName,
+        concurrency: cfg.concurrency ?? 1,
+        cronConcurrency: cfg.cronConcurrency ?? null,
+        processors: this.processors.size,
+        scheduledProcessors: this.scheduledNames.size,
+      },
       '🎧 Worker listening for jobs'
     );
     return this.worker;
@@ -175,6 +218,8 @@ export class WorkerClient {
       this.dlq = null;
     }
     this.processors.clear();
+    this.scheduledNames.clear();
+    this.cronSemaphore = null;
     this.terminalFailureHooks.length = 0;
     this.config = null;
   }

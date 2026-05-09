@@ -234,9 +234,15 @@ async function main(): Promise<void> {
   // Consumer side: WorkerClient owns the BullMQ Worker + dispatch table
   // + DLQ push on terminal failure.
   const workerClient = Container.get(WorkerClient);
+  // Default the cron cap to half the global pool so user jobs always
+  // have headroom even when the hourly tide arrives. Explicit 0 → no
+  // cap (legacy behaviour); explicit value → use as-is.
+  const cronConcurrency =
+    env.WORKER_CONCURRENCY_CRON ?? Math.max(1, Math.ceil(env.WORKER_CONCURRENCY / 2));
   workerClient.configure({
     connection,
     concurrency: env.WORKER_CONCURRENCY,
+    cronConcurrency: cronConcurrency > 0 ? cronConcurrency : undefined,
     drainDelay: 5,
   });
 

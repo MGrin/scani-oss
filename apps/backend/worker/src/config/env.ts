@@ -18,14 +18,30 @@ const envSchema = z.object({
   // SCANI_CLOUD_URL + SCANI_CLOUD_API_KEY are owned by @scani/cloud-client's
   // own env schema. Required in prod; optional in dev (local fallback).
 
-  // Worker concurrency — how many jobs per processor run in parallel.
-  // Default 4 so user-initiated jobs don't queue up behind scheduled cron
-  // fire-ups. Bump higher on dedicated workers with Redis headroom.
+  // Worker concurrency — how many jobs run in parallel across the
+  // worker. Default 4 so user-initiated jobs don't queue up behind
+  // scheduled cron fire-ups. Bump higher on dedicated workers with
+  // Redis headroom.
   WORKER_CONCURRENCY: z
     .string()
     .optional()
     .transform((v) => (v ? Number.parseInt(v, 10) : 4))
     .refine((n) => Number.isFinite(n) && n > 0, { message: 'must be a positive integer' }),
+
+  // Sub-cap on how many *scheduled* (cron-triggered) jobs may run in
+  // parallel. The hourly tide of pricing + wallet-balances + exchange-
+  // balances all firing at minute 0 used to take three concurrency
+  // slots, leaving only one for any user-initiated work that landed
+  // in the same minute. Default = ceil(WORKER_CONCURRENCY/2) reserves
+  // half the budget for user jobs without starving crons. Set to 0 (or
+  // ≥ WORKER_CONCURRENCY) to disable the cap entirely.
+  WORKER_CONCURRENCY_CRON: z
+    .string()
+    .optional()
+    .transform((v) => (v ? Number.parseInt(v, 10) : undefined))
+    .refine((n) => n === undefined || (Number.isFinite(n) && n >= 0), {
+      message: 'WORKER_CONCURRENCY_CRON must be a non-negative integer',
+    }),
 
   // Object storage (S3_*) is owned by @scani/storage's own env schema; the
   // worker only sees it via the cloud-client storage-facade's local-mode
