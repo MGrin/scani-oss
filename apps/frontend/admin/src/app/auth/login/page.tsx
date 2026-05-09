@@ -1,5 +1,6 @@
 'use client';
 
+import { safeRedirectPath } from '@scani/shared';
 import { startAuthentication } from '@simplewebauthn/browser';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Suspense, useState } from 'react';
@@ -16,7 +17,9 @@ export default function LoginPage() {
 function LoginInner() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const next = searchParams.get('next') ?? '/';
+  // Validated against open-redirect chains: any non-same-origin target
+  // (`https://…`, `//…`, `javascript:…`) falls back to `/`.
+  const next = safeRedirectPath(searchParams.get('next'), '/');
   const [status, setStatus] = useState<'idle' | 'pending' | 'error'>('idle');
   const [error, setError] = useState<string | null>(null);
 

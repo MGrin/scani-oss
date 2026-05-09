@@ -18,10 +18,29 @@ import type { Token } from '@scani/db/schema';
 import { createComponentLogger } from '@scani/logging';
 import { ProviderRegistry } from '@scani/providers/core/registry';
 import type { ProviderContext } from '@scani/providers/core/types';
+import { createOutflowLimiter, getSharedRedis } from '@scani/rate-limiter';
 import { TRPCError } from '@trpc/server';
 import { Container } from 'typedi';
 import { z } from 'zod';
 import { bearerProcedure, router } from '../trpc';
+
+// Per-API-key budget for the address-probe endpoints. Both
+// `hasActivity` and `resolveAddressName` reach the platform's
+// Etherscan / Helius / Solana RPC pool — without a per-key gate, a
+// hostile or buggy client could spam these to burn the platform's
+// upstream quota and starve other tenants. The provider-side outflow
+// limiters protect *us* from upstream 429s; this protects each tenant
+// from the others.
+//
+// 30/min/key is generous for legitimate wallet-onboarding flows
+// (validate one address at a time, occasional batch). Tighten via env
+// override if abuse shows up in usage logs.
+const chainsAddressProbeLimiter = createOutflowLimiter({
+  maxRequests: 30,
+  windowMs: 60_000,
+  redis: getSharedRedis(),
+  namespace: 'inflow:chains-address-probe',
+});
 
 const log = createComponentLogger('data-provider:chains');
 
@@ -387,7 +406,14 @@ export const chainsRouter = router({
 
   hasActivity: bearerProcedure
     .input(z.object({ chainId: chainIdSchema, address: z.string() }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
+      const budget = await chainsAddressProbeLimiter.tryConsume(ctx.auth.apiKeyId);
+      if (!budget.ok) {
+        throw new TRPCError({
+          code: 'TOO_MANY_REQUESTS',
+          message: `chains.hasActivity rate limit hit; retry in ${Math.ceil(budget.retryAfterMs / 1000)}s`,
+        });
+      }
       const institutionCode = institutionCodeForChainId(input.chainId);
       if (!institutionCode) return false;
       const validator = Container.get(ProviderRegistry).getAddressValidator(institutionCode);
@@ -408,7 +434,14 @@ export const chainsRouter = router({
 
   resolveAddressName: bearerProcedure
     .input(z.object({ chainId: chainIdSchema, address: z.string() }))
-    .mutation(async ({ input }): Promise<string | null> => {
+    .mutation(async ({ input, ctx }): Promise<string | null> => {
+      const budget = await chainsAddressProbeLimiter.tryConsume(ctx.auth.apiKeyId);
+      if (!budget.ok) {
+        throw new TRPCError({
+          code: 'TOO_MANY_REQUESTS',
+          message: `chains.resolveAddressName rate limit hit; retry in ${Math.ceil(budget.retryAfterMs / 1000)}s`,
+        });
+      }
       const institutionCode = institutionCodeForChainId(input.chainId);
       if (!institutionCode) return null;
       const validator = Container.get(ProviderRegistry).getAddressValidator(institutionCode);

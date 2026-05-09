@@ -64,6 +64,20 @@
       "when": 1778250000000,
       "tag": "0008_clear_bogus_reconciliation_openings",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1778260000000,
+      "tag": "0009_user_sessions_user_id_idx",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1778260100000,
+      "tag": "0010_holding_tx_token_fks_set_null",
+      "breakpoints": true
     }
   ]
 }

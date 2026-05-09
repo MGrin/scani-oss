@@ -1,3 +1,4 @@
+import { safeRedirectPath } from '@scani/shared';
 import { Button } from '@scani/ui/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@scani/ui/ui/card';
 import { Input } from '@scani/ui/ui/input';
@@ -18,7 +19,9 @@ import { authClient } from '../lib/auth-client';
 export function AuthPage() {
   const [params] = useSearchParams();
   const navigate = useNavigate();
-  const returnTo = params.get('returnTo') || '/keys';
+  // Validated against open-redirect chains: any non-same-origin target
+  // (`https://…`, `//…`, `javascript:…`) falls back to `/keys`.
+  const returnTo = safeRedirectPath(params.get('returnTo'), '/keys');
 
   const [email, setEmail] = useState('');
   const [otp, setOtp] = useState('');

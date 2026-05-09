@@ -1,5 +1,5 @@
 import { zodResolver } from '@hookform/resolvers/zod';
-import { emailSchema } from '@scani/shared';
+import { emailSchema, safeRedirectPath } from '@scani/shared';
 import { MagicCodeInput } from '@scani/ui/components/MagicCodeInput';
 import { isPWA } from '@scani/ui/lib/pwa-utils';
 import { Alert, AlertDescription } from '@scani/ui/ui/alert';
@@ -30,8 +30,10 @@ export function Auth() {
   const [isEmailSent, setIsEmailSent] = useState(false);
   const [userEmail, setUserEmail] = useState<string>('');
 
-  // Get return URL from query params
-  const returnTo = searchParams.get('returnTo') || '/';
+  // Get return URL from query params, validated against open-redirect
+  // chains: must be a same-origin path, never an absolute or
+  // protocol-relative URL.
+  const returnTo = safeRedirectPath(searchParams.get('returnTo'), '/');
 
   // Detect if running in PWA
   const runningAsPWA = isPWA();

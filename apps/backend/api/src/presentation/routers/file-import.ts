@@ -8,10 +8,12 @@ import { BANK_TEMPLATES, parseStatement } from '@scani/file-import';
 import { FILE_IMPORT } from '@scani/jobs';
 import { createComponentLogger } from '@scani/logging';
 import { BullMqEnqueueService } from '@scani/queue';
+import { createOutflowLimiter, getSharedRedis } from '@scani/rate-limiter';
 import { TRPCError } from '@trpc/server';
 import { Container } from 'typedi';
 import { z } from 'zod';
 import { UPLOAD_LIMITS } from '../../config/limits';
+import { requireAuth } from '../middleware/auth';
 import { protectedProcedure, router } from '../trpc';
 
 const fileImportLogger = createComponentLogger('router:file-import');
@@ -22,6 +24,19 @@ const fileImportLogger = createComponentLogger('router:file-import');
 // regardless of how compressible the input was.
 const MAX_PARSED_TRANSACTIONS = UPLOAD_LIMITS.PARSED_TRANSACTIONS;
 const MAX_DECODED_BYTES = UPLOAD_LIMITS.INLINE_DECODED_BYTES;
+
+// Per-user budget for the parse endpoint. The decode + parse pipeline
+// is CPU-heavy (CSV/OFX/QIF parser, optional AI column detection on
+// the worker side), so the global tRPC strict-limiter (60/min) is
+// far too generous. 4/min is enough headroom for legitimate "preview,
+// fix mapping, re-preview" flows without giving a hostile client a
+// CPU-DoS vector.
+const fileImportParseLimiter = createOutflowLimiter({
+  maxRequests: 4,
+  windowMs: 60_000,
+  redis: getSharedRedis(),
+  namespace: 'inflow:file-import-parse',
+});
 
 export const fileImportRouter = router({
   /** Get available bank templates for CSV parsing */
@@ -63,7 +78,17 @@ export const fileImportRouter = router({
           .optional(),
       })
     )
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
+      // Per-user budget. Rejects before any decode / parse / AI hit.
+      const { dbUser } = await requireAuth(ctx);
+      const budget = await fileImportParseLimiter.tryConsume(dbUser.id);
+      if (!budget.ok) {
+        throw new TRPCError({
+          code: 'TOO_MANY_REQUESTS',
+          message: `Too many parse attempts. Try again in ${Math.ceil(budget.retryAfterMs / 1000)}s.`,
+        });
+      }
+
       fileImportLogger.info(
         { filename: input.filename, bankTemplate: input.bankTemplate },
         'Parsing bank statement file'

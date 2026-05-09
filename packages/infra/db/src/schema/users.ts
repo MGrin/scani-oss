@@ -1,5 +1,5 @@
 import { relations } from 'drizzle-orm';
-import { boolean, pgTable, text, timestamp, uuid } from 'drizzle-orm/pg-core';
+import { boolean, index, pgTable, text, timestamp, uuid } from 'drizzle-orm/pg-core';
 import { accounts } from './accounts';
 import { groups } from './groups';
 import { holdings } from './holdings';
@@ -26,18 +26,27 @@ export const users = pgTable('users', {
 });
 
 // Better-Auth session table.
-export const userSessions = pgTable('user_sessions', {
-  id: text('id').primaryKey(),
-  expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
-  token: text('token').notNull().unique(),
-  ipAddress: text('ip_address'),
-  userAgent: text('user_agent'),
-  userId: uuid('user_id')
-    .notNull()
-    .references(() => users.id, { onDelete: 'cascade' }),
-  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
-});
+export const userSessions = pgTable(
+  'user_sessions',
+  {
+    id: text('id').primaryKey(),
+    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+    token: text('token').notNull().unique(),
+    ipAddress: text('ip_address'),
+    userAgent: text('user_agent'),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => ({
+    // Better-Auth resolves sessions by user_id on every authenticated
+    // request; without this index the lookup falls back to a sequential
+    // scan as the table grows.
+    userIdIdx: index('idx_user_sessions_user_id').on(table.userId),
+  })
+);
 
 // Better-Auth account table — auth provider linkage (NOT financial accounts;
 // see ./accounts.ts for those).

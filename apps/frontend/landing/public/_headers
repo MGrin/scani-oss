@@ -1,0 +1,12 @@
+# Cloudflare Pages headers for the marketing site (scani.xyz).
+# Static content, so the CSP can be a touch tighter than the SPAs:
+# no WebSocket, no per-user API calls. Same defenses (frame-ancestors,
+# nosniff, HSTS) as the apps.
+
+/*
+  Content-Security-Policy: default-src 'self'; base-uri 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; connect-src 'self' https://*.sentry.io https://*.ingest.sentry.io; font-src 'self' data:; frame-ancestors 'none'; form-action 'self'; object-src 'none'
+  X-Content-Type-Options: nosniff
+  X-Frame-Options: DENY
+  Referrer-Policy: strict-origin-when-cross-origin
+  Strict-Transport-Security: max-age=31536000; includeSubDomains; preload
+  Permissions-Policy: camera=(), microphone=(), geolocation=()

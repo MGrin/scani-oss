@@ -105,15 +105,26 @@ export const holdingTransactions = pgTable(
     // Per-unit price at tx time, stored in its NATIVE quote currency.
     // E.g. a Kraken BTC/EUR trade has priceNativeTokenId = EUR.
     priceNative: text('price_native'),
-    priceNativeTokenId: uuid('price_native_token_id').references(() => tokens.id),
+    // ON DELETE SET NULL on the price / counter / fee token refs — they
+    // are informational only. If the referenced token is merged or
+    // dedup-deleted (migrations 0006 / 0007) we'd rather null the
+    // reference than block the delete. The primary `token_id` above
+    // stays ON DELETE RESTRICT.
+    priceNativeTokenId: uuid('price_native_token_id').references(() => tokens.id, {
+      onDelete: 'set null',
+    }),
     // For trades / swaps: the other side of the transaction.
-    counterTokenId: uuid('counter_token_id').references(() => tokens.id),
+    counterTokenId: uuid('counter_token_id').references(() => tokens.id, {
+      onDelete: 'set null',
+    }),
     counterQuantity: text('counter_quantity'),
     counterPriceNative: text('counter_price_native'),
-    counterPriceNativeTokenId: uuid('counter_price_native_token_id').references(() => tokens.id),
+    counterPriceNativeTokenId: uuid('counter_price_native_token_id').references(() => tokens.id, {
+      onDelete: 'set null',
+    }),
     // Fees in their native token.
     feeQuantity: text('fee_quantity'),
-    feeTokenId: uuid('fee_token_id').references(() => tokens.id),
+    feeTokenId: uuid('fee_token_id').references(() => tokens.id, { onDelete: 'set null' }),
     // When the tx actually happened per the source (not our ingest time).
     occurredAt: timestamp('occurred_at', { withTimezone: true }).notNull(),
     // Chain tx hash / exchange trade id / bank tx id — for dedup across

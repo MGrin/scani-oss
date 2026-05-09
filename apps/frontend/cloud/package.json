@@ -14,6 +14,7 @@
   },
   "dependencies": {
     "@scani/data-provider": "workspace:*",
+    "@scani/shared": "workspace:*",
     "@scani/ui": "workspace:*",
     "@tanstack/react-query": "^4.44.0",
     "@trpc/client": "^10.45.4",

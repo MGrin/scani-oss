@@ -1,0 +1,125 @@
+name: Monthly DB restore test
+
+# Pulls the most recent backup written by `backup-db.yaml` and restores
+# it into a throwaway Neon branch. Asserts the restored schema has the
+# expected core tables populated, then drops the branch. The workflow
+# is the automated proof that "we can actually restore from R2".
+#
+# Goes red if: backup file is missing / truncated, schema drift between
+# the backup and current Drizzle migrations, or Neon branch quota
+# exhausted. See docs/technical/2026-05-09_disaster-recovery.md.
+
+on:
+  schedule:
+    - cron: "37 4 1 * *" # 1st of each month, 04:37 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  restore-test:
+    runs-on: ubuntu-latest
+    environment: production
+    timeout-minutes: 20
+    steps:
+      - name: Install Postgres client + neonctl
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client
+          curl -sL https://github.com/neondatabase/neonctl/releases/latest/download/neonctl-linux \
+            -o /usr/local/bin/neonctl
+          chmod +x /usr/local/bin/neonctl
+
+      - name: Download newest backup from R2
+        env:
+          AWS_ACCESS_KEY_ID:     ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          AWS_ENDPOINT_URL_S3:   ${{ secrets.R2_S3_ENDPOINT }}
+          BACKUP_BUCKET:         scani-backups
+        run: |
+          set -euo pipefail
+          pip install --quiet awscli
+          # Pick the lexicographically latest dump (timestamp prefix).
+          latest=$(aws --endpoint-url "$AWS_ENDPOINT_URL_S3" \
+            s3 ls "s3://$BACKUP_BUCKET/" | sort | tail -n 1 | awk '{print $NF}')
+          if [[ -z "$latest" ]]; then
+            echo "::error::No backup found in s3://$BACKUP_BUCKET/"
+            exit 1
+          fi
+          echo "Latest backup: $latest"
+          aws --endpoint-url "$AWS_ENDPOINT_URL_S3" \
+            s3 cp "s3://$BACKUP_BUCKET/$latest" ./restore.dump
+          echo "BACKUP_FILE=$latest" >> "$GITHUB_ENV"
+          # Sanity check: a one-byte file is a corrupted upload.
+          size=$(wc -c < ./restore.dump)
+          echo "Dump size: $size bytes"
+          if [[ "$size" -lt 4096 ]]; then
+            echo "::error::Backup file suspiciously small ($size bytes)"
+            exit 1
+          fi
+
+      - name: Create ephemeral Neon branch
+        env:
+          NEON_API_KEY:    ${{ secrets.NEON_API_KEY }}
+          NEON_PROJECT_ID: ${{ secrets.NEON_PROJECT_ID }}
+        run: |
+          set -euo pipefail
+          ts=$(date -u +"%Y%m%dT%H%M%SZ")
+          branch="restore-test-$ts"
+          neonctl branches create \
+            --project-id "$NEON_PROJECT_ID" \
+            --name "$branch" \
+            --parent main
+          # Capture the unpooled URL — pgbouncer (Neon's pooler) chokes
+          # on multi-statement COPY chunks pg_restore emits.
+          url=$(neonctl connection-string \
+            --project-id "$NEON_PROJECT_ID" \
+            --branch "$branch" \
+            --pooler false)
+          echo "::add-mask::$url"
+          echo "RESTORE_URL=$url" >> "$GITHUB_ENV"
+          echo "RESTORE_BRANCH=$branch" >> "$GITHUB_ENV"
+
+      - name: Restore the dump
+        run: |
+          set -euo pipefail
+          pg_restore --no-owner --no-privileges --clean --if-exists \
+            --dbname "$RESTORE_URL" ./restore.dump
+
+      - name: Smoke-test restored schema
+        run: |
+          set -euo pipefail
+          # Counts are expected to be > 0 in any non-greenfield prod DB.
+          # A zero on any of these tables means the dump was incomplete
+          # OR the schema has drifted beyond what the backup carries.
+          # Either way: investigate.
+          rows=$(psql "$RESTORE_URL" -At -c "
+            SELECT
+              (SELECT count(*) FROM users)                 || ',' ||
+              (SELECT count(*) FROM holdings)              || ',' ||
+              (SELECT count(*) FROM holding_transactions)  || ',' ||
+              (SELECT count(*) FROM accounts)              || ',' ||
+              (SELECT count(*) FROM tokens)
+          ")
+          IFS=',' read -r users holdings tx accounts tokens <<<"$rows"
+          echo "users=$users holdings=$holdings tx=$tx accounts=$accounts tokens=$tokens"
+          for c in "$users" "$tokens"; do
+            if [[ "$c" -lt 1 ]]; then
+              echo "::error::Restored DB has zero rows in a core table — dump is incomplete or stale"
+              exit 1
+            fi
+          done
+
+      - name: Tear down ephemeral branch
+        if: always()
+        env:
+          NEON_API_KEY:    ${{ secrets.NEON_API_KEY }}
+          NEON_PROJECT_ID: ${{ secrets.NEON_PROJECT_ID }}
+        run: |
+          set -euo pipefail
+          if [[ -n "${RESTORE_BRANCH:-}" ]]; then
+            neonctl branches delete \
+              --project-id "$NEON_PROJECT_ID" \
+              "$RESTORE_BRANCH" || true
+          fi

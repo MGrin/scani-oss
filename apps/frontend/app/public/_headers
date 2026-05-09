@@ -1,7 +1,30 @@
-# Cache headers for Render.com static site hosting
-# index.html and sw.js must never be cached by the browser
-# Hashed assets can be cached forever (immutable content-addressed names)
+# Render.com static-site headers. CSP / clickjack / sniff defenses
+# apply to every response; cache rules are per-path.
+#
+# Notes on the CSP:
+#  - `script-src 'self'` blocks the most common XSS vectors. Vite builds
+#    do not need `'unsafe-inline'` for scripts because all script tags
+#    in the build output are external `<script src=…>`.
+#  - `style-src 'self' 'unsafe-inline'` is required for Radix /
+#    headlessui's runtime-injected inline `style=` attributes and a
+#    handful of Tailwind class-state animations. Tightening to nonces
+#    is a follow-up.
+#  - `connect-src 'self' https: wss:` is loose by design for the first
+#    deploy: the app talks to api.scani.xyz, the data-provider, Sentry,
+#    and R2 presigned URLs, all over HTTPS. We'll narrow to named
+#    origins after observing CSP-violation reports.
+#  - `frame-ancestors 'none'` is the modern equivalent of X-Frame-Options:
+#    DENY; both are sent to cover legacy browsers.
 
+/*
+  Content-Security-Policy: default-src 'self'; base-uri 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; connect-src 'self' https: wss:; font-src 'self' data:; frame-ancestors 'none'; form-action 'self'; object-src 'none'
+  X-Content-Type-Options: nosniff
+  X-Frame-Options: DENY
+  Referrer-Policy: strict-origin-when-cross-origin
+  Strict-Transport-Security: max-age=31536000; includeSubDomains; preload
+  Permissions-Policy: camera=(), microphone=(), geolocation=()
+
+# index.html and sw.js must never be cached by the browser
 /index.html
   Cache-Control: no-cache, no-store, must-revalidate
 
@@ -11,6 +34,7 @@
 /version.json
   Cache-Control: no-cache, no-store, must-revalidate
 
+# Hashed assets can be cached forever (immutable content-addressed names)
 /assets/*
   Cache-Control: public, max-age=31536000, immutable
 

@@ -4,8 +4,48 @@ import { withSentryConfig } from '@sentry/nextjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
+// Security headers applied to every response. CSP shape mirrors the
+// other Scani frontends (apps/frontend/{app,cloud}/public/_headers).
+// `connect-src` is intentionally generous (https:, wss:) for the first
+// deploy — the admin reaches the api, data-provider, BullMQ admin
+// UI, and Sentry. We narrow to named origins after observing
+// CSP-violation reports.
+const SECURITY_HEADERS = [
+  {
+    key: 'Content-Security-Policy',
+    value: [
+      "default-src 'self'",
+      "base-uri 'self'",
+      "script-src 'self'",
+      "style-src 'self' 'unsafe-inline'",
+      "img-src 'self' data: blob: https:",
+      "connect-src 'self' https: wss:",
+      "font-src 'self' data:",
+      "frame-ancestors 'none'",
+      "form-action 'self'",
+      "object-src 'none'",
+    ].join('; '),
+  },
+  { key: 'X-Content-Type-Options', value: 'nosniff' },
+  { key: 'X-Frame-Options', value: 'DENY' },
+  { key: 'Referrer-Policy', value: 'strict-origin-when-cross-origin' },
+  // HSTS only in production where TLS is guaranteed.
+  ...(process.env.NODE_ENV === 'production'
+    ? [
+        {
+          key: 'Strict-Transport-Security',
+          value: 'max-age=31536000; includeSubDomains; preload',
+        },
+      ]
+    : []),
+  { key: 'Permissions-Policy', value: 'camera=(), microphone=(), geolocation=()' },
+];
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  async headers() {
+    return [{ source: '/:path*', headers: SECURITY_HEADERS }];
+  },
   webpack(config) {
     // `@simplewebauthn/server` statically imports `cross-fetch`. Webpack
     // resolves it via its `browser` field (browser-ponyfill.js), which needs
