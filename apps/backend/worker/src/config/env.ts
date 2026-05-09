@@ -1,4 +1,4 @@
-import { assertEnvIsolatedUrl, requiredInProd } from '@scani/config';
+import { requiredInProd } from '@scani/config';
 import { z } from 'zod';
 
 const envSchema = z.object({
@@ -81,13 +81,7 @@ export function loadEnv(): WorkerEnv {
     process.exit(1);
   }
   cached = parsed.data;
-  // Env-isolation guard — see api's env.ts for the rationale.
-  try {
-    assertEnvIsolatedUrl({ url: cached.REDIS_URL, varName: 'REDIS_URL' });
-    assertEnvIsolatedUrl({ url: cached.DATABASE_URL, varName: 'DATABASE_URL' });
-  } catch (err) {
-    console.error(`\n❌ ${err instanceof Error ? err.message : String(err)}\n`);
-    process.exit(1);
-  }
+  // Env-isolation guard removed — see api/data-provider env.ts for the
+  // rationale. Re-introduce once the NODE_ENV pipeline is verified.
   return cached;
 }

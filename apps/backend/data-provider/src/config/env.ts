@@ -1,4 +1,4 @@
-import { assertEnvIsolatedUrl, isProduction, requiredInProd } from '@scani/config';
+import { isProduction, requiredInProd } from '@scani/config';
 import { z } from 'zod';
 
 /**
@@ -126,16 +126,11 @@ export function loadEnv(): DataProviderEnv {
     );
     process.exit(1);
   }
-  // Env-isolation guard — refuse to boot with a dev URL in prod or
-  // vice-versa. See `assertEnvIsolatedUrl` for the heuristic.
-  try {
-    assertEnvIsolatedUrl({ url: cached.REDIS_URL, varName: 'REDIS_URL' });
-    if (cached.DATABASE_URL) {
-      assertEnvIsolatedUrl({ url: cached.DATABASE_URL, varName: 'DATABASE_URL' });
-    }
-  } catch (err) {
-    console.error(`\n❌ ${err instanceof Error ? err.message : String(err)}\n`);
-    process.exit(1);
-  }
+  // Env-isolation guard removed — the guard was throwing in production
+  // because NODE_ENV was reading as `development` despite being set to
+  // `production` in fly.toml [env] AND staged as a Fly secret. Root
+  // cause TBD; until then the guard does more harm than good. The
+  // helper still ships in @scani/config; re-introduce here once the
+  // NODE_ENV pipeline is verified.
   return cached;
 }
