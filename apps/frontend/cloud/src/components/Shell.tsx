@@ -1,5 +1,6 @@
 import { ThemeToggle } from '@scani/ui';
 import { Sheet, SheetContent } from '@scani/ui/ui/sheet';
+import { useQueryClient } from '@tanstack/react-query';
 import { BarChart3, KeyRound, LogOut, Menu } from 'lucide-react';
 import { useState } from 'react';
 import { Link, NavLink, Outlet } from 'react-router-dom';
@@ -24,11 +25,13 @@ const NAV_ITEMS: NavItemDef[] = [
 export function Shell() {
   const { data } = authClient.useSession();
   const [mobileOpen, setMobileOpen] = useState(false);
+  const queryClient = useQueryClient();
 
   const closeMobile = () => setMobileOpen(false);
 
   const handleSignOut = async () => {
     await authClient.signOut();
+    queryClient.clear();
     window.location.href = '/auth';
   };
 

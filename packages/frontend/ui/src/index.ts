@@ -22,6 +22,11 @@ export { UpdateBanner } from './components/UpdateBanner';
 export { type ResolvedTheme, type Theme, ThemeProvider, useTheme } from './contexts/ThemeContext';
 export { useAppUpdate } from './hooks/useAppUpdate';
 export { useDebouncedValue } from './hooks/useDebouncedValue';
+export {
+  type AssertFrontendEnvOptions,
+  assertFrontendEnv,
+  type FrontendEnvSpec,
+} from './lib/assert-frontend-env';
 export { cn } from './lib/cn';
 export {
   type CreateAuthClientOptions,

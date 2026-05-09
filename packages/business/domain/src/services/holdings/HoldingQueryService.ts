@@ -91,7 +91,21 @@ export class HoldingQueryService extends BaseService {
     const detailedHoldings: HoldingWithDetails[] = holdingsWithFullDetails.map(
       ({ holding, token, account, institution }) => {
         const currentPrice = portfolioPriceMap.get(token.symbol) || '0';
-        const currentValue = new Decimal(holding.balance).mul(new Decimal(currentPrice)).toNumber();
+        // The `HoldingWithDetails` wire contract is `number`, so we must
+        // convert. To make precision loss deterministic we round to a
+        // bounded number of decimals before .toNumber():
+        //   - quantity → 8 dp (industry standard for crypto satoshi-tier
+        //     precision; equity quantities never exceed 4 dp anyway).
+        //   - monetary value → 4 dp (1/100 of a cent — more than the UI
+        //     ever renders).
+        // Without this, large quantities × small prices (or vice versa)
+        // can land on IEEE-754 representations whose decimal expansion
+        // differs from the user's mental model. Bounded rounding is
+        // worse-than-Decimal but better-than-unspecified.
+        const currentValue = new Decimal(holding.balance)
+          .mul(new Decimal(currentPrice))
+          .toDecimalPlaces(4)
+          .toNumber();
 
         // Cost basis is intentionally `currentValue` — a simplified
         // placeholder. Real FIFO cost basis lives in
@@ -125,7 +139,7 @@ export class HoldingQueryService extends BaseService {
             iconUrl: token.iconUrl,
             isScamProbability: token.isScamProbability ?? 0,
           },
-          amount: new Decimal(holding.balance).toNumber(),
+          amount: new Decimal(holding.balance).toDecimalPlaces(8).toNumber(),
           value: currentValue,
           costBasis: costBasis,
           price: priceInfo,

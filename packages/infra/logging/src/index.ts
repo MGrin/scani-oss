@@ -8,3 +8,4 @@ export {
   logger,
   sanitizeUrl,
 } from './logger';
+export { pseudonymizeId, pseudonymizeIdFields } from './pseudonymize';

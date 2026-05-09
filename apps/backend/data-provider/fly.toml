@@ -30,7 +30,13 @@ primary_region = "sin"
   [[http_service.checks]]
     interval     = "30s"
     timeout      = "5s"
-    grace_period = "30s"
+    # 30s was too tight: rolling deploys occasionally timed out on the
+    # second machine because boot-time work (10 provider factories,
+    # ioredis connect, typedi singletons, Better-Auth setup if cloud
+    # management is on) plus shared-cpu jitter exceeded the window. Bump
+    # to 60s — same shape as a TCP keep-alive probe, no impact on steady
+    # state.
+    grace_period = "60s"
     method       = "GET"
     path         = "/health"
 
@@ -39,9 +45,15 @@ primary_region = "sin"
 
 [[vm]]
   size     = "shared-cpu-1x"
-  memory   = "512mb"
+  memory   = "1024mb"
   cpu_kind = "shared"
   cpus     = 1
+  # 512MB was tight at boot — 10 provider factories plus typedi + ioredis
+  # + (when CLOUD_MANAGEMENT_ENABLED) Postgres pool + Better-Auth pushed
+  # the second-machine of the rolling deploy past the health-check
+  # window on 2026-05-09. Match the worker's 1024MB sizing — same Bun
+  # runtime, similar dependency surface — to give the rolling deploy
+  # headroom.
 
 [deploy]
   # Rolling deploy: one machine at a time so the other keeps serving

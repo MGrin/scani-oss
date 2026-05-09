@@ -5,6 +5,10 @@ export { EXCHANGE_BALANCES_SCHEDULE } from './exchange-balances';
 export { FOREX_BACKFILL_SCHEDULE } from './forex-backfill';
 export { HIDE_CLOSED_HOLDINGS_SCHEDULE } from './hide-closed-holdings';
 export { HISTORICAL_PRICE_BACKFILL_SCHEDULE } from './historical-price-backfill';
+export {
+  HEARTBEAT_TOLERANCE_MS,
+  JOB_HEARTBEAT_PROBE_SCHEDULE,
+} from './job-heartbeat-probe';
 export { PORTFOLIO_VALUE_ROLLUP_SCHEDULE } from './portfolio-value-rollup';
 export { PRICING_SCHEDULE } from './pricing';
 export { RECONCILE_ORPHANED_USER_JOBS_SCHEDULE } from './reconcile-orphaned-user-jobs';
@@ -19,6 +23,7 @@ import { EXCHANGE_BALANCES_SCHEDULE } from './exchange-balances';
 import { FOREX_BACKFILL_SCHEDULE } from './forex-backfill';
 import { HIDE_CLOSED_HOLDINGS_SCHEDULE } from './hide-closed-holdings';
 import { HISTORICAL_PRICE_BACKFILL_SCHEDULE } from './historical-price-backfill';
+import { JOB_HEARTBEAT_PROBE_SCHEDULE } from './job-heartbeat-probe';
 import { PORTFOLIO_VALUE_ROLLUP_SCHEDULE } from './portfolio-value-rollup';
 import { PRICING_SCHEDULE } from './pricing';
 import { RECONCILE_ORPHANED_USER_JOBS_SCHEDULE } from './reconcile-orphaned-user-jobs';
@@ -40,4 +45,5 @@ export const SCHEDULED_JOB_DESCRIPTORS = [
   BACKFILL_TOKEN_IDENTITY_SCHEDULE,
   HIDE_CLOSED_HOLDINGS_SCHEDULE,
   DLQ_DEPTH_PROBE_SCHEDULE,
+  JOB_HEARTBEAT_PROBE_SCHEDULE,
 ] as const;

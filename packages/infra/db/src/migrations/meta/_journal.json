@@ -78,6 +78,13 @@
       "when": 1778260100000,
       "tag": "0010_holding_tx_token_fks_set_null",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1778270000000,
+      "tag": "0011_job_heartbeats",
+      "breakpoints": true
     }
   ]
 }

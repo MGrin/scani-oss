@@ -6,6 +6,11 @@
 export type { JobsOptions } from 'bullmq';
 export { UnrecoverableError } from 'bullmq';
 export {
+  JOB_HEARTBEAT_WRITER,
+  JobHeartbeatWriter,
+  type JobRunOutcome,
+} from './consumer/job-heartbeat-writer';
+export {
   JOB_LOCK,
   JobLock,
   type JobLockAcquired,

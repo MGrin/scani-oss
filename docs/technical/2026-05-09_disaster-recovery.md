@@ -261,9 +261,52 @@ to the live `ENCRYPTION_KEY`. Procedure:
 Rotating invalidates every active session — every user signs out. Plan
 for the comms.
 
+The api app and the data-provider both consume Better-Auth — the api
+for the main scani.xyz session, the data-provider for the
+`cloud.scani.xyz` console (when `CLOUD_MANAGEMENT_ENABLED`). They use
+**separate secrets** so rotating one doesn't sign out the other:
+
 ```bash
+# Main app (scani.xyz)
 flyctl secrets set --app scani-backend BETTER_AUTH_SECRET="$(openssl rand -hex 32)"
+
+# Cloud console (cloud.scani.xyz) — only when CLOUD_MANAGEMENT_ENABLED
+flyctl secrets set --app scani-data-provider BETTER_AUTH_SECRET="$(openssl rand -hex 32)"
 ```
+
+### `ADMIN_SESSION_SECRET` (admin dashboard signed-cookie session)
+
+Used by `apps/frontend/admin` to sign the passkey-authenticated session
+cookie. Rotating signs every admin out of the dashboard but doesn't
+affect customer auth.
+
+The admin runs on Cloudflare Pages, so the secret lives in Pages env
+vars (managed via Terraform under `infra/terraform/cloudflare.tf`):
+
+1. Generate: `openssl rand -hex 32`.
+2. Update GitHub Actions secret `ADMIN_SESSION_SECRET`.
+3. `bun run terraform:apply` re-stages the value on the Pages project,
+   triggering a redeploy with the new value.
+4. Confirm: visit `https://admin.scani.xyz` in a fresh browser; the
+   passkey gate should re-prompt.
+
+### `ADMIN_JOBS_HMAC_SECRET` (admin → api action signing)
+
+Shared between `apps/frontend/admin` (signs HMAC of admin → api
+mutations like job retry / DLQ purge) and `apps/backend/api` (verifies
+HMAC). Both must rotate atomically — a mismatched secret breaks the
+admin job dashboard until both sides converge.
+
+1. Generate: `openssl rand -hex 32`.
+2. Update GitHub Actions secret `ADMIN_JOBS_HMAC_SECRET`.
+3. **Stage on api first** so the backend tolerates either old or new
+   during the transition (this requires the api to read both `_OLD`
+   and `_NEW` fallback envs — currently the code does NOT, so accept
+   ~30 s of admin-action failures during the swap):
+   ```bash
+   flyctl secrets set --app scani-backend ADMIN_JOBS_HMAC_SECRET="$NEW"
+   ```
+4. Trigger admin redeploy via `terraform apply`.
 
 ### Other vendor tokens (Sentry, Fly, R2, Etherscan, OpenAI, …)
 
@@ -281,10 +324,30 @@ Rotate via the vendor console first, then:
 Symptom: api / worker / data-provider start logging
 `PostgresError: too many connections for role "scani"` and 5xx spikes.
 
-1. Check Neon dashboard → connection count. The branch limit is ~100;
-   our default per-app pool is 20 (`packages/infra/db/src/connection.ts:62`).
-   60 across three apps with one machine each = healthy. If it's
-   higher, a leak is in flight.
+### Connection budget — what we expect
+
+Per-app pool: `max=20` from `packages/infra/db/src/connection.ts:62`,
+overridable via `POSTGRES_POOL_MAX`. Multiplied by Fly machine count:
+
+| App | Machines | Budget |
+|---|---|---|
+| `scani-backend` (api) | 1 (single replica — WS state local) | 20 |
+| `scani-worker` | 1 | 20 |
+| `scani-data-provider` | 2 (rolling deploy needs 2) | 40 |
+| **Total ceiling** | | **80** |
+
+Neon free-plan ceiling per branch is ~100 with default settings. 80
+leaves ~20 headroom for migrations, ad-hoc psql, and the monthly
+`restore-test.yaml` worker that opens an isolated branch (it does
+NOT count against the production branch).
+
+If the org moves to Neon Pro the ceiling rises (currently 1000), but
+this doc should be updated when that happens.
+
+### Triage
+
+1. Check Neon dashboard → connection count. If it's >80, we're past
+   the budget — a leak is in flight.
 2. The api app has a `endConnectionTracking` pair around request
    handling (after the 2026-05-08 OOM incident, see
    `apps/backend/api/fly.toml`). Greppable as
@@ -294,6 +357,86 @@ Symptom: api / worker / data-provider start logging
    connection from that replica.
 4. File an incident note in `docs/archive/` once resolved with the
    commit that introduced the regression.
+
+---
+
+## 6. Deploy rollback
+
+When a Fly deploy succeeds but the new code is broken in production
+(e.g. a regression slipped past CI), roll back fast — every minute of
+5xx is a refund or a churned customer. The procedure differs slightly
+depending on whether the deploy ran a database migration.
+
+### 6a. Rollback when no migration ran in this deploy
+
+The deploy workflow at `.github/workflows/deploy-fly.yaml` runs DB
+migrations BEFORE deploying app code. If the migration step was a
+no-op (no files in `packages/infra/db/src/migrations/` changed), the
+schema is identical to the previous deploy and rolling back is a
+single command:
+
+1. Find the previous good commit on `main`:
+   ```bash
+   git log --oneline main -10
+   ```
+2. Re-deploy from that commit. The workflow has a manual trigger
+   (`workflow_dispatch`); pass the commit SHA as an input. No code
+   changes needed — just click Re-run on the previous green deploy
+   in the Actions UI.
+3. Watch `https://app.scani.xyz/health`, the data-provider's
+   `/health/r2`, and Sentry inbox; they should clear within minutes.
+
+### 6b. Rollback when a migration DID run
+
+This is the painful case. Migrations in this repo are written to be
+backward-compatible (additive: ADD COLUMN, CREATE INDEX CONCURRENTLY,
+new tables) so the OLD app version still functions against the NEW
+schema. **Verify that property** before rolling back the app:
+
+1. Find the migration files in the bad deploy:
+   ```bash
+   git diff <prev>..<bad> -- packages/infra/db/src/migrations/
+   ```
+2. Check each: `ADD COLUMN ... NOT NULL` without DEFAULT? `DROP
+   COLUMN`? `RENAME`? Anything that **removes** schema is NOT
+   backward-compatible. Stop and write a forward fix instead — a
+   schema rollback against live data is a one-way trip to a Postgres
+   restore (see §1).
+3. If migrations are purely additive: redeploy the previous commit
+   (same as 6a). The new schema's extra columns / indexes / tables
+   are dormant from the old code's perspective.
+4. Open a PR that *adds* a follow-up migration to undo the schema
+   change in the next forward deploy, rather than running a manual
+   `DROP COLUMN` against prod.
+
+### 6c. Cloudflare Pages frontends
+
+Each frontend project (app, cloud, admin, landing) keeps the last 50
+deployments. To roll back:
+
+1. Go to the Pages project's Deployments tab in the Cloudflare
+   dashboard.
+2. Click the last green deployment → "Retry deployment". Cloudflare
+   re-promotes that build with the new "current" pointer.
+3. Verify in browser; CDN cache may take ~30 s to flip.
+
+There is no "automatic" rollback — Pages doesn't auto-revert on health
+check failure (Pages has no concept of health checks). The watch-list
+is Sentry: if the new bundle's first-seen alert fires
+post-deploy with a high event count, treat that as a regression and
+roll back.
+
+### 6d. Terraform rollback
+
+Provider versions pinned via `~>` in `infra/terraform/versions.tf`
+mean a `terraform apply` could pull a new minor that introduces a
+regression. To pin to a known-good version:
+
+1. Locate the working version in
+   `infra/terraform/.terraform.lock.hcl`.
+2. Tighten `versions.tf` to that exact version.
+3. `terraform init -upgrade=false` then `terraform apply` — confirms
+   plan diff is clean before applying.
 
 ---
 

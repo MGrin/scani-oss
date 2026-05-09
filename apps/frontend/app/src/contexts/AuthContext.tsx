@@ -1,4 +1,5 @@
 import { isPWA, logPWAInfo } from '@scani/ui/lib/pwa-utils';
+import { useQueryClient } from '@tanstack/react-query';
 import type React from 'react';
 import { createContext, useContext, useEffect, useState } from 'react';
 import { authClient } from '@/lib/auth-client';
@@ -42,6 +43,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<AuthUser | null>(null);
   const [session, setSession] = useState<AuthSession | null>(null);
   const [loading, setLoading] = useState(true);
+  const queryClient = useQueryClient();
 
   useEffect(() => {
     let mounted = true;
@@ -158,6 +160,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     await authClient.signOut();
     setUser(null);
     setSession(null);
+    // Wipe React-Query cache so a second user logging in on the same
+    // browser can't see the previous user's holdings/accounts flash on
+    // mount before the fresh fetch lands.
+    queryClient.clear();
   };
 
   const resetPassword = async (_email: string) => {

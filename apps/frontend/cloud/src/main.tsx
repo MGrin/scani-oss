@@ -1,10 +1,22 @@
-import { ErrorBoundary, ThemeProvider } from '@scani/ui';
+import { assertFrontendEnv, ErrorBoundary, ThemeProvider } from '@scani/ui';
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import { BrowserRouter } from 'react-router-dom';
 import { App } from './App';
 import './index.css';
 import { TrpcProvider } from './lib/trpc-provider';
+
+// VITE_DATA_PROVIDER_URL is allowed to be empty (same-origin proxy mode in
+// dev), but if it's set it MUST parse cleanly. The check fires at startup
+// so a misconfigured prod build crashes loud rather than booting against
+// an unreachable URL.
+assertFrontendEnv([
+  {
+    name: 'VITE_DATA_PROVIDER_URL',
+    value: import.meta.env.VITE_DATA_PROVIDER_URL,
+    required: false,
+  },
+]);
 
 const root = document.getElementById('root');
 if (!root) throw new Error('#root not found');

@@ -87,6 +87,7 @@ import { HideClosedHoldingsProcessor } from './processors/hide-closed-holdings';
 import { HistoricalPriceBackfillProcessor } from './processors/historical-price-backfill';
 import { HoldingPriceUpdateProcessor } from './processors/holding-price-update';
 import { IngestTransactionsProcessor } from './processors/ingest-transactions';
+import { JobHeartbeatProbeProcessor } from './processors/job-heartbeat-probe';
 import { ManualHoldingsCreateProcessor } from './processors/manual-holdings-create';
 import { PortfolioHistoryBackfillProcessor } from './processors/portfolio-history-backfill';
 import { PortfolioValueRollupProcessor } from './processors/portfolio-value-rollup';
@@ -122,6 +123,7 @@ function resolveProcessors() {
     Container.get(ReconcilePendingCredentialsProcessor),
     Container.get(ReconcileOrphanedUserJobsProcessor),
     Container.get(DlqDepthProbeProcessor),
+    Container.get(JobHeartbeatProbeProcessor),
     // User-initiated (payload via UserJobDescriptor schema).
     Container.get(ScreenshotParseProcessor),
     Container.get(ExchangeImportProcessor),
@@ -280,6 +282,62 @@ async function main(): Promise<void> {
   await Container.get(JobScheduler).upsertAll(SCHEDULED_JOB_DESCRIPTORS);
 
   await workerClient.start();
+
+  // --- Redis liveness monitor ----------------------------------------------
+  // ioredis retries forever on Redis loss by default; the worker process
+  // stays alive but BullMQ's blocking consumer can't recover. Without an
+  // explicit health gate, a multi-hour Upstash outage looks identical to
+  // "everything is fine" from Fly's side. The monitor pings Redis every
+  // 30s; after 3 consecutive failures (~90s of degradation) we exit so
+  // Fly restarts the machine and the new process re-establishes the
+  // connection from scratch.
+  const REDIS_PING_INTERVAL_MS = 30_000;
+  const REDIS_PING_TIMEOUT_MS = 5_000;
+  const REDIS_MAX_CONSECUTIVE_FAILURES = 3;
+  let consecutiveFailures = 0;
+  const redisMonitor = setInterval(() => {
+    void (async () => {
+      try {
+        const ping = connection.ping();
+        const result = await Promise.race([
+          ping,
+          new Promise<never>((_, reject) =>
+            setTimeout(() => reject(new Error('redis ping timed out')), REDIS_PING_TIMEOUT_MS)
+          ),
+        ]);
+        if (result === 'PONG') {
+          if (consecutiveFailures > 0) {
+            logger.info({ previousFailures: consecutiveFailures }, '✅ Redis liveness restored');
+          }
+          consecutiveFailures = 0;
+          return;
+        }
+        throw new Error(`unexpected ping response: ${String(result)}`);
+      } catch (err) {
+        consecutiveFailures++;
+        const message = err instanceof Error ? err.message : String(err);
+        logger.warn({ consecutiveFailures, error: message }, '⚠️ Redis liveness ping failed');
+        if (consecutiveFailures >= REDIS_MAX_CONSECUTIVE_FAILURES) {
+          logger.fatal(
+            {
+              consecutiveFailures,
+              thresholdMs: REDIS_PING_INTERVAL_MS * REDIS_MAX_CONSECUTIVE_FAILURES,
+            },
+            '💀 Redis unreachable for ' +
+              `${(REDIS_PING_INTERVAL_MS * REDIS_MAX_CONSECUTIVE_FAILURES) / 1000}s — ` +
+              'exiting so Fly restarts the machine'
+          );
+          sentryCapture(err instanceof Error ? err : new Error(String(err)), {
+            kind: 'redis-liveness-exhausted',
+            consecutiveFailures: String(consecutiveFailures),
+          });
+          await flushSentry(2000);
+          process.exit(1);
+        }
+      }
+    })();
+  }, REDIS_PING_INTERVAL_MS);
+  redisMonitor.unref?.();
 
   // --- Graceful shutdown ---------------------------------------------------
   let shuttingDown = false;

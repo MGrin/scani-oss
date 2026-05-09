@@ -1,4 +1,5 @@
 import { scrubSentryBreadcrumb, scrubSentryEvent } from '@scani/shared';
+import { assertFrontendEnv } from '@scani/ui';
 import { ErrorBoundary } from '@scani/ui/components/ErrorBoundary';
 import { UpdateBanner } from '@scani/ui/components/UpdateBanner';
 import { ThemeProvider } from '@scani/ui/contexts/ThemeContext';
@@ -9,6 +10,17 @@ import ReactDOM from 'react-dom/client';
 import { TRPCProvider } from '@/lib/trpc-provider';
 import App from './App.tsx';
 import './index.css';
+
+// Fail loudly if the build pipeline forgot to stage VITE_API_URL — better
+// a clear error surface in /var/log than a silently broken bundle hitting
+// localhost:3001 forever.
+assertFrontendEnv([
+  {
+    name: 'VITE_API_URL',
+    value: import.meta.env.VITE_API_URL,
+    required: true,
+  },
+]);
 
 // Sentry init — DSN populated at build time from VITE_SENTRY_DSN
 // (GH Actions secret `VITE_SENTRY_DSN_FRONTEND`). No-op if unset.

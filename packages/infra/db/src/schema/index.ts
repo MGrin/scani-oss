@@ -14,6 +14,7 @@ export * from './cloud';
 export * from './groups';
 export * from './holdings';
 export * from './institutions';
+export * from './job-heartbeats';
 export * from './portfolio';
 export * from './tokens';
 export * from './user-integration-credentials';

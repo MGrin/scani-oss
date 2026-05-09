@@ -1,3 +1,4 @@
+import { withAdvisoryLock } from '@scani/db';
 import { withTransaction } from '@scani/db/transaction';
 import { createComponentLogger } from '@scani/logging';
 import Decimal from 'decimal.js';
@@ -7,6 +8,7 @@ import {
   HoldingApyConfigRepository,
 } from '../repositories/HoldingApyConfigRepository';
 import { HoldingRepository } from '../repositories/HoldingRepository';
+import { HoldingTransactionRepository } from '../repositories/HoldingTransactionRepository';
 import { HoldingService, VaultService } from '../services';
 
 const logger = createComponentLogger('use-case:apply-apy-payouts');
@@ -110,6 +112,7 @@ export function computeDuePayoutDates(
 export class ApplyApyPayoutsUseCase {
   private readonly apyConfigRepository = Container.get(HoldingApyConfigRepository);
   private readonly holdingRepository = Container.get(HoldingRepository);
+  private readonly holdingTxRepository = Container.get(HoldingTransactionRepository);
   private readonly holdingService = Container.get(HoldingService);
   private readonly vaultService = Container.get(VaultService);
 
@@ -129,7 +132,19 @@ export class ApplyApyPayoutsUseCase {
 
     for (const entry of configs) {
       try {
-        const result = await this.processConfig(entry, now);
+        // Per-holding advisory lock prevents two cron containers from
+        // both reading the pre-update balance and double-applying interest.
+        // The ledger upsert below is the second line of defence (idempotent
+        // on re-run) but the lock keeps the canonical balance honest in
+        // the common case.
+        const outcome = await withAdvisoryLock(`apy-payout:${entry.holdingId}`, () =>
+          this.processConfig(entry, now)
+        );
+        if (!outcome.ran) {
+          skipped++;
+          continue;
+        }
+        const result = outcome.result;
         if (result.applied) {
           payoutsApplied += result.payoutCount;
           totalInterest = totalInterest.plus(result.interestApplied);
@@ -200,16 +215,21 @@ export class ApplyApyPayoutsUseCase {
           throw new Error(`Holding not found: ${entry.holdingId}`);
         }
 
-        let currentBalance = new Decimal(holding.balance);
+        // Per-payout interest amounts so we can write one ledger row per
+        // payout date with a stable externalId. Each row carries the
+        // post-compounding contribution at that date.
+        const perPayout: Array<{ date: Date; interest: Decimal }> = [];
+        let runningBalance = new Decimal(holding.balance);
         let totalInterest = new Decimal(0);
 
         for (let i = 0; i < dueDates.length; i++) {
-          const interest = currentBalance.mul(rate).div(perYear);
+          const interest = runningBalance.mul(rate).div(perYear);
+          perPayout.push({ date: dueDates[i]!, interest });
           totalInterest = totalInterest.plus(interest);
-          currentBalance = currentBalance.plus(interest);
+          runningBalance = runningBalance.plus(interest);
         }
 
-        const newBalance = currentBalance.toDecimalPlaces(8).toFixed();
+        const newBalance = runningBalance.toDecimalPlaces(8).toFixed();
 
         logger.debug(
           {
@@ -221,6 +241,32 @@ export class ApplyApyPayoutsUseCase {
           },
           'Applying APY payout'
         );
+
+        // Ledger rows BEFORE the balance write. The unique index
+        // (holdingId, source, externalId) makes re-runs a no-op for
+        // already-applied dates — when paired with the advisory lock
+        // above, this means a crash between the ledger insert and the
+        // balance update is recovered correctly on the next tick: the
+        // ledger insert dedups, and only the missing balance delta is
+        // re-applied.
+        const txRows = perPayout.map(({ date, interest }) => ({
+          userId: holding.userId,
+          holdingId: holding.id,
+          tokenId: holding.tokenId,
+          kind: 'interest' as const,
+          quantity: interest.toFixed(),
+          occurredAt: date,
+          externalId: `apy:${config.id}:${date.toISOString().slice(0, 10)}`,
+          source: 'apy-payout',
+          sourceMetadata: {
+            configId: config.id,
+            annualRatePct: config.annualRatePct,
+            payoutFrequency: config.payoutFrequency,
+          },
+        }));
+        if (txRows.length > 0) {
+          await this.holdingTxRepository.bulkUpsert(txRows, tx);
+        }
 
         await this.holdingService.updateHoldingBalance(entry.holdingId, newBalance, tx);
         await this.apyConfigRepository.updateLastPayoutAt(config.id, now, tx);

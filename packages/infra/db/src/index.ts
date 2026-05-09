@@ -30,6 +30,7 @@ export {
   resetConnectionMonitoringStats,
   startConnectionTracking,
 } from './connection-monitor';
+export { type UpsertJobHeartbeatInput, upsertJobHeartbeat } from './job-heartbeat-writer';
 export * from './schema';
 export { awaitSchemaReady, type SchemaReadyOptions } from './schema-ready';
 export * from './transaction';

@@ -287,6 +287,21 @@ export function RealtimeProvider({ children }: RealtimeProviderProps) {
       // http:// → ws://, https:// → wss://
       const wsUrl = `${apiUrl.replace(/^http/, 'ws')}/`;
 
+      // Defensive: refuse to open a non-secure WS in a secure page
+      // context. Browsers should reject this anyway, but failing fast
+      // here surfaces a clear error rather than the generic
+      // "WebSocket connection failed" Sentry breadcrumb. Also catches
+      // a misconfigured VITE_API_URL pointing at http:// in prod.
+      if (typeof window !== 'undefined' && window.location.protocol === 'https:') {
+        if (!wsUrl.startsWith('wss:')) {
+          console.error(
+            '[realtime] refusing to open insecure ws:// from a secure page (check VITE_API_URL)'
+          );
+          setConnectionStatus('disconnected');
+          return;
+        }
+      }
+
       setConnectionStatus(reason === 'reconnect' ? 'reconnecting' : 'connecting');
 
       let nextSocket: WebSocket;
