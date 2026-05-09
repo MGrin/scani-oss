@@ -183,7 +183,6 @@ describe('assertEnvIsolatedUrl', () => {
       'redis://127.0.0.1:6379',
       'postgres://0.0.0.0:5432/scani',
       'redis://host.docker.internal:6379',
-      'redis://upstash.io:6379/0',
     ];
     for (const url of cases) {
       expect(() => assertEnvIsolatedUrl({ url, varName: 'REDIS_URL', isProduction: true })).toThrow(
@@ -192,9 +191,13 @@ describe('assertEnvIsolatedUrl', () => {
     }
   });
 
-  test('production accepts remote vendor URLs', () => {
+  test('production accepts remote vendor URLs (incl. port 6379)', () => {
     const cases = [
       'redis://default:secret@scani-prod.upstash.io:6380',
+      // Real Upstash deployments commonly use port 6379 too — the
+      // earlier `:6379` blanket-reject was a false-positive that
+      // caused production boot crashes. Host-based detection only now.
+      'rediss://default:secret@scani-prod.upstash.io:6379',
       'postgresql://scani:pw@ep-cool-noise-1.us-east-2.aws.neon.tech/scani',
     ];
     for (const url of cases) {

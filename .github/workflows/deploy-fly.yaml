@@ -333,14 +333,18 @@ jobs:
 
       - name: Smoke test /health
         run: |
+          # --max-time bounds each curl so a hung edge proxy (502/503
+          # storm) doesn't burn the GitHub Actions minute budget. Without
+          # this the loop has stretched to 17min+ on a broken deploy
+          # because each curl waits on the default connect timeout.
           for i in 1 2 3 4 5; do
-            if curl -fsS https://scani-data-provider.fly.dev/health | jq -e '.status == "ok"' > /dev/null; then
+            if curl -fsS --max-time 10 https://scani-data-provider.fly.dev/health | jq -e '.status == "ok"' > /dev/null; then
               echo "data-provider healthy"; exit 0
             fi
             sleep 5
           done
           echo "data-provider /health smoke test failed:" >&2
-          curl -s https://scani-data-provider.fly.dev/health || true
+          curl -s --max-time 10 https://scani-data-provider.fly.dev/health || true
           exit 1
 
   deploy-backend:
@@ -409,14 +413,16 @@ jobs:
       # AI-keys-missing classes that took prod down in April 2026).
       - name: Smoke test /health/deep
         run: |
+          # --max-time bounds each curl; same rationale as the
+          # data-provider smoke test above.
           for i in 1 2 3 4 5; do
-            if curl -fsS https://api.scani.xyz/health/deep | jq -e '.status == "ok"' > /dev/null; then
+            if curl -fsS --max-time 10 https://api.scani.xyz/health/deep | jq -e '.status == "ok"' > /dev/null; then
               echo "Backend up with all dependencies healthy"; exit 0
             fi
             sleep 5
           done
           echo "Backend failed /health/deep smoke test:" >&2
-          curl -s https://api.scani.xyz/health/deep || true
+          curl -s --max-time 10 https://api.scani.xyz/health/deep || true
           exit 1
 
   deploy-worker:
