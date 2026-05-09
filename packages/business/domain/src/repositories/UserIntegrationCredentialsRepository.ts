@@ -151,7 +151,8 @@ export class UserIntegrationCredentialsRepository extends BaseRepository<
    */
   async findPendingEnqueueOlderThan(
     cutoff: Date,
-    transaction?: DatabaseTransaction
+    transaction?: DatabaseTransaction,
+    limit?: number
   ): Promise<UserIntegrationCredentials[]> {
     const database = this.getDb(transaction);
     // Two explicit param casts needed for this query to run under Drizzle
@@ -163,7 +164,7 @@ export class UserIntegrationCredentialsRepository extends BaseRepository<
     //      "The string argument must be of type string" before the driver
     //      ever sees the row. Passing `cutoff.toISOString()` sidesteps it.
     const cutoffIso = cutoff.toISOString();
-    return database
+    const query = database
       .select()
       .from(schema.userIntegrationCredentials)
       .where(
@@ -172,6 +173,7 @@ export class UserIntegrationCredentialsRepository extends BaseRepository<
           sql`(${schema.userIntegrationCredentials.importEnqueuedAt} IS NULL OR ${schema.userIntegrationCredentials.importEnqueuedAt} < ${cutoffIso}::timestamptz)`
         )
       );
+    return typeof limit === 'number' && limit > 0 ? query.limit(limit) : query;
   }
 
   /**

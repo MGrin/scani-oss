@@ -13,11 +13,16 @@
  *    raw text.
  *
  * Failure handling: every method throws on transport / 4xx / 5xx
- * errors.
+ * errors. Every successful response is paced through an outflow
+ * rate-limiter (per-providerKey) so a runaway batch can't pin upstream
+ * to its 429-budget; usage tokens are parsed off the response and
+ * returned alongside the parsed data so the data-provider's usage
+ * middleware can attribute upstream cost back to the calling tenant.
  */
 
 import { type CustomLogger, createComponentLogger } from '@scani/logging';
-import type { AIInferenceProvider, Capability } from '../core/capabilities';
+import { createOutflowLimiter, getSharedRedis, type OutflowRateLimiter } from '@scani/rate-limiter';
+import type { AIInferenceProvider, AIResult, AIUsage, Capability } from '../core/capabilities';
 import { fetchWithTimeout } from '../core/utils/fetch';
 
 export interface ChatCompletionsConfig {
@@ -31,22 +36,50 @@ export interface ChatCompletionsConfig {
   apiKey: string;
   maxTokens?: number;
   temperature?: number;
+  /** Per-minute upstream call budget for this provider key. Defaults
+      to a conservative 20/min. Override via factory if you have a
+      higher OpenAI tier. */
+  rateLimitPerMinute?: number;
+  /** Pricing table for `upstreamCostUsd` calculation. USD per 1M
+      tokens. Optional — when absent, `usage.upstreamCostUsd` is left
+      unset and the dashboard applies its fallback rate. */
+  pricing?: {
+    promptUsdPerMillion: number;
+    completionUsdPerMillion: number;
+  };
 }
 
 interface ChatCompletionsResponse {
   choices: Array<{ message: { content: string } }>;
-  usage?: { total_tokens?: number };
+  usage?: {
+    prompt_tokens?: number;
+    completion_tokens?: number;
+    total_tokens?: number;
+  };
 }
+
+const DEFAULT_RATE_LIMIT_PER_MINUTE = 20;
 
 export class ChatCompletionsProvider implements AIInferenceProvider {
   readonly providerKey: string;
   readonly capabilities: readonly Capability[] = ['ai-inference'];
 
   protected readonly logger: CustomLogger;
+  private readonly limiter: OutflowRateLimiter;
 
   constructor(protected readonly config: ChatCompletionsConfig) {
     this.providerKey = config.providerKey;
     this.logger = createComponentLogger(`provider:${config.providerKey}`);
+    // Redis-backed when the host app initialised the shared client
+    // (api / worker / data-provider), in-memory in tests / OSS without
+    // Redis. Namespace per providerKey so OpenAI ≠ Perplexity ≠ DeepSeek
+    // budgets stay independent.
+    this.limiter = createOutflowLimiter({
+      maxRequests: config.rateLimitPerMinute ?? DEFAULT_RATE_LIMIT_PER_MINUTE,
+      windowMs: 60_000,
+      redis: getSharedRedis(),
+      namespace: `ai:${config.providerKey}`,
+    });
   }
 
   isConfigured(): boolean {
@@ -57,7 +90,7 @@ export class ChatCompletionsProvider implements AIInferenceProvider {
     imageBase64: string;
     mimeType: string;
     hint?: string;
-  }): Promise<unknown> {
+  }): Promise<AIResult<unknown>> {
     if (!this.isConfigured()) {
       throw new Error(`${this.config.providerKey}: apiKey not configured`);
     }
@@ -91,7 +124,7 @@ export class ChatCompletionsProvider implements AIInferenceProvider {
     return this.callJson(body);
   }
 
-  async parseDocumentText(text: string, hint?: string): Promise<unknown> {
+  async parseDocumentText(text: string, hint?: string): Promise<AIResult<unknown>> {
     if (!this.isConfigured()) {
       throw new Error(`${this.config.providerKey}: apiKey not configured`);
     }
@@ -113,7 +146,7 @@ export class ChatCompletionsProvider implements AIInferenceProvider {
   async completeText(
     prompt: string,
     opts?: { temperature?: number; maxTokens?: number }
-  ): Promise<string> {
+  ): Promise<AIResult<string>> {
     if (!this.isConfigured()) {
       throw new Error(`${this.config.providerKey}: apiKey not configured`);
     }
@@ -123,8 +156,11 @@ export class ChatCompletionsProvider implements AIInferenceProvider {
       max_tokens: opts?.maxTokens ?? this.config.maxTokens ?? 1000,
       temperature: opts?.temperature ?? this.config.temperature ?? 0.7,
     };
-    const data = await this.callRaw(body);
-    return data.choices?.[0]?.message?.content ?? '';
+    const { data, usage } = await this.callRaw(body);
+    return {
+      data: data.choices?.[0]?.message?.content ?? '',
+      usage,
+    };
   }
 
   // ============================================================
@@ -132,14 +168,14 @@ export class ChatCompletionsProvider implements AIInferenceProvider {
   // ============================================================
 
   /** Returns the parsed JSON content of the assistant's first choice. */
-  private async callJson(body: unknown): Promise<unknown> {
-    const data = await this.callRaw(body);
+  private async callJson(body: unknown): Promise<AIResult<unknown>> {
+    const { data, usage } = await this.callRaw(body);
     const content = data.choices?.[0]?.message?.content;
     if (!content) {
       throw new Error(`${this.config.providerKey}: no content in response`);
     }
     try {
-      return JSON.parse(content);
+      return { data: JSON.parse(content), usage };
     } catch (err) {
       throw new Error(
         `${this.config.providerKey}: failed to parse JSON response (${err instanceof Error ? err.message : err})`
@@ -147,28 +183,48 @@ export class ChatCompletionsProvider implements AIInferenceProvider {
     }
   }
 
-  /** Returns the raw `ChatCompletionsResponse`. */
-  private async callRaw(body: unknown): Promise<ChatCompletionsResponse> {
-    const response = await fetchWithTimeout(
-      `${this.config.baseUrl}/chat/completions`,
-      {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${this.config.apiKey}`,
-          'Content-Type': 'application/json',
+  /** Returns the raw `ChatCompletionsResponse` and parsed token usage. */
+  private async callRaw(
+    body: unknown
+  ): Promise<{ data: ChatCompletionsResponse; usage?: AIUsage }> {
+    const data = await this.limiter.execute(async () => {
+      const response = await fetchWithTimeout(
+        `${this.config.baseUrl}/chat/completions`,
+        {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${this.config.apiKey}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(body),
         },
-        body: JSON.stringify(body),
-      },
-      30000,
-      0
-    );
-    if (!response.ok) {
-      const errorBody = await response.text().catch(() => '');
-      throw new Error(
-        `${this.config.providerKey} HTTP ${response.status}: ${errorBody.slice(0, 300)}`
+        30000,
+        0
       );
+      if (!response.ok) {
+        const errorBody = await response.text().catch(() => '');
+        throw new Error(
+          `${this.config.providerKey} HTTP ${response.status}: ${errorBody.slice(0, 300)}`
+        );
+      }
+      return (await response.json()) as ChatCompletionsResponse;
+    });
+    return { data, usage: this.extractUsage(data) };
+  }
+
+  private extractUsage(data: ChatCompletionsResponse): AIUsage | undefined {
+    const u = data.usage;
+    if (!u) return undefined;
+    const tokensIn = typeof u.prompt_tokens === 'number' ? u.prompt_tokens : 0;
+    const tokensOut = typeof u.completion_tokens === 'number' ? u.completion_tokens : 0;
+    const totalTokens = typeof u.total_tokens === 'number' ? u.total_tokens : tokensIn + tokensOut;
+    let upstreamCostUsd: number | undefined;
+    if (this.config.pricing) {
+      upstreamCostUsd =
+        (tokensIn * this.config.pricing.promptUsdPerMillion) / 1_000_000 +
+        (tokensOut * this.config.pricing.completionUsdPerMillion) / 1_000_000;
     }
-    return (await response.json()) as ChatCompletionsResponse;
+    return { tokensIn, tokensOut, totalTokens, upstreamCostUsd };
   }
 }
 

@@ -42,6 +42,7 @@ export class ApyPayoutsProcessor extends ScheduledJobProcessor {
         },
         'APY payouts run failed'
       );
+      throw error;
     }
   }
 }

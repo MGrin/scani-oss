@@ -146,6 +146,27 @@ export interface TokenIdentityProvider extends ProviderBase {
   searchTokens?(query: string, limit?: number): Promise<TokenSearchResult[]>;
 }
 
+/**
+ * Token-usage telemetry surfaced by AI providers per call. The
+ * data-provider's usage middleware reads this off `AIResult.usage` and
+ * writes it onto the per-request `cloud_usage_events` row so Tier 2/3
+ * billing reflects actual upstream token spend instead of being silently
+ * zero. `upstreamCostUsd` is computed by the provider when it knows the
+ * model's pricing table; left undefined otherwise (the dashboard can
+ * apply a fallback rate).
+ */
+export interface AIUsage {
+  tokensIn: number;
+  tokensOut: number;
+  totalTokens: number;
+  upstreamCostUsd?: number;
+}
+
+export interface AIResult<T> {
+  data: T;
+  usage?: AIUsage;
+}
+
 export interface AIInferenceProvider extends ProviderBase {
   /** Vision: extract structured data from a portfolio screenshot or
       PDF page. */
@@ -153,16 +174,16 @@ export interface AIInferenceProvider extends ProviderBase {
     imageBase64: string;
     mimeType: string;
     hint?: string;
-  }): Promise<unknown>;
+  }): Promise<AIResult<unknown>>;
   /** Text: parse a CSV header / OFX free-text field for column
       detection. */
-  parseDocumentText?(text: string, hint?: string): Promise<unknown>;
+  parseDocumentText?(text: string, hint?: string): Promise<AIResult<unknown>>;
   /** Generic completion. Used by smaller helpers (token-name
       cleanup, etc.). */
   completeText?(
     prompt: string,
     opts?: { temperature?: number; maxTokens?: number }
-  ): Promise<string>;
+  ): Promise<AIResult<string>>;
 }
 
 // ============================================================================

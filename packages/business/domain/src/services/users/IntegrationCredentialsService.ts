@@ -199,10 +199,12 @@ export class IntegrationCredentialsService extends BaseService {
 
   /**
    * Reconciler helper: find rows stuck in pending_enqueue beyond the cutoff.
+   * `limit` bounds the per-tick batch so a misfire that produces thousands
+   * of orphans can't tie up the worker for a full minute.
    */
-  async findPendingEnqueueOlderThan(cutoff: Date) {
+  async findPendingEnqueueOlderThan(cutoff: Date, limit?: number) {
     try {
-      return await this.credentialsRepository.findPendingEnqueueOlderThan(cutoff);
+      return await this.credentialsRepository.findPendingEnqueueOlderThan(cutoff, undefined, limit);
     } catch (error) {
       throw this.handleError(error, 'findPendingEnqueueOlderThan');
     }

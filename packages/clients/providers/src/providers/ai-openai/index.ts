@@ -15,6 +15,15 @@
 import type { ProviderFactory } from '../../core/boot';
 import { ChatCompletionsProvider } from '../_chat-completions';
 
+// Reflects OpenAI's published per-1M-token pricing for the models used
+// here (gpt-4o-mini for text, gpt-4o for vision). The blended rate
+// straddles both; for the dashboard a single per-call cost estimate is
+// good enough — token-level refinement can come later.
+const OPENAI_PRICING = {
+  promptUsdPerMillion: 0.15,
+  completionUsdPerMillion: 0.6,
+};
+
 export class OpenAIProvider extends ChatCompletionsProvider {
   constructor(apiKey: string) {
     super({
@@ -25,6 +34,8 @@ export class OpenAIProvider extends ChatCompletionsProvider {
       apiKey,
       maxTokens: 4000,
       temperature: 0.1,
+      rateLimitPerMinute: 30,
+      pricing: OPENAI_PRICING,
     });
   }
 }

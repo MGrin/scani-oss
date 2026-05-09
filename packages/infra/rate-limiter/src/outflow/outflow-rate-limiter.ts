@@ -27,6 +27,15 @@ export abstract class OutflowRateLimiter {
     return fn();
   }
 
+  // Single-shot fail-fast variant. Used by inbound HTTP handlers that
+  // need to reject (429) instead of wait. Returns `{ ok: true }` if a
+  // slot was acquired, or `{ ok: false, retryAfterMs }` otherwise.
+  async tryConsume(subKey?: string): Promise<{ ok: true } | { ok: false; retryAfterMs: number }> {
+    const waitMs = await this.tryAcquire(subKey);
+    if (waitMs === 0) return { ok: true };
+    return { ok: false, retryAfterMs: waitMs };
+  }
+
   protected async waitForSlot(subKey?: string): Promise<void> {
     while (true) {
       const waitMs = await this.tryAcquire(subKey);

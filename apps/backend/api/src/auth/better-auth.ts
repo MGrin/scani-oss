@@ -1,4 +1,5 @@
 import { EmailFacade } from '@scani/cloud-client/facades/email-facade';
+import { isProduction } from '@scani/config';
 import { db } from '@scani/db';
 import {
   tokens,
@@ -131,10 +132,12 @@ export function createBetterAuth(opts: {
     session: {
       expiresIn: 60 * 60 * 24 * 7, // 7 days
       updateAge: 60 * 60 * 24, // extend at most once per day
-      cookieCache: {
-        enabled: true,
-        maxAge: 5 * 60, // 5 min in-memory cache to avoid DB hit on every request
-      },
+      // The cookie cache is per-instance and not shared across Fly machines.
+      // Keeping it on in prod meant a session revoked on machine A could
+      // still authenticate on machine B for up to 5 min — incompatible with
+      // "sign me out everywhere now". In dev keep it on (no horizontal
+      // scaling) to avoid a DB hit on every authenticated request.
+      cookieCache: isProduction ? { enabled: false } : { enabled: true, maxAge: 5 * 60 },
     },
     advanced: {
       useSecureCookies: opts.baseURL.startsWith('https://'),

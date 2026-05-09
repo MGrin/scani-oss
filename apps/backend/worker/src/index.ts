@@ -78,6 +78,7 @@ import { Container } from 'typedi';
 // pulls them out and registers them.
 import { ApyPayoutsProcessor } from './processors/apy-payouts';
 import { BackfillTokenIdentityProcessor } from './processors/backfill-token-identity';
+import { DlqDepthProbeProcessor } from './processors/dlq-depth-probe';
 import { ExchangeBalancesProcessor } from './processors/exchange-balances';
 import { ExchangeImportProcessor } from './processors/exchange-import';
 import { FileImportProcessor } from './processors/file-import';
@@ -120,6 +121,7 @@ function resolveProcessors() {
     Container.get(HideClosedHoldingsProcessor),
     Container.get(ReconcilePendingCredentialsProcessor),
     Container.get(ReconcileOrphanedUserJobsProcessor),
+    Container.get(DlqDepthProbeProcessor),
     // User-initiated (payload via UserJobDescriptor schema).
     Container.get(ScreenshotParseProcessor),
     Container.get(ExchangeImportProcessor),

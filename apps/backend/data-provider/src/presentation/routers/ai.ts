@@ -1,10 +1,33 @@
 import { createComponentLogger } from '@scani/logging';
-import type { AIInferenceProvider } from '@scani/providers/core/capabilities';
+import type { AIInferenceProvider, AIUsage } from '@scani/providers/core/capabilities';
 import { ProviderRegistry } from '@scani/providers/core/registry';
 import { TRPCError } from '@trpc/server';
 import { Container } from 'typedi';
 import { z } from 'zod';
+import type { UsageContext } from '../../usage/middleware';
 import { bearerProcedure, router } from '../trpc';
+
+/**
+ * Forward token usage + computed upstream cost from the AI provider into
+ * the per-request `cloud_usage_events` row via the usage middleware.
+ * No-op when the provider didn't report usage (older endpoints / errors).
+ */
+function annotateUsage(
+  ctx: { usage: UsageContext },
+  providerKey: string,
+  usage: AIUsage | undefined
+): void {
+  if (!usage) {
+    ctx.usage.annotate({ provider: providerKey });
+    return;
+  }
+  ctx.usage.annotate({
+    provider: providerKey,
+    tokensIn: usage.tokensIn,
+    tokensOut: usage.tokensOut,
+    upstreamCostUsd: usage.upstreamCostUsd,
+  });
+}
 
 /**
  * AI router — owns every outbound call to OpenAI / Perplexity /
@@ -126,7 +149,7 @@ export const aiRouter = router({
           .optional(),
       })
     )
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       const opts = input.options ?? {};
       const providers = selectProviders(opts.provider);
       if (providers.length === 0) {
@@ -141,13 +164,14 @@ export const aiRouter = router({
       for (const provider of providers) {
         const start = Date.now();
         try {
-          const raw = await provider.parseScreenshot({
+          const result = await provider.parseScreenshot({
             imageBase64: input.imageBase64,
             mimeType,
             hint,
           });
+          annotateUsage(ctx, provider.providerKey, result.usage);
           return {
-            portfolio: normalizePortfolio(raw),
+            portfolio: normalizePortfolio(result.data),
             metadata: {
               provider: provider.providerKey,
               processingTime: Date.now() - start,
@@ -181,7 +205,7 @@ export const aiRouter = router({
           .optional(),
       })
     )
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       const opts = input.options ?? {};
       const providers = selectProviders(opts.provider);
       if (providers.length === 0) {
@@ -196,9 +220,10 @@ export const aiRouter = router({
         if (!provider.parseDocumentText) continue;
         const start = Date.now();
         try {
-          const raw = await provider.parseDocumentText(input.text, hint);
+          const result = await provider.parseDocumentText(input.text, hint);
+          annotateUsage(ctx, provider.providerKey, result.usage);
           return {
-            portfolio: normalizePortfolio(raw),
+            portfolio: normalizePortfolio(result.data),
             metadata: {
               provider: provider.providerKey,
               processingTime: Date.now() - start,
@@ -233,7 +258,7 @@ export const aiRouter = router({
           .optional(),
       })
     )
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       const opts = input.options ?? {};
       const providers = selectProviders(opts.provider);
       if (providers.length === 0) {
@@ -246,11 +271,12 @@ export const aiRouter = router({
       for (const provider of providers) {
         if (!provider.completeText) continue;
         try {
-          const content = await provider.completeText(input.prompt, {
+          const result = await provider.completeText(input.prompt, {
             maxTokens: opts.maxTokens,
             temperature: opts.temperature,
           });
-          return { content, provider: provider.providerKey };
+          annotateUsage(ctx, provider.providerKey, result.usage);
+          return { content: result.data, provider: provider.providerKey };
         } catch (err) {
           lastError = err instanceof Error ? err : new Error(String(err));
           log.warn(

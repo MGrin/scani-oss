@@ -473,6 +473,49 @@ app
       };
     }
   })
+  // Readiness probe — used by the load balancer to decide when a fresh
+  // machine should start receiving traffic. Pings DB + Redis only, no
+  // upstream calls, to keep p99 < 100ms. `/health` (above) doubles as the
+  // liveness probe (process alive). `/health/deep` is for deploy-time
+  // smoke tests, not for traffic routing.
+  .get('/readyz', async ({ set }: { set: { status: number } }) => {
+    const checks: Record<string, { ok: boolean; latencyMs: number; error?: string }> = {};
+    const dbStart = performance.now();
+    try {
+      await db.execute(sql`SELECT 1`);
+      checks.db = { ok: true, latencyMs: Math.round(performance.now() - dbStart) };
+    } catch (err) {
+      checks.db = {
+        ok: false,
+        latencyMs: Math.round(performance.now() - dbStart),
+        error: err instanceof Error ? err.message : String(err),
+      };
+    }
+
+    const redisStart = performance.now();
+    try {
+      const reply = await redisConnection.ping();
+      checks.redis = {
+        ok: reply === 'PONG',
+        latencyMs: Math.round(performance.now() - redisStart),
+        ...(reply !== 'PONG' ? { error: `unexpected reply ${reply}` } : {}),
+      };
+    } catch (err) {
+      checks.redis = {
+        ok: false,
+        latencyMs: Math.round(performance.now() - redisStart),
+        error: err instanceof Error ? err.message : String(err),
+      };
+    }
+
+    const ok = checks.db.ok && checks.redis.ok;
+    if (!ok) set.status = 503;
+    return {
+      status: ok ? 'ok' : 'error',
+      timestamp: new Date().toISOString(),
+      checks,
+    };
+  })
   // Deep health: everything the three user flows depend on. Returns 200 iff
   // DB + Redis + R2 + AI are all reachable; 503 with a per-check breakdown
   // otherwise. Used by the deploy-time smoke test to catch silent breakage
@@ -734,6 +777,21 @@ const gracefulShutdown = async (signal: string) => {
   hardTimer.unref?.();
 
   try {
+    // Notify connected WS clients before tearing the HTTP server down.
+    // Without this every Fly redeploy looks like a network error to the
+    // SPA and real-time updates stop until the user manually refreshes.
+    // The broadcast fans out via Elysia's pub/sub; give it a brief beat
+    // to flush over the wire before server.stop() severs the sockets.
+    try {
+      const { recipients } = wsRealtime.broadcastShutdown(1000);
+      logger.info({ recipients }, 'Broadcast shutdown advisory to WebSocket clients');
+      if (recipients > 0) {
+        await new Promise((resolve) => setTimeout(resolve, 500));
+      }
+    } catch (err) {
+      logger.warn({ err }, 'WS shutdown broadcast failed (non-fatal)');
+    }
+
     server.stop();
     logger.info({}, 'HTTP server stopped accepting new connections');
 

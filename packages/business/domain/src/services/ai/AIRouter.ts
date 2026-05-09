@@ -148,17 +148,18 @@ export class AIRouter {
     for (const provider of providers) {
       const start = Date.now();
       try {
-        const raw = await provider.parseScreenshot({
+        const result = await provider.parseScreenshot({
           imageBase64,
           mimeType,
           hint,
         });
-        const portfolio = normalizePortfolio(raw);
+        const portfolio = normalizePortfolio(result.data);
         return {
           portfolio,
           metadata: {
             provider: provider.providerKey,
             processingTime: Date.now() - start,
+            tokensUsed: result.usage?.totalTokens,
           },
         };
       } catch (err) {
@@ -187,13 +188,14 @@ export class AIRouter {
       if (!provider.parseDocumentText) continue;
       const start = Date.now();
       try {
-        const raw = await provider.parseDocumentText(text, hint);
-        const portfolio = normalizePortfolio(raw);
+        const result = await provider.parseDocumentText(text, hint);
+        const portfolio = normalizePortfolio(result.data);
         return {
           portfolio,
           metadata: {
             provider: provider.providerKey,
             processingTime: Date.now() - start,
+            tokensUsed: result.usage?.totalTokens,
           },
         };
       } catch (err) {
@@ -223,11 +225,11 @@ export class AIRouter {
     for (const provider of providers) {
       if (!provider.completeText) continue;
       try {
-        const content = await provider.completeText(prompt, {
+        const result = await provider.completeText(prompt, {
           maxTokens: opts.maxTokens,
           temperature: opts.temperature,
         });
-        return { content, provider: provider.providerKey };
+        return { content: result.data, provider: provider.providerKey };
       } catch (err) {
         lastError = err instanceof Error ? err : new Error(String(err));
         this.logger.warn(

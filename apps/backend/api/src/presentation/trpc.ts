@@ -5,6 +5,7 @@ import {
   logConfig,
   sanitizeUrl,
 } from '@scani/logging';
+import { captureException } from '@scani/logging/sentry';
 import { initTRPC, TRPCError } from '@trpc/server';
 import type { FetchCreateContextFnOptions } from '@trpc/server/adapters/fetch';
 import type { BetterAuthInstance } from '../auth/better-auth';
@@ -201,9 +202,39 @@ const loggingMiddleware = t.middleware(async ({ ctx, path, type, input, next }) 
       `💥 Procedure threw exception: ${path}`
     );
 
+    // Capture to Sentry with route/user/requestId so triage isn't anonymous.
+    // Skip TRPCError 4xx codes — those are intentional client-fault throws
+    // (UNAUTHORIZED, BAD_REQUEST, NOT_FOUND, FORBIDDEN, CONFLICT) that
+    // would otherwise drown out real server errors.
+    if (!isExpectedClientError(error)) {
+      captureException(error, {
+        route: path,
+        type,
+        requestId: ctx.requestId,
+        ...(ctx.userId ? { userId: ctx.userId } : {}),
+      });
+    }
+
     throw error;
   }
 });
+
+const CLIENT_ERROR_CODES = new Set([
+  'BAD_REQUEST',
+  'UNAUTHORIZED',
+  'FORBIDDEN',
+  'NOT_FOUND',
+  'METHOD_NOT_SUPPORTED',
+  'CONFLICT',
+  'PRECONDITION_FAILED',
+  'PAYLOAD_TOO_LARGE',
+  'UNPROCESSABLE_CONTENT',
+  'TOO_MANY_REQUESTS',
+]);
+
+function isExpectedClientError(error: unknown): boolean {
+  return error instanceof TRPCError && CLIENT_ERROR_CODES.has(error.code);
+}
 
 const safeStringify = (value: unknown): string => {
   try {

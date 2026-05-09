@@ -1,3 +1,4 @@
+import { createComponentLogger } from '@scani/logging';
 import type { JobsOptions } from 'bullmq';
 import { Container, Service } from 'typedi';
 import type { UserJobDescriptor } from '../core/job-descriptor';
@@ -5,6 +6,8 @@ import type { UserJobBase } from '../core/types';
 import { ENQUEUE_MIRROR, type EnqueueMirror } from './enqueue-mirror';
 import { EnqueueService } from './enqueue-service';
 import { QueueClient } from './queue-client';
+
+const logger = createComponentLogger('queue:enqueue');
 
 @Service()
 export class BullMqEnqueueService extends EnqueueService {
@@ -36,8 +39,21 @@ export class BullMqEnqueueService extends EnqueueService {
 
     try {
       await this.queueClient.get().add(descriptor.name, data, opts);
+      logger.info(
+        { jobId, jobName: descriptor.name, userId: data.userId, attemptsAllowed },
+        'Job enqueued'
+      );
     } catch (err) {
       const error = err instanceof Error ? err : new Error(String(err));
+      logger.error(
+        {
+          jobId,
+          jobName: descriptor.name,
+          userId: data.userId,
+          err: error.message,
+        },
+        'Job enqueue failed'
+      );
       if (mirror) {
         await mirror.onEnqueueFailed(jobId, error, {
           jobId,

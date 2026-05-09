@@ -78,6 +78,26 @@ export class WebSocketRealtimeUpdatesService extends RealtimeUpdatesService {
     this.elysiaApp = null;
   }
 
+  // Notify every connected client that the server is going away so the
+  // SPA can show a clean reconnect prompt instead of treating the abrupt
+  // socket close as a network error. Caller is responsible for waiting
+  // briefly (~500ms) for the publish to flush over the wire before
+  // tearing the HTTP server down.
+  broadcastShutdown(reconnectInMs = 1000): { recipients: number } {
+    if (!this.elysiaApp?.server) return { recipients: 0 };
+    const payload = JSON.stringify({
+      type: 'server_shutdown',
+      reconnectInMs,
+      timestamp: new Date().toISOString(),
+    });
+    let recipients = 0;
+    for (const userId of this.userConnections.keys()) {
+      this.elysiaApp.server.publish(`user:${userId}`, payload);
+      recipients += 1;
+    }
+    return { recipients };
+  }
+
   // Subscribe to the shared `rt:user:*` Redis channel and forward inbound
   // payloads to local WS clients. This is the fan-in side that lets a
   // worker (or another api machine) reach this machine's WS subscribers.

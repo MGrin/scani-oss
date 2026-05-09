@@ -1,5 +1,6 @@
 export { APY_PAYOUTS_SCHEDULE } from './apy-payouts';
 export { BACKFILL_TOKEN_IDENTITY_SCHEDULE } from './backfill-token-identity';
+export { DLQ_DEPTH_PROBE_SCHEDULE } from './dlq-depth-probe';
 export { EXCHANGE_BALANCES_SCHEDULE } from './exchange-balances';
 export { FOREX_BACKFILL_SCHEDULE } from './forex-backfill';
 export { HIDE_CLOSED_HOLDINGS_SCHEDULE } from './hide-closed-holdings';
@@ -13,6 +14,7 @@ export { WALLET_BALANCES_SCHEDULE } from './wallet-balances';
 
 import { APY_PAYOUTS_SCHEDULE } from './apy-payouts';
 import { BACKFILL_TOKEN_IDENTITY_SCHEDULE } from './backfill-token-identity';
+import { DLQ_DEPTH_PROBE_SCHEDULE } from './dlq-depth-probe';
 import { EXCHANGE_BALANCES_SCHEDULE } from './exchange-balances';
 import { FOREX_BACKFILL_SCHEDULE } from './forex-backfill';
 import { HIDE_CLOSED_HOLDINGS_SCHEDULE } from './hide-closed-holdings';
@@ -37,4 +39,5 @@ export const SCHEDULED_JOB_DESCRIPTORS = [
   TRANSFER_LINKING_SCHEDULE,
   BACKFILL_TOKEN_IDENTITY_SCHEDULE,
   HIDE_CLOSED_HOLDINGS_SCHEDULE,
+  DLQ_DEPTH_PROBE_SCHEDULE,
 ] as const;

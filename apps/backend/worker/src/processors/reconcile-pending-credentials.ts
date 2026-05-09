@@ -43,6 +43,11 @@ const logger = createComponentLogger('processor:reconcile-pending-credentials');
 
 const MAX_RECONCILE_ATTEMPTS = 3;
 const PENDING_CUTOFF_MS = 5 * 60 * 1000; // 5 min
+// Per-tick bound. The reconciler runs every minute; if there are more
+// than 100 orphans queued (an incident, not normal operation), we drain
+// them across successive ticks rather than tying up the worker for a
+// full minute on a single fire and risking overlap with the next tick.
+const RECONCILE_BATCH_LIMIT = 100;
 
 @Service()
 export class ReconcilePendingCredentialsProcessor extends ScheduledJobProcessor {
@@ -54,10 +59,16 @@ export class ReconcilePendingCredentialsProcessor extends ScheduledJobProcessor 
     const enqueueService = Container.get(BullMqEnqueueService);
 
     const cutoff = new Date(Date.now() - PENDING_CUTOFF_MS);
-    const orphans = await credentialsService.findPendingEnqueueOlderThan(cutoff);
+    const orphans = await credentialsService.findPendingEnqueueOlderThan(
+      cutoff,
+      RECONCILE_BATCH_LIMIT
+    );
     if (orphans.length === 0) return;
 
-    logger.warn({ count: orphans.length }, '🔧 Reconciling orphaned credentials');
+    logger.warn(
+      { count: orphans.length, batchLimit: RECONCILE_BATCH_LIMIT },
+      '🔧 Reconciling orphaned credentials'
+    );
 
     for (const row of orphans) {
       if (row.importRetryCount >= MAX_RECONCILE_ATTEMPTS) {

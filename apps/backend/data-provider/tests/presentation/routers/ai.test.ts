@@ -35,9 +35,9 @@ function makeAi(
   return {
     providerKey: overrides.providerKey ?? 'openai',
     capabilities: ['ai-inference'],
-    parseScreenshot: async () => okPortfolio,
-    parseDocumentText: async () => okPortfolio,
-    completeText: async (_prompt) => 'completion-text',
+    parseScreenshot: async () => ({ data: okPortfolio }),
+    parseDocumentText: async () => ({ data: okPortfolio }),
+    completeText: async (_prompt) => ({ data: 'completion-text' }),
     ...overrides,
   } as AIInferenceProvider;
 }

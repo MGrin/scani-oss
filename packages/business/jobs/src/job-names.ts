@@ -27,6 +27,7 @@ export const JOB_NAMES = {
   userDataDelete: 'user-data-delete',
   transactionImport: 'transaction-import',
   hideClosedHoldings: 'hide-closed-holdings',
+  dlqDepthProbe: 'dlq-depth-probe',
 } as const;
 
 export type JobName = (typeof JOB_NAMES)[keyof typeof JOB_NAMES];

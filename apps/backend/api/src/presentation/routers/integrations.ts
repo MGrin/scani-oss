@@ -24,12 +24,26 @@ import { EXCHANGE_IMPORT } from '@scani/jobs';
 import type { IntegrationManifest } from '@scani/providers/core';
 import { ProviderRegistry } from '@scani/providers/core/registry';
 import { BullMqEnqueueService } from '@scani/queue';
+import { createOutflowLimiter, getSharedRedis } from '@scani/rate-limiter';
 import { TRPCError } from '@trpc/server';
 import { eq, inArray } from 'drizzle-orm';
 import { Container } from 'typedi';
 import { z } from 'zod';
 import { toTRPCError } from '../../utils/error-mapping';
 import { protectedProcedure, router } from '../trpc';
+
+// Per-user rate budget for `validateKeys`. The global tRPC limiter (60/min)
+// is too generous for this endpoint — each call performs upstream HTTP
+// validation against the exchange's API and CPU work decrypting the
+// payload. 5 attempts/min/user is plenty for legitimate retries while
+// preventing a stuck client (or hostile actor) from saturating CPU and
+// burning the exchange's per-key quota with junk credentials.
+const validateKeysLimiter = createOutflowLimiter({
+  maxRequests: 5,
+  windowMs: 60_000,
+  redis: getSharedRedis(),
+  namespace: 'inflow:validate-keys',
+});
 
 /**
  * Store credentials + enqueue import as a single guarded operation.
@@ -189,6 +203,16 @@ export const integrationsRouter = router({
       })
     )
     .mutation(async ({ input, ctx }) => {
+      // Per-user budget: reject before doing any expensive work
+      // (manifest lookup, credential decryption, upstream HTTP).
+      const budget = await validateKeysLimiter.tryConsume(ctx.userId);
+      if (!budget.ok) {
+        throw new TRPCError({
+          code: 'TOO_MANY_REQUESTS',
+          message: `Too many credential validation attempts. Try again in ${Math.ceil(budget.retryAfterMs / 1000)}s.`,
+        });
+      }
+
       const registry = Container.get(ProviderRegistry);
       const manifest = registry.getIntegrationManifest(input.providerKey);
       if (!manifest) {
