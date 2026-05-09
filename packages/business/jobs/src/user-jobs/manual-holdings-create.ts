@@ -1,6 +1,7 @@
 import type { UserJobBase, UserJobDescriptor } from '@scani/queue';
 import { z } from 'zod';
 import { JOB_NAMES } from '../job-names';
+import { RETRY_NONE } from '../retry-policies';
 
 const newHoldingSchema = z.object({
   tokenId: z.string().uuid(),
@@ -59,7 +60,7 @@ export const MANUAL_HOLDINGS_CREATE: UserJobDescriptor<ManualHoldingsCreateJob> 
   name: JOB_NAMES.manualHoldingsCreate,
   schema: manualHoldingsCreateSchema,
   defaultOpts: {
-    attempts: 1,
+    ...RETRY_NONE,
     removeOnComplete: 100,
     removeOnFail: 500,
   },

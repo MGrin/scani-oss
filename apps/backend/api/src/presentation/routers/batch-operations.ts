@@ -26,8 +26,11 @@ const CreateHoldingsBatchInputSchema = z
     institution: CreateInstitutionDto.optional(),
     accountId: z.string().uuid().optional(),
     account: CreateAccountDto.optional(),
-    newHoldings: z.array(newHoldingInputSchema).default([]),
-    updateHoldings: z.array(updateHoldingInputSchema).default([]),
+    // Caps protect the worker job payload against a runaway client —
+    // the typical screenshot or import surfaces ≤30 holdings; 200 is
+    // generous headroom while keeping the payload size bounded.
+    newHoldings: z.array(newHoldingInputSchema).max(200).default([]),
+    updateHoldings: z.array(updateHoldingInputSchema).max(200).default([]),
     parentJobIdToStampOnSuccess: z.string().min(1).max(200).optional(),
   })
   .refine((d) => d.newHoldings.length + d.updateHoldings.length > 0, {

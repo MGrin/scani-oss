@@ -24,7 +24,7 @@ import { solanaFactory } from '@scani/providers/providers/solana';
 import { tonFactory } from '@scani/providers/providers/ton';
 import { tronFactory } from '@scani/providers/providers/tron';
 import { yahooFinanceFactory } from '@scani/providers/providers/yahoo-finance';
-import { setSharedRedis } from '@scani/rate-limiter';
+import { createOutflowLimiter, setSharedRedis } from '@scani/rate-limiter';
 import { StorageService } from '@scani/storage';
 import { Elysia } from 'elysia';
 import { Redis } from 'ioredis';
@@ -35,7 +35,7 @@ initSentry({ component: 'data-provider', release: env.SENTRY_RELEASE });
 import { type CloudBetterAuthInstance, createCloudBetterAuth } from './auth/better-auth';
 import { type CloudDb, closeCloudDb, getCloudDb } from './db/connection';
 import { appRouter, installCloudDb, installUsageDeps } from './presentation/router';
-import { buildCreateContext, installUsageSink } from './presentation/trpc';
+import { buildCreateContext, installQuotaLimiter, installUsageSink } from './presentation/trpc';
 import { NoopUsageSink, PostgresUsageSink, type UsageSink } from './usage/sink';
 
 const PORT = env.PORT;
@@ -109,6 +109,26 @@ installUsageSink(usageSink);
 installCloudDb(cloudDb);
 installUsageDeps({ db: cloudDb });
 
+// Per-API-key hourly quota. Disabled when CLOUD_QUOTA_HOURLY_DEFAULT
+// is 0 / unset (OSS / dev). The limiter is keyed by apiKeyId so each
+// of a tenant's keys carries an independent budget; future per-tier
+// overrides can swap in a multi-tier registry without changing the
+// middleware contract.
+if (env.CLOUD_QUOTA_HOURLY_DEFAULT > 0) {
+  installQuotaLimiter(
+    createOutflowLimiter({
+      maxRequests: env.CLOUD_QUOTA_HOURLY_DEFAULT,
+      windowMs: 60 * 60 * 1000,
+      redis: redisConnection,
+      namespace: 'quota:hourly',
+    })
+  );
+  logger.info(
+    { hourlyDefault: env.CLOUD_QUOTA_HOURLY_DEFAULT },
+    'quota: per-API-key hourly budget enabled'
+  );
+}
+
 interface RequestWithTracking extends Request {
   _timer?: { end: () => number };
   _requestId?: string;
@@ -168,6 +188,21 @@ const app = new Elysia()
       );
     }
     return response;
+  })
+  // Security headers — applied to every response. The api app sets the
+  // same set; the data-provider serves the same kind of bearer-auth API
+  // surface, so the headers should match. CSP defaults to `default-src
+  // 'none'` because this service returns JSON; no inline scripts, no
+  // images. HSTS only ships in production where TLS is guaranteed.
+  .onAfterHandle(({ set }) => {
+    set.headers = set.headers || {};
+    set.headers['X-Content-Type-Options'] = 'nosniff';
+    set.headers['X-Frame-Options'] = 'DENY';
+    set.headers['Referrer-Policy'] = 'strict-origin-when-cross-origin';
+    set.headers['Content-Security-Policy'] = "default-src 'none'";
+    if (process.env.NODE_ENV === 'production') {
+      set.headers['Strict-Transport-Security'] = 'max-age=31536000; includeSubDomains; preload';
+    }
   })
   .onError(({ error, request, set }) => {
     const tracked = request as RequestWithTracking;

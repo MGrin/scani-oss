@@ -72,10 +72,11 @@ const envSchema = z.object({
   // api only sees it when SCANI_CLOUD_URL is unset and the storage-facade
   // in @scani/cloud-client falls through to the local StorageService.
 
-  // Sentry — required in prod once the Terraform provision lands. Left
-  // optional at the schema level so dev boots without it; the SDK init
-  // checks for DSN presence before enabling.
-  SENTRY_DSN: z.string().url().optional(),
+  // Sentry — hard-required in prod so a misconfigured deploy refuses
+  // to boot rather than running blind. Optional in dev (the SDK init
+  // checks for DSN presence before enabling). The Terraform provision
+  // for `SENTRY_DSN` is the source of truth on Fly.
+  SENTRY_DSN: requiredInProd(z.string().url(), 'SENTRY_DSN'),
   SENTRY_ENVIRONMENT: z.string().optional(),
   SENTRY_RELEASE: z.string().optional(),
 
@@ -108,10 +109,5 @@ export function loadEnv(): Env {
   }
 
   cached = parsed.data;
-
-  if (isProduction && !cached.SENTRY_DSN) {
-    console.warn('⚠️  env: SENTRY_DSN unset — errors will not be reported to Sentry.');
-  }
-
   return cached;
 }

@@ -1,3 +1,4 @@
+import type { OutflowRateLimiter } from '@scani/rate-limiter';
 import { initTRPC, TRPCError } from '@trpc/server';
 import type { ApiKeyContext } from '../auth/api-key';
 import { validateBearerToken } from '../auth/api-key';
@@ -49,6 +50,9 @@ export function buildCreateContext({ env, cloudDb, betterAuth }: BuildContextDep
       auth = await validateBearerToken({
         authHeader: req.headers.get('authorization'),
         expectedToken: env.DATA_PROVIDER_API_KEY,
+        expectedTokenExpiresAt: env.DATA_PROVIDER_API_KEY_EXPIRES_AT
+          ? new Date(env.DATA_PROVIDER_API_KEY_EXPIRES_AT)
+          : null,
         cloudDb,
       });
     } catch {
@@ -80,14 +84,19 @@ export function buildCreateContext({ env, cloudDb, betterAuth }: BuildContextDep
 const t = initTRPC.context<DataProviderContext>().create();
 
 let activeSink: UsageSink = new NoopUsageSink();
+let activeQuotaLimiter: OutflowRateLimiter | null = null;
 
 export function installUsageSink(sink: UsageSink): void {
   activeSink = sink;
 }
 
+export function installQuotaLimiter(limiter: OutflowRateLimiter | null): void {
+  activeQuotaLimiter = limiter;
+}
+
 // biome-ignore lint/suspicious/noExplicitAny: tRPC's MiddlewareResult is branded
 const usageMiddleware = t.middleware((opts: any) =>
-  buildUsageMiddleware({ sink: activeSink })(opts)
+  buildUsageMiddleware({ sink: activeSink, quotaLimiter: activeQuotaLimiter })(opts)
 );
 
 export const router = t.router;

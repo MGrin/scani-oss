@@ -1,5 +1,9 @@
 // Re-export BullMQ's UnrecoverableError so processors signal "don't
-// retry" without depending on the bullmq package directly.
+// retry" without depending on the bullmq package directly. JobsOptions
+// is also re-exported so descriptor packages can declare `defaultOpts`
+// without taking a direct dependency on bullmq.
+
+export type { JobsOptions } from 'bullmq';
 export { UnrecoverableError } from 'bullmq';
 export {
   JOB_LOCK,

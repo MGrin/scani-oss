@@ -1,6 +1,7 @@
 import type { UserJobBase, UserJobDescriptor } from '@scani/queue';
 import { z } from 'zod';
 import { JOB_NAMES } from '../job-names';
+import { RETRY_EXTERNAL } from '../retry-policies';
 
 export interface WalletImportJob extends UserJobBase {
   chain: string;
@@ -31,8 +32,7 @@ export const WALLET_IMPORT: UserJobDescriptor<WalletImportJob> = {
   name: JOB_NAMES.walletImport,
   schema: walletImportSchema,
   defaultOpts: {
-    attempts: 3,
-    backoff: { type: 'exponential', delay: 10_000 },
+    ...RETRY_EXTERNAL,
     removeOnComplete: 100,
     removeOnFail: 500,
   },

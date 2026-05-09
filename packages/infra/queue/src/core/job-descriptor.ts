@@ -22,6 +22,13 @@ export interface ScheduledJobDescriptor {
   // When set, ScheduledJobProcessor wraps handle() in JobLock.tryAcquire.
   // Reconcile-* style sweepers (idempotent re-scans) leave this undefined.
   readonly lockName?: string;
+  // Random delay (in ms) applied per fire before handle() runs. Useful
+  // for `* * * * *` schedules running on multiple replicas: BullMQ fires
+  // every replica's handler at the same wallclock second, which spikes
+  // Postgres advisory-lock contention once a minute. With jitterMs the
+  // base class draws `Math.random() * jitterMs` and waits before
+  // dispatching, smoothing the load.
+  readonly jitterMs?: number;
 }
 
 // Type guard used by WorkerClient / JobScheduler when iterating mixed

@@ -20,6 +20,7 @@ export abstract class ScheduledJobProcessor {
   protected abstract handle(job: Job): Promise<unknown>;
 
   async process(job: Job): Promise<unknown> {
+    await this.applyJitter();
     const lockName = this.descriptor.lockName;
     if (!lockName) {
       return await this.handle(job);
@@ -39,6 +40,14 @@ export abstract class ScheduledJobProcessor {
       return undefined;
     }
     return outcome.result;
+  }
+
+  private async applyJitter(): Promise<void> {
+    const jitterMs = this.descriptor.jitterMs;
+    if (!jitterMs || jitterMs <= 0) return;
+    const wait = Math.floor(Math.random() * jitterMs);
+    if (wait <= 0) return;
+    await new Promise((resolve) => setTimeout(resolve, wait));
   }
 
   private tryGetLock(): JobLock | null {

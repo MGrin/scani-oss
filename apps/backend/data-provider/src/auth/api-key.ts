@@ -1,3 +1,4 @@
+import { addBreadcrumb } from '@scani/logging/sentry';
 import { TRPCError } from '@trpc/server';
 import type { CloudDb } from '../db/connection';
 import { verifyCloudApiKey } from './cloud-api-keys';
@@ -33,10 +34,18 @@ export interface ValidateBearerOptions {
   authHeader: string | null | undefined;
   expectedToken: string | undefined;
   cloudDb?: CloudDb | null;
+  /**
+   * ISO-8601 timestamp after which the env-configured superuser token
+   * is no longer accepted. Drives the 90-day rotation policy without
+   * requiring a deploy: ops sets the new key + the old key's expiry
+   * via Fly secrets, then peels the old key off after the window. When
+   * unset the env token never expires (legacy behaviour).
+   */
+  expectedTokenExpiresAt?: Date | null;
 }
 
 export async function validateBearerToken(opts: ValidateBearerOptions): Promise<ApiKeyContext> {
-  const { authHeader, expectedToken, cloudDb } = opts;
+  const { authHeader, expectedToken, cloudDb, expectedTokenExpiresAt } = opts;
 
   if (!expectedToken && !cloudDb) {
     // Dev-mode boot: no env key, no DB. Accept everything so local
@@ -51,6 +60,23 @@ export async function validateBearerToken(opts: ValidateBearerOptions): Promise<
 
   // Env-token superuser path (works in both tiers).
   if (expectedToken && timingSafeEqual(presented, expectedToken)) {
+    if (expectedTokenExpiresAt && expectedTokenExpiresAt.getTime() < Date.now()) {
+      throw new TRPCError({
+        code: 'UNAUTHORIZED',
+        message: 'Superuser token expired — rotate via DATA_PROVIDER_API_KEY',
+      });
+    }
+    // Trail every superuser invocation in Sentry. This is the only
+    // bearer credential without per-key rotation in the DB; if it ever
+    // leaks the breadcrumbs make the impact auditable.
+    addBreadcrumb({
+      category: 'auth.superuser',
+      level: 'warning',
+      message: 'Data-provider superuser bearer accepted',
+      data: {
+        expiresAt: expectedTokenExpiresAt?.toISOString() ?? null,
+      },
+    });
     return { apiKeyId: OSS_KEY_ID, tenantId: 'oss', ownerUserId: null, tier: 'oss' };
   }
 

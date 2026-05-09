@@ -1,4 +1,4 @@
-import { isProduction } from '@scani/config';
+import { requiredInProd } from '@scani/config';
 import { z } from 'zod';
 
 const envSchema = z.object({
@@ -31,8 +31,9 @@ const envSchema = z.object({
   // worker only sees it via the cloud-client storage-facade's local-mode
   // fallback when SCANI_CLOUD_URL is unset.
 
-  // Sentry — optional at schema level; SDK init gates on DSN presence.
-  SENTRY_DSN: z.string().url().optional(),
+  // Sentry — hard-required in prod so a misconfigured deploy fails
+  // loudly; optional in dev. SDK init gates on DSN presence regardless.
+  SENTRY_DSN: requiredInProd(z.string().url(), 'SENTRY_DSN'),
   SENTRY_ENVIRONMENT: z.string().optional(),
   SENTRY_RELEASE: z.string().optional(),
 });
@@ -52,10 +53,5 @@ export function loadEnv(): WorkerEnv {
     process.exit(1);
   }
   cached = parsed.data;
-
-  if (isProduction && !cached.SENTRY_DSN) {
-    console.warn('⚠️  env: SENTRY_DSN unset — errors will not be reported to Sentry.');
-  }
-
   return cached;
 }

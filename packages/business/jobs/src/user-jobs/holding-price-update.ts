@@ -1,6 +1,7 @@
 import type { UserJobBase, UserJobDescriptor } from '@scani/queue';
 import { z } from 'zod';
 import { JOB_NAMES } from '../job-names';
+import { RETRY_FAST } from '../retry-policies';
 
 export interface HoldingPriceUpdateJob extends UserJobBase {
   holdingId: string;
@@ -22,8 +23,7 @@ export const HOLDING_PRICE_UPDATE: UserJobDescriptor<HoldingPriceUpdateJob> = {
   name: JOB_NAMES.holdingPriceUpdate,
   schema: holdingPriceUpdateSchema,
   defaultOpts: {
-    attempts: 3,
-    backoff: { type: 'exponential', delay: 2_000 },
+    ...RETRY_FAST,
     removeOnComplete: 100,
     removeOnFail: 500,
   },

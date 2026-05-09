@@ -1,6 +1,7 @@
 import type { UserJobBase, UserJobDescriptor } from '@scani/queue';
 import { z } from 'zod';
 import { JOB_NAMES } from '../job-names';
+import { RETRY_HEAVY } from '../retry-policies';
 
 export interface FileImportJob extends UserJobBase {
   r2Key: string;
@@ -29,8 +30,7 @@ export const FILE_IMPORT: UserJobDescriptor<FileImportJob> = {
   name: JOB_NAMES.fileImport,
   schema: fileImportSchema,
   defaultOpts: {
-    attempts: 2,
-    backoff: { type: 'fixed', delay: 30_000 },
+    ...RETRY_HEAVY,
     removeOnComplete: 100,
     removeOnFail: 500,
   },

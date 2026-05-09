@@ -120,7 +120,9 @@ export const accountsRouter = router({
   bulkAssignGroups: protectedProcedure
     .input(
       z.object({
-        accountIds: z.array(z.string()).min(1),
+        // Bounded so a buggy or hostile client can't request a
+        // multi-thousand-row mutation in one round-trip.
+        accountIds: z.array(z.string()).min(1).max(200),
         // Diff-based like `holdings.bulkAssignGroups` — see that
         // procedure for the rationale. Under the current model, an
         // account is "in" a group iff all of its visible holdings are
@@ -128,8 +130,8 @@ export const accountsRouter = router({
         // group to every visible holding of the account; removing a
         // group from an account removes that group from every visible
         // holding. `accountGroups` is then recomputed as a cache.
-        addedGroupIds: z.array(z.string()).default([]),
-        removedGroupIds: z.array(z.string()).default([]),
+        addedGroupIds: z.array(z.string()).max(50).default([]),
+        removedGroupIds: z.array(z.string()).max(50).default([]),
       })
     )
     .mutation(async ({ input, ctx }) => {
@@ -157,7 +159,7 @@ export const accountsRouter = router({
     // defined (empty set), and the frontend can transiently pass []
     // while the dialog is mounting or mid-transition. Returning []
     // is cheaper and friendlier than a 400.
-    .input(z.object({ accountIds: z.array(z.string()) }))
+    .input(z.object({ accountIds: z.array(z.string()).max(200) }))
     .query(async ({ input, ctx }) => {
       const { dbUser } = await requireAuth(ctx);
 

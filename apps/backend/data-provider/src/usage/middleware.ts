@@ -13,6 +13,7 @@
  * the annotations into the final event.
  */
 
+import type { OutflowRateLimiter } from '@scani/rate-limiter';
 import { TRPCError } from '@trpc/server';
 import type { UsageEvent, UsageSink } from './sink';
 
@@ -49,6 +50,15 @@ export function createUsageContext(): UsageContext {
 
 interface BuildDeps {
   sink: UsageSink;
+  /**
+   * Optional per-API-key hourly budget. When provided, the middleware
+   * rejects requests with `FORBIDDEN { code: 'quota_exceeded' }` once
+   * the running counter for the calling api key exceeds the limit.
+   * OSS / superuser / cookie-session callers (apiKeyId == null or the
+   * shared OSS marker) bypass the check — they're already gated by
+   * separate auth flows. Pass `null` to disable.
+   */
+  quotaLimiter?: OutflowRateLimiter | null;
 }
 
 interface BaseCtx {
@@ -72,7 +82,7 @@ type MwOpts = { ctx: BaseCtx; path: string; type: string; next: (o?: any) => Pro
  * Pure factory — keeps the middleware decoupled from `initTRPC` so it can
  * be attached to both `publicProcedure` and `bearerProcedure` in trpc.ts.
  */
-export function buildUsageMiddleware({ sink }: BuildDeps) {
+export function buildUsageMiddleware({ sink, quotaLimiter }: BuildDeps) {
   return async (opts: MwOpts) => {
     const start = Date.now();
     const { ctx, path, next } = opts;
@@ -80,6 +90,35 @@ export function buildUsageMiddleware({ sink }: BuildDeps) {
     let outcome: UsageEvent['outcome'] = 'ok';
     let statusCode: number | undefined;
     let errorCode: string | undefined;
+
+    // Per-key hourly quota. Skip when no limiter is wired (OSS / dev),
+    // when the request is unauthenticated (cookie path takes over),
+    // when it's the OSS shared key (no per-key counter), or when there
+    // is no tenantId attribution. The limiter is keyed by apiKeyId so
+    // a single tenant's keys carry independent budgets.
+    if (
+      quotaLimiter &&
+      ctx.auth &&
+      ctx.auth.apiKeyId !== 'oss-shared-key' &&
+      ctx.auth.tenantId !== 'oss' &&
+      ctx.auth.tenantId !== 'dev'
+    ) {
+      const budget = await quotaLimiter.tryConsume(ctx.auth.apiKeyId);
+      if (!budget.ok) {
+        const retryAfterSec = Math.ceil(budget.retryAfterMs / 1000);
+        // Annotate so the sink records the rejected event with the
+        // tenant attribution intact (otherwise the throw below skips
+        // record() in the caller's catch path).
+        ctx.usage.annotate({
+          provider,
+          metadata: { quotaRetryAfterSec: retryAfterSec },
+        });
+        throw new TRPCError({
+          code: 'FORBIDDEN',
+          message: `quota_exceeded — retry in ${retryAfterSec}s`,
+        });
+      }
+    }
 
     try {
       const result = await next();

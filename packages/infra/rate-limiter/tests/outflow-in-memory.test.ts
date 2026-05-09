@@ -56,4 +56,35 @@ describe('InMemoryOutflowRateLimiter', () => {
     ]);
     expect(Date.now() - start).toBeLessThan(150);
   });
+
+  test('tryConsume returns ok when a slot is available', async () => {
+    const limiter = new InMemoryOutflowRateLimiter(2, 200);
+    const r1 = await limiter.tryConsume('subject');
+    const r2 = await limiter.tryConsume('subject');
+    expect(r1.ok).toBe(true);
+    expect(r2.ok).toBe(true);
+  });
+
+  test('tryConsume returns retryAfterMs once the bucket is exhausted', async () => {
+    const limiter = new InMemoryOutflowRateLimiter(1, 200);
+    const accept = await limiter.tryConsume('subject');
+    expect(accept.ok).toBe(true);
+
+    const reject = await limiter.tryConsume('subject');
+    expect(reject.ok).toBe(false);
+    if (!reject.ok) {
+      expect(reject.retryAfterMs).toBeGreaterThan(0);
+      expect(reject.retryAfterMs).toBeLessThanOrEqual(200);
+    }
+  });
+
+  test('tryConsume buckets by subKey — exhausting one bucket does not block another', async () => {
+    const limiter = new InMemoryOutflowRateLimiter(1, 200);
+    const a = await limiter.tryConsume('user-a');
+    const aAgain = await limiter.tryConsume('user-a');
+    const b = await limiter.tryConsume('user-b');
+    expect(a.ok).toBe(true);
+    expect(aAgain.ok).toBe(false);
+    expect(b.ok).toBe(true);
+  });
 });

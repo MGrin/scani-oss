@@ -216,14 +216,18 @@ export const holdingsRouter = router({
   bulkAssignGroups: protectedProcedure
     .input(
       z.object({
-        holdingIds: z.array(z.string()).min(1),
+        // 500 is well above any realistic UI selection — the bulk-edit
+        // grid maxes around the visible viewport — but bounded so a
+        // hostile or buggy client can't request a multi-thousand-row
+        // database operation in a single round-trip.
+        holdingIds: z.array(z.string()).min(1).max(500),
         // The dialog computes an explicit diff between the pre-checked
         // common-groups state and the user's save selection, then sends
         // add/remove sets. Preferable to REPLACE semantics because
         // REPLACE would clobber any per-holding groups that weren't in
         // the pre-checked set.
-        addedGroupIds: z.array(z.string()).default([]),
-        removedGroupIds: z.array(z.string()).default([]),
+        addedGroupIds: z.array(z.string()).max(50).default([]),
+        removedGroupIds: z.array(z.string()).max(50).default([]),
       })
     )
     .mutation(async ({ input, ctx }) => {
@@ -251,7 +255,7 @@ export const holdingsRouter = router({
     // defined (empty set), and the frontend can transiently pass []
     // while the dialog is mounting or mid-transition. Returning []
     // is cheaper and friendlier than a 400.
-    .input(z.object({ holdingIds: z.array(z.string()) }))
+    .input(z.object({ holdingIds: z.array(z.string()).max(500) }))
     .query(async ({ input, ctx }) => {
       const { dbUser } = await requireAuth(ctx);
 

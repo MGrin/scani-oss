@@ -1,4 +1,4 @@
-import { isProduction } from '@scani/config';
+import { isProduction, requiredInProd } from '@scani/config';
 import { z } from 'zod';
 
 /**
@@ -38,6 +38,15 @@ const envSchema = z.object({
     ? z.string().min(16, { message: 'DATA_PROVIDER_API_KEY must be >=16 chars in production' })
     : z.string().optional(),
 
+  // Optional ISO-8601 timestamp gating the superuser bearer above. When
+  // set, requests after the window are rejected with 401 even if the
+  // token still matches. Lets ops rotate without a deploy: set the new
+  // key + an expiry on the old, peel the old after the window passes.
+  DATA_PROVIDER_API_KEY_EXPIRES_AT: z
+    .string()
+    .datetime({ message: 'DATA_PROVIDER_API_KEY_EXPIRES_AT must be an ISO-8601 timestamp' })
+    .optional(),
+
   // Feature flag: when true (and DATABASE_URL is set) the data-provider
   // runs in Tier 2/3 mode — DB-backed api keys, Better-Auth cookie
   // sessions for cloud-frontend, and per-request usage logging.
@@ -46,14 +55,31 @@ const envSchema = z.object({
     .optional()
     .transform((v) => v === 'true' || v === '1'),
 
+  // Default per-API-key request budget over a 1-hour rolling window.
+  // 0 (or unset) = quota disabled — OSS / dev boots unmetered. The
+  // bearer middleware reads the running counter from Redis and rejects
+  // with `FORBIDDEN { code: 'quota_exceeded' }` when the budget is gone.
+  // Per-tier / per-key overrides are a future improvement; this is the
+  // single global ceiling so a runaway tenant can't burn unbounded
+  // upstream cost.
+  CLOUD_QUOTA_HOURLY_DEFAULT: z
+    .string()
+    .optional()
+    .default('0')
+    .transform((v) => Number.parseInt(v, 10))
+    .refine((n) => Number.isFinite(n) && n >= 0, {
+      message: 'CLOUD_QUOTA_HOURLY_DEFAULT must be a non-negative integer',
+    }),
+
   // Better-Auth config (only consumed when CLOUD_MANAGEMENT_ENABLED).
   // Secret signs session tokens; trusted origins scope CORS+cookies.
   BETTER_AUTH_SECRET: z.string().optional(),
   BETTER_AUTH_URL: z.string().url().optional(),
   CLOUD_FRONTEND_ORIGIN: z.string().url().optional(),
 
-  // Sentry (optional; init gates on DSN presence).
-  SENTRY_DSN: z.string().url().optional(),
+  // Sentry — hard-required in prod; optional in dev. SDK init gates
+  // on DSN presence regardless.
+  SENTRY_DSN: requiredInProd(z.string().url(), 'SENTRY_DSN'),
   SENTRY_ENVIRONMENT: z.string().optional(),
   SENTRY_RELEASE: z.string().optional(),
 
@@ -82,10 +108,6 @@ export function loadEnv(): DataProviderEnv {
     process.exit(1);
   }
   cached = parsed.data;
-
-  if (isProduction && !cached.SENTRY_DSN) {
-    console.warn('⚠️  env: SENTRY_DSN unset — errors will not be reported to Sentry.');
-  }
   if (cached.CLOUD_MANAGEMENT_ENABLED && !cached.DATABASE_URL) {
     console.error(
       '❌ env: CLOUD_MANAGEMENT_ENABLED=true but DATABASE_URL is not set. Tier 2/3 management requires a Postgres DB.'

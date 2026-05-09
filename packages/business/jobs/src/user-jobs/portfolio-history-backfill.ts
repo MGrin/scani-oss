@@ -1,6 +1,7 @@
 import type { UserJobBase, UserJobDescriptor } from '@scani/queue';
 import { z } from 'zod';
 import { JOB_NAMES } from '../job-names';
+import { RETRY_HEAVY } from '../retry-policies';
 
 export interface PortfolioHistoryBackfillJob extends UserJobBase {
   // Tokens to backfill historical prices for. Empty array → no-op,
@@ -25,8 +26,7 @@ export const PORTFOLIO_HISTORY_BACKFILL: UserJobDescriptor<PortfolioHistoryBackf
   name: JOB_NAMES.portfolioHistoryBackfill,
   schema: portfolioHistoryBackfillSchema,
   defaultOpts: {
-    attempts: 2,
-    backoff: { type: 'exponential', delay: 30_000 },
+    ...RETRY_HEAVY,
     removeOnComplete: 100,
     removeOnFail: 500,
   },

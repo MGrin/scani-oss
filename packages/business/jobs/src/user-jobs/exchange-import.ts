@@ -1,6 +1,7 @@
 import type { UserJobBase, UserJobDescriptor } from '@scani/queue';
 import { z } from 'zod';
 import { JOB_NAMES } from '../job-names';
+import { RETRY_EXTERNAL } from '../retry-policies';
 
 export interface ExchangeImportJob extends UserJobBase {
   // Credentials are AES-GCM encrypted at rest by IntegrationCredentialsService
@@ -22,8 +23,7 @@ export const EXCHANGE_IMPORT: UserJobDescriptor<ExchangeImportJob> = {
   name: JOB_NAMES.exchangeImport,
   schema: exchangeImportSchema,
   defaultOpts: {
-    attempts: 3,
-    backoff: { type: 'exponential', delay: 10_000 },
+    ...RETRY_EXTERNAL,
     removeOnComplete: 100,
     removeOnFail: 500,
   },
