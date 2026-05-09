@@ -1,3 +1,4 @@
+import { scrubSentryBreadcrumb, scrubSentryEvent } from '@scani/shared';
 import * as Sentry from '@sentry/react';
 import React from 'react';
 import ReactDOM from 'react-dom/client';
@@ -11,6 +12,10 @@ if (SENTRY_DSN) {
     environment: import.meta.env.VITE_SENTRY_ENVIRONMENT || import.meta.env.MODE,
     release: import.meta.env.VITE_SENTRY_RELEASE || undefined,
     tracesSampleRate: 0.1,
+    // Strip PII (emails, JWTs, Authorization values) from event +
+    // breadcrumb payloads before they leave the browser.
+    beforeSend: scrubSentryEvent,
+    beforeBreadcrumb: scrubSentryBreadcrumb,
   });
 }
 

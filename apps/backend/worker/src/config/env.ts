@@ -1,4 +1,4 @@
-import { requiredInProd } from '@scani/config';
+import { assertEnvIsolatedUrl, requiredInProd } from '@scani/config';
 import { z } from 'zod';
 
 const envSchema = z.object({
@@ -47,6 +47,18 @@ const envSchema = z.object({
   // worker only sees it via the cloud-client storage-facade's local-mode
   // fallback when SCANI_CLOUD_URL is unset.
 
+  // Above this DLQ depth the dlq-depth-probe processor escalates to
+  // Sentry. 50 is the historical default; tune via env without a code
+  // change. Validated up-front so a typo (`fifty`) doesn't silently
+  // fall back to the default.
+  DLQ_ALERT_THRESHOLD: z
+    .string()
+    .optional()
+    .transform((v) => (v ? Number.parseInt(v, 10) : 50))
+    .refine((n) => Number.isFinite(n) && n > 0, {
+      message: 'DLQ_ALERT_THRESHOLD must be a positive integer',
+    }),
+
   // Sentry — hard-required in prod so a misconfigured deploy fails
   // loudly; optional in dev. SDK init gates on DSN presence regardless.
   SENTRY_DSN: requiredInProd(z.string().url(), 'SENTRY_DSN'),
@@ -69,5 +81,13 @@ export function loadEnv(): WorkerEnv {
     process.exit(1);
   }
   cached = parsed.data;
+  // Env-isolation guard — see api's env.ts for the rationale.
+  try {
+    assertEnvIsolatedUrl({ url: cached.REDIS_URL, varName: 'REDIS_URL' });
+    assertEnvIsolatedUrl({ url: cached.DATABASE_URL, varName: 'DATABASE_URL' });
+  } catch (err) {
+    console.error(`\n❌ ${err instanceof Error ? err.message : String(err)}\n`);
+    process.exit(1);
+  }
   return cached;
 }

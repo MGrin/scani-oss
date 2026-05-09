@@ -1,4 +1,10 @@
-import { httpsUrlInProduction, isProduction, requiredInProd, urlSchema } from '@scani/config';
+import {
+  assertEnvIsolatedUrl,
+  httpsUrlInProduction,
+  isProduction,
+  requiredInProd,
+  urlSchema,
+} from '@scani/config';
 import { z } from 'zod';
 
 /**
@@ -109,5 +115,16 @@ export function loadEnv(): Env {
   }
 
   cached = parsed.data;
+  // Env-isolation guard: in prod, REDIS_URL / DATABASE_URL must not
+  // look like dev URLs; in dev, they must not look like prod URLs.
+  // Refusing to boot prevents dev-machine queue cross-contamination
+  // and the inverse "prod is somehow pointing at compose" misfire.
+  try {
+    assertEnvIsolatedUrl({ url: cached.REDIS_URL, varName: 'REDIS_URL' });
+    assertEnvIsolatedUrl({ url: cached.DATABASE_URL, varName: 'DATABASE_URL' });
+  } catch (err) {
+    console.error(`\n❌ ${err instanceof Error ? err.message : String(err)}\n`);
+    process.exit(1);
+  }
   return cached;
 }

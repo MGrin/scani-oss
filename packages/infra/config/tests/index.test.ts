@@ -1,6 +1,12 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { z } from 'zod';
-import { httpsUrlInProduction, isProduction, requiredInProd, urlSchema } from '../src/index';
+import {
+  assertEnvIsolatedUrl,
+  httpsUrlInProduction,
+  isProduction,
+  requiredInProd,
+  urlSchema,
+} from '../src/index';
 
 function withNodeEnv(value: string) {
   let original: string | undefined;
@@ -167,5 +173,78 @@ describe('requiredInProd (production mode)', () => {
     });
     const result = env.safeParse({ REQUIRED_URL: 'https://example.com' });
     expect(result.success).toBe(false);
+  });
+});
+
+describe('assertEnvIsolatedUrl', () => {
+  test('production rejects localhost / 127.0.0.1 / docker-host URLs', () => {
+    const cases = [
+      'redis://localhost:6379',
+      'redis://127.0.0.1:6379',
+      'postgres://0.0.0.0:5432/scani',
+      'redis://host.docker.internal:6379',
+      'redis://upstash.io:6379/0',
+    ];
+    for (const url of cases) {
+      expect(() => assertEnvIsolatedUrl({ url, varName: 'REDIS_URL', isProduction: true })).toThrow(
+        /REDIS_URL/
+      );
+    }
+  });
+
+  test('production accepts remote vendor URLs', () => {
+    const cases = [
+      'redis://default:secret@scani-prod.upstash.io:6380',
+      'postgresql://scani:pw@ep-cool-noise-1.us-east-2.aws.neon.tech/scani',
+    ];
+    for (const url of cases) {
+      expect(assertEnvIsolatedUrl({ url, varName: 'X', isProduction: true })).toBe(url);
+    }
+  });
+
+  test('non-production rejects vendor URLs', () => {
+    expect(() =>
+      assertEnvIsolatedUrl({
+        url: 'redis://default:secret@scani-prod.upstash.io:6380',
+        varName: 'REDIS_URL',
+        isProduction: false,
+      })
+    ).toThrow(/REDIS_URL/);
+  });
+
+  test('non-production accepts localhost URLs', () => {
+    expect(
+      assertEnvIsolatedUrl({
+        url: 'redis://localhost:6380',
+        varName: 'REDIS_URL',
+        isProduction: false,
+      })
+    ).toBe('redis://localhost:6380');
+  });
+
+  test('allowCrossEnv opts out of the guard entirely', () => {
+    expect(
+      assertEnvIsolatedUrl({
+        url: 'redis://default:secret@scani-prod.upstash.io:6380',
+        varName: 'REDIS_URL',
+        isProduction: false,
+        allowCrossEnv: true,
+      })
+    ).toBe('redis://default:secret@scani-prod.upstash.io:6380');
+  });
+
+  test('error messages redact embedded credentials', () => {
+    try {
+      assertEnvIsolatedUrl({
+        url: 'redis://user:supersecret@localhost:6379',
+        varName: 'REDIS_URL',
+        isProduction: true,
+      });
+      throw new Error('should have thrown');
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      expect(msg).not.toContain('supersecret');
+      expect(msg).toContain('<redacted>');
+    }
   });
 });

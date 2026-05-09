@@ -30,6 +30,25 @@ const DEFAULT_UPLOAD_TTL_SECONDS = 15 * 60;
 const DEFAULT_DOWNLOAD_TTL_SECONDS = 5 * 60;
 const HEALTH_CHECK_TIMEOUT_MS = 3_000;
 
+// Allowed characters for caller-supplied `keyPrefix`. The prefix is
+// concatenated into the S3 key (`temp/<prefix>/<uuid>.<ext>`), so a
+// prefix containing `..`, `/` (apart from internal segments), or
+// non-printable characters could escape the temp/ jail. The router
+// passes user-supplied data through this prefix (`temp/<purpose>/<userId>`);
+// the regex below caps that to safe characters.
+//
+// Allowed: alphanumerics, hyphens, underscores, and a single `/` between
+// segments (i.e. `purpose/userId`). No `.` so `..` and `.` traversals
+// are statically impossible. Empty / leading-slash / trailing-slash /
+// double-slash all rejected.
+const KEY_PREFIX_PATTERN = /^[A-Za-z0-9_-]+(?:\/[A-Za-z0-9_-]+)*$/;
+const MAX_KEY_PREFIX_LENGTH = 200;
+
+// Allowed characters for the file extension. Filename extensions on
+// the wire are user-provided too; constraining to alphanumerics keeps
+// the assembled key safe.
+const EXTENSION_PATTERN = /^[A-Za-z0-9]{1,10}$/;
+
 // Env shape owned by this package. Callers don't declare these in their own
 // env.ts schemas — they just set the env vars and the service self-validates
 // on first method call.
@@ -62,7 +81,19 @@ export class StorageService {
 
   presignUpload(opts: PresignUploadOptions): PresignedUpload {
     const ttl = opts.ttlSeconds ?? DEFAULT_UPLOAD_TTL_SECONDS;
+    if (opts.keyPrefix.length > MAX_KEY_PREFIX_LENGTH || !KEY_PREFIX_PATTERN.test(opts.keyPrefix)) {
+      throw new Error(
+        `StorageService.presignUpload: invalid keyPrefix (${opts.keyPrefix.slice(0, 64)}). ` +
+          'Only alphanumerics, hyphens, underscores, and `/` between segments are allowed.'
+      );
+    }
     const ext = opts.extension.replace(/^\./, '');
+    if (!EXTENSION_PATTERN.test(ext)) {
+      throw new Error(
+        `StorageService.presignUpload: invalid extension (${ext.slice(0, 16)}). ` +
+          'Only alphanumeric extensions ≤ 10 chars are allowed.'
+      );
+    }
     const key = `${TEMP_PREFIX}${opts.keyPrefix}/${crypto.randomUUID()}.${ext}`;
     const uploadUrl = this.publicClient().file(key).presign({
       method: 'PUT',

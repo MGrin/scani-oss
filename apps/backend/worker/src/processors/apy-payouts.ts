@@ -29,8 +29,23 @@ export class ApyPayoutsProcessor extends ScheduledJobProcessor {
         'APY payouts run completed'
       );
       if (result.errors.length > 0) {
+        // Cap the inline error sample at 100 so a pricing-outage tide
+        // (10k+ failures in one run) doesn't bloat heap or stretch the
+        // pino flush queue. The full count is already in the summary
+        // log above; the sample is for triaging individual rows.
+        const SAMPLE_LIMIT = 100;
+        const sample = result.errors
+          .slice(0, SAMPLE_LIMIT)
+          .map((e) => ({ holdingId: e.holdingId, error: e.error }));
         logger.warn(
-          { errors: result.errors.map((e) => ({ holdingId: e.holdingId, error: e.error })) },
+          {
+            errors: sample,
+            errorSummary: {
+              total: result.errors.length,
+              sampled: sample.length,
+              truncated: result.errors.length > sample.length,
+            },
+          },
           'Some holdings failed during APY payouts'
         );
       }

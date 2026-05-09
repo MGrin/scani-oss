@@ -44,10 +44,22 @@ export const sessionsRouter = router({
       if (!ctx.headers) {
         throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Missing request headers' });
       }
+      if (!ctx.userId) {
+        throw new TRPCError({ code: 'UNAUTHORIZED', message: 'Authentication required' });
+      }
       const auth = getBetterAuth();
-      // Better-Auth scopes the revoke to the caller's user — the session
-      // table lookup happens server-side, so a malicious caller can't
-      // revoke another user's session by guessing tokens.
+      // Defense in depth: Better-Auth's revokeSession scopes to the
+      // caller's user via the session cookie, but we don't want the
+      // safety of an internal API call sitting on a single library
+      // contract — verify the token belongs to the caller against the
+      // session list before revoking.
+      const sessions = await auth.api.listSessions({ headers: ctx.headers });
+      const owned = sessions.some((s) => s.token === input.token);
+      if (!owned) {
+        // NOT_FOUND rather than FORBIDDEN — don't tell a probing caller
+        // whether the token exists for some other user.
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'Session not found' });
+      }
       await auth.api.revokeSession({
         headers: ctx.headers,
         body: { token: input.token },

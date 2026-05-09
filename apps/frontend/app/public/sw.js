@@ -218,9 +218,21 @@ async function staleWhileRevalidate(request, cacheName) {
 }
 
 /**
- * Handle messages from the main thread
+ * Handle messages from the main thread.
+ *
+ * Origin gate: a Service Worker's `message` channel is reachable from
+ * any window holding a reference to its registration, including
+ * cross-origin embeds. The two messages this SW handles (SKIP_WAITING,
+ * CLEAR_CACHE) are not security-bearing — the worst case is a cache
+ * flush, i.e. one extra round-trip to the api on the next request —
+ * but there's no reason to accept them from anything other than our
+ * own origin. Reject anything that isn't.
  */
 self.addEventListener('message', (event) => {
+  if (event.origin && event.origin !== self.location.origin) {
+    return;
+  }
+
   if (event.data?.type === 'SKIP_WAITING') {
     console.log('[SW] Skip waiting requested by app');
     self.skipWaiting();

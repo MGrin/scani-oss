@@ -250,6 +250,45 @@ describe('presignUpload', () => {
     const b = svc.presignUpload(defaultOpts());
     expect(a.key).not.toBe(b.key);
   });
+
+  test('rejects keyPrefix containing path traversal', () => {
+    const svc = svcWithEnv();
+    expect(() => svc.presignUpload({ ...defaultOpts(), keyPrefix: '../etc/passwd' })).toThrow(
+      /invalid keyPrefix/i
+    );
+    expect(() => svc.presignUpload({ ...defaultOpts(), keyPrefix: 'a/../b' })).toThrow(
+      /invalid keyPrefix/i
+    );
+  });
+
+  test('rejects keyPrefix with leading / trailing / double slash', () => {
+    const svc = svcWithEnv();
+    expect(() => svc.presignUpload({ ...defaultOpts(), keyPrefix: '/screenshot' })).toThrow();
+    expect(() => svc.presignUpload({ ...defaultOpts(), keyPrefix: 'screenshot/' })).toThrow();
+    expect(() => svc.presignUpload({ ...defaultOpts(), keyPrefix: 'a//b' })).toThrow();
+  });
+
+  test('rejects keyPrefix longer than 200 chars', () => {
+    const svc = svcWithEnv();
+    const huge = 'a'.repeat(201);
+    expect(() => svc.presignUpload({ ...defaultOpts(), keyPrefix: huge })).toThrow();
+  });
+
+  test('rejects extension with non-alphanumeric characters', () => {
+    const svc = svcWithEnv();
+    expect(() => svc.presignUpload({ ...defaultOpts(), extension: 'png/foo' })).toThrow(
+      /invalid extension/i
+    );
+    expect(() => svc.presignUpload({ ...defaultOpts(), extension: '..' })).toThrow(
+      /invalid extension/i
+    );
+  });
+
+  test('accepts a multi-segment alphanumeric keyPrefix', () => {
+    const svc = svcWithEnv();
+    const result = svc.presignUpload({ ...defaultOpts(), keyPrefix: 'screenshot/user-123' });
+    expect(result.key).toMatch(/^temp\/screenshot\/user-123\/[0-9a-f-]{36}\.png$/);
+  });
 });
 
 describe('presignDownload', () => {

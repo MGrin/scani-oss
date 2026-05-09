@@ -3,20 +3,9 @@ import { createComponentLogger } from '@scani/logging';
 import { captureException } from '@scani/logging/sentry';
 import { ScheduledJobProcessor, WorkerClient } from '@scani/queue';
 import { Container, Service } from 'typedi';
+import { loadEnv } from '../config/env';
 
 const logger = createComponentLogger('processor:dlq-depth-probe');
-
-// Above this depth we surface a Sentry event so on-call gets paged. The
-// floor (default 50) is overridable via env so OSS / dev can tune it
-// without a code change.
-const DEFAULT_ALERT_THRESHOLD = 50;
-
-function getAlertThreshold(): number {
-  const raw = process.env.DLQ_ALERT_THRESHOLD;
-  if (!raw) return DEFAULT_ALERT_THRESHOLD;
-  const parsed = Number.parseInt(raw, 10);
-  return Number.isFinite(parsed) && parsed > 0 ? parsed : DEFAULT_ALERT_THRESHOLD;
-}
 
 @Service()
 export class DlqDepthProbeProcessor extends ScheduledJobProcessor {
@@ -25,7 +14,8 @@ export class DlqDepthProbeProcessor extends ScheduledJobProcessor {
   protected async handle(): Promise<void> {
     const workerClient = Container.get(WorkerClient);
     const depth = await workerClient.getDlqDepth();
-    const threshold = getAlertThreshold();
+    // Validated + parsed at boot — see apps/backend/worker/src/config/env.ts.
+    const threshold = loadEnv().DLQ_ALERT_THRESHOLD;
 
     // Always emit a structured log so the existing pino-based dashboards
     // can graph the trend even when we're below the alert threshold.

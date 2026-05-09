@@ -1,3 +1,4 @@
+import { scrubSentryBreadcrumb, scrubSentryEvent } from '@scani/shared';
 import { ErrorBoundary } from '@scani/ui/components/ErrorBoundary';
 import { UpdateBanner } from '@scani/ui/components/UpdateBanner';
 import { ThemeProvider } from '@scani/ui/contexts/ThemeContext';
@@ -67,18 +68,21 @@ if (SENTRY_DSN) {
     // Drop events whose stack is exclusively third-party (extensions,
     // anonymous eval). `ignoreErrors` above catches known messages; this
     // catches the long tail of extension-injected crashes that rotate
-    // their error messages faster than we can enumerate them.
+    // their error messages faster than we can enumerate them. Then strip
+    // PII (emails, JWTs, Authorization values) from whatever survives.
     beforeSend(event) {
       const frames = event.exception?.values?.[0]?.stacktrace?.frames ?? [];
-      if (frames.length === 0) return event;
-      const allThirdParty = frames.every((f) => {
-        const url = f.abs_path || f.filename || '';
-        if (!url) return false;
-        return THIRD_PARTY_FRAME_PATTERNS.some((p) => p.test(url));
-      });
-      if (allThirdParty) return null;
-      return event;
+      if (frames.length > 0) {
+        const allThirdParty = frames.every((f) => {
+          const url = f.abs_path || f.filename || '';
+          if (!url) return false;
+          return THIRD_PARTY_FRAME_PATTERNS.some((p) => p.test(url));
+        });
+        if (allThirdParty) return null;
+      }
+      return scrubSentryEvent(event);
     },
+    beforeBreadcrumb: scrubSentryBreadcrumb,
   });
 }
 

@@ -3,9 +3,16 @@ import { Button } from '@scani/ui/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@scani/ui/ui/card';
 import { Input } from '@scani/ui/ui/input';
 import { Label } from '@scani/ui/ui/label';
-import { type FormEvent, useState } from 'react';
+import { type FormEvent, useEffect, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { authClient } from '../lib/auth-client';
+
+// Backend rate-limits OTP sends per email; the cooldown here is just
+// UX feedback so the user doesn't bash "resend" and trip the server-
+// side limit. 30s is a comfortable middle ground — quick enough that
+// a missed-email retry doesn't stall, slow enough that double-tapping
+// can't burn through the budget.
+const RESEND_COOLDOWN_SECONDS = 30;
 
 /**
  * Single-screen auth flow:
@@ -28,15 +35,42 @@ export function AuthPage() {
   const [stage, setStage] = useState<'email' | 'otp'>('email');
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [resendCooldown, setResendCooldown] = useState(0);
+
+  // Tick the resend cooldown down to zero. Cleared on unmount.
+  useEffect(() => {
+    if (resendCooldown <= 0) return;
+    const id = window.setInterval(() => {
+      setResendCooldown((s) => Math.max(0, s - 1));
+    }, 1000);
+    return () => window.clearInterval(id);
+  }, [resendCooldown]);
 
   const sendOtp = async (e: FormEvent) => {
     e.preventDefault();
+    if (resendCooldown > 0) return;
     setLoading(true);
     setError(null);
     try {
       const res = await authClient.emailOtp.sendVerificationOtp({ email, type: 'sign-in' });
       if (res.error) throw new Error(res.error.message || 'Failed to send code');
       setStage('otp');
+      setResendCooldown(RESEND_COOLDOWN_SECONDS);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to send code');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const resendOtp = async () => {
+    if (resendCooldown > 0 || !email) return;
+    setError(null);
+    setLoading(true);
+    try {
+      const res = await authClient.emailOtp.sendVerificationOtp({ email, type: 'sign-in' });
+      if (res.error) throw new Error(res.error.message || 'Failed to send code');
+      setResendCooldown(RESEND_COOLDOWN_SECONDS);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to send code');
     } finally {
@@ -111,6 +145,14 @@ export function AuthPage() {
               <Button type="submit" className="w-full" disabled={loading || otp.length !== 6}>
                 {loading ? 'Verifying…' : 'Sign in'}
               </Button>
+              <button
+                type="button"
+                className="w-full text-center text-xs text-muted-foreground hover:text-foreground disabled:opacity-50"
+                onClick={resendOtp}
+                disabled={loading || resendCooldown > 0}
+              >
+                {resendCooldown > 0 ? `Resend code in ${resendCooldown}s` : 'Resend code'}
+              </button>
               <button
                 type="button"
                 className="w-full text-center text-xs text-muted-foreground hover:text-foreground"

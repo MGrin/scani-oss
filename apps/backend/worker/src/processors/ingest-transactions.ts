@@ -5,6 +5,8 @@ import {
   TRANSACTION_IMPORT,
   type TransactionImportJob,
 } from '@scani/jobs';
+import { createComponentLogger } from '@scani/logging';
+import { captureException } from '@scani/logging/sentry';
 import {
   BullMqEnqueueService,
   type ProcessorContext,
@@ -13,6 +15,8 @@ import {
 } from '@scani/queue';
 import { emitEntityChange } from '@scani/realtime';
 import { Container, Service } from 'typedi';
+
+const logger = createComponentLogger('processor:ingest-transactions');
 
 // 5 minutes: an import wave (4 EVM accounts × ~30s each + the kraken
 // /Ledgers paginator at ~2.2s/page × ~20 pages) easily spans more than
@@ -83,9 +87,28 @@ export class IngestTransactionsProcessor extends UserJobProcessor<TransactionImp
           lookbackDays,
         });
       } catch (error) {
-        result.warnings.push(
-          `Backfill enqueue failed: ${error instanceof Error ? error.message : String(error)}`
+        // Backfill enqueue failures don't fail the parent tx-import
+        // (the ledger rows are already persisted), but they DO leave
+        // the user's chart un-updated until the next nightly cron.
+        // Surface to Sentry so they don't sit silent in `result.warnings`
+        // forever — the warnings field surfaces in /jobs but rarely gets
+        // looked at unless the user reports a missing chart range.
+        const message = error instanceof Error ? error.message : String(error);
+        logger.error(
+          {
+            userId: data.userId,
+            accountId: data.accountId,
+            err: message,
+          },
+          'PORTFOLIO_HISTORY_BACKFILL enqueue failed; chart will fill in via the nightly cron'
         );
+        captureException(error, {
+          component: 'worker',
+          processor: 'ingest-transactions',
+          kind: 'backfill-enqueue-failure',
+          userId: data.userId,
+        });
+        result.warnings.push(`Backfill enqueue failed: ${message}`);
       }
 
       emitEntityChange({

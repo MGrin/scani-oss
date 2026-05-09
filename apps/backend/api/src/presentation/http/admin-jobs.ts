@@ -29,6 +29,7 @@ import { adminAuditLog } from '@scani/db/schema';
 import { createComponentLogger } from '@scani/logging';
 import { QueueClient } from '@scani/queue';
 import { Container } from 'typedi';
+import { loadEnv } from '../../config/env';
 
 const getQueue = () => Container.get(QueueClient).get();
 
@@ -114,7 +115,10 @@ async function rawBodyHash(request: Request): Promise<string> {
 
 // biome-ignore lint/suspicious/noExplicitAny: Elysia accumulates route types; match whatever shape the caller has.
 export function registerAdminJobsRoutes(app: any): void {
-  const secret = process.env.ADMIN_JOBS_HMAC_SECRET;
+  // Read via the validated env schema instead of `process.env` directly,
+  // so the var is checked at boot time (loadEnv exits the process when
+  // ADMIN_JOBS_HMAC_SECRET is missing in prod) and not silently per-call.
+  const secret = loadEnv().ADMIN_JOBS_HMAC_SECRET;
   if (!secret) {
     logger.warn(
       {},

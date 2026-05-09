@@ -39,6 +39,12 @@ const OG_CACHE_EVICT_BATCH = 50;
 
 const ogCache = new Map<string, OGCacheEntry>();
 
+// Map iterates in insertion order, so we get LRU semantics for free
+// by deleting + re-inserting on every read hit: hot entries drift to
+// the end, cold entries stay at the front and are the first to be
+// evicted when the cap is reached. Previously this was FIFO, which
+// could evict a frequently-accessed URL while a never-touched URL
+// stayed cached.
 function getOGFromCache(url: string): OGData | null {
   const entry = ogCache.get(url);
   if (!entry) return null;
@@ -46,10 +52,17 @@ function getOGFromCache(url: string): OGData | null {
     ogCache.delete(url);
     return null;
   }
+  // Promote to most-recently-used.
+  ogCache.delete(url);
+  ogCache.set(url, entry);
   return entry.data;
 }
 
 function setOGInCache(url: string, data: OGData, ttlMs: number): void {
+  // If the URL is already present, delete first so the new entry lands
+  // at the end of the iteration order (otherwise Map.set on an
+  // existing key keeps the original position).
+  if (ogCache.has(url)) ogCache.delete(url);
   if (ogCache.size >= OG_CACHE_MAX_ENTRIES) {
     const keys = Array.from(ogCache.keys()).slice(0, OG_CACHE_EVICT_BATCH);
     for (const key of keys) ogCache.delete(key);

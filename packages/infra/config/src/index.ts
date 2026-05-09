@@ -25,3 +25,57 @@ export function requiredInProd<T extends z.ZodString>(
     message: `${varName} is required in production and cannot be empty`,
   }) as unknown as T;
 }
+
+/**
+ * Cross-environment-isolation guard for shared infrastructure URLs
+ * (Redis, Postgres). The threat: a developer's local stack picking up
+ * a prod URL by accident, or a misconfigured CI job pointing at a
+ * shared instance. BullMQ in particular shares its Redis prefix
+ * across every connection, so a stray dev process pulling jobs from
+ * the prod queue would silently process real user data.
+ *
+ * Heuristic: if the URL contains the substring `localhost`, `127.0.0.1`,
+ * or `:6379` (the default Redis port commonly used in compose), it's
+ * a dev URL. Any other host is treated as remote/prod. We don't
+ * accept "looks like prod" matches because vendor URLs vary
+ * (`*.upstash.io`, `*.neon.tech`, `*.fly.dev`). Instead the rule is
+ * simple: production NODE_ENV must NOT see a localhost-style URL,
+ * and non-production must NOT see a non-localhost URL — unless the
+ * caller explicitly opts out (e.g. for an integration test that
+ * spins up its own remote stack).
+ *
+ * @returns the URL if it passes the env consistency check
+ * @throws  Error with a loud message if it doesn't
+ */
+export function assertEnvIsolatedUrl(opts: {
+  url: string;
+  varName: string;
+  /** Override NODE_ENV detection — useful for tests. */
+  isProduction?: boolean;
+  /** Caller opt-out (e.g. integration test against a real Redis). */
+  allowCrossEnv?: boolean;
+}): string {
+  if (opts.allowCrossEnv) return opts.url;
+  const inProd = opts.isProduction ?? process.env.NODE_ENV === 'production';
+  const looksLocal = /localhost|127\.0\.0\.1|0\.0\.0\.0|host\.docker\.internal|:6379(\D|$)/i.test(
+    opts.url
+  );
+  if (inProd && looksLocal) {
+    throw new Error(
+      `${opts.varName} appears to be a local URL (${redactUrlForLog(opts.url)}) but NODE_ENV=production. ` +
+        'Refusing to boot — set the production URL or unset NODE_ENV.'
+    );
+  }
+  if (!inProd && !looksLocal) {
+    throw new Error(
+      `${opts.varName} appears to be a remote URL (${redactUrlForLog(opts.url)}) but NODE_ENV=${process.env.NODE_ENV ?? '<unset>'}. ` +
+        'Refusing to boot — point at a local instance or set NODE_ENV=production.'
+    );
+  }
+  return opts.url;
+}
+
+function redactUrlForLog(url: string): string {
+  // Hide credentials in log lines.
+  return url.replace(/\/\/[^:]+:[^@]+@/, '//<redacted>@');
+}

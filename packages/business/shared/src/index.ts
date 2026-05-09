@@ -12,4 +12,9 @@ export * from './format/currency';
 export * from './format/date';
 export * from './token-validatiion';
 export { safeRedirectPath } from './utils/safe-redirect';
+export {
+  scrubSentryBreadcrumb,
+  scrubSentryEvent,
+  scrubString,
+} from './utils/sentry-scrubber';
 export * from './validators';
