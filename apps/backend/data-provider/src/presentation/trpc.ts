@@ -23,8 +23,13 @@ export interface DataProviderContext {
 
 export interface BuildContextDeps {
   env: DataProviderEnv;
-  cloudDb: CloudDb | null;
-  betterAuth: CloudBetterAuthInstance | null;
+  // Getter-based so the Elysia app can be constructed (and the server
+  // can start listening) before cloud init has populated cloudDb /
+  // betterAuth. Without this, the trpc plugin captures `null`s at
+  // construct-time and never sees the post-init values. Each request
+  // re-reads the current value via these getters.
+  getCloudDb: () => CloudDb | null;
+  getBetterAuth: () => CloudBetterAuthInstance | null;
 }
 
 /**
@@ -41,7 +46,7 @@ export interface BuildContextDeps {
  * session. `bearerProcedure` / `cookieProcedure` choose which gate they
  * want.
  */
-export function buildCreateContext({ env, cloudDb, betterAuth }: BuildContextDeps) {
+export function buildCreateContext({ env, getCloudDb, getBetterAuth }: BuildContextDeps) {
   return async ({ req }: { req: Request }): Promise<DataProviderContext> => {
     const requestId = req.headers.get('x-request-id') ?? crypto.randomUUID();
 
@@ -53,7 +58,7 @@ export function buildCreateContext({ env, cloudDb, betterAuth }: BuildContextDep
         expectedTokenExpiresAt: env.DATA_PROVIDER_API_KEY_EXPIRES_AT
           ? new Date(env.DATA_PROVIDER_API_KEY_EXPIRES_AT)
           : null,
-        cloudDb,
+        cloudDb: getCloudDb(),
       });
     } catch {
       // Bearer token absent or invalid; the cookie path may still let
@@ -62,6 +67,7 @@ export function buildCreateContext({ env, cloudDb, betterAuth }: BuildContextDep
     }
 
     let cloudUser: CloudSessionUser | null = null;
+    const betterAuth = getBetterAuth();
     if (betterAuth) {
       try {
         const session = await betterAuth.api.getSession({ headers: req.headers });
@@ -88,6 +94,13 @@ let activeQuotaLimiter: OutflowRateLimiter | null = null;
 
 export function installUsageSink(sink: UsageSink): void {
   activeSink = sink;
+}
+
+// Read the currently-installed sink. Used by index.ts's graceful
+// shutdown to flush pending usage events; needed because `activeSink`
+// is module-private and gets swapped in the deferred boot IIFE.
+export function getActiveUsageSink(): UsageSink {
+  return activeSink;
 }
 
 export function installQuotaLimiter(limiter: OutflowRateLimiter | null): void {

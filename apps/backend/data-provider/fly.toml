@@ -30,15 +30,18 @@ primary_region = "sin"
   [[http_service.checks]]
     interval     = "30s"
     timeout      = "5s"
-    # 30s was too tight: rolling deploys occasionally timed out on the
-    # second machine because boot-time work (10 provider factories,
-    # ioredis connect, typedi singletons, Better-Auth setup if cloud
-    # management is on) plus shared-cpu jitter exceeded the window. Bump
-    # to 60s — same shape as a TCP keep-alive probe, no impact on steady
-    # state.
+    # /ready is gated on the deferred-boot IIFE (see src/index.ts):
+    # - Process listens on the port within milliseconds of start →
+    #   smoke check passes immediately.
+    # - /ready returns 503 until provider registry + cloud DB +
+    #   Better-Auth init complete; flips to 200 once `bootState.ready`
+    #   is true.
+    # Result: Fly only routes traffic to a replica that's fully ready,
+    # AND grace_period only needs to cover the time between machine-up
+    # and the first successful /ready (not the entire boot).
     grace_period = "60s"
     method       = "GET"
-    path         = "/health"
+    path         = "/ready"
 
 [http_service.http_options]
   idle_timeout = 120
@@ -48,12 +51,12 @@ primary_region = "sin"
   memory   = "1024mb"
   cpu_kind = "shared"
   cpus     = 1
-  # 512MB was tight at boot — 10 provider factories plus typedi + ioredis
-  # + (when CLOUD_MANAGEMENT_ENABLED) Postgres pool + Better-Auth pushed
-  # the second-machine of the rolling deploy past the health-check
-  # window on 2026-05-09. Match the worker's 1024MB sizing — same Bun
-  # runtime, similar dependency surface — to give the rolling deploy
-  # headroom.
+  # 512MB was tight at boot. Memory stays at 1024MB matching the worker
+  # — the deferred-boot pattern (see src/index.ts) keeps grace_period
+  # tight, but boot-time memory is still ~10 provider factories +
+  # typedi + ioredis + (when CLOUD_MANAGEMENT_ENABLED) Postgres pool +
+  # Better-Auth, which 512MB couldn't comfortably absorb under
+  # shared-CPU contention.
 
 [deploy]
   # Rolling deploy: one machine at a time so the other keeps serving
