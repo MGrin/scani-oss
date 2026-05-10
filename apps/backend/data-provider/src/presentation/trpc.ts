@@ -1,5 +1,6 @@
 import type { OutflowRateLimiter } from '@scani/rate-limiter';
 import { initTRPC, TRPCError } from '@trpc/server';
+import type { OpenApiMeta } from 'trpc-openapi';
 import type { ApiKeyContext } from '../auth/api-key';
 import { validateBearerToken } from '../auth/api-key';
 import type { CloudBetterAuthInstance } from '../auth/better-auth';
@@ -88,7 +89,7 @@ export function buildCreateContext({ env, getCloudDb, getBetterAuth }: BuildCont
   };
 }
 
-const t = initTRPC.context<DataProviderContext>().create();
+const t = initTRPC.context<DataProviderContext>().meta<OpenApiMeta>().create();
 
 let activeSink: UsageSink = new NoopUsageSink();
 let activeQuotaLimiter: OutflowRateLimiter | null = null;

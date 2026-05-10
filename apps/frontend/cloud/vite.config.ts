@@ -34,6 +34,12 @@ export default defineConfig({
     proxy: {
       '/trpc': { target: proxyTarget, changeOrigin: true },
       '/api/auth': { target: proxyTarget, changeOrigin: true },
+      // The data-provider hosts /openapi.json + /docs (Scalar UI).
+      // Proxying them in dev keeps the sidebar's docs link working
+      // against a same-origin relative URL when VITE_DATA_PROVIDER_URL
+      // is unset.
+      '/openapi.json': { target: proxyTarget, changeOrigin: true },
+      '/docs': { target: proxyTarget, changeOrigin: true },
     },
   },
   build: {

@@ -17,6 +17,15 @@ const storage = (): StorageService => Container.get(StorageService);
 
 export const storageRouter = router({
   presignUpload: bearerProcedure
+    .meta({
+      openapi: {
+        method: 'POST',
+        path: '/trpc/storage.presignUpload',
+        tags: ['storage'],
+        summary: 'Get a presigned URL for direct-to-R2 PUT upload',
+        protect: true,
+      },
+    })
     .input(
       z.object({
         keyPrefix: z.string(),
@@ -26,6 +35,7 @@ export const storageRouter = router({
         ttlSeconds: z.number().optional(),
       })
     )
+    .output(z.unknown())
     .mutation(({ input }) => {
       try {
         return storage().presignUpload(input);
@@ -38,7 +48,17 @@ export const storageRouter = router({
     }),
 
   presignDownload: bearerProcedure
+    .meta({
+      openapi: {
+        method: 'GET',
+        path: '/trpc/storage.presignDownload',
+        tags: ['storage'],
+        summary: 'Get a presigned URL to GET an R2 object',
+        protect: true,
+      },
+    })
     .input(z.object({ key: z.string(), ttlSeconds: z.number().optional() }))
+    .output(z.unknown())
     .query(({ input }) => {
       try {
         return { url: storage().presignDownload(input.key, input.ttlSeconds) };
@@ -53,24 +73,46 @@ export const storageRouter = router({
   // Streams the blob back as base64 — tRPC-over-HTTP doesn't do binary
   // transport, and at temp-blob sizes the ~33% bloat isn't worth a
   // parallel binary endpoint.
-  readTempBlob: bearerProcedure.input(z.object({ key: z.string() })).mutation(async ({ input }) => {
-    try {
-      const buf = await storage().read(input.key);
-      return { base64: buf.toString('base64'), byteLength: buf.byteLength };
-    } catch (err) {
-      log.warn(
-        { key: input.key, error: err instanceof Error ? err.message : String(err) },
-        'readTempBlob failed'
-      );
-      throw new TRPCError({
-        code: 'INTERNAL_SERVER_ERROR',
-        message: err instanceof Error ? err.message : String(err),
-      });
-    }
-  }),
+  readTempBlob: bearerProcedure
+    .meta({
+      openapi: {
+        method: 'POST',
+        path: '/trpc/storage.readTempBlob',
+        tags: ['storage'],
+        summary: 'Read a temp blob and return it as base64 (no binary transport)',
+        protect: true,
+      },
+    })
+    .input(z.object({ key: z.string() }))
+    .output(z.unknown())
+    .mutation(async ({ input }) => {
+      try {
+        const buf = await storage().read(input.key);
+        return { base64: buf.toString('base64'), byteLength: buf.byteLength };
+      } catch (err) {
+        log.warn(
+          { key: input.key, error: err instanceof Error ? err.message : String(err) },
+          'readTempBlob failed'
+        );
+        throw new TRPCError({
+          code: 'INTERNAL_SERVER_ERROR',
+          message: err instanceof Error ? err.message : String(err),
+        });
+      }
+    }),
 
   deleteTempBlob: bearerProcedure
+    .meta({
+      openapi: {
+        method: 'POST',
+        path: '/trpc/storage.deleteTempBlob',
+        tags: ['storage'],
+        summary: 'Delete a temp blob from object storage',
+        protect: true,
+      },
+    })
     .input(z.object({ key: z.string() }))
+    .output(z.unknown())
     .mutation(async ({ input }) => {
       try {
         await storage().delete(input.key);

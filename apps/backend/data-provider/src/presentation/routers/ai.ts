@@ -134,6 +134,15 @@ const providerSchema = z.string().optional();
 
 export const aiRouter = router({
   parseScreenshot: bearerProcedure
+    .meta({
+      openapi: {
+        method: 'POST',
+        path: '/trpc/ai.parseScreenshot',
+        tags: ['ai'],
+        summary: 'Parse a base64-encoded screenshot into a portfolio shape',
+        protect: true,
+      },
+    })
     .input(
       z.object({
         imageBase64: z.string(),
@@ -149,6 +158,7 @@ export const aiRouter = router({
           .optional(),
       })
     )
+    .output(z.unknown())
     .mutation(async ({ input, ctx }) => {
       const opts = input.options ?? {};
       const providers = selectProviders(opts.provider);
@@ -192,6 +202,15 @@ export const aiRouter = router({
     }),
 
   parseDocumentText: bearerProcedure
+    .meta({
+      openapi: {
+        method: 'POST',
+        path: '/trpc/ai.parseDocumentText',
+        tags: ['ai'],
+        summary: 'Parse unstructured document text into a portfolio shape',
+        protect: true,
+      },
+    })
     .input(
       z.object({
         text: z.string(),
@@ -205,6 +224,7 @@ export const aiRouter = router({
           .optional(),
       })
     )
+    .output(z.unknown())
     .mutation(async ({ input, ctx }) => {
       const opts = input.options ?? {};
       const providers = selectProviders(opts.provider);
@@ -244,6 +264,15 @@ export const aiRouter = router({
     }),
 
   completeText: bearerProcedure
+    .meta({
+      openapi: {
+        method: 'POST',
+        path: '/trpc/ai.completeText',
+        tags: ['ai'],
+        summary: 'Free-form LLM text completion via the configured AI provider',
+        protect: true,
+      },
+    })
     .input(
       z.object({
         prompt: z.string(),
@@ -258,6 +287,7 @@ export const aiRouter = router({
           .optional(),
       })
     )
+    .output(z.unknown())
     .mutation(async ({ input, ctx }) => {
       const opts = input.options ?? {};
       const providers = selectProviders(opts.provider);
@@ -291,11 +321,23 @@ export const aiRouter = router({
       });
     }),
 
-  status: bearerProcedure.query(() => {
-    const providers = getProviders();
-    return {
-      availableProviders: providers.map((p) => ({ providerKey: p.providerKey })),
-      hasAvailableProvider: providers.length > 0,
-    };
-  }),
+  status: bearerProcedure
+    .meta({
+      openapi: {
+        method: 'GET',
+        path: '/trpc/ai.status',
+        tags: ['ai'],
+        summary: 'Report which AI providers are currently available',
+        protect: true,
+      },
+    })
+    .input(z.void())
+    .output(z.unknown())
+    .query(() => {
+      const providers = getProviders();
+      return {
+        availableProviders: providers.map((p) => ({ providerKey: p.providerKey })),
+        hasAvailableProvider: providers.length > 0,
+      };
+    }),
 });

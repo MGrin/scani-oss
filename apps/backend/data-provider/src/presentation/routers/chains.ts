@@ -332,7 +332,19 @@ export const chainsRouter = router({
    * the address validators table without having to ship the chain
    * list in-process.
    */
-  listConfigs: bearerProcedure.query((): ChainConfig[] => CHAIN_CATALOG),
+  listConfigs: bearerProcedure
+    .meta({
+      openapi: {
+        method: 'GET',
+        path: '/trpc/chains.listConfigs',
+        tags: ['chains'],
+        summary: 'List every chain config the data-provider knows about',
+        protect: true,
+      },
+    })
+    .input(z.void())
+    .output(z.unknown())
+    .query((): ChainConfig[] => CHAIN_CATALOG),
 
   /**
    * Public-endpoint native + ERC-20 balance fetch. Returns the
@@ -341,7 +353,17 @@ export const chainsRouter = router({
    * is projected into that shape inline.
    */
   getTokenBalances: bearerProcedure
+    .meta({
+      openapi: {
+        method: 'POST',
+        path: '/trpc/chains.getTokenBalances',
+        tags: ['chains'],
+        summary: 'Fetch native + ERC-20 balances for an address on a chain',
+        protect: true,
+      },
+    })
     .input(z.object({ chainId: chainIdSchema, address: z.string() }))
+    .output(z.unknown())
     .mutation(async ({ input }) => {
       const institutionCode = institutionCodeForChainId(input.chainId);
       if (!institutionCode) {
@@ -405,7 +427,17 @@ export const chainsRouter = router({
     }),
 
   hasActivity: bearerProcedure
+    .meta({
+      openapi: {
+        method: 'POST',
+        path: '/trpc/chains.hasActivity',
+        tags: ['chains'],
+        summary: 'Probe whether an address has on-chain activity (rate-limited)',
+        protect: true,
+      },
+    })
     .input(z.object({ chainId: chainIdSchema, address: z.string() }))
+    .output(z.unknown())
     .mutation(async ({ input, ctx }) => {
       const budget = await chainsAddressProbeLimiter.tryConsume(ctx.auth.apiKeyId);
       if (!budget.ok) {
@@ -433,7 +465,17 @@ export const chainsRouter = router({
     }),
 
   resolveAddressName: bearerProcedure
+    .meta({
+      openapi: {
+        method: 'POST',
+        path: '/trpc/chains.resolveAddressName',
+        tags: ['chains'],
+        summary: 'Resolve an address to its canonical name (e.g. ENS) if available',
+        protect: true,
+      },
+    })
     .input(z.object({ chainId: chainIdSchema, address: z.string() }))
+    .output(z.unknown())
     .mutation(async ({ input, ctx }): Promise<string | null> => {
       const budget = await chainsAddressProbeLimiter.tryConsume(ctx.auth.apiKeyId);
       if (!budget.ok) {

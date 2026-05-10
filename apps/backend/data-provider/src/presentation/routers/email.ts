@@ -20,17 +20,29 @@ const sendInput = z.object({
 });
 
 export const emailRouter = router({
-  send: bearerProcedure.input(sendInput).mutation(async ({ input }) => {
-    try {
-      await Container.get(LocalEmailService).send(input);
-      return { ok: true as const };
-    } catch (err) {
-      if (err instanceof TRPCError) throw err;
-      log.error({ error: err instanceof Error ? err.message : String(err) }, 'Email send failed');
-      throw new TRPCError({
-        code: 'INTERNAL_SERVER_ERROR',
-        message: err instanceof Error ? err.message : String(err),
-      });
-    }
-  }),
+  send: bearerProcedure
+    .meta({
+      openapi: {
+        method: 'POST',
+        path: '/trpc/email.send',
+        tags: ['email'],
+        summary: 'Send a transactional email',
+        protect: true,
+      },
+    })
+    .input(sendInput)
+    .output(z.unknown())
+    .mutation(async ({ input }) => {
+      try {
+        await Container.get(LocalEmailService).send(input);
+        return { ok: true as const };
+      } catch (err) {
+        if (err instanceof TRPCError) throw err;
+        log.error({ error: err instanceof Error ? err.message : String(err) }, 'Email send failed');
+        throw new TRPCError({
+          code: 'INTERNAL_SERVER_ERROR',
+          message: err instanceof Error ? err.message : String(err),
+        });
+      }
+    }),
 });

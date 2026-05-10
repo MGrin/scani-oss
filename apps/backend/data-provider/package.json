@@ -22,8 +22,8 @@
     "@scani/db": "workspace:*",
     "@scani/email": "workspace:*",
     "@scani/http-fetch": "workspace:*",
-    "@scani/providers": "workspace:*",
     "@scani/logging": "workspace:*",
+    "@scani/providers": "workspace:*",
     "@scani/rate-limiter": "workspace:*",
     "@scani/storage": "workspace:*",
     "@sentry/node": "^8.49.0",
@@ -35,6 +35,7 @@
     "open-graph-scraper": "^6.11.0",
     "postgres": "^3.4.9",
     "reflect-metadata": "^0.2.2",
+    "trpc-openapi": "^1.2.0",
     "typedi": "^0.10.0",
     "zod": "^3.25.76"
   },

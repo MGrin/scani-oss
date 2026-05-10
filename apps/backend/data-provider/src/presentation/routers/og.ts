@@ -40,7 +40,17 @@ const EMPTY: OGMetadata = {
 
 export const ogRouter = router({
   fetchMetadata: bearerProcedure
+    .meta({
+      openapi: {
+        method: 'GET',
+        path: '/trpc/og.fetchMetadata',
+        tags: ['og'],
+        summary: 'Fetch Open Graph metadata for a URL (SSRF-hardened)',
+        protect: true,
+      },
+    })
     .input(z.object({ url: z.string().url() }))
+    .output(z.unknown())
     .query(async ({ input }): Promise<OGMetadata> => {
       try {
         const { html, truncated, finalUrl } = await fetchHtmlBounded(input.url);

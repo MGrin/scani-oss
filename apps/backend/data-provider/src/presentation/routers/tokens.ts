@@ -33,12 +33,22 @@ export const tokensRouter = router({
    * dedupe / prioritize against its own DB.
    */
   search: bearerProcedure
+    .meta({
+      openapi: {
+        method: 'GET',
+        path: '/trpc/tokens.search',
+        tags: ['tokens'],
+        summary: 'Free-text token search across CoinGecko, DeFiLlama, Finnhub',
+        protect: true,
+      },
+    })
     .input(
       z.object({
         query: z.string().min(1).max(100),
         limit: z.number().int().min(1).max(50).default(10),
       })
     )
+    .output(z.unknown())
     .query(async ({ input }): Promise<TokenSearchResult[]> => {
       const enrichers = Container.get(ProviderRegistry)
         .getIdentityEnrichers()
@@ -78,6 +88,15 @@ export const tokensRouter = router({
     }),
 
   enrichIdentity: bearerProcedure
+    .meta({
+      openapi: {
+        method: 'POST',
+        path: '/trpc/tokens.enrichIdentity',
+        tags: ['tokens'],
+        summary: 'Enrich a partial token record using a specific identity provider',
+        protect: true,
+      },
+    })
     .input(
       z.object({
         providerKey: z.string(),
@@ -94,6 +113,7 @@ export const tokensRouter = router({
         force: z.boolean().optional(),
       })
     )
+    .output(z.unknown())
     .mutation(async ({ input }): Promise<unknown> => {
       const enricher = Container.get(ProviderRegistry)
         .getIdentityEnrichers()

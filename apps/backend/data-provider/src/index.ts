@@ -34,6 +34,7 @@ initSentry({ component: 'data-provider', release: env.SENTRY_RELEASE });
 
 import { type CloudBetterAuthInstance, createCloudBetterAuth } from './auth/better-auth';
 import { type CloudDb, closeCloudDb, getCloudDb } from './db/connection';
+import { buildOpenApiDocument, renderScalarHtml } from './presentation/openapi';
 import { appRouter, installCloudDb, installUsageDeps } from './presentation/router';
 import {
   buildCreateContext,
@@ -178,6 +179,10 @@ const app = new Elysia()
       origin: true,
       credentials: true,
       allowedHeaders: ['Authorization', 'Content-Type', 'x-request-id'],
+      // Default `*` makes @elysiajs/cors echo every inbound request
+      // header (incl. `via`, `host`, `fly-client-ip`, `x-forwarded-*`).
+      // Browser callers only need `x-request-id` for tracing.
+      exposeHeaders: ['x-request-id'],
     })
   )
   .use(
@@ -222,6 +227,25 @@ const app = new Elysia()
     return auth.handler(request);
   })
   .get('/', () => ({ status: 'ok', service: 'scani-data-provider' }))
+  // OpenAPI 3.0 spec for the bearer-auth tRPC surface. Generated once
+  // at boot from `appRouter`'s .meta() annotations and post-processed
+  // so it accurately describes the `?input=<JSON>` query convention
+  // tRPC v10 uses on the wire (see ./presentation/openapi.ts). The
+  // SENTRY_RELEASE doubles as the spec version so docs and code never
+  // disagree about which build a customer is calling.
+  .get('/openapi.json', () =>
+    buildOpenApiDocument(appRouter, {
+      baseUrl: env.PUBLIC_BASE_URL ?? `http://${HOST}:${PORT}`,
+      version: env.SENTRY_RELEASE ?? '0.0.0-dev',
+    })
+  )
+  // Browseable API reference. Loads Scalar from a CDN so we don't
+  // bundle the UI; the page is ~15 lines of HTML and the actual UI
+  // is rendered client-side against /openapi.json.
+  .get('/docs', ({ set }: { set: { headers: Record<string, string> } }) => {
+    set.headers['Content-Type'] = 'text/html; charset=utf-8';
+    return renderScalarHtml('/openapi.json');
+  })
   // Liveness — process is alive. Returns 200 from the moment Elysia
   // starts listening, even before init finishes. Useful for app-level
   // deep-health probes; NOT what Fly's machine check uses (see /ready).

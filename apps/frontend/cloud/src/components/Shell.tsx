@@ -1,7 +1,7 @@
 import { ThemeToggle } from '@scani/ui';
 import { Sheet, SheetContent } from '@scani/ui/ui/sheet';
 import { useQueryClient } from '@tanstack/react-query';
-import { BarChart3, KeyRound, LogOut, Menu } from 'lucide-react';
+import { BarChart3, BookOpen, ExternalLink, KeyRound, LogOut, Menu } from 'lucide-react';
 import { useState } from 'react';
 import { Link, NavLink, Outlet } from 'react-router-dom';
 import { authClient } from '../lib/auth-client';
@@ -16,6 +16,12 @@ const NAV_ITEMS: NavItemDef[] = [
   { to: '/keys', label: 'API keys', Icon: KeyRound },
   { to: '/usage', label: 'Usage', Icon: BarChart3 },
 ];
+
+// Data-provider hosts /docs (Scalar UI). In prod VITE_DATA_PROVIDER_URL
+// resolves to https://api.cloud.scani.xyz so the link is cross-origin
+// and opens in a new tab; in dev we leave it relative and Vite's
+// dev-server proxies /docs to the local data-provider (see vite.config.ts).
+const API_DOCS_HREF = `${import.meta.env.VITE_DATA_PROVIDER_URL ?? ''}/docs`;
 
 /**
  * Authenticated layout: persistent sidebar on desktop, hamburger + left
@@ -65,6 +71,17 @@ export function Shell() {
             {label}
           </NavLink>
         ))}
+        <a
+          href={API_DOCS_HREF}
+          target="_blank"
+          rel="noreferrer noopener"
+          onClick={closeMobile}
+          className="flex items-center gap-3 rounded-lg px-3 py-2 text-sm text-muted-foreground transition-colors hover:bg-accent/50 hover:text-foreground"
+        >
+          <BookOpen className="h-4 w-4" />
+          <span className="flex-1">API docs</span>
+          <ExternalLink className="h-3.5 w-3.5 opacity-60" />
+        </a>
       </nav>
       <div
         className="border-t px-3 py-3 space-y-px"

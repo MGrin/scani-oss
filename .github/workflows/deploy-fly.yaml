@@ -279,6 +279,11 @@ jobs:
           BETTER_AUTH_SECRET: ${{ secrets.CLOUD_BETTER_AUTH_SECRET }}
           BETTER_AUTH_URL: https://api.cloud.scani.xyz
           CLOUD_FRONTEND_ORIGIN: https://cloud.scani.xyz
+          # Public origin this service is reachable on. Consumed by
+          # buildOpenApiDocument() to fill the OpenAPI `servers[]` field
+          # so generated docs/SDKs hit the right URL. Falls back to a
+          # localhost URL constructed from HOST + PORT when unset.
+          PUBLIC_BASE_URL: https://api.cloud.scani.xyz
           # Storage — staged as S3_* (the @scani/storage env shape).
           # GitHub secrets are stored under R2_* names; we alias here so
           # ops doesn't have to recreate them.
@@ -323,7 +328,8 @@ jobs:
                      GOOGLE_SERVICE_ACCOUNT_KEY GOOGLE_SHEETS_ID \
                      FASTMAIL_API_TOKEN \
                      CLOUD_MANAGEMENT_ENABLED DATABASE_URL \
-                     BETTER_AUTH_SECRET BETTER_AUTH_URL CLOUD_FRONTEND_ORIGIN; do
+                     BETTER_AUTH_SECRET BETTER_AUTH_URL CLOUD_FRONTEND_ORIGIN \
+                     PUBLIC_BASE_URL; do
             if [ -n "${!var:-}" ]; then
               args+=("$var=${!var}")
               echo "  → staging $var"

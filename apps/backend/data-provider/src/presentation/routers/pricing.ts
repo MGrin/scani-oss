@@ -78,6 +78,15 @@ function findHistoricalPricer(providerKey: string): HistoricalPriceProvider {
 
 export const pricingRouter = router({
   fetchCurrentPrice: bearerProcedure
+    .meta({
+      openapi: {
+        method: 'POST',
+        path: '/trpc/pricing.fetchCurrentPrice',
+        tags: ['pricing'],
+        summary: 'Fetch the current price for one token in a base currency',
+        protect: true,
+      },
+    })
     .input(
       z.object({
         providerKey: z.string(),
@@ -86,6 +95,7 @@ export const pricingRouter = router({
         timestamp: z.coerce.date().optional(),
       })
     )
+    .output(z.unknown())
     .mutation(async ({ input }): Promise<z.infer<typeof priceQuoteOut>> => {
       const provider = findCurrentPricer(input.providerKey);
       const token = input.token as unknown as Parameters<
@@ -110,6 +120,15 @@ export const pricingRouter = router({
     }),
 
   fetchCurrentPrices: bearerProcedure
+    .meta({
+      openapi: {
+        method: 'POST',
+        path: '/trpc/pricing.fetchCurrentPrices',
+        tags: ['pricing'],
+        summary: 'Batch fetch current prices for many tokens',
+        protect: true,
+      },
+    })
     .input(
       z.object({
         providerKey: z.string(),
@@ -118,6 +137,7 @@ export const pricingRouter = router({
         timestamp: z.coerce.date().optional(),
       })
     )
+    .output(z.unknown())
     .mutation(
       async ({
         input,
@@ -159,6 +179,15 @@ export const pricingRouter = router({
     ),
 
   fetchHistoricalPrice: bearerProcedure
+    .meta({
+      openapi: {
+        method: 'POST',
+        path: '/trpc/pricing.fetchHistoricalPrice',
+        tags: ['pricing'],
+        summary: 'Fetch the historical price for a token at a specific timestamp',
+        protect: true,
+      },
+    })
     .input(
       z.object({
         providerKey: z.string(),
@@ -167,6 +196,7 @@ export const pricingRouter = router({
         baseCurrency: tokenSchema,
       })
     )
+    .output(z.unknown())
     .mutation(async ({ input }): Promise<z.infer<typeof priceQuoteOut>> => {
       const provider = findHistoricalPricer(input.providerKey);
       const token = input.token as unknown as Parameters<
@@ -191,6 +221,15 @@ export const pricingRouter = router({
     }),
 
   fetchHistoricalRange: bearerProcedure
+    .meta({
+      openapi: {
+        method: 'POST',
+        path: '/trpc/pricing.fetchHistoricalRange',
+        tags: ['pricing'],
+        summary: 'Fetch a range of historical prices (OHLCV-style series)',
+        protect: true,
+      },
+    })
     .input(
       z.object({
         providerKey: z.string(),
@@ -200,6 +239,7 @@ export const pricingRouter = router({
         baseCurrency: tokenSchema,
       })
     )
+    .output(z.unknown())
     .mutation(async ({ input }): Promise<NonNullable<z.infer<typeof priceQuoteOut>>[]> => {
       const provider = findHistoricalPricer(input.providerKey);
       if (typeof provider.fetchHistoricalRange !== 'function') {
@@ -240,12 +280,22 @@ export const pricingRouter = router({
    * free tier is the right tool for one-rate live lookups.
    */
   convertRate: bearerProcedure
+    .meta({
+      openapi: {
+        method: 'GET',
+        path: '/trpc/pricing.convertRate',
+        tags: ['pricing'],
+        summary: 'Live FX conversion rate between two ISO currency codes',
+        protect: true,
+      },
+    })
     .input(
       z.object({
         fromCurrency: z.string(),
         toCurrency: z.string(),
       })
     )
+    .output(z.unknown())
     .query(async ({ input }): Promise<{ rate: string }> => {
       if (input.fromCurrency === input.toCurrency) return { rate: '1' };
       try {
