@@ -71,9 +71,11 @@ export function BetaPromise() {
           className="mx-auto mt-10 flex max-w-md flex-col gap-3 sm:flex-row sm:gap-2"
           aria-label="Beta-preview waitlist signup"
         >
-          {/* `text-base` (16px) is the iOS threshold below which Safari
-           * auto-zooms on input focus — stay at or above it on mobile.
-           * h-12 is a thumb-sized tap target; tightens on tablet+. */}
+          {/* h-14 on mobile so the input visually matches the chunky
+           * primary button below it; the previous h-12 felt thin and
+           * mismatched. text-base (16px) stays above the iOS auto-zoom
+           * threshold. Tightens to h-11 / text-sm on tablet+ where the
+           * input is in a row next to the button. */}
           <input
             type="email"
             required
@@ -83,12 +85,12 @@ export function BetaPromise() {
             value={email}
             onChange={(e) => setEmail(e.target.value)}
             disabled={status.kind === 'submitting' || status.kind === 'joined'}
-            className="h-12 flex-1 rounded-md border border-border bg-background px-4 text-base placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring disabled:opacity-60 sm:h-11 sm:text-sm"
+            className="h-14 flex-1 rounded-md border border-border bg-background px-4 text-base placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring disabled:opacity-60 sm:h-11 sm:text-sm"
           />
           <button
             type="submit"
             disabled={status.kind === 'submitting' || status.kind === 'joined'}
-            className="inline-flex h-12 items-center justify-center gap-2 rounded-md bg-foreground px-5 text-base font-medium text-background transition-opacity hover:opacity-90 disabled:opacity-60 sm:h-11 sm:text-sm"
+            className="inline-flex h-14 items-center justify-center gap-2 rounded-md bg-foreground px-5 text-base font-medium text-background transition-opacity hover:opacity-90 disabled:opacity-60 sm:h-11 sm:text-sm"
           >
             {status.kind === 'submitting' ? 'Joining…' : 'Join the waitlist'}
             {status.kind !== 'submitting' && <ArrowRight className="h-4 w-4" />}

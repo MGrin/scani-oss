@@ -24,8 +24,8 @@ const PILLARS: ReadonlyArray<Pillar> = [
   },
   {
     Icon: Activity,
-    title: 'Live by default',
-    body: 'Balances and prices update as soon as upstream changes; the dashboard reflects them within seconds. No polling buttons, no "last refreshed 4 minutes ago" stamps.',
+    title: 'Fresh, honestly',
+    body: 'Balances and prices refresh as fast as upstream APIs let us — usually minutes, sometimes hours, never more than 8. Every figure carries a timestamp so you always know how fresh it is.',
   },
 ];
 
