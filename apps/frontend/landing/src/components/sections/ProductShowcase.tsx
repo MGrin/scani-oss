@@ -25,7 +25,7 @@ const SHOTS: ReadonlyArray<Shot> = [
     id: 'integrations',
     title: 'Integrations',
     caption:
-      'OAuth flows for Plaid, exchange API keys, and read-only on-chain wallets — managed in one place.',
+      'Bank/broker OAuth, exchange API keys, and read-only on-chain wallets — managed in one place.',
     src: '/screenshots/integrations.png',
   },
 ];

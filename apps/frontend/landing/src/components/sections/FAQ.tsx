@@ -21,7 +21,7 @@ const QAS: ReadonlyArray<QA> = [
   },
   {
     q: 'Where is my data hosted on the managed tier?',
-    a: 'Postgres on Neon (eu-central / us-east), Redis on Upstash, object storage on Cloudflare R2, compute on Fly.io. Everything is provisioned in Terraform under `infra/terraform/` so you can audit the topology without our help.',
+    a: "Postgres on Neon, Redis on Upstash, object storage on Cloudflare R2, compute on Fly.io. The exact regions are configurable via Terraform under `infra/terraform/` — that's where you'd audit or change them.",
   },
   {
     q: 'Is the API the same code as the dashboard uses?',

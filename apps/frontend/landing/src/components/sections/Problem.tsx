@@ -7,27 +7,30 @@ interface Bucket {
   examples: string[];
 }
 
+// Examples are illustrative, not exhaustive — `+ N more` lets us add
+// providers without rewriting the page. Edit the chip list when the
+// shipped names shift, but resist the urge to enumerate every provider.
 const BUCKETS: ReadonlyArray<Bucket> = [
   {
     Icon: Banknote,
     title: 'Banks & brokerages',
     description:
-      'Checking, savings, and investment accounts pulled via Plaid + direct broker APIs.',
-    examples: ['IBKR', 'Plaid-linked banks', 'Wise', 'Yahoo Finance', 'Finnhub'],
+      'Checking, savings, and investment accounts pulled via direct broker and bank APIs.',
+    examples: ['IBKR', 'Wise', 'Yahoo Finance', 'Finnhub'],
   },
   {
     Icon: Bitcoin,
     title: 'Crypto exchanges & custody',
     description:
-      'Centralized exchanges, custodial wallets, and OTC venues sync over read-only API keys.',
-    examples: ['Binance', 'Kraken', 'CoinGecko', 'CoinMarketCap'],
+      'Centralized exchanges sync over read-only API keys; pricing data from major aggregators.',
+    examples: ['Binance', 'Kraken', 'Coinbase', 'OKX', '+ 8 more'],
   },
   {
     Icon: Wallet,
     title: 'On-chain & DeFi',
     description:
       'Self-custody balances, staking positions, and DeFi yield from explorers and indexers.',
-    examples: ['Etherscan', 'Helius', 'DeFiLlama', 'Bitcoin', 'Solana', 'TON', 'Tron'],
+    examples: ['Bitcoin', 'EVM chains', 'Solana', 'TON', 'Tron', 'DeFiLlama'],
   },
 ];
 
