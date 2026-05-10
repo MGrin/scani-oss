@@ -13,11 +13,23 @@ export function layout({
   brand,
   preheader,
   content,
+  footerNote,
 }: {
   brand: EmailBrand;
   preheader: string;
   content: string;
+  // Override the default sign-in footer for emails that aren't auth-
+  // related (e.g. the beta-preview waitlist confirmation). When omitted,
+  // the body keeps the canonical "someone requested sign-in" language
+  // used by the auth templates. Caller is responsible for HTML-escaping
+  // any interpolated values inside the override.
+  footerNote?: string;
 }): string {
+  const footerHtml =
+    footerNote ??
+    `You're getting this email because someone requested sign-in to
+                <a href="${brand.appUrl}" style="color:${brand.textMuted};">${escapeHtml(brand.appName)}</a>
+                using this address. If that wasn't you, you can safely ignore this message — no account action was taken.`;
   return `<!doctype html>
 <html lang="en">
   <head>
@@ -49,9 +61,7 @@ export function layout({
             </tr>
             <tr>
               <td style="padding:20px 32px;background:#fafbfc;border-top:1px solid ${brand.border};font-size:12px;line-height:18px;color:${brand.textMuted};">
-                You're getting this email because someone requested sign-in to
-                <a href="${brand.appUrl}" style="color:${brand.textMuted};">${escapeHtml(brand.appName)}</a>
-                using this address. If that wasn't you, you can safely ignore this message — no account action was taken.
+                ${footerHtml}
               </td>
             </tr>
           </table>

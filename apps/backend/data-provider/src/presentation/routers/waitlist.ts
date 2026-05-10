@@ -19,7 +19,7 @@
  */
 
 import { waitlistSignups } from '@scani/db';
-import { LocalEmailService } from '@scani/email';
+import { LocalEmailService, renderWaitlistJoinEmail, SCANI_BRAND } from '@scani/email';
 import { createComponentLogger } from '@scani/logging';
 import { createOutflowLimiter, getSharedRedis } from '@scani/rate-limiter';
 import { TRPCError } from '@trpc/server';
@@ -98,6 +98,31 @@ async function notifyOps(args: {
   }
 }
 
+// Sends the user-facing confirmation. Reuses the auth-email layout from
+// `@scani/email/templates` so visual language matches sign-in mail. Only
+// fires on the first signup — duplicate submissions skip the send so we
+// don't spam someone who taps the form twice. Best-effort: a transient
+// SMTP failure here is logged and swallowed; the signup itself is
+// already durable in Postgres.
+async function sendUserConfirmation(args: { email: string; isDuplicate: boolean }): Promise<void> {
+  if (args.isDuplicate) return;
+  try {
+    const rendered = renderWaitlistJoinEmail({ brand: SCANI_BRAND, email: args.email });
+    await Container.get(LocalEmailService).send({
+      from: SCANI_BRAND.from,
+      to: args.email,
+      subject: rendered.subject,
+      text: rendered.text,
+      html: rendered.html,
+    });
+  } catch (err) {
+    log.warn(
+      { error: err instanceof Error ? err.message : String(err) },
+      'Failed to send waitlist confirmation email'
+    );
+  }
+}
+
 export const waitlistRouter = router({
   join: publicProcedure
     .meta({
@@ -169,15 +194,20 @@ export const waitlistRouter = router({
         log.info({ source: input.source }, 'Beta waitlist signup recorded');
       }
 
-      // Fire ops notification out-of-band (await so SMTP failures are
-      // logged, but the catch above keeps them from poisoning the
-      // user-facing response).
-      await notifyOps({
-        email,
-        source: input.source,
-        referrer: input.referrer ?? null,
-        isDuplicate,
-      });
+      // Fan out two best-effort notifications in parallel: an internal
+      // ops alert (so the team sees signups in real-time) and a user-
+      // facing confirmation (so they have proof of signup in their
+      // inbox). Both swallow their own errors; the signup is already
+      // durable, so SMTP hiccups must not 500 the public endpoint.
+      await Promise.all([
+        notifyOps({
+          email,
+          source: input.source,
+          referrer: input.referrer ?? null,
+          isDuplicate,
+        }),
+        sendUserConfirmation({ email, isDuplicate }),
+      ]);
 
       return { ok: true, alreadyJoined: isDuplicate };
     }),

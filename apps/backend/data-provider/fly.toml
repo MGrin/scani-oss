@@ -9,6 +9,11 @@ primary_region = "sin"
   HOST         = "0.0.0.0"
   NODE_ENV     = "production"
   SERVICE_NAME = "scani-data-provider"
+  # Internal mailbox for beta-preview waitlist signup notifications.
+  # Public address; safe to keep in the repo. The waitlist router
+  # silently no-ops the ops notification when this is unset.
+  WAITLIST_OPS_EMAIL = "waitlist@scani.xyz"
+  WAITLIST_OPS_FROM  = "\"Scani Waitlist\" <waitlist@scani.xyz>"
 
 [http_service]
   internal_port        = 8082
