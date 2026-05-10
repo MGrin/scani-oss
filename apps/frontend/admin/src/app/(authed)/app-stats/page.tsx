@@ -20,14 +20,14 @@ export default async function AppStatsPage() {
   return (
     <div>
       <h1 className="text-xl font-semibold mb-1">App stats</h1>
-      <p className="text-xs text-neutral-400 mb-6">
+      <p className="text-xs text-muted-foreground mb-6">
         Live counts from the production database and BullMQ queue
       </p>
 
       <Section title="Backend health">
         <div className="grid grid-cols-2 gap-4">
-          <div className="rounded-lg border border-neutral-800 bg-neutral-900/40 p-4">
-            <div className="text-xs uppercase tracking-wide text-neutral-500">/health</div>
+          <div className="rounded-lg border border-border bg-card/40 p-4">
+            <div className="text-xs uppercase tracking-wide text-muted-foreground">/health</div>
             {health.ok ? (
               <div className="text-sm mt-1">
                 <span
@@ -44,8 +44,8 @@ export default async function AppStatsPage() {
               <div className="text-red-300 text-sm mt-1">{health.error}</div>
             )}
           </div>
-          <div className="rounded-lg border border-neutral-800 bg-neutral-900/40 p-4">
-            <div className="text-xs uppercase tracking-wide text-neutral-500">/health/db</div>
+          <div className="rounded-lg border border-border bg-card/40 p-4">
+            <div className="text-xs uppercase tracking-wide text-muted-foreground">/health/db</div>
             {dbHealth.ok ? (
               <div className="text-sm mt-1">
                 <span
@@ -115,7 +115,7 @@ export default async function AppStatsPage() {
             </div>
             {stats.data.integrationsByInstitution.length > 0 && (
               <table className="w-full text-xs">
-                <thead className="text-neutral-500">
+                <thead className="text-muted-foreground">
                   <tr>
                     <th className="text-left font-normal py-1">institution</th>
                     <th className="text-left font-normal py-1">credentials</th>
@@ -123,7 +123,7 @@ export default async function AppStatsPage() {
                 </thead>
                 <tbody>
                   {stats.data.integrationsByInstitution.map((r) => (
-                    <tr key={r.institution} className="border-t border-neutral-800/60">
+                    <tr key={r.institution} className="border-t border-border/60">
                       <td className="py-1">{r.institution}</td>
                       <td className="py-1 font-mono">{r.count}</td>
                     </tr>
@@ -136,7 +136,7 @@ export default async function AppStatsPage() {
           <Section title="Top institutions by account count">
             {stats.data.topInstitutions.length > 0 ? (
               <table className="w-full text-xs">
-                <thead className="text-neutral-500">
+                <thead className="text-muted-foreground">
                   <tr>
                     <th className="text-left font-normal py-1">institution</th>
                     <th className="text-left font-normal py-1">accounts</th>
@@ -144,7 +144,7 @@ export default async function AppStatsPage() {
                 </thead>
                 <tbody>
                   {stats.data.topInstitutions.map((r) => (
-                    <tr key={r.institution} className="border-t border-neutral-800/60">
+                    <tr key={r.institution} className="border-t border-border/60">
                       <td className="py-1">{r.institution}</td>
                       <td className="py-1 font-mono">{r.accounts}</td>
                     </tr>
@@ -152,7 +152,7 @@ export default async function AppStatsPage() {
                 </tbody>
               </table>
             ) : (
-              <div className="text-xs text-neutral-500">No accounts yet.</div>
+              <div className="text-xs text-muted-foreground">No accounts yet.</div>
             )}
           </Section>
         </>

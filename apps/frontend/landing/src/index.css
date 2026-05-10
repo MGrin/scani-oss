@@ -36,3 +36,119 @@ body {
   background-size: 32px 32px;
   mask-image: radial-gradient(ellipse 80% 60% at 50% 0%, black 30%, transparent 80%);
 }
+
+/* ============================================================
+ * Tasteful entrance + scroll animations.
+ *
+ * Two layered defenses keep this accessible + SEO-safe:
+ *
+ * 1. **Content always renders.** Elements default to their natural
+ *    layout + opacity 1; the animation only kicks in if `[data-reveal]`
+ *    is also present on the element and `prefers-reduced-motion: no-
+ *    preference` matches. Crawlers and no-JS visitors see the page
+ *    fully composed.
+ *
+ * 2. **Reduced-motion users get nothing.** The whole block is gated
+ *    by the media query — opt-out is total, not partial.
+ *
+ * Triggers: hero/footer animations fire on mount (via the parent
+ * setting `data-revealed="true"` immediately). Section animations
+ * fire when the IntersectionObserver in useRevealOnScroll() toggles
+ * `data-revealed` after the element enters viewport.
+ * ============================================================ */
+@media (prefers-reduced-motion: no-preference) {
+  /* Section-level reveal: fade + small upward translate. */
+  [data-reveal='section'] {
+    opacity: 0;
+    transform: translateY(12px);
+    transition: opacity 0.6s ease-out, transform 0.6s ease-out;
+  }
+  [data-reveal='section'][data-revealed='true'] {
+    opacity: 1;
+    transform: translateY(0);
+  }
+
+  /* Hero block: same shape, shorter duration, fires on mount. */
+  [data-reveal='hero'] {
+    opacity: 0;
+    transform: translateY(8px);
+    transition: opacity 0.5s ease-out, transform 0.5s ease-out;
+  }
+  [data-reveal='hero'][data-revealed='true'] {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  /* Stagger the children of the hero so the badge, h1, subhead, and
+   * CTAs cascade in instead of arriving together. The badge fires
+   * first; each subsequent child waits an extra 80ms. */
+  [data-reveal='hero'] > * {
+    transition-delay: 0ms;
+  }
+  [data-reveal='hero'][data-revealed='true'] > *:nth-child(1) {
+    animation: heroFadeUp 0.5s ease-out 0ms both;
+  }
+  [data-reveal='hero'][data-revealed='true'] > *:nth-child(2) {
+    animation: heroFadeUp 0.5s ease-out 80ms both;
+  }
+  [data-reveal='hero'][data-revealed='true'] > *:nth-child(3) {
+    animation: heroFadeUp 0.5s ease-out 160ms both;
+  }
+  [data-reveal='hero'][data-revealed='true'] > *:nth-child(4) {
+    animation: heroFadeUp 0.5s ease-out 240ms both;
+  }
+  [data-reveal='hero'][data-revealed='true'] > *:nth-child(5) {
+    animation: heroFadeUp 0.5s ease-out 320ms both;
+  }
+
+  @keyframes heroFadeUp {
+    from {
+      opacity: 0;
+      transform: translateY(8px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  /* Problem-section chips: stagger inside the card after the card
+   * itself has revealed. Uses CSS custom property `--reveal-index`
+   * set on each <li> so the math stays declarative. */
+  [data-reveal='chip'] {
+    opacity: 0;
+    transform: translateY(4px);
+    transition: opacity 0.35s ease-out, transform 0.35s ease-out;
+    transition-delay: calc(var(--reveal-index, 0) * 60ms + 300ms);
+  }
+  [data-revealed='true'] [data-reveal='chip'] {
+    opacity: 1;
+    transform: translateY(0);
+  }
+
+  /* Tier cards: subtle hover lift; not scroll-triggered. */
+  [data-reveal='lift'] {
+    transition: transform 0.2s ease-out, border-color 0.2s ease-out, box-shadow 0.2s ease-out;
+  }
+  [data-reveal='lift']:hover {
+    transform: translateY(-2px);
+  }
+
+  /* Architecture diagram SVG connectors: draw in once the diagram
+   * enters viewport. Each <line data-reveal="draw"> starts with
+   * stroke-dasharray/dashoffset equal to its visible length so the
+   * stroke is invisible until [data-revealed] flips it.
+   *
+   * We don't know each line's exact length at author time, so we
+   * pick a sufficiently-large constant (220) that covers every
+   * connector in the diagram. Anything shorter just animates faster;
+   * the perceptual difference is invisible. */
+  [data-reveal='diagram'] [data-reveal='draw'] {
+    stroke-dasharray: 220;
+    stroke-dashoffset: 220;
+    transition: stroke-dashoffset 0.9s ease-in-out;
+    transition-delay: 0.2s;
+  }
+  [data-reveal='diagram'][data-revealed='true'] [data-reveal='draw'] {
+    stroke-dashoffset: 0;
+  }
+}

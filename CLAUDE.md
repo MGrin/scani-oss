@@ -154,6 +154,48 @@ ships to a browser via Cloudflare Pages).
 **`packages/frontend/`** — browser-only.
 - `packages/frontend/ui` (`@scani/ui`) — Design system + shared client plumbing for the Scani SPAs. Ships the Tailwind preset + CSS tokens, the full shadcn primitive set (button/card/input/dialog/select/popover/sheet/table/textarea/checkbox/command/progress/loading/etc.), `ThemeContext`, `ErrorBoundary`, `UpdateBanner`, `MagicCodeInput`, the `useAppUpdate` hook, PWA helpers, and the `createScaniAuthClient` / `createTrpcProvider` factories. Consumed by `frontend/app` and `frontend/cloud`. **`apps/frontend/app` is the canonical source of truth** — when promoting a new shared primitive, copy from there.
 
+## Landing-Page Accuracy
+
+The marketing site at `apps/frontend/landing` makes concrete claims about the
+product — integration coverage, tier capabilities, freshness SLAs, OSS state,
+billing status. We've shipped multiple corrective PRs in a single week because
+feature work didn't keep the landing in sync. **Going forward, every feature
+PR that ships one of the items below must update the relevant landing
+section(s) in the same PR.** Landing copy is not auto-generated — it lives
+in plain TSX under `apps/frontend/landing/src/components/sections/`.
+
+| When you ship… | Touch | Update landing section(s) |
+|---|---|---|
+| New integration provider (exchange / bank / chain / AI) | `packages/clients/providers/src/providers/<name>/` + `packages/clients/providers/src/core/registry.ts` | `Problem.tsx` chips on the matching bucket; `Tiers.tsx` self-host "every integration runs locally" claim |
+| New data-provider tRPC router | `apps/backend/data-provider/src/presentation/routers/<name>.ts` + `apps/backend/data-provider/src/presentation/router.ts` | `Problem.tsx` 4th card if it's a pricing source; `Tiers.tsx` Cloud-API "type-safe endpoints" bullet |
+| New scheduled job / queue processor | `packages/business/jobs/src/scheduled-jobs/<name>.ts` + `packages/infra/queue/src/queue-names.ts` + `apps/backend/worker/src/processors/<name>.ts` | `Architecture.tsx` pillar 3 (distributed-jobs) if behaviour changes; `BetaPromise.tsx` if billing-related |
+| Pricing job cadence / freshness SLA change | `packages/business/jobs/src/scheduled-jobs/pricing.ts` cron + processor's max-age logic | `Architecture.tsx` pillar 4 — the literal "never more than 8" must match the actual SLA |
+| New user-facing feature in `app.scani.xyz` | `apps/frontend/app/src/v2/...` page or section + route registration | `Tiers.tsx` Managed-SaaS bullets if tier-specific; `ProductShowcase.tsx` caption if it changes what the dashboard / holdings / integrations pages do |
+| OSS license merged / repo flipped public | `LICENSE` at root + `package.json: private` flip + `infra/terraform/github.tf` visibility | `OSSContributors.tsx` disclaimer + "Notify me when it's out" CTA; `Tiers.tsx` self-host "Source under a permissive license (work in progress)" parenthetical; `FAQ.tsx` Q3 self-host answer; restore GitHub buttons in `TopNav.tsx` + `Footer.tsx`; if Scalar UI docs are publish-ready, restore the docs CTAs |
+| Grandfathering job launched | `packages/business/jobs/src/scheduled-jobs/` new descriptor + `apps/backend/worker/src/processors/` new processor that reads `waitlist_signups` and applies the discount when billing starts | `BetaPromise.tsx` — the "1 year free" promise is now enforceable, not aspirational |
+| Subscriptions / Stripe / Polar shipped | New router on `apps/backend/api/` + billing-state job on the worker + tier-enforcement middleware on the data-provider | `BetaPromise.tsx` "Subscriptions aren't live yet" line is removed; `FAQ.tsx` Q1 "When does billing start?" gets a date; `Tiers.tsx` prices become real |
+| SOC 2 / ISO 27001 / GDPR audit status changed | `docs/COMPLIANCE.md` once a report is signed; region-routing logic if added in api/data-provider config | `FAQ.tsx` Q4 answer — drop the "working through our own SOC 2 audit" hedge once it's signed |
+
+**Quick check before merging any feature PR**:
+
+```bash
+# Replace <concept> with the keyword your PR introduces.
+grep -rEi '<provider-name>|<router-name>|<concept>' apps/frontend/landing/src/components/
+```
+
+Anything that comes back is a candidate for an update in the same PR.
+
+**Known aspirational claims (no code enforcement yet)** — flag in your PR
+description if you alter behaviour anywhere near them:
+
+- `Architecture.tsx` pillar 4 — `"never more than 8"` hours of staleness. No
+  constant in code enforces this; it's tied to the hourly pricing job cadence.
+  If you slow that cadence or add slower-refreshing data, the claim rots.
+- `BetaPromise.tsx` — `"1 year free at every paid tier"` for waitlist signups
+  and beta-preview accounts. The `waitlist_signups` table records the
+  promises but no grandfathering job exists yet. Whoever ships billing must
+  also ship that job, or the page lies.
+
 ## Key Paths
 
 - tRPC routers: `apps/backend/api/src/presentation/routers/`

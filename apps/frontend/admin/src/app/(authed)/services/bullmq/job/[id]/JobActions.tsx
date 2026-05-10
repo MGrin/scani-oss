@@ -74,7 +74,9 @@ export function JobActions({ jobId, state }: JobActionsProps) {
         </span>
       ) : null}
       {!canRetry ? (
-        <span className="text-xs text-neutral-500">Retry is only available for failed jobs.</span>
+        <span className="text-xs text-muted-foreground">
+          Retry is only available for failed jobs.
+        </span>
       ) : null}
     </div>
   );

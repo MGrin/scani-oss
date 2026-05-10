@@ -23,13 +23,13 @@ export default async function JobDetailPage({ params }: PageProps) {
   return (
     <div>
       <h1 className="text-xl font-semibold mb-1">
-        <Link href="/services/bullmq" className="text-neutral-500 hover:text-neutral-300">
+        <Link href="/services/bullmq" className="text-muted-foreground hover:text-foreground/80">
           BullMQ
         </Link>{' '}
-        <span className="text-neutral-600">/</span>{' '}
+        <span className="text-muted-foreground/70">/</span>{' '}
         <span className="font-mono text-sm">{job.id}</span>
       </h1>
-      <p className="text-xs text-neutral-400 mb-6">
+      <p className="text-xs text-muted-foreground mb-6">
         {job.name} · {job.state} · attempt {job.attemptsMade} of{' '}
         {String((job.opts as { attempts?: number } | null)?.attempts ?? 1)}
       </p>
@@ -66,11 +66,11 @@ export default async function JobDetailPage({ params }: PageProps) {
           </pre>
           {job.stacktrace ? (
             <details className="mt-3 text-xs">
-              <summary className="cursor-pointer text-neutral-500 hover:text-neutral-300">
+              <summary className="cursor-pointer text-muted-foreground hover:text-foreground/80">
                 Stack traces ({job.stacktrace.length} attempt
                 {job.stacktrace.length === 1 ? '' : 's'})
               </summary>
-              <pre className="mt-2 rounded-md bg-neutral-900 p-3 text-xs text-neutral-400 whitespace-pre-wrap">
+              <pre className="mt-2 rounded-md bg-card p-3 text-xs text-muted-foreground whitespace-pre-wrap">
                 {job.stacktrace.join('\n---\n')}
               </pre>
             </details>
@@ -79,17 +79,17 @@ export default async function JobDetailPage({ params }: PageProps) {
       ) : null}
 
       <Section title="Payload">
-        <pre className="rounded-md bg-neutral-900 p-3 text-xs text-neutral-300 whitespace-pre-wrap">
+        <pre className="rounded-md bg-card p-3 text-xs text-foreground/80 whitespace-pre-wrap">
           {JSON.stringify(job.data, null, 2)}
         </pre>
-        <p className="mt-2 text-xs text-neutral-500">
+        <p className="mt-2 text-xs text-muted-foreground">
           Sensitive-looking keys (apiKey, password, token, credentials…) are redacted for display.
         </p>
       </Section>
 
       {job.returnvalue != null ? (
         <Section title="Result">
-          <pre className="rounded-md bg-neutral-900 p-3 text-xs text-neutral-300 whitespace-pre-wrap">
+          <pre className="rounded-md bg-card p-3 text-xs text-foreground/80 whitespace-pre-wrap">
             {JSON.stringify(job.returnvalue, null, 2)}
           </pre>
         </Section>
@@ -101,7 +101,7 @@ export default async function JobDetailPage({ params }: PageProps) {
 function DlRow({ label, value }: { label: string; value: string }) {
   return (
     <div>
-      <dt className="text-xs uppercase tracking-wide text-neutral-500">{label}</dt>
+      <dt className="text-xs uppercase tracking-wide text-muted-foreground">{label}</dt>
       <dd className="mt-1">{value}</dd>
     </div>
   );

@@ -22,7 +22,7 @@ export default async function SentryPage() {
   return (
     <div>
       <h1 className="text-xl font-semibold mb-1">Sentry</h1>
-      <p className="text-xs text-neutral-400 mb-6">
+      <p className="text-xs text-muted-foreground mb-6">
         {overview.data.length} project{overview.data.length === 1 ? '' : 's'} instrumented · error
         tracking + release health
       </p>
@@ -47,12 +47,12 @@ export default async function SentryPage() {
                 href={p.dashboardUrl}
                 target="_blank"
                 rel="noreferrer"
-                className="rounded-lg border border-neutral-800 bg-neutral-900/40 p-4 hover:bg-neutral-900/70 transition-colors"
+                className="rounded-lg border border-border bg-card/40 p-4 hover:bg-card/70 transition-colors"
               >
                 <div className="flex items-center justify-between mb-3">
                   <div>
                     <div className="text-sm font-semibold">{p.slug}</div>
-                    <div className="text-xs text-neutral-400">
+                    <div className="text-xs text-muted-foreground">
                       {p.platform ?? 'unknown platform'}
                     </div>
                   </div>
@@ -102,8 +102,8 @@ function Row({
 }) {
   return (
     <div className="flex items-center justify-between">
-      <span className="text-neutral-500">{label}</span>
-      <span className={emphasize ? 'text-amber-300 font-medium' : 'text-neutral-200'}>{value}</span>
+      <span className="text-muted-foreground">{label}</span>
+      <span className={emphasize ? 'text-amber-300 font-medium' : 'text-foreground'}>{value}</span>
     </div>
   );
 }

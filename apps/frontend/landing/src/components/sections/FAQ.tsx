@@ -1,5 +1,6 @@
 import { ChevronDown } from 'lucide-react';
 import { useState } from 'react';
+import { useRevealOnScroll } from '../../hooks/useRevealOnScroll';
 
 interface QA {
   q: string;
@@ -58,8 +59,13 @@ function FaqItem({ qa, isOpen, onToggle }: { qa: QA; isOpen: boolean; onToggle: 
 
 export function FAQ() {
   const [openIdx, setOpenIdx] = useState<number | null>(0);
+  const ref = useRevealOnScroll<HTMLElement>();
   return (
-    <section className="border-b border-border/60 bg-background py-12 sm:py-20 lg:py-28">
+    <section
+      ref={ref}
+      data-reveal="section"
+      className="border-b border-border/60 bg-background py-12 sm:py-20 lg:py-28"
+    >
       <div className="mx-auto max-w-3xl px-6">
         <div className="text-center">
           <p className="text-xs font-medium uppercase tracking-widest text-muted-foreground">FAQ</p>

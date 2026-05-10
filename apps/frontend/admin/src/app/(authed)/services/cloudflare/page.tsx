@@ -29,7 +29,7 @@ export default async function CloudflarePage() {
   return (
     <div>
       <h1 className="text-xl font-semibold mb-1">Cloudflare</h1>
-      <p className="text-xs text-neutral-400 mb-6">
+      <p className="text-xs text-muted-foreground mb-6">
         Pages (frontend + landing), R2 (tfstate + backups), DNS zone
       </p>
 
@@ -71,7 +71,7 @@ export default async function CloudflarePage() {
         {history.ok ? (
           history.data.length > 0 ? (
             <table className="w-full text-xs">
-              <thead className="text-neutral-500">
+              <thead className="text-muted-foreground">
                 <tr>
                   <th className="text-left font-normal py-1">date</th>
                   <th className="text-left font-normal py-1">type</th>
@@ -82,10 +82,10 @@ export default async function CloudflarePage() {
               </thead>
               <tbody>
                 {history.data.map((h) => (
-                  <tr key={h.id} className="border-t border-neutral-800/60">
-                    <td className="py-1 text-neutral-400">{formatRelative(h.occurredAt)}</td>
+                  <tr key={h.id} className="border-t border-border/60">
+                    <td className="py-1 text-muted-foreground">{formatRelative(h.occurredAt)}</td>
                     <td className="py-1">{h.type}</td>
-                    <td className="py-1 text-neutral-400">{h.action}</td>
+                    <td className="py-1 text-muted-foreground">{h.action}</td>
                     <td className="py-1">{h.description}</td>
                     <td className="py-1 text-right font-mono">
                       {formatCurrency(h.amount, h.currency)}
@@ -95,7 +95,7 @@ export default async function CloudflarePage() {
               </tbody>
             </table>
           ) : (
-            <div className="text-xs text-neutral-500">No billing history.</div>
+            <div className="text-xs text-muted-foreground">No billing history.</div>
           )
         ) : (
           <ErrorPanel service="Billing history" error={history.error} />
@@ -106,28 +106,25 @@ export default async function CloudflarePage() {
         {pages.ok ? (
           <div className="space-y-3">
             {pages.data.map((p) => (
-              <div
-                key={p.name}
-                className="rounded-lg border border-neutral-800 bg-neutral-900/40 p-4"
-              >
+              <div key={p.name} className="rounded-lg border border-border bg-card/40 p-4">
                 <div className="flex items-center justify-between">
                   <div>
                     <div className="text-sm font-semibold">{p.name}</div>
-                    <div className="text-xs text-neutral-400">
+                    <div className="text-xs text-muted-foreground">
                       branch {p.productionBranch} · subdomain {p.subdomain}
                     </div>
                   </div>
                   {p.latestDeployment ? (
-                    <div className="text-right text-xs text-neutral-400">
+                    <div className="text-right text-xs text-muted-foreground">
                       <div>deploy {p.latestDeployment.stage}</div>
                       <div>{formatRelative(p.latestDeployment.createdAt)}</div>
                     </div>
                   ) : (
-                    <div className="text-xs text-neutral-500">no deployments</div>
+                    <div className="text-xs text-muted-foreground">no deployments</div>
                   )}
                 </div>
                 {p.latestDeployment?.source ? (
-                  <div className="mt-2 text-xs text-neutral-400 italic">
+                  <div className="mt-2 text-xs text-muted-foreground italic">
                     {p.latestDeployment.source}
                   </div>
                 ) : null}
@@ -142,7 +139,7 @@ export default async function CloudflarePage() {
       <Section title="R2 buckets">
         {r2.ok ? (
           <table className="w-full text-xs">
-            <thead className="text-neutral-500">
+            <thead className="text-muted-foreground">
               <tr>
                 <th className="text-left font-normal py-1">name</th>
                 <th className="text-left font-normal py-1">location</th>
@@ -151,10 +148,10 @@ export default async function CloudflarePage() {
             </thead>
             <tbody>
               {r2.data.map((b) => (
-                <tr key={b.name} className="border-t border-neutral-800/60">
+                <tr key={b.name} className="border-t border-border/60">
                   <td className="py-1 font-mono">{b.name}</td>
                   <td className="py-1">{b.location ?? '—'}</td>
-                  <td className="py-1 text-neutral-400">{formatRelative(b.createdAt)}</td>
+                  <td className="py-1 text-muted-foreground">{formatRelative(b.createdAt)}</td>
                 </tr>
               ))}
             </tbody>
@@ -167,7 +164,7 @@ export default async function CloudflarePage() {
       <Section title={`DNS — ${primaryZone?.name ?? '(no zone)'}`}>
         {dns?.ok ? (
           <table className="w-full text-xs">
-            <thead className="text-neutral-500">
+            <thead className="text-muted-foreground">
               <tr>
                 <th className="text-left font-normal py-1">name</th>
                 <th className="text-left font-normal py-1">type</th>
@@ -177,12 +174,9 @@ export default async function CloudflarePage() {
             </thead>
             <tbody>
               {dns.data.map((r) => (
-                <tr
-                  key={`${r.name}-${r.type}-${r.content}`}
-                  className="border-t border-neutral-800/60"
-                >
+                <tr key={`${r.name}-${r.type}-${r.content}`} className="border-t border-border/60">
                   <td className="py-1">{r.name}</td>
-                  <td className="py-1 text-neutral-400">{r.type}</td>
+                  <td className="py-1 text-muted-foreground">{r.type}</td>
                   <td className="py-1 font-mono">{r.content}</td>
                   <td className="py-1">{r.proxied ? 'yes' : 'no'}</td>
                 </tr>
@@ -192,7 +186,7 @@ export default async function CloudflarePage() {
         ) : dns && !dns.ok ? (
           <ErrorPanel service="DNS" error={dns.error} />
         ) : (
-          <div className="text-xs text-neutral-500">No zone available.</div>
+          <div className="text-xs text-muted-foreground">No zone available.</div>
         )}
       </Section>
     </div>

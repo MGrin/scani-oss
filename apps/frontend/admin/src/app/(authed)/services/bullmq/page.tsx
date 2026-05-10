@@ -27,7 +27,7 @@ export default async function BullMQDashboardPage() {
   return (
     <div>
       <h1 className="text-xl font-semibold mb-1">BullMQ · scani-jobs</h1>
-      <p className="text-xs text-neutral-400 mb-6">
+      <p className="text-xs text-muted-foreground mb-6">
         Background job queue · Redis-backed (Upstash) · one worker process, concurrency 4
       </p>
 
@@ -43,10 +43,10 @@ export default async function BullMQDashboardPage() {
 
       <Section title="By job name">
         {byName.length === 0 ? (
-          <p className="text-sm text-neutral-500">No jobs observed in recent samples.</p>
+          <p className="text-sm text-muted-foreground">No jobs observed in recent samples.</p>
         ) : (
           <table className="w-full text-sm">
-            <thead className="text-xs text-neutral-500">
+            <thead className="text-xs text-muted-foreground">
               <tr>
                 <th className="text-left pb-2">Job name</th>
                 <th className="text-right pb-2">Recent count</th>
@@ -54,7 +54,7 @@ export default async function BullMQDashboardPage() {
             </thead>
             <tbody>
               {byName.map((row) => (
-                <tr key={row.name} className="border-t border-neutral-900">
+                <tr key={row.name} className="border-t border-border">
                   <td className="py-2 font-mono text-xs">{row.name}</td>
                   <td className="py-2 text-right">{formatNumber(row.count)}</td>
                 </tr>
@@ -66,10 +66,10 @@ export default async function BullMQDashboardPage() {
 
       <Section title="Recent failures">
         {recentFailures.length === 0 ? (
-          <p className="text-sm text-neutral-500">No failed jobs. 🎉</p>
+          <p className="text-sm text-muted-foreground">No failed jobs. 🎉</p>
         ) : (
           <table className="w-full text-sm">
-            <thead className="text-xs text-neutral-500">
+            <thead className="text-xs text-muted-foreground">
               <tr>
                 <th className="text-left pb-2">Job ID</th>
                 <th className="text-left pb-2">Name</th>
@@ -80,7 +80,7 @@ export default async function BullMQDashboardPage() {
             </thead>
             <tbody>
               {recentFailures.map((job) => (
-                <tr key={job.id} className="border-t border-neutral-900">
+                <tr key={job.id} className="border-t border-border">
                   <td className="py-2">
                     <Link
                       href={`/services/bullmq/job/${encodeURIComponent(job.id)}`}
@@ -91,7 +91,7 @@ export default async function BullMQDashboardPage() {
                   </td>
                   <td className="py-2 font-mono text-xs">{job.name}</td>
                   <td className="py-2">{job.attemptsMade}</td>
-                  <td className="py-2 text-xs text-neutral-400">
+                  <td className="py-2 text-xs text-muted-foreground">
                     {job.finishedOn ? formatRelative(new Date(job.finishedOn)) : '—'}
                   </td>
                   <td className="py-2 text-xs truncate max-w-md text-red-400">

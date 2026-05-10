@@ -1,4 +1,5 @@
 import { Banknote, Bitcoin, LineChart, Wallet } from 'lucide-react';
+import { useRevealOnScroll } from '../../hooks/useRevealOnScroll';
 
 interface Bucket {
   Icon: typeof Banknote;
@@ -44,8 +45,13 @@ const BUCKETS: ReadonlyArray<Bucket> = [
 ];
 
 export function Problem() {
+  const ref = useRevealOnScroll<HTMLElement>();
   return (
-    <section className="border-b border-border/60 bg-background py-12 sm:py-20 lg:py-28">
+    <section
+      ref={ref}
+      data-reveal="section"
+      className="border-b border-border/60 bg-background py-12 sm:py-20 lg:py-28"
+    >
       <div className="mx-auto max-w-6xl px-6">
         <div className="mx-auto max-w-2xl text-center">
           <p className="text-xs font-medium uppercase tracking-widest text-muted-foreground">

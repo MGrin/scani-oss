@@ -2,10 +2,13 @@
 @tailwind components;
 @tailwind utilities;
 
-:root {
-  color-scheme: dark;
-}
+/* Inherit the full design-system token set (light + dark). Admin
+ * locks itself to dark via `<html class="dark" data-theme="dark">` in
+ * layout.tsx — we keep ThemeContext-style overrides available but
+ * default operators to a dark surface, which matches the BullMQ /
+ * Fly / Neon dashboards that this app embeds. */
+@import "@scani/ui/styles/globals.css";
 
 body {
-  @apply bg-neutral-950 text-neutral-100 font-mono antialiased;
+  @apply font-mono antialiased;
 }

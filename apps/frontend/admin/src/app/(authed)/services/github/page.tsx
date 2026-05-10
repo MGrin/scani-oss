@@ -13,7 +13,7 @@ export default async function GithubPage() {
   return (
     <div>
       <h1 className="text-xl font-semibold mb-1">GitHub</h1>
-      <p className="text-xs text-neutral-400 mb-6">
+      <p className="text-xs text-muted-foreground mb-6">
         {repo.ok ? `${repo.data.fullName} (${repo.data.visibility})` : 'repo info unavailable'}
       </p>
 
@@ -35,7 +35,7 @@ export default async function GithubPage() {
       <Section title="Recent workflow runs">
         {runs.ok ? (
           <table className="w-full text-xs">
-            <thead className="text-neutral-500">
+            <thead className="text-muted-foreground">
               <tr>
                 <th className="text-left font-normal py-1">#</th>
                 <th className="text-left font-normal py-1">workflow</th>
@@ -47,8 +47,8 @@ export default async function GithubPage() {
             </thead>
             <tbody>
               {runs.data.map((r) => (
-                <tr key={r.id} className="border-t border-neutral-800/60">
-                  <td className="py-1 font-mono text-neutral-400">{r.runNumber}</td>
+                <tr key={r.id} className="border-t border-border/60">
+                  <td className="py-1 font-mono text-muted-foreground">{r.runNumber}</td>
                   <td className="py-1">
                     <a
                       href={r.htmlUrl}
@@ -59,20 +59,20 @@ export default async function GithubPage() {
                       {r.name}
                     </a>
                   </td>
-                  <td className="py-1 text-neutral-400">{r.headBranch}</td>
-                  <td className="py-1 text-neutral-400">{r.event}</td>
+                  <td className="py-1 text-muted-foreground">{r.headBranch}</td>
+                  <td className="py-1 text-muted-foreground">{r.event}</td>
                   <td
                     className={`py-1 ${
                       r.conclusion === 'success'
                         ? 'text-emerald-400'
                         : r.conclusion === 'failure'
                           ? 'text-red-400'
-                          : 'text-neutral-300'
+                          : 'text-foreground/80'
                     }`}
                   >
                     {r.conclusion ?? r.status}
                   </td>
-                  <td className="py-1 text-neutral-400">{formatRelative(r.createdAt)}</td>
+                  <td className="py-1 text-muted-foreground">{formatRelative(r.createdAt)}</td>
                 </tr>
               ))}
             </tbody>

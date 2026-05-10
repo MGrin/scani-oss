@@ -1,4 +1,5 @@
 import { ArrowRight, Bug, GitPullRequest, Plug } from 'lucide-react';
+import { useRevealOnScroll } from '../../hooks/useRevealOnScroll';
 
 const REWARD_TYPES = [
   {
@@ -19,8 +20,13 @@ const REWARD_TYPES = [
 ];
 
 export function OSSContributors() {
+  const ref = useRevealOnScroll<HTMLElement>();
   return (
-    <section className="border-b border-border/60 bg-background py-12 sm:py-20 lg:py-28">
+    <section
+      ref={ref}
+      data-reveal="section"
+      className="border-b border-border/60 bg-background py-12 sm:py-20 lg:py-28"
+    >
       <div className="mx-auto max-w-4xl px-6">
         <div className="text-center">
           <p className="text-xs font-medium uppercase tracking-widest text-muted-foreground">

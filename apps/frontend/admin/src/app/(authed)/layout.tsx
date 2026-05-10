@@ -22,12 +22,12 @@ const nav: Array<{ href: string; label: string }> = [
 export default function AuthedLayout({ children }: { children: ReactNode }) {
   return (
     <>
-      <header className="border-b border-neutral-800 px-6 py-4">
+      <header className="border-b border-border px-6 py-4">
         <div className="flex items-center justify-between">
           <Link href="/" className="text-lg font-semibold tracking-tight">
             scani · admin
           </Link>
-          <a href="/auth/logout" className="text-xs text-neutral-500 hover:text-neutral-300">
+          <a href="/auth/logout" className="text-xs text-muted-foreground hover:text-foreground/80">
             sign out
           </a>
         </div>
@@ -36,7 +36,7 @@ export default function AuthedLayout({ children }: { children: ReactNode }) {
             <Link
               key={item.href}
               href={item.href}
-              className="text-neutral-400 hover:text-neutral-100"
+              className="text-muted-foreground hover:text-foreground"
             >
               {item.label}
             </Link>

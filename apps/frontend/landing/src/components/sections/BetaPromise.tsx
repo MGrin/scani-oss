@@ -1,6 +1,7 @@
 import { TRPCClientError } from '@trpc/client';
 import { ArrowRight, CheckCircle2, Clock } from 'lucide-react';
 import { type FormEvent, useState } from 'react';
+import { useRevealOnScroll } from '../../hooks/useRevealOnScroll';
 import { trpc } from '../../lib/trpc';
 
 type Status =
@@ -13,6 +14,7 @@ type Status =
 export function BetaPromise() {
   const [email, setEmail] = useState('');
   const [status, setStatus] = useState<Status>({ kind: 'idle' });
+  const ref = useRevealOnScroll<HTMLElement>();
 
   const submit = async (e: FormEvent) => {
     e.preventDefault();
@@ -42,7 +44,9 @@ export function BetaPromise() {
 
   return (
     <section
+      ref={ref}
       id="beta"
+      data-reveal="section"
       className="border-b border-border/60 bg-gradient-to-b from-background to-card/40 py-12 sm:py-20 lg:py-28"
     >
       <div className="mx-auto max-w-3xl px-6 text-center">

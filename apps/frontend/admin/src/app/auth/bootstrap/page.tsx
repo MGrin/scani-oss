@@ -55,10 +55,10 @@ function BootstrapInner() {
 
   return (
     <div className="min-h-screen flex items-center justify-center px-4 py-8">
-      <div className="w-full max-w-2xl rounded-lg border border-neutral-800 bg-neutral-900/40 p-6 space-y-6">
+      <div className="w-full max-w-2xl rounded-lg border border-border bg-card/40 p-6 space-y-6">
         <div>
           <h1 className="text-lg font-semibold mb-1">scani · admin bootstrap</h1>
-          <p className="text-xs text-neutral-400">
+          <p className="text-xs text-muted-foreground">
             One-shot passkey registration. Displays the secrets once; copy them into GitHub Actions
             / Cloudflare Pages secrets, then remove <code>ADMIN_BOOTSTRAP_TOKEN</code>
             to permanently lock this route.
@@ -67,7 +67,7 @@ function BootstrapInner() {
 
         {status !== 'done' ? (
           <>
-            <label className="block text-xs text-neutral-400">
+            <label className="block text-xs text-muted-foreground">
               Bootstrap token
               <input
                 type="password"
@@ -75,14 +75,14 @@ function BootstrapInner() {
                 value={token}
                 onChange={(e) => setToken(e.target.value)}
                 disabled={status === 'pending'}
-                className="mt-1 w-full rounded-md border border-neutral-700 bg-neutral-950 px-3 py-2 text-sm text-neutral-100"
+                className="mt-1 w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground"
               />
             </label>
             <button
               type="button"
               onClick={onRegister}
               disabled={status === 'pending' || !token}
-              className="w-full rounded-md border border-neutral-700 bg-neutral-800 hover:bg-neutral-700 disabled:opacity-50 px-4 py-2 text-sm font-semibold"
+              className="w-full rounded-md border border-border bg-muted hover:bg-muted disabled:opacity-50 px-4 py-2 text-sm font-semibold"
             >
               {status === 'pending' ? 'Waiting for passkey…' : 'Create passkey'}
             </button>
@@ -97,9 +97,9 @@ function BootstrapInner() {
             </div>
             <SecretRow label="ADMIN_PASSKEY_CREDENTIAL_ID" value={secrets.credentialId} />
             <SecretRow label="ADMIN_PASSKEY_PUBLIC_KEY" value={secrets.publicKey} />
-            <div className="pt-2 text-xs text-neutral-400 space-y-2">
+            <div className="pt-2 text-xs text-muted-foreground space-y-2">
               <p>Add these as GitHub Actions secrets, then remove the bootstrap token:</p>
-              <pre className="rounded-md bg-neutral-950 border border-neutral-800 p-3 text-neutral-300 overflow-x-auto">
+              <pre className="rounded-md bg-background border border-border p-3 text-foreground/80 overflow-x-auto">
                 {`gh secret set ADMIN_PASSKEY_CREDENTIAL_ID --body "${secrets.credentialId}"
 gh secret set ADMIN_PASSKEY_PUBLIC_KEY --body "${secrets.publicKey}"
 gh secret delete ADMIN_BOOTSTRAP_TOKEN
@@ -120,12 +120,12 @@ gh workflow run deploy-fly.yaml -f services=admin`}
 function SecretRow({ label, value }: { label: string; value: string }) {
   return (
     <div>
-      <div className="text-xs uppercase tracking-wide text-neutral-500 mb-1">{label}</div>
+      <div className="text-xs uppercase tracking-wide text-muted-foreground mb-1">{label}</div>
       <input
         readOnly
         onClick={(e) => e.currentTarget.select()}
         value={value}
-        className="w-full rounded-md border border-neutral-700 bg-neutral-950 px-3 py-2 text-xs font-mono text-neutral-100"
+        className="w-full rounded-md border border-border bg-background px-3 py-2 text-xs font-mono text-foreground"
       />
     </div>
   );

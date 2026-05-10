@@ -31,23 +31,23 @@ export default async function JobStateListPage({ params, searchParams }: PagePro
   return (
     <div>
       <h1 className="text-xl font-semibold mb-1">
-        <Link href="/services/bullmq" className="text-neutral-500 hover:text-neutral-300">
+        <Link href="/services/bullmq" className="text-muted-foreground hover:text-foreground/80">
           BullMQ
         </Link>{' '}
-        <span className="text-neutral-600">/</span> {prettyState(state)}
+        <span className="text-muted-foreground/70">/</span> {prettyState(state)}
       </h1>
-      <p className="text-xs text-neutral-400 mb-6">
+      <p className="text-xs text-muted-foreground mb-6">
         {formatNumber(total)} job{total === 1 ? '' : 's'} in this state · showing {offset + 1}–
         {Math.min(offset + PAGE_SIZE, total)}
       </p>
 
       <Section title="Jobs">
         {items.length === 0 ? (
-          <p className="text-sm text-neutral-500">No jobs in this state.</p>
+          <p className="text-sm text-muted-foreground">No jobs in this state.</p>
         ) : (
           <>
             <table className="w-full text-sm">
-              <thead className="text-xs text-neutral-500">
+              <thead className="text-xs text-muted-foreground">
                 <tr>
                   <th className="text-left pb-2">Job ID</th>
                   <th className="text-left pb-2">Name</th>
@@ -60,7 +60,7 @@ export default async function JobStateListPage({ params, searchParams }: PagePro
               </thead>
               <tbody>
                 {items.map((job) => (
-                  <tr key={job.id} className="border-t border-neutral-900">
+                  <tr key={job.id} className="border-t border-border">
                     <td className="py-2">
                       <Link
                         href={`/services/bullmq/job/${encodeURIComponent(job.id)}`}
@@ -71,7 +71,7 @@ export default async function JobStateListPage({ params, searchParams }: PagePro
                     </td>
                     <td className="py-2 font-mono text-xs">{job.name}</td>
                     <td className="py-2">{job.attemptsMade}</td>
-                    <td className="py-2 text-xs text-neutral-400">
+                    <td className="py-2 text-xs text-muted-foreground">
                       {(() => {
                         const ts =
                           state === 'waiting' || state === 'delayed'
@@ -97,7 +97,7 @@ export default async function JobStateListPage({ params, searchParams }: PagePro
                   ← previous
                 </Link>
               ) : (
-                <span className="text-neutral-700">← previous</span>
+                <span className="text-muted-foreground/50">← previous</span>
               )}
               {nextOffset < total ? (
                 <Link
@@ -107,7 +107,7 @@ export default async function JobStateListPage({ params, searchParams }: PagePro
                   next →
                 </Link>
               ) : (
-                <span className="text-neutral-700">next →</span>
+                <span className="text-muted-foreground/50">next →</span>
               )}
             </div>
           </>

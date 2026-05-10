@@ -14,7 +14,7 @@ export default async function NeonPage() {
   return (
     <div>
       <h1 className="text-xl font-semibold mb-1">Neon Postgres</h1>
-      <p className="text-xs text-neutral-400 mb-6">
+      <p className="text-xs text-muted-foreground mb-6">
         Billing-period usage per project (resets on plan's billing-cycle boundary)
       </p>
 
@@ -23,7 +23,7 @@ export default async function NeonPage() {
           <div key={p.id}>
             <h2 className="text-sm font-semibold mb-3">
               {p.name}{' '}
-              <span className="text-neutral-500 font-normal">
+              <span className="text-muted-foreground font-normal">
                 · {p.platformId} · {p.regionId} · pg{p.pgVersion}
               </span>
             </h2>
@@ -52,7 +52,7 @@ export default async function NeonPage() {
       </div>
 
       <Section title="Raw project ids">
-        <ul className="text-xs text-neutral-400 font-mono space-y-1">
+        <ul className="text-xs text-muted-foreground font-mono space-y-1">
           {projects.data.map((p) => (
             <li key={p.id}>
               {p.id} — {p.name}

@@ -1,4 +1,5 @@
 import { Activity, Layers, Repeat, Sigma } from 'lucide-react';
+import { useRevealOnScroll } from '../../hooks/useRevealOnScroll';
 
 interface Pillar {
   Icon: typeof Layers;
@@ -30,8 +31,18 @@ const PILLARS: ReadonlyArray<Pillar> = [
 ];
 
 export function Architecture() {
+  const sectionRef = useRevealOnScroll<HTMLElement>();
+  // Diagram has its own reveal trigger so the line-draw animation
+  // doesn't fire until the SVG is actually on-screen — otherwise on
+  // small viewports the lines would draw before the user could see
+  // them.
+  const diagramRef = useRevealOnScroll<HTMLDivElement>({ threshold: 0.25 });
   return (
-    <section className="border-b border-border/60 bg-background py-12 sm:py-20 lg:py-28">
+    <section
+      ref={sectionRef}
+      data-reveal="section"
+      className="border-b border-border/60 bg-background py-12 sm:py-20 lg:py-28"
+    >
       <div className="mx-auto max-w-6xl px-6">
         <div className="grid items-center gap-12 lg:grid-cols-2">
           <div>
@@ -65,7 +76,11 @@ export function Architecture() {
            * or our managed cloud. Deliberately avoids naming specific
            * tooling so the diagram doesn't rot when implementation
            * details change underneath. */}
-          <div className="relative rounded-xl border border-border bg-card p-6">
+          <div
+            ref={diagramRef}
+            data-reveal="diagram"
+            className="relative rounded-xl border border-border bg-card p-6"
+          >
             <svg
               viewBox="0 0 420 360"
               className="h-auto w-full text-foreground"
@@ -133,7 +148,12 @@ export function Architecture() {
                 read-only, your credentials
               </text>
 
+              {/* Flow connector — animates a stroke-dash draw-in when
+               * the diagram enters viewport (see index.css). Solid
+               * stroke chosen over the dashed style because the draw
+               * animation needs full control of stroke-dasharray. */}
               <line
+                data-reveal="draw"
                 x1="210"
                 y1="84"
                 x2="210"
@@ -142,7 +162,6 @@ export function Architecture() {
                 strokeWidth="1.4"
                 opacity="0.55"
                 markerEnd="url(#arch-arrow)"
-                strokeDasharray="3 3"
               />
 
               {/* Row 2 — Scani core, "the constant" */}
@@ -210,6 +229,7 @@ export function Architecture() {
               ))}
 
               <line
+                data-reveal="draw"
                 x1="115"
                 y1="230"
                 x2="115"
@@ -218,9 +238,9 @@ export function Architecture() {
                 strokeWidth="1.4"
                 opacity="0.55"
                 markerEnd="url(#arch-arrow)"
-                strokeDasharray="3 3"
               />
               <line
+                data-reveal="draw"
                 x1="305"
                 y1="230"
                 x2="305"
@@ -229,7 +249,6 @@ export function Architecture() {
                 strokeWidth="1.4"
                 opacity="0.55"
                 markerEnd="url(#arch-arrow)"
-                strokeDasharray="3 3"
               />
 
               {/* Row 3 — two deployment shapes */}

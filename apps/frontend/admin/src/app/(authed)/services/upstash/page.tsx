@@ -19,7 +19,7 @@ export default async function UpstashPage() {
   return (
     <div>
       <h1 className="text-xl font-semibold mb-1">Upstash Redis</h1>
-      <p className="text-xs text-neutral-400 mb-6">
+      <p className="text-xs text-muted-foreground mb-6">
         Backs BullMQ (scani-jobs), rate limiter, and WebSocket pub/sub fan-out
       </p>
 
@@ -43,7 +43,7 @@ export default async function UpstashPage() {
             <div key={db.id}>
               <h3 className="text-sm font-semibold mb-3">
                 {db.name}{' '}
-                <span className="text-neutral-500 font-normal">
+                <span className="text-muted-foreground font-normal">
                   · {db.type} · {db.region} · TLS {db.tls ? 'on' : 'off'} · {db.state}
                 </span>
               </h3>
@@ -59,7 +59,7 @@ export default async function UpstashPage() {
                 <MetricTile label="Created" value={formatRelative(new Date(db.createdAt * 1000))} />
               </div>
 
-              <div className="mt-3 text-xs text-neutral-400 font-mono">
+              <div className="mt-3 text-xs text-muted-foreground font-mono">
                 {db.endpoint}:{db.port}
               </div>
             </div>

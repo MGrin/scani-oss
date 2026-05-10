@@ -44,16 +44,16 @@ function LoginInner() {
 
   return (
     <div className="min-h-screen flex items-center justify-center px-4">
-      <div className="w-full max-w-sm rounded-lg border border-neutral-800 bg-neutral-900/40 p-6">
+      <div className="w-full max-w-sm rounded-lg border border-border bg-card/40 p-6">
         <h1 className="text-lg font-semibold mb-1">scani · admin</h1>
-        <p className="text-xs text-neutral-400 mb-6">
+        <p className="text-xs text-muted-foreground mb-6">
           Sign in with your passkey to access the dashboard.
         </p>
         <button
           type="button"
           onClick={onSignIn}
           disabled={status === 'pending'}
-          className="w-full rounded-md border border-neutral-700 bg-neutral-800 hover:bg-neutral-700 disabled:opacity-50 px-4 py-2 text-sm font-semibold"
+          className="w-full rounded-md border border-border bg-muted hover:bg-muted disabled:opacity-50 px-4 py-2 text-sm font-semibold"
         >
           {status === 'pending' ? 'Waiting for passkey…' : 'Sign in with passkey'}
         </button>

@@ -1,4 +1,5 @@
 import { Check, Cloud, Server, Sparkles } from 'lucide-react';
+import { useRevealOnScroll } from '../../hooks/useRevealOnScroll';
 
 interface Tier {
   Icon: typeof Cloud;
@@ -56,8 +57,14 @@ const TIERS: ReadonlyArray<Tier> = [
 ];
 
 export function Tiers() {
+  const ref = useRevealOnScroll<HTMLElement>();
   return (
-    <section id="tiers" className="border-b border-border/60 bg-background py-12 sm:py-20 lg:py-28">
+    <section
+      ref={ref}
+      id="tiers"
+      data-reveal="section"
+      className="border-b border-border/60 bg-background py-12 sm:py-20 lg:py-28"
+    >
       <div className="mx-auto max-w-6xl px-6">
         <div className="mx-auto max-w-2xl text-center">
           <p className="text-xs font-medium uppercase tracking-widest text-muted-foreground">
@@ -75,7 +82,8 @@ export function Tiers() {
           {TIERS.map((tier) => (
             <div
               key={tier.name}
-              className="flex flex-col rounded-xl border border-border bg-card p-6"
+              data-reveal="lift"
+              className="flex flex-col rounded-xl border border-border bg-card p-6 hover:border-border/80"
             >
               <div className="flex items-center gap-2">
                 <tier.Icon className="h-5 w-5 text-foreground" />

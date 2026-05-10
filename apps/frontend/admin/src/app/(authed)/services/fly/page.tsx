@@ -26,8 +26,8 @@ export default async function FlyPage() {
   return (
     <div>
       <h1 className="text-xl font-semibold mb-1">Fly.io</h1>
-      <p className="text-xs text-neutral-400 mb-6">
-        Org <span className="text-neutral-200">{overview.data.slug}</span> · role{' '}
+      <p className="text-xs text-muted-foreground mb-6">
+        Org <span className="text-foreground">{overview.data.slug}</span> · role{' '}
         {overview.data.viewerRole ?? '—'}
       </p>
 
@@ -43,14 +43,11 @@ export default async function FlyPage() {
           {overview.data.apps.map((app) => {
             const machines = machineResults.find((m) => m.app === app.name)?.machines;
             return (
-              <div
-                key={app.name}
-                className="rounded-lg border border-neutral-800 bg-neutral-900/40 p-4"
-              >
+              <div key={app.name} className="rounded-lg border border-border bg-card/40 p-4">
                 <div className="flex items-center justify-between mb-3">
                   <div>
                     <div className="text-sm font-semibold">{app.name}</div>
-                    <div className="text-xs text-neutral-400">
+                    <div className="text-xs text-muted-foreground">
                       {app.status} · deployed: {app.deployed ? 'yes' : 'no'}
                       {app.currentRelease
                         ? ` · v${app.currentRelease.version} (${formatRelative(
@@ -62,7 +59,7 @@ export default async function FlyPage() {
                 </div>
                 {machines?.ok ? (
                   <table className="w-full text-xs">
-                    <thead className="text-neutral-500">
+                    <thead className="text-muted-foreground">
                       <tr>
                         <th className="text-left font-normal py-1">id</th>
                         <th className="text-left font-normal py-1">name</th>
@@ -73,12 +70,14 @@ export default async function FlyPage() {
                     </thead>
                     <tbody>
                       {machines.data.map((m) => (
-                        <tr key={m.id} className="border-t border-neutral-800/60">
-                          <td className="py-1 font-mono text-neutral-400">{m.id}</td>
+                        <tr key={m.id} className="border-t border-border/60">
+                          <td className="py-1 font-mono text-muted-foreground">{m.id}</td>
                           <td className="py-1">{m.name}</td>
                           <td className="py-1">{m.state}</td>
                           <td className="py-1">{m.region}</td>
-                          <td className="py-1 text-neutral-400">{formatRelative(m.createdAt)}</td>
+                          <td className="py-1 text-muted-foreground">
+                            {formatRelative(m.createdAt)}
+                          </td>
                         </tr>
                       ))}
                     </tbody>

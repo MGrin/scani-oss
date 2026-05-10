@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useRevealOnScroll } from '../../hooks/useRevealOnScroll';
 
 interface Shot {
   id: string;
@@ -55,9 +56,12 @@ function Screenshot({ shot }: { shot: Shot }) {
 }
 
 export function ProductShowcase() {
+  const ref = useRevealOnScroll<HTMLElement>();
   return (
     <section
+      ref={ref}
       id="product"
+      data-reveal="section"
       className="border-b border-border/60 bg-background py-12 sm:py-20 lg:py-28"
     >
       <div className="mx-auto max-w-6xl px-6">
