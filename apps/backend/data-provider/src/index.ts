@@ -147,12 +147,26 @@ const app = new Elysia()
   // surface, so the headers should match. CSP defaults to `default-src
   // 'none'` because this service returns JSON; no inline scripts, no
   // images. HSTS only ships in production where TLS is guaranteed.
-  .onAfterHandle(({ set }) => {
+  // The one exception is `/docs`, which embeds Scalar's API-reference
+  // bundle from jsdelivr — that page swaps in a Scalar-friendly CSP
+  // that whitelists the CDN + the assets Scalar fetches at runtime.
+  .onAfterHandle(({ request, set }) => {
     set.headers = set.headers || {};
     set.headers['X-Content-Type-Options'] = 'nosniff';
     set.headers['X-Frame-Options'] = 'DENY';
     set.headers['Referrer-Policy'] = 'strict-origin-when-cross-origin';
-    set.headers['Content-Security-Policy'] = "default-src 'none'";
+    const isDocsPage = new URL(request.url).pathname === '/docs';
+    set.headers['Content-Security-Policy'] = isDocsPage
+      ? [
+          "default-src 'self'",
+          "script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net",
+          "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://fonts.googleapis.com",
+          "font-src 'self' data: https://cdn.jsdelivr.net https://fonts.gstatic.com",
+          "img-src 'self' data: https:",
+          "connect-src 'self'",
+          "worker-src 'self' blob:",
+        ].join('; ')
+      : "default-src 'none'";
     if (process.env.NODE_ENV === 'production') {
       set.headers['Strict-Transport-Security'] = 'max-age=31536000; includeSubDomains; preload';
     }
