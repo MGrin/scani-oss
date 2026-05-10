@@ -1,4 +1,4 @@
-import { Banknote, Bitcoin, Wallet } from 'lucide-react';
+import { Banknote, Bitcoin, LineChart, Wallet } from 'lucide-react';
 
 interface Bucket {
   Icon: typeof Banknote;
@@ -7,22 +7,24 @@ interface Bucket {
   examples: string[];
 }
 
-// Examples are illustrative, not exhaustive — `+ N more` lets us add
-// providers without rewriting the page. Edit the chip list when the
-// shipped names shift, but resist the urge to enumerate every provider.
+// Examples are illustrative, not exhaustive. The first three buckets
+// list where the *balances and transactions* come from; the fourth
+// lists where the *prices* come from — they're a different concern
+// and need their own surface so visitors can see the asset-class
+// coverage.
 const BUCKETS: ReadonlyArray<Bucket> = [
   {
     Icon: Banknote,
     title: 'Banks & brokerages',
     description:
       'Checking, savings, and investment accounts pulled via direct broker and bank APIs.',
-    examples: ['IBKR', 'Wise', 'Yahoo Finance', 'Finnhub'],
+    examples: ['IBKR', 'Wise'],
   },
   {
     Icon: Bitcoin,
     title: 'Crypto exchanges & custody',
     description:
-      'Centralized exchanges sync over read-only API keys; pricing data from major aggregators.',
+      'Centralized exchanges sync over read-only API keys; balances refresh on a schedule.',
     examples: ['Binance', 'Kraken', 'Coinbase', 'OKX', '+ 8 more'],
   },
   {
@@ -30,27 +32,34 @@ const BUCKETS: ReadonlyArray<Bucket> = [
     title: 'On-chain & DeFi',
     description:
       'Self-custody balances, staking positions, and DeFi yield from explorers and indexers.',
-    examples: ['Bitcoin', 'EVM chains', 'Solana', 'TON', 'Tron', 'DeFiLlama'],
+    examples: ['Bitcoin', 'EVM chains', 'Solana', 'TON', 'Tron'],
+  },
+  {
+    Icon: LineChart,
+    title: 'Prices for everything you hold',
+    description:
+      'Spot, historical, and FX rates for every asset class — crypto, equities (US and non-US), and fiat. Backfilled overnight, refreshed live during the day.',
+    examples: ['CoinGecko', 'DeFiLlama', 'Yahoo Finance', 'Finnhub', 'Frankfurter'],
   },
 ];
 
 export function Problem() {
   return (
-    <section className="border-b border-border/60 bg-background py-20 sm:py-28">
+    <section className="border-b border-border/60 bg-background py-12 sm:py-20 lg:py-28">
       <div className="mx-auto max-w-6xl px-6">
         <div className="mx-auto max-w-2xl text-center">
           <p className="text-xs font-medium uppercase tracking-widest text-muted-foreground">
             The problem
           </p>
           <h2 className="mt-3 text-balance text-3xl font-semibold tracking-tight sm:text-4xl">
-            Your money lives in 14 different apps. Your view of it shouldn't.
+            Your money lives across too many apps. Your view of it shouldn't.
           </h2>
           <p className="mt-4 text-balance text-muted-foreground">
             Most personal-finance tools cover one slice — bank accounts, or crypto, or stocks. Scani
-            plugs into all three at once and reconciles them into one accurate balance.
+            plugs into all of them and reconciles them into one accurate balance.
           </p>
         </div>
-        <div className="mt-14 grid gap-6 md:grid-cols-3">
+        <div className="mt-14 grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
           {BUCKETS.map(({ Icon, title, description, examples }) => (
             <div
               key={title}

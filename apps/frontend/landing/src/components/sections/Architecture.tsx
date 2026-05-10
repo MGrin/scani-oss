@@ -1,37 +1,37 @@
-import { Database, GitBranch, Globe, Server } from 'lucide-react';
+import { Activity, Layers, Repeat, Sigma } from 'lucide-react';
 
 interface Pillar {
-  Icon: typeof Server;
+  Icon: typeof Layers;
   title: string;
   body: string;
 }
 
 const PILLARS: ReadonlyArray<Pillar> = [
   {
-    Icon: GitBranch,
+    Icon: Layers,
     title: 'One codebase, three deployments',
-    body: 'A backend, a worker, and a data-provider — packaged as Docker images that boot identically on a laptop, your VPS, or our Fly cluster.',
+    body: 'The same backend, worker, and data plane boot identically on your laptop, your VPS, or our managed cloud — same binary, same behavior.',
   },
   {
-    Icon: Database,
-    title: 'Drizzle + Postgres',
-    body: 'Type-safe schema in code, real migrations on disk. Decimal.js for money so floats never round your balance.',
+    Icon: Sigma,
+    title: 'Money is hard; we know',
+    body: 'Floats round. Currencies drift. Stale prices lie. Scani stores every amount in arbitrary-precision decimal end-to-end and reconciles balances against historical prices, so a portfolio total never lies because of a binary representation.',
   },
   {
-    Icon: Server,
-    title: 'BullMQ on Redis',
-    body: 'Pricing, balance syncs, payouts, transfer linking — every long-running job lives in queues that survive restarts.',
+    Icon: Repeat,
+    title: 'Distributed job processing',
+    body: 'Pricing, balance syncs, payouts, transfer linking — every long-running task runs on a durable queue that survives restarts, retries on transient failure, and back-pressures gracefully under load.',
   },
   {
-    Icon: Globe,
-    title: 'tRPC end-to-end',
-    body: 'API + worker + frontends share types. Add a field to the schema, every caller sees it at compile time.',
+    Icon: Activity,
+    title: 'Live by default',
+    body: 'Balances and prices update as soon as upstream changes; the dashboard reflects them within seconds. No polling buttons, no "last refreshed 4 minutes ago" stamps.',
   },
 ];
 
 export function Architecture() {
   return (
-    <section className="border-b border-border/60 bg-background py-20 sm:py-28">
+    <section className="border-b border-border/60 bg-background py-12 sm:py-20 lg:py-28">
       <div className="mx-auto max-w-6xl px-6">
         <div className="grid items-center gap-12 lg:grid-cols-2">
           <div>
@@ -42,9 +42,10 @@ export function Architecture() {
               Built like infrastructure, not a product demo.
             </h2>
             <p className="mt-4 text-muted-foreground">
-              Bun, tRPC, Drizzle, BullMQ, Postgres, Redis. Strictly typed end-to-end. No
-              service-fragmentation tax — the same code runs every tier, so an upstream fix in
-              self-host lands in managed SaaS automatically.
+              One codebase, packaged three ways.{' '}
+              <strong className="text-foreground">No service-fragmentation tax</strong> — a fix
+              shipped to a self-hosted instance is the same fix running on our managed cloud,
+              because they're the same binary.
             </p>
             <ul className="mt-8 grid gap-5 sm:grid-cols-2">
               {PILLARS.map(({ Icon, title, body }) => (
@@ -59,142 +60,242 @@ export function Architecture() {
             </ul>
           </div>
 
-          {/* Inline SVG diagram — three deployment shapes feeding the
-           * shared core. Renders in light + dark theme via currentColor. */}
+          {/* Three-layer architectural diagram: external assets feed
+           * into the Scani core, which deploys to either your infra
+           * or our managed cloud. Deliberately avoids naming specific
+           * tooling so the diagram doesn't rot when implementation
+           * details change underneath. */}
           <div className="relative rounded-xl border border-border bg-card p-6">
             <svg
-              viewBox="0 0 420 320"
+              viewBox="0 0 420 360"
               className="h-auto w-full text-foreground"
               role="img"
-              aria-label="Three deployment shapes: self-host, cloud API, managed SaaS — sharing the same Scani core."
+              aria-label="Layered architecture: your assets flow into Scani core, which deploys to either self-host or our managed cloud."
             >
               <defs>
-                <pattern id="dots" width="8" height="8" patternUnits="userSpaceOnUse">
-                  <circle cx="1" cy="1" r="1" fill="currentColor" opacity="0.15" />
+                <pattern id="arch-dots" width="8" height="8" patternUnits="userSpaceOnUse">
+                  <circle cx="1" cy="1" r="1" fill="currentColor" opacity="0.12" />
                 </pattern>
+                <marker
+                  id="arch-arrow"
+                  viewBox="0 0 10 10"
+                  refX="9"
+                  refY="5"
+                  markerWidth="6"
+                  markerHeight="6"
+                  orient="auto"
+                >
+                  <path d="M0 0 L10 5 L0 10 z" fill="currentColor" opacity="0.55" />
+                </marker>
               </defs>
-              <rect width="420" height="320" fill="url(#dots)" />
+              <rect width="420" height="360" fill="url(#arch-dots)" />
 
-              {/* Core */}
+              {/* Row 1 — your assets feed in */}
               <rect
-                x="155"
-                y="135"
-                width="110"
-                height="50"
-                rx="8"
+                x="30"
+                y="20"
+                width="360"
+                height="64"
+                rx="10"
                 fill="currentColor"
-                fillOpacity="0.08"
+                fillOpacity="0.04"
                 stroke="currentColor"
-                strokeWidth="1.4"
+                strokeWidth="1.2"
               />
               <text
                 x="210"
-                y="158"
+                y="44"
                 textAnchor="middle"
                 fontSize="11"
                 fontWeight="600"
                 fill="currentColor"
               >
-                @scani/* core
+                Your assets
               </text>
               <text
                 x="210"
-                y="172"
+                y="62"
                 textAnchor="middle"
-                fontSize="9"
+                fontSize="10"
                 fill="currentColor"
                 opacity="0.6"
               >
-                api · worker · data-provider
+                banks · brokerages · exchanges · chains
+              </text>
+              <text
+                x="210"
+                y="76"
+                textAnchor="middle"
+                fontSize="9"
+                fill="currentColor"
+                opacity="0.45"
+              >
+                read-only, your credentials
               </text>
 
-              {/* Three deployment shapes */}
+              <line
+                x1="210"
+                y1="84"
+                x2="210"
+                y2="124"
+                stroke="currentColor"
+                strokeWidth="1.4"
+                opacity="0.55"
+                markerEnd="url(#arch-arrow)"
+                strokeDasharray="3 3"
+              />
+
+              {/* Row 2 — Scani core, "the constant" */}
+              <rect
+                x="30"
+                y="130"
+                width="360"
+                height="100"
+                rx="10"
+                fill="currentColor"
+                fillOpacity="0.09"
+                stroke="currentColor"
+                strokeWidth="1.6"
+              />
+              <text
+                x="210"
+                y="155"
+                textAnchor="middle"
+                fontSize="12"
+                fontWeight="700"
+                fill="currentColor"
+              >
+                Scani core
+              </text>
+              <text
+                x="210"
+                y="170"
+                textAnchor="middle"
+                fontSize="9"
+                fill="currentColor"
+                opacity="0.55"
+              >
+                the constant — same code on every deployment
+              </text>
+
               {[
-                { x: 30, y: 55, label: 'Self-host', sub: 'Docker on your box' },
-                { x: 165, y: 35, label: 'Cloud API', sub: 'api.cloud.scani.xyz' },
-                { x: 300, y: 55, label: 'Managed SaaS', sub: 'app.scani.xyz' },
-              ].map((node) => (
-                <g key={node.label}>
+                { x: 50, label: 'API', w: 60 },
+                { x: 125, label: 'Async queue', w: 85 },
+                { x: 225, label: 'Workers', w: 70 },
+                { x: 310, label: 'Durable store', w: 80 },
+              ].map((p) => (
+                <g key={p.label}>
                   <rect
-                    x={node.x}
-                    y={node.y}
-                    width="90"
-                    height="46"
-                    rx="6"
+                    x={p.x}
+                    y="186"
+                    width={p.w}
+                    height="28"
+                    rx="14"
                     fill="currentColor"
-                    fillOpacity="0.04"
+                    fillOpacity="0.06"
                     stroke="currentColor"
-                    strokeWidth="1.2"
+                    strokeWidth="1"
                   />
                   <text
-                    x={node.x + 45}
-                    y={node.y + 21}
+                    x={p.x + p.w / 2}
+                    y="204"
                     textAnchor="middle"
-                    fontSize="11"
+                    fontSize="10"
                     fontWeight="500"
                     fill="currentColor"
                   >
-                    {node.label}
-                  </text>
-                  <text
-                    x={node.x + 45}
-                    y={node.y + 35}
-                    textAnchor="middle"
-                    fontSize="9"
-                    fill="currentColor"
-                    opacity="0.55"
-                  >
-                    {node.sub}
+                    {p.label}
                   </text>
                 </g>
               ))}
 
-              {/* Connectors */}
-              <g stroke="currentColor" strokeWidth="1.2" strokeDasharray="3 3" opacity="0.5">
-                <line x1="75" y1="101" x2="170" y2="135" />
-                <line x1="210" y1="81" x2="210" y2="135" />
-                <line x1="345" y1="101" x2="250" y2="135" />
-              </g>
+              <line
+                x1="115"
+                y1="230"
+                x2="115"
+                y2="270"
+                stroke="currentColor"
+                strokeWidth="1.4"
+                opacity="0.55"
+                markerEnd="url(#arch-arrow)"
+                strokeDasharray="3 3"
+              />
+              <line
+                x1="305"
+                y1="230"
+                x2="305"
+                y2="270"
+                stroke="currentColor"
+                strokeWidth="1.4"
+                opacity="0.55"
+                markerEnd="url(#arch-arrow)"
+                strokeDasharray="3 3"
+              />
 
-              {/* Bottom: shared infra */}
-              <g>
-                {[
-                  { x: 50, label: 'Postgres' },
-                  { x: 145, label: 'Redis' },
-                  { x: 240, label: 'R2 / S3' },
-                  { x: 330, label: 'Providers' },
-                ].map((n) => (
-                  <g key={n.label}>
-                    <rect
-                      x={n.x}
-                      y="240"
-                      width="65"
-                      height="36"
-                      rx="6"
-                      fill="currentColor"
-                      fillOpacity="0.04"
-                      stroke="currentColor"
-                      strokeWidth="1"
-                    />
-                    <text
-                      x={n.x + 32.5}
-                      y="262"
-                      textAnchor="middle"
-                      fontSize="10"
-                      fill="currentColor"
-                      opacity="0.75"
-                    >
-                      {n.label}
-                    </text>
-                  </g>
-                ))}
-              </g>
-              <g stroke="currentColor" strokeWidth="1" opacity="0.35">
-                <line x1="180" y1="185" x2="82" y2="240" />
-                <line x1="200" y1="185" x2="177" y2="240" />
-                <line x1="220" y1="185" x2="272" y2="240" />
-                <line x1="240" y1="185" x2="362" y2="240" />
-              </g>
+              {/* Row 3 — two deployment shapes */}
+              <rect
+                x="30"
+                y="276"
+                width="170"
+                height="64"
+                rx="10"
+                fill="currentColor"
+                fillOpacity="0.04"
+                stroke="currentColor"
+                strokeWidth="1.2"
+              />
+              <text
+                x="115"
+                y="300"
+                textAnchor="middle"
+                fontSize="11"
+                fontWeight="600"
+                fill="currentColor"
+              >
+                Self-host
+              </text>
+              <text
+                x="115"
+                y="318"
+                textAnchor="middle"
+                fontSize="9"
+                fill="currentColor"
+                opacity="0.55"
+              >
+                on your infrastructure
+              </text>
+
+              <rect
+                x="220"
+                y="276"
+                width="170"
+                height="64"
+                rx="10"
+                fill="currentColor"
+                fillOpacity="0.04"
+                stroke="currentColor"
+                strokeWidth="1.2"
+              />
+              <text
+                x="305"
+                y="300"
+                textAnchor="middle"
+                fontSize="11"
+                fontWeight="600"
+                fill="currentColor"
+              >
+                Managed cloud
+              </text>
+              <text
+                x="305"
+                y="318"
+                textAnchor="middle"
+                fontSize="9"
+                fill="currentColor"
+                opacity="0.55"
+              >
+                on ours, audited &amp; compliant
+              </text>
             </svg>
           </div>
         </div>

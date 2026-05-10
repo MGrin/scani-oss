@@ -1,4 +1,4 @@
-import { Bug, Github, GitPullRequest, Plug } from 'lucide-react';
+import { ArrowRight, Bug, GitPullRequest, Plug } from 'lucide-react';
 
 const REWARD_TYPES = [
   {
@@ -20,7 +20,7 @@ const REWARD_TYPES = [
 
 export function OSSContributors() {
   return (
-    <section className="border-b border-border/60 bg-background py-20 sm:py-28">
+    <section className="border-b border-border/60 bg-background py-12 sm:py-20 lg:py-28">
       <div className="mx-auto max-w-4xl px-6">
         <div className="text-center">
           <p className="text-xs font-medium uppercase tracking-widest text-muted-foreground">
@@ -31,8 +31,8 @@ export function OSSContributors() {
           </h2>
           <p className="mt-4 text-balance text-muted-foreground">
             We'll be opening the source under a permissive license shortly. Anyone whose merged
-            contribution shows up in the kinds of work below gets a free-forever license to every
-            paid tier — no deprecation, no clawback.
+            contribution shows up in the kinds of work below gets free-forever access to every paid
+            tier — no deprecation, no clawback.
           </p>
         </div>
 
@@ -48,22 +48,20 @@ export function OSSContributors() {
 
         <div className="mt-10 rounded-xl border border-dashed border-border bg-card/50 p-5 text-sm text-muted-foreground">
           <p>
-            <strong className="text-foreground">Honest disclaimer:</strong> the OSS license isn't
-            merged yet. The code is public and readable today, but we'll ship a proper license +
-            CONTRIBUTING guide before we accept external PRs. Star the repo to know when that lands
-            — the offer applies to every significant contribution from that point onward.
+            <strong className="text-foreground">Heads up:</strong> the source isn't public yet.
+            We're getting the code ready to publish under a permissive OSS license. Once that ships
+            you'll be able to read it, fork it, and contribute — and the free-forever-access offer
+            applies to every significant contribution from that moment on.
           </p>
         </div>
 
         <div className="mt-8 flex justify-center">
           <a
-            href="https://github.com/MGrin/scani"
-            target="_blank"
-            rel="noreferrer noopener"
+            href="#beta"
             className="inline-flex h-11 items-center gap-2 rounded-md border border-border bg-card px-5 text-sm font-medium transition-colors hover:bg-accent"
           >
-            <Github className="h-4 w-4" />
-            Browse the source on GitHub
+            Notify me when it's out
+            <ArrowRight className="h-4 w-4" />
           </a>
         </div>
       </div>

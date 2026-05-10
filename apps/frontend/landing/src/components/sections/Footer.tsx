@@ -1,21 +1,20 @@
-import { Github } from 'lucide-react';
 import { ScaniLogo } from '../ScaniLogo';
 
+// GitHub + curated API-docs links are deliberately absent: the repo is
+// still private and the docs site isn't published. The OpenAPI spec is
+// kept as a developer-reference link — it's machine-readable, distinct
+// from a marketed docs site.
 const COLUMNS: ReadonlyArray<{ label: string; links: { label: string; href: string }[] }> = [
   {
     label: 'Product',
     links: [
       { label: 'Open the app', href: 'https://app.scani.xyz' },
       { label: 'Cloud console', href: 'https://cloud.scani.xyz' },
-      { label: 'API docs', href: 'https://api.cloud.scani.xyz/docs' },
     ],
   },
   {
     label: 'Resources',
-    links: [
-      { label: 'GitHub', href: 'https://github.com/MGrin/scani' },
-      { label: 'OpenAPI spec', href: 'https://api.cloud.scani.xyz/openapi.json' },
-    ],
+    links: [{ label: 'OpenAPI spec', href: 'https://api.cloud.scani.xyz/openapi.json' }],
   },
 ];
 
@@ -58,15 +57,6 @@ export function Footer() {
       </div>
       <div className="mx-auto mt-12 flex max-w-6xl flex-col items-start gap-3 border-t border-border px-6 pt-6 text-xs text-muted-foreground sm:flex-row sm:items-center sm:justify-between">
         <span>© {new Date().getFullYear()} Scani. All rights reserved.</span>
-        <a
-          href="https://github.com/MGrin/scani"
-          target="_blank"
-          rel="noreferrer noopener"
-          className="inline-flex items-center gap-1 transition-colors hover:text-foreground"
-        >
-          <Github className="h-3.5 w-3.5" />
-          MGrin/scani
-        </a>
       </div>
     </footer>
   );

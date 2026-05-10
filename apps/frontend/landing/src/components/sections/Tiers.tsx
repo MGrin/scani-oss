@@ -18,12 +18,12 @@ const TIERS: ReadonlyArray<Tier> = [
     price: 'Free forever',
     beta: null,
     features: [
-      'Open-source Docker stack — laptop or your VPS',
-      'Bring your own Postgres + Redis',
-      'Every integration provider runs locally',
-      'Source-available now, OSS license soon',
+      'Open-source — runs on your laptop, your VPS, or any cloud',
+      'Bring your own database, cache, and provider API keys',
+      'Every integration runs locally — no Scani server in the loop',
+      'Source under a permissive license (work in progress)',
     ],
-    cta: { label: 'Read the self-host guide', href: 'https://github.com/MGrin/scani' },
+    cta: { label: 'Notify me at launch', href: '#beta' },
   },
   {
     Icon: Cloud,
@@ -32,10 +32,10 @@ const TIERS: ReadonlyArray<Tier> = [
     price: 'Usage-based',
     beta: '1 year free for beta-preview signups',
     features: [
-      'api.cloud.scani.xyz with tenant-scoped bearer keys',
-      'Typed endpoints for prices, balances, AI, and storage',
-      'OpenAPI spec + Scalar UI at /docs',
-      'Per-key quotas + global cost ceiling',
+      'One API key per tenant — no shared secrets',
+      'Type-safe endpoints for every asset class we cover',
+      'Open spec + interactive playground at /docs',
+      'Hard cost ceiling and per-key quotas — no surprise bills',
     ],
     cta: { label: 'Get an API key', href: 'https://cloud.scani.xyz', primary: true },
   },
@@ -46,10 +46,10 @@ const TIERS: ReadonlyArray<Tier> = [
     price: 'Subscription',
     beta: '1 year free for beta-preview signups',
     features: [
-      'Sign up at app.scani.xyz — zero setup',
-      'Real-time portfolio sync over WebSocket',
-      'AI screenshot import for paper statements',
-      'Hosted on Fly · automated backups',
+      "Sign up and you're done — no infra, no setup",
+      'Always-current balances and prices, no manual refresh',
+      'AI parses screenshots of any account, anywhere',
+      'We run the security, the backups, the uptime',
     ],
     cta: { label: 'Open the app', href: 'https://app.scani.xyz', primary: true },
   },
@@ -57,7 +57,7 @@ const TIERS: ReadonlyArray<Tier> = [
 
 export function Tiers() {
   return (
-    <section id="tiers" className="border-b border-border/60 bg-background py-20 sm:py-28">
+    <section id="tiers" className="border-b border-border/60 bg-background py-12 sm:py-20 lg:py-28">
       <div className="mx-auto max-w-6xl px-6">
         <div className="mx-auto max-w-2xl text-center">
           <p className="text-xs font-medium uppercase tracking-widest text-muted-foreground">

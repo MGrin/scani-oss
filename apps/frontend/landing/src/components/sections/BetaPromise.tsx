@@ -43,7 +43,7 @@ export function BetaPromise() {
   return (
     <section
       id="beta"
-      className="border-b border-border/60 bg-gradient-to-b from-background to-card/40 py-20 sm:py-28"
+      className="border-b border-border/60 bg-gradient-to-b from-background to-card/40 py-12 sm:py-20 lg:py-28"
     >
       <div className="mx-auto max-w-3xl px-6 text-center">
         <div className="inline-flex items-center gap-2 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-3 py-1 text-xs font-medium text-emerald-400">
@@ -68,22 +68,27 @@ export function BetaPromise() {
 
         <form
           onSubmit={submit}
-          className="mx-auto mt-10 flex max-w-md flex-col gap-3 sm:flex-row"
+          className="mx-auto mt-10 flex max-w-md flex-col gap-3 sm:flex-row sm:gap-2"
           aria-label="Beta-preview waitlist signup"
         >
+          {/* `text-base` (16px) is the iOS threshold below which Safari
+           * auto-zooms on input focus — stay at or above it on mobile.
+           * h-12 is a thumb-sized tap target; tightens on tablet+. */}
           <input
             type="email"
             required
             placeholder="you@work.com"
+            inputMode="email"
+            autoComplete="email"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
             disabled={status.kind === 'submitting' || status.kind === 'joined'}
-            className="h-11 flex-1 rounded-md border border-border bg-background px-4 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring disabled:opacity-60"
+            className="h-12 flex-1 rounded-md border border-border bg-background px-4 text-base placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring disabled:opacity-60 sm:h-11 sm:text-sm"
           />
           <button
             type="submit"
             disabled={status.kind === 'submitting' || status.kind === 'joined'}
-            className="inline-flex h-11 items-center justify-center gap-2 rounded-md bg-foreground px-5 text-sm font-medium text-background transition-opacity hover:opacity-90 disabled:opacity-60"
+            className="inline-flex h-12 items-center justify-center gap-2 rounded-md bg-foreground px-5 text-base font-medium text-background transition-opacity hover:opacity-90 disabled:opacity-60 sm:h-11 sm:text-sm"
           >
             {status.kind === 'submitting' ? 'Joining…' : 'Join the waitlist'}
             {status.kind !== 'submitting' && <ArrowRight className="h-4 w-4" />}

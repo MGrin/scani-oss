@@ -25,7 +25,7 @@ const SHOTS: ReadonlyArray<Shot> = [
     id: 'integrations',
     title: 'Integrations',
     caption:
-      'Bank/broker OAuth, exchange API keys, and read-only on-chain wallets — managed in one place.',
+      'Read-only API keys for exchanges, broker tokens for banks, public addresses for on-chain — managed in one place.',
     src: '/screenshots/integrations.png',
   },
 ];
@@ -56,7 +56,10 @@ function Screenshot({ shot }: { shot: Shot }) {
 
 export function ProductShowcase() {
   return (
-    <section id="product" className="border-b border-border/60 bg-background py-20 sm:py-28">
+    <section
+      id="product"
+      className="border-b border-border/60 bg-background py-12 sm:py-20 lg:py-28"
+    >
       <div className="mx-auto max-w-6xl px-6">
         <div className="mx-auto max-w-2xl text-center">
           <p className="text-xs font-medium uppercase tracking-widest text-muted-foreground">

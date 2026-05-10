@@ -17,11 +17,11 @@ const QAS: ReadonlyArray<QA> = [
   },
   {
     q: 'Can I self-host today?',
-    a: 'Yes — the Docker stack boots with `docker compose --profile full up -d --build`. Your data stays on your machine. The OSS license is still being prepared, so the code is source-available now and properly licensed soon.',
+    a: "Not yet — the source isn't public. We're preparing the open-source release; once it ships, you'll be able to run the entire Scani stack on your own infrastructure end-to-end, with your own database, your own provider keys, and your data never leaving your machine. Drop your email on the waitlist to be notified.",
   },
   {
     q: 'Where is my data hosted on the managed tier?',
-    a: "Postgres on Neon, Redis on Upstash, object storage on Cloudflare R2, compute on Fly.io. The exact regions are configurable via Terraform under `infra/terraform/` — that's where you'd audit or change them.",
+    a: "On top-tier managed-infrastructure providers — database, cache, object storage, and compute — all of them SOC 2 / ISO 27001 audited and GDPR-compliant. We're working through our own SOC 2 audit and will publish the report once it's signed off. EU customers' data lives in EU regions, US customers' in US regions, and you choose at signup.",
   },
   {
     q: 'Is the API the same code as the dashboard uses?',
@@ -59,7 +59,7 @@ function FaqItem({ qa, isOpen, onToggle }: { qa: QA; isOpen: boolean; onToggle: 
 export function FAQ() {
   const [openIdx, setOpenIdx] = useState<number | null>(0);
   return (
-    <section className="border-b border-border/60 bg-background py-20 sm:py-28">
+    <section className="border-b border-border/60 bg-background py-12 sm:py-20 lg:py-28">
       <div className="mx-auto max-w-3xl px-6">
         <div className="text-center">
           <p className="text-xs font-medium uppercase tracking-widest text-muted-foreground">FAQ</p>

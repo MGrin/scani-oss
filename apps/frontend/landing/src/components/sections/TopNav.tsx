@@ -1,12 +1,14 @@
-import { Github } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { ScaniLogo } from '../ScaniLogo';
 
-const NAV_LINKS: ReadonlyArray<{ label: string; href: string; external?: boolean }> = [
+// Nav anchors visitors hit from the top bar. GitHub + API-docs links
+// are intentionally absent: the repo isn't public yet and the curated
+// docs site isn't published. The hero shows a "coming soon" pill for
+// the same reason. Re-introduce both when the repo opens.
+const NAV_LINKS: ReadonlyArray<{ label: string; href: string }> = [
   { label: 'Product', href: '#product' },
   { label: 'Tiers', href: '#tiers' },
   { label: 'Beta', href: '#beta' },
-  { label: 'API docs', href: 'https://api.cloud.scani.xyz/docs', external: true },
 ];
 
 export function TopNav() {
@@ -37,8 +39,6 @@ export function TopNav() {
             <a
               key={link.href}
               href={link.href}
-              target={link.external ? '_blank' : undefined}
-              rel={link.external ? 'noreferrer noopener' : undefined}
               className="text-muted-foreground transition-colors hover:text-foreground"
             >
               {link.label}
@@ -46,16 +46,6 @@ export function TopNav() {
           ))}
         </nav>
         <div className="flex items-center gap-2">
-          <a
-            href="https://github.com/MGrin/scani"
-            target="_blank"
-            rel="noreferrer noopener"
-            className="hidden items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-foreground sm:flex"
-            aria-label="GitHub repository"
-          >
-            <Github className="h-3.5 w-3.5" />
-            GitHub
-          </a>
           <a
             href="https://app.scani.xyz"
             className="rounded-md bg-foreground px-3 py-1.5 text-xs font-medium text-background transition-opacity hover:opacity-90"
