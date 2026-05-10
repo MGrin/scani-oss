@@ -19,6 +19,7 @@ import { UpdateHoldingDto, UpsertHoldingApyConfigDto } from '@scani/shared';
 import { TRPCError } from '@trpc/server';
 import { Container } from 'typedi';
 import { z } from 'zod';
+import { withIdempotency } from '../../lib/idempotency';
 import { executeBulkOperation } from '../lib/bulk-operation';
 import { enqueuePortfolioRollup } from '../lib/portfolio-rollup';
 import { requireAuth } from '../middleware/auth';
@@ -41,31 +42,40 @@ export const holdingsRouter = router({
       z.object({
         id: z.string().uuid(),
         data: UpdateHoldingDto,
+        // Optional client-supplied key. If the same (userId, key)
+        // arrives within the 5-min cache window — e.g. a network
+        // retry or double-click — the cached response is returned
+        // and the underlying mutation runs only once. Frontend
+        // opts in by passing `crypto.randomUUID()` per submission;
+        // omitting the key is equivalent to the previous behaviour
+        // (no de-dup).
+        idempotencyKey: z.string().min(1).max(128).optional(),
       })
     )
     .mutation(async ({ input, ctx }) => {
       const { dbUser } = await requireAuth(ctx);
+      return withIdempotency(dbUser.id, input.idempotencyKey, async () => {
+        const updatedHolding = await Container.get(UpdateHoldingUseCase).execute(
+          input.id,
+          input.data,
+          dbUser.id,
+          { baseCurrencyId: dbUser.baseCurrencyId || undefined }
+        );
 
-      const updatedHolding = await Container.get(UpdateHoldingUseCase).execute(
-        input.id,
-        input.data,
-        dbUser.id,
-        { baseCurrencyId: dbUser.baseCurrencyId || undefined }
-      );
+        emitEntityChange({
+          entityType: 'holding',
+          operationType: 'update',
+          entityId: updatedHolding.id,
+          userId: dbUser.id,
+          data: {
+            accountId: updatedHolding.accountId,
+            tokenId: updatedHolding.tokenId,
+          },
+        });
 
-      emitEntityChange({
-        entityType: 'holding',
-        operationType: 'update',
-        entityId: updatedHolding.id,
-        userId: dbUser.id,
-        data: {
-          accountId: updatedHolding.accountId,
-          tokenId: updatedHolding.tokenId,
-        },
+        void enqueuePortfolioRollup(dbUser.id);
+        return updatedHolding;
       });
-
-      void enqueuePortfolioRollup(dbUser.id);
-      return updatedHolding;
     }),
 
   // Delete holding (with cascading to transactions)

@@ -38,9 +38,11 @@ import { appRouter, installCloudDb, installUsageDeps } from './presentation/rout
 import {
   buildCreateContext,
   getActiveUsageSink,
+  installGlobalCostBreaker,
   installQuotaLimiter,
   installUsageSink,
 } from './presentation/trpc';
+import { GlobalCostBreaker } from './usage/global-cost-breaker';
 import { NoopUsageSink, PostgresUsageSink, type UsageSink } from './usage/sink';
 
 const PORT = env.PORT;
@@ -371,6 +373,23 @@ void (async () => {
         logger.info(
           { hourlyDefault: env.CLOUD_QUOTA_HOURLY_DEFAULT },
           'quota: per-API-key hourly budget enabled'
+        );
+      }
+
+      // Org-wide hourly cost breaker. Disabled when GLOBAL_HOURLY_USD_CAP
+      // is 0 / unset. Tracks cumulative `upstreamCostUsd` across ALL
+      // tenants in Redis; tripped state rejects new requests with 503
+      // until the next hour-bucket starts. Catches runaway loops that
+      // bypass the per-API-key quota.
+      if (env.GLOBAL_HOURLY_USD_CAP > 0) {
+        installGlobalCostBreaker(
+          new GlobalCostBreaker(redisConnection, {
+            hourlyUsdCap: env.GLOBAL_HOURLY_USD_CAP,
+          })
+        );
+        logger.info(
+          { hourlyUsdCap: env.GLOBAL_HOURLY_USD_CAP },
+          'cost-breaker: global hourly USD cap enabled'
         );
       }
 

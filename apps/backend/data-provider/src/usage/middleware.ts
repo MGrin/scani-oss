@@ -15,6 +15,7 @@
 
 import type { OutflowRateLimiter } from '@scani/rate-limiter';
 import { TRPCError } from '@trpc/server';
+import type { GlobalCostBreaker } from './global-cost-breaker';
 import type { UsageEvent, UsageSink } from './sink';
 
 export interface UsageAnnotation {
@@ -59,6 +60,14 @@ interface BuildDeps {
    * separate auth flows. Pass `null` to disable.
    */
   quotaLimiter?: OutflowRateLimiter | null;
+  /**
+   * Optional global org-wide hourly cost breaker. Trips when the
+   * cumulative `upstreamCostUsd` across ALL tenants exceeds the cap.
+   * Sentry-captures the trip, then rejects subsequent requests with
+   * `SERVICE_UNAVAILABLE { code: 'global_cost_cap' }` until the next
+   * hour-bucket. Pass `null` to disable.
+   */
+  globalCostBreaker?: GlobalCostBreaker | null;
 }
 
 interface BaseCtx {
@@ -82,7 +91,7 @@ type MwOpts = { ctx: BaseCtx; path: string; type: string; next: (o?: any) => Pro
  * Pure factory — keeps the middleware decoupled from `initTRPC` so it can
  * be attached to both `publicProcedure` and `bearerProcedure` in trpc.ts.
  */
-export function buildUsageMiddleware({ sink, quotaLimiter }: BuildDeps) {
+export function buildUsageMiddleware({ sink, quotaLimiter, globalCostBreaker }: BuildDeps) {
   return async (opts: MwOpts) => {
     const start = Date.now();
     const { ctx, path, next } = opts;
@@ -90,6 +99,35 @@ export function buildUsageMiddleware({ sink, quotaLimiter }: BuildDeps) {
     let outcome: UsageEvent['outcome'] = 'ok';
     let statusCode: number | undefined;
     let errorCode: string | undefined;
+
+    // Global cost breaker — fires BEFORE the per-key quota check so a
+    // runaway loop on one tenant can't burn unbounded org-wide spend
+    // before its per-key counter notices. The breaker is org-wide,
+    // not per-tenant; one tripped breaker blocks everyone, which is
+    // the right call: we'd rather refuse all paid traffic than
+    // burn an unbounded bill while we figure out which tenant is
+    // misbehaving.
+    if (globalCostBreaker?.enabled()) {
+      const breakerResult = await globalCostBreaker.shouldAllow();
+      if (!breakerResult.ok) {
+        ctx.usage.annotate({
+          provider,
+          metadata: {
+            globalCostCapUsd: breakerResult.capUsd,
+            globalCurrentUsd: breakerResult.currentUsd,
+          },
+        });
+        // tRPC has no SERVICE_UNAVAILABLE code; FORBIDDEN matches the
+        // existing per-key quota_exceeded shape so callers' retry
+        // logic doesn't need to differentiate. The
+        // `code = 'global_cost_cap'` in the message lets observability
+        // distinguish org-wide cap from per-key cap.
+        throw new TRPCError({
+          code: 'FORBIDDEN',
+          message: 'global_cost_cap',
+        });
+      }
+    }
 
     // Per-key hourly quota. Skip when no limiter is wired (OSS / dev),
     // when the request is unauthenticated (cookie path takes over),
@@ -178,6 +216,15 @@ export function buildUsageMiddleware({ sink, quotaLimiter }: BuildDeps) {
         errorCode,
         metadata: annotation.metadata,
       });
+      // Tally into the global cost breaker post-flight. Best-effort;
+      // failures are swallowed inside `record()`.
+      if (
+        globalCostBreaker?.enabled() &&
+        annotation.upstreamCostUsd &&
+        annotation.upstreamCostUsd > 0
+      ) {
+        void globalCostBreaker.record(annotation.upstreamCostUsd);
+      }
     }
   };
 }

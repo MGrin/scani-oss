@@ -71,6 +71,19 @@ const envSchema = z.object({
       message: 'CLOUD_QUOTA_HOURLY_DEFAULT must be a non-negative integer',
     }),
 
+  // Org-wide hourly cap on cumulative `upstreamCostUsd` across all
+  // tenants. Trips the GlobalCostBreaker when exceeded; subsequent
+  // requests get 503 until the next hour-bucket. Decimal supported
+  // for cents-level granularity. 0 / unset disables the breaker.
+  GLOBAL_HOURLY_USD_CAP: z
+    .string()
+    .optional()
+    .default('0')
+    .transform((v) => Number.parseFloat(v))
+    .refine((n) => Number.isFinite(n) && n >= 0, {
+      message: 'GLOBAL_HOURLY_USD_CAP must be a non-negative number',
+    }),
+
   // Better-Auth config (only consumed when CLOUD_MANAGEMENT_ENABLED).
   // Secret signs session tokens; trusted origins scope CORS+cookies.
   BETTER_AUTH_SECRET: z.string().optional(),

@@ -208,9 +208,24 @@ export class WorkerClient {
     return this.worker;
   }
 
-  async close(): Promise<void> {
+  /**
+   * Close the worker.
+   *
+   * Default (force=false): BullMQ waits for every in-flight job to
+   * complete before resolving. With long-running processors
+   * (portfolio-history-backfill at ~35s, wallet-import at ~75s) this
+   * can exceed Fly's 30s grace_period and the platform will SIGKILL
+   * the process mid-shutdown — leaving Sentry breadcrumbs unflushed
+   * and possibly corrupting BullMQ lock state.
+   *
+   * Callers (worker app graceful shutdown) should wrap this in a
+   * Promise.race with their own timeout, log active count, and call
+   * close(true) on timeout to force-cancel remaining jobs (BullMQ
+   * marks them as `failed` so they retry on the next worker boot).
+   */
+  async close(force = false): Promise<void> {
     if (this.worker) {
-      await this.worker.close();
+      await this.worker.close(force);
       this.worker = null;
     }
     if (this.dlq) {

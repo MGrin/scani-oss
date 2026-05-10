@@ -392,21 +392,47 @@ async function main(): Promise<void> {
   redisMonitor.unref?.();
 
   // --- Graceful shutdown ---------------------------------------------------
+  // Drain budget — must be < Fly's grace_period (default 30s) minus
+  // a safety margin for the post-drain steps (queueClient close,
+  // Redis quit, Sentry flush ≈ 3s combined).
+  const DRAIN_TIMEOUT_MS = 25_000;
   let shuttingDown = false;
   const shutdown = async (signal: NodeJS.Signals) => {
     if (shuttingDown) return;
     shuttingDown = true;
-    logger.warn({ signal }, '🛑 Shutdown signal received — draining worker');
+    const startedAt = Date.now();
+    logger.warn(
+      { signal, drainTimeoutMs: DRAIN_TIMEOUT_MS },
+      '🛑 Shutdown signal received — draining worker'
+    );
     try {
-      await workerClient.close();
+      // Race the graceful close against the drain budget. On timeout
+      // we force-close: BullMQ marks active jobs as failed and they
+      // retry on the next worker boot per their job's retry policy.
+      const drainResult = await Promise.race([
+        workerClient.close(false).then(() => 'drained' as const),
+        new Promise<'timeout'>((resolve) => setTimeout(() => resolve('timeout'), DRAIN_TIMEOUT_MS)),
+      ]);
+      if (drainResult === 'timeout') {
+        logger.warn(
+          { elapsedMs: Date.now() - startedAt },
+          '⏱️ Drain budget exceeded — force-closing worker. Active jobs will be marked failed and retried on next boot.'
+        );
+        await workerClient.close(true).catch((err) => {
+          logger.error({ err }, 'Force-close threw');
+        });
+      } else {
+        logger.info({ elapsedMs: Date.now() - startedAt }, '✅ Worker drained cleanly');
+      }
+
       await Container.get(QueueClient).close();
       await publisher.quit();
       await connection.quit();
       await flushSentry(2000);
-      logger.info({}, '✅ Worker drained cleanly');
+      logger.info({ totalShutdownMs: Date.now() - startedAt }, '✅ Shutdown complete');
       process.exit(0);
     } catch (err) {
-      logger.error({ error: err }, '❌ Error during shutdown');
+      logger.error({ error: err, elapsedMs: Date.now() - startedAt }, '❌ Error during shutdown');
       await flushSentry(2000);
       process.exit(1);
     }

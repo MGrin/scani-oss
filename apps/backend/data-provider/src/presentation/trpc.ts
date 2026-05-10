@@ -5,6 +5,7 @@ import { validateBearerToken } from '../auth/api-key';
 import type { CloudBetterAuthInstance } from '../auth/better-auth';
 import type { DataProviderEnv } from '../config/env';
 import type { CloudDb } from '../db/connection';
+import type { GlobalCostBreaker } from '../usage/global-cost-breaker';
 import { buildUsageMiddleware, createUsageContext, type UsageContext } from '../usage/middleware';
 import { NoopUsageSink, type UsageSink } from '../usage/sink';
 
@@ -91,6 +92,7 @@ const t = initTRPC.context<DataProviderContext>().create();
 
 let activeSink: UsageSink = new NoopUsageSink();
 let activeQuotaLimiter: OutflowRateLimiter | null = null;
+let activeGlobalCostBreaker: GlobalCostBreaker | null = null;
 
 export function installUsageSink(sink: UsageSink): void {
   activeSink = sink;
@@ -107,9 +109,17 @@ export function installQuotaLimiter(limiter: OutflowRateLimiter | null): void {
   activeQuotaLimiter = limiter;
 }
 
+export function installGlobalCostBreaker(breaker: GlobalCostBreaker | null): void {
+  activeGlobalCostBreaker = breaker;
+}
+
 // biome-ignore lint/suspicious/noExplicitAny: tRPC's MiddlewareResult is branded
 const usageMiddleware = t.middleware((opts: any) =>
-  buildUsageMiddleware({ sink: activeSink, quotaLimiter: activeQuotaLimiter })(opts)
+  buildUsageMiddleware({
+    sink: activeSink,
+    quotaLimiter: activeQuotaLimiter,
+    globalCostBreaker: activeGlobalCostBreaker,
+  })(opts)
 );
 
 export const router = t.router;
