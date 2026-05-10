@@ -12,6 +12,32 @@ body,
 
 html {
   scroll-behavior: smooth;
+  /* Snap each wheel/swipe to the next <section>, "like anchors". The
+   * snap container is the document scroller (html), so the sticky
+   * TopNav still works because sticky positions resolve before snap.
+   * `scroll-padding-top` reserves the nav height (h-14 = 3.5rem) so
+   * snapped sections don't end up tucked under the nav.
+   * Tall sections (FAQ when expanded, ProductShowcase on mobile) are
+   * still scrollable mid-section — `mandatory` only kicks in once the
+   * gesture ends; the user is never trapped. Switch to `proximity` if
+   * we want the snap to feel softer on touch devices. */
+  scroll-snap-type: y mandatory;
+  scroll-padding-top: 3.5rem;
+}
+
+/* Every top-level <section> on the landing is a snap point. The only
+ * <section> elements in the tree are the landing sections; if that
+ * stops being true, scope this with a class. */
+section {
+  scroll-snap-align: start;
+  scroll-snap-stop: always;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+    scroll-snap-type: none;
+  }
 }
 
 body {
