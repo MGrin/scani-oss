@@ -1,10 +1,60 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-theme="dark" class="dark">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="description" content="Scani — personal wealth tracker." />
-    <title>Scani</title>
+    <meta name="theme-color" content="#0a0a0a" />
+
+    <title>Scani — One dashboard for every asset, every chain</title>
+    <meta
+      name="description"
+      content="Scani consolidates banks, brokerages, exchanges, and on-chain wallets into one real-time portfolio. Self-host, use the cloud API, or sign up for the managed app."
+    />
+    <link rel="canonical" href="https://scani.xyz/" />
+
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="preconnect" href="https://api.cloud.scani.xyz" crossorigin />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"
+    />
+
+    <!-- Open Graph -->
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content="https://scani.xyz/" />
+    <meta property="og:title" content="Scani — One dashboard for every asset" />
+    <meta
+      property="og:description"
+      content="Personal wealth, consolidated across banks, brokerages, exchanges, and chains. Self-host or use ours."
+    />
+    <!-- SVG OG image — Twitter, Slack, Discord, LinkedIn render fine.
+       Facebook's crawler needs a raster PNG; export this to PNG before
+       relying on FB previews (Squoosh / `npx svgexport` work). -->
+    <meta property="og:image" content="https://scani.xyz/og-image.svg" />
+    <meta property="og:image:type" content="image/svg+xml" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+
+    <!-- Twitter -->
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="Scani — One dashboard for every asset" />
+    <meta
+      name="twitter:description"
+      content="Personal wealth, consolidated across banks, brokerages, exchanges, and chains."
+    />
+    <meta name="twitter:image" content="https://scani.xyz/og-image.svg" />
+
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@type": "Organization",
+        "name": "Scani",
+        "url": "https://scani.xyz",
+        "logo": "https://scani.xyz/og-image.svg",
+        "sameAs": ["https://github.com/MGrin/scani"]
+      }
+    </script>
   </head>
   <body>
     <div id="root"></div>

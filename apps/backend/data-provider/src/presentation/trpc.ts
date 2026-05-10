@@ -21,6 +21,11 @@ export interface DataProviderContext {
   cloudUser: CloudSessionUser | null;
   requestId: string;
   usage: UsageContext;
+  // Best-effort client IP, read from `x-forwarded-for` (Fly's edge sets
+  // this) or `fly-client-ip`. Used by public procedures (waitlist.join)
+  // for per-IP rate limiting; never persisted unhashed. Null when no
+  // header is present (direct internal calls / tests).
+  clientIp: string | null;
 }
 
 export interface BuildContextDeps {
@@ -85,7 +90,14 @@ export function buildCreateContext({ env, getCloudDb, getBetterAuth }: BuildCont
       }
     }
 
-    return { auth, cloudUser, requestId, usage: createUsageContext() };
+    // x-forwarded-for is a comma-delimited list (`client, proxy1, proxy2`);
+    // the first entry is the original caller. Fly's `fly-client-ip` is a
+    // single value and is the more reliable source when running on Fly.
+    const flyClientIp = req.headers.get('fly-client-ip');
+    const xff = req.headers.get('x-forwarded-for');
+    const clientIp = flyClientIp ?? xff?.split(',')[0]?.trim() ?? null;
+
+    return { auth, cloudUser, requestId, usage: createUsageContext(), clientIp };
   };
 }
 

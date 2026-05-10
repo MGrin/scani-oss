@@ -92,6 +92,13 @@
       "when": 1778280000000,
       "tag": "0012_holdings_balance_partial_idx",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1778290000000,
+      "tag": "0013_waitlist_signups",
+      "breakpoints": true
     }
   ]
 }

@@ -21,16 +21,21 @@ export function buildAuthedContext(
     cloudUser: null,
     requestId: 'test-request',
     usage: createUsageContext(),
+    clientIp: null,
     ...overrides,
   };
 }
 
-export function buildUnauthedContext(): DataProviderContext {
+export function buildUnauthedContext(
+  overrides: Partial<DataProviderContext> = {}
+): DataProviderContext {
   return {
     auth: null,
     cloudUser: null,
     requestId: 'test-request',
     usage: createUsageContext(),
+    clientIp: null,
+    ...overrides,
   };
 }
 

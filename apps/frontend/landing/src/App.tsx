@@ -1,32 +1,29 @@
+import { Architecture } from './components/sections/Architecture';
+import { BetaPromise } from './components/sections/BetaPromise';
+import { FAQ } from './components/sections/FAQ';
+import { Footer } from './components/sections/Footer';
+import { Hero } from './components/sections/Hero';
+import { OSSContributors } from './components/sections/OSSContributors';
+import { Problem } from './components/sections/Problem';
+import { ProductShowcase } from './components/sections/ProductShowcase';
+import { Tiers } from './components/sections/Tiers';
+import { TopNav } from './components/sections/TopNav';
+
 export function App() {
   return (
-    <main className="min-h-screen flex items-center justify-center px-6">
-      <div className="max-w-xl text-center space-y-6">
-        <h1 className="text-5xl font-semibold tracking-tight">Scani</h1>
-        <p className="text-lg text-neutral-400">
-          A personal wealth tracker for people who want one place to see every asset, across every
-          institution, every chain.
-        </p>
-        <div className="flex items-center justify-center gap-4 pt-4">
-          <a
-            href="https://app.scani.xyz"
-            className="inline-flex items-center rounded-full bg-white px-5 py-2.5 text-sm font-medium text-black transition hover:bg-neutral-200"
-          >
-            Open the app
-          </a>
-          <a
-            href="https://github.com/MGrin/scani"
-            target="_blank"
-            rel="noreferrer noopener"
-            className="inline-flex items-center rounded-full border border-neutral-700 px-5 py-2.5 text-sm font-medium text-neutral-200 transition hover:bg-neutral-900"
-          >
-            GitHub
-          </a>
-        </div>
-        <p className="pt-8 text-xs text-neutral-600">
-          Still under active development. This landing is a placeholder.
-        </p>
-      </div>
-    </main>
+    <div className="min-h-screen bg-background text-foreground antialiased">
+      <TopNav />
+      <main>
+        <Hero />
+        <Problem />
+        <ProductShowcase />
+        <Tiers />
+        <Architecture />
+        <BetaPromise />
+        <OSSContributors />
+        <FAQ />
+      </main>
+      <Footer />
+    </div>
   );
 }

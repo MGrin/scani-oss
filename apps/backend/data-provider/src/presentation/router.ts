@@ -7,10 +7,12 @@ import { pricingRouter } from './routers/pricing';
 import { storageRouter } from './routers/storage';
 import { tokensRouter } from './routers/tokens';
 import { usageRouter } from './routers/usage';
+import { waitlistRouter } from './routers/waitlist';
 import { router } from './trpc';
 
 export { installCloudDb } from './routers/keys';
 export { installUsageDeps } from './routers/usage';
+export { installWaitlistCloudDb } from './routers/waitlist';
 
 export const appRouter = router({
   pricing: pricingRouter,
@@ -22,6 +24,7 @@ export const appRouter = router({
   keys: keysRouter,
   tokens: tokensRouter,
   usage: usageRouter,
+  waitlist: waitlistRouter,
 });
 
 export type AppRouter = typeof appRouter;

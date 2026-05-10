@@ -642,6 +642,10 @@ jobs:
           VITE_SENTRY_DSN: ${{ secrets.VITE_SENTRY_DSN_LANDING }}
           VITE_SENTRY_ENVIRONMENT: production
           VITE_SENTRY_RELEASE: ${{ github.sha }}
+          # Used by the beta-preview waitlist form to POST to the
+          # public `waitlist.join` tRPC procedure. Hardcoded — not a
+          # secret — same convention as BETTER_AUTH_URL upstream.
+          VITE_DATA_PROVIDER_URL: https://api.cloud.scani.xyz
       - name: Upload landing sourcemaps to Sentry
         if: ${{ env.SENTRY_AUTH_TOKEN != '' }}
         env:

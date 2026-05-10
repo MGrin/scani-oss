@@ -35,7 +35,12 @@ initSentry({ component: 'data-provider', release: env.SENTRY_RELEASE });
 import { type CloudBetterAuthInstance, createCloudBetterAuth } from './auth/better-auth';
 import { type CloudDb, closeCloudDb, getCloudDb } from './db/connection';
 import { buildOpenApiDocument, renderScalarHtml } from './presentation/openapi';
-import { appRouter, installCloudDb, installUsageDeps } from './presentation/router';
+import {
+  appRouter,
+  installCloudDb,
+  installUsageDeps,
+  installWaitlistCloudDb,
+} from './presentation/router';
 import {
   buildCreateContext,
   getActiveUsageSink,
@@ -81,6 +86,7 @@ const bootState: DataProviderBootState = {
 installUsageSink(new NoopUsageSink());
 installCloudDb(null);
 installUsageDeps({ db: null });
+installWaitlistCloudDb(null);
 
 interface RequestWithTracking extends Request {
   _timer?: { end: () => number };
@@ -390,6 +396,7 @@ void (async () => {
         }
         installCloudDb(cloudDb);
         installUsageDeps({ db: cloudDb });
+        installWaitlistCloudDb(cloudDb);
         logger.info({}, 'cloud management enabled: DB-backed api keys + usage log');
       }
       installUsageSink(usageSink);

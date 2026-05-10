@@ -160,3 +160,34 @@ export type CloudUsageEvent = typeof cloudUsageEvents.$inferSelect;
 export type NewCloudUsageEvent = typeof cloudUsageEvents.$inferInsert;
 export type CloudApiKeyTier = 'free' | 'starter' | 'pro' | 'enterprise' | 'internal';
 export type CloudApiKeyBillingStatus = 'active' | 'past_due' | 'suspended' | 'cancelled';
+
+// Beta-preview waitlist captured by the public landing page. Anyone who
+// joins (account on app/cloud OR an email here) is grandfathered into
+// 1 year of paid tiers free when subscriptions launch — see
+// `apps/frontend/landing/src/components/sections/BetaPromise.tsx`.
+//
+// Email is stored lowercased; uniqueness is enforced via a Postgres
+// unique constraint so a duplicate signup is a no-op rather than a
+// duplicate row. `ipHash` is a sha256 of the client IP; we never
+// store the raw address. `convertedToAccountAt` is set later by the
+// grandfathering job once the email shows up in `cloudUsers`.
+// Migration: 0013_waitlist_signups.sql
+export const waitlistSignups = pgTable(
+  'waitlist_signups',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    email: text('email').notNull().unique(),
+    source: text('source').notNull().default('landing'),
+    referrer: text('referrer'),
+    userAgent: text('user_agent'),
+    ipHash: text('ip_hash'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    convertedToAccountAt: timestamp('converted_to_account_at', { withTimezone: true }),
+  },
+  (t) => ({
+    createdAtIdx: index('waitlist_signups_created_at_idx').on(t.createdAt),
+  })
+);
+
+export type WaitlistSignup = typeof waitlistSignups.$inferSelect;
+export type NewWaitlistSignup = typeof waitlistSignups.$inferInsert;
