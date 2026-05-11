@@ -13,6 +13,7 @@ import {
   DollarSign,
   Gauge,
   GitBranch,
+  History,
   ListChecks,
   LogOut,
   Mail,
@@ -90,6 +91,10 @@ const NAV: NavGroup[] = [
   {
     label: 'Billing',
     items: [{ href: '/spend', label: 'Spend', icon: DollarSign, matchPrefix: true }],
+  },
+  {
+    label: 'Operations',
+    items: [{ href: '/audit-log', label: 'Audit log', icon: History, matchPrefix: true }],
   },
 ];
 

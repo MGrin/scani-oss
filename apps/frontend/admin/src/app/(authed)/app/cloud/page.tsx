@@ -1,11 +1,13 @@
 import { formatNumber, formatRelative } from '@scani/shared';
 import { Badge } from '@scani/ui/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@scani/ui/ui/table';
+import { ActionDialog } from '@/components/ActionDialog';
 import { ErrorPanel } from '@/components/ErrorPanel';
 import { PageHeader } from '@/components/PageHeader';
 import { SectionCard } from '@/components/SectionCard';
 import { StatCard } from '@/components/StatCard';
 import { getCloudStats } from '@/lib/clients/db/cloudStats';
+import { writesEnabled } from '@/lib/writes';
 
 export const runtime = 'edge';
 export const dynamic = 'force-dynamic';
@@ -31,6 +33,7 @@ export default async function CloudPage() {
     recent,
     events24h,
   } = stats.data;
+  const writes = writesEnabled();
 
   return (
     <>
@@ -171,6 +174,7 @@ export default async function CloudPage() {
                   <TableHead>Billing</TableHead>
                   <TableHead>Last used</TableHead>
                   <TableHead>Revoked</TableHead>
+                  <TableHead className="text-right">Action</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -209,6 +213,28 @@ export default async function CloudPage() {
                         <Badge variant="destructive">{formatRelative(r.revokedAt)}</Badge>
                       ) : (
                         <span className="text-muted-foreground">—</span>
+                      )}
+                    </TableCell>
+                    <TableCell className="text-right">
+                      {r.revokedAt ? (
+                        <span className="text-xs text-muted-foreground">—</span>
+                      ) : (
+                        <ActionDialog
+                          endpoint="/api/admin/cloud-keys/revoke"
+                          payload={{ keyId: r.id }}
+                          label="Revoke"
+                          title={`Revoke ${r.name}?`}
+                          description={
+                            <>
+                              Stamps <span className="font-mono">revoked_at = now()</span> on this
+                              key. Subsequent requests from the holder will 401 immediately. This is
+                              reversible only by issuing a new key.
+                            </>
+                          }
+                          confirmLabel="Revoke key"
+                          destructive
+                          enabled={writes}
+                        />
                       )}
                     </TableCell>
                   </TableRow>

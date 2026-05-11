@@ -1,11 +1,13 @@
 import { formatNumber, formatRelative } from '@scani/shared';
 import { Badge } from '@scani/ui/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@scani/ui/ui/table';
+import { ActionDialog } from '@/components/ActionDialog';
 import { ErrorPanel } from '@/components/ErrorPanel';
 import { PageHeader } from '@/components/PageHeader';
 import { SectionCard } from '@/components/SectionCard';
 import { StatCard } from '@/components/StatCard';
 import { getWaitlistStats } from '@/lib/clients/db/waitlistStats';
+import { writesEnabled } from '@/lib/writes';
 
 export const runtime = 'edge';
 export const dynamic = 'force-dynamic';
@@ -22,6 +24,7 @@ export default async function WaitlistPage() {
     );
   }
   const { total, converted, conversionRate, signups7d, signups30d, bySource, recent } = stats.data;
+  const writes = writesEnabled();
 
   return (
     <>
@@ -81,6 +84,7 @@ export default async function WaitlistPage() {
                   <TableHead>Referrer</TableHead>
                   <TableHead>Signed up</TableHead>
                   <TableHead>Converted</TableHead>
+                  <TableHead className="text-right">Action</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -101,6 +105,27 @@ export default async function WaitlistPage() {
                         <Badge>{formatRelative(r.convertedToAccountAt)}</Badge>
                       ) : (
                         <span className="text-muted-foreground">—</span>
+                      )}
+                    </TableCell>
+                    <TableCell className="text-right">
+                      {r.convertedToAccountAt ? (
+                        <span className="text-xs text-muted-foreground">already in</span>
+                      ) : (
+                        <ActionDialog
+                          endpoint="/api/admin/waitlist/invite"
+                          payload={{ signupId: r.id }}
+                          label="Invite"
+                          title={`Send magic-link invite?`}
+                          description={
+                            <>
+                              Emails a one-shot magic-link to{' '}
+                              <span className="font-mono">{r.emailMasked}</span> so they can sign in
+                              and create an account. The link expires in 24 hours.
+                            </>
+                          }
+                          confirmLabel="Send invite"
+                          enabled={writes}
+                        />
                       )}
                     </TableCell>
                   </TableRow>

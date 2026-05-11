@@ -1,10 +1,12 @@
 import { formatRelative } from '@scani/shared';
 import { Badge } from '@scani/ui/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@scani/ui/ui/table';
+import { ActionDialog } from '@/components/ActionDialog';
 import { PageHeader } from '@/components/PageHeader';
 import { SectionCard } from '@/components/SectionCard';
 import { StatCard } from '@/components/StatCard';
 import { getScheduledJobs } from '@/lib/clients/scheduledJobs';
+import { writesEnabled } from '@/lib/writes';
 
 export const runtime = 'edge';
 export const dynamic = 'force-dynamic';
@@ -12,6 +14,7 @@ export const dynamic = 'force-dynamic';
 export default function SchedulesPage() {
   const fetchedAt = new Date().toISOString();
   const schedules = getScheduledJobs();
+  const writes = writesEnabled();
 
   return (
     <>
@@ -56,6 +59,7 @@ export default function SchedulesPage() {
                 <TableHead>Cadence</TableHead>
                 <TableHead>Next run</TableHead>
                 <TableHead>Description</TableHead>
+                <TableHead className="text-right">Action</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -73,6 +77,23 @@ export default function SchedulesPage() {
                   </TableCell>
                   <TableCell className="max-w-md text-xs text-muted-foreground">
                     {s.description}
+                  </TableCell>
+                  <TableCell className="text-right">
+                    <ActionDialog
+                      endpoint="/api/admin/schedules/run"
+                      payload={{ name: s.name }}
+                      label="Run now"
+                      title={`Trigger ${s.name}?`}
+                      description={
+                        <>
+                          Enqueues a one-shot run of <span className="font-mono">{s.name}</span>{' '}
+                          right now in addition to its scheduled cron pattern. Useful for testing
+                          fixes without waiting for the next cycle.
+                        </>
+                      }
+                      confirmLabel="Run now"
+                      enabled={writes}
+                    />
                   </TableCell>
                 </TableRow>
               ))}

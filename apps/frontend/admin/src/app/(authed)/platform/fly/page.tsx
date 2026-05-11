@@ -1,11 +1,13 @@
 import { formatRelative } from '@scani/shared';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@scani/ui/ui/table';
+import { ActionDialog } from '@/components/ActionDialog';
 import { ErrorPanel } from '@/components/ErrorPanel';
 import { PageHeader } from '@/components/PageHeader';
 import { SectionCard } from '@/components/SectionCard';
 import { StatCard } from '@/components/StatCard';
 import { type Status, StatusBadge } from '@/components/StatusBadge';
 import { getFlyMachines, getFlyOverview } from '@/lib/clients/fly';
+import { writesEnabled } from '@/lib/writes';
 
 export const runtime = 'edge';
 export const dynamic = 'force-dynamic';
@@ -33,6 +35,7 @@ export default async function FlyPage() {
     (acc, m) => acc + (m.machines.ok ? m.machines.data.length : 0),
     0
   );
+  const writes = writesEnabled();
 
   return (
     <>
@@ -84,6 +87,7 @@ export default async function FlyPage() {
                         <TableHead>state</TableHead>
                         <TableHead>region</TableHead>
                         <TableHead>age</TableHead>
+                        <TableHead className="text-right">action</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -95,6 +99,27 @@ export default async function FlyPage() {
                           <TableCell>{m.region}</TableCell>
                           <TableCell className="text-muted-foreground">
                             {formatRelative(m.createdAt)}
+                          </TableCell>
+                          <TableCell className="text-right">
+                            <ActionDialog
+                              endpoint="/api/admin/fly/restart-machine"
+                              payload={{ app: app.name, machineId: m.id }}
+                              label="Restart"
+                              title={`Restart ${m.name}?`}
+                              description={
+                                <>
+                                  Issues a restart against{' '}
+                                  <span className="font-mono">
+                                    {app.name}/{m.id}
+                                  </span>{' '}
+                                  (region <span className="font-mono">{m.region}</span>). The
+                                  machine will be unavailable for a few seconds while it cycles.
+                                </>
+                              }
+                              confirmLabel="Restart machine"
+                              destructive
+                              enabled={writes}
+                            />
                           </TableCell>
                         </TableRow>
                       ))}

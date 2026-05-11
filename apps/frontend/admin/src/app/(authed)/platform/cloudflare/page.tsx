@@ -1,5 +1,6 @@
 import { formatCurrency, formatRelative } from '@scani/shared';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@scani/ui/ui/table';
+import { ActionDialog } from '@/components/ActionDialog';
 import { ErrorPanel } from '@/components/ErrorPanel';
 import { PageHeader } from '@/components/PageHeader';
 import { SectionCard } from '@/components/SectionCard';
@@ -12,6 +13,7 @@ import {
   getR2Buckets,
   getZones,
 } from '@/lib/clients/cloudflare';
+import { writesEnabled } from '@/lib/writes';
 
 export const runtime = 'edge';
 export const dynamic = 'force-dynamic';
@@ -28,6 +30,7 @@ export default async function CloudflarePage() {
 
   const primaryZone = zones.ok ? zones.data[0] : null;
   const dns = primaryZone ? await getDnsRecords(primaryZone.id) : null;
+  const writes = writesEnabled();
 
   return (
     <>
@@ -178,6 +181,35 @@ export default async function CloudflarePage() {
             </div>
           )}
         </SectionCard>
+
+        {zones.ok && zones.data.length > 0 ? (
+          <SectionCard
+            title="Cache"
+            description="Purge a zone's edge cache. Routes through Cloudflare's purge_cache API with the existing token."
+          >
+            <div className="flex flex-wrap gap-2">
+              {zones.data.map((z) => (
+                <ActionDialog
+                  key={z.id}
+                  endpoint="/api/admin/cloudflare/purge-cache"
+                  payload={{ zoneId: z.id, purgeEverything: true }}
+                  label={`Purge ${z.name}`}
+                  title={`Purge ${z.name} cache?`}
+                  description={
+                    <>
+                      Drops every cached asset for <span className="font-mono">{z.name}</span>{' '}
+                      across Cloudflare's edge. Next request to each path re-fetches from origin —
+                      expect a short-lived cold-cache spike. Useful after a misconfigured deploy.
+                    </>
+                  }
+                  confirmLabel="Purge entire zone"
+                  destructive
+                  enabled={writes}
+                />
+              ))}
+            </div>
+          </SectionCard>
+        ) : null}
 
         <SectionCard title={`DNS — ${primaryZone?.name ?? '(no zone)'}`} flushBody>
           {dns?.ok ? (
