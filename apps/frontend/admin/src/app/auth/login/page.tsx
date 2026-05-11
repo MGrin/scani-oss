@@ -1,102 +1,45 @@
-'use client';
-
 import { safeRedirectPath } from '@scani/shared';
-import { startAuthentication } from '@simplewebauthn/browser';
 import type { PublicKeyCredentialRequestOptionsJSON } from '@simplewebauthn/types';
-import { useRouter, useSearchParams } from 'next/navigation';
-import { Suspense, useCallback, useEffect, useState } from 'react';
-import { completeLoginAction } from './actions';
+import { headers } from 'next/headers';
+import type { ReactNode } from 'react';
+import { LOGIN_OPTIONS_HEADER } from '@/lib/auth/login-headers';
+import { LoginForm } from './LoginForm';
 
-export default function LoginPage() {
+export const runtime = 'edge';
+export const dynamic = 'force-dynamic';
+
+interface PageProps {
+  searchParams: { next?: string };
+}
+
+export default function LoginPage({ searchParams }: PageProps) {
+  // Validated against open-redirect chains: any non-same-origin target
+  // (`https://…`, `//…`, `javascript:…`) falls back to `/`.
+  const next = safeRedirectPath(searchParams.next, '/');
+  // Options are minted by middleware on every GET /auth/login so the
+  // signed-challenge cookie and the inline `optionsJSON` are guaranteed
+  // to match. No client fetch is required before the user clicks the
+  // passkey button — that's what lets iOS Safari / Brave preserve the
+  // gesture activation `navigator.credentials.get()` needs.
+  const raw = headers().get(LOGIN_OPTIONS_HEADER);
+  if (!raw) {
+    return (
+      <LoginShell>
+        <p className="text-xs text-red-300">
+          Failed to prepare passkey challenge. Refresh the page to try again.
+        </p>
+      </LoginShell>
+    );
+  }
+  const options = JSON.parse(raw) as PublicKeyCredentialRequestOptionsJSON;
   return (
-    <Suspense>
-      <LoginInner />
-    </Suspense>
+    <LoginShell>
+      <LoginForm initialOptions={options} next={next} />
+    </LoginShell>
   );
 }
 
-// Server-side challenge TTL is 5 min; refresh a bit before that so the
-// challenge is fresh by the time the user clicks.
-const OPTIONS_REFRESH_MS = 4 * 60 * 1000;
-
-type Status = 'preparing' | 'ready' | 'pending' | 'error';
-
-function LoginInner() {
-  const router = useRouter();
-  const searchParams = useSearchParams();
-  // Validated against open-redirect chains: any non-same-origin target
-  // (`https://…`, `//…`, `javascript:…`) falls back to `/`.
-  const next = safeRedirectPath(searchParams.get('next'), '/');
-  const [status, setStatus] = useState<Status>('preparing');
-  const [error, setError] = useState<string | null>(null);
-  const [options, setOptions] = useState<PublicKeyCredentialRequestOptionsJSON | null>(null);
-
-  // iOS Safari (and stricter Android browsers) require `navigator.credentials.get()`
-  // to run inside the click's transient activation. Awaiting a network call first
-  // burns the activation, so the OS passkey sheet never appears. We pre-fetch the
-  // challenge on mount (and refresh it periodically) so the click handler can call
-  // `startAuthentication` synchronously.
-  const prepareOptions = useCallback(async () => {
-    try {
-      const res = await fetch('/auth/login/begin', {
-        method: 'GET',
-        credentials: 'same-origin',
-        cache: 'no-store',
-      });
-      if (!res.ok) {
-        throw new Error(`Failed to prepare passkey challenge (${res.status})`);
-      }
-      const opts = (await res.json()) as PublicKeyCredentialRequestOptionsJSON;
-      setOptions(opts);
-      setError(null);
-      setStatus((prev) => (prev === 'pending' ? prev : 'ready'));
-    } catch (err) {
-      setStatus('error');
-      setError(err instanceof Error ? err.message : String(err));
-    }
-  }, []);
-
-  useEffect(() => {
-    void prepareOptions();
-    const interval = setInterval(() => {
-      void prepareOptions();
-    }, OPTIONS_REFRESH_MS);
-    return () => clearInterval(interval);
-  }, [prepareOptions]);
-
-  async function onSignIn() {
-    if (!options) {
-      setError('Passkey challenge is still loading. Try again in a moment.');
-      void prepareOptions();
-      return;
-    }
-    setStatus('pending');
-    setError(null);
-    try {
-      const response = await startAuthentication({ optionsJSON: options });
-      const result = await completeLoginAction(response);
-      if (!result.ok) {
-        setStatus('error');
-        setError(result.error);
-        void prepareOptions();
-        return;
-      }
-      router.replace(next);
-    } catch (err) {
-      setStatus('error');
-      setError(err instanceof Error ? err.message : String(err));
-      void prepareOptions();
-    }
-  }
-
-  const buttonDisabled = status === 'pending' || status === 'preparing';
-  const buttonLabel =
-    status === 'pending'
-      ? 'Waiting for passkey…'
-      : status === 'preparing'
-        ? 'Preparing…'
-        : 'Sign in with passkey';
-
+function LoginShell({ children }: { children: ReactNode }) {
   return (
     <div className="min-h-screen flex items-center justify-center px-4">
       <div className="w-full max-w-sm rounded-lg border border-border bg-card/40 p-6">
@@ -104,15 +47,7 @@ function LoginInner() {
         <p className="text-xs text-muted-foreground mb-6">
           Sign in with your passkey to access the dashboard.
         </p>
-        <button
-          type="button"
-          onClick={onSignIn}
-          disabled={buttonDisabled}
-          className="w-full rounded-md border border-border bg-muted hover:bg-muted disabled:opacity-50 px-4 py-2 text-sm font-semibold"
-        >
-          {buttonLabel}
-        </button>
-        {error ? <div className="mt-4 text-xs text-red-300 break-words">{error}</div> : null}
+        {children}
       </div>
     </div>
   );
