@@ -33,7 +33,8 @@ export default async function LoginPage({ searchParams }: PageProps) {
           data-options={JSON.stringify(options)}
           data-token={challengeToken}
           data-next={next}
-          className="w-full rounded-md border border-border bg-muted hover:bg-muted disabled:opacity-50 px-4 py-2 text-sm font-semibold"
+          style={{ touchAction: 'manipulation', WebkitTapHighlightColor: 'rgba(255,255,255,0.1)' }}
+          className="w-full cursor-pointer rounded-md border border-border bg-muted hover:bg-muted active:bg-muted/70 disabled:opacity-50 px-4 py-2 text-sm font-semibold"
         >
           Sign in with passkey
         </button>

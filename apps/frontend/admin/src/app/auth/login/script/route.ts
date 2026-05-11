@@ -32,7 +32,12 @@ const SCRIPT = String.raw`
     if (!btn) return;
     if (statusEl) statusEl.textContent = 'Ready';
     btn.setAttribute('data-script-loaded', '1');
-    btn.addEventListener('click', async function () {
+
+    var attempted = false;
+    async function runSignin(via) {
+      if (attempted) return;
+      attempted = true;
+      if (statusEl) statusEl.textContent = 'event: ' + via;
       btn.disabled = true;
       btn.textContent = 'Waiting for passkey…';
       if (errorEl) errorEl.textContent = '';
@@ -72,6 +77,7 @@ const SCRIPT = String.raw`
         });
         var data = await res.json();
         if (!data.ok) {
+          attempted = false;
           btn.disabled = false;
           btn.textContent = 'Sign in with passkey';
           if (errorEl) errorEl.textContent = data.error || 'Sign-in failed';
@@ -79,11 +85,31 @@ const SCRIPT = String.raw`
         }
         window.location.href = next;
       } catch (err) {
+        attempted = false;
         btn.disabled = false;
         btn.textContent = 'Sign in with passkey';
         if (errorEl) errorEl.textContent = err && err.message ? err.message : String(err);
       }
+    }
+
+    // Diagnostic: also bind touchstart/touchend so we can see in the status
+    // line which event iOS Brave is actually firing. The first event in
+    // wins; runSignin's own attempted-flag debounces the rest.
+    btn.addEventListener('click', function () {
+      runSignin('click');
     });
+    btn.addEventListener('touchend', function (e) {
+      runSignin('touchend');
+      // touchend on iOS does NOT automatically fire click if we don't
+      // preventDefault — leave click free to fire too, runSignin will
+      // dedupe.
+    });
+    btn.addEventListener('touchstart', function () {
+      if (statusEl && !attempted) statusEl.textContent = 'touchstart received';
+    }, { passive: true });
+    btn.onclick = function () {
+      runSignin('onclick');
+    };
   }
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', init);
