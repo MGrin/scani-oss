@@ -88,6 +88,46 @@ export async function getNeonProjects(): Promise<Result<NeonProject[]>> {
   );
 }
 
+export interface NeonOverviewSummary {
+  id: string;
+  name: string;
+  plan: string;
+  regionId: string;
+  pgVersion: number;
+  storageBytes: number;
+  computeHours: number;
+}
+
+/**
+ * Lightweight projects listing for the Overview tile — one HTTP call
+ * (`GET /projects`), no per-project branches fan-out. `getNeonProjects`
+ * does a second request per project to count branches; that's wasted
+ * work for the dashboard which only renders the first project's
+ * top-line numbers. TTL is 5 min (operator doesn't watch this tick).
+ */
+export async function getNeonOverviewSummary(): Promise<Result<NeonOverviewSummary[]>> {
+  return tryCatch(() =>
+    cached('neon:overview-summary', 300, async () => {
+      const list = await req<{ projects: Array<Record<string, unknown>> }>(
+        `/projects?org_id=${encodeURIComponent(orgId())}`
+      );
+      return list.projects.map((p) => ({
+        id: (p.id as string) ?? '',
+        name: (p.name as string) ?? (p.id as string) ?? 'unknown',
+        plan:
+          ((p.owner as Record<string, unknown> | undefined)?.plan as string | undefined) ??
+          (p.plan as string | undefined) ??
+          'unknown',
+        regionId: (p.region_id as string) ?? 'unknown',
+        pgVersion: (p.pg_version as number) ?? 0,
+        storageBytes:
+          ((p.synthetic_storage_size as number | null) ?? (p.store_bytes as number) ?? 0) || 0,
+        computeHours: Math.round((((p.cpu_used_sec as number) ?? 0) / 3600) * 100) / 100,
+      }));
+    })
+  );
+}
+
 export interface NeonConnectionUri {
   uri: string;
   pooled: boolean;

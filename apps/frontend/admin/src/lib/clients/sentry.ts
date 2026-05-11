@@ -173,3 +173,42 @@ export async function getSentryOverview(): Promise<Result<SentryProjectSummary[]
     })
   );
 }
+
+export interface SentryOverviewSummary {
+  /** Event count across all projects in the last 7 days. */
+  events7d: number;
+  /** Number of projects with at least one event in the last 7 days. */
+  activeProjects: number;
+  /** Total projects instrumented (from the project list endpoint). */
+  totalProjects: number;
+}
+
+/**
+ * Cheap Sentry rollup for the dashboard tile. Two subrequests total:
+ * one project list (so we can count instrumentation coverage), one
+ * org-wide stats_v2 query that groups by project. Skips the per-project
+ * unresolved-issue + latest-release fan-out from `getSentryOverview`
+ * because the Overview card doesn't render that level of detail — and
+ * those calls were the single biggest contributor to the Worker
+ * "too many subrequests" cap. Per-project drill-down still loads via
+ * `getSentryOverview` on the dedicated /platform/sentry page.
+ *
+ * TTL is intentionally longer (5 min) than `sentry:overview` — totals
+ * change slowly and the operator is rarely watching them tick.
+ */
+export async function getSentryOverviewSummary(): Promise<Result<SentryOverviewSummary>> {
+  return tryCatch(() =>
+    cached('sentry:overview-summary', 300, async () => {
+      const [projects, events7dByProject] = await Promise.all([
+        fetchProjects(),
+        fetchEvents7dByProject(),
+      ]);
+      const events7d = Array.from(events7dByProject.values()).reduce((a, b) => a + b, 0);
+      return {
+        events7d,
+        activeProjects: events7dByProject.size,
+        totalProjects: projects.length,
+      };
+    })
+  );
+}

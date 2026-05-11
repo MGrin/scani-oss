@@ -11,8 +11,8 @@ import { getBillingProfile, getPagesProjects, getR2Buckets } from '@/lib/clients
 import { getFastmailStatus } from '@/lib/clients/fastmail';
 import { getFlyOverview } from '@/lib/clients/fly';
 import { getRecentRuns } from '@/lib/clients/github';
-import { getNeonProjects } from '@/lib/clients/neon';
-import { getSentryOverview } from '@/lib/clients/sentry';
+import { getNeonOverviewSummary } from '@/lib/clients/neon';
+import { getSentryOverviewSummary } from '@/lib/clients/sentry';
 import { getSpendSummary } from '@/lib/clients/spend';
 import { getQueueDepths, getUpstashDatabases } from '@/lib/clients/upstash';
 
@@ -159,7 +159,11 @@ async function FlyCard() {
 }
 
 async function NeonCard() {
-  const neon = await getNeonProjects();
+  // Uses the lighter `getNeonOverviewSummary` — one HTTP call (no
+  // per-project branches fan-out) and a longer TTL. Saves N+1
+  // subrequests vs `getNeonProjects` and keeps us under the Cloudflare
+  // Worker subrequest cap on the Overview page.
+  const neon = await getNeonOverviewSummary();
   if (!neon.ok) return <CardError message={neon.error} />;
   const p = neon.data[0];
   if (!p) return <CardBody status="warn" statusLabel="no projects" rows={[]} />;
@@ -169,10 +173,8 @@ async function NeonCard() {
       statusLabel={p.plan ?? 'ok'}
       rows={[
         { label: 'Project', value: `${p.name} · pg${p.pgVersion} · ${p.regionId}` },
-        { label: 'Branches', value: `${p.branchCount}` },
-        { label: 'Storage', value: formatBytes(p.syntheticStorageSize ?? p.storeBytes) },
+        { label: 'Storage', value: formatBytes(p.storageBytes) },
         { label: 'CPU-hours', value: `${p.computeHours}` },
-        { label: 'Written', value: formatBytes(p.writtenDataBytes) },
       ]}
     />
   );
@@ -269,23 +271,19 @@ async function FastmailCard() {
 }
 
 async function SentryCard() {
-  const sentry = await getSentryOverview();
+  // Uses the lighter `getSentryOverviewSummary` — 2 subrequests
+  // instead of `getSentryOverview`'s 2 + (5 projects × 2) = 12. The
+  // dedicated /platform/sentry page still loads the per-project
+  // unresolved + latest-release detail via the heavier endpoint.
+  const sentry = await getSentryOverviewSummary();
   if (!sentry.ok) return <CardError message={sentry.error} />;
-  const unresolved = sentry.data.reduce((acc, p) => acc + p.unresolvedIssues, 0);
-  const events = sentry.data.reduce((acc, p) => acc + p.events7d, 0);
-  const status: Status = unresolved > 0 ? 'warn' : 'ok';
-  const top = sentry.data
-    .filter((p) => p.unresolvedIssues > 0)
-    .map((p) => `${p.slug} (${p.unresolvedIssues})`)
-    .join(' · ');
   return (
     <CardBody
-      status={status}
-      statusLabel={`${unresolved} unresolved`}
+      status="ok"
+      statusLabel={`${sentry.data.totalProjects} projects`}
       rows={[
-        { label: 'Projects', value: `${sentry.data.length}` },
-        { label: 'Events 7d', value: formatNumber(events) },
-        { label: 'Open', value: top || 'no open issues', dim: !top },
+        { label: 'Events 7d', value: formatNumber(sentry.data.events7d) },
+        { label: 'Active', value: `${sentry.data.activeProjects} project(s)` },
       ]}
     />
   );
