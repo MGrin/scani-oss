@@ -44,7 +44,19 @@ const SECURITY_HEADERS = [
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   async headers() {
-    return [{ source: '/:path*', headers: SECURITY_HEADERS }];
+    return [
+      { source: '/:path*', headers: SECURITY_HEADERS },
+      // /auth/login must never be served from any cache. The page bakes a
+      // fresh single-use challenge token into the HTML on every render;
+      // a stale HTML body would yield an expired token (or worse, a
+      // token that doesn't match the JS the browser has). iOS WebKit
+      // tab-cache / bfcache has been observed serving stale variants
+      // even after an explicit reopen, so be explicit.
+      {
+        source: '/auth/login',
+        headers: [{ key: 'Cache-Control', value: 'no-store, must-revalidate' }],
+      },
+    ];
   },
   webpack(config) {
     // `@simplewebauthn/server` statically imports `cross-fetch`. Webpack

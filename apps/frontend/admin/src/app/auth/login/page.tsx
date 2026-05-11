@@ -38,6 +38,13 @@ export default async function LoginPage({ searchParams }: PageProps) {
           Sign in with passkey
         </button>
         <div id="signin-error" className="mt-4 text-xs text-red-300 break-words" />
+        {/* `signin-status` starts as "Initializing…"; the inline JS flips it
+            to "Ready" as soon as it attaches the click listener. If you see
+            the button next to a stuck "Initializing…", the script never
+            loaded — that's the failure to diagnose, not the click itself. */}
+        <small id="signin-status" className="mt-2 block text-[10px] text-muted-foreground/60">
+          Initializing…
+        </small>
         <script src="/auth/login/script" defer />
       </div>
     </div>

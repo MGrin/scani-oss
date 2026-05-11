@@ -28,7 +28,10 @@ const SCRIPT = String.raw`
   function init() {
     var btn = document.getElementById('signin-button');
     var errorEl = document.getElementById('signin-error');
+    var statusEl = document.getElementById('signin-status');
     if (!btn) return;
+    if (statusEl) statusEl.textContent = 'Ready';
+    btn.setAttribute('data-script-loaded', '1');
     btn.addEventListener('click', async function () {
       btn.disabled = true;
       btn.textContent = 'Waiting for passkey…';
@@ -94,7 +97,7 @@ export function GET(): NextResponse {
   return new NextResponse(SCRIPT, {
     headers: {
       'Content-Type': 'application/javascript; charset=utf-8',
-      'Cache-Control': 'public, max-age=60, must-revalidate',
+      'Cache-Control': 'no-store, must-revalidate',
     },
   });
 }
