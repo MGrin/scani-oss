@@ -105,6 +105,12 @@ export interface FlyMachine {
   region: string;
   image: string;
   createdAt: string;
+  /** `shared` (small/medium/large/etc.) or `performance` per Fly's pricing tiers. */
+  cpuKind: string;
+  /** Allocated vCPU count from `config.guest.cpus`. */
+  cpus: number;
+  /** Allocated RAM in MB from `config.guest.memory_mb`. */
+  memoryMb: number;
 }
 
 export async function getFlyMachines(app: string): Promise<Result<FlyMachine[]>> {
@@ -123,6 +129,13 @@ export async function getFlyMachines(app: string): Promise<Result<FlyMachine[]>>
         region: string;
         image_ref?: { repository?: string; tag?: string };
         created_at: string;
+        config?: {
+          guest?: {
+            cpu_kind?: string;
+            cpus?: number;
+            memory_mb?: number;
+          };
+        };
       }>;
       return raw.map((m) => ({
         id: m.id,
@@ -133,6 +146,9 @@ export async function getFlyMachines(app: string): Promise<Result<FlyMachine[]>>
           ? `${m.image_ref.repository}:${m.image_ref.tag ?? 'latest'}`
           : 'unknown',
         createdAt: m.created_at,
+        cpuKind: m.config?.guest?.cpu_kind ?? 'shared',
+        cpus: m.config?.guest?.cpus ?? 1,
+        memoryMb: m.config?.guest?.memory_mb ?? 256,
       }));
     })
   );

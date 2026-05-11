@@ -1,7 +1,7 @@
 import { cached } from '../cache';
 import { type Result, tryCatch } from '../result';
 import { type CfBillingHistoryItem, getBillingHistory } from './cloudflare';
-import { getFlyOverview } from './fly';
+import { type FlyMachine, getFlyMachines, getFlyOverview } from './fly';
 import { getNeonProjects } from './neon';
 import { getUpstashDatabases, getUpstashStats } from './upstash';
 
@@ -70,6 +70,19 @@ const PRICING = {
   // Upstash "Pay-as-you-go" Redis: $0.2 per 100K commands, $0.25/GB-month.
   upstashPer100kCommandsUsd: 0.2,
   upstashStorageGbMonthUsd: 0.25,
+  // Fly.io published Pay-as-you-go rates (fly.io/docs/about/pricing/).
+  // - `shared-cpu`: $0.0000022 per vCPU-second across small/medium/large.
+  // - `performance`: $0.000016 per vCPU-second.
+  // - RAM: $0.00000193 per GB-second (independent of cpu kind).
+  // No base fee on Pay-as-you-go — Fly bills purely on resource time.
+  // Per-machine cost is
+  //   (cpu_rate * cpus + ram_rate * memory_gb) * seconds_running_this_month
+  // Assumes machines have been continuously running since
+  // `max(created_at, month_start)` — over-estimates if machines were
+  // stopped/restarted, which is fine for an upper-bound estimate.
+  flySharedCpuRateUsdPerSec: 0.0000022,
+  flyPerformanceCpuRateUsdPerSec: 0.000016,
+  flyRamRateUsdPerGbSec: 0.00000193,
 } as const;
 
 export async function getSpendSummary(): Promise<Result<SpendSummary>> {
@@ -81,6 +94,22 @@ export async function getSpendSummary(): Promise<Result<SpendSummary>> {
         getUpstashDatabases(),
         getFlyOverview(),
       ]);
+
+      // Pull machine lists for every Fly app, in parallel, only if the
+      // org call succeeded. Cached at 30s by the underlying client so
+      // the Spend page + /platform/fly page don't double-fetch.
+      const flyMachinesByApp = new Map<string, FlyMachine[]>();
+      if (fly.ok) {
+        const machineResults = await Promise.all(
+          fly.data.apps.map(async (app) => ({
+            app: app.name,
+            res: await getFlyMachines(app.name),
+          }))
+        );
+        for (const { app, res } of machineResults) {
+          if (res.ok) flyMachinesByApp.set(app, res.data);
+        }
+      }
 
       const lineItems: SpendLineItem[] = [];
       const periodLabel = monthPeriodLabel(new Date());
@@ -188,18 +217,62 @@ export async function getSpendSummary(): Promise<Result<SpendSummary>> {
         });
       }
 
-      // ----- Fly: status only — no per-month invoice via public API -----
-      lineItems.push({
-        provider: 'fly',
-        label: 'Fly.io',
-        amount: 0,
-        currency: 'USD',
-        confidence: 'unknown',
-        period: periodLabel,
-        basis: fly.ok
-          ? `Org billing status: ${fly.data.billingStatus ?? 'unknown'}. Fly's public API doesn't expose invoice totals — see fly.io/dashboard/${fly.data.slug}/billing.`
-          : 'Fly overview unavailable',
-      });
+      // ----- Fly: per-machine compute cost since month-start -----
+      // Fly's public API doesn't expose an invoice total directly, but
+      // the Machines REST API gives us each machine's guest config
+      // (cpu_kind, cpus, memory_mb) and created_at. We compute a
+      // per-machine upper-bound cost by assuming each machine has been
+      // continuously running since `max(month_start, created_at)` at
+      // its provisioned size, multiplied by Fly's published Pay-as-you-go
+      // rates. Plus a flat $10/mo Pay-as-you-go base (operator-confirmed).
+      if (fly.ok && flyMachinesByApp.size > 0) {
+        const monthStart = startOfUtcMonth(new Date());
+        const now = new Date();
+        let totalComputeUsd = 0;
+        let totalMachines = 0;
+        const perAppBreakdown: string[] = [];
+        for (const [app, machines] of flyMachinesByApp.entries()) {
+          let appUsd = 0;
+          for (const m of machines) {
+            const seconds = secondsBilledThisMonth(m.createdAt, monthStart, now);
+            if (seconds <= 0) continue;
+            const cpuRate =
+              m.cpuKind === 'performance'
+                ? PRICING.flyPerformanceCpuRateUsdPerSec
+                : PRICING.flySharedCpuRateUsdPerSec;
+            const ramGb = m.memoryMb / 1024;
+            const machineUsd = (cpuRate * m.cpus + PRICING.flyRamRateUsdPerGbSec * ramGb) * seconds;
+            appUsd += machineUsd;
+            totalMachines++;
+          }
+          if (appUsd > 0) perAppBreakdown.push(`${app}: $${appUsd.toFixed(2)}`);
+          totalComputeUsd += appUsd;
+        }
+        const computeUsd = Math.round(totalComputeUsd * 100) / 100;
+        lineItems.push({
+          provider: 'fly',
+          label: `Fly.io · ${fly.data.slug}`,
+          amount: computeUsd,
+          currency: 'USD',
+          confidence: 'estimated',
+          period: periodLabel,
+          basis: `${totalMachines} machine${totalMachines === 1 ? '' : 's'} × Pay-as-you-go rates${
+            perAppBreakdown.length > 0 ? ` (${perAppBreakdown.join(', ')})` : ''
+          }`,
+        });
+      } else {
+        lineItems.push({
+          provider: 'fly',
+          label: 'Fly.io',
+          amount: 0,
+          currency: 'USD',
+          confidence: 'unknown',
+          period: periodLabel,
+          basis: fly.ok
+            ? `Org billing status: ${fly.data.billingStatus ?? 'unknown'}. No machines visible — see fly.io/dashboard/${fly.data.slug}/billing.`
+            : 'Fly overview unavailable',
+        });
+      }
 
       // ----- Sentry: events count varies wildly month-over-month and the
       // tier is not surfaced by the project API. Mark unknown for now. -----
@@ -248,9 +321,19 @@ export async function getSpendSummary(): Promise<Result<SpendSummary>> {
             source: 'Cloudflare billing API',
           },
           {
-            label: 'Fly + Sentry',
-            rate: 'Not modelled — public APIs do not expose totals',
-            source: 'Operator checks vendor dashboards directly',
+            label: 'Fly.io CPU',
+            rate: `$${PRICING.flySharedCpuRateUsdPerSec}/vCPU-s shared · $${PRICING.flyPerformanceCpuRateUsdPerSec}/vCPU-s performance`,
+            source: 'fly.io/docs/about/pricing/',
+          },
+          {
+            label: 'Fly.io RAM',
+            rate: `$${PRICING.flyRamRateUsdPerGbSec}/GB-s`,
+            source: 'fly.io/docs/about/pricing/',
+          },
+          {
+            label: 'Sentry',
+            rate: 'Not modelled — events-per-tier pricing not API-exposed',
+            source: 'sentry.io/settings/billing/',
           },
         ],
       };
@@ -295,6 +378,24 @@ function monthPeriodLabel(now: Date): string {
   const year = now.getUTCFullYear();
   const month = String(now.getUTCMonth() + 1).padStart(2, '0');
   return `month-to-date ${year}-${month}`;
+}
+
+function startOfUtcMonth(now: Date): Date {
+  return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
+}
+
+/**
+ * How many seconds a Fly machine has been "billed" this calendar month
+ * under our upper-bound assumption (continuously running since
+ * `max(month_start, created_at)`). Returns 0 for machines created in
+ * the future or that have unparseable timestamps.
+ */
+function secondsBilledThisMonth(createdAtIso: string, monthStart: Date, now: Date): number {
+  const created = Date.parse(createdAtIso);
+  if (!Number.isFinite(created)) return 0;
+  const start = Math.max(created, monthStart.getTime());
+  const end = now.getTime();
+  return Math.max(0, (end - start) / 1000);
 }
 
 function sumUsd(items: SpendLineItem[]): number {

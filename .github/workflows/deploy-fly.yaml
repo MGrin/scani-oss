@@ -778,6 +778,12 @@ jobs:
           # BullMQ retry/remove: admin signs these → backend verifies with
           # the matching secret. Must equal the backend's Fly secret.
           ADMIN_JOBS_HMAC_SECRET: ${{ secrets.ADMIN_JOBS_HMAC_SECRET }}
+          # Master switch for admin write actions (DLQ replay, schedule
+          # run-now, Cloudflare purge, Fly restart, key revoke, …).
+          # Hardcoded to "1" — operator has authorized writes to be on
+          # in production. Flip to "0" to gate every /api/admin/* route
+          # with a 503 + audit-log "denied" row.
+          ADMIN_WRITES_ENABLED: "1"
           # Where the admin proxy sends signed requests. Hardcoded to prod
           # here; override per-env via GH environment secret if we ever
           # add staging.
@@ -812,7 +818,7 @@ jobs:
                    TF_GITHUB_TOKEN FASTMAIL_API_TOKEN \
                    ADMIN_PASSKEY_CREDENTIAL_ID ADMIN_PASSKEY_PUBLIC_KEY \
                    ADMIN_SESSION_SECRET \
-                   ADMIN_JOBS_HMAC_SECRET BACKEND_BASE_URL \
+                   ADMIN_JOBS_HMAC_SECRET ADMIN_WRITES_ENABLED BACKEND_BASE_URL \
                    NEXT_PUBLIC_SENTRY_DSN SENTRY_AUTH_TOKEN SENTRY_ORG \
                    SENTRY_RELEASE SENTRY_ENVIRONMENT; do
             sync_secret "$n" "${!n}"
