@@ -1,4 +1,4 @@
-import { formatBytes, formatNumber, formatRelative } from '@scani/shared';
+import { formatBytes, formatCurrency, formatNumber, formatRelative } from '@scani/shared';
 import { Alert, AlertDescription, AlertTitle } from '@scani/ui/ui/alert';
 import { Activity, CheckCircle2, XCircle } from 'lucide-react';
 import Link from 'next/link';
@@ -13,6 +13,7 @@ import { getFlyOverview } from '@/lib/clients/fly';
 import { getRecentRuns } from '@/lib/clients/github';
 import { getNeonProjects } from '@/lib/clients/neon';
 import { getSentryOverview } from '@/lib/clients/sentry';
+import { getSpendSummary } from '@/lib/clients/spend';
 import { getQueueDepths, getUpstashDatabases } from '@/lib/clients/upstash';
 
 export const runtime = 'edge';
@@ -93,6 +94,13 @@ export default async function OverviewPage() {
           description="scani-jobs"
         >
           <QueueCard />
+        </StreamingCard>
+
+        <StreamingCard
+          title={<CardTitleLink href="/spend">Monthly spend</CardTitleLink>}
+          description="Invoiced + estimated rollup"
+        >
+          <SpendCard />
         </StreamingCard>
       </div>
     </div>
@@ -320,6 +328,28 @@ async function QueueCard() {
           value: `${q.data.waiting} waiting · ${q.data.active} active · ${q.data.delayed} delayed`,
         },
         { label: 'Completed', value: formatNumber(q.data.completed) },
+      ]}
+    />
+  );
+}
+
+async function SpendCard() {
+  const spend = await getSpendSummary();
+  if (!spend.ok) return <CardError message={spend.error} />;
+  const { totalUsd, invoicedUsd, estimatedUsd, lineItems } = spend.data;
+  const unknown = lineItems.filter((l) => l.confidence === 'unknown').length;
+  return (
+    <CardBody
+      status="ok"
+      statusLabel={formatCurrency(totalUsd, 'USD')}
+      rows={[
+        { label: 'Invoiced', value: formatCurrency(invoicedUsd, 'USD') },
+        { label: 'Estimated', value: formatCurrency(estimatedUsd, 'USD'), dim: true },
+        {
+          label: 'Unknown',
+          value: unknown > 0 ? `${unknown} line${unknown === 1 ? '' : 's'}` : 'all modelled',
+          dim: true,
+        },
       ]}
     />
   );
