@@ -33,6 +33,25 @@ const SCRIPT = String.raw`
     if (statusEl) statusEl.textContent = 'Ready';
     btn.setAttribute('data-script-loaded', '1');
 
+    // Document-level capture-phase diagnostics. If any tap reaches the
+    // page at all, one of these fires before any listener on a child
+    // could swallow it. The status line shows event name + which element
+    // received it. If "Ready" stays unchanged even after these, no event
+    // of any kind is reaching the document — points at an iOS Brave or
+    // overlay-level interception.
+    function logEvent(name) {
+      return function (e) {
+        if (!statusEl) return;
+        var t = e.target || e.srcElement;
+        var label = t && t.id ? '#' + t.id : t && t.tagName ? t.tagName : '?';
+        statusEl.textContent = name + ' → ' + label;
+      };
+    }
+    document.addEventListener('pointerdown', logEvent('pointerdown'), true);
+    document.addEventListener('touchstart', logEvent('touchstart'), true);
+    document.addEventListener('mousedown', logEvent('mousedown'), true);
+    document.addEventListener('click', logEvent('click'), true);
+
     var attempted = false;
     async function runSignin(via) {
       if (attempted) return;
@@ -92,21 +111,14 @@ const SCRIPT = String.raw`
       }
     }
 
-    // Diagnostic: also bind touchstart/touchend so we can see in the status
-    // line which event iOS Brave is actually firing. The first event in
-    // wins; runSignin's own attempted-flag debounces the rest.
+    // Button-level handlers still attached, but the document-level
+    // capture listeners above will fire first regardless.
     btn.addEventListener('click', function () {
       runSignin('click');
     });
-    btn.addEventListener('touchend', function (e) {
+    btn.addEventListener('touchend', function () {
       runSignin('touchend');
-      // touchend on iOS does NOT automatically fire click if we don't
-      // preventDefault — leave click free to fire too, runSignin will
-      // dedupe.
     });
-    btn.addEventListener('touchstart', function () {
-      if (statusEl && !attempted) statusEl.textContent = 'touchstart received';
-    }, { passive: true });
     btn.onclick = function () {
       runSignin('onclick');
     };
