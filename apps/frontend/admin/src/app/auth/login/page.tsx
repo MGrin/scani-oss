@@ -5,7 +5,7 @@ import { startAuthentication } from '@simplewebauthn/browser';
 import type { PublicKeyCredentialRequestOptionsJSON } from '@simplewebauthn/types';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Suspense, useCallback, useEffect, useState } from 'react';
-import { beginLoginAction, completeLoginAction } from './actions';
+import { completeLoginAction } from './actions';
 
 export default function LoginPage() {
   return (
@@ -15,9 +15,11 @@ export default function LoginPage() {
   );
 }
 
-// Server-side challenge TTL is 5 min; refresh a bit before that to avoid
-// a stale challenge if the user lingers on the page.
+// Server-side challenge TTL is 5 min; refresh a bit before that so the
+// challenge is fresh by the time the user clicks.
 const OPTIONS_REFRESH_MS = 4 * 60 * 1000;
+
+type Status = 'preparing' | 'ready' | 'pending' | 'error';
 
 function LoginInner() {
   const router = useRouter();
@@ -25,19 +27,28 @@ function LoginInner() {
   // Validated against open-redirect chains: any non-same-origin target
   // (`https://…`, `//…`, `javascript:…`) falls back to `/`.
   const next = safeRedirectPath(searchParams.get('next'), '/');
-  const [status, setStatus] = useState<'preparing' | 'ready' | 'pending' | 'error'>('preparing');
+  const [status, setStatus] = useState<Status>('preparing');
   const [error, setError] = useState<string | null>(null);
   const [options, setOptions] = useState<PublicKeyCredentialRequestOptionsJSON | null>(null);
 
   // iOS Safari (and stricter Android browsers) require `navigator.credentials.get()`
-  // to run inside the click's transient activation. Awaiting a Server Action first
+  // to run inside the click's transient activation. Awaiting a network call first
   // burns the activation, so the OS passkey sheet never appears. We pre-fetch the
-  // challenge on mount and refresh it periodically so the click handler can call
+  // challenge on mount (and refresh it periodically) so the click handler can call
   // `startAuthentication` synchronously.
   const prepareOptions = useCallback(async () => {
     try {
-      const opts = await beginLoginAction();
+      const res = await fetch('/auth/login/begin', {
+        method: 'GET',
+        credentials: 'same-origin',
+        cache: 'no-store',
+      });
+      if (!res.ok) {
+        throw new Error(`Failed to prepare passkey challenge (${res.status})`);
+      }
+      const opts = (await res.json()) as PublicKeyCredentialRequestOptionsJSON;
       setOptions(opts);
+      setError(null);
       setStatus((prev) => (prev === 'pending' ? prev : 'ready'));
     } catch (err) {
       setStatus('error');
@@ -56,6 +67,7 @@ function LoginInner() {
   async function onSignIn() {
     if (!options) {
       setError('Passkey challenge is still loading. Try again in a moment.');
+      void prepareOptions();
       return;
     }
     setStatus('pending');
@@ -77,11 +89,11 @@ function LoginInner() {
     }
   }
 
-  const buttonDisabled = status === 'pending' || status === 'preparing' || !options;
+  const buttonDisabled = status === 'pending' || status === 'preparing';
   const buttonLabel =
     status === 'pending'
       ? 'Waiting for passkey…'
-      : status === 'preparing' || !options
+      : status === 'preparing'
         ? 'Preparing…'
         : 'Sign in with passkey';
 

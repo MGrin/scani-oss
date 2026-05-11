@@ -1,27 +1,15 @@
 'use server';
 
-import type {
-  AuthenticationResponseJSON,
-  PublicKeyCredentialRequestOptionsJSON,
-} from '@simplewebauthn/types';
+import type { AuthenticationResponseJSON } from '@simplewebauthn/types';
 import { cookies } from 'next/headers';
-import { beginPasskeyLogin, verifyPasskeyLogin } from '@/lib/auth/passkey';
+import { verifyPasskeyLogin } from '@/lib/auth/passkey';
 import {
   CHALLENGE_COOKIE,
-  challengeCookieOpts,
   SESSION_COOKIE,
   sessionCookieOpts,
-  signChallenge,
   signSession,
   verifyChallenge,
 } from '@/lib/auth/session';
-
-export async function beginLoginAction(): Promise<PublicKeyCredentialRequestOptionsJSON> {
-  const options = await beginPasskeyLogin();
-  const token = await signChallenge(options.challenge);
-  cookies().set(CHALLENGE_COOKIE, token, challengeCookieOpts());
-  return options;
-}
 
 export async function completeLoginAction(
   response: AuthenticationResponseJSON
