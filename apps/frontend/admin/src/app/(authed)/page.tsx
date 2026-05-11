@@ -14,7 +14,7 @@ import { getRecentRuns } from '@/lib/clients/github';
 import { getNeonOverviewSummary } from '@/lib/clients/neon';
 import { getSentryOverviewSummary } from '@/lib/clients/sentry';
 import { getSpendSummary } from '@/lib/clients/spend';
-import { getQueueDepths, getUpstashDatabases } from '@/lib/clients/upstash';
+import { getQueueDepths, getUpstashDatabases, getUpstashStats } from '@/lib/clients/upstash';
 
 export const runtime = 'edge';
 export const dynamic = 'force-dynamic';
@@ -181,18 +181,32 @@ async function NeonCard() {
 }
 
 async function UpstashCard() {
+  // Pulls live counters from `/redis/stats/<id>`. The list endpoint
+  // (`getUpstashDatabases`) doesn't populate usage counters — historical
+  // versions of this card read zeros from there.
   const dbs = await getUpstashDatabases();
   if (!dbs.ok) return <CardError message={dbs.error} />;
   const d = dbs.data[0];
   if (!d) return <CardBody status="warn" statusLabel="no databases" rows={[]} />;
+  const stats = await getUpstashStats(d.id);
   return (
     <CardBody
       status="ok"
       statusLabel={d.state ?? 'ok'}
       rows={[
         { label: 'Name', value: `${d.name} · ${d.type} · ${d.region}` },
-        { label: 'Commands', value: formatNumber(d.totalCommands) },
-        { label: 'Bandwidth/d', value: formatBytes(d.totalDailyBandwidth) },
+        stats.ok
+          ? { label: 'Requests', value: `${formatNumber(stats.data.monthlyRequests)} / mo` }
+          : { label: 'Requests', value: stats.error, dim: true },
+        stats.ok
+          ? {
+              label: 'Bandwidth',
+              value: `${formatBytes(stats.data.monthlyBandwidthBytes)} / mo`,
+            }
+          : { label: 'Bandwidth', value: '—', dim: true },
+        stats.ok
+          ? { label: 'Keyspace', value: formatNumber(stats.data.keyspace), dim: true }
+          : { label: 'Keyspace', value: '—', dim: true },
       ]}
     />
   );

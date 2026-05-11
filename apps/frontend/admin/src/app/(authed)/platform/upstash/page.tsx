@@ -43,16 +43,54 @@ export default async function UpstashPage() {
               </>
             }
           >
-            <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-              <StatCard
-                label="Total commands"
-                value={formatNumber(db.totalCommands)}
-                sub={stats.ok ? `${formatNumber(stats.data.dailyCommands)} monthly` : undefined}
-              />
-              <StatCard label="Daily bandwidth" value={formatBytes(db.totalDailyBandwidth)} />
-              <StatCard label="Connections" value={formatNumber(db.totalConnections)} />
-              <StatCard label="Created" value={formatRelative(new Date(db.createdAt * 1000))} />
-            </div>
+            {stats.ok ? (
+              <>
+                <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                  <StatCard
+                    label="Monthly requests"
+                    value={formatNumber(stats.data.monthlyRequests)}
+                    sub={
+                      stats.data.dailyRequests > 0
+                        ? `${formatNumber(stats.data.dailyRequests)} today`
+                        : undefined
+                    }
+                  />
+                  <StatCard
+                    label="Monthly bandwidth"
+                    value={formatBytes(stats.data.monthlyBandwidthBytes)}
+                    sub={
+                      stats.data.dailyBandwidthBytes > 0
+                        ? `${formatBytes(stats.data.dailyBandwidthBytes)} today`
+                        : undefined
+                    }
+                  />
+                  <StatCard
+                    label="Monthly connections"
+                    value={formatNumber(stats.data.monthlyConnections)}
+                    sub={
+                      stats.data.dailyConnections > 0
+                        ? `${formatNumber(stats.data.dailyConnections)} today`
+                        : undefined
+                    }
+                  />
+                  <StatCard label="Keyspace" value={formatNumber(stats.data.keyspace)} />
+                </div>
+                <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
+                  <StatCard label="Storage" value={formatBytes(stats.data.storageBytes)} />
+                  <StatCard
+                    label="Read latency"
+                    value={`${stats.data.readLatencyMean.toFixed(2)} ms`}
+                  />
+                  <StatCard
+                    label="Write latency"
+                    value={`${stats.data.writeLatencyMean.toFixed(2)} ms`}
+                  />
+                  <StatCard label="Created" value={formatRelative(new Date(db.createdAt * 1000))} />
+                </div>
+              </>
+            ) : (
+              <ErrorPanel service={`${db.name} stats`} error={stats.error} />
+            )}
             <div className="mt-3 font-mono text-xs text-muted-foreground">
               {db.endpoint}:{db.port}
             </div>

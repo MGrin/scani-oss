@@ -29,13 +29,11 @@ export interface UpstashDb {
   port: number;
   state: string;
   tls: boolean;
-  dailyBandwidth: number;
+  /**
+   * Upstash list endpoint reports the disk threshold here (size cap),
+   * NOT live usage. We keep it for plan-tier signaling.
+   */
   dbSizeBytes: number;
-  totalCommands: number;
-  totalConnections: number;
-  totalDailyBandwidth: number;
-  readLatencyMean: number;
-  writeLatencyMean: number;
   createdAt: number;
 }
 
@@ -52,26 +50,63 @@ export async function getUpstashDatabases(): Promise<Result<UpstashDb[]>> {
         port: (d.port as number) ?? 0,
         state: (d.state as string) ?? 'unknown',
         tls: Boolean(d.tls),
-        dailyBandwidth: (d.daily_bandwidth as number) ?? 0,
         dbSizeBytes: (d.db_disk_threshold as number) ?? (d.db_max_size as number) ?? 0,
-        totalCommands: (d.db_total_commands as number) ?? 0,
-        totalConnections: (d.db_total_connections as number) ?? 0,
-        totalDailyBandwidth: (d.db_daily_bandwidth as number) ?? 0,
-        readLatencyMean: (d.db_read_latency_mean as number) ?? 0,
-        writeLatencyMean: (d.db_write_latency_mean as number) ?? 0,
         createdAt: (d.creation_time as number) ?? 0,
       }));
     })
   );
 }
 
+/**
+ * Per-database usage from `/redis/stats/<id>`.
+ *
+ * Earlier versions of this client tried to read usage counters
+ * (`db_total_commands`, `db_daily_bandwidth`, etc.) off the
+ * `/redis/databases` list response — Upstash doesn't populate those
+ * on the list endpoint, so the dashboard rendered zeros. The stats
+ * endpoint is the source of truth; everything below comes from there.
+ *
+ * Upstash field names are inconsistent across plan tiers, so each
+ * value reads through a short fallback chain of plausible keys before
+ * defaulting to 0. The shape is normalized into clearly-named fields
+ * (`monthlyRequests`, `dailyBandwidth`, …) so the page never has to
+ * decode Upstash's raw schema again.
+ */
 export interface UpstashStats {
-  dailyCommands: number;
-  readLatencyMean: number;
-  writeLatencyMean: number;
-  bandwidth: number;
-  totalConnections: number;
+  /** Month-to-date request count. */
+  monthlyRequests: number;
+  /** Today's request count (last 24h sample). */
+  dailyRequests: number;
+  /** Month-to-date egress bytes. */
+  monthlyBandwidthBytes: number;
+  /** Today's egress bytes. */
+  dailyBandwidthBytes: number;
+  /** Month-to-date unique connection count (Upstash sums opens). */
+  monthlyConnections: number;
+  /** Today's unique connection count. */
+  dailyConnections: number;
+  /** Current keyspace size (key count). */
   keyspace: number;
+  /** Current stored bytes (approximate; Upstash reports daily storage). */
+  storageBytes: number;
+  /** Last-known read latency mean (ms). */
+  readLatencyMean: number;
+  /** Last-known write latency mean (ms). */
+  writeLatencyMean: number;
+}
+
+function num(value: unknown): number {
+  const n = Number(value);
+  return Number.isFinite(n) ? n : 0;
+}
+
+/** Read the first non-zero value across plausible Upstash field names. */
+function pick(stats: Record<string, unknown>, ...keys: string[]): number {
+  for (const k of keys) {
+    const v = num(stats[k]);
+    if (v !== 0) return v;
+  }
+  return 0;
 }
 
 export async function getUpstashStats(dbId: string): Promise<Result<UpstashStats>> {
@@ -79,14 +114,16 @@ export async function getUpstashStats(dbId: string): Promise<Result<UpstashStats
     cached(`upstash:stats:${dbId}`, 30, async () => {
       const stats = await req<Record<string, unknown>>(`/redis/stats/${dbId}`);
       return {
-        dailyCommands:
-          Number((stats.total_monthly_requests as number) ?? 0) ||
-          Number((stats.total_commands as number) ?? 0),
-        readLatencyMean: Number(stats.read_latency_mean ?? 0),
-        writeLatencyMean: Number(stats.write_latency_mean ?? 0),
-        bandwidth: Number(stats.daily_bandwidth ?? 0),
-        totalConnections: Number(stats.total_connections ?? 0),
-        keyspace: Number(stats.total_keys ?? 0),
+        monthlyRequests: pick(stats, 'total_monthly_requests', 'total_requests'),
+        dailyRequests: pick(stats, 'daily_requests', 'requests_per_day'),
+        monthlyBandwidthBytes: pick(stats, 'total_monthly_bandwidth', 'total_bandwidth'),
+        dailyBandwidthBytes: pick(stats, 'daily_bandwidth', 'bandwidth_per_day'),
+        monthlyConnections: pick(stats, 'total_monthly_connections', 'total_connections'),
+        dailyConnections: pick(stats, 'daily_connections', 'connections_per_day'),
+        keyspace: pick(stats, 'total_keys', 'keys'),
+        storageBytes: pick(stats, 'daily_storage', 'storage_per_day', 'total_storage'),
+        readLatencyMean: num(stats.read_latency_mean),
+        writeLatencyMean: num(stats.write_latency_mean),
       };
     })
   );

@@ -3,7 +3,7 @@ import { type Result, tryCatch } from '../result';
 import { type CfBillingHistoryItem, getBillingHistory } from './cloudflare';
 import { getFlyOverview } from './fly';
 import { getNeonProjects } from './neon';
-import { getUpstashDatabases } from './upstash';
+import { getUpstashDatabases, getUpstashStats } from './upstash';
 
 /**
  * Monthly-spend rollup across every infra provider Scani pays for.
@@ -136,9 +136,31 @@ export async function getSpendSummary(): Promise<Result<SpendSummary>> {
       }
 
       // ----- Upstash: estimate from monthly commands × $0.20 / 100K -----
+      //
+      // Counters live on `/redis/stats/<id>` (`getUpstashStats`), NOT
+      // on the list endpoint — historical versions of this estimate
+      // read `db.totalCommands` from the list response, which Upstash
+      // doesn't populate, so the line item was always $0. Fan out one
+      // stats call per database; same cache layer dedupes it with the
+      // Overview's UpstashCard and the dedicated /platform/upstash page.
       if (upstash.ok) {
-        for (const db of upstash.data) {
-          const commands = db.totalCommands ?? 0;
+        const usageResults = await Promise.all(
+          upstash.data.map(async (db) => ({ db, usage: await getUpstashStats(db.id) }))
+        );
+        for (const { db, usage } of usageResults) {
+          if (!usage.ok) {
+            lineItems.push({
+              provider: 'upstash',
+              label: `Upstash · ${db.name}`,
+              amount: 0,
+              currency: 'USD',
+              confidence: 'unknown',
+              period: periodLabel,
+              basis: usage.error,
+            });
+            continue;
+          }
+          const commands = usage.data.monthlyRequests;
           // Upstash Pay-as-you-go: $0.20 per 100K commands. We don't
           // currently surface storage-GB in the admin client, so we
           // omit it from the estimate and call that out in the basis.
