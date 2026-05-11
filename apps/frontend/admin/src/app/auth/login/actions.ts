@@ -4,7 +4,6 @@ import type { AuthenticationResponseJSON } from '@simplewebauthn/types';
 import { cookies } from 'next/headers';
 import { verifyPasskeyLogin } from '@/lib/auth/passkey';
 import {
-  CHALLENGE_COOKIE,
   SESSION_COOKIE,
   sessionCookieOpts,
   signSession,
@@ -12,16 +11,13 @@ import {
 } from '@/lib/auth/session';
 
 export async function completeLoginAction(
-  response: AuthenticationResponseJSON
+  response: AuthenticationResponseJSON,
+  challengeToken: string
 ): Promise<{ ok: true } | { ok: false; error: string }> {
-  const cookieStore = cookies();
-  const challengeToken = cookieStore.get(CHALLENGE_COOKIE)?.value;
-  if (!challengeToken) return { ok: false, error: 'No challenge cookie' };
+  if (!challengeToken) return { ok: false, error: 'Missing challenge token' };
 
   const challenge = await verifyChallenge(challengeToken);
   if (!challenge) return { ok: false, error: 'Challenge expired or invalid' };
-
-  cookieStore.delete(CHALLENGE_COOKIE);
 
   let verified = false;
   try {
@@ -33,6 +29,6 @@ export async function completeLoginAction(
   if (!verified) return { ok: false, error: 'Passkey verification failed' };
 
   const session = await signSession();
-  cookieStore.set(SESSION_COOKIE, session, sessionCookieOpts());
+  cookies().set(SESSION_COOKIE, session, sessionCookieOpts());
   return { ok: true };
 }

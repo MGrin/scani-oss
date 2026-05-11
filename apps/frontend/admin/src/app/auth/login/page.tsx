@@ -1,8 +1,7 @@
 import { safeRedirectPath } from '@scani/shared';
-import type { PublicKeyCredentialRequestOptionsJSON } from '@simplewebauthn/types';
-import { headers } from 'next/headers';
 import type { ReactNode } from 'react';
-import { LOGIN_OPTIONS_HEADER } from '@/lib/auth/login-headers';
+import { beginPasskeyLogin } from '@/lib/auth/passkey';
+import { signChallenge } from '@/lib/auth/session';
 import { LoginForm } from './LoginForm';
 
 export const runtime = 'edge';
@@ -12,29 +11,20 @@ interface PageProps {
   searchParams: { next?: string };
 }
 
-export default function LoginPage({ searchParams }: PageProps) {
+export default async function LoginPage({ searchParams }: PageProps) {
   // Validated against open-redirect chains: any non-same-origin target
   // (`https://…`, `//…`, `javascript:…`) falls back to `/`.
   const next = safeRedirectPath(searchParams.next, '/');
-  // Options are minted by middleware on every GET /auth/login so the
-  // signed-challenge cookie and the inline `optionsJSON` are guaranteed
-  // to match. No client fetch is required before the user clicks the
-  // passkey button — that's what lets iOS Safari / Brave preserve the
-  // gesture activation `navigator.credentials.get()` needs.
-  const raw = headers().get(LOGIN_OPTIONS_HEADER);
-  if (!raw) {
-    return (
-      <LoginShell>
-        <p className="text-xs text-red-300">
-          Failed to prepare passkey challenge. Refresh the page to try again.
-        </p>
-      </LoginShell>
-    );
-  }
-  const options = JSON.parse(raw) as PublicKeyCredentialRequestOptionsJSON;
+  // Mint a fresh challenge inline. The signed token travels to the client
+  // as a prop and back to `completeLoginAction` as an argument — no
+  // challenge cookie is involved, so concurrent page renders (browser
+  // prefetch, RSC payload fetch, etc.) can't desync the challenge the
+  // user signed over from the one the server verifies against.
+  const options = await beginPasskeyLogin();
+  const challengeToken = await signChallenge(options.challenge);
   return (
     <LoginShell>
-      <LoginForm initialOptions={options} next={next} />
+      <LoginForm options={options} challengeToken={challengeToken} next={next} />
     </LoginShell>
   );
 }
