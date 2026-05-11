@@ -1,14 +1,20 @@
 import { NextResponse } from 'next/server';
 
 export const runtime = 'edge';
-export const dynamic = 'force-static';
 
 // Plain JS that drives /auth/login. Deliberately not a React Client
-// Component — we observed React hydration silently failing on iOS Brave
-// after the cookie-based flow was replaced (#473), leaving the button
-// non-interactive with no error surfaced. This bypasses Next.js's
-// client-side reconciliation entirely: the page is static HTML and this
-// script attaches the click listener on DOMContentLoaded.
+// Component — React 18 hydration was reconciling the whole <body> and
+// detaching listeners we attached pre-hydration (see PRs #473–#478).
+// /auth/login is now a route handler returning raw HTML, so this script
+// runs against the SSR'd DOM directly with nothing to fight.
+//
+// The button binds `click` + `touchend` + an assignment-form `onclick`
+// for defense-in-depth on iOS Safari/Brave WebKit; `runSignin`'s
+// `attempted` flag dedupes whichever fires first. The visible
+// "Initializing… / Ready" status line stays — it's cheap and makes
+// production failures self-diagnosable from a phone. The document-level
+// capture-phase diagnostics that PR #477 added to *locate* the original
+// hydration bug have been removed now that the root cause is fixed.
 const SCRIPT = String.raw`
 (function () {
   function b64urlToBuffer(s) {
@@ -33,30 +39,11 @@ const SCRIPT = String.raw`
     if (statusEl) statusEl.textContent = 'Ready';
     btn.setAttribute('data-script-loaded', '1');
 
-    // Document-level capture-phase diagnostics. If any tap reaches the
-    // page at all, one of these fires before any listener on a child
-    // could swallow it. The status line shows event name + which element
-    // received it. If "Ready" stays unchanged even after these, no event
-    // of any kind is reaching the document — points at an iOS Brave or
-    // overlay-level interception.
-    function logEvent(name) {
-      return function (e) {
-        if (!statusEl) return;
-        var t = e.target || e.srcElement;
-        var label = t && t.id ? '#' + t.id : t && t.tagName ? t.tagName : '?';
-        statusEl.textContent = name + ' → ' + label;
-      };
-    }
-    document.addEventListener('pointerdown', logEvent('pointerdown'), true);
-    document.addEventListener('touchstart', logEvent('touchstart'), true);
-    document.addEventListener('mousedown', logEvent('mousedown'), true);
-    document.addEventListener('click', logEvent('click'), true);
-
     var attempted = false;
     async function runSignin(via) {
       if (attempted) return;
       attempted = true;
-      if (statusEl) statusEl.textContent = 'event: ' + via;
+      if (statusEl) statusEl.textContent = 'Waiting · ' + via;
       btn.disabled = true;
       btn.textContent = 'Waiting for passkey…';
       if (errorEl) errorEl.textContent = '';
@@ -99,6 +86,7 @@ const SCRIPT = String.raw`
           attempted = false;
           btn.disabled = false;
           btn.textContent = 'Sign in with passkey';
+          if (statusEl) statusEl.textContent = 'Ready';
           if (errorEl) errorEl.textContent = data.error || 'Sign-in failed';
           return;
         }
@@ -107,12 +95,11 @@ const SCRIPT = String.raw`
         attempted = false;
         btn.disabled = false;
         btn.textContent = 'Sign in with passkey';
+        if (statusEl) statusEl.textContent = 'Ready';
         if (errorEl) errorEl.textContent = err && err.message ? err.message : String(err);
       }
     }
 
-    // Button-level handlers still attached, but the document-level
-    // capture listeners above will fire first regardless.
     btn.addEventListener('click', function () {
       runSignin('click');
     });

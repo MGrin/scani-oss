@@ -58,6 +58,29 @@ const nextConfig = {
       },
     ];
   },
+  async redirects() {
+    // 308 (permanent, method-preserving) — keeps bookmarks working after
+    // the /services/* → /platform/* and /app-stats → /app/holdings
+    // information-architecture rename. Drop these once the analytics
+    // show no traffic.
+    return [
+      { source: '/services/fly', destination: '/platform/fly', permanent: true },
+      { source: '/services/neon', destination: '/platform/neon', permanent: true },
+      { source: '/services/upstash', destination: '/platform/upstash', permanent: true },
+      { source: '/services/cloudflare', destination: '/platform/cloudflare', permanent: true },
+      { source: '/services/github', destination: '/platform/github', permanent: true },
+      { source: '/services/sentry', destination: '/platform/sentry', permanent: true },
+      { source: '/services/fastmail', destination: '/platform/fastmail', permanent: true },
+      { source: '/services/bullmq', destination: '/jobs/queue', permanent: true },
+      { source: '/services/bullmq/:state', destination: '/jobs/queue/:state', permanent: true },
+      {
+        source: '/services/bullmq/job/:id',
+        destination: '/jobs/queue/job/:id',
+        permanent: true,
+      },
+      { source: '/app-stats', destination: '/app/holdings', permanent: true },
+    ];
+  },
   webpack(config) {
     // `@simplewebauthn/server` statically imports `cross-fetch`. Webpack
     // resolves it via its `browser` field (browser-ponyfill.js), which needs

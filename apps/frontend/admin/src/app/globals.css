@@ -2,11 +2,10 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Inherit the full design-system token set (light + dark). Admin
- * locks itself to dark via `<html class="dark" data-theme="dark">` in
- * layout.tsx — we keep ThemeContext-style overrides available but
- * default operators to a dark surface, which matches the BullMQ /
- * Fly / Neon dashboards that this app embeds. */
+/* Inherit the full design-system token set (light + dark) from @scani/ui.
+ * Admin defaults to dark at SSR (`<html class="dark" data-theme="dark">`
+ * in layout.tsx); `ThemeProvider`, mounted via `ThemeBridge`, takes over
+ * post-hydration if the operator has a stored override. */
 @import "@scani/ui/styles/globals.css";
 
 body {

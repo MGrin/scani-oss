@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import type { ReactNode } from 'react';
+import { ThemeBridge } from '@/components/ThemeBridge';
 import './globals.css';
 
 export const metadata: Metadata = {
@@ -7,16 +8,18 @@ export const metadata: Metadata = {
   description: 'Infrastructure & usage overview',
 };
 
-// Admin locks itself to the dark theme via the className + data-theme
-// attribute on <html>. The @scani/ui design-system tokens (loaded in
-// globals.css) emit dark-variant values under both signals, so every
-// `bg-background` / `text-foreground` / `border-border` resolves to the
-// dark scale without ad-hoc inline overrides.
+// SSR default is dark; the client-side ThemeProvider re-reads the
+// 'scani-admin-theme' localStorage entry post-hydration and switches if
+// the operator picked light. We can't ship an inline no-FOUC script
+// because admin's CSP is `script-src 'self'` (no nonce / unsafe-inline);
+// the brief dark-flash on light-theme is acceptable for a dashboard.
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
-    <html lang="en" className="dark" data-theme="dark">
+    <html lang="en" className="dark" data-theme="dark" suppressHydrationWarning>
       <body className="bg-background text-foreground">
-        <div className="min-h-screen">{children}</div>
+        <ThemeBridge>
+          <div className="min-h-screen">{children}</div>
+        </ThemeBridge>
       </body>
     </html>
   );
