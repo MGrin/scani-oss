@@ -29,7 +29,16 @@ const SheetOverlay = React.forwardRef<
 SheetOverlay.displayName = SheetPrimitive.Overlay.displayName;
 
 const sheetVariants = cva(
-  'fixed z-50 gap-4 bg-background p-6 shadow-lg transition ease-in-out data-[state=closed]:duration-300 data-[state=open]:duration-500 data-[state=open]:animate-in data-[state=closed]:animate-out',
+  // `transition-transform` (instead of `transition`) intentionally narrows
+  // the animation to transform-only so `bg-background` applies instantly
+  // on mount. With the broad `transition` utility, iOS WebKit (Safari +
+  // Brave) was occasionally getting stuck mid-transition on
+  // `background-color` when it resolves from `hsl(var(--background))`,
+  // leaving the drawer with a transparent background and the page
+  // content visible behind it. The slide-in/out itself is driven by the
+  // `animate-in` / `animate-out` CSS animations from tailwindcss-animate,
+  // so narrowing the transition doesn't affect motion.
+  'fixed z-50 gap-4 bg-background p-6 shadow-lg transition-transform ease-in-out data-[state=closed]:duration-300 data-[state=open]:duration-500 data-[state=open]:animate-in data-[state=closed]:animate-out',
   {
     variants: {
       side: {
@@ -54,12 +63,20 @@ interface SheetContentProps
 const SheetContent = React.forwardRef<
   React.ElementRef<typeof SheetPrimitive.Content>,
   SheetContentProps
->(({ side = 'right', className, children, ...props }, ref) => (
+>(({ side = 'right', className, children, style, ...props }, ref) => (
   <SheetPortal>
     <SheetOverlay />
     <SheetPrimitive.Content
       ref={ref}
       className={cn(sheetVariants({ side }), 'flex flex-col', className)}
+      // Inline-style fallback for the drawer background. `bg-background`
+      // depends on `--background` cascading through Radix's portal; if
+      // the variable is unset for any reason (theme not yet hydrated,
+      // some upstream stacking quirk) the class evaluates to `hsl()`,
+      // which is invalid → transparent. The fallback in the var()
+      // expression resolves to the dark-theme background literal so
+      // the drawer is never see-through. Caller `style` still wins.
+      style={{ backgroundColor: 'hsl(var(--background, 0 0% 3.9%))', ...style }}
       {...props}
     >
       {children}
