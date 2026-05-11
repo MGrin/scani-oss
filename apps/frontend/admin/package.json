@@ -18,6 +18,7 @@
   },
   "dependencies": {
     "@neondatabase/serverless": "^0.10.4",
+    "@scani/queue": "workspace:*",
     "@scani/shared": "workspace:*",
     "@scani/ui": "workspace:*",
     "@sentry/nextjs": "^8.49.0",

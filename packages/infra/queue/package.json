@@ -5,7 +5,8 @@
   "version": "1.0.0",
   "description": "BullMQ-based async-coordination framework. Abstract bases (UserJobProcessor, ScheduledJobProcessor, EnqueueService, JobLock, ResourceLock, LifecyclePublisher) plus concrete @Service() impls (QueueClient, WorkerClient, JobScheduler, BullMqEnqueueService, RedisLifecyclePublisher, RedisResourceLock). Domain-free.",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./queue-names": "./src/queue-names.ts"
   },
   "scripts": {
     "lint": "biome check .",

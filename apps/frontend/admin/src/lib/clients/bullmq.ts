@@ -17,7 +17,9 @@ import { type Result, tryCatch } from '../result';
 import { redisPipeline } from './upstash';
 
 const QUEUE = 'scani-jobs';
+const DLQ = 'scani-dlq';
 const bkey = (suffix: string) => `bull:${QUEUE}:${suffix}`;
+const dlqKey = (suffix: string) => `bull:${DLQ}:${suffix}`;
 
 export type JobState = 'waiting' | 'active' | 'delayed' | 'failed' | 'completed';
 
@@ -287,6 +289,59 @@ export async function getJobDetail(id: string): Promise<Result<JobDetail | null>
         detail.data = redactSensitive(detail.data);
       }
       return detail;
+    })
+  );
+}
+
+export interface DlqOverview {
+  queue: string;
+  /** Total entries in the DLQ failed-zset. */
+  depth: number;
+  /** Most recent N failed jobs (newest first). */
+  recent: JobSummary[];
+}
+
+/**
+ * Read DLQ depth + a sample of recent entries. The DLQ is its own BullMQ
+ * queue (`scani-dlq`); jobs land there after exhausting their retry
+ * attempts on the main queue. Replay action lives behind an HMAC proxy
+ * (Phase 4) — this client is read-only.
+ */
+export async function getDlqOverview(): Promise<Result<DlqOverview>> {
+  return tryCatch(() =>
+    cached('bullmq:dlq', 10, async () => {
+      const SAMPLE = 25;
+      // BullMQ records DLQ entries in the same failed-zset shape as a
+      // normal queue, so we can reuse ZCARD + ZRANGE-REV + HGETALL.
+      const [depthRaw, idsRaw] = await redisPipeline([
+        ['ZCARD', dlqKey('failed')],
+        ['ZRANGE', dlqKey('failed'), 0, SAMPLE - 1, 'REV'],
+      ]);
+      const depth = Number(depthRaw) || 0;
+      const ids = Array.isArray(idsRaw) ? (idsRaw as string[]) : [];
+
+      const hashes = ids.length
+        ? await redisPipeline(ids.map((id) => ['HGETALL', dlqKey(id)]))
+        : [];
+
+      const recent: JobSummary[] = [];
+      ids.forEach((id, i) => {
+        const hash = normalizeHash(hashes[i]);
+        if (!hash) return;
+        const detail = parseJobHash(id, hash);
+        recent.push({
+          id: detail.id,
+          name: detail.name,
+          state: 'failed',
+          timestamp: detail.timestamp,
+          processedOn: detail.processedOn,
+          finishedOn: detail.finishedOn,
+          attemptsMade: detail.attemptsMade,
+          failedReason: detail.failedReason,
+        });
+      });
+
+      return { queue: DLQ, depth, recent };
     })
   );
 }
