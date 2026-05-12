@@ -19,25 +19,38 @@ outputs:
 runs:
   using: "composite"
   steps:
-    - uses: oven-sh/setup-bun@v2
+    - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
       with:
         bun-version: ${{ inputs.bun-version }}
 
     - name: Cache Bun install + node_modules
       id: cache
-      uses: actions/cache@v5
+      uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
       with:
-        # ~/.bun/install/cache is Bun's global module cache; node_modules
-        # holds the resolved symlinks + hoisted deps after `bun install`.
+        # ~/.bun/install/cache is Bun's global module cache (immutable
+        # content-addressed tarballs, safe to share across branches).
+        # node_modules holds workspace symlinks + hoisted deps after
+        # `bun install`; we scope it to the calling workflow so a cache
+        # saved by a job running on `main` is never restored into a PR
+        # branch's job, and vice versa. Without that scope, a malicious
+        # PR with a `postinstall` script could plant secret-bearing
+        # files under `node_modules` on the main-branch cache and have
+        # them lifted into a later workflow with full secrets in env.
         path: |
           ~/.bun/install/cache
           node_modules
           apps/*/node_modules
           packages/*/node_modules
-        key: ${{ runner.os }}-bun-${{ inputs.bun-version }}-${{ hashFiles('bun.lock') }}
+        key: ${{ runner.os }}-bun-${{ inputs.bun-version }}-${{ github.workflow }}-${{ github.ref_name }}-${{ hashFiles('bun.lock') }}
+        # Restore-keys never reach across (workflow, ref) boundaries:
+        # the most general fallback still pins workflow + ref, so a
+        # PR job can only restore from a previous run of the same
+        # workflow on the same branch. Falls back to the global
+        # ~/.bun/install/cache via Bun's own resolution if nothing
+        # matches — at most a 10-15s `bun install` cold-start cost.
         restore-keys: |
-          ${{ runner.os }}-bun-${{ inputs.bun-version }}-
-          ${{ runner.os }}-bun-
+          ${{ runner.os }}-bun-${{ inputs.bun-version }}-${{ github.workflow }}-${{ github.ref_name }}-
+          ${{ runner.os }}-bun-${{ inputs.bun-version }}-${{ github.workflow }}-
 
     - name: bun install
       if: ${{ inputs.install == 'true' }}

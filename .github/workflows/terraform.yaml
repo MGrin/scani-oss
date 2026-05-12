@@ -58,17 +58,17 @@ jobs:
       run:
         working-directory: infra/terraform
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0
 
       - name: Cache Terraform providers
-        uses: actions/cache@v5
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
         with:
           path: infra/terraform/.terraform
           key: ${{ runner.os }}-tf-${{ env.TF_VERSION }}-${{ hashFiles('infra/terraform/.terraform.lock.hcl') }}
           restore-keys: |
             ${{ runner.os }}-tf-${{ env.TF_VERSION }}-
 
-      - uses: hashicorp/setup-terraform@v4
+      - uses: hashicorp/setup-terraform@5e8dbf3c6d9deaf4193ca7a8fb23f2ac83bb6c85 # v4.0.0
         with:
           terraform_version: ${{ env.TF_VERSION }}
           terraform_wrapper: false
@@ -79,18 +79,46 @@ jobs:
       - run: terraform plan -no-color -input=false -lock-timeout=60s -out=tfplan
       - name: Comment plan on PR
         if: github.event_name == 'pull_request'
-        uses: actions/github-script@v9
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         with:
           script: |
             const { execSync } = require('child_process');
-            const out = execSync(
+            // Cap at 12 KB. The previous 60 KB ceiling was chosen for
+            // "I want to see everything in the comment" — but anything
+            // approaching that size is a TF refactor that should be
+            // reviewed in the workflow log, not in a single PR
+            // comment. Keeping the cap small also limits the surface
+            // area for the sanitization below.
+            const MAX_BODY = 12_000;
+            let out = execSync(
               'terraform show -no-color tfplan',
               { cwd: 'infra/terraform', encoding: 'utf8' }
-            ).slice(0, 60000);
+            );
+
+            // Sanitize content before posting:
+            //   1. Strip embedded ``` so an attacker-authored resource
+            //      `description = "```\nphishing link\n```"`
+            //      can't break out of the fenced block and inject raw
+            //      Markdown / phishing links into the comment body.
+            //   2. Strip HTML angle brackets — GitHub renders raw HTML
+            //      from issue comments in some surfaces (notifications,
+            //      RSS); a TF string containing `<img src=...>` could
+            //      smuggle a tracking pixel onto a maintainer's review.
+            //   3. Hard truncate before fencing.
+            out = out
+              .replace(/`/g, 'ˋ')     // backtick → modifier letter grave accent
+              .replace(/[<>]/g, (m) => (m === '<' ? '&lt;' : '&gt;'));
+            const truncated = out.length > MAX_BODY;
+            if (truncated) out = out.slice(0, MAX_BODY);
+
+            const footer = truncated
+              ? `\n\n_…truncated at ${MAX_BODY.toLocaleString()} chars; full plan in the workflow log._`
+              : '';
+
             await github.rest.issues.createComment({
               ...context.repo,
               issue_number: context.issue.number,
-              body: '```hcl\n' + out + '\n```',
+              body: '```hcl\n' + out + '\n```' + footer,
             });
 
   apply:
@@ -103,24 +131,24 @@ jobs:
       run:
         working-directory: infra/terraform
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0
 
       - name: Cache Terraform providers
-        uses: actions/cache@v5
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
         with:
           path: infra/terraform/.terraform
           key: ${{ runner.os }}-tf-${{ env.TF_VERSION }}-${{ hashFiles('infra/terraform/.terraform.lock.hcl') }}
           restore-keys: |
             ${{ runner.os }}-tf-${{ env.TF_VERSION }}-
 
-      - uses: hashicorp/setup-terraform@v4
+      - uses: hashicorp/setup-terraform@5e8dbf3c6d9deaf4193ca7a8fb23f2ac83bb6c85 # v4.0.0
         with:
           terraform_version: ${{ env.TF_VERSION }}
           terraform_wrapper: false
 
       # flyctl is invoked from the machine-count guardrail in fly.tf
       # (terraform_data.*_machine_count) via local-exec during apply.
-      - uses: superfly/flyctl-actions/setup-flyctl@master
+      - uses: superfly/flyctl-actions/setup-flyctl@ed8efb33836e8b2096c7fd3ba1c8afe303ebbff1 # master @ 2026-05-12
 
       - run: terraform init -input=false
 

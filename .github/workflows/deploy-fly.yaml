@@ -25,12 +25,14 @@ concurrency:
   cancel-in-progress: false
 
 permissions:
-  # `contents: write` is needed by the post-smoke-test steps that
-  # update the per-app `prod-<app>-last-known-good` git tags. Without
-  # it, `git push origin <tag> --force` fails with 403 "Write access
-  # to repository not granted". Other token capabilities stay
-  # read-only.
-  contents: write
+  # Default to read-only at the workflow level. The three deploy-*
+  # jobs that need to push `prod-<app>-last-known-good` tags
+  # opt-in to `contents: write` at the job level. Keeping the
+  # default-restrictive blast radius small: a compromise of an
+  # earlier step (e.g. a tampered third-party action loaded by
+  # `setup-flyctl`) can't push commits / branches because its
+  # GITHUB_TOKEN doesn't carry the write scope.
+  contents: read
   actions: read
   pull-requests: read
 
@@ -111,7 +113,7 @@ jobs:
       admin: ${{ steps.resolve.outputs.admin }}
       migrations: ${{ steps.resolve.outputs.migrations }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0
         with:
           fetch-depth: 2
           ref: ${{ github.event.workflow_run.head_sha || github.sha }}
@@ -120,7 +122,7 @@ jobs:
       # a multi-commit push. Resolve HEAD~1 explicitly as the diff base.
       - id: base
         run: echo "sha=$(git rev-parse HEAD~1)" >> "$GITHUB_OUTPUT"
-      - uses: dorny/paths-filter@v4
+      - uses: dorny/paths-filter@fbd0ab8f3e69293af611ebaee6363fc25e6d187d # v4.0.1
         id: filter
         with:
           base: ${{ steps.base.outputs.sha }}
@@ -197,7 +199,7 @@ jobs:
     if: ${{ always() && needs.detect-changes.result == 'success' && needs.detect-changes.outputs.migrations == 'true' }}
     environment: production
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0
       - uses: ./.github/actions/setup-bun
       # Bootstrap-wipe gate: when packages/infra/db/.bootstrap-wipe exists,
       # drop+recreate the public schema BEFORE running migrations. Used
@@ -238,9 +240,16 @@ jobs:
     needs: [detect-changes, migrate]
     if: ${{ always() && needs.detect-changes.outputs.data_provider == 'true' && !failure() }}
     environment: production
+    # Scoped write — needed by the `Tag last-known-good` step which
+    # force-pushes `prod-data-provider-last-known-good`. Workflow
+    # default is read-only.
+    permissions:
+      contents: write
+      actions: read
+      pull-requests: read
     steps:
-      - uses: actions/checkout@v6
-      - uses: superfly/flyctl-actions/setup-flyctl@master
+      - uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0
+      - uses: superfly/flyctl-actions/setup-flyctl@ed8efb33836e8b2096c7fd3ba1c8afe303ebbff1 # master @ 2026-05-12
 
       # The data-provider is the only service that holds provider API keys
       # for AI, blockchain, pricing, email, storage + the tenant-scoped
@@ -307,9 +316,17 @@ jobs:
               exit 1
             fi
           done
-          args=(
-            DATA_PROVIDER_API_KEY="$DATA_PROVIDER_API_KEY"
-            LOG_ID_PEPPER="$LOG_ID_PEPPER"
+          # Build the secrets payload as a KEY=value file, then feed it
+          # to `flyctl secrets import` via stdin. Avoids exposing values
+          # on argv (process listings, future flyctl error logs) the way
+          # the previous `flyctl secrets set K=v K=v ...` form did. Each
+          # line is one `KEY=value` pair; values can contain `=` because
+          # the parser splits on the first `=` only.
+          payload=$(mktemp)
+          trap 'rm -f "$payload"' EXIT
+          {
+            printf 'DATA_PROVIDER_API_KEY=%s\n' "$DATA_PROVIDER_API_KEY"
+            printf 'LOG_ID_PEPPER=%s\n' "$LOG_ID_PEPPER"
             # Fly secrets override `[env]` in fly.toml, so we stage
             # NODE_ENV explicitly to defend against any stale or
             # incorrectly-set secret value carrying through. Without
@@ -317,17 +334,17 @@ jobs:
             # NODE_ENV=development and crashing on the env-isolation
             # guard (assertEnvIsolatedUrl rejects "remote URL but
             # NODE_ENV != production").
-            NODE_ENV="production"
-            SENTRY_DSN="$SENTRY_DSN_DATA_PROVIDER"
-            SENTRY_ENVIRONMENT="production"
-            SENTRY_RELEASE="${GITHUB_SHA}"
-            SERVICE_VERSION="${GITHUB_SHA}"
-            REDIS_URL="$REDIS_URL"
-            S3_ENDPOINT="https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com"
-            S3_ACCESS_KEY_ID="$R2_ACCESS_KEY_ID"
-            S3_SECRET_ACCESS_KEY="$R2_SECRET_ACCESS_KEY"
-            S3_BUCKET="$R2_BUCKET"
-          )
+            printf 'NODE_ENV=%s\n' "production"
+            printf 'SENTRY_DSN=%s\n' "$SENTRY_DSN_DATA_PROVIDER"
+            printf 'SENTRY_ENVIRONMENT=%s\n' "production"
+            printf 'SENTRY_RELEASE=%s\n' "${GITHUB_SHA}"
+            printf 'SERVICE_VERSION=%s\n' "${GITHUB_SHA}"
+            printf 'REDIS_URL=%s\n' "$REDIS_URL"
+            printf 'S3_ENDPOINT=%s\n' "https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com"
+            printf 'S3_ACCESS_KEY_ID=%s\n' "$R2_ACCESS_KEY_ID"
+            printf 'S3_SECRET_ACCESS_KEY=%s\n' "$R2_SECRET_ACCESS_KEY"
+            printf 'S3_BUCKET=%s\n' "$R2_BUCKET"
+          } > "$payload"
           for var in OPENAI_API_KEY OPENAI_VISION_MODEL \
                      PERPLEXITY_API_KEY \
                      DEEPSEEK_API_KEY DEEPSEEK_VISION_MODEL \
@@ -339,13 +356,13 @@ jobs:
                      BETTER_AUTH_SECRET BETTER_AUTH_URL CLOUD_FRONTEND_ORIGIN \
                      PUBLIC_BASE_URL; do
             if [ -n "${!var:-}" ]; then
-              args+=("$var=${!var}")
+              printf '%s=%s\n' "$var" "${!var}" >> "$payload"
               echo "  → staging $var"
             else
               echo "  ⊘ $var not set in GitHub Secrets — skipping"
             fi
           done
-          flyctl secrets set --stage --app scani-data-provider "${args[@]}"
+          flyctl secrets import --stage --app scani-data-provider < "$payload"
 
       - run: |
           # Strategy lives in fly.toml (rolling, max_unavailable=1) so
@@ -396,9 +413,14 @@ jobs:
     needs: [detect-changes, migrate, deploy-data-provider]
     if: ${{ always() && needs.detect-changes.outputs.backend == 'true' && needs.migrate.result != 'failure' && (needs.deploy-data-provider.result == 'success' || needs.deploy-data-provider.result == 'skipped') }}
     environment: production
+    # Scoped write for the `Tag last-known-good` push.
+    permissions:
+      contents: write
+      actions: read
+      pull-requests: read
     steps:
-      - uses: actions/checkout@v6
-      - uses: superfly/flyctl-actions/setup-flyctl@master
+      - uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0
+      - uses: superfly/flyctl-actions/setup-flyctl@ed8efb33836e8b2096c7fd3ba1c8afe303ebbff1 # master @ 2026-05-12
 
       # Stage new secrets before the deploy. `--stage` writes to Fly's
       # secret store without triggering a restart; the immediately-
@@ -437,16 +459,22 @@ jobs:
               exit 1
             fi
           done
-          flyctl secrets set --stage --app scani-backend \
-            ADMIN_JOBS_HMAC_SECRET="$ADMIN_JOBS_HMAC_SECRET" \
-            LOG_ID_PEPPER="$LOG_ID_PEPPER" \
-            NODE_ENV="production" \
-            SENTRY_DSN="$SENTRY_DSN_BACKEND" \
-            SENTRY_ENVIRONMENT="production" \
-            SENTRY_RELEASE="${GITHUB_SHA}" \
-            SERVICE_VERSION="${GITHUB_SHA}" \
-            SCANI_CLOUD_URL="$SCANI_CLOUD_URL" \
-            SCANI_CLOUD_API_KEY="$SCANI_CLOUD_API_KEY"
+          # See data-provider block above for rationale; stdin keeps
+          # secret values out of argv.
+          payload=$(mktemp)
+          trap 'rm -f "$payload"' EXIT
+          {
+            printf 'ADMIN_JOBS_HMAC_SECRET=%s\n' "$ADMIN_JOBS_HMAC_SECRET"
+            printf 'LOG_ID_PEPPER=%s\n' "$LOG_ID_PEPPER"
+            printf 'NODE_ENV=%s\n' "production"
+            printf 'SENTRY_DSN=%s\n' "$SENTRY_DSN_BACKEND"
+            printf 'SENTRY_ENVIRONMENT=%s\n' "production"
+            printf 'SENTRY_RELEASE=%s\n' "${GITHUB_SHA}"
+            printf 'SERVICE_VERSION=%s\n' "${GITHUB_SHA}"
+            printf 'SCANI_CLOUD_URL=%s\n' "$SCANI_CLOUD_URL"
+            printf 'SCANI_CLOUD_API_KEY=%s\n' "$SCANI_CLOUD_API_KEY"
+          } > "$payload"
+          flyctl secrets import --stage --app scani-backend < "$payload"
 
       - run: |
           flyctl deploy --remote-only \
@@ -488,9 +516,14 @@ jobs:
     needs: [detect-changes, migrate, deploy-data-provider]
     if: ${{ always() && needs.detect-changes.outputs.worker == 'true' && needs.migrate.result != 'failure' && (needs.deploy-data-provider.result == 'success' || needs.deploy-data-provider.result == 'skipped') }}
     environment: production
+    # Scoped write for the `Tag last-known-good` push.
+    permissions:
+      contents: write
+      actions: read
+      pull-requests: read
     steps:
-      - uses: actions/checkout@v6
-      - uses: superfly/flyctl-actions/setup-flyctl@master
+      - uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0
+      - uses: superfly/flyctl-actions/setup-flyctl@ed8efb33836e8b2096c7fd3ba1c8afe303ebbff1 # master @ 2026-05-12
 
       # With the data-provider split, the worker no longer holds provider
       # API keys; all outbound calls (AI parse, chain RPC, pricing, R2,
@@ -517,15 +550,21 @@ jobs:
               exit 1
             fi
           done
-          flyctl secrets set --stage --app scani-worker \
-            LOG_ID_PEPPER="$LOG_ID_PEPPER" \
-            NODE_ENV="production" \
-            SENTRY_DSN="$SENTRY_DSN_WORKER" \
-            SENTRY_ENVIRONMENT="production" \
-            SENTRY_RELEASE="${GITHUB_SHA}" \
-            SERVICE_VERSION="${GITHUB_SHA}" \
-            SCANI_CLOUD_URL="$SCANI_CLOUD_URL" \
-            SCANI_CLOUD_API_KEY="$SCANI_CLOUD_API_KEY"
+          # See data-provider block above for rationale; stdin keeps
+          # secret values out of argv.
+          payload=$(mktemp)
+          trap 'rm -f "$payload"' EXIT
+          {
+            printf 'LOG_ID_PEPPER=%s\n' "$LOG_ID_PEPPER"
+            printf 'NODE_ENV=%s\n' "production"
+            printf 'SENTRY_DSN=%s\n' "$SENTRY_DSN_WORKER"
+            printf 'SENTRY_ENVIRONMENT=%s\n' "production"
+            printf 'SENTRY_RELEASE=%s\n' "${GITHUB_SHA}"
+            printf 'SERVICE_VERSION=%s\n' "${GITHUB_SHA}"
+            printf 'SCANI_CLOUD_URL=%s\n' "$SCANI_CLOUD_URL"
+            printf 'SCANI_CLOUD_API_KEY=%s\n' "$SCANI_CLOUD_API_KEY"
+          } > "$payload"
+          flyctl secrets import --stage --app scani-worker < "$payload"
 
       # `--ha=false` keeps a single primary machine — without it, fly.io
       # deploys a primary+standby pair. When the Terraform `scale count 1`
@@ -614,7 +653,7 @@ jobs:
     if: ${{ always() && needs.detect-changes.result == 'success' && needs.detect-changes.outputs.frontend == 'true' }}
     environment: production
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0
       - uses: ./.github/actions/setup-bun
       - run: cd apps/frontend/app && bun run build
         env:
@@ -651,7 +690,7 @@ jobs:
     if: ${{ always() && needs.detect-changes.result == 'success' && needs.detect-changes.outputs.landing == 'true' }}
     environment: production
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0
       - uses: ./.github/actions/setup-bun
       - run: cd apps/frontend/landing && bun run build
         env:
@@ -691,7 +730,7 @@ jobs:
     if: ${{ always() && needs.detect-changes.result == 'success' && needs.detect-changes.outputs.cloud_frontend == 'true' }}
     environment: production
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0
       - uses: ./.github/actions/setup-bun
       - name: Wait for scani-cloud Pages project (Terraform-managed)
         # Internal deadline is 30 × 10s = 5min; step cap gives a 1min
@@ -745,7 +784,7 @@ jobs:
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
       CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0
       - uses: ./.github/actions/setup-bun
       - run: cd apps/frontend/admin && bun run build:cf
 

@@ -119,6 +119,161 @@ resource "cloudflare_record" "www" {
   comment = "Cloudflare Pages — scani-landing (www)"
 }
 
+# ---------- DNS hardening: CAA + email auth + MTA-STS ----------
+#
+# These records close common defaults-are-permissive holes that were
+# called out in the 2026-05-12 security audit (finding D-16). None of
+# them affect HTTP traffic — they're policy records that cert
+# authorities, mail servers, and MUAs consult before issuing certs or
+# accepting mail "from" scani.xyz. Cloudflare won't proxy any of them
+# (TXT / CAA / non-A/AAAA CNAME); leave `proxied = false`.
+
+# CAA — restrict who can issue TLS certs for scani.xyz. Without this,
+# any public CA can issue a cert on demand, so a compromised registrar
+# / DNS account is enough for a MITM. Whitelist the two CAs we actually
+# use:
+#   - letsencrypt.org: Fly's ACME issuer for api / data-provider.
+#   - pki.goog: Google Trust Services, used by Cloudflare Pages.
+# `iodef` lets a CA email us when an issuance is rejected — useful as
+# a noise-floor alarm for unauthorised issuance attempts.
+resource "cloudflare_record" "caa_letsencrypt" {
+  zone_id = data.cloudflare_zone.primary.id
+  name    = "@"
+  type    = "CAA"
+  ttl     = 3600
+  data {
+    flags = 0
+    tag   = "issue"
+    value = "letsencrypt.org"
+  }
+  comment = "CAA — Let's Encrypt (Fly ACME)"
+}
+
+resource "cloudflare_record" "caa_pki_goog" {
+  zone_id = data.cloudflare_zone.primary.id
+  name    = "@"
+  type    = "CAA"
+  ttl     = 3600
+  data {
+    flags = 0
+    tag   = "issue"
+    value = "pki.goog"
+  }
+  comment = "CAA — Google Trust Services (Cloudflare Pages)"
+}
+
+resource "cloudflare_record" "caa_iodef" {
+  zone_id = data.cloudflare_zone.primary.id
+  name    = "@"
+  type    = "CAA"
+  ttl     = 3600
+  data {
+    flags = 0
+    tag   = "iodef"
+    value = "mailto:security@scani.xyz"
+  }
+  comment = "CAA — incident reporting (rejected issuances)"
+}
+
+# SPF — authorise Fastmail's outbound mail servers and explicitly
+# refuse everything else (`-all`). Hard fail (rather than `~all`
+# soft-fail) is appropriate because we have one mail vendor and any
+# mail claiming to be from us via another route is spoofed by
+# definition.
+resource "cloudflare_record" "spf" {
+  zone_id = data.cloudflare_zone.primary.id
+  name    = "@"
+  type    = "TXT"
+  content = "\"v=spf1 include:spf.messagingengine.com -all\""
+  ttl     = 3600
+  comment = "SPF — Fastmail only, hard fail"
+}
+
+# DKIM — Fastmail provisions three rotating CNAME pointers
+# (fm1/fm2/fm3._domainkey.scani.xyz → fm1.scani.xyz.dkim.fmhosted.com,
+# etc.). Without these, mail Fastmail signs from our account won't
+# verify at the receiver and we end up in spam.
+resource "cloudflare_record" "dkim_fm1" {
+  zone_id = data.cloudflare_zone.primary.id
+  name    = "fm1._domainkey"
+  content = "fm1.scani.xyz.dkim.fmhosted.com"
+  type    = "CNAME"
+  proxied = false
+  ttl     = 3600
+  comment = "DKIM — Fastmail fm1"
+}
+
+resource "cloudflare_record" "dkim_fm2" {
+  zone_id = data.cloudflare_zone.primary.id
+  name    = "fm2._domainkey"
+  content = "fm2.scani.xyz.dkim.fmhosted.com"
+  type    = "CNAME"
+  proxied = false
+  ttl     = 3600
+  comment = "DKIM — Fastmail fm2"
+}
+
+resource "cloudflare_record" "dkim_fm3" {
+  zone_id = data.cloudflare_zone.primary.id
+  name    = "fm3._domainkey"
+  content = "fm3.scani.xyz.dkim.fmhosted.com"
+  type    = "CNAME"
+  proxied = false
+  ttl     = 3600
+  comment = "DKIM — Fastmail fm3"
+}
+
+# DMARC — `p=reject` tells receiving servers to throw away anything
+# that fails SPF *and* DKIM alignment. `rua` is the aggregate-report
+# inbox; `ruf` (forensic) is intentionally omitted because it tends to
+# leak full message bodies. `pct=100` applies the policy to every
+# message; staged rollouts (pct=25 / 50 etc.) belong in a separate PR
+# with deliverability monitoring.
+resource "cloudflare_record" "dmarc" {
+  zone_id = data.cloudflare_zone.primary.id
+  name    = "_dmarc"
+  type    = "TXT"
+  content = "\"v=DMARC1; p=reject; rua=mailto:dmarc@scani.xyz; adkim=s; aspf=s; pct=100\""
+  ttl     = 3600
+  comment = "DMARC — reject unauthenticated mail"
+}
+
+# MTA-STS — opts scani.xyz into MTA-STS so receiving mail servers
+# (Gmail, Outlook, Apple Mail's Hide-My-Email, etc.) refuse to
+# downgrade the TLS connection to our MX. The policy itself is served
+# by the landing project at `mta-sts.scani.xyz/.well-known/mta-sts.txt`
+# (see apps/frontend/landing/public/.well-known/mta-sts.txt); the
+# `id` here is bumped whenever the policy file changes so caches
+# refresh.
+resource "cloudflare_record" "mta_sts_record" {
+  zone_id = data.cloudflare_zone.primary.id
+  name    = "_mta-sts"
+  type    = "TXT"
+  content = "\"v=STSv1; id=20260512000000Z\""
+  ttl     = 3600
+  comment = "MTA-STS policy version pointer"
+}
+
+resource "cloudflare_record" "mta_sts_host" {
+  zone_id = data.cloudflare_zone.primary.id
+  name    = "mta-sts"
+  content = "scani-landing.pages.dev"
+  type    = "CNAME"
+  proxied = true
+  ttl     = 1
+  comment = "MTA-STS — policy file hosted on landing"
+}
+
+# TLS reporting — receivers send a daily report of any STS failures.
+resource "cloudflare_record" "smtp_tls_reporting" {
+  zone_id = data.cloudflare_zone.primary.id
+  name    = "_smtp._tls"
+  type    = "TXT"
+  content = "\"v=TLSRPTv1; rua=mailto:tls-rpt@scani.xyz\""
+  ttl     = 3600
+  comment = "SMTP TLS reporting"
+}
+
 # ---------- Pages custom-domain attachments ----------
 # Tell each Pages project which hostnames it owns. Without this, Pages
 # returns a 404 "Domain not configured" even if the DNS resolves.

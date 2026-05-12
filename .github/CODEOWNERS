@@ -1,0 +1,25 @@
+# CODEOWNERS — combines with the branch-protection rule on `main`
+# (see infra/terraform/github.tf) to require an MGrin review on every
+# PR. The pattern below maps the whole tree to @MGrin; future
+# delegations (per-package, per-app) extend with more specific lines.
+#
+# Note: github_branch_protection requires_review_from_code_owners is
+# enabled, so this file is load-bearing — a missing entry would let a
+# PR slip through without a required review on whatever path it
+# touches.
+
+*       @MGrin
+
+# Security-sensitive paths get an explicit line so reviewers see them
+# called out in the GitHub UI even when the catch-all above would
+# match.
+/infra/terraform/                       @MGrin
+/.github/workflows/                     @MGrin
+/.github/actions/                       @MGrin
+/.github/SECURITY.md                    @MGrin
+/packages/infra/security/               @MGrin
+/packages/infra/logging/                @MGrin
+/apps/backend/api/src/auth/             @MGrin
+/apps/backend/api/src/presentation/http/admin-jobs.ts @MGrin
+/apps/frontend/admin/src/lib/auth/      @MGrin
+/apps/frontend/admin/src/middleware.ts  @MGrin

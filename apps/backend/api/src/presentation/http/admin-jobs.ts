@@ -28,6 +28,8 @@ import { db } from '@scani/db/connection';
 import { adminAuditLog } from '@scani/db/schema';
 import { createComponentLogger } from '@scani/logging';
 import { QueueClient } from '@scani/queue';
+import { desc } from 'drizzle-orm';
+import type { Redis } from 'ioredis';
 import { Container } from 'typedi';
 import { loadEnv } from '../../config/env';
 
@@ -36,7 +38,46 @@ const getQueue = () => Container.get(QueueClient).get();
 const logger = createComponentLogger('admin-jobs');
 
 const MAX_SKEW_MS = 30_000;
+// Replay window: any (signature) seen inside this many ms is rejected
+// as a replay. Chosen as a safe multiple of MAX_SKEW_MS so a request
+// whose clock drifts to the far edge of the skew window still gets
+// covered. Set in Redis as a SET-NX with PX expiry; the same signature
+// presented twice fails the SET-NX and is rejected.
+const NONCE_TTL_MS = MAX_SKEW_MS * 4;
 const EMPTY_BODY_SHA256 = createHash('sha256').update('').digest('hex');
+
+// Per-process fallback when no Redis client was passed at registration.
+// Tests + local dev without Redis: a Map keyed by signature, swept on
+// every check. Production passes a real Redis client.
+class InMemoryNonceStore {
+  private readonly seen = new Map<string, number>();
+
+  async addOrReject(key: string, ttlMs: number): Promise<boolean> {
+    const now = Date.now();
+    // Sweep expired entries so the map doesn't grow unbounded under load.
+    for (const [k, expiresAt] of this.seen) {
+      if (expiresAt <= now) this.seen.delete(k);
+    }
+    if (this.seen.has(key)) return false;
+    this.seen.set(key, now + ttlMs);
+    return true;
+  }
+}
+
+interface NonceStore {
+  addOrReject(key: string, ttlMs: number): Promise<boolean>;
+}
+
+class RedisNonceStore implements NonceStore {
+  constructor(private readonly redis: Redis) {}
+
+  async addOrReject(key: string, ttlMs: number): Promise<boolean> {
+    // `SET key 1 PX ttl NX` — returns 'OK' if newly set, null if the
+    // key already existed. Atomic across replicas.
+    const res = await this.redis.set(`admin:nonce:${key}`, '1', 'PX', ttlMs, 'NX');
+    return res === 'OK';
+  }
+}
 
 function sha256Hex(input: string | Buffer): string {
   return createHash('sha256').update(input).digest('hex');
@@ -108,20 +149,87 @@ function sanitizeAuditDetails(input: Record<string, unknown>): Record<string, un
   return out;
 }
 
+// Canonical serialization for the HMAC chain. Order is fixed and
+// independent of insertion order so a verifier can recompute the
+// signature without seeing the schema. JSON.stringify of `details` is
+// already canonicalized by sanitizeAuditDetails (it walks keys in
+// insertion order); we accept that as the "as-stored" payload.
+function canonicalAuditPayload(row: {
+  actor: string;
+  action: string;
+  resource: string;
+  result: string;
+  details: Record<string, unknown>;
+  createdAtIso: string;
+  prevSignature: string;
+}): string {
+  return [
+    `actor=${row.actor}`,
+    `action=${row.action}`,
+    `resource=${row.resource}`,
+    `result=${row.result}`,
+    `details=${JSON.stringify(row.details)}`,
+    `created_at=${row.createdAtIso}`,
+    `prev=${row.prevSignature}`,
+  ].join('\n');
+}
+
 async function audit(
   actor: string,
   action: string,
   resource: string,
   result: 'success' | 'failure',
-  details: Record<string, unknown>
+  details: Record<string, unknown>,
+  hmacSecret: string | undefined
 ): Promise<void> {
   try {
+    const sanitized = sanitizeAuditDetails(details);
+    // Use the same `created_at` value in both the signature and the
+    // INSERT so the canonical payload exactly matches what's stored.
+    const createdAt = new Date();
+    let prevSignature = '';
+    let signature: string | null = null;
+    if (hmacSecret) {
+      // Fetch the previous row's signature. SELECT … ORDER BY created_at
+      // DESC LIMIT 1 — the table has an index on created_at so this is
+      // cheap. Race: two concurrent writers might both read the same
+      // prev row and produce sibling rows that share `prev_signature`.
+      // That's still detectable by the verifier (the chain forks) but
+      // would make a clean linear chain harder to rebuild. The admin
+      // surface is single-actor in practice (one operator triggers
+      // retry/remove from the dashboard), so concurrent writes are
+      // rare; if that changes, switch this to a SERIALIZABLE
+      // transaction or use a Postgres advisory lock keyed on the
+      // table name.
+      const [prev] = await db
+        .select({ signature: adminAuditLog.signature })
+        .from(adminAuditLog)
+        .orderBy(desc(adminAuditLog.createdAt))
+        .limit(1);
+      prevSignature = prev?.signature ?? '';
+      signature = createHmac('sha256', hmacSecret)
+        .update(
+          canonicalAuditPayload({
+            actor,
+            action,
+            resource,
+            result,
+            details: sanitized,
+            createdAtIso: createdAt.toISOString(),
+            prevSignature,
+          })
+        )
+        .digest('hex');
+    }
     await db.insert(adminAuditLog).values({
       actor,
       action,
       resource,
       result,
-      details: sanitizeAuditDetails(details),
+      details: sanitized,
+      createdAt,
+      prevSignature: hmacSecret ? prevSignature : null,
+      signature,
     });
   } catch (err) {
     logger.warn(
@@ -149,7 +257,7 @@ async function rawBodyHash(request: Request): Promise<string> {
 }
 
 // biome-ignore lint/suspicious/noExplicitAny: Elysia accumulates route types; match whatever shape the caller has.
-export function registerAdminJobsRoutes(app: any): void {
+export function registerAdminJobsRoutes(app: any, redis?: Redis | null): void {
   // Read via the validated env schema instead of `process.env` directly,
   // so the var is checked at boot time (loadEnv exits the process when
   // ADMIN_JOBS_HMAC_SECRET is missing in prod) and not silently per-call.
@@ -160,6 +268,21 @@ export function registerAdminJobsRoutes(app: any): void {
       '⚠️ ADMIN_JOBS_HMAC_SECRET is not set — admin job endpoints will refuse all requests'
     );
   }
+
+  // Replay-protection nonce store. Redis-backed in prod (atomic across
+  // backend replicas); in-memory fallback covers tests + local dev. The
+  // store records each (HMAC signature) we've seen for NONCE_TTL_MS and
+  // rejects the second presentation, closing the 30s replay window
+  // that the timestamp-skew check alone left open.
+  const nonceStore: NonceStore = redis
+    ? new RedisNonceStore(redis)
+    : (() => {
+        logger.warn(
+          {},
+          'admin-jobs nonce store falling back to in-memory — replay protection is per-instance only'
+        );
+        return new InMemoryNonceStore();
+      })();
 
   app
     // biome-ignore lint/suspicious/noExplicitAny: Elysia handler ctx types are dynamic
@@ -181,21 +304,31 @@ export function registerAdminJobsRoutes(app: any): void {
         set.status = 401;
         return { error: 'unauthorized' };
       }
+      // Replay protection: the signature hex digest uniquely identifies
+      // a (method, path, timestamp, actor, bodyHash) tuple. If we've
+      // already accepted it inside NONCE_TTL_MS, refuse.
+      const hmacHeader = request.headers.get('x-admin-hmac') ?? '';
+      const fresh = await nonceStore.addOrReject(hmacHeader, NONCE_TTL_MS);
+      if (!fresh) {
+        logger.warn({ path: pathname }, 'admin-jobs replay detected — refusing');
+        set.status = 401;
+        return { error: 'replay detected' };
+      }
 
       try {
         const queue = getQueue();
         const job = await queue.getJob(params.id);
         if (!job) {
-          await audit(v.actor, 'job.retry', params.id, 'failure', { reason: 'not_found' });
+          await audit(v.actor, 'job.retry', params.id, 'failure', { reason: 'not_found' }, secret);
           set.status = 404;
           return { error: 'job not found' };
         }
         await job.retry();
-        await audit(v.actor, 'job.retry', params.id, 'success', { name: job.name });
+        await audit(v.actor, 'job.retry', params.id, 'success', { name: job.name }, secret);
         return { ok: true, jobId: params.id };
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
-        await audit(v.actor, 'job.retry', params.id, 'failure', { error: msg });
+        await audit(v.actor, 'job.retry', params.id, 'failure', { error: msg }, secret);
         set.status = 500;
         return { error: msg };
       }
@@ -219,21 +352,31 @@ export function registerAdminJobsRoutes(app: any): void {
         set.status = 401;
         return { error: 'unauthorized' };
       }
+      // Replay protection: the signature hex digest uniquely identifies
+      // a (method, path, timestamp, actor, bodyHash) tuple. If we've
+      // already accepted it inside NONCE_TTL_MS, refuse.
+      const hmacHeader = request.headers.get('x-admin-hmac') ?? '';
+      const fresh = await nonceStore.addOrReject(hmacHeader, NONCE_TTL_MS);
+      if (!fresh) {
+        logger.warn({ path: pathname }, 'admin-jobs replay detected — refusing');
+        set.status = 401;
+        return { error: 'replay detected' };
+      }
 
       try {
         const queue = getQueue();
         const job = await queue.getJob(params.id);
         if (!job) {
-          await audit(v.actor, 'job.remove', params.id, 'failure', { reason: 'not_found' });
+          await audit(v.actor, 'job.remove', params.id, 'failure', { reason: 'not_found' }, secret);
           set.status = 404;
           return { error: 'job not found' };
         }
         await job.remove();
-        await audit(v.actor, 'job.remove', params.id, 'success', { name: job.name });
+        await audit(v.actor, 'job.remove', params.id, 'success', { name: job.name }, secret);
         return { ok: true, jobId: params.id };
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
-        await audit(v.actor, 'job.remove', params.id, 'failure', { error: msg });
+        await audit(v.actor, 'job.remove', params.id, 'failure', { error: msg }, secret);
         set.status = 500;
         return { error: msg };
       }

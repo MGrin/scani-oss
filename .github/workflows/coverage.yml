@@ -49,7 +49,7 @@ jobs:
           --health-timeout 3s
           --health-retries 10
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0
       - uses: ./.github/actions/setup-bun
 
       - name: Run DB migrations
@@ -83,7 +83,7 @@ jobs:
         # Skipped when secret/var aren't configured yet, so the workflow
         # stays green before the one-time setup is done.
         if: ${{ env.GIST_SECRET != '' && vars.COVERAGE_GIST_ID != '' }}
-        uses: Schneegans/dynamic-badges-action@v1.7.0
+        uses: Schneegans/dynamic-badges-action@e9a478b16159b4d31420099ba146cdc50f134483 # v1.7.0
         with:
           auth: ${{ secrets.GIST_SECRET }}
           gistID: ${{ vars.COVERAGE_GIST_ID }}

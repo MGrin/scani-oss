@@ -81,3 +81,17 @@ export const createStandardLimiter = (redis: Redis | null, perMinute = 120): Inf
 
 export const createStrictLimiter = (redis: Redis | null, perMinute = 20): InflowRateLimiter =>
   createInflowLimiter(redis, { windowMs: 60_000, max: perMinute, namespace: 'rl:strict' });
+
+// Per-IP signup throttle. Defends against account-enumeration brute
+// force: even though Better-Auth's signup response shape still
+// distinguishes "exists" from "new", an attacker can only probe N
+// emails per hour per IP before getting 429s. Pair with the existing
+// global + strict limiters. Keep the default conservative — real
+// users sign up at most a handful of times per IP per hour (shared
+// office NAT, etc.).
+export const createSignupLimiter = (redis: Redis | null, perHour = 6): InflowRateLimiter =>
+  createInflowLimiter(redis, {
+    windowMs: 60 * 60 * 1000,
+    max: perHour,
+    namespace: 'rl:signup',
+  });

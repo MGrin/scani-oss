@@ -99,6 +99,13 @@
       "when": 1778290000000,
       "tag": "0013_waitlist_signups",
       "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1778300000000,
+      "tag": "0014_admin_audit_log_signature",
+      "breakpoints": true
     }
   ]
 }

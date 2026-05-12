@@ -26,6 +26,7 @@
     "@scani/file-import": "workspace:*",
     "@scani/logging": "workspace:*",
     "@scani/providers": "workspace:*",
+    "@scani/queue": "workspace:*",
     "@scani/rate-limiter": "workspace:*",
     "@scani/security": "workspace:*",
     "@scani/shared": "workspace:*",

@@ -10,20 +10,22 @@ CI/CD workflows, and read-only public-surface checks against the
 deployed origins. No active probing of authenticated endpoints was
 performed.
 
-**Counts:**
+**Status after the deferred-findings follow-up PR (2026-05-12):**
 
-| Severity | Total | Fixed in this PR | Tracked |
-| -------- | ----- | ---------------- | ------- |
-| Critical |     2 |                2 |       0 |
-| High     |    11 |                7 |       4 |
-| Medium   |    16 |               10 |       6 |
-| Low      |    11 |                7 |       4 |
-| Info     |     8 |                3 |       5 |
-| **Total**|  **48**|           **29**|  **19** |
+| Severity | Total | Fixed in initial PR | Fixed in follow-up | Still tracked |
+| -------- | ----- | ------------------- | ------------------ | ------------- |
+| Critical |     2 |                   2 |                  0 |             0 |
+| High     |    11 |                   7 |                  3 |             1 |
+| Medium   |    16 |                  10 |                  4 |             2 |
+| Low      |    11 |                   7 |                  3 |             1 |
+| Info     |     8 |                   3 |                  2 |             3 |
+| **Total**|  **48**|             **29**|              **12**|         **7** |
 
-(`Tracked` items are filed against the same audit ID for follow-up —
-either because they require migrations, ops/TF coordination, or are
-intentional product decisions documented for future review.)
+`Still tracked` items either require operations coordination (Fly
+machine counts, Sentry token split, manual Cloudflare environment
+config) or product decisions (credential-pool opt-in UX,
+email-verification flip with grandfather migration). See section 4 for
+the per-finding status.
 
 **Top five risks at audit start (all now mitigated):**
 
@@ -709,3 +711,82 @@ exercised:
 - Mobile clients (none exist).
 - Marketing-site copy accuracy (covered by the `CLAUDE.md` landing-
   page-accuracy section; outside the security review's scope).
+
+---
+
+## 8. Follow-up PR — 2026-05-12
+
+After the initial PR (#489) landed, this follow-up ships the
+previously-tracked items that were tractable inside the codebase
+without requiring external operations work. Sections 1, 2, 4 above
+reflect both PRs' state.
+
+### Fixed in the follow-up
+
+| ID    | Title                                                | Change                                                                                                                                                       |
+| ----- | ---------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| A-07  | HMAC replay nonce store                              | Redis-backed `SET … NX PX` nonce gate around admin-jobs HMAC; in-memory fallback for tests. TTL = 4× the timestamp-skew window.                              |
+| A-09  | Absolute 30-day session-max                          | Better-Auth `databaseHooks.session.update.before` rejects sessions older than `ABSOLUTE_SESSION_MAX_MS`; user is forced through fresh sign-in.                |
+| A-10  | Audit-log tamper-evident chain                       | Migration 0014 adds `prev_signature` + `signature` columns; `audit()` writes an HMAC-SHA256 chain keyed on `ADMIN_JOBS_HMAC_SECRET`.                          |
+| A-12  | Signup enumeration brute force                       | New `createSignupLimiter` (6/h/IP) wraps `/api/auth/sign-up*`, `/sign-in*`, `/email-otp/send-verification-otp`, `/forget-password`.                            |
+| C-10  | BullMQ payload purge on user-data-delete             | `DeleteAllUserDataUseCase` enumerates the user's job IDs and calls `queue.getJob(id).remove()` after the DB tx commits.                                       |
+| D-03  | Pin third-party GH Actions to SHA                    | Every `uses:` on `@vN` / `@master` rewritten to `@<40-hex-sha> # <tag>`. Dependabot already wired (PR #489) to keep them current.                             |
+| D-04  | Actions cache scoping                                | Cache key includes `${{ github.workflow }}` + `${{ github.ref_name }}` so PR jobs can't restore a main-branch cache that may have been poisoned.              |
+| D-07  | `contents: write` scope                              | Workflow default trimmed to `contents: read`; the three deploy-* jobs opt back in to `contents: write` at job level for their tag-push step.                  |
+| D-08  | CODEOWNERS + branch protection                       | New `.github/CODEOWNERS` + `github_branch_protection` resource on `main` (CI required, code-owner reviews, no force-push / deletions, admins not exempt).     |
+| D-10  | Terraform plan comment sanitization                  | PR-comment body now strips backticks and `<>`, hard-caps at 12 KB, escapes Markdown break-out.                                                                |
+| D-13  | flyctl secrets via stdin                             | All three deploy jobs build a tmpfile and pipe via `flyctl secrets import` instead of passing `KEY=value` on argv.                                            |
+| D-14  | random_password rotation                             | `keepers = { rotation_id = "<date>" }` on each `random_password`; bump the date to regenerate. Documented per-secret with the relevant cascade.               |
+| D-16  | DNS hardening                                        | CAA (letsencrypt + pki.goog + iodef), SPF (Fastmail only, `-all`), DKIM (fm1/2/3), DMARC (`p=reject`), MTA-STS + policy file, SMTP TLS reporting.              |
+| —     | C-01 invariant gate                                  | New `.github/workflows/security-invariants.yml` fails the PR that enables an OAuth provider without also wrapping `drizzleAdapter` in an encrypting adapter. |
+| —     | A-04 / C-03 / A-01 invariants                        | The same workflow asserts the production guards we landed in PR #489 stay in place.                                                                          |
+
+### Reassessed (no code change)
+
+| ID    | New status                                                                                                                                                                                          |
+| ----- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| C-05  | **N/A.** With A-04 blocking `ADMIN_DEV_BYPASS=1` in production, there is no pre-passkey session in production that could survive bootstrap. The post-passkey flow already mints a fresh cookie.     |
+| C-08  | **N/A.** `sharp` is only imported by `apps/frontend/app/scripts/generate-icons.js` (build-time PWA icon generation), never on user input at runtime. Screenshot parsing routes via OpenAI Vision.   |
+
+### Still tracked (requires external coordination)
+
+| ID    | Why deferred                                                                                                                                                                                                  |
+| ----- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| A-05  | Bootstrap-token persistence across restarts requires either a DB column reachable from the admin Pages runtime (new infra) or Cloudflare KV provisioning. The current in-process flag + audit warning is acceptable given that the residual window only opens with a leaked `ADMIN_BOOTSTRAP_TOKEN` AND a delayed env-var update.                                                              |
+| A-06  | Email-verification flip locks out every user with `email_verified=false`; needs a grandfather migration shipped in the same PR. Scope-deferred at the audit owner's request.                                  |
+| C-01  | Better-Auth OAuth-token column encryption requires wrapping `drizzleAdapter` (write-side encrypt + read-side decrypt) so Better-Auth's own DB access remains transparent. The columns are dormant today (no OAuth providers configured). The new `security-invariants.yml` gate fails the first PR that turns one on without the wrapper.                                                       |
+| D-02  | Backend + worker single-machine on Fly. Requires Fly machine scaling, rolling deploy strategy work, and BullMQ multi-consumer validation in staging. Ops handoff.                                              |
+| D-06  | Sentry deploy-token vs admin-read-token split. Requires Sentry-side provisioning + Terraform changes. Ops handoff.                                                                                            |
+| D-09  | Bootstrap-wipe sentinel gate redesign. Workflow change with operational implications (sentinel detection, required reviewer enforcement). Ops handoff.                                                        |
+| C-02  | Cloud-tier user-data-delete extension. N/A in OSS today; ships with the billing rollout PR.                                                                                                                   |
+
+### Verification — follow-up PR
+
+```bash
+bun run type-check          # 26 workspaces clean
+bun lint:fix                # 0 errors (2 unsafe-suggestion infos remain from #489)
+bun run deps:lint           # syncpack ✓
+bun run deps:unused         # knip ✓
+bun test --preload …/test-preload.ts \
+  packages/infra/security/tests/ \
+  packages/business/file-import/tests/csv-parser.test.ts \
+  packages/infra/logging/ packages/infra/rate-limiter/ \
+  --timeout 30000           # 136 pass / 0 fail
+terraform fmt -check -recursive  # infra/terraform clean
+python3 -c "import yaml; ..."    # every workflow file parses
+```
+
+Manual / end-to-end checks recommended before merging:
+
+- **DNS records**: after the terraform.yaml apply, confirm
+  `dig +short CAA scani.xyz`, `dig +short TXT _dmarc.scani.xyz`,
+  `dig +short CNAME fm1._domainkey.scani.xyz` all resolve.
+- **MTA-STS policy**: `curl https://mta-sts.scani.xyz/.well-known/mta-sts.txt`
+  should return the policy file (Fastmail MX records).
+- **Branch protection**: try `git push --force-with-lease origin main`
+  from a throwaway local clone — expected 403.
+- **HMAC replay**: capture a legitimate admin-jobs request via
+  browser dev tools, replay it within 30s with the same `x-admin-hmac`
+  header — expected 401 "replay detected".
+- **Migration 0014**: `bun run db:migrate` against a dev DB; assert
+  the `admin_audit_log.signature` column exists and is nullable.

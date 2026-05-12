@@ -18,6 +18,14 @@ import { Container } from 'typedi';
 
 const authLogger = createComponentLogger('auth');
 
+// Hard ceiling on session lifetime. Independent of `expiresIn` /
+// `updateAge` — those govern the rolling renewal window; this caps
+// how far that window can slide. 30 days matches what most banking /
+// crypto SaaS apps expose as "stay signed in for a month" without
+// triggering a re-auth. Compromised tokens have a bounded blast
+// radius even if the legitimate user keeps the session active.
+const ABSOLUTE_SESSION_MAX_MS = 30 * 24 * 60 * 60 * 1000;
+
 // First time it's called, resolves USD's token id from the fiat seed and
 // caches it for the life of the process. Every downstream feature
 // (dashboard, portfolio valuation, holdings) assumes the field is set —
@@ -114,6 +122,42 @@ export function createBetterAuth(opts: {
                 'Failed to set default base currency — user will need to set it in Settings'
               );
             }
+          },
+        },
+      },
+      session: {
+        // Absolute session-max enforcement. The base session config
+        // sets `expiresIn = 7 days` with `updateAge = 1 day` — a
+        // sliding window that, by itself, has no hard ceiling. An
+        // active user (or a compromised long-lived token used
+        // weekly to keep it alive) could ride the same session for
+        // months. This hook rejects any session whose `createdAt` is
+        // more than ABSOLUTE_SESSION_MAX_MS in the past, regardless
+        // of how recently it was touched. The user is forced through
+        // a fresh sign-in (magic link / passkey / OTP) at that
+        // point, which re-mints a fresh sessionId.
+        update: {
+          before: async (session) => {
+            const createdAt = session.createdAt;
+            if (!createdAt) return;
+            const ageMs = Date.now() - new Date(createdAt).getTime();
+            if (ageMs > ABSOLUTE_SESSION_MAX_MS) {
+              authLogger.info(
+                {
+                  userId: session.userId,
+                  sessionId: session.id,
+                  ageDays: Math.floor(ageMs / (24 * 60 * 60 * 1000)),
+                },
+                'Session exceeded absolute max age; refusing extension'
+              );
+              // Throwing rejects the update; Better-Auth then
+              // treats the session as unresolved and forces the
+              // user back through sign-in.
+              throw new Error('Session exceeded absolute max age');
+            }
+            // Returning `false` from a Better-Auth `before` hook
+            // means "no changes" — pass the data through unchanged.
+            return false;
           },
         },
       },

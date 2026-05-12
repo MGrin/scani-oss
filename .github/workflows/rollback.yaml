@@ -88,7 +88,7 @@ jobs:
           echo
           echo "json=$(cat /tmp/app_to_sha.json)" >> "$GITHUB_OUTPUT"
 
-      - uses: superfly/flyctl-actions/setup-flyctl@master
+      - uses: superfly/flyctl-actions/setup-flyctl@ed8efb33836e8b2096c7fd3ba1c8afe303ebbff1 # master @ 2026-05-12
 
       - name: Deploy each app at its target SHA
         env:

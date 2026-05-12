@@ -44,7 +44,11 @@ let dataProviderReachable = true;
 // CRITICAL: Initialize container BEFORE importing any routers
 // This must happen before any module that calls Container.get()
 import { QueueClient } from '@scani/queue';
-import { createStandardLimiter, createStrictLimiter } from '@scani/rate-limiter';
+import {
+  createSignupLimiter,
+  createStandardLimiter,
+  createStrictLimiter,
+} from '@scani/rate-limiter';
 import { RedisRealtimeUpdatesService, WebSocketRealtimeUpdatesService } from '@scani/realtime';
 import { StorageService } from '@scani/storage';
 import { sql } from 'drizzle-orm';
@@ -227,6 +231,10 @@ interface RequestWithTracking extends Request {
 // backend instances share fairness.
 const globalLimiter = createStandardLimiter(redisConnection, 300);
 const strictLimiter = createStrictLimiter(redisConnection, 60);
+// Per-IP signup attempt cap. Better-Auth's signup response still
+// reveals "email exists" vs "new", so this limiter is the primary
+// defense against account enumeration brute force.
+const signupLimiter = createSignupLimiter(redisConnection, 6);
 // WebSocket connection limiter: max 30 auth attempts per minute per IP.
 // Prevents brute-forcing auth tokens over the ws endpoint, which bypasses
 // the HTTP limiters above.
@@ -418,7 +426,7 @@ const app = new Elysia()
     })
   );
 
-registerAdminJobsRoutes(app);
+registerAdminJobsRoutes(app, redisConnection);
 
 app
   .get('/', () => ({ status: 'ok', service: 'scani-backend' }))
@@ -426,7 +434,34 @@ app
   // /api/auth/sign-in/magic-link, /api/auth/get-session, etc.
   // Elysia has already consumed the original request body stream, so we
   // rebuild the Request from the parsed body before handing it off.
-  .all('/api/auth/*', async ({ request, body, headers }) => {
+  .all('/api/auth/*', async ({ request, body, headers, set }) => {
+    // Enumeration / brute-force defense. Better-Auth's signup +
+    // sign-in responses distinguish "exists" from "new" / "wrong
+    // password" by status code, so an attacker can probe a list of
+    // emails as fast as the global limiter allows (300/min). The
+    // signup-specific limiter caps at 6/hour per IP across signup +
+    // sign-in + magic-link request endpoints; a real user hits the
+    // page at most a handful of times per hour, so 6 is comfortable
+    // headroom while raising enumeration cost ~3000×.
+    const pathname = new URL(request.url).pathname;
+    const isAuthAttempt =
+      pathname.startsWith('/api/auth/sign-up') ||
+      pathname.startsWith('/api/auth/sign-in') ||
+      pathname.startsWith('/api/auth/email-otp/send-verification-otp') ||
+      pathname.startsWith('/api/auth/forget-password');
+    if (isAuthAttempt) {
+      const res = await signupLimiter.tryConsume(request);
+      if ('ok' in res && !res.ok) {
+        set.status = 429;
+        set.headers = set.headers || {};
+        set.headers['Retry-After'] = String(res.retryAfterSec);
+        return {
+          error: 'Too Many Requests',
+          message: 'Too many auth attempts from this IP. Try again later.',
+          retryAfterSec: res.retryAfterSec,
+        };
+      }
+    }
     const cloneHeaders = new Headers();
     for (const [k, v] of Object.entries(headers ?? {})) {
       if (typeof v === 'string') cloneHeaders.set(k, v);

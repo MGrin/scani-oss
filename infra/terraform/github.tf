@@ -12,6 +12,51 @@ data "github_repository" "scani" {
   full_name = "${var.github_owner}/${var.github_repo}"
 }
 
+# ---------- Branch protection on `main` ----------
+#
+# Codifies the policy that every change to main goes through a PR, gets
+# a CODEOWNERS-required review, and waits for CI to pass. Without
+# this rule, the GITHUB_TOKEN carried by the deploy workflow could
+# theoretically push directly to main (it has `contents: write` on the
+# three deploy jobs; D-07 already trimmed that to the smallest possible
+# scope, but defense in depth is still warranted).
+#
+# `allows_force_pushes = false` and `allows_deletions = false` prevent
+# branch-rewriting / branch-deletion entirely. Force-push to main, even
+# from the repo owner, requires temporarily relaxing this rule.
+resource "github_branch_protection" "main" {
+  repository_id = data.github_repository.scani.node_id
+  pattern       = "main"
+
+  enforce_admins                  = true
+  require_signed_commits          = false
+  required_linear_history         = true
+  allows_force_pushes             = false
+  allows_deletions                = false
+  require_conversation_resolution = true
+
+  required_pull_request_reviews {
+    required_approving_review_count = 1
+    require_code_owner_reviews      = true
+    dismiss_stale_reviews           = true
+    # `restrict_dismissals` left default — only the repo owner can
+    # dismiss reviews, which matches the single-maintainer model.
+  }
+
+  required_status_checks {
+    strict = true
+    # Must match the rendered job `name:` from `.github/workflows/ci.yml`
+    # exactly — branch protection compares display-name strings, not the
+    # YAML job ids. Update both sides when renaming a CI job.
+    contexts = [
+      "Lint & Type Check",
+      "Deps sync & knip",
+      "Test",
+      "Secret scan",
+    ]
+  }
+}
+
 resource "github_actions_secret" "database_url_direct" {
   repository      = data.github_repository.scani.name
   secret_name     = "DATABASE_URL_DIRECT"
@@ -40,6 +85,17 @@ resource "github_actions_secret" "fly_api_token" {
 resource "random_password" "admin_jobs_hmac_secret" {
   length  = 64
   special = false
+  # Bump `rotation_id` to force regeneration on the next
+  # `terraform apply`. Convention: `<YYYY-MM-DD>` of the rotation,
+  # so the file diff itself documents when (and roughly why) the
+  # last rotation happened. Suggested cadence: every 90 days, or
+  # immediately on suspected secret compromise. Pair the bump with
+  # a redeploy of `scani-backend` and `scani-admin` so both sides
+  # pick up the new value within seconds; until both have, signed
+  # admin requests fail with `signature mismatch`.
+  keepers = {
+    rotation_id = "2026-05-12"
+  }
 }
 
 resource "github_actions_secret" "admin_jobs_hmac_secret" {
@@ -60,6 +116,14 @@ resource "github_actions_secret" "admin_jobs_hmac_secret" {
 resource "random_password" "log_id_pepper" {
   length  = 64
   special = false
+  # Rotation breaks the cross-service hash join (same user shows up as
+  # a different pseudonym before vs after rotation). Bump only when
+  # there's a real reason — suspected pepper exposure, an annual
+  # compliance review, etc. Document the bump rationale in the commit
+  # message so the audit trail explains the discontinuity.
+  keepers = {
+    rotation_id = "2026-05-12"
+  }
 }
 
 resource "github_actions_secret" "log_id_pepper" {
@@ -120,6 +184,14 @@ resource "github_actions_secret" "sentry_dsn_data_provider" {
 resource "random_password" "scani_cloud_api_key" {
   length  = 48
   special = false
+  # Same convention as admin_jobs_hmac_secret: bump rotation_id to
+  # roll. Affects data-provider (server-side validator) AND
+  # backend + worker (caller). Stage backend/worker redeploys
+  # alongside the rotation so they pick up the new key from secrets
+  # in the same window.
+  keepers = {
+    rotation_id = "2026-05-12"
+  }
 }
 
 resource "github_actions_secret" "data_provider_api_key" {
@@ -142,6 +214,12 @@ resource "github_actions_secret" "data_provider_api_key" {
 resource "random_password" "cloud_better_auth_secret" {
   length  = 48
   special = false
+  # Rotating this invalidates every active cloud-frontend session
+  # immediately. Don't bump casually — schedule with users (notify
+  # via banner), then bump + redeploy data-provider.
+  keepers = {
+    rotation_id = "2026-05-12"
+  }
 }
 
 resource "github_actions_secret" "cloud_better_auth_secret" {
