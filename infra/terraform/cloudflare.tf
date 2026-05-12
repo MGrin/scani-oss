@@ -191,37 +191,17 @@ resource "cloudflare_record" "spf" {
 
 # DKIM — Fastmail provisions three rotating CNAME pointers
 # (fm1/fm2/fm3._domainkey.scani.xyz → fm1.scani.xyz.dkim.fmhosted.com,
-# etc.). Without these, mail Fastmail signs from our account won't
-# verify at the receiver and we end up in spam.
-resource "cloudflare_record" "dkim_fm1" {
-  zone_id = data.cloudflare_zone.primary.id
-  name    = "fm1._domainkey"
-  content = "fm1.scani.xyz.dkim.fmhosted.com"
-  type    = "CNAME"
-  proxied = false
-  ttl     = 3600
-  comment = "DKIM — Fastmail fm1"
-}
-
-resource "cloudflare_record" "dkim_fm2" {
-  zone_id = data.cloudflare_zone.primary.id
-  name    = "fm2._domainkey"
-  content = "fm2.scani.xyz.dkim.fmhosted.com"
-  type    = "CNAME"
-  proxied = false
-  ttl     = 3600
-  comment = "DKIM — Fastmail fm2"
-}
-
-resource "cloudflare_record" "dkim_fm3" {
-  zone_id = data.cloudflare_zone.primary.id
-  name    = "fm3._domainkey"
-  content = "fm3.scani.xyz.dkim.fmhosted.com"
-  type    = "CNAME"
-  proxied = false
-  ttl     = 3600
-  comment = "DKIM — Fastmail fm3"
-}
+# etc.). Fastmail's dashboard creates these automatically when the
+# domain is added there, so they pre-existed before this Terraform was
+# written. The 2026-05-12 apply failed with `expected DNS record to
+# not already be present but already exists`; rather than carry the
+# dashboard-managed records into TF state (which would require a manual
+# `terraform import` per record), we leave them in the dashboard. The
+# records are stable: Fastmail rotates keys silently against the same
+# CNAMEs, so DNS-side drift is zero.
+#
+# If Fastmail ever asks us to add or rotate a DKIM selector, do it in
+# their UI, NOT here.
 
 # DMARC — `p=reject` tells receiving servers to throw away anything
 # that fails SPF *and* DKIM alignment. `rua` is the aggregate-report

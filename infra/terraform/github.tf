@@ -14,48 +14,44 @@ data "github_repository" "scani" {
 
 # ---------- Branch protection on `main` ----------
 #
-# Codifies the policy that every change to main goes through a PR, gets
-# a CODEOWNERS-required review, and waits for CI to pass. Without
-# this rule, the GITHUB_TOKEN carried by the deploy workflow could
-# theoretically push directly to main (it has `contents: write` on the
-# three deploy jobs; D-07 already trimmed that to the smallest possible
-# scope, but defense in depth is still warranted).
+# Audit finding D-08 calls for a Terraform-managed `github_branch_protection`
+# on `main` (CI required, code-owner reviews, no force-push, admins not
+# exempt). The 2026-05-12 apply rejected this with `Resource not
+# accessible by personal access token` — the `TF_GITHUB_TOKEN` PAT
+# currently has the scopes needed to manage Actions secrets (`repo` +
+# `workflow`) but NOT the `administration: write` scope needed to set
+# branch-protection rules.
 #
-# `allows_force_pushes = false` and `allows_deletions = false` prevent
-# branch-rewriting / branch-deletion entirely. Force-push to main, even
-# from the repo owner, requires temporarily relaxing this rule.
-resource "github_branch_protection" "main" {
-  repository_id = data.github_repository.scani.node_id
-  pattern       = "main"
-
-  enforce_admins                  = true
-  require_signed_commits          = false
-  required_linear_history         = true
-  allows_force_pushes             = false
-  allows_deletions                = false
-  require_conversation_resolution = true
-
-  required_pull_request_reviews {
-    required_approving_review_count = 1
-    require_code_owner_reviews      = true
-    dismiss_stale_reviews           = true
-    # `restrict_dismissals` left default — only the repo owner can
-    # dismiss reviews, which matches the single-maintainer model.
-  }
-
-  required_status_checks {
-    strict = true
-    # Must match the rendered job `name:` from `.github/workflows/ci.yml`
-    # exactly — branch protection compares display-name strings, not the
-    # YAML job ids. Update both sides when renaming a CI job.
-    contexts = [
-      "Lint & Type Check",
-      "Deps sync & knip",
-      "Test",
-      "Secret scan",
-    ]
-  }
-}
+# Deferred until the PAT is rotated with the additional scope. Until
+# then, branch protection lives in the GitHub UI (Settings → Branches).
+# CODEOWNERS still enforces required-reviewer routing for PRs.
+#
+# resource "github_branch_protection" "main" {
+#   repository_id                   = data.github_repository.scani.node_id
+#   pattern                         = "main"
+#   enforce_admins                  = true
+#   require_signed_commits          = false
+#   required_linear_history         = true
+#   allows_force_pushes             = false
+#   allows_deletions                = false
+#   require_conversation_resolution = true
+#
+#   required_pull_request_reviews {
+#     required_approving_review_count = 1
+#     require_code_owner_reviews      = true
+#     dismiss_stale_reviews           = true
+#   }
+#
+#   required_status_checks {
+#     strict = true
+#     contexts = [
+#       "Lint & Type Check",
+#       "Deps sync & knip",
+#       "Test",
+#       "Secret scan",
+#     ]
+#   }
+# }
 
 resource "github_actions_secret" "database_url_direct" {
   repository      = data.github_repository.scani.name
