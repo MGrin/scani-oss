@@ -118,6 +118,10 @@ export function AuthPage() {
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   placeholder="you@company.com"
+                  // iOS zooms into inputs with font-size < 16px on focus.
+                  // Force 16px on mobile, drop back to the design-system
+                  // 14px on sm+ where the zoom heuristic doesn't apply.
+                  className="text-base sm:text-sm"
                 />
               </div>
               {error && <p className="text-sm text-destructive">{error}</p>}
