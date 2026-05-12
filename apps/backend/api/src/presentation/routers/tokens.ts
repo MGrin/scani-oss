@@ -103,6 +103,10 @@ export function createTokensRouter(db: DbType, schemaObj: typeof schema) {
       )
       .query(async ({ input }) => {
         const query = input.query.toUpperCase();
+        // Escape LIKE metacharacters so a user-supplied query like
+        // `_____` doesn't become a wildcard that matches any 5-char
+        // symbol. We use `\` as the escape character via `ESCAPE`.
+        const likePattern = `%${query.replace(/[\\%_]/g, '\\$&')}%`;
 
         // First, search in our database
         const dbTokens = await db
@@ -124,9 +128,9 @@ export function createTokensRouter(db: DbType, schemaObj: typeof schema) {
             and(
               eq(schemaObj.tokens.isActive, true),
               lt(schemaObj.tokens.isScamProbability, SCAM_PROBABILITY_THRESHOLD),
-              sql`(UPPER(${schemaObj.tokens.symbol}) LIKE ${`%${query}%`} OR UPPER(${
+              sql`(UPPER(${schemaObj.tokens.symbol}) LIKE ${likePattern} ESCAPE '\\' OR UPPER(${
                 schemaObj.tokens.name
-              }) LIKE ${`%${query}%`})`
+              }) LIKE ${likePattern} ESCAPE '\\')`
             )
           )
           .orderBy(schemaObj.tokens.symbol)

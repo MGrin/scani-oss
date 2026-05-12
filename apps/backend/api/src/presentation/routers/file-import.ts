@@ -3,6 +3,7 @@
  * Handles bank statement file parsing and preview
  */
 
+import { AccountRepository } from '@scani/domain/repositories';
 import { CsvColumnDetectionService } from '@scani/domain/services';
 import { BANK_TEMPLATES, parseStatement } from '@scani/file-import';
 import { FILE_IMPORT } from '@scani/jobs';
@@ -198,6 +199,21 @@ export const fileImportRouter = router({
         throw new TRPCError({
           code: 'FORBIDDEN',
           message: 'Upload key does not belong to the current user',
+        });
+      }
+      // Enforce that the target account belongs to the caller. The
+      // worker forwards `accountId` straight into the ingest pipeline;
+      // without a router-side check, an attacker could pair their own
+      // r2Key with a victim's accountId and pollute the victim's
+      // transactions / holdings ledger.
+      const account = await Container.get(AccountRepository).findByIdAndUser(
+        input.accountId,
+        ctx.userId
+      );
+      if (!account) {
+        throw new TRPCError({
+          code: 'FORBIDDEN',
+          message: 'Account does not belong to the current user',
         });
       }
       fileImportLogger.info(

@@ -27,8 +27,23 @@ export function getSessionSecret(): string {
   return secret;
 }
 
+/**
+ * Dev-only bypass for the passkey middleware. Hard-refuses to activate
+ * when NODE_ENV=production so a leaked or copy-pasted env file can't
+ * disable the admin gate in prod. If both flags are ever observed
+ * together in prod we fail loud at boot rather than silently allowing
+ * traffic — better a deploy outage than an open admin.
+ */
 export function devBypassEnabled(): boolean {
-  return process.env.ADMIN_DEV_BYPASS === '1';
+  const requested = process.env.ADMIN_DEV_BYPASS === '1';
+  if (!requested) return false;
+  if (process.env.NODE_ENV === 'production') {
+    throw new Error(
+      'ADMIN_DEV_BYPASS=1 is set in a production environment. Refusing to start ' +
+        'with passkey gating disabled. Unset ADMIN_DEV_BYPASS in the admin deployment.'
+    );
+  }
+  return true;
 }
 
 /**

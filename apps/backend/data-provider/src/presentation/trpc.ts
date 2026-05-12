@@ -90,12 +90,22 @@ export function buildCreateContext({ env, getCloudDb, getBetterAuth }: BuildCont
       }
     }
 
-    // x-forwarded-for is a comma-delimited list (`client, proxy1, proxy2`);
-    // the first entry is the original caller. Fly's `fly-client-ip` is a
-    // single value and is the more reliable source when running on Fly.
+    // Fly's `fly-client-ip` is a single value, set at the edge, and is
+    // the most reliable source. `x-forwarded-for` is a comma-delimited
+    // list where Fly and Cloudflare APPEND the real client IP at the
+    // tail — the leftmost entries are attacker-controllable, so we trust
+    // only the rightmost element. Keying off the leftmost entry would
+    // let a caller rotate fake prefixes and trivially bypass per-IP
+    // rate limits (e.g. waitlist.join). Matches the rule applied by
+    // @scani/rate-limiter's defaultInflowKey.
     const flyClientIp = req.headers.get('fly-client-ip');
     const xff = req.headers.get('x-forwarded-for');
-    const clientIp = flyClientIp ?? xff?.split(',')[0]?.trim() ?? null;
+    const xffTail = xff
+      ?.split(',')
+      .map((s) => s.trim())
+      .filter((s) => s.length > 0)
+      .at(-1);
+    const clientIp = flyClientIp ?? xffTail ?? null;
 
     return { auth, cloudUser, requestId, usage: createUsageContext(), clientIp };
   };

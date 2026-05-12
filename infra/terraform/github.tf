@@ -48,6 +48,26 @@ resource "github_actions_secret" "admin_jobs_hmac_secret" {
   plaintext_value = random_password.admin_jobs_hmac_secret.result
 }
 
+# Pepper for one-way hashing of user/tenant/account IDs in structured
+# logs. The pseudonymize helper in @scani/logging refuses to import
+# under NODE_ENV=production without this — without it, raw UUIDs would
+# leak to the shared Sentry / pino aggregator. Generated once by TF so
+# the value is stable across redeploys (rotation deliberately requires
+# `terraform taint` + apply to avoid accidentally breaking log-trail
+# joins). 64 chars satisfies the runtime min-length check with margin.
+# Consumed by: scani-backend, scani-worker, scani-data-provider — all
+# three import @scani/logging and run with NODE_ENV=production.
+resource "random_password" "log_id_pepper" {
+  length  = 64
+  special = false
+}
+
+resource "github_actions_secret" "log_id_pepper" {
+  repository      = data.github_repository.scani.name
+  secret_name     = "LOG_ID_PEPPER"
+  plaintext_value = random_password.log_id_pepper.result
+}
+
 # R2 bucket name for temp job-payload storage (screenshot parsing, file
 # imports). Value is the Terraform-managed bucket above, mirrored into
 # GH Secrets so the deploy workflow can stage it onto Fly and Pages.

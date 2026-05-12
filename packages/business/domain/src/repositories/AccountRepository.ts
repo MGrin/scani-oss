@@ -9,6 +9,32 @@ export class AccountRepository extends BaseRepository<Account, NewAccount> {
   protected readonly table = schema.accounts;
   protected readonly tableName = 'accounts';
 
+  /**
+   * Ownership-scoped single-row lookup. Used by routers that accept an
+   * `accountId` from the client and must reject cross-tenant references
+   * before enqueueing or mutating anything. Returns null when the
+   * account doesn't exist OR doesn't belong to the caller — callers
+   * should not distinguish those cases in error messages.
+   */
+  async findByIdAndUser(
+    accountId: string,
+    userId: string,
+    transaction?: DatabaseTransaction
+  ): Promise<Account | null> {
+    try {
+      const database = this.getDb(transaction);
+      const [account] = await database
+        .select()
+        .from(schema.accounts)
+        .where(and(eq(schema.accounts.id, accountId), eq(schema.accounts.userId, userId)))
+        .limit(1);
+      return account ?? null;
+    } catch (error) {
+      this.logger.error({ userId, accountId, error }, 'Failed to find account by id+user');
+      throw error;
+    }
+  }
+
   async findByUserInstitutionName(
     userId: string,
     institutionId: string,

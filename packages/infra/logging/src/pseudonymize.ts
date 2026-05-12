@@ -19,13 +19,20 @@ import { createHash } from 'node:crypto';
  *  - Empty / nullish input returns the empty string — callers are
  *    expected to omit the field rather than log an empty string.
  *
- * If `LOG_ID_PEPPER` is unset (dev / OSS / single-developer), the
- * helper returns the raw id verbatim — pseudonymization is a
- * production-aggregator concern, not a dev-loop concern. Production
- * deploys MUST stage `LOG_ID_PEPPER` (see docs/technical/disaster-recovery.md).
+ * Production requires `LOG_ID_PEPPER` to be set. Boot fails fast if it
+ * is missing under `NODE_ENV=production` so we never silently leak raw
+ * UUIDs to a shared aggregator. Dev / OSS / single-developer runs can
+ * omit the pepper and the helper returns the raw id verbatim.
  */
 const PEPPER = process.env.LOG_ID_PEPPER;
 const HEX_PREFIX_LEN = 16;
+
+if (process.env.NODE_ENV === 'production' && (!PEPPER || PEPPER.length < 16)) {
+  throw new Error(
+    'LOG_ID_PEPPER is required in production and must be at least 16 chars. ' +
+      'Generate with `openssl rand -hex 32` and stage as a Fly app secret.'
+  );
+}
 
 export function pseudonymizeId(id: string | null | undefined): string {
   if (!id) return '';

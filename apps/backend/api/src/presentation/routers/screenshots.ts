@@ -1,3 +1,4 @@
+import { AccountRepository } from '@scani/domain/repositories';
 import { SCREENSHOT_PARSE } from '@scani/jobs';
 import { createComponentLogger } from '@scani/logging';
 import { BullMqEnqueueService } from '@scani/queue';
@@ -56,6 +57,23 @@ export const screenshotsRouter = router({
     .mutation(async ({ input, ctx }) => {
       for (const key of input.r2Keys) {
         assertOwnedKey(key, ctx.userId, 'screenshot');
+      }
+      // When the caller pins the screenshot to a specific account,
+      // enforce the account belongs to them. The downstream use case
+      // trusts `accountId` from the payload; without this guard an
+      // attacker could pair their own r2Keys with a victim's accountId
+      // and force-write holdings under the victim's account.
+      if (input.accountId) {
+        const account = await Container.get(AccountRepository).findByIdAndUser(
+          input.accountId,
+          ctx.userId
+        );
+        if (!account) {
+          throw new TRPCError({
+            code: 'FORBIDDEN',
+            message: 'Account does not belong to the current user',
+          });
+        }
       }
       screenshotsLogger.info(
         { fileCount: input.r2Keys.length, provider: input.provider, requestId: input.requestId },

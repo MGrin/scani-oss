@@ -198,12 +198,46 @@ jobs:
         run: |
           set -euo pipefail
 
+          # Patterns target the actual secret shapes used in this monorepo.
+          # When adding a new one: validate against a real value (rotate it
+          # afterwards), test the regex doesn't fire on docs/test fixtures,
+          # and prefer narrow shapes that won't fire on environment-variable
+          # placeholder names in .env.example.
           PATTERNS=(
+            # AWS access key + Render deploy hook
             'api\.render\.com/deploy/[A-Za-z0-9_-]+\?key=[A-Za-z0-9_-]{8,}'
             'AKIA[0-9A-Z]{16}'
-            '-----BEGIN (RSA |EC |OPENSSH |)PRIVATE KEY-----'
+            # Private keys (any flavor)
+            '-----BEGIN (RSA |EC |OPENSSH |OPENPGP |)PRIVATE KEY-----'
+            # Slack
             'xoxb-[0-9]+-[0-9]+-[A-Za-z0-9]+'
-            'eyJhbGciOi[A-Za-z0-9_\-]{100,}'
+            # GitHub: classic + fine-grained PATs + OAuth/installation tokens
+            'ghp_[A-Za-z0-9]{36,}'
+            'github_pat_[A-Za-z0-9_]{82,}'
+            'gho_[A-Za-z0-9]{36,}'
+            'ghs_[A-Za-z0-9]{36,}'
+            'ghu_[A-Za-z0-9]{36,}'
+            # OpenAI + Anthropic API keys
+            'sk-(proj-)?[A-Za-z0-9_\-]{40,}'
+            'sk-ant-(api|sid)[0-9]{2}-[A-Za-z0-9_\-]{80,}'
+            # Stripe live keys (test keys are sk_test_ — allow those)
+            'sk_live_[0-9a-zA-Z]{24,}'
+            'pk_live_[0-9a-zA-Z]{24,}'
+            'rk_live_[0-9a-zA-Z]{24,}'
+            # Sentry user + org auth tokens
+            'sntrys_eyJ[A-Za-z0-9_\-]{40,}'
+            'sntryu_[0-9a-f]{60,}'
+            # Cloudflare API token (v4 shape)
+            'cf_v1_[A-Za-z0-9_\-]{32,}'
+            # Fastmail JMAP token (`fmu1-`/`fmm1-` prefix on token tokens)
+            'fmu1-[a-zA-Z0-9]{6,}-[a-zA-Z0-9_-]+'
+            'fmm1-[a-zA-Z0-9]{6,}-[a-zA-Z0-9_-]+'
+            # Postgres connection string with credentials (Neon / generic)
+            'postgres(ql)?://[A-Za-z0-9._%+\-]+:[^@\s/"<>]{8,}@[A-Za-z0-9._\-]+\.neon\.tech'
+            'postgres(ql)?://[A-Za-z0-9._%+\-]+:[^@\s/"<>]{16,}@[A-Za-z0-9._\-]+'
+            # Generic high-entropy JWT (kept tighter than before: at least
+            # one dot before the long alphanum suffix)
+            'eyJhbGciOi[A-Za-z0-9_\-]{40,}\.[A-Za-z0-9_\-]{40,}'
           )
 
           FAIL=0
@@ -213,10 +247,14 @@ jobs:
                 --exclude-dir=.git \
                 --exclude-dir=dist \
                 --exclude-dir=.next \
+                --exclude-dir=docs \
                 --exclude="bun.lock*" \
                 --exclude="*.lock" \
                 --exclude="*.map" \
                 --exclude="*.min.js" \
+                --exclude="*.test.ts" \
+                --exclude="*.test.tsx" \
+                --exclude=".env.example" \
                 -e "$p" . ; then
               echo "::error::Potential secret matched pattern: $p"
               FAIL=1

@@ -1,0 +1,5 @@
+Contact: mailto:security@scani.xyz
+Expires: 2027-05-12T00:00:00.000Z
+Preferred-Languages: en
+Canonical: https://scani.xyz/.well-known/security.txt
+Policy: https://scani.xyz/security

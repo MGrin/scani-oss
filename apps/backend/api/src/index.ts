@@ -263,6 +263,23 @@ const app = new Elysia()
     (request as RequestWithTracking)._timer = timer;
     (request as RequestWithTracking)._requestId = requestId;
   })
+  .onBeforeHandle(({ request, set }) => {
+    // Reject oversized requests before the body is read into memory.
+    // The largest legitimate payload is a base64-encoded statement at
+    // ~4 MB (see UPLOAD_LIMITS.INLINE_DECODED_BYTES) plus tRPC envelope;
+    // 16 MB is a comfortable ceiling and still bounds memory under a
+    // burst of attacker requests. Without this an unauthenticated POST
+    // with Content-Length: 5 GB would let the framework allocate
+    // before the per-procedure zod `.max()` kicks in.
+    const contentLength = request.headers.get('content-length');
+    if (contentLength) {
+      const len = Number.parseInt(contentLength, 10);
+      if (Number.isFinite(len) && len > 16 * 1024 * 1024) {
+        set.status = 413;
+        return { error: 'Payload Too Large', message: `Request exceeds 16 MB cap (${len} bytes)` };
+      }
+    }
+  })
   .onBeforeHandle(async ({ request, set }) => {
     const res = await globalLimiter.tryConsume(request);
     if ('ok' in res && res.ok) return;
@@ -379,9 +396,17 @@ const app = new Elysia()
     set.headers = set.headers || {};
     set.headers['X-Content-Type-Options'] = 'nosniff';
     set.headers['X-Frame-Options'] = 'DENY';
-    set.headers['X-XSS-Protection'] = '1; mode=block';
+    // `X-XSS-Protection` is dropped intentionally — the legacy IE/Chrome
+    // XSS auditor was removed years ago, and the spec advice is to send
+    // either nothing or `0`. CSP (`default-src 'none'`) is what actually
+    // protects this JSON-only API.
     set.headers['Referrer-Policy'] = 'strict-origin-when-cross-origin';
-    set.headers['Content-Security-Policy'] = "default-src 'none'";
+    set.headers['Permissions-Policy'] =
+      'camera=(), microphone=(), geolocation=(), interest-cohort=()';
+    set.headers['Cross-Origin-Opener-Policy'] = 'same-origin';
+    set.headers['Cross-Origin-Resource-Policy'] = 'same-site';
+    set.headers['Content-Security-Policy'] =
+      "default-src 'none'; frame-ancestors 'none'; base-uri 'none'";
     if (process.env.NODE_ENV === 'production') {
       set.headers['Strict-Transport-Security'] = 'max-age=31536000; includeSubDomains; preload';
     }

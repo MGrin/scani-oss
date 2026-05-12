@@ -37,14 +37,31 @@ const isDevelopment = process.env.NODE_ENV === 'development' || !process.env.NOD
 const serviceName = process.env.SERVICE_NAME || 'scani';
 const serviceVersion = process.env.SERVICE_VERSION || 'unknown';
 
+// Hard-refuse body logging in production. The flags are debug knobs
+// that ship raw request/response payloads (including magic-link tokens,
+// OAuth callbacks, and credential imports) to the log aggregator with
+// no scrubbing. If an operator flips one in prod for "just a quick
+// look", every authenticated request in that window leaks. The
+// schema-level requiredInProd helper isn't available here (logging
+// can't depend on @scani/config's env loader without a cycle), so
+// guard at module load.
+const requestBodyLogRequested = process.env.LOG_REQUEST_BODIES === 'true';
+const responseBodyLogRequested = process.env.LOG_RESPONSE_BODIES === 'true';
+if (isProduction && (requestBodyLogRequested || responseBodyLogRequested)) {
+  throw new Error(
+    'LOG_REQUEST_BODIES / LOG_RESPONSE_BODIES are debug-only flags and ' +
+      'must not be enabled in production. Refusing to start.'
+  );
+}
+
 export const logConfig = {
   level: (process.env.LOG_LEVEL || (isDevelopment ? 'debug' : 'info')).toLowerCase(),
   pretty: isProduction ? false : process.env.LOG_PRETTY === 'true' || isDevelopment,
   timestamp: process.env.LOG_TIMESTAMP !== 'false',
   colorize: isProduction ? false : process.env.LOG_COLORIZE !== 'false' && isDevelopment,
   logSqlQueries: process.env.LOG_SQL_QUERIES === 'true',
-  logRequestBodies: process.env.LOG_REQUEST_BODIES === 'true',
-  logResponseBodies: process.env.LOG_RESPONSE_BODIES === 'true',
+  logRequestBodies: !isProduction && requestBodyLogRequested,
+  logResponseBodies: !isProduction && responseBodyLogRequested,
   logWebSocketMessages: process.env.LOG_WEBSOCKET_MESSAGES !== 'false',
 };
 

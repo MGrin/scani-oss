@@ -95,6 +95,20 @@ interface RequestWithTracking extends Request {
 
 const app = new Elysia()
   .onBeforeHandle(({ request, set }) => {
+    // Cap inbound body size before parsing. tRPC envelopes plus the
+    // largest legitimate AI request (a base64-encoded screenshot) are
+    // well under 16 MB; anything larger is either misuse or a DoS
+    // probe.
+    const contentLength = request.headers.get('content-length');
+    if (contentLength) {
+      const len = Number.parseInt(contentLength, 10);
+      if (Number.isFinite(len) && len > 16 * 1024 * 1024) {
+        set.status = 413;
+        return { error: 'Payload Too Large', message: `Request exceeds 16 MB cap (${len} bytes)` };
+      }
+    }
+  })
+  .onBeforeHandle(({ request, set }) => {
     const url = new URL(request.url);
     // Respect a caller-supplied x-request-id so backend → data-provider →
     // Sentry traces stitch together. Generate one only when missing.
@@ -161,6 +175,9 @@ const app = new Elysia()
     set.headers['X-Content-Type-Options'] = 'nosniff';
     set.headers['X-Frame-Options'] = 'DENY';
     set.headers['Referrer-Policy'] = 'strict-origin-when-cross-origin';
+    set.headers['Permissions-Policy'] =
+      'camera=(), microphone=(), geolocation=(), interest-cohort=()';
+    set.headers['Cross-Origin-Resource-Policy'] = 'same-site';
     const isDocsPage = new URL(request.url).pathname === '/docs';
     set.headers['Content-Security-Policy'] = isDocsPage
       ? [
@@ -172,7 +189,7 @@ const app = new Elysia()
           "connect-src 'self'",
           "worker-src 'self' blob:",
         ].join('; ')
-      : "default-src 'none'";
+      : "default-src 'none'; frame-ancestors 'none'; base-uri 'none'";
     if (process.env.NODE_ENV === 'production') {
       set.headers['Strict-Transport-Security'] = 'max-age=31536000; includeSubDomains; preload';
     }
@@ -191,12 +208,19 @@ const app = new Elysia()
   })
   .use(
     cors({
-      // Wide-open CORS by default: callers are backend/worker over private
-      // net (no browser origin) + cloud-frontend (which lives on the same
-      // TLD in managed deployments, so the Pages origin is appended at
-      // deploy-time via env). FE-1/FE-2 will narrow this to the
-      // cloud-frontend origin for cookie-session endpoints.
-      origin: true,
+      // Explicit allowlist. `origin: true` previously reflected the
+      // request Origin verbatim and paired with `credentials: true` —
+      // that combo lets any third-party page initiate authenticated
+      // cross-origin requests against this service (including the
+      // cookie-session surface mounted under /api/auth and the cloud
+      // tRPC routers). Bearer-auth (M2M) calls don't need CORS at all
+      // since they're server-to-server; the only browser origin that
+      // legitimately reaches this service is the cloud-frontend.
+      origin: env.CLOUD_FRONTEND_ORIGIN
+        ? [env.CLOUD_FRONTEND_ORIGIN]
+        : env.NODE_ENV === 'production'
+          ? []
+          : true,
       credentials: true,
       allowedHeaders: ['Authorization', 'Content-Type', 'x-request-id'],
       // Default `*` makes @elysiajs/cors echo every inbound request

@@ -73,6 +73,41 @@ function verifyHmac(
   return { ok: true, actor };
 }
 
+// Cap audit-log detail payloads so a misbehaving caller can't inflate
+// the jsonb column (every retry/remove tries to log; an OOM here would
+// take down /jobs admin entirely). Strings are truncated, nested
+// objects are stringified-and-truncated, everything else passes
+// through. Single-level walk only — deeper hostile payloads are
+// flattened rather than fully sanitised.
+const AUDIT_DETAIL_MAX_KEYS = 20;
+const AUDIT_DETAIL_VALUE_MAX_CHARS = 1024;
+
+function sanitizeAuditDetails(input: Record<string, unknown>): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  let keys = 0;
+  for (const [k, v] of Object.entries(input)) {
+    if (keys >= AUDIT_DETAIL_MAX_KEYS) break;
+    if (v == null) {
+      out[k] = v;
+    } else if (typeof v === 'string') {
+      out[k] =
+        v.length > AUDIT_DETAIL_VALUE_MAX_CHARS
+          ? v.slice(0, AUDIT_DETAIL_VALUE_MAX_CHARS) + '…'
+          : v;
+    } else if (typeof v === 'number' || typeof v === 'boolean') {
+      out[k] = v;
+    } else {
+      const stringified = JSON.stringify(v);
+      out[k] =
+        stringified.length > AUDIT_DETAIL_VALUE_MAX_CHARS
+          ? stringified.slice(0, AUDIT_DETAIL_VALUE_MAX_CHARS) + '…'
+          : stringified;
+    }
+    keys++;
+  }
+  return out;
+}
+
 async function audit(
   actor: string,
   action: string,
@@ -86,7 +121,7 @@ async function audit(
       action,
       resource,
       result,
-      details,
+      details: sanitizeAuditDetails(details),
     });
   } catch (err) {
     logger.warn(

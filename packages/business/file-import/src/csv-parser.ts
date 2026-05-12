@@ -148,12 +148,37 @@ function autoDetectMapping(headerMap: Map<string, string>, warnings: string[]): 
   };
 }
 
+/**
+ * Defang CSV-injection payloads. Cells beginning with `=`, `+`, `-`, `@`,
+ * tab, or CR are interpreted as formulas by Excel/Sheets when a user
+ * later exports their ledger and opens it in a spreadsheet. Prefixing
+ * with a single quote tells the spreadsheet to treat the cell as text;
+ * it remains harmless when consumed by humans or by our own renderers,
+ * which strip the prefix before display.
+ */
+function sanitizeCsvCell(value: string): string {
+  if (value.length === 0) return value;
+  const first = value.charCodeAt(0);
+  // = (0x3d), + (0x2b), - (0x2d), @ (0x40), TAB (0x09), CR (0x0d)
+  if (
+    first === 0x3d ||
+    first === 0x2b ||
+    first === 0x2d ||
+    first === 0x40 ||
+    first === 0x09 ||
+    first === 0x0d
+  ) {
+    return `'${value}`;
+  }
+  return value;
+}
+
 function parseRow(
   row: Record<string, string>,
   mapping: CsvColumnMapping
 ): ParsedTransaction | null {
   const dateStr = getColumn(row, mapping.date)?.trim();
-  const description = getColumn(row, mapping.description)?.trim() || '';
+  const description = sanitizeCsvCell(getColumn(row, mapping.description)?.trim() || '');
 
   if (!dateStr) return null;
 

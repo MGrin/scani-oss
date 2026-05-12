@@ -48,7 +48,7 @@ import {
   credentialPoolState,
   userIntegrationCredentials,
 } from '@scani/db/schema';
-import { createComponentLogger } from '@scani/logging';
+import { createComponentLogger, pseudonymizeId } from '@scani/logging';
 import { and, asc, eq, gt, isNull, or, sql } from 'drizzle-orm';
 import { Service } from 'typedi';
 import type { ProviderError } from './errors';
@@ -179,7 +179,7 @@ export class CredentialPool {
       // either). One-shot warn keeps the log meaningful without
       // flooding.
       this.logger.warn(
-        { providerKey, userId: candidate.userId },
+        { providerKey, userIdHash: pseudonymizeId(candidate.userId) },
         'Pool entry resolved to no credentials — likely deleted; skipping'
       );
       return null;
@@ -204,7 +204,7 @@ export class CredentialPool {
         // bookkeeping. Errors here are logged but never propagate.
         this.releaseHandle(handle, outcome).catch((err) => {
           this.logger.error(
-            { err, providerKey, userId: handle.userId },
+            { err, providerKey, userIdHash: pseudonymizeId(handle.userId) },
             'Failed to release pool entry — bookkeeping may be stale'
           );
         });

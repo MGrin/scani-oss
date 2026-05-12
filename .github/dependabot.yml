@@ -1,0 +1,66 @@
+# https://docs.github.com/en/code-security/dependabot/dependabot-version-updates/configuration-options-for-the-dependabot.yml-file
+#
+# Adds an automated update path for the three ecosystems whose drift is
+# our biggest supply-chain risk: GitHub Actions (especially after the
+# 2024 tj-actions incident), Terraform providers, and Bun/npm deps.
+# Updates open as PRs against `main`; CI gates and our review process
+# keep them honest.
+
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    labels:
+      - dependencies
+      - ci
+    commit-message:
+      prefix: ci
+
+  - package-ecosystem: terraform
+    directory: /infra/terraform
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 3
+    labels:
+      - dependencies
+      - infra
+    commit-message:
+      prefix: infra
+
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 10
+    labels:
+      - dependencies
+    commit-message:
+      prefix: deps
+    # syncpack enforces single-version across the monorepo, so version
+    # groups stop dependabot from opening N parallel PRs for the same
+    # bump across workspaces.
+    groups:
+      bun-types:
+        patterns:
+          - "@types/bun"
+      sentry:
+        patterns:
+          - "@sentry/*"
+      better-auth:
+        patterns:
+          - "better-auth"
+          - "better-auth/*"
+      drizzle:
+        patterns:
+          - "drizzle-orm"
+          - "drizzle-kit"
+      trpc:
+        patterns:
+          - "@trpc/*"
+          - "trpc-openapi"
