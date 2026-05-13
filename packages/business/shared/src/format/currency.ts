@@ -16,17 +16,31 @@ export interface FormatCurrencyOptions {
   locale?: string;
 }
 
+/** Rendered in place of a value when the underlying data is null /
+ *  undefined — i.e. unpriceable. Standardized so dashboards and lists
+ *  agree on the "no price" glyph instead of each picking their own.
+ */
+export const UNPRICEABLE_PLACEHOLDER = '—';
+
 /**
  * Format a numeric value as currency. Falls back to "<symbol> <number>"
  * when the currency code isn't a known ISO code (Intl rejects custom
  * codes; Scani tokens.symbol can hold anything including private equity
  * tickers).
+ *
+ * Accepts `null` / `undefined` and returns `UNPRICEABLE_PLACEHOLDER`
+ * — this is the canonical "no resolvable price" representation, used
+ * by every holding / dashboard / vault display since the silent-zero
+ * cleanup. Callers never need to ternary on null before calling.
  */
 export function formatCurrency(
-  value: number | string,
+  value: number | string | null | undefined,
   currency: string,
   options: FormatCurrencyOptions = {}
 ): string {
+  if (value === null || value === undefined) {
+    return UNPRICEABLE_PLACEHOLDER;
+  }
   const { decimals = 2, locale = 'en-US' } = options;
   const numeric = typeof value === 'number' ? value : Number(value);
   const safe = Number.isFinite(numeric) ? numeric : 0;

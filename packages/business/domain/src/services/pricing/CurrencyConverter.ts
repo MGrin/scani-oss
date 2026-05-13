@@ -33,20 +33,32 @@ export class CurrencyConverter {
 
   private readonly currencyRateCache = new Map<string, { rate: string; expiresAt: number }>();
 
+  /**
+   * Convert a price between fiat currencies. Returns `null` when the
+   * pair has no resolvable rate — either we were asked to stay cache-only
+   * and nothing was cached, or the upstream call genuinely failed.
+   *
+   * IMPORTANT: callers MUST handle `null` explicitly. Coercing it to
+   * `'0'` at the call site is the bug that silently zeroed every
+   * dashboard after a base-currency switch. The right thing to do with
+   * `null` depends on the caller: skip the holding from a sum, display
+   * the value in its un-converted currency with a UI marker, or
+   * surface an error.
+   */
   async convert(
     price: string,
     fromCurrency: string,
     toCurrency: string,
     timestamp: Date,
     cacheOnly = false
-  ): Promise<string> {
+  ): Promise<string | null> {
     if (fromCurrency === toCurrency || price === '0') {
       return price;
     }
 
     try {
       const rate = await this.getRate(fromCurrency, toCurrency, timestamp, cacheOnly);
-      if (rate === '0') return '0';
+      if (rate === null) return null;
 
       const converted = new Decimal(price).mul(new Decimal(rate));
       logger.debug(
@@ -62,16 +74,21 @@ export class CurrencyConverter {
       return converted.toString();
     } catch (error) {
       logger.error({ error, price, fromCurrency, toCurrency }, 'Price conversion failed');
-      return '0';
+      return null;
     }
   }
 
+  /**
+   * Fetch the conversion rate from fromCurrency → toCurrency at the
+   * given timestamp. Returns `null` when no rate can be resolved (same
+   * contract as `convert()` — see its doc-comment).
+   */
   async getRate(
     fromCurrency: string,
     toCurrency: string,
     timestamp: Date,
     cacheOnly = false
-  ): Promise<string> {
+  ): Promise<string | null> {
     if (fromCurrency === toCurrency) return '1';
 
     const cacheKey = this.cacheKey(fromCurrency, toCurrency);
@@ -100,7 +117,7 @@ export class CurrencyConverter {
         { fromCurrency, toCurrency },
         'No cached conversion rate available in cache-only mode'
       );
-      return '0';
+      return null;
     }
 
     try {
@@ -161,8 +178,44 @@ export class CurrencyConverter {
       return rateString;
     } catch (error) {
       logger.warn({ fromCurrency, toCurrency, error }, 'Failed to get currency conversion rate');
-      return '0';
+      return null;
     }
+  }
+
+  /**
+   * Pre-warm rates for a set of (from, to) pairs. Spawns one parallel
+   * `getRate(..., cacheOnly=false)` per pair, so by the time consumers
+   * loop their holdings the in-memory cache is hot and each per-holding
+   * convert can run with cacheOnly=true (cheap, sync after the warm-up).
+   *
+   * This is the right hook for callers that need to convert many prices
+   * to one base currency — the dashboard pricing path being the obvious
+   * one. Without this, a base-currency switch forces dozens of serial
+   * exchangerate-api calls on the first dashboard fetch.
+   *
+   * Returns the set of pairs that could NOT be resolved so callers can
+   * decide what to do with the affected holdings (skip from a sum,
+   * display in source currency, etc.).
+   */
+  async prewarmRates(
+    pairs: Array<{ from: string; to: string }>,
+    timestamp: Date
+  ): Promise<Set<string>> {
+    const unresolved = new Set<string>();
+    const unique = new Map<string, { from: string; to: string }>();
+    for (const p of pairs) {
+      if (p.from === p.to) continue;
+      unique.set(this.cacheKey(p.from, p.to), p);
+    }
+    await Promise.all(
+      Array.from(unique.values()).map(async ({ from, to }) => {
+        const rate = await this.getRate(from, to, timestamp, false);
+        if (rate === null) {
+          unresolved.add(this.cacheKey(from, to));
+        }
+      })
+    );
+    return unresolved;
   }
 
   async preWarm(): Promise<void> {

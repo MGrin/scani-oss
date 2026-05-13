@@ -14,8 +14,9 @@ type PortfolioValueResult = {
   holdings: Array<{
     tokenSymbol: string;
     balance: string;
-    currentPrice?: string;
-    value?: string;
+    // See `PortfolioValuationService` — null when unpriceable.
+    currentPrice: string | null;
+    value: string | null;
     priceTimestamp?: Date;
     priceSource?: string;
   }>;
@@ -182,23 +183,29 @@ export class DashboardService extends BaseService {
     // Extract token prices using helper method
     const priceMap = extractPriceMap(portfolioValue);
 
-    // Build holdings with values calculated individually
-    // Only include active holdings (exclude inactive holdings from top holdings)
+    // Build holdings with values calculated individually. priceMap
+    // contains only PRICEABLE tokens — an absent key means we couldn't
+    // resolve the price, so the holding doesn't qualify for the
+    // "top holdings" list. Skip it entirely rather than coerce its
+    // price to '0', which would silently rank unpriceable holdings
+    // alongside genuine zero-value ones.
     const holdingsWithValues = holdingsWithDetails
       .filter(({ holding }) => holding.isActive)
-      .map(({ holding, token, account, institution }) => {
-        const currentPrice = priceMap.get(token.symbol) || '0';
+      .flatMap(({ holding, token, account, institution }) => {
+        const currentPrice = priceMap.get(token.symbol);
+        if (!currentPrice) return [];
         const balance = new Decimal(holding.balance);
         const value = balance.mul(new Decimal(currentPrice)).toString();
-
-        return {
-          holding,
-          token,
-          account,
-          institution,
-          value,
-          currentPrice,
-        };
+        return [
+          {
+            holding,
+            token,
+            account,
+            institution,
+            value,
+            currentPrice,
+          },
+        ];
       })
       .filter((h) => new Decimal(h.value).greaterThan(0));
 

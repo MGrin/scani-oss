@@ -34,7 +34,10 @@ interface HoldingResultRow {
   typeCode: string;
   balance: string;
   isUpdate: boolean;
-  priceUsd?: string;
+  // `null` when the price fetch ran without error but no provider had a
+  // quote and no stale fallback was usable. Undefined when the row
+  // never reached pricing (e.g. failed earlier).
+  priceUsd?: string | null;
   priceSource?: string;
   error?: string;
 }

@@ -23,8 +23,10 @@ interface PortfolioValueResult {
   holdings: Array<{
     tokenSymbol: string;
     balance: string;
-    currentPrice?: string;
-    value?: string;
+    // `null` matches the PortfolioValuationService contract — unpriceable
+    // holdings carry null and are excluded from the totalValue sum.
+    currentPrice: string | null;
+    value: string | null;
   }>;
 }
 
@@ -61,10 +63,14 @@ interface HoldingWithDetails {
 // ---------------------------------------------------------------------------
 
 function extractPriceMap(portfolioValue: PortfolioValueResult): Map<string, string> {
+  // Mirror the real extractPriceMap (packages/business/domain/src/lib/price-map.ts):
+  // null `value` → skip the holding entirely; the returned map only
+  // contains symbols we can actually price.
   const priceMap = new Map<string, string>();
   for (const h of portfolioValue.holdings) {
+    if (h.value === null) continue;
     const balance = new Decimal(h.balance);
-    const value = new Decimal(h.value || '0');
+    const value = new Decimal(h.value);
     if (balance.greaterThan(0) && !priceMap.has(h.tokenSymbol)) {
       const price = value.div(balance);
       priceMap.set(h.tokenSymbol, price.toString());
@@ -79,13 +85,17 @@ function calculateTopHoldings(
 ) {
   const priceMap = extractPriceMap(portfolioValue);
 
+  // Mirror DashboardService.calculateTopHoldings: priceMap only carries
+  // priceable tokens. Skip unpriceable holdings entirely rather than
+  // ranking a zero against genuine zeros.
   const holdingsWithValues = holdingsWithDetails
     .filter(({ holding }) => holding.isActive)
-    .map(({ holding, token, account, institution }) => {
-      const currentPrice = priceMap.get(token.symbol) || '0';
+    .flatMap(({ holding, token, account, institution }) => {
+      const currentPrice = priceMap.get(token.symbol);
+      if (!currentPrice) return [];
       const balance = new Decimal(holding.balance);
       const value = balance.mul(new Decimal(currentPrice)).toString();
-      return { holding, token, account, institution, value, currentPrice };
+      return [{ holding, token, account, institution, value, currentPrice }];
     })
     .filter((h) => new Decimal(h.value).greaterThan(0));
 
@@ -299,7 +309,7 @@ describe('DashboardService (unit)', () => {
       expect(result.topHoldings).toHaveLength(0);
     });
 
-    it('should handle holdings with zero value (no prices available)', () => {
+    it('should exclude unpriceable holdings (null value) from top holdings', () => {
       const holdings: HoldingWithDetails[] = [
         makeHolding({
           holding: { id: 'h1', balance: '100' },
@@ -310,13 +320,16 @@ describe('DashboardService (unit)', () => {
       const portfolioValue: PortfolioValueResult = {
         totalValue: '0',
         baseCurrency: 'USD',
-        holdings: [{ tokenSymbol: 'UNKNOWN', balance: '100', value: '0' }],
+        // Unpriceable holding: value is `null`, not `'0'`. The dashboard
+        // must distinguish "couldn't price" from "worth zero" — both
+        // resolve to "not in top holdings" but for different reasons.
+        holdings: [{ tokenSymbol: 'UNKNOWN', balance: '100', currentPrice: null, value: null }],
       };
 
       const result = buildDashboardOverview(holdings, portfolioValue);
 
       expect(result.counts.holdings).toBe(1);
-      // Zero-value holdings are excluded from top holdings
+      // Unpriceable holdings are excluded from top holdings.
       expect(result.topHoldings).toHaveLength(0);
     });
   });

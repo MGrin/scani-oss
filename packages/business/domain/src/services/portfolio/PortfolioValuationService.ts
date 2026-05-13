@@ -13,15 +13,23 @@ import { UserService } from '../users/UserService';
 // Type for request cache (shared with tRPC context)
 export type RequestCache = Map<string, unknown>;
 
-// Define the return type for portfolio value
+// Define the return type for portfolio value.
+//
+// `currentPrice` / `value` are `null` when the holding's token has no
+// resolvable price in the user's base currency (no cached price, no
+// stale fallback, no usable fiat-pair rate). Such holdings are
+// EXCLUDED from `totalValue` so the dashboard total reflects only the
+// portion of the portfolio we can actually price. The UI is expected
+// to render `null` as "—" so the missing-data state is visible —
+// never as $0.
 type PortfolioValueResult = {
   totalValue: string;
   baseCurrency: string;
   holdings: Array<{
     tokenSymbol: string;
     balance: string;
-    currentPrice?: string;
-    value?: string;
+    currentPrice: string | null;
+    value: string | null;
     priceTimestamp?: Date;
     priceSource?: string;
     isActive: boolean;
@@ -208,21 +216,22 @@ export class PortfolioValuationService {
       }
     }
 
-    // HIGH PRIORITY FIX: Process holdings with pure map() transformation
-    // This prevents accidental N+1 queries and makes it clear this is data transformation only
+    // Process holdings as a pure map() transformation. `priceResults`
+    // is keyed only by tokens that actually resolved to a price — an
+    // absent key means the token is unpriceable in the user's base
+    // currency, NOT zero. We surface that distinction by returning
+    // `currentPrice: null, value: null` for those holdings and
+    // excluding them from the aggregated total.
     const portfolioHoldings = holdings.map((holding) => {
       try {
         const balance = new Decimal(holding.balance);
 
-        // Determine price based on whether it's base currency or needs lookup
         const currentPrice =
-          holding.tokenId === baseCurrency.id
-            ? '1' // Base currency is always 1:1
-            : priceResults.get(holding.tokenId) || '0'; // Use batched price result
+          holding.tokenId === baseCurrency.id ? '1' : (priceResults.get(holding.tokenId) ?? null);
 
-        const value = balance.mul(new Decimal(currentPrice)).toString();
+        const value =
+          currentPrice === null ? null : balance.mul(new Decimal(currentPrice)).toString();
 
-        // Get price metadata for this token
         const priceInfo = priceMetadata.get(holding.tokenId);
 
         return {
@@ -244,13 +253,13 @@ export class PortfolioValuationService {
           'Failed to process holding while computing portfolio value'
         );
 
-        // Return fallback holding with 0 value
+        // Computation error: surface as unpriceable rather than $0.
         const balance = new Decimal(holding.balance);
         return {
           tokenSymbol: holding.tokenSymbol,
           balance: balance.toString(),
-          currentPrice: '0',
-          value: '0',
+          currentPrice: null,
+          value: null,
           priceTimestamp: undefined,
           priceSource: undefined,
           isActive: holding.isActive,
@@ -258,11 +267,12 @@ export class PortfolioValuationService {
       }
     });
 
-    // Total value aggregates only active holdings. Inactive holdings
-    // are returned above (with prices, so lists can display their
-    // per-holding value), but excluded from the summed portfolio total.
+    // Total aggregates active, PRICEABLE holdings. Inactive or
+    // unpriceable holdings appear in the list (so the UI can render
+    // them as "—") but contribute nothing to the sum.
     const totalValue = portfolioHoldings.reduce(
-      (sum, holding) => (holding.isActive ? sum.add(new Decimal(holding.value)) : sum),
+      (sum, holding) =>
+        holding.isActive && holding.value !== null ? sum.add(new Decimal(holding.value)) : sum,
       new Decimal(0)
     );
 

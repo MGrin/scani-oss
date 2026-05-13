@@ -123,7 +123,10 @@ interface CoinListEntry {
  * data-provider through the cloud client and never needs this path.
  */
 export interface CurrencyConverter {
-  convert(price: string, fromSymbol: string, toSymbol: string, at?: Date): Promise<string>;
+  // Returns `null` when no rate is available — the pair isn't covered
+  // by Frankfurter / exchangerate-api, or the upstream call failed.
+  // Providers skip the affected token rather than emit a zero price.
+  convert(price: string, fromSymbol: string, toSymbol: string, at?: Date): Promise<string | null>;
 }
 
 export class CoinGeckoProvider implements HistoricalPriceProvider, TokenIdentityProvider {
@@ -245,7 +248,7 @@ export class CoinGeckoProvider implements HistoricalPriceProvider, TokenIdentity
       const v = usdResp[id]?.usd;
       if (typeof v !== 'number' || v <= 0) continue;
       const converted = await converter.convert(String(v), 'USD', baseUpper, ctx.timestamp);
-      if (converted === '0') continue;
+      if (converted === null || converted === '0') continue;
       out.set(token.id, {
         tokenId: token.id,
         baseTokenId: ctx.baseCurrency.id,
@@ -309,7 +312,7 @@ export class CoinGeckoProvider implements HistoricalPriceProvider, TokenIdentity
     for (const bar of usdSeries) {
       const at = new Date(bar.timeMs);
       const converted = await converter.convert(String(bar.price), 'USD', baseUpper, at);
-      if (converted === '0') continue;
+      if (converted === null || converted === '0') continue;
       out.push({
         tokenId: t.id,
         baseTokenId: ctx.baseCurrency.id,
@@ -397,7 +400,7 @@ export class CoinGeckoProvider implements HistoricalPriceProvider, TokenIdentity
       if (!converter) return null;
       const baseUpper = ctx.baseCurrency.symbol.toUpperCase();
       const converted = await converter.convert(String(usd), 'USD', baseUpper, at);
-      if (converted === '0') return null;
+      if (converted === null || converted === '0') return null;
       return {
         tokenId: t.id,
         baseTokenId: ctx.baseCurrency.id,

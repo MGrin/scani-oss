@@ -14,8 +14,9 @@ type PortfolioValueResult = {
   holdings: Array<{
     tokenSymbol: string;
     balance: string;
-    currentPrice?: string;
-    value?: string;
+    // See `PortfolioValuationService` — null when unpriceable.
+    currentPrice: string | null;
+    value: string | null;
     priceTimestamp?: Date;
     priceSource?: string;
   }>;
@@ -151,7 +152,13 @@ export class AssetAllocationService extends BaseService {
       if (!holding.isActive) {
         continue;
       }
-      const price = priceMap.get(token.symbol) || '0';
+      // priceMap only contains priceable tokens — an absent key means
+      // we couldn't resolve the price. Skip such holdings from the
+      // allocation (the corresponding slice would be 0 anyway, but
+      // skipping makes the intent explicit and avoids confusing
+      // "unpriceable" with "worth zero").
+      const price = priceMap.get(token.symbol);
+      if (!price) continue;
       const balance = new Decimal(holding.balance);
       const value = balance.mul(new Decimal(price));
 
@@ -268,7 +275,8 @@ export class AssetAllocationService extends BaseService {
         if (holdingWithDetails) {
           holdingsInGroups.add(holdingId);
           const { holding, token } = holdingWithDetails;
-          const price = priceMap.get(token.symbol) || '0';
+          const price = priceMap.get(token.symbol);
+          if (!price) continue;
           const balance = new Decimal(holding.balance);
           const value = balance.mul(new Decimal(price));
           groupValue = groupValue.add(value);
@@ -289,7 +297,8 @@ export class AssetAllocationService extends BaseService {
           if (!holdingsInGroups.has(holdingId)) {
             holdingsInGroups.add(holdingId);
             const { holding, token } = holdingWithDetails;
-            const price = priceMap.get(token.symbol) || '0';
+            const price = priceMap.get(token.symbol);
+            if (!price) continue;
             const balance = new Decimal(holding.balance);
             const value = balance.mul(new Decimal(price));
             groupValue = groupValue.add(value);
@@ -315,7 +324,8 @@ export class AssetAllocationService extends BaseService {
         continue;
       }
 
-      const price = priceMap.get(token.symbol) || '0';
+      const price = priceMap.get(token.symbol);
+      if (!price) continue;
       const balance = new Decimal(holding.balance);
       const value = balance.mul(new Decimal(price));
       ungroupedValue = ungroupedValue.add(value);

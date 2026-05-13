@@ -52,7 +52,7 @@ export class VaultService extends BaseService {
         const balance = new Decimal(holding.balance);
         if (balance.isZero()) continue;
 
-        let price: string;
+        let price: string | null;
         if (token.id === vaultCurrency.id) {
           // Token is same as vault currency, price is 1
           price = '1';
@@ -74,9 +74,21 @@ export class VaultService extends BaseService {
                 new Date()
               );
             } catch {
-              price = '0';
+              price = null;
             }
           }
+        }
+
+        // Unpriceable holding: skip from the vault total rather than
+        // treat it as worth zero. A partial vault total is more honest
+        // than a silently understated one.
+        if (price === null || price === '0') {
+          this.logWarning('Skipping unpriceable holding from vault total', {
+            vaultId,
+            tokenSymbol: token.symbol,
+            holdingId: holding.id,
+          });
+          continue;
         }
 
         const holdingValue = balance.times(new Decimal(price));
@@ -176,7 +188,7 @@ export class VaultService extends BaseService {
 
     for (const { vaultHolding, holding, token, account, institution } of vaultHoldingsData) {
       const balance = new Decimal(holding.balance);
-      let price = '0';
+      let price: string | null = null;
 
       if (token.id === vaultCurrency.id) {
         price = '1';
@@ -199,15 +211,16 @@ export class VaultService extends BaseService {
               new Date()
             );
           } catch {
-            price = '0';
+            price = null;
           }
         }
       }
 
-      const holdingValue = balance.times(new Decimal(price));
+      const holdingValue =
+        price !== null && price !== '0' ? balance.times(new Decimal(price)) : null;
       const attributedValue = holdingValue
-        .times(new Decimal(vaultHolding.percentage))
-        .dividedBy(100);
+        ? holdingValue.times(new Decimal(vaultHolding.percentage)).dividedBy(100)
+        : null;
 
       holdingDetails.push({
         holdingId: holding.id,
@@ -218,8 +231,8 @@ export class VaultService extends BaseService {
         accountName: account.name,
         institutionName: institution.name,
         holdingBalance: holding.balance,
-        holdingValue: holdingValue.toFixed(),
-        attributedValue: attributedValue.toFixed(),
+        holdingValue: holdingValue?.toFixed() ?? null,
+        attributedValue: attributedValue?.toFixed() ?? null,
       });
     }
 

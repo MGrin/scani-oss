@@ -309,7 +309,7 @@ export class DeFiLlamaProvider implements HistoricalPriceProvider, TokenIdentity
     const converter = this.opts.converter;
     if (!converter) return null;
     const converted = await converter.convert(usdPrice, 'USD', baseUpper, timestamp);
-    if (converted === '0') return null;
+    if (converted === null || converted === '0') return null;
     return {
       tokenId: t.id,
       baseTokenId: ctx.baseCurrency.id,

@@ -71,8 +71,13 @@ export class HoldingQueryService extends BaseService {
       this.holdingCoverageRepository.findManyByHoldingIds(holdingIds),
     ]);
 
+    // portfolioPriceMap only contains symbols we could actually price.
+    // Skipping null currentPrices here propagates "unpriceable" all the
+    // way to the wire so the UI can render "—" instead of "$0".
     const portfolioPriceMap = new Map(
-      portfolioValue.holdings.map((h) => [h.tokenSymbol, h.currentPrice || '0'])
+      portfolioValue.holdings.flatMap((h) =>
+        h.currentPrice !== null ? [[h.tokenSymbol, h.currentPrice] as const] : []
+      )
     );
 
     const priceMetadataMap = new Map(
@@ -81,7 +86,9 @@ export class HoldingQueryService extends BaseService {
         .map((h) => [
           h.tokenSymbol,
           {
-            value: h.currentPrice || '0',
+            // Pass null through — the UI distinguishes "no price" from
+            // "price = $0" via the nullable field on the wire DTO.
+            value: h.currentPrice,
             timestamp: h.priceTimestamp!.toISOString(),
             source: h.priceSource,
           },
@@ -90,22 +97,19 @@ export class HoldingQueryService extends BaseService {
 
     const detailedHoldings: HoldingWithDetails[] = holdingsWithFullDetails.map(
       ({ holding, token, account, institution }) => {
-        const currentPrice = portfolioPriceMap.get(token.symbol) || '0';
-        // The `HoldingWithDetails` wire contract is `number`, so we must
-        // convert. To make precision loss deterministic we round to a
-        // bounded number of decimals before .toNumber():
-        //   - quantity → 8 dp (industry standard for crypto satoshi-tier
-        //     precision; equity quantities never exceed 4 dp anyway).
-        //   - monetary value → 4 dp (1/100 of a cent — more than the UI
-        //     ever renders).
-        // Without this, large quantities × small prices (or vice versa)
-        // can land on IEEE-754 representations whose decimal expansion
-        // differs from the user's mental model. Bounded rounding is
-        // worse-than-Decimal but better-than-unspecified.
-        const currentValue = new Decimal(holding.balance)
-          .mul(new Decimal(currentPrice))
-          .toDecimalPlaces(4)
-          .toNumber();
+        const currentPrice = portfolioPriceMap.get(token.symbol);
+
+        // Bounded rounding before .toNumber() (4 dp = 1/100 of a cent).
+        // See git history for the previous comment about IEEE-754
+        // precision; the only change here is null-propagation when the
+        // price isn't resolvable.
+        const currentValue =
+          currentPrice === undefined
+            ? null
+            : new Decimal(holding.balance)
+                .mul(new Decimal(currentPrice))
+                .toDecimalPlaces(4)
+                .toNumber();
 
         // Cost basis is intentionally `currentValue` — a simplified
         // placeholder. Real FIFO cost basis lives in
@@ -232,7 +236,13 @@ export class HoldingQueryService extends BaseService {
     );
 
     const activeHoldings = holdings.filter((h) => h.isActive);
-    const totalValue = activeHoldings.reduce((sum, h) => sum + h.value, 0);
+    // Sum priceable holdings only — unpriceable ones (h.value === null)
+    // contribute nothing rather than coercing to zero, matching the
+    // dashboard's totalValue semantics.
+    const totalValue = activeHoldings.reduce(
+      (sum, h) => (h.value !== null ? sum + h.value : sum),
+      0
+    );
 
     return {
       holdings,

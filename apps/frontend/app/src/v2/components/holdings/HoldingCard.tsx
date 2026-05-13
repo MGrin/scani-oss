@@ -90,7 +90,11 @@ export function HoldingCard({ item, isSelected, onSelect }: HoldingCardProps) {
         <span>{item.amount.toLocaleString()} units</span>
         {item.price && (
           <span>
-            @ {formatCurrency(Number.parseFloat(item.price.value), currencySymbol)}
+            @{' '}
+            {formatCurrency(
+              item.price.value === null ? null : Number.parseFloat(item.price.value),
+              currencySymbol
+            )}
             {item.price.timestamp && (
               <span className="text-muted-foreground/50 ml-1">
                 ({formatRelativeTime(item.price.timestamp)})
@@ -99,7 +103,7 @@ export function HoldingCard({ item, isSelected, onSelect }: HoldingCardProps) {
           </span>
         )}
       </div>
-      {item.costBasis > 0 && (
+      {item.value !== null && item.costBasis !== null && item.costBasis > 0 && (
         <p
           className={cn(
             'text-xs font-medium mt-1',

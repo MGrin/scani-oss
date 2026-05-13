@@ -110,7 +110,10 @@ function getHoldingColumns(currency: string): ColumnDef<HoldingWithDetails>[] {
                   : undefined
               }
             >
-              {formatCurrency(Number.parseFloat(item.price.value), currency)}
+              {formatCurrency(
+                item.price.value === null ? null : Number.parseFloat(item.price.value),
+                currency
+              )}
             </span>
           ) : (
             '-'
@@ -273,16 +276,28 @@ export function HoldingsPage() {
           ],
           sortFn: (a: HoldingWithDetails, b: HoldingWithDetails, field: string, dir: string) => {
             const mult = dir === 'asc' ? 1 : -1;
+            // Sort unpriceable rows to the bottom regardless of asc/desc
+            // — null values aren't numerically comparable and ranking them
+            // as "$0" would mislead.
             switch (field) {
-              case 'value':
+              case 'value': {
+                if (a.value === null && b.value === null) return 0;
+                if (a.value === null) return 1;
+                if (b.value === null) return -1;
                 return (a.value - b.value) * mult;
+              }
               case 'symbol':
                 return a.token.symbol.localeCompare(b.token.symbol) * mult;
               case 'amount':
                 return (a.amount - b.amount) * mult;
               case 'price': {
-                const pa = a.price ? Number.parseFloat(a.price.value) : 0;
-                const pb = b.price ? Number.parseFloat(b.price.value) : 0;
+                const pa =
+                  a.price && a.price.value !== null ? Number.parseFloat(a.price.value) : null;
+                const pb =
+                  b.price && b.price.value !== null ? Number.parseFloat(b.price.value) : null;
+                if (pa === null && pb === null) return 0;
+                if (pa === null) return 1;
+                if (pb === null) return -1;
                 return (pa - pb) * mult;
               }
               default:

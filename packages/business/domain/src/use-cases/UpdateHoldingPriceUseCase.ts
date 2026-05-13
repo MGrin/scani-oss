@@ -17,7 +17,10 @@ export class UpdateHoldingPriceUseCase {
     baseCurrencySymbol: string
   ): Promise<{
     success: boolean;
-    price: string;
+    // `null` when no provider had a quote and no stale fallback was
+    // usable. The request technically succeeded (no error, no rate
+    // limit) but produced no price; the UI shows "—" rather than $0.
+    price: string | null;
     source: string;
     timestamp: string;
   }> {

@@ -89,8 +89,11 @@ export type VaultHoldingDetail = {
   accountName: string;
   institutionName: string;
   holdingBalance: string;
-  holdingValue: string; // Full value of the holding in vault currency
-  attributedValue: string; // holdingValue * percentage / 100
+  // `null` when the holding's token can't be priced in the vault's
+  // currency (no live price, no stale fallback, no fiat-pair rate).
+  // UI renders "—" so the missing value is visible — never $0.
+  holdingValue: string | null;
+  attributedValue: string | null;
 };
 
 export type VaultWithProgress = {

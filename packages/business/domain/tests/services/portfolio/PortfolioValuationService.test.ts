@@ -33,15 +33,21 @@ function calculateTotalValue(
   holdings: MockHolding[],
   prices: PriceMap,
   baseCurrencyId: string
-): { totalValue: string; holdingValues: Array<{ tokenSymbol: string; value: string }> } {
+): {
+  totalValue: string;
+  holdingValues: Array<{ tokenSymbol: string; value: string | null }>;
+} {
+  // Mirror the service: missing prices produce `null`, never '0'. Null
+  // values are listed in the output (so the UI can show "—") but
+  // EXCLUDED from the summed total. See PortfolioValuationService.
   const holdingValues = holdings.map((h) => {
-    const currentPrice = h.tokenId === baseCurrencyId ? '1' : prices[h.tokenId] || '0';
-    const value = calculateHoldingValue(h.balance, currentPrice);
+    const currentPrice = h.tokenId === baseCurrencyId ? '1' : (prices[h.tokenId] ?? null);
+    const value = currentPrice === null ? null : calculateHoldingValue(h.balance, currentPrice);
     return { tokenSymbol: h.tokenSymbol, value };
   });
 
   const totalValue = holdingValues.reduce(
-    (sum, h) => sum.add(new Decimal(h.value)),
+    (sum, h) => (h.value !== null ? sum.add(new Decimal(h.value)) : sum),
     new Decimal(0)
   );
 
@@ -106,14 +112,31 @@ describe('PortfolioValuationService (unit — math)', () => {
       expect(result.totalValue).toBe('1234.56');
     });
 
-    it('should use 0 for tokens without a price', () => {
+    it('should surface null (not 0) for tokens without a price and exclude them from the total', () => {
+      // Replaces the prior "use 0 for tokens without a price" assertion.
+      // The silent-zero behaviour was the bug that zeroed every
+      // dashboard after a base-currency switch — unpriceable holdings
+      // now produce a null value and contribute nothing to the sum.
       const holdings: MockHolding[] = [
         { tokenSymbol: 'UNKNOWN', balance: '100', tokenId: 'unknown-id' },
       ];
 
       const result = calculateTotalValue(holdings, {}, baseCurrencyId);
       expect(result.totalValue).toBe('0');
-      expect(result.holdingValues[0].value).toBe('0');
+      expect(result.holdingValues[0].value).toBeNull();
+    });
+
+    it('should exclude unpriceable holdings from total while including priced ones', () => {
+      const holdings: MockHolding[] = [
+        { tokenSymbol: 'BTC', balance: '1', tokenId: 'btc-id' },
+        { tokenSymbol: 'UNKNOWN', balance: '100', tokenId: 'unknown-id' },
+      ];
+      const prices: PriceMap = { 'btc-id': '60000' };
+
+      const result = calculateTotalValue(holdings, prices, baseCurrencyId);
+      expect(result.totalValue).toBe('60000');
+      expect(result.holdingValues).toHaveLength(2);
+      expect(result.holdingValues[1].value).toBeNull();
     });
 
     it('should handle empty holdings', () => {

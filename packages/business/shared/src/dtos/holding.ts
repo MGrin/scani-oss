@@ -77,10 +77,16 @@ export type HoldingWithDetails = {
     isScamProbability: number;
   };
   amount: number;
-  value: number;
-  costBasis: number;
+  // `null` when the holding's token has no resolvable price in the
+  // user's base currency. UI renders "—" rather than $0 so the
+  // missing-data state is visible.
+  value: number | null;
+  costBasis: number | null;
   price?: {
-    value: string;
+    // `null` for the same reason as `value`. When present, the value
+    // string is the per-unit price; when null, only timestamp/source
+    // are still meaningful (e.g. last-known-source metadata).
+    value: string | null;
     timestamp: string;
     source?: string;
   };

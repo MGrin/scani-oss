@@ -34,11 +34,25 @@ export class PricingService {
   private readonly providerRouter = Container.get(PricingProviderRouter);
   private readonly currencyConverter = Container.get(CurrencyConverter);
 
-  async getTokenPrice(token: Token, baseCurrencySymbol: string, timestamp: Date): Promise<string> {
+  /**
+   * Resolve a single token's price in the requested base currency.
+   * Returns `null` when:
+   *   - the base currency is unknown,
+   *   - no cached price exists and no provider returned one,
+   *   - the cached price's source currency can't be converted to the
+   *     requested base currency (Frankfurter / exchangerate-api miss).
+   *
+   * Callers MUST treat `null` as "no price"; never coerce to `'0'`.
+   */
+  async getTokenPrice(
+    token: Token,
+    baseCurrencySymbol: string,
+    timestamp: Date
+  ): Promise<string | null> {
     const baseCurrencyToken = await this.tokenRepository.findBySymbol(baseCurrencySymbol);
     if (!baseCurrencyToken) {
       pricingLogger.debug({ baseCurrencySymbol }, 'Base currency token not found in getTokenPrice');
-      return '0';
+      return null;
     }
 
     if (token.id === baseCurrencyToken.id) {
@@ -97,9 +111,13 @@ export class PricingService {
     );
 
     const priceResult = freshPrices.find((p) => p.tokenId === token.id);
-    let finalPrice = priceResult?.price || '0';
+    // PricingProviderRouter still uses '0' as an internal failure
+    // sentinel (separate cleanup). Treat it the same as a missing
+    // price; never propagate it out of PricingService.
+    let finalPrice: string | null =
+      priceResult?.price && priceResult.price !== '0' ? priceResult.price : null;
 
-    if (finalPrice === '0') {
+    if (finalPrice === null) {
       const lastSuccessfulPrice = await this.getLastSuccessfulPrice(token.id, baseCurrencyToken.id);
 
       if (lastSuccessfulPrice) {
@@ -141,7 +159,7 @@ export class PricingService {
     tokenId: string,
     baseCurrencySymbol: string,
     timestamp?: Date
-  ): Promise<{ price: string; source: string; timestamp: Date }> {
+  ): Promise<{ price: string | null; source: string; timestamp: Date }> {
     const now = timestamp ?? new Date();
     const token = await this.tokenRepository.findById(tokenId);
     if (!token) {
@@ -193,10 +211,9 @@ export class PricingService {
       try {
         const baseCurrencyToken = await this.tokenRepository.findBySymbol(baseCurrencySymbol);
         if (!baseCurrencyToken) {
+          // Same map-invariant as getCachedTokenPrices: present = priced.
+          // Unknown base currency → no token can be priced → empty map.
           logger.warn({ baseCurrencySymbol }, 'Base currency token not found in getTokenPrices');
-          for (const token of tokensToPrice) {
-            results.set(token.id, '0');
-          }
           return results;
         }
 
@@ -286,7 +303,9 @@ export class PricingService {
 
           const conversionResults = await Promise.all(conversionPromises);
           for (const { tokenId, convertedPrice } of conversionResults) {
-            results.set(tokenId, convertedPrice);
+            if (convertedPrice !== null) {
+              results.set(tokenId, convertedPrice);
+            }
           }
         }
 
@@ -318,8 +337,13 @@ export class PricingService {
               baseCurrencyToken,
               timestamp
             );
+            // Provider router still uses '0' as an internal failure
+            // sentinel; we intentionally do not store that into the
+            // result map.
             for (const priceResult of freshPrices) {
-              results.set(priceResult.tokenId, priceResult.price);
+              if (priceResult.price !== '0') {
+                results.set(priceResult.tokenId, priceResult.price);
+              }
             }
           } catch (error) {
             const err = error instanceof Error ? error : new Error(String(error));
@@ -329,9 +353,7 @@ export class PricingService {
             );
           }
 
-          const stillMissing = tokensNeedingPrices.filter(
-            (t) => !results.has(t.id) || results.get(t.id) === '0'
-          );
+          const stillMissing = tokensNeedingPrices.filter((t) => !results.has(t.id));
           if (stillMissing.length > 0 && stillMissing.length < tokensNeedingPrices.length) {
             try {
               const retryPrices = await this.providerRouter.routeAndFetch(
@@ -355,9 +377,7 @@ export class PricingService {
             }
           }
 
-          const tokensStillNeedingPrice = tokensNeedingPrices.filter(
-            (t) => !results.has(t.id) || results.get(t.id) === '0'
-          );
+          const tokensStillNeedingPrice = tokensNeedingPrices.filter((t) => !results.has(t.id));
 
           if (tokensStillNeedingPrice.length > 0) {
             const uniqueTokenIds = Array.from(new Set(tokensStillNeedingPrice.map((t) => t.id)));
@@ -409,22 +429,25 @@ export class PricingService {
                     baseCurrencyToken
                   );
 
-                  results.set(token.id, fallbackPrice);
-                  pricingLogger.debug(
-                    {
-                      tokenId: token.id,
-                      symbol: token.symbol,
-                      fallbackPrice,
-                      fallbackSource: lastSuccessfulPrice.source,
-                      originalTimestamp: lastSuccessfulPrice.timestamp,
-                    },
-                    'Using last successful price as fallback in batch operation after all providers failed'
-                  );
-                  continue;
+                  if (fallbackPrice !== null) {
+                    results.set(token.id, fallbackPrice);
+                    pricingLogger.debug(
+                      {
+                        tokenId: token.id,
+                        symbol: token.symbol,
+                        fallbackPrice,
+                        fallbackSource: lastSuccessfulPrice.source,
+                        originalTimestamp: lastSuccessfulPrice.timestamp,
+                      },
+                      'Using last successful price as fallback in batch operation after all providers failed'
+                    );
+                  }
                 }
               }
 
-              results.set(token.id, '0');
+              // No fresh provider price, no usable stale fallback, or
+              // the stale-fallback conversion failed. Omit the token
+              // from `results` — caller treats absent keys as null.
             }
           }
         }
@@ -439,6 +462,22 @@ export class PricingService {
     return requestPromise;
   }
 
+  /**
+   * Resolve cached prices for a batch of tokens, converted to the
+   * requested base currency.
+   *
+   * Map invariant: a key is PRESENT only if the price could be resolved
+   * AND converted. Unpriceable tokens (no cache, no stale fallback) and
+   * unconvertable tokens (forex rate missing for the pair) are OMITTED
+   * from the map. Callers MUST distinguish "priced" from "unpriceable"
+   * via `.has(id)`; do NOT fall back to `'0'` — that's the silent-zero
+   * bug that zeroed every dashboard after a base-currency switch.
+   *
+   * Cache-cold currency pairs are warmed up-front via
+   * `CurrencyConverter.prewarmRates` (one live exchangerate-api call
+   * per pair, deduplicated and rate-limited). Per-token conversions
+   * then run cache-only and resolve from memory.
+   */
   async getCachedTokenPrices(
     tokensToPrice: Token[],
     baseCurrencySymbol: string,
@@ -450,10 +489,9 @@ export class PricingService {
 
     const baseCurrencyToken = await this.tokenRepository.findBySymbol(baseCurrencySymbol);
     if (!baseCurrencyToken) {
+      // Unknown base currency: nothing can be priced. Return empty map;
+      // callers see absent keys and treat the holdings as unpriceable.
       logger.warn({ baseCurrencySymbol }, 'Base currency token not found in getCachedTokenPrices');
-      for (const token of tokensToPrice) {
-        results.set(token.id, '0');
-      }
       return results;
     }
 
@@ -568,46 +606,52 @@ export class PricingService {
             tokenId: token.id,
             fallbackPrice: lastSuccessfulPrice,
           });
-        } else {
-          results.set(token.id, '0');
         }
+        // No cached price, no stale fallback: token is unpriceable.
+        // Omit from results — caller distinguishes via `.has(id)`.
       }
     }
 
-    // Pre-warm conversion-rate cache for all unique pairs in cache-only
-    // mode so each per-token conversion below is a memory hit.
-    const uniqueFromCurrencies = new Set<string>();
+    // Pre-warm conversion-rate cache for every unique (from → user-base)
+    // pair we're about to convert. `prewarmRates` calls the live forex
+    // API once per pair (deduplicated, rate-limited) so the per-token
+    // `convert` loop below resolves out of the in-memory cache. Without
+    // this warm-up, a base-currency switch leaves the cache cold and
+    // every conversion returns null → silent unpriced holdings.
+    const pairsToWarm: Array<{ from: string; to: string }> = [];
     for (const { fromCurrency } of tokensNeedingConversion) {
       if (fromCurrency !== baseCurrencyToken.symbol) {
-        uniqueFromCurrencies.add(fromCurrency);
+        pairsToWarm.push({ from: fromCurrency, to: baseCurrencyToken.symbol });
       }
     }
     for (const { fallbackPrice } of tokensNeedingFallbackConversion) {
       if (fallbackPrice.baseTokenId !== baseCurrencyToken.id) {
         const fallbackBaseCurrency = fallbackBaseCurrencyTokensMap.get(fallbackPrice.baseTokenId);
         if (fallbackBaseCurrency) {
-          uniqueFromCurrencies.add(fallbackBaseCurrency.symbol);
+          pairsToWarm.push({
+            from: fallbackBaseCurrency.symbol,
+            to: baseCurrencyToken.symbol,
+          });
         }
       }
     }
 
-    if (uniqueFromCurrencies.size > 0) {
+    if (pairsToWarm.length > 0) {
       pricingLogger.debug(
         {
-          currencies: Array.from(uniqueFromCurrencies),
-          toCurrency: baseCurrencyToken.symbol,
+          pairs: pairsToWarm.map((p) => `${p.from}->${p.to}`),
         },
         'Pre-warming conversion rate cache for unique currency pairs'
       );
-
-      await Promise.all(
-        Array.from(uniqueFromCurrencies).map((fromCurrency) =>
-          this.currencyConverter.getRate(fromCurrency, baseCurrencyToken.symbol, timestamp, true)
-        )
-      );
+      await this.currencyConverter.prewarmRates(pairsToWarm, timestamp);
     }
 
-    const conversionPromises: Promise<{ tokenId: string; price: string }>[] = [];
+    // Each promise resolves to a price (rates are warm, so conversion
+    // is a memory hit) OR `null` when even the warmed cache couldn't
+    // produce a rate (the pair is truly unsupported — Frankfurter and
+    // exchangerate-api both miss it). Null results are omitted from the
+    // map below; callers see absence as "unpriceable".
+    const conversionPromises: Promise<{ tokenId: string; price: string | null }>[] = [];
 
     for (const { tokenId, price, fromCurrency } of tokensNeedingConversion) {
       conversionPromises.push(
@@ -637,7 +681,9 @@ export class PricingService {
 
       const conversionResults = await Promise.all(conversionPromises);
       for (const { tokenId, price } of conversionResults) {
-        results.set(tokenId, price);
+        if (price !== null) {
+          results.set(tokenId, price);
+        }
       }
     }
 
@@ -762,7 +808,7 @@ export class PricingService {
     timestamp: Date,
     baseCurrencyTokensMap?: Map<string, Token>,
     targetBaseCurrencyToken?: Token
-  ): Promise<string> {
+  ): Promise<string | null> {
     if (cachedPrice.baseTokenId === targetBaseCurrencyId) {
       return cachedPrice.price;
     }
