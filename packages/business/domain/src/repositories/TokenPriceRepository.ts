@@ -77,6 +77,67 @@ export class TokenPriceRepository extends BaseRepository<TokenPrice, NewTokenPri
   }
 
   /**
+   * Latest price per token regardless of which base currency it was
+   * stored against. Tie-breaks toward `preferredBaseTokenId` so a
+   * dashboard request that does have a row in the user's base
+   * currency keeps using it (avoids unnecessary fiat-pair conversion
+   * at read time); otherwise picks the most recent row in whatever
+   * base exists.
+   *
+   * Why this exists: the pricing pipeline writes a row per
+   * `(tokenId, baseTokenId)` it observes. CoinGecko-fetched prices
+   * for crypto are virtually all stored against USD; user-base
+   * changes don't retroactively re-write them. Without this method,
+   * a strict `findLatestPricesForTokens(ids, EUR)` returns nothing
+   * for a user whose holdings are all USD-priced, and the dashboard
+   * silently zeros out. Callers are expected to convert the returned
+   * price from `result.baseTokenId` to whatever base they actually
+   * want — `CurrencyConverter` does the bidirectional + hub routing
+   * to make that succeed for cross-base requests.
+   *
+   * Manual prices are intentionally NOT special-cased here — they
+   * obey the same time ordering as upstream prices. Callers that
+   * want stale manual fallbacks use `findLatestManualPricesForTokensAnyBase`
+   * after this returns.
+   */
+  async findLatestPricesForTokensAnyBase(
+    tokenIds: string[],
+    preferredBaseTokenId: string,
+    transaction?: DatabaseTransaction
+  ): Promise<Map<string, TokenPrice>> {
+    try {
+      if (tokenIds.length === 0) return new Map();
+
+      const database = this.getDb(transaction);
+
+      // Order: matching base wins first, then most-recent wins. The
+      // group-by-and-keep-first loop below picks the head of each
+      // tokenId's sorted partition.
+      const matchesPreferredBase = sql`CASE WHEN ${schema.tokenPrices.baseTokenId} = ${preferredBaseTokenId} THEN 0 ELSE 1 END`;
+      const results = await database
+        .select()
+        .from(schema.tokenPrices)
+        .where(inArray(schema.tokenPrices.tokenId, tokenIds))
+        .orderBy(matchesPreferredBase, desc(schema.tokenPrices.timestamp));
+
+      const priceMap = new Map<string, TokenPrice>();
+      for (const price of results) {
+        if (!priceMap.has(price.tokenId)) {
+          priceMap.set(price.tokenId, price);
+        }
+      }
+
+      return priceMap;
+    } catch (error) {
+      this.logger.error(
+        { tokenIds, preferredBaseTokenId, error },
+        'Failed to find latest prices for tokens (any base)'
+      );
+      throw error;
+    }
+  }
+
+  /**
    * Return the latest manual price per tokenId regardless of baseTokenId.
    * Used by pricing cache fallback: if a custom token was priced in EUR
    * and a user queries with base=USD, the strict baseTokenId match fails.

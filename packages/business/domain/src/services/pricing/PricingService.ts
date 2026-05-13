@@ -382,7 +382,11 @@ export class PricingService {
           if (tokensStillNeedingPrice.length > 0) {
             const uniqueTokenIds = Array.from(new Set(tokensStillNeedingPrice.map((t) => t.id)));
 
-            const fallbackPrices = await this.tokenPriceRepository.findLatestPricesForTokens(
+            // Any-base lookup: see the rationale on
+            // `getBatchCachedPrices`. The stale-fallback branch below
+            // already calls `convertCachedPriceIfNeeded` to translate
+            // a non-base-currency price to the user's base.
+            const fallbackPrices = await this.tokenPriceRepository.findLatestPricesForTokensAnyBase(
               uniqueTokenIds,
               baseCurrencyToken.id
             );
@@ -534,7 +538,11 @@ export class PricingService {
     if (tokensNeedingFallback.length > 0) {
       const uniqueTokenIds = Array.from(new Set(tokensNeedingFallback.map((t) => t.id)));
 
-      const latestPrices = await this.tokenPriceRepository.findLatestPricesForTokens(
+      // Any-base lookup so a USD-priced holding has a fallback when
+      // the user's base is EUR (or anything else). The downstream
+      // `tokensNeedingFallbackConversion` branch translates these via
+      // CurrencyConverter when `baseTokenId !== baseCurrencyToken.id`.
+      const latestPrices = await this.tokenPriceRepository.findLatestPricesForTokensAnyBase(
         uniqueTokenIds,
         baseCurrencyToken.id
       );
@@ -844,7 +852,15 @@ export class PricingService {
 
     const uniqueTokenIds = Array.from(new Set(tokenIds));
 
-    const latestPrices = await this.tokenPriceRepository.findLatestPricesForTokens(
+    // Look up the latest price per token across ALL base currencies,
+    // tie-breaking toward the requested one. The strict-base lookup
+    // we used here previously returned nothing when the user's base
+    // currency was different from the base every cached price was
+    // stored against (every USD-priced holding for an EUR user → empty
+    // map → dashboard silently zeroed). The downstream conversion
+    // branch reconciles `baseTokenId !== baseCurrencyToken.id` via
+    // CurrencyConverter.
+    const latestPrices = await this.tokenPriceRepository.findLatestPricesForTokensAnyBase(
       uniqueTokenIds,
       baseCurrencyId
     );

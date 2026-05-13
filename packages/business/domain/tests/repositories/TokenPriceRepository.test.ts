@@ -170,4 +170,132 @@ describe('TokenPriceRepository', () => {
       expect(closest?.price).toBe('20');
     });
   });
+
+  // findLatestPricesForTokensAnyBase is the dashboard hot-path read for
+  // users whose base currency differs from the base every cached price
+  // is stored against (the EUR-user-with-USD-priced-holdings case that
+  // zeroed the dashboard on currency switch). The strict
+  // `findLatestPricesForTokens(ids, EUR)` returned an empty map; this
+  // method returns one row per token in whatever base exists, so the
+  // downstream conversion path can do its work.
+  describe('findLatestPricesForTokensAnyBase', () => {
+    test('returns prices stored against a non-preferred base when no preferred-base row exists', async () => {
+      await withTestDb(async (tx) => {
+        const btc = await makeToken(tx);
+        const eth = await makeToken(tx);
+        const usd = await makeToken(tx);
+        const eur = await makeToken(tx);
+
+        // Both holdings priced against USD only — exactly the
+        // production state that zeroed the dashboard for an EUR user.
+        await repo().create(
+          {
+            tokenId: btc.id,
+            baseTokenId: usd.id,
+            price: '65000',
+            timestamp: new Date('2026-05-01T12:00:00Z'),
+            source: 'coingecko',
+          },
+          tx
+        );
+        await repo().create(
+          {
+            tokenId: eth.id,
+            baseTokenId: usd.id,
+            price: '3500',
+            timestamp: new Date('2026-05-01T12:00:00Z'),
+            source: 'coingecko',
+          },
+          tx
+        );
+
+        const prices = await repo().findLatestPricesForTokensAnyBase([btc.id, eth.id], eur.id, tx);
+
+        expect(prices.size).toBe(2);
+        expect(prices.get(btc.id)?.price).toBe('65000');
+        expect(prices.get(btc.id)?.baseTokenId).toBe(usd.id);
+        expect(prices.get(eth.id)?.price).toBe('3500');
+        expect(prices.get(eth.id)?.baseTokenId).toBe(usd.id);
+      });
+    });
+
+    test('prefers a row in the requested base when one exists, ignoring more recent rows in other bases', async () => {
+      await withTestDb(async (tx) => {
+        const btc = await makeToken(tx);
+        const usd = await makeToken(tx);
+        const eur = await makeToken(tx);
+
+        // Newer USD row, older EUR row — must return the EUR row
+        // because EUR is the caller's preferred base. (Skips the
+        // unnecessary USD→EUR conversion at read time when a direct
+        // EUR price is already on disk.)
+        await repo().create(
+          {
+            tokenId: btc.id,
+            baseTokenId: eur.id,
+            price: '60000',
+            timestamp: new Date('2026-05-01T09:00:00Z'),
+            source: 'coingecko',
+          },
+          tx
+        );
+        await repo().create(
+          {
+            tokenId: btc.id,
+            baseTokenId: usd.id,
+            price: '65000',
+            timestamp: new Date('2026-05-01T12:00:00Z'),
+            source: 'coingecko',
+          },
+          tx
+        );
+
+        const prices = await repo().findLatestPricesForTokensAnyBase([btc.id], eur.id, tx);
+        expect(prices.get(btc.id)?.price).toBe('60000');
+        expect(prices.get(btc.id)?.baseTokenId).toBe(eur.id);
+      });
+    });
+
+    test('picks the most recent row when multiple bases have prices and none match the preferred', async () => {
+      await withTestDb(async (tx) => {
+        const btc = await makeToken(tx);
+        const usd = await makeToken(tx);
+        const gbp = await makeToken(tx);
+        const eur = await makeToken(tx);
+
+        await repo().create(
+          {
+            tokenId: btc.id,
+            baseTokenId: usd.id,
+            price: '65000',
+            timestamp: new Date('2026-05-01T09:00:00Z'),
+            source: 'coingecko',
+          },
+          tx
+        );
+        await repo().create(
+          {
+            tokenId: btc.id,
+            baseTokenId: gbp.id,
+            price: '50000',
+            timestamp: new Date('2026-05-01T12:00:00Z'),
+            source: 'coingecko',
+          },
+          tx
+        );
+
+        const prices = await repo().findLatestPricesForTokensAnyBase([btc.id], eur.id, tx);
+        // GBP row is newer; neither matches EUR; the timestamp tiebreak wins.
+        expect(prices.get(btc.id)?.baseTokenId).toBe(gbp.id);
+      });
+    });
+
+    test('returns an empty map for an empty input', async () => {
+      await withTestDb(async (tx) => {
+        const eur = await makeToken(tx);
+        const prices = await repo().findLatestPricesForTokensAnyBase([], eur.id, tx);
+        expect(prices.size).toBe(0);
+      });
+    });
+  });
 });
