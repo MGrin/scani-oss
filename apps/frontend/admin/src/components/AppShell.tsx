@@ -170,51 +170,11 @@ export function AppShell({ children }: { children: ReactNode }) {
   const [open, setOpen] = useState(false);
 
   return (
-    <div className="flex min-h-screen flex-col lg:flex-row">
-      {/* Top bar — mobile + desktop */}
-      <header
-        className="flex items-center justify-between gap-2 border-b border-border bg-background/95 px-4 backdrop-blur lg:hidden"
-        style={{
-          paddingTop: 'env(safe-area-inset-top, 0px)',
-          minHeight: 'calc(3.5rem + env(safe-area-inset-top, 0px))',
-        }}
-      >
-        <div className="flex items-center gap-3">
-          <Sheet open={open} onOpenChange={setOpen}>
-            <SheetTrigger asChild>
-              <Button type="button" variant="ghost" size="icon" aria-label="Open navigation">
-                <Menu className="h-5 w-5" />
-              </Button>
-            </SheetTrigger>
-            <SheetContent
-              side="left"
-              className="flex w-72 flex-col gap-4 overflow-y-auto p-4"
-              style={{
-                paddingTop: 'calc(1rem + env(safe-area-inset-top, 0px))',
-                paddingBottom: 'calc(1rem + env(safe-area-inset-bottom, 0px))',
-              }}
-            >
-              <Link
-                href="/"
-                onClick={() => setOpen(false)}
-                className="text-base font-semibold tracking-tight"
-              >
-                scani · admin
-              </Link>
-              <NavList pathname={pathname} onNavigate={() => setOpen(false)} />
-              <div className="mt-auto flex flex-col gap-2 border-t border-border pt-3">
-                <ThemeToggle variant="row" side="top" align="start" />
-                <SignOutForm />
-              </div>
-            </SheetContent>
-          </Sheet>
-          <Link href="/" className="text-base font-semibold tracking-tight">
-            scani · admin
-          </Link>
-        </div>
-        <ThemeToggle variant="icon" side="bottom" align="end" />
-      </header>
-
+    // h-dvh + overflow-hidden mirrors the pattern used by main app and
+    // cloud: only the inner <main> scrolls. Without this, the entire
+    // page scrolls and the mobile header scrolls away exposing page
+    // content to the iOS status bar in PWA mode (regressed in #515).
+    <div className="flex h-dvh overflow-hidden bg-background lg:flex-row">
       {/* Desktop sidebar */}
       <aside
         className="hidden w-60 shrink-0 flex-col gap-5 border-r border-border bg-background/50 px-4 lg:flex"
@@ -233,22 +193,68 @@ export function AppShell({ children }: { children: ReactNode }) {
         </div>
       </aside>
 
-      <main className="flex-1 min-w-0">
-        <div
-          className="mx-auto w-full max-w-6xl px-4 py-6 sm:px-6 sm:py-8"
+      {/* Main column — mobile header stays pinned, only the <main> scrolls */}
+      <div className="flex min-w-0 flex-1 flex-col">
+        {/* Mobile top bar */}
+        <header
+          className="flex shrink-0 items-center justify-between gap-2 border-b border-border bg-background/95 px-4 backdrop-blur lg:hidden"
           style={{
-            // On desktop the mobile header is hidden, so the main content
-            // is what sits flush with the top of the viewport. Push it
-            // past the notch when running as an installed PWA on a device
-            // with a status bar. Mobile already gets safe-area from the
-            // sticky header above.
-            paddingTop: 'max(1.5rem, env(safe-area-inset-top, 0px))',
-            paddingBottom: 'max(1.5rem, env(safe-area-inset-bottom, 0px))',
+            paddingTop: 'env(safe-area-inset-top, 0px)',
+            minHeight: 'calc(3.5rem + env(safe-area-inset-top, 0px))',
           }}
         >
-          {children}
-        </div>
-      </main>
+          <div className="flex items-center gap-3">
+            <Sheet open={open} onOpenChange={setOpen}>
+              <SheetTrigger asChild>
+                <Button type="button" variant="ghost" size="icon" aria-label="Open navigation">
+                  <Menu className="h-5 w-5" />
+                </Button>
+              </SheetTrigger>
+              <SheetContent
+                side="left"
+                className="flex w-72 flex-col gap-4 overflow-y-auto p-4"
+                style={{
+                  paddingTop: 'calc(1rem + env(safe-area-inset-top, 0px))',
+                  paddingBottom: 'calc(1rem + env(safe-area-inset-bottom, 0px))',
+                }}
+              >
+                <Link
+                  href="/"
+                  onClick={() => setOpen(false)}
+                  className="text-base font-semibold tracking-tight"
+                >
+                  scani · admin
+                </Link>
+                <NavList pathname={pathname} onNavigate={() => setOpen(false)} />
+                <div className="mt-auto flex flex-col gap-2 border-t border-border pt-3">
+                  <ThemeToggle variant="row" side="top" align="start" />
+                  <SignOutForm />
+                </div>
+              </SheetContent>
+            </Sheet>
+            <Link href="/" className="text-base font-semibold tracking-tight">
+              scani · admin
+            </Link>
+          </div>
+          <ThemeToggle variant="icon" side="bottom" align="end" />
+        </header>
+
+        <main className="min-h-0 flex-1 overflow-y-auto">
+          <div
+            className="mx-auto w-full max-w-6xl px-4 py-6 sm:px-6 sm:py-8"
+            style={{
+              // On desktop the mobile header is hidden, so the main
+              // content is what sits flush with the top of the viewport.
+              // Push it past the notch when running as an installed PWA
+              // on a device with a status bar.
+              paddingTop: 'max(1.5rem, env(safe-area-inset-top, 0px))',
+              paddingBottom: 'max(1.5rem, env(safe-area-inset-bottom, 0px))',
+            }}
+          >
+            {children}
+          </div>
+        </main>
+      </div>
     </div>
   );
 }

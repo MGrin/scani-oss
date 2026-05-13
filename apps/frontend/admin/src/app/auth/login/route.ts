@@ -38,7 +38,13 @@ export async function GET(req: Request): Promise<NextResponse> {
 <html lang="en" class="dark" data-theme="dark">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Admin">
+<meta name="theme-color" content="#1a1f2e">
+<link rel="manifest" href="/manifest.json">
+<link rel="apple-touch-icon" href="/icons/icon-180x180.png">
 <title>scani · admin · sign in</title>
 <style>
 :root{
@@ -61,7 +67,12 @@ html,body{
   font-family:ui-monospace,SFMono-Regular,Menlo,monospace;
   -webkit-font-smoothing:antialiased;
 }
-.wrap{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:1rem}
+.wrap{
+  min-height:100vh;
+  min-height:100dvh;
+  display:flex;align-items:center;justify-content:center;
+  padding:max(1rem, env(safe-area-inset-top, 0px)) 1rem max(1rem, env(safe-area-inset-bottom, 0px));
+}
 .card{
   width:100%;max-width:24rem;
   border:1px solid hsl(var(--border));
