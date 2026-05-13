@@ -1,4 +1,4 @@
-import { assertFrontendEnv, ErrorBoundary, ThemeProvider } from '@scani/ui';
+import { assertFrontendEnv, ErrorBoundary, ThemeProvider, UpdateBanner } from '@scani/ui';
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import { BrowserRouter } from 'react-router-dom';
@@ -29,8 +29,20 @@ ReactDOM.createRoot(root).render(
           <BrowserRouter>
             <App />
           </BrowserRouter>
+          <UpdateBanner />
         </TrpcProvider>
       </ThemeProvider>
     </ErrorBoundary>
   </React.StrictMode>
 );
+
+// Register the service worker so the app keeps working offline and the
+// UpdateBanner / useAppUpdate hook can detect new deploys. Production-only
+// so dev iteration isn't disturbed by stale caches.
+if ('serviceWorker' in navigator && import.meta.env.PROD) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/sw.js').catch((error) => {
+      console.error('[SW] Service Worker registration failed:', error);
+    });
+  });
+}

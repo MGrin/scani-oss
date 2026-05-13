@@ -1,11 +1,37 @@
-import type { Metadata } from 'next';
+import type { Metadata, Viewport } from 'next';
 import type { ReactNode } from 'react';
+import { ServiceWorkerRegistration } from '@/components/ServiceWorkerRegistration';
 import { ThemeBridge } from '@/components/ThemeBridge';
 import './globals.css';
 
 export const metadata: Metadata = {
   title: 'Scani Admin',
   description: 'Infrastructure & usage overview',
+  manifest: '/manifest.json',
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: 'black-translucent',
+    title: 'Admin',
+  },
+  icons: {
+    icon: [
+      { url: '/favicon.ico' },
+      { url: '/favicon-16x16.png', sizes: '16x16', type: 'image/png' },
+      { url: '/favicon-32x32.png', sizes: '32x32', type: 'image/png' },
+    ],
+    apple: [
+      { url: '/icons/icon-152x152.png', sizes: '152x152', type: 'image/png' },
+      { url: '/icons/icon-180x180.png', sizes: '180x180', type: 'image/png' },
+      { url: '/icons/icon-192x192.png', sizes: '192x192', type: 'image/png' },
+    ],
+  },
+};
+
+export const viewport: Viewport = {
+  themeColor: '#1a1f2e',
+  width: 'device-width',
+  initialScale: 1,
+  viewportFit: 'cover',
 };
 
 // SSR default is dark; the client-side ThemeProvider re-reads the
@@ -20,6 +46,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
         <ThemeBridge>
           <div className="min-h-screen">{children}</div>
         </ThemeBridge>
+        <ServiceWorkerRegistration />
       </body>
     </html>
   );

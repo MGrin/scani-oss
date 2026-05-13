@@ -56,6 +56,19 @@ const nextConfig = {
         source: '/auth/login',
         headers: [{ key: 'Cache-Control', value: 'no-store, must-revalidate' }],
       },
+      // PWA: sw.js must never be cached or update detection breaks.
+      {
+        source: '/sw.js',
+        headers: [{ key: 'Cache-Control', value: 'no-cache, no-store, must-revalidate' }],
+      },
+      {
+        source: '/manifest.json',
+        headers: [{ key: 'Cache-Control', value: 'public, max-age=3600' }],
+      },
+      {
+        source: '/icons/:path*',
+        headers: [{ key: 'Cache-Control', value: 'public, max-age=86400' }],
+      },
     ];
   },
   async redirects() {

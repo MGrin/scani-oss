@@ -1,6 +1,7 @@
 import path from 'node:path';
 import react from '@vitejs/plugin-react';
 import { defineConfig } from 'vite';
+import { viteVersion } from './plugins/vite-version';
 
 /**
  * Vite config for cloud-frontend (cloud.scani.xyz in prod).
@@ -20,7 +21,7 @@ import { defineConfig } from 'vite';
 const proxyTarget = process.env.DATA_PROVIDER_PROXY_TARGET ?? 'http://localhost:8082';
 
 export default defineConfig({
-  plugins: [react()],
+  plugins: [react(), viteVersion()],
   resolve: {
     alias: {
       '@': path.resolve(__dirname, './src'),

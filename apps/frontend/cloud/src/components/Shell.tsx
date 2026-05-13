@@ -1,4 +1,4 @@
-import { ThemeToggle } from '@scani/ui';
+import { InstallPromptBanner, ThemeToggle } from '@scani/ui';
 import { Sheet, SheetContent } from '@scani/ui/ui/sheet';
 import { useQueryClient } from '@tanstack/react-query';
 import { BarChart3, BookOpen, ExternalLink, KeyRound, LogOut, Menu } from 'lucide-react';
@@ -103,6 +103,7 @@ export function Shell() {
 
   return (
     <div className="flex h-dvh bg-background text-foreground">
+      <InstallPromptBanner isLoggedIn={!!data?.user} appName="Scani Cloud" />
       <aside className="hidden w-60 flex-col border-r bg-card lg:flex">{sidebarBody}</aside>
 
       <Sheet open={mobileOpen} onOpenChange={setMobileOpen}>

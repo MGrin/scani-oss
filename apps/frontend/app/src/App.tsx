@@ -3,11 +3,13 @@ import { ProtectedRoute } from '@/components/ProtectedRoute';
 import { AuthProvider } from '@/contexts/AuthContext';
 import { Auth } from '@/pages/Auth';
 import { AuthCallback } from '@/pages/AuthCallback';
+import { InstallPromptHost } from '@/v2/components/InstallPromptHost';
 import { V2App } from '@/v2/V2App';
 
 function App() {
   return (
     <AuthProvider>
+      <InstallPromptHost />
       <Router
         future={{
           v7_startTransition: true,
