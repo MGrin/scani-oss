@@ -1,7 +1,6 @@
 import { TokenService, UserService } from '@scani/domain/services';
 import { USER_DATA_DELETE } from '@scani/jobs';
 import { createComponentLogger } from '@scani/logging';
-import { FRANKFURTER_HISTORICAL_FIAT } from '@scani/providers';
 import { BullMqEnqueueService } from '@scani/queue';
 import { UpdateUserDto } from '@scani/shared';
 import { Container } from 'typedi';
@@ -25,11 +24,7 @@ export const usersRouter = router({
     return await Container.get(UserService).updateUser(dbUser.id, input);
   }),
 
-  // Get supported fiat currencies (tokens) for base currency selection.
-  // `hasHistoricalForex` mirrors `FRANKFURTER_HISTORICAL_FIAT`: currencies
-  // outside that set only have live rates (via exchangerate-api.com), so
-  // historical chart data will be sparse. The picker surfaces this as a
-  // separate "Live rates only" section.
+  // Get supported fiat currencies (tokens) for base currency selection
   getSupportedCurrencies: protectedProcedure.query(async () => {
     usersLogger.debug('Fetching supported fiat currencies');
     const fiatTokens = await Container.get(TokenService).getTokensByType('fiat');
@@ -37,7 +32,6 @@ export const usersRouter = router({
       id: token.id,
       symbol: token.symbol,
       name: token.name,
-      hasHistoricalForex: FRANKFURTER_HISTORICAL_FIAT.has(token.symbol.toUpperCase()),
     }));
     usersLogger.debug({ count: result.length }, 'Fetched fiat tokens');
     return result;

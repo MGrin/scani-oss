@@ -49,44 +49,6 @@ export function FiatCurrencySelect({
     return list.find((c) => (valueField === 'id' ? c.id : c.symbol) === value) ?? null;
   }, [list, value, valueField]);
 
-  const { historical, liveOnly } = useMemo(() => {
-    const historical: typeof list = [];
-    const liveOnly: typeof list = [];
-    for (const c of list) {
-      if (c.hasHistoricalForex) historical.push(c);
-      else liveOnly.push(c);
-    }
-    return { historical, liveOnly };
-  }, [list]);
-
-  const renderItem = (c: (typeof list)[number]) => {
-    const storeValue = valueField === 'id' ? c.id : c.symbol;
-    const isSelected = selected
-      ? valueField === 'id'
-        ? c.id === selected.id
-        : c.symbol === selected.symbol
-      : false;
-    return (
-      <CommandItem
-        key={c.id}
-        value={`${c.symbol} ${c.name}`}
-        onSelect={() => {
-          onChange(storeValue);
-          setOpen(false);
-        }}
-      >
-        <Check className={cn('mr-2 h-4 w-4 shrink-0', isSelected ? 'opacity-100' : 'opacity-0')} />
-        <span className="font-medium w-14 shrink-0">{c.symbol}</span>
-        <span className="text-muted-foreground text-xs truncate flex-1">{c.name}</span>
-        {!c.hasHistoricalForex && (
-          <span className="ml-2 shrink-0 text-[10px] uppercase tracking-wide text-amber-600">
-            live
-          </span>
-        )}
-      </CommandItem>
-    );
-  };
-
   const triggerLabel = selected
     ? variant === 'compact'
       ? selected.symbol
@@ -122,19 +84,36 @@ export function FiatCurrencySelect({
           <CommandInput placeholder="Search currencies…" />
           <CommandList>
             <CommandEmpty>No currency found.</CommandEmpty>
-            {historical.length > 0 && (
-              <CommandGroup heading="Fully supported">{historical.map(renderItem)}</CommandGroup>
-            )}
-            {liveOnly.length > 0 && (
-              <CommandGroup heading="Live rates only">{liveOnly.map(renderItem)}</CommandGroup>
-            )}
+            <CommandGroup>
+              {list.map((c) => {
+                const storeValue = valueField === 'id' ? c.id : c.symbol;
+                const isSelected = selected
+                  ? valueField === 'id'
+                    ? c.id === selected.id
+                    : c.symbol === selected.symbol
+                  : false;
+                return (
+                  <CommandItem
+                    key={c.id}
+                    value={`${c.symbol} ${c.name}`}
+                    onSelect={() => {
+                      onChange(storeValue);
+                      setOpen(false);
+                    }}
+                  >
+                    <Check
+                      className={cn(
+                        'mr-2 h-4 w-4 shrink-0',
+                        isSelected ? 'opacity-100' : 'opacity-0'
+                      )}
+                    />
+                    <span className="font-medium w-14 shrink-0">{c.symbol}</span>
+                    <span className="text-muted-foreground text-xs truncate">{c.name}</span>
+                  </CommandItem>
+                );
+              })}
+            </CommandGroup>
           </CommandList>
-          {liveOnly.length > 0 && (
-            <p className="border-t border-border/60 px-3 py-2 text-[10px] leading-snug text-muted-foreground">
-              Live-rates-only currencies have no historical chart data — past portfolio values will
-              be sparse.
-            </p>
-          )}
         </Command>
       </PopoverContent>
     </Popover>

@@ -20,8 +20,3 @@
  */
 
 export * from './core';
-
-// Set of fiat symbols Frankfurter (ECB) publishes historical rates for.
-// Other supported currencies fall back to exchangerate-api.com which is
-// live-only — surfaced in the UI as a "Live rates only" picker section.
-export { FRANKFURTER_HISTORICAL_FIAT } from './providers/frankfurter';
