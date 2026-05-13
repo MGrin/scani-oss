@@ -11,6 +11,7 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { trpc } from '@/lib/trpc';
 import { FiatCurrencySelect } from '../components/shared/FiatCurrencySelect';
+import { invalidatePortfolioQueries } from '../hooks/invalidatePortfolioQueries';
 import { useJobStatus } from '../hooks/useJobStatus';
 import { V2_ROUTES } from '../lib/routes';
 
@@ -27,6 +28,11 @@ export function SettingsPage() {
   // failure we surface the error and release the button.
   const [deleteJobId, setDeleteJobId] = useState<string | null>(null);
   const [recomputeJobId, setRecomputeJobId] = useState<string | null>(null);
+  // Why the current recompute run was triggered. The "Recompute portfolio
+  // history" button sets `manual`; switching base currency sets `currency`.
+  // Drives the banner / toast copy — the underlying job is identical and
+  // dedups in the router, so we share one jobId + one `useJobStatus`.
+  const [recomputeReason, setRecomputeReason] = useState<'manual' | 'currency'>('manual');
 
   const handleSignOut = () => {
     // ProtectedRoute will redirect to /auth on session loss.
@@ -75,28 +81,47 @@ export function SettingsPage() {
   useEffect(() => {
     if (!recomputeJobId) return;
     if (recomputeJobStatus.state === 'completed') {
-      showSuccess('Portfolio history rebuilt');
+      showSuccess(
+        recomputeReason === 'currency'
+          ? 'Portfolio recomputed in your new base currency'
+          : 'Portfolio history rebuilt'
+      );
       setRecomputeJobId(null);
-      utils.portfolio.invalidate();
+      // For a currency switch, dashboard / holdings / charts are the
+      // primary consumers — fan the invalidation across all of them so
+      // the freshly-written rows surface immediately, not only on next
+      // page navigation.
+      if (recomputeReason === 'currency') {
+        void invalidatePortfolioQueries(utils, { refetchType: 'all' });
+      } else {
+        void utils.portfolio.invalidate();
+      }
     } else if (recomputeJobStatus.state === 'failed') {
       showError(
         new Error(recomputeJobStatus.error ?? 'Recompute job failed'),
-        'Recomputing portfolio history'
+        recomputeReason === 'currency'
+          ? 'Rebuilding portfolio in new currency'
+          : 'Recomputing portfolio history'
       );
       setRecomputeJobId(null);
     }
-  }, [recomputeJobId, recomputeJobStatus.state, recomputeJobStatus.error, utils]);
+  }, [recomputeJobId, recomputeJobStatus.state, recomputeJobStatus.error, recomputeReason, utils]);
   const isRecomputing = recomputeMutation.isPending || recomputeJobId !== null;
 
-  const updateMutation = trpc.users.updateCurrent.useMutation({
-    onSuccess: () => {
-      utils.users.getCurrent.invalidate();
-      utils.users.getBaseCurrency.invalidate();
-    },
-  });
+  const updateMutation = trpc.users.updateCurrent.useMutation();
+  // `getSupportedCurrencies` is also called by `FiatCurrencySelect`; tRPC
+  // dedupes the request, so this is free. We need the list here to look up
+  // the picked currency's `hasHistoricalForex` flag for the confirm dialog.
+  const supportedCurrenciesQuery = trpc.users.getSupportedCurrencies.useQuery();
 
   const [name, setName] = useState('');
   const [baseCurrencyId, setBaseCurrencyId] = useState('');
+  // Once the user picks a currency that differs from their saved one, this
+  // flips true and the confirm dialog opens. We do NOT auto-save the
+  // currency: unlike the name field, switching base currency triggers a
+  // visible portfolio recompute, so a stray click should not silently
+  // rewrite every chart.
+  const [showCurrencyConfirm, setShowCurrencyConfirm] = useState(false);
 
   useEffect(() => {
     if (user) {
@@ -105,22 +130,71 @@ export function SettingsPage() {
     }
   }, [user]);
 
-  const isDirty = useMemo(() => {
+  const isNameDirty = useMemo(() => {
     if (!user) return false;
-    return name !== (user.name || '') || baseCurrencyId !== (user.baseCurrencyId || '');
-  }, [user, name, baseCurrencyId]);
+    return name !== (user.name || '');
+  }, [user, name]);
 
-  // Auto-save on change with debounce
+  // Auto-save the name field on a 1s debounce. The currency field is
+  // handled by the confirm dialog below, not by this effect.
   useEffect(() => {
-    if (!isDirty || !user) return;
+    if (!isNameDirty || !user) return;
     const timer = setTimeout(() => {
-      updateMutation.mutate({
-        name: name || undefined,
-        baseCurrencyId: baseCurrencyId || undefined,
-      });
+      updateMutation.mutate(
+        { name: name || undefined },
+        {
+          onSuccess: () => {
+            void utils.users.getCurrent.invalidate();
+          },
+          onError: (err) => showError(err, 'Saving name'),
+        }
+      );
     }, 1000);
     return () => clearTimeout(timer);
-  }, [name, baseCurrencyId, isDirty, updateMutation.mutate, user]);
+  }, [name, isNameDirty, updateMutation, user, utils.users.getCurrent]);
+
+  const pendingCurrency = useMemo(() => {
+    if (!baseCurrencyId) return null;
+    return supportedCurrenciesQuery.data?.find((c) => c.id === baseCurrencyId) ?? null;
+  }, [baseCurrencyId, supportedCurrenciesQuery.data]);
+
+  const cancelCurrencyChange = () => {
+    setBaseCurrencyId(user?.baseCurrencyId || '');
+    setShowCurrencyConfirm(false);
+  };
+
+  const confirmCurrencyChange = () => {
+    if (!baseCurrencyId) return;
+    updateMutation.mutate(
+      { baseCurrencyId },
+      {
+        onSuccess: async () => {
+          setShowCurrencyConfirm(false);
+          // Refresh the user object + base-currency join so every chart
+          // axis label flips to the new symbol immediately.
+          await Promise.all([
+            utils.users.getCurrent.invalidate(),
+            utils.users.getBaseCurrency.invalidate(),
+          ]);
+          // Force-refetch dashboard / holdings / charts / etc. so cached
+          // values denominated in the OLD currency don't sit next to NEW
+          // currency labels. `refetchType: 'all'` because the user may
+          // navigate away from Settings before active refetches finish.
+          await invalidatePortfolioQueries(utils, { refetchType: 'all' });
+          // Kick off the rollup so historical chart rows in the new
+          // currency populate within minutes instead of waiting up to
+          // 24h for the 04:00 UTC cron. The router dedups in-flight
+          // runs; we set the reason BEFORE firing so the banner / toast
+          // copy lands on the currency variant.
+          setRecomputeReason('currency');
+          recomputeMutation.mutate();
+        },
+        onError: (err) => showError(err, 'Changing base currency'),
+      }
+    );
+  };
+  const isChangingCurrency =
+    updateMutation.isPending || (recomputeReason === 'currency' && recomputeJobId !== null);
 
   if (userLoading) {
     return (
@@ -167,14 +241,49 @@ export function SettingsPage() {
         <CardContent className="space-y-4">
           <div className="space-y-2">
             <Label htmlFor="currency">Base Currency</Label>
-            <FiatCurrencySelect id="currency" value={baseCurrencyId} onChange={setBaseCurrencyId} />
+            <FiatCurrencySelect
+              id="currency"
+              value={baseCurrencyId}
+              onChange={(id) => {
+                setBaseCurrencyId(id);
+                // Open the confirm dialog only on an explicit user pick.
+                // We do NOT open it from an effect on `isCurrencyDirty`
+                // because that races with the post-save refetch: the
+                // mutation succeeds → `baseCurrencyId` is new and
+                // `user.baseCurrencyId` is briefly still old → the
+                // effect would re-open the dialog after the user
+                // already confirmed.
+                if (id && id !== (user?.baseCurrencyId || '')) {
+                  setShowCurrencyConfirm(true);
+                }
+              }}
+              disabled={isChangingCurrency}
+            />
           </div>
         </CardContent>
       </Card>
 
-      {updateMutation.isPending && <p className="text-xs text-muted-foreground">Saving...</p>}
-      {isDirty && !updateMutation.isPending && (
+      {isChangingCurrency && (
+        <Card className="border-primary/40 bg-primary/5">
+          <CardContent className="flex items-start gap-3 py-4">
+            <Loader2 className="h-4 w-4 mt-0.5 shrink-0 animate-spin text-primary" />
+            <div className="space-y-0.5">
+              <p className="text-sm font-medium">
+                Recomputing portfolio in {pendingCurrency?.symbol ?? 'new currency'}…
+              </p>
+              <p className="text-xs text-muted-foreground">
+                Charts and historical values will refresh in a few minutes. You can leave this page
+                — the rebuild keeps running in the background.
+              </p>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+      {isNameDirty && !updateMutation.isPending && (
         <p className="text-xs text-muted-foreground">Changes will auto-save</p>
+      )}
+      {updateMutation.isPending && !isChangingCurrency && (
+        <p className="text-xs text-muted-foreground">Saving...</p>
       )}
 
       <Card>
@@ -208,7 +317,10 @@ export function SettingsPage() {
           <Button
             type="button"
             variant="outline"
-            onClick={() => recomputeMutation.mutate()}
+            onClick={() => {
+              setRecomputeReason('manual');
+              recomputeMutation.mutate();
+            }}
             disabled={isRecomputing}
           >
             {isRecomputing ? (
@@ -254,6 +366,31 @@ export function SettingsPage() {
         variant="destructive"
         isPending={isDeleting}
         onConfirm={() => deleteAllDataMutation.mutate({ requestId: crypto.randomUUID() })}
+      />
+
+      <ConfirmDialog
+        open={showCurrencyConfirm}
+        onOpenChange={(open) => {
+          if (!open) cancelCurrencyChange();
+        }}
+        title={
+          pendingCurrency
+            ? `Change base currency to ${pendingCurrency.symbol}?`
+            : 'Change base currency?'
+        }
+        description={
+          pendingCurrency
+            ? `Your dashboard, holdings, and charts will recompute in ${pendingCurrency.symbol}. Historical chart values will rebuild over the next few minutes.${
+                pendingCurrency.hasHistoricalForex
+                  ? ''
+                  : ` Note: ${pendingCurrency.symbol} has live rates only — historical chart values may be limited.`
+              }`
+            : ''
+        }
+        confirmLabel="Switch currency"
+        cancelLabel="Keep current"
+        isPending={updateMutation.isPending}
+        onConfirm={confirmCurrencyChange}
       />
     </div>
   );

@@ -44,8 +44,12 @@ interface FrankfurterResponse {
  * in 2022 and never carried smaller-economy currencies (KZT, GEL, …).
  * Symbols outside this set fall through to `EXCHANGERATE_FALLBACK_FIAT`
  * and we resolve them via exchangerate-api.com instead.
+ *
+ * Exported for the UI: the base-currency picker uses this set to
+ * surface a "Live rates only" warning for currencies whose historical
+ * chart will be sparse.
  */
-const SUPPORTED_FIAT = new Set([
+export const FRANKFURTER_HISTORICAL_FIAT = new Set([
   'AUD',
   'BGN',
   'BRL',
@@ -141,7 +145,7 @@ export class FrankfurterProvider implements HistoricalPriceProvider {
    */
   canPrice(t: Token): boolean {
     const sym = t.symbol.toUpperCase();
-    return SUPPORTED_FIAT.has(sym) || EXCHANGERATE_FALLBACK_FIAT.has(sym);
+    return FRANKFURTER_HISTORICAL_FIAT.has(sym) || EXCHANGERATE_FALLBACK_FIAT.has(sym);
   }
 
   /**
@@ -165,8 +169,8 @@ export class FrankfurterProvider implements HistoricalPriceProvider {
       };
     }
 
-    const fromInPrimary = SUPPORTED_FIAT.has(fromSymbol);
-    const toInPrimary = SUPPORTED_FIAT.has(toSymbol);
+    const fromInPrimary = FRANKFURTER_HISTORICAL_FIAT.has(fromSymbol);
+    const toInPrimary = FRANKFURTER_HISTORICAL_FIAT.has(toSymbol);
     const fromInFallback = EXCHANGERATE_FALLBACK_FIAT.has(fromSymbol);
     const toInFallback = EXCHANGERATE_FALLBACK_FIAT.has(toSymbol);
 
@@ -244,8 +248,8 @@ export class FrankfurterProvider implements HistoricalPriceProvider {
     const fromSymbol = t.symbol.toUpperCase();
     const toSymbol = ctx.baseCurrency.symbol.toUpperCase();
 
-    if (!SUPPORTED_FIAT.has(fromSymbol)) return null;
-    if (!SUPPORTED_FIAT.has(toSymbol)) return null;
+    if (!FRANKFURTER_HISTORICAL_FIAT.has(fromSymbol)) return null;
+    if (!FRANKFURTER_HISTORICAL_FIAT.has(toSymbol)) return null;
 
     // Identity case — same currency, 1:1 at the requested date. We
     // emit a quote here so callers don't have to special-case it
@@ -307,8 +311,8 @@ export class FrankfurterProvider implements HistoricalPriceProvider {
   ): Promise<PriceQuote[]> {
     const fromSymbol = t.symbol.toUpperCase();
     const toSymbol = ctx.baseCurrency.symbol.toUpperCase();
-    if (!SUPPORTED_FIAT.has(fromSymbol)) return [];
-    if (!SUPPORTED_FIAT.has(toSymbol)) return [];
+    if (!FRANKFURTER_HISTORICAL_FIAT.has(fromSymbol)) return [];
+    if (!FRANKFURTER_HISTORICAL_FIAT.has(toSymbol)) return [];
     if (fromSymbol === toSymbol) return [];
     if (to.getTime() < from.getTime()) return [];
 
