@@ -243,6 +243,28 @@ export function RealtimeProvider({ children }: RealtimeProviderProps) {
         return;
       }
 
+      // Base-currency changes broadcast a `user:update` event with
+      // `metadata.source === 'base-currency-change'`. Every money
+      // value on the wire is denominated in the user's base, so a
+      // currency switch invalidates the entire portfolio query
+      // surface and the user-scoped queries that carry the new
+      // base-currency symbol. Other `user` events (none today, but
+      // forward-compatible) only refresh the user queries.
+      if (event.entityType === 'user') {
+        const metadata = (event as { metadata?: Record<string, unknown> }).metadata;
+        const isBaseCurrencyChange = metadata?.source === 'base-currency-change';
+        void utilsRef.current.users.getCurrent.invalidate();
+        void utilsRef.current.users.getBaseCurrency.invalidate();
+        if (isBaseCurrencyChange) {
+          // Use `refetchType: 'all'` rather than the usual `'active'`:
+          // a currency switch on one device must repaint every tab,
+          // even those that aren't the active view, so navigation
+          // doesn't briefly flash old-currency values.
+          void invalidatePortfolioQueries(utilsRef.current, { refetchType: 'all' });
+        }
+        return;
+      }
+
       if (!event.entityType || !PORTFOLIO_ENTITY_TYPES.has(event.entityType)) return;
 
       // Fire-and-forget — React Query handles dedup internally.

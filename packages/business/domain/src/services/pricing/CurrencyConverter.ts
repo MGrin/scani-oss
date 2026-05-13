@@ -4,6 +4,7 @@ import Decimal from 'decimal.js';
 import { Container, Service } from 'typedi';
 import { TokenPriceRepository } from '../../repositories/TokenPriceRepository';
 import { TokenRepository } from '../../repositories/TokenRepository';
+import { PriceGraphService } from './PriceGraphService';
 import { EXCHANGERATE_LIMIT } from './upstream-rate-limits';
 
 const currencyLogger = createComponentLogger('pricing:currency');
@@ -15,21 +16,45 @@ const currencyLogger = createComponentLogger('pricing:currency');
 const EXCHANGERATE_BASE_URL = 'https://api.exchangerate-api.com/v4/latest';
 const EXCHANGERATE_FETCH_TIMEOUT_MS = 8000;
 
+// Hub symbols used when no direct (or inverse direct) edge exists for a
+// pair — e.g. EUR→GBP routed through USD as `(EUR→USD) · (USD→GBP)`.
+// USD first because every forex-backfill edge is anchored on USD; EUR
+// second because it's the second-most-common base; USDT included so
+// crypto-quoted tokens (priced in USDT on CEXes) can hop to fiat bases.
+// Hub order matters only for tie-breaking — PriceGraphService picks the
+// first hub whose two legs both resolve.
+const FIAT_HUB_SYMBOLS = ['USD', 'EUR', 'USDT'] as const;
+
 /**
  * Fiat currency conversion with an in-memory rate cache, a DB-backed
  * historical lookup, and exchangerate-api.com as the upstream of last
  * resort. Forex-pair backfill (cron) goes through Frankfurter; this is
  * the synchronous request-time path.
+ *
+ * DB lookup is delegated to `PriceGraphService` so the same direct +
+ * inverse + one-hop routing the historical-chart path uses is also
+ * available here. That's what fixes the "switched to EUR, everything
+ * shows zero" failure mode: forex-backfill only stores
+ * `(EUR → USD = 1.08)` rows, never `(USD → EUR)`. The historical
+ * path inverted automatically; this path didn't, so cross-base
+ * conversions on a cold exchangerate-api fell off a cliff. Now both
+ * paths share the same graph.
  */
 @Service()
 export class CurrencyConverter {
   private readonly CURRENCY_CONVERSION_TTL_MS = 10 * 60 * 1000;
+  // Don't use a DB-resolved rate older than this for a live valuation.
+  // Forex moves ~10–15 bp/day on majors; 24 h is the tolerance we
+  // already accepted before delegating to PriceGraphService, kept here
+  // so the live API still gets a chance to refresh a stale row.
+  private readonly DB_RATE_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 
   private readonly limiterRegistry = Container.get(OutflowRateLimiterRegistry);
   private readonly exchangeRateLimiter = this.limiterRegistry.get(EXCHANGERATE_LIMIT);
 
   private readonly tokenRepository = Container.get(TokenRepository);
   private readonly tokenPriceRepository = Container.get(TokenPriceRepository);
+  private readonly priceGraphService = Container.get(PriceGraphService);
 
   private readonly currencyRateCache = new Map<string, { rate: string; expiresAt: number }>();
 
@@ -280,6 +305,25 @@ export class CurrencyConverter {
     });
   }
 
+  /**
+   * Resolve a fiat-pair rate from anything already stored in
+   * `token_prices`. Delegates to `PriceGraphService` so we get:
+   *
+   *   1. Direct (A → B) — the simple case.
+   *   2. Inverse (B → A) → `1 / price`. This is the case forex-backfill
+   *      actually produces: every hub edge is stored as `(<edge> → USD)`,
+   *      never `(USD → <edge>)`. The previous unidirectional lookup
+   *      always missed and forced a live exchangerate-api call; when
+   *      that call was rate-limited or down, the dashboard saw `null`
+   *      and degraded to "all prices unavailable".
+   *   3. One hop via USD / EUR / USDT — covers cross-fiat (EUR → GBP)
+   *      and USDT-quoted crypto when the user's base is anything other
+   *      than USD/USDT.
+   *
+   * Returns `null` when no path exists OR the binding leg of the path
+   * is older than 24 h relative to `timestamp` — stale enough that
+   * we'd rather fall through to the live API than serve it.
+   */
   private async fetchRateFromDatabase(
     fromCurrencySymbol: string,
     toCurrencySymbol: string,
@@ -290,41 +334,55 @@ export class CurrencyConverter {
       const toToken = await this.tokenRepository.findBySymbol(toCurrencySymbol);
 
       if (!fromToken || !toToken) return null;
-
       if (fromToken.id === toToken.id) return '1';
 
-      const priceResult = await this.tokenPriceRepository.findLatestPrice(fromToken.id, toToken.id);
+      const conversion = await this.priceGraphService.convert(
+        new Decimal(1),
+        fromToken.id,
+        toToken.id,
+        timestamp,
+        {
+          // forex-backfill writes `granularity: 'daily'` rows; preferring
+          // daily here lets PriceGraphService pick the cron-fresh edge
+          // over any intraday noise from on-demand caching.
+          preferGranularity: 'daily',
+          hubSymbols: [...FIAT_HUB_SYMBOLS],
+        }
+      );
 
-      if (!priceResult || priceResult.price === '0') return null;
+      if (!conversion) return null;
 
-      const priceAge = timestamp.getTime() - new Date(priceResult.timestamp).getTime();
-      if (priceAge > 24 * 60 * 60 * 1000) {
+      const priceAge = timestamp.getTime() - conversion.effectiveAt.getTime();
+      if (priceAge > this.DB_RATE_MAX_AGE_MS) {
         currencyLogger.debug(
           {
             fromCurrency: fromCurrencySymbol,
             toCurrency: toCurrencySymbol,
             priceAge: priceAge / (60 * 60 * 1000),
+            path: conversion.path,
           },
-          'Conversion rate from database is too old'
+          'Conversion rate from price graph is too old'
         );
         return null;
       }
 
+      const rateString = conversion.rate.toString();
       currencyLogger.debug(
         {
           fromCurrency: fromCurrencySymbol,
           toCurrency: toCurrencySymbol,
-          rate: priceResult.price,
-          source: priceResult.source,
+          rate: rateString,
+          path: conversion.path,
+          effectiveAt: conversion.effectiveAt,
         },
-        'Using conversion rate from database'
+        'Using conversion rate from price graph'
       );
 
-      return priceResult.price;
+      return rateString;
     } catch (error) {
       currencyLogger.warn(
         { error, fromCurrencySymbol, toCurrencySymbol },
-        'Failed to get conversion rate from database'
+        'Failed to get conversion rate from price graph'
       );
       return null;
     }

@@ -2,6 +2,7 @@ import { TokenService, UserService } from '@scani/domain/services';
 import { USER_DATA_DELETE } from '@scani/jobs';
 import { createComponentLogger } from '@scani/logging';
 import { BullMqEnqueueService } from '@scani/queue';
+import { emitEntityChange } from '@scani/realtime';
 import { UpdateUserDto } from '@scani/shared';
 import { Container } from 'typedi';
 import { z } from 'zod';
@@ -18,10 +19,32 @@ export const usersRouter = router({
     return dbUser;
   }),
 
-  // Update current user
+  // Update current user. When `baseCurrencyId` actually changes we
+  // broadcast a `user:update` realtime event so every open tab /
+  // device for this user re-invalidates portfolio queries without
+  // waiting for the user to refresh — every dashboard total, holding
+  // price, vault value, etc. is denominated in the user's base, so
+  // the currency switch is effectively a "refetch everything that
+  // shows money" trigger. Name-only edits do NOT emit (no portfolio
+  // impact; refetching dozens of queries on a name typo is wasteful).
   updateCurrent: protectedProcedure.input(UpdateUserDto).mutation(async ({ input, ctx }) => {
     const { dbUser } = await requireAuth(ctx);
-    return await Container.get(UserService).updateUser(dbUser.id, input);
+    const previousBaseCurrencyId = dbUser.baseCurrencyId;
+    const updated = await Container.get(UserService).updateUser(dbUser.id, input);
+    if (input.baseCurrencyId !== undefined && input.baseCurrencyId !== previousBaseCurrencyId) {
+      emitEntityChange({
+        entityType: 'user',
+        operationType: 'update',
+        entityId: dbUser.id,
+        userId: dbUser.id,
+        metadata: {
+          source: 'base-currency-change',
+          previousBaseCurrencyId,
+          newBaseCurrencyId: updated.baseCurrencyId,
+        },
+      });
+    }
+    return updated;
   }),
 
   // Get supported fiat currencies (tokens) for base currency selection

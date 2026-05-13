@@ -11,6 +11,7 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { trpc } from '@/lib/trpc';
 import { FiatCurrencySelect } from '../components/shared/FiatCurrencySelect';
+import { invalidatePortfolioQueries } from '../hooks/invalidatePortfolioQueries';
 import { useJobStatus } from '../hooks/useJobStatus';
 import { V2_ROUTES } from '../lib/routes';
 
@@ -89,9 +90,28 @@ export function SettingsPage() {
   const isRecomputing = recomputeMutation.isPending || recomputeJobId !== null;
 
   const updateMutation = trpc.users.updateCurrent.useMutation({
-    onSuccess: () => {
-      utils.users.getCurrent.invalidate();
-      utils.users.getBaseCurrency.invalidate();
+    onSuccess: (_data, variables) => {
+      void utils.users.getCurrent.invalidate();
+      void utils.users.getBaseCurrency.invalidate();
+      // The auto-save effect always submits both `name` and
+      // `baseCurrencyId`, so compare against the rendered user
+      // state to detect a real currency change rather than a
+      // name-only edit (we don't want to refetch every chart
+      // every time the user fixes a typo).
+      //
+      // When it DID change: refetch every query that renders a
+      // money value (every dashboard total, holding price, vault,
+      // group, etc.). The `user:update` realtime event fired by
+      // the API hits other tabs / devices for the same user; this
+      // local call is the fast-path for the tab that initiated the
+      // change so the user doesn't have to wait for the WS
+      // roundtrip. `refetchType: 'all'` so pages the user hasn't
+      // navigated to yet are ready when they get there.
+      const previousBaseCurrencyId = user?.baseCurrencyId ?? null;
+      const nextBaseCurrencyId = variables.baseCurrencyId ?? null;
+      if (nextBaseCurrencyId !== previousBaseCurrencyId) {
+        void invalidatePortfolioQueries(utils, { refetchType: 'all' });
+      }
     },
   });
 
