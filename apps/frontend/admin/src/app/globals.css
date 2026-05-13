@@ -1,12 +1,22 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
-
 /* Inherit the full design-system token set (light + dark) from @scani/ui.
  * Admin defaults to dark at SSR (`<html class="dark" data-theme="dark">`
  * in layout.tsx); `ThemeProvider`, mounted via `ThemeBridge`, takes over
- * post-hydration if the operator has a stored override. */
-@import "@scani/ui/styles/globals.css";
+ * post-hydration if the operator has a stored override.
+ *
+ * The import MUST stay at the top of the file — CSS spec requires every
+ * `@import` before any other at-rule, and Next.js's CSS pipeline silently
+ * drops imports that appear after `@tailwind` directives, which leaves
+ * `--primary`, `--background`, etc. undefined at runtime.
+ *
+ * Path is relative rather than `@scani/ui/styles/globals.css` because
+ * postcss-import doesn't resolve workspace `exports` maps the way Vite
+ * does (used by frontend/app + frontend/cloud); the relative path
+ * resolves correctly under both runtimes. */
+@import "../../../../../packages/frontend/ui/src/styles/globals.css";
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
 
 body {
   @apply font-mono antialiased;

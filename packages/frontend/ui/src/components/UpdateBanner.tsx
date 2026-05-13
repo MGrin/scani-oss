@@ -1,3 +1,5 @@
+'use client';
+
 import { Loader2, RefreshCw, X } from 'lucide-react';
 import { useState } from 'react';
 import { useAppUpdate } from '../hooks/useAppUpdate';

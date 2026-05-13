@@ -1,3 +1,4 @@
+import { UpdateBanner } from '@scani/ui/components/UpdateBanner';
 import type { Metadata, Viewport } from 'next';
 import type { ReactNode } from 'react';
 import { ServiceWorkerRegistration } from '@/components/ServiceWorkerRegistration';
@@ -46,6 +47,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
         <ThemeBridge>
           <div className="min-h-screen">{children}</div>
         </ThemeBridge>
+        <UpdateBanner />
         <ServiceWorkerRegistration />
       </body>
     </html>

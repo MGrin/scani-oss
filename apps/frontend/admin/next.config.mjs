@@ -56,9 +56,15 @@ const nextConfig = {
         source: '/auth/login',
         headers: [{ key: 'Cache-Control', value: 'no-store, must-revalidate' }],
       },
-      // PWA: sw.js must never be cached or update detection breaks.
+      // PWA: sw.js and version.json must never be cached or update
+      // detection breaks — useAppUpdate polls version.json to surface the
+      // blue "new version available" banner.
       {
         source: '/sw.js',
+        headers: [{ key: 'Cache-Control', value: 'no-cache, no-store, must-revalidate' }],
+      },
+      {
+        source: '/version.json',
         headers: [{ key: 'Cache-Control', value: 'no-cache, no-store, must-revalidate' }],
       },
       {

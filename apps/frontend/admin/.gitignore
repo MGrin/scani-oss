@@ -6,3 +6,7 @@ node_modules
 next-env.d.ts.bak
 *.tsbuildinfo
 .env.local
+
+# Generated at build time by scripts/generate-version.js; polled by the
+# useAppUpdate hook to surface the blue update banner after a redeploy.
+public/version.json

@@ -172,7 +172,13 @@ export function AppShell({ children }: { children: ReactNode }) {
   return (
     <div className="flex min-h-screen flex-col lg:flex-row">
       {/* Top bar — mobile + desktop */}
-      <header className="flex h-14 items-center justify-between gap-2 border-b border-border bg-background/95 px-4 backdrop-blur lg:hidden">
+      <header
+        className="flex items-center justify-between gap-2 border-b border-border bg-background/95 px-4 backdrop-blur lg:hidden"
+        style={{
+          paddingTop: 'env(safe-area-inset-top, 0px)',
+          minHeight: 'calc(3.5rem + env(safe-area-inset-top, 0px))',
+        }}
+      >
         <div className="flex items-center gap-3">
           <Sheet open={open} onOpenChange={setOpen}>
             <SheetTrigger asChild>
@@ -180,7 +186,14 @@ export function AppShell({ children }: { children: ReactNode }) {
                 <Menu className="h-5 w-5" />
               </Button>
             </SheetTrigger>
-            <SheetContent side="left" className="flex w-72 flex-col gap-4 overflow-y-auto p-4">
+            <SheetContent
+              side="left"
+              className="flex w-72 flex-col gap-4 overflow-y-auto p-4"
+              style={{
+                paddingTop: 'calc(1rem + env(safe-area-inset-top, 0px))',
+                paddingBottom: 'calc(1rem + env(safe-area-inset-bottom, 0px))',
+              }}
+            >
               <Link
                 href="/"
                 onClick={() => setOpen(false)}
@@ -203,7 +216,13 @@ export function AppShell({ children }: { children: ReactNode }) {
       </header>
 
       {/* Desktop sidebar */}
-      <aside className="hidden w-60 shrink-0 flex-col gap-5 border-r border-border bg-background/50 px-4 py-5 lg:flex">
+      <aside
+        className="hidden w-60 shrink-0 flex-col gap-5 border-r border-border bg-background/50 px-4 lg:flex"
+        style={{
+          paddingTop: 'calc(1.25rem + env(safe-area-inset-top, 0px))',
+          paddingBottom: 'calc(1.25rem + env(safe-area-inset-bottom, 0px))',
+        }}
+      >
         <Link href="/" className="px-2 text-base font-semibold tracking-tight">
           scani · admin
         </Link>
@@ -215,7 +234,20 @@ export function AppShell({ children }: { children: ReactNode }) {
       </aside>
 
       <main className="flex-1 min-w-0">
-        <div className="mx-auto w-full max-w-6xl px-4 py-6 sm:px-6 sm:py-8">{children}</div>
+        <div
+          className="mx-auto w-full max-w-6xl px-4 py-6 sm:px-6 sm:py-8"
+          style={{
+            // On desktop the mobile header is hidden, so the main content
+            // is what sits flush with the top of the viewport. Push it
+            // past the notch when running as an installed PWA on a device
+            // with a status bar. Mobile already gets safe-area from the
+            // sticky header above.
+            paddingTop: 'max(1.5rem, env(safe-area-inset-top, 0px))',
+            paddingBottom: 'max(1.5rem, env(safe-area-inset-bottom, 0px))',
+          }}
+        >
+          {children}
+        </div>
       </main>
     </div>
   );
