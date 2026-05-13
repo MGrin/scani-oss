@@ -1,4 +1,4 @@
-import { InstallPromptBanner } from '@scani/ui';
+import { InstallPromptBanner } from '@scani/ui/components/InstallPromptBanner';
 import type { ReactNode } from 'react';
 import { AppShell } from '@/components/AppShell';
 
