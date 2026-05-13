@@ -1,5 +1,6 @@
 'use client';
 
+import { PullToRefresh } from '@scani/ui/components/PullToRefresh';
 import { ThemeToggle } from '@scani/ui/components/ThemeToggle';
 import { cn } from '@scani/ui/lib/cn';
 import { Button } from '@scani/ui/ui/button';
@@ -14,6 +15,7 @@ import {
   Gauge,
   GitBranch,
   History,
+  LayoutGrid,
   ListChecks,
   LogOut,
   Mail,
@@ -25,7 +27,7 @@ import {
   Waves,
 } from 'lucide-react';
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import type { ComponentType, ReactNode } from 'react';
 import { useState } from 'react';
 
@@ -98,9 +100,28 @@ const NAV: NavGroup[] = [
   },
 ];
 
+// Top-level groups surfaced in the mobile bottom nav. Admin has too many
+// pages to fit on the bar — picking the four highest-frequency groups
+// and tucking the rest behind "More" matches main app's pattern.
+const MOBILE_NAV: Array<{ href: string; label: string; icon: IconType; matchPrefix: string }> = [
+  { href: '/', label: 'Overview', icon: Gauge, matchPrefix: '' },
+  { href: '/jobs/queue', label: 'Jobs', icon: Activity, matchPrefix: '/jobs' },
+  { href: '/app/users', label: 'App', icon: LayoutGrid, matchPrefix: '/app' },
+  { href: '/platform/fly', label: 'Platform', icon: Server, matchPrefix: '/platform' },
+];
+
 function isActive(pathname: string, item: NavLink): boolean {
   if (item.matchPrefix) return pathname === item.href || pathname.startsWith(`${item.href}/`);
   return pathname === item.href;
+}
+
+function getPageTitle(pathname: string): string {
+  for (const group of NAV) {
+    for (const item of group.items) {
+      if (isActive(pathname, item)) return item.label;
+    }
+  }
+  return 'Admin';
 }
 
 function NavList({
@@ -167,13 +188,25 @@ function SignOutForm({ className }: { className?: string }) {
 
 export function AppShell({ children }: { children: ReactNode }) {
   const pathname = usePathname() || '/';
+  const router = useRouter();
   const [open, setOpen] = useState(false);
+
+  const title = getPageTitle(pathname);
+
+  // PullToRefresh expects an async refresh. router.refresh() returns
+  // void, so wrap it in a Promise that resolves after a short delay —
+  // long enough for the spinner animation to register, short enough not
+  // to feel sluggish.
+  const handleRefresh = async () => {
+    router.refresh();
+    await new Promise((resolve) => setTimeout(resolve, 400));
+  };
 
   return (
     // h-dvh + overflow-hidden mirrors the pattern used by main app and
     // cloud: only the inner <main> scrolls. Without this, the entire
     // page scrolls and the mobile header scrolls away exposing page
-    // content to the iOS status bar in PWA mode (regressed in #515).
+    // content to the iOS status bar in PWA mode.
     <div className="flex h-dvh overflow-hidden bg-background lg:flex-row">
       {/* Desktop sidebar */}
       <aside
@@ -195,66 +228,113 @@ export function AppShell({ children }: { children: ReactNode }) {
 
       {/* Main column — mobile header stays pinned, only the <main> scrolls */}
       <div className="flex min-w-0 flex-1 flex-col">
-        {/* Mobile top bar */}
+        {/* Mobile top bar — shows the active page title (mirrors main
+            app's TopBar). The desktop sidebar already shows the brand. */}
         <header
-          className="flex shrink-0 items-center justify-between gap-2 border-b border-border bg-background/95 px-4 backdrop-blur lg:hidden"
+          className="flex shrink-0 items-center gap-2 border-b border-border bg-background/95 px-3 backdrop-blur lg:hidden"
           style={{
             paddingTop: 'env(safe-area-inset-top, 0px)',
             minHeight: 'calc(3.5rem + env(safe-area-inset-top, 0px))',
           }}
         >
-          <div className="flex items-center gap-3">
-            <Sheet open={open} onOpenChange={setOpen}>
-              <SheetTrigger asChild>
-                <Button type="button" variant="ghost" size="icon" aria-label="Open navigation">
-                  <Menu className="h-5 w-5" />
-                </Button>
-              </SheetTrigger>
-              <SheetContent
-                side="left"
-                className="flex w-72 flex-col gap-4 overflow-y-auto p-4"
-                style={{
-                  paddingTop: 'calc(1rem + env(safe-area-inset-top, 0px))',
-                  paddingBottom: 'calc(1rem + env(safe-area-inset-bottom, 0px))',
-                }}
+          <Sheet open={open} onOpenChange={setOpen}>
+            <SheetTrigger asChild>
+              <Button type="button" variant="ghost" size="icon" aria-label="Open navigation">
+                <Menu className="h-5 w-5" />
+              </Button>
+            </SheetTrigger>
+            <SheetContent
+              side="left"
+              className="flex w-72 flex-col gap-4 overflow-y-auto p-4"
+              style={{
+                paddingTop: 'calc(1rem + env(safe-area-inset-top, 0px))',
+                paddingBottom: 'calc(1rem + env(safe-area-inset-bottom, 0px))',
+              }}
+            >
+              <Link
+                href="/"
+                onClick={() => setOpen(false)}
+                className="text-base font-semibold tracking-tight"
               >
-                <Link
-                  href="/"
-                  onClick={() => setOpen(false)}
-                  className="text-base font-semibold tracking-tight"
-                >
-                  scani · admin
-                </Link>
-                <NavList pathname={pathname} onNavigate={() => setOpen(false)} />
-                <div className="mt-auto flex flex-col gap-2 border-t border-border pt-3">
-                  <ThemeToggle variant="row" side="top" align="start" />
-                  <SignOutForm />
-                </div>
-              </SheetContent>
-            </Sheet>
-            <Link href="/" className="text-base font-semibold tracking-tight">
-              scani · admin
-            </Link>
-          </div>
+                scani · admin
+              </Link>
+              <NavList pathname={pathname} onNavigate={() => setOpen(false)} />
+              <div className="mt-auto flex flex-col gap-2 border-t border-border pt-3">
+                <ThemeToggle variant="row" side="top" align="start" />
+                <SignOutForm />
+              </div>
+            </SheetContent>
+          </Sheet>
+          <h1 className="flex-1 truncate text-sm font-medium text-foreground">{title}</h1>
           <ThemeToggle variant="icon" side="bottom" align="end" />
         </header>
 
-        <main className="min-h-0 flex-1 overflow-y-auto">
-          <div
-            className="mx-auto w-full max-w-6xl px-4 py-6 sm:px-6 sm:py-8"
-            style={{
-              // On desktop the mobile header is hidden, so the main
-              // content is what sits flush with the top of the viewport.
-              // Push it past the notch when running as an installed PWA
-              // on a device with a status bar.
-              paddingTop: 'max(1.5rem, env(safe-area-inset-top, 0px))',
-              paddingBottom: 'max(1.5rem, env(safe-area-inset-bottom, 0px))',
-            }}
-          >
-            {children}
-          </div>
+        <main className="min-h-0 flex-1">
+          <PullToRefresh onRefresh={handleRefresh}>
+            <div
+              className="mx-auto w-full max-w-6xl px-4 py-6 sm:px-6 sm:py-8"
+              style={{
+                // On desktop the mobile header is hidden, so the main
+                // content is what sits flush with the top of the viewport.
+                // Push it past the notch when running as an installed PWA
+                // on a device with a status bar.
+                paddingTop: 'max(1.5rem, env(safe-area-inset-top, 0px))',
+              }}
+            >
+              {children}
+            </div>
+            {/* Spacer so the bottom MobileNav doesn't overlap the last
+                row of content. Mirrors the same trick in
+                apps/frontend/app/src/v2/layouts/AppShell.tsx. */}
+            <div
+              aria-hidden="true"
+              className="lg:hidden"
+              style={{ height: 'calc(3.5rem + env(safe-area-inset-bottom, 0px))' }}
+            />
+          </PullToRefresh>
         </main>
       </div>
+
+      {/* Mobile bottom nav — fixed to viewport so PWA scroll anchoring
+          and visual-viewport keyboard shifts don't drift it. Five slots:
+          four top-level destinations + a "More" button that opens the
+          full nav drawer. */}
+      <nav
+        aria-label="Primary"
+        className="lg:hidden fixed bottom-0 inset-x-0 z-40 flex items-center justify-around border-t border-border bg-background"
+        style={{
+          paddingBottom: 'env(safe-area-inset-bottom, 0px)',
+          height: 'calc(3.5rem + env(safe-area-inset-bottom, 0px))',
+        }}
+      >
+        {MOBILE_NAV.map(({ href, label, icon: Icon, matchPrefix }) => {
+          const active = matchPrefix === '' ? pathname === href : pathname.startsWith(matchPrefix);
+          return (
+            <Link
+              key={href}
+              href={href}
+              aria-label={label}
+              aria-current={active ? 'page' : undefined}
+              className={cn(
+                'flex h-full flex-1 flex-col items-center justify-center gap-0.5 text-[10px]',
+                active ? 'text-primary' : 'text-muted-foreground'
+              )}
+            >
+              <Icon className="h-5 w-5" aria-hidden="true" />
+              <span>{label}</span>
+            </Link>
+          );
+        })}
+        <button
+          type="button"
+          onClick={() => setOpen(true)}
+          aria-label="More"
+          className="flex h-full flex-1 flex-col items-center justify-center gap-0.5 text-[10px] text-muted-foreground"
+        >
+          <Menu className="h-5 w-5" aria-hidden="true" />
+          <span>More</span>
+        </button>
+      </nav>
     </div>
   );
 }

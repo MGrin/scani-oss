@@ -1,9 +1,10 @@
 import { InstallPromptBanner, ThemeToggle } from '@scani/ui';
+import { PullToRefresh } from '@scani/ui/components/PullToRefresh';
 import { Sheet, SheetContent } from '@scani/ui/ui/sheet';
 import { useQueryClient } from '@tanstack/react-query';
 import { BarChart3, BookOpen, ExternalLink, KeyRound, LogOut, Menu } from 'lucide-react';
 import { useState } from 'react';
-import { Link, NavLink, Outlet } from 'react-router-dom';
+import { NavLink, Outlet, useLocation } from 'react-router-dom';
 import { authClient } from '../lib/auth-client';
 
 interface NavItemDef {
@@ -23,6 +24,13 @@ const NAV_ITEMS: NavItemDef[] = [
 // dev-server proxies /docs to the local data-provider (see vite.config.ts).
 const API_DOCS_HREF = `${import.meta.env.VITE_DATA_PROVIDER_URL ?? ''}/docs`;
 
+function getPageTitle(pathname: string): string {
+  for (const item of NAV_ITEMS) {
+    if (pathname === item.to || pathname.startsWith(`${item.to}/`)) return item.label;
+  }
+  return 'Scani Cloud';
+}
+
 /**
  * Authenticated layout: persistent sidebar on desktop, hamburger + left
  * drawer on mobile. Visual parity with frontendV2 is preserved via the
@@ -30,10 +38,16 @@ const API_DOCS_HREF = `${import.meta.env.VITE_DATA_PROVIDER_URL ?? ''}/docs`;
  */
 export function Shell() {
   const { data } = authClient.useSession();
+  const { pathname } = useLocation();
   const [mobileOpen, setMobileOpen] = useState(false);
   const queryClient = useQueryClient();
 
   const closeMobile = () => setMobileOpen(false);
+  const title = getPageTitle(pathname);
+
+  const handleRefresh = async () => {
+    await queryClient.invalidateQueries();
+  };
 
   const handleSignOut = async () => {
     await authClient.signOut();
@@ -113,8 +127,10 @@ export function Shell() {
       </Sheet>
 
       <div className="flex min-w-0 flex-1 flex-col">
+        {/* Mobile top bar — shows the active page title; the desktop
+            sidebar already shows the brand. */}
         <header
-          className="flex items-center gap-2 border-b border-border bg-card px-3 lg:hidden"
+          className="flex shrink-0 items-center gap-2 border-b border-border bg-card px-3 lg:hidden"
           style={{
             paddingTop: 'env(safe-area-inset-top)',
             minHeight: 'calc(3.5rem + env(safe-area-inset-top))',
@@ -128,15 +144,59 @@ export function Shell() {
           >
             <Menu className="h-5 w-5" />
           </button>
-          <Link to="/keys" className="text-sm font-semibold">
-            Scani Cloud
-          </Link>
+          <h1 className="flex-1 truncate text-sm font-medium text-foreground">{title}</h1>
         </header>
 
-        <main className="flex-1 overflow-y-auto">
-          <Outlet />
+        <main className="min-h-0 flex-1">
+          <PullToRefresh onRefresh={handleRefresh}>
+            <Outlet />
+            {/* Spacer so the bottom MobileNav doesn't overlap the last
+                row of content. Mirrors apps/frontend/app/src/v2/layouts/AppShell.tsx. */}
+            <div
+              aria-hidden="true"
+              className="lg:hidden"
+              style={{ height: 'calc(3.5rem + env(safe-area-inset-bottom, 0px))' }}
+            />
+          </PullToRefresh>
         </main>
       </div>
+
+      {/* Mobile bottom nav — only two internal routes plus "More" for
+          the rest (sign-out, theme toggle, API docs link). Fixed to the
+          viewport so PWA scroll anchoring doesn't drift it. */}
+      <nav
+        aria-label="Primary"
+        className="lg:hidden fixed bottom-0 inset-x-0 z-40 flex items-center justify-around border-t border-border bg-background"
+        style={{
+          paddingBottom: 'env(safe-area-inset-bottom, 0px)',
+          height: 'calc(3.5rem + env(safe-area-inset-bottom, 0px))',
+        }}
+      >
+        {NAV_ITEMS.map(({ to, label, Icon }) => (
+          <NavLink
+            key={to}
+            to={to}
+            aria-label={label}
+            className={({ isActive }) =>
+              `flex h-full flex-1 flex-col items-center justify-center gap-0.5 text-[10px] ${
+                isActive ? 'text-primary' : 'text-muted-foreground'
+              }`
+            }
+          >
+            <Icon className="h-5 w-5" aria-hidden="true" />
+            <span>{label}</span>
+          </NavLink>
+        ))}
+        <button
+          type="button"
+          onClick={() => setMobileOpen(true)}
+          aria-label="More"
+          className="flex h-full flex-1 flex-col items-center justify-center gap-0.5 text-[10px] text-muted-foreground"
+        >
+          <Menu className="h-5 w-5" aria-hidden="true" />
+          <span>More</span>
+        </button>
+      </nav>
     </div>
   );
 }
