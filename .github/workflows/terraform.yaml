@@ -74,7 +74,26 @@ jobs:
           terraform_wrapper: false
 
       - run: terraform fmt -check -recursive
-      - run: terraform init -input=false
+      - name: terraform init (with retry)
+        # `terraform init` reaches GitHub for `<provider>_<v>_SHA256SUMS`
+        # whenever a provider is missing from `.terraform.lock.hcl`
+        # (today: `jianyuan/sentry`, `hashicorp/random`). GitHub releases
+        # downloads occasionally time out from the runner network; one
+        # failed checksum fetch fails the whole step. Retry with
+        # exponential backoff so a transient flake doesn't block the
+        # workflow. Longer-term: regenerate the lock file locally so
+        # every provider is pinned and this network call is skipped.
+        run: |
+          for attempt in 1 2 3 4; do
+            if terraform init -input=false; then
+              exit 0
+            fi
+            sleep_for=$((2 ** attempt))
+            echo "terraform init attempt ${attempt} failed; retrying in ${sleep_for}s"
+            sleep "${sleep_for}"
+          done
+          echo "terraform init failed after 4 attempts" >&2
+          exit 1
       - run: terraform validate
       - run: terraform plan -no-color -input=false -lock-timeout=60s -out=tfplan
       - name: Comment plan on PR
@@ -150,7 +169,19 @@ jobs:
       # (terraform_data.*_machine_count) via local-exec during apply.
       - uses: superfly/flyctl-actions/setup-flyctl@ed8efb33836e8b2096c7fd3ba1c8afe303ebbff1 # master @ 2026-05-12
 
-      - run: terraform init -input=false
+      - name: terraform init (with retry)
+        # See the plan job above for context — same flake, same fix.
+        run: |
+          for attempt in 1 2 3 4; do
+            if terraform init -input=false; then
+              exit 0
+            fi
+            sleep_for=$((2 ** attempt))
+            echo "terraform init attempt ${attempt} failed; retrying in ${sleep_for}s"
+            sleep "${sleep_for}"
+          done
+          echo "terraform init failed after 4 attempts" >&2
+          exit 1
 
       # Idempotent self-healing imports. When a resource is added to TF that
       # already exists in the target system, `terraform apply` errors with
