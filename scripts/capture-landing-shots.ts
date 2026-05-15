@@ -43,6 +43,54 @@ const SHOTS: ReadonlyArray<Shot> = [
 const THEMES: ReadonlyArray<Theme> = ['light', 'dark'];
 const DEVICES: ReadonlyArray<Device> = ['desktop', 'mobile'];
 
+interface BrowserCookie {
+  name: string;
+  value: string;
+  url?: string;
+  domain?: string;
+  path?: string;
+  expires?: number;
+  httpOnly?: boolean;
+  secure?: boolean;
+  sameSite?: 'Strict' | 'Lax' | 'None';
+}
+
+function parseSetCookie(raw: string, fallbackUrl: string): BrowserCookie {
+  const parts = raw.split(';');
+  const pair = parts[0] ?? '';
+  const attrs = parts.slice(1);
+  const eq = pair.indexOf('=');
+  if (eq === -1) {
+    throw new Error(`Malformed Set-Cookie header: ${raw}`);
+  }
+  const cookie: BrowserCookie = {
+    name: pair.slice(0, eq).trim(),
+    value: pair.slice(eq + 1).trim(),
+  };
+  for (const attr of attrs) {
+    const parts2 = attr.split('=');
+    const key = (parts2[0] ?? '').trim().toLowerCase();
+    const val = parts2.slice(1).join('=').trim();
+    if (key === 'path') cookie.path = val;
+    else if (key === 'domain') cookie.domain = val;
+    else if (key === 'expires') cookie.expires = Math.floor(new Date(val).getTime() / 1000);
+    else if (key === 'max-age') cookie.expires = Math.floor(Date.now() / 1000) + Number(val);
+    else if (key === 'httponly') cookie.httpOnly = true;
+    else if (key === 'secure') cookie.secure = true;
+    else if (key === 'samesite') {
+      const v = val.toLowerCase();
+      cookie.sameSite = v === 'strict' ? 'Strict' : v === 'none' ? 'None' : 'Lax';
+    }
+  }
+  // Playwright wants exactly one of `url` OR `domain`+`path`.
+  if (cookie.domain) {
+    if (!cookie.path) cookie.path = '/';
+  } else {
+    cookie.url = fallbackUrl;
+  }
+  return cookie;
+}
+
 async function main() {
   const appUrl = (process.env.SCANI_APP_URL ?? 'https://app.scani.xyz').replace(/\/$/, '');
   const apiUrl = (process.env.SCANI_API_URL ?? 'https://api.scani.xyz').replace(/\/$/, '');
@@ -89,14 +137,27 @@ async function main() {
         }, theme);
 
         const signInUrl = `${apiUrl}/api/auth/screenshot-bot/sign-in`;
-        const authRes = await ctx.request.post(signInUrl, {
+        // Playwright 1.60's HTTP client crashes on Bun parsing the
+        // Set-Cookie response (responseUrl arrives as a relative path
+        // through Bun's node:http shim, so `new URL(responseUrl)`
+        // throws ERR_INVALID_URL). Use Bun's native fetch for the bot
+        // sign-in, then forward the Set-Cookie headers into the
+        // browser context manually.
+        const authRes = await fetch(signInUrl, {
+          method: 'POST',
           headers: { Authorization: `Bearer ${secret}` },
+          redirect: 'manual',
         });
-        if (!authRes.ok()) {
+        if (!authRes.ok) {
           throw new Error(
-            `Bot sign-in failed (${authRes.status()} ${authRes.statusText()}): ${await authRes.text()}`
+            `Bot sign-in failed (${authRes.status} ${authRes.statusText}): ${await authRes.text()}`
           );
         }
+        const setCookies = authRes.headers.getSetCookie();
+        if (setCookies.length === 0) {
+          throw new Error('Bot sign-in returned no Set-Cookie headers; cannot authenticate.');
+        }
+        await ctx.addCookies(setCookies.map((raw) => parseSetCookie(raw, signInUrl)));
 
         for (const shot of SHOTS) {
           const page = await ctx.newPage();
