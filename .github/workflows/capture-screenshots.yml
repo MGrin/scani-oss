@@ -7,11 +7,19 @@ on:
         description: 'App URL to capture screenshots from'
         required: false
         default: 'https://app.scani.xyz'
+      email:
+        description: 'Demo account email (overrides secret)'
+        required: false
+      password:
+        description: 'Demo account password (overrides secret)'
+        required: false
 
 jobs:
   capture:
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    permissions:
+      contents: write
 
     steps:
       - name: Checkout
@@ -30,8 +38,8 @@ jobs:
       - name: Capture screenshots
         working-directory: apps/frontend/landing
         env:
-          SCANI_EMAIL: ${{ secrets.SCANI_DEMO_EMAIL }}
-          SCANI_PASSWORD: ${{ secrets.SCANI_DEMO_PASSWORD }}
+          SCANI_EMAIL: ${{ inputs.email || secrets.SCANI_DEMO_EMAIL }}
+          SCANI_PASSWORD: ${{ inputs.password || secrets.SCANI_DEMO_PASSWORD }}
           SCANI_APP_URL: ${{ inputs.app_url }}
         run: bun run scripts/capture-landing-shots.ts
 
