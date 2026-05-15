@@ -210,6 +210,7 @@ const betterAuthInstance = createBetterAuth({
   secret: env.BETTER_AUTH_SECRET,
   cookieDomain: env.COOKIE_DOMAIN,
   trustedOrigins: [env.FRONTEND_URL],
+  screenshotBotSecret: env.SCREENSHOT_BOT_SECRET,
 });
 setBetterAuthForContext(betterAuthInstance);
 logger.info(

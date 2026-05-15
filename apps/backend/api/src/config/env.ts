@@ -90,6 +90,13 @@ const envSchema = z.object({
   // DLQ replay). Required in prod.
   ADMIN_JOBS_HMAC_SECRET: requiredInProd(z.string().min(32), 'ADMIN_JOBS_HMAC_SECRET'),
 
+  // Shared secret for the screenshot-bot endpoint. Lets the GH Actions
+  // workflow mint a Better-Auth session for the single allow-listed
+  // landing-screenshots user. Optional everywhere — the endpoint itself
+  // refuses (403) when unset, so a missing value disables the feature
+  // gracefully instead of blocking prod boot.
+  SCREENSHOT_BOT_SECRET: z.string().min(32).optional(),
+
   // SCANI_CLOUD_URL + SCANI_CLOUD_API_KEY are owned by @scani/cloud-client's
   // own env schema. Required in prod; optional in dev (local fallback).
 });

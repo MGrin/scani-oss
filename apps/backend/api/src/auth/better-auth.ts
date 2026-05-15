@@ -15,6 +15,7 @@ import { drizzleAdapter } from 'better-auth/adapters/drizzle';
 import { emailOTP, magicLink } from 'better-auth/plugins';
 import { and, eq, isNull } from 'drizzle-orm';
 import { Container } from 'typedi';
+import { screenshotBotPlugin } from './screenshot-bot-plugin';
 
 const authLogger = createComponentLogger('auth');
 
@@ -59,6 +60,7 @@ export function createBetterAuth(opts: {
   secret: string;
   cookieDomain?: string;
   trustedOrigins?: string[];
+  screenshotBotSecret?: string;
 }) {
   const email = Container.get(EmailFacade);
 
@@ -242,6 +244,7 @@ export function createBetterAuth(opts: {
           }
         },
       }),
+      screenshotBotPlugin({ secret: opts.screenshotBotSecret }),
     ],
   });
 }

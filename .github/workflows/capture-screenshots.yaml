@@ -1,0 +1,66 @@
+name: Capture landing screenshots
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'apps/frontend/app/**'
+      - 'packages/frontend/ui/**'
+      - 'packages/business/shared/src/**'
+      - 'scripts/capture-landing-shots.ts'
+      - '.github/workflows/capture-screenshots.yaml'
+  workflow_dispatch: {}
+
+# Refresh runs commit a new PNG set back to main; running them
+# concurrently would race on the same files and force-push each other.
+concurrency:
+  group: capture-screenshots
+  cancel-in-progress: false
+
+# `contents: write` is required to commit + push the regenerated
+# screenshots back to main. Everything else stays read-only.
+permissions:
+  contents: write
+
+jobs:
+  capture:
+    name: Capture screenshots
+    runs-on: ubuntu-latest
+    # Skip the run we just pushed ourselves to avoid an infinite loop.
+    if: "!contains(github.event.head_commit.message, '[skip screenshots]')"
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0
+        with:
+          # We need a writable token + full history so the push later
+          # in this job isn't rejected as a shallow non-fast-forward.
+          token: ${{ secrets.GITHUB_TOKEN }}
+          fetch-depth: 0
+
+      - uses: ./.github/actions/setup-bun
+
+      - name: Install Playwright (chromium only)
+        run: bunx playwright install --with-deps chromium
+
+      - name: Capture screenshots
+        env:
+          SCREENSHOT_BOT_SECRET: ${{ secrets.SCREENSHOT_BOT_SECRET }}
+          SCANI_APP_URL: https://app.scani.xyz
+          SCANI_API_URL: https://api.scani.xyz
+        run: bun scripts/capture-landing-shots.ts
+
+      - name: Commit + push if changed
+        env:
+          GIT_AUTHOR_NAME: github-actions[bot]
+          GIT_AUTHOR_EMAIL: 41898282+github-actions[bot]@users.noreply.github.com
+          GIT_COMMITTER_NAME: github-actions[bot]
+          GIT_COMMITTER_EMAIL: 41898282+github-actions[bot]@users.noreply.github.com
+        run: |
+          set -euo pipefail
+          if git diff --quiet -- apps/frontend/landing/public/screenshots/; then
+            echo "No screenshot changes; nothing to commit."
+            exit 0
+          fi
+          git add apps/frontend/landing/public/screenshots/
+          git commit -m "chore(landing): refresh screenshots [skip screenshots]"
+          git push origin HEAD:${{ github.ref_name }}

@@ -46,6 +46,7 @@
     "@typescript/native-preview": "^7.0.0-dev.20260416.2",
     "concurrently": "^8.2.2",
     "knip": "^6.4.1",
+    "playwright": "^1.60.0",
     "syncpack": "^14.3.0",
     "typescript": "^5"
   },
