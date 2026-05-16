@@ -57,10 +57,14 @@ jobs:
           GIT_COMMITTER_EMAIL: 41898282+github-actions[bot]@users.noreply.github.com
         run: |
           set -euo pipefail
-          if git diff --quiet -- apps/frontend/landing/public/screenshots/; then
+          # Stage first, then diff against the index — `git diff` alone
+          # ignores untracked files, so the first run (when the
+          # screenshots directory doesn't yet exist in HEAD) would
+          # short-circuit before any of the new PNGs got committed.
+          git add apps/frontend/landing/public/screenshots/
+          if git diff --cached --quiet -- apps/frontend/landing/public/screenshots/; then
             echo "No screenshot changes; nothing to commit."
             exit 0
           fi
-          git add apps/frontend/landing/public/screenshots/
           git commit -m "chore(landing): refresh screenshots [skip screenshots]"
           git push origin HEAD:${{ github.ref_name }}

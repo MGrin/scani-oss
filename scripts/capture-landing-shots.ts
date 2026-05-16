@@ -36,7 +36,7 @@ const SHOTS: ReadonlyArray<Shot> = [
   { slug: 'integrations', path: '/integrations', waitFor: 'text=Crypto Exchanges' },
   { slug: 'accounts', path: '/accounts', waitFor: 'text=/\\d+ accounts/' },
   { slug: 'institutions', path: '/institutions', waitFor: 'text=/\\d+ institutions/' },
-  { slug: 'jobs', path: '/jobs', waitFor: '[role="heading"]:has-text("Active")' },
+  { slug: 'jobs', path: '/jobs', waitFor: 'role=heading[name=/Active/]' },
   { slug: 'settings', path: '/settings', waitFor: '#currency' },
 ];
 
