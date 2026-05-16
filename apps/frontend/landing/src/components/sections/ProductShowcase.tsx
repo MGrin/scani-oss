@@ -29,7 +29,10 @@ const SHOTS: ReadonlyArray<Shot> = [
 ];
 
 function variantSrc(id: string, prefs: SystemPreferences): string {
-  return `/screenshots/${id}-${prefs.theme}-${prefs.device}.png`;
+  // `?v=__BUILD_ID__` busts the browser/CDN cache on each deploy — the
+  // capture workflow overwrites these PNGs under stable filenames, so a
+  // plain path would keep serving the previous capture.
+  return `/screenshots/${id}-${prefs.theme}-${prefs.device}.png?v=${__BUILD_ID__}`;
 }
 
 // Real screenshots are dropped into `public/screenshots/` by the GH
@@ -41,9 +44,10 @@ function Screenshot({ shot, prefs }: { shot: Shot; prefs: SystemPreferences }) {
   const src = variantSrc(shot.id, prefs);
   const [errored, setErrored] = useState<string | null>(null);
   // Desktop shots are captured at 1600×1000 (16:10); mobile shots at the
-  // iPhone-14 viewport (390×844). Match the frame to the source so the
-  // portrait phone screenshot isn't cropped down to a landscape sliver.
-  const aspect = prefs.device === 'mobile' ? 'aspect-[390/844]' : 'aspect-[16/10]';
+  // iPhone-14 *viewport* — 390×664, not the 390×844 physical screen.
+  // The frame must match the capture aspect or object-cover zooms and
+  // crops the screenshot.
+  const aspect = prefs.device === 'mobile' ? 'aspect-[390/664]' : 'aspect-[16/10]';
   if (errored === src) {
     return (
       <div
