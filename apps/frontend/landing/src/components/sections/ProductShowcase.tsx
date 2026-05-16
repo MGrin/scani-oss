@@ -40,9 +40,15 @@ function variantSrc(id: string, prefs: SystemPreferences): string {
 function Screenshot({ shot, prefs }: { shot: Shot; prefs: SystemPreferences }) {
   const src = variantSrc(shot.id, prefs);
   const [errored, setErrored] = useState<string | null>(null);
+  // Desktop shots are captured at 1600×1000 (16:10); mobile shots at the
+  // iPhone-14 viewport (390×844). Match the frame to the source so the
+  // portrait phone screenshot isn't cropped down to a landscape sliver.
+  const aspect = prefs.device === 'mobile' ? 'aspect-[390/844]' : 'aspect-[16/10]';
   if (errored === src) {
     return (
-      <div className="flex aspect-[16/10] items-center justify-center rounded-md border border-dashed border-border bg-card text-xs text-muted-foreground">
+      <div
+        className={`flex ${aspect} items-center justify-center rounded-md border border-dashed border-border bg-card text-xs text-muted-foreground`}
+      >
         Screenshot pending capture
       </div>
     );
@@ -53,7 +59,7 @@ function Screenshot({ shot, prefs }: { shot: Shot; prefs: SystemPreferences }) {
       src={src}
       alt={shot.title}
       loading="lazy"
-      className="aspect-[16/10] w-full rounded-md border border-border bg-card object-cover object-top"
+      className={`${aspect} w-full rounded-md border border-border bg-card object-cover object-top`}
       onError={() => setErrored(src)}
     />
   );

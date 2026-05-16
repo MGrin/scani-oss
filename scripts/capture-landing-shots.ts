@@ -130,6 +130,10 @@ async function main() {
         await ctx.addInitScript((t) => {
           try {
             window.localStorage.setItem('scani-theme', t);
+            // Suppress the mobile PWA install banner so it doesn't
+            // overlay the captured screenshots. Key must match
+            // DISMISSED_KEY in @scani/ui's useInstallPrompt hook.
+            window.localStorage.setItem('scani-install-prompt-dismissed', 'true');
           } catch {
             // localStorage can be unavailable on about:blank; the next
             // navigation triggers this again with a real origin.
