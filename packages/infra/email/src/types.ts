@@ -33,7 +33,7 @@ export const SCANI_BRAND: EmailBrand = {
   appName: 'Scani',
   appUrl: 'https://app.scani.xyz',
   marketingUrl: 'https://scani.xyz',
-  supportAddress: 'welcome@scani.xyz',
+  supportAddress: 'support@scani.xyz',
   from: '"Scani" <welcome@scani.xyz>',
   accent: '#111111',
   accentText: '#ffffff',

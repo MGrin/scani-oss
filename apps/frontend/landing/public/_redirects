@@ -1,0 +1,6 @@
+# SPA fallback for Cloudflare Pages. The marketing site is a single Vite
+# bundle with client-side routing in App.tsx (currently `/` and `/contact`).
+# Real static assets (favicon, sitemap, /assets/*, /.well-known/*) are
+# served directly; everything else falls through to index.html so a deep
+# link or refresh on /contact boots the app instead of 404ing.
+/*  /index.html  200

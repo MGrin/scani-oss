@@ -12,7 +12,7 @@ const BRAND = {
   appName: 'Scani',
   appUrl: 'https://app.scani.xyz',
   marketingUrl: 'https://scani.xyz',
-  supportAddress: 'welcome@scani.xyz',
+  supportAddress: 'support@scani.xyz',
   accent: '#111111',
   accentText: '#ffffff',
   bodyBg: '#f5f6f8',

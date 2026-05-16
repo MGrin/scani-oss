@@ -16,6 +16,13 @@ const COLUMNS: ReadonlyArray<{ label: string; links: { label: string; href: stri
     label: 'Resources',
     links: [{ label: 'OpenAPI spec', href: 'https://api.cloud.scani.xyz/openapi.json' }],
   },
+  {
+    label: 'Support',
+    links: [
+      { label: 'Contact us', href: '/contact' },
+      { label: 'support@scani.xyz', href: 'mailto:support@scani.xyz' },
+    ],
+  },
 ];
 
 export function Footer() {
@@ -23,7 +30,7 @@ export function Footer() {
     <footer className="bg-background py-12">
       <div className="mx-auto grid max-w-6xl gap-10 px-6 md:grid-cols-[1fr_auto] md:items-start">
         <div>
-          <a href="#top" className="inline-flex items-center gap-2 text-sm font-semibold">
+          <a href="/" className="inline-flex items-center gap-2 text-sm font-semibold">
             <ScaniLogo className="h-5 w-5" />
             Scani
           </a>
@@ -31,7 +38,7 @@ export function Footer() {
             Personal wealth, consolidated. Self-host or use ours.
           </p>
         </div>
-        <div className="grid gap-10 sm:grid-cols-2">
+        <div className="grid gap-10 sm:grid-cols-3">
           {COLUMNS.map((col) => (
             <div key={col.label}>
               <div className="text-xs font-medium uppercase tracking-widest text-muted-foreground">

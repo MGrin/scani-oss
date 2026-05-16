@@ -2,6 +2,7 @@ export { type EmailConfig, loadEmailConfig, resetEmailConfig } from './config';
 export { EmailService } from './email-service';
 export { LocalEmailService } from './local-email-service';
 export {
+  renderContactReceivedEmail,
   renderMagicLinkEmail,
   renderOtpEmail,
   renderVerificationEmail,

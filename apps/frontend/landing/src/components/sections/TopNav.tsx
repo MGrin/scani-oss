@@ -5,10 +5,13 @@ import { ScaniLogo } from '../ScaniLogo';
 // are intentionally absent: the repo isn't public yet and the curated
 // docs site isn't published. The hero shows a "coming soon" pill for
 // the same reason. Re-introduce both when the repo opens.
+//
+// Hrefs are root-anchored (`/#…`) so they also resolve from the
+// standalone /contact page, not just the home scroll.
 const NAV_LINKS: ReadonlyArray<{ label: string; href: string }> = [
-  { label: 'Product', href: '#product' },
-  { label: 'Tiers', href: '#tiers' },
-  { label: 'Beta', href: '#beta' },
+  { label: 'Product', href: '/#product' },
+  { label: 'Tiers', href: '/#tiers' },
+  { label: 'Beta', href: '/#beta' },
 ];
 
 export function TopNav() {
@@ -30,7 +33,7 @@ export function TopNav() {
       }`}
     >
       <div className="mx-auto flex h-14 max-w-6xl items-center justify-between px-6">
-        <a href="#top" className="flex items-center gap-2 text-sm font-semibold tracking-tight">
+        <a href="/" className="flex items-center gap-2 text-sm font-semibold tracking-tight">
           <ScaniLogo className="h-6 w-6" />
           Scani
         </a>

@@ -1,5 +1,6 @@
 import { aiRouter } from './routers/ai';
 import { chainsRouter } from './routers/chains';
+import { contactRouter } from './routers/contact';
 import { emailRouter } from './routers/email';
 import { keysRouter } from './routers/keys';
 import { ogRouter } from './routers/og';
@@ -18,6 +19,7 @@ export const appRouter = router({
   pricing: pricingRouter,
   ai: aiRouter,
   chains: chainsRouter,
+  contact: contactRouter,
   email: emailRouter,
   storage: storageRouter,
   og: ogRouter,
