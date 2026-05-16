@@ -54,6 +54,13 @@ import { NoopUsageSink, PostgresUsageSink, type UsageSink } from './usage/sink';
 const PORT = env.PORT;
 const HOST = env.HOST;
 
+// The marketing site (scani.xyz) hosts public, unauthenticated forms —
+// waitlist signup and the contact form — that POST cross-origin to this
+// service's tRPC endpoint. It's a fixed Scani-owned origin, so it's
+// allowlisted directly (unlike the cloud frontend, whose origin is
+// env-driven to vary across preview deploys).
+const MARKETING_ORIGIN = 'https://scani.xyz';
+
 logger.info({ port: PORT, host: HOST, nodeEnv: env.NODE_ENV }, '🚀 Starting Scani Data-Provider');
 
 // Redis powers per-provider rate-limit buckets. Upstream 3rd-party APIs
@@ -214,12 +221,14 @@ const app = new Elysia()
       // cross-origin requests against this service (including the
       // cookie-session surface mounted under /api/auth and the cloud
       // tRPC routers). Bearer-auth (M2M) calls don't need CORS at all
-      // since they're server-to-server; the only browser origin that
-      // legitimately reaches this service is the cloud-frontend.
+      // since they're server-to-server. The browser origins that
+      // legitimately reach this service are the cloud frontend and the
+      // marketing site (the latter for its public waitlist + contact
+      // forms).
       origin: env.CLOUD_FRONTEND_ORIGIN
-        ? [env.CLOUD_FRONTEND_ORIGIN]
+        ? [env.CLOUD_FRONTEND_ORIGIN, MARKETING_ORIGIN]
         : env.NODE_ENV === 'production'
-          ? []
+          ? [MARKETING_ORIGIN]
           : true,
       credentials: true,
       allowedHeaders: ['Authorization', 'Content-Type', 'x-request-id'],
