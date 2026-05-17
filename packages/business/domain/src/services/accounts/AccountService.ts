@@ -1,15 +1,19 @@
 import type { DatabaseTransaction } from '@scani/db';
 import type { Account } from '@scani/db/schema';
 import type { AccountWihSumaryDTO, CreateAccountInput } from '@scani/shared';
+import Decimal from 'decimal.js';
 import { Container, Service } from 'typedi';
 import { AccountRepository } from '../../repositories/AccountRepository';
 import { AccountTypeRepository } from '../../repositories/EnumRepositories';
 import { GroupRepository } from '../../repositories/GroupRepository';
 import { HoldingRepository } from '../../repositories/HoldingRepository';
 import { InstitutionRepository } from '../../repositories/InstitutionRepository';
-import { PortfolioValueDailyRepository } from '../../repositories/PortfolioValueDailyRepository';
 import { UserRepository } from '../../repositories/UserRepository';
 import { BaseService } from '../BaseService';
+import {
+  PortfolioValuationService,
+  sumPortfolioValuesByAccount,
+} from '../portfolio/PortfolioValuationService';
 import { UserWalletService } from '../users/UserWalletService';
 
 @Service()
@@ -21,7 +25,7 @@ export class AccountService extends BaseService {
   private readonly groupRepository = Container.get(GroupRepository);
   private readonly userWalletService = Container.get(UserWalletService);
   private readonly userRepository = Container.get(UserRepository);
-  private readonly dailyRepository = Container.get(PortfolioValueDailyRepository);
+  private readonly portfolioValuationService = Container.get(PortfolioValuationService);
 
   constructor() {
     super('AccountService');
@@ -95,9 +99,14 @@ export class AccountService extends BaseService {
    * Accounts for a user, each annotated with `summary.holdingsCount`
    * + `summary.totalValue`.
    *
-   * Reads `totalValue` from `portfolio_value_daily` (per-account
-   * scope) instead of running a live valuation. Same OOM-driven
-   * rewrite as InstitutionService.getInstitutionsByUserIdWithSummary.
+   * `totalValue` is a LIVE current valuation — one
+   * `getUserPortfolioValue` pass for the whole user, with each
+   * holding's value bucketed by `accountId`. This keeps account
+   * totals consistent with the holdings view (a freshly-imported
+   * account shows its real value immediately instead of $0 until the
+   * nightly rollup runs). The `portfolio_value_daily` rollup is still
+   * used for the historical net-worth chart — only the current total
+   * is live.
    */
   async getAccountsByUserIdWithSummary(userId: string): Promise<AccountWihSumaryDTO[]> {
     const [accounts, user] = await Promise.all([
@@ -107,16 +116,12 @@ export class AccountService extends BaseService {
     if (accounts.length === 0) return [];
 
     const accountIds = accounts.map((a) => a.id);
-    const [holdings, groupsMap, latestByScope] = await Promise.all([
+    const [holdings, groupsMap, portfolio] = await Promise.all([
       this.holdingRepository.findByUser(userId),
       this.groupRepository.findGroupsForAccounts(accountIds),
       user?.baseCurrencyId
-        ? this.dailyRepository.findLatestForScopes(
-            userId,
-            user.baseCurrencyId,
-            accounts.map((a) => ({ kind: 'account' as const, id: a.id }))
-          )
-        : Promise.resolve(new Map()),
+        ? this.portfolioValuationService.getUserPortfolioValue(userId, user.baseCurrencyId)
+        : Promise.resolve(null),
     ]);
 
     const holdingsCountByAccount = new Map<string, number>();
@@ -127,13 +132,15 @@ export class AccountService extends BaseService {
       );
     }
 
+    const valueByAccount = sumPortfolioValuesByAccount(portfolio);
+
     return accounts.map((account) => {
       const accountGroups = groupsMap.get(account.id) || [];
       return {
         ...account,
         summary: {
           holdingsCount: holdingsCountByAccount.get(account.id) ?? 0,
-          totalValue: latestByScope.get(`account:${account.id}`)?.totalValue ?? '0',
+          totalValue: (valueByAccount.get(account.id) ?? new Decimal(0)).toString(),
         },
         groups: accountGroups.map((g) => ({ id: g.id, name: g.name, color: g.color })),
       };
@@ -154,23 +161,22 @@ export class AccountService extends BaseService {
     ]);
     if (!account || account.userId !== userId) return null;
 
-    const [holdings, groupsMap, latestByScope] = await Promise.all([
+    const [holdings, groupsMap, portfolio] = await Promise.all([
       this.holdingRepository.findByUser(userId),
       this.groupRepository.findGroupsForAccounts([accountId]),
       user?.baseCurrencyId
-        ? this.dailyRepository.findLatestForScopes(userId, user.baseCurrencyId, [
-            { kind: 'account', id: accountId },
-          ])
-        : Promise.resolve(new Map()),
+        ? this.portfolioValuationService.getUserPortfolioValue(userId, user.baseCurrencyId)
+        : Promise.resolve(null),
     ]);
 
     const holdingsCount = holdings.filter((h) => h.accountId === accountId).length;
     const accountGroups = groupsMap.get(accountId) || [];
+    const totalValue = sumPortfolioValuesByAccount(portfolio).get(accountId) ?? new Decimal(0);
     return {
       ...account,
       summary: {
         holdingsCount,
-        totalValue: latestByScope.get(`account:${accountId}`)?.totalValue ?? '0',
+        totalValue: totalValue.toString(),
       },
       groups: accountGroups.map((g) => ({ id: g.id, name: g.name, color: g.color })),
     };

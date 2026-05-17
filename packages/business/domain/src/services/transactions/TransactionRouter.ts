@@ -39,6 +39,7 @@ import { Container, Service } from 'typedi';
 import { TokenTypeRepository } from '../../repositories/EnumRepositories';
 import { HoldingService } from '../holdings/HoldingService';
 import { TokenIdentityService } from '../tokens/TokenIdentityService';
+import { isWalletDerivedSource } from './transaction-sources';
 
 export interface TransactionRouterRequest {
   userId: string;
@@ -224,14 +225,16 @@ export class TransactionRouter {
       }
     };
 
-    // Wallet-derived imports (`etherscan`) are gated by the wallet
-    // review: only the holdings the user kept are pre-created. We
-    // FIND ONLY here so a tx referencing a token the user dropped at
-    // review doesn't silently re-introduce that holding (which is how
-    // 100+ spam tokens used to leak back in via OpeningBalanceReconciliation).
-    // Exchange-derived imports keep the create-on-miss flavour
-    // because deposits of new tokens are legitimate without a review.
-    const findOnly = request.source === 'etherscan';
+    // Wallet-derived imports (EVM via `etherscan`, Solana, and any
+    // other on-chain source) are gated by the wallet review: only the
+    // holdings the user kept are pre-created. We FIND ONLY for them so
+    // a tx referencing a token the user dropped at review doesn't
+    // silently re-introduce that holding (which is how 100+ spam
+    // tokens used to leak back in via OpeningBalanceReconciliation).
+    // Exchange-derived imports keep the create-on-miss flavour because
+    // deposits of new tokens are legitimate without a review. The
+    // source taxonomy lives in `transaction-sources.ts`.
+    const findOnly = isWalletDerivedSource(request.source);
     const skippedByToken = new Map<string, number>();
     const resolveHoldingId = async (tokenId: string): Promise<string | null> => {
       const cached = holdingCache.get(tokenId);

@@ -56,6 +56,7 @@ export interface ImportExchangeAccountsResult {
     balance: string;
   }>;
   accountsCreated: number;
+  /** Holdings imported (created or updated) for the user, not new catalog tokens. */
   tokensImported: number;
   errors: Array<{
     accountType: string;
@@ -227,7 +228,7 @@ export class ImportExchangeAccountsUseCase {
     }
 
     result.accountsCreated = importResult.accounts.length;
-    result.tokensImported = importResult.holdings.filter((h) => h.tokenIsNew).length;
+    result.tokensImported = importResult.holdings.length;
 
     result.accounts = importResult.accounts.map((a) => ({
       id: a.id,

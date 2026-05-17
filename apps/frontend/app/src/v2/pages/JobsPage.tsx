@@ -2,7 +2,7 @@ import { formatRelative } from '@scani/shared';
 import { Badge } from '@scani/ui/ui/badge';
 import { Button } from '@scani/ui/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@scani/ui/ui/card';
-import { LoadingSpinner } from '@scani/ui/ui/loading';
+import { PageLoader } from '@scani/ui/ui/loading';
 import { showError, showSuccess } from '@scani/ui/ui/use-toast';
 import { AlertCircle, RotateCcw, Trash2 } from 'lucide-react';
 import { Link } from 'react-router-dom';
@@ -29,7 +29,7 @@ function needsAction(job: { state: string; jobName: string; actionTakenAt: unkno
 export function JobsPage() {
   const { jobs, isLoading } = useUserJobs();
 
-  if (isLoading) return <LoadingSpinner />;
+  if (isLoading) return <PageLoader />;
 
   // Surface action-required jobs at the top in their own section so the
   // user can't miss them. They still appear in the regular Completed

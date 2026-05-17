@@ -28,6 +28,7 @@
     "@scani/providers": "workspace:*",
     "@scani/queue": "workspace:*",
     "@scani/rate-limiter": "workspace:*",
+    "@scani/realtime": "workspace:*",
     "@scani/security": "workspace:*",
     "@scani/shared": "workspace:*",
     "decimal.js": "^10.6.0",

@@ -25,6 +25,23 @@ export function LoadingSpinner({ size = 'md', className }: LoadingSpinnerProps) 
   );
 }
 
+interface PageLoaderProps {
+  className?: string;
+}
+
+// Full-content-area loader: centers the spinner instead of letting a
+// bare LoadingSpinner pin to the top-left of the page.
+export function PageLoader({ className }: PageLoaderProps) {
+  return (
+    <div
+      className={cn('flex min-h-[40vh] w-full items-center justify-center', className)}
+      aria-live="polite"
+    >
+      <LoadingSpinner size="lg" />
+    </div>
+  );
+}
+
 interface LoadingButtonProps {
   isLoading: boolean;
   loadingText: string;

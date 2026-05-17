@@ -22,10 +22,11 @@ export type RequestCache = Map<string, unknown>;
 // portion of the portfolio we can actually price. The UI is expected
 // to render `null` as "—" so the missing-data state is visible —
 // never as $0.
-type PortfolioValueResult = {
+export type PortfolioValueResult = {
   totalValue: string;
   baseCurrency: string;
   holdings: Array<{
+    accountId: string;
     tokenSymbol: string;
     balance: string;
     currentPrice: string | null;
@@ -35,6 +36,27 @@ type PortfolioValueResult = {
     isActive: boolean;
   }>;
 };
+
+/**
+ * Buckets a whole-user portfolio valuation into per-account current
+ * totals. Mirrors the aggregate rule used for `totalValue` — only
+ * active, priceable holdings contribute. Lets account/institution
+ * summaries derive live current values from a single valuation pass.
+ */
+export function sumPortfolioValuesByAccount(
+  portfolio: PortfolioValueResult | null
+): Map<string, Decimal> {
+  const byAccount = new Map<string, Decimal>();
+  if (!portfolio) return byAccount;
+  for (const holding of portfolio.holdings) {
+    if (!holding.isActive || holding.value === null) continue;
+    byAccount.set(
+      holding.accountId,
+      (byAccount.get(holding.accountId) ?? new Decimal(0)).add(holding.value)
+    );
+  }
+  return byAccount;
+}
 
 /**
  * Service to update portfolio values with current token prices
@@ -235,6 +257,7 @@ export class PortfolioValuationService {
         const priceInfo = priceMetadata.get(holding.tokenId);
 
         return {
+          accountId: holding.accountId,
           tokenSymbol: holding.tokenSymbol,
           balance: balance.toString(),
           currentPrice,
@@ -256,6 +279,7 @@ export class PortfolioValuationService {
         // Computation error: surface as unpriceable rather than $0.
         const balance = new Decimal(holding.balance);
         return {
+          accountId: holding.accountId,
           tokenSymbol: holding.tokenSymbol,
           balance: balance.toString(),
           currentPrice: null,

@@ -48,6 +48,10 @@ interface SetupOpts {
   /** When provided, the registry is seeded with a stub
       `TransactionsProvider` for this institutionCode. */
   withProviderForInstitution?: string;
+  /** Token ids the stubbed `HoldingService.findExistingForIngest`
+      reports as already having a holding. Used to exercise the
+      wallet-source FIND-ONLY path. */
+  existingHoldingTokenIds?: Set<string>;
 }
 
 function setup(opts: SetupOpts): {
@@ -85,6 +89,12 @@ function setup(opts: SetupOpts): {
       accountId: string;
       tokenId: string;
     }): Promise<{ id: string }> => ({ id: `holding-${input.tokenId}` }),
+    findExistingForIngest: async (input: {
+      userId: string;
+      accountId: string;
+      tokenId: string;
+    }): Promise<{ id: string } | null> =>
+      opts.existingHoldingTokenIds?.has(input.tokenId) ? { id: `holding-${input.tokenId}` } : null,
   } as unknown as HoldingService);
 
   Container.set(TokenTypeRepository, {
@@ -183,6 +193,73 @@ describe('TransactionRouter.run', () => {
     expect(tx?.occurredAt.getTime()).toBe(occurred.getTime());
     expect(result.firstEventAt?.getTime()).toBe(occurred.getTime());
     expect(result.lastEventAt?.getTime()).toBe(occurred.getTime());
+  });
+
+  // Wallet-derived imports (etherscan, solana, …) are review-gated:
+  // the router must FIND-ONLY so a tx referencing a token the user
+  // dropped at the wallet-import review can't silently re-create that
+  // holding. Exchange sources keep create-on-miss.
+  test('wallet source (solana) skips a tx for a token with no pre-existing holding', async () => {
+    const { router, request } = setup({
+      withProviderForInstitution: 'solana',
+      existingHoldingTokenIds: new Set(), // nothing pre-created
+      events: [
+        {
+          externalId: 'spl-1',
+          occurredAt: new Date('2024-06-01T10:00:00Z'),
+          kind: 'deposit',
+          primary: { tokenIdentity: { symbol: 'BONK', name: 'Bonk' }, quantity: '100' },
+        },
+      ],
+    });
+    const result = await router.run({
+      ...request,
+      source: 'solana',
+      institutionCode: 'solana',
+    });
+    // FIND-ONLY: no holding exists → the event is dropped, not created.
+    expect(result.transactions).toHaveLength(0);
+  });
+
+  test('wallet source (solana) keeps a tx for a token the user kept at review', async () => {
+    const { router, request } = setup({
+      withProviderForInstitution: 'solana',
+      existingHoldingTokenIds: new Set(['token-SOL']),
+      events: [
+        {
+          externalId: 'sol-1',
+          occurredAt: new Date('2024-06-01T10:00:00Z'),
+          kind: 'deposit',
+          primary: { tokenIdentity: { symbol: 'SOL', name: 'Solana' }, quantity: '2' },
+        },
+      ],
+    });
+    const result = await router.run({
+      ...request,
+      source: 'solana',
+      institutionCode: 'solana',
+    });
+    expect(result.transactions).toHaveLength(1);
+    expect(result.transactions[0]?.tokenId).toBe('token-SOL');
+  });
+
+  test('exchange source (kraken-api) still creates a holding on miss', async () => {
+    const { router, request } = setup({
+      withProviderForInstitution: 'kraken',
+      existingHoldingTokenIds: new Set(), // nothing pre-created
+      events: [
+        {
+          externalId: 'dep-1',
+          occurredAt: new Date('2024-06-01T10:00:00Z'),
+          kind: 'deposit',
+          primary: { tokenIdentity: { symbol: 'XRP', name: 'XRP' }, quantity: '10' },
+        },
+      ],
+    });
+    // request defaults to source 'kraken-api' / institutionCode 'kraken'.
+    const result = await router.run(request);
+    expect(result.transactions).toHaveLength(1);
+    expect(result.transactions[0]?.tokenId).toBe('token-XRP');
   });
 
   test('tracks first/last event timestamps across multiple events', async () => {

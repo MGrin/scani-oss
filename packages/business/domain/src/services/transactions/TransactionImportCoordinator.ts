@@ -30,6 +30,7 @@ import { TokenRepository } from '../../repositories/TokenRepository';
 import { OpeningBalanceReconciliationService } from '../holdings/OpeningBalanceReconciliationService';
 import { IntegrationCredentialsService } from '../users/IntegrationCredentialsService';
 import { TransactionRouter, type TransactionRouterResult } from './TransactionRouter';
+import { CEX_SOURCE_TO_INSTITUTION } from './transaction-sources';
 
 export interface TransactionImportInput {
   userId: string;
@@ -74,29 +75,6 @@ export class TransactionImportUnrecoverableError extends Error {
     this.name = 'TransactionImportUnrecoverableError';
   }
 }
-
-/**
- * Source tag (the BullMQ payload field) → institution code (the
- * registry filter). Keeping the existing source tags lets the
- * persisted `holding_transactions.source` column stay stable for
- * dedup, while the registry sees the institution code its providers
- * registered for.
- */
-const CEX_SOURCE_TO_INSTITUTION: Record<string, string> = {
-  'kraken-api': 'kraken',
-  'binance-api': 'binance',
-  'bybit-api': 'bybit',
-  'okx-api': 'okx',
-  'coinbase-api': 'coinbase',
-  'kucoin-api': 'kucoin',
-  'gate-api': 'gate',
-  'bitget-api': 'bitget',
-  'huobi-api': 'huobi',
-  'mexc-api': 'mexc',
-  'bitstamp-api': 'bitstamp',
-  'gemini-api': 'gemini',
-  'ibkr-api': 'ibkr',
-};
 
 /**
  * EVM chain id → institution code mapping for the chains the new

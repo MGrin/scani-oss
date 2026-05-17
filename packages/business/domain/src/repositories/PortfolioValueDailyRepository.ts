@@ -115,68 +115,6 @@ export class PortfolioValueDailyRepository {
     }
   }
 
-  // Bulk read of the most recent rollup row for each (scope_kind,
-  // scope_id) pair handed in. Used by the `*WithSummary` endpoints to
-  // hydrate per-institution / per-account `totalValue` fields straight
-  // out of the rollup cache instead of running a live valuation per
-  // page-load. One DB query covers every scope; the index
-  // `idx_pvd_scope_user_date` makes per-scope DISTINCT-ON cheap.
-  async findLatestForScopes(
-    userId: string,
-    baseCurrencyId: string,
-    scopes: ReadonlyArray<{ kind: 'user' | 'institution' | 'account' | 'holding'; id: string }>,
-    transaction?: DatabaseTransaction
-  ): Promise<Map<string, PortfolioValueDaily>> {
-    const out = new Map<string, PortfolioValueDaily>();
-    if (scopes.length === 0) return out;
-    try {
-      const db = this.getDb(transaction);
-      // Build (scope_kind, scope_id) tuples for an IN-style match.
-      // Postgres composite IN works via a row-value list; Drizzle
-      // doesn't model that natively, so we OR per scope. ~14
-      // institutions + 19 accounts is fine for a single ORed query.
-      const scopeMatches = scopes.map((s) =>
-        and(
-          eq(schema.portfolioValueDaily.scopeKind, s.kind),
-          eq(schema.portfolioValueDaily.scopeId, s.id)
-        )
-      );
-      const rows = await db
-        .selectDistinctOn([
-          schema.portfolioValueDaily.scopeKind,
-          schema.portfolioValueDaily.scopeId,
-        ])
-        .from(schema.portfolioValueDaily)
-        .where(
-          and(
-            eq(schema.portfolioValueDaily.userId, userId),
-            eq(schema.portfolioValueDaily.baseCurrencyId, baseCurrencyId),
-            scopes.length === 1 ? scopeMatches[0] : sql`(${sql.join(scopeMatches, sql` OR `)})`
-          )
-        )
-        .orderBy(
-          asc(schema.portfolioValueDaily.scopeKind),
-          asc(schema.portfolioValueDaily.scopeId),
-          desc(schema.portfolioValueDaily.snapshotDate)
-        );
-      for (const row of rows as PortfolioValueDaily[]) {
-        out.set(`${row.scopeKind}:${row.scopeId}`, row);
-      }
-      return out;
-    } catch (error) {
-      this.logger.error(
-        {
-          userId,
-          baseCurrencyId,
-          scopeCount: scopes.length,
-          error: error instanceof Error ? error.message : error,
-        },
-        'Failed to find latest rollup rows for scopes'
-      );
-      throw error;
-    }
-  }
-
   async findLatest(
     userId: string,
     baseCurrencyId: string,

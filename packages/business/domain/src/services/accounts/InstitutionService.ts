@@ -1,19 +1,23 @@
 import type { DatabaseTransaction } from '@scani/db';
 import type { Institution } from '@scani/db/schema';
 import type { CreateInstitutionInput } from '@scani/shared';
+import Decimal from 'decimal.js';
 import { Container, Service } from 'typedi';
 import { AccountRepository } from '../../repositories/AccountRepository';
 import { InstitutionRepository } from '../../repositories/InstitutionRepository';
-import { PortfolioValueDailyRepository } from '../../repositories/PortfolioValueDailyRepository';
 import { UserRepository } from '../../repositories/UserRepository';
 import { BaseService } from '../BaseService';
+import {
+  PortfolioValuationService,
+  sumPortfolioValuesByAccount,
+} from '../portfolio/PortfolioValuationService';
 
 @Service()
 export class InstitutionService extends BaseService {
   private readonly institutionRepository = Container.get(InstitutionRepository);
   private readonly accountRepository = Container.get(AccountRepository);
   private readonly userRepository = Container.get(UserRepository);
-  private readonly dailyRepository = Container.get(PortfolioValueDailyRepository);
+  private readonly portfolioValuationService = Container.get(PortfolioValuationService);
 
   constructor() {
     super('InstitutionService');
@@ -53,12 +57,15 @@ export class InstitutionService extends BaseService {
    * Institutions for a user, each annotated with `summary.accountCount`
    * + `summary.totalValue`.
    *
-   * Reads `totalValue` from the `portfolio_value_daily` rollup cache
-   * instead of running a live valuation per request. Previously this
-   * endpoint took ~1s and held ~110 holdings + token prices in memory
-   * per call — under concurrent page-loads it OOM-killed the backend
-   * (exit 137, 2026-05-06). The rollup is recomputed nightly + on
-   * every chart-affecting job, so the value is at most one day stale.
+   * `totalValue` is a LIVE current valuation: one
+   * `getUserPortfolioValue` pass for the whole user, bucketed by
+   * `accountId` and rolled up to the institution via the
+   * account→institution map. One valuation per request (the same
+   * computation the dashboard already runs) — this removes the
+   * per-institution N valuations that OOM-killed the backend (exit
+   * 137, 2026-05-06), rather than scaling them. The
+   * `portfolio_value_daily` rollup remains the source for the
+   * historical chart; only the current total is live.
    */
   async getInstitutionsByUserIdWithSummary(userId: string): Promise<
     Array<
@@ -86,20 +93,16 @@ export class InstitutionService extends BaseService {
         );
       }
 
-      const baseCurrencyId = user?.baseCurrencyId ?? null;
-      const latestByScope = baseCurrencyId
-        ? await this.dailyRepository.findLatestForScopes(
-            userId,
-            baseCurrencyId,
-            institutions.map((i) => ({ kind: 'institution' as const, id: i.id }))
-          )
-        : new Map();
+      const portfolio = user?.baseCurrencyId
+        ? await this.portfolioValuationService.getUserPortfolioValue(userId, user.baseCurrencyId)
+        : null;
+      const valueByInstitution = rollUpToInstitution(portfolio, accounts);
 
       return institutions.map((institution) => ({
         ...institution,
         summary: {
           accountCount: accountCountByInstitution.get(institution.id) ?? 0,
-          totalValue: latestByScope.get(`institution:${institution.id}`)?.totalValue ?? '0',
+          totalValue: (valueByInstitution.get(institution.id) ?? new Decimal(0)).toString(),
         },
       }));
     } catch (error) {
@@ -135,22 +138,43 @@ export class InstitutionService extends BaseService {
       const ownAccounts = accounts.filter((a) => a.institutionId === institutionId);
       if (ownAccounts.length === 0) return null;
 
-      const baseCurrencyId = user?.baseCurrencyId ?? null;
-      const latestByScope = baseCurrencyId
-        ? await this.dailyRepository.findLatestForScopes(userId, baseCurrencyId, [
-            { kind: 'institution', id: institutionId },
-          ])
-        : new Map();
+      const portfolio = user?.baseCurrencyId
+        ? await this.portfolioValuationService.getUserPortfolioValue(userId, user.baseCurrencyId)
+        : null;
+      const totalValue =
+        rollUpToInstitution(portfolio, ownAccounts).get(institutionId) ?? new Decimal(0);
 
       return {
         ...institution,
         summary: {
           accountCount: ownAccounts.length,
-          totalValue: latestByScope.get(`institution:${institutionId}`)?.totalValue ?? '0',
+          totalValue: totalValue.toString(),
         },
       };
     } catch (error) {
       throw this.handleError(error, 'getInstitutionByIdWithSummary');
     }
   }
+}
+
+/**
+ * Rolls a whole-user portfolio valuation up to per-institution current
+ * totals, via the account→institution map. Only accounts in the
+ * supplied list contribute, so a caller can scope the rollup.
+ */
+function rollUpToInstitution(
+  portfolio: Parameters<typeof sumPortfolioValuesByAccount>[0],
+  accounts: Array<{ id: string; institutionId: string }>
+): Map<string, Decimal> {
+  const valueByAccount = sumPortfolioValuesByAccount(portfolio);
+  const valueByInstitution = new Map<string, Decimal>();
+  for (const account of accounts) {
+    const accountValue = valueByAccount.get(account.id);
+    if (!accountValue) continue;
+    valueByInstitution.set(
+      account.institutionId,
+      (valueByInstitution.get(account.institutionId) ?? new Decimal(0)).add(accountValue)
+    );
+  }
+  return valueByInstitution;
 }

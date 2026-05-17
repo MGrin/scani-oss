@@ -14,6 +14,7 @@
 import { db } from '@scani/db/connection';
 import * as schema from '@scani/db/schema';
 import { createComponentLogger } from '@scani/logging';
+import { emitEntityChange } from '@scani/realtime';
 import { inArray } from 'drizzle-orm';
 import { Container, Service } from 'typedi';
 import { TokenRepository } from '../repositories/TokenRepository';
@@ -144,25 +145,33 @@ export class UpdateTokenPricesUseCase {
         }
       }
 
+      const updatedTokenIds = tokens
+        .filter((t) => {
+          const price = prices.get(t.id);
+          return price && price !== '0';
+        })
+        .map((t) => t.id);
+
+      // Holdings touched by this price run — used both to recalculate
+      // vaults and to notify the users who hold those tokens.
+      let holdingsForUpdatedTokens: Array<{ id: string; tokenId: string; userId: string }> = [];
+      if (updatedTokenIds.length > 0) {
+        holdingsForUpdatedTokens = await db
+          .select({
+            id: schema.holdings.id,
+            tokenId: schema.holdings.tokenId,
+            userId: schema.holdings.userId,
+          })
+          .from(schema.holdings)
+          .where(inArray(schema.holdings.tokenId, updatedTokenIds));
+      }
+
       // Recalculate vaults for all tokens that had price updates (best-effort)
       try {
-        const updatedTokenIds = tokens
-          .filter((t) => {
-            const price = prices.get(t.id);
-            return price && price !== '0';
-          })
-          .map((t) => t.id);
-
-        if (updatedTokenIds.length > 0) {
-          // Batch query: find all holdings for all updated tokens at once
-          const allHoldingsForTokens = await db
-            .select({ id: schema.holdings.id, tokenId: schema.holdings.tokenId })
-            .from(schema.holdings)
-            .where(inArray(schema.holdings.tokenId, updatedTokenIds));
-
+        if (holdingsForUpdatedTokens.length > 0) {
           // Group by tokenId
           const holdingsByToken = new Map<string, string[]>();
-          for (const h of allHoldingsForTokens) {
+          for (const h of holdingsForUpdatedTokens) {
             const ids = holdingsByToken.get(h.tokenId);
             if (ids) {
               ids.push(h.id);
@@ -180,6 +189,27 @@ export class UpdateTokenPricesUseCase {
         }
       } catch (vaultError) {
         logger.warn({ error: vaultError }, 'Failed to recalculate vaults after token price update');
+      }
+
+      // Notify every user holding a repriced token so their dashboard /
+      // holdings views refresh — without this the hourly price refresh
+      // is invisible until the next mutation or page remount. One
+      // coalesced event per user keeps the broadcast bounded.
+      try {
+        const affectedUserIds = new Set(holdingsForUpdatedTokens.map((h) => h.userId));
+        for (const affectedUserId of affectedUserIds) {
+          emitEntityChange({
+            entityType: 'holding',
+            operationType: 'sync',
+            userId: affectedUserId,
+            data: { reason: 'price_refresh', tokensUpdated: updatedTokenIds.length },
+          });
+        }
+      } catch (emitError) {
+        logger.warn(
+          { error: emitError },
+          'Failed to emit price-refresh realtime events after token price update'
+        );
       }
 
       const durationMs = Date.now() - startTime;

@@ -1,5 +1,5 @@
 import { Button } from '@scani/ui/ui/button';
-import { LoadingSpinner } from '@scani/ui/ui/loading';
+import { PageLoader } from '@scani/ui/ui/loading';
 import { ArrowLeft } from 'lucide-react';
 import { Link, useParams } from 'react-router-dom';
 import { trpc } from '@/lib/trpc';
@@ -21,7 +21,7 @@ export function JobDetailPage() {
   const live = useJobStatus(jobId || null);
 
   if (!jobId) return null;
-  if (jobQuery.isLoading) return <LoadingSpinner />;
+  if (jobQuery.isLoading) return <PageLoader />;
   if (jobQuery.error || !jobQuery.data) {
     return (
       <div className="max-w-4xl mx-auto w-full p-4 space-y-3">
