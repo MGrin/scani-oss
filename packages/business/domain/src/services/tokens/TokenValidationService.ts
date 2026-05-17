@@ -114,6 +114,18 @@ export class TokenValidationService {
       };
     }
 
+    // A stock match for a fiat symbol is wrong by definition. The
+    // data-provider's `tokens.search` has no DB access, so for a fiat
+    // code (USD, EUR, …) the only result is often a same-ticker equity
+    // (USD = ProShares Ultra Semiconductors). Reject it rather than hand
+    // a stock name/metadata back to the screenshot-parse pipeline.
+    if (wantsFiat && !isFiatTypedResult(exact)) {
+      return {
+        isValid: false,
+        error: `No fiat token found for ${symbol} (only non-fiat matches)`,
+      };
+    }
+
     return {
       isValid: true,
       metadata: {

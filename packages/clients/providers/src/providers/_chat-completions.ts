@@ -258,6 +258,20 @@ Classify every holding with "assetType", based on what the screenshot actually s
   • "stock"  — a publicly traded stock, ETF, fund, or other equity/commodity.
 When genuinely unsure, pick the most likely type and lower "confidence".
 
+Extract EVERY balance line — be exhaustive:
+  • Include named savings pockets, vaults, "pots", "spaces", goals and
+    sub-accounts, not only rows that show an explicit ticker. A line like
+    "Savings  $7,040.50" is a holding.
+  • Each distinct balance line is its OWN holding, even when several lines
+    share the same currency. Never merge, deduplicate, or skip a balance
+    because that currency already appeared in another row.
+  • When a line has no ticker but shows a currency symbol ($, €, £, ¥, ₣,
+    …), use the matching ISO-4217 code as "symbol" and the line's own
+    label (e.g. "Savings") as "name".
+  • When one balance is shown in two currencies (a primary amount plus a
+    smaller converted estimate), use the primary/most-prominent amount and
+    the currency shown directly next to it.
+
 Always return at least one holding when the document clearly shows an account balance.
 Be conservative with confidence — when in doubt, lower it. Use Decimal.js-safe string
 representation for balance (no scientific notation, no thousands separators).`;

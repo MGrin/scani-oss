@@ -134,9 +134,15 @@ export class TokenIdentityService extends BaseService {
     // Without this synthesis, the second USDC create hits the unique
     // constraint and the tx-import drops every event for the second
     // chain's real USDC.
-    const marketSegment =
-      partial.marketSegment ??
-      (evmChainId && evmContract ? `evm:${evmChainId}:${evmContract.toLowerCase()}` : null);
+    // Fiat is never market-segmented: a fiat-coded symbol resolves to the
+    // single canonical seeded row. Forcing the segment to null here keeps
+    // a stock-provider payload (which carries `marketSegment: 'US'`) from
+    // creating a segmented, stock-named fiat token that coexists with the
+    // canonical one under the `(symbol, type, segment)` unique index.
+    const marketSegment = isFiatCode(symbol)
+      ? null
+      : (partial.marketSegment ??
+        (evmChainId && evmContract ? `evm:${evmChainId}:${evmContract.toLowerCase()}` : null));
 
     // 2. Fall through to the `(symbol, typeId, marketSegment)` tuple.
     //    Safe to re-enable for EVM tokens now that marketSegment

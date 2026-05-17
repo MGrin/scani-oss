@@ -16,11 +16,13 @@ afterAll(() => {
   Container.set(EnrichHoldingsService, new EnrichHoldingsService());
 });
 
+type StubToken = { id: string; symbol: string; name: string };
+
 interface SetupOpts {
   /** Keyed `${SYMBOL}:${typeId}` → token row (or null = miss). */
-  bySymbolAndType?: Record<string, { id: string } | null>;
+  bySymbolAndType?: Record<string, StubToken | null>;
   /** Keyed `SYMBOL` → token row returned by the type-blind lookup. */
-  bySymbol?: Record<string, { id: string } | null>;
+  bySymbol?: Record<string, StubToken | null>;
 }
 
 function setup(opts: SetupOpts): EnrichHoldingsService {
@@ -44,13 +46,21 @@ function setup(opts: SetupOpts): EnrichHoldingsService {
   return service;
 }
 
+const FIAT_USD: StubToken = { id: 'fiat-usd-token', symbol: 'USD', name: 'United States Dollar' };
+const STOCK_USD: StubToken = {
+  id: 'stock-usd-token',
+  symbol: 'USD',
+  name: 'ProShares Ultra Semiconductors',
+};
+const BTC: StubToken = { id: 'btc-token', symbol: 'BTC', name: 'Bitcoin' };
+
 describe('EnrichHoldingsService — type-aware token resolution', () => {
   test('a fiat-classified holding resolves to the fiat token, not a same-named stock', async () => {
     // USD exists as both a fiat row and a stock-ticker row; the
     // type-blind findBySymbol returns the stock one.
     const service = setup({
-      bySymbolAndType: { 'USD:fiat-type-id': { id: 'fiat-usd-token' } },
-      bySymbol: { USD: { id: 'stock-usd-token' } },
+      bySymbolAndType: { 'USD:fiat-type-id': FIAT_USD },
+      bySymbol: { USD: STOCK_USD },
     });
 
     const [enriched] = await service.enrich({
@@ -63,8 +73,8 @@ describe('EnrichHoldingsService — type-aware token resolution', () => {
 
   test('an unclassified holding still resolves via the type-blind lookup', async () => {
     const service = setup({
-      bySymbolAndType: { 'USD:fiat-type-id': { id: 'fiat-usd-token' } },
-      bySymbol: { USD: { id: 'stock-usd-token' } },
+      bySymbolAndType: { 'USD:fiat-type-id': FIAT_USD },
+      bySymbol: { USD: STOCK_USD },
     });
 
     const [enriched] = await service.enrich({
@@ -78,7 +88,7 @@ describe('EnrichHoldingsService — type-aware token resolution', () => {
   test('falls back to the type-blind lookup when no typed row exists', async () => {
     const service = setup({
       bySymbolAndType: {}, // no fiat-typed USD row
-      bySymbol: { USD: { id: 'stock-usd-token' } },
+      bySymbol: { USD: STOCK_USD },
     });
 
     const [enriched] = await service.enrich({
@@ -91,7 +101,7 @@ describe('EnrichHoldingsService — type-aware token resolution', () => {
 
   test('preserves assetType on the enriched holding', async () => {
     const service = setup({
-      bySymbolAndType: { 'BTC:crypto-type-id': { id: 'btc-token' } },
+      bySymbolAndType: { 'BTC:crypto-type-id': BTC },
     });
 
     const [enriched] = await service.enrich({
@@ -101,5 +111,44 @@ describe('EnrichHoldingsService — type-aware token resolution', () => {
 
     expect(enriched?.assetType).toBe('crypto');
     expect(enriched?.tokenId).toBe('btc-token');
+  });
+});
+
+describe('EnrichHoldingsService — canonical name/symbol from the resolved token', () => {
+  test('adopts the resolved fiat token name, overriding a wrong AI-supplied name', async () => {
+    const service = setup({
+      bySymbolAndType: { 'USD:fiat-type-id': FIAT_USD },
+    });
+
+    // AI mislabelled the fiat row with a stock ETF name + lowercase symbol.
+    const [enriched] = await service.enrich({
+      holdings: [
+        {
+          symbol: 'usd',
+          name: 'ProShares Ultra Semiconductors',
+          assetType: 'fiat',
+          balance: '1263.72',
+          confidence: 1,
+        },
+      ],
+      userId: 'u1',
+    });
+
+    expect(enriched?.tokenId).toBe('fiat-usd-token');
+    expect(enriched?.symbol).toBe('USD');
+    expect(enriched?.name).toBe('United States Dollar');
+  });
+
+  test('an unmatched holding keeps its AI-provided name and symbol', async () => {
+    const service = setup({ bySymbolAndType: {}, bySymbol: {} });
+
+    const [enriched] = await service.enrich({
+      holdings: [{ symbol: 'WEIRDPOCKET', name: 'My Savings Pot', balance: '50', confidence: 0.6 }],
+      userId: 'u1',
+    });
+
+    expect(enriched?.tokenId).toBeUndefined();
+    expect(enriched?.symbol).toBe('WEIRDPOCKET');
+    expect(enriched?.name).toBe('My Savings Pot');
   });
 });

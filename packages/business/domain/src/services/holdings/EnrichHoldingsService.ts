@@ -153,6 +153,12 @@ export class EnrichHoldingsService {
 
         if (token) {
           enrichedHolding.tokenId = token.id;
+          // The resolved token is the row that will actually be created
+          // for this holding — adopt its canonical symbol/name so the
+          // review card never shows a stale or wrong-typed label (e.g. a
+          // fiat USD row mislabelled with a stock ETF name).
+          enrichedHolding.symbol = token.symbol;
+          enrichedHolding.name = token.name;
           logger.debug({ symbol: holding.symbol, tokenId: token.id }, 'Token found for holding');
 
           if (input.accountId && holdingsByTokenId.has(token.id)) {

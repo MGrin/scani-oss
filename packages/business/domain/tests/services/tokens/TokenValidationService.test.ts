@@ -112,6 +112,42 @@ describe('TokenValidationService — fiat ISO-4217 ranking', () => {
     expect(result.metadata?.name).toBe('British Pound Sterling');
   });
 
+  test('USD with only a non-fiat (stock) match is rejected — fiat guard', async () => {
+    // The data-provider tokens.search has no DB access, so for USD it
+    // returns only the Finnhub equity. A stock match for a fiat symbol
+    // is wrong by definition — the service must not hand it back.
+    stubCloudClient([
+      {
+        symbol: 'USD',
+        name: 'PROSHARES ULTRA SEMICONDUCTORS',
+        type: 'Equity',
+        provider: 'finnhub',
+      },
+    ]);
+
+    const hinted = await service.validateToken('USD', 'fiat');
+    expect(hinted.isValid).toBe(false);
+
+    // Same outcome with no hint — isFiatCode('USD') drives wantsFiat.
+    const unhinted = await service.validateToken('USD');
+    expect(unhinted.isValid).toBe(false);
+  });
+
+  test('USD still validates when a fiat-typed result is present', async () => {
+    stubCloudClient([
+      {
+        symbol: 'USD',
+        name: 'PROSHARES ULTRA SEMICONDUCTORS',
+        type: 'Equity',
+        provider: 'finnhub',
+      },
+      { symbol: 'USD', name: 'United States Dollar', type: 'fiat', provider: 'database' },
+    ]);
+    const result = await service.validateToken('USD', 'fiat');
+    expect(result.isValid).toBe(true);
+    expect(result.metadata?.name).toBe('United States Dollar');
+  });
+
   test('returns isValid=false when no exact symbol match', async () => {
     stubCloudClient([
       { symbol: 'OTHER', name: 'Other Token', type: 'Crypto', provider: 'coingecko' },
