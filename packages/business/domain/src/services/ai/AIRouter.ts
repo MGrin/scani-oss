@@ -23,9 +23,13 @@ import type { AIInferenceProvider } from '@scani/providers/core/capabilities';
 import { ProviderRegistry } from '@scani/providers/core/registry';
 import { Container, Service } from 'typedi';
 
+export type ParsedAssetType = 'fiat' | 'crypto' | 'stock';
+
 export interface ParsedHolding {
   symbol: string;
   name?: string;
+  /** AI-classified asset type. Absent when the model didn't classify. */
+  assetType?: ParsedAssetType;
   balance: string;
   confidence: number;
   notes?: string;
@@ -303,6 +307,10 @@ function normalizePortfolio(raw: unknown): ParsedPortfolio {
     holdings.push({
       symbol,
       name: typeof hh.name === 'string' ? hh.name : undefined,
+      assetType:
+        hh.assetType === 'fiat' || hh.assetType === 'crypto' || hh.assetType === 'stock'
+          ? hh.assetType
+          : undefined,
       balance,
       confidence:
         typeof hh.confidence === 'number'

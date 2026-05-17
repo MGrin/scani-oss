@@ -1,7 +1,10 @@
+import type { Token } from '@scani/db/schema';
 import { createComponentLogger } from '@scani/logging';
 import Container, { Service } from 'typedi';
+import { TokenTypeRepository } from '../../repositories/EnumRepositories';
 import { HoldingRepository } from '../../repositories/HoldingRepository';
 import { TokenRepository } from '../../repositories/TokenRepository';
+import type { ParsedAssetType } from '../ai/AIRouter';
 
 const logger = createComponentLogger('service:enrich-holdings');
 
@@ -45,6 +48,7 @@ export interface EnrichHoldingsInput {
   holdings: Array<{
     symbol: string;
     name?: string;
+    assetType?: ParsedAssetType;
     balance: string;
     confidence: number;
     notes?: string;
@@ -56,6 +60,7 @@ export interface EnrichHoldingsInput {
 export interface EnrichedParsedHolding {
   symbol: string;
   name?: string;
+  assetType?: ParsedAssetType;
   balance: string;
   confidence: number;
   notes?: string;
@@ -70,6 +75,25 @@ export interface EnrichedParsedHolding {
 export class EnrichHoldingsService {
   private readonly tokenRepository = Container.get(TokenRepository);
   private readonly holdingRepository = Container.get(HoldingRepository);
+  private readonly tokenTypeRepository = Container.get(TokenTypeRepository);
+
+  /**
+   * Resolve a parsed symbol to a token row. When the parse step
+   * classified an `assetType`, prefer the row of that exact type — a
+   * fiat `USD` must resolve to the fiat US Dollar, not a same-named
+   * stock ticker. Falls back to the type-blind `findBySymbol` when no
+   * typed row exists or the holding wasn't classified.
+   */
+  private async resolveToken(symbol: string, assetType?: ParsedAssetType): Promise<Token | null> {
+    if (assetType) {
+      const tokenType = await this.tokenTypeRepository.findByCode(assetType);
+      if (tokenType) {
+        const typed = await this.tokenRepository.findBySymbolAndType(symbol, tokenType.id);
+        if (typed) return typed;
+      }
+    }
+    return this.tokenRepository.findBySymbol(symbol);
+  }
 
   async enrich(input: EnrichHoldingsInput): Promise<EnrichedParsedHolding[]> {
     logger.info(
@@ -125,7 +149,7 @@ export class EnrichHoldingsService {
       const enrichedHolding: EnrichedParsedHolding = { ...holding };
 
       try {
-        const token = await this.tokenRepository.findBySymbol(holding.symbol);
+        const token = await this.resolveToken(holding.symbol, holding.assetType);
 
         if (token) {
           enrichedHolding.tokenId = token.id;

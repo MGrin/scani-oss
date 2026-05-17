@@ -234,7 +234,7 @@ account holder owns from screenshots or document text. Return JSON in this exact
 
 {
   "holdings": [
-    { "symbol": "<ticker>", "name": "<full name>", "balance": "<decimal string>", "confidence": <0-1> }
+    { "symbol": "<ticker>", "name": "<full name>", "assetType": "<fiat|crypto|stock>", "balance": "<decimal string>", "confidence": <0-1> }
   ],
   "overallConfidence": <0-1>,
   "detectedCurrency": "<ISO currency code>"
@@ -247,6 +247,16 @@ A "holding" is anything with a balance the user owns. This includes:
     use the ISO currency code as both symbol and (if no other name is given) name.
     For a savings/checking statement with a single currency, the holding's balance is
     the closing balance shown on the statement.
+
+Classify every holding with "assetType", based on what the screenshot actually shows:
+  • "fiat"   — a cash or currency balance (a "Cash", "Available balance", "Buying
+               power" or account-balance line). A 3-letter ISO-4217 currency code
+               (USD, EUR, GBP, CHF, JPY, …) shown as a cash/account balance is ALWAYS
+               "fiat" — never a stock, even though some currency codes also exist as
+               equity tickers.
+  • "crypto" — a cryptocurrency or token (including stablecoins like USDT, USDC).
+  • "stock"  — a publicly traded stock, ETF, fund, or other equity/commodity.
+When genuinely unsure, pick the most likely type and lower "confidence".
 
 Always return at least one holding when the document clearly shows an account balance.
 Be conservative with confidence — when in doubt, lower it. Use Decimal.js-safe string

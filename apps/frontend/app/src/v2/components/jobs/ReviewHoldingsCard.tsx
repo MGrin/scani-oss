@@ -26,6 +26,8 @@ import { TokenSearchInput } from '../tokens/TokenSearchInput';
 export interface ReviewHoldingInput {
   symbol: string;
   name?: string | null;
+  /** AI-classified asset type (fiat / crypto / stock), when available. */
+  assetType?: 'fiat' | 'crypto' | 'stock' | null;
   balance: string;
   confidence?: number;
   tokenId?: string | null;
@@ -264,6 +266,14 @@ export function ReviewHoldingsCard({
                       <span className="text-muted-foreground text-xs truncate min-w-0">
                         {h.name}
                       </span>
+                    )}
+                    {h.assetType && (
+                      <Badge
+                        variant="secondary"
+                        className="text-[9px] px-1 py-0 capitalize shrink-0"
+                      >
+                        {h.assetType}
+                      </Badge>
                     )}
                     {isUpdate && !h.removed && (
                       <Badge

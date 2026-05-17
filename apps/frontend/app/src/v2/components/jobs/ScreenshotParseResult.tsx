@@ -28,6 +28,7 @@ interface ScreenshotFileResult {
       symbol?: string;
       balance?: string;
       name?: string;
+      assetType?: 'fiat' | 'crypto' | 'stock';
       // tokenId/holdingId are set by EnrichHoldingsUseCase during parse.
       // Without them in the review payload every row shows as
       // "unmatched" and the Import button stays disabled.
@@ -82,6 +83,7 @@ export function ScreenshotParseResult({
     return items.map((h) => ({
       symbol: h.symbol ?? '',
       name: h.name ?? null,
+      assetType: h.assetType,
       balance: String(h.balance ?? '0'),
       confidence: typeof h.confidence === 'number' ? h.confidence : undefined,
       tokenId: h.tokenId ?? null,

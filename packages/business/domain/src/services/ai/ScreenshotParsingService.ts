@@ -1,3 +1,4 @@
+import { isFiatCode } from '@scani/providers/core/utils/fiat-codes';
 import { Container, Service } from 'typedi';
 import { BaseService } from '../BaseService';
 import { TokenValidationService } from '../tokens/TokenValidationService';
@@ -148,26 +149,36 @@ export class ScreenshotParsingService extends BaseService {
           return null;
         }
 
+        // ISO-4217 backstop: a known fiat code is fiat regardless of how
+        // the model labelled it — keeps USD/EUR/GBP/… off same-named
+        // stock tickers even when the AI misclassifies the row.
+        const corrected: ParsedHolding = isFiatCode(holding.symbol)
+          ? { ...holding, assetType: 'fiat' }
+          : holding;
+
         try {
-          const validationResult = await this.tokenValidationService.validateToken(holding.symbol);
+          const validationResult = await this.tokenValidationService.validateToken(
+            corrected.symbol,
+            corrected.assetType
+          );
           if (!validationResult.isValid) {
             this.logInfo('Token validation failed - returning holding for user decision', {
-              symbol: holding.symbol,
+              symbol: corrected.symbol,
               error: validationResult.error,
             });
-            return holding;
+            return corrected;
           }
           return {
-            ...holding,
-            name: validationResult.metadata?.name || holding.name,
-            symbol: validationResult.metadata?.symbol || holding.symbol,
+            ...corrected,
+            name: validationResult.metadata?.name || corrected.name,
+            symbol: validationResult.metadata?.symbol || corrected.symbol,
           };
         } catch (error) {
           this.logWarning('Token validation error - returning holding for user decision', {
-            symbol: holding.symbol,
+            symbol: corrected.symbol,
             error: error instanceof Error ? error.message : 'Unknown error',
           });
-          return holding;
+          return corrected;
         }
       })
     );
