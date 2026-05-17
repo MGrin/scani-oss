@@ -204,6 +204,12 @@ export class SyncWalletBalancesUseCase {
     let holdingsCreated = 0;
     let holdingsRemoved = 0;
 
+    // Captured before any token can be created this run. Used to tell
+    // genuinely-new tokens (created during this sync) apart from
+    // pre-existing tokens that merely received a new holding — only the
+    // former may be scam-scored, never the latter (see scoreAndWarmNewTokens).
+    const runStartedAt = new Date();
+
     // STEP 1 & 2 combined: iterate users in pages (keyset pagination on id)
     // and fetch blockchain data incrementally. This keeps peak memory bounded
     // regardless of user count, which matters once the user base grows beyond
@@ -528,7 +534,7 @@ export class SyncWalletBalancesUseCase {
     // STEP 4: Scam-score + warm prices for tokens auto-discovered this run.
     // Runs after the transaction commits (warm-up does its own network I/O
     // under a time budget). Non-fatal — the hourly pricing cron backfills.
-    await this.scoreAndWarmNewTokens(createdTokenIdsByUser);
+    await this.scoreAndWarmNewTokens(createdTokenIdsByUser, runStartedAt);
 
     return {
       accountsSynced,
@@ -541,14 +547,22 @@ export class SyncWalletBalancesUseCase {
   }
 
   /**
-   * For tokens auto-discovered this run: assign an initial scam score from
-   * name/symbol heuristics (the recurring cron has no human review step),
-   * then warm prices so legitimate tokens get re-scored below the scam
-   * threshold and stay visible. Spam keeps its heuristic score and is
-   * hidden by the dashboard scam filter. Best-effort — never throws.
+   * For tokens that are *genuinely new* (created during this run): assign
+   * an initial scam score from name/symbol heuristics (the recurring cron
+   * has no human review step), then warm prices so legitimate tokens get
+   * re-scored below the scam threshold and stay visible.
+   *
+   * CRITICAL: `createdTokenIdsByUser` holds the token id of every holding
+   * created this run — but `findOrCreateTokenFromIntegration` returns the
+   * pre-existing token row when a wallet receives an already-known token
+   * (e.g. USDC) for the first time. Scoring those would overwrite a
+   * shared, global `isScamProbability` — silently un-hiding scam tokens
+   * for every user. So we scope every write to tokens whose `createdAt`
+   * is at/after this run started. Best-effort — never throws.
    */
   private async scoreAndWarmNewTokens(
-    createdTokenIdsByUser: Map<string, Set<string>>
+    createdTokenIdsByUser: Map<string, Set<string>>,
+    runStartedAt: Date
   ): Promise<void> {
     if (createdTokenIdsByUser.size === 0) return;
 
@@ -557,9 +571,13 @@ export class SyncWalletBalancesUseCase {
       for (const id of ids) allTokenIds.add(id);
     }
 
+    // Only tokens created during this run — never pre-existing ones.
+    const genuinelyNewIds = new Set<string>();
     try {
       const tokens = await this.tokenRepository.findByIds([...allTokenIds]);
       for (const token of tokens) {
+        if (token.createdAt < runStartedAt) continue;
+        genuinelyNewIds.add(token.id);
         const score = this.scamDetectionService.calculateScamProbability(
           token.symbol,
           token.name,
@@ -577,11 +595,15 @@ export class SyncWalletBalancesUseCase {
       );
     }
 
+    if (genuinelyNewIds.size === 0) return;
+
     for (const [userId, tokenIds] of createdTokenIdsByUser) {
+      const newForUser = [...tokenIds].filter((id) => genuinelyNewIds.has(id));
+      if (newForUser.length === 0) continue;
       try {
         await this.priceWarmupService.warm({
           userId,
-          tokenIds: [...tokenIds],
+          tokenIds: newForUser,
           rescanScamScores: true,
         });
       } catch (error) {

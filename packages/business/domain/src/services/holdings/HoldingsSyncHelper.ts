@@ -49,7 +49,12 @@ export interface ProcessSnapshotsForAccountResult {
   updated: number;
   created: number;
   removed: number;
-  /** Token ids of holdings created in this run — for post-sync pricing. */
+  // Token id of every holding created this run. NOTE: this is the
+  // holding's token — which may be a pre-existing, shared token row
+  // (findOrCreateTokenFromIntegration returns the existing row when a
+  // wallet receives an already-known token). Callers that scam-score
+  // or otherwise mutate the token MUST re-check the token is genuinely
+  // new before writing — see SyncWalletBalancesUseCase.scoreAndWarmNewTokens.
   createdTokenIds: string[];
 }
 
