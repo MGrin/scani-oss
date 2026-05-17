@@ -3,12 +3,30 @@ import type { Holding, User } from '@scani/db/schema';
 import type { HoldingWithDetails } from '@scani/shared';
 import Decimal from 'decimal.js';
 import { Container, Service } from 'typedi';
+import { SCAM_PROBABILITY_THRESHOLD } from '../../lib/constants';
 import { GroupRepository } from '../../repositories/GroupRepository';
 import { HoldingApyConfigRepository } from '../../repositories/HoldingApyConfigRepository';
 import { HoldingCoverageRepository } from '../../repositories/HoldingCoverageRepository';
 import { HoldingRepository } from '../../repositories/HoldingRepository';
 import { BaseService } from '../BaseService';
 import { PortfolioValuationService } from '../portfolio/PortfolioValuationService';
+
+/** A holding hidden from the dashboard, plus why it's hidden. */
+interface HiddenHoldingRow {
+  id: string;
+  balance: string;
+  source: string;
+  hiddenReason: 'user_hidden' | 'scam' | 'both';
+  token: {
+    id: string;
+    symbol: string;
+    name: string;
+    iconUrl: string | null;
+    isScamProbability: number;
+  };
+  account: { id: string; name: string };
+  institution: { id: string; name: string };
+}
 
 // HoldingQueryService — read-only queries against holdings. Mutations
 // live in HoldingService; splitting them keeps each class focused on a
@@ -252,6 +270,47 @@ export class HoldingQueryService extends BaseService {
         totalValue: totalValue.toString(),
       },
     };
+  }
+
+  /**
+   * Holdings currently invisible on the dashboard — either user-hidden
+   * (`isHidden`) or auto-flagged as scam (`token.isScamProbability` over
+   * the threshold). Powers the "Hidden Holdings" section of the Tokens
+   * page so users can reverse either kind of hiding.
+   */
+  async getHiddenHoldings(user: User): Promise<HiddenHoldingRow[]> {
+    const all = await this.holdingRepository.findByUserWithFullDetails(
+      user.id,
+      undefined,
+      undefined,
+      true,
+      true
+    );
+
+    return all
+      .map(({ holding, token, account, institution }) => {
+        const isScam = (token.isScamProbability ?? 0) >= SCAM_PROBABILITY_THRESHOLD;
+        const isHidden = holding.isHidden;
+        if (!isScam && !isHidden) return null;
+        const hiddenReason: HiddenHoldingRow['hiddenReason'] =
+          isScam && isHidden ? 'both' : isScam ? 'scam' : 'user_hidden';
+        return {
+          id: holding.id,
+          balance: holding.balance,
+          source: holding.source,
+          hiddenReason,
+          token: {
+            id: token.id,
+            symbol: token.symbol,
+            name: token.name,
+            iconUrl: token.iconUrl,
+            isScamProbability: token.isScamProbability ?? 0,
+          },
+          account: { id: account.id, name: account.name },
+          institution: { id: institution.id, name: institution.name },
+        };
+      })
+      .filter((r): r is HiddenHoldingRow => r !== null);
   }
 
   async findByAccount(

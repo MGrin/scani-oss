@@ -7,6 +7,7 @@ import { useState } from 'react';
 import { trpc } from '@/lib/trpc';
 import { CreateCustomTokenDialog } from '../components/tokens/CreateCustomTokenDialog';
 import { EditCustomTokenPriceDialog } from '../components/tokens/EditCustomTokenPriceDialog';
+import { HiddenHoldingsSection } from '../components/tokens/HiddenHoldingsSection';
 
 const SKELETON_KEYS = ['a', 'b', 'c', 'd'];
 
@@ -32,7 +33,7 @@ function formatRelative(date: string | Date | null): string {
   return new Date(t).toLocaleDateString();
 }
 
-export function TokensPage() {
+function CustomTokensSection() {
   const { data: tokens, isLoading } = trpc.tokens.listCustom.useQuery();
   const [createOpen, setCreateOpen] = useState(false);
   const [editing, setEditing] = useState<{
@@ -42,27 +43,11 @@ export function TokensPage() {
     currentBaseCurrency: string | null;
   } | null>(null);
 
-  if (isLoading) {
-    return (
-      <div className="space-y-4">
-        <div className="flex items-center justify-between">
-          <Skeleton className="h-8 w-40" />
-          <Skeleton className="h-9 w-36" />
-        </div>
-        <div className="space-y-2">
-          {SKELETON_KEYS.map((k) => (
-            <Skeleton key={`tokens-skel-${k}`} className="h-16" />
-          ))}
-        </div>
-      </div>
-    );
-  }
-
   return (
-    <div className="space-y-6">
+    <div className="space-y-2">
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-2xl font-bold tracking-tight">Custom Tokens</h2>
+          <h3 className="text-lg font-semibold tracking-tight">Custom tokens</h3>
           <p className="text-sm text-muted-foreground mt-1">
             Manually-priced assets (private company shares, custom holdings). Shared across all
             users; any user can update the price.
@@ -74,7 +59,13 @@ export function TokensPage() {
         </Button>
       </div>
 
-      {tokens && tokens.length > 0 ? (
+      {isLoading ? (
+        <div className="space-y-2">
+          {SKELETON_KEYS.map((k) => (
+            <Skeleton key={`tokens-skel-${k}`} className="h-16" />
+          ))}
+        </div>
+      ) : tokens && tokens.length > 0 ? (
         <div className="space-y-2">
           {tokens.map((t) => (
             <Card key={t.id} className="hover:border-primary/50 transition-colors">
@@ -138,6 +129,22 @@ export function TokensPage() {
           currentBaseCurrency={editing.currentBaseCurrency}
         />
       )}
+    </div>
+  );
+}
+
+export function TokensPage() {
+  return (
+    <div className="space-y-8">
+      <div>
+        <h2 className="text-2xl font-bold tracking-tight">Tokens</h2>
+        <p className="text-sm text-muted-foreground mt-1">
+          Manage manually-priced custom tokens and review holdings hidden from your dashboard.
+        </p>
+      </div>
+
+      <CustomTokensSection />
+      <HiddenHoldingsSection />
     </div>
   );
 }

@@ -12,6 +12,7 @@ export * from './accounts';
 export * from './admin-audit-log';
 export * from './cloud';
 export * from './groups';
+export * from './holding-exclusions';
 export * from './holdings';
 export * from './institutions';
 export * from './job-heartbeats';

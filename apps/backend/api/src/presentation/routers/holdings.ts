@@ -37,6 +37,13 @@ export const holdingsRouter = router({
     );
   }),
 
+  // Holdings hidden from the dashboard — user-hidden or auto-flagged as
+  // scam. Powers the Tokens page "Hidden Holdings" section.
+  getHidden: protectedProcedure.query(async ({ ctx }) => {
+    const { dbUser } = await requireAuth(ctx);
+    return await Container.get(HoldingQueryService).getHiddenHoldings(dbUser as User);
+  }),
+
   update: protectedProcedure
     .input(
       z.object({

@@ -9,9 +9,11 @@
  * - Fetch current balances from blockchain for each wallet
  * - Update existing holdings with new balances (preserving hidden state)
  * - Update holdings when balance goes to zero (keeping them for future syncs)
- * - Create new holdings when wallet owns new tokens
+ * - Create new holdings when a wallet receives a token for the first time,
+ *   skipping any token the user explicitly rejected (`holding_exclusions`)
+ * - Scam-score and warm prices for those newly-created tokens so legit
+ *   tokens stay visible and obvious spam stays hidden
  * - Respect rate limits of blockchain APIs
- * - NOTE: Token prices are NOT fetched during sync to improve performance
  *
  * Note: Hidden holdings are updated with new balances but remain hidden.
  * This preserves user intent when they explicitly hide a holding.
@@ -28,10 +30,14 @@ import { integrationCircuitBreaker, withRetry } from '@scani/rate-limiter';
 import { and, asc, eq, gt, sql } from 'drizzle-orm';
 import { Container, Service } from 'typedi';
 import { TokenTypeRepository } from '../repositories/EnumRepositories';
+import { HoldingExclusionRepository } from '../repositories/HoldingExclusionRepository';
+import { TokenRepository } from '../repositories/TokenRepository';
 import {
   AccountService,
   HoldingQueryService,
   HoldingsSyncHelper,
+  PriceWarmupService,
+  ScamTokenDetectionService,
   UserWalletService,
   WalletDiscoveryService,
 } from '../services';
@@ -79,7 +85,15 @@ export class SyncWalletBalancesUseCase {
     private readonly walletDiscovery: WalletDiscoveryService = Container.get(
       WalletDiscoveryService
     ),
-    private readonly holdingsSyncHelper: HoldingsSyncHelper = Container.get(HoldingsSyncHelper)
+    private readonly holdingsSyncHelper: HoldingsSyncHelper = Container.get(HoldingsSyncHelper),
+    private readonly holdingExclusionRepository: HoldingExclusionRepository = Container.get(
+      HoldingExclusionRepository
+    ),
+    private readonly tokenRepository: TokenRepository = Container.get(TokenRepository),
+    private readonly scamDetectionService: ScamTokenDetectionService = Container.get(
+      ScamTokenDetectionService
+    ),
+    private readonly priceWarmupService: PriceWarmupService = Container.get(PriceWarmupService)
   ) {}
 
   async execute(): Promise<SyncWalletBalancesResult> {
@@ -225,6 +239,10 @@ export class SyncWalletBalancesUseCase {
       for (const user of pageUsers) {
         // Get user's wallets
         const userWallets = await this.userWalletService.getUserWallets(user.id);
+
+        // Tokens this user rejected during a past wallet-import review.
+        // Keyed `institutionId:externalId` — see `holding_exclusions`.
+        const exclusionKeys = await this.holdingExclusionRepository.findKeysByUser(user.id);
 
         // Pre-fetch the user's wallet-backed accounts once per user so we can
         // cheaply tell which `user_wallet` rows still have any accounts and
@@ -390,13 +408,19 @@ export class SyncWalletBalancesUseCase {
                 throw fetchErr;
               }
 
+              // Drop snapshots for tokens the user rejected at import
+              // review — auto-discovery must not resurrect them.
+              const keptSnapshots = snapshots.filter(
+                (s) => !exclusionKeys.has(`${institutionId}:${s.externalId}`)
+              );
+
               walletDataToSync.push({
                 user,
                 userWallet,
                 institutionId,
                 institution,
                 account: syncAccount,
-                snapshots,
+                snapshots: keptSnapshots,
               });
             } catch (error) {
               accountsFailed++;
@@ -423,6 +447,7 @@ export class SyncWalletBalancesUseCase {
 
     // STEP 3: Process ALL updates in a SINGLE TRANSACTION
     // This dramatically reduces connection usage from N*M operations to 1 transaction
+    const createdTokenIdsByUser = new Map<string, Set<string>>();
     await withTransaction(
       async (tx) => {
         for (const walletData of walletDataToSync) {
@@ -453,15 +478,21 @@ export class SyncWalletBalancesUseCase {
               defaultDecimals: 18,
               respectHiddenForCounts: true,
               skipUnchangedUpdates: false,
-              // Recurring sync — refresh balances on existing holdings
-              // only. Adding new tokens requires the user to re-import
-              // the wallet and pick them in the review step.
-              updateOnly: true,
+              // Auto-discover newly-received tokens. Snapshots for tokens
+              // the user rejected at import review were already filtered
+              // out above against `holding_exclusions`.
+              updateOnly: false,
               tx,
             });
             holdingsUpdated += result.updated;
             holdingsCreated += result.created;
             holdingsRemoved += result.removed;
+
+            if (result.createdTokenIds.length > 0) {
+              const set = createdTokenIdsByUser.get(user.id) ?? new Set<string>();
+              for (const id of result.createdTokenIds) set.add(id);
+              createdTokenIdsByUser.set(user.id, set);
+            }
 
             // Update account metadata with last sync time (within transaction)
             const metadata = account.metadata as Record<string, unknown>;
@@ -494,6 +525,11 @@ export class SyncWalletBalancesUseCase {
       }
     );
 
+    // STEP 4: Scam-score + warm prices for tokens auto-discovered this run.
+    // Runs after the transaction commits (warm-up does its own network I/O
+    // under a time budget). Non-fatal — the hourly pricing cron backfills.
+    await this.scoreAndWarmNewTokens(createdTokenIdsByUser);
+
     return {
       accountsSynced,
       accountsFailed,
@@ -502,6 +538,59 @@ export class SyncWalletBalancesUseCase {
       holdingsRemoved,
       errors,
     };
+  }
+
+  /**
+   * For tokens auto-discovered this run: assign an initial scam score from
+   * name/symbol heuristics (the recurring cron has no human review step),
+   * then warm prices so legitimate tokens get re-scored below the scam
+   * threshold and stay visible. Spam keeps its heuristic score and is
+   * hidden by the dashboard scam filter. Best-effort — never throws.
+   */
+  private async scoreAndWarmNewTokens(
+    createdTokenIdsByUser: Map<string, Set<string>>
+  ): Promise<void> {
+    if (createdTokenIdsByUser.size === 0) return;
+
+    const allTokenIds = new Set<string>();
+    for (const ids of createdTokenIdsByUser.values()) {
+      for (const id of ids) allTokenIds.add(id);
+    }
+
+    try {
+      const tokens = await this.tokenRepository.findByIds([...allTokenIds]);
+      for (const token of tokens) {
+        const score = this.scamDetectionService.calculateScamProbability(
+          token.symbol,
+          token.name,
+          token.createdAt,
+          false
+        );
+        if (score !== token.isScamProbability) {
+          await this.tokenRepository.update(token.id, { isScamProbability: score });
+        }
+      }
+    } catch (error) {
+      logger.warn(
+        { error: error instanceof Error ? error.message : String(error) },
+        'Failed to scam-score newly-discovered tokens (non-fatal)'
+      );
+    }
+
+    for (const [userId, tokenIds] of createdTokenIdsByUser) {
+      try {
+        await this.priceWarmupService.warm({
+          userId,
+          tokenIds: [...tokenIds],
+          rescanScamScores: true,
+        });
+      } catch (error) {
+        logger.warn(
+          { userId, error: error instanceof Error ? error.message : String(error) },
+          'Failed to warm prices for newly-discovered tokens (non-fatal)'
+        );
+      }
+    }
   }
 }
 

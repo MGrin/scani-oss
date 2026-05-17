@@ -5,6 +5,7 @@
 
 import { randomUUID } from 'node:crypto';
 import {
+  HoldingExclusionRepository,
   InstitutionBlockchainMappingRepository,
   UserJobRepository,
 } from '@scani/domain/repositories';
@@ -238,6 +239,31 @@ export const walletRouter = router({
       }
 
       await repo.markActionTaken(dbUser.id, input.pickerJobId);
+
+      // Record which tokens the user kept vs rejected so the hourly
+      // wallet-balances cron's auto-discovery never resurrects a rejected
+      // token, and clears a stale exclusion if a token is re-added.
+      // Non-fatal: the import already succeeded.
+      try {
+        const keptEntries: { institutionId: string; externalId: string }[] = [];
+        const excludedEntries: { institutionId: string; externalId: string }[] = [];
+        for (const chain of allChains) {
+          const keep = keptByChain.get(chain.institutionId);
+          for (const snapshot of chain.snapshots) {
+            const entry = { institutionId: chain.institutionId, externalId: snapshot.externalId };
+            if (keep?.has(snapshot.externalId)) keptEntries.push(entry);
+            else excludedEntries.push(entry);
+          }
+        }
+        const exclusionRepo = Container.get(HoldingExclusionRepository);
+        await exclusionRepo.removeExclusions(dbUser.id, keptEntries);
+        await exclusionRepo.recordExclusions(dbUser.id, excludedEntries, 'user_unchecked');
+      } catch (err) {
+        logger.warn(
+          { error: err instanceof Error ? err.message : String(err) },
+          'Failed to record wallet-import holding exclusions (non-fatal)'
+        );
+      }
 
       return {
         accountsCreated: importResult.accounts.length,

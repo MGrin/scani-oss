@@ -36,12 +36,11 @@ export interface ProcessSnapshotsForAccountInput {
   // Exchange sync skips updates when the balance hasn't changed; wallet
   // sync updates unconditionally to refresh the lastUpdated timestamp.
   skipUnchangedUpdates: boolean;
-  // Recurring wallet syncs (`wallet-balances` cron) set this to true so
-  // they only refresh balances on holdings the user already chose to
-  // keep — never auto-create new ones from chain discovery. The
-  // user-initiated wallet-import flow has its own review step
-  // (`walletImport.confirmHoldings`) for adding tokens; the cron must
-  // not silently re-import tokens the user explicitly excluded.
+  // When true, only existing holdings are refreshed — no new holdings are
+  // created from snapshots. The `wallet-balances` cron sets this false so
+  // it auto-discovers newly-received tokens; callers that filter snapshots
+  // up-front (e.g. against `holding_exclusions`) keep deliberately-rejected
+  // tokens out before they reach the helper.
   updateOnly: boolean;
   tx: DatabaseTransaction;
 }
@@ -50,6 +49,8 @@ export interface ProcessSnapshotsForAccountResult {
   updated: number;
   created: number;
   removed: number;
+  /** Token ids of holdings created in this run — for post-sync pricing. */
+  createdTokenIds: string[];
 }
 
 @Service()
@@ -85,6 +86,7 @@ export class HoldingsSyncHelper extends BaseService {
     let updated = 0;
     let created = 0;
     let removed = 0;
+    const createdTokenIds: string[] = [];
 
     const snapshotsByExternalId = new Map<string, HoldingSnapshot>();
     for (const s of snapshots) snapshotsByExternalId.set(s.externalId, s);
@@ -186,6 +188,7 @@ export class HoldingsSyncHelper extends BaseService {
             tx
           );
           created++;
+          createdTokenIds.push(token.id);
         }
       } catch (error) {
         this.logger.error(
@@ -224,7 +227,7 @@ export class HoldingsSyncHelper extends BaseService {
       }
     }
 
-    return { updated, created, removed };
+    return { updated, created, removed, createdTokenIds };
   }
 
   private findExisting(input: {

@@ -15,6 +15,7 @@ export { GroupRepository } from './GroupRepository';
 export { HoldingApyConfigRepository } from './HoldingApyConfigRepository';
 export { HoldingBalanceObservationRepository } from './HoldingBalanceObservationRepository';
 export { HoldingCoverageRepository } from './HoldingCoverageRepository';
+export { HoldingExclusionRepository } from './HoldingExclusionRepository';
 export { HoldingRepository } from './HoldingRepository';
 export {
   HoldingTransactionRepository,
