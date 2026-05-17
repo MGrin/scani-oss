@@ -24,6 +24,11 @@ export interface TokenMappingResult {
     typeId: string;
     decimals?: number;
     iconUrl?: string | null;
+    // Structural exchange segment ('US' / 'TO' / 'L' / …). Dropping it
+    // here let the IBKR balance import resolve stocks to a NULL-segment
+    // token while the tx import resolved them to the segmented one,
+    // splitting every holding in two.
+    marketSegment?: string | null;
     providerMetadata?: string | TokenMetadata;
   };
   isNew: boolean;
@@ -181,6 +186,7 @@ export function projectSnapshotToTokenMapping(snapshot: HoldingSnapshot): TokenM
       typeId: '', // service layer fills in (crypto type for blockchain holdings)
       decimals,
       iconUrl: typeof ti.iconUrl === 'string' ? ti.iconUrl : null,
+      marketSegment: ti.marketSegment ?? null,
       providerMetadata:
         ti.providerMetadata ??
         (snapshot.externalId ? JSON.stringify({ externalId: snapshot.externalId }) : undefined),

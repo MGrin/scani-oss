@@ -343,6 +343,11 @@ export class TokenService extends BaseService {
         typeId: string;
         decimals?: number;
         iconUrl?: string | null;
+        // Structural exchange segment supplied by the provider (IBKR
+        // maps listingExchange → 'US' / 'TO' / 'L'). Must reach
+        // findOrCreateByIdentity so a balance import resolves the same
+        // segmented stock token the tx import does.
+        marketSegment?: string | null;
         // Accepts both string-encoded JSON and the schema-typed
         // `TokenMetadata` object — `HoldingSnapshotProjection` passes
         // through whichever the upstream provider produced.
@@ -379,6 +384,7 @@ export class TokenService extends BaseService {
           typeId: tokenTypeId,
           decimals: tokenMapping.token.decimals ?? defaultDecimals,
           iconUrl: tokenMapping.token.iconUrl ?? null,
+          marketSegment: tokenMapping.token.marketSegment ?? undefined,
           providerMetadata: incomingMetadata,
         },
         transaction
