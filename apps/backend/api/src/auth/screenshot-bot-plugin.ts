@@ -10,6 +10,13 @@ const log = createComponentLogger('auth.screenshot-bot');
 // the GH Actions screenshot workflow as exactly this user.
 export const SCREENSHOT_BOT_ALLOWED_EMAIL = 'mr6r1n+olesya@gmail.com';
 
+// Screenshot-bot sessions are minted by the GH Actions landing-shot
+// workflow and consumed within a single short-lived capture run. The
+// default 7-day session expiry left the admin session list flooded with
+// stale screenshot sessions, so these are capped at 15 minutes — long
+// enough for one run, short enough to age out on their own.
+const SCREENSHOT_SESSION_TTL_SEC = 15 * 60;
+
 function timingSafeStrEq(a: string, b: string): boolean {
   const ba = Buffer.from(a);
   const bb = Buffer.from(b);
@@ -54,13 +61,21 @@ export const screenshotBotPlugin = (opts: { secret: string | undefined }) => ({
           );
           throw APIError.fromStatus('NOT_FOUND', { message: 'screenshot user not provisioned' });
         }
-        const session = await ctx.context.internalAdapter.createSession(found.user.id);
+        const expiresAt = new Date(Date.now() + SCREENSHOT_SESSION_TTL_SEC * 1000);
+        const session = await ctx.context.internalAdapter.createSession(
+          found.user.id,
+          false,
+          { expiresAt },
+          true
+        );
         if (!session) {
           throw APIError.fromStatus('INTERNAL_SERVER_ERROR', {
             message: 'failed to create session',
           });
         }
-        await setSessionCookie(ctx, { session, user: found.user });
+        await setSessionCookie(ctx, { session, user: found.user }, false, {
+          maxAge: SCREENSHOT_SESSION_TTL_SEC,
+        });
         log.info({ userId: found.user.id, sessionId: session.id }, 'minted screenshot-bot session');
         return ctx.json({
           token: session.token,
