@@ -68,3 +68,9 @@ variable "sentry_org" {
   description = "Sentry organization slug (case-sensitive). Discovered via the Sentry API; value is 'scani'."
   default     = "scani"
 }
+
+variable "posthog_project_key" {
+  type        = string
+  description = "PostHog project API key (phc_...). Set via TF_VAR_posthog_project_key from the POSTHOG_PROJECT_KEY GitHub secret; fanned out to GH Actions secrets POSTHOG_KEY + VITE_POSTHOG_KEY."
+  sensitive   = true
+}

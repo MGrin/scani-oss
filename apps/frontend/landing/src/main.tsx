@@ -1,3 +1,4 @@
+import { AnalyticsProvider } from '@scani/analytics/client';
 import { scrubSentryBreadcrumb, scrubSentryEvent } from '@scani/shared';
 import * as Sentry from '@sentry/react';
 import React from 'react';
@@ -21,6 +22,12 @@ if (SENTRY_DSN) {
 
 ReactDOM.createRoot(document.getElementById('root') as HTMLElement).render(
   <React.StrictMode>
-    <App />
+    <AnalyticsProvider
+      apiKey={import.meta.env.VITE_POSTHOG_KEY}
+      apiHost={import.meta.env.VITE_POSTHOG_HOST}
+      app="landing"
+    >
+      <App />
+    </AnalyticsProvider>
   </React.StrictMode>
 );

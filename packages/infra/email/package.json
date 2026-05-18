@@ -13,6 +13,7 @@
     "type-check": "tsgo --noEmit"
   },
   "dependencies": {
+    "@scani/analytics": "workspace:*",
     "@scani/logging": "workspace:*",
     "nodemailer": "^6",
     "typedi": "^0.10.0",

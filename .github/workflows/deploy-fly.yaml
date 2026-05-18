@@ -283,6 +283,14 @@ jobs:
           GOOGLE_SHEETS_ID: ${{ secrets.GOOGLE_SHEETS_ID }}
           # Email
           FASTMAIL_API_TOKEN: ${{ secrets.FASTMAIL_API_TOKEN }}
+          # Analytics — PostHog. POSTHOG_KEY is a public project token;
+          # EMAIL_TRACKING_SECRET signs email open/click tokens (secret).
+          # This service serves the /e/o + /e/c tracking routes, so
+          # EMAIL_TRACKING_BASE_URL is its own public origin.
+          POSTHOG_KEY: ${{ secrets.POSTHOG_KEY }}
+          POSTHOG_HOST: https://eu.i.posthog.com
+          EMAIL_TRACKING_BASE_URL: https://api.cloud.scani.xyz
+          EMAIL_TRACKING_SECRET: ${{ secrets.EMAIL_TRACKING_SECRET }}
           # Cloud management (Tier 2/3 only): enables cloud_api_keys DB
           # lookup, Postgres-backed `cloud_usage_events` metering, and
           # Better-Auth cookie sessions for cloud-frontend. DATABASE_URL
@@ -352,6 +360,8 @@ jobs:
                      COINGECKO_API_KEY FINNHUB_API_KEY \
                      GOOGLE_SERVICE_ACCOUNT_KEY GOOGLE_SHEETS_ID \
                      FASTMAIL_API_TOKEN \
+                     POSTHOG_KEY POSTHOG_HOST \
+                     EMAIL_TRACKING_BASE_URL EMAIL_TRACKING_SECRET \
                      CLOUD_MANAGEMENT_ENABLED DATABASE_URL \
                      BETTER_AUTH_SECRET BETTER_AUTH_URL CLOUD_FRONTEND_ORIGIN \
                      PUBLIC_BASE_URL; do
@@ -447,6 +457,12 @@ jobs:
           # superuser path). Customers self-hosting Tier 2 set their own
           # `sk_live_*` key locally; this is the prod equivalent.
           SCANI_CLOUD_API_KEY: ${{ secrets.DATA_PROVIDER_API_KEY }}
+          # Analytics — PostHog. The api captures backend product events
+          # and rewrites magic-link/OTP email HTML for open/click tracking.
+          # EMAIL_TRACKING_BASE_URL points at the data-provider, which
+          # serves the tracking routes. All empty → analytics no-ops.
+          POSTHOG_KEY: ${{ secrets.POSTHOG_KEY }}
+          EMAIL_TRACKING_SECRET: ${{ secrets.EMAIL_TRACKING_SECRET }}
         run: |
           set -euo pipefail
           # SCANI_CLOUD_URL is a public URL, hardcoded here so it doesn't
@@ -473,6 +489,10 @@ jobs:
             printf 'SERVICE_VERSION=%s\n' "${GITHUB_SHA}"
             printf 'SCANI_CLOUD_URL=%s\n' "$SCANI_CLOUD_URL"
             printf 'SCANI_CLOUD_API_KEY=%s\n' "$SCANI_CLOUD_API_KEY"
+            printf 'POSTHOG_KEY=%s\n' "${POSTHOG_KEY:-}"
+            printf 'POSTHOG_HOST=%s\n' "https://eu.i.posthog.com"
+            printf 'EMAIL_TRACKING_BASE_URL=%s\n' "$SCANI_CLOUD_URL"
+            printf 'EMAIL_TRACKING_SECRET=%s\n' "${EMAIL_TRACKING_SECRET:-}"
           } > "$payload"
           flyctl secrets import --stage --app scani-backend < "$payload"
 
@@ -541,6 +561,9 @@ jobs:
           # only manage one secret. SCANI_CLOUD_URL is hardcoded since
           # it's a public hostname (api.cloud.scani.xyz).
           SCANI_CLOUD_API_KEY: ${{ secrets.DATA_PROVIDER_API_KEY }}
+          # Analytics — PostHog. The worker captures import_completed.
+          # Empty → analytics no-ops.
+          POSTHOG_KEY: ${{ secrets.POSTHOG_KEY }}
         run: |
           set -euo pipefail
           SCANI_CLOUD_URL="https://api.cloud.scani.xyz"
@@ -563,6 +586,8 @@ jobs:
             printf 'SERVICE_VERSION=%s\n' "${GITHUB_SHA}"
             printf 'SCANI_CLOUD_URL=%s\n' "$SCANI_CLOUD_URL"
             printf 'SCANI_CLOUD_API_KEY=%s\n' "$SCANI_CLOUD_API_KEY"
+            printf 'POSTHOG_KEY=%s\n' "${POSTHOG_KEY:-}"
+            printf 'POSTHOG_HOST=%s\n' "https://eu.i.posthog.com"
           } > "$payload"
           flyctl secrets import --stage --app scani-worker < "$payload"
 
@@ -661,6 +686,11 @@ jobs:
           VITE_SENTRY_DSN: ${{ secrets.VITE_SENTRY_DSN_FRONTEND }}
           VITE_SENTRY_ENVIRONMENT: production
           VITE_SENTRY_RELEASE: ${{ github.sha }}
+          # PostHog project key (phc_…) — a public client token, not a
+          # secret. Sourced from repo secrets so it can be set without a
+          # code change; empty → analytics no-ops in the built bundle.
+          VITE_POSTHOG_KEY: ${{ secrets.VITE_POSTHOG_KEY }}
+          VITE_POSTHOG_HOST: https://eu.i.posthog.com
       - name: Upload frontend sourcemaps to Sentry
         if: ${{ env.SENTRY_AUTH_TOKEN != '' }}
         env:
@@ -701,6 +731,9 @@ jobs:
           # public `waitlist.join` tRPC procedure. Hardcoded — not a
           # secret — same convention as BETTER_AUTH_URL upstream.
           VITE_DATA_PROVIDER_URL: https://api.cloud.scani.xyz
+          # PostHog project key (public client token); empty → no-ops.
+          VITE_POSTHOG_KEY: ${{ secrets.VITE_POSTHOG_KEY }}
+          VITE_POSTHOG_HOST: https://eu.i.posthog.com
       - name: Upload landing sourcemaps to Sentry
         if: ${{ env.SENTRY_AUTH_TOKEN != '' }}
         env:
@@ -762,6 +795,9 @@ jobs:
           # hosts share the `scani.xyz` registrable domain so the
           # browser treats fetches as same-site for SameSite=Lax.
           VITE_DATA_PROVIDER_URL: https://api.cloud.scani.xyz
+          # PostHog project key (public client token); empty → no-ops.
+          VITE_POSTHOG_KEY: ${{ secrets.VITE_POSTHOG_KEY }}
+          VITE_POSTHOG_HOST: https://eu.i.posthog.com
       - name: Publish to Cloudflare Pages
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}

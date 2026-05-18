@@ -1,3 +1,4 @@
+import { AnalyticsProvider } from '@scani/analytics/client';
 import { assertFrontendEnv, ErrorBoundary, ThemeProvider, UpdateBanner } from '@scani/ui';
 import React from 'react';
 import ReactDOM from 'react-dom/client';
@@ -27,7 +28,13 @@ ReactDOM.createRoot(root).render(
       <ThemeProvider storageKey="scani-cloud-theme">
         <TrpcProvider>
           <BrowserRouter>
-            <App />
+            <AnalyticsProvider
+              apiKey={import.meta.env.VITE_POSTHOG_KEY}
+              apiHost={import.meta.env.VITE_POSTHOG_HOST}
+              app="cloud"
+            >
+              <App />
+            </AnalyticsProvider>
           </BrowserRouter>
           <UpdateBanner />
         </TrpcProvider>

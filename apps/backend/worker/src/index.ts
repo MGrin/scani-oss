@@ -4,6 +4,7 @@ import { loadEnv } from './config/env';
 
 const env = loadEnv();
 
+import { AnalyticsService } from '@scani/analytics';
 import { loadCloudClientConfig } from '@scani/cloud-client';
 import { probeDataProvider } from '@scani/cloud-client/health-probe';
 // Import DI-registered modules so Container.get() resolves the @scani/domain
@@ -428,6 +429,9 @@ async function main(): Promise<void> {
       await Container.get(QueueClient).close();
       await publisher.quit();
       await connection.quit();
+      await Container.get(AnalyticsService)
+        .shutdown()
+        .catch(() => undefined);
       await flushSentry(2000);
       logger.info({ totalShutdownMs: Date.now() - startedAt }, '✅ Shutdown complete');
       process.exit(0);

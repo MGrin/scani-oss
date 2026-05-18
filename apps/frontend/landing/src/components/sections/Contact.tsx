@@ -1,3 +1,4 @@
+import { ANALYTICS_EVENTS, capture, identifyUser } from '@scani/analytics/client';
 import { TRPCClientError } from '@trpc/client';
 import { ArrowRight, CheckCircle2, Mail } from 'lucide-react';
 import { type FormEvent, useState } from 'react';
@@ -34,15 +35,18 @@ export function Contact() {
     e.preventDefault();
     if (status.kind === 'submitting') return;
     setStatus({ kind: 'submitting' });
+    const normalizedEmail = email.trim().toLowerCase();
     try {
       await trpc.contact.submit.mutate({
         name: name.trim(),
-        email: email.trim().toLowerCase(),
+        email: normalizedEmail,
         topic,
         message: message.trim(),
         referrer: typeof document !== 'undefined' ? document.referrer || undefined : undefined,
       });
       setStatus({ kind: 'sent' });
+      identifyUser({ id: normalizedEmail, email: normalizedEmail });
+      capture(ANALYTICS_EVENTS.contactSubmitted, { topic });
     } catch (err) {
       const message =
         err instanceof TRPCClientError

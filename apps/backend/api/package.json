@@ -17,6 +17,7 @@
   "dependencies": {
     "@elysiajs/cors": "^1.4.1",
     "@elysiajs/trpc": "^1.1.0",
+    "@scani/analytics": "workspace:*",
     "@scani/cloud-client": "workspace:*",
     "@scani/config": "workspace:*",
     "@scani/domain": "workspace:*",

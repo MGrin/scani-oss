@@ -54,6 +54,9 @@
     "packages/frontend/ui": {
       "project": ["src/**/*.{ts,tsx}"]
     },
+    "packages/infra/analytics": {
+      "project": ["src/**/*.{ts,tsx}"]
+    },
     "packages/infra/config": {
       "project": ["src/**/*.ts"]
     },

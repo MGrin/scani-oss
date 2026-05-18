@@ -1,3 +1,4 @@
+import { AnalyticsProvider } from '@scani/analytics/client';
 import { scrubSentryBreadcrumb, scrubSentryEvent } from '@scani/shared';
 import { assertFrontendEnv } from '@scani/ui';
 import { ErrorBoundary } from '@scani/ui/components/ErrorBoundary';
@@ -108,7 +109,13 @@ ReactDOM.createRoot(rootElement).render(
     <ErrorBoundary>
       <ThemeProvider>
         <TRPCProvider>
-          <App />
+          <AnalyticsProvider
+            apiKey={import.meta.env.VITE_POSTHOG_KEY}
+            apiHost={import.meta.env.VITE_POSTHOG_HOST}
+            app="app"
+          >
+            <App />
+          </AnalyticsProvider>
           <Toaster />
           <UpdateBanner />
         </TRPCProvider>

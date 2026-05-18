@@ -1,3 +1,4 @@
+import { ANALYTICS_EVENTS, capture, identifyUser } from '@scani/analytics/client';
 import { TRPCClientError } from '@trpc/client';
 import { ArrowRight, CheckCircle2, Clock } from 'lucide-react';
 import { type FormEvent, useState } from 'react';
@@ -20,9 +21,10 @@ export function BetaPromise() {
     e.preventDefault();
     if (status.kind === 'submitting') return;
     setStatus({ kind: 'submitting' });
+    const normalizedEmail = email.trim().toLowerCase();
     try {
       const res = await trpc.waitlist.join.mutate({
-        email: email.trim().toLowerCase(),
+        email: normalizedEmail,
         source: 'landing',
         referrer: typeof document !== 'undefined' ? document.referrer || undefined : undefined,
       });
@@ -31,6 +33,13 @@ export function BetaPromise() {
       // we just persisted a new row or rediscovered an existing one.
       const r = res as { ok: boolean; alreadyJoined: boolean };
       setStatus({ kind: r.alreadyJoined ? 'already-joined' : 'joined' });
+      // Tie the anonymous visitor to their email so the landing-page
+      // funnel connects to backend + email-engagement events.
+      identifyUser({ id: normalizedEmail, email: normalizedEmail });
+      capture(ANALYTICS_EVENTS.waitlistJoined, {
+        source: 'landing',
+        already_joined: r.alreadyJoined,
+      });
     } catch (err) {
       const message =
         err instanceof TRPCClientError

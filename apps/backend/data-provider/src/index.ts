@@ -10,6 +10,13 @@ const env = loadEnv();
 
 import { cors } from '@elysiajs/cors';
 import { trpc } from '@elysiajs/trpc';
+import {
+  ANALYTICS_EVENTS,
+  AnalyticsService,
+  loadAnalyticsConfig,
+  TRANSPARENT_GIF,
+  verifyTrackingToken,
+} from '@scani/analytics';
 import { createTimer, logger, sanitizeUrl } from '@scani/logging';
 import { flushSentry, initSentry, captureException as sentryCapture } from '@scani/logging/sentry';
 import { buildProviderRegistry } from '@scani/providers/core/boot';
@@ -98,6 +105,32 @@ installWaitlistCloudDb(null);
 interface RequestWithTracking extends Request {
   _timer?: { end: () => number };
   _requestId?: string;
+}
+
+// Verifies an email-tracking token and records the matching PostHog event.
+// Returns the click destination for `click` hits. Silent + safe on bad or
+// forged tokens — analytics must never break email link delivery.
+function captureEmailEvent(kind: 'open' | 'click', token: string, request: Request): string | null {
+  const { EMAIL_TRACKING_SECRET } = loadAnalyticsConfig();
+  if (!EMAIL_TRACKING_SECRET) return null;
+  const payload = verifyTrackingToken(token, EMAIL_TRACKING_SECRET);
+  if (!payload) return null;
+  const ip =
+    request.headers.get('fly-client-ip') ??
+    request.headers.get('x-forwarded-for')?.split(',')[0]?.trim();
+  Container.get(AnalyticsService).capture({
+    distinctId: payload.e,
+    event: kind === 'open' ? ANALYTICS_EVENTS.emailOpened : ANALYTICS_EVENTS.emailLinkClicked,
+    app: 'email',
+    properties: {
+      template: payload.t,
+      message_id: payload.m,
+      surface: payload.a,
+      ...(payload.u ? { url: payload.u } : {}),
+    },
+    ...(ip ? { ip } : {}),
+  });
+  return payload.u ?? null;
 }
 
 const app = new Elysia()
@@ -280,6 +313,27 @@ const app = new Elysia()
     return auth.handler(request);
   })
   .get('/', () => ({ status: 'ok', service: 'scani-data-provider' }))
+  // Email open-tracking pixel. Always returns a 1x1 GIF; records an
+  // `email_opened` event when the signed token verifies.
+  .get('/e/o/:token', ({ params, request }: { params: { token: string }; request: Request }) => {
+    captureEmailEvent('open', params.token, request);
+    return new Response(TRANSPARENT_GIF, {
+      headers: {
+        'Content-Type': 'image/gif',
+        'Cache-Control': 'no-store, no-cache, must-revalidate, private',
+      },
+    });
+  })
+  // Email click-tracking redirect. Records `email_link_clicked`, then
+  // 302s to the signed destination URL embedded in the token. The URL is
+  // HMAC-protected, so this can't be turned into an open redirect.
+  .get('/e/c/:token', ({ params, request }: { params: { token: string }; request: Request }) => {
+    const dest = captureEmailEvent('click', params.token, request);
+    return new Response(null, {
+      status: 302,
+      headers: { Location: dest ?? 'https://scani.xyz', 'Cache-Control': 'no-store' },
+    });
+  })
   // OpenAPI 3.0 spec for the bearer-auth tRPC surface. Generated once
   // at boot from `appRouter`'s .meta() annotations and post-processed
   // so it accurately describes the `?input=<JSON>` query convention
@@ -520,6 +574,10 @@ const gracefulShutdown = async (signal: string) => {
   hardTimer.unref?.();
   try {
     server.stop();
+    // Flush any buffered PostHog events before the process exits.
+    await Container.get(AnalyticsService)
+      .shutdown()
+      .catch(() => undefined);
     // Drain buffered usage events before the process exits. Read via
     // the trpc module's getter — the active sink is swapped in the
     // deferred boot IIFE, so this picks up whichever one is current

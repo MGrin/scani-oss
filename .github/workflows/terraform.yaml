@@ -47,6 +47,17 @@ env:
   # `terraform import` commands in the one-shot step can't read TF
   # defaults, so we surface it here too.
   TF_VAR_sentry_org: ${{ secrets.SENTRY_ORG }}
+  # PostHog provider credentials — the PostHog/posthog provider reads
+  # these from env to manage dashboards + insights (see posthog.tf).
+  # All three are hand-set secrets (like SENTRY_AUTH_TOKEN):
+  #   POSTHOG_PERSONAL_API_KEY — personal API key the provider authenticates with
+  #   POSTHOG_PROJECT_ID       — numeric project id from the PostHog URL
+  #   POSTHOG_PROJECT_KEY      — the phc_ project key, fanned out to the
+  #                              POSTHOG_KEY / VITE_POSTHOG_KEY app secrets
+  POSTHOG_API_KEY: ${{ secrets.POSTHOG_PERSONAL_API_KEY }}
+  POSTHOG_PROJECT_ID: ${{ secrets.POSTHOG_PROJECT_ID }}
+  POSTHOG_HOST: https://eu.posthog.com
+  TF_VAR_posthog_project_key: ${{ secrets.POSTHOG_PROJECT_KEY }}
   # Fail fast on any missing interactive prompt.
   TF_INPUT: "false"
 

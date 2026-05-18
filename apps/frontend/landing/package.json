@@ -13,6 +13,7 @@
     "type-check": "tsgo --noEmit"
   },
   "dependencies": {
+    "@scani/analytics": "workspace:*",
     "@scani/data-provider": "workspace:*",
     "@scani/shared": "workspace:*",
     "@scani/ui": "workspace:*",

@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import { type EmailMessage, LocalEmailService } from '@scani/email';
+import { type EmailMessage, EmailService, LocalEmailService } from '@scani/email';
 import { Container } from 'typedi';
 import { contactRouter } from '../../../src/presentation/routers/contact';
 import { buildUnauthedContext } from '../../helpers/test-context';
@@ -8,11 +8,14 @@ import { buildUnauthedContext } from '../../helpers/test-context';
 // through three gates: zod validation → in-memory rate limiter (5/h/IP) →
 // the ops-email send. We stand in a fake email service so submissions
 // don't hit SMTP, can be inspected, and can be made to fail on demand.
-
-class FakeEmailService {
+//
+// Extends the real EmailService so it inherits send() + sendTracked() and
+// every message — ops notification and tracked receipt alike — funnels
+// through the single sendMessage() seam.
+class FakeEmailService extends EmailService {
   readonly sent: EmailMessage[] = [];
   failNext = false;
-  async send(message: EmailMessage): Promise<void> {
+  protected async sendMessage(message: EmailMessage): Promise<void> {
     if (this.failNext) {
       this.failNext = false;
       throw new Error('simulated SMTP failure');

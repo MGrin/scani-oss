@@ -16,6 +16,7 @@
   },
   "dependencies": {
     "@hookform/resolvers": "^5.2.2",
+    "@scani/analytics": "workspace:*",
     "@scani/backend": "workspace:*",
     "@scani/shared": "workspace:*",
     "@scani/ui": "workspace:*",

@@ -1,4 +1,5 @@
 import { Route, BrowserRouter as Router, Routes } from 'react-router-dom';
+import { AnalyticsBridge } from '@/components/AnalyticsBridge';
 import { ProtectedRoute } from '@/components/ProtectedRoute';
 import { AuthProvider } from '@/contexts/AuthContext';
 import { Auth } from '@/pages/Auth';
@@ -16,6 +17,7 @@ function App() {
           v7_relativeSplatPath: true,
         }}
       >
+        <AnalyticsBridge />
         <Routes>
           {/* Public auth routes */}
           <Route path="/auth" element={<Auth />} />

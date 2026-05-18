@@ -12,6 +12,7 @@
     "type-check": "tsgo --noEmit"
   },
   "dependencies": {
+    "@scani/analytics": "workspace:*",
     "@scani/cloud-client": "workspace:*",
     "@scani/config": "workspace:*",
     "@scani/db": "workspace:*",

@@ -107,13 +107,12 @@ async function notifyOps(args: {
 async function sendUserConfirmation(args: { email: string; isDuplicate: boolean }): Promise<void> {
   if (args.isDuplicate) return;
   try {
-    const rendered = renderWaitlistJoinEmail({ brand: SCANI_BRAND, email: args.email });
-    await Container.get(LocalEmailService).send({
-      from: SCANI_BRAND.from,
+    await Container.get(LocalEmailService).sendTracked({
       to: args.email,
-      subject: rendered.subject,
-      text: rendered.text,
-      html: rendered.html,
+      template: 'waitlist-join',
+      app: 'landing',
+      brand: SCANI_BRAND,
+      content: renderWaitlistJoinEmail({ brand: SCANI_BRAND, email: args.email }),
     });
   } catch (err) {
     log.warn(

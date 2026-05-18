@@ -125,13 +125,12 @@ export const contactRouter = router({
       // User-facing receipt. Best-effort: the message already reached the
       // support inbox above, so an SMTP hiccup here must not 500 the form.
       try {
-        const rendered = renderContactReceivedEmail({ brand: SCANI_BRAND, name });
-        await emailService.send({
-          from: SCANI_BRAND.from,
+        await emailService.sendTracked({
           to: email,
-          subject: rendered.subject,
-          text: rendered.text,
-          html: rendered.html,
+          template: 'contact-received',
+          app: 'landing',
+          brand: SCANI_BRAND,
+          content: renderContactReceivedEmail({ brand: SCANI_BRAND, name }),
         });
       } catch (err) {
         log.warn(

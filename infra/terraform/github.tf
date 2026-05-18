@@ -263,3 +263,48 @@ resource "github_actions_secret" "sentry_org" {
   secret_name     = "SENTRY_ORG"
   plaintext_value = var.sentry_org
 }
+
+# -----------------------------------------------------------------------
+# PostHog analytics secrets.
+#
+# POSTHOG_KEY / VITE_POSTHOG_KEY mirror the public project key (phc_...)
+# so the deploy workflow bakes it into the SPA bundles and stages it onto
+# the Fly apps — same fan-out pattern as the Sentry DSNs above.
+#
+# EMAIL_TRACKING_SECRET is the HMAC key that signs email open/click
+# tracking tokens; generated once by TF (stable across redeploys) and
+# consumed by scani-backend + scani-data-provider. See posthog.tf for the
+# dashboards/insights and .github/workflows/terraform.yaml for the
+# provider credentials (the personal API key stays a hand-set secret,
+# like SENTRY_AUTH_TOKEN).
+# -----------------------------------------------------------------------
+
+resource "github_actions_secret" "posthog_key" {
+  repository      = data.github_repository.scani.name
+  secret_name     = "POSTHOG_KEY"
+  plaintext_value = var.posthog_project_key
+}
+
+resource "github_actions_secret" "vite_posthog_key" {
+  repository      = data.github_repository.scani.name
+  secret_name     = "VITE_POSTHOG_KEY"
+  plaintext_value = var.posthog_project_key
+}
+
+resource "random_password" "email_tracking_secret" {
+  length  = 48
+  special = false
+  # Rotating invalidates in-flight tracking links in already-sent
+  # emails (their tokens stop verifying — opens/clicks just go
+  # uncounted, mail still delivers fine). Bump rotation_id + redeploy
+  # scani-backend and scani-data-provider together.
+  keepers = {
+    rotation_id = "2026-05-18"
+  }
+}
+
+resource "github_actions_secret" "email_tracking_secret" {
+  repository      = data.github_repository.scani.name
+  secret_name     = "EMAIL_TRACKING_SECRET"
+  plaintext_value = random_password.email_tracking_secret.result
+}

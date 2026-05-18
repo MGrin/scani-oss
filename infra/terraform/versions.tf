@@ -30,6 +30,10 @@ terraform {
       source  = "jianyuan/sentry"
       version = "~> 0.12"
     }
+    posthog = {
+      source  = "PostHog/posthog"
+      version = "~> 1.0"
+    }
   }
 
   # Terraform state lives in a Cloudflare R2 bucket via the S3-compatible API.
