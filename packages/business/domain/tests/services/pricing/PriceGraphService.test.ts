@@ -207,3 +207,62 @@ describe('PriceGraphService.convert', () => {
     expect(r).toBeNull();
   });
 });
+
+describe('PriceGraphService.convert — staleness', () => {
+  const AT = new Date('2024-06-01T00:00:00Z');
+  // Caps: intraday 7d, daily 45d. Pick edge dates relative to AT.
+  const FRESH = new Date('2024-05-28T00:00:00Z'); // 4 days old
+  const MID = new Date('2024-05-20T00:00:00Z'); // 12 days old
+  const ANCIENT = new Date('2024-04-02T00:00:00Z'); // 60 days old
+
+  function btcUsd(timestamp: Date): Edge {
+    return { tokenId: 'BTC', baseTokenId: 'USD', price: '65000', timestamp };
+  }
+
+  test('identity conversion is never stale', async () => {
+    const svc = makePriceGraphService(makeTokenPriceStub([]), makeTokenStub(HUB_IDS));
+    const r = await svc.convert('1', 'same', 'same', AT);
+    expect(r?.stale).toBe(false);
+  });
+
+  test('a fresh price (within the intraday cap) is not stale', async () => {
+    const svc = makePriceGraphService(makeTokenPriceStub([btcUsd(FRESH)]), makeTokenStub(HUB_IDS));
+    const r = await svc.convert('1', 'BTC', 'USD', AT);
+    expect(r?.stale).toBe(false);
+  });
+
+  test('a price past the 7-day intraday cap is flagged stale', async () => {
+    const svc = makePriceGraphService(makeTokenPriceStub([btcUsd(MID)]), makeTokenStub(HUB_IDS));
+    const r = await svc.convert('1', 'BTC', 'USD', AT);
+    expect(r?.amount.toString()).toBe('65000');
+    expect(r?.stale).toBe(true);
+  });
+
+  test('the wider 45-day daily cap tolerates a mid-age daily price', async () => {
+    const svc = makePriceGraphService(makeTokenPriceStub([btcUsd(MID)]), makeTokenStub(HUB_IDS));
+    const r = await svc.convert('1', 'BTC', 'USD', AT, { preferGranularity: 'daily' });
+    expect(r?.stale).toBe(false);
+  });
+
+  test('a price past the 45-day daily cap is flagged stale even for daily', async () => {
+    const svc = makePriceGraphService(
+      makeTokenPriceStub([btcUsd(ANCIENT)]),
+      makeTokenStub(HUB_IDS)
+    );
+    const r = await svc.convert('1', 'BTC', 'USD', AT, { preferGranularity: 'daily' });
+    expect(r?.stale).toBe(true);
+  });
+
+  test('one-hop staleness binds on the oldest leg', async () => {
+    const svc = makePriceGraphService(
+      makeTokenPriceStub([
+        { tokenId: 'BTC', baseTokenId: 'token-USD', price: '65000', timestamp: FRESH },
+        { tokenId: 'token-USD', baseTokenId: 'EUR', price: '0.92', timestamp: ANCIENT },
+      ]),
+      makeTokenStub(HUB_IDS)
+    );
+    const r = await svc.convert('1', 'BTC', 'EUR', AT);
+    expect(r?.path).toBe('one-hop-token-USD');
+    expect(r?.stale).toBe(true);
+  });
+});

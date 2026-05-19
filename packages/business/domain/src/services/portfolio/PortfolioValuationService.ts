@@ -5,6 +5,7 @@ import Decimal from 'decimal.js';
 import { and, eq, lt } from 'drizzle-orm';
 import { Container, Service } from 'typedi';
 import { SCAM_PROBABILITY_THRESHOLD } from '../../lib/constants';
+import { isIncludedInTotal } from '../../lib/holding-inclusion';
 import { getOrComputeFromCache } from '../../lib/request-cache';
 import { TokenPriceRepository } from '../../repositories/TokenPriceRepository';
 import { PricingService } from '../pricing/PricingService';
@@ -169,6 +170,7 @@ export class PortfolioValuationService {
         accountId: schema.holdings.accountId,
         balance: schema.holdings.balance,
         isActive: schema.holdings.isActive,
+        isHidden: schema.holdings.isHidden,
         tokenId: schema.tokens.id,
         tokenSymbol: schema.tokens.symbol,
         tokenName: schema.tokens.name,
@@ -291,14 +293,28 @@ export class PortfolioValuationService {
       }
     });
 
-    // Total aggregates active, PRICEABLE holdings. Inactive or
-    // unpriceable holdings appear in the list (so the UI can render
-    // them as "—") but contribute nothing to the sum.
-    const totalValue = portfolioHoldings.reduce(
-      (sum, holding) =>
-        holding.isActive && holding.value !== null ? sum.add(new Decimal(holding.value)) : sum,
-      new Decimal(0)
-    );
+    // Total aggregates PRICEABLE holdings that pass the shared
+    // inclusion contract (`isIncludedInTotal` — excludes hidden,
+    // inactive, and scam). Excluded or unpriceable holdings still
+    // appear in the list (so the UI can render them as "—") but
+    // contribute nothing to the sum. The historical chart applies the
+    // same contract so its latest point reconciles with this total.
+    // Reduce over the raw `holdings` rows (which carry the holding +
+    // token flags the contract needs); `portfolioHoldings[i]`
+    // corresponds by index since it is a 1:1 `map` of `holdings`.
+    const totalValue = holdings.reduce((sum, holding, i) => {
+      const computed = portfolioHoldings[i];
+      if (
+        computed?.value != null &&
+        isIncludedInTotal(
+          { isHidden: holding.isHidden, isActive: holding.isActive },
+          { isScamProbability: holding.token.isScamProbability }
+        )
+      ) {
+        return sum.add(new Decimal(computed.value));
+      }
+      return sum;
+    }, new Decimal(0));
 
     return {
       totalValue: totalValue.toString(),

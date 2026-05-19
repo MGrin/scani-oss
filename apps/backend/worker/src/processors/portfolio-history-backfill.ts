@@ -3,6 +3,7 @@ import * as schema from '@scani/db/schema';
 import { OpeningBalanceReconciliationService } from '@scani/domain/services';
 import {
   BackfillHistoricalPricesUseCase,
+  LinkTransferPairsUseCase,
   RollupPortfolioValueDailyUseCase,
 } from '@scani/domain/use-cases';
 import { PORTFOLIO_HISTORY_BACKFILL, type PortfolioHistoryBackfillJob } from '@scani/jobs';
@@ -128,6 +129,21 @@ export class PortfolioHistoryBackfillProcessor extends UserJobProcessor<
     // fresh price backfill.
     const reconcileSummary = await this.reconcileUser(data.userId);
     await ctx.reportProgress(0.15);
+
+    // Link cross-account transfer pairs before the rollup — its
+    // cost-basis walk reads `transfer_group_id` to carry lot cost across
+    // a transfer instead of resetting it to market value. Cheap (two
+    // queries + in-memory matching); a failure is non-fatal — the rollup
+    // still runs, just without fresh linkage.
+    try {
+      await Container.get(LinkTransferPairsUseCase).execute({ userId: data.userId });
+    } catch (error) {
+      logger.warn(
+        { userId: data.userId, error: error instanceof Error ? error.message : error },
+        'Transfer linking failed during backfill; continuing'
+      );
+    }
+    await ctx.reportProgress(0.2);
 
     const priceSummary = await Container.get(BackfillHistoricalPricesUseCase).execute({
       usdTokenId,

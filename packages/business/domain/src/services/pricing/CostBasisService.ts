@@ -16,11 +16,23 @@ export interface CostLot {
   date: Date;
 }
 
+// Internal lot for the transfer-aware component walk — a CostLot that
+// also tracks which holding it currently resides in, so a transfer can
+// move it between holdings on the shared ledger.
+interface ComponentLot extends CostLot {
+  holdingId: string;
+}
+
 export interface CostBasisAtTime {
   openQty: Decimal;
   costBasis: Decimal; // sum of remaining lots' cost in base currency
   realizedPnl: Decimal; // cumulative realized PnL up to `at`
   lots: CostLot[]; // remaining open lots, oldest first
+  // False when the holding has no cost-relevant transaction at or before
+  // `at`. The walk then produces costBasis 0, which would render the
+  // whole position as unrealized gain. Callers (PnLAtTimeService) treat
+  // a cost-unknown holding as cost basis = current value (0% gain).
+  hasTransactions: boolean;
 }
 
 // Transaction kinds that contribute INFLOW (add to lot pool).
@@ -131,9 +143,23 @@ export class CostBasisService {
       }
 
       if (OUTFLOW_SELL_KINDS.has(tx.kind)) {
-        const proceeds =
-          (await this.txValueInBase(tx, qtyAbs, baseCurrencyId, heldTokenId, priceLookup)) ??
-          new Decimal(0);
+        const proceeds = await this.txValueInBase(
+          tx,
+          qtyAbs,
+          baseCurrencyId,
+          heldTokenId,
+          priceLookup
+        );
+        if (proceeds === null) {
+          // Unpriceable sell — in practice a `swap_out` with no
+          // `priceNative` (its proceeds are denominated in the counter
+          // token, which this per-holding walk can't value). Booking
+          // proceeds of 0 would realize a phantom loss of the entire
+          // popped cost basis. Pop the lots FIFO at ZERO realized
+          // instead, surfacing the gap rather than fabricating a loss.
+          popLotsFIFO(lots, qtyAbs);
+          continue;
+        }
         const soldCost = popLotsFIFO(lots, qtyAbs);
         realized = realized.add(proceeds.minus(soldCost));
         continue;
@@ -150,7 +176,157 @@ export class CostBasisService {
 
     const costBasis = lots.reduce((s, l) => s.add(l.cost), new Decimal(0));
     const openQty = lots.reduce((s, l) => s.add(l.qty), new Decimal(0));
-    return { openQty, costBasis, realizedPnl: realized, lots };
+    return { openQty, costBasis, realizedPnl: realized, lots, hasTransactions: txs.length > 0 };
+  }
+
+  /**
+   * Transfer-aware cost-basis walk across a set of holdings linked by
+   * `transfer_group_id`.
+   *
+   * A transfer between a user's own accounts is not a taxable sale: the
+   * source `transfer_out` must NOT realize PnL, and the destination
+   * `transfer_in` must inherit the original lots' cost and acquisition
+   * date rather than opening a fresh market-value lot. Per-holding cost
+   * basis therefore cannot be computed in isolation — this walks every
+   * holding in the transfer-connected component on a single shared lot
+   * ledger where each lot is tagged with the holding it currently
+   * resides in. A holding's reported cost basis is the cost of the lots
+   * residing in it at `at`, which keeps account / institution / user
+   * aggregation additive.
+   */
+  async walkComponent(
+    holdingIds: ReadonlyArray<string>,
+    txsByHolding: ReadonlyMap<string, ReadonlyArray<HoldingTransaction>>,
+    at: Date,
+    baseCurrencyId: string,
+    heldTokenByHolding: ReadonlyMap<string, string>,
+    priceLookup?: PriceLookup
+  ): Promise<Map<string, CostBasisAtTime>> {
+    // Flatten + globally order every tx in the component up to `at`. On
+    // equal timestamps an outflow sorts before an inflow so a
+    // transfer_out buffers its lots before the paired transfer_in needs
+    // them.
+    const events: HoldingTransaction[] = [];
+    const hasTxByHolding = new Map<string, boolean>();
+    for (const h of holdingIds) {
+      const txs = filterTxsUpTo(txsByHolding.get(h) ?? [], at);
+      hasTxByHolding.set(h, txs.length > 0);
+      for (const tx of txs) events.push(tx);
+    }
+    events.sort((a, b) => {
+      const d = a.occurredAt.getTime() - b.occurredAt.getTime();
+      return d !== 0 ? d : outflowRank(a.kind) - outflowRank(b.kind);
+    });
+
+    const lots: ComponentLot[] = [];
+    const realizedByHolding = new Map<string, Decimal>();
+    // Lots popped by a linked transfer_out, keyed by transfer_group_id,
+    // waiting for the paired transfer_in to inherit them.
+    const pending = new Map<string, ComponentLot[]>();
+    const addRealized = (holdingId: string, amount: Decimal): void => {
+      realizedByHolding.set(
+        holdingId,
+        (realizedByHolding.get(holdingId) ?? new Decimal(0)).add(amount)
+      );
+    };
+    // Pop oldest lots (by acquisition date) belonging to `holdingId`,
+    // splitting the last lot proportionally when needed.
+    const popHolding = (holdingId: string, wantQty: Decimal): ComponentLot[] => {
+      const popped: ComponentLot[] = [];
+      let remaining = wantQty;
+      while (remaining.gt(0)) {
+        let idx = -1;
+        for (let i = 0; i < lots.length; i++) {
+          const l = lots[i];
+          if (!l || l.holdingId !== holdingId) continue;
+          const best = idx === -1 ? undefined : lots[idx];
+          if (!best || l.date < best.date) idx = i;
+        }
+        if (idx === -1) break;
+        const lot = lots[idx];
+        if (!lot) break;
+        if (lot.qty.lte(remaining)) {
+          popped.push(lot);
+          remaining = remaining.minus(lot.qty);
+          lots.splice(idx, 1);
+        } else {
+          const ratio = remaining.div(lot.qty);
+          const partialCost = lot.cost.mul(ratio);
+          popped.push({ qty: remaining, cost: partialCost, date: lot.date, holdingId });
+          lot.qty = lot.qty.minus(remaining);
+          lot.cost = lot.cost.minus(partialCost);
+          remaining = new Decimal(0);
+        }
+      }
+      return popped;
+    };
+
+    for (const tx of events) {
+      const holdingId = tx.holdingId;
+      const qtyAbs = new Decimal(tx.quantity).abs();
+      if (qtyAbs.isZero()) continue;
+      const heldTokenId = heldTokenByHolding.get(holdingId) ?? null;
+
+      if (INFLOW_BUY_KINDS.has(tx.kind) || INFLOW_OTHER_KINDS.has(tx.kind)) {
+        const tgid = tx.transferGroupId;
+        const buffered = tgid ? pending.get(tgid) : undefined;
+        if (tgid && buffered && (tx.kind === 'transfer_in' || tx.kind === 'deposit')) {
+          // Paired transfer_in: inherit the buffered lots (cost +
+          // acquisition date intact), re-homed to this holding.
+          pending.delete(tgid);
+          for (const lot of buffered) {
+            lots.push({ qty: lot.qty, cost: lot.cost, date: lot.date, holdingId });
+          }
+          continue;
+        }
+        const cost = await this.txValueInBase(tx, qtyAbs, baseCurrencyId, heldTokenId, priceLookup);
+        lots.push({ qty: qtyAbs, cost: cost ?? new Decimal(0), date: tx.occurredAt, holdingId });
+        continue;
+      }
+
+      if (OUTFLOW_SELL_KINDS.has(tx.kind)) {
+        const proceeds = await this.txValueInBase(
+          tx,
+          qtyAbs,
+          baseCurrencyId,
+          heldTokenId,
+          priceLookup
+        );
+        const popped = popHolding(holdingId, qtyAbs);
+        if (proceeds !== null) {
+          const soldCost = popped.reduce((s, l) => s.add(l.cost), new Decimal(0));
+          addRealized(holdingId, proceeds.minus(soldCost));
+        }
+        // proceeds === null → unpriceable swap_out: pop at zero realized.
+        continue;
+      }
+
+      if (OUTFLOW_NEUTRAL_KINDS.has(tx.kind)) {
+        const popped = popHolding(holdingId, qtyAbs);
+        const tgid = tx.transferGroupId;
+        if (tgid && (tx.kind === 'transfer_out' || tx.kind === 'withdraw')) {
+          // Linked transfer_out: buffer the popped lots for the paired
+          // transfer_in. Unlinked → discard at zero realized.
+          const bucket = pending.get(tgid);
+          if (bucket) bucket.push(...popped);
+          else pending.set(tgid, popped);
+        }
+      }
+      // Unknown kind — skip; balance is handled by BalanceAtTimeService.
+    }
+
+    const out = new Map<string, CostBasisAtTime>();
+    for (const h of holdingIds) {
+      const holdingLots = lots.filter((l) => l.holdingId === h);
+      out.set(h, {
+        openQty: holdingLots.reduce((s, l) => s.add(l.qty), new Decimal(0)),
+        costBasis: holdingLots.reduce((s, l) => s.add(l.cost), new Decimal(0)),
+        realizedPnl: realizedByHolding.get(h) ?? new Decimal(0),
+        lots: holdingLots.map((l) => ({ qty: l.qty, cost: l.cost, date: l.date })),
+        hasTransactions: hasTxByHolding.get(h) ?? false,
+      });
+    }
+    return out;
   }
 
   // Compute the transaction's value in the user's base currency at
@@ -231,6 +407,14 @@ function filterTxsUpTo(
 ): ReadonlyArray<HoldingTransaction> {
   const cutoff = at.getTime();
   return txs.filter((t) => t.occurredAt.getTime() <= cutoff);
+}
+
+// Ordering helper for the component walk: on equal timestamps an
+// outflow (rank 0) is processed before an inflow (rank 1) so a linked
+// transfer_out buffers its lots before the paired transfer_in inherits
+// them.
+function outflowRank(kind: string): number {
+  return OUTFLOW_SELL_KINDS.has(kind) || OUTFLOW_NEUTRAL_KINDS.has(kind) ? 0 : 1;
 }
 
 // Pop lots FIFO until `wantQty` is satisfied. Returns the total

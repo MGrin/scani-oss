@@ -41,7 +41,7 @@ export interface PortfolioValueAtTimeResult {
 
 // Heuristic thresholds for coverage_quality:
 //   full      = ≥ 95% of holdings priced and anchor=='holdings'|'observation-after'
-//   partial   = ≥ 95% priced but some via stale anchor
+//   partial   = ≥ 95% priced but some via a stale anchor or a stale price
 //   estimated = 50%–95% priced
 //   unknown   = < 50% priced
 //
@@ -115,6 +115,7 @@ export class PortfolioValuationAtTimeService {
     let total = new Decimal(0);
     let knownCount = 0;
     let anyStaleAnchor = false;
+    let anyStalePrice = false;
 
     for (const h of holdings) {
       const result = await this.balanceAtTimeService.getBalance(h.id, at, opts.caches);
@@ -200,6 +201,9 @@ export class PortfolioValuationAtTimeService {
       if (result.anchor === 'observation-before') {
         anyStaleAnchor = true;
       }
+      if (priced.stale) {
+        anyStalePrice = true;
+      }
 
       perHolding.push({
         holdingId: h.id,
@@ -222,7 +226,7 @@ export class PortfolioValuationAtTimeService {
     } else {
       const knownRatio = knownCount / holdingsTotal;
       if (knownRatio >= COVERAGE_FULL_THRESHOLD) {
-        coverageQuality = anyStaleAnchor ? 'partial' : 'full';
+        coverageQuality = anyStaleAnchor || anyStalePrice ? 'partial' : 'full';
       } else if (knownRatio >= COVERAGE_PARTIAL_THRESHOLD) {
         coverageQuality = 'estimated';
       } else {

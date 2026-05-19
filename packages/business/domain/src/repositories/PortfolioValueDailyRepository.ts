@@ -6,8 +6,9 @@ import type {
 } from '@scani/db/schema';
 import * as schema from '@scani/db/schema';
 import { createComponentLogger } from '@scani/logging';
-import { and, asc, desc, eq, gte, inArray, lte, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, gte, inArray, lt, lte, sql } from 'drizzle-orm';
 import { Service } from 'typedi';
+import { SCAM_PROBABILITY_THRESHOLD } from '../lib/constants';
 
 export interface PortfolioValueDailyRow {
   userId: string;
@@ -25,6 +26,21 @@ export interface PortfolioValueDailyRow {
 export interface ScopeFilter {
   kind: 'user' | 'institution' | 'account' | 'holding';
   id: string;
+}
+
+// One `scope_kind='holding'` rollup row, already filtered by the shared
+// inclusion contract. Returned by `findIncludedHoldingScopeRange`; the
+// chart router groups these by `snapshotDate`.
+export interface IncludedHoldingScopeRow {
+  snapshotDate: string;
+  holdingId: string;
+  totalValue: string;
+  costBasis: string | null;
+  realizedPnl: string | null;
+  unrealizedPnl: string | null;
+  coverageQuality: CoverageQuality;
+  holdingsWithKnownValue: number;
+  holdingsTotal: number;
 }
 
 // Composite primary key (user_id, snapshot_date, base_currency_id); can't use
@@ -70,6 +86,62 @@ export class PortfolioValueDailyRepository {
       this.logger.error(
         { userId, baseCurrencyId, from, to, error: error instanceof Error ? error.message : error },
         'Failed to find portfolio_value_daily range'
+      );
+      throw error;
+    }
+  }
+
+  // Per-holding (`scope_kind='holding'`) rollup rows for the chart,
+  // pre-filtered by the shared inclusion contract: only holdings that
+  // are not hidden, active, and non-scam are returned. The caller
+  // groups these by snapshot_date to build the user-wide series, so the
+  // chart total reconciles with the dashboard headline (which applies
+  // the same contract via `isIncludedInTotal`). The three holding /
+  // token WHERE conditions below MUST mirror that predicate.
+  async findIncludedHoldingScopeRange(
+    userId: string,
+    baseCurrencyId: string,
+    from: Date,
+    to: Date,
+    transaction?: DatabaseTransaction
+  ): Promise<IncludedHoldingScopeRow[]> {
+    try {
+      const db = this.getDb(transaction);
+      const fromStr = from.toISOString().slice(0, 10);
+      const toStr = to.toISOString().slice(0, 10);
+      const results = await db
+        .select({
+          snapshotDate: schema.portfolioValueDaily.snapshotDate,
+          holdingId: schema.portfolioValueDaily.scopeId,
+          totalValue: schema.portfolioValueDaily.totalValue,
+          costBasis: schema.portfolioValueDaily.costBasis,
+          realizedPnl: schema.portfolioValueDaily.realizedPnl,
+          unrealizedPnl: schema.portfolioValueDaily.unrealizedPnl,
+          coverageQuality: schema.portfolioValueDaily.coverageQuality,
+          holdingsWithKnownValue: schema.portfolioValueDaily.holdingsWithKnownValue,
+          holdingsTotal: schema.portfolioValueDaily.holdingsTotal,
+        })
+        .from(schema.portfolioValueDaily)
+        .innerJoin(schema.holdings, eq(schema.holdings.id, schema.portfolioValueDaily.scopeId))
+        .innerJoin(schema.tokens, eq(schema.tokens.id, schema.holdings.tokenId))
+        .where(
+          and(
+            eq(schema.portfolioValueDaily.userId, userId),
+            eq(schema.portfolioValueDaily.scopeKind, 'holding'),
+            eq(schema.portfolioValueDaily.baseCurrencyId, baseCurrencyId),
+            gte(schema.portfolioValueDaily.snapshotDate, fromStr),
+            lte(schema.portfolioValueDaily.snapshotDate, toStr),
+            eq(schema.holdings.isHidden, false),
+            eq(schema.holdings.isActive, true),
+            lt(schema.tokens.isScamProbability, SCAM_PROBABILITY_THRESHOLD)
+          )
+        )
+        .orderBy(asc(schema.portfolioValueDaily.snapshotDate));
+      return results as IncludedHoldingScopeRow[];
+    } catch (error) {
+      this.logger.error(
+        { userId, baseCurrencyId, from, to, error: error instanceof Error ? error.message : error },
+        'Failed to find included holding-scope portfolio_value_daily range'
       );
       throw error;
     }
@@ -201,6 +273,12 @@ export class PortfolioValueDailyRepository {
             coverageQuality: sql`EXCLUDED.coverage_quality`,
             holdingsWithKnownValue: sql`EXCLUDED.holdings_with_known_value`,
             holdingsTotal: sql`EXCLUDED.holdings_total`,
+            // Without these, re-running the rollup for an already-cached
+            // day left the PnL columns stale (the rollup writes them on
+            // INSERT but the conflict path skipped them).
+            costBasis: sql`EXCLUDED.cost_basis`,
+            realizedPnl: sql`EXCLUDED.realized_pnl`,
+            unrealizedPnl: sql`EXCLUDED.unrealized_pnl`,
             computedAt: sql`now()`,
           },
         })
@@ -244,6 +322,12 @@ export class PortfolioValueDailyRepository {
             coverageQuality: sql`EXCLUDED.coverage_quality`,
             holdingsWithKnownValue: sql`EXCLUDED.holdings_with_known_value`,
             holdingsTotal: sql`EXCLUDED.holdings_total`,
+            // Without these, re-running the rollup for an already-cached
+            // day left the PnL columns stale (the rollup writes them on
+            // INSERT but the conflict path skipped them).
+            costBasis: sql`EXCLUDED.cost_basis`,
+            realizedPnl: sql`EXCLUDED.realized_pnl`,
+            unrealizedPnl: sql`EXCLUDED.unrealized_pnl`,
             computedAt: sql`now()`,
           },
         })

@@ -2,6 +2,7 @@ import type { TokenPriceGranularity } from '@scani/db/schema';
 import { createComponentLogger } from '@scani/logging';
 import Decimal from 'decimal.js';
 import { Container, Service } from 'typedi';
+import { MAX_DAILY_PRICE_AGE_MS, MAX_INTRADAY_PRICE_AGE_MS } from '../../lib/constants';
 import { TokenPriceRepository } from '../../repositories/TokenPriceRepository';
 import { TokenRepository } from '../../repositories/TokenRepository';
 import type { PriceLookup } from './PriceLookup';
@@ -15,6 +16,11 @@ export interface PriceGraphConversion {
   effectiveAt: Date;
   // 'direct' | 'one-hop-{HUB}' | 'two-hop-{HUB1}-{HUB2}'.
   path: string;
+  // True when the binding leg's `effectiveAt` is older than the
+  // granularity-appropriate staleness cap (see constants). The amount is
+  // still returned — callers fold this into coverage_quality rather than
+  // dropping the holding and fabricating a chart gap.
+  stale: boolean;
 }
 
 export interface PriceGraphOptions {
@@ -72,12 +78,17 @@ export class PriceGraphService {
         rate: new Decimal(1),
         effectiveAt: at,
         path: 'identity',
+        stale: false,
       };
     }
 
     const prefer = options.preferGranularity ?? null;
     const maxDepth = options.maxDepth ?? 2;
     const lookup = options.priceLookup ?? null;
+    // Daily-granularity lookups tolerate a wider staleness window than
+    // intraday — thin-pair daily closes are legitimately weekly.
+    const staleCap = prefer === 'daily' ? MAX_DAILY_PRICE_AGE_MS : MAX_INTRADAY_PRICE_AGE_MS;
+    const isStale = (effectiveAt: Date): boolean => at.getTime() - effectiveAt.getTime() > staleCap;
 
     // Depth 1 — direct.
     const direct = await this.tryDirect(fromTokenId, toTokenId, at, prefer, lookup);
@@ -87,6 +98,7 @@ export class PriceGraphService {
         rate: direct.rate,
         effectiveAt: direct.at,
         path: 'direct',
+        stale: isStale(direct.at),
       };
     }
 
@@ -114,6 +126,7 @@ export class PriceGraphService {
         rate,
         effectiveAt,
         path: `one-hop-${hubId}`,
+        stale: isStale(effectiveAt),
       };
     }
 
@@ -146,6 +159,7 @@ export class PriceGraphService {
           rate,
           effectiveAt,
           path: `two-hop-${hubA}-${hubB}`,
+          stale: isStale(effectiveAt),
         };
       }
     }

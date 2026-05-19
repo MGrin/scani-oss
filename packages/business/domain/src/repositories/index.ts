@@ -24,6 +24,7 @@ export {
 export { InstitutionBlockchainMappingRepository } from './InstitutionBlockchainMappingRepository';
 export { InstitutionRepository } from './InstitutionRepository';
 export {
+  type IncludedHoldingScopeRow,
   PortfolioValueDailyRepository,
   type PortfolioValueDailyRow,
 } from './PortfolioValueDailyRepository';

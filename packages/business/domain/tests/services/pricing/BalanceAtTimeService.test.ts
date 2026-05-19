@@ -1,7 +1,6 @@
 process.env.DATABASE_URL = process.env.DATABASE_URL || 'postgresql://dummy:dummy@localhost/dummy';
 
 import { afterAll, describe, expect, test } from 'bun:test';
-import Decimal from 'decimal.js';
 import { Container } from 'typedi';
 import { HoldingBalanceObservationRepository } from '../../../src/repositories/HoldingBalanceObservationRepository';
 import { HoldingRepository } from '../../../src/repositories/HoldingRepository';
@@ -84,26 +83,6 @@ function makeTransactionStub(
           userId: 'u',
           tokenId: 'tok-1',
           kind: 'deposit',
-          source: 's',
-          sourceMetadata: {},
-          rawPayload: null,
-          createdAt: new Date(),
-          updatedAt: new Date(),
-        })) as never;
-    },
-    findByRange: async ({ holdingId, to }: { holdingId?: string; to?: Date }) => {
-      const cutoff = to ?? new Date(8_640_000_000_000_000);
-      return rows
-        .filter((r) => r.holdingId === holdingId && r.occurredAt < cutoff)
-        .sort((a, b) => a.occurredAt.getTime() - b.occurredAt.getTime())
-        .map((r) => ({
-          ...r,
-          id: 'x',
-          userId: 'u',
-          tokenId: 'tok-1',
-          kind: new Decimal(r.quantity).isNegative() ? 'sell' : 'buy',
-          priceNative: r.priceNative ?? null,
-          priceNativeTokenId: r.priceNativeTokenId ?? null,
           source: 's',
           sourceMetadata: {},
           rawPayload: null,
@@ -243,114 +222,5 @@ describe('BalanceAtTimeService.getBalance', () => {
     const r = await svc.getBalance(HOLD, new Date('2024-05-01T00:00:00Z'));
     expect(r.balance?.toString()).toBe('10');
     expect(r.txApplied).toBe(0);
-  });
-});
-
-describe('BalanceAtTimeService.getCostBasisFIFO', () => {
-  // identity converter — 1:1, always same base. Lets us assert lot math
-  // without pulling in PriceGraphService.
-  const identityConvert = async (amount: Decimal) => amount;
-
-  test('returns null when no txs exist', async () => {
-    const svc = makeService([], []);
-    const r = await svc.getCostBasisFIFO(HOLD, new Date('2024-01-01T00:00:00Z'), identityConvert);
-    expect(r.costBasis).toBeNull();
-    expect(r.openLotCount).toBe(0);
-  });
-
-  test('FIFO consumes oldest lots first', async () => {
-    // Buy 10@100 at t1, buy 10@200 at t2, sell 15 at t3.
-    // FIFO: sell consumes all of lot1 (10@100) + 5 of lot2 (5@200) → 5@200
-    // remains. Cost basis = 5 * 200 = 1000.
-    const svc = makeService(
-      [],
-      [
-        {
-          holdingId: HOLD,
-          quantity: '10',
-          occurredAt: new Date('2024-01-01T00:00:00Z'),
-          priceNative: '100',
-          priceNativeTokenId: 'USD',
-        },
-        {
-          holdingId: HOLD,
-          quantity: '10',
-          occurredAt: new Date('2024-02-01T00:00:00Z'),
-          priceNative: '200',
-          priceNativeTokenId: 'USD',
-        },
-        {
-          holdingId: HOLD,
-          quantity: '-15',
-          occurredAt: new Date('2024-03-01T00:00:00Z'),
-        },
-      ]
-    );
-    const r = await svc.getCostBasisFIFO(HOLD, new Date('2024-04-01T00:00:00Z'), identityConvert);
-    expect(r.costBasis?.toString()).toBe('1000');
-    expect(r.openLotCount).toBe(1);
-  });
-
-  test('sell-all zeros out cost basis', async () => {
-    const svc = makeService(
-      [],
-      [
-        {
-          holdingId: HOLD,
-          quantity: '5',
-          occurredAt: new Date('2024-01-01T00:00:00Z'),
-          priceNative: '100',
-          priceNativeTokenId: 'USD',
-        },
-        {
-          holdingId: HOLD,
-          quantity: '-5',
-          occurredAt: new Date('2024-02-01T00:00:00Z'),
-        },
-      ]
-    );
-    const r = await svc.getCostBasisFIFO(HOLD, new Date('2024-03-01T00:00:00Z'), identityConvert);
-    expect(r.costBasis?.toString()).toBe('0');
-    expect(r.openLotCount).toBe(0);
-  });
-
-  test('tx without price info opens a zero-cost lot', async () => {
-    // Airdrops / transfers-in without price should show up as open lots
-    // at zero cost. Caller sees openLotCount > 0 but costBasis = 0 and
-    // can disclaim accordingly.
-    const svc = makeService(
-      [],
-      [{ holdingId: HOLD, quantity: '3', occurredAt: new Date('2024-01-01T00:00:00Z') }]
-    );
-    const r = await svc.getCostBasisFIFO(HOLD, new Date('2024-02-01T00:00:00Z'), identityConvert);
-    expect(r.costBasis?.toString()).toBe('0');
-    expect(r.openLotCount).toBe(1);
-  });
-
-  test('txs after `at` are ignored', async () => {
-    // Only lots with occurredAt < at are considered. A later buy doesn't
-    // retroactively increase yesterday's cost basis.
-    const svc = makeService(
-      [],
-      [
-        {
-          holdingId: HOLD,
-          quantity: '1',
-          occurredAt: new Date('2024-01-01T00:00:00Z'),
-          priceNative: '50',
-          priceNativeTokenId: 'USD',
-        },
-        {
-          holdingId: HOLD,
-          quantity: '10',
-          occurredAt: new Date('2025-01-01T00:00:00Z'),
-          priceNative: '500',
-          priceNativeTokenId: 'USD',
-        },
-      ]
-    );
-    const r = await svc.getCostBasisFIFO(HOLD, new Date('2024-06-01T00:00:00Z'), identityConvert);
-    expect(r.costBasis?.toString()).toBe('50');
-    expect(r.openLotCount).toBe(1);
   });
 });

@@ -13,8 +13,13 @@
 
 import { randomUUID } from 'node:crypto';
 import { db } from '@scani/db/connection';
+import type { PortfolioValueDaily } from '@scani/db/schema';
 import * as schema from '@scani/db/schema';
-import { PortfolioValueDailyRepository, UserJobRepository } from '@scani/domain/repositories';
+import {
+  type IncludedHoldingScopeRow,
+  PortfolioValueDailyRepository,
+  UserJobRepository,
+} from '@scani/domain/repositories';
 import { HIDE_CLOSED_HOLDINGS_STALE_DAYS } from '@scani/domain/use-cases';
 import { PORTFOLIO_HISTORY_BACKFILL } from '@scani/jobs';
 import { BullMqEnqueueService } from '@scani/queue';
@@ -136,6 +141,97 @@ function lttbDownsample<T>(data: LttbPoint<T>[], target: number): LttbPoint<T>[]
   return sampled;
 }
 
+// One user-wide daily chart point. Both the net-worth and PnL series
+// downsample + render from this shape, sourced either from the
+// inclusion-filtered per-holding rollup rows (user-wide) or the
+// pre-aggregated per-entity rollup row (scoped).
+interface AggregatedDailyPoint {
+  snapshotDate: string;
+  totalValue: string;
+  costBasis: string | null;
+  realizedPnl: string | null;
+  unrealizedPnl: string | null;
+  coverageQuality: string;
+  holdingsWithKnownValue: number;
+  holdingsTotal: number;
+}
+
+// Map a pre-aggregated rollup row (scoped series path) to the shared
+// daily-point shape.
+function toAggregatedDaily(row: PortfolioValueDaily): AggregatedDailyPoint {
+  return {
+    snapshotDate: String(row.snapshotDate).slice(0, 10),
+    totalValue: row.totalValue,
+    costBasis: row.costBasis,
+    realizedPnl: row.realizedPnl,
+    unrealizedPnl: row.unrealizedPnl,
+    coverageQuality: row.coverageQuality,
+    holdingsWithKnownValue: row.holdingsWithKnownValue,
+    holdingsTotal: row.holdingsTotal,
+  };
+}
+
+// Group inclusion-filtered per-holding rollup rows into one user-wide
+// point per date. coverage_quality is re-derived from the known/total
+// ratio with the rollup's thresholds; a fully-priced day stays
+// 'partial' when any holding used a stale anchor/price. The day's PnL
+// is null unless every holding row carries cost columns (pre-rebuild
+// rows may not), since a partial sum would be misleading.
+function aggregateIncludedHoldingRows(rows: IncludedHoldingScopeRow[]): AggregatedDailyPoint[] {
+  const byDate = new Map<string, IncludedHoldingScopeRow[]>();
+  for (const row of rows) {
+    const key = String(row.snapshotDate).slice(0, 10);
+    const list = byDate.get(key);
+    if (list) list.push(row);
+    else byDate.set(key, [row]);
+  }
+  const out: AggregatedDailyPoint[] = [];
+  for (const [date, dayRows] of byDate) {
+    let totalValue = new Decimal(0);
+    let costBasis = new Decimal(0);
+    let realizedPnl = new Decimal(0);
+    let unrealizedPnl = new Decimal(0);
+    let known = 0;
+    let total = 0;
+    let anyPartial = false;
+    let pnlComplete = true;
+    for (const r of dayRows) {
+      totalValue = totalValue.add(new Decimal(r.totalValue));
+      known += r.holdingsWithKnownValue;
+      total += r.holdingsTotal;
+      if (r.coverageQuality === 'partial') anyPartial = true;
+      if (r.costBasis == null || r.realizedPnl == null || r.unrealizedPnl == null) {
+        pnlComplete = false;
+      } else {
+        costBasis = costBasis.add(new Decimal(r.costBasis));
+        realizedPnl = realizedPnl.add(new Decimal(r.realizedPnl));
+        unrealizedPnl = unrealizedPnl.add(new Decimal(r.unrealizedPnl));
+      }
+    }
+    let coverageQuality: string;
+    if (total === 0) {
+      coverageQuality = 'full';
+    } else {
+      const ratio = known / total;
+      if (ratio >= 0.95) coverageQuality = anyPartial ? 'partial' : 'full';
+      else if (ratio >= 0.5) coverageQuality = 'estimated';
+      else coverageQuality = 'unknown';
+    }
+    out.push({
+      snapshotDate: date,
+      totalValue: totalValue.toString(),
+      costBasis: pnlComplete ? costBasis.toString() : null,
+      realizedPnl: pnlComplete ? realizedPnl.toString() : null,
+      unrealizedPnl: pnlComplete ? unrealizedPnl.toString() : null,
+      coverageQuality,
+      holdingsWithKnownValue: known,
+      holdingsTotal: total,
+    });
+  }
+  out.sort((a, b) => a.snapshotDate.localeCompare(b.snapshotDate));
+  return out;
+}
+
 const NetWorthSeriesInput = z
   .object({
     from: z.coerce.date(),
@@ -248,30 +344,33 @@ export const portfolioRouter = router({
 
     // Pure cache read — no live-fallback (see prior commit history;
     // live valuation OOM-killed the backend under chart click-spam).
-    const scopeFilter = input.scope ?? { kind: 'user' as const, id: dbUser.id };
-    const cached = await dailyRepo.findRange(
-      dbUser.id,
-      baseId,
-      input.from,
-      input.to,
-      undefined,
-      scopeFilter
-    );
+    //
+    // User-wide series sums the inclusion-filtered per-holding rollup
+    // rows (hidden / inactive / scam holdings dropped) so the chart's
+    // latest point reconciles with the dashboard headline. Scoped
+    // detail-page series read the pre-aggregated per-entity row.
+    const daily: AggregatedDailyPoint[] = input.scope
+      ? (
+          await dailyRepo.findRange(dbUser.id, baseId, input.from, input.to, undefined, input.scope)
+        ).map(toAggregatedDaily)
+      : aggregateIncludedHoldingRows(
+          await dailyRepo.findIncludedHoldingScopeRange(dbUser.id, baseId, input.from, input.to)
+        );
 
-    // LTTB on the raw daily rows. For ranges <= 200 days the threshold
+    // LTTB on the daily points. For ranges <= 200 days the threshold
     // is a no-op and we ship every daily row; for longer ranges the
     // algorithm picks the points that preserve the silhouette of the
     // curve (peaks + dips) so a spike on a single day doesn't get
     // averaged out by a weekly bucket.
-    const points: LttbPoint<(typeof cached)[number]>[] = cached.map((row) => ({
-      x: new Date(row.snapshotDate as unknown as string).getTime(),
+    const points: LttbPoint<AggregatedDailyPoint>[] = daily.map((row) => ({
+      x: new Date(row.snapshotDate).getTime(),
       y: Number(row.totalValue),
       raw: row,
     }));
     const sampled = lttbDownsample(points, LTTB_TARGET_POINTS);
 
     const series: SeriesPoint[] = sampled.map((p) => ({
-      date: String(p.raw.snapshotDate).slice(0, 10),
+      date: p.raw.snapshotDate,
       totalValue: p.raw.totalValue,
       coverageQuality: p.raw.coverageQuality,
       holdingsWithKnownValue: p.raw.holdingsWithKnownValue,
@@ -297,15 +396,17 @@ export const portfolioRouter = router({
     }
     const granularity: Granularity =
       input.granularity === 'auto' ? pickGranularity(input.from, input.to) : input.granularity;
-    const scopeFilter = input.scope ?? { kind: 'user' as const, id: dbUser.id };
-    const cached = await dailyRepo.findRange(
-      dbUser.id,
-      baseId,
-      input.from,
-      input.to,
-      undefined,
-      scopeFilter
-    );
+
+    // Same source split as getNetWorthSeries: user-wide sums the
+    // inclusion-filtered per-holding rows; scoped reads the
+    // pre-aggregated per-entity row.
+    const daily: AggregatedDailyPoint[] = input.scope
+      ? (
+          await dailyRepo.findRange(dbUser.id, baseId, input.from, input.to, undefined, input.scope)
+        ).map(toAggregatedDaily)
+      : aggregateIncludedHoldingRows(
+          await dailyRepo.findIncludedHoldingScopeRange(dbUser.id, baseId, input.from, input.to)
+        );
     type PnLPoint = {
       date: string;
       totalValue: string;
@@ -317,8 +418,8 @@ export const portfolioRouter = router({
       holdingsWithKnownValue: number;
       holdingsTotal: number;
     };
-    const points: LttbPoint<(typeof cached)[number]>[] = cached.map((row) => ({
-      x: new Date(row.snapshotDate as unknown as string).getTime(),
+    const points: LttbPoint<AggregatedDailyPoint>[] = daily.map((row) => ({
+      x: new Date(row.snapshotDate).getTime(),
       // Downsample on totalPnl when present, falling back to total
       // value (unpopulated rows from before the rollup re-runs).
       // Keeps the LTTB silhouette meaningful for either chart.
@@ -356,11 +457,8 @@ export const portfolioRouter = router({
   // shape as Phase 3 lands cost basis + sparkline.
   getHoldingHistory: protectedProcedure.input(HoldingHistoryInput).query(async ({ ctx, input }) => {
     const { dbUser } = await requireAuth(ctx);
-    // Ownership guard — verify the holding belongs to the caller.
-    // Landed before the real implementation bolts on top so the
-    // endpoint can't become a latent IDOR when Phase 3 wires real
-    // data here. Any future code reading from this handler inherits
-    // the guarantee that `input.holdingId` is authenticated.
+    // Ownership guard — verify the holding belongs to the caller so the
+    // endpoint can't become an IDOR.
     const holdingRow = await db
       .select({ id: schema.holdings.id })
       .from(schema.holdings)
@@ -369,10 +467,31 @@ export const portfolioRouter = router({
     if (!holdingRow[0]) {
       throw new TRPCError({ code: 'NOT_FOUND', message: 'Holding not found' });
     }
-    // Minimal implementation: returns the per-day balance series for
-    // the holding using BalanceAtTimeService-backed logic. Full cost-
-    // basis plumbing lands with Phase 3.
-    return { holdingId: input.holdingId, series: [] as unknown[] };
+    const baseId = dbUser.baseCurrencyId ?? null;
+    if (!baseId) {
+      return { holdingId: input.holdingId, series: [] as Array<{ date: string; value: number }> };
+    }
+    // Per-day value series for the holding — reads the
+    // `scope_kind='holding'` rollup rows the rollup already produces.
+    const rows = await Container.get(PortfolioValueDailyRepository).findRange(
+      dbUser.id,
+      baseId,
+      input.from,
+      input.to,
+      undefined,
+      { kind: 'holding', id: input.holdingId }
+    );
+    const points: LttbPoint<(typeof rows)[number]>[] = rows.map((row) => ({
+      x: new Date(String(row.snapshotDate)).getTime(),
+      y: Number(row.totalValue),
+      raw: row,
+    }));
+    const sampled = lttbDownsample(points, LTTB_TARGET_POINTS);
+    const series = sampled.map((p) => ({
+      date: String(p.raw.snapshotDate).slice(0, 10),
+      value: Number(p.raw.totalValue),
+    }));
+    return { holdingId: input.holdingId, series };
   }),
 
   // Manual trigger for the portfolio-history-backfill job — same job
