@@ -6,7 +6,10 @@ primary_region = "sin"
 
 [env]
   NODE_ENV           = "production"
-  WORKER_CONCURRENCY = "2"
+  # 8 job slots: the hourly cron tide takes up to cronConcurrency
+  # (ceil(8/2)=4), leaving 4 for user-initiated imports so they don't
+  # queue minutes-deep behind scheduled work at 100-1000 users.
+  WORKER_CONCURRENCY = "8"
   # Identifies this process for cross-service routing (e.g. realtime
   # picks RedisRealtimeUpdatesService when SERVICE_NAME != scani-backend).
   SERVICE_NAME       = "scani-worker"

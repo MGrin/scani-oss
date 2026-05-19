@@ -37,7 +37,7 @@ const getQueue = () => Container.get(QueueClient).get();
 
 const logger = createComponentLogger('admin-jobs');
 
-const MAX_SKEW_MS = 30_000;
+const MAX_SKEW_MS = 5_000;
 // Replay window: any (signature) seen inside this many ms is rejected
 // as a replay. Chosen as a safe multiple of MAX_SKEW_MS so a request
 // whose clock drifts to the far edge of the skew window still gets

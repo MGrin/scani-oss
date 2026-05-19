@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test';
-import { CircuitBreaker } from './circuit-breaker';
+import { CircuitBreaker } from '../../src/utils/circuit-breaker';
 
 describe('CircuitBreaker', () => {
   it('should start with circuit closed (available)', () => {

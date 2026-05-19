@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test';
-import { TokenMetadataSchema, TokenValidationResultSchema } from './token-validatiion';
+import { TokenMetadataSchema, TokenValidationResultSchema } from '../src/token-validatiion';
 
 describe('TokenMetadataSchema', () => {
   it('should accept valid metadata', () => {

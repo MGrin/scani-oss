@@ -174,21 +174,29 @@ export class OpeningBalanceReconciliationService {
   async reconcileUser(userId: string): Promise<ReconciliationResult[]> {
     const holdings = await this.holdingRepository.findByUser(userId);
     const results: ReconciliationResult[] = [];
-    for (const h of holdings) {
-      try {
-        const r = await this.reconcileHolding(h.id);
-        if (r) results.push(r);
-      } catch (error) {
-        this.logger.warn(
-          {
-            userId,
-            holdingId: h.id,
-            accountId: h.accountId,
-            tokenId: h.tokenId,
-            error: error instanceof Error ? error.message : error,
-          },
-          'Reconciliation failed for one holding; continuing'
-        );
+    // Each holding reconciles independently — batch with bounded fan-out
+    // rather than serializing every holding behind the previous one.
+    const CONCURRENCY = 10;
+    for (let i = 0; i < holdings.length; i += CONCURRENCY) {
+      const batch = holdings.slice(i, i + CONCURRENCY);
+      const settled = await Promise.allSettled(batch.map((h) => this.reconcileHolding(h.id)));
+      for (let j = 0; j < settled.length; j++) {
+        const s = settled[j];
+        const h = batch[j];
+        if (s?.status === 'fulfilled') {
+          if (s.value) results.push(s.value);
+        } else if (s) {
+          this.logger.warn(
+            {
+              userId,
+              holdingId: h?.id,
+              accountId: h?.accountId,
+              tokenId: h?.tokenId,
+              error: s.reason instanceof Error ? s.reason.message : s.reason,
+            },
+            'Reconciliation failed for one holding; continuing'
+          );
+        }
       }
     }
     return results;

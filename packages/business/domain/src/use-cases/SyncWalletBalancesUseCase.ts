@@ -76,25 +76,16 @@ export interface SyncWalletBalancesResult {
  */
 @Service()
 export class SyncWalletBalancesUseCase {
-  // Constructor injection — same rationale as ImportWalletAddressUseCase.
-  constructor(
-    private readonly userWalletService: UserWalletService = Container.get(UserWalletService),
-    private readonly accountService: AccountService = Container.get(AccountService),
-    private readonly holdingQueryService: HoldingQueryService = Container.get(HoldingQueryService),
-    private readonly tokenTypeRepository: TokenTypeRepository = Container.get(TokenTypeRepository),
-    private readonly walletDiscovery: WalletDiscoveryService = Container.get(
-      WalletDiscoveryService
-    ),
-    private readonly holdingsSyncHelper: HoldingsSyncHelper = Container.get(HoldingsSyncHelper),
-    private readonly holdingExclusionRepository: HoldingExclusionRepository = Container.get(
-      HoldingExclusionRepository
-    ),
-    private readonly tokenRepository: TokenRepository = Container.get(TokenRepository),
-    private readonly scamDetectionService: ScamTokenDetectionService = Container.get(
-      ScamTokenDetectionService
-    ),
-    private readonly priceWarmupService: PriceWarmupService = Container.get(PriceWarmupService)
-  ) {}
+  private readonly userWalletService = Container.get(UserWalletService);
+  private readonly accountService = Container.get(AccountService);
+  private readonly holdingQueryService = Container.get(HoldingQueryService);
+  private readonly tokenTypeRepository = Container.get(TokenTypeRepository);
+  private readonly walletDiscovery = Container.get(WalletDiscoveryService);
+  private readonly holdingsSyncHelper = Container.get(HoldingsSyncHelper);
+  private readonly holdingExclusionRepository = Container.get(HoldingExclusionRepository);
+  private readonly tokenRepository = Container.get(TokenRepository);
+  private readonly scamDetectionService = Container.get(ScamTokenDetectionService);
+  private readonly priceWarmupService = Container.get(PriceWarmupService);
 
   async execute(): Promise<SyncWalletBalancesResult> {
     const startTime = Date.now();
@@ -242,7 +233,10 @@ export class SyncWalletBalancesUseCase {
       if (pageUsers.length === 0) break;
       cursor = pageUsers[pageUsers.length - 1]?.id ?? null;
 
-      for (const user of pageUsers) {
+      // Each user's wallet sync is independent — process users in bounded
+      // concurrency batches instead of strictly one after another.
+      const USER_CONCURRENCY = 8;
+      const processUser = async (user: UserRow): Promise<void> => {
         // Get user's wallets
         const userWallets = await this.userWalletService.getUserWallets(user.id);
 
@@ -448,7 +442,11 @@ export class SyncWalletBalancesUseCase {
             }
           }
         }
-      } // end for (user of pageUsers)
+      };
+
+      for (let i = 0; i < pageUsers.length; i += USER_CONCURRENCY) {
+        await Promise.all(pageUsers.slice(i, i + USER_CONCURRENCY).map(processUser));
+      }
     } while (pageUsers.length === USER_PAGE_SIZE);
 
     // STEP 3: Process ALL updates in a SINGLE TRANSACTION

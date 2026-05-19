@@ -117,22 +117,12 @@ interface PreparedChain {
 
 @Service()
 export class ImportWalletAddressUseCase {
-  constructor(
-    private readonly walletDiscovery: WalletDiscoveryService = Container.get(
-      WalletDiscoveryService
-    ),
-    private readonly userWalletService: UserWalletService = Container.get(UserWalletService),
-    private readonly integrationCredentialsService: IntegrationCredentialsService = Container.get(
-      IntegrationCredentialsService
-    ),
-    private readonly mappingRepository: InstitutionBlockchainMappingRepository = Container.get(
-      InstitutionBlockchainMappingRepository
-    ),
-    private readonly integrationImportService: IntegrationImportService = Container.get(
-      IntegrationImportService
-    ),
-    private readonly priceWarmupService: PriceWarmupService = Container.get(PriceWarmupService)
-  ) {}
+  private readonly walletDiscovery = Container.get(WalletDiscoveryService);
+  private readonly userWalletService = Container.get(UserWalletService);
+  private readonly integrationCredentialsService = Container.get(IntegrationCredentialsService);
+  private readonly mappingRepository = Container.get(InstitutionBlockchainMappingRepository);
+  private readonly integrationImportService = Container.get(IntegrationImportService);
+  private readonly priceWarmupService = Container.get(PriceWarmupService);
 
   async execute(input: ImportWalletInput, userId: string): Promise<ImportWalletResult> {
     logger.info(

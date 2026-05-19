@@ -383,6 +383,62 @@ export class GroupRepository extends BaseRepository<Group, NewGroup> {
     }
   }
 
+  /** Batch variant of getHoldingsByGroupId — one query for every group. */
+  async getHoldingsByGroupIds(
+    groupIds: string[],
+    transaction?: DatabaseTransaction
+  ): Promise<Map<string, string[]>> {
+    const result = new Map<string, string[]>();
+    if (groupIds.length === 0) return result;
+    try {
+      const database = this.getDb(transaction);
+      const rows = await database
+        .select({
+          groupId: schema.holdingGroups.groupId,
+          holdingId: schema.holdingGroups.holdingId,
+        })
+        .from(schema.holdingGroups)
+        .where(inArray(schema.holdingGroups.groupId, groupIds));
+      for (const r of rows) {
+        const list = result.get(r.groupId);
+        if (list) list.push(r.holdingId);
+        else result.set(r.groupId, [r.holdingId]);
+      }
+      return result;
+    } catch (error) {
+      this.logger.error({ groupIds, error }, 'Failed to batch-get holdings by groups');
+      throw error;
+    }
+  }
+
+  /** Batch variant of getAccountsByGroupId — one query for every group. */
+  async getAccountsByGroupIds(
+    groupIds: string[],
+    transaction?: DatabaseTransaction
+  ): Promise<Map<string, string[]>> {
+    const result = new Map<string, string[]>();
+    if (groupIds.length === 0) return result;
+    try {
+      const database = this.getDb(transaction);
+      const rows = await database
+        .select({
+          groupId: schema.accountGroups.groupId,
+          accountId: schema.accountGroups.accountId,
+        })
+        .from(schema.accountGroups)
+        .where(inArray(schema.accountGroups.groupId, groupIds));
+      for (const r of rows) {
+        const list = result.get(r.groupId);
+        if (list) list.push(r.accountId);
+        else result.set(r.groupId, [r.accountId]);
+      }
+      return result;
+    } catch (error) {
+      this.logger.error({ groupIds, error }, 'Failed to batch-get accounts by groups');
+      throw error;
+    }
+  }
+
   /**
    * Get groups for multiple holdings. Returns a map of holdingId → groups.
    *

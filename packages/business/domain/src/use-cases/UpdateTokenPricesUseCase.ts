@@ -180,11 +180,20 @@ export class UpdateTokenPricesUseCase {
             }
           }
 
-          for (const tokenId of updatedTokenIds) {
-            const holdingIds = holdingsByToken.get(tokenId);
-            if (holdingIds && holdingIds.length > 0) {
-              await this.vaultService.recalculateVaultsForToken(tokenId, holdingIds);
-            }
+          // Bounded fan-out: each token's vault recalculation is
+          // independent, so batch them instead of one-at-a-time.
+          const VAULT_CONCURRENCY = 10;
+          for (let i = 0; i < updatedTokenIds.length; i += VAULT_CONCURRENCY) {
+            const batch = updatedTokenIds.slice(i, i + VAULT_CONCURRENCY);
+            await Promise.all(
+              batch.map((tokenId) => {
+                const holdingIds = holdingsByToken.get(tokenId);
+                if (holdingIds && holdingIds.length > 0) {
+                  return this.vaultService.recalculateVaultsForToken(tokenId, holdingIds);
+                }
+                return Promise.resolve();
+              })
+            );
           }
         }
       } catch (vaultError) {

@@ -1,3 +1,14 @@
+// Eager boot-time guard: if the dev bypass is requested in production the
+// deploy must never come up. Evaluated at module load (this file is imported
+// by the middleware), so the failure surfaces at boot rather than on the
+// first request that happens to call `devBypassEnabled()`.
+if (process.env.ADMIN_DEV_BYPASS === '1' && process.env.NODE_ENV === 'production') {
+  throw new Error(
+    'ADMIN_DEV_BYPASS=1 is set in a production environment. Refusing to start ' +
+      'with passkey gating disabled. Unset ADMIN_DEV_BYPASS in the admin deployment.'
+  );
+}
+
 export interface PasskeyConfig {
   rpId: string;
   origin: string;

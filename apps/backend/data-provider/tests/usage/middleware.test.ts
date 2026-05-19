@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'bun:test';
 import { TRPCError } from '@trpc/server';
-import { buildUsageMiddleware, createUsageContext } from './middleware';
-import type { UsageEvent, UsageSink } from './sink';
+import { buildUsageMiddleware, createUsageContext } from '../../src/usage/middleware';
+import type { UsageEvent, UsageSink } from '../../src/usage/sink';
 
 class CapturingSink implements UsageSink {
   events: UsageEvent[] = [];

@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { sanitizeResult } from './sanitize-result';
+import { sanitizeResult } from '../src/sanitize-result';
 
 // Mirrors the backend's summarize-payload test. This copy protects the
 // worker-side write path into `user_jobs.result` from the same class of

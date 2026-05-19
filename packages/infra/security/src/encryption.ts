@@ -38,8 +38,13 @@ const LEGACY_KDF_SALT = 'scani-salt';
 // of credentials per import job. Keyed on `(rawKey, salt)` so per-record
 // salts each occupy their own slot. Bounded LRU so misbehaving callers
 // can't grow it unbounded.
+//
+// Only the non-hex KDF path uses this cache; production stages a 64-char
+// hex ENCRYPTION_KEY (see `isHexKey`) which skips scrypt entirely. The
+// cap is sized so a dev/test import decrypting many per-record-salted
+// rows in one pass doesn't thrash and re-derive on every credential.
 const KDF_CACHE = new Map<string, Buffer>();
-const KDF_CACHE_MAX = 64;
+const KDF_CACHE_MAX = 256;
 
 function deriveScryptKey(rawKey: string, salt: Buffer | string): Buffer {
   const saltKey = typeof salt === 'string' ? salt : salt.toString('hex');

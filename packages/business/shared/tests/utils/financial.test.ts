@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { isValidDecimalString } from './financial';
+import { isValidDecimalString } from '../../src/utils/financial';
 
 describe('isValidDecimalString', () => {
   test('should accept valid decimal strings', () => {

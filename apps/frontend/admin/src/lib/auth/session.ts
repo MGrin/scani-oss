@@ -82,7 +82,10 @@ export function sessionCookieOpts(maxAgeSec = SESSION_TTL_SEC) {
   return {
     httpOnly: true,
     secure: process.env.NODE_ENV === 'production',
-    sameSite: 'lax' as const,
+    // 'strict' rather than 'lax': the admin console is single-tenant,
+    // passkey-gated, and never reached via a cross-site link, so the
+    // cookie should never ride a cross-site request.
+    sameSite: 'strict' as const,
     path: '/',
     maxAge: maxAgeSec,
   };

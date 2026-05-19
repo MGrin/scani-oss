@@ -76,6 +76,10 @@ const connectionConfig: postgres.Options<Record<string, postgres.PostgresType>> 
   ssl: sslMode,
   connection: {
     application_name: `scani-${NODE_ENV}`, // Helps identify connections in pg_stat_activity
+    // Cap per-query wall-time so a runaway query can't pin a pool slot
+    // indefinitely under load. Cron jobs run heavier sweeps, so they get
+    // the longer ceiling (also applied via the URL param above).
+    statement_timeout: IS_CRON_JOB ? 120000 : 30000,
   },
 };
 

@@ -1,5 +1,5 @@
 import { describe, expect, it, mock } from 'bun:test';
-import { NoopUsageSink, PostgresUsageSink, type UsageEvent } from './sink';
+import { NoopUsageSink, PostgresUsageSink, type UsageEvent } from '../../src/usage/sink';
 
 const baseEvent = (over: Partial<UsageEvent> = {}): UsageEvent => ({
   apiKeyId: 'key-1',

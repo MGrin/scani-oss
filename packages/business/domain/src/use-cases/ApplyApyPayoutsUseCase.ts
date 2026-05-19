@@ -130,7 +130,10 @@ export class ApplyApyPayoutsUseCase {
     const configs = await this.apyConfigRepository.findAllActive();
     logger.info({ count: configs.length }, 'Found active APY configs');
 
-    for (const entry of configs) {
+    // Per-holding advisory locks make configs independent — process them
+    // in bounded-concurrency batches rather than one strictly after another.
+    const CONFIG_CONCURRENCY = 10;
+    const processEntry = async (entry: (typeof configs)[number]): Promise<void> => {
       try {
         // Per-holding advisory lock prevents two cron containers from
         // both reading the pre-update balance and double-applying interest.
@@ -142,7 +145,7 @@ export class ApplyApyPayoutsUseCase {
         );
         if (!outcome.ran) {
           skipped++;
-          continue;
+          return;
         }
         const result = outcome.result;
         if (result.applied) {
@@ -159,6 +162,9 @@ export class ApplyApyPayoutsUseCase {
         );
         errors.push({ holdingId: entry.holdingId, error: message });
       }
+    };
+    for (let i = 0; i < configs.length; i += CONFIG_CONCURRENCY) {
+      await Promise.all(configs.slice(i, i + CONFIG_CONCURRENCY).map(processEntry));
     }
 
     const durationMs = Date.now() - startTime;

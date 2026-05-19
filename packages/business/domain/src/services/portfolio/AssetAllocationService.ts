@@ -262,15 +262,31 @@ export class AssetAllocationService extends BaseService {
     // Track holdings that have been assigned to at least one group
     const holdingsInGroups = new Set<string>();
 
+    // Batch the group→holdings and group→accounts membership lookups into
+    // two queries (instead of two per group), and index holdings by id and
+    // by account so the per-group loop does O(1) lookups, not full scans.
+    const groupIds = groups.map((g) => g.id);
+    const [holdingsByGroup, accountsByGroup] = await Promise.all([
+      this.groupRepository.getHoldingsByGroupIds(groupIds),
+      this.groupRepository.getAccountsByGroupIds(groupIds),
+    ]);
+    const activeHoldingById = new Map<string, HoldingWithCompleteDetails>();
+    const activeHoldingsByAccount = new Map<string, HoldingWithCompleteDetails[]>();
+    for (const h of holdingsWithDetails) {
+      if (!h.holding.isActive) continue;
+      activeHoldingById.set(h.holding.id, h);
+      const list = activeHoldingsByAccount.get(h.holding.accountId);
+      if (list) list.push(h);
+      else activeHoldingsByAccount.set(h.holding.accountId, [h]);
+    }
+
     // For each group, get its holdings and calculate value
     for (const group of groups) {
-      const holdingIds = await this.groupRepository.getHoldingsByGroupId(group.id);
+      const holdingIds = holdingsByGroup.get(group.id) ?? [];
       let groupValue = new Decimal(0);
 
       for (const holdingId of holdingIds) {
-        const holdingWithDetails = holdingsWithDetails.find(
-          (h) => h.holding.id === holdingId && h.holding.isActive
-        );
+        const holdingWithDetails = activeHoldingById.get(holdingId);
 
         if (holdingWithDetails) {
           holdingsInGroups.add(holdingId);
@@ -284,12 +300,10 @@ export class AssetAllocationService extends BaseService {
       }
 
       // Also get account-level groups
-      const accountIds = await this.groupRepository.getAccountsByGroupId(group.id);
+      const accountIds = accountsByGroup.get(group.id) ?? [];
       for (const accountId of accountIds) {
-        // Find all holdings in this account
-        const accountHoldings = holdingsWithDetails.filter(
-          (h) => h.holding.accountId === accountId && h.holding.isActive
-        );
+        // All active holdings in this account
+        const accountHoldings = activeHoldingsByAccount.get(accountId) ?? [];
 
         for (const holdingWithDetails of accountHoldings) {
           const holdingId = holdingWithDetails.holding.id;

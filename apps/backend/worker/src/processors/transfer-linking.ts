@@ -20,17 +20,25 @@ export class TransferLinkingProcessor extends ScheduledJobProcessor {
       const users = await db.select({ id: schema.users.id }).from(schema.users);
       let totalLinked = 0;
       let totalAmbiguous = 0;
-      for (const u of users) {
-        try {
-          const s = await useCase.execute({ userId: u.id });
-          totalLinked += s.linked;
-          totalAmbiguous += s.ambiguous;
-        } catch (error) {
-          logger.warn(
-            { userId: u.id, error: error instanceof Error ? error.message : error },
-            'Transfer-linking failed for one user; continuing'
-          );
-        }
+      // Bounded fan-out: linking is per-user independent, so batch it
+      // instead of serializing every user behind the previous one.
+      const USER_CONCURRENCY = 25;
+      for (let i = 0; i < users.length; i += USER_CONCURRENCY) {
+        const batch = users.slice(i, i + USER_CONCURRENCY);
+        await Promise.all(
+          batch.map(async (u) => {
+            try {
+              const s = await useCase.execute({ userId: u.id });
+              totalLinked += s.linked;
+              totalAmbiguous += s.ambiguous;
+            } catch (error) {
+              logger.warn(
+                { userId: u.id, error: error instanceof Error ? error.message : error },
+                'Transfer-linking failed for one user; continuing'
+              );
+            }
+          })
+        );
       }
       logger.info(
         {

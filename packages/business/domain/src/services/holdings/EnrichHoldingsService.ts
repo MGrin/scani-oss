@@ -145,11 +145,26 @@ export class EnrichHoldingsService {
 
     const enrichedHoldings: EnrichedParsedHolding[] = [];
 
-    for (const holding of input.holdings) {
+    // Token resolution is independent per holding — resolve them all in
+    // parallel up front. The matching loop below still runs sequentially
+    // because its duplicate-index bookkeeping depends on prior iterations.
+    const resolvedTokens = await Promise.all(
+      input.holdings.map((h) =>
+        this.resolveToken(h.symbol, h.assetType).catch((error) => {
+          logger.warn(
+            { symbol: h.symbol, error: error instanceof Error ? error.message : 'Unknown error' },
+            'Error resolving token for holding'
+          );
+          return null;
+        })
+      )
+    );
+
+    for (const [index, holding] of input.holdings.entries()) {
       const enrichedHolding: EnrichedParsedHolding = { ...holding };
 
       try {
-        const token = await this.resolveToken(holding.symbol, holding.assetType);
+        const token = resolvedTokens[index] ?? null;
 
         if (token) {
           enrichedHolding.tokenId = token.id;

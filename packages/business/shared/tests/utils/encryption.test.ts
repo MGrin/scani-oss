@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from 'bun:test';
-import { decrypt, encrypt, hasEncryptionKey } from './encryption';
+import { decrypt, encrypt, hasEncryptionKey } from '../../src/utils/encryption';
 
 describe('encryption', () => {
   const originalKey = process.env.ENCRYPTION_KEY;

@@ -70,6 +70,7 @@ export class ReconcilePendingCredentialsProcessor extends ScheduledJobProcessor 
       '🔧 Reconciling orphaned credentials'
     );
 
+    let failed = 0;
     for (const row of orphans) {
       if (row.importRetryCount >= MAX_RECONCILE_ATTEMPTS) {
         await credentialsService.markImportFailed(
@@ -130,6 +131,7 @@ export class ReconcilePendingCredentialsProcessor extends ScheduledJobProcessor 
           '✅ Orphaned credentials re-enqueued'
         );
       } catch (enqueueError) {
+        failed++;
         const message = enqueueError instanceof Error ? enqueueError.message : String(enqueueError);
         await credentialsService.markImportFailed(row.id, message);
         logger.error(
@@ -137,6 +139,16 @@ export class ReconcilePendingCredentialsProcessor extends ScheduledJobProcessor 
           '❌ Reconciler failed to re-enqueue'
         );
       }
+    }
+
+    // A handful of per-row failures is normal; the majority failing in a
+    // single tick signals a systemic problem (queue down, DB unreachable)
+    // that a sweep of per-row error logs would bury.
+    if (failed > 0 && failed >= orphans.length / 2) {
+      logger.error(
+        { failed, total: orphans.length },
+        '🚨 Reconciler failed to re-enqueue the majority of orphaned credentials — investigate'
+      );
     }
   }
 }

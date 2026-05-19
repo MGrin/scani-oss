@@ -1,3 +1,5 @@
+// @ts-expect-error — ofx-js (CommonJS) ships no type declarations
+import ofx from 'ofx-js';
 import type { ParsedTransaction, ParseResult } from './types';
 
 /**
@@ -10,10 +12,6 @@ export async function parseOfxStatement(content: string): Promise<ParseResult> {
   const warnings: string[] = [];
 
   try {
-    // Dynamic import ofx-js (untyped ESM module)
-    // @ts-expect-error — ofx-js has no type declarations
-    const ofxModule = await import('ofx-js');
-    const ofx = ofxModule.default || ofxModule;
     const parsed = await ofx.parse(content);
 
     const transactions: ParsedTransaction[] = [];

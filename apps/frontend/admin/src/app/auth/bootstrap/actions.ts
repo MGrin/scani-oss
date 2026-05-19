@@ -5,7 +5,7 @@ import type {
   PublicKeyCredentialCreationOptionsJSON,
   RegistrationResponseJSON,
 } from '@simplewebauthn/types';
-import { cookies } from 'next/headers';
+import { cookies, headers } from 'next/headers';
 import { b64urlEncode } from '@/lib/auth/b64';
 import { bootstrapStatus, getRpIdAndOrigin } from '@/lib/auth/config';
 import {
@@ -17,7 +17,7 @@ import {
 
 function authorized(providedToken: string): boolean {
   const expected = process.env.ADMIN_BOOTSTRAP_TOKEN;
-  if (!expected || expected.length < 16) return false;
+  if (!expected || expected.length < 32) return false;
   const a = new TextEncoder().encode(expected);
   const b = new TextEncoder().encode(providedToken);
   if (a.length !== b.length) return false;
@@ -61,12 +61,35 @@ function checkBootstrap(token: string): string | null {
   return null;
 }
 
+// Per-process, per-IP throttle on bootstrap attempts. The token is already
+// length-gated + timing-safe-compared, so this is defence-in-depth against a
+// weak token: it caps online guessing. Per-process is acceptable — bootstrap
+// is a one-shot operation on a single-tenant admin (same rationale as
+// `provisionedInThisProcess`).
+const BOOTSTRAP_MAX_ATTEMPTS = 6;
+const BOOTSTRAP_WINDOW_MS = 60_000;
+const bootstrapAttempts = new Map<string, number[]>();
+
+function bootstrapRateLimited(): boolean {
+  const h = headers();
+  const ip = h.get('x-forwarded-for')?.split(',')[0]?.trim() || h.get('x-real-ip') || 'unknown';
+  const now = Date.now();
+  const recent = (bootstrapAttempts.get(ip) ?? []).filter((t) => now - t < BOOTSTRAP_WINDOW_MS);
+  recent.push(now);
+  bootstrapAttempts.set(ip, recent);
+  return recent.length > BOOTSTRAP_MAX_ATTEMPTS;
+}
+
 export type BeginResult =
   | { ok: true; options: PublicKeyCredentialCreationOptionsJSON }
   | { ok: false; error: string };
 
 export async function beginBootstrapAction(token: string): Promise<BeginResult> {
   try {
+    if (bootstrapRateLimited()) {
+      console.warn('[admin][bootstrap] rate limit exceeded — denied');
+      return { ok: false, error: 'Too many attempts. Wait a minute and try again.' };
+    }
     const err = checkBootstrap(token);
     if (err) return { ok: false, error: err };
 

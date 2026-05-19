@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test';
-import { generateCloudApiKey, sha256Hex } from './cloud-api-keys';
+import { generateCloudApiKey, sha256Hex } from '../../src/auth/cloud-api-keys';
 
 describe('sha256Hex', () => {
   it('produces deterministic 64-char lowercase hex', async () => {

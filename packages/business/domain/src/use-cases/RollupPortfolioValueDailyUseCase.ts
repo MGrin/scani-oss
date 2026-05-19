@@ -150,8 +150,12 @@ export class RollupPortfolioValueDailyUseCase {
             .offset(offset);
       if (page.length === 0) break;
 
-      for (const user of page) {
-        if (!user.baseCurrencyId) continue; // type-narrow; already filtered
+      // Each user's rollup is independently prefetch-scoped and guarded by
+      // a per-user advisory lock, so process them in bounded-concurrency
+      // batches instead of strictly one after another.
+      const USER_CONCURRENCY = 8;
+      const processUser = async (user: (typeof page)[number]): Promise<void> => {
+        if (!user.baseCurrencyId) return; // type-narrow; already filtered
         const baseCurrencyId = user.baseCurrencyId;
         try {
           // Per-user advisory lock: serializes this user's rollup against
@@ -267,7 +271,7 @@ export class RollupPortfolioValueDailyUseCase {
               { userId: user.id },
               'Rollup skipped for user — another instance holds the lock'
             );
-            continue;
+            return;
           }
 
           summary.usersProcessed++;
@@ -282,6 +286,10 @@ export class RollupPortfolioValueDailyUseCase {
             'Rollup failed for one user; continuing'
           );
         }
+      };
+
+      for (let i = 0; i < page.length; i += USER_CONCURRENCY) {
+        await Promise.all(page.slice(i, i + USER_CONCURRENCY).map(processUser));
       }
 
       if (opts.userId) break; // single-user mode: one page, done

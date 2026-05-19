@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'bun:test';
 import { TRPCError } from '@trpc/server';
-import { OSS_KEY_ID, validateBearerToken } from './api-key';
+import { OSS_KEY_ID, validateBearerToken } from '../../src/auth/api-key';
 
 const ENV_TOKEN = 'env-superuser-token-1234567890';
 

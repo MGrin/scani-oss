@@ -65,18 +65,11 @@ export interface SyncExchangeBalancesResult {
  */
 @Service()
 export class SyncExchangeBalancesUseCase {
-  // Constructor injection — same rationale as ImportWalletAddressUseCase.
-  constructor(
-    private readonly walletDiscovery: WalletDiscoveryService = Container.get(
-      WalletDiscoveryService
-    ),
-    private readonly integrationCredentialsService: IntegrationCredentialsService = Container.get(
-      IntegrationCredentialsService
-    ),
-    private readonly holdingRepository: HoldingRepository = Container.get(HoldingRepository),
-    private readonly tokenTypeRepository: TokenTypeRepository = Container.get(TokenTypeRepository),
-    private readonly holdingsSyncHelper: HoldingsSyncHelper = Container.get(HoldingsSyncHelper)
-  ) {}
+  private readonly walletDiscovery = Container.get(WalletDiscoveryService);
+  private readonly integrationCredentialsService = Container.get(IntegrationCredentialsService);
+  private readonly holdingRepository = Container.get(HoldingRepository);
+  private readonly tokenTypeRepository = Container.get(TokenTypeRepository);
+  private readonly holdingsSyncHelper = Container.get(HoldingsSyncHelper);
 
   async execute(): Promise<SyncExchangeBalancesResult> {
     const startTime = Date.now();
@@ -214,8 +207,13 @@ export class SyncExchangeBalancesUseCase {
             'Found credentials for institution'
           );
 
-          // Sync accounts for each user
-          for (const userCredential of credentials) {
+          // Sync accounts for each user — credentials within an
+          // institution are independent, so process them in bounded
+          // concurrency batches instead of strictly one user at a time.
+          const CREDENTIAL_CONCURRENCY = 8;
+          const processCredential = async (
+            userCredential: (typeof credentials)[number]
+          ): Promise<void> => {
             // Get user's accounts for this institution
             const accounts = await db
               .select()
@@ -233,7 +231,7 @@ export class SyncExchangeBalancesUseCase {
                 { userId: userCredential.userId, institutionId },
                 'No accounts found for user'
               );
-              continue;
+              return;
             }
 
             logger.debug(
@@ -262,7 +260,7 @@ export class SyncExchangeBalancesUseCase {
                   },
                   'Skipping user: integration credentials expired'
                 );
-                continue;
+                return;
               }
               throw error;
             }
@@ -272,7 +270,7 @@ export class SyncExchangeBalancesUseCase {
                 { userId: userCredential.userId, institutionId },
                 'Failed to decrypt credentials'
               );
-              continue;
+              return;
             }
 
             // Fetch holdings for all accounts (external API calls)
@@ -359,6 +357,12 @@ export class SyncExchangeBalancesUseCase {
                 });
               }
             }
+          };
+
+          for (let i = 0; i < credentials.length; i += CREDENTIAL_CONCURRENCY) {
+            await Promise.all(
+              credentials.slice(i, i + CREDENTIAL_CONCURRENCY).map(processCredential)
+            );
           }
         } catch (error) {
           logger.error(

@@ -65,12 +65,27 @@ export class ForexBackfillProcessor extends ScheduledJobProcessor {
       let inserted = 0;
       let alreadyHad = 0;
       let providerMissing = 0;
+      const pairs: { tokenId: string; symbol: string; at: Date }[] = [];
       for (let dayOffset = 0; dayOffset < LOOKBACK_DAYS; dayOffset++) {
         const at = new Date(today);
         at.setUTCDate(at.getUTCDate() - dayOffset);
         for (const { id: tokenId, symbol } of hubTokens) {
+          pairs.push({ tokenId, symbol, at });
+        }
+      }
+      // (day, hub-currency) pairs are independent — run them in bounded
+      // batches instead of strictly one external call after another.
+      const CONCURRENCY = 6;
+      for (let i = 0; i < pairs.length; i += CONCURRENCY) {
+        const results = await Promise.all(
+          pairs.slice(i, i + CONCURRENCY).map(async ({ tokenId, symbol, at }) => ({
+            symbol,
+            at,
+            result: await service.backfillOne(tokenId, at, usdTokenId),
+          }))
+        );
+        for (const { symbol, at, result } of results) {
           attempted++;
-          const result = await service.backfillOne(tokenId, at, usdTokenId);
           if (result.status === 'inserted') inserted++;
           else if (result.status === 'already-have') alreadyHad++;
           else if (result.status === 'provider-missing') {

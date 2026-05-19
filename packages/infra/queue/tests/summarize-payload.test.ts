@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
-import { JOB_NAMES } from './queue-names';
-import { sanitizeResult } from './sanitize-result';
-import { summarizePayload } from './summarize-payload';
+import { JOB_NAMES } from '../src/queue-names';
+import { sanitizeResult } from '../src/sanitize-result';
+import { summarizePayload } from '../src/summarize-payload';
 
 // Defense-in-depth: the payload summary is rendered in the /jobs list UI
 // and saved to `user_jobs.payload_summary`. Any field that ends up here

@@ -38,7 +38,10 @@ export class BackfillTokenIdentityProcessor extends ScheduledJobProcessor {
     let totalSkipped = 0;
     let totalFailed = 0;
 
-    for (const token of tokens) {
+    // Each token enriches independently — process tokens in bounded
+    // batches instead of strictly one after another.
+    const TOKEN_CONCURRENCY = 8;
+    const processToken = async (token: (typeof tokens)[number]): Promise<void> => {
       const existing =
         (typeof token.providerMetadata === 'string'
           ? (JSON.parse(token.providerMetadata) as TokenMetadata)
@@ -77,7 +80,7 @@ export class BackfillTokenIdentityProcessor extends ScheduledJobProcessor {
 
       if (!changed) {
         totalSkipped += 1;
-        continue;
+        return;
       }
 
       try {
@@ -93,6 +96,10 @@ export class BackfillTokenIdentityProcessor extends ScheduledJobProcessor {
         );
         totalFailed += 1;
       }
+    };
+
+    for (let i = 0; i < tokens.length; i += TOKEN_CONCURRENCY) {
+      await Promise.all(tokens.slice(i, i + TOKEN_CONCURRENCY).map(processToken));
     }
 
     logger.info(

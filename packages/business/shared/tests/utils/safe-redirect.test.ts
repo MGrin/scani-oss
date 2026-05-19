@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { safeRedirectPath } from './safe-redirect';
+import { safeRedirectPath } from '../../src/utils/safe-redirect';
 
 describe('safeRedirectPath', () => {
   const FALLBACK = '/';

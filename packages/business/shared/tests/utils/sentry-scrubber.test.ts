@@ -1,5 +1,9 @@
 import { describe, expect, test } from 'bun:test';
-import { scrubSentryBreadcrumb, scrubSentryEvent, scrubString } from './sentry-scrubber';
+import {
+  scrubSentryBreadcrumb,
+  scrubSentryEvent,
+  scrubString,
+} from '../../src/utils/sentry-scrubber';
 
 describe('scrubString', () => {
   test('redacts email addresses', () => {
