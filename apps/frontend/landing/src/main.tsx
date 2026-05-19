@@ -1,33 +1,36 @@
-import { AnalyticsProvider } from '@scani/analytics/client';
-import { scrubSentryBreadcrumb, scrubSentryEvent } from '@scani/shared';
-import * as Sentry from '@sentry/react';
-import React from 'react';
-import ReactDOM from 'react-dom/client';
+import { StrictMode } from 'react';
+import { hydrateRoot } from 'react-dom/client';
 import { App } from './App';
 import './index.css';
 
-const SENTRY_DSN = import.meta.env.VITE_SENTRY_DSN;
-if (SENTRY_DSN) {
-  Sentry.init({
-    dsn: SENTRY_DSN,
-    environment: import.meta.env.VITE_SENTRY_ENVIRONMENT || import.meta.env.MODE,
-    release: import.meta.env.VITE_SENTRY_RELEASE || undefined,
-    tracesSampleRate: 0.1,
-    // Strip PII (emails, JWTs, Authorization values) from event +
-    // breadcrumb payloads before they leave the browser.
-    beforeSend: scrubSentryEvent,
-    beforeBreadcrumb: scrubSentryBreadcrumb,
+// hydrateRoot (not createRoot): the page ships fully prerendered, so we
+// adopt the existing DOM instead of discarding and repainting it — that
+// repaint was pushing Largest Contentful Paint well past First Paint.
+hydrateRoot(
+  document.getElementById('root') as HTMLElement,
+  <StrictMode>
+    <App />
+  </StrictMode>
+);
+
+// PostHog is loaded + initialised after first paint so posthog-js stays
+// out of the initial bundle — it is the landing's biggest mobile-perf
+// cost and nothing render-critical depends on it (the contact/waitlist
+// forms' capture() calls no-op until init completes). The dynamic import
+// is a deliberate, localized exception to the repo's top-level-import
+// rule: main.tsx is the app boot entry and analytics is non-critical.
+function initTelemetry(): void {
+  void import('@scani/analytics/client').then(({ initAnalytics }) => {
+    initAnalytics({
+      apiKey: import.meta.env.VITE_POSTHOG_KEY,
+      apiHost: import.meta.env.VITE_POSTHOG_HOST,
+      app: 'landing',
+    });
   });
 }
 
-ReactDOM.createRoot(document.getElementById('root') as HTMLElement).render(
-  <React.StrictMode>
-    <AnalyticsProvider
-      apiKey={import.meta.env.VITE_POSTHOG_KEY}
-      apiHost={import.meta.env.VITE_POSTHOG_HOST}
-      app="landing"
-    >
-      <App />
-    </AnalyticsProvider>
-  </React.StrictMode>
-);
+if (typeof requestIdleCallback === 'function') {
+  requestIdleCallback(initTelemetry);
+} else {
+  setTimeout(initTelemetry, 1);
+}

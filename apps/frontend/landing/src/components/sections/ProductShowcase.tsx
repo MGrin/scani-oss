@@ -28,23 +28,23 @@ const SHOTS: ReadonlyArray<Shot> = [
   },
 ];
 
-function variantSrc(id: string, theme: SystemTheme): string {
+function variantSrc(id: string, theme: SystemTheme, ext: 'avif' | 'webp'): string {
   // Always the desktop capture, on mobile landing too — the mobile
-  // shots don't surface enough of the app. `?v=__BUILD_ID__` busts the
-  // browser/CDN cache each deploy, since the capture workflow overwrites
-  // these PNGs under stable filenames.
-  return `/screenshots/${id}-${theme}-desktop.png?v=${__BUILD_ID__}`;
+  // shots don't surface enough of the app.
+  return `/screenshots/${id}-${theme}-desktop.${ext}`;
 }
 
 // Real screenshots are dropped into `public/screenshots/` by the GH
 // Actions workflow at `.github/workflows/capture-screenshots.yaml`,
-// which runs `scripts/capture-landing-shots.ts`. When a variant is
-// missing (fresh checkout, before the workflow has run), fall back to
-// a styled placeholder so the page still composes cleanly.
+// which runs `scripts/capture-landing-shots.ts` then `optimize:images`
+// to emit AVIF + WebP. When a variant is missing (fresh checkout,
+// before the workflow has run), fall back to a styled placeholder so
+// the page still composes cleanly.
 function Screenshot({ shot, theme }: { shot: Shot; theme: SystemTheme }) {
-  const src = variantSrc(shot.id, theme);
+  const avif = variantSrc(shot.id, theme, 'avif');
+  const webp = variantSrc(shot.id, theme, 'webp');
   const [errored, setErrored] = useState<string | null>(null);
-  if (errored === src) {
+  if (errored === webp) {
     return (
       <div className="flex aspect-[16/10] items-center justify-center rounded-md border border-dashed border-border bg-card text-xs text-muted-foreground">
         Screenshot pending capture
@@ -52,14 +52,20 @@ function Screenshot({ shot, theme }: { shot: Shot; theme: SystemTheme }) {
     );
   }
   return (
-    <img
-      key={src}
-      src={src}
-      alt={shot.title}
-      loading="lazy"
-      className="aspect-[16/10] w-full rounded-md border border-border bg-card object-cover object-top"
-      onError={() => setErrored(src)}
-    />
+    <picture>
+      <source type="image/avif" srcSet={avif} />
+      <img
+        key={webp}
+        src={webp}
+        alt={shot.title}
+        width={1440}
+        height={900}
+        loading="lazy"
+        decoding="async"
+        className="aspect-[16/10] w-full rounded-md border border-border bg-card object-cover object-top"
+        onError={() => setErrored(webp)}
+      />
+    </picture>
   );
 }
 

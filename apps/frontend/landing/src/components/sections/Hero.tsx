@@ -1,28 +1,13 @@
 import { ArrowRight, BookOpen } from 'lucide-react';
-import { useEffect, useRef } from 'react';
 
 export function Hero() {
-  // Hero animation fires on mount (not on scroll) since it's the first
-  // thing visible. We set data-revealed="true" in an effect so the
-  // initial server-rendered HTML still has the natural opacity:1 +
-  // translate:0 baked in via CSS gates — crawlers and no-JS visitors
-  // see the page fully composed.
-  const heroRef = useRef<HTMLDivElement | null>(null);
-  useEffect(() => {
-    if (heroRef.current) heroRef.current.dataset.revealed = 'true';
-  }, []);
-
   return (
     <section
       id="top"
       className="relative isolate overflow-hidden border-b border-border/60 bg-background"
     >
       <div className="bg-grid-fade absolute inset-0 -z-10" aria-hidden="true" />
-      <div
-        ref={heroRef}
-        data-reveal="hero"
-        className="mx-auto flex max-w-5xl flex-col items-center px-6 pt-12 pb-16 text-center sm:pt-20 sm:pb-24 lg:pt-28 lg:pb-32"
-      >
+      <div className="mx-auto flex max-w-5xl flex-col items-center px-6 pt-12 pb-16 text-center sm:pt-20 sm:pb-24 lg:pt-28 lg:pb-32">
         <a
           href="#beta"
           className="mb-8 inline-flex items-center gap-2 rounded-full border border-border bg-card/40 px-3 py-1 text-xs text-muted-foreground transition-colors hover:bg-card hover:text-foreground"

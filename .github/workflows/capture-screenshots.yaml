@@ -49,6 +49,11 @@ jobs:
           SCANI_API_URL: https://api.scani.xyz
         run: bun scripts/capture-landing-shots.ts
 
+      # Downscale + re-encode the freshly captured PNGs to AVIF + WebP
+      # (the PNG sources are removed) so only optimized assets ship.
+      - name: Optimize screenshots
+        run: cd apps/frontend/landing && bun run optimize:images
+
       - name: Commit + push if changed
         env:
           GIT_AUTHOR_NAME: github-actions[bot]

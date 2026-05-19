@@ -4,13 +4,6 @@ import { defineConfig } from 'vite';
 
 export default defineConfig({
   plugins: [react()],
-  // Unique per build. Appended as a `?v=` query to the screenshot URLs
-  // so a fresh deploy busts the browser/CDN cache — the PNG filenames
-  // are stable across captures, so without this an overwritten
-  // screenshot keeps serving the stale copy.
-  define: {
-    __BUILD_ID__: JSON.stringify(Date.now().toString(36)),
-  },
   resolve: {
     alias: {
       '@': path.resolve(__dirname, './src'),
@@ -21,13 +14,14 @@ export default defineConfig({
     sourcemap: false,
     rollupOptions: {
       output: {
-        // Split heavy vendor deps so the browser can fetch them in
-        // parallel and cache them across deploys independent of the
-        // app code. Sentry alone is ~100 KB minified and changes far
-        // less often than the page itself.
+        // Split heavy vendor deps into their own chunks so the browser
+        // can fetch them in parallel and cache them across deploys
+        // independent of the app code. posthog-js is dynamically
+        // imported (deferred off the critical path) — naming its chunk
+        // keeps it stably cacheable.
         manualChunks: {
           react: ['react', 'react-dom'],
-          sentry: ['@sentry/react'],
+          posthog: ['posthog-js'],
           trpc: ['@trpc/client'],
           icons: ['lucide-react'],
         },

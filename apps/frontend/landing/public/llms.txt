@@ -1,0 +1,24 @@
+# Scani
+
+> One real-time portfolio across every bank, brokerage, exchange, and on-chain wallet — run it self-hosted, as a metered cloud API, or as a fully managed app.
+
+Scani consolidates banks, brokerages, crypto exchanges, and on-chain wallets into a single real-time portfolio. It connects directly to broker and bank APIs, to centralized exchanges over read-only API keys, and to public on-chain addresses, then reconciles every balance with arbitrary-precision accounting. The same codebase ships three ways: a fully managed SaaS (app.scani.xyz), a metered, type-safe Cloud API (cloud.scani.xyz), and a self-hostable build under a permissive open-source license (in preparation). Scani is in beta — waitlist signups lock in one year free at every paid tier.
+
+## Core pages
+
+- [Scani — home](https://scani.xyz/): Product overview — what Scani is, the three deployment tiers (self-host, Cloud API, managed SaaS), the architecture, and the beta-preview offer.
+- [Contact Scani](https://scani.xyz/contact): Reach the team for support, sales, feedback, or security reports.
+
+## Comparisons
+
+- [Portfolio tracker alternatives](https://scani.xyz/alternatives): Hub page comparing Scani with the open-source and proprietary portfolio trackers people evaluate it against.
+- [Scani vs Ghostfolio](https://scani.xyz/vs/ghostfolio): Scani's live, automatic account sync versus Ghostfolio's open-source, manual-entry wealth tracking.
+- [Scani vs rotki](https://scani.xyz/vs/rotki): Scani's all-asset coverage versus rotki's privacy-first, crypto-focused, local-only tracker.
+- [Scani vs Kubera](https://scani.xyz/vs/kubera): Scani's self-hostable, API-first model versus Kubera's proprietary, subscription-only net-worth tracker.
+- [Scani vs CoinStats](https://scani.xyz/vs/coinstats): Scani's banks + brokerages + crypto coverage versus CoinStats' crypto-only portfolio tracker.
+- [Scani vs Maybe Finance](https://scani.xyz/vs/maybe-finance): Scani versus Maybe Finance (the community "sure" fork) for self-hosted personal finance, with first-class crypto.
+- [Scani vs MyFinanceTools](https://scani.xyz/vs/myfinancetools): Scani's automated multi-account sync versus MyFinanceTools' free calculators and manual tracking.
+
+## Resources
+
+- [OpenAPI specification](https://api.cloud.scani.xyz/openapi.json): Machine-readable API spec for the Scani Cloud API.

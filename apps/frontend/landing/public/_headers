@@ -8,9 +8,19 @@
 # so posthog-js can ship product-analytics events.
 
 /*
-  Content-Security-Policy: default-src 'self'; base-uri 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; connect-src 'self' https://api.cloud.scani.xyz https://*.i.posthog.com https://*.sentry.io https://*.ingest.sentry.io; font-src 'self' data:; frame-ancestors 'none'; form-action 'self'; object-src 'none'
+  Content-Security-Policy: default-src 'self'; base-uri 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; connect-src 'self' https://api.cloud.scani.xyz https://*.i.posthog.com; font-src 'self' data:; frame-ancestors 'none'; form-action 'self'; object-src 'none'
   X-Content-Type-Options: nosniff
   X-Frame-Options: DENY
   Referrer-Policy: strict-origin-when-cross-origin
   Strict-Transport-Security: max-age=31536000; includeSubDomains; preload
   Permissions-Policy: camera=(), microphone=(), geolocation=()
+
+# Vite emits content-hashed filenames under /assets/, so they can be
+# cached indefinitely — a content change produces a new filename.
+/assets/*
+  Cache-Control: public, max-age=31536000, immutable
+
+# Screenshots have stable filenames (re-captured by a workflow), so cap
+# the browser cache at an hour — Cloudflare purges its edge on deploy.
+/screenshots/*
+  Cache-Control: public, max-age=3600

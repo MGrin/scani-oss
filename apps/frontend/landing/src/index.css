@@ -68,48 +68,9 @@ body {
     transform: translateY(0);
   }
 
-  /* Hero block: same shape, shorter duration, fires on mount. */
-  [data-reveal='hero'] {
-    opacity: 0;
-    transform: translateY(8px);
-    transition: opacity 0.5s ease-out, transform 0.5s ease-out;
-  }
-  [data-reveal='hero'][data-revealed='true'] {
-    opacity: 1;
-    transform: translateY(0);
-  }
-  /* Stagger the children of the hero so the badge, h1, subhead, and
-   * CTAs cascade in instead of arriving together. The badge fires
-   * first; each subsequent child waits an extra 80ms. */
-  [data-reveal='hero'] > * {
-    transition-delay: 0ms;
-  }
-  [data-reveal='hero'][data-revealed='true'] > *:nth-child(1) {
-    animation: heroFadeUp 0.5s ease-out 0ms both;
-  }
-  [data-reveal='hero'][data-revealed='true'] > *:nth-child(2) {
-    animation: heroFadeUp 0.5s ease-out 80ms both;
-  }
-  [data-reveal='hero'][data-revealed='true'] > *:nth-child(3) {
-    animation: heroFadeUp 0.5s ease-out 160ms both;
-  }
-  [data-reveal='hero'][data-revealed='true'] > *:nth-child(4) {
-    animation: heroFadeUp 0.5s ease-out 240ms both;
-  }
-  [data-reveal='hero'][data-revealed='true'] > *:nth-child(5) {
-    animation: heroFadeUp 0.5s ease-out 320ms both;
-  }
-
-  @keyframes heroFadeUp {
-    from {
-      opacity: 0;
-      transform: translateY(8px);
-    }
-    to {
-      opacity: 1;
-      transform: translateY(0);
-    }
-  }
+  /* The hero is intentionally NOT reveal-animated: it is the Largest
+   * Contentful Paint element, so it must paint at first paint rather
+   * than wait for hydration to flip an opacity gate. */
 
   /* Problem-section chips: stagger inside the card after the card
    * itself has revealed. Uses CSS custom property `--reveal-index`

@@ -30,11 +30,27 @@ function outputFile(routePath: string): string {
   return join(DIST, `${routePath.replace(/^\/+/, '')}.html`);
 }
 
+// Inlines the built stylesheet into the template so the first paint is
+// not blocked on a separate CSS request — the main FCP/LCP lever for a
+// prerendered page. The hashed <link> is replaced by a <style> block.
+async function inlineStylesheets(html: string): Promise<string> {
+  let out = html;
+  const linkRe = /<link[^>]*rel="stylesheet"[^>]*href="(\/assets\/[^"]+\.css)"[^>]*>/g;
+  for (const match of html.matchAll(linkRe)) {
+    const href = match[1];
+    if (!href) continue;
+    const css = await readFile(join(DIST, href.replace(/^\//, '')), 'utf8');
+    out = out.replace(match[0], `<style>${css}</style>`);
+  }
+  return out;
+}
+
 async function main(): Promise<void> {
-  const template = await readFile(join(DIST, 'index.html'), 'utf8');
-  if (!template.includes('<div id="root"></div>')) {
+  const rawTemplate = await readFile(join(DIST, 'index.html'), 'utf8');
+  if (!rawTemplate.includes('<div id="root"></div>')) {
     throw new Error('dist/index.html has no empty <div id="root"> to inject into');
   }
+  const template = await inlineStylesheets(rawTemplate);
 
   const vite = await createServer({
     root: LANDING_ROOT,
