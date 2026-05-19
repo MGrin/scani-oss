@@ -1,13 +1,15 @@
 import { StrictMode } from 'react';
-import { hydrateRoot } from 'react-dom/client';
+import { createRoot } from 'react-dom/client';
 import { App } from './App';
 import './index.css';
 
-// hydrateRoot (not createRoot): the page ships fully prerendered, so we
-// adopt the existing DOM instead of discarding and repainting it — that
-// repaint was pushing Largest Contentful Paint well past First Paint.
-hydrateRoot(
-  document.getElementById('root') as HTMLElement,
+// createRoot (not hydrateRoot): the prerendered markup is re-rendered
+// from scratch on the client. hydrateRoot adopts the existing DOM and is
+// marginally faster for LCP, but it is sensitive to server/client
+// divergence — a hydration failure left every scroll-revealed section
+// stuck invisible on Safari. createRoot always mounts cleanly, so we
+// trade the small LCP win for a render path that cannot break.
+createRoot(document.getElementById('root') as HTMLElement).render(
   <StrictMode>
     <App />
   </StrictMode>
