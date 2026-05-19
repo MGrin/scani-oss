@@ -874,6 +874,12 @@ jobs:
           SENTRY_ORG: ${{ secrets.SENTRY_ORG }}
           SENTRY_RELEASE: ${{ github.sha }}
           SENTRY_ENVIRONMENT: production
+          # PostHog — read-only product analytics for /platform/posthog.
+          # Personal API key + numeric project id reused from the Terraform
+          # secrets; POSTHOG_HOST is the EU app host the dashboards live on.
+          POSTHOG_API_KEY: ${{ secrets.POSTHOG_PERSONAL_API_KEY }}
+          POSTHOG_PROJECT_ID: ${{ secrets.POSTHOG_PROJECT_ID }}
+          POSTHOG_HOST: https://eu.posthog.com
         run: |
           cd apps/frontend/admin
           # Push every non-empty secret; Wrangler's `secret put` is upsert.
@@ -898,7 +904,8 @@ jobs:
                    ADMIN_SESSION_SECRET \
                    ADMIN_JOBS_HMAC_SECRET ADMIN_WRITES_ENABLED BACKEND_BASE_URL \
                    NEXT_PUBLIC_SENTRY_DSN SENTRY_AUTH_TOKEN SENTRY_ORG \
-                   SENTRY_RELEASE SENTRY_ENVIRONMENT; do
+                   SENTRY_RELEASE SENTRY_ENVIRONMENT \
+                   POSTHOG_API_KEY POSTHOG_PROJECT_ID POSTHOG_HOST; do
             sync_secret "$n" "${!n}"
           done
 
