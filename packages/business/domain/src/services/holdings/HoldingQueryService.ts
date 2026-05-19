@@ -8,6 +8,7 @@ import { GroupRepository } from '../../repositories/GroupRepository';
 import { HoldingApyConfigRepository } from '../../repositories/HoldingApyConfigRepository';
 import { HoldingCoverageRepository } from '../../repositories/HoldingCoverageRepository';
 import { HoldingRepository } from '../../repositories/HoldingRepository';
+import { PortfolioValueDailyRepository } from '../../repositories/PortfolioValueDailyRepository';
 import { BaseService } from '../BaseService';
 import { PortfolioValuationService } from '../portfolio/PortfolioValuationService';
 
@@ -38,6 +39,7 @@ export class HoldingQueryService extends BaseService {
   private readonly holdingApyConfigRepository = Container.get(HoldingApyConfigRepository);
   private readonly holdingCoverageRepository = Container.get(HoldingCoverageRepository);
   private readonly portfolioValuationService = Container.get(PortfolioValuationService);
+  private readonly portfolioValueDailyRepository = Container.get(PortfolioValueDailyRepository);
 
   constructor() {
     super('HoldingQueryService');
@@ -58,7 +60,7 @@ export class HoldingQueryService extends BaseService {
       'Getting holdings with details'
     );
 
-    const [holdingsWithFullDetails, portfolioValue] = await Promise.all([
+    const [holdingsWithFullDetails, portfolioValue, costBasisMap] = await Promise.all([
       this.holdingRepository.findByUserWithFullDetails(
         user.id,
         accountId,
@@ -71,6 +73,7 @@ export class HoldingQueryService extends BaseService {
         accountId,
         requestCache
       ),
+      this.portfolioValueDailyRepository.findLatestHoldingCostBasis(user.id, user.baseCurrencyId),
     ]);
 
     if (holdingsWithFullDetails.length === 0) {
@@ -129,13 +132,13 @@ export class HoldingQueryService extends BaseService {
                 .toDecimalPlaces(4)
                 .toNumber();
 
-        // Cost basis is intentionally `currentValue` — a simplified
-        // placeholder. Real FIFO cost basis lives in
-        // `BalanceAtTimeService.getCostBasisFIFO` and is too expensive for
-        // the list view. Using `opening_balance × currentPrice` here as a
-        // proxy would produce near-zero gain/loss for every historical
-        // holding, which is *more* misleading than the honest stub.
-        const costBasis = currentValue;
+        // Cost basis comes from the latest portfolio_value_daily
+        // holding-scope rollup row (transfer-aware FIFO, in the user's
+        // base currency). Falls back to current value — a flat 0 gain —
+        // only when the rollup hasn't produced a row for this holding
+        // yet, rather than fabricating a number.
+        const cachedCostBasis = costBasisMap.get(holding.id);
+        const costBasis = cachedCostBasis !== undefined ? cachedCostBasis : currentValue;
 
         let priceInfo = priceMetadataMap.get(token.symbol);
 

@@ -13,6 +13,7 @@ import { useAccountActions } from '../../hooks/useAccountActions';
 import { useBaseCurrency } from '../../hooks/useBaseCurrency';
 import { V2_ROUTES } from '../../lib/routes';
 import { PortfolioCharts } from '../dashboard/PortfolioCharts';
+import { AccountTransactionsList } from './AccountTransactionsList';
 
 interface AccountDetailContentProps {
   accountId: string;
@@ -224,6 +225,10 @@ export function AccountDetailContent({ accountId, mode = 'panel' }: AccountDetai
           </div>
         </div>
       )}
+
+      <Separator />
+
+      <AccountTransactionsList accountId={accountId} />
 
       <ConfirmDialog
         open={showDeleteConfirm}

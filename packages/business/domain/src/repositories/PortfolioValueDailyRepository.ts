@@ -147,6 +147,50 @@ export class PortfolioValueDailyRepository {
     }
   }
 
+  // Latest `scope_kind='holding'` cost basis per holding for a user, in
+  // the given base currency. Lets the holdings list / detail page show a
+  // real gain/loss instead of the value=cost placeholder. One indexed
+  // scan (idx_pvd_scope_user_date) with DISTINCT ON the newest snapshot.
+  // Holdings with no rollup row, or a row predating the PnL columns
+  // (cost_basis null), are simply absent from the map — the caller
+  // falls back to current value.
+  async findLatestHoldingCostBasis(
+    userId: string,
+    baseCurrencyId: string,
+    transaction?: DatabaseTransaction
+  ): Promise<Map<string, number>> {
+    try {
+      const db = this.getDb(transaction);
+      const rows = await db
+        .selectDistinctOn([schema.portfolioValueDaily.scopeId], {
+          holdingId: schema.portfolioValueDaily.scopeId,
+          costBasis: schema.portfolioValueDaily.costBasis,
+        })
+        .from(schema.portfolioValueDaily)
+        .where(
+          and(
+            eq(schema.portfolioValueDaily.userId, userId),
+            eq(schema.portfolioValueDaily.scopeKind, 'holding'),
+            eq(schema.portfolioValueDaily.baseCurrencyId, baseCurrencyId)
+          )
+        )
+        .orderBy(schema.portfolioValueDaily.scopeId, desc(schema.portfolioValueDaily.snapshotDate));
+      const out = new Map<string, number>();
+      for (const row of rows) {
+        if (row.costBasis == null) continue;
+        const n = Number(row.costBasis);
+        if (Number.isFinite(n)) out.set(row.holdingId, n);
+      }
+      return out;
+    } catch (error) {
+      this.logger.error(
+        { userId, baseCurrencyId, error: error instanceof Error ? error.message : error },
+        'Failed to find latest holding cost basis'
+      );
+      throw error;
+    }
+  }
+
   // Fetch only the rows whose snapshot_date is in `dates`. Used by the
   // bucketed chart query: we compute bucket-end dates client-side, then
   // pull just those rows from the cache instead of loading every day in

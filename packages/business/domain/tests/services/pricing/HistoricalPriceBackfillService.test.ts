@@ -8,7 +8,10 @@ import type { PriceQuote } from '@scani/providers/core/types';
 import { Container } from 'typedi';
 import { TokenPriceRepository } from '../../../src/repositories/TokenPriceRepository';
 import { TokenRepository } from '../../../src/repositories/TokenRepository';
-import { HistoricalPriceBackfillService } from '../../../src/services/pricing/HistoricalPriceBackfillService';
+import {
+  filterProvidersByTokenType,
+  HistoricalPriceBackfillService,
+} from '../../../src/services/pricing/HistoricalPriceBackfillService';
 
 // Stubs leak across files because typedi's Container is process-global.
 // After this suite, restore real @Service() instances so a later
@@ -231,5 +234,49 @@ describe('HistoricalPriceBackfillService.backfillOne', () => {
     expect(r.status).toBe('inserted');
     expect(r.providerUsed).toBe('fallback');
     expect(captured).toHaveLength(1);
+  });
+});
+
+describe('filterProvidersByTokenType', () => {
+  const ALL = [
+    { providerKey: 'yahoo-finance' },
+    { providerKey: 'finnhub' },
+    { providerKey: 'defillama' },
+    { providerKey: 'coingecko' },
+    { providerKey: 'kraken' },
+    { providerKey: 'binance' },
+  ];
+  const keys = (ps: readonly { providerKey: string }[]): string[] => ps.map((p) => p.providerKey);
+
+  test('a stock token is NOT offered crypto providers', () => {
+    // The BLK incident: DeFiLlama returned a same-ticker memecoin price
+    // for the BlackRock stock, oscillating the chart.
+    const out = keys(filterProvidersByTokenType(ALL, 'stock'));
+    expect(out).not.toContain('defillama');
+    expect(out).not.toContain('coingecko');
+    expect(out).not.toContain('kraken');
+    expect(out).not.toContain('binance');
+    expect(out).toContain('yahoo-finance');
+    expect(out).toContain('finnhub');
+  });
+
+  test('a fiat token is NOT offered crypto providers', () => {
+    const out = keys(filterProvidersByTokenType(ALL, 'fiat'));
+    expect(out).not.toContain('defillama');
+    expect(out).not.toContain('coingecko');
+    expect(out).toContain('yahoo-finance');
+  });
+
+  test('a crypto token IS offered crypto providers but NOT equity providers', () => {
+    const out = keys(filterProvidersByTokenType(ALL, 'crypto'));
+    expect(out).toContain('defillama');
+    expect(out).toContain('coingecko');
+    expect(out).not.toContain('yahoo-finance');
+    expect(out).not.toContain('finnhub');
+  });
+
+  test('unknown / null type keeps every provider (best-effort)', () => {
+    expect(keys(filterProvidersByTokenType(ALL, null))).toEqual(keys(ALL));
+    expect(keys(filterProvidersByTokenType(ALL, 'other'))).toEqual(keys(ALL));
   });
 });

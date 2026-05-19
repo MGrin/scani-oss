@@ -120,6 +120,13 @@
       "when": 1778320000000,
       "tag": "0016_ibkr_segment_token_dedup",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1778330000000,
+      "tag": "0017_purge_crosstype_price_pollution",
+      "breakpoints": true
     }
   ]
 }

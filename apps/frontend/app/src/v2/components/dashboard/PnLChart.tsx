@@ -99,7 +99,7 @@ export function PnLChart({
 
   const chartData = useMemo(() => {
     const rows = (data?.series ?? []) as PnLPoint[];
-    return rows.map((r) => ({
+    const mapped = rows.map((r) => ({
       date: r.date,
       totalPnl: r.totalPnl != null ? Number(r.totalPnl) : null,
       realized: r.realizedPnl != null ? Number(r.realizedPnl) : null,
@@ -109,6 +109,26 @@ export function PnLChart({
       coverageQuality: r.coverageQuality,
       holdingsTotal: r.holdingsTotal,
       holdingsKnown: r.holdingsWithKnownValue,
+    }));
+    // Re-base to the start of the selected window: the series carries
+    // cumulative-since-inception PnL, so subtract the first in-range
+    // point's cumulative values from every point. The chart then starts
+    // at 0 and shows PnL *change over the window*, and the period
+    // selector visibly drives both chart and headline. The identity
+    // totalPnl = realized + unrealized is preserved (each component is
+    // re-based against its own baseline).
+    const base = mapped.find(
+      (p) => p.totalPnl != null && p.realized != null && p.unrealized != null
+    );
+    if (!base) return mapped;
+    const baseTotal = base.totalPnl ?? 0;
+    const baseRealized = base.realized ?? 0;
+    const baseUnrealized = base.unrealized ?? 0;
+    return mapped.map((p) => ({
+      ...p,
+      totalPnl: p.totalPnl != null ? p.totalPnl - baseTotal : null,
+      realized: p.realized != null ? p.realized - baseRealized : null,
+      unrealized: p.unrealized != null ? p.unrealized - baseUnrealized : null,
     }));
   }, [data]);
 

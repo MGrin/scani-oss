@@ -14,6 +14,14 @@ import { TokenRepository } from '../../repositories/TokenRepository';
 // CoinGecko / DeFiLlama / Kraken / Binance instead.
 const EQUITY_ONLY_PROVIDER_KEYS = new Set(['yahoo-finance', 'finnhub']);
 
+// Providers whose universe is crypto only — they MUST NOT be asked to
+// price stock or fiat tokens. DeFiLlama / CoinGecko match by ticker and
+// return a same-symbol memecoin's price for an equity (DeFiLlama
+// returned ~$0.04 for the stock BLK, oscillating the chart against the
+// correct Yahoo ~$1000 row — prod incident 2026-05). Kraken / Binance
+// only cover exchange-listed crypto pairs.
+const CRYPTO_ONLY_PROVIDER_KEYS = new Set(['defillama', 'coingecko', 'kraken', 'binance']);
+
 export interface BackfillOneResult {
   tokenId: string;
   baseTokenId: string;
@@ -92,7 +100,10 @@ export class HistoricalPriceBackfillService {
 
     const ctx: ProviderContext = { baseCurrency: baseToken, timestamp: at };
     const registry = Container.get(ProviderRegistry);
-    const providers = filterEquityOnly(registry.getHistoricalPricers(token), token.typeCode);
+    const providers = filterProvidersByTokenType(
+      registry.getHistoricalPricers(token),
+      token.typeCode
+    );
 
     if (providers.length === 0) {
       return {
@@ -212,7 +223,10 @@ export class HistoricalPriceBackfillService {
 
     const ctx: ProviderContext = { baseCurrency: baseToken, timestamp: to };
     const registry = Container.get(ProviderRegistry);
-    const providers = filterEquityOnly(registry.getHistoricalPricers(token), token.typeCode);
+    const providers = filterProvidersByTokenType(
+      registry.getHistoricalPricers(token),
+      token.typeCode
+    );
     if (providers.length === 0) {
       return { ...empty, providerMissing: neededDays.length };
     }
@@ -306,17 +320,26 @@ export class HistoricalPriceBackfillService {
   }
 }
 
-// Drop equity-only providers (Yahoo, Finnhub) when the token is
-// crypto. Their `canPrice` regexes can't tell ETH-the-coin from
-// ETH-the-ETF, and Finnhub/Yahoo will happily return ~$22 for
-// "ETH" because some Ethereum-themed equity matches the ticker.
-// Only the price-backfill site has cheap access to typeCode (the
-// service does a `findWithType` lookup right before this call), so
-// the filter lives here rather than in each provider's canPrice.
-function filterEquityOnly<P extends { providerKey: string }>(
+// Restrict the historical-pricer list to providers whose asset
+// universe matches the token's type. Equity providers can't tell
+// ETH-the-coin from ETH-the-ETF; crypto providers match a stock
+// ticker to a same-symbol coin. typeCode is cheaply available here
+// (the service does a `findWithType` lookup right before this call),
+// so the filter lives here rather than in each provider's canPrice.
+// Unknown / 'other' / 'private-company' types keep every provider —
+// best-effort, since none of the type-specific hazards apply.
+//
+// Exported for unit testing — the pure routing decision is the part
+// worth covering directly.
+export function filterProvidersByTokenType<P extends { providerKey: string }>(
   providers: readonly P[],
   typeCode: string | null | undefined
 ): readonly P[] {
-  if (typeCode !== 'crypto') return providers;
-  return providers.filter((p) => !EQUITY_ONLY_PROVIDER_KEYS.has(p.providerKey));
+  if (typeCode === 'crypto') {
+    return providers.filter((p) => !EQUITY_ONLY_PROVIDER_KEYS.has(p.providerKey));
+  }
+  if (typeCode === 'stock' || typeCode === 'fiat') {
+    return providers.filter((p) => !CRYPTO_ONLY_PROVIDER_KEYS.has(p.providerKey));
+  }
+  return providers;
 }
