@@ -10,16 +10,16 @@
 #    handful of Tailwind class-state animations. Tightening to nonces
 #    is a follow-up.
 #  - `connect-src` lists every origin the app legitimately talks to:
-#    the backend API (api.scani.xyz, with its WebSocket sibling), Sentry
-#    ingest (*.ingest.sentry.io / *.sentry.io), and Cloudflare R2 buckets
-#    for presigned uploads. Wide `https:` was a first-deploy convenience;
-#    a successful XSS payload would otherwise be able to exfiltrate to
-#    any HTTPS origin.
+#    the backend API (api.scani.xyz, with its WebSocket sibling), PostHog
+#    analytics ingest (*.i.posthog.com), Sentry ingest (*.ingest.sentry.io
+#    / *.sentry.io), and Cloudflare R2 buckets for presigned uploads. Wide
+#    `https:` was a first-deploy convenience; a successful XSS payload
+#    would otherwise be able to exfiltrate to any HTTPS origin.
 #  - `frame-ancestors 'none'` is the modern equivalent of X-Frame-Options:
 #    DENY; both are sent to cover legacy browsers.
 
 /*
-  Content-Security-Policy: default-src 'self'; base-uri 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; connect-src 'self' https://api.scani.xyz wss://api.scani.xyz https://*.sentry.io https://*.ingest.sentry.io https://*.r2.cloudflarestorage.com; font-src 'self' data:; frame-ancestors 'none'; form-action 'self'; object-src 'none'
+  Content-Security-Policy: default-src 'self'; base-uri 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; connect-src 'self' https://api.scani.xyz wss://api.scani.xyz https://*.i.posthog.com https://*.sentry.io https://*.ingest.sentry.io https://*.r2.cloudflarestorage.com; font-src 'self' data:; frame-ancestors 'none'; form-action 'self'; object-src 'none'
   X-Content-Type-Options: nosniff
   X-Frame-Options: DENY
   Referrer-Policy: strict-origin-when-cross-origin

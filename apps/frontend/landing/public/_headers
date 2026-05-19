@@ -4,10 +4,11 @@
 # nosniff, HSTS) as the apps.
 #
 # `connect-src` includes api.cloud.scani.xyz so the beta-preview
-# waitlist form can POST to /trpc/waitlist.join.
+# waitlist form can POST to /trpc/waitlist.join, and *.i.posthog.com
+# so posthog-js can ship product-analytics events.
 
 /*
-  Content-Security-Policy: default-src 'self'; base-uri 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; connect-src 'self' https://api.cloud.scani.xyz https://*.sentry.io https://*.ingest.sentry.io; font-src 'self' data:; frame-ancestors 'none'; form-action 'self'; object-src 'none'
+  Content-Security-Policy: default-src 'self'; base-uri 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; connect-src 'self' https://api.cloud.scani.xyz https://*.i.posthog.com https://*.sentry.io https://*.ingest.sentry.io; font-src 'self' data:; frame-ancestors 'none'; form-action 'self'; object-src 'none'
   X-Content-Type-Options: nosniff
   X-Frame-Options: DENY
   Referrer-Policy: strict-origin-when-cross-origin
