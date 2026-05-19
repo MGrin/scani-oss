@@ -1,4 +1,4 @@
-import { PORTFOLIO_HISTORY_BACKFILL } from '@scani/jobs';
+import { PORTFOLIO_HISTORY_BACKFILL, PORTFOLIO_HISTORY_LOOKBACK_DAYS } from '@scani/jobs';
 import { BullMqEnqueueService } from '@scani/queue';
 import { Container } from 'typedi';
 
@@ -30,7 +30,7 @@ export async function enqueuePortfolioRollup(userId: string): Promise<void> {
       userId,
       requestId,
       tokenIds: [],
-      lookbackDays: 365,
+      lookbackDays: PORTFOLIO_HISTORY_LOOKBACK_DAYS,
     });
   } catch {
     // swallow — nightly cron + next mutation will catch up.

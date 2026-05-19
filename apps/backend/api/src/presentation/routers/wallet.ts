@@ -11,7 +11,12 @@ import {
 } from '@scani/domain/repositories';
 import { WalletDiscoveryService } from '@scani/domain/services';
 import { ImportWalletAddressUseCase, type WalletReviewChain } from '@scani/domain/use-cases';
-import { PORTFOLIO_HISTORY_BACKFILL, TRANSACTION_IMPORT, WALLET_IMPORT } from '@scani/jobs';
+import {
+  PORTFOLIO_HISTORY_BACKFILL,
+  PORTFOLIO_HISTORY_LOOKBACK_DAYS,
+  TRANSACTION_IMPORT,
+  WALLET_IMPORT,
+} from '@scani/jobs';
 import { createComponentLogger } from '@scani/logging';
 import { BullMqEnqueueService } from '@scani/queue';
 import { emitEntityChange } from '@scani/realtime';
@@ -228,7 +233,7 @@ export const walletRouter = router({
             userId: dbUser.id,
             requestId: randomUUID(),
             tokenIds: [],
-            lookbackDays: 365,
+            lookbackDays: PORTFOLIO_HISTORY_LOOKBACK_DAYS,
           });
         } catch (err) {
           logger.warn(

@@ -21,7 +21,7 @@ import {
   UserJobRepository,
 } from '@scani/domain/repositories';
 import { HIDE_CLOSED_HOLDINGS_STALE_DAYS } from '@scani/domain/use-cases';
-import { PORTFOLIO_HISTORY_BACKFILL } from '@scani/jobs';
+import { PORTFOLIO_HISTORY_BACKFILL, PORTFOLIO_HISTORY_LOOKBACK_DAYS } from '@scani/jobs';
 import { BullMqEnqueueService } from '@scani/queue';
 import { TRPCError } from '@trpc/server';
 import Decimal from 'decimal.js';
@@ -498,12 +498,12 @@ export const portfolioRouter = router({
   // the nightly cron runs, but on demand. Wired up to a "Recompute
   // portfolio history" button in Settings so users can rebuild the
   // chart cache after import / data fixes without waiting for 04:00
-  // UTC. Always passes lookbackDays=365 (the deepest the rollup is
-  // configured to handle) so a single click rebuilds everything,
-  // not just the recent tail. If a backfill is already in flight for
-  // this user we return that jobId instead of stacking duplicates —
-  // each run is heavy (16K+ provider lookups) and the worker advisory
-  // lock would skip the duplicate anyway.
+  // UTC. Passes PORTFOLIO_HISTORY_LOOKBACK_DAYS so a single click
+  // rebuilds the whole window the charts can show — it must exceed the
+  // 1Y chart range or the chart's oldest point reads a stale row. If a
+  // backfill is already in flight for this user we return that jobId
+  // instead of stacking duplicates — each run is heavy (16K+ provider
+  // lookups) and the worker advisory lock would skip the duplicate.
   recomputeHistory: protectedProcedure.mutation(async ({ ctx }) => {
     const { dbUser } = await requireAuth(ctx);
     const userJobs = Container.get(UserJobRepository);
@@ -515,7 +515,7 @@ export const portfolioRouter = router({
       userId: dbUser.id,
       requestId: randomUUID(),
       tokenIds: [],
-      lookbackDays: 365,
+      lookbackDays: PORTFOLIO_HISTORY_LOOKBACK_DAYS,
     });
     return { jobId, deduplicated: false } as const;
   }),

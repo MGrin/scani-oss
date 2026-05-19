@@ -2,6 +2,7 @@ import { TransactionImportCoordinator, TransactionImportUnrecoverableError } fro
 import { HoldingRepository, PortfolioValueDailyRepository } from '@scani/domain/repositories';
 import {
   PORTFOLIO_HISTORY_BACKFILL,
+  PORTFOLIO_HISTORY_LOOKBACK_DAYS,
   TRANSACTION_IMPORT,
   type TransactionImportJob,
 } from '@scani/jobs';
@@ -31,10 +32,10 @@ const ROLLUP_COALESCE_WINDOW_MS = 5 * 60_000;
 // transaction whose date barely predates the last rollup row still
 // gets re-priced.
 const LOOKBACK_SAFETY_PAD_DAYS = 7;
-// Hard ceiling; a fresh user (no rollup rows yet) still backfills a
-// year by default. Worker can override via PORTFOLIO_HISTORY_LOOKBACK
-// env if the user wants longer history.
-const LOOKBACK_DEFAULT_DAYS = 365;
+// Hard ceiling; a fresh user (no rollup rows yet) backfills the full
+// chart window. Shares PORTFOLIO_HISTORY_LOOKBACK_DAYS so the post-
+// import backfill reaches at least as deep as the 1Y chart range.
+const LOOKBACK_DEFAULT_DAYS = PORTFOLIO_HISTORY_LOOKBACK_DAYS;
 const LOOKBACK_MIN_DAYS = 1;
 
 // Dispatches a single transaction-import to TransactionImportCoordinator,

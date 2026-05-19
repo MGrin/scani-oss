@@ -1,5 +1,5 @@
 import { describe, expect, it, mock } from 'bun:test';
-import { PORTFOLIO_HISTORY_BACKFILL } from '@scani/jobs';
+import { PORTFOLIO_HISTORY_BACKFILL, PORTFOLIO_HISTORY_LOOKBACK_DAYS } from '@scani/jobs';
 import {
   LOCK_HELD_RETRY_DELAY_MS,
   LOCK_HELD_RETRY_REQUEST_ID,
@@ -18,7 +18,7 @@ describe('scheduleLockHeldRetry', () => {
       userId: 'user-1',
       requestId: LOCK_HELD_RETRY_REQUEST_ID,
       tokenIds: [],
-      lookbackDays: 365,
+      lookbackDays: PORTFOLIO_HISTORY_LOOKBACK_DAYS,
     });
     expect(opts).toEqual({ delay: LOCK_HELD_RETRY_DELAY_MS });
   });
@@ -28,13 +28,13 @@ describe('scheduleLockHeldRetry', () => {
       userId: 'user-1',
       requestId: LOCK_HELD_RETRY_REQUEST_ID,
       tokenIds: [],
-      lookbackDays: 365,
+      lookbackDays: PORTFOLIO_HISTORY_LOOKBACK_DAYS,
     });
     const jobIdB = PORTFOLIO_HISTORY_BACKFILL.computeJobId({
       userId: 'user-1',
       requestId: LOCK_HELD_RETRY_REQUEST_ID,
       tokenIds: [],
-      lookbackDays: 365,
+      lookbackDays: PORTFOLIO_HISTORY_LOOKBACK_DAYS,
     });
     expect(jobIdA).toBe(jobIdB);
 
@@ -42,7 +42,7 @@ describe('scheduleLockHeldRetry', () => {
       userId: 'user-2',
       requestId: LOCK_HELD_RETRY_REQUEST_ID,
       tokenIds: [],
-      lookbackDays: 365,
+      lookbackDays: PORTFOLIO_HISTORY_LOOKBACK_DAYS,
     });
     expect(otherUser).not.toBe(jobIdA);
   });

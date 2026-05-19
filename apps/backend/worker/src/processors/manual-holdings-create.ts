@@ -11,6 +11,7 @@ import {
   MANUAL_HOLDINGS_CREATE,
   type ManualHoldingsCreateJob,
   PORTFOLIO_HISTORY_BACKFILL,
+  PORTFOLIO_HISTORY_LOOKBACK_DAYS,
 } from '@scani/jobs';
 import { createComponentLogger } from '@scani/logging';
 import { BullMqEnqueueService, type ProcessorContext, UserJobProcessor } from '@scani/queue';
@@ -22,7 +23,7 @@ import { Container, Service } from 'typedi';
 // follow-up job fast (one provider call per token per ~year of data)
 // while giving the chart a meaningful 1Y view immediately. Older history
 // is filled in by the nightly 1825-day cron sweep.
-const MANUAL_BACKFILL_LOOKBACK_DAYS = 365;
+const MANUAL_BACKFILL_LOOKBACK_DAYS = PORTFOLIO_HISTORY_LOOKBACK_DAYS;
 
 const logger = createComponentLogger('processor:manual-holdings-create');
 

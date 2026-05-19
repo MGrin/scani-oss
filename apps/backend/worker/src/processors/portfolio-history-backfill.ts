@@ -6,7 +6,11 @@ import {
   LinkTransferPairsUseCase,
   RollupPortfolioValueDailyUseCase,
 } from '@scani/domain/use-cases';
-import { PORTFOLIO_HISTORY_BACKFILL, type PortfolioHistoryBackfillJob } from '@scani/jobs';
+import {
+  PORTFOLIO_HISTORY_BACKFILL,
+  PORTFOLIO_HISTORY_LOOKBACK_DAYS,
+  type PortfolioHistoryBackfillJob,
+} from '@scani/jobs';
 import { createComponentLogger } from '@scani/logging';
 import { BullMqEnqueueService, type ProcessorContext, UserJobProcessor } from '@scani/queue';
 import { emitEntityChange } from '@scani/realtime';
@@ -37,11 +41,11 @@ export async function scheduleLockHeldRetry(
     {
       userId,
       requestId: LOCK_HELD_RETRY_REQUEST_ID,
-      // Empty tokenIds + max lookback so the retry catches everything
+      // Empty tokenIds + full lookback so the retry catches everything
       // the original triggers were meant to cover, regardless of who
       // first hit the lock.
       tokenIds: [],
-      lookbackDays: 365,
+      lookbackDays: PORTFOLIO_HISTORY_LOOKBACK_DAYS,
     },
     { delay: LOCK_HELD_RETRY_DELAY_MS }
   );

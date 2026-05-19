@@ -5,6 +5,7 @@ import {
   EXCHANGE_IMPORT,
   type ExchangeImportJob,
   PORTFOLIO_HISTORY_BACKFILL,
+  PORTFOLIO_HISTORY_LOOKBACK_DAYS,
   TRANSACTION_IMPORT,
 } from '@scani/jobs';
 import { createComponentLogger } from '@scani/logging';
@@ -178,7 +179,7 @@ export class ExchangeImportProcessor extends UserJobProcessor<ExchangeImportJob,
           userId: data.userId,
           requestId: `exchange-import-${bucket}`,
           tokenIds: [],
-          lookbackDays: 365,
+          lookbackDays: PORTFOLIO_HISTORY_LOOKBACK_DAYS,
         });
       } catch (error) {
         logger.warn(

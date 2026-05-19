@@ -10,7 +10,12 @@ import {
 import { CsvColumnDetectionService, HoldingService } from '@scani/domain/services';
 import { parseStatement } from '@scani/file-import';
 import { StatementTransactionIngester } from '@scani/ingesters';
-import { FILE_IMPORT, type FileImportJob, PORTFOLIO_HISTORY_BACKFILL } from '@scani/jobs';
+import {
+  FILE_IMPORT,
+  type FileImportJob,
+  PORTFOLIO_HISTORY_BACKFILL,
+  PORTFOLIO_HISTORY_LOOKBACK_DAYS,
+} from '@scani/jobs';
 import { createComponentLogger } from '@scani/logging';
 import { BullMqEnqueueService, type ProcessorContext, UserJobProcessor } from '@scani/queue';
 import { Container, Service } from 'typedi';
@@ -281,7 +286,7 @@ export class FileImportProcessor extends UserJobProcessor<FileImportJob, FileImp
           userId: data.userId,
           requestId: randomUUID(),
           tokenIds,
-          lookbackDays: 365,
+          lookbackDays: PORTFOLIO_HISTORY_LOOKBACK_DAYS,
         });
       } catch (err) {
         logger.warn(
