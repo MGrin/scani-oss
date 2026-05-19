@@ -11,6 +11,7 @@ import { ScaniLogo } from '../ScaniLogo';
 const NAV_LINKS: ReadonlyArray<{ label: string; href: string }> = [
   { label: 'Product', href: '/#product' },
   { label: 'Tiers', href: '/#tiers' },
+  { label: 'Compare', href: '/alternatives' },
   { label: 'Beta', href: '/#beta' },
 ];
 

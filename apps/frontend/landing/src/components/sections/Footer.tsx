@@ -1,3 +1,4 @@
+import { COMPARISONS } from '../../data/comparisons';
 import { ScaniLogo } from '../ScaniLogo';
 
 // GitHub + curated API-docs links are deliberately absent: the repo is
@@ -10,6 +11,13 @@ const COLUMNS: ReadonlyArray<{ label: string; links: { label: string; href: stri
     links: [
       { label: 'Open the app', href: 'https://app.scani.xyz' },
       { label: 'Cloud console', href: 'https://cloud.scani.xyz' },
+    ],
+  },
+  {
+    label: 'Compare',
+    links: [
+      { label: 'All alternatives', href: '/alternatives' },
+      ...COMPARISONS.map((c) => ({ label: `Scani vs ${c.competitor}`, href: `/vs/${c.slug}` })),
     ],
   },
   {
@@ -38,7 +46,7 @@ export function Footer() {
             Personal wealth, consolidated. Self-host or use ours.
           </p>
         </div>
-        <div className="grid gap-10 sm:grid-cols-3">
+        <div className="grid grid-cols-2 gap-10 sm:grid-cols-4">
           {COLUMNS.map((col) => (
             <div key={col.label}>
               <div className="text-xs font-medium uppercase tracking-widest text-muted-foreground">

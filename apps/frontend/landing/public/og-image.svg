@@ -23,10 +23,10 @@
     </text>
   </g>
 
-  <text x="80" y="340" font-family="Inter, system-ui, sans-serif" font-size="68" font-weight="600" fill="#f5f5f5">
+  <text x="80" y="340" font-family="Inter, system-ui, sans-serif" font-size="56" font-weight="600" fill="#f5f5f5">
     One dashboard for every asset,
   </text>
-  <text x="80" y="420" font-family="Inter, system-ui, sans-serif" font-size="68" font-weight="600" fill="#f5f5f5">
+  <text x="80" y="412" font-family="Inter, system-ui, sans-serif" font-size="56" font-weight="600" fill="#f5f5f5">
     every institution, every chain.
   </text>
   <text x="80" y="490" font-family="Inter, system-ui, sans-serif" font-size="28" fill="#a1a1aa">

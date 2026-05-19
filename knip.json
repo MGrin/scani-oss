@@ -28,6 +28,7 @@
       "project": ["src/**/*.{ts,tsx}"]
     },
     "apps/frontend/landing": {
+      "entry": ["src/entry-server.tsx"],
       "project": ["src/**/*.{ts,tsx}"]
     },
     "packages/business/domain": {
