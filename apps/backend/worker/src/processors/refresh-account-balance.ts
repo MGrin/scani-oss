@@ -1,3 +1,4 @@
+import { PortfolioValueCache } from '@scani/domain/services';
 import { RefreshAccountBalanceUseCase } from '@scani/domain/use-cases';
 import { REFRESH_ACCOUNT_BALANCE, type RefreshAccountBalanceJob } from '@scani/jobs';
 import { createComponentLogger } from '@scani/logging';
@@ -41,6 +42,10 @@ export class RefreshAccountBalanceProcessor extends UserJobProcessor<
         holdingId: data.holdingId,
         accountId: data.accountId,
       });
+
+      // A balance refresh can change the holding's balance — drop the
+      // user's cached portfolio valuation so the next read recomputes.
+      await Container.get(PortfolioValueCache).bust(data.userId);
 
       // Tell the WS pipe to reload the user's holdings list — the
       // entityId is the holdingId the user clicked from, but the

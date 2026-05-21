@@ -60,3 +60,26 @@ export async function invalidatePortfolioQueries(
     utils.groups.invalidate(undefined, { refetchType }),
   ]);
 }
+
+/**
+ * Narrower invalidation for vault-only mutations (create / update / delete a
+ * vault; attach / detach / re-weight a holding within one).
+ *
+ * Vaults are a savings-goal grouping layer — they never change holding
+ * balances, account balances, token prices, or net worth. So account totals,
+ * dashboard figures, asset allocation, institution summaries, and groups
+ * cannot change, and refetching them — especially the CPU-heavy `dashboard.*`
+ * whole-portfolio valuations — on every vault edit was pure waste that fed
+ * the backend's CPU-saturation outages. `holdings` is kept because a holding
+ * row surfaces its vault membership.
+ */
+export async function invalidateVaultQueries(
+  utils: TrpcUtils,
+  options: { refetchType?: 'all' | 'active' } = {}
+): Promise<void> {
+  const { refetchType = 'active' } = options;
+  await Promise.all([
+    utils.vaults.invalidate(undefined, { refetchType }),
+    utils.holdings.invalidate(undefined, { refetchType }),
+  ]);
+}

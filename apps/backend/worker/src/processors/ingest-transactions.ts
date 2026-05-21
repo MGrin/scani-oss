@@ -1,5 +1,6 @@
 import { TransactionImportCoordinator, TransactionImportUnrecoverableError } from '@scani/domain';
 import { HoldingRepository, PortfolioValueDailyRepository } from '@scani/domain/repositories';
+import { PortfolioValueCache } from '@scani/domain/services';
 import {
   PORTFOLIO_HISTORY_BACKFILL,
   PORTFOLIO_HISTORY_LOOKBACK_DAYS,
@@ -123,6 +124,10 @@ export class IngestTransactionsProcessor extends UserJobProcessor<TransactionImp
           transactions: result.transactions,
         },
       });
+
+      // Imported transactions changed holding balances — drop the user's
+      // cached portfolio valuation so the next read recomputes.
+      await Container.get(PortfolioValueCache).bust(data.userId);
     }
 
     return result;

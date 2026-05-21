@@ -6,10 +6,15 @@ import { and, eq, lt } from 'drizzle-orm';
 import { Container, Service } from 'typedi';
 import { SCAM_PROBABILITY_THRESHOLD } from '../../lib/constants';
 import { isIncludedInTotal } from '../../lib/holding-inclusion';
-import { getOrComputeFromCache } from '../../lib/request-cache';
+import {
+  createPortfolioCacheKey,
+  createPortfolioRedisKey,
+  getOrComputeFromCache,
+} from '../../lib/request-cache';
 import { TokenPriceRepository } from '../../repositories/TokenPriceRepository';
 import { PricingService } from '../pricing/PricingService';
 import { UserService } from '../users/UserService';
+import { PortfolioValueCache } from './PortfolioValueCache';
 
 // Type for request cache (shared with tRPC context)
 export type RequestCache = Map<string, unknown>;
@@ -76,6 +81,7 @@ export class PortfolioValuationService {
   private readonly pricingService = Container.get(PricingService);
   private readonly userService = Container.get(UserService);
   private readonly tokenPriceRepository = Container.get(TokenPriceRepository);
+  private readonly portfolioValueCache = Container.get(PortfolioValueCache);
 
   /**
    * Get user portfolio value with request-scoped caching
@@ -94,13 +100,23 @@ export class PortfolioValuationService {
     accountId?: string,
     requestCache?: RequestCache
   ): Promise<PortfolioValueResult> {
-    // Cache key is local to this service — keyed on (user, accountId) so
-    // sibling tRPC procedures in the same batch share one computation.
-    // accountId may be undefined (whole-portfolio view) which collapses
-    // to the same key correctly.
-    const cacheKey = accountId ? `portfolio:${userId}:${accountId}` : `portfolio:${userId}`;
-    return getOrComputeFromCache(requestCache, cacheKey, () =>
-      this.computePortfolioValue(userId, userBaseCurrencyId, accountId)
+    // Two cache layers wrap the (expensive) computation:
+    //   1. `requestCache` — dedupes sibling tRPC procedures within one
+    //      batch (e.g. dashboard.getOverview + getAssetAllocation).
+    //   2. `portfolioValueCache` — a short-TTL Redis cache shared across
+    //      requests and machines, so a burst of holdings/vault activity
+    //      reuses one computation instead of saturating the CPU.
+    return getOrComputeFromCache(
+      requestCache,
+      createPortfolioCacheKey(userId, accountId),
+      async () => {
+        const baseCurrencyId =
+          userBaseCurrencyId ?? (await this.userService.getBaseCurrency(userId)).id;
+        return this.portfolioValueCache.getOrCompute(
+          createPortfolioRedisKey(userId, accountId, baseCurrencyId),
+          () => this.computePortfolioValue(userId, userBaseCurrencyId, accountId)
+        );
+      }
     );
   }
 

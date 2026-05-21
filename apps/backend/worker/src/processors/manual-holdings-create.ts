@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { db } from '@scani/db/connection';
 import * as schema from '@scani/db/schema';
 import { UserJobRepository } from '@scani/domain/repositories';
-import { PortfolioValuationService } from '@scani/domain/services';
+import { PortfolioValuationService, PortfolioValueCache } from '@scani/domain/services';
 import {
   CreateHoldingsWithDependenciesUseCase,
   UpdateHoldingPriceUseCase,
@@ -248,7 +248,10 @@ export class ManualHoldingsCreateProcessor extends UserJobProcessor<
     );
 
     // Phase 4: portfolio valuation (best-effort — failure here doesn't
-    // invalidate the holdings the user just created).
+    // invalidate the holdings the user just created). Bust the cached
+    // valuation first so this recompute — and the user's next read —
+    // reflect the holdings created above instead of a stale total.
+    await Container.get(PortfolioValueCache).bust(data.userId);
     await ctx.reportStatus('Recomputing portfolio value…');
     try {
       await Container.get(PortfolioValuationService).getUserPortfolioValue(

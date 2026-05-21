@@ -15,7 +15,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { NumericFormat } from 'react-number-format';
 import { trpc } from '@/lib/trpc';
 import { FiatCurrencySelect } from '@/v2/components/shared/FiatCurrencySelect';
-import { invalidatePortfolioQueries } from '@/v2/hooks/invalidatePortfolioQueries';
+import { invalidateVaultQueries } from '@/v2/hooks/invalidatePortfolioQueries';
 
 const COLORS = [
   '#3b82f6',
@@ -146,7 +146,7 @@ export function VaultFormDialog({ open, onOpenChange, vaultId }: VaultFormDialog
           ? `Vault created with ${idsToAttach.length} holding(s)`
           : 'Vault created successfully'
       );
-      void invalidatePortfolioQueries(utils);
+      void invalidateVaultQueries(utils);
     },
     onError: (error) => showError(error, 'Failed to create vault'),
   });
@@ -155,7 +155,7 @@ export function VaultFormDialog({ open, onOpenChange, vaultId }: VaultFormDialog
     onSuccess: () => {
       onOpenChange(false);
       showSuccess('Vault updated successfully');
-      void invalidatePortfolioQueries(utils);
+      void invalidateVaultQueries(utils);
     },
     onError: (error) => showError(error, 'Failed to update vault'),
   });

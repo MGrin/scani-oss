@@ -1,5 +1,6 @@
 import crypto from 'node:crypto';
 import { ANALYTICS_EVENTS, AnalyticsService } from '@scani/analytics';
+import { PortfolioValueCache } from '@scani/domain/services';
 import { ImportExchangeAccountsUseCase, ImportIbkrAccountsUseCase } from '@scani/domain/use-cases';
 import {
   EXCHANGE_IMPORT,
@@ -134,6 +135,10 @@ export class ExchangeImportProcessor extends UserJobProcessor<ExchangeImportJob,
         userId: data.userId,
         data: { reason: 'exchange_import', holdingsAffected: result.holdings.length },
       });
+
+      // New holdings/balances were imported — drop the user's cached
+      // portfolio valuation so the next read recomputes.
+      await Container.get(PortfolioValueCache).bust(data.userId);
     }
 
     // Chain-enqueue transaction-import per account so /jobs shows each

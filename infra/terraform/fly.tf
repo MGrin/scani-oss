@@ -61,9 +61,11 @@ resource "fly_ip" "backend_v6" {
 # This guardrail runs in two passes:
 #   1. Destroy any machine carrying a `standby_for` config — that marker
 #      is only ever set during HA pair creation; a solo primary never has it.
-#   2. After purging standbys, scale to exactly 1 so any remaining zombies
-#      are removed. With `--ha=false` in the deploy flow and standbys
-#      purged first, this cannot accidentally kill the primary.
+#   2. After purging standbys, scale to exactly 2 — the backend runs a
+#      redundant pair (see apps/backend/api/fly.toml min/max_machines_running),
+#      so one saturated or unhealthy instance can't blackhole all traffic.
+#      With `--ha=false` in the deploy flow and standbys purged first, this
+#      only adds/removes plain machines to converge on the target count.
 resource "terraform_data" "backend_machine_count" {
   triggers_replace = [timestamp()]
 
@@ -78,8 +80,9 @@ resource "terraform_data" "backend_machine_count" {
         echo "Destroying standby machine $mid on $app"
         flyctl machine destroy "$mid" --app "$app" --force --yes
       done
-      # Then scale to 1.
-      flyctl scale count 1 --app "$app" --region sin --yes
+      # Then scale to 2 (matches apps/backend/api/fly.toml
+      # min/max_machines_running = 2 — a redundant pair).
+      flyctl scale count 2 --app "$app" --region sin --yes
     EOT
   }
 

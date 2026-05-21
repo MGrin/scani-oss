@@ -57,6 +57,7 @@ export {
   type PortfolioValueScope,
 } from './portfolio/PortfolioValuationAtTimeService';
 export { PortfolioValuationService } from './portfolio/PortfolioValuationService';
+export { PortfolioValueCache } from './portfolio/PortfolioValueCache';
 // pricing/
 export {
   type BalanceAtTimeResult,

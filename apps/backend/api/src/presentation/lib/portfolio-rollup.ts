@@ -1,3 +1,4 @@
+import { PortfolioValueCache } from '@scani/domain/services';
 import { PORTFOLIO_HISTORY_BACKFILL, PORTFOLIO_HISTORY_LOOKBACK_DAYS } from '@scani/jobs';
 import { BullMqEnqueueService } from '@scani/queue';
 import { Container } from 'typedi';
@@ -23,6 +24,10 @@ const ROLLUP_COALESCE_WINDOW_MS = 30_000;
  * day in the lookback window.
  */
 export async function enqueuePortfolioRollup(userId: string): Promise<void> {
+  // Drop the user's cached live valuation so the next read recomputes
+  // against current holdings instead of serving a pre-mutation total.
+  await Container.get(PortfolioValueCache).bust(userId);
+
   const bucket = Math.floor(Date.now() / ROLLUP_COALESCE_WINDOW_MS);
   const requestId = `mutation-${bucket}`;
   try {

@@ -13,7 +13,7 @@ import { showError, showSuccess } from '@scani/ui/ui/use-toast';
 import { useMemo, useState } from 'react';
 import { NumericFormat } from 'react-number-format';
 import { trpc } from '@/lib/trpc';
-import { invalidatePortfolioQueries } from '@/v2/hooks/invalidatePortfolioQueries';
+import { invalidateVaultQueries } from '@/v2/hooks/invalidatePortfolioQueries';
 
 interface AttachHoldingDialogProps {
   open: boolean;
@@ -49,7 +49,7 @@ export function AttachHoldingDialog({ open, onOpenChange, vaultId }: AttachHoldi
       showSuccess('Holding attached to vault');
       onOpenChange(false);
       resetForm();
-      void invalidatePortfolioQueries(utils);
+      void invalidateVaultQueries(utils);
     },
     onError: (error) => showError(error, 'Failed to attach holding'),
   });

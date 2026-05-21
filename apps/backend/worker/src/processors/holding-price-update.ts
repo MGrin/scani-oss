@@ -1,5 +1,6 @@
 import { db } from '@scani/db/connection';
 import * as schema from '@scani/db/schema';
+import { PortfolioValueCache } from '@scani/domain/services';
 import { UpdateHoldingPriceUseCase } from '@scani/domain/use-cases';
 import { HOLDING_PRICE_UPDATE, type HoldingPriceUpdateJob } from '@scani/jobs';
 import { createComponentLogger } from '@scani/logging';
@@ -44,6 +45,11 @@ export class HoldingPriceUpdateProcessor extends UserJobProcessor<HoldingPriceUp
         data.userId,
         baseCurrency
       );
+
+      // The holding's price (and thus value) changed — drop the user's
+      // cached portfolio valuation so the next read recomputes.
+      await Container.get(PortfolioValueCache).bust(data.userId);
+
       emitEntityChange({
         entityType: 'holding',
         operationType: 'update',

@@ -15,7 +15,7 @@ import { Link, useNavigate, useParams } from 'react-router-dom';
 import { trpc } from '@/lib/trpc';
 import { AttachHoldingDialog } from '../components/vaults/AttachHoldingDialog';
 import { VaultFormDialog } from '../components/vaults/VaultFormDialog';
-import { invalidatePortfolioQueries } from '../hooks/invalidatePortfolioQueries';
+import { invalidateVaultQueries } from '../hooks/invalidatePortfolioQueries';
 import { V2_ROUTES } from '../lib/routes';
 
 export function VaultDetailPage() {
@@ -38,7 +38,7 @@ export function VaultDetailPage() {
       setShowDeleteConfirm(false);
       showSuccess('Vault deleted successfully');
       navigate(V2_ROUTES.vaults);
-      void invalidatePortfolioQueries(utils, { refetchType: 'all' });
+      void invalidateVaultQueries(utils, { refetchType: 'all' });
     },
     onError: (error) => showError(error, 'Failed to delete vault'),
   });
@@ -49,7 +49,7 @@ export function VaultDetailPage() {
       // its own active queries will refetch; blocking the toast on the
       // full portfolio refetch made the action feel sluggish.
       showSuccess('Holding removed from vault');
-      void invalidatePortfolioQueries(utils);
+      void invalidateVaultQueries(utils);
     },
     onError: (error) => showError(error, 'Failed to remove holding'),
   });
@@ -58,7 +58,7 @@ export function VaultDetailPage() {
     onSuccess: () => {
       setEditingPercentage(null);
       showSuccess('Percentage updated');
-      void invalidatePortfolioQueries(utils);
+      void invalidateVaultQueries(utils);
     },
     onError: (error) => showError(error, 'Failed to update percentage'),
   });

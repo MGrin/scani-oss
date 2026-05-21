@@ -96,3 +96,17 @@ export async function getOrComputeRequestCache<T>(
 export function createPortfolioCacheKey(userId: string, accountId?: string): string {
   return accountId ? `portfolio:${userId}:${accountId}` : `portfolio:${userId}`;
 }
+
+/** Redis key for the cross-request portfolio-value cache. Deliberately
+ *  distinct from `createPortfolioCacheKey`: it is versioned (`v1`) so the
+ *  shape can change without colliding with stale entries, and it includes
+ *  the base currency because cached values are denominated in it. Every
+ *  key for a user shares the `pv:v1:<userId>:` prefix so
+ *  `PortfolioValueCache.bust` can drop them all with one SCAN. */
+export function createPortfolioRedisKey(
+  userId: string,
+  accountId: string | undefined,
+  baseCurrencyId: string
+): string {
+  return `pv:v1:${userId}:${accountId ?? 'all'}:${baseCurrencyId}`;
+}
