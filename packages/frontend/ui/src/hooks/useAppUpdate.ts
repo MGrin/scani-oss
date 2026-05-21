@@ -5,13 +5,18 @@ interface AppUpdateState {
   updateAvailable: boolean;
   /** Apply the update — activates new SW and reloads the page */
   applyUpdate: () => void;
-  /** Dismiss the update banner (will re-appear on next check) */
+  /** Dismiss the update banner. Persisted per version — it will not re-appear
+   *  for the dismissed version, but a genuinely newer deploy still shows it. */
   dismissUpdate: () => void;
 }
 
 const VERSION_CHECK_INTERVAL = 2 * 60 * 1000; // Check every 2 minutes
 const VERSION_URL = '/version.json';
 const VERSION_STORAGE_KEY = 'scani-last-known-version';
+// The app version the user last dismissed the update banner for. The banner
+// stays hidden for this version even across reloads; a different (newer)
+// version string clears the suppression.
+const DISMISSED_VERSION_STORAGE_KEY = 'scani-dismissed-update-version';
 
 /**
  * Hook that detects when a new version of the app is deployed.
@@ -21,13 +26,27 @@ const VERSION_STORAGE_KEY = 'scani-last-known-version';
  * 2. Listens for service worker state changes (waiting → update available)
  *
  * When an update is detected, shows a banner. When the user clicks "Update",
- * tells the waiting SW to skipWaiting and reloads the page.
+ * tells the waiting SW to skipWaiting and reloads the page. Dismissals are
+ * persisted per version so the banner doesn't loop back every poll interval.
  */
 export function useAppUpdate(): AppUpdateState {
   const [updateAvailable, setUpdateAvailable] = useState(false);
   const [dismissed, setDismissed] = useState(false);
   const initialVersion = useRef<string | null>(null);
+  // The version currently being offered to the user (from the /version.json
+  // poll). `null` for service-worker-only updates with no version string.
+  const offeredVersion = useRef<string | null>(null);
   const waitingWorker = useRef<ServiceWorker | null>(null);
+
+  // Surface an update unless the user already dismissed this exact version.
+  const offerUpdate = useCallback((version: string | null) => {
+    if (version && version === localStorage.getItem(DISMISSED_VERSION_STORAGE_KEY)) {
+      return;
+    }
+    offeredVersion.current = version;
+    setUpdateAvailable(true);
+    setDismissed(false);
+  }, []);
 
   // Listen for SW messages
   useEffect(() => {
@@ -35,8 +54,7 @@ export function useAppUpdate(): AppUpdateState {
 
     const handleMessage = (event: MessageEvent) => {
       if (event.data?.type === 'SW_UPDATE_WAITING') {
-        setUpdateAvailable(true);
-        setDismissed(false);
+        offerUpdate(offeredVersion.current);
       }
       if (event.data?.type === 'SW_ACTIVATED') {
         // New SW activated — reload to get fresh content
@@ -46,7 +64,7 @@ export function useAppUpdate(): AppUpdateState {
 
     navigator.serviceWorker.addEventListener('message', handleMessage);
     return () => navigator.serviceWorker.removeEventListener('message', handleMessage);
-  }, []);
+  }, [offerUpdate]);
 
   // Monitor SW registration for waiting workers
   useEffect(() => {
@@ -55,8 +73,7 @@ export function useAppUpdate(): AppUpdateState {
     const checkWaiting = (registration: ServiceWorkerRegistration) => {
       if (registration.waiting) {
         waitingWorker.current = registration.waiting;
-        setUpdateAvailable(true);
-        setDismissed(false);
+        offerUpdate(offeredVersion.current);
       }
     };
 
@@ -73,13 +90,12 @@ export function useAppUpdate(): AppUpdateState {
           if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
             // New SW installed while old one is still controlling — update available
             waitingWorker.current = newWorker;
-            setUpdateAvailable(true);
-            setDismissed(false);
+            offerUpdate(offeredVersion.current);
           }
         });
       });
     });
-  }, []);
+  }, [offerUpdate]);
 
   // Poll version.json for changes
   useEffect(() => {
@@ -105,8 +121,7 @@ export function useAppUpdate(): AppUpdateState {
           if (lastKnown && lastKnown !== version) {
             // Version changed since last session — show update banner
             if (active) {
-              setUpdateAvailable(true);
-              setDismissed(false);
+              offerUpdate(version);
             }
           }
           localStorage.setItem(VERSION_STORAGE_KEY, version);
@@ -114,8 +129,7 @@ export function useAppUpdate(): AppUpdateState {
           // Version changed — new deployment detected
           localStorage.setItem(VERSION_STORAGE_KEY, version);
           if (active) {
-            setUpdateAvailable(true);
-            setDismissed(false);
+            offerUpdate(version);
 
             // Also trigger SW update check
             if ('serviceWorker' in navigator) {
@@ -139,7 +153,7 @@ export function useAppUpdate(): AppUpdateState {
       clearTimeout(initialTimer);
       clearInterval(interval);
     };
-  }, []);
+  }, [offerUpdate]);
 
   // Also check for SW updates periodically
   useEffect(() => {
@@ -184,6 +198,11 @@ export function useAppUpdate(): AppUpdateState {
   }, []);
 
   const dismissUpdate = useCallback(() => {
+    // Persist the dismissal so the banner doesn't loop back on the next poll
+    // (or after a reload). Only a different version string re-shows it.
+    if (offeredVersion.current) {
+      localStorage.setItem(DISMISSED_VERSION_STORAGE_KEY, offeredVersion.current);
+    }
     setDismissed(true);
   }, []);
 

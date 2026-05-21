@@ -5,6 +5,7 @@ import { Skeleton } from '@scani/ui/ui/skeleton';
 import { showError, showSuccess } from '@scani/ui/ui/use-toast';
 import { Eye, EyeOff } from 'lucide-react';
 import { trpc } from '@/lib/trpc';
+import { optimisticRemoveHiddenHolding } from '../../hooks/optimisticUpdates';
 import { ScamActionButton } from '../ScamActionButton';
 import { ScamBadge } from '../ScamBadge';
 
@@ -20,12 +21,21 @@ type HiddenHolding = {
 };
 
 function UnhideButton({ holdingId, onChanged }: { holdingId: string; onChanged: () => void }) {
+  const utils = trpc.useUtils();
   const restore = trpc.holdings.restore.useMutation({
+    onMutate: () => optimisticRemoveHiddenHolding(utils, holdingId),
     onSuccess: () => {
       showSuccess('Holding unhidden');
       onChanged();
     },
-    onError: (err) => showError(err, 'unhide holding'),
+    onError: (err, _vars, ctx) => {
+      ctx?.restore();
+      showError(err, 'unhide holding');
+    },
+    onSettled: () => {
+      void utils.holdings.getHidden.invalidate();
+      void utils.holdings.getWithDetails.invalidate();
+    },
   });
   return (
     <Button

@@ -16,6 +16,11 @@ import { ArrowLeft, ArrowRight } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { trpc } from '@/lib/trpc';
 import { invalidatePortfolioQueries } from '@/v2/hooks/invalidatePortfolioQueries';
+import {
+  insertCreatedGroup,
+  optimisticPatchGroup,
+  optimisticRemoveGroups,
+} from '@/v2/hooks/optimisticUpdates';
 
 const COLORS = [
   '#ef4444',
@@ -135,6 +140,9 @@ export function GroupFormDialog({ open, onOpenChange, groupId }: GroupFormDialog
 
   const createMutation = trpc.groups.create.useMutation({
     onSuccess: (newGroup) => {
+      // Instant-insert the created group into the list caches so the
+      // Groups page shows it without waiting for a refetch.
+      insertCreatedGroup(utils, newGroup);
       // The new group doesn't exist on any entity yet, so the save is
       // pure add — every selected entity gets the new group added,
       // nothing is removed. Fire these assignment mutations in the
@@ -158,12 +166,20 @@ export function GroupFormDialog({ open, onOpenChange, groupId }: GroupFormDialog
       }
       onOpenChange(false);
       showSuccess('Group created');
-      void invalidatePortfolioQueries(utils);
     },
     onError: (error) => showError(error, 'Creating group'),
+    onSettled: () => {
+      void invalidatePortfolioQueries(utils);
+    },
   });
 
   const updateMutation = trpc.groups.update.useMutation({
+    onMutate: ({ id, data }) =>
+      optimisticPatchGroup(utils, id, {
+        name: data.name,
+        color: data.color,
+        description: data.description,
+      }),
     onSuccess: async () => {
       if (groupId) {
         // For an existing group we care about the *diff* between the
@@ -220,19 +236,30 @@ export function GroupFormDialog({ open, onOpenChange, groupId }: GroupFormDialog
       }
       onOpenChange(false);
       showSuccess('Group updated');
+    },
+    onError: (error, _vars, ctx) => {
+      ctx?.restore();
+      showError(error, 'Updating group');
+    },
+    onSettled: () => {
       void invalidatePortfolioQueries(utils);
     },
-    onError: (error) => showError(error, 'Updating group'),
   });
 
   const deleteMutation = trpc.groups.delete.useMutation({
+    onMutate: ({ id }) => optimisticRemoveGroups(utils, [id]),
     onSuccess: () => {
       setShowDeleteConfirm(false);
       onOpenChange(false);
       showSuccess('Group deleted');
+    },
+    onError: (error, _vars, ctx) => {
+      ctx?.restore();
+      showError(error, 'Deleting group');
+    },
+    onSettled: () => {
       void invalidatePortfolioQueries(utils);
     },
-    onError: (error) => showError(error, 'Deleting group'),
   });
 
   const assignHoldingsMutation = trpc.holdings.bulkAssignGroups.useMutation({

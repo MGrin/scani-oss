@@ -16,6 +16,11 @@ import { trpc } from '@/lib/trpc';
 import { AttachHoldingDialog } from '../components/vaults/AttachHoldingDialog';
 import { VaultFormDialog } from '../components/vaults/VaultFormDialog';
 import { invalidateVaultQueries } from '../hooks/invalidatePortfolioQueries';
+import {
+  optimisticDetachVaultHolding,
+  optimisticRemoveVaults,
+  optimisticSetVaultHoldingPercentage,
+} from '../hooks/optimisticUpdates';
 import { V2_ROUTES } from '../lib/routes';
 
 export function VaultDetailPage() {
@@ -31,36 +36,51 @@ export function VaultDetailPage() {
   const [percentageInput, setPercentageInput] = useState('');
 
   const deleteMutation = trpc.vaults.delete.useMutation({
+    onMutate: ({ id: vaultId }) => optimisticRemoveVaults(utils, [vaultId]),
     onSuccess: () => {
-      // Navigate first, invalidate in background with `'all'` so the
-      // destination page refetches. Awaiting here blocked the toast +
-      // navigation behind a dozen portfolio refetches.
       setShowDeleteConfirm(false);
       showSuccess('Vault deleted successfully');
       navigate(V2_ROUTES.vaults);
+    },
+    onError: (error, _vars, ctx) => {
+      ctx?.restore();
+      showError(error, 'Failed to delete vault');
+    },
+    onSettled: () => {
+      // `'all'` so the destination Vaults page refetches even though it
+      // isn't mounted yet at settle time.
       void invalidateVaultQueries(utils, { refetchType: 'all' });
     },
-    onError: (error) => showError(error, 'Failed to delete vault'),
   });
 
   const detachMutation = trpc.vaults.detachHolding.useMutation({
+    onMutate: ({ vaultId, holdingId }) => optimisticDetachVaultHolding(utils, vaultId, holdingId),
     onSuccess: () => {
-      // Fire-and-forget invalidation: the detail page stays mounted and
-      // its own active queries will refetch; blocking the toast on the
-      // full portfolio refetch made the action feel sluggish.
       showSuccess('Holding removed from vault');
+    },
+    onError: (error, _vars, ctx) => {
+      ctx?.restore();
+      showError(error, 'Failed to remove holding');
+    },
+    onSettled: () => {
       void invalidateVaultQueries(utils);
     },
-    onError: (error) => showError(error, 'Failed to remove holding'),
   });
 
   const updatePercentageMutation = trpc.vaults.updateHoldingPercentage.useMutation({
+    onMutate: ({ vaultId, holdingId, percentage }) =>
+      optimisticSetVaultHoldingPercentage(utils, vaultId, holdingId, percentage),
     onSuccess: () => {
       setEditingPercentage(null);
       showSuccess('Percentage updated');
+    },
+    onError: (error, _vars, ctx) => {
+      ctx?.restore();
+      showError(error, 'Failed to update percentage');
+    },
+    onSettled: () => {
       void invalidateVaultQueries(utils);
     },
-    onError: (error) => showError(error, 'Failed to update percentage'),
   });
 
   const savePercentage = (holdingId: string) => {

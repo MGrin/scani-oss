@@ -2,6 +2,7 @@ import { Button } from '@scani/ui/ui/button';
 import { showError, showSuccess } from '@scani/ui/ui/use-toast';
 import { ShieldAlert, ShieldCheck } from 'lucide-react';
 import { trpc } from '@/lib/trpc';
+import { optimisticSetTokenScam } from '../hooks/optimisticUpdates';
 import { isScamToken } from './ScamBadge';
 
 interface ScamActionButtonProps {
@@ -30,22 +31,35 @@ export function ScamActionButton({
   const utils = trpc.useUtils();
   const isCurrentlyScam = isScamToken(probability);
 
+  const settleScam = () => {
+    void utils.holdings.getWithDetails.invalidate();
+    void utils.holdings.getHidden.invalidate();
+  };
+
   const markMutation = trpc.tokens.markAsScam.useMutation({
+    onMutate: () => optimisticSetTokenScam(utils, tokenId, true),
     onSuccess: () => {
       showSuccess(`Marked ${tokenSymbol} as scam`);
-      void utils.holdings.getWithDetails.invalidate();
       onChanged?.();
     },
-    onError: (err) => showError(err, 'mark as scam'),
+    onError: (err, _vars, ctx) => {
+      ctx?.restore();
+      showError(err, 'mark as scam');
+    },
+    onSettled: settleScam,
   });
 
   const unmarkMutation = trpc.tokens.unmarkAsScam.useMutation({
+    onMutate: () => optimisticSetTokenScam(utils, tokenId, false),
     onSuccess: () => {
       showSuccess(`Restored ${tokenSymbol}`);
-      void utils.holdings.getWithDetails.invalidate();
       onChanged?.();
     },
-    onError: (err) => showError(err, 'unmark as scam'),
+    onError: (err, _vars, ctx) => {
+      ctx?.restore();
+      showError(err, 'unmark as scam');
+    },
+    onSettled: settleScam,
   });
 
   const handleClick = () => {

@@ -92,6 +92,7 @@ export function HoldingDetailContent({ holdingId, mode = 'panel' }: HoldingDetai
     updateHolding,
     refreshPrice,
     refreshBalance,
+    refreshPriceMutation,
     refreshBalanceMutation,
     isDeleting,
     isRefreshingPrice,
@@ -173,7 +174,38 @@ export function HoldingDetailContent({ holdingId, mode = 'panel' }: HoldingDetai
   ]);
   const refreshBalanceBusy = isRefreshingBalance || refreshBalanceJobId !== null;
 
-  if (isLoading) {
+  // Price refresh runs async on the worker too. Track its job so the
+  // RefreshCw button keeps spinning until fresh price data lands —
+  // otherwise the button stops at enqueue while the number stays stale.
+  const [refreshPriceJobId, setRefreshPriceJobId] = useState<string | null>(null);
+  const refreshPriceJobStatus = useJobStatus(refreshPriceJobId);
+  const refreshPriceJobIdFromMutation = refreshPriceMutation.data?.jobId ?? null;
+  useEffect(() => {
+    if (refreshPriceJobIdFromMutation) {
+      setRefreshPriceJobId(refreshPriceJobIdFromMutation);
+    }
+  }, [refreshPriceJobIdFromMutation]);
+  useEffect(() => {
+    if (!refreshPriceJobId) return;
+    if (refreshPriceJobStatus.state === 'completed') {
+      showSuccess('Price refreshed');
+      setRefreshPriceJobId(null);
+      void invalidatePortfolioQueries(utils);
+    } else if (refreshPriceJobStatus.state === 'failed') {
+      showError(
+        new Error(refreshPriceJobStatus.error ?? 'Price refresh job failed'),
+        'Refreshing price'
+      );
+      setRefreshPriceJobId(null);
+    }
+  }, [refreshPriceJobId, refreshPriceJobStatus.state, refreshPriceJobStatus.error, utils]);
+  const refreshPriceBusy = isRefreshingPrice || refreshPriceJobId !== null;
+
+  // While a delete is in flight the optimistic patch has already pulled
+  // this holding out of the shared `getWithDetails` cache. Show the
+  // skeleton (not "not found") until `onSuccess` navigates away; on error
+  // the rollback puts the holding back and this resolves to the real view.
+  if (isLoading || (!holding && isDeleting)) {
     return (
       <div className="space-y-4">
         <Skeleton className="h-8 w-48" />
@@ -232,10 +264,10 @@ export function HoldingDetailContent({ holdingId, mode = 'panel' }: HoldingDetai
             size="icon"
             className="h-8 w-8"
             onClick={() => refreshPrice(holdingId)}
-            disabled={isRefreshingPrice}
+            disabled={refreshPriceBusy}
             title="Refresh price"
           >
-            <RefreshCw className={cn('h-4 w-4', isRefreshingPrice && 'animate-spin')} />
+            <RefreshCw className={cn('h-4 w-4', refreshPriceBusy && 'animate-spin')} />
           </Button>
           {holding.source && holding.source !== 'manual' && (
             <Button

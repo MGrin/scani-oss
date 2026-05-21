@@ -3,13 +3,20 @@ import { Button } from './button';
 import type { ToastActionElement, ToastProps } from './toast';
 
 const TOAST_LIMIT = 1;
-const TOAST_REMOVE_DELAY = 1000 * 5; // 5 seconds
+// Default time a toast stays visible before auto-dismiss (ms).
+const DEFAULT_TOAST_DURATION = 5_000;
+// Errors carry actionable info + a "View Details" action — give them longer.
+const DEFAULT_ERROR_DURATION = 10_000;
+// Delay between closing a toast and unmounting it. Must cover the
+// `data-[state=closed]` exit animation in toast.tsx.
+const TOAST_ANIMATION_DURATION = 300;
 
 type ToasterToast = ToastProps & {
   id: string;
   title?: React.ReactNode;
   description?: React.ReactNode;
   action?: ToastActionElement;
+  duration?: number;
 };
 
 const actionTypes = {
@@ -50,22 +57,36 @@ interface State {
   toasts: ToasterToast[];
 }
 
-const toastTimeouts = new Map<string, ReturnType<typeof setTimeout>>();
+// Auto-dismiss timers: fire DISMISS_TOAST (flips the toast to `open: false`).
+// Owned by our code so the lifecycle is deterministic — unlike Radix's own
+// timer, which pauses on pointer-enter / window blur and can therefore leave
+// a toast open forever on touch devices and installed PWAs.
+const dismissTimeouts = new Map<string, ReturnType<typeof setTimeout>>();
+// Removal timers: fire REMOVE_TOAST after the close animation finishes.
+const removeTimeouts = new Map<string, ReturnType<typeof setTimeout>>();
+
+const clearDismissTimeout = (toastId: string) => {
+  const timeout = dismissTimeouts.get(toastId);
+  if (timeout) {
+    clearTimeout(timeout);
+    dismissTimeouts.delete(toastId);
+  }
+};
 
 const addToRemoveQueue = (toastId: string) => {
-  if (toastTimeouts.has(toastId)) {
+  if (removeTimeouts.has(toastId)) {
     return;
   }
 
   const timeout = setTimeout(() => {
-    toastTimeouts.delete(toastId);
+    removeTimeouts.delete(toastId);
     dispatch({
       type: 'REMOVE_TOAST',
       toastId: toastId,
     });
-  }, TOAST_REMOVE_DELAY);
+  }, TOAST_ANIMATION_DURATION);
 
-  toastTimeouts.set(toastId, timeout);
+  removeTimeouts.set(toastId, timeout);
 };
 
 export const reducer = (state: State, action: Action): State => {
@@ -134,27 +155,47 @@ function dispatch(action: Action) {
 
 type Toast = Omit<ToasterToast, 'id'>;
 
-function toast({ ...props }: Toast) {
+function toast({ duration, ...props }: Toast) {
   const id = genId();
+  const resolvedDuration = duration ?? DEFAULT_TOAST_DURATION;
 
   const update = (props: ToasterToast) =>
     dispatch({
       type: 'UPDATE_TOAST',
       toast: { ...props, id },
     });
-  const dismiss = () => dispatch({ type: 'DISMISS_TOAST', toastId: id });
+  const dismiss = () => {
+    clearDismissTimeout(id);
+    dispatch({ type: 'DISMISS_TOAST', toastId: id });
+  };
+
+  // TOAST_LIMIT is 1 — the toast we're adding evicts any current one. Clear
+  // the evicted toast's pending auto-dismiss timer so it can't fire later.
+  for (const existing of memoryState.toasts) {
+    clearDismissTimeout(existing.id);
+  }
 
   dispatch({
     type: 'ADD_TOAST',
     toast: {
       ...props,
       id,
+      duration: resolvedDuration,
       open: true,
       onOpenChange: (open: boolean) => {
         if (!open) dismiss();
       },
     },
   });
+
+  // Code-owned auto-dismiss. `duration: 0` / `Infinity` keeps the toast sticky.
+  if (Number.isFinite(resolvedDuration) && resolvedDuration > 0) {
+    const timeout = setTimeout(() => {
+      dismissTimeouts.delete(id);
+      dispatch({ type: 'DISMISS_TOAST', toastId: id });
+    }, resolvedDuration);
+    dismissTimeouts.set(id, timeout);
+  }
 
   return {
     id: id,
@@ -179,16 +220,28 @@ function useToast() {
   return {
     ...state,
     toast,
-    dismiss: (toastId?: string) => dispatch({ type: 'DISMISS_TOAST', toastId }),
+    dismiss: (toastId?: string) => {
+      if (toastId) {
+        clearDismissTimeout(toastId);
+      } else {
+        for (const t of memoryState.toasts) clearDismissTimeout(t.id);
+      }
+      dispatch({ type: 'DISMISS_TOAST', toastId });
+    },
   };
 }
 
-function showError(error: unknown, context?: string) {
+interface ToastOptions {
+  duration?: number;
+}
+
+function showError(error: unknown, context?: string, options?: ToastOptions) {
   const message = error instanceof Error ? error.message : 'Unknown error';
   toast({
     title: 'Something went wrong',
     description: `${context ? `${context}: ` : ''}${message}`,
     variant: 'destructive',
+    duration: options?.duration ?? DEFAULT_ERROR_DURATION,
     action: (
       <Button variant="outline" size="sm" onClick={() => console.error('Error details:', error)}>
         View Details
@@ -197,11 +250,12 @@ function showError(error: unknown, context?: string) {
   });
 }
 
-function showSuccess(message: string, context?: string) {
+function showSuccess(message: string, context?: string, options?: ToastOptions) {
   toast({
     title: context || 'Success',
     description: message,
     variant: 'default',
+    duration: options?.duration ?? DEFAULT_TOAST_DURATION,
   });
 }
 

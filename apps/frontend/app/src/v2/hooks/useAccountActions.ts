@@ -1,6 +1,7 @@
 import { showError, showSuccess } from '@scani/ui/ui/use-toast';
 import { trpc } from '@/lib/trpc';
 import { invalidatePortfolioQueries } from './invalidatePortfolioQueries';
+import { optimisticPatchAccount, optimisticRemoveAccounts } from './optimisticUpdates';
 
 // Note: there is no `bulkAssignGroups` here. That flow lives inside
 // `AssignGroupsDialog` because it needs access to the current common-
@@ -11,31 +12,62 @@ import { invalidatePortfolioQueries } from './invalidatePortfolioQueries';
 export function useAccountActions() {
   const utils = trpc.useUtils();
 
-  // All three mutations fire invalidation in the background so callers
-  // (the bulk-action bar, the detail page, etc.) don't wait for every
-  // portfolio query to refetch before showing the success toast.
+  // delete / bulkDelete / update apply an optimistic cache patch in `onMutate`,
+  // roll back in `onError`, and reconcile via `invalidatePortfolioQueries` in
+  // `onSettled` (server-computed totals can't be patched client-side).
   const deleteMutation = trpc.accounts.delete.useMutation({
+    onMutate: ({ id }) => optimisticRemoveAccounts(utils, [id]),
     onSuccess: () => {
       showSuccess('Account deleted successfully');
+    },
+    onError: (error, _vars, ctx) => {
+      ctx?.restore();
+      showError(error, 'Failed to delete account');
+    },
+    onSettled: () => {
       void invalidatePortfolioQueries(utils);
     },
-    onError: (error) => showError(error, 'Failed to delete account'),
   });
 
   const bulkDeleteMutation = trpc.accounts.bulkDelete.useMutation({
-    onSuccess: (_data, variables) => {
-      showSuccess(`${variables.ids.length} account(s) deleted successfully`);
+    onMutate: ({ ids }) => optimisticRemoveAccounts(utils, ids),
+    onSuccess: (result, _vars, ctx) => {
+      if (result.failedIds.length > 0 && ctx) {
+        // The call resolved but some ids failed server-side. Restore the
+        // snapshot, then re-remove only the rows that actually deleted.
+        ctx.restore();
+        void optimisticRemoveAccounts(utils, result.deletedIds);
+      }
+      const failed = result.failedIds.length;
+      showSuccess(
+        `${result.deletedIds.length} account(s) deleted${failed > 0 ? `, ${failed} failed` : ''}`
+      );
+    },
+    onError: (error, _vars, ctx) => {
+      ctx?.restore();
+      showError(error, 'Failed to delete accounts');
+    },
+    onSettled: () => {
       void invalidatePortfolioQueries(utils);
     },
-    onError: (error) => showError(error, 'Failed to delete accounts'),
   });
 
   const updateMutation = trpc.accounts.update.useMutation({
+    onMutate: ({ id, data }) =>
+      optimisticPatchAccount(utils, id, {
+        name: data.name,
+        description: data.description,
+      }),
     onSuccess: () => {
       showSuccess('Account updated successfully');
+    },
+    onError: (error, _vars, ctx) => {
+      ctx?.restore();
+      showError(error, 'Failed to update account');
+    },
+    onSettled: () => {
       void invalidatePortfolioQueries(utils);
     },
-    onError: (error) => showError(error, 'Failed to update account'),
   });
 
   return {

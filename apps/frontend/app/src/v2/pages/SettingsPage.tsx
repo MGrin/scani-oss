@@ -12,6 +12,11 @@ import { useAuth } from '@/contexts/AuthContext';
 import { trpc } from '@/lib/trpc';
 import { FiatCurrencySelect } from '../components/shared/FiatCurrencySelect';
 import { invalidatePortfolioQueries } from '../hooks/invalidatePortfolioQueries';
+import {
+  optimisticPatchUser,
+  optimisticRevokeOtherSessions,
+  optimisticRevokeSession,
+} from '../hooks/optimisticUpdates';
 import { useJobStatus } from '../hooks/useJobStatus';
 import { V2_ROUTES } from '../lib/routes';
 
@@ -90,28 +95,40 @@ export function SettingsPage() {
   const isRecomputing = recomputeMutation.isPending || recomputeJobId !== null;
 
   const updateMutation = trpc.users.updateCurrent.useMutation({
-    onSuccess: (_data, variables) => {
-      void utils.users.getCurrent.invalidate();
-      void utils.users.getBaseCurrency.invalidate();
+    onMutate: async (variables) => {
+      // Capture the pre-patch base currency from the cache so the
+      // currency-change check in `onSuccess` isn't fooled by our own
+      // optimistic patch.
+      const previousBaseCurrencyId = utils.users.getCurrent.getData()?.baseCurrencyId ?? null;
+      const snapshot = await optimisticPatchUser(utils, {
+        name: variables.name,
+        baseCurrencyId: variables.baseCurrencyId,
+      });
+      return { snapshot, previousBaseCurrencyId };
+    },
+    onSuccess: (_data, variables, ctx) => {
       // The auto-save effect always submits both `name` and
-      // `baseCurrencyId`, so compare against the rendered user
-      // state to detect a real currency change rather than a
-      // name-only edit (we don't want to refetch every chart
-      // every time the user fixes a typo).
+      // `baseCurrencyId`, so compare against the captured previous
+      // value to detect a real currency change rather than a name-only
+      // edit (we don't want to refetch every chart on a typo fix).
       //
-      // When it DID change: refetch every query that renders a
-      // money value (every dashboard total, holding price, vault,
-      // group, etc.). The `user:update` realtime event fired by
-      // the API hits other tabs / devices for the same user; this
-      // local call is the fast-path for the tab that initiated the
-      // change so the user doesn't have to wait for the WS
-      // roundtrip. `refetchType: 'all'` so pages the user hasn't
-      // navigated to yet are ready when they get there.
-      const previousBaseCurrencyId = user?.baseCurrencyId ?? null;
+      // When it DID change: refetch every query that renders a money
+      // value. The `user:update` realtime event fired by the API hits
+      // other tabs / devices; this local call is the fast-path for the
+      // tab that initiated the change. `refetchType: 'all'` so pages
+      // the user hasn't navigated to yet are ready when they get there.
       const nextBaseCurrencyId = variables.baseCurrencyId ?? null;
-      if (nextBaseCurrencyId !== previousBaseCurrencyId) {
+      if (nextBaseCurrencyId !== (ctx?.previousBaseCurrencyId ?? null)) {
         void invalidatePortfolioQueries(utils, { refetchType: 'all' });
       }
+    },
+    onError: (err, _vars, ctx) => {
+      ctx?.snapshot.restore();
+      showError(err, 'Saving settings');
+    },
+    onSettled: () => {
+      void utils.users.getCurrent.invalidate();
+      void utils.users.getBaseCurrency.invalidate();
     },
   });
 
@@ -293,18 +310,30 @@ function SessionsCard() {
     refetchOnWindowFocus: true,
   });
   const revokeMutation = trpc.sessions.revoke.useMutation({
+    onMutate: ({ token }) => optimisticRevokeSession(utils, token),
     onSuccess: () => {
       showSuccess('Session revoked');
-      utils.sessions.list.invalidate();
     },
-    onError: (err) => showError(err, 'Revoking session'),
+    onError: (err, _vars, ctx) => {
+      ctx?.restore();
+      showError(err, 'Revoking session');
+    },
+    onSettled: () => {
+      void utils.sessions.list.invalidate();
+    },
   });
   const revokeOthersMutation = trpc.sessions.revokeOthers.useMutation({
+    onMutate: () => optimisticRevokeOtherSessions(utils),
     onSuccess: () => {
       showSuccess('Signed out of all other sessions');
-      utils.sessions.list.invalidate();
     },
-    onError: (err) => showError(err, 'Signing out other sessions'),
+    onError: (err, _vars, ctx) => {
+      ctx?.restore();
+      showError(err, 'Signing out other sessions');
+    },
+    onSettled: () => {
+      void utils.sessions.list.invalidate();
+    },
   });
 
   const sessions = sessionsQuery.data ?? [];

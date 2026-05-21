@@ -2,6 +2,7 @@
 
 import { Download, X } from 'lucide-react';
 import { useState } from 'react';
+import { useBannerOffset } from '../hooks/useBannerOffset';
 import { useInstallPrompt } from '../hooks/useInstallPrompt';
 import { InstallInstructionsSheet } from './InstallInstructionsSheet';
 
@@ -20,6 +21,7 @@ export interface InstallPromptBannerProps {
 export function InstallPromptBanner({ isLoggedIn, appName = 'Scani' }: InstallPromptBannerProps) {
   const { visible, platform, canPrompt, prompt, dismiss } = useInstallPrompt();
   const [instructionsOpen, setInstructionsOpen] = useState(false);
+  const bannerRef = useBannerOffset<HTMLDivElement>();
 
   if (!isLoggedIn || !visible) return null;
 
@@ -34,6 +36,7 @@ export function InstallPromptBanner({ isLoggedIn, appName = 'Scani' }: InstallPr
   return (
     <>
       <div
+        ref={bannerRef}
         className="fixed top-0 left-0 right-0 z-[99] bg-primary text-primary-foreground px-4 flex items-center gap-3 text-sm shadow-lg animate-in slide-in-from-top duration-300"
         style={{
           paddingTop: 'calc(0.5rem + env(safe-area-inset-top, 0px))',

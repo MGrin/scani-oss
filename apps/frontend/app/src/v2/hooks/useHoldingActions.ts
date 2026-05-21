@@ -1,54 +1,80 @@
 import { showError, showSuccess } from '@scani/ui/ui/use-toast';
 import { trpc } from '@/lib/trpc';
 import { invalidatePortfolioQueries } from './invalidatePortfolioQueries';
+import { optimisticPatchHolding, optimisticRemoveHoldings } from './optimisticUpdates';
 
 export function useHoldingActions() {
   const utils = trpc.useUtils();
 
-  // All three mutations fire invalidation in the background so callers
-  // (e.g. dialogs, bulk-action bars) don't wait for every portfolio
-  // query to refetch before showing the success toast / closing.
+  // delete / bulkDelete / update apply an optimistic cache patch in `onMutate`
+  // (the row disappears / updates instantly), roll back in `onError`, and
+  // reconcile server-computed figures via `invalidatePortfolioQueries` in
+  // `onSettled`.
   const deleteMutation = trpc.holdings.delete.useMutation({
+    onMutate: ({ id }) => optimisticRemoveHoldings(utils, [id]),
     onSuccess: () => {
       showSuccess('Holding deleted');
+    },
+    onError: (err, _vars, ctx) => {
+      ctx?.restore();
+      showError(err, 'Deleting holding');
+    },
+    onSettled: () => {
       void invalidatePortfolioQueries(utils);
     },
-    onError: (err) => showError(err, 'Deleting holding'),
   });
 
   const bulkDeleteMutation = trpc.holdings.bulkDelete.useMutation({
-    onSuccess: (result) => {
-      showSuccess(`${result.deletedIds.length} holding(s) deleted`);
+    onMutate: ({ ids }) => optimisticRemoveHoldings(utils, ids),
+    onSuccess: (result, _vars, ctx) => {
+      if (result.failedIds.length > 0 && ctx) {
+        // The call resolved but some ids failed server-side. Restore the
+        // snapshot, then re-remove only the rows that actually deleted.
+        ctx.restore();
+        void optimisticRemoveHoldings(utils, result.deletedIds);
+      }
+      const failed = result.failedIds.length;
+      showSuccess(
+        `${result.deletedIds.length} holding(s) deleted${failed > 0 ? `, ${failed} failed` : ''}`
+      );
+    },
+    onError: (err, _vars, ctx) => {
+      ctx?.restore();
+      showError(err, 'Deleting holdings');
+    },
+    onSettled: () => {
       void invalidatePortfolioQueries(utils);
     },
-    onError: (err) => showError(err, 'Deleting holdings'),
   });
 
   const updateMutation = trpc.holdings.update.useMutation({
+    onMutate: ({ id, data }) =>
+      optimisticPatchHolding(utils, id, {
+        amount: data.balance !== undefined ? Number(data.balance) : undefined,
+        isActive: data.isActive,
+      }),
     onSuccess: () => {
       showSuccess('Holding updated');
+    },
+    onError: (err, _vars, ctx) => {
+      ctx?.restore();
+      showError(err, 'Updating holding');
+    },
+    onSettled: () => {
       void invalidatePortfolioQueries(utils);
     },
-    onError: (err) => showError(err, 'Updating holding'),
   });
 
-  // Price refresh runs async on the worker — the queued job emits a
-  // `holding.update` WS event on completion, so the RealtimeContext
-  // auto-invalidates. We toast immediately on enqueue.
+  // Price refresh runs async on the worker. The enqueue mutation resolves
+  // immediately with a jobId; HoldingDetailContent subscribes to it via
+  // `useJobStatus` to show an inline spinner and emit the terminal toast.
   const refreshPriceMutation = trpc.holdings.updatePrice.useMutation({
-    onSuccess: () => {
-      showSuccess('Price refresh queued');
-    },
     onError: (err) => showError(err, 'Refreshing price'),
   });
 
-  // Balance refresh hits the underlying integration (wallet RPC, CEX
-  // API, broker Flex Query) and re-syncs the account this holding sits
-  // on. Same async + WS-event pattern as price refresh.
+  // Balance refresh hits the underlying integration (wallet RPC, CEX API,
+  // broker Flex Query). Same async + jobId pattern as price refresh.
   const refreshBalanceMutation = trpc.holdings.refreshBalance.useMutation({
-    onSuccess: () => {
-      showSuccess('Balance refresh queued');
-    },
     onError: (err) => showError(err, 'Refreshing balance'),
   });
 
@@ -64,12 +90,11 @@ export function useHoldingActions() {
     refreshBalance: (holdingId: string) =>
       refreshBalanceMutation.mutate({ holdingId, requestId: crypto.randomUUID() }),
     /**
-     * The raw mutation handle is exposed so the holding detail page can
-     * read `data.jobId` from the latest call and subscribe via
-     * `useJobStatus`. The toast in the hook only confirms enqueue —
-     * downstream feedback ("we synced ETH but USDC wasn't in the
-     * wallet response") needs the per-call jobId from this handle.
+     * Raw mutation handles are exposed so the holding detail page can read
+     * `data.jobId` from the latest call and subscribe via `useJobStatus` —
+     * the inline spinner + terminal toast are driven there, not here.
      */
+    refreshPriceMutation,
     refreshBalanceMutation,
     isDeleting: deleteMutation.isPending,
     isBulkDeleting: bulkDeleteMutation.isPending,

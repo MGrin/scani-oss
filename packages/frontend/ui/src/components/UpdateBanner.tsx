@@ -3,6 +3,7 @@
 import { Loader2, RefreshCw, X } from 'lucide-react';
 import { useState } from 'react';
 import { useAppUpdate } from '../hooks/useAppUpdate';
+import { useBannerOffset } from '../hooks/useBannerOffset';
 
 /**
  * Non-intrusive banner that appears when a new version of the app is deployed.
@@ -12,6 +13,7 @@ import { useAppUpdate } from '../hooks/useAppUpdate';
 export function UpdateBanner() {
   const { updateAvailable, applyUpdate, dismissUpdate } = useAppUpdate();
   const [updating, setUpdating] = useState(false);
+  const bannerRef = useBannerOffset<HTMLDivElement>();
 
   if (!updateAvailable) return null;
 
@@ -22,7 +24,8 @@ export function UpdateBanner() {
 
   return (
     <div
-      className="fixed top-0 left-0 right-0 z-[100] bg-blue-600 text-white px-4 flex items-center justify-center gap-3 text-sm shadow-lg animate-in slide-in-from-top duration-300"
+      ref={bannerRef}
+      className="fixed top-0 left-0 right-0 z-[110] bg-blue-600 text-white px-4 flex items-center justify-center gap-3 text-sm shadow-lg animate-in slide-in-from-top duration-300"
       style={{
         paddingTop: 'calc(0.5rem + env(safe-area-inset-top, 0px))',
         paddingBottom: '0.5rem',

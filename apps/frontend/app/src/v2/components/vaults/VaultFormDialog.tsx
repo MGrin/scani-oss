@@ -16,6 +16,7 @@ import { NumericFormat } from 'react-number-format';
 import { trpc } from '@/lib/trpc';
 import { FiatCurrencySelect } from '@/v2/components/shared/FiatCurrencySelect';
 import { invalidateVaultQueries } from '@/v2/hooks/invalidatePortfolioQueries';
+import { optimisticPatchVault } from '@/v2/hooks/optimisticUpdates';
 
 const COLORS = [
   '#3b82f6',
@@ -152,12 +153,23 @@ export function VaultFormDialog({ open, onOpenChange, vaultId }: VaultFormDialog
   });
 
   const updateMutation = trpc.vaults.update.useMutation({
+    onMutate: ({ id, data }) =>
+      optimisticPatchVault(utils, id, {
+        name: data.name,
+        targetAmount: data.targetAmount,
+        color: data.color,
+      }),
     onSuccess: () => {
       onOpenChange(false);
       showSuccess('Vault updated successfully');
+    },
+    onError: (error, _vars, ctx) => {
+      ctx?.restore();
+      showError(error, 'Failed to update vault');
+    },
+    onSettled: () => {
       void invalidateVaultQueries(utils);
     },
-    onError: (error) => showError(error, 'Failed to update vault'),
   });
 
   const handleSubmit = () => {
