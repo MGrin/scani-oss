@@ -1,6 +1,11 @@
-# SPA fallback for Cloudflare Pages. The marketing site is a single Vite
-# bundle with client-side routing in App.tsx (currently `/` and `/contact`).
-# Real static assets (favicon, sitemap, /assets/*, /.well-known/*) are
-# served directly; everything else falls through to index.html so a deep
-# link or refresh on /contact boots the app instead of 404ing.
+# Consolidate the www subdomain onto the apex domain. www.scani.xyz
+# otherwise serves a full duplicate of the site, which Search Console
+# flags as "alternate page with canonical tag". This 301 must precede
+# the host-agnostic SPA fallback below, or that rule would match first.
+https://www.scani.xyz/*  https://scani.xyz/:splat  301
+
+# SPA fallback for Cloudflare Pages. Prerendered routes ship as real
+# static files and are served directly; any unknown path falls through
+# to index.html so a deep link or refresh boots the client-side router
+# instead of 404ing.
 /*  /index.html  200
