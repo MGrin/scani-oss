@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { httpBatchLink, TRPCClientError } from '@trpc/client';
+import { httpBatchLink, splitLink, TRPCClientError } from '@trpc/client';
 import { useEffect, useState } from 'react';
 import { authClient } from './auth-client';
 import { trpc } from './trpc';
@@ -87,22 +87,37 @@ export function TRPCProvider({ children }: TRPCProviderProps) {
   // Auth headers logic lives in `trpc-auth-headers.ts` so any future
   // sibling tRPC client (background worker, vanilla proxy) can reuse
   // the same session-refresh path without drifting.
-  const [trpcClient] = useState(() =>
-    trpc.createClient({
+  const [trpcClient] = useState(() => {
+    const makeBatchLink = () =>
+      httpBatchLink({
+        url: `${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/trpc`,
+        // Send the Better-Auth session cookie on every tRPC call.
+        fetch(url, options) {
+          return fetch(url, { ...options, credentials: 'include' });
+        },
+        async headers() {
+          return getTrpcAuthHeaders();
+        },
+      });
+
+    return trpc.createClient({
       links: [
-        httpBatchLink({
-          url: `${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/trpc`,
-          // Send the Better-Auth session cookie on every tRPC call.
-          fetch(url, options) {
-            return fetch(url, { ...options, credentials: 'include' });
-          },
-          async headers() {
-            return getTrpcAuthHeaders();
-          },
+        // `dashboard.*` (getOverview / getAssetAllocation) are CPU-heavy
+        // whole-portfolio valuation passes. Sharing one HTTP batch with the
+        // light dashboard procedures gated the entire page on the slowest
+        // call — a batch response cannot return until every procedure in it
+        // resolves. Routing them to a dedicated batch lets the rest of the
+        // dashboard render while valuation is still in flight; the two heavy
+        // procedures stay batched together so the server's per-request cache
+        // still dedupes the valuation across them.
+        splitLink({
+          condition: (op) => op.path.startsWith('dashboard.'),
+          true: makeBatchLink(),
+          false: makeBatchLink(),
         }),
       ],
-    })
-  );
+    });
+  });
 
   return (
     <trpc.Provider client={trpcClient} queryClient={queryClient}>
