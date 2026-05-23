@@ -99,14 +99,19 @@ jobs:
         if: steps.check.outputs.has_changes == 'true' && steps.merge.outcome == 'failure'
         id: resolve
         run: |
-          # `git diff --diff-filter=U` only catches BOTH-modified conflicts
-          # (state `UU`). After --no-ff with intentionally-divergent trees
-          # there are two other failure modes:
-          #   - DU: we deleted, they modified  → keep deleted (`git rm`)
-          #   - UD: we modified, they deleted  → keep our version (`git add`)
-          # Both are policy choices that mirror the "private's tree wins"
-          # rule we use everywhere else in this workflow.
-          BOTH_MODIFIED=$(git diff --name-only --diff-filter=U)
+          # `git status --porcelain` is the single source of truth here.
+          # `git diff --diff-filter=U` returns ALL unmerged paths (UU, DU,
+          # UD, AA, …) — not just both-modified — so using it as the input
+          # to `git checkout --ours` fails on the DU rows (no "ours"
+          # version to check out).
+          #
+          # After --no-ff with intentionally-divergent trees there are
+          # three failure modes worth handling, all resolving to
+          # "private's tree wins":
+          #   - UU: both modified            → keep ours (`git checkout --ours`)
+          #   - DU: we deleted, they modified → re-delete (`git rm`)
+          #   - UD: we modified, they deleted → keep our version (`git add`)
+          BOTH_MODIFIED=$(git status --porcelain | awk '$1=="UU" {print $2}')
           DELETED_BY_US=$(git status --porcelain | awk '$1=="DU" {print $2}')
           DELETED_BY_THEM=$(git status --porcelain | awk '$1=="UD" {print $2}')
 
