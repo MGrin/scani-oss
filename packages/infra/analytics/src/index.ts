@@ -1,3 +1,12 @@
+export {
+  applyEmailTracking,
+  captureAccountConnected,
+  captureExchangeImportCompleted,
+  captureUserSignedUp,
+  handleEmailClickRequest,
+  handleEmailOpenRequest,
+  shutdownAnalytics,
+} from './call-helpers';
 export { type AnalyticsConfig, loadAnalyticsConfig, resetAnalyticsConfig } from './config';
 export {
   rewriteEmailHtml,

@@ -17,7 +17,7 @@
  *     worker validates), and enqueues the EXCHANGE_IMPORT job.
  */
 
-import { ANALYTICS_EVENTS, AnalyticsService } from '@scani/analytics';
+import { captureAccountConnected } from '@scani/analytics';
 import { db } from '@scani/db/connection';
 import * as schema from '@scani/db/schema';
 import { IntegrationCredentialsService } from '@scani/domain/services';
@@ -267,15 +267,7 @@ export const integrationsRouter = router({
           input.credentials,
           input.requestId
         );
-        Container.get(AnalyticsService).capture({
-          distinctId: ctx.userId,
-          event: ANALYTICS_EVENTS.accountConnected,
-          app: 'backend',
-          properties: {
-            provider: manifest.providerKey,
-            institution: manifest.institutionName,
-          },
-        });
+        captureAccountConnected(ctx.userId, manifest);
         return {
           success: true,
           message: `${manifest.institutionName} credentials stored — running import`,

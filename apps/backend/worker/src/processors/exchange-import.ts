@@ -1,5 +1,5 @@
 import crypto from 'node:crypto';
-import { ANALYTICS_EVENTS, AnalyticsService } from '@scani/analytics';
+import { captureExchangeImportCompleted } from '@scani/analytics';
 import { PortfolioValueCache } from '@scani/domain/services';
 import { ImportExchangeAccountsUseCase, ImportIbkrAccountsUseCase } from '@scani/domain/use-cases';
 import {
@@ -205,17 +205,7 @@ export class ExchangeImportProcessor extends UserJobProcessor<ExchangeImportJob,
       throw new UnrecoverableError(`Exchange import produced no accounts; errors: ${summary}`);
     }
 
-    Container.get(AnalyticsService).capture({
-      distinctId: data.userId,
-      event: ANALYTICS_EVENTS.importCompleted,
-      app: 'backend',
-      properties: {
-        kind: 'exchange',
-        provider: data.provider,
-        accounts_created: result.accountsCreated,
-        tokens_imported: result.tokensImported,
-      },
-    });
+    captureExchangeImportCompleted(data.userId, data.provider, result);
 
     return {
       accountsCreated: result.accountsCreated,

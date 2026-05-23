@@ -1,11 +1,4 @@
-import {
-  ANALYTICS_EVENTS,
-  type AnalyticsApp,
-  AnalyticsService,
-  loadAnalyticsConfig,
-  rewriteEmailHtml,
-} from '@scani/analytics';
-import { Container } from 'typedi';
+import { type AnalyticsApp, applyEmailTracking } from '@scani/analytics';
 import { renderMagicLinkEmail, renderOtpEmail, renderVerificationEmail } from './templates';
 import {
   type EmailBrand,
@@ -87,9 +80,9 @@ export abstract class EmailService {
     await this.sendMessage(message);
   }
 
-  // Single tracking-aware delivery path: rewrites links + appends an open
-  // pixel when email tracking is configured, records an `email_sent`
-  // event, then hands the message to the concrete transport.
+  // Single tracking-aware delivery path: applyEmailTracking rewrites
+  // links + appends an open pixel when configured and fires `email_sent`;
+  // the rendered HTML then goes to the concrete transport.
   private async deliver(input: {
     to: string;
     template: string;
@@ -97,25 +90,11 @@ export abstract class EmailService {
     brand: EmailBrand;
     content: EmailContent;
   }): Promise<void> {
-    const messageId = crypto.randomUUID();
-    const cfg = loadAnalyticsConfig();
-    let html = input.content.html;
-    if (cfg.EMAIL_TRACKING_BASE_URL && cfg.EMAIL_TRACKING_SECRET) {
-      html = rewriteEmailHtml({
-        html,
-        messageId,
-        recipient: input.to,
-        template: input.template,
-        app: input.app,
-        baseUrl: cfg.EMAIL_TRACKING_BASE_URL,
-        secret: cfg.EMAIL_TRACKING_SECRET,
-      });
-    }
-    Container.get(AnalyticsService).capture({
-      distinctId: input.to,
-      event: ANALYTICS_EVENTS.emailSent,
-      app: 'email',
-      properties: { template: input.template, message_id: messageId, surface: input.app },
+    const { html } = applyEmailTracking({
+      to: input.to,
+      template: input.template,
+      app: input.app,
+      html: input.content.html,
     });
     await this.sendMessage({
       from: input.brand.from,

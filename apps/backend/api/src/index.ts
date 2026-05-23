@@ -7,7 +7,7 @@ const env = loadEnv();
 
 import { cors } from '@elysiajs/cors';
 import { trpc } from '@elysiajs/trpc';
-import { AnalyticsService } from '@scani/analytics';
+import { shutdownAnalytics } from '@scani/analytics';
 import { loadCloudClientConfig } from '@scani/cloud-client';
 import { probeDataProvider } from '@scani/cloud-client/health-probe';
 import { createComponentLogger, createTimer, logger, sanitizeUrl } from '@scani/logging';
@@ -933,10 +933,7 @@ const gracefulShutdown = async (signal: string) => {
       logger.error({ err }, 'Error closing BullMQ/Redis during shutdown');
     }
 
-    // Flush buffered PostHog analytics events before the process exits.
-    await Container.get(AnalyticsService)
-      .shutdown()
-      .catch(() => undefined);
+    await shutdownAnalytics();
 
     // Flush Sentry before exit so the shutdown-triggering error (if any)
     // makes it to the dashboard. 2s is plenty over Fly's private net.

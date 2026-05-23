@@ -1,4 +1,4 @@
-import { ANALYTICS_EVENTS, AnalyticsService } from '@scani/analytics';
+import { captureUserSignedUp } from '@scani/analytics';
 import { EmailFacade } from '@scani/cloud-client/facades/email-facade';
 import { isProduction } from '@scani/config';
 import { db } from '@scani/db';
@@ -105,12 +105,7 @@ export function createBetterAuth(opts: {
       user: {
         create: {
           after: async (user) => {
-            Container.get(AnalyticsService).capture({
-              distinctId: user.id,
-              event: ANALYTICS_EVENTS.userSignedUp,
-              app: 'backend',
-              properties: { email: user.email },
-            });
+            captureUserSignedUp(user);
             try {
               const baseCurrencyId = await getDefaultBaseCurrencyId();
               if (!baseCurrencyId) return;
