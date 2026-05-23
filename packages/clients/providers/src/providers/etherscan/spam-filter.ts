@@ -11,6 +11,10 @@
  * providers reuse it without duplicating the regex set.
  */
 
+// Token names/symbols on EVM chains are realistically <=256 chars; the
+// bounded `.{0,256}` keeps the regex linear-time instead of polynomial
+// (CodeQL js/polynomial-redos) without changing match behaviour on
+// real-world inputs.
 const SUSPICIOUS_PATTERNS: readonly RegExp[] = [
   /https?:\/\//i,
   /www\./i,
@@ -18,7 +22,7 @@ const SUSPICIOUS_PATTERNS: readonly RegExp[] = [
   /claim|visit|reward|bonus|airdrop/i,
   /^\$/,
   /t\.me|telegram/i,
-  /swap.*on|claim.*on/i,
+  /(?:swap|claim).{0,256}on/i,
   /<|>|\{|\}|\[|\]/i,
 ];
 
