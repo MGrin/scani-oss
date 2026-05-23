@@ -1,4 +1,5 @@
 import { ArrowRight, BookOpen } from 'lucide-react';
+import { DOCS_URL } from '../../seo/siteMeta';
 
 export function Hero() {
   return (
@@ -41,21 +42,15 @@ export function Hero() {
             Open the app
             <ArrowRight className="h-4 w-4" />
           </a>
-          {/* Docs aren't ready yet — render as a visibly-disabled button
-           * with a "coming soon" pill instead of a working link. Swap
-           * back to an <a> once the API docs are publish-ready. */}
-          <button
-            type="button"
-            disabled
-            aria-disabled="true"
-            className="inline-flex h-11 cursor-not-allowed items-center justify-center gap-2 rounded-md border border-border bg-card px-6 text-sm font-medium text-foreground opacity-60"
+          <a
+            href={DOCS_URL}
+            target="_blank"
+            rel="noreferrer noopener"
+            className="inline-flex h-11 items-center justify-center gap-2 rounded-md border border-border bg-card px-6 text-sm font-medium text-foreground transition-colors hover:bg-accent"
           >
             <BookOpen className="h-4 w-4" />
             Read the docs
-            <span className="rounded-full bg-muted px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
-              soon
-            </span>
-          </button>
+          </a>
         </div>
         <p className="mt-6 text-xs text-muted-foreground">
           Free during beta · No credit card · Self-host or use ours

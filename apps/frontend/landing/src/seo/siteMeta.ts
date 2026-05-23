@@ -11,6 +11,8 @@ export const DEFAULT_OG_IMAGE = `${SITE_URL}/og-image.png`;
 
 export const GITHUB_URL = 'https://github.com/MGrin/scani-oss';
 
+export const DOCS_URL = 'https://docs.scani.xyz';
+
 export const SUPPORT_EMAIL = 'support@scani.xyz';
 
 /** Joins a route path onto the site origin, always producing an absolute URL. */

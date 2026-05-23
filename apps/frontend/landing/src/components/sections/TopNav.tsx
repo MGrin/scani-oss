@@ -1,18 +1,18 @@
 import { Github } from 'lucide-react';
 import { useEffect, useState } from 'react';
-import { GITHUB_URL } from '../../seo/siteMeta';
+import { DOCS_URL, GITHUB_URL } from '../../seo/siteMeta';
 import { ScaniLogo } from '../ScaniLogo';
 
-// Nav anchors visitors hit from the top bar. Curated API-docs links are
-// still absent — the docs site isn't published yet; the hero shows a
-// "coming soon" pill for the same reason. Re-introduce the docs CTA
-// when those land.
+// Nav anchors visitors hit from the top bar.
 //
-// Hrefs are root-anchored (`/#…`) so they also resolve from the
-// standalone /contact page, not just the home scroll.
-const NAV_LINKS: ReadonlyArray<{ label: string; href: string }> = [
+// Internal hrefs are root-anchored (`/#…`) so they also resolve from
+// the standalone /contact page, not just the home scroll. The Docs
+// entry points off-domain to docs.scani.xyz; it's flagged with
+// `external: true` so the renderer opens it in a new tab.
+const NAV_LINKS: ReadonlyArray<{ label: string; href: string; external?: boolean }> = [
   { label: 'Product', href: '/#product' },
   { label: 'Tiers', href: '/#tiers' },
+  { label: 'Docs', href: DOCS_URL, external: true },
   { label: 'Compare', href: '/alternatives' },
   { label: 'Beta', href: '/#beta' },
 ];
@@ -45,6 +45,8 @@ export function TopNav() {
             <a
               key={link.href}
               href={link.href}
+              target={link.external ? '_blank' : undefined}
+              rel={link.external ? 'noreferrer noopener' : undefined}
               className="text-muted-foreground transition-colors hover:text-foreground"
             >
               {link.label}
