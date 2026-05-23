@@ -87,7 +87,7 @@ jobs:
         with:
           auth: ${{ secrets.GIST_SECRET }}
           gistID: ${{ vars.COVERAGE_GIST_ID }}
-          filename: scani-coverage.json
+          filename: scani-oss-coverage.json
           label: coverage
           message: ${{ steps.badge.outputs.message }}
           color: ${{ steps.badge.outputs.color }}
