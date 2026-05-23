@@ -1,0 +1,154 @@
+---
+title: Adding a scheduled job
+description: Where the job-name lives, where the descriptor lives, where the processor lives, and how to wrap it in the advisory lock.
+sidebar:
+  order: 6
+---
+
+import { Steps, Aside } from '@astrojs/starlight/components';
+
+Adding a scheduled (cron-style) job touches three places. The
+contract is intentionally split so the wire-name catalogue stays
+small, the descriptors live with the domain that owns them, and
+processors stay close to the worker that runs them.
+
+## The three places
+
+- `packages/business/jobs/src/job-names.ts` — add the string name
+  to the `JOB_NAMES` map. This is the wire-contract identifier
+  BullMQ uses; renaming it requires a coordinated rolling deploy,
+  so pick well.
+- `packages/business/jobs/src/scheduled-jobs/my-new-job.ts` — the
+  descriptor: schedule (cron expression), payload schema, retry
+  policy, summariser. Imports the job name from `job-names.ts`.
+- `apps/backend/worker/src/processors/my-new-job.ts` — the
+  processor: the handler function, wrapped in the advisory-lock
+  helper from `apps/backend/worker/src/lib/cron-lock.ts`.
+
+The worker reads the registry at boot and registers everything
+with BullMQ via `upsertJobScheduler`. There is no separate cron
+container.
+
+## The step-by-step
+
+<Steps>
+
+1. **Pick a wire-name.** Kebab-case, descriptive, stable.
+   ```ts
+   // packages/business/jobs/src/job-names.ts
+   export const JOB_NAMES = {
+     // ...existing...
+     myNewJob: 'my-new-job',
+   } as const;
+   ```
+
+2. **Write the descriptor.**
+   ```ts
+   // packages/business/jobs/src/scheduled-jobs/my-new-job.ts
+   import { JOB_NAMES } from '../job-names';
+   import { repeatableSchedule } from '../infrastructure';
+
+   export const myNewJob = repeatableSchedule({
+     name: JOB_NAMES.myNewJob,
+     cron: '0 4 * * *',           // 04:00 UTC daily
+     retryPolicy: 'standard',     // see retry-policies.ts
+     payloadSchema: z.object({}),
+   });
+   ```
+
+3. **Add it to the registry.** Re-export from
+   `packages/business/jobs/src/scheduled-jobs/index.ts` so the
+   worker's boot-time iterator picks it up.
+
+4. **Write the processor.**
+   ```ts
+   // apps/backend/worker/src/processors/my-new-job.ts
+   import { JOB_NAMES } from '@scani/jobs';
+   import { withCronLock } from '../lib/cron-lock';
+   import { Container } from 'typedi';
+   import { MyService } from '@scani/domain';
+
+   export const myNewJobProcessor = {
+     name: JOB_NAMES.myNewJob,
+     handler: withCronLock(JOB_NAMES.myNewJob, async (job) => {
+       const service = Container.get(MyService);
+       const summary = await service.run();
+       return summary;
+     }),
+   };
+   ```
+
+5. **Register the processor** in the worker's index:
+   ```ts
+   // apps/backend/worker/src/processors/index.ts
+   export * from './my-new-job';
+   ```
+
+6. **Write tests** for the underlying service. Don't test the cron
+   wrapper itself — the wrapper is shared infra and is tested in
+   `apps/backend/worker/tests/lib/cron-lock.test.ts`.
+
+7. **Document it** in [Job catalogue](/reference/jobs/) with the
+   schedule, what it does, and what it depends on.
+
+</Steps>
+
+## The advisory-lock wrapper
+
+`withCronLock(jobName, handler)` acquires a Postgres advisory lock
+keyed on the job name, runs the handler, then releases. If the
+lock is already held (a sibling worker or an overlapping fire),
+the handler is **silently skipped** — that's the point. Two
+worker pods running the same cron tick will not race; one wins
+the lock and the other no-ops.
+
+Full rationale in
+[Why BullMQ + Postgres advisory locks](/decisions/bullmq-advisory-locks/).
+
+<Aside type="caution" title="The lock is opt-in">
+  `withCronLock` is not applied automatically. If you forget to
+  wrap your handler, two replicas of the worker pod will both run
+  the job and produce duplicates / contention. Always wrap.
+</Aside>
+
+## Retry policies
+
+The standard retry shapes live in
+`packages/business/jobs/src/retry-policies.ts`. Pick one:
+
+| Policy | Shape | Use |
+|---|---|---|
+| `standard` | Exponential backoff, 5 attempts, 60s base. | Most scheduled jobs. |
+| `aggressive` | Fast retries, 10 attempts, 5s base. | Quick reconcilers (`reconcile-pending-credentials`). |
+| `none` | One shot, no retry. | Diagnostics (`dlq-depth-probe`, `job-heartbeat-probe`). |
+
+Custom policies are fine but justify them in the PR.
+
+## Schedule conventions
+
+| Frequency | Convention |
+|---|---|
+| Every minute | `* * * * *` — reserved for reconcilers. |
+| Hourly | `0 * * * *` — pricing, balance syncs. |
+| Nightly heavy | Pick a slot between 03:00–05:00 UTC; coordinate with existing jobs. |
+| Weekly | `0 2 * * 0` — Sunday early. |
+
+The current schedule allocations are documented in
+[Job catalogue](/reference/jobs/). When adding a heavy job, avoid
+clashing with the existing nightly chain (3:00 → 3:30 → 4:00 →
+5:00).
+
+## User-initiated jobs (not the same thing)
+
+A user-initiated job (`screenshot-parse`, `exchange-import`,
+`wallet-import`, …) lives under
+`packages/business/jobs/src/user-jobs/` and is enqueued by the
+api in response to a user action. It does NOT use the cron lock —
+each enqueue gets a unique job ID and runs once. Different
+contract, similar shape.
+
+## See also
+
+- [Engineering conventions](/contributing/conventions/)
+- [Why BullMQ + Postgres advisory locks](/decisions/bullmq-advisory-locks/)
+- [Job catalogue](/reference/jobs/)

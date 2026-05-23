@@ -1,42 +1,67 @@
 ---
 title: Scani
-description: Self-hostable, open-source portfolio tracker for crypto and traditional assets.
+description: Self-hostable, open-source portfolio tracker for crypto and traditional assets. Domain model, self-hosting guide, design decisions, and a financial glossary.
 template: splash
 hero:
-  tagline: One view across every asset you care about — exchanges, on-chain wallets, brokerages, and manual entries.
+  tagline: One ledger across every asset you care about — exchanges, on-chain wallets, brokerages, banks, and manual entries. Same TypeScript codebase runs three ways.
   actions:
-    - text: Get started
-      link: /quickstart/
+    - text: Quickstart
+      link: /start/quickstart/
       icon: right-arrow
       variant: primary
+    - text: Self-host
+      link: /self-hosting/tier-model/
+      icon: setting
+      variant: secondary
     - text: View on GitHub
       link: https://github.com/MGrin/scani-oss
       icon: external
       variant: minimal
 ---
 
-import { Card, CardGrid } from '@astrojs/starlight/components';
+import { Card, CardGrid, LinkCard } from '@astrojs/starlight/components';
 
-## Why Scani
+## What you'll find here
 
-The same TypeScript codebase runs three ways: fully self-hosted, against a hosted
-data-provider, or as a managed service. MIT licensed. No telemetry. No vendor lock-in.
+These docs are written for three audiences at once — operators self-hosting
+the stack, contributors reading the code, and agents ingesting Scani as
+context. Same content, organised so each can skim it.
 
 <CardGrid stagger>
-  <Card title="Self-host in one command" icon="rocket">
-    `bun run dev:stack` boots the full stack against Postgres, Redis, MinIO, and Mailpit.
-    See the [Quickstart](/quickstart/).
+  <Card title="Concepts" icon="document">
+    The domain model: holdings, accounts, vaults, groups, tokens,
+    transactions, observations, the price graph, and the rollup.
+    Every page ends with a *why it's modelled this way* note.
+    See [Mental model](/concepts/mental-model/).
   </Card>
-  <Card title="Three tiers, same binaries" icon="setting">
-    Pick fully self-hosted, semi-managed, or fully managed by setting two env vars.
-    See the [Tier model](/self-hosting/tier-model/).
+  <Card title="Design decisions" icon="puzzle">
+    Why the ledger is append-only. Why there's no USD canonicalisation.
+    Why transfer linking runs nightly. The cross-cutting choices that
+    explain the shape of the code.
+    See [Design decisions](/decisions/append-only-ledger/).
   </Card>
-  <Card title="Provider integrations included" icon="puzzle">
-    Binance, Kraken, Coinbase, IBKR, Wise, Etherscan, Helius, CoinGecko, OpenAI, and more.
-    See [Provider integrations](/concepts/integrations/).
+  <Card title="Self-hosting" icon="rocket">
+    Three tiers from one binary. Compose for a one-box deploy,
+    managed Postgres / Redis / S3 when you outgrow it, backup &
+    restore, upgrades, observability, troubleshooting.
+    See [Tier model](/self-hosting/tier-model/).
   </Card>
-  <Card title="No telemetry, ever" icon="approve-check">
-    The OSS distribution sends no install IDs, no usage counters, no version-check beacons.
-    See [Privacy & telemetry](/concepts/privacy/).
+  <Card title="Reference" icon="open-book">
+    A full financial [glossary](/reference/glossary/) — Scani-specific
+    terms plus general finance. Database schema, tRPC routes, jobs,
+    provider matrix, env-var index, and an
+    [LLM-friendly index](/reference/llms/).
   </Card>
 </CardGrid>
+
+## New here
+
+<LinkCard title="What is Scani" description="What it tracks, what it doesn't, and the shape of the product." href="/start/what-is-scani/" />
+<LinkCard title="Quickstart" description="A self-contained stack in one command — no external API keys required." href="/start/quickstart/" />
+<LinkCard title="How to read these docs" description="An audience map: which pages matter if you're an operator, a contributor, or an LLM." href="/start/how-to-read/" />
+
+## License & telemetry
+
+MIT licensed. The OSS distribution sends **no telemetry, ever** — no install
+ID, no anonymous usage counter, no version-check beacon. The only outbound
+calls a self-hosted stack makes are the ones you explicitly configure.
