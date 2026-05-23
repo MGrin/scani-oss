@@ -1,4 +1,4 @@
-import { captureUserSignedUp } from '@scani/analytics';
+import { captureUserSignedUp, notifyFounderOfNewUser } from '@scani/analytics';
 import { EmailFacade } from '@scani/cloud-client/facades/email-facade';
 import { isProduction } from '@scani/config';
 import { db } from '@scani/db';
@@ -106,6 +106,7 @@ export function createBetterAuth(opts: {
         create: {
           after: async (user) => {
             captureUserSignedUp(user);
+            void notifyFounderOfNewUser(user, email);
             try {
               const baseCurrencyId = await getDefaultBaseCurrencyId();
               if (!baseCurrencyId) return;

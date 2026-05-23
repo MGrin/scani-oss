@@ -14,6 +14,9 @@
   },
   "description": "PostHog product analytics — browser provider/hooks (posthog-js) + a Node @Service() capture client (posthog-node) + email open/click tracking helpers. No-ops when unconfigured.",
   "dependencies": {
+    "@scani/db": "workspace:*",
+    "@scani/logging": "workspace:*",
+    "drizzle-orm": "^0.45.2",
     "posthog-js": "^1.270.1",
     "posthog-node": "^4.18.0",
     "typedi": "^0.10.0",

@@ -12,6 +12,13 @@ primary_region = "sin"
   # refuses to construct unless SERVICE_NAME=scani-backend at boot. Worker
   # / data-provider use the Redis-pub/sub fallback and set their own value.
   SERVICE_NAME = "scani-backend"
+  # Inbox for founder new-user notifications (see
+  # @scani/analytics/founder-alerts). Same mailbox the data-provider's
+  # waitlist router uses for signup notifications. Silently no-ops when
+  # WAITLIST_OPS_EMAIL is unset. FOUNDER_NOTIFY_USER_CAP defaults to 100
+  # — leave unset to use the default.
+  WAITLIST_OPS_EMAIL = "waitlist@scani.xyz"
+  WAITLIST_OPS_FROM  = "\"Scani Signups\" <waitlist@scani.xyz>"
 
 [http_service]
   internal_port       = 8080
