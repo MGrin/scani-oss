@@ -48,15 +48,15 @@ with a typed adapter behind a **capability interface**:
   caller change
 
 All outbound 3rd-party calls flow through the
-[`data-provider`](/scani-oss/concepts/architecture/) service — the api and
+[`data-provider`](/concepts/architecture/) service — the api and
 worker call it over tRPC via `@scani/cloud-client` rather than hitting
 upstream APIs directly. This is what makes the
-[tier model](/scani-oss/self-hosting/tier-model/) possible.
+[tier model](/self-hosting/tier-model/) possible.
 
 ## Adding a new provider
 
 **Adding a new provider is one of the highest-leverage contributions.**
-Start with [Contributing → How to contribute](/scani-oss/contributing/how-to/)
+Start with [Contributing → How to contribute](/contributing/how-to/)
 and the
 [`packages/clients/providers/`](https://github.com/MGrin/scani-oss/tree/main/packages/clients/providers)
 directory.

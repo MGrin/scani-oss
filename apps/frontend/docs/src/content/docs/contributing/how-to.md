@@ -5,7 +5,7 @@ description: Filing issues, opening PRs, and what kinds of contributions are mos
 
 Thanks for your interest in working on Scani. This page is a short on-ramp.
 The canonical engineering spec lives in
-[Engineering conventions](/scani-oss/contributing/conventions/) — read that
+[Engineering conventions](/contributing/conventions/) — read that
 before opening anything non-trivial.
 
 ## Filing issues
@@ -24,7 +24,7 @@ before opening anything non-trivial.
 
 ## Local development
 
-See [Quickstart](/scani-oss/quickstart/) for boot instructions. The short
+See [Quickstart](/quickstart/) for boot instructions. The short
 version:
 
 ```bash

@@ -34,7 +34,7 @@ host. **All outbound provider calls fan out from there.** In Tier 1, that's
 your machine.
 
 If you point `SCANI_CLOUD_URL` at a third-party hosted data-provider instead
-(Tier 2 — see [Tier model](/scani-oss/self-hosting/tier-model/)), upstream
+(Tier 2 — see [Tier model](/self-hosting/tier-model/)), upstream
 requests fan out from the hosted endpoint. The OSS code makes no such call
 by default.
 

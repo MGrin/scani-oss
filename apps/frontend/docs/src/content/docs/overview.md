@@ -34,6 +34,6 @@ Provider API keys unlock specific integrations.
 
 ## What's next
 
-- New here? Read the [Quickstart](/scani-oss/quickstart/).
-- Deploying it? See [Self-hosting](/scani-oss/self-hosting/tier-model/).
-- Contributing? Start with [How to contribute](/scani-oss/contributing/how-to/).
+- New here? Read the [Quickstart](/quickstart/).
+- Deploying it? See [Self-hosting](/self-hosting/tier-model/).
+- Contributing? Start with [How to contribute](/contributing/how-to/).

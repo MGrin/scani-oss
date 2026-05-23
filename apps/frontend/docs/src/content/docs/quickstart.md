@@ -19,7 +19,7 @@ The stack is self-contained — no external service credentials required. Auth,
 holdings, FX pricing, and local screenshot storage (via MinIO) all work
 without any API key. Provider API keys (CoinGecko, OpenAI, exchange
 read-only keys, …) unlock specific integrations — see
-[Environment variables](/scani-oss/self-hosting/environment/).
+[Environment variables](/self-hosting/environment/).
 
 ## Local ports
 
@@ -70,6 +70,6 @@ To test Fastmail in dev, comment out that line in `docker-compose.yml`.
 
 ## Next steps
 
-- Configure provider keys → [Environment variables](/scani-oss/self-hosting/environment/)
-- Deploy to a server → [Production](/scani-oss/self-hosting/production/)
-- Understand what's running → [Architecture](/scani-oss/concepts/architecture/)
+- Configure provider keys → [Environment variables](/self-hosting/environment/)
+- Deploy to a server → [Production](/self-hosting/production/)
+- Understand what's running → [Architecture](/concepts/architecture/)
