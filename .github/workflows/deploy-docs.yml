@@ -1,0 +1,82 @@
+name: Deploy docs
+
+# Builds the Starlight static site under `apps/frontend/docs/` and deploys
+# the output to GitHub Pages, served at the `docs.scani.xyz` custom
+# domain. PRs that touch the docs site build (without deploying) so we
+# don't merge a broken site.
+#
+# One-time setup outside this workflow:
+#   1. Repo Settings → Pages → Build and deployment → Source:
+#      GitHub Actions.
+#   2. Repo Settings → Pages → Custom domain → enter `docs.scani.xyz`.
+#      GitHub will tell you to add a DNS record. In whichever DNS host
+#      runs the `scani.xyz` zone, add:
+#        CNAME  docs  →  mgrin.github.io
+#      (Pages serves all of a user's project sites from
+#      `<user>.github.io`; the CNAME file in `public/` tells Pages which
+#      project this hostname belongs to.)
+#   3. Wait for the DNS check to pass, then tick "Enforce HTTPS" in
+#      Settings → Pages (Let's Encrypt cert provisioning is automatic
+#      once the domain verifies).
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'apps/frontend/docs/**'
+      - '.github/workflows/deploy-docs.yml'
+      - '.github/actions/setup-bun/**'
+      - 'bun.lock'
+      - 'package.json'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'apps/frontend/docs/**'
+      - '.github/workflows/deploy-docs.yml'
+  workflow_dispatch:
+
+# `pages: write` + `id-token: write` are what `actions/deploy-pages`
+# requires to publish; everything else stays read-only.
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Pages allows only one in-flight deployment at a time. We do NOT
+# cancel in-progress runs — a half-published Pages artifact can leave
+# the site stuck mid-deploy. PRs are scoped per-ref so they don't
+# contend with each other.
+concurrency:
+  group: pages-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build site
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0
+      - uses: ./.github/actions/setup-bun
+
+      - name: Build Starlight site
+        run: bun --cwd apps/frontend/docs build
+
+      - name: Upload Pages artifact
+        # Only the main-branch run uploads — PR runs verify the build
+        # succeeds but don't publish.
+        if: github.event_name != 'pull_request'
+        uses: actions/upload-pages-artifact@56afc609e74202658d3ffba0e8f6dda462b719fa # v3.0.1
+        with:
+          path: apps/frontend/docs/dist
+
+  deploy:
+    name: Deploy to GitHub Pages
+    if: github.event_name != 'pull_request'
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@d6db90164ac5ed86f2b6aed7e0febac5b3c0c03e # v4.0.5

@@ -12,6 +12,9 @@ service. MIT licensed.
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
 [![Bun](https://img.shields.io/badge/runtime-Bun-black.svg)](https://bun.sh)
 
+**📚 [Docs →](https://docs.scani.xyz/)** — quickstart, self-hosting,
+architecture, provider integrations, and the full env-var reference.
+
 ---
 
 ## Quickstart
@@ -258,10 +261,4 @@ MIT. See [`LICENSE`](./LICENSE).
 
 ## Roadmap
 
-Named things in flight:
-
-- **OSS-native documentation site** — the repo intentionally keeps the
-  README as the single source of truth for now; a dedicated docs site
-  comes once we have something stable enough to deserve one.
-
-Everything else lives in [GitHub issues](https://github.com/MGrin/scani-oss/issues).
+Tracked in [GitHub issues](https://github.com/MGrin/scani-oss/issues).
