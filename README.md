@@ -86,14 +86,31 @@ at call-time if unset):
 
 ### Production
 
-For a production deployment, point the four backend services at managed
-Postgres, Redis, and S3-compatible storage, set `NODE_ENV=production`,
-provide real values for everything `requiredInProd` (the api refuses to
-boot otherwise), and run behind your own reverse proxy / TLS.
+The repo ships a [`docker-compose.prod.yml`](./docker-compose.prod.yml)
+that pulls pre-built multi-arch images from Docker Hub
+(`scani/api`, `scani/worker`, `scani/data-provider`, `scani/frontend-app`)
+and wires them up with Postgres + Redis + MinIO. One-command bring-up:
 
-A reference production compose file (`docker-compose.prod.yml`) is
-planned — it will pull pre-built multi-arch images from Docker Hub and
-wire them up with the same env vars. See [Roadmap](#roadmap).
+```bash
+cp .env.example .env                              # set real values
+docker compose -f docker-compose.prod.yml up -d
+```
+
+For a real deployment, set the required env vars in `.env`
+(`BACKEND_URL`, `FRONTEND_URL`, `BETTER_AUTH_SECRET`, `ENCRYPTION_KEY`,
+`JOBS_HMAC_SECRET`, `DATA_PROVIDER_API_KEY`, `SCANI_CLOUD_API_KEY`,
+`LOG_ID_PEPPER`), and put your own TLS-terminating reverse proxy in
+front of the `frontend-app` container (the only one that needs to be
+reachable from the public internet — nginx inside it proxies `/api`
+and `/ws` to `api` over the compose network).
+
+To use managed Postgres / Redis / S3-compatible storage, comment out
+the corresponding services in `docker-compose.prod.yml` and point
+`DATABASE_URL` / `REDIS_URL` / `S3_*` at the managed endpoints.
+
+Images are tagged `:latest` (head of `main`), `:sha-<short>` (every
+push), and `:1.2.3` / `:1.2` / `:1` (semver tags). Pin
+`SCANI_IMAGE_TAG=1.2.3` in `.env` if you want reproducible deploys.
 
 ## Architecture
 
@@ -194,9 +211,6 @@ MIT. See [`LICENSE`](./LICENSE).
 
 Named things in flight:
 
-- **Multi-arch Docker images** published to Docker Hub
-  (`scani/api`, `scani/worker`, `scani/data-provider`, `scani/frontend-app`)
-  via GitHub Actions, plus a `docker-compose.prod.yml` that pulls them.
 - **OSS-native documentation site** — the repo intentionally keeps the
   README as the single source of truth for now; a dedicated docs site
   comes once we have something stable enough to deserve one.
