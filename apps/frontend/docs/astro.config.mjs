@@ -8,7 +8,7 @@ export default defineConfig({
   site: 'https://docs.scani.xyz',
   integrations: [
     starlight({
-      title: 'Scani',
+      title: 'Scani docs',
       description:
         'Self-hostable, open-source portfolio tracker for crypto and traditional assets.',
       social: [

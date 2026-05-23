@@ -192,12 +192,16 @@ export class FastmailEmailService extends EmailService {
 }
 
 // Accepts `"Name" <email@host>` or plain `email@host`.
+// Bounded whitespace quantifiers keep the regex linear-time even on
+// pathological all-whitespace input (CodeQL js/polynomial-redos); real
+// email-header values never approach these bounds.
 function parseAddress(raw: string): { name?: string; email: string } {
-  const match = raw.match(/^\s*(?:"?([^"<]*?)"?\s+)?<([^>]+)>\s*$/);
+  const trimmed = raw.trim();
+  const match = trimmed.match(/^(?:"?([^"<]{0,256}?)"?[ \t]{1,16})?<([^>]{1,512})>$/);
   if (match?.[2]) {
     return { name: match[1]?.trim() || undefined, email: match[2].trim() };
   }
-  return { email: raw.trim() };
+  return { email: trimmed };
 }
 
 // Fastmail accepts both exact-match identities (`nikita@scani.xyz`) and
