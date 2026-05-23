@@ -1,0 +1,47 @@
+# Static-host headers (`_headers` format, supported by Cloudflare Pages,
+# Netlify, and others). CSP / clickjack / sniff defenses apply to every
+# response; cache rules are per-path.
+#
+# Notes on the CSP:
+#  - `script-src 'self'` blocks the most common XSS vectors. Vite builds
+#    do not need `'unsafe-inline'` for scripts because all script tags
+#    in the build output are external `<script src=…>`.
+#  - `style-src 'self' 'unsafe-inline'` is required for Radix /
+#    headlessui's runtime-injected inline `style=` attributes and a
+#    handful of Tailwind class-state animations. Tightening to nonces
+#    is a follow-up.
+#  - `connect-src` lists every origin the app legitimately talks to:
+#    the backend API (set this to your own API host + its WebSocket
+#    sibling), Sentry ingest (*.ingest.sentry.io / *.sentry.io), and
+#    S3-compatible object storage for presigned uploads. Self-hosters
+#    must edit the API origin below to match their deployment.
+#  - `frame-ancestors 'none'` is the modern equivalent of X-Frame-Options:
+#    DENY; both are sent to cover legacy browsers.
+
+/*
+  Content-Security-Policy: default-src 'self'; base-uri 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; connect-src 'self' https://your-api-host.example.com wss://your-api-host.example.com https://*.sentry.io https://*.ingest.sentry.io https://*.r2.cloudflarestorage.com; font-src 'self' data:; frame-ancestors 'none'; form-action 'self'; object-src 'none'
+  X-Content-Type-Options: nosniff
+  X-Frame-Options: DENY
+  Referrer-Policy: strict-origin-when-cross-origin
+  Strict-Transport-Security: max-age=31536000; includeSubDomains; preload
+  Permissions-Policy: camera=(), microphone=(), geolocation=()
+
+# index.html and sw.js must never be cached by the browser
+/index.html
+  Cache-Control: no-cache, no-store, must-revalidate
+
+/sw.js
+  Cache-Control: no-cache, no-store, must-revalidate
+
+/version.json
+  Cache-Control: no-cache, no-store, must-revalidate
+
+# Hashed assets can be cached forever (immutable content-addressed names)
+/assets/*
+  Cache-Control: public, max-age=31536000, immutable
+
+/manifest.json
+  Cache-Control: public, max-age=3600
+
+/icons/*
+  Cache-Control: public, max-age=86400

@@ -1,0 +1,132 @@
+/* Form Mobile Responsiveness Improvements */
+
+/* Ensure form fields have adequate touch targets on mobile */
+@media (max-width: 768px) {
+  /* Increase touch target size for mobile */
+  .form-input,
+  .form-textarea,
+  .form-select {
+    min-height: 44px; /* iOS/Android recommended minimum */
+    font-size: 16px; /* Prevents zoom on iOS */
+    padding: 12px 16px;
+  }
+
+  /* Responsive character counter positioning */
+  .character-counter {
+    font-size: 0.75rem;
+    line-height: 1.2;
+  }
+
+  /* Stack form elements vertically with proper spacing */
+  .form-field-mobile {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+
+  .form-field-mobile .field-info {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    align-items: stretch;
+  }
+
+  .form-field-mobile .character-counter {
+    align-self: flex-end;
+    margin-top: 0.25rem;
+  }
+
+  /* Improve dialog responsiveness */
+  .dialog-mobile {
+    margin: 1rem;
+    max-width: calc(100vw - 2rem);
+    max-height: calc(100vh - 2rem);
+  }
+
+  .dialog-mobile .dialog-content {
+    max-height: calc(100vh - 4rem);
+    overflow-y: auto;
+  }
+
+  /* Better button spacing on mobile */
+  .dialog-footer-mobile {
+    flex-direction: column;
+    gap: 0.75rem;
+  }
+
+  .dialog-footer-mobile .button {
+    width: 100%;
+    min-height: 44px;
+  }
+
+  /* Ensure loading states are visible on mobile */
+  .loading-indicator-mobile {
+    justify-content: center;
+    padding: 0.5rem;
+  }
+}
+
+/* Tablet-specific adjustments */
+@media (min-width: 769px) and (max-width: 1024px) {
+  .form-input,
+  .form-textarea,
+  .form-select {
+    min-height: 42px;
+    padding: 10px 14px;
+  }
+
+  .dialog-tablet {
+    max-width: 90vw;
+  }
+}
+
+/* Focus improvements for better accessibility */
+.form-input:focus,
+.form-textarea:focus,
+.form-select:focus {
+  outline: 2px solid hsl(var(--ring));
+  outline-offset: 2px;
+}
+
+/* High contrast mode support */
+@media (prefers-contrast: high) {
+  .form-input,
+  .form-textarea,
+  .form-select {
+    border-width: 2px;
+  }
+
+  .form-error {
+    font-weight: 600;
+  }
+}
+
+/* Reduced motion support */
+@media (prefers-reduced-motion: reduce) {
+  .animate-pulse,
+  .animate-spin {
+    animation: none;
+  }
+
+  .loading-indicator-static::before {
+    content: "•";
+    color: hsl(var(--primary));
+  }
+}
+
+/* Dark mode form improvements */
+@media (prefers-color-scheme: dark) {
+  .form-input,
+  .form-textarea,
+  .form-select {
+    border-color: hsl(var(--border));
+    background-color: hsl(var(--background));
+  }
+
+  .form-input:focus,
+  .form-textarea:focus,
+  .form-select:focus {
+    border-color: hsl(var(--ring));
+    box-shadow: 0 0 0 2px hsl(var(--ring) / 0.2);
+  }
+}

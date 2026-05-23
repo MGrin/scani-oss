@@ -1,0 +1,29 @@
+{
+  "name": "@scani/providers-google-sheets",
+  "private": true,
+  "type": "module",
+  "version": "1.0.0",
+  "description": "GoogleSheetsProvider — sub-workspace of @scani/providers carrying the googleapis dep so the rest of the providers tree (and @scani/domain transitively) stays slim.",
+  "exports": {
+    ".": "./src/index.ts",
+    "./factory": "./src/factory.ts"
+  },
+  "scripts": {
+    "lint": "biome check .",
+    "lint:fix": "biome check --write .",
+    "type-check": "tsgo --noEmit"
+  },
+  "dependencies": {
+    "@scani/db": "workspace:*",
+    "@scani/logging": "workspace:*",
+    "@scani/providers": "workspace:*",
+    "@scani/rate-limiter": "workspace:*",
+    "decimal.js": "^10.6.0",
+    "drizzle-orm": "^0.45.2",
+    "googleapis": "^160.0.0",
+    "ioredis": "^5.10.1"
+  },
+  "devDependencies": {
+    "typescript": "^5"
+  }
+}

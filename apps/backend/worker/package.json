@@ -1,0 +1,39 @@
+{
+  "name": "@scani/worker",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "bun run --watch src/index.ts",
+    "build": "bun build src/index.ts --compile --target=bun --minify --outfile=dist/server",
+    "start": "./dist/server",
+    "clean": "rm -rf dist",
+    "lint": "biome check .",
+    "lint:fix": "biome check --write .",
+    "type-check": "tsgo --noEmit"
+  },
+  "dependencies": {
+    "@scani/cloud-client": "workspace:*",
+    "@scani/config": "workspace:*",
+    "@scani/db": "workspace:*",
+    "@scani/domain": "workspace:*",
+    "@scani/file-import": "workspace:*",
+    "@scani/ingesters": "workspace:*",
+    "@scani/jobs": "workspace:*",
+    "@scani/providers": "workspace:*",
+    "@scani/providers-google-sheets": "workspace:*",
+    "@scani/logging": "workspace:*",
+    "@scani/queue": "workspace:*",
+    "@scani/rate-limiter": "workspace:*",
+    "@scani/realtime": "workspace:*",
+    "@sentry/node": "^8.49.0",
+    "drizzle-orm": "^0.45.2",
+    "ioredis": "^5.10.1",
+    "reflect-metadata": "^0.2.2",
+    "typedi": "^0.10.0",
+    "zod": "^3.25.76"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "typescript": "^5"
+  }
+}

@@ -1,0 +1,357 @@
+/**
+ * `TransactionRouter` — translates the new
+ * `TransactionsProvider.fetchTransactions(ctx)` shape into the
+ * `NewHoldingTransaction[]` rows the existing `TransactionImportCoordinator
+ * .persistAndReport` consumes.
+ *
+ * The migration target is to retire the per-CEX `*TransactionIngester`
+ * classes from `@scani/integrations` (which expose `{ resolveHolding,
+ * resolveToken }` callbacks at the call site) in favour of generic
+ * `TransactionEvent` events that carry `Partial<NewToken>` identity
+ * hints, and let the orchestrator resolve identities + holdings AFTER
+ * receiving events.
+ *
+ * This router is a single resolution pipeline:
+ *   1. `registry.getTransactionsFetcher(institutionCode).fetchTransactions(ctx)`
+ *      → `TransactionEvent[]` from the provider directory.
+ *   2. Per event, `findOrCreateByIdentity(primary.tokenIdentity)` →
+ *      tokenId; `holdingService.findOrCreateForIngest(...)` → holdingId.
+ *      Same for counter / fee / priceNative.
+ *   3. Build `NewHoldingTransaction` rows; the coordinator's existing
+ *      `persistAndReport` writes them.
+ *
+ * Coverage tracking: the router carries `firstEventAt`, `lastEventAt`,
+ * and a `hasCompleteTxHistory` hint forward; the coordinator combines
+ * those with the holdings touched in this run to update
+ * `holding_coverage`.
+ */
+
+import type {
+  NewHoldingBalanceObservation,
+  NewHoldingTransaction,
+  NewToken,
+  Token,
+} from '@scani/db/schema';
+import type { TransactionsProvider } from '@scani/providers/core/capabilities';
+import { ProviderRegistry } from '@scani/providers/core/registry';
+import type { ProviderContext, TransactionEvent, WithUserCreds } from '@scani/providers/core/types';
+import { Container, Service } from 'typedi';
+import { TokenTypeRepository } from '../../repositories/EnumRepositories';
+import { HoldingService } from '../holdings/HoldingService';
+import { TokenIdentityService } from '../tokens/TokenIdentityService';
+import { isWalletDerivedSource } from './transaction-sources';
+
+export interface TransactionRouterRequest {
+  userId: string;
+  accountId: string;
+  institutionId: string;
+  /** Institution code the registry filter dispatches by. */
+  institutionCode: string;
+  /** Source tag stored on every transaction row for dedup + audit. */
+  source: string;
+  /** Optional incremental cutoff. */
+  since?: Date;
+  /** Optional upper bound (rare; balance-snapshot use case). */
+  until?: Date;
+  /** Base currency for the provider context. */
+  baseCurrency: Token;
+  /**
+   * Decryption callback. Wired from the coordinator to
+   * `IntegrationCredentialsService.getDecryptedCredentials`.
+   */
+  resolveCredentials: ProviderContext['resolveCredentials'];
+}
+
+export interface TransactionRouterResult {
+  transactions: NewHoldingTransaction[];
+  observations: NewHoldingBalanceObservation[];
+  warnings: string[];
+  firstEventAt: Date | null;
+  lastEventAt: Date | null;
+  /**
+   * Best-effort claim: true when the run has no `since` and the
+   * provider didn't truncate. The new providers don't yet surface a
+   * truncation flag in `TransactionEvent`, so today we conservatively
+   * report `!since` only.
+   */
+  hasCompleteTxHistory: boolean;
+}
+
+@Service()
+export class TransactionRouter {
+  // Class-field DI per the project's typedi conventions (see CLAUDE.md).
+  private readonly tokenIdentityService = Container.get(TokenIdentityService);
+  private readonly tokenTypeRepository = Container.get(TokenTypeRepository);
+  private readonly holdingService = Container.get(HoldingService);
+
+  /**
+   * Returns whether the registry has any provider that claims the
+   * given institution code. The coordinator uses this to decide
+   * whether to dispatch the import or surface an unrecoverable
+   * "no provider registered" error.
+   */
+  hasProviderFor(institutionCode: string): boolean {
+    try {
+      return Container.get(ProviderRegistry).getTransactionsFetcher(institutionCode) !== null;
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * Run the transactions fetcher for the given institution and
+   * convert the resulting `TransactionEvent[]` into
+   * `NewHoldingTransaction[]` rows ready for persistence.
+   *
+   * Throws when no provider is registered for the institution code.
+   * The coordinator should call `hasProviderFor()` first to surface
+   * a cleaner unrecoverable error.
+   */
+  async run(request: TransactionRouterRequest): Promise<TransactionRouterResult> {
+    const provider = this.resolveProvider(request.institutionCode);
+
+    const ctx: WithUserCreds<ProviderContext> & {
+      institutionCode: string;
+      since?: Date;
+      until?: Date;
+    } = {
+      baseCurrency: request.baseCurrency,
+      timestamp: new Date(),
+      userId: request.userId,
+      accountId: request.accountId,
+      credentialsRef: { userId: request.userId, institutionId: request.institutionId },
+      resolveCredentials: request.resolveCredentials!,
+      institutionCode: request.institutionCode,
+      since: request.since,
+      until: request.until,
+    };
+
+    const events = await provider.fetchTransactions(ctx);
+    if (events.length === 0) {
+      return this.emptyResult(!request.since);
+    }
+
+    return this.materializeEvents(events, request);
+  }
+
+  // ============================================================
+  // Internals
+  // ============================================================
+
+  private resolveProvider(institutionCode: string): TransactionsProvider {
+    const registry = Container.get(ProviderRegistry);
+    const provider = registry.getTransactionsFetcher(institutionCode);
+    if (!provider) {
+      throw new Error(
+        `TransactionRouter: no provider registered for institutionCode '${institutionCode}'`
+      );
+    }
+    return provider;
+  }
+
+  /**
+   * Convert `TransactionEvent[]` into ledger-ready
+   * `NewHoldingTransaction[]`. Every `tokenIdentity` flows through
+   * `tokenIdentityService.findOrCreateByIdentity` so brand-new symbols
+   * (token discovered for the first time on a tx page) get a
+   * persisted `tokens` row with the federated metadata before the
+   * tx row is written.
+   *
+   * Returns warnings (non-fatal) when an identity can't be
+   * resolved — the event is skipped but the surrounding run
+   * continues.
+   */
+  private async materializeEvents(
+    events: readonly TransactionEvent[],
+    request: TransactionRouterRequest
+  ): Promise<TransactionRouterResult> {
+    const transactions: NewHoldingTransaction[] = [];
+    const warnings: string[] = [];
+    const accumulator: { first: Date | null; last: Date | null } = {
+      first: null,
+      last: null,
+    };
+
+    // Per-symbol token + holding cache. A typical tx import touches
+    // a handful of symbols thousands of times; resolving them
+    // through the DB on every event would be needlessly expensive.
+    const tokenCache = new Map<string, string>();
+    const holdingCache = new Map<string, string>();
+
+    // Pre-resolve every token-type code we might map against per-leg
+    // `tokenType` hints. IBKR equity legs declare `tokenType: 'stock'`
+    // (otherwise they'd default to crypto and silently route Yahoo →
+    // ETF look-alike pricing — see prod incident 2026-05-06 where
+    // AAPL/MSFT/NVDA/AMZN/PLTR/VOO ended up `crypto`-typed).
+    const seededTypes = await this.tokenTypeRepository.findByCodes([
+      'crypto',
+      'fiat',
+      'stock',
+      'private-company',
+      'other',
+    ]);
+    const tokenTypeIdByCode = new Map<string, string>(seededTypes.map((t) => [t.code, t.id]));
+    const defaultTypeId = tokenTypeIdByCode.get('crypto') ?? tokenTypeIdByCode.get('fiat');
+    if (!defaultTypeId) {
+      throw new Error('TransactionRouter: neither crypto nor fiat token type seeded');
+    }
+
+    const resolveTokenId = async (
+      identity: Partial<NewToken>,
+      tokenType?: string
+    ): Promise<string | null> => {
+      const cacheKey = this.identityCacheKey(identity);
+      const cached = tokenCache.get(cacheKey);
+      if (cached) return cached;
+      try {
+        // Per-leg `tokenType` hint takes precedence over the default;
+        // identity.typeId (rare, usually unset by providers) wins over
+        // both. The findOrCreateByIdentity lookup-by-tuple still finds
+        // existing rows regardless of the supplied typeId, so this only
+        // matters for newly-created tokens.
+        const hintedTypeId = tokenType ? tokenTypeIdByCode.get(tokenType) : undefined;
+        const partial: Partial<NewToken> = {
+          ...identity,
+          typeId: identity.typeId ?? hintedTypeId ?? defaultTypeId,
+        };
+        const token = await this.tokenIdentityService.findOrCreateByIdentity(partial);
+        tokenCache.set(cacheKey, token.id);
+        return token.id;
+      } catch (err) {
+        warnings.push(
+          `Failed to resolve token identity ${cacheKey}: ${err instanceof Error ? err.message : String(err)}`
+        );
+        return null;
+      }
+    };
+
+    // Wallet-derived imports (EVM via `etherscan`, Solana, and any
+    // other on-chain source) are gated by the wallet review: only the
+    // holdings the user kept are pre-created. We FIND ONLY for them so
+    // a tx referencing a token the user dropped at review doesn't
+    // silently re-introduce that holding (which is how 100+ spam
+    // tokens used to leak back in via OpeningBalanceReconciliation).
+    // Exchange-derived imports keep the create-on-miss flavour because
+    // deposits of new tokens are legitimate without a review. The
+    // source taxonomy lives in `transaction-sources.ts`.
+    const findOnly = isWalletDerivedSource(request.source);
+    const skippedByToken = new Map<string, number>();
+    const resolveHoldingId = async (tokenId: string): Promise<string | null> => {
+      const cached = holdingCache.get(tokenId);
+      if (cached) return cached;
+      try {
+        if (findOnly) {
+          const existing = await this.holdingService.findExistingForIngest({
+            userId: request.userId,
+            accountId: request.accountId,
+            tokenId,
+          });
+          if (!existing) {
+            skippedByToken.set(tokenId, (skippedByToken.get(tokenId) ?? 0) + 1);
+            return null;
+          }
+          holdingCache.set(tokenId, existing.id);
+          return existing.id;
+        }
+        const holding = await this.holdingService.findOrCreateForIngest({
+          userId: request.userId,
+          accountId: request.accountId,
+          tokenId,
+        });
+        holdingCache.set(tokenId, holding.id);
+        return holding.id;
+      } catch (err) {
+        warnings.push(
+          `Failed to resolve holding for token ${tokenId}: ${err instanceof Error ? err.message : String(err)}`
+        );
+        return null;
+      }
+    };
+
+    for (const event of events) {
+      const primaryTokenId = await resolveTokenId(
+        event.primary.tokenIdentity,
+        event.primary.tokenType
+      );
+      if (!primaryTokenId) continue;
+      const primaryHoldingId = await resolveHoldingId(primaryTokenId);
+      if (!primaryHoldingId) continue;
+
+      const counterTokenId = event.counter
+        ? await resolveTokenId(event.counter.tokenIdentity, event.counter.tokenType)
+        : null;
+      const feeTokenId = event.fee
+        ? await resolveTokenId(event.fee.tokenIdentity, event.fee.tokenType)
+        : null;
+      const priceNativeTokenId = event.priceNative
+        ? await resolveTokenId(event.priceNative.quoteIdentity, event.priceNative.tokenType)
+        : null;
+
+      if (!accumulator.first || event.occurredAt < accumulator.first) {
+        accumulator.first = event.occurredAt;
+      }
+      if (!accumulator.last || event.occurredAt > accumulator.last) {
+        accumulator.last = event.occurredAt;
+      }
+
+      transactions.push({
+        userId: request.userId,
+        holdingId: primaryHoldingId,
+        tokenId: primaryTokenId,
+        kind: event.kind,
+        quantity: event.primary.quantity,
+        priceNative: event.priceNative?.value ?? null,
+        priceNativeTokenId,
+        counterTokenId,
+        counterQuantity: event.counter?.quantity ?? null,
+        feeQuantity: event.fee?.quantity ?? null,
+        feeTokenId,
+        occurredAt: event.occurredAt,
+        externalId: event.externalId,
+        source: request.source,
+        sourceMetadata: {},
+        rawPayload: (event.rawPayload as Record<string, unknown> | null) ?? null,
+      });
+    }
+
+    if (skippedByToken.size > 0) {
+      let skippedTotal = 0;
+      for (const n of skippedByToken.values()) skippedTotal += n;
+      warnings.push(
+        `Skipped ${skippedTotal} tx event(s) referencing ${skippedByToken.size} token(s) the user didn't keep during wallet review.`
+      );
+    }
+
+    return {
+      transactions,
+      observations: [],
+      warnings,
+      firstEventAt: accumulator.first,
+      lastEventAt: accumulator.last,
+      hasCompleteTxHistory: !request.since,
+    };
+  }
+
+  private identityCacheKey(identity: Partial<NewToken>): string {
+    const meta = identity.providerMetadata as Record<string, unknown> | undefined;
+    // Prefer the most-specific identity component for cache keying.
+    if (meta && typeof meta === 'object') {
+      const eth = meta.etherscan as { chainId?: number; contractAddress?: string } | undefined;
+      if (eth?.chainId && eth.contractAddress) {
+        return `evm:${eth.chainId}:${eth.contractAddress.toLowerCase()}`;
+      }
+    }
+    return `sym:${(identity.symbol ?? '').toUpperCase()}:${identity.marketSegment ?? ''}`;
+  }
+
+  private emptyResult(hasCompleteTxHistory: boolean): TransactionRouterResult {
+    return {
+      transactions: [],
+      observations: [],
+      warnings: [],
+      firstEventAt: null,
+      lastEventAt: null,
+      hasCompleteTxHistory,
+    };
+  }
+}

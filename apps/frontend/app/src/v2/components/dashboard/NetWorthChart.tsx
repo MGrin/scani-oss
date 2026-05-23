@@ -1,0 +1,323 @@
+import { formatCompact, formatCurrency } from '@scani/shared';
+import { Card, CardContent, CardHeader, CardTitle } from '@scani/ui/ui/card';
+import { Skeleton } from '@scani/ui/ui/skeleton';
+import { AlertTriangle, Loader2 } from 'lucide-react';
+import { useMemo, useState } from 'react';
+import { Link } from 'react-router-dom';
+import {
+  Area,
+  AreaChart,
+  CartesianGrid,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from 'recharts';
+import { trpc } from '@/lib/trpc';
+import { useBaseCurrency } from '../../hooks/useBaseCurrency';
+import type { useUserJobs } from '../../hooks/useUserJobs';
+import { V2_ROUTES } from '../../lib/routes';
+
+type Granularity = 'daily' | 'weekly' | 'monthly';
+
+// Range presets. 2Y was removed because the data layer caps lookback
+// at 365 days (PORTFOLIO_HISTORY_BACKFILL.LOOKBACK_DEFAULT_DAYS) — a
+// 2Y selector promised data we couldn't deliver and made the curve
+// flatline at the import boundary.
+const RANGE_OPTIONS: { label: string; days: number }[] = [
+  { label: '1W', days: 7 },
+  { label: '1M', days: 30 },
+  { label: '3M', days: 90 },
+  { label: '6M', days: 180 },
+  { label: '1Y', days: 365 },
+];
+
+const DEFAULT_DAYS = 90;
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+interface SeriesPoint {
+  date: string;
+  totalValue: string;
+  coverageQuality: string;
+  holdingsWithKnownValue: number;
+  holdingsTotal: number;
+}
+
+const MONTH_SHORT = [
+  'Jan',
+  'Feb',
+  'Mar',
+  'Apr',
+  'May',
+  'Jun',
+  'Jul',
+  'Aug',
+  'Sep',
+  'Oct',
+  'Nov',
+  'Dec',
+];
+
+function formatTick(iso: string, granularity: Granularity): string {
+  const [y, m, d] = iso.split('-').map(Number);
+  if (!y || !m || !d) return iso;
+  const month = MONTH_SHORT[m - 1] ?? '';
+  if (granularity === 'monthly') return `${month} ${y}`;
+  return `${month} ${d}`;
+}
+
+// Per-entity scope for the chart. Omitted = user-wide. The same
+// component renders all four scope variants — the dashboard uses
+// no scope, while institution / account / holding detail pages pass
+// the appropriate scope object through.
+export type NetWorthChartScope =
+  | { kind: 'institution'; id: string }
+  | { kind: 'account'; id: string }
+  | { kind: 'holding'; id: string };
+
+export interface NetWorthChartProps {
+  scope?: NetWorthChartScope;
+  // Title override — defaults to "Net worth over time" but the
+  // detail-page embeds want shorter labels (e.g., "Value over time"
+  // when the parent header already says "AAPL holding").
+  title?: string;
+  // Hoisted from the parent (PortfolioCharts) so a tabbed layout
+  // only runs ONE `jobs.listMine` query + WS subscription per page,
+  // not one per chart card.
+  chartAffectingActive: boolean;
+  chartAffectingFailure: ReturnType<typeof useUserJobs>['chartAffectingFailure'];
+}
+
+export function NetWorthChart({
+  scope,
+  title,
+  chartAffectingActive,
+  chartAffectingFailure,
+}: NetWorthChartProps) {
+  const { symbol: baseSymbol, isLoading: baseLoading } = useBaseCurrency();
+
+  // Static range — no zoom, no pan, no drag. The previous version
+  // wired wheel/drag/touch handlers to scroll and zoom the chart, but
+  // it was buggy on touchpads (vertical-scroll inertia bled into the
+  // page) and slow (debounced tRPC re-fetches on every wheel tick).
+  // Range presets cover the actual use-case.
+  const [windowDays, setWindowDays] = useState(DEFAULT_DAYS);
+
+  const { from, to } = useMemo(() => {
+    const now = new Date();
+    return {
+      from: new Date(now.getTime() - windowDays * DAY_MS),
+      to: now,
+    };
+  }, [windowDays]);
+
+  const { data, isLoading, isFetching } = trpc.portfolio.getNetWorthSeries.useQuery(
+    { from, to, granularity: 'auto', ...(scope ? { scope } : {}) },
+    { enabled: !baseLoading }
+  );
+
+  const granularity = (data?.granularity as Granularity | undefined) ?? 'daily';
+
+  const chartData = useMemo(() => {
+    const rows = (data?.series ?? []) as SeriesPoint[];
+    return rows.map((r) => ({
+      date: r.date,
+      value: Number(r.totalValue),
+      coverageQuality: r.coverageQuality,
+      holdingsTotal: r.holdingsTotal,
+      holdingsKnown: r.holdingsWithKnownValue,
+    }));
+  }, [data]);
+
+  // Coverage chip — averages the per-day "holdings priced / holdings
+  // total" ratio across the visible window. The previous version
+  // counted only days that crossed the rollup's 95% "full" threshold,
+  // which produced a punishing "0% of days at full coverage" red chip
+  // when the user had even a handful of always-unpriced dust tokens.
+  // The average tells the user what they actually want to know:
+  // "what fraction of my positions are being priced on a typical day."
+  const coverage = useMemo(() => {
+    if (chartData.length === 0) return null;
+    let totalKnown = 0;
+    let totalSeen = 0;
+    for (const p of chartData) {
+      if (p.holdingsTotal && p.holdingsKnown != null) {
+        totalKnown += p.holdingsKnown;
+        totalSeen += p.holdingsTotal;
+      }
+    }
+    if (totalSeen === 0) return null;
+    const ratio = totalKnown / totalSeen;
+    const pct = Math.round(ratio * 100);
+    return {
+      ratio,
+      label: ratio >= 0.99 ? 'Full coverage' : `${pct}% of holdings priced`,
+      tooltip: `Average ${pct}% of holdings have a historical price across the window (${totalKnown.toLocaleString()} of ${totalSeen.toLocaleString()} holding-days).`,
+    };
+  }, [chartData]);
+
+  // Pad the YAxis domain by 5% on both sides of the data range so the
+  // curve doesn't kiss the top/bottom edges. Falls back to ['auto',
+  // 'auto'] when the dataset is empty (Recharts handles the empty
+  // case fine, but a tuple keeps the prop type stable).
+  const yAxisDomain = useMemo<[number | string, number | string]>(() => {
+    if (chartData.length === 0) return ['auto', 'auto'];
+    let min = Number.POSITIVE_INFINITY;
+    let max = Number.NEGATIVE_INFINITY;
+    for (const p of chartData) {
+      if (p.value < min) min = p.value;
+      if (p.value > max) max = p.value;
+    }
+    if (!Number.isFinite(min) || !Number.isFinite(max)) return ['auto', 'auto'];
+    const span = max - min || Math.abs(max) || 1;
+    const pad = span * 0.05;
+    return [Math.max(0, min - pad), max + pad];
+  }, [chartData]);
+
+  const isEmpty = !isLoading && chartData.length === 0;
+  const headerTitle = title ?? 'Net worth over time';
+
+  return (
+    <Card>
+      <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-3 flex-wrap">
+        <div className="flex items-center gap-2 min-w-0">
+          <CardTitle className="text-sm font-medium">{headerTitle}</CardTitle>
+          {(isFetching && !isLoading) || chartAffectingActive ? (
+            <Loader2 className="h-3 w-3 animate-spin text-muted-foreground shrink-0" />
+          ) : null}
+          {chartAffectingActive && (
+            <span className="text-[10px] text-muted-foreground">updating…</span>
+          )}
+          {coverage && (
+            <span
+              className={`ml-2 inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium ${
+                coverage.ratio >= 0.99
+                  ? 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400'
+                  : coverage.ratio >= 0.85
+                    ? 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-500'
+                    : coverage.ratio >= 0.5
+                      ? 'bg-amber-500/15 text-amber-600 dark:text-amber-400'
+                      : 'bg-rose-500/15 text-rose-600 dark:text-rose-400'
+              }`}
+              title={coverage.tooltip}
+            >
+              {coverage.label}
+            </span>
+          )}
+        </div>
+        <div className="flex gap-1 flex-wrap">
+          {RANGE_OPTIONS.map((opt) => {
+            const isActive = windowDays === opt.days;
+            return (
+              <button
+                type="button"
+                key={opt.label}
+                onClick={() => setWindowDays(opt.days)}
+                className={`px-2 py-1 text-xs rounded ${
+                  isActive
+                    ? 'bg-primary text-primary-foreground'
+                    : 'bg-muted text-muted-foreground hover:bg-muted/80'
+                }`}
+              >
+                {opt.label}
+              </button>
+            );
+          })}
+        </div>
+      </CardHeader>
+      <CardContent>
+        {isLoading || baseLoading ? (
+          <Skeleton className="h-[220px] w-full" />
+        ) : isEmpty ? (
+          <div className="h-[220px] flex items-center justify-center text-sm text-muted-foreground text-center px-4">
+            No portfolio value in this range. Pick a longer period or wait for the history backfill
+            to finish.
+          </div>
+        ) : (
+          <div className="h-[220px] w-full">
+            <ResponsiveContainer width="100%" height={220}>
+              <AreaChart data={chartData} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+                <XAxis
+                  dataKey="date"
+                  tick={{ fontSize: 11 }}
+                  tickFormatter={(v: string) => formatTick(v, granularity)}
+                  minTickGap={32}
+                />
+                <YAxis
+                  tick={{ fontSize: 11 }}
+                  tickFormatter={(v: number) => formatCompact(v, baseSymbol)}
+                  width={72}
+                  // Auto-scale to data range instead of anchoring at 0.
+                  // For a portfolio fluctuating between 100k-150k the
+                  // 0-baseline default flattened the curve and made
+                  // movements invisible. 5% padding keeps the line off
+                  // the chart edges so peaks/troughs aren't clipped.
+                  domain={yAxisDomain}
+                  allowDataOverflow={false}
+                />
+                <Tooltip
+                  formatter={(v) =>
+                    [formatCurrency(String(v ?? 0), baseSymbol), 'Value'] as [string, string]
+                  }
+                  labelFormatter={(label, payload) => {
+                    const p = payload?.[0]?.payload as
+                      | {
+                          date: string;
+                          coverageQuality: string;
+                          holdingsKnown: number;
+                          holdingsTotal: number;
+                        }
+                      | undefined;
+                    if (!p) return String(label ?? '');
+                    const coverageNote =
+                      p.coverageQuality === 'full'
+                        ? '· full coverage'
+                        : `· ${p.holdingsKnown}/${p.holdingsTotal} priced`;
+                    return `${p.date}  ${coverageNote}`;
+                  }}
+                  contentStyle={{
+                    background: 'hsl(var(--popover))',
+                    border: '1px solid hsl(var(--border))',
+                  }}
+                />
+                <Area
+                  type="monotone"
+                  dataKey="value"
+                  stroke="#3b82f6"
+                  fill="#3b82f6"
+                  fillOpacity={0.15}
+                  strokeWidth={2}
+                  isAnimationActive={false}
+                  // Anchor the fill to the chart's data minimum, not y=0.
+                  // Without this Recharts fills all the way down to
+                  // y=0 even when the YAxis domain starts at 100k,
+                  // producing a giant solid block under the curve.
+                  baseValue="dataMin"
+                />
+              </AreaChart>
+            </ResponsiveContainer>
+          </div>
+        )}
+        {chartAffectingFailure && (
+          <div className="mt-3 flex items-start gap-2 rounded-md border border-amber-500/40 bg-amber-500/5 p-2 text-xs">
+            <AlertTriangle className="h-4 w-4 text-amber-500 mt-0.5 shrink-0" />
+            <div className="space-y-0.5">
+              <div className="font-medium">Chart may be incomplete</div>
+              <div className="text-muted-foreground">
+                A recent {chartAffectingFailure.jobName.replace(/-/g, ' ')} job failed; the curve
+                below excludes data that job would have produced.
+                <Link
+                  to={V2_ROUTES.jobDetail(chartAffectingFailure.jobId)}
+                  className="ml-1 underline hover:text-foreground"
+                >
+                  Open job
+                </Link>
+              </div>
+            </div>
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}

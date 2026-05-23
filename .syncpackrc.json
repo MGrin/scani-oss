@@ -1,0 +1,35 @@
+{
+  "$schema": "https://unpkg.com/syncpack@14/dist/schema.json",
+  "indent": "  ",
+  "sortFirst": ["name", "private", "version", "type", "exports", "main", "scripts"],
+
+  "semverGroups": [
+    {
+      "label": "@types/bun is pinned to `latest` to track Bun's own release cadence",
+      "dependencies": ["@types/bun"],
+      "range": ""
+    },
+    {
+      "label": "All external deps use a caret range",
+      "dependencies": ["**"],
+      "range": "^"
+    }
+  ],
+
+  "versionGroups": [
+    {
+      "label": "Internal workspace packages — always `workspace:*`",
+      "dependencies": ["@scani/**"],
+      "pinVersion": "workspace:*"
+    },
+    {
+      "label": "@types/bun exempt — tracks Bun upstream via `latest`",
+      "dependencies": ["@types/bun"],
+      "isIgnored": true
+    },
+    {
+      "label": "Every external dep must be the same version across all workspaces",
+      "dependencies": ["**"]
+    }
+  ]
+}

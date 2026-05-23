@@ -1,0 +1,18 @@
+{
+  "name": "@scani/http-fetch",
+  "private": true,
+  "type": "module",
+  "version": "1.0.0",
+  "description": "Bounded HTTP fetcher for Open Graph metadata + similar fixed-budget pulls. SSRF-guarded, size-capped, timeout-bounded. Pure functions; no DI.",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "lint": "biome check .",
+    "lint:fix": "biome check --write .",
+    "type-check": "tsgo --noEmit"
+  },
+  "devDependencies": {
+    "typescript": "^5"
+  }
+}

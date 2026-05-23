@@ -1,0 +1,49 @@
+# dependencies (bun install)
+node_modules
+
+# output
+out
+dist
+*.tgz
+
+# code coverage
+coverage
+*.lcov
+
+# logs
+logs
+_.log
+report.[0-9]_.[0-9]_.[0-9]_.[0-9]_.json
+
+# dotenv environment variable files
+.env
+.env.development.local
+.env.test.local
+.env.production.local
+.env.local
+
+# caches
+.eslintcache
+.cache
+*.tsbuildinfo
+
+# IntelliJ based IDEs
+.idea
+
+# Finder (MacOS) folder config
+.DS_Store
+
+
+**/*.api-key.json
+
+# Claude Code local state (worktrees, scheduled-task locks, etc.).
+# Nothing under this directory is source — it's all per-checkout tooling
+# artifacts that would pollute the repo if committed.
+.claude/
+
+# Local Docker Compose overrides
+docker-compose.override.yml
+
+# Local scratch files
+.local/
+

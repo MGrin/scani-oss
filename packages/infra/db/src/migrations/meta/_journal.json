@@ -1,0 +1,125 @@
+{
+  "version": "7",
+  "dialect": "postgresql",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "7",
+      "when": 1777622194899,
+      "tag": "0000_clean_start",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1777999999999,
+      "tag": "0001_per_scope_portfolio_value",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1778000099999,
+      "tag": "0002_pnl_columns",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1778147300000,
+      "tag": "0003_token_unpriceable_cooldown",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1778147400000,
+      "tag": "0004_merge_mistyped_equity_dupes",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1778147500000,
+      "tag": "0005_holdings_user_created_idx",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1778240000000,
+      "tag": "0006_generalized_stock_dedup",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1778240100000,
+      "tag": "0007_merge_chain_spread_crypto",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1778250000000,
+      "tag": "0008_clear_bogus_reconciliation_openings",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1778260000000,
+      "tag": "0009_user_sessions_user_id_idx",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1778260100000,
+      "tag": "0010_holding_tx_token_fks_set_null",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1778270000000,
+      "tag": "0011_job_heartbeats",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1778280000000,
+      "tag": "0012_holdings_balance_partial_idx",
+      "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1778300000000,
+      "tag": "0014_admin_audit_log_signature",
+      "breakpoints": true
+    },
+    {
+      "idx": 15,
+      "version": "7",
+      "when": 1778310000000,
+      "tag": "0015_holding_exclusions",
+      "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "7",
+      "when": 1778320000000,
+      "tag": "0016_ibkr_segment_token_dedup",
+      "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1778330000000,
+      "tag": "0017_purge_crosstype_price_pollution",
+      "breakpoints": true
+    }
+  ]
+}

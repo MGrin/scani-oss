@@ -1,0 +1,15 @@
+# Bun runtime config — applies to `bun`, `bun test`, and `bun build` invocations
+# from anywhere inside this monorepo.
+
+[test]
+# Every typedi-decorated `@Service()` class needs reflect-metadata loaded
+# before its first reference; the domain preload also sets a default
+# `DATABASE_URL` pointing at the docker-compose Postgres on :5433. Wiring
+# this here means plain `bun test` works repo-wide without each invocation
+# having to remember `--preload`. The `bun run test` script still passes
+# `--preload` explicitly, which is harmless (idempotent).
+preload = ["./packages/business/domain/test-preload.ts"]
+
+# Most repository tests run < 100ms; the safety net is for the few that
+# spin up a transaction + run an end-to-end fixture.
+timeout = 30000

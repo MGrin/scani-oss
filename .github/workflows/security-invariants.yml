@@ -1,0 +1,58 @@
+name: Security invariants
+
+# Tiny grep-based assertions for invariants that have to hold across
+# the codebase. Each gate is fast (≪1s) and runs on every push so we
+# fail loud the moment one drifts. The intent is to encode
+# "second-system rules" that are hard to express in a type system —
+# e.g., "if any social-OAuth provider is enabled, the Better-Auth
+# adapter must also be encryption-wrapped".
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  invariants:
+    name: Security invariants
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0
+
+      - name: C-01 — OAuth provider gating
+        run: |
+          set -euo pipefail
+          AUTH_FILE="apps/backend/api/src/auth/better-auth.ts"
+          # Detect any of the canonical Better-Auth social-provider
+          # configuration keys. If one is present, the file MUST also
+          # reference the encrypting adapter wrapper. We don't ship
+          # OAuth today; this gate fails the PR that enables it
+          # without also encrypting the OAuth token columns.
+          if grep -E "(socialProviders|github\(|google\(|apple\(|microsoft\(|discord\(|facebook\(|twitter\()" \
+              "$AUTH_FILE" >/dev/null; then
+            if ! grep -q "encryptingAccountAdapter" "$AUTH_FILE"; then
+              echo "::error file=$AUTH_FILE::OAuth provider configured without encryptingAccountAdapter wrapper — OAuth account tokens must round-trip through the encrypting adapter."
+              exit 1
+            fi
+          fi
+
+      - name: C-03 — log-id pepper guard
+        run: |
+          set -euo pipefail
+          FILE="packages/infra/logging/src/pseudonymize.ts"
+          if ! grep -q "LOG_ID_PEPPER" "$FILE" || ! grep -q "NODE_ENV === 'production'" "$FILE"; then
+            echo "::error file=$FILE::LOG_ID_PEPPER prod-guard removed. See C-03."
+            exit 1
+          fi
+
+      - name: A-01 — encryption prod-guard
+        run: |
+          set -euo pipefail
+          FILE="packages/infra/security/src/encryption.ts"
+          if ! grep -q "isProduction" "$FILE"; then
+            echo "::error file=$FILE::encryption.ts lost its isProduction guard. See A-01."
+            exit 1
+          fi

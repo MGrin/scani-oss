@@ -1,0 +1,23 @@
+{
+  "name": "@scani/realtime",
+  "private": true,
+  "type": "module",
+  "version": "1.0.0",
+  "description": "WebSocket transport + Redis pub/sub fan-out for realtime entity-change events.",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "lint": "biome check .",
+    "lint:fix": "biome check --write .",
+    "type-check": "tsgo --noEmit"
+  },
+  "dependencies": {
+    "@scani/logging": "workspace:*"
+  },
+  "devDependencies": {
+    "ioredis": "^5.10.1",
+    "typedi": "^0.10.0",
+    "typescript": "^5"
+  }
+}
