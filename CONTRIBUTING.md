@@ -133,6 +133,40 @@ A few highlights so you know what you're walking into:
 - "Add framework X" PRs without an issue agreeing on the direction
   first.
 
+## Contributor benefits
+
+Every contributor with at least one merged, non-trivial pull request on
+`scani-oss` gets free, permanent access to every paid tier of the hosted
+Scani service at <https://app.scani.xyz>.
+
+What this means in practice:
+
+- **Eligibility**: any merged PR that materially changes the product —
+  a bug fix with a regression test, a new provider integration, a
+  language translation of meaningful coverage, a performance fix with
+  before/after numbers, a documentation contribution beyond a one-line
+  typo, a non-trivial refactor agreed in an issue first. Cosmetic-only
+  changes (a single-line README typo, a whitespace reflow) don't
+  qualify on their own — bundle them with substantive work.
+- **What "paid tiers" means today**: the hosted service is currently in
+  beta with no billing live. When paid tiers ship, your account is
+  flagged as a contributor account on the same day and retains every
+  paid tier indefinitely, with no further conditions. You do not have
+  to keep contributing to keep access.
+- **How to claim**: after your PR merges, email
+  contributors@scani.xyz from the address on your GitHub account, or
+  open an account at <https://app.scani.xyz> with that same email and
+  mention the PR number. The maintainer flags the account manually
+  during beta; this becomes automatic once billing ships.
+- **If the hosted product is ever shut down**: the grant is
+  forward-looking. If the hosted service stops operating there is
+  nothing to grant — the OSS code is yours either way under MIT.
+
+This is a unilateral commitment by the maintainer, not a contract. It
+exists because the value of every contribution to `scani-oss` is
+strictly larger than the marginal cost of a hosted seat, and saying so
+in writing is the honest way to acknowledge that.
+
 ## License
 
 By contributing, you agree that your contributions will be licensed under
