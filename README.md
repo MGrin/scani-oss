@@ -230,6 +230,28 @@ Security findings should go to **security@scani.xyz**, not a public
 issue. See [`.github/SECURITY.md`](./.github/SECURITY.md) for the full
 disclosure flow.
 
+## Contributors
+
+Thanks goes to these people ([emoji key](https://allcontributors.org/docs/en/emoji-key)):
+
+<!-- ALL-CONTRIBUTORS-LIST:START - Do not remove or modify this section -->
+<!-- prettier-ignore-start -->
+<!-- markdownlint-disable -->
+<table>
+  <tbody>
+    <tr>
+      <td align="center" valign="top" width="14.28%"><a href="https://github.com/MGrin"><img src="https://avatars.githubusercontent.com/u/2393862?v=4?s=100" width="100px;" alt="MGrin"/><br /><sub><b>MGrin</b></sub></a><br /><a href="https://github.com/MGrin/scani-oss/commits?author=MGrin" title="Code">💻</a> <a href="#maintenance-MGrin" title="Maintenance">🚧</a> <a href="https://github.com/MGrin/scani-oss/commits?author=MGrin" title="Documentation">📖</a> <a href="#infra-MGrin" title="Infrastructure (Hosting, Build-Tools, etc)">🚇</a> <a href="https://github.com/MGrin/scani-oss/pulls?q=is%3Apr+reviewed-by%3AMGrin" title="Reviewed Pull Requests">👀</a></td>
+    </tr>
+  </tbody>
+</table>
+
+<!-- markdownlint-restore -->
+<!-- prettier-ignore-end -->
+
+<!-- ALL-CONTRIBUTORS-LIST:END -->
+
+This project follows the [all-contributors](https://github.com/all-contributors/all-contributors) specification. Contributions of any kind welcome — comment `@all-contributors please add @username for code` (or any other [contribution type](https://allcontributors.org/docs/en/emoji-key)) on any PR or issue.
+
 ## License
 
 MIT. See [`LICENSE`](./LICENSE).
