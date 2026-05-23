@@ -1,0 +1,17 @@
+/* Design-system tokens (light + dark) MUST come first — per CSS
+ * spec, @import directives have to precede every other rule, and
+ * Vite/PostCSS silently drops any @import placed after @tailwind. The
+ * previous version of this file put the globals import at the bottom,
+ * which made every `bg-background`, `text-foreground`, `border-border`
+ * resolve to undefined CSS vars (transparent backgrounds, drawer
+ * showing the page through it). */
+@import "@scani/ui/styles/globals.css";
+
+/* App-specific extras — also @imports, also above @tailwind. */
+@import "./styles/accessibility.css";
+@import "./styles/animations.css";
+@import "./styles/forms.css";
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;

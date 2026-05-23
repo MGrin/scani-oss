@@ -1,0 +1,38 @@
+{
+  "name": "@scani/cloud-client",
+  "private": true,
+  "type": "module",
+  "version": "1.0.0",
+  "description": "Typed tRPC client + domain-facing adapters for apps/backend/data-provider; consumed by api and worker.",
+  "exports": {
+    ".": "./src/index.ts",
+    "./cloud-services/cloud-email-service": "./src/cloud-services/cloud-email-service.ts",
+    "./cloud-services/cloud-storage": "./src/cloud-services/cloud-storage.ts",
+    "./cloud-services/cloud-og-client": "./src/cloud-services/cloud-og-client.ts",
+    "./cloud-services/cloud-provider-client": "./src/cloud-services/cloud-provider-client.ts",
+    "./facades/storage-facade": "./src/facades/storage-facade.ts",
+    "./facades/email-facade": "./src/facades/email-facade.ts",
+    "./health-probe": "./src/health-probe.ts",
+    "./runtime": "./src/runtime.ts"
+  },
+  "scripts": {
+    "lint": "biome check .",
+    "lint:fix": "biome check --write .",
+    "type-check": "tsgo --noEmit"
+  },
+  "dependencies": {
+    "@scani/config": "workspace:*",
+    "@scani/data-provider": "workspace:*",
+    "@scani/db": "workspace:*",
+    "@scani/email": "workspace:*",
+    "@scani/logging": "workspace:*",
+    "@scani/providers": "workspace:*",
+    "@scani/storage": "workspace:*",
+    "@trpc/client": "^10.45.4",
+    "typedi": "^0.10.0",
+    "zod": "^3.25.76"
+  },
+  "devDependencies": {
+    "typescript": "^5"
+  }
+}

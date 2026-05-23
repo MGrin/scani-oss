@@ -1,0 +1,56 @@
+name: Feature request
+description: Propose a new capability or improvement.
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Tell us the problem first, the solution second. We're more
+        likely to ship something we understand than something handed
+        to us as a finished design.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem are you trying to solve?
+      description: The user / operator pain point — not the feature.
+      placeholder: |
+        I'm tracking ~40 assets across 6 exchanges and I can't see
+        which subset moved in the last hour without scrolling.
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: What you have in mind. Sketches, mockups, or pseudocode all welcome.
+      placeholder: A "Recent movers" widget on the dashboard showing the top N % movers in a configurable window.
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: What else you tried or thought about, and why it didn't work.
+
+  - type: dropdown
+    id: scope
+    attributes:
+      label: Which area is this?
+      options:
+        - Frontend (the SPA)
+        - Backend (api / worker / data-provider)
+        - A specific provider integration
+        - Self-host experience (docker-compose, env vars, docs)
+        - Developer experience (lint, tests, types)
+        - Other / not sure
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Pre-flight
+      options:
+        - label: I searched existing issues and didn't find a duplicate.
+          required: true

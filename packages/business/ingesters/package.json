@@ -1,0 +1,25 @@
+{
+  "name": "@scani/ingesters",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "lint": "biome check .",
+    "lint:fix": "biome check --write .",
+    "type-check": "tsgo --noEmit"
+  },
+  "description": "Transaction-ingester registry + statement/screenshot ingesters. Leaf package: callers inject the AI screenshot-parser callback at construction so this package never imports @scani/domain.",
+  "dependencies": {
+    "@scani/db": "workspace:*",
+    "@scani/file-import": "workspace:*",
+    "@scani/logging": "workspace:*",
+    "decimal.js": "^10.6.0",
+    "typedi": "^0.10.0"
+  },
+  "devDependencies": {
+    "typescript": "^5"
+  }
+}

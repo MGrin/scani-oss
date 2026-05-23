@@ -1,0 +1,26 @@
+{
+  "name": "@scani/jobs",
+  "private": true,
+  "type": "module",
+  "version": "1.0.0",
+  "description": "Scani's async job catalog: per-job descriptors (payload schemas, retry policies, jobId strategies, summarizers), repeatable schedules, and the @scani/queue mirror/lock impls. Apps import descriptors from here; processor classes live in apps/backend/worker.",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "lint": "biome check .",
+    "lint:fix": "biome check --write .",
+    "type-check": "tsgo --noEmit"
+  },
+  "dependencies": {
+    "@scani/db": "workspace:*",
+    "@scani/domain": "workspace:*",
+    "@scani/logging": "workspace:*",
+    "@scani/queue": "workspace:*",
+    "typedi": "^0.10.0",
+    "zod": "^3.25.76"
+  },
+  "devDependencies": {
+    "typescript": "^5"
+  }
+}

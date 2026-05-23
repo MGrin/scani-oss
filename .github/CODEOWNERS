@@ -1,0 +1,7 @@
+# Code owners for the OSS repo.
+#
+# Combined with branch protection on `main`, this requires a review from
+# the listed owner(s) before any PR can merge. Catch-all maps the whole
+# tree to @MGrin; add more specific lines as the project grows.
+
+* @MGrin

@@ -1,0 +1,15 @@
+# Copy to docker-compose.override.yml to customize locally.
+# This file is gitignored.
+#
+# Common uses:
+#   - Change exposed ports (e.g. if 5432 is taken)
+#   - Mount custom init SQL into postgres
+#   - Persist volumes outside the default Docker-managed location
+
+# services:
+#   postgres:
+#     ports:
+#       - "15432:5432"
+#     volumes:
+#       - ./.local/postgres-data:/var/lib/postgresql/data
+#       - ./scripts/init-db.sql:/docker-entrypoint-initdb.d/init.sql:ro

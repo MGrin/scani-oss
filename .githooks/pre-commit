@@ -1,0 +1,108 @@
+#!/usr/bin/env bash
+# Pre-commit hook: lint + type-check + syncpack.
+#
+# Installed automatically by the `prepare` script in the root package.json
+# (runs `git config core.hooksPath .githooks` on `bun install`).
+#
+# Skip with `git commit --no-verify`.
+
+set -eu
+
+# Make sure common tool locations are on PATH for GUI git clients (IDEs,
+# Fork, Tower) that don't inherit a full shell environment.
+export PATH="$HOME/.bun/bin:/opt/homebrew/bin:/usr/local/bin:$PATH"
+
+RED=$'\033[31m'
+GREEN=$'\033[32m'
+YELLOW=$'\033[33m'
+RESET=$'\033[0m'
+
+fail() {
+  echo "${RED}✗ pre-commit failed:${RESET} $1" >&2
+  echo "  Fix the issue and re-stage, or bypass with \`git commit --no-verify\`." >&2
+  exit 1
+}
+
+note() {
+  echo "${YELLOW}→ $1${RESET}"
+}
+
+ok() {
+  echo "${GREEN}✓ $1${RESET}"
+}
+
+# Paths of staged (Added/Modified/Renamed/Copied) files — exclude Deleted.
+staged_files() {
+  git diff --cached --name-only --diff-filter=ACMR "$@"
+}
+
+# -------- 1. Biome lint (staged files only, fast) --------
+
+biome_relevant=$(staged_files -- '*.ts' '*.tsx' '*.js' '*.jsx' '*.json' '*.jsonc' || true)
+if [ -n "$biome_relevant" ]; then
+  note "biome check --staged"
+  if ! bunx --bun @biomejs/biome@2.4.12 check --staged --no-errors-on-unmatched; then
+    fail "biome check reported errors"
+  fi
+  ok "biome clean"
+else
+  note "no lintable files staged; skipping biome"
+fi
+
+# -------- 2. TypeScript type-check (full monorepo) --------
+#
+# Only triggered when TS/TSX files changed; the graph-based check has to
+# be whole-project, so there's no point running it for docs/infra-only
+# commits.
+ts_relevant=$(staged_files -- '*.ts' '*.tsx' || true)
+if [ -n "$ts_relevant" ]; then
+  note "bun run type-check (full monorepo)"
+  if ! bun run type-check >/dev/null 2>&1; then
+    echo "${RED}type-check output:${RESET}" >&2
+    bun run type-check >&2 || true
+    fail "type-check errors"
+  fi
+  ok "type-check clean"
+else
+  note "no TS files staged; skipping type-check"
+fi
+
+# -------- 3. Syncpack (only when any package.json is staged) --------
+#
+# Catches version drift across the workspace: if two package.json files
+# ever declare different versions of the same external dependency,
+# syncpack fails here instead of at install time.
+
+pkg_staged=$(staged_files -- '**/package.json' 'package.json' || true)
+if [ -n "$pkg_staged" ]; then
+  note "syncpack lint"
+  if ! bun run deps:lint >/dev/null 2>&1; then
+    echo "${RED}syncpack output:${RESET}" >&2
+    bun run deps:lint >&2 || true
+    echo "  Run: bun run deps:fix && git add package.json **/package.json" >&2
+    fail "workspace dependencies out of sync"
+  fi
+  ok "dependencies in sync"
+fi
+
+# -------- 5. CI per-package filter list in sync with workspaces --------
+#
+# Triggered when any workspace package.json or the codegen-managed CI
+# workflow changed. The auto:filters block in `.github/workflows/ci.yml`
+# is generated from `packages/*/*/package.json`; staging drift fails CI
+# server-side, so catch it here. Also runs when the codegen script itself
+# is touched.
+
+ci_relevant=$(staged_files -- 'packages/*/*/package.json' '.github/workflows/ci.yml' 'scripts/generate-ci-filters.ts' || true)
+if [ -n "$ci_relevant" ]; then
+  note "ci:gen:check"
+  if ! bun run ci:gen:check >/dev/null 2>&1; then
+    echo "${RED}ci:gen:check output:${RESET}" >&2
+    bun run ci:gen:check >&2 || true
+    echo "  Run: bun run ci:gen && git add .github/workflows/ci.yml" >&2
+    fail "CI filter list out of sync with packages/*/*"
+  fi
+  ok "CI filters in sync"
+fi
+
+echo "${GREEN}✓ pre-commit passed${RESET}"

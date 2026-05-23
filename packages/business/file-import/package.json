@@ -1,0 +1,25 @@
+{
+  "name": "@scani/file-import",
+  "private": true,
+  "type": "module",
+  "version": "1.0.0",
+  "description": "Bank-statement parsing primitives (CSV / OFX / QIF / IB-CSV + format detection). Pure functions; AI fallback for CSV column mapping is provided via an optional caller-injected callback so this package never imports @scani/domain.",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "lint": "biome check .",
+    "lint:fix": "biome check --write .",
+    "type-check": "tsgo --noEmit"
+  },
+  "dependencies": {
+    "@scani/logging": "workspace:*",
+    "@scani/shared": "workspace:*",
+    "ofx-js": "^0.2.0",
+    "papaparse": "^5.5.3"
+  },
+  "devDependencies": {
+    "@types/papaparse": "^5.5.2",
+    "typescript": "^5"
+  }
+}

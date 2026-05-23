@@ -1,0 +1,23 @@
+{
+  "name": "@scani/storage",
+  "private": true,
+  "type": "module",
+  "version": "1.0.0",
+  "description": "S3-compatible object-storage service. Uses Bun's native S3Client; works against any S3-compatible backend (Cloudflare R2, MinIO, AWS S3).",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "lint": "biome check .",
+    "lint:fix": "biome check --write .",
+    "type-check": "tsgo --noEmit"
+  },
+  "dependencies": {
+    "@scani/config": "workspace:*",
+    "typedi": "^0.10.0",
+    "zod": "^3.25.76"
+  },
+  "devDependencies": {
+    "typescript": "^5"
+  }
+}

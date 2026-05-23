@@ -1,0 +1,84 @@
+{
+  "$schema": "https://unpkg.com/knip@latest/schema.json",
+  "workspaces": {
+    "apps/backend/api": {
+      "entry": ["src/index.ts"],
+      "project": ["src/**/*.ts"],
+      "ignoreDependencies": ["@sentry/node"]
+    },
+    "apps/backend/worker": {
+      "entry": ["src/index.ts"],
+      "project": ["src/**/*.ts"],
+      "ignoreDependencies": ["@sentry/node"]
+    },
+    "apps/backend/data-provider": {
+      "entry": ["src/index.ts"],
+      "project": ["src/**/*.ts"],
+      "ignoreDependencies": ["@sentry/node"]
+    },
+    "apps/frontend/app": {
+      "project": ["src/**/*.{ts,tsx}"],
+      "ignoreDependencies": ["tailwindcss-animate"]
+    },
+    "packages/business/domain": {
+      "project": ["src/**/*.ts"]
+    },
+    "packages/business/file-import": {
+      "project": ["src/**/*.ts"]
+    },
+    "packages/business/ingesters": {
+      "project": ["src/**/*.ts"]
+    },
+    "packages/business/jobs": {
+      "project": ["src/**/*.ts"]
+    },
+    "packages/business/shared": {
+      "project": ["src/**/*.ts"]
+    },
+    "packages/clients/cloud-client": {
+      "project": ["src/**/*.ts"]
+    },
+    "packages/clients/providers": {
+      "project": ["src/**/*.ts"]
+    },
+    "packages/frontend/ui": {
+      "project": ["src/**/*.{ts,tsx}"]
+    },
+    "packages/infra/config": {
+      "project": ["src/**/*.ts"]
+    },
+    "packages/infra/db": {
+      "project": ["src/**/*.ts"]
+    },
+    "packages/infra/email": {
+      "project": ["src/**/*.ts"]
+    },
+    "packages/infra/logging": {
+      "project": ["src/**/*.ts"]
+    },
+    "packages/infra/queue": {
+      "project": ["src/**/*.ts"]
+    },
+    "packages/infra/rate-limiter": {
+      "project": ["src/**/*.ts"]
+    },
+    "packages/infra/realtime": {
+      "project": ["src/**/*.ts"]
+    },
+    "packages/infra/security": {
+      "project": ["src/**/*.ts"]
+    },
+    "packages/infra/storage": {
+      "project": ["src/**/*.ts"]
+    }
+  },
+  "ignore": ["**/*.test.ts"],
+  "ignoreUnresolved": ["./packages/business/domain/test-preload.ts"],
+  "rules": {
+    "exports": "off",
+    "types": "off",
+    "nsExports": "off",
+    "nsTypes": "off",
+    "enumMembers": "off"
+  }
+}
