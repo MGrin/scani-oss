@@ -119,6 +119,22 @@ resource "cloudflare_record" "www" {
   comment = "Cloudflare Pages — scani-landing (www)"
 }
 
+# OSS documentation site (Astro Starlight) — published from MGrin/scani-oss
+# by .github/workflows/deploy-docs.yml. Grey-cloud (DNS-only) because
+# GitHub Pages terminates TLS itself via Let's Encrypt; proxying through
+# Cloudflare would require origin-cert setup and adds a TLS hop for no
+# benefit. The CNAME file at apps/frontend/docs/public/CNAME in the OSS
+# repo tells Pages which project this hostname belongs to.
+resource "cloudflare_record" "docs" {
+  zone_id = data.cloudflare_zone.primary.id
+  name    = "docs"
+  content = "mgrin.github.io"
+  type    = "CNAME"
+  proxied = false
+  ttl     = 1 # auto
+  comment = "GitHub Pages — MGrin/scani-oss docs"
+}
+
 # ---------- DNS hardening: CAA + email auth + MTA-STS ----------
 #
 # These records close common defaults-are-permissive holes that were
