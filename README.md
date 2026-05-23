@@ -8,6 +8,7 @@ fully self-hosted, against a hosted data-provider, or as a managed
 service. MIT licensed.
 
 [![CI](https://github.com/MGrin/scani-oss/actions/workflows/ci.yml/badge.svg)](https://github.com/MGrin/scani-oss/actions/workflows/ci.yml)
+[![Coverage](https://img.shields.io/endpoint?url=https://gist.githubusercontent.com/MGrin/0ecce2153b44eedf13ad350eacb3193d/raw/scani-oss-coverage.json)](https://github.com/MGrin/scani-oss/actions/workflows/coverage.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
 [![Bun](https://img.shields.io/badge/runtime-Bun-black.svg)](https://bun.sh)
 
