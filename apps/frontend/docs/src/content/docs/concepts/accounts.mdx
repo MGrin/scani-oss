@@ -1,0 +1,130 @@
+---
+title: Accounts & institutions
+description: How Scani models the financial entities behind your holdings — exchanges, brokerages, banks, blockchains, and the synthetic "manual" institution.
+sidebar:
+  order: 3
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+## Summary
+
+An **account** is a per-user container for [holdings](/concepts/holdings/)
+at one **institution**. Institutions are a shared catalogue (every user
+sees the same Kraken, the same Ethereum); accounts are private to a
+user. Scani does not have a separate "exchange account" vs "wallet
+account" vs "brokerage account" type — they all share the `accounts`
+table and differ in metadata + the kind of `institution` they're under.
+
+## Schema
+
+Three tables together model the relationship:
+
+`institution_types` (catalogue) — `bank`, `broker`, `crypto_exchange`,
+`crypto_wallet`, `investment_fund`, `private_equity`, `real_estate`,
+`other`. Stored as rows so admins can extend without a migration; the
+literal union is mirrored in TypeScript as `INSTITUTION_TYPE_CODES`.
+
+`institutions` — name, type, optional description / website / logo,
+`hasIntegration` flag indicating whether Scani knows how to sync this
+institution natively.
+
+`accounts` — per-user, FK to `institution`, plus:
+
+| Column | Meaning |
+|---|---|
+| `name` | Human label (`"Kraken main"`, `"Treasury wallet"`, …). Unique per `(user, institution)`. |
+| `typeId` → `account_types.id` | `checking`, `savings`, `investment`, `wallet`, etc. |
+| `description` | Free text. |
+| `metadata` (jsonb) | Wallet addresses, chain-specific data, anything provider-specific. |
+| `isHidden` | Excluded from UI but still synced by cron. |
+| `isActive` | Synced and shown; mirrors the holdings flag pattern. |
+
+There's also `institution_blockchain_mappings` — for blockchain-typed
+institutions (Ethereum, Bitcoin, Solana, …), this maps the institution
+row to a `chainId` / `chainType` so the wallet-discovery flow can resolve
+`institutionId → chainId/chainType` without baking the catalogue into
+application code.
+
+## Why institutions are extensible from data, not code
+
+The institution catalogue lives in the database, not in a hardcoded
+enum. This is deliberate:
+
+- Adding a new bank or brokerage doesn't require a code deploy. The
+  admin seed step inserts a row.
+- Provider-specific metadata (logo URL, marketing copy) is updated
+  without touching application code.
+- Per-user wallets register against a blockchain institution row —
+  Ethereum once in the catalogue, then every user account that's an
+  EVM wallet references that row.
+
+The institution **type** catalogue is more constrained — adding a new
+type means both appending to `INSTITUTION_TYPE_CODES` in
+`packages/infra/db/src/schema/institutions.ts` *and* updating the
+seed migration. Types are referenced by code paths
+(`'crypto_wallet'` triggers the wallet-discovery flow), so they can't
+be silently extended.
+
+## The "manual" institution
+
+Manual holdings — typed in directly, imported from screenshots, or
+loaded from CSV — live under a synthetic **manual institution** so they
+fit the same schema as everything else.
+
+When a user creates a manual holding, the flow:
+
+1. Look up (or create) a `manual` institution for this user.
+2. Look up (or create) an account under that institution (reusing one
+   if the source/metadata match).
+3. Create the holding row with `source = 'manual'` and `externalId =
+   NULL`.
+
+Manual holdings are never synced by cron jobs — they only change when
+the user edits them or re-imports. See
+[Manual assets](/concepts/manual-assets/).
+
+<Aside type="note" title="Why a synthetic institution instead of a special-case table">
+  A separate `manual_holdings` table would have meant two read paths,
+  two write paths, two reconciliation flows, and two places to enforce
+  the [inclusion rule](/decisions/holding-inclusion-rule/). The
+  synthetic-institution pattern means manual holdings inherit every
+  primitive — the ledger, the observation log, the rollup, the
+  vault / group / inclusion logic — for free. See
+  [Why manual data is a synthetic institution](/decisions/manual-institution/).
+</Aside>
+
+## Custodial vs non-custodial
+
+Scani does not model custody explicitly. The distinction is implicit
+in the institution type:
+
+| Institution type | Custodial? | Source of truth |
+|---|---|---|
+| `crypto_exchange` | Yes (the exchange holds your keys) | Exchange API. |
+| `crypto_wallet` | No (you hold the keys) | Public blockchain RPC. |
+| `bank` / `broker` / `investment_fund` | Yes | Statement, API, or manual. |
+| `private_equity` / `real_estate` / `other` | N/A | Manual. |
+
+The ingester pipeline differs by type (an exchange API vs an
+Etherscan RPC vs a screenshot parse), but the holdings, ledger, and
+observation schemas are unified. A BTC holding on Kraken and a BTC
+holding in self-custody render identically downstream.
+
+## Hidden accounts
+
+Setting `isHidden = true` on an account hides the account *and all its
+holdings* from the UI, but cron jobs continue to sync it. Useful when
+a user wants to keep an integration connected (to track activity, to
+preserve the cost-basis chain across a closed-then-reopened position)
+without cluttering the dashboard.
+
+## See also
+
+- [Holdings](/concepts/holdings/)
+- [Manual assets](/concepts/manual-assets/)
+- [Provider matrix](/reference/provider-matrix/) — which institutions
+  have native integrations.
+- [Why manual data is a synthetic institution](/decisions/manual-institution/)
+- [Glossary: account](/reference/glossary/#account),
+  [institution](/reference/glossary/#institution)

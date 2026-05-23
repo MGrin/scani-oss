@@ -1,0 +1,148 @@
+---
+title: Observations & coverage
+description: How Scani anchors past balances to point-in-time truth, tracks history completeness, and reconciles gaps with synthetic opening balances.
+sidebar:
+  order: 7
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+## Summary
+
+**Observations** are append-only point-in-time balance snapshots — "at
+time T, this holding's balance was B, per source S". Every sync
+appends one. Every screenshot appends one. They are the anchor points
+that make [historical balance reconstruction](/concepts/balance-reconstruction/)
+robust against incomplete transaction history. The **coverage** table
+is a per-holding cache that records first/last observation, first/last
+transaction, the set of ingester sources that have contributed, and
+the synthesised opening balance (if any). The
+[opening-balance reconciliation](#opening-balance-reconciliation)
+flow runs nightly to keep the [ledger](/concepts/transactions/) in
+sync with the current `holdings.balance`.
+
+## Why observations exist
+
+Transaction history is frequently incomplete. Helius's parsed-tx
+index has retention limits. Etherscan caps how far back it'll return
+events for some addresses. Exchange CSV exports start at the first
+export date, not the account-creation date. A wallet imported
+mid-life has no events before the import.
+
+Without observations, balance-at-time-T reconstruction would be a
+pure walk over transactions starting from zero — which produces
+negative reconstructed balances the moment the first event we know
+about is a sell. (You can't have negatively held an asset you can't
+short.)
+
+Observations break that dependency: every sync writes "as of *now*,
+the balance is *B*", giving the reconstructor a forward floor even
+when the historical ledger is sparse.
+
+## Schema
+
+`holding_balance_observations`:
+
+| Column | Meaning |
+|---|---|
+| `id` | uuid PK. |
+| `userId` | uuid → `users.id`. |
+| `holdingId` | uuid → `holdings.id`. Migration `0054` dropped redundant `(account_id, token_id)` columns. |
+| `balance` | Decimal string — the observed balance. |
+| `observedAt` | When the observation was true. |
+| `source` | See [Sources](#sources). |
+| `sourceMetadata` (jsonb) | Provider-specific context. |
+| `createdAt` | When the row was written. |
+
+**Uniqueness:** `(holdingId, observedAt, source)`. Indexes on
+`(holdingId, observedAt desc)` and `(userId, observedAt desc)`.
+
+### Sources
+
+| Source | When it's written |
+|---|---|
+| `sync-capture` | Every successful balance-fetching sync run (exchange API, blockchain RPC). |
+| `statement-close` | A closing balance read from an uploaded statement (PDF / CSV). |
+| `screenshot` | Extracted via OpenAI Vision from a portfolio screenshot. |
+| `user-entered` | User typed it in. |
+| `manual-correction` | User edited the holding's balance directly; the *new* value is captured here. |
+
+## Coverage
+
+`holding_coverage` is a per-holding metadata cache:
+
+| Column | Meaning |
+|---|---|
+| `holdingId` | PK, FK to `holdings.id`. |
+| `firstTxAt` / `lastTxAt` | The transaction history window. |
+| `firstObservationAt` / `lastObservationAt` | The observation window. |
+| `txSources` | Array of ingester source names that have contributed — e.g. `['etherscan', 'binance-api']`. |
+| `hasCompleteTxHistory` | True when the ingester signalled it has paged everything reachable. |
+| `lastReconciledAt` | When the opening-balance reconciliation last ran. |
+| `openingBalanceQuantity` | The synthesised opening balance (Decimal string, positive or negative) — see below. NULL if reconciliation hasn't run or `sum(txs)` matched the observation. |
+| `reconciliationNotes` | Free-text notes for the data-quality panel. |
+| `updatedAt` | |
+
+Coverage drives:
+
+- The data-quality panel in the SPA.
+- The set of `(token × date)` pairs the historical price backfill
+  needs to fetch.
+- The `coverageQuality` column on the [rollup](/concepts/rollup/),
+  which the chart uses to render dashed/gap segments.
+
+## Opening-balance reconciliation
+
+`OpeningBalanceReconciliationService` runs nightly. For each holding:
+
+1. Sum all *real* transactions (every `kind` except
+   `opening_balance`).
+2. Compare to current `holdings.balance`.
+3. If they disagree by more than an epsilon (`1e-12`), synthesise a
+   `kind='opening_balance'` transaction at the start of known
+   history with `source = 'reconciliation-opening'`. The synthesised
+   quantity is whatever makes `sum(transactions) ==
+   holdings.balance`.
+4. Update `holding_coverage.openingBalanceQuantity` to record what
+   was synthesised.
+
+The operation is **idempotent per holding** — re-running won't insert
+a second opening balance. If the holding's balance later drifts
+again, the synthesised row is *updated in place* (the only ledger
+row Scani ever updates, by design exception, because there is at
+most one opening-balance row per holding per cycle).
+
+<Aside type="note" title="Why a synthesised opening balance instead of correcting transactions">
+  The transaction ledger represents what the *sources* know. Editing
+  source-derived rows to "fix" the math destroys the audit trail.
+  The synthesised opening balance is honest: it says "the
+  `holdings.balance` doesn't match the sum of what we know — here's
+  the gap we can't account for". The data-quality panel surfaces
+  this so users can hunt down the missing source if they care, or
+  just accept the floor.
+</Aside>
+
+## Coverage quality on the rollup
+
+The nightly [portfolio-value rollup](/concepts/rollup/) writes one of
+four `coverageQuality` values per row:
+
+| Value | Meaning |
+|---|---|
+| `full` | All holdings priced, all transactions known. |
+| `partial` | Some holdings priced, some missing. |
+| `estimated` | Used a stale or hub-routed price. |
+| `unknown` | No anchor available. |
+
+These bucket sizes drive how the chart renders that point (solid /
+dashed / gap) and feed into the data-quality summary.
+
+## See also
+
+- [Transactions (the ledger)](/concepts/transactions/)
+- [Balance reconstruction](/concepts/balance-reconstruction/)
+- [Portfolio value rollup](/concepts/rollup/)
+- [Why an append-only ledger](/decisions/append-only-ledger/)
+- [Glossary: observation](/reference/glossary/#observation),
+  [opening balance](/reference/glossary/#opening-balance),
+  [reconciliation](/reference/glossary/#reconciliation)

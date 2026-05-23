@@ -1,0 +1,129 @@
+---
+title: Vaults
+description: Savings goals with a target amount and currency, accumulating from percentage splits of holdings.
+sidebar:
+  order: 11
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+## Summary
+
+A **vault** is a user-defined savings goal — a target amount in a
+target currency, with a name, colour, and optional icon. Vaults
+**accumulate value from fractions of [holdings](/concepts/holdings/)**:
+you allocate "25% of my BTC" and "100% of this EUR savings account"
+to your *Emergency fund* vault, and the vault's current amount is the
+sum of those attributed values. Vaults are lightweight overlays on
+top of holdings — they don't change the underlying ledger, just give
+you a goal-tracking view.
+
+## Schema
+
+`vaults`:
+
+| Column | Meaning |
+|---|---|
+| `id` | uuid PK. |
+| `userId` | uuid → `users.id`. |
+| `name` | Unique per user. |
+| `description` | Free text. |
+| `targetAmount` | Decimal string — what you're saving toward. |
+| `currencyId` | uuid → `tokens.id`. The currency of the target. |
+| `currentAmount` | **Denormalised** sum of attributed values, in the vault's currency. Updated by the vault-recompute path; kept on the row so the dashboard reads it without a recompute. |
+| `color` | Hex string. |
+| `iconName` | Optional. |
+| `isActive` | |
+| `createdAt` / `updatedAt` | |
+
+`vault_holdings` (junction):
+
+| Column | Meaning |
+|---|---|
+| `id` | uuid PK. |
+| `vaultId` | uuid → `vaults.id`. |
+| `holdingId` | uuid → `holdings.id`. |
+| `percentage` | `real`, 1–100. The fraction of the holding attributed to this vault. |
+| `createdAt` | |
+
+**Uniqueness:** `(vaultId, holdingId)` — a holding can appear in a
+vault at most once.
+
+## Allocation semantics
+
+A single holding can be split across multiple vaults — 25% to a house
+deposit, 75% to retirement. The percentages can sum to anything: the
+system does not enforce that the sum across vaults equals 100% for a
+given holding. You can over-allocate (sum > 100%) or under-allocate
+(sum < 100%) deliberately — Scani treats vaults as a UI overlay, not
+an accounting view.
+
+A single vault can pull from multiple holdings — your *Emergency fund*
+draws from a Wise EUR account, a Coinbase USDC position, and 10% of
+your BTC.
+
+## How `currentAmount` is computed
+
+When the vault page loads (or after a relevant balance/price update),
+the vault service computes:
+
+```
+currentAmount = Σ over vault_holdings { 
+  convert(holding.balance × (percentage/100), holding.token, vault.currency, now)
+}
+```
+
+The conversion uses the [price graph](/concepts/pricing/) at the
+current time. The result is stored on `vaults.currentAmount` so
+dashboards render without a recompute.
+
+Because the vault's currency is configurable and arbitrary, a vault
+denominated in EUR pulling from a USDC holding will see daily
+fluctuation from the EUR/USD rate — that's intentional and matches
+what users expect from a goal denominated in their target currency.
+
+## Progress
+
+UI computes progress as `currentAmount / targetAmount` (clamped 0–1
+for visualisation; the raw ratio is also surfaced so over-funded
+vaults show > 100%).
+
+## Vaults vs groups
+
+Both are user-defined organisation. The difference:
+
+| Aspect | Vaults | [Groups](/concepts/groups/) |
+|---|---|---|
+| Purpose | Goal tracking — total progress toward a target. | Free-form tagging — filtering / categorisation. |
+| Attaches to | Holdings only, with percentage split. | Holdings *and* accounts, no percentage. |
+| Computes a financial total | Yes — `currentAmount`. | No. |
+| Has a target | Yes — `targetAmount` + `currencyId`. | No. |
+| Has a currency | Yes. | No. |
+
+A holding can belong to multiple vaults (with different percentages)
+and multiple groups simultaneously, independently.
+
+## Lifecycle
+
+- Created via the `vaults.create` tRPC mutation.
+- Holdings attach via the `vaults.attachHolding` mutation, which
+  inserts a `vault_holdings` row with the percentage.
+- `currentAmount` is refreshed by the vault service after any
+  attach / detach / balance / price update. There's no separate cron
+  for vault recompute — it's cheap enough to do on demand.
+
+<Aside type="note" title="Why a junction table with percentages instead of vault-owned balances">
+  A vault could have stored its own balances directly — but then a
+  $100 sale would have to be reflected in N places (the holding, every
+  vault that holds a fraction of it, every group that contains it).
+  Modelling vaults as a *view* over holdings, with a percentage, means
+  the source of truth is one place — the holding — and the vault
+  always reflects current reality.
+</Aside>
+
+## See also
+
+- [Holdings](/concepts/holdings/)
+- [Groups](/concepts/groups/)
+- [Pricing & the price graph](/concepts/pricing/)
+- [Glossary: vault](/reference/glossary/#vault)
