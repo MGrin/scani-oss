@@ -18,6 +18,7 @@ import {
   Vault,
   Wallet,
 } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import { Link, NavLink, useLocation } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { cn } from '@/lib/utils';
@@ -173,6 +174,7 @@ interface SidebarProps {
 export function Sidebar({ collapsed, onToggle }: SidebarProps) {
   const { signOut } = useAuth();
   const { actionRequiredCount } = useUserJobs();
+  const { t } = useTranslation();
 
   const handleSignOut = () => {
     // Fire and forget. ProtectedRoute will redirect to /auth when the
@@ -205,7 +207,7 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
           type="button"
           onClick={onToggle}
           className="p-1.5 rounded-md hover:bg-accent text-muted-foreground hover:text-foreground transition-colors flex items-center justify-center"
-          aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+          aria-label={collapsed ? t('nav.expandSidebar') : t('nav.collapseSidebar')}
         >
           {collapsed ? <Menu className="h-5 w-5" /> : <ChevronLeft className="h-4 w-4" />}
         </button>
@@ -215,11 +217,11 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
       <div className="flex-1 overflow-y-auto py-2">
         <nav className={cn('space-y-3', collapsed ? 'px-1' : 'px-2')}>
           {NAV_SECTIONS.map((section, idx) => (
-            <div key={section.title}>
+            <div key={section.titleKey}>
               {collapsed && idx > 0 && <div className="border-t border-border mb-2" />}
               {!collapsed && (
                 <p className="px-2 mb-0.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/50">
-                  {section.title}
+                  {t(section.titleKey)}
                 </p>
               )}
               <div className={collapsed ? 'space-y-1' : 'space-y-px'}>
@@ -230,7 +232,7 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
                       key={item.path}
                       to={item.path}
                       icon={Icon}
-                      label={item.label}
+                      label={t(item.labelKey)}
                       collapsed={collapsed}
                       end={item.path === V2_ROUTES.dashboard}
                       badgeCount={item.path === V2_ROUTES.jobs ? actionRequiredCount : undefined}
@@ -248,7 +250,7 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
         <SidebarNavLink
           to={V2_ROUTES.settings}
           icon={Settings}
-          label="Settings"
+          label={t('nav.settings')}
           collapsed={collapsed}
         />
         {collapsed ? (
@@ -259,7 +261,7 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
               </div>
             </TooltipTrigger>
             <TooltipContent side="right" sideOffset={8}>
-              Theme
+              {t('nav.theme')}
             </TooltipContent>
           </Tooltip>
         ) : (
@@ -267,7 +269,7 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
         )}
         <SidebarButton
           icon={LogOut}
-          label="Sign out"
+          label={t('nav.signOut')}
           collapsed={collapsed}
           onClick={handleSignOut}
           className="text-red-600 hover:text-red-600 hover:bg-red-600/10"

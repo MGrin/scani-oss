@@ -1,0 +1,61 @@
+{
+  "$meta": {
+    "name": "English",
+    "nativeName": "English"
+  },
+  "nav": {
+    "sections": {
+      "portfolio": "Portfolio",
+      "organization": "Organization",
+      "addData": "Add Data",
+      "activity": "Activity"
+    },
+    "dashboard": "Dashboard",
+    "holdings": "Holdings",
+    "accounts": "Accounts",
+    "institutions": "Institutions",
+    "groups": "Groups",
+    "vaults": "Vaults",
+    "tokens": "Tokens",
+    "manualEntry": "Manual Entry",
+    "uploadFile": "Upload File",
+    "cryptoWallet": "Crypto Wallet",
+    "integration": "Integration",
+    "jobs": "Jobs",
+    "settings": "Settings",
+    "signOut": "Sign out",
+    "theme": "Theme",
+    "more": "More",
+    "add": "Add",
+    "addDataButton": "Add Data",
+    "search": "Search",
+    "openMenu": "Open menu",
+    "expandSidebar": "Expand sidebar",
+    "collapseSidebar": "Collapse sidebar"
+  },
+  "dashboard": {
+    "title": "Dashboard",
+    "subtitle": "Your portfolio overview",
+    "stats": {
+      "institutions": "Institutions",
+      "accounts": "Accounts",
+      "holdings": "Holdings"
+    }
+  },
+  "settings": {
+    "title": "Settings",
+    "subtitle": "Manage your preferences",
+    "profile": "Profile",
+    "name": "Name",
+    "namePlaceholder": "Your name",
+    "email": "Email",
+    "preferences": "Preferences",
+    "baseCurrency": "Base Currency",
+    "language": "Language",
+    "languageHint": "Translations are community-contributed. Missing strings fall back to English.",
+    "saving": "Saving...",
+    "autoSave": "Changes will auto-save",
+    "account": "Account",
+    "signOut": "Sign out"
+  }
+}
