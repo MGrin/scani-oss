@@ -1,0 +1,175 @@
+---
+title: Production with docker-compose
+description: Production-flavour docker-compose that pulls pre-built multi-arch images from Docker Hub and runs the full Scani stack.
+sidebar:
+  order: 2
+---
+
+import { Steps, Aside, Tabs, TabItem } from '@astrojs/starlight/components';
+
+`docker-compose.prod.yml` is the production-shaped compose file. It
+pulls pre-built multi-arch images from Docker Hub
+(`scani/api`, `scani/worker`, `scani/data-provider`,
+`scani/frontend-app`) and wires them up with Postgres, Redis, and
+MinIO. Run it as-is for a one-box deploy, or comment out the
+data-plane services and point at managed Postgres / Redis / S3
+endpoints (see [Managed services](/self-hosting/tier1/managed-services/)).
+
+## The one-command bring-up
+
+<Steps>
+
+1. Get the file.
+
+   ```sh
+   curl -O https://raw.githubusercontent.com/MGrin/scani-oss/main/docker-compose.prod.yml
+   curl -O https://raw.githubusercontent.com/MGrin/scani-oss/main/.env.example
+   mv .env.example .env
+   ```
+
+2. Fill in the required values in `.env`.
+
+   See [Required environment variables](/self-hosting/tier1/required-env/)
+   — at minimum: `BACKEND_URL`, `FRONTEND_URL`,
+   `BETTER_AUTH_SECRET`, `ENCRYPTION_KEY`, `JOBS_HMAC_SECRET`,
+   `DATA_PROVIDER_API_KEY`, `SCANI_CLOUD_API_KEY`, `LOG_ID_PEPPER`.
+
+3. Boot.
+
+   ```sh
+   docker compose -f docker-compose.prod.yml up -d
+   docker compose -f docker-compose.prod.yml logs -f frontend-app api worker
+   ```
+
+4. Put a TLS-terminating reverse proxy in front of `frontend-app:8080`.
+
+   See [TLS & reverse proxy](/self-hosting/tier1/tls-reverse-proxy/)
+   for Caddy and nginx examples.
+
+</Steps>
+
+## What's in the compose file
+
+| Service | Image | Port | Reachable from |
+|---|---|---|---|
+| `postgres` | `postgres:16-alpine` | (internal) | Other compose services. |
+| `redis` | `redis:7-alpine` | (internal) | Other compose services. |
+| `minio` + `minio-init` | `minio/minio:latest`, `minio/mc:latest` | (internal) | Other compose services. |
+| `data-provider` | `scani/data-provider:${SCANI_IMAGE_TAG:-latest}` | (internal) | `api`, `worker`. |
+| `api` | `scani/api:${SCANI_IMAGE_TAG:-latest}` | (internal) | `frontend-app` via nginx reverse proxy. |
+| `worker` | `scani/worker:${SCANI_IMAGE_TAG:-latest}` | (none) | n/a — consumes from Redis. |
+| `frontend-app` | `scani/frontend-app:${SCANI_IMAGE_TAG:-latest}` | host `${FRONTEND_PORT:-8080}` | **Public internet** (behind your TLS proxy). |
+
+Only `frontend-app` needs to be reachable from the public internet.
+nginx inside the `frontend-app` container reverse-proxies `/api` and
+`/ws` to `api:3001` over the compose network — no extra wiring on
+your side.
+
+## Boot order
+
+Healthchecks gate startup so services come up in the right order:
+
+```
+postgres ─┐
+redis ────┤        ┌── api ──┐
+          ├─→ data-provider ─┼─→ frontend-app
+minio ────┘        └─ worker ┘
+```
+
+- `data-provider` waits for `postgres:healthy` and `redis:healthy`.
+- `api` and `worker` wait for `data-provider:healthy` (so they can
+  reach it on first call).
+- `frontend-app` waits for `api:healthy`.
+
+The migrate step is **not** a separate service in the production
+compose — the runtime images run migrations on first boot
+automatically. (In dev, the explicit `migrate` service runs against
+the bun image because the runtime images are slim and don't carry
+`bun run`.)
+
+## Image tags
+
+| Tag | Pushed on |
+|---|---|
+| `:latest` | Every push to `main`. |
+| `:sha-<short>` | Every push (any branch). |
+| `:1.2.3`, `:1.2`, `:1` | Semver tag pushes (cut by release-please). |
+
+Pin `SCANI_IMAGE_TAG=1.2.3` in `.env` for reproducible deploys. The
+default `latest` follows main, which means a `docker compose pull`
+gets you the newest code — convenient for development, dangerous for
+production.
+
+See [Upgrades & version pinning](/self-hosting/tier1/upgrades/) for
+the safer upgrade flow.
+
+## Multi-arch
+
+Images are built for `linux/amd64` and `linux/arm64`. Docker selects
+the right variant for your host automatically. Apple Silicon and
+Graviton machines work out of the box.
+
+## Public-internet shape
+
+```
+Internet ─→ Your reverse proxy (TLS) ─→ frontend-app:8080
+                                              │
+                                              │ /api, /ws
+                                              ▼
+                                            api:3001 ─→ data-provider:8082
+                                              │              │
+                                              ▼              ▼
+                                          postgres:5432   postgres:5432
+                                          redis:6379      redis:6379
+                                              │
+                                              ▼
+                                            worker
+```
+
+- Public TLS lives on **your** reverse proxy.
+- `api`, `worker`, `data-provider`, `postgres`, `redis`, `minio` all
+  live on the compose internal network. None of them are exposed to
+  the host (`ports:` are omitted in `docker-compose.prod.yml`).
+
+## Required-in-production env shape
+
+The compose file uses `${VAR:?message}` for must-set vars — booting
+without them fails fast with a readable message:
+
+```
+FRONTEND_URL: ${FRONTEND_URL:?FRONTEND_URL is required (public URL of the SPA, used for CORS + cookie scope)}
+BACKEND_URL: ${BACKEND_URL:?BACKEND_URL is required (public URL of the API, embedded in magic-link emails)}
+BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:?BETTER_AUTH_SECRET is required}
+ENCRYPTION_KEY: ${ENCRYPTION_KEY:?ENCRYPTION_KEY is required (must match the worker)}
+JOBS_HMAC_SECRET: ${JOBS_HMAC_SECRET:?JOBS_HMAC_SECRET is required}
+DATA_PROVIDER_API_KEY: ${DATA_PROVIDER_API_KEY:?DATA_PROVIDER_API_KEY is required}
+SCANI_CLOUD_API_KEY: ${SCANI_CLOUD_API_KEY:?SCANI_CLOUD_API_KEY is required (must match DATA_PROVIDER_API_KEY)}
+LOG_ID_PEPPER: ${LOG_ID_PEPPER:?LOG_ID_PEPPER is required in production}
+```
+
+`SCANI_CLOUD_API_KEY` and `DATA_PROVIDER_API_KEY` must match in a
+single-tenant Tier-1 deployment (api/worker present one bearer; the
+data-provider validates against the same value).
+
+<Aside type="caution" title="Don't reuse dev secrets in production">
+  The placeholders in `.env.example` (`dev_secret_change_me_...`)
+  exist so the local dev stack boots without you generating keys.
+  In production every secret must be regenerated. Generate
+  high-entropy values with:
+
+  ```sh
+  openssl rand -hex 32
+  openssl rand -hex 16   # for LOG_ID_PEPPER (16+ chars is enough)
+  ```
+</Aside>
+
+## See also
+
+- [Required environment variables](/self-hosting/tier1/required-env/)
+- [Optional integration keys](/self-hosting/tier1/optional-keys/)
+- [TLS & reverse proxy](/self-hosting/tier1/tls-reverse-proxy/)
+- [Managed Postgres / Redis / S3](/self-hosting/tier1/managed-services/)
+- [Backup & restore](/self-hosting/tier1/backup-restore/)
+- [Upgrades & version pinning](/self-hosting/tier1/upgrades/)
+- [Observability](/self-hosting/tier1/observability/)
+- [Troubleshooting](/self-hosting/tier1/troubleshooting/)

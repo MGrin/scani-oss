@@ -1,101 +1,102 @@
 ---
 title: How to contribute
-description: Filing issues, opening PRs, and what kinds of contributions are most welcome.
+description: How to file an issue, write a PR, and get it merged.
+sidebar:
+  order: 1
 ---
 
-Thanks for your interest in working on Scani. This page is a short on-ramp.
-The canonical engineering spec lives in
-[Engineering conventions](/contributing/conventions/) — read that
-before opening anything non-trivial.
+Pull requests welcome. The canonical engineering spec is
+[`CLAUDE.md`](https://github.com/MGrin/scani-oss/blob/main/CLAUDE.md);
+read it before opening anything non-trivial. The summary below is
+what you'll trip over most often.
 
 ## Filing issues
 
-- **Bug?** Use the
-  [Bug report](https://github.com/MGrin/scani-oss/blob/main/.github/ISSUE_TEMPLATE/bug.yml)
-  template. Include reproduction steps, what you expected, what you saw,
-  and your environment (OS, Bun version, whether you're self-hosted or
-  pointing at a hosted data-provider).
-- **Feature idea?** Use the
-  [Feature request](https://github.com/MGrin/scani-oss/blob/main/.github/ISSUE_TEMPLATE/feature.yml)
-  template. State the problem first, the proposed solution second.
-- **Security finding?** Do **not** open a public issue. See
+- **Bug?** Use the [bug template](https://github.com/MGrin/scani-oss/issues/new?template=bug.yml).
+  Include reproduction steps, what you expected, what you saw, and
+  your environment (OS, Bun version, tier).
+- **Feature idea?** Use the [feature template](https://github.com/MGrin/scani-oss/issues/new?template=feature.yml).
+  State the problem first, the solution second.
+- **Security finding?** Do *not* open a public issue. See
   [`.github/SECURITY.md`](https://github.com/MGrin/scani-oss/blob/main/.github/SECURITY.md)
-  for the private disclosure flow.
+  for the private flow. Or email `security@scani.xyz`.
 
-## Local development
+## Local setup
 
-See [Quickstart](/quickstart/) for boot instructions. The short
-version:
+You need [Bun](https://bun.sh) ≥ 1.3 and Docker.
 
-```bash
+```sh
 git clone git@github.com:MGrin/scani-oss.git
 cd scani-oss
 cp .env.example .env
 bun install
-bun run dev:stack
+bun run dev:stack      # the full local stack
 open http://localhost:5173
 ```
 
-You need [Bun](https://bun.sh) ≥ 1.3 and Docker.
+See [Local development stack](/self-hosting/tier1/local-dev/) for
+the details.
 
-## Pull-request flow
+## PR flow
 
-1. **Fork** the repo and create a topic branch:
-
-   ```bash
+1. **Fork** and create a topic branch:
+   ```sh
    git checkout -b your-name/short-descriptive-name
    ```
-
-2. **One logical change per PR.** A bug fix, a single new feature, a
-   refactor — not all three at once.
-
+2. **One logical change per PR.** Don't bundle a bugfix, a refactor,
+   and a new feature.
 3. **Run the checks locally** before pushing:
-
-   ```bash
+   ```sh
    bun run type-check
    bun lint:fix
-   bun test --preload ./packages/business/domain/test-preload.ts packages/ --timeout 30000
+   bun test --preload ./packages/business/domain/test-preload.ts \
+     packages/ --timeout 30000
    ```
-
    If you touched dependencies:
-
-   ```bash
-   bun run deps:lint    # syncpack — version alignment
-   bun run deps:unused  # knip — unused exports/files/dependencies
+   ```sh
+   bun run deps:lint    # syncpack
+   bun run deps:unused  # knip
    ```
-
-4. **Sign off your commits** with the Developer Certificate of Origin (DCO):
-
-   ```bash
-   git commit -s -m "your message"
+4. **Conventional-commit message + DCO sign-off:**
+   ```sh
+   git commit -s -m "feat: add Kraken transaction adapter"
    ```
-
-   This adds a `Signed-off-by:` trailer and certifies you have the right to
-   contribute the work under the project's MIT license.
-
-5. **Open the PR** using the
+   `-s` adds `Signed-off-by:` (DCO — certifying you have the right
+   to contribute under MIT).
+5. **Open the PR.** Use the
    [PR template](https://github.com/MGrin/scani-oss/blob/main/.github/PULL_REQUEST_TEMPLATE.md).
-   Link the issue it closes if one exists. Wait for CI green.
+   Link the issue if one exists.
 
-6. **Code review** is a conversation. Expect questions and small change
-   requests. Maintainers aim to first-review within a few days.
+## Commit prefix → release effect
 
-## What kinds of contributions are most welcome
+| Prefix | Triggers release? | Effect (pre-1.0) |
+|---|---|---|
+| `feat:` | Yes | Minor bump. |
+| `fix:` | Yes | Patch bump. |
+| `docs:` / `refactor:` / `chore:` | No | — |
+| `feat!:` or `BREAKING CHANGE:` footer | Yes | Minor bump pre-1.0 (`bump-minor-pre-major: true`). |
 
-- **Provider integrations.** Exchange + brokerage + chain adapters in
-  `packages/clients/providers/`. Every exchange has quirks; we've only
-  normalized a fraction of what users want.
-- **Bug fixes** with a regression test.
-- **Documentation.** README clarifications, package-level READMEs, better
-  self-host instructions, additions to this site.
-- **Performance.** Profile-driven; show the before/after numbers.
+Pick the prefix honestly — [release-please](https://github.com/googleapis/release-please)
+watches `main` and cuts versions off these.
+
+## What we're most interested in
+
+- **New provider integrations.** Exchanges, brokerages, chains.
+  See [Adding a provider](/contributing/adding-a-provider/).
+- **Translations.** Drop a JSON file into
+  [`apps/frontend/app/src/i18n/locales/`](https://github.com/MGrin/scani-oss/tree/main/apps/frontend/app/src/i18n/locales) —
+  partial translations welcome.
+- **Bug fixes with a regression test.**
+- **Documentation.** README clarifications, conventions, this docs
+  site.
+- **Performance.** Profile-driven; show before/after numbers.
 
 ## What we'll likely close
 
 - Sweeping refactors with no behaviour change and no benchmark wins.
 - Drive-by formatter / lint reflows. `bun lint:fix` handles those.
-- Adding new linters, formatters, or test runners.
-- "Add framework X" PRs without an issue agreeing on the direction first.
+- New linters, formatters, or test runners.
+- "Add framework X" without an issue agreeing on direction first.
 
 ## Contributor benefits
 
@@ -131,8 +132,24 @@ exists because the value of every contribution to `scani-oss` is
 strictly larger than the marginal cost of a hosted seat, and saying so
 in writing is the honest way to acknowledge that.
 
+## Code review
+
+Code review is a conversation; expect questions and small change
+requests. Maintainers aim to first-review within a few days. If
+your PR sits idle for more than a week, comment on it.
+
 ## License
 
 By contributing, you agree that your contributions will be licensed under
 the MIT License (see
 [`LICENSE`](https://github.com/MGrin/scani-oss/blob/main/LICENSE)).
+
+## See also
+
+- [Engineering conventions](/contributing/conventions/)
+- [Dependency injection pattern](/contributing/di-pattern/)
+- [Testing patterns](/contributing/testing/)
+- [Adding a provider](/contributing/adding-a-provider/)
+- [Adding a scheduled job](/contributing/adding-a-job/)
+- [Adding a database migration](/contributing/adding-a-migration/)
+- [Release flow](/contributing/release-flow/)
