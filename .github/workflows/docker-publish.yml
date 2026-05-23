@@ -82,6 +82,13 @@ jobs:
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
+        with:
+          # Route docker.io pulls through Google's anonymous mirror to dodge
+          # Docker Hub's per-account 429 rate limit. Pushes still target
+          # Docker Hub via docker/login-action below.
+          buildkitd-config-inline: |
+            [registry."docker.io"]
+              mirrors = ["mirror.gcr.io"]
 
       - name: Log in to Docker Hub
         # Skip the login on pull_request from forks — secrets aren't
