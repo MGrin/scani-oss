@@ -78,13 +78,29 @@ A few highlights so you know what you're walking into:
    bun run deps:lint    # syncpack — version alignment
    bun run deps:unused  # knip — unused exports/files/dependencies
    ```
-4. **Sign off your commits** with the Developer Certificate of Origin
-   (DCO):
+4. **Write a conventional-commit message** and **sign off** with the
+   Developer Certificate of Origin (DCO):
    ```bash
-   git commit -s -m "your message"
+   git commit -s -m "feat: add Kraken transaction adapter"
    ```
-   This adds a `Signed-off-by: …` trailer and certifies you have the
-   right to contribute the work under the project's MIT license.
+   The `-s` adds a `Signed-off-by: …` trailer (you certify you have the
+   right to contribute under the project's MIT license). The prefix is
+   load-bearing: [release-please](https://github.com/googleapis/release-please)
+   watches `main` and opens a release PR off these prefixes, so use them
+   honestly.
+
+   | Prefix      | Meaning                                            | Triggers release? |
+   |-------------|----------------------------------------------------|-------------------|
+   | `feat:`     | New user-visible feature                           | yes — minor bump  |
+   | `fix:`      | Bug fix                                            | yes — patch bump  |
+   | `docs:`     | Docs-only change                                   | no                |
+   | `refactor:` | Code change with no behaviour change               | no                |
+   | `chore:`    | Tooling, deps, CI, build — no product change       | no                |
+
+   Mark breaking changes with `!` after the type (`feat!: …`) or a
+   `BREAKING CHANGE:` footer. While we're pre-1.0, breaking changes
+   bump the minor (`0.X.0`), not the major — see
+   `release-please-config.json` (`bump-minor-pre-major: true`).
 5. **Open the PR.** Use the
    [PR template](./.github/PULL_REQUEST_TEMPLATE.md). Link the issue
    it closes if one exists. Wait for CI green.
