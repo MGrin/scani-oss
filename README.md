@@ -226,6 +226,14 @@ Pull requests welcome — start with
 [`CONTRIBUTING.md`](./CONTRIBUTING.md), then read
 [`CLAUDE.md`](./CLAUDE.md) for the engineering conventions.
 
+High-leverage entry points if you're looking for somewhere to start:
+**provider integrations** (new exchanges / brokerages / chains under
+[`packages/clients/providers/`](./packages/clients/providers/)) and
+**translations** (drop a JSON file into
+[`apps/frontend/app/src/i18n/locales/`](./apps/frontend/app/src/i18n/locales/) —
+no other code needs to change, partial translations are accepted, see
+[`locales/CONTRIBUTORS.md`](./apps/frontend/app/src/i18n/locales/CONTRIBUTORS.md)).
+
 Security findings should go to **security@scani.xyz**, not a public
 issue. See [`.github/SECURITY.md`](./.github/SECURITY.md) for the full
 disclosure flow.

@@ -21,48 +21,50 @@ export const V2_ROUTES = {
   jobDetail: (jobId: string) => `/jobs/${jobId}`,
 } as const;
 
-/** Sidebar navigation structure */
+/** Sidebar navigation structure. `labelKey` / `titleKey` are i18n keys
+ * resolved via `t()` at render time — the literal English strings live
+ * in `src/i18n/locales/en.json` under the `nav.*` namespace. */
 export interface NavItem {
-  label: string;
+  labelKey: string;
   icon: string;
   path: string;
   badge?: string;
 }
 
 export interface NavSection {
-  title: string;
+  titleKey: string;
   items: NavItem[];
 }
 
 export const NAV_SECTIONS: NavSection[] = [
   {
-    title: 'Portfolio',
+    titleKey: 'nav.sections.portfolio',
     items: [
-      { label: 'Dashboard', icon: 'LayoutDashboard', path: V2_ROUTES.dashboard },
-      { label: 'Holdings', icon: 'PieChart', path: V2_ROUTES.holdings },
-      { label: 'Accounts', icon: 'Wallet', path: V2_ROUTES.accounts },
-      { label: 'Institutions', icon: 'Building2', path: V2_ROUTES.institutions },
+      { labelKey: 'nav.dashboard', icon: 'LayoutDashboard', path: V2_ROUTES.dashboard },
+      { labelKey: 'nav.holdings', icon: 'PieChart', path: V2_ROUTES.holdings },
+      { labelKey: 'nav.accounts', icon: 'Wallet', path: V2_ROUTES.accounts },
+      { labelKey: 'nav.institutions', icon: 'Building2', path: V2_ROUTES.institutions },
     ],
   },
   {
-    title: 'Organization',
+    titleKey: 'nav.sections.organization',
     items: [
-      { label: 'Groups', icon: 'Tags', path: V2_ROUTES.groups },
-      { label: 'Vaults', icon: 'Vault', path: V2_ROUTES.vaults },
-      { label: 'Tokens', icon: 'Coins', path: V2_ROUTES.tokens },
+      { labelKey: 'nav.groups', icon: 'Tags', path: V2_ROUTES.groups },
+      { labelKey: 'nav.vaults', icon: 'Vault', path: V2_ROUTES.vaults },
+      { labelKey: 'nav.tokens', icon: 'Coins', path: V2_ROUTES.tokens },
     ],
   },
   {
-    title: 'Add Data',
+    titleKey: 'nav.sections.addData',
     items: [
-      { label: 'Manual Entry', icon: 'Keyboard', path: V2_ROUTES.manualEntry },
-      { label: 'Upload File', icon: 'FileUp', path: V2_ROUTES.fileImport },
-      { label: 'Crypto Wallet', icon: 'Coins', path: V2_ROUTES.walletImport },
-      { label: 'Integration', icon: 'Plug', path: V2_ROUTES.integrations },
+      { labelKey: 'nav.manualEntry', icon: 'Keyboard', path: V2_ROUTES.manualEntry },
+      { labelKey: 'nav.uploadFile', icon: 'FileUp', path: V2_ROUTES.fileImport },
+      { labelKey: 'nav.cryptoWallet', icon: 'Coins', path: V2_ROUTES.walletImport },
+      { labelKey: 'nav.integration', icon: 'Plug', path: V2_ROUTES.integrations },
     ],
   },
   {
-    title: 'Activity',
-    items: [{ label: 'Jobs', icon: 'ListChecks', path: V2_ROUTES.jobs }],
+    titleKey: 'nav.sections.activity',
+    items: [{ labelKey: 'nav.jobs', icon: 'ListChecks', path: V2_ROUTES.jobs }],
   },
 ];
