@@ -8,7 +8,7 @@ The canonical annotated list lives in
 This page groups them by which app or package owns validation.
 
 For the must-set subset, see
-[Self-hosting → Environment variables](/scani-oss/self-hosting/environment/).
+[Self-hosting → Environment variables](/self-hosting/environment/).
 
 ## App-level
 

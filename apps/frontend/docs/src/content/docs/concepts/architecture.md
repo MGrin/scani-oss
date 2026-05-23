@@ -43,7 +43,7 @@ registers them with BullMQ at boot via `upsertJobScheduler`.
 
 tRPC service that centralizes outbound 3rd-party calls. The api and worker
 call it over tRPC rather than reaching for upstream APIs directly. This is
-the seam between the [tiers](/scani-oss/self-hosting/tier-model/): in Tier 1
+the seam between the [tiers](/self-hosting/tier-model/): in Tier 1
 it's on `localhost:8082`, in Tier 2/3 it's a hosted endpoint.
 
 ### `apps/frontend/app`
@@ -101,6 +101,6 @@ HMAC-gated job endpoints on the api (retry / remove / DLQ replay) signed with
   [shadcn/ui](https://ui.shadcn.com)
 - **Dependency injection:**
   [typedi](https://github.com/typestack/typedi) (class-field pattern — see
-  [Engineering conventions](/scani-oss/contributing/conventions/))
+  [Engineering conventions](/contributing/conventions/))
 - **Testing:** `bun test` with per-test transactional rollback for
   repository tests

@@ -8,7 +8,7 @@ The Scani OSS documentation site. [Astro](https://astro.build) +
 From the repo root:
 
 ```bash
-bun run dev:docs        # → http://localhost:4321/scani-oss
+bun run dev:docs        # → http://localhost:4321
 ```
 
 Or directly:
@@ -36,6 +36,9 @@ config changes.
 
 ## Deploy
 
-Static output (`dist/`) deploys to any static host. The site is configured
-for GitHub Pages with `base: /scani-oss` in `astro.config.mjs`. Change
-`site` / `base` if hosting elsewhere.
+Static output (`dist/`) deploys to any static host. Production target is
+**Cloudflare Pages** at [`docs.scani.xyz`](https://docs.scani.xyz/),
+configured via [`site` in `astro.config.mjs`](./astro.config.mjs) and the
+deploy workflow at
+[`.github/workflows/deploy-docs.yml`](../../../.github/workflows/deploy-docs.yml).
+Change `site` if hosting elsewhere.

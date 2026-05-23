@@ -8,7 +8,7 @@ The full annotated list lives in
 the repo root. This page covers the ones you actually need to set.
 
 For the full reference table organized by package, see
-[Reference → Environment variables](/scani-oss/reference/environment/).
+[Reference → Environment variables](/reference/environment/).
 
 ## Required for any real deployment
 
@@ -21,7 +21,7 @@ For the full reference table organized by package, see
 | `JOBS_HMAC_SECRET`                | Shared secret for HMAC-gated job admin endpoints                                              |
 | `FRONTEND_URL` / `BACKEND_URL`    | What the browser sees; powers CORS + cookies                                                  |
 | `S3_*`                            | Object storage (any S3-compatible store; MinIO locally, R2 / S3 / B2 / … in prod)             |
-| `SCANI_CLOUD_URL`                 | Where the data-provider lives (see [Tier model](/scani-oss/self-hosting/tier-model/))         |
+| `SCANI_CLOUD_URL`                 | Where the data-provider lives (see [Tier model](/self-hosting/tier-model/))         |
 | `SCANI_CLOUD_API_KEY`             | Bearer token the api + worker present to reach the data-provider                              |
 
 ## Optional integration keys
