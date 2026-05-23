@@ -8,14 +8,16 @@
   "files": {
     "ignoreUnknown": false,
     "includes": [
-      "apps/**/*.{ts,tsx,js,jsx,json}",
+      "apps/**/*.{ts,tsx,js,jsx,mjs,json}",
       "packages/**/*.{ts,tsx,js,jsx,json}",
       "scripts/**/*.{ts,tsx,js,jsx,json}",
       "*.ts",
       "*.tsx",
       "*.js",
       "*.jsx",
-      "*.json"
+      "*.json",
+      "!apps/frontend/docs/.astro",
+      "!apps/frontend/docs/dist"
     ]
   },
   "formatter": {
