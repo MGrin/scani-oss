@@ -1,0 +1,167 @@
+---
+title: Quickstart
+description: A self-contained Scani stack in one command. Postgres, Redis, MinIO, Mailpit, and every Scani service in Docker — no external API keys required.
+sidebar:
+  order: 2
+---
+
+import { Steps, Tabs, TabItem, Aside, FileTree } from '@astrojs/starlight/components';
+
+You can have a working Scani instance running locally in five minutes. The
+default stack is **completely self-contained** — no external accounts, no
+provider API keys.
+
+## Prerequisites
+
+- [Bun](https://bun.sh) ≥ 1.3
+- Docker (Docker Desktop, OrbStack, or any compatible runtime)
+- A free port at: 5173 (SPA), 3011 (api), 8082 (data-provider), 5433
+  (Postgres), 6380 (Redis), 9000/9001 (MinIO), 1026/8026 (Mailpit).
+
+## The five-minute path
+
+<Steps>
+
+1. Clone and seed the env file.
+
+   ```sh
+   git clone git@github.com:MGrin/scani-oss.git
+   cd scani-oss
+   cp .env.example .env
+   ```
+
+2. Install workspace dependencies.
+
+   ```sh
+   bun install
+   ```
+
+3. Boot the full stack.
+
+   ```sh
+   bun run dev:stack
+   ```
+
+   This runs `scripts/sync-env.ts` (materialises per-app `.env` files from
+   the root `.env`) then `docker compose --profile full up -d --build`.
+   First boot pulls images and builds the app containers — give it a few
+   minutes.
+
+4. Open the SPA.
+
+   ```sh
+   open http://localhost:5173
+   ```
+
+   Sign in with a magic-link email. Local emails land in
+   [Mailpit at http://localhost:8026](http://localhost:8026) — click the
+   link there.
+
+5. Stop the stack when you're done.
+
+   ```sh
+   bun run dev:stack:down
+   ```
+
+   Containers go away; named volumes (your Postgres data, your MinIO
+   bucket) persist until you `docker compose down -v`.
+
+</Steps>
+
+## What you get
+
+| Service | URL |
+|---|---|
+| Frontend SPA | `http://localhost:5173` |
+| API (tRPC + Elysia) | `http://localhost:3011` |
+| Data-provider (tRPC) | `http://localhost:8082` |
+| Postgres | `localhost:5433` (`scani` / `scani`) |
+| Redis | `localhost:6380` |
+| Mailpit SMTP | `localhost:1026` |
+| Mailpit UI | `http://localhost:8026` |
+| MinIO S3 API | `http://localhost:9000` |
+| MinIO console | `http://localhost:9001` (`minioadmin` / `minioadmin`) |
+
+## What works out of the box
+
+- Magic-link sign-in (emails land in Mailpit).
+- Manual holdings with manual prices.
+- FX conversion (the Frankfurter provider needs no key).
+- Screenshot uploads (stored in the local MinIO bucket).
+- The full SPA, dashboard, vaults, groups.
+
+## What needs a key
+
+These integrations are gated by an API key — without the key, the
+corresponding tRPC routes return `PRECONDITION_FAILED` and the rest of
+the app keeps working.
+
+| Provider | Env var | Unlocks |
+|---|---|---|
+| CoinGecko | `COINGECKO_API_KEY` | Crypto prices on the paid tier (public tier works without a key but is rate-limited) |
+| Finnhub | `FINNHUB_API_KEY` | Public-equity prices |
+| Etherscan | `ETHERSCAN_API_KEY` | EVM wallet balances (one key covers every EVM chain) |
+| Helius | `HELIUS_API_KEY` | Solana balances + transactions |
+| OpenAI | `OPENAI_API_KEY` | Screenshot parsing |
+| Binance OAuth | `BINANCE_OAUTH_CLIENT_ID` / `_SECRET` / `_REDIRECT_URI` | Binance exchange connection flow |
+
+See [Optional integration keys](/self-hosting/tier1/optional-keys/) for
+the full list.
+
+## Running services on the host instead of in containers
+
+If you prefer to iterate on api / worker / frontend on the host (faster
+HMR, easier debugger attach) and only run infra in Docker:
+
+<Tabs>
+  <TabItem label="Infra in compose, apps on host">
+    ```sh
+    docker compose up -d postgres redis mailpit minio
+    bun install
+    bun dev               # api + frontend/app concurrently
+    bun dev:worker        # separate terminal — the BullMQ consumer
+    bun dev:data-provider # separate terminal — outbound 3rd-party calls
+    ```
+  </TabItem>
+  <TabItem label="Everything in compose (the default)">
+    ```sh
+    bun run dev:stack
+    ```
+  </TabItem>
+</Tabs>
+
+<Aside type="caution" title="Host-side SMTP gotcha">
+  Host-side `bun dev` reads `apps/backend/api/.env`, which is generated
+  from the root `.env` by `scripts/sync-env.ts`. The root `.env` only
+  sets `SMTP_URL=smtp://localhost:1026` if you add it yourself. The
+  containerised stack overrides `SMTP_URL` via compose environment, so
+  emails always reach Mailpit; the host-side stack will silently fail
+  to send unless you set `SMTP_URL` + `SMTP_FROM` in the root `.env` and
+  re-run `bun scripts/sync-env.ts`.
+</Aside>
+
+## Common gotchas
+
+- **`compose up` fails with a name conflict.** One-shot init containers
+  (`env-sync`, `deps`, `minio-init`, `migrate`) exit cleanly but linger
+  with their container names reserved. `bun run dev:stack:down` removes
+  them. `compose up` without a prior `down` will hit the conflict.
+- **API keys go in `.env`, not in compose.** `.env` is the single source
+  of truth. `scripts/sync-env.ts` propagates it to per-app `.env` files.
+  Editing `docker-compose.yml` directly will drift.
+- **`ENCRYPTION_KEY` must match between api and worker.** They're the
+  same value in `.env.example` for a reason — if they differ, the worker
+  cannot decrypt the integration credentials the api stored, and every
+  import silently fails.
+- **Persistent data lives in named volumes.** `docker compose down`
+  preserves them; `docker compose down -v` wipes them. The Postgres
+  data, the MinIO bucket, and the Redis AOF all live there.
+
+## Next steps
+
+- Read [What is Scani](/start/what-is-scani/) for the product shape.
+- Read [Mental model](/concepts/mental-model/) for the domain model.
+- Read [Tier model](/self-hosting/tier-model/) when you're ready to
+  put it behind a real domain.
+- Read [How to contribute](/contributing/how-to/) if you'd like to
+  send a PR.

@@ -1,0 +1,198 @@
+---
+title: Repo layout
+description: A map of the monorepo. Where to find things and what each package owns.
+sidebar:
+  order: 3
+---
+
+import { FileTree } from '@astrojs/starlight/components';
+
+Bun workspaces monorepo. Apps split into `backend/` and
+`frontend/`; packages split into `business/`, `infra/`, `clients/`,
+and `frontend/`.
+
+## Top-level shape
+
+<FileTree>
+- apps/
+  - backend/
+    - api/                tRPC + Elysia HTTP server. BullMQ producer.
+    - worker/             BullMQ consumer. Every async job runs here.
+    - data-provider/      Centralised outbound 3rd-party calls.
+  - frontend/
+    - app/                React + Vite SPA.
+    - docs/               This Starlight docs site.
+- packages/
+  - business/             Domain logic + the wire contract.
+    - domain/             Services, repositories, use cases.
+    - jobs/               Async-job catalog: descriptors, schedules.
+    - shared/             Frontend-safe contract (zod DTOs, Decimal).
+  - infra/                System concerns. No business knowledge.
+    - db/                 Drizzle schema, migrations, BaseRepository.
+    - queue/              BullMQ framework (queue, worker, scheduler).
+    - email/              Fastmail JMAP / SMTP.
+    - logging/            Structured logging (pino).
+    - security/           AES-256-GCM credential encryption.
+    - storage/            S3-compatible object storage.
+    - realtime/           SSE / Redis pub-sub.
+    - rate-limiter/       Per-provider rate limit + circuit breakers.
+    - config/             Env-validation primitives.
+  - clients/              Outbound network adapters.
+    - providers/          Unified 3rd-party integration package.
+    - cloud-client/       Typed tRPC client for the data-provider.
+  - frontend/
+    - ui/                 Design system + shared client plumbing (@scani/ui).
+- scripts/                Workspace scripts (sync-env, …).
+- docker-compose.yml      Local dev stack.
+- docker-compose.prod.yml Production-flavour compose.
+- .env.example            Annotated env vars.
+- CLAUDE.md               Canonical engineering spec.
+- CONTRIBUTING.md         Contributor on-ramp.
+</FileTree>
+
+## Backend apps
+
+### `apps/backend/api`
+
+tRPC over Elysia. Owns per-user credentialed integrations
+(exchange API keys, brokerage tokens). The api decrypts and uses
+those credentials on its own machine; they never leave the tenant
+boundary. Acts as the BullMQ producer — every user action that
+needs async work enqueues into Redis from here.
+
+Routes live in `apps/backend/api/src/presentation/routers/`.
+
+### `apps/backend/worker`
+
+The BullMQ consumer. Every scheduled job (pricing, balance syncs,
+historical backfills, transfer linking, APY payouts, …) and every
+user-initiated job (screenshot parse, exchange import, wallet
+import, file import, …) runs here in one binary.
+
+Processors live in `apps/backend/worker/src/processors/`. The
+cron-lock helper is in `apps/backend/worker/src/lib/cron-lock.ts`.
+
+### `apps/backend/data-provider`
+
+tRPC service that centralises every outbound third-party call
+(CoinGecko, Finnhub, DeFiLlama, OpenAI, Etherscan, Helius, …) and
+the email transport. The api and worker call it over tRPC rather
+than hitting upstream APIs directly. **This is the seam between
+[tiers](/self-hosting/tier-model/)** — in Tier 1 it's a sidecar
+on `localhost:8082`; in Tier 2/3 it's a hosted endpoint.
+
+Routers live in `apps/backend/data-provider/src/presentation/`.
+
+## Frontend apps
+
+### `apps/frontend/app`
+
+The main React + Vite SPA. End-to-end type-safe with the api via
+tRPC. Source under `src/v2/`. Locales under `src/i18n/locales/`.
+
+### `apps/frontend/docs`
+
+This site. Astro + Starlight. Pages under
+`src/content/docs/`. Custom CSS in `src/styles/custom.css`.
+`scripts/generate-llms-txt.ts` runs before `astro build` to emit
+`public/llms.txt` and `public/llms-full.txt`.
+
+## Packages — `business/`
+
+Things that change when the product changes.
+
+### `@scani/domain` (`packages/business/domain`)
+
+The bulk of business logic — services, repositories, use cases.
+Class-field DI (see [DI pattern](/contributing/di-pattern/)).
+Tests in mirrored `tests/` directories.
+
+### `@scani/jobs` (`packages/business/jobs`)
+
+Per-job descriptors (payload schemas, retry policies, jobId
+strategies, summarisers), repeatable schedules, and the
+`@scani/queue` mirror/lock impls. The wire-name catalogue is
+`job-names.ts`.
+
+### `@scani/shared` (`packages/business/shared`)
+
+Frontend-safe contract: zod DTOs (the tRPC wire), the
+project-configured `Decimal.js` instance, UI helpers
+(`formatCurrency`, `formatRelative`, `emailSchema`, …). **Strict
+rule: no Node-only APIs reachable from the barrel.** The frontend
+must be able to import any of it.
+
+## Packages — `infra/`
+
+Pure system concerns. No business knowledge; reusable in any
+TypeScript backend.
+
+| Package | Role |
+|---|---|
+| `@scani/db` | Drizzle schema, migrations, postgres.js connection, `BaseRepository`. |
+| `@scani/queue` | Async-coordination framework on BullMQ. Abstract bases + concrete `@Service()` impls. |
+| `@scani/email` | Fastmail JMAP / SMTP. Owns `FASTMAIL_API_TOKEN` / `SMTP_URL`. |
+| `@scani/logging` | Structured logging (pino). Owns `LOG_*`. |
+| `@scani/security` | AES-256-GCM credential encryption. Owns `ENCRYPTION_KEY`. |
+| `@scani/storage` | S3-compatible object storage. Owns `S3_*`. |
+| `@scani/realtime` | Realtime / SSE pub-sub via Redis. |
+| `@scani/rate-limiter` | Rate limiting + circuit breakers for upstream calls. |
+| `@scani/config` | Env-validation primitives (`requiredInProd`, `httpsUrlInProduction`, …). |
+
+## Packages — `clients/`
+
+Outbound network adapters.
+
+### `@scani/providers` (`packages/clients/providers`)
+
+The unified 3rd-party integration package. One directory per
+provider under `src/providers/` (CoinGecko, DeFiLlama, Kraken,
+Binance, IBKR, Wise, OpenAI, Solana, …). Capability-based
+interfaces (`PriceProvider`, `BalanceProvider`, `TransactionProvider`,
+`TokenIdentityProvider`, `AIProvider`).
+
+See [Adding a provider](/contributing/adding-a-provider/) and
+[Provider matrix](/reference/provider-matrix/).
+
+### `@scani/cloud-client` (`packages/clients/cloud-client`)
+
+Typed tRPC client for the data-provider. The api + worker call
+the data-provider through this rather than reaching for HTTP
+directly.
+
+## Packages — `frontend/`
+
+### `@scani/ui` (`packages/frontend/ui`)
+
+Design system + shared client plumbing for the SPA. Tailwind
+preset + CSS tokens, the full shadcn primitive set,
+`ThemeContext`, `ErrorBoundary`, `UpdateBanner`, `MagicCodeInput`,
+the `useAppUpdate` hook, PWA helpers, `createScaniAuthClient` /
+`createTrpcProvider` factories.
+
+**`apps/frontend/app` is the canonical source of truth** for
+shared primitives — when promoting a new primitive into the
+library, copy from there.
+
+## Key paths
+
+| What | Where |
+|---|---|
+| tRPC routers | `apps/backend/api/src/presentation/routers/` |
+| Queue names + enqueue helpers | `packages/infra/queue/src/{queue-names,enqueue}.ts` |
+| Worker processors | `apps/backend/worker/src/processors/` |
+| Repeatable schedules | `packages/business/jobs/src/scheduled-jobs/` |
+| Domain services / repos / use cases | `packages/business/domain/src/` |
+| DB schema | `packages/infra/db/src/schema/` |
+| Drizzle migrations | `packages/infra/db/src/migrations/` |
+| Provider registry | `packages/clients/providers/src/` |
+| Data-provider routers | `apps/backend/data-provider/src/presentation/` |
+| Test preload | `packages/business/domain/test-preload.ts` |
+
+## See also
+
+- [Engineering conventions](/contributing/conventions/)
+- [Database schema](/reference/database-schema/)
+- [tRPC route catalogue](/reference/trpc-routes/)
+- [Job catalogue](/reference/jobs/)
+- [Provider matrix](/reference/provider-matrix/)

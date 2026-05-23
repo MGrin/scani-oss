@@ -1,0 +1,131 @@
+---
+title: Transactions (the ledger)
+description: The immutable, append-only record of every economic event behind every holding. Buys, sells, deposits, withdrawals, transfers, swaps, fees, rewards, interest, airdrops.
+sidebar:
+  order: 5
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+## Summary
+
+`holding_transactions` is the **append-only ledger** of every economic
+event Scani has ingested from any source: chain transactions, CEX
+trades, statement lines, screenshot extractions, manual entries, plus
+synthesised `opening_balance` rows from
+[reconciliation](/concepts/observations/). It is strictly additive —
+the ledger never overrides `holdings.balance`, and rows are never
+updated or deleted in normal operation. The ledger is what makes
+cost-basis math, historical reconstruction, and cross-venue transfer
+linking possible.
+
+## Schema
+
+| Column | Meaning |
+|---|---|
+| `id` | uuid PK. |
+| `userId` | uuid → `users.id`. |
+| `holdingId` | uuid → `holdings.id`. **Primary relational anchor** — the position this event belongs to. Migration `0054` keyed the ledger on `holdingId` (was `(account_id, token_id)`) to allow multi-lot per account. |
+| `tokenId` | uuid → `tokens.id`. Denormalised from the holding for query ergonomics; ingesters must keep it in sync with the referenced holding's token. |
+| `kind` | text. Intentionally loose — see [Kinds](#kinds). |
+| `quantity` | Signed Decimal string. **Negative for outflows** (sell, withdraw, fee). |
+| `priceNative` | Per-unit price at the time of the event, in its **native quote currency**. |
+| `priceNativeTokenId` | The token of the native quote (e.g. EUR for a Kraken BTC/EUR trade). `ON DELETE SET NULL`. |
+| `counterTokenId` | For trades/swaps: the other side of the transaction. `ON DELETE SET NULL`. |
+| `counterQuantity` / `counterPriceNative` / `counterPriceNativeTokenId` | The other-side details. |
+| `feeQuantity` / `feeTokenId` | Fees in their native token. |
+| `occurredAt` | When the event happened per the source — **not** Scani's ingest time. |
+| `externalId` | Chain tx hash, exchange trade ID, bank tx ID — the dedup key. **NOT NULL** so the unique constraint on `(holdingId, source, externalId)` is meaningful. Ingesters synthesise a stable id when the source doesn't provide one. |
+| `swapGroupId` | Links both legs of a swap. |
+| `transferGroupId` | Links a CEX withdraw to a wallet deposit. Populated by the [transfer-linking job](/concepts/transfers/). |
+| `source` | `'binance-api'`, `'etherscan'`, `'statement-csv'`, `'screenshot'`, `'user-entered'`, `'reconciliation-opening'`, …. |
+| `sourceMetadata` (jsonb) | Provider-specific payload context. |
+| `rawPayload` (jsonb) | Original payload for forensics / re-parse after normaliser improvements. |
+| `createdAt` / `updatedAt` | |
+
+**Uniqueness:** `(holdingId, source, externalId)`. Indexes on
+`(userId, occurredAt desc)`, `(holdingId, occurredAt desc)`,
+`transferGroupId`, `swapGroupId`.
+
+## Kinds
+
+The `kind` column is intentionally **loose** — not a Postgres enum —
+so new ingesters can introduce new kinds (`rebase`, `slash`,
+`liquidation`, …) without a schema migration. Readers must tolerate
+unknown kinds.
+
+The current live set, declared as the `HoldingTransactionKind` union:
+
+| Kind | Meaning |
+|---|---|
+| `buy` | Trade where the holding's token was acquired in exchange for `counterToken`. |
+| `sell` | Trade where the holding's token was sold for `counterToken`. |
+| `deposit` | An inflow from outside the tracked system (or with no matching paired transfer yet). |
+| `withdraw` | An outflow to outside the tracked system. |
+| `transfer_in` / `transfer_out` | Paired flows between two tracked accounts. Get a shared `transferGroupId` when [linked](/concepts/transfers/). |
+| `swap_in` / `swap_out` | Both legs of a single swap. Share a `swapGroupId`. |
+| `fee` | A fee in the holding's token. |
+| `reward` | Staking reward, mining reward, liquidity-mining drop. |
+| `interest` | Yield from APY config payouts (see [APY & yield](/concepts/apy/)). |
+| `airdrop` | Free token grant. |
+| `opening_balance` | Synthesised by the reconciliation flow. The "true starting point" that makes the ledger reconcile with `holdings.balance`. |
+| `unknown` | Fallback when an ingester can't classify. |
+
+## Dedup contract
+
+Every ingester **must** produce a stable `externalId` per source.
+Chain-based ingesters use the transaction hash; exchange ingesters use
+the trade ID; statement-CSV ingesters synthesise an id by hashing a
+canonical representation of the line. The unique constraint
+`(holdingId, source, externalId)` is what makes re-ingesting safe:
+re-running the Binance importer on overlapping date ranges produces
+zero duplicates.
+
+<Aside type="caution" title="NOT NULL on externalId is load-bearing">
+  Postgres treats `NULL` as not-equal-to-`NULL` in unique constraints.
+  A nullable `externalId` would have meant re-ingesters silently
+  filling the ledger with infinite duplicates. The contract is
+  enforced at the column level: every ingester synthesises an id, no
+  exceptions.
+</Aside>
+
+## Native vs converted prices
+
+`priceNative` is the trade price in the actual quote currency — a
+Kraken `BTC/EUR` fill has `priceNative = "67000"`, `priceNativeTokenId
+= EUR-token-uuid`. **There is no auto-conversion to USD at write
+time.** Conversion happens at read time, through the
+[price graph](/concepts/pricing/), so the original quote currency
+remains available forever for FX-aware queries.
+
+## Append-only in practice
+
+- The api / worker / data-provider all `INSERT`, never `UPDATE`, on
+  `holding_transactions` in the happy path. The only exception is
+  populating `transferGroupId` / `swapGroupId` after a match —
+  metadata fields that don't alter the economic event.
+- Ingesters that re-discover a transaction with a *changed* payload
+  treat it as a separate (rejected) row rather than overwriting —
+  preserving the audit trail.
+- `rawPayload` is kept indefinitely so the team can re-parse old data
+  when normaliser logic improves.
+
+<Aside type="note" title="Why the ledger is append-only">
+  The cost basis of every position depends on every economic event
+  that has touched it. If the ledger were mutable, a corrected import
+  could silently change the historical PnL of a year-old close,
+  causing tax-relevant numbers to drift. Append-only means a
+  correction is a *new* row with a different source — the original
+  stays visible. See
+  [Why an append-only ledger](/decisions/append-only-ledger/).
+</Aside>
+
+## See also
+
+- [Holdings](/concepts/holdings/)
+- [Transfers & swaps](/concepts/transfers/)
+- [Observations & coverage](/concepts/observations/)
+- [Balance reconstruction](/concepts/balance-reconstruction/)
+- [Why an append-only ledger](/decisions/append-only-ledger/)
+- [Glossary: ledger](/reference/glossary/#ledger),
+  [transaction](/reference/glossary/#transaction)

@@ -1,0 +1,161 @@
+---
+title: Pricing & the price graph
+description: How Scani converts between any two tokens at any point in time without assuming a single canonical base currency.
+sidebar:
+  order: 9
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+## Summary
+
+`PriceGraphService.convert(amount, fromTokenId, toTokenId, at)` is the
+single entry point for cross-token / cross-time conversion. There is
+**no USD-canonical column** in the schema — every price is stored in
+its native quote currency. The service walks the implicit graph
+defined by `token_prices` rows: direct → reverse direct → one-hop via
+USD / USDT / EUR → (rarely) two-hop. A staleness contract lets
+conversions succeed with old prices while flagging the result for
+downstream coverage-quality treatment.
+
+## What the graph looks like
+
+Every `token_prices` row is a directed edge `tokenId → baseTokenId`
+at a particular `timestamp` and `granularity`. The "graph" is
+implicit — there is no `edges` table. Hubs are well-known tokens
+(USD, USDT, EUR by default) that frequently have edges from many
+other tokens.
+
+```
+   AAPL ──$── USD ─────────── EUR ──€── BTC
+                │              │
+                USDT           GBP
+```
+
+## The routing algorithm
+
+`PriceGraphService.convert(...)` tries paths in order:
+
+1. **Identity.** Same token in and out: `(amount, rate=1, stale=false)`.
+2. **Direct lookup** at or before `at`, preferred granularity. The
+   edge `(from → to)` at the most recent timestamp wins.
+3. **Reverse direct.** If `(to → from)` exists, use `1/price`.
+4. **One-hop via each hub** in order (default `[USD, USDT, EUR]`,
+   plus the user's display base when known). First hub whose two
+   legs both resolve wins.
+5. **Two-hop** via pairs of hubs (only when `maxDepth: 3`). Rarely
+   useful; pays for extra lookups.
+6. **Otherwise null.** Callers must tolerate.
+
+```ts
+const conversion = await priceGraph.convert(
+  new Decimal('1'),
+  btcTokenId,
+  eurTokenId,
+  new Date('2024-06-01T00:00:00Z'),
+  { preferGranularity: 'daily', maxDepth: 2 }
+);
+// → { amount: Decimal('57000'), rate: Decimal('57000'), effectiveAt: ..., path: 'direct', stale: false }
+```
+
+### What the result tells you
+
+| Field | Meaning |
+|---|---|
+| `amount` | The result, already denominated in `toTokenId`. |
+| `rate` | The effective rate used (per unit of `fromToken`). |
+| `effectiveAt` | Timestamp of the **oldest** edge consulted — the binding leg. |
+| `path` | `'identity'`, `'direct'`, `'reverse-direct'`, `'one-hop-<hubId>'`, `'two-hop-<hub1>-<hub2>'`. |
+| `stale` | True when `effectiveAt` is older than the granularity-appropriate staleness cap. The amount is **still returned** — callers fold it into `coverageQuality` rather than dropping the holding and fabricating a chart gap. |
+
+## Staleness contract
+
+Two caps:
+
+- `MAX_INTRADAY_PRICE_AGE_MS` — short. An intraday price older than
+  this is stale.
+- `MAX_DAILY_PRICE_AGE_MS` — much longer. A daily-granularity price
+  can legitimately be days old for thin pairs.
+
+If `preferGranularity = 'daily'`, the service uses the daily cap. The
+**binding leg** of a multi-hop path — whichever leg has the older
+timestamp — is what determines staleness, because the chain is only
+as fresh as its weakest link.
+
+## Hub selection
+
+Default hubs: `['USD', 'USDT', 'EUR']`, evaluated in order.
+
+- Callers can override via `options.hubSymbols`.
+- `PortfolioValuationAtTimeService` automatically folds the user's
+  display base into the hub list when a display currency is
+  configured.
+- The hub-symbol → token-id resolution is cached for the lifetime of
+  the process. Tokens are seeded by migration and stable for the
+  process lifetime; invalidation on restart is fine.
+
+The service deduplicates resolved hub ids before iterating —
+configured hub symbols can resolve to the same `tokens.id` (USD and a
+fiat stablecoin aliased to the same token, or a future alias table),
+and a repeated id would produce a degenerate path
+`A → hub → same-hub → B` with rate `p × 1/p = 1`.
+
+## PriceLookup — the hot-path optimisation
+
+The [portfolio-value rollup](/concepts/rollup/) does **millions** of
+`convert` calls per backfill. Per-call DB lookups would be ruinous.
+
+`PriceLookup` is a pre-fetched in-memory price index. The rollup
+loads every relevant price for the user up front, hands the
+`PriceLookup` in via `options.priceLookup`, and `tryDirect` reads
+from memory. Pairs not in the lookup defensively fall through to the
+DB — so the hot path is still correct if the rollup didn't preload
+something.
+
+## Granularities
+
+Three granularities live in `token_prices.granularity`:
+
+| Granularity | Source | Use |
+|---|---|---|
+| `intraday` | Live syncs (CoinGecko paid, Finnhub, exchange tickers). | Recent valuation, the dashboard headline. |
+| `daily` | Historical backfill (`historical-price-backfill` job). | The chart, point-in-time historical valuation. |
+| `tx-exact` | Captured at a transaction's `occurredAt`. | Cost-basis math against the actual fill price. |
+
+The composite unique key on `token_prices` is
+`(tokenId, baseTokenId, timestamp, granularity)` so the same
+timestamp can carry both a daily close and an intraday candle without
+collision.
+
+## Provider routing
+
+`PricingProviderRouter` decides which upstream to ask. Adapters
+(`PricingProviderAdapter`) wrap each provider; the router falls
+through to the next on failure. The
+[`unpriceableUntil`](/concepts/tokens/) cooldown gate on `tokens`
+prevents the historical backfill from retrying providers we've
+already established can't supply prices for a given token.
+
+The `PricingFailureCacher` records "no price found at time X for
+token Y" with a short TTL so the next pass doesn't re-ask every
+provider for the same gap.
+
+<Aside type="note" title="Why a graph, not a single canonical base">
+  A USD-canonical schema forces every non-USD trade through a USD
+  conversion at write time — at which point the original quote is
+  lost and FX revisions are stuck with the original rate. Storing
+  every price in its native base lets conversions stay accurate even
+  when FX history is revised, and lets users without USD exposure
+  read their portfolio in their actual currency without an extra
+  conversion. See
+  [Why no USD canonicalisation](/decisions/no-usd-canonical/).
+</Aside>
+
+## See also
+
+- [Tokens & market segments](/concepts/tokens/)
+- [Portfolio value rollup](/concepts/rollup/)
+- [Balance reconstruction](/concepts/balance-reconstruction/)
+- [Why no USD canonicalisation](/decisions/no-usd-canonical/)
+- [Glossary: price graph](/reference/glossary/#price-graph),
+  [granularity](/reference/glossary/#granularity)
