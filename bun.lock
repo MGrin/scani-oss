@@ -417,7 +417,6 @@
       "name": "@scani/analytics",
       "version": "1.0.0",
       "dependencies": {
-        "@scani/cloud-client": "workspace:*",
         "@scani/db": "workspace:*",
         "@scani/logging": "workspace:*",
         "drizzle-orm": "^0.45.2",

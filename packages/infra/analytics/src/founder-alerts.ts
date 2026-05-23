@@ -1,9 +1,7 @@
-import { EmailFacade } from '@scani/cloud-client/facades/email-facade';
 import { db } from '@scani/db';
 import { users } from '@scani/db/schema';
 import { createComponentLogger } from '@scani/logging';
 import { count } from 'drizzle-orm';
-import { Container } from 'typedi';
 
 const log = createComponentLogger('founder-alerts');
 
@@ -13,11 +11,23 @@ let capLogged = false;
 
 const DEFAULT_CAP = 100;
 
-export async function notifyFounderOfNewUser(user: {
-  id: string;
-  email?: string | null;
-  createdAt?: Date | null;
-}): Promise<void> {
+// Decoupled from @scani/email / @scani/cloud-client by design: importing
+// either would create a runtime cycle (email imports analytics for
+// applyEmailTracking → analytics importing the email facade closes the
+// loop and TDZ-errors EmailService). Caller passes whatever email
+// transport it already holds.
+export interface FounderAlertEmailSender {
+  send(message: { from: string; to: string; subject: string; text: string }): Promise<void>;
+}
+
+export async function notifyFounderOfNewUser(
+  user: {
+    id: string;
+    email?: string | null;
+    createdAt?: Date | null;
+  },
+  email: FounderAlertEmailSender
+): Promise<void> {
   const to = process.env.WAITLIST_OPS_EMAIL;
   if (!to) return;
   const from = process.env.WAITLIST_OPS_FROM ?? 'no-reply@scani.xyz';
@@ -33,7 +43,7 @@ export async function notifyFounderOfNewUser(user: {
       }
       return;
     }
-    await Container.get(EmailFacade).send({
+    await email.send({
       from,
       to,
       subject: `New Scani signup #${c}/${cap}: ${user.email ?? user.id}`,

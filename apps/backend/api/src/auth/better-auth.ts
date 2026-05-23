@@ -106,7 +106,7 @@ export function createBetterAuth(opts: {
         create: {
           after: async (user) => {
             captureUserSignedUp(user);
-            void notifyFounderOfNewUser(user);
+            void notifyFounderOfNewUser(user, email);
             try {
               const baseCurrencyId = await getDefaultBaseCurrencyId();
               if (!baseCurrencyId) return;
