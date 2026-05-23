@@ -34,7 +34,9 @@
     "deps:fix": "syncpack fix",
     "deps:unused": "knip --dependencies",
     "deps:outdated": "syncpack update --check",
-    "deps:update:minor": "syncpack update --target minor"
+    "deps:update:minor": "syncpack update --target minor",
+    "dockerhub:readmes:check": "bun scripts/sync-dockerhub-readme.ts --check",
+    "dockerhub:readmes:sync": "bun scripts/sync-dockerhub-readme.ts"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.4.12",
