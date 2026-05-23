@@ -1,22 +1,23 @@
 import type { LucideIcon } from 'lucide-react';
 import { LayoutDashboard, Menu, PieChart, PlusCircle, Wallet } from 'lucide-react';
 import { useEffect, useRef } from 'react';
+import { useTranslation } from 'react-i18next';
 import { NavLink } from 'react-router-dom';
 import { cn } from '@/lib/utils';
 import { V2_ROUTES } from '../lib/routes';
 
 interface MobileNavItem {
-  label: string;
+  labelKey: string;
   icon: LucideIcon;
   path: string;
   end?: boolean;
 }
 
 const items: MobileNavItem[] = [
-  { label: 'Dashboard', icon: LayoutDashboard, path: V2_ROUTES.dashboard, end: true },
-  { label: 'Holdings', icon: PieChart, path: V2_ROUTES.holdings },
-  { label: 'Add', icon: PlusCircle, path: V2_ROUTES.addData },
-  { label: 'Accounts', icon: Wallet, path: V2_ROUTES.accounts },
+  { labelKey: 'nav.dashboard', icon: LayoutDashboard, path: V2_ROUTES.dashboard, end: true },
+  { labelKey: 'nav.holdings', icon: PieChart, path: V2_ROUTES.holdings },
+  { labelKey: 'nav.add', icon: PlusCircle, path: V2_ROUTES.addData },
+  { labelKey: 'nav.accounts', icon: Wallet, path: V2_ROUTES.accounts },
 ];
 
 interface MobileNavProps {
@@ -87,6 +88,7 @@ export function MobileNav({ onMorePress, actionRequiredCount = 0 }: MobileNavPro
   const hasActionRequired = actionRequiredCount > 0;
   const navRef = useRef<HTMLElement | null>(null);
   useVisualViewportPin(navRef);
+  const { t } = useTranslation();
   return (
     <nav
       ref={navRef}
@@ -99,30 +101,33 @@ export function MobileNav({ onMorePress, actionRequiredCount = 0 }: MobileNavPro
         height: 'calc(3.5rem + env(safe-area-inset-bottom, 0px))',
       }}
     >
-      {items.map((item) => (
-        <NavLink
-          key={item.path}
-          to={item.path}
-          end={item.end}
-          aria-label={item.label}
-          className={({ isActive }) =>
-            cn(
-              'flex flex-col items-center justify-center gap-0.5 flex-1 h-full text-[10px]',
-              isActive ? 'text-primary' : 'text-muted-foreground'
-            )
-          }
-        >
-          <item.icon className="h-5 w-5" aria-hidden="true" />
-          <span>{item.label}</span>
-        </NavLink>
-      ))}
+      {items.map((item) => {
+        const label = t(item.labelKey);
+        return (
+          <NavLink
+            key={item.path}
+            to={item.path}
+            end={item.end}
+            aria-label={label}
+            className={({ isActive }) =>
+              cn(
+                'flex flex-col items-center justify-center gap-0.5 flex-1 h-full text-[10px]',
+                isActive ? 'text-primary' : 'text-muted-foreground'
+              )
+            }
+          >
+            <item.icon className="h-5 w-5" aria-hidden="true" />
+            <span>{label}</span>
+          </NavLink>
+        );
+      })}
       <button
         type="button"
         onClick={onMorePress}
         aria-label={
           hasActionRequired
-            ? `More — ${actionRequiredCount} job${actionRequiredCount === 1 ? '' : 's'} need review`
-            : 'More'
+            ? `${t('nav.more')} — ${actionRequiredCount} job${actionRequiredCount === 1 ? '' : 's'} need review`
+            : t('nav.more')
         }
         className="flex flex-col items-center justify-center gap-0.5 flex-1 h-full text-[10px] text-muted-foreground"
       >
@@ -135,7 +140,7 @@ export function MobileNav({ onMorePress, actionRequiredCount = 0 }: MobileNavPro
             />
           )}
         </span>
-        <span>More</span>
+        <span>{t('nav.more')}</span>
       </button>
     </nav>
   );
