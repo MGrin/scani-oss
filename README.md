@@ -112,6 +112,32 @@ Images are tagged `:latest` (head of `main`), `:sha-<short>` (every
 push), and `:1.2.3` / `:1.2` / `:1` (semver tags). Pin
 `SCANI_IMAGE_TAG=1.2.3` in `.env` if you want reproducible deploys.
 
+## Privacy
+
+**Scani's OSS distribution sends no telemetry, ever.** Self-hosted
+installs do not phone home: no install ID, no anonymous usage
+counters, no feature-flag pings, no version-check beacons. The only
+outbound calls a self-hosted stack makes are the ones you explicitly
+configure — exchange APIs you connect, the pricing / chain providers
+whose keys you set in `.env`, and your email transport.
+
+Two opt-in, default-off exceptions exist:
+
+- **Sentry** (`SENTRY_DSN` / `VITE_SENTRY_DSN`) — error monitoring. No
+  DSN means the SDK is a no-op; nothing leaves the process. Even when
+  enabled, payloads are scrubbed by `packages/business/shared/src/utils/sentry-scrubber.ts`
+  before send.
+- **Whatever you point `SCANI_CLOUD_URL` at** — by default this is the
+  bundled `data-provider` container on the same host. If you point it
+  at a third-party hosted data-provider instead (Tier 2), upstream
+  requests fan out from there. The OSS code makes no such call by
+  default.
+
+We are not collecting usage analytics for the OSS project itself. We
+don't plan to. If we ever change our mind, the new feature will be
+opt-in, default-off, fully documented in `.github/SECURITY.md`, and
+shipped as a separate PR you can read end-to-end before deciding.
+
 ## Architecture
 
 ```
