@@ -13,6 +13,26 @@ export const httpsUrlInProduction = urlSchema.refine(
   { message: 'must use https:// in production' }
 );
 
+/**
+ * Optional URL that treats empty string the same as unset (undefined).
+ *
+ * Solves the common docker-compose footgun: a compose file with
+ * `SENTRY_DSN: ${SENTRY_DSN:-}` passes the literal empty string `""` to
+ * the container when the env var is unset in `.env`. A plain
+ * `z.string().url().optional()` then rejects `""` as "Invalid url",
+ * crashing boot for any operator who hasn't opted into the optional
+ * feature.
+ *
+ * `optionalUrl` accepts: `undefined`, `""`, or any valid URL. Empty
+ * string is preprocessed to `undefined` so downstream consumers see a
+ * single "unset" shape rather than having to also check for the empty
+ * string sentinel.
+ */
+export const optionalUrl = z.preprocess(
+  (v) => (v === '' ? undefined : v),
+  z.string().url({ message: 'must be a valid URL or empty/unset' }).optional()
+);
+
 export function requiredInProd<T extends z.ZodString>(
   schema: T,
   varName?: string

@@ -5,6 +5,7 @@ import {
   checkEnvIsolatedUrl,
   httpsUrlInProduction,
   isProduction,
+  optionalUrl,
   requiredInProd,
   urlSchema,
 } from '../src/index';
@@ -299,5 +300,30 @@ describe('assertEnvIsolatedUrl (deprecated throwing wrapper)', () => {
       expect(msg).not.toContain('supersecret');
       expect(msg).toContain('<redacted>');
     }
+  });
+});
+
+describe('optionalUrl', () => {
+  test('undefined → undefined (regular optional behaviour)', () => {
+    const result = optionalUrl.parse(undefined);
+    expect(result).toBeUndefined();
+  });
+
+  test('empty string → undefined (docker-compose env-passthrough footgun)', () => {
+    // Critical: `SENTRY_DSN: ${SENTRY_DSN:-}` in compose passes "" when
+    // the env var is unset. Plain z.string().url().optional() would
+    // reject this as "Invalid url"; optionalUrl preprocesses it to
+    // undefined so optional really means optional.
+    const result = optionalUrl.parse('');
+    expect(result).toBeUndefined();
+  });
+
+  test('valid URL passes through unchanged', () => {
+    const result = optionalUrl.parse('https://o12345.ingest.sentry.io/678');
+    expect(result).toBe('https://o12345.ingest.sentry.io/678');
+  });
+
+  test('garbage non-empty string fails validation', () => {
+    expect(() => optionalUrl.parse('not a url')).toThrow();
   });
 });

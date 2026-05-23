@@ -1,4 +1,4 @@
-import { checkEnvIsolatedUrl, requiredInProd } from '@scani/config';
+import { checkEnvIsolatedUrl, optionalUrl } from '@scani/config';
 import { z } from 'zod';
 
 const envSchema = z.object({
@@ -59,9 +59,9 @@ const envSchema = z.object({
       message: 'DLQ_ALERT_THRESHOLD must be a positive integer',
     }),
 
-  // Sentry — hard-required in prod so a misconfigured deploy fails
-  // loudly; optional in dev. SDK init gates on DSN presence regardless.
-  SENTRY_DSN: requiredInProd(z.string().url(), 'SENTRY_DSN'),
+  // Sentry — fully optional. Empty string is treated as unset (see
+  // `optionalUrl`). SDK init gates on DSN presence regardless.
+  SENTRY_DSN: optionalUrl,
   SENTRY_ENVIRONMENT: z.string().optional(),
   SENTRY_RELEASE: z.string().optional(),
 });
