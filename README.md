@@ -263,6 +263,17 @@ Thanks goes to these people ([emoji key](https://allcontributors.org/docs/en/emo
 
 This project follows the [all-contributors](https://github.com/all-contributors/all-contributors) specification. Contributions of any kind welcome — comment `@all-contributors please add @username for code` (or any other [contribution type](https://allcontributors.org/docs/en/emoji-key)) on any PR or issue.
 
+## Community
+
+Questions, ideas, and show-and-tell live in
+[GitHub Discussions](https://github.com/MGrin/scani-oss/discussions) —
+the best place to ask "is this the right approach" before you open a PR,
+or to share what you've built on top of Scani. Security issues should go
+through the private flow in [`.github/SECURITY.md`](./.github/SECURITY.md)
+instead of Discussions or public issues. If Scani saves you time and
+you'd like to fund continued work, [GitHub Sponsors](https://github.com/sponsors/MGrin)
+is open.
+
 ## License
 
 MIT. See [`LICENSE`](./LICENSE).
