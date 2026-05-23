@@ -1,0 +1,78 @@
+# nginx site config for the frontend SPA. Run through envsubst at
+# container boot — `${API_UPSTREAM}` is expanded from the env var of
+# the same name.
+
+server {
+    listen       80 default_server;
+    listen       [::]:80 default_server;
+    server_name  _;
+
+    root   /usr/share/nginx/html;
+    index  index.html;
+
+    # Don't index the SPA — only the SSR landing page would. Self-hosters
+    # who want indexing should layer their own front-of-stack.
+    add_header X-Robots-Tag "noindex, nofollow" always;
+
+    # Disable nginx's "Server: nginx/x.y.z" header — small information
+    # leak that adds nothing for the operator.
+    server_tokens off;
+
+    # SPA history routing — any path that doesn't match a real file
+    # falls back to index.html so React Router takes over.
+    location / {
+        try_files $uri $uri/ /index.html;
+
+        # Aggressive caching for hashed assets, none for index.html so
+        # deploys are picked up on the next page load.
+        location ~* \.(?:js|css|woff2?|ttf|eot|otf|svg|png|jpg|jpeg|gif|ico|webp|avif)$ {
+            expires 1y;
+            add_header Cache-Control "public, immutable";
+            try_files $uri =404;
+        }
+
+        location = /index.html {
+            add_header Cache-Control "no-cache, no-store, must-revalidate";
+            expires 0;
+        }
+    }
+
+    # Reverse-proxy /api/* to the backend service. The trailing slash on
+    # both sides strips /api before forwarding (so the api itself sees
+    # the un-prefixed path it knows about).
+    location /api/ {
+        proxy_pass         ${API_UPSTREAM}/;
+        proxy_http_version 1.1;
+        proxy_set_header   Host              $host;
+        proxy_set_header   X-Real-IP         $remote_addr;
+        proxy_set_header   X-Forwarded-For   $proxy_add_x_forwarded_for;
+        proxy_set_header   X-Forwarded-Proto $scheme;
+        proxy_set_header   Connection        "";
+        # Magic-link emails embed BACKEND_URL — keep redirects passing
+        # back unchanged so the browser lands on the right host.
+        proxy_redirect     off;
+        # tRPC mutations can carry largish JSON bodies (file imports,
+        # screenshot OCR results) — give them headroom.
+        client_max_body_size 25m;
+        proxy_read_timeout   90s;
+    }
+
+    # WebSocket endpoint on the api — Elysia upgrades over the same port.
+    location /ws {
+        proxy_pass         ${API_UPSTREAM};
+        proxy_http_version 1.1;
+        proxy_set_header   Upgrade           $http_upgrade;
+        proxy_set_header   Connection        "upgrade";
+        proxy_set_header   Host              $host;
+        proxy_read_timeout 3600s;
+        proxy_send_timeout 3600s;
+    }
+
+    # Container-level health probe — returns the SPA index so any HTTP
+    # client (including the Dockerfile's HEALTHCHECK) gets a 200.
+    location = /healthz {
+        access_log off;
+        return 200 "ok\n";
+        add_header Content-Type text/plain;
+    }
+}
