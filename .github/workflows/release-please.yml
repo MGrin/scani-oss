@@ -2,13 +2,11 @@ name: Release Please
 
 # Maintains a permanent "release PR" tracking unreleased conventional commits
 # (feat:, fix:, …) on main. Merging that PR cuts a new semver tag (vX.Y.Z) and
-# regenerates CHANGELOG.md. The Docker publish workflow (docker-publish.yml)
-# listens on `tags: ['v*']` and republishes the four images with the new
-# semver tags.
+# regenerates CHANGELOG.md.
 #
-# Single root release (release-type: node) — the four Docker images version
-# in lockstep against the root package.json. release-please-config.json and
-# .release-please-manifest.json track state at the repo root.
+# Tags pushed by the default GITHUB_TOKEN do not trigger downstream `on: push:
+# tags` workflows (GitHub anti-loop safety), so we explicitly dispatch
+# docker-publish.yml at the new tag ref when release-please cuts a release.
 
 on:
   push:
@@ -17,6 +15,7 @@ on:
 permissions:
   contents: write
   pull-requests: write
+  actions: write
 
 concurrency:
   group: release-please-${{ github.ref }}
@@ -25,8 +24,32 @@ concurrency:
 jobs:
   release-please:
     runs-on: ubuntu-latest
+    outputs:
+      release_created: ${{ steps.release.outputs.release_created }}
+      tag_name: ${{ steps.release.outputs.tag_name }}
     steps:
-      - uses: googleapis/release-please-action@v4
+      - id: release
+        uses: googleapis/release-please-action@v4
         with:
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
+
+  trigger-docker-publish:
+    needs: release-please
+    if: ${{ needs.release-please.outputs.release_created == 'true' }}
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write
+    steps:
+      - name: Dispatch docker-publish at the new tag
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const tag = '${{ needs.release-please.outputs.tag_name }}';
+            core.info(`Dispatching docker-publish.yml at ref ${tag}`);
+            await github.rest.actions.createWorkflowDispatch({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              workflow_id: 'docker-publish.yml',
+              ref: tag,
+            });
