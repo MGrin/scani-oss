@@ -47,7 +47,7 @@ ownership rule.
 | `BETTER_AUTH_SECRET` | app (api) | 32+ chars. Better-Auth session signing key. |
 | `JOBS_HMAC_SECRET` | app (api) | 32+ chars. HMAC for operator job endpoints. |
 | `SCREENSHOT_BOT_SECRET` | app (api) | 32+ chars. Screenshot-bot sign-in bearer. |
-| `ENCRYPTION_KEY` | **package** (`@scani/security`) | 32 hex chars. AES-256-GCM. Must match api ↔ worker. |
+| `ENCRYPTION_KEY` | **package** (`@scani/security`) | ≥32 chars (recommended: 64 hex chars from `openssl rand -hex 32`). AES-256-GCM. Must match api ↔ worker. |
 | `LOG_ID_PEPPER` | **package** (`@scani/logging`) | 16+ chars. ID-hashing pepper. Required in production. |
 | `WORKER_CONCURRENCY` | app (worker) | Max concurrent BullMQ jobs per worker. Default 4. |
 

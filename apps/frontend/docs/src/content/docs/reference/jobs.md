@@ -27,13 +27,13 @@ overlapping fires of the same name silently no-op rather than race.
 | `historical-price-backfill` | Nightly, 03:00 UTC | Fill `daily`-granularity price history for tokens with holdings; respects `unpriceableUntil` cooldown. |
 | `forex-backfill` | Nightly, 03:30 UTC | Fill historical FX pairs (via Frankfurter) needed by the rollup. |
 | `portfolio-value-rollup` | Nightly, 04:00 UTC | Recompute `portfolio_value_daily` for every user at user / institution / account / holding scope. |
-| `transfer-linking` | Nightly, 05:00 UTC | Pair CEX withdrawals with wallet deposits via `LinkTransferPairsUseCase`. |
+| `transfer-linking` | Nightly, 03:45 UTC | Pair CEX withdrawals with wallet deposits via `LinkTransferPairsUseCase`. |
 | `backfill-token-identity` | Weekly, Sunday 02:00 UTC | Re-enrich tokens whose `providerMetadata` hasn't been touched lately. |
 | `reconcile-pending-credentials` | Every minute | Sweep stuck `pending` integration-credential rows (UI flow interruptions). |
 | `reconcile-orphaned-user-jobs` | Every minute | Sweep stuck `running` user-job rows whose worker process died. |
-| `dlq-depth-probe` | Every minute | Read the dead-letter queue depth; emit a warn log when it crosses thresholds. |
-| `job-heartbeat-probe` | Every minute | Detect jobs whose heartbeat went silent; mark them stuck. |
-| `hide-closed-holdings` | Daily | Auto-hide holdings that have been at zero balance for the configured window. |
+| `dlq-depth-probe` | Every 5 minutes | Read the dead-letter queue depth; emit a warn log when it crosses thresholds. |
+| `job-heartbeat-probe` | Every 10 minutes | Detect jobs whose heartbeat went silent; mark them stuck. |
+| `hide-closed-holdings` | Nightly, 04:30 UTC | Auto-hide holdings that have been at zero balance for the configured window. |
 
 ## User-initiated jobs
 

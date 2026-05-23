@@ -9,9 +9,11 @@ sidebar:
 
 [Transfer linking](/concepts/transfers/) — the process that pairs a
 CEX withdrawal to a wallet deposit (and vice versa) by writing a
-shared `transferGroupId` — runs **nightly at 05:00 UTC**, after every
-ingester (exchange sync, wallet sync, screenshot parse, file import,
-etc.) has had a chance to write its transactions for the day.
+shared `transferGroupId` — runs **nightly at 03:45 UTC**, after the
+hourly ingesters (exchange sync, wallet sync) have had a chance to
+write the day's transactions, and before the
+[portfolio-value rollup](/concepts/rollup/) at 04:00 UTC depends on
+the linked groups.
 
 ## The alternative we rejected
 
