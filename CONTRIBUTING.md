@@ -112,6 +112,14 @@ A few highlights so you know what you're walking into:
 - **Provider integrations.** Exchange + brokerage + chain adapters in
   `packages/clients/providers/`. Every exchange has quirks; we've only
   normalized a fraction of what users want.
+- **Translations.** The SPA's UI strings live in
+  [`apps/frontend/app/src/i18n/locales/`](./apps/frontend/app/src/i18n/locales/) —
+  one JSON file per language, English as the source of truth. Drop a
+  new `<code>.json` next to `en.json` and the language picker in
+  Settings auto-discovers it. Partial translations are welcome; missing
+  keys fall back to English. See
+  [`locales/CONTRIBUTORS.md`](./apps/frontend/app/src/i18n/locales/CONTRIBUTORS.md)
+  for the step-by-step.
 - **Bug fixes** with a regression test.
 - **Documentation.** README clarifications, package-level READMEs,
   better self-host instructions.

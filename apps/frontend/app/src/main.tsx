@@ -9,6 +9,7 @@ import React from 'react';
 import ReactDOM from 'react-dom/client';
 import { TRPCProvider } from '@/lib/trpc-provider';
 import App from './App.tsx';
+import './i18n';
 import './index.css';
 
 // Fail loudly if the build pipeline forgot to stage VITE_API_URL — better

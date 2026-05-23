@@ -1,6 +1,7 @@
 import { Card, CardContent, CardHeader } from '@scani/ui/ui/card';
 import { Skeleton } from '@scani/ui/ui/skeleton';
 import { Building2, PieChart, Wallet } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router-dom';
 import { trpc } from '@/lib/trpc';
 import { AssetAllocationChart } from '../components/dashboard/AssetAllocationChart';
@@ -25,6 +26,7 @@ function StatSkeleton() {
 }
 
 export function DashboardPage() {
+  const { t } = useTranslation();
   const { data: overview, isLoading: overviewLoading } = trpc.dashboard.getOverview.useQuery();
   const { data: vaults } = trpc.vaults.getAll.useQuery();
   const { data: baseCurrency } = trpc.users.getBaseCurrency.useQuery();
@@ -35,8 +37,8 @@ export function DashboardPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h2 className="text-2xl font-bold tracking-tight">Dashboard</h2>
-        <p className="text-muted-foreground mt-1">Your portfolio overview</p>
+        <h2 className="text-2xl font-bold tracking-tight">{t('dashboard.title')}</h2>
+        <p className="text-muted-foreground mt-1">{t('dashboard.subtitle')}</p>
       </div>
 
       {/* Stat cards */}
@@ -53,16 +55,24 @@ export function DashboardPage() {
             <PortfolioSummary value={totalValue} currency={currency} />
             <Link to={V2_ROUTES.institutions}>
               <StatCard
-                label="Institutions"
+                label={t('dashboard.stats.institutions')}
                 value={overview?.counts.institutions ?? 0}
                 icon={Building2}
               />
             </Link>
             <Link to={V2_ROUTES.accounts}>
-              <StatCard label="Accounts" value={overview?.counts.accounts ?? 0} icon={Wallet} />
+              <StatCard
+                label={t('dashboard.stats.accounts')}
+                value={overview?.counts.accounts ?? 0}
+                icon={Wallet}
+              />
             </Link>
             <Link to={V2_ROUTES.holdings}>
-              <StatCard label="Holdings" value={overview?.counts.holdings ?? 0} icon={PieChart} />
+              <StatCard
+                label={t('dashboard.stats.holdings')}
+                value={overview?.counts.holdings ?? 0}
+                icon={PieChart}
+              />
             </Link>
           </>
         )}

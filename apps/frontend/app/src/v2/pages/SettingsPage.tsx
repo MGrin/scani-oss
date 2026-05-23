@@ -3,12 +3,15 @@ import { Button } from '@scani/ui/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@scani/ui/ui/card';
 import { Input } from '@scani/ui/ui/input';
 import { Label } from '@scani/ui/ui/label';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@scani/ui/ui/select';
 import { Skeleton } from '@scani/ui/ui/skeleton';
 import { showError, showSuccess } from '@scani/ui/ui/use-toast';
 import { Loader2, LogOut, Monitor, RefreshCw, Trash2 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
+import { AVAILABLE_LANGUAGES } from '@/i18n';
 import { trpc } from '@/lib/trpc';
 import { FiatCurrencySelect } from '../components/shared/FiatCurrencySelect';
 import { invalidatePortfolioQueries } from '../hooks/invalidatePortfolioQueries';
@@ -21,6 +24,7 @@ import { useJobStatus } from '../hooks/useJobStatus';
 import { V2_ROUTES } from '../lib/routes';
 
 export function SettingsPage() {
+  const { t, i18n } = useTranslation();
   const { data: user, isLoading: userLoading } = trpc.users.getCurrent.useQuery();
   const utils = trpc.useUtils();
   const navigate = useNavigate();
@@ -171,27 +175,27 @@ export function SettingsPage() {
   return (
     <div className="max-w-2xl space-y-6">
       <div>
-        <h2 className="text-2xl font-bold tracking-tight">Settings</h2>
-        <p className="text-sm text-muted-foreground mt-1">Manage your preferences</p>
+        <h2 className="text-2xl font-bold tracking-tight">{t('settings.title')}</h2>
+        <p className="text-sm text-muted-foreground mt-1">{t('settings.subtitle')}</p>
       </div>
 
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">Profile</CardTitle>
+          <CardTitle className="text-base">{t('settings.profile')}</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="space-y-2">
-            <Label htmlFor="name">Name</Label>
+            <Label htmlFor="name">{t('settings.name')}</Label>
             <Input
               id="name"
               value={name}
               onChange={(e) => setName(e.target.value)}
-              placeholder="Your name"
+              placeholder={t('settings.namePlaceholder')}
             />
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="email">Email</Label>
+            <Label htmlFor="email">{t('settings.email')}</Label>
             <Input id="email" value={user?.email || ''} disabled className="bg-muted" />
           </div>
         </CardContent>
@@ -199,24 +203,49 @@ export function SettingsPage() {
 
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">Preferences</CardTitle>
+          <CardTitle className="text-base">{t('settings.preferences')}</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="space-y-2">
-            <Label htmlFor="currency">Base Currency</Label>
+            <Label htmlFor="currency">{t('settings.baseCurrency')}</Label>
             <FiatCurrencySelect id="currency" value={baseCurrencyId} onChange={setBaseCurrencyId} />
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="language">{t('settings.language')}</Label>
+            <Select
+              value={i18n.resolvedLanguage ?? i18n.language}
+              onValueChange={(code) => {
+                void i18n.changeLanguage(code);
+              }}
+            >
+              <SelectTrigger id="language">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {AVAILABLE_LANGUAGES.map((lang) => (
+                  <SelectItem key={lang.code} value={lang.code}>
+                    {lang.nativeName}
+                    {lang.nativeName !== lang.name ? ` — ${lang.name}` : ''}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-muted-foreground">{t('settings.languageHint')}</p>
           </div>
         </CardContent>
       </Card>
 
-      {updateMutation.isPending && <p className="text-xs text-muted-foreground">Saving...</p>}
+      {updateMutation.isPending && (
+        <p className="text-xs text-muted-foreground">{t('settings.saving')}</p>
+      )}
       {isDirty && !updateMutation.isPending && (
-        <p className="text-xs text-muted-foreground">Changes will auto-save</p>
+        <p className="text-xs text-muted-foreground">{t('settings.autoSave')}</p>
       )}
 
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">Account</CardTitle>
+          <CardTitle className="text-base">{t('settings.account')}</CardTitle>
         </CardHeader>
         <CardContent>
           <Button
@@ -226,7 +255,7 @@ export function SettingsPage() {
             className="text-red-600 hover:text-red-600 hover:bg-red-600/10"
           >
             <LogOut className="h-4 w-4 mr-2" />
-            Sign out
+            {t('settings.signOut')}
           </Button>
         </CardContent>
       </Card>
