@@ -1,0 +1,53 @@
+name: Sync Docker Hub READMEs
+
+# Pushes per-image README content from `docker-readmes/<image>.md` to
+# the corresponding `scani/<image>` repository on Docker Hub. Runs on
+# pushes to `main` that touch `docker-readmes/**` or the sync script
+# itself, plus on-demand via workflow_dispatch.
+#
+# Required repo secrets (same as docker-publish.yml):
+#   - DOCKERHUB_USERNAME — typically `scani` (the org account)
+#   - DOCKERHUB_TOKEN    — a Docker Hub access token with read/write
+#                          on the four `scani/*` repos
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'docker-readmes/**'
+      - 'scripts/sync-dockerhub-readme.ts'
+      - '.github/workflows/sync-dockerhub-readmes.yml'
+  pull_request:
+    paths:
+      - 'docker-readmes/**'
+      - 'scripts/sync-dockerhub-readme.ts'
+      - '.github/workflows/sync-dockerhub-readmes.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sync-dockerhub-readmes-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  sync:
+    name: ${{ github.event_name == 'pull_request' && 'Validate' || 'Sync' }} Docker Hub READMEs
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Validate README files
+        run: bun scripts/sync-dockerhub-readme.ts --check
+
+      - name: Push READMEs to Docker Hub
+        if: github.event_name != 'pull_request'
+        env:
+          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+          DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+        run: bun scripts/sync-dockerhub-readme.ts
