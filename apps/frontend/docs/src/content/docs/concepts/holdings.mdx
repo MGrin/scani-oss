@@ -1,0 +1,126 @@
+---
+title: Holdings
+description: A holding is a single (account, token) position with a balance. Scani's atomic unit of portfolio tracking.
+sidebar:
+  order: 2
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+## Summary
+
+A **holding** is the atomic unit of portfolio tracking: one position of
+one [token](/concepts/tokens/) inside one [account](/concepts/accounts/).
+Each holding has a current `balance` (a decimal string for precision),
+flags for `isHidden` / `isActive`, and a `source` indicating whether it
+came from a synced provider or manual entry. The `balance` field is the
+*only* mutable balance in the system; every change to it is also
+[appended](/concepts/transactions/) to the immutable ledger and
+[observed](/concepts/observations/) at the moment it changed.
+
+## Schema
+
+The Drizzle table is `holdings` in
+`packages/infra/db/src/schema/holdings.ts`. The relevant columns:
+
+| Column | Type | Meaning |
+|---|---|---|
+| `id` | uuid PK | |
+| `userId` | uuid → `users.id` | Cascade-deletes with the user. |
+| `accountId` | uuid → `accounts.id` | Cascade-deletes with the account. |
+| `tokenId` | uuid → `tokens.id` | `ON DELETE RESTRICT` — a token with holdings cannot be deleted. |
+| `balance` | text | Decimal string (uses `Decimal.js` for precision). |
+| `source` | text | `'manual'` or `'blockchain'` (or an exchange-specific value like `'binance-api'`). Tracks how the holding was created. |
+| `externalId` | text \| null | Provider-specific identifier (e.g. `'BTC'` for Binance) used as a sync-matching key. NULL for manual holdings. |
+| `isHidden` | bool | Hidden holdings are excluded from the UI but still synced by cron jobs. |
+| `isActive` | bool | Inactive holdings stay visible but are excluded from total calculations. |
+| `lastUpdated` | timestamptz | When the balance was last updated by any source. Also the [anchor timestamp](/concepts/balance-reconstruction/) for current-state-based reconstruction. |
+| `createdAt` | timestamptz | |
+
+Composite indexes cover the common lookups: `(user, account, token)`,
+`(user, token)`, `(user, createdAt desc)`, plus boolean indexes on
+`isHidden` and `isActive`.
+
+## Hidden vs inactive
+
+These two flags do different things and matter for both the UI and the
+[rollup](/concepts/rollup/):
+
+| Flag | UI behaviour | Synced by cron? | Counts toward totals? |
+|---|---|---|---|
+| `isHidden = true` | Hidden from dashboards and lists. | **Yes** — still kept up to date. | No. |
+| `isActive = false` | Visible (greyed). | **No** — left alone. | No. |
+
+The [holding-inclusion rule](/decisions/holding-inclusion-rule/)
+combines these with the token's `isScamProbability` to decide whether
+a holding contributes to a portfolio total. The rule is enforced
+identically in the TypeScript read path
+(`PortfolioValuationService`) and the SQL chart read path
+(`PortfolioValueDailyRepository`).
+
+## Lifecycle
+
+A holding is created in one of four ways:
+
+1. **A sync discovers a position** the user didn't have before. The
+   relevant ingester (`exchange-import`, `wallet-import`, the
+   per-provider sync jobs) calls into
+   `HoldingsSyncHelper` / `HoldingService`, which creates the account if
+   needed, then the holding, then the initial `kind='deposit'` ledger
+   entry and a `'sync-capture'` observation.
+2. **A screenshot is parsed** via OpenAI Vision and the resulting rows
+   are written under a synthetic
+   ["manual" institution](/concepts/manual-assets/).
+3. **A CSV / file import** writes both holdings and the matching ledger
+   entries.
+4. **The user creates one manually** (`manual-holdings-create` job).
+
+A holding's `balance` then changes only via:
+
+- A sync run that observes a different balance — the new balance is
+  written, a `'sync-capture'` observation is appended, and any *new*
+  transactions discovered since the last sync are inserted into the
+  ledger.
+- A user edit — the change is written and an `'manual-correction'`
+  observation is recorded.
+- A [yield payout](/concepts/apy/) — the nightly `apy-payouts` job
+  appends a `kind='interest'` transaction and bumps the balance.
+- The [opening-balance reconciliation](/concepts/observations/) — when
+  `sum(transactions) ≠ holdings.balance`, a synthetic
+  `kind='opening_balance'` transaction is appended so the ledger
+  fully explains the current balance.
+
+<Aside type="note" title="Why holdings and transactions are separate">
+  The current balance is in `holdings.balance` because the dashboard
+  has to render in milliseconds, and recomputing every total from the
+  ledger on every request would be ruinous. But the *truth* is the
+  ledger plus the observations — the balance column is a denormalised
+  cache that the reconciliation job is allowed to repair, not a
+  primary source. This is why you can drop the rollup and the cache
+  and rebuild from the ledger alone. See
+  [Why an append-only ledger](/decisions/append-only-ledger/).
+</Aside>
+
+## Multiple holdings of the same token in the same account
+
+The schema allows it. Multi-lot scenarios (a user with two separately
+tracked BTC positions on the same exchange — e.g. one for trading, one
+for long-term cost basis) work without schema gymnastics. The
+`holding_transactions` table keys on `holdingId` rather than
+`(account_id, token_id)` precisely so a second position can be
+materialised without breaking the ledger.
+
+Migration `0054` was the schema change that made this possible: it
+dropped the old `(account_id, token_id)` composite key on
+`holding_transactions` and re-keyed everything on `holding_id`.
+
+## See also
+
+- [Accounts & institutions](/concepts/accounts/)
+- [Tokens & market segments](/concepts/tokens/)
+- [Transactions (the ledger)](/concepts/transactions/)
+- [Observations & coverage](/concepts/observations/)
+- [Balance reconstruction](/concepts/balance-reconstruction/)
+- [Manual assets](/concepts/manual-assets/)
+- [Why the holding-inclusion rule lives twice](/decisions/holding-inclusion-rule/)
+- [Glossary: holding](/reference/glossary/#holding)

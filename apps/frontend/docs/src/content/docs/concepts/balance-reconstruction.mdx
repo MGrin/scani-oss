@@ -1,0 +1,131 @@
+---
+title: Balance reconstruction
+description: How Scani derives a holding's balance at any past time from observations, transactions, and current state — without ever mutating the ledger.
+sidebar:
+  order: 8
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+## Summary
+
+`BalanceAtTimeService.getBalance(holdingId, at)` returns the
+reconstructed balance of one [holding](/concepts/holdings/) at any
+past time. It walks the [ledger](/concepts/transactions/) backward
+(or forward) from the most trustworthy [anchor](#anchor-priority)
+available — typically the nearest balance
+[observation](/concepts/observations/), falling back to the current
+state of the holding when no observation is near. The result is
+clamped non-negative because early imported history is frequently
+incomplete; you can't have negatively held an asset you can't short.
+
+## Anchor priority
+
+For a given `(holdingId, at)`, the service picks the first available
+anchor from this ordered list:
+
+1. **Nearest observation at or after `at`.** Highest confidence.
+   Subtract the sum of transaction quantities between `at` and the
+   observation timestamp from the observed balance — that's the
+   balance at `at`.
+2. **Current `holdings.balance` at `holdings.lastUpdated`.** Fallback
+   when no observation is at or after the target time. Subtract the
+   sum of transactions between `at` and `holdings.lastUpdated`.
+3. **Nearest observation before `at`** — last-ditch anchor. Walk
+   *forward* by adding the sum of transactions between
+   `observation.observedAt` and `at`.
+
+If no anchor of any kind is reachable (no observation, no current
+holding, no transactions), the service returns `{ balance: null }` —
+honest "unknown" rather than a fabricated zero.
+
+```ts
+// Simplified shape of the return:
+interface BalanceAtTimeResult {
+  balance: Decimal | null;
+  anchor: 'holdings' | 'observation-after' | 'observation-before' | null;
+  anchorAt: Date | null;
+  txApplied: number;
+}
+```
+
+`anchor` is reported back so callers can fold confidence into the
+displayed `coverageQuality` rather than blindly trust every point.
+
+## The non-negative clamp
+
+The service applies `clampNonNegative` to every reconstructed past
+balance — if the math produces a negative number, it's clamped to
+zero.
+
+Why: blockchain indexers, exchange CSVs, and manual entry frequently
+*start partway through* a holding's life. Helius's parsed-tx index
+has retention limits. An exchange CSV starts at export date, not
+account creation. A wallet imported mid-life has no events before
+the import. When the first transaction Scani knows about is a sell,
+naïve forward-walking math produces:
+
+```
+0 (assumed starting balance)
+- 0.5 BTC (the sell we have)
+= -0.5 BTC
+```
+
+That's nonsense; you can't have negatively held BTC. Clamping at
+zero keeps the chart sensible without rewriting the underlying
+ledger, which preserves signed quantities for cost-basis math.
+
+The [opening-balance reconciliation](/concepts/observations/#opening-balance-reconciliation)
+flow later synthesises the implied opening balance so the ledger
+becomes self-consistent.
+
+## How the rollup uses it
+
+The nightly [portfolio-value rollup](/concepts/rollup/) calls
+`getBalance` once per holding per snapshot date in the backfill
+window. To avoid a per-holding round-trip per day, callers can
+pre-load the per-user data and hand it in:
+
+```ts
+interface BalanceAtTimeCaches {
+  holdings?: ReadonlyMap<string, Holding>;
+  observations?: ReadonlyMap<string, ReadonlyArray<HoldingBalanceObservation>>;
+  transactions?: ReadonlyMap<string, ReadonlyArray<HoldingTransaction>>;
+}
+```
+
+When a cache key is present, the service uses it; when absent (or
+`undefined` for that holding), it falls through to the repository.
+This lets the rollup hot-path do **one** bulk fetch of per-user data
+and feed millions of `getBalance` calls without further DB
+round-trips, while ad-hoc callers (the chart endpoint, an interactive
+valuation) just call `getBalance(holdingId, at)` and let the
+service handle the I/O.
+
+## What it doesn't do
+
+- **It does not mutate the ledger.** Pure read.
+- **It does not mutate observations.** Pure read.
+- **It does not return PnL** — that's a separate concern computed by
+  the rollup against the reconstructed balance and the
+  [price graph](/concepts/pricing/).
+- **It does not convert currencies.** The returned balance is in
+  the token's units (BTC, AAPL, EUR, …); pricing happens above.
+
+<Aside type="note" title="Why three anchor types instead of one">
+  Single-anchor designs (always-observation, always-current-balance,
+  always-replay-from-zero) each break for a realistic data class:
+  observation-only doesn't work for the first sync on a wallet
+  imported mid-life; replay-from-zero breaks every imported-mid-life
+  holding; current-balance-only requires recent observations that
+  may not exist. The three-anchor priority covers each case with the
+  most trustworthy data Scani has.
+</Aside>
+
+## See also
+
+- [Holdings](/concepts/holdings/)
+- [Observations & coverage](/concepts/observations/)
+- [Transactions (the ledger)](/concepts/transactions/)
+- [Portfolio value rollup](/concepts/rollup/)
+- [Why an append-only ledger](/decisions/append-only-ledger/)
