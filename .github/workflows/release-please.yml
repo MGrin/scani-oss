@@ -1,0 +1,32 @@
+name: Release Please
+
+# Maintains a permanent "release PR" tracking unreleased conventional commits
+# (feat:, fix:, …) on main. Merging that PR cuts a new semver tag (vX.Y.Z) and
+# regenerates CHANGELOG.md. The Docker publish workflow (docker-publish.yml)
+# listens on `tags: ['v*']` and republishes the four images with the new
+# semver tags.
+#
+# Single root release (release-type: node) — the four Docker images version
+# in lockstep against the root package.json. release-please-config.json and
+# .release-please-manifest.json track state at the repo root.
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: release-please-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release-please:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: googleapis/release-please-action@v4
+        with:
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json
