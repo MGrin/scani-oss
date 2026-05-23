@@ -1,0 +1,107 @@
+name: Deploy docs
+
+# Builds the Starlight static site under `apps/frontend/docs/` and deploys
+# the output to Cloudflare Pages (project `scani-docs` → `docs.scani.xyz`).
+# PRs that touch the docs site build (without deploying) so we don't merge
+# a broken site.
+#
+# One-time setup outside this workflow:
+#   1. Cloudflare dashboard → Workers & Pages → Create application →
+#      Pages → Direct upload. Name the project `scani-docs`. (No Git
+#      integration — this workflow handles publishing.)
+#   2. Cloudflare → Pages project → Custom domains → add `docs.scani.xyz`.
+#      Cloudflare will tell you the CNAME / DNS record to add; if the
+#      `scani.xyz` zone is already in Cloudflare, the record is created
+#      automatically.
+#   3. Cloudflare → My Profile → API Tokens → Create Token →
+#      "Edit Cloudflare Workers" template (or a custom token with
+#      Account.Cloudflare Pages: Edit). Copy the token.
+#   4. Cloudflare → Workers & Pages → take note of the account ID from
+#      the right-hand sidebar.
+#   5. GitHub repo → Settings → Secrets and variables → Actions:
+#        - secret  `CLOUDFLARE_API_TOKEN`  = the token from step 3
+#        - secret  `CLOUDFLARE_ACCOUNT_ID` = the account ID from step 4
+#      (account ID isn't a secret per se, but keeping it in secrets means
+#      fork PRs can't reach it.)
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'apps/frontend/docs/**'
+      - '.github/workflows/deploy-docs.yml'
+      - '.github/actions/setup-bun/**'
+      - 'bun.lock'
+      - 'package.json'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'apps/frontend/docs/**'
+      - '.github/workflows/deploy-docs.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Pages allows only one in-flight deployment per project at a time. We
+# do NOT cancel in-progress runs — Wrangler uploads can leave the project
+# half-published if interrupted. PRs are scoped per-ref so they don't
+# contend with each other.
+concurrency:
+  group: pages-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build site
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0
+      - uses: ./.github/actions/setup-bun
+
+      - name: Build Starlight site
+        run: bun --cwd apps/frontend/docs build
+
+      - name: Upload build artifact
+        # Only the main-branch run uploads — PR runs verify the build
+        # succeeds but don't publish. The artifact is passed to the
+        # deploy job so we don't rebuild between jobs.
+        if: github.event_name != 'pull_request'
+        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
+        with:
+          name: docs-dist
+          path: apps/frontend/docs/dist
+          retention-days: 1
+          if-no-files-found: error
+
+  deploy:
+    name: Deploy to Cloudflare Pages
+    if: github.event_name != 'pull_request'
+    needs: build
+    runs-on: ubuntu-latest
+    # Mirror secrets to job-level env so the step-level `if:` can compare.
+    # GitHub disallows referencing `secrets.X` directly inside `if:`.
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+    steps:
+      - name: Skip if Cloudflare secrets unset
+        # Keeps the workflow green before the one-time setup is done.
+        if: ${{ env.CLOUDFLARE_API_TOKEN == '' || env.CLOUDFLARE_ACCOUNT_ID == '' }}
+        run: |
+          echo "::warning::CLOUDFLARE_API_TOKEN or CLOUDFLARE_ACCOUNT_ID is unset; skipping deploy. See the workflow header for setup steps."
+          exit 0
+
+      - uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53 # v6.0.0
+        if: ${{ env.CLOUDFLARE_API_TOKEN != '' && env.CLOUDFLARE_ACCOUNT_ID != '' }}
+        with:
+          name: docs-dist
+          path: dist
+
+      - name: Publish to Cloudflare Pages
+        if: ${{ env.CLOUDFLARE_API_TOKEN != '' && env.CLOUDFLARE_ACCOUNT_ID != '' }}
+        uses: cloudflare/wrangler-action@9acf94ace14e7dc412b076f2c5c20b8ce93c79cd # v3.15.0
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: pages deploy dist --project-name=scani-docs --branch=main --commit-dirty=true
