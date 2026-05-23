@@ -1,0 +1,219 @@
+# Production-style compose for self-hosters. Pulls pre-built multi-arch
+# images from Docker Hub (`scani/api`, `scani/worker`, `scani/data-provider`,
+# `scani/frontend-app`) rather than building from source — useful as a
+# one-command bring-your-own-server setup.
+#
+# Usage:
+#   cp .env.example .env             # then fill in real values
+#   docker compose -f docker-compose.prod.yml up -d
+#   docker compose -f docker-compose.prod.yml logs -f frontend-app api worker
+#
+# Behind a reverse proxy: only `frontend-app` needs to be reachable from
+# the public internet. nginx inside `frontend-app` reverse-proxies /api
+# and /ws to the `api` service over the compose network — point your
+# external proxy + TLS at the `frontend-app` container's port 80.
+#
+# Postgres, Redis, and S3-compatible storage are included as opt-in
+# services for a one-box deploy. Operators using managed Postgres / Redis
+# / R2 / S3 should comment them out and update DATABASE_URL / REDIS_URL /
+# S3_* in `.env` to point at the managed endpoints.
+
+services:
+  # ---- Data plane (commentable if using managed services) ----
+
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-scani}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-scani}
+      POSTGRES_DB: ${POSTGRES_DB:-scani}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-scani} -d ${POSTGRES_DB:-scani}"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 6
+
+  # Comment out if pointing S3_* at a managed bucket (R2 / S3 / B2 / …).
+  minio:
+    image: minio/minio:latest
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin}
+    volumes:
+      - minio-data:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 15s
+      timeout: 5s
+      retries: 6
+
+  # One-shot to create the S3 bucket on first boot (idempotent).
+  minio-init:
+    image: minio/mc:latest
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint:
+      - sh
+      - -c
+      - |
+        set -e
+        mc alias set local http://minio:9000 ${MINIO_ROOT_USER:-minioadmin} ${MINIO_ROOT_PASSWORD:-minioadmin}
+        mc mb --ignore-existing local/${S3_BUCKET:-job-uploads}
+        echo "bucket ${S3_BUCKET:-job-uploads} ready"
+    restart: "no"
+
+  # ---- Scani services (pulled from Docker Hub) ----
+
+  data-provider:
+    image: scani/data-provider:${SCANI_IMAGE_TAG:-latest}
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: ${DATABASE_URL:-postgres://scani:scani@postgres:5432/scani?sslmode=disable}
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379}
+      DATA_PROVIDER_API_KEY: ${DATA_PROVIDER_API_KEY:?DATA_PROVIDER_API_KEY is required}
+      BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:?BETTER_AUTH_SECRET is required}
+      # Optional provider keys — see .env.example.
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      COINGECKO_API_KEY: ${COINGECKO_API_KEY:-}
+      FINNHUB_API_KEY: ${FINNHUB_API_KEY:-}
+      ETHERSCAN_API_KEY: ${ETHERSCAN_API_KEY:-}
+      HELIUS_API_KEY: ${HELIUS_API_KEY:-}
+      # S3
+      S3_ENDPOINT: ${S3_ENDPOINT:-http://minio:9000}
+      S3_PUBLIC_ENDPOINT: ${S3_PUBLIC_ENDPOINT:-}
+      S3_ACCESS_KEY_ID: ${S3_ACCESS_KEY_ID:-minioadmin}
+      S3_SECRET_ACCESS_KEY: ${S3_SECRET_ACCESS_KEY:-minioadmin}
+      S3_BUCKET: ${S3_BUCKET:-job-uploads}
+      # Email (SMTP or Fastmail). Set ONE of these.
+      SMTP_URL: ${SMTP_URL:-}
+      SMTP_FROM: ${SMTP_FROM:-no-reply@example.com}
+      FASTMAIL_API_TOKEN: ${FASTMAIL_API_TOKEN:-}
+      # Logging
+      SERVICE_NAME: data-provider
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      LOG_ID_PEPPER: ${LOG_ID_PEPPER:?LOG_ID_PEPPER is required in production}
+      # Sentry (optional)
+      SENTRY_DSN: ${SENTRY_DSN:-}
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8082/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 6
+      start_period: 30s
+
+  api:
+    image: scani/api:${SCANI_IMAGE_TAG:-latest}
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      data-provider:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      PORT: 3001
+      HOST: 0.0.0.0
+      DATABASE_URL: ${DATABASE_URL:-postgres://scani:scani@postgres:5432/scani?sslmode=disable}
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379}
+      FRONTEND_URL: ${FRONTEND_URL:?FRONTEND_URL is required (public URL of the SPA, used for CORS + cookie scope)}
+      BACKEND_URL: ${BACKEND_URL:?BACKEND_URL is required (public URL of the API, embedded in magic-link emails)}
+      BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:?BETTER_AUTH_SECRET is required}
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY:?ENCRYPTION_KEY is required (must match the worker)}
+      JOBS_HMAC_SECRET: ${JOBS_HMAC_SECRET:?JOBS_HMAC_SECRET is required}
+      SCANI_CLOUD_URL: ${SCANI_CLOUD_URL:-http://data-provider:8082}
+      SCANI_CLOUD_API_KEY: ${SCANI_CLOUD_API_KEY:?SCANI_CLOUD_API_KEY is required (must match DATA_PROVIDER_API_KEY)}
+      COOKIE_DOMAIN: ${COOKIE_DOMAIN:-}
+      # Logging
+      SERVICE_NAME: api
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      LOG_ID_PEPPER: ${LOG_ID_PEPPER:?LOG_ID_PEPPER is required in production}
+      # Sentry
+      SENTRY_DSN: ${SENTRY_DSN:-}
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:3001/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 6
+      start_period: 30s
+
+  worker:
+    image: scani/worker:${SCANI_IMAGE_TAG:-latest}
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      data-provider:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: ${DATABASE_URL:-postgres://scani:scani@postgres:5432/scani?sslmode=disable}
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379}
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY:?ENCRYPTION_KEY is required (must match the api)}
+      WORKER_CONCURRENCY: ${WORKER_CONCURRENCY:-4}
+      SCANI_CLOUD_URL: ${SCANI_CLOUD_URL:-http://data-provider:8082}
+      SCANI_CLOUD_API_KEY: ${SCANI_CLOUD_API_KEY:?SCANI_CLOUD_API_KEY is required (must match DATA_PROVIDER_API_KEY)}
+      # S3 (worker writes screenshot / import uploads here)
+      S3_ENDPOINT: ${S3_ENDPOINT:-http://minio:9000}
+      S3_PUBLIC_ENDPOINT: ${S3_PUBLIC_ENDPOINT:-}
+      S3_ACCESS_KEY_ID: ${S3_ACCESS_KEY_ID:-minioadmin}
+      S3_SECRET_ACCESS_KEY: ${S3_SECRET_ACCESS_KEY:-minioadmin}
+      S3_BUCKET: ${S3_BUCKET:-job-uploads}
+      # Logging
+      SERVICE_NAME: worker
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      LOG_ID_PEPPER: ${LOG_ID_PEPPER:?LOG_ID_PEPPER is required in production}
+      SENTRY_DSN: ${SENTRY_DSN:-}
+
+  frontend-app:
+    image: scani/frontend-app:${SCANI_IMAGE_TAG:-latest}
+    restart: unless-stopped
+    depends_on:
+      api:
+        condition: service_healthy
+    environment:
+      # nginx inside the container reverse-proxies /api → ${API_UPSTREAM}.
+      # Default reaches the `api` container by service name on the
+      # compose network.
+      API_UPSTREAM: ${API_UPSTREAM:-http://api:3001}
+    ports:
+      # Front the SPA on port 8080 of the host. Put your TLS-terminating
+      # reverse proxy in front of this.
+      - "${FRONTEND_PORT:-8080}:80"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost/healthz"]
+      interval: 30s
+      timeout: 3s
+      retries: 6
+
+volumes:
+  postgres-data:
+  redis-data:
+  minio-data:
