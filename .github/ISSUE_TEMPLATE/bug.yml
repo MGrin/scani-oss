@@ -1,0 +1,73 @@
+name: Bug report
+description: Something broke or behaves unexpectedly.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to file a bug report.
+
+        **Security issues do not belong here** — see
+        [`.github/SECURITY.md`](../SECURITY.md) for the private
+        disclosure flow.
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: A clear, concise description of the bug.
+      placeholder: When I import a Binance account, the balance stays at zero…
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: What did you expect to happen?
+      placeholder: I expected the balance to populate within ~10 seconds.
+    validations:
+      required: true
+
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      description: Minimal reproduction. Include the exact commands or UI clicks.
+      placeholder: |
+        1. `bun run dev:stack`
+        2. Open localhost:5173 and log in
+        3. Go to Integrations → Connect → Binance
+        4. Paste valid read-only API key + secret
+        5. Wait 60s; balance never updates.
+    validations:
+      required: true
+
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: Bun version, OS, deployment mode, anything else relevant.
+      placeholder: |
+        - Bun: 1.3.13
+        - OS: macOS 15.4 (arm64)
+        - Mode: `bun run dev:stack` (Tier 1 self-hosted)
+        - Postgres + Redis: docker-compose defaults
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs / screenshots
+      description: Paste relevant log lines, error traces, or screenshots. Redact secrets.
+      render: shell
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Pre-flight
+      options:
+        - label: I searched existing issues and didn't find a duplicate.
+          required: true
+        - label: This is not a security finding.
+          required: true

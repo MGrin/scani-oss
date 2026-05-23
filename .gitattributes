@@ -1,0 +1,20 @@
+# Keep private's version on every sync from the OSS upstream.
+# These files diverge between MGrin/scani (private) and MGrin/scani-oss
+# (public) and we never want a sync merge to replace private's content.
+#
+# Configured driver: `git config merge.ours.driver true` (set per-clone).
+
+package.json                                                  merge=ours
+docker-compose.yml                                            merge=ours
+README.md                                                     merge=ours
+CONTRIBUTING.md                                               merge=ours
+CLAUDE.md                                                     merge=ours
+.github/CODEOWNERS                                            merge=ours
+.github/workflows/ci.yml                                      merge=ours
+.github/workflows/security-invariants.yml                     merge=ours
+.githooks/pre-commit                                          merge=ours
+.env.example                                                  merge=ours
+apps/backend/api/.env.example                                 merge=ours
+apps/backend/data-provider/.env.example                       merge=ours
+apps/backend/worker/.env.example                              merge=ours
+apps/backend/data-provider/src/presentation/router.ts         merge=ours
