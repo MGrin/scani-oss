@@ -1,0 +1,24 @@
+{
+  "name": "@scani/docs",
+  "private": true,
+  "type": "module",
+  "version": "0.0.0",
+  "scripts": {
+    "dev": "astro dev",
+    "build": "astro build",
+    "preview": "astro preview",
+    "clean": "rm -rf dist .astro",
+    "lint": "biome check .",
+    "lint:fix": "biome check --write .",
+    "type-check": "astro check"
+  },
+  "dependencies": {
+    "@astrojs/check": "^0.9.4",
+    "@astrojs/starlight": "^0.39.2",
+    "astro": "^6.3.1",
+    "sharp": "^0.34.5"
+  },
+  "devDependencies": {
+    "typescript": "^5"
+  }
+}
