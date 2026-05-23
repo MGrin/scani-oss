@@ -44,3 +44,36 @@ We won't pursue legal action against researchers who:
 - Give us reasonable time to remediate before public disclosure.
 - Don't exfiltrate data or use findings for anything other than
   disclosure to us.
+
+## Telemetry & data the project receives
+
+**Scani's OSS distribution collects no telemetry.** A self-hosted Scani
+install does not send installation IDs, anonymous usage counts, error
+breadcrumbs, version pings, or any other signal back to the project. We
+do not operate a telemetry endpoint for the OSS distribution; there is
+nothing to opt out of because there is nothing to opt out of.
+
+Two narrow exceptions exist and are operator-controlled:
+
+- **Sentry**, when `SENTRY_DSN` (or `VITE_SENTRY_DSN`) is set. The
+  resulting reports go to **your** Sentry project, not ours — we have
+  no access to them. With no DSN, the SDK is a complete no-op.
+- **Outbound calls to whatever you configure `SCANI_CLOUD_URL` to point
+  at.** By default that's `http://data-provider:8082` on the same
+  Docker network as your install, so no traffic leaves your machine. If
+  you point it at a hosted data-provider, that operator sees the
+  requests — which is the whole reason to use Tier 2.
+
+The OSS code includes no other outbound signal. We will not add one
+silently. Any future change to this stance will:
+
+1. Be opt-in, default-off.
+2. Document the exact payload schema, transport, retention, and
+   opt-out in this file before merge.
+3. Land in its own pull request with a clear title (e.g.
+   `feat: opt-in anonymous self-host telemetry`) so reviewers can read
+   the entire change without context.
+
+If you find an outbound call from a self-hosted Scani that doesn't
+match this policy, **treat it as a security vulnerability and report
+it via the disclosure flow at the top of this document.**
