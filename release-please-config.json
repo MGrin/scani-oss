@@ -5,6 +5,7 @@
   "draft": false,
   "prerelease": false,
   "include-v-in-tag": true,
+  "include-component-in-tag": false,
   "packages": {
     ".": {
       "package-name": "scani",
