@@ -1,9 +1,10 @@
 import { COMPARISONS } from '../../data/comparisons';
+import { DOCS_URL } from '../../seo/siteMeta';
 import { ScaniLogo } from '../ScaniLogo';
 
-// Curated API-docs links are still absent — the docs site isn't
-// published. The OpenAPI spec stays as a developer-reference link;
-// it's machine-readable, distinct from a marketed docs site.
+// The Documentation entry points at docs.scani.xyz (concepts,
+// self-host guide, glossary). The OpenAPI spec lives alongside it as
+// a machine-readable developer reference — distinct surface.
 const COLUMNS: ReadonlyArray<{ label: string; links: { label: string; href: string }[] }> = [
   {
     label: 'Product',
@@ -16,7 +17,7 @@ const COLUMNS: ReadonlyArray<{ label: string; links: { label: string; href: stri
     label: 'Open source',
     links: [
       { label: 'GitHub repo', href: 'https://github.com/MGrin/scani-oss' },
-      { label: 'Self-host guide', href: 'https://github.com/MGrin/scani-oss#self-hosting' },
+      { label: 'Self-host guide', href: `${DOCS_URL}/self-hosting/tier-model/` },
       {
         label: 'Contributing',
         href: 'https://github.com/MGrin/scani-oss/blob/main/CONTRIBUTING.md',
@@ -32,7 +33,11 @@ const COLUMNS: ReadonlyArray<{ label: string; links: { label: string; href: stri
   },
   {
     label: 'Resources',
-    links: [{ label: 'OpenAPI spec', href: 'https://api.cloud.scani.xyz/openapi.json' }],
+    links: [
+      { label: 'Documentation', href: DOCS_URL },
+      { label: 'Glossary', href: `${DOCS_URL}/reference/glossary/` },
+      { label: 'OpenAPI spec', href: 'https://api.cloud.scani.xyz/openapi.json' },
+    ],
   },
   {
     label: 'Support',
