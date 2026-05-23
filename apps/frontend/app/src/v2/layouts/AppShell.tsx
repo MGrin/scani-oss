@@ -18,6 +18,7 @@ import {
   Wallet,
 } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { NavLink, Outlet } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { trpc } from '@/lib/trpc';
@@ -51,6 +52,7 @@ export function AppShell() {
   const { signOut } = useAuth();
   const { actionRequiredCount } = useUserJobs();
   const jobsNavRef = useRef<HTMLAnchorElement>(null);
+  const { t } = useTranslation();
 
   // When the mobile sidebar opens and there are jobs needing attention,
   // scroll the Jobs nav item into view — on short viewports it can sit
@@ -92,9 +94,9 @@ export function AppShell() {
             </div>
             <nav className="flex-1 overflow-y-auto py-2 px-2 space-y-4">
               {NAV_SECTIONS.map((section) => (
-                <div key={section.title}>
+                <div key={section.titleKey}>
                   <p className="px-2 mb-1 text-[11px] font-medium uppercase tracking-wider text-muted-foreground/60">
-                    {section.title}
+                    {t(section.titleKey)}
                   </p>
                   <div className="space-y-0.5">
                     {section.items.map((item) => {
@@ -121,7 +123,7 @@ export function AppShell() {
                           }
                         >
                           <Icon className="h-4 w-4 shrink-0" />
-                          <span>{item.label}</span>
+                          <span>{t(item.labelKey)}</span>
                           {badgeCount && (
                             <span className="ml-auto inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-amber-500/20 px-1 text-[10px] font-medium text-amber-700 dark:text-amber-300">
                               {badgeCount}
@@ -151,7 +153,7 @@ export function AppShell() {
                 }
               >
                 <Settings className="h-4 w-4 shrink-0" />
-                <span>Settings</span>
+                <span>{t('nav.settings')}</span>
               </NavLink>
               <ThemeToggle variant="row" side="top" align="start" className="px-2 py-2 text-sm" />
               <button
@@ -160,7 +162,7 @@ export function AppShell() {
                 className="flex items-center gap-2 rounded-md px-2 py-2 text-sm text-red-600 hover:bg-red-600/10 transition-colors w-full"
               >
                 <LogOut className="h-4 w-4 shrink-0" />
-                <span>Sign out</span>
+                <span>{t('nav.signOut')}</span>
               </button>
             </div>
           </div>

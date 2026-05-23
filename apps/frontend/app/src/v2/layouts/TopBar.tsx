@@ -1,5 +1,6 @@
 import { Button } from '@scani/ui/ui/button';
 import { Menu, Plus, Search } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import { Link, useLocation } from 'react-router-dom';
 import { JobsBadge } from '../components/JobsBadge';
 import { V2_ROUTES } from '../lib/routes';
@@ -12,10 +13,30 @@ interface TopBarProps {
   actionRequiredCount?: number;
 }
 
-/** Derive page title from URL path */
-function getPageTitle(pathname: string): string {
+/** Map the first path segment to an i18n nav key when we have a
+ * translation for it. Routes we haven't extracted yet fall back to the
+ * old behaviour (slug → Title Case). */
+const TITLE_KEY_BY_SEGMENT: Record<string, string> = {
+  holdings: 'nav.holdings',
+  accounts: 'nav.accounts',
+  institutions: 'nav.institutions',
+  groups: 'nav.groups',
+  vaults: 'nav.vaults',
+  tokens: 'nav.tokens',
+  integrations: 'nav.integration',
+  import: 'nav.uploadFile',
+  'wallet-import': 'nav.cryptoWallet',
+  'manual-entry': 'nav.manualEntry',
+  'add-data': 'nav.addDataButton',
+  settings: 'nav.settings',
+  jobs: 'nav.jobs',
+};
+
+function getPageTitle(pathname: string, t: (k: string) => string): string {
   const segment = pathname.split('/').filter(Boolean)[0];
-  if (!segment) return 'Dashboard';
+  if (!segment) return t('nav.dashboard');
+  const key = TITLE_KEY_BY_SEGMENT[segment];
+  if (key) return t(key);
   return segment.charAt(0).toUpperCase() + segment.slice(1).replace(/-/g, ' ');
 }
 
@@ -23,20 +44,23 @@ function getPageTitle(pathname: string): string {
  * itself (no point linking back to where you are). Everywhere else
  * gets the button — some routes pre-fill context (account/institution
  * detail), the rest get the plain "Add Data" entry. */
-function getAddLink(pathname: string): { href: string; label: string } | null {
+function getAddLink(
+  pathname: string,
+  t: (k: string) => string
+): { href: string; label: string } | null {
   // Hide on the Add Data page itself + its sub-flows to avoid a link
   // that navigates to where the user already is.
   if (pathname.startsWith(V2_ROUTES.addData)) return null;
 
   const accountMatch = pathname.match(/^\/accounts\/([^/]+)$/);
   if (accountMatch) {
-    return { href: `${V2_ROUTES.addData}?accountId=${accountMatch[1]}`, label: 'Add' };
+    return { href: `${V2_ROUTES.addData}?accountId=${accountMatch[1]}`, label: t('nav.add') };
   }
   const instMatch = pathname.match(/^\/institutions\/([^/]+)$/);
   if (instMatch) {
-    return { href: `${V2_ROUTES.addData}?institutionId=${instMatch[1]}`, label: 'Add' };
+    return { href: `${V2_ROUTES.addData}?institutionId=${instMatch[1]}`, label: t('nav.add') };
   }
-  return { href: V2_ROUTES.addData, label: 'Add Data' };
+  return { href: V2_ROUTES.addData, label: t('nav.addDataButton') };
 }
 
 export function TopBar({
@@ -45,8 +69,9 @@ export function TopBar({
   actionRequiredCount = 0,
 }: TopBarProps) {
   const { pathname } = useLocation();
-  const title = getPageTitle(pathname);
-  const addLink = getAddLink(pathname);
+  const { t } = useTranslation();
+  const title = getPageTitle(pathname, t);
+  const addLink = getAddLink(pathname, t);
   const hasActionRequired = actionRequiredCount > 0;
 
   return (
@@ -65,8 +90,8 @@ export function TopBar({
         onClick={onMobileMenuOpen}
         aria-label={
           hasActionRequired
-            ? `Open menu — ${actionRequiredCount} job${actionRequiredCount === 1 ? '' : 's'} need review`
-            : 'Open menu'
+            ? `${t('nav.openMenu')} — ${actionRequiredCount} job${actionRequiredCount === 1 ? '' : 's'} need review`
+            : t('nav.openMenu')
         }
       >
         <Menu className="h-4 w-4" />
@@ -106,7 +131,7 @@ export function TopBar({
         className="hidden sm:flex items-center gap-2 h-7 px-2.5 rounded-md border border-border bg-muted/50 text-xs text-muted-foreground hover:bg-accent hover:text-foreground transition-colors"
       >
         <Search className="h-3 w-3" />
-        <span>Search</span>
+        <span>{t('nav.search')}</span>
         <kbd className="pointer-events-none inline-flex h-4 select-none items-center gap-0.5 rounded border border-border bg-muted px-1 font-mono text-[9px] font-medium text-muted-foreground">
           <span>⌘</span>K
         </kbd>
@@ -118,7 +143,7 @@ export function TopBar({
         size="icon"
         className="sm:hidden h-8 w-8"
         onClick={onCommandPaletteOpen}
-        aria-label="Search"
+        aria-label={t('nav.search')}
       >
         <Search className="h-4 w-4" />
       </Button>
