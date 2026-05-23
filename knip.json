@@ -20,6 +20,9 @@
       "project": ["src/**/*.{ts,tsx}"],
       "ignoreDependencies": ["tailwindcss-animate"]
     },
+    "apps/frontend/docs": {
+      "project": ["src/**/*.ts"]
+    },
     "packages/business/domain": {
       "project": ["src/**/*.ts"]
     },
