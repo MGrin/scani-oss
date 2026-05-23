@@ -1,0 +1,164 @@
+---
+title: TLS & reverse proxy
+description: Putting Caddy or nginx in front of the frontend-app container. Same-origin vs split-origin layouts, cookie scope, WebSocket forwarding.
+sidebar:
+  order: 5
+---
+
+import { Tabs, TabItem, Aside } from '@astrojs/starlight/components';
+
+The `frontend-app` container ships nginx that reverse-proxies `/api`
+and `/ws` to the internal `api:3001`. You only need to put a
+**TLS-terminating reverse proxy** in front of `frontend-app:8080`.
+
+Two common layouts:
+
+- **Same-origin** (recommended) — SPA and api share one hostname,
+  e.g. `https://scani.example.com` for the SPA and `/api` on the same
+  origin. Simplest cookie handling. `frontend-app`'s nginx does the
+  /api routing internally.
+- **Split-origin** — SPA at `app.example.com`, api at
+  `api.example.com`. Requires `COOKIE_DOMAIN=.example.com` so the
+  session cookie reaches both.
+
+## Same-origin with Caddy
+
+<Tabs>
+  <TabItem label="Caddyfile">
+    ```text
+    scani.example.com {
+        encode gzip
+        reverse_proxy localhost:8080
+    }
+    ```
+
+    That's it. Caddy provisions and renews the TLS certificate
+    automatically via Let's Encrypt. `frontend-app` handles `/api`
+    and `/ws` internally.
+  </TabItem>
+  <TabItem label="docker-compose .env">
+    ```ini
+    FRONTEND_PORT=8080
+    FRONTEND_URL=https://scani.example.com
+    BACKEND_URL=https://scani.example.com
+    # COOKIE_DOMAIN unset — single-origin
+    ```
+  </TabItem>
+</Tabs>
+
+## Same-origin with nginx
+
+<Tabs>
+  <TabItem label="nginx.conf snippet">
+    ```nginx
+    server {
+        listen 443 ssl http2;
+        server_name scani.example.com;
+
+        ssl_certificate /etc/letsencrypt/live/scani.example.com/fullchain.pem;
+        ssl_certificate_key /etc/letsencrypt/live/scani.example.com/privkey.pem;
+
+        location / {
+            proxy_pass http://127.0.0.1:8080;
+            proxy_http_version 1.1;
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto $scheme;
+
+            # WebSocket
+            proxy_set_header Upgrade $http_upgrade;
+            proxy_set_header Connection "upgrade";
+        }
+    }
+
+    server {
+        listen 80;
+        server_name scani.example.com;
+        return 301 https://$server_name$request_uri;
+    }
+    ```
+  </TabItem>
+</Tabs>
+
+## Split-origin
+
+When the SPA lives on `app.example.com` and the api on
+`api.example.com`:
+
+<Tabs>
+  <TabItem label="Caddyfile">
+    ```text
+    app.example.com {
+        reverse_proxy localhost:8080
+    }
+
+    api.example.com {
+        reverse_proxy localhost:3001 {
+            # Forward WebSocket upgrade headers
+            transport http {
+                versions 1.1
+            }
+        }
+    }
+    ```
+
+    Note: in this layout, expose `api:3001` on the host (publish the
+    port in your compose override) and skip `frontend-app`'s
+    internal proxying.
+  </TabItem>
+  <TabItem label=".env">
+    ```ini
+    FRONTEND_URL=https://app.example.com
+    BACKEND_URL=https://api.example.com
+    COOKIE_DOMAIN=.example.com
+    ```
+  </TabItem>
+</Tabs>
+
+<Aside type="caution" title="Cookie domain in split-origin">
+  Without `COOKIE_DOMAIN=.example.com`, the session cookie set by
+  the api on `api.example.com` will not be sent on requests to
+  `app.example.com`. Sign-in will appear to succeed and then
+  immediately log the user back out.
+</Aside>
+
+## What `frontend-app`'s internal nginx does
+
+`API_UPSTREAM` (default `http://api:3001`) is where `/api` and
+`/ws` requests are reverse-proxied:
+
+```ini
+# In docker-compose.prod.yml, the frontend-app service:
+environment:
+  API_UPSTREAM: ${API_UPSTREAM:-http://api:3001}
+```
+
+If you point your external reverse proxy directly at the `api`
+container (split-origin), you don't need this — the frontend-app
+container becomes a static-file server only.
+
+## WebSockets
+
+The api exposes a WebSocket endpoint at `/ws` (realtime SSE / pub-sub
+for live dashboard updates). Make sure your reverse proxy forwards
+the `Upgrade` and `Connection` headers — both Caddy and the nginx
+snippet above already do.
+
+## Healthcheck endpoints
+
+| Service | Endpoint | Used by |
+|---|---|---|
+| `api` | `/health` | Compose healthcheck. |
+| `worker` | none | Has no HTTP surface; observability is via logs. |
+| `data-provider` | `/health` | Compose healthcheck. |
+| `frontend-app` | `/healthz` | Compose healthcheck (served by internal nginx). |
+
+Your reverse proxy can probe `/healthz` on the frontend container if
+you want it to fail open when the SPA is unavailable.
+
+## See also
+
+- [Production with docker-compose](/self-hosting/tier1/production/)
+- [Required environment variables](/self-hosting/tier1/required-env/)
+- [Observability](/self-hosting/tier1/observability/)

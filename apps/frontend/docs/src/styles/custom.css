@@ -1,0 +1,62 @@
+/* Scani docs — branded palette overrides for Starlight. */
+
+:root {
+  --sl-color-accent-low: #1a2e1d;
+  --sl-color-accent: #2f9e44;
+  --sl-color-accent-high: #b8e8c5;
+  --sl-color-white: #ffffff;
+  --sl-color-gray-1: #eef0f3;
+  --sl-color-gray-2: #c0c2c7;
+  --sl-color-gray-3: #888b94;
+  --sl-color-gray-4: #545861;
+  --sl-color-gray-5: #353841;
+  --sl-color-gray-6: #24272f;
+  --sl-color-black: #17191e;
+}
+
+:root[data-theme='light'] {
+  --sl-color-accent-low: #d3f1dc;
+  --sl-color-accent: #1f7a32;
+  --sl-color-accent-high: #0e3b18;
+  --sl-color-white: #17191e;
+  --sl-color-gray-1: #24272f;
+  --sl-color-gray-2: #353841;
+  --sl-color-gray-3: #545861;
+  --sl-color-gray-4: #888b94;
+  --sl-color-gray-5: #c0c2c7;
+  --sl-color-gray-6: #eef0f3;
+  --sl-color-gray-7: #f6f7f9;
+  --sl-color-black: #ffffff;
+}
+
+/* Hero on the splash page reads as a quiet gradient rather than a flat
+   background — the value prop is the content, not the chrome. */
+.hero {
+  background: linear-gradient(
+    135deg,
+    var(--sl-color-accent-low) 0%,
+    transparent 60%
+  );
+  border-radius: 0.75rem;
+  padding-inline: clamp(1rem, 3vw, 2.5rem);
+}
+
+/* Tighten card grids a touch — Starlight defaults are quite generous. */
+.card {
+  border-radius: 0.5rem;
+}
+
+/* Nudge inline code: a touch more contrast so it pops out of body text. */
+:not(pre) > code {
+  color: var(--sl-color-accent-high);
+  background: var(--sl-color-accent-low);
+  border-radius: 0.25rem;
+  padding-inline: 0.25rem;
+}
+
+/* Page-table-of-contents anchor uses the accent so it's obvious which
+   section you're reading. */
+starlight-toc nav a[aria-current='true'] {
+  color: var(--sl-color-accent);
+  font-weight: 600;
+}

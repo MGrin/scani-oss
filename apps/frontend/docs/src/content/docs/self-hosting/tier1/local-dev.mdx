@@ -1,0 +1,182 @@
+---
+title: Local development stack
+description: A full local Scani stack — Postgres, Redis, MinIO, Mailpit, and every Scani service — in one command.
+sidebar:
+  order: 1
+---
+
+import { Steps, Tabs, TabItem, Aside } from '@astrojs/starlight/components';
+
+The local dev stack is what you'll iterate against. It's
+**completely self-contained** — no external accounts, no provider API
+keys required to boot. Same compose file is consulted on every CI run.
+
+## Topology
+
+```
+docker-compose.yml — services + profiles
+
+infra (always-on)
+  postgres        :5433  → 5432 inside the container
+  redis           :6380  → 6379
+  mailpit         :1026 SMTP, :8026 UI
+  minio           :9000 S3 API, :9001 console (minioadmin / minioadmin)
+
+init (one-shot, exit cleanly)
+  env-sync        — materialises per-app .env files from root .env
+  deps            — bun install on the shared workspace volume
+  minio-init      — creates the dev bucket
+  migrate         — runs Drizzle migrations against postgres
+
+services (profile: full)
+  data-provider   :8082
+  api             :3011
+  worker
+  frontend        :5173 (Vite dev server)
+```
+
+## Bring it up
+
+<Steps>
+
+1. Seed the root env file.
+
+   ```sh
+   cp .env.example .env
+   ```
+
+   The defaults work as-is for local development.
+
+2. Boot.
+
+   ```sh
+   bun install
+   bun run dev:stack
+   ```
+
+   `bun run dev:stack` is `scripts/sync-env.ts` + `docker compose
+   --profile full up -d --build`. First boot pulls images and builds
+   the app containers.
+
+3. Open the SPA.
+
+   ```sh
+   open http://localhost:5173
+   ```
+
+4. Sign in.
+
+   Magic-link emails land in [Mailpit](http://localhost:8026). Click
+   the link there.
+
+</Steps>
+
+## Bring it down
+
+```sh
+bun run dev:stack:down   # remove containers; volumes preserved
+```
+
+To also wipe Postgres / MinIO / Redis data:
+
+```sh
+docker compose down -v
+```
+
+## Run apps on the host instead of in containers
+
+Faster HMR, easier debugger attach, host-side breakpoints — useful
+when iterating on the api or worker:
+
+<Tabs>
+  <TabItem label="Infra in compose, apps on host">
+    ```sh
+    docker compose up -d postgres redis mailpit minio
+    bun install
+    bun dev               # api + frontend/app
+    bun dev:worker        # separate terminal
+    bun dev:data-provider # separate terminal
+    ```
+  </TabItem>
+  <TabItem label="Full stack in compose (default)">
+    ```sh
+    bun run dev:stack
+    ```
+  </TabItem>
+</Tabs>
+
+<Aside type="caution" title="Host-side SMTP gotcha">
+  Host-side `bun dev` reads `apps/backend/api/.env`, materialised
+  from the root `.env` by `scripts/sync-env.ts`. The root `.env`
+  doesn't set `SMTP_URL` by default (the compose file overrides it
+  inside the container network). For host-side dev, add
+  `SMTP_URL=smtp://localhost:1026` and `SMTP_FROM=no-reply@scani.local`
+  to root `.env`, then re-run `bun scripts/sync-env.ts`.
+</Aside>
+
+## Per-app env files
+
+The root `.env` is the single source of truth. `scripts/sync-env.ts`
+materialises per-app `.env` files from it on every `bun run dev:stack`
+and on every `env-sync` container run.
+
+The script:
+
+1. Reads root `.env`.
+2. For each app under `apps/*/`, parses that app's `.env.example` to
+   discover which keys it cares about.
+3. Writes per-app `.env` filtered to only those keys.
+4. Skips writes when content is unchanged (prevents Vite dev-server
+   restart loops).
+
+Adding a new env var an app needs: append it to that app's
+`.env.example` and to root `.env.example`. The script picks it up
+automatically.
+
+## Service-to-service URLs in compose
+
+The compose file overrides URLs that need a container-network
+hostname (`postgres`, `redis`, `minio`, `mailpit`, `data-provider`)
+on the relevant service's `environment:` block. The root `.env`
+versions are for host-side `bun dev`; the compose overrides take
+precedence inside containers.
+
+## Default ports
+
+| Service | Host port |
+|---|---|
+| Postgres | `localhost:5433` (user/db `scani` / `scani`) |
+| Redis | `localhost:6380` |
+| Mailpit SMTP | `localhost:1026` |
+| Mailpit UI | `http://localhost:8026` |
+| MinIO S3 API | `http://localhost:9000` |
+| MinIO console | `http://localhost:9001` (`minioadmin` / `minioadmin`) |
+| Data-provider | `http://localhost:8082` |
+| API | `http://localhost:3011` |
+| Frontend | `http://localhost:5173` |
+
+## Common dev tasks
+
+```sh
+# Rebuild just one image
+docker compose --profile full up -d --build api
+
+# Tail logs across services
+docker compose --profile full logs -f api worker data-provider
+
+# Run migrations on demand (when Drizzle generates new ones)
+docker compose --profile migrate run --rm migrate
+
+# Open a psql shell
+docker compose exec postgres psql -U scani scani
+
+# Open a redis-cli
+docker compose exec redis redis-cli
+```
+
+## See also
+
+- [Quickstart](/start/quickstart/)
+- [Production with docker-compose](/self-hosting/tier1/production/)
+- [Troubleshooting](/self-hosting/tier1/troubleshooting/)
+- [Environment variables reference](/reference/environment/)

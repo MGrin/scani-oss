@@ -1,0 +1,219 @@
+---
+title: Adding a provider
+description: The highest-leverage contribution. Step-by-step for adding a new exchange, brokerage, blockchain, pricing source, or AI integration.
+sidebar:
+  order: 5
+---
+
+import { Steps, FileTree, Aside } from '@astrojs/starlight/components';
+
+Adding a new provider is the single most impactful kind of
+contribution. Every supported exchange, brokerage, chain, and price
+source comes from this same pattern — one directory per provider
+under `packages/clients/providers/src/providers/`.
+
+## What providers exist
+
+The provider directory layout (each is a self-contained adapter):
+
+<FileTree>
+- packages/clients/providers/src/providers/
+  - binance/
+  - bitcoin/
+  - bitget/
+  - bitstamp/
+  - bybit/
+  - coinbase/
+  - coingecko/
+  - defillama/
+  - etherscan/
+  - finnhub/
+  - frankfurter/
+  - gate/
+  - gemini/
+  - huobi/
+  - ibkr/
+  - kraken/
+  - kucoin/
+  - mexc/
+  - okx/
+  - solana/
+  - ton/
+  - tron/
+  - wise/
+  - yahoo-finance/
+  - ai-deepseek/
+  - ai-openai/
+  - ai-perplexity/
+</FileTree>
+
+## The capability-based interface model
+
+Each provider implements one or more **capability interfaces**:
+
+| Capability | Interface | What it does |
+|---|---|---|
+| Pricing | `PriceProvider` | Quote current and historical prices for a token in a base currency. |
+| Balances | `BalanceProvider` | Read the current balance of an account / wallet for a list of tokens. |
+| Transactions | `TransactionProvider` | Page through historical transactions of an account / wallet. |
+| Token identity | `TokenIdentityProvider` | Enrich a token row with provider-specific metadata. |
+| AI inference | `AIProvider` | Parse a screenshot / answer a structured question. |
+| OAuth | `OAuthProvider` | Drive the OAuth handshake (Binance is the only one currently). |
+
+A provider can implement any subset. CoinGecko implements
+`PriceProvider` + `TokenIdentityProvider`. Etherscan implements
+`BalanceProvider` + `TransactionProvider` + `TokenIdentityProvider`.
+Kraken implements all four (price, balance, tx, identity).
+
+## The step-by-step
+
+<Steps>
+
+1. **Open an issue first** for non-trivial providers (anything
+   with auth flows, anything that introduces new capability shapes,
+   anything where the upstream is complicated). For a small
+   pricing source with a key, just file the PR.
+
+2. **Create the directory:**
+   ```sh
+   mkdir packages/clients/providers/src/providers/myprovider
+   cd packages/clients/providers/src/providers/myprovider
+   ```
+
+3. **Implement the capability adapter.** Copy from the closest
+   existing provider that implements the same capability:
+   - **Pricing-only?** Copy `coingecko/` or `frankfurter/`.
+   - **Exchange (price + balance + tx)?** Copy `kraken/`.
+   - **Blockchain RPC?** Copy `etherscan/` (EVM) or `helius/`
+     (Solana — actually under `solana/`).
+   - **AI?** Copy `ai-openai/`.
+
+   The directory typically contains:
+   ```
+   myprovider/
+     index.ts              # exports the @Service() class(es)
+     MyProviderClient.ts   # raw HTTP / SDK wrapper
+     MyProviderPriceProvider.ts   # if implementing PriceProvider
+     types.ts              # upstream payload shapes
+   ```
+
+4. **Register the provider.** Each capability has a registry under
+   `packages/clients/providers/src/core/`. The provider class
+   `@Service()`-registers itself; routers that need a price /
+   balance / tx provider for a given context look it up.
+
+5. **Wire up env vars.** If the provider needs an API key, declare
+   it in the data-provider's `apps/backend/data-provider/.env.example`
+   and read it via `packages/infra/config/`'s helpers. The
+   `PricingService` / `BalanceService` route automatically falls
+   through providers that report "not configured".
+
+6. **Add an institution row.** For exchanges / brokerages / chains,
+   add a seed entry to the institutions catalogue migration so the
+   UI shows the integration:
+   - Migration in `packages/infra/db/src/migrations/` adding
+     an `INSERT INTO institutions ...`.
+   - For blockchains, also a row in
+     `institution_blockchain_mappings`.
+
+7. **Write tests.** Two layers:
+   - **Unit tests** stubbing the upstream HTTP client.
+   - **Integration tests** with `withTestDb` if the provider writes
+     to the schema (token identity providers do; pure pricing
+     providers typically don't).
+
+8. **Document the env var** in `.env.example` (root) and in
+   [`Optional integration keys`](/self-hosting/tier1/optional-keys/).
+
+9. **Run the full checks:**
+   ```sh
+   bun run type-check
+   bun lint:fix
+   bun test --preload ./packages/business/domain/test-preload.ts \
+     packages/ --timeout 30000
+   ```
+
+10. **Open the PR** with a conventional-commit message:
+    ```
+    feat(providers): add MyProvider pricing adapter
+    ```
+
+</Steps>
+
+## Capability examples
+
+### A pricing provider
+
+```ts
+@Service()
+export class MyProviderPriceProvider implements PriceProvider {
+  private readonly client = Container.get(MyProviderClient);
+
+  async getCurrentPrice(
+    token: Token,
+    base: Token
+  ): Promise<PriceResult | null> {
+    const data = await this.client.fetch(`/price/${token.symbol}/${base.symbol}`);
+    if (!data) return null;
+    return {
+      price: new Decimal(data.price),
+      timestamp: new Date(data.ts),
+      source: 'myprovider',
+      granularity: 'intraday',
+    };
+  }
+
+  async getHistoricalPrice(
+    token: Token,
+    base: Token,
+    at: Date
+  ): Promise<PriceResult | null> {
+    // ...
+  }
+}
+```
+
+### A token identity provider
+
+```ts
+@Service()
+export class MyProviderTokenIdentityProvider implements TokenIdentityProvider {
+  private readonly client = Container.get(MyProviderClient);
+
+  async enrich(token: Token): Promise<Partial<TokenMetadata>> {
+    const id = await this.client.lookupBySymbol(token.symbol);
+    if (!id) return {};
+    return { myprovider: { id, symbol: token.symbol } };
+  }
+}
+```
+
+The merged `TokenMetadata` is written back to
+`tokens.providerMetadata`. See
+[Tokens & market segments](/concepts/tokens/#provider-metadata).
+
+<Aside type="tip" title="Rate limiting">
+  Every outbound provider call goes through
+  `@scani/rate-limiter`'s per-provider buckets. Configure your
+  provider's limits in
+  `packages/business/domain/src/services/pricing/upstream-rate-limits.ts`
+  so noisy backfills don't blow past the upstream's quota.
+</Aside>
+
+## What we'll likely close
+
+- A new exchange that just calls one undocumented endpoint, no
+  retry handling, no rate-limit awareness. Get to "production
+  shape" before submitting.
+- A pricing adapter that doesn't implement *historical* prices.
+  Historical prices are what the rollup needs; current-only
+  providers are partial.
+- An AI provider that doesn't have a clear use case (we have
+  three; we don't need a fourth without a reason).
+
+## See also
+
+- [Engineering conventions](/contributing/conventions/)
+- [Provider matrix](/reference/provider-matrix/)
+- [Tokens & market segments](/concepts/tokens/)
+- [Token identity & enrichment](/concepts/token-identity/)
