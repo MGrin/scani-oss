@@ -229,6 +229,12 @@ Pull requests welcome — start with
 [`CONTRIBUTING.md`](./CONTRIBUTING.md), then read
 [`CLAUDE.md`](./CLAUDE.md) for the engineering conventions.
 
+**Contributor benefit**: every merged, non-trivial PR earns free permanent
+access to every paid tier of the hosted Scani service at
+[app.scani.xyz](https://app.scani.xyz). Eligibility and claim flow are
+documented in
+[`CONTRIBUTING.md#contributor-benefits`](./CONTRIBUTING.md#contributor-benefits).
+
 High-leverage entry points if you're looking for somewhere to start:
 **provider integrations** (new exchanges / brokerages / chains under
 [`packages/clients/providers/`](./packages/clients/providers/)) and
