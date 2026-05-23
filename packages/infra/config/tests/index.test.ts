@@ -214,6 +214,19 @@ describe('checkEnvIsolatedUrl', () => {
     expect(result.reason).toContain('<redacted>');
   });
 
+  test('credential-redaction regex stays linear on pathological no-@ input', () => {
+    // Regression test for the bounded redactUrlForLog regex (CodeQL
+    // js/polynomial-redos). The pre-fix regex `\/\/[^:]+:[^@]+@` could
+    // be coerced into polynomial backtracking with many '//' and no '@';
+    // the bounded character classes keep this fast.
+    const evil = `redis://localhost:6379/${'/'.repeat(50000)}`;
+    const start = performance.now();
+    const result = checkEnvIsolatedUrl({ url: evil, varName: 'REDIS_URL', isProduction: true });
+    const elapsed = performance.now() - start;
+    expect(result.ok).toBe(false);
+    expect(elapsed).toBeLessThan(50);
+  });
+
   test('allowCrossEnv opts out of the check', () => {
     expect(
       checkEnvIsolatedUrl({

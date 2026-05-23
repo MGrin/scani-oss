@@ -112,6 +112,9 @@ export function assertEnvIsolatedUrl(opts: {
 }
 
 function redactUrlForLog(url: string): string {
-  // Hide credentials in log lines.
-  return url.replace(/\/\/[^:]+:[^@]+@/, '//<redacted>@');
+  // Hide credentials in log lines. The character classes exclude '/' and
+  // bound the userinfo length so a pathological '////…' input can't drive
+  // polynomial backtracking (CodeQL js/polynomial-redos). Userinfo per
+  // RFC 3986 cannot contain '/' or '@' anyway.
+  return url.replace(/\/\/[^:/@]{1,256}:[^@/]{1,256}@/, '//<redacted>@');
 }
