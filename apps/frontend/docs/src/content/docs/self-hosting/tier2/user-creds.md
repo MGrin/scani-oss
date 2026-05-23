@@ -59,13 +59,14 @@ not a feature.
 
 ## Encryption of integration creds
 
-Integration credentials are encrypted with `ENCRYPTION_KEY` (32 hex
-chars, AES-256-GCM with scrypt-derived nonces). The key lives in
-your `.env`; it is **not** sent to the data-provider.
+Integration credentials are encrypted with `ENCRYPTION_KEY` (≥32
+chars, AES-256-GCM; a 64-hex-char value is used directly, any other
+≥32-char string is run through scrypt). The key lives in your
+`.env`; it is **not** sent to the data-provider.
 
 `packages/infra/security/src/config.ts` enforces:
 
-- 32 hex chars exactly (validates at startup).
+- At least 32 chars (validates at startup).
 - Required in production. Boot fails without it.
 
 If you lose the key, the encrypted credentials are unrecoverable.
