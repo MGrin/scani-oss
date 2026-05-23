@@ -99,20 +99,46 @@ jobs:
         if: steps.check.outputs.has_changes == 'true' && steps.merge.outcome == 'failure'
         id: resolve
         run: |
-          CONFLICTED=$(git diff --name-only --diff-filter=U)
+          # `git diff --diff-filter=U` only catches BOTH-modified conflicts
+          # (state `UU`). After --no-ff with intentionally-divergent trees
+          # there are two other failure modes:
+          #   - DU: we deleted, they modified  → keep deleted (`git rm`)
+          #   - UD: we modified, they deleted  → keep our version (`git add`)
+          # Both are policy choices that mirror the "private's tree wins"
+          # rule we use everywhere else in this workflow.
+          BOTH_MODIFIED=$(git diff --name-only --diff-filter=U)
+          DELETED_BY_US=$(git status --porcelain | awk '$1=="DU" {print $2}')
+          DELETED_BY_THEM=$(git status --porcelain | awk '$1=="UD" {print $2}')
+
+          if [ -n "$BOTH_MODIFIED" ]; then
+            echo "both-modified (keeping ours):"
+            echo "$BOTH_MODIFIED"
+            echo "$BOTH_MODIFIED" | xargs -r git checkout --ours --
+          fi
+          if [ -n "$DELETED_BY_US" ]; then
+            echo "deleted-by-us (re-deleting):"
+            echo "$DELETED_BY_US"
+            echo "$DELETED_BY_US" | xargs -r git rm -f --
+          fi
+          if [ -n "$DELETED_BY_THEM" ]; then
+            echo "deleted-by-them (keeping our version):"
+            echo "$DELETED_BY_THEM"
+            echo "$DELETED_BY_THEM" | xargs -r git add --
+          fi
+
+          # Aggregate everything for the PR body
+          CONFLICTED=$(printf '%s\n%s\n%s\n' "$BOTH_MODIFIED" "$DELETED_BY_US" "$DELETED_BY_THEM" | sed '/^$/d')
           {
             echo "files<<CONFLICTS_EOF"
             echo "$CONFLICTED"
             echo "CONFLICTS_EOF"
           } >> "$GITHUB_OUTPUT"
-          echo "Conflicted files:"
-          echo "$CONFLICTED"
-          echo "$CONFLICTED" | xargs -r git checkout --ours --
+
           git add -A
           git commit \
             -m "sync: pull latest from MGrin/scani-oss (auto-resolved with --ours)" \
             -m "Upstream: https://github.com/MGrin/scani-oss/commit/${{ steps.check.outputs.upstream_sha }}" \
-            -m "Conflicts auto-resolved by keeping private's version. Reviewer must verify no OSS improvements were discarded."
+            -m "Conflicts auto-resolved by keeping private's version (incl. re-deleting files private has intentionally dropped from the OSS upstream). Reviewer must verify no OSS improvements were discarded."
 
       - name: Setup Bun
         if: steps.check.outputs.has_changes == 'true'
