@@ -125,11 +125,27 @@ resource "cloudflare_record" "www" {
 # Cloudflare would require origin-cert setup and adds a TLS hop for no
 # benefit. The CNAME file at apps/frontend/docs/public/CNAME in the OSS
 # repo tells Pages which project this hostname belongs to.
+#
+# Why A records instead of `CNAME → mgrin.github.io`: GitHub Pages's DNS
+# verifier (Dnsruby) does not follow cross-zone CNAME chains for CAA
+# lookups — it queries CAA at the destination via the source zone's
+# authority, gets NXDOMAIN (Cloudflare is not authoritative for
+# github.io), and concludes `dns_resolves: false`. The verified work-
+# around per GitHub's own docs for `<subdomain>.<custom>.<domain>` is
+# 4× A records at GitHub Pages's anycast IPs. The IP set has been
+# stable for years (185.199.108-111.153); changes are announced via
+# the github/customer-stories pages-ip-changes feed.
 resource "cloudflare_record" "docs" {
+  for_each = toset([
+    "185.199.108.153",
+    "185.199.109.153",
+    "185.199.110.153",
+    "185.199.111.153",
+  ])
   zone_id = data.cloudflare_zone.primary.id
   name    = "docs"
-  content = "mgrin.github.io"
-  type    = "CNAME"
+  content = each.value
+  type    = "A"
   proxied = false
   ttl     = 1 # auto
   comment = "GitHub Pages — MGrin/scani-oss docs"
