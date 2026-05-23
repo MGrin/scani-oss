@@ -417,6 +417,10 @@
       "name": "@scani/analytics",
       "version": "1.0.0",
       "dependencies": {
+        "@scani/cloud-client": "workspace:*",
+        "@scani/db": "workspace:*",
+        "@scani/logging": "workspace:*",
+        "drizzle-orm": "^0.45.2",
         "posthog-js": "^1.270.1",
         "posthog-node": "^4.18.0",
         "typedi": "^0.10.0",

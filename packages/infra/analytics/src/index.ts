@@ -16,4 +16,5 @@ export {
   verifyTrackingToken,
 } from './email-tracking';
 export { ANALYTICS_EVENTS, type AnalyticsApp, type AnalyticsEvent } from './events';
+export { notifyFounderOfNewUser } from './founder-alerts';
 export { AnalyticsService } from './server';
