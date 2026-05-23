@@ -37,7 +37,7 @@ config changes.
 ## Deploy
 
 Static output (`dist/`) deploys to any static host. Production target is
-**Cloudflare Pages** at [`docs.scani.xyz`](https://docs.scani.xyz/),
+**GitHub Pages** at [`docs.scani.xyz`](https://docs.scani.xyz/),
 configured via [`site` in `astro.config.mjs`](./astro.config.mjs) and the
 deploy workflow at
 [`.github/workflows/deploy-docs.yml`](../../../.github/workflows/deploy-docs.yml).
