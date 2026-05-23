@@ -1,4 +1,4 @@
-import { checkEnvIsolatedUrl, isProduction, requiredInProd } from '@scani/config';
+import { checkEnvIsolatedUrl, isProduction, optionalUrl } from '@scani/config';
 import { z } from 'zod';
 
 /**
@@ -25,7 +25,7 @@ const envSchema = z.object({
   // back to a localhost URL constructed from HOST + PORT when unset
   // (fine for OSS / dev). Production should set this explicitly to the
   // service's public HTTPS URL.
-  PUBLIC_BASE_URL: z.string().url().optional(),
+  PUBLIC_BASE_URL: optionalUrl,
 
   // Redis backs the per-provider rate-limiter buckets. Single-tenant in
   // OSS; colocated with backend Redis in managed deployments (different
@@ -94,12 +94,12 @@ const envSchema = z.object({
   // Better-Auth config (only consumed when CLOUD_MANAGEMENT_ENABLED).
   // Secret signs session tokens; trusted origins scope CORS+cookies.
   BETTER_AUTH_SECRET: z.string().optional(),
-  BETTER_AUTH_URL: z.string().url().optional(),
-  CLOUD_FRONTEND_ORIGIN: z.string().url().optional(),
+  BETTER_AUTH_URL: optionalUrl,
+  CLOUD_FRONTEND_ORIGIN: optionalUrl,
 
-  // Sentry — hard-required in prod; optional in dev. SDK init gates
-  // on DSN presence regardless.
-  SENTRY_DSN: requiredInProd(z.string().url(), 'SENTRY_DSN'),
+  // Sentry — fully optional. Empty string is treated as unset (see
+  // `optionalUrl`). SDK init gates on DSN presence regardless.
+  SENTRY_DSN: optionalUrl,
   SENTRY_ENVIRONMENT: z.string().optional(),
   SENTRY_RELEASE: z.string().optional(),
 

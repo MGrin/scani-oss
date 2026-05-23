@@ -2,6 +2,7 @@ import {
   checkEnvIsolatedUrl,
   httpsUrlInProduction,
   isProduction,
+  optionalUrl,
   requiredInProd,
   urlSchema,
 } from '@scani/config';
@@ -78,11 +79,13 @@ const envSchema = z.object({
   // api only sees it when SCANI_CLOUD_URL is unset and the storage-facade
   // in @scani/cloud-client falls through to the local StorageService.
 
-  // Sentry — hard-required in prod so a misconfigured deploy refuses
-  // to boot rather than running blind. Optional in dev (the SDK init
-  // checks for DSN presence before enabling). The Terraform provision
-  // for `SENTRY_DSN` is the source of truth on Fly.
-  SENTRY_DSN: requiredInProd(z.string().url(), 'SENTRY_DSN'),
+  // Sentry — fully optional. SDK init checks for DSN presence before
+  // enabling; absent DSN means no-op. Empty string from docker-compose
+  // env interpolation is treated as unset (see `optionalUrl`).
+  // Self-hosters who don't use Sentry leave it blank; managed
+  // deployments enforce its presence via their own pipeline checks,
+  // not the env schema.
+  SENTRY_DSN: optionalUrl,
   SENTRY_ENVIRONMENT: z.string().optional(),
   SENTRY_RELEASE: z.string().optional(),
 
