@@ -7,6 +7,7 @@
     "apps/backend/worker",
     "apps/backend/data-provider",
     "apps/frontend/app",
+    "apps/frontend/docs",
     "packages/business/*",
     "packages/infra/*",
     "packages/clients/*",
@@ -15,6 +16,7 @@
   "scripts": {
     "prepare": "git config --local core.hooksPath .githooks || true",
     "dev": "concurrently \"cd apps/backend/api && bun dev\" \"cd apps/frontend/app && bun dev\"",
+    "dev:docs": "bun --cwd apps/frontend/docs dev",
     "dev:stack": "bun scripts/sync-env.ts && docker compose --profile full up -d --build",
     "dev:stack:down": "docker compose --profile full down",
     "env:sync": "bun scripts/sync-env.ts",
