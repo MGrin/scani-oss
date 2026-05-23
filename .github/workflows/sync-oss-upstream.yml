@@ -1,0 +1,190 @@
+name: Sync OSS upstream
+
+# Pulls the latest commits from MGrin/scani-oss into this private repo's
+# main via an automation/sync-oss-YYYYMMDD branch + PR. Run daily at 08:00
+# UTC, or kick off manually via "Run workflow".
+#
+# Conflict policy: if the merge produces conflicts (analytics-divergent
+# files are the most likely culprit), the workflow auto-resolves them by
+# keeping this side's version (`git checkout --ours`) and labels the PR
+# `needs-human-review`. Reviewers must inspect each conflicted file to
+# see whether the --ours resolution discarded an OSS bug-fix that
+# should have been kept.
+#
+# See docs/technical/2026-05-23_oss-private-sync.md for the full sync
+# playbook + the merge=ours allowlist + the analytics-divergent set.
+
+on:
+  schedule:
+    # Daily at 08:00 UTC. Picked so the resulting PR lands before the
+    # workday in EU and well before the US workday.
+    - cron: "0 8 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: sync-oss-upstream
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    name: Merge MGrin/scani-oss into main
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout main with full history
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+          # Default GITHUB_TOKEN is fine — we push to the same repo and
+          # use REST to open the PR. The drift-check workflow does NOT
+          # need to fire on the sync PR (the sync PR is the upstream
+          # itself), so GITHUB_TOKEN's "doesn't trigger downstream
+          # workflows" semantics is actually what we want here.
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Configure git identity + merge driver
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git config merge.ours.driver true
+
+      - name: Add upstream remote
+        run: git remote add upstream https://github.com/MGrin/scani-oss.git
+
+      - name: Fetch upstream main
+        run: git fetch upstream main
+
+      - name: Check for new upstream commits
+        id: check
+        run: |
+          if git merge-base --is-ancestor upstream/main HEAD; then
+            echo "has_changes=false" >> "$GITHUB_OUTPUT"
+            echo "Upstream is already merged. Nothing to do."
+          else
+            echo "has_changes=true" >> "$GITHUB_OUTPUT"
+            UPSTREAM_SHA=$(git rev-parse upstream/main)
+            echo "upstream_sha=$UPSTREAM_SHA" >> "$GITHUB_OUTPUT"
+            COUNT=$(git rev-list --count HEAD..upstream/main)
+            echo "commit_count=$COUNT" >> "$GITHUB_OUTPUT"
+            echo "Upstream has $COUNT new commits to merge (HEAD → $UPSTREAM_SHA)."
+          fi
+
+      - name: Create sync branch
+        if: steps.check.outputs.has_changes == 'true'
+        id: branch
+        run: |
+          DATE=$(date -u +%Y%m%d)
+          BRANCH="automation/sync-oss-${DATE}"
+          # If a same-day re-run, suffix with HHMM.
+          if git ls-remote --exit-code origin "refs/heads/${BRANCH}" >/dev/null 2>&1; then
+            BRANCH="automation/sync-oss-${DATE}-$(date -u +%H%M)"
+          fi
+          git checkout -b "$BRANCH"
+          echo "name=$BRANCH" >> "$GITHUB_OUTPUT"
+
+      - name: Attempt merge
+        if: steps.check.outputs.has_changes == 'true'
+        id: merge
+        continue-on-error: true
+        run: |
+          git merge --no-ff upstream/main \
+            -m "sync: pull latest from MGrin/scani-oss" \
+            -m "Upstream: https://github.com/MGrin/scani-oss/commit/${{ steps.check.outputs.upstream_sha }}"
+
+      - name: Auto-resolve conflicts (keep --ours, flag for review)
+        if: steps.check.outputs.has_changes == 'true' && steps.merge.outcome == 'failure'
+        id: resolve
+        run: |
+          CONFLICTED=$(git diff --name-only --diff-filter=U)
+          {
+            echo "files<<CONFLICTS_EOF"
+            echo "$CONFLICTED"
+            echo "CONFLICTS_EOF"
+          } >> "$GITHUB_OUTPUT"
+          echo "Conflicted files:"
+          echo "$CONFLICTED"
+          echo "$CONFLICTED" | xargs -r git checkout --ours --
+          git add -A
+          git commit \
+            -m "sync: pull latest from MGrin/scani-oss (auto-resolved with --ours)" \
+            -m "Upstream: https://github.com/MGrin/scani-oss/commit/${{ steps.check.outputs.upstream_sha }}" \
+            -m "Conflicts auto-resolved by keeping private's version. Reviewer must verify no OSS improvements were discarded."
+
+      - name: Setup Bun
+        if: steps.check.outputs.has_changes == 'true'
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.3.13"
+
+      - name: Regenerate bun.lock
+        if: steps.check.outputs.has_changes == 'true'
+        run: |
+          bun install
+          if ! git diff --quiet bun.lock; then
+            git add bun.lock
+            git commit -m "sync: regenerate bun.lock after OSS merge"
+          else
+            echo "bun.lock unchanged after install."
+          fi
+
+      - name: Push sync branch
+        if: steps.check.outputs.has_changes == 'true'
+        run: git push -u origin "${{ steps.branch.outputs.name }}"
+
+      - name: Open sync PR
+        if: steps.check.outputs.has_changes == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          BRANCH: ${{ steps.branch.outputs.name }}
+          UPSTREAM_SHA: ${{ steps.check.outputs.upstream_sha }}
+          COMMIT_COUNT: ${{ steps.check.outputs.commit_count }}
+          CONFLICTED_FILES: ${{ steps.resolve.outputs.files }}
+        run: |
+          # Build PR body
+          BODY="Automated sync from \`MGrin/scani-oss/main\` at [\`${UPSTREAM_SHA:0:8}\`](https://github.com/MGrin/scani-oss/commit/${UPSTREAM_SHA})."$'\n\n'
+          BODY+="Pulled **${COMMIT_COUNT}** new upstream commit(s) into this private repo."$'\n\n'
+          LABELS='[]'
+          if [ -n "$CONFLICTED_FILES" ]; then
+            BODY+='## ⚠️ Needs human review'$'\n\n'
+            BODY+='The merge produced conflicts. They were auto-resolved by keeping private`s version (`git checkout --ours`), which may have discarded OSS-side improvements. Review each conflicted file and reconcile:'$'\n\n'
+            BODY+='```'$'\n'
+            BODY+="$CONFLICTED_FILES"$'\n'
+            BODY+='```'$'\n\n'
+            BODY+='See `docs/technical/2026-05-23_oss-private-sync.md` for the resolution playbook (merge=ours allowlist vs analytics-divergent set vs neither).'$'\n'
+            LABELS='["needs-human-review"]'
+          fi
+          BODY+=$'\n''---'$'\n''🤖 Opened by `.github/workflows/sync-oss-upstream.yml`. See [the sync-flow doc](../blob/main/docs/technical/2026-05-23_oss-private-sync.md) for context.'
+
+          # Use REST API directly — gh CLI mis-parses head branches that
+          # contain a slash (it interprets "automation/sync-oss-..." as
+          # "owner=automation, branch=sync-oss-...").
+          PR_JSON=$(jq -nc \
+            --arg title "sync: pull latest from MGrin/scani-oss" \
+            --arg head  "$BRANCH" \
+            --arg base  "main" \
+            --arg body  "$BODY" \
+            '{title: $title, head: $head, base: $base, body: $body}')
+          PR_RESPONSE=$(curl -fsS \
+            -X POST \
+            -H "Authorization: Bearer ${GH_TOKEN}" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/${{ github.repository }}/pulls" \
+            -d "$PR_JSON")
+          PR_NUMBER=$(echo "$PR_RESPONSE" | jq -r '.number')
+          PR_URL=$(echo "$PR_RESPONSE" | jq -r '.html_url')
+          echo "Opened PR #${PR_NUMBER}: ${PR_URL}"
+
+          # Apply labels if any
+          if [ "$LABELS" != "[]" ]; then
+            curl -fsS \
+              -X POST \
+              -H "Authorization: Bearer ${GH_TOKEN}" \
+              -H "Accept: application/vnd.github+json" \
+              "https://api.github.com/repos/${{ github.repository }}/issues/${PR_NUMBER}/labels" \
+              -d "{\"labels\": $LABELS}" >/dev/null
+            echo "Applied labels: $LABELS"
+          fi

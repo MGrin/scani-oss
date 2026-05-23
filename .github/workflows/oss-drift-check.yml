@@ -1,0 +1,145 @@
+name: OSS drift check
+
+# Fails the check on any PR that modifies an OSS-eligible path without
+# referencing an upstream MGrin/scani-oss PR in the body. The OSS-first
+# rule says: OSS-eligible code lands in MGrin/scani-oss first, then
+# syncs down here via the automated sync workflow. Direct private edits
+# to OSS-eligible files are drift.
+#
+# Escape hatches:
+#   - Add a `bypass-oss-drift` label (used for private-only edits to the
+#     analytics-divergent set, e.g. when extending analytics call sites).
+#   - Reference an existing scani-oss PR in the body (e.g.
+#     "Upstream: MGrin/scani-oss#42" or "https://github.com/MGrin/scani-oss/pull/42").
+#
+# See docs/technical/2026-05-23_oss-private-sync.md for the path
+# definitions and the analytics-divergent set.
+
+on:
+  pull_request:
+    types: [opened, edited, synchronize, reopened, labeled, unlabeled]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  check:
+    name: Check OSS-first rule
+    runs-on: ubuntu-latest
+    # Skip the check on the automated sync PR itself — it IS the upstream.
+    if: github.event.pull_request.user.login != 'github-actions[bot]' && !startsWith(github.head_ref, 'automation/sync-oss-')
+    steps:
+      - name: Fetch changed files from the PR
+        id: files
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          ALL_CHANGED=$(gh api --paginate \
+            "repos/${{ github.repository }}/pulls/${PR_NUMBER}/files" \
+            --jq '.[].filename')
+          echo "Files in PR:"
+          echo "$ALL_CHANGED"
+
+          # OSS-eligible paths: where editing private-only without an upstream
+          # link is drift. Enumerated explicitly (no negative lookahead in grep).
+          INCLUDE_REGEX='^(apps/backend/(api|worker|data-provider)/(src|tests|README\.md|package\.json|Dockerfile)|apps/frontend/app/(src|tests|public|README\.md|package\.json|index\.html)|packages/business/|packages/clients/|packages/frontend/|packages/infra/(config|db|email|http-fetch|logging|queue|rate-limiter|realtime|security|storage)/|biome\.json$|tsconfig\.json$|knip\.json$|\.syncpackrc\.json$|bunfig\.toml$|scripts/(sync-env|generate-ci-filters|coverage-badge)\.ts$|\.github/workflows/(coverage|security-invariants)\.yml$)'
+
+          # Exclusions: private overlay + merge=ours allowlist files. Editing
+          # any of these private-only is fine (merge=ours pins private's
+          # version, or the path is private-only by design).
+          EXCLUDE_REGEX='^(apps/frontend/(admin|cloud|landing)/|infra/|packages/infra/analytics/|docs/|.*/fly\.toml$|apps/backend/(api|worker|data-provider)/\.env\.example$|apps/backend/data-provider/src/presentation/router\.ts$|\.github/workflows/(deploy-fly|terraform|fly-diagnostics|backup-db|restore-test|rollback|capture-screenshots|sync-oss-upstream|oss-drift-check)\.yml$|^package\.json$|^docker-compose\.yml$|^README\.md$|^CONTRIBUTING\.md$|^CLAUDE\.md$|^\.gitattributes$|^\.env\.example$|^\.github/CODEOWNERS$|^\.githooks/pre-commit$)'
+
+          OSS_TOUCHED=$(echo "$ALL_CHANGED" | grep -E "$INCLUDE_REGEX" | grep -vE "$EXCLUDE_REGEX" || true)
+
+          echo ""
+          echo "OSS-eligible (drift-tracked) files in this PR:"
+          if [ -z "$OSS_TOUCHED" ]; then
+            echo "(none)"
+            echo "oss_touched=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "$OSS_TOUCHED"
+            echo "oss_touched=true" >> "$GITHUB_OUTPUT"
+            {
+              echo "list<<TOUCHED_EOF"
+              echo "$OSS_TOUCHED"
+              echo "TOUCHED_EOF"
+            } >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Skip if no OSS-eligible paths touched
+        if: steps.files.outputs.oss_touched == 'false'
+        run: echo "PR touches no OSS-eligible files; drift check does not apply."
+
+      - name: Check for bypass label
+        if: steps.files.outputs.oss_touched == 'true'
+        id: bypass
+        env:
+          LABELS_JSON: ${{ toJSON(github.event.pull_request.labels) }}
+        run: |
+          if echo "$LABELS_JSON" | jq -e '.[] | select(.name=="bypass-oss-drift")' >/dev/null; then
+            echo "Bypass label found; drift check skipped."
+            echo "bypassed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "bypassed=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Check PR body for upstream reference
+        if: steps.files.outputs.oss_touched == 'true' && steps.bypass.outputs.bypassed == 'false'
+        id: ref_check
+        env:
+          BODY: ${{ github.event.pull_request.body }}
+        run: |
+          if echo "$BODY" | grep -qE '(MGrin/scani-oss#[0-9]+|MGrin/scani-oss/pull/[0-9]+|github\.com/MGrin/scani-oss/pull/[0-9]+)'; then
+            echo "PR body references an upstream MGrin/scani-oss PR. Drift check passes."
+            echo "ok=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "ok=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Comment + fail when upstream reference is missing
+        if: steps.files.outputs.oss_touched == 'true' && steps.bypass.outputs.bypassed == 'false' && steps.ref_check.outputs.ok == 'false'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          TOUCHED: ${{ steps.files.outputs.list }}
+        run: |
+          # Idempotent comment: only post once per PR. Look for our marker.
+          MARKER='<!-- oss-drift-check -->'
+          EXISTING=$(gh api "repos/${{ github.repository }}/issues/${PR_NUMBER}/comments" \
+            --jq ".[] | select(.body | contains(\"${MARKER}\")) | .id" | head -1)
+          if [ -z "$EXISTING" ]; then
+            COMMENT=$(cat <<COMMENT_EOF
+          ${MARKER}
+          ## OSS-first rule
+
+          This PR modifies files that also live in **[MGrin/scani-oss](https://github.com/MGrin/scani-oss)**, but the PR body does not reference an upstream PR. OSS-eligible changes should land in \`scani-oss\` first, then sync down here.
+
+          **OSS-eligible files in this PR**:
+
+          \`\`\`
+          ${TOUCHED}
+          \`\`\`
+
+          ### To unblock this PR, do one of:
+
+          1. **Open the change upstream first.** Push the same change to a branch on \`MGrin/scani-oss\`, open a PR there, get it merged. Then either wait for the next automated sync, or rebase this PR on top of the sync. Add a line to this PR body like \`Upstream: MGrin/scani-oss#42\`.
+          2. **Add the \`bypass-oss-drift\` label.** Use this when the edit is intentionally private-only — for example, extending the PostHog analytics overlay in one of the [analytics-divergent files](../blob/main/docs/technical/2026-05-23_oss-private-sync.md#analytics-divergent-files-normal-merge-not-mergeours).
+
+          See [\`docs/technical/2026-05-23_oss-private-sync.md\`](../blob/main/docs/technical/2026-05-23_oss-private-sync.md) for the full rationale and the divergent-files allowlist.
+          COMMENT_EOF
+          )
+            gh api -X POST "repos/${{ github.repository }}/issues/${PR_NUMBER}/comments" \
+              -f "body=${COMMENT}" >/dev/null
+            echo "Posted drift-check comment."
+          else
+            echo "Drift-check comment already present (id=${EXISTING}); not re-posting."
+          fi
+
+          echo "::error::PR touches OSS-eligible paths without referencing an upstream MGrin/scani-oss PR. Add the upstream reference to the body, or apply the bypass-oss-drift label."
+          exit 1
+
+      - name: Drift check passed
+        if: steps.files.outputs.oss_touched == 'true' && (steps.bypass.outputs.bypassed == 'true' || steps.ref_check.outputs.ok == 'true')
+        run: echo "Drift check passed."
