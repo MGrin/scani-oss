@@ -1,0 +1,28 @@
+{
+  "projectName": "scani-oss",
+  "projectOwner": "MGrin",
+  "repoType": "github",
+  "repoHost": "https://github.com",
+  "files": ["README.md"],
+  "imageSize": 100,
+  "commit": true,
+  "commitConvention": "angular",
+  "commitType": "docs",
+  "contributorsPerLine": 7,
+  "contributorsSortAlphabetically": false,
+  "contributors": [
+    {
+      "login": "MGrin",
+      "name": "MGrin",
+      "avatar_url": "https://avatars.githubusercontent.com/u/2393862?v=4",
+      "profile": "https://github.com/MGrin",
+      "contributions": [
+        "code",
+        "maintenance",
+        "doc",
+        "infra",
+        "review"
+      ]
+    }
+  ]
+}
