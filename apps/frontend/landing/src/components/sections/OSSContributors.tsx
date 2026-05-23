@@ -1,4 +1,4 @@
-import { ArrowRight, Bug, GitPullRequest, Plug } from 'lucide-react';
+import { Bug, Github, GitPullRequest, Plug } from 'lucide-react';
 import { useRevealOnScroll } from '../../hooks/useRevealOnScroll';
 
 const REWARD_TYPES = [
@@ -36,9 +36,17 @@ export function OSSContributors() {
             Land a real PR. Get the paid tiers, free, forever.
           </h2>
           <p className="mt-4 text-balance text-muted-foreground">
-            We'll be opening the source under a permissive license shortly. Anyone whose merged
-            contribution shows up in the kinds of work below gets free-forever access to every paid
-            tier — no deprecation, no clawback.
+            The source is{' '}
+            <a
+              href="https://github.com/MGrin/scani-oss"
+              target="_blank"
+              rel="noreferrer noopener"
+              className="underline-offset-2 hover:underline"
+            >
+              open and MIT-licensed
+            </a>
+            . Anyone whose merged contribution shows up in the kinds of work below gets free-forever
+            access to every paid tier — no deprecation, no clawback.
           </p>
         </div>
 
@@ -54,20 +62,29 @@ export function OSSContributors() {
 
         <div className="mt-10 rounded-xl border border-dashed border-border bg-card/50 p-5 text-sm text-muted-foreground">
           <p>
-            <strong className="text-foreground">Heads up:</strong> the source isn't public yet.
-            We're getting the code ready to publish under a permissive OSS license. Once that ships
-            you'll be able to read it, fork it, and contribute — and the free-forever-access offer
-            applies to every significant contribution from that moment on.
+            <strong className="text-foreground">How to claim it:</strong> open a PR against{' '}
+            <a
+              href="https://github.com/MGrin/scani-oss"
+              target="_blank"
+              rel="noreferrer noopener"
+              className="text-foreground underline-offset-2 hover:underline"
+            >
+              MGrin/scani-oss
+            </a>
+            , get it merged, then reply to your account-creation email with the PR link. We flag
+            your account as a contributor and the paid tiers unlock on the spot.
           </p>
         </div>
 
         <div className="mt-8 flex justify-center">
           <a
-            href="#beta"
+            href="https://github.com/MGrin/scani-oss"
+            target="_blank"
+            rel="noreferrer noopener"
             className="inline-flex h-11 items-center gap-2 rounded-md border border-border bg-card px-5 text-sm font-medium transition-colors hover:bg-accent"
           >
-            Notify me when it's out
-            <ArrowRight className="h-4 w-4" />
+            <Github className="h-4 w-4" />
+            View the source on GitHub
           </a>
         </div>
       </div>

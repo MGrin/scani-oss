@@ -1,10 +1,12 @@
+import { Github } from 'lucide-react';
 import { useEffect, useState } from 'react';
+import { GITHUB_URL } from '../../seo/siteMeta';
 import { ScaniLogo } from '../ScaniLogo';
 
-// Nav anchors visitors hit from the top bar. GitHub + API-docs links
-// are intentionally absent: the repo isn't public yet and the curated
-// docs site isn't published. The hero shows a "coming soon" pill for
-// the same reason. Re-introduce both when the repo opens.
+// Nav anchors visitors hit from the top bar. Curated API-docs links are
+// still absent — the docs site isn't published yet; the hero shows a
+// "coming soon" pill for the same reason. Re-introduce the docs CTA
+// when those land.
 //
 // Hrefs are root-anchored (`/#…`) so they also resolve from the
 // standalone /contact page, not just the home scroll.
@@ -50,6 +52,15 @@ export function TopNav() {
           ))}
         </nav>
         <div className="flex items-center gap-2">
+          <a
+            href={GITHUB_URL}
+            target="_blank"
+            rel="noreferrer noopener"
+            aria-label="View source on GitHub"
+            className="inline-flex h-7 items-center justify-center rounded-md border border-border bg-card px-2 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+          >
+            <Github className="h-4 w-4" />
+          </a>
           <a
             href="https://app.scani.xyz"
             className="rounded-md bg-foreground px-3 py-1.5 text-xs font-medium text-background transition-opacity hover:opacity-90"

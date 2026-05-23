@@ -10,11 +10,11 @@ export const QAS: ReadonlyArray<QA> = [
   },
   {
     q: 'What counts as a "significant" OSS contribution?',
-    a: "We'll publish concrete heuristics with the license, but the working definition is: a merged PR that fixes a real bug, ships a new integration provider, or meaningfully improves an existing one. Single-line typo fixes are appreciated but don't qualify.",
+    a: "The working definition is: a merged PR on github.com/MGrin/scani-oss that fixes a real bug, ships a new integration provider, or meaningfully improves an existing one. Single-line typo fixes are appreciated but don't qualify. Once your PR is merged, reply to your account-creation email with the PR link and we flag your account as a contributor.",
   },
   {
     q: 'Can I self-host today?',
-    a: "Not yet — the source isn't public. We're preparing the open-source release; once it ships, you'll be able to run the entire Scani stack on your own infrastructure end-to-end, with your own database, your own provider keys, and your data never leaving your machine. Drop your email on the waitlist to be notified.",
+    a: 'Yes — the source is open at github.com/MGrin/scani-oss under MIT. Pre-built multi-arch Docker images publish on every push to main (`scani/api`, `scani/worker`, `scani/data-provider`, `scani/frontend-app`); `docker compose -f docker-compose.prod.yml up -d` brings up the whole stack. You bring your own Postgres, Redis, and S3-compatible storage, or let the bundled containers handle them. Your data never leaves your machine.',
   },
   {
     q: 'Where is my data hosted on the managed tier?',

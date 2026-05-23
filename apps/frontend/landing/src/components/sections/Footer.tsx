@@ -1,16 +1,26 @@
 import { COMPARISONS } from '../../data/comparisons';
 import { ScaniLogo } from '../ScaniLogo';
 
-// GitHub + curated API-docs links are deliberately absent: the repo is
-// still private and the docs site isn't published. The OpenAPI spec is
-// kept as a developer-reference link — it's machine-readable, distinct
-// from a marketed docs site.
+// Curated API-docs links are still absent — the docs site isn't
+// published. The OpenAPI spec stays as a developer-reference link;
+// it's machine-readable, distinct from a marketed docs site.
 const COLUMNS: ReadonlyArray<{ label: string; links: { label: string; href: string }[] }> = [
   {
     label: 'Product',
     links: [
       { label: 'Open the app', href: 'https://app.scani.xyz' },
       { label: 'Cloud console', href: 'https://cloud.scani.xyz' },
+    ],
+  },
+  {
+    label: 'Open source',
+    links: [
+      { label: 'GitHub repo', href: 'https://github.com/MGrin/scani-oss' },
+      { label: 'Self-host guide', href: 'https://github.com/MGrin/scani-oss#self-hosting' },
+      {
+        label: 'Contributing',
+        href: 'https://github.com/MGrin/scani-oss/blob/main/CONTRIBUTING.md',
+      },
     ],
   },
   {
@@ -46,7 +56,7 @@ export function Footer() {
             Personal wealth, consolidated. Self-host or use ours.
           </p>
         </div>
-        <div className="grid grid-cols-2 gap-10 sm:grid-cols-4">
+        <div className="grid grid-cols-2 gap-10 sm:grid-cols-5">
           {COLUMNS.map((col) => (
             <div key={col.label}>
               <div className="text-xs font-medium uppercase tracking-widest text-muted-foreground">

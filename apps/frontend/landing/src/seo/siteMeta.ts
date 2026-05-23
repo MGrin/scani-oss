@@ -9,7 +9,7 @@ export const SITE_NAME = 'Scani';
 /** Raster OG image — Facebook's crawler cannot render SVG. */
 export const DEFAULT_OG_IMAGE = `${SITE_URL}/og-image.png`;
 
-export const GITHUB_URL = 'https://github.com/MGrin/scani';
+export const GITHUB_URL = 'https://github.com/MGrin/scani-oss';
 
 export const SUPPORT_EMAIL = 'support@scani.xyz';
 

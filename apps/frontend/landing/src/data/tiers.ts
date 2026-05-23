@@ -18,12 +18,12 @@ export const TIERS: ReadonlyArray<Tier> = [
     price: 'Free forever',
     beta: null,
     features: [
-      'Open-source — runs on your laptop, your VPS, or any cloud',
+      'MIT-licensed — runs on your laptop, your VPS, or any cloud',
       'Bring your own database, cache, and provider API keys',
       'Every integration runs locally — no Scani server in the loop',
-      'Source under a permissive license (work in progress)',
+      'Pre-built multi-arch Docker images on every push to main',
     ],
-    cta: { label: 'Notify me at launch', href: '#beta' },
+    cta: { label: 'View on GitHub', href: 'https://github.com/MGrin/scani-oss' },
   },
   {
     Icon: Cloud,
