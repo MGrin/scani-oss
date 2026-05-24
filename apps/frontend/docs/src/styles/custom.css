@@ -1,14 +1,19 @@
 /* Scani docs — visual alignment with the landing page + app.
  *
- * Tokens are kept achromatic to match `@scani/ui`'s `globals.css`
- * (the canonical design system used by the landing + the app SPA):
- * pure white / near-black, soft greys for chrome, with emerald only
- * as an accent for "live" elements (active links, current page
- * indicator) — matching the beta pill on the landing's hero. */
+ * Tokens follow `@scani/ui`'s `globals.css` (the canonical design
+ * system used by the landing + the app SPA): pure white / near-black,
+ * soft neutral greys for chrome.
+ *
+ * Accent palette: deliberately set to the foreground colour so the
+ * site title, primary CTAs, and link emphasis all render as plain
+ * dark text on white (light) or light text on near-black (dark) —
+ * matching the landing's "text-foreground" buttons. Emerald is
+ * reserved for the single "live" cue on the sidebar's current page
+ * indicator, applied explicitly below; it's the same green as the
+ * landing's beta pill. */
 
 :root,
 :root[data-theme='dark'] {
-  /* Achromatic dark — same #0a0a0a / #fafafa base as the app. */
   --sl-color-white: #fafafa;
   --sl-color-gray-1: #e5e5e5;
   --sl-color-gray-2: #a3a3a3;
@@ -18,11 +23,12 @@
   --sl-color-gray-6: #171717;
   --sl-color-gray-7: #0f0f0f;
   --sl-color-black: #0a0a0a;
-  /* Emerald accent — matches the landing's beta pill (emerald-500
-   * for ring/dot). Brightened a notch for dark-mode legibility. */
-  --sl-color-accent-low: #052e1a;
-  --sl-color-accent: #10b981;
-  --sl-color-accent-high: #6ee7b7;
+  /* "Accent" is foreground — kills the default emerald site title,
+   * CTAs and active-link backgrounds. */
+  --sl-color-accent-low: #262626;
+  --sl-color-accent: #fafafa;
+  --sl-color-accent-high: #fafafa;
+  --sl-color-text-accent: #fafafa;
 }
 
 :root[data-theme='light'] {
@@ -35,34 +41,60 @@
   --sl-color-gray-6: #e5e5e5;
   --sl-color-gray-7: #f5f5f5;
   --sl-color-black: #ffffff;
-  /* Emerald-600 reads better than emerald-500 on white. */
-  --sl-color-accent-low: #d1fae5;
-  --sl-color-accent: #059669;
-  --sl-color-accent-high: #064e3b;
+  --sl-color-accent-low: #f5f5f5;
+  --sl-color-accent: #0a0a0a;
+  --sl-color-accent-high: #0a0a0a;
+  --sl-color-text-accent: #0a0a0a;
 }
 
-/* Match @scani/ui's --radius: 0.5rem — slightly tighter than
- * Starlight's defaults; aligns with the landing's button shapes. */
+/* Card components — match @scani/ui's --radius: 0.5rem. */
 .card,
 .sl-link-card {
   border-radius: 0.5rem;
 }
 
-/* Splash hero — match the landing's `bg-grid-fade` dotted-grid
- * backdrop instead of a flat or coloured gradient. Subtle, on-brand,
- * theme-aware (uses Starlight's gray-6 which is the border colour). */
+/* Splash hero.
+ *
+ * The dotted-grid backdrop matches the landing's `bg-grid-fade`.
+ * Putting it on a ::before pseudo-element (and not on `.hero` itself)
+ * is critical — the mask-image would otherwise clip the title text
+ * along with the dots and make the hero unreadable. */
 [data-has-hero] .hero {
-  background-image:
-    radial-gradient(circle at 1px 1px, var(--sl-color-gray-6) 1px, transparent 0);
-  background-size: 32px 32px;
-  -webkit-mask-image: radial-gradient(ellipse 80% 60% at 50% 0%, black 30%, transparent 80%);
-  mask-image: radial-gradient(ellipse 80% 60% at 50% 0%, black 30%, transparent 80%);
+  position: relative;
+  isolation: isolate;
   border-radius: 0.5rem;
   padding-block: clamp(2rem, 6vw, 4rem);
 }
 
-/* Inline code — quiet greyscale, no coloured pill. Matches the
- * subdued treatment in the landing's body copy. */
+[data-has-hero] .hero::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background-image: radial-gradient(circle at 1px 1px, var(--sl-color-gray-6) 1px, transparent 0);
+  background-size: 32px 32px;
+  -webkit-mask-image: radial-gradient(ellipse 80% 60% at 50% 0%, black 30%, transparent 80%);
+  mask-image: radial-gradient(ellipse 80% 60% at 50% 0%, black 30%, transparent 80%);
+  border-radius: inherit;
+}
+
+/* Hero title — Starlight defaults to a gradient text-fill using the
+ * accent palette. With our achromatic palette it renders as flat
+ * foreground, but we still need to disable the gradient explicitly
+ * so older Starlight defaults can't bleed through. */
+.hero h1,
+.hero .tagline {
+  background: none;
+  -webkit-text-fill-color: currentColor;
+  color: var(--sl-color-white);
+}
+
+.hero .tagline {
+  color: var(--sl-color-gray-2);
+}
+
+/* Inline code — quiet greyscale chrome. */
 :not(pre) > code {
   color: var(--sl-color-white);
   background: var(--sl-color-gray-6);
@@ -71,23 +103,35 @@
   font-size: 0.9em;
 }
 
-/* Sidebar — current page gets a faint emerald hairline on the left
- * + bold weight, echoing the landing's "live" beta-pill accent. */
+/* Sidebar — current page reads as bold foreground text with a
+ * thin emerald hairline on the left. Emerald-500 in dark mode,
+ * emerald-600 in light mode for legibility — same shades the
+ * landing's beta pill uses. */
 .sidebar-content a[aria-current='page'] {
-  color: var(--sl-color-accent);
+  background-color: transparent;
+  color: var(--sl-color-white);
   font-weight: 600;
-  box-shadow: inset 2px 0 0 var(--sl-color-accent);
+  box-shadow: inset 2px 0 0 #10b981;
 }
 
-/* Page table-of-contents — same treatment so the reader can tell
- * which section they're reading at a glance. */
+:root[data-theme='light'] .sidebar-content a[aria-current='page'] {
+  box-shadow: inset 2px 0 0 #059669;
+}
+
+/* Page table-of-contents — same hairline treatment, on the active
+ * heading link. */
 starlight-toc nav a[aria-current='true'] {
-  color: var(--sl-color-accent);
+  color: var(--sl-color-white);
   font-weight: 600;
+  box-shadow: inset 2px 0 0 #10b981;
 }
 
-/* Links in body copy — underline on hover only, like the landing's
- * "text-foreground/80 hover:text-foreground" nav pattern. */
+:root[data-theme='light'] starlight-toc nav a[aria-current='true'] {
+  box-shadow: inset 2px 0 0 #059669;
+}
+
+/* Body links — underline, slightly offset, like the landing's
+ * "hover:text-foreground" inline links. */
 .sl-markdown-content a:not(:where(.not-content *)) {
   text-underline-offset: 0.2em;
   text-decoration-thickness: 1px;
