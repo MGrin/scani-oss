@@ -1,134 +1,142 @@
 ---
 title: Engineering conventions
-description: The non-negotiable rules contributors ship against in this repo. Mirrors CLAUDE.md.
+description: The non-negotiable rules of this repo. Code that violates them should be fixed in place or rejected at review.
+sidebar:
+  order: 2
 ---
 
-These are non-negotiable. Code that violates them should be either fixed in
-place or rejected at review. The full canonical version lives in
-[`CLAUDE.md`](https://github.com/MGrin/scani-oss/blob/main/CLAUDE.md); this
-page is a contributor-friendly mirror.
+These come from
+[`CLAUDE.md`](https://github.com/MGrin/scani-oss/blob/main/CLAUDE.md)
+— that file is the canonical spec for both human and agent
+contributors. Read it. The condensed list below covers what most
+PRs trip over.
 
-## Toolchain
+## Runtime + toolchain
 
-- **Bun runtime only.** No `npm` / `pnpm` / `yarn`. Use `bun install`,
-  `bun run`, `bun test`, `bun build`. Don't reach for Node-specific APIs
-  when a Bun primitive exists (`Bun.file`, `Bun.serve`, `Bun.$`, …).
-- **Type-check via `tsgo`** (`@typescript/native-preview`). Every workspace's
-  `type-check` script must call `tsgo --noEmit` — do not regress to plain
-  `tsc`. tsgo is dramatically faster on this monorepo.
-- **Lint via Biome** (`biome.json` at root). No ESLint, no Prettier, no
-  parallel formatter. `bun lint:fix` is the only formatting/linting
-  command.
+- **Bun only.** No `npm` / `pnpm` / `yarn`. Use `bun install`,
+  `bun run`, `bun test`, `bun build`. Reach for Bun primitives
+  (`Bun.file`, `Bun.serve`, `Bun.$`) over Node equivalents when
+  one fits.
+- **Type-check with `tsgo`**
+  (`@typescript/native-preview`). Every workspace's `type-check`
+  script must call `tsgo --noEmit`. Don't regress to plain `tsc`.
+- **Lint with Biome.** One `biome.json` at root. No ESLint, no
+  Prettier, no parallel formatter. `bun lint:fix` is the only
+  formatting/linting command.
 
 ## Imports
 
-- **Top-level imports only.** No `await import(...)`, no `require()`. If a
-  module needs lazy initialization, restructure the boot sequence so
-  dependencies are statically resolvable.
+- **Top-level imports only.** No `await import(...)`, no
+  `require()`. If a module needs lazy initialisation, restructure
+  boot order so dependencies are statically resolvable.
+- Existing `await import` calls in
+  `apps/backend/{api,worker,data-provider}/src/index.ts` predate
+  this rule. Refactor them when you touch those files.
 
-## Code shape
+## OOP + DI
 
-- **SOLID, OOP, DRY.** Domain logic lives in `@Service()`-decorated classes
-  with class-field DI (see below). One responsibility per class. Compose
-  over inherit. If two callers reach for the same logic, promote it into
-  the appropriate `packages/*` rather than copy-pasting.
-- **No `@ts-ignore` / `@ts-expect-error` / `biome-ignore`** without a
-  one-line justification comment. If you can't articulate the reason, fix
-  the underlying problem.
-- **Code is documentation.** Default to no comments. Add one only when the
-  WHY is non-obvious — a hidden constraint, a subtle invariant, or a
-  workaround for a specific bug. Never explain WHAT the code does.
-- **No dead code, no stubs, no half-finished implementations.** If a
-  feature is removed, delete the code. Don't leave commented blocks,
-  `// TODO: implement`, or "kept for backwards compatibility" shims.
+- **Domain logic lives in `@Service()`-decorated classes.** SOLID,
+  one responsibility per class, compose over inherit.
+- **Class-field DI**, not constructor-param injection. See
+  [Dependency injection pattern](/contributing/di-pattern/) for
+  why — it's a Bun-specific runtime requirement, not a style
+  choice.
+- **DRY across packages.** Two places reaching for the same logic →
+  promote into a `packages/*`. No copy-paste between apps.
 
 ## Tests
 
-- **Runner:** `bun test`. No Jest, no Vitest.
-- **Layout:** tests live in `tests/` next to `src/`, mirroring the source
-  tree — e.g.
-  `packages/business/domain/tests/services/HoldingService.test.ts` for
-  `packages/business/domain/src/services/HoldingService.ts`. New tests
-  must use this layout.
-- **Preload:** shared preload at
-  `packages/business/domain/test-preload.ts` — loads `reflect-metadata`
-  and sets a default `DATABASE_URL` pointed at the docker-compose
-  Postgres.
-- **Per-test isolation:** repository tests wrap each body in a transaction
-  via `withTestDb` and roll back on exit, so suites can run in parallel
-  against the same DB.
-
-## Dependency injection (the trap)
-
-Use **class-field DI**, not constructor-param injection. Bun's TypeScript
-transpiler does not emit `design:paramtypes` reflect-metadata for
-decorators; typedi falls back to injecting its own `ContainerInstance` into
-every constructor param, which "works" until runtime.
-
-```ts
-// ✅ Correct
-@Service()
-export class MyService {
-  private readonly repo = Container.get(MyRepository);
-  private readonly other = Container.get(OtherService);
-}
-
-// ❌ Wrong — silently broken at runtime
-@Service()
-export class MyService {
-  constructor(
-    private readonly repo: MyRepository,
-    private readonly other: OtherService,
-  ) {}
-}
-```
-
-**Testing services that use class-field DI:** seed stubs on the Container,
-then construct a fresh instance. Don't `Container.reset()` /
-`Container.remove()` — either wipes the `@Service()` registration.
-
-```ts
-function makeService(stubDep: Dep): MyService {
-  Container.set(MyRepository, stubDep);
-  const instance = new MyService();      // class-field initializers run now,
-  Container.set(MyService, instance);    // reading the stub we just set
-  return instance;
-}
-```
-
-See `packages/business/domain/src/services/HoldingService.ts` as a canonical
-example.
+- **Tests live in `tests/` next to `src/`**, mirroring the source
+  tree. E.g.
+  `packages/business/domain/tests/services/HoldingService.test.ts`
+  for
+  `packages/business/domain/src/services/HoldingService.ts`.
+- Existing inline `*.test.ts` files (next to source) should
+  migrate to the mirrored `tests/` layout when their surrounding
+  code is touched.
+- See [Testing patterns](/contributing/testing/) for the
+  stubbed-DI helper and the `withTestDb` transaction wrapper.
 
 ## Async work
 
-- **All async work goes through BullMQ on Redis**, consumed by
-  `apps/backend/worker`. The api enqueues; it doesn't process long-running
-  work inline.
+- **Async work goes through BullMQ on Redis**, consumed by
+  `apps/backend/worker`. The api enqueues; it doesn't process
+  long-running work inline.
+- **Scheduled jobs use the advisory-lock wrapper** so overlapping
+  fires of the same job name no-op. See
+  [Adding a scheduled job](/contributing/adding-a-job/).
 
-## Env vars
+## Comments
 
-Two layers, with a strict ownership rule:
+- **Default to no comments.** Code is documentation; well-named
+  identifiers do the explaining.
+- Add a comment **only when the WHY is non-obvious** — a hidden
+  constraint, a subtle invariant, a workaround for a specific bug,
+  behaviour that would surprise a reader.
+- Never explain WHAT the code does.
+- Never reference the current task, fix, or callers ("used by X",
+  "added for the Y flow") — those belong in the PR description
+  and rot as the codebase evolves.
 
-- **App-level** (`apps/*/src/config/env.ts`) owns env vars that belong to
-  the *app itself* — its bind port, its database connection, its frontend
-  origin.
-- **Package-level** (`packages/infra/<pkg>/src/config.ts`) owns env vars
-  that belong to *that package* — `FASTMAIL_API_TOKEN` for `@scani/email`,
-  `S3_*` for `@scani/storage`, `ENCRYPTION_KEY` for `@scani/security`.
+## Suppression
 
-Apps that depend on a package **do not redeclare** that package's env vars
-in their own schema.
+- **No `@ts-ignore` / `@ts-expect-error` / `biome-ignore` without
+  a one-line justification.** If you can't articulate the reason,
+  fix the underlying problem instead.
+
+## Dead code
+
+- **No dead code, no stubs, no half-finished implementations.**
+  If a feature is removed, delete the code. Don't leave commented
+  blocks, `// TODO: implement`, or "kept for backwards
+  compatibility" shims when nothing actually needs them.
+
+## Env var ownership
+
+- **Apps own app-level env vars.** App's `envSchema` validates
+  them at boot.
+- **Packages own package-level env vars** (e.g.
+  `@scani/security` owns `ENCRYPTION_KEY`, `@scani/storage` owns
+  `S3_*`, `@scani/email` owns `FASTMAIL_API_TOKEN` /
+  `SMTP_URL`). Each has its own `src/config.ts` with a `loadX()`
+  loader and `resetX()` for tests.
+- **Apps must NOT redeclare a package's env vars.** The package
+  owns validation; the app just sets the variable and trusts the
+  package's loader.
+
+See [Environment variables reference](/reference/environment/)
+for the full split.
+
+## Dependency hygiene
+
+- `bun run deps:lint` — syncpack: workspace alignment, single
+  version per external dep, caret ranges.
+- `bun run deps:fix` — auto-fix.
+- `bun run deps:unused` — knip: surfaces unused exports / files /
+  deps.
+- CI runs both whenever lockfile/config files change.
 
 ## Before pushing
 
-Always run:
+Always:
 
-```bash
-bun run type-check                                                          # parallel tsgo --noEmit across all workspaces
-bun lint:fix                                                                # Biome
-bun test --preload ./packages/business/domain/test-preload.ts packages/ --timeout 30000
-
-# When dependencies changed
-bun run deps:lint    # syncpack — version alignment
-bun run deps:unused  # knip — unused exports/files/dependencies
+```sh
+bun run type-check
+bun lint:fix
+bun test --preload ./packages/business/domain/test-preload.ts \
+  packages/ --timeout 30000
 ```
+
+If you touched deps:
+
+```sh
+bun run deps:lint
+bun run deps:unused
+```
+
+## See also
+
+- [How to contribute](/contributing/how-to/)
+- [Dependency injection pattern](/contributing/di-pattern/)
+- [Testing patterns](/contributing/testing/)
+- The canonical spec: [`CLAUDE.md`](https://github.com/MGrin/scani-oss/blob/main/CLAUDE.md)

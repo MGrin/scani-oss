@@ -1,0 +1,140 @@
+---
+title: Tokens & market segments
+description: How Scani models tradeable assets — fiat, crypto, equities, private companies — and disambiguates cross-listed securities.
+sidebar:
+  order: 4
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+## Summary
+
+A **token** in Scani is any tradeable asset: a fiat currency, a
+cryptocurrency, a public equity, a private company, or "other"
+(commodity, real-estate share, etc.). Tokens are global and
+deduplicated, identified by the tuple `(symbol, typeId, marketSegment)`.
+Provider-specific identity (CoinGecko ID, Etherscan contract, Kraken
+asset code, …) lives in a per-provider namespace on
+`tokens.providerMetadata`, so new providers can plug in without schema
+changes.
+
+## Schema
+
+`token_types` is a small catalogue: `fiat`, `crypto`, `public-stock`,
+`private-company`, `other`. Like other type tables, rows-not-enum so
+admins can extend it.
+
+`tokens` is the main table:
+
+| Column | Meaning |
+|---|---|
+| `symbol` | `BTC`, `AAPL`, `EUR`, `USDC`. |
+| `name` | Display name. |
+| `typeId` | One of the catalogue rows above. |
+| `decimals` | Display precision. |
+| `marketSegment` | **Structural** — `US` for NYSE/NASDAQ, `L` for LSE, `TO` for Toronto. `NULL` for crypto and fiat. Used for dedup and for cross-listed equity disambiguation. |
+| `iconUrl` | Optional icon. |
+| `providerMetadata` (jsonb) | Per-provider identity, see below. |
+| `isScamProbability` | 0–1; tokens above the threshold are excluded by the [inclusion rule](/decisions/holding-inclusion-rule/). |
+| `isActive` | |
+| `unpriceableUntil` | Cooldown gate. When set and in the future, the historical-price backfill skips this token — it has already been established that no provider can supply prices for it. Cleared on the next successful price write. |
+| `lastPricingAttemptAt` | When the last pricing attempt ran. |
+
+### The unique key
+
+Migration `0055` widened the uniqueness key from `(symbol, typeId)` to
+**`(symbol, typeId, marketSegment)`**, with a `COALESCE` so `NULL`
+segments still dedup. This is what makes AAPL on NYSE distinct from
+AAPL on LSE — different dividends, different tax treatment, different
+liquidity, different ISIN.
+
+The 3-tuple constraint and the EVM-contract jsonb index are created
+directly in SQL in migration `0055` — Drizzle's `unique()` and
+`index()` builders can't express `COALESCE` or expression indexes
+over jsonb paths.
+
+## Provider metadata
+
+`tokens.providerMetadata` is jsonb, typed via Drizzle's `$type<>()`
+attachment to the `TokenMetadata` interface in
+`packages/infra/db/src/schema/tokens.ts`:
+
+```ts
+export interface TokenMetadata {
+  coingecko?: { id: string; symbol?: string };
+  defillama?: { coin: string };        // "ethereum:0xA0b..." or "coingecko:bitcoin"
+  etherscan?: { chainId: number; contractAddress?: string };
+  solana?: { mint: string };           // SPL mint address
+  kraken?: { asset: string };          // 'XXBT', 'XETH', 'BABY'
+  finnhub?: { symbol: string; exchange?: string };
+  [key: string]: unknown;              // open for future providers
+}
+```
+
+**First-writer-wins per namespace.** When two providers disagree
+(rare), the first to populate that namespace wins; conflicts are
+logged. Adding a new provider extends the interface and writes under
+its own key — no migration needed.
+
+<Aside type="note" title="Why providerMetadata is jsonb, not separate tables">
+  The Drizzle column carries a strongly-typed `TokenMetadata` via
+  `$type<>()`, so reads narrow correctly without a domain-layer
+  wrapper. Splitting per-provider identity into separate join tables
+  would mean a join-per-provider on every token read and a migration
+  per new provider — neither pays for itself.
+</Aside>
+
+## Token prices
+
+Prices live in `token_prices`, keyed by
+`(tokenId, baseTokenId, timestamp, granularity)`. The composite key
+allows the same `(tokenId, baseTokenId, timestamp)` to carry both a
+daily close and an intraday candle without collision.
+
+| Column | Meaning |
+|---|---|
+| `tokenId` | The token being priced. |
+| `baseTokenId` | The currency the price is in. **No USD-canonical assumption.** A Kraken BTC/EUR trade stores `baseTokenId = EUR`. |
+| `price` | Decimal string. |
+| `timestamp` | When the price was observed. |
+| `source` | Provider name. |
+| `granularity` | `'daily'` (backfilled close), `'intraday'` (live sync), `'tx-exact'` (the price exactly at a transaction's `occurredAt`). |
+
+See [Pricing & the price graph](/concepts/pricing/) for how prices
+flow through conversions, and
+[Why no USD canonicalisation](/decisions/no-usd-canonical/) for the
+rationale behind the multi-base design.
+
+## Manual price edits
+
+For tokens of type `private-company` and `other`, users can edit
+prices directly. Every edit is logged in `token_price_edit_history`
+(append-only, with `previousPrice`, `newPrice`, `editedByUserId`,
+optional `reason`). This unlocks future abuse-detection /
+user-flagging without schema changes.
+
+## Token identity & dedup
+
+Materialising a token from a partial provider-supplied identity (an
+Etherscan contract, a CoinGecko slug, a Kraken asset code) goes
+through `TokenIdentityService.findOrCreateByIdentity()`:
+
+1. EVM contract lookup by `(chainId, contractAddress)`.
+2. `(symbol, typeId, marketSegment)` lookup.
+3. Parallel enrichment via every registered
+   `TokenIdentityProvider` (CoinGecko, DeFiLlama, Etherscan, Kraken,
+   Finnhub, Solana, …).
+4. Persist with fully-enriched `providerMetadata`.
+
+See [Token identity & enrichment](/concepts/token-identity/) for
+the federated identity resolution flow and the weekly
+`backfill-token-identity` job that re-enriches stale rows.
+
+## See also
+
+- [Pricing & the price graph](/concepts/pricing/)
+- [Token identity & enrichment](/concepts/token-identity/)
+- [Manual assets](/concepts/manual-assets/)
+- [Why no USD canonicalisation](/decisions/no-usd-canonical/)
+- [Glossary: token](/reference/glossary/#token),
+  [market segment](/reference/glossary/#market-segment)

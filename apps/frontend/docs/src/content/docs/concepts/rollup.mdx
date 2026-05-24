@@ -1,0 +1,142 @@
+---
+title: Portfolio value rollup
+description: A daily cache of portfolio totals at multiple scopes, rebuildable end-to-end from the ledger, observations, and prices.
+sidebar:
+  order: 10
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+## Summary
+
+`portfolio_value_daily` is a **derived daily cache** of portfolio
+totals, keyed by `(user, scope_kind, scope_id, snapshot_date,
+base_currency)`. It holds user-wide totals *and* per-institution /
+per-account / per-holding scoped series so detail-page charts read
+from one table instead of three. It's rebuildable end-to-end from
+[transactions](/concepts/transactions/),
+[observations](/concepts/observations/), and
+[prices](/concepts/pricing/). The nightly `portfolio-value-rollup`
+job runs at 04:00 UTC after every ingester, reconciliation, and
+[transfer linking](/concepts/transfers/) has finished.
+
+## Schema
+
+| Column | Meaning |
+|---|---|
+| `userId` | uuid → `users.id`. |
+| `scopeKind` | `'user'`, `'institution'`, `'account'`, or `'holding'`. |
+| `scopeId` | The id at that scope. `userId` is the sentinel for `scopeKind='user'` (Postgres composite PKs treat NULL as not-equal-to-NULL, so a non-null sentinel keeps the unique constraint usable). |
+| `snapshotDate` | The date this row is the rollup for. |
+| `baseCurrencyId` | uuid → `tokens.id`. The currency the totals are reported in. |
+| `totalValue` | Decimal string. |
+| `coverageQuality` | `'full' \| 'partial' \| 'estimated' \| 'unknown'`. Drives chart rendering (solid / dashed / gap). |
+| `holdingsWithKnownValue` | Count. |
+| `holdingsTotal` | Count. |
+| `costBasis` | Sum of remaining open lots' cost in the row's base currency (FX-converted at purchase time). Nullable for pre-C3 rows. |
+| `realizedPnl` | Cumulative gain/loss from closed positions up to `snapshotDate`. |
+| `unrealizedPnl` | `totalValue - costBasis`. |
+| `computedAt` | When the rollup last wrote this row. |
+
+**Primary key:** `(userId, scopeKind, scopeId, snapshotDate,
+baseCurrencyId)`. Indexes on `(userId, snapshotDate desc)` and
+`(userId, scopeKind, scopeId, snapshotDate desc)` cover the chart
+reads.
+
+## Scopes
+
+| Scope | What it rolls up | Used by |
+|---|---|---|
+| `user` | Whole portfolio. | Dashboard headline + main chart. |
+| `institution` | Everything at one institution. | Institution detail page chart. |
+| `account` | Everything in one account. | Account detail page chart. |
+| `holding` | One holding. | Holding detail page chart. |
+
+All four scopes for a user are computed in the same backfill pass —
+no separate per-scope jobs.
+
+## How it's computed
+
+For each `(user, scope, date)`:
+
+1. For each holding in scope, call
+   [`BalanceAtTimeService.getBalance(holdingId, date)`](/concepts/balance-reconstruction/).
+   The rollup pre-loads per-user holdings, observations, and
+   transactions into in-memory maps so each call avoids DB round-trips.
+2. Convert each balance to the base currency via
+   [`PriceGraphService.convert(...)`](/concepts/pricing/), using
+   `granularity: 'daily'` and a pre-fetched
+   [`PriceLookup`](/concepts/pricing/#pricelookup--the-hot-path-optimisation).
+3. Sum the priced balances. Bucket each holding into a
+   `coverageQuality` based on whether the balance reconstruction had
+   a strong anchor and whether the price was fresh / hub-routed /
+   stale.
+4. Compute `costBasis`, `realizedPnl`, `unrealizedPnl` from the
+   ledger lots up to `date`.
+5. `UPSERT` the row.
+
+The job is **idempotent per (user, scope, date, base)** — re-running
+just overwrites.
+
+## The holding-inclusion rule
+
+The rollup applies the canonical
+[holding-inclusion rule](/decisions/holding-inclusion-rule/):
+
+```ts
+function isIncludedInTotal(holding, token) {
+  if (holding.isHidden) return false;
+  if (!holding.isActive) return false;
+  if (token.isScamProbability >= SCAM_PROBABILITY_THRESHOLD) return false;
+  return true;
+}
+```
+
+The same rule is duplicated in SQL inside
+`PortfolioValueDailyRepository.findIncludedHoldingScopeRange` so the
+chart read path and the dashboard headline always agree. Keeping the
+two definitions in sync is the *point* — that's what makes the
+chart's latest point reconcile with the headline.
+
+## Coverage quality
+
+| Bucket | Conditions |
+|---|---|
+| `full` | Strong observation/current anchor + a fresh price for every included holding. |
+| `partial` | Some holdings priced, some missing. |
+| `estimated` | Used a stale or hub-routed price for at least one priced holding. |
+| `unknown` | No anchor available for the scope. |
+
+The chart UI reads `coverageQuality` and renders accordingly: a
+`full` series is solid, `partial` is shaded, `estimated` is dashed,
+`unknown` becomes a gap.
+
+## Triggering a rebuild
+
+- **Scheduled.** The `portfolio-value-rollup` job runs nightly at
+  04:00 UTC. See the [Job catalogue](/reference/jobs/).
+- **On import.** A user-initiated import triggers a
+  `portfolio-history-backfill` user job for that user, scoped to the
+  affected date range.
+- **Manual.** Operators can enqueue a rollup for one user / one
+  date range via the HMAC-gated job endpoint on the api.
+
+<Aside type="note" title="Why a cache instead of computing on every dashboard load">
+  Computing the totals per request would mean reconstructing
+  balances for every holding for every date in the window on every
+  page load — fine for one holding, ruinous for a user with hundreds
+  of positions. The cache trades disk for read latency. Because it
+  rebuilds from the source primitives, it's safe to drop, blow away,
+  or rebuild incrementally without losing data.
+</Aside>
+
+## See also
+
+- [Balance reconstruction](/concepts/balance-reconstruction/)
+- [Pricing & the price graph](/concepts/pricing/)
+- [Why the holding-inclusion rule lives twice](/decisions/holding-inclusion-rule/)
+- [Job catalogue](/reference/jobs/) — `portfolio-value-rollup`,
+  `historical-price-backfill`, `forex-backfill`,
+  `portfolio-history-backfill`
+- [Glossary: rollup](/reference/glossary/#rollup),
+  [coverage quality](/reference/glossary/#coverage-quality)

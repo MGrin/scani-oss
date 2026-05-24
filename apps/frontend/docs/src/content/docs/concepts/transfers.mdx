@@ -1,0 +1,134 @@
+---
+title: Transfers & swaps
+description: How Scani reconnects the two halves of a cross-venue move (CEX withdraw ↔ wallet deposit) and the two legs of a swap, so cost basis flows across venues.
+sidebar:
+  order: 6
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+## Summary
+
+A **transfer** is the same economic event seen from two sides — money
+leaving one [account](/concepts/accounts/) and arriving at another. A
+**swap** is two legs of one trade — one token going out, another coming
+in. Scani records each side as its own
+[transaction](/concepts/transactions/), then links the pair with a
+shared `transferGroupId` or `swapGroupId`. The linking job runs
+nightly. Without it, a Binance withdrawal followed by a Metamask
+deposit would look like two unrelated events, breaking cost-basis
+continuity across venues.
+
+## Two flavours of pairing
+
+### Transfers (cross-venue)
+
+A withdraw from one tracked account paired to a deposit at another
+tracked account.
+
+- **Outflow kinds:** `withdraw`, `transfer_out`.
+- **Inflow kinds:** `deposit`, `transfer_in`.
+- **Linked by:** `transferGroupId`.
+- **Matched by:** `LinkTransferPairsUseCase`, run by the
+  `transfer-linking` scheduled job (nightly at 03:45 UTC).
+
+### Swaps (single venue, two legs)
+
+Both sides of one trade — `swap_in` for what came in, `swap_out` for
+what went out — share a `swapGroupId`. Ingesters that already know
+the two legs are part of the same swap write the group ID at insert
+time; no separate matching job runs for swaps.
+
+## Transfer matching rules
+
+`LinkTransferPairsUseCase.execute({ userId, sinceDays })`:
+
+1. **Kinds:** outflow side is `withdraw` or `transfer_out`; inflow
+   side is `deposit` or `transfer_in`.
+2. **Same token, same user.** No cross-user, no cross-token matches.
+3. **Same quantity within ±1%.** The 1% drift absorbs typical network
+   fees (gas on chain, exchange withdrawal fees).
+4. **Timestamps within 30 minutes.** CEX queues can delay; chain
+   finality is minutes.
+
+Matches write `transferGroupId = <fresh uuid>` on both rows. The
+operation is **idempotent** — re-running the job skips rows that
+already have a group ID.
+
+## The implementation, briefly
+
+The use case (`packages/business/domain/src/use-cases/LinkTransferPairsUseCase.ts`)
+pulls **all** outflows and **all** inflows for the user in two
+queries, then matches in memory. A previous implementation issued
+one candidate `SELECT` per outflow; on heavy-CEX users with years
+of withdrawals, that produced thousands of round-trips per cron run
+and timed out before finishing. Two queries plus in-memory windowed
+matching is `O(n log n)` per user and finishes comfortably in the
+cron budget.
+
+```ts
+const OUTFLOW_KINDS = ['withdraw', 'transfer_out'];
+const INFLOW_KINDS = ['deposit', 'transfer_in'];
+const MATCH_WINDOW_MS = 30 * 60 * 1000;
+const QTY_MATCH_EPSILON = new Decimal('0.01');
+```
+
+## Why this matters
+
+Without linking, a sequence like:
+
+1. Buy 1 BTC on Binance at $40,000.
+2. Withdraw 1 BTC to your own wallet.
+3. Sell 1 BTC on a DEX three months later at $50,000.
+
+…shows up as two disconnected legs: a closed Binance lot (cost basis
+$40k, fully realised) and a "free" 1 BTC at the DEX (zero cost
+basis, full $50k realised gain on sale). Total realised gain looks
+like $50k, double-counted.
+
+**With linking**, the cross-venue transfer is recognised: cost basis
+flows through. The lot opened at Binance is the same lot closed at
+the DEX. Realised gain is $10k, computed once.
+
+This isn't tax advice — it's just the correct economic view. Tax
+treatment varies by jurisdiction and is out of scope.
+
+<Aside type="note" title="Why matching is nightly, not inline">
+  Inline matching at ingest time would mean the order ingesters run
+  in matters: a withdraw arriving before its paired deposit creates a
+  half-match. Running the matcher *after* every ingester has finished
+  means the whole cross-user transfer graph is visible, and the
+  matcher gets one shot per night to do the right thing. See
+  [Why transfer linking runs nightly](/decisions/nightly-transfer-linking/).
+</Aside>
+
+## Ambiguity
+
+Some withdraws genuinely have multiple candidate deposits (round
+amounts, overlapping windows). The matcher counts these as
+*ambiguous* and **does not** link them — better to leave a known gap
+than to make a confident wrong guess. The summary returned by the use
+case (`scanned`, `linked`, `ambiguous`, `durationMs`) is logged by
+the cron handler so operators can watch the ambiguity rate.
+
+A future UI control will let users resolve ambiguities by hand; the
+schema already supports it (just write the `transferGroupId`).
+
+## What the group ID enables
+
+Once `transferGroupId` is set on both rows:
+
+- Cost-basis flows: the lot opened at the outflow source carries
+  through to the inflow destination.
+- The dashboard hides the inflow's "balance grew from nowhere"
+  surprise.
+- The historical [rollup](/concepts/rollup/) computes realised PnL
+  against the upstream lot, not against zero.
+
+## See also
+
+- [Transactions (the ledger)](/concepts/transactions/)
+- [Why transfer linking runs nightly](/decisions/nightly-transfer-linking/)
+- [Job catalogue](/reference/jobs/) — `transfer-linking`
+- [Glossary: transfer group](/reference/glossary/#transfer-group),
+  [swap group](/reference/glossary/#swap-group)
