@@ -11,6 +11,10 @@ export default defineConfig({
       title: 'Scani docs',
       description:
         'Self-hostable, open-source portfolio tracker for crypto and traditional assets. Domain model, self-hosting guide, design decisions, and a full financial glossary.',
+      logo: {
+        light: './src/assets/logo-light.svg',
+        dark: './src/assets/logo-dark.svg',
+      },
       customCss: ['./src/styles/custom.css'],
       social: [
         {
