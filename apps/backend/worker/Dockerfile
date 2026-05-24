@@ -24,6 +24,11 @@ RUN bun install --frozen-lockfile --filter @scani/worker
 FROM oven/bun:${BUN_VERSION} AS build
 WORKDIR /app
 
+# See apps/backend/api/Dockerfile for the rationale — `bun build
+# --minify` folds `process.env.NODE_ENV === 'production'` at build
+# time, so NODE_ENV must be set in this stage (not just runtime).
+ENV NODE_ENV=production
+
 COPY --from=deps /app/node_modules ./node_modules
 
 COPY package.json bun.lock tsconfig.json ./
