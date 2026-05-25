@@ -4,6 +4,7 @@
 import type { QA } from '../data/faq';
 import {
   absoluteUrl,
+  BLUESKY_URL,
   DEFAULT_OG_IMAGE,
   GITHUB_URL,
   SITE_NAME,
@@ -20,7 +21,7 @@ export function organizationJsonLd(): JsonLd {
     name: SITE_NAME,
     url: SITE_URL,
     logo: DEFAULT_OG_IMAGE,
-    sameAs: [GITHUB_URL, TWITTER_URL],
+    sameAs: [GITHUB_URL, TWITTER_URL, BLUESKY_URL],
   };
 }
 
@@ -84,7 +85,7 @@ export function contactPointOrganizationJsonLd(email: string): JsonLd {
     name: SITE_NAME,
     url: SITE_URL,
     logo: DEFAULT_OG_IMAGE,
-    sameAs: [GITHUB_URL, TWITTER_URL],
+    sameAs: [GITHUB_URL, TWITTER_URL, BLUESKY_URL],
     contactPoint: {
       '@type': 'ContactPoint',
       contactType: 'customer support',
