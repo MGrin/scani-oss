@@ -45,7 +45,11 @@ function getEncryptionKey(): Buffer | null {
  * database in the clear. We refuse to start that code path in production.
  */
 function assertEncryptionKeyInProduction(): void {
-  if (process.env.NODE_ENV === 'production' && !process.env.ENCRYPTION_KEY) {
+  // Bun.env (runtime API) defeats `bun build --compile --minify`'s
+  // static substitution of `process.env.NODE_ENV` — see @scani/config
+  // getNodeEnv() for the failure mode this avoids.
+  const nodeEnv = Bun.env.NODE_ENV;
+  if (nodeEnv === 'production' && !process.env.ENCRYPTION_KEY) {
     throw new Error(
       'ENCRYPTION_KEY is required in production. Refusing to store sensitive ' +
         'data without encryption. Set ENCRYPTION_KEY (>=32 chars) and restart.'

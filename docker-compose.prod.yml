@@ -1,12 +1,20 @@
 # Production-style compose for self-hosters. Pulls pre-built multi-arch
 # images from Docker Hub (`scani/api`, `scani/worker`, `scani/data-provider`,
-# `scani/frontend-app`) rather than building from source — useful as a
-# one-command bring-your-own-server setup.
+# `scani/frontend-app`, `scani/migrate`) rather than building from source
+# — useful as a one-command bring-your-own-server setup.
 #
-# Usage:
+# Usage (first boot AND every upgrade):
 #   cp .env.example .env             # then fill in real values
+#   docker compose -f docker-compose.prod.yml --profile migrate run --rm migrate
 #   docker compose -f docker-compose.prod.yml up -d
 #   docker compose -f docker-compose.prod.yml logs -f frontend-app api worker
+#
+# The `migrate` service is intentionally profile-gated (not part of the
+# default `up -d`) — schema changes are an explicit operator step, not
+# something the app silently does on its own. Skip the migrate step and
+# the api's /readyz endpoint returns 503 with a clear "schema not
+# ready" message; see self-hosting/tier1/production for the full
+# migration playbook.
 #
 # Behind a reverse proxy: only `frontend-app` needs to be reachable from
 # the public internet. nginx inside `frontend-app` reverse-proxies /api
@@ -78,6 +86,30 @@ services:
         mc alias set local http://minio:9000 ${MINIO_ROOT_USER:-minioadmin} ${MINIO_ROOT_PASSWORD:-minioadmin}
         mc mb --ignore-existing local/${S3_BUCKET:-job-uploads}
         echo "bucket ${S3_BUCKET:-job-uploads} ready"
+    restart: "no"
+
+  # ---- Schema migrator (opt-in, profile-gated) ----
+  #
+  # One-shot container. Reads DATABASE_URL, applies pending Drizzle
+  # migrations, exits with code 0 on success. Re-running is a no-op
+  # for already-applied migrations.
+  #
+  # Run before every `up -d` on a fresh deploy AND on every upgrade
+  # after `docker compose pull`:
+  #
+  #   docker compose -f docker-compose.prod.yml --profile migrate run --rm migrate
+  #
+  # The `profiles: [migrate]` gate keeps it out of the default `up -d`
+  # — operators trigger schema changes explicitly instead of leaving
+  # them as a startup-race side-effect of the api/worker.
+  migrate:
+    profiles: ["migrate"]
+    image: scani/migrate:${SCANI_IMAGE_TAG:-latest}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: ${DATABASE_URL:-postgres://scani:scani@postgres:5432/scani?sslmode=disable}
     restart: "no"
 
   # ---- Scani services (pulled from Docker Hub) ----
@@ -155,8 +187,13 @@ services:
       LOG_ID_PEPPER: ${LOG_ID_PEPPER:?LOG_ID_PEPPER is required in production}
       # Sentry
       SENTRY_DSN: ${SENTRY_DSN:-}
+    # /readyz also validates the schema (via @scani/db's awaitSchemaReady).
+    # It returns 503 when migrations haven't been applied — so the
+    # `service_healthy` gate below holds frontend-app back instead of
+    # routing traffic to an api that will 500 on every authenticated
+    # call. The plain /health (process liveness) would mask that.
     healthcheck:
-      test: ["CMD", "curl", "-fsS", "http://localhost:3001/health"]
+      test: ["CMD", "curl", "-fsS", "http://localhost:3001/readyz"]
       interval: 30s
       timeout: 5s
       retries: 6

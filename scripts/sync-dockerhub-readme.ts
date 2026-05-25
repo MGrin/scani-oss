@@ -100,7 +100,9 @@ async function login(username: string, token: string): Promise<string> {
   return body.token;
 }
 
-async function patchRepo(jwt: string, readme: ReadmeFile): Promise<void> {
+type PatchResult = 'updated' | 'skipped-missing-repo';
+
+async function patchRepo(jwt: string, readme: ReadmeFile): Promise<PatchResult> {
   const url = `${HUB_API}/repositories/${NAMESPACE}/${readme.image}/`;
   const res = await fetch(url, {
     method: 'PATCH',
@@ -113,9 +115,17 @@ async function patchRepo(jwt: string, readme: ReadmeFile): Promise<void> {
       full_description: readme.fullDescription,
     }),
   });
+  if (res.status === 404) {
+    // Docker Hub auto-creates repos on first image push, not on README PATCH.
+    // A README can land before its image does (e.g. when a new image is added
+    // to docker-publish.yml but no `v*` tag has been cut yet). Treat as a
+    // soft skip — the next sync run after the first publish will populate it.
+    return 'skipped-missing-repo';
+  }
   if (!res.ok) {
     throw new Error(`PATCH ${NAMESPACE}/${readme.image} failed: ${res.status} ${await res.text()}`);
   }
+  return 'updated';
 }
 
 async function main(): Promise<void> {
@@ -150,10 +160,22 @@ async function main(): Promise<void> {
   const jwt = await login(username, token);
   console.log('Logged in to Docker Hub.');
 
+  let updated = 0;
+  let skipped = 0;
   for (const r of readmes) {
-    await patchRepo(jwt, r);
-    console.log(`  ✓ updated scani/${r.image}`);
+    const result = await patchRepo(jwt, r);
+    if (result === 'updated') {
+      updated += 1;
+      console.log(`  ✓ updated scani/${r.image}`);
+    } else {
+      skipped += 1;
+      console.log(
+        `  ⚠ skipped scani/${r.image} — repo does not exist yet on Docker Hub. ` +
+          `It will be created on the next image push; re-run this sync afterwards.`
+      );
+    }
   }
+  console.log(`Done. updated=${updated} skipped=${skipped}`);
 }
 
 main().catch((err) => {
