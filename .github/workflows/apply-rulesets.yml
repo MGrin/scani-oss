@@ -1,0 +1,50 @@
+name: Apply Rulesets
+
+# Syncs .github/rulesets/*.json to the repo's GitHub Rulesets configuration.
+# Idempotent: re-running is a no-op; editing the JSON updates in place;
+# deleting a file does NOT delete the ruleset (explicit operator action).
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/rulesets/**'
+      - '.github/workflows/apply-rulesets.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  administration: write
+
+concurrency:
+  group: apply-rulesets
+  cancel-in-progress: false
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0
+      - name: Apply rulesets
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          files=(.github/rulesets/*.json)
+          if [ ${#files[@]} -eq 0 ]; then
+            echo "No ruleset files found."
+            exit 0
+          fi
+          for file in "${files[@]}"; do
+            name=$(jq -r '.name' "$file")
+            existing_id=$(gh api "repos/$REPO/rulesets" --jq ".[] | select(.name==\"$name\") | .id")
+            if [ -n "$existing_id" ]; then
+              echo "Updating ruleset '$name' (id=$existing_id) from $file"
+              gh api --method PUT "repos/$REPO/rulesets/$existing_id" --input "$file"
+            else
+              echo "Creating ruleset '$name' from $file"
+              gh api --method POST "repos/$REPO/rulesets" --input "$file"
+            fi
+          done
