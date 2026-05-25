@@ -17,6 +17,8 @@
   "scripts": {
     "prepare": "git config --local core.hooksPath .githooks || true",
     "dev": "concurrently \"cd apps/backend/api && bun dev\" \"cd apps/frontend/app && bun dev\"",
+    "dev:worker": "bun --cwd apps/backend/worker dev",
+    "dev:data-provider": "bun --cwd apps/backend/data-provider dev",
     "dev:docs": "bun --cwd apps/frontend/docs dev",
     "dev:stack": "bun scripts/sync-env.ts && docker compose --profile full up -d --build",
     "dev:stack:down": "docker compose --profile full down",
