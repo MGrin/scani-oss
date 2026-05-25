@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { isNodeEnvProduction } from '@scani/config';
 
 /**
  * Deterministic pseudonymization helper for user-bearing identifiers in
@@ -27,10 +28,11 @@ import { createHash } from 'node:crypto';
 const PEPPER = process.env.LOG_ID_PEPPER;
 const HEX_PREFIX_LEN = 16;
 
-if (process.env.NODE_ENV === 'production' && (!PEPPER || PEPPER.length < 16)) {
+if (isNodeEnvProduction() && (!PEPPER || PEPPER.length < 16)) {
   throw new Error(
     'LOG_ID_PEPPER is required in production and must be at least 16 chars. ' +
-      'Generate with `openssl rand -hex 32` and stage as a Fly app secret.'
+      'Generate with `openssl rand -hex 32` and set it as an environment ' +
+      'variable on every backend service (api, worker, data-provider).'
   );
 }
 

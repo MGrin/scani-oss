@@ -8,25 +8,31 @@
 # object storage (MinIO) all run in containers.
 #
 # Default ports (host-side offsets to avoid clashing with other local services):
-#   Postgres        : localhost:5433
-#   Redis           : localhost:6380
-#   API             : localhost:3011
-#   Frontend        : localhost:5173   (apps/frontend/app — the user-facing SPA)
-#   Data-provider   : localhost:8082   (apps/backend/data-provider — tRPC + Better-Auth)
-#   Mailpit         : SMTP localhost:1026, UI http://localhost:8026
-#   MinIO           : S3 API localhost:9000, console http://localhost:9001 (minioadmin/minioadmin)
+#   Postgres        : localhost:5433   (override: POSTGRES_HOST_PORT)
+#   Redis           : localhost:6380   (override: REDIS_HOST_PORT)
+#   API             : localhost:3011   (override: API_HOST_PORT)
+#   Frontend        : localhost:5173   (override: FRONTEND_HOST_PORT — apps/frontend/app)
+#   Data-provider   : localhost:8082   (override: DATA_PROVIDER_HOST_PORT)
+#   Mailpit         : SMTP localhost:1026 (MAILPIT_SMTP_HOST_PORT) / UI 8026 (MAILPIT_UI_HOST_PORT)
+#   MinIO           : S3 9000 (MINIO_API_HOST_PORT) / console 9001 (MINIO_CONSOLE_HOST_PORT)
+#                     (default creds: minioadmin/minioadmin)
+#
+# To run two scani checkouts in parallel without port conflicts, set each
+# override variable in the second worktree's `.env` (or use the
+# `docker-compose.override.yml.example` template). See
+# `apps/frontend/docs/src/content/docs/self-hosting/tier1/troubleshooting.md`
+# for the "Running two scani checkouts in parallel" recipe.
 
 services:
   postgres:
     image: postgres:16-alpine
-    container_name: postgres
     restart: unless-stopped
     environment:
       POSTGRES_USER: scani
       POSTGRES_PASSWORD: scani
       POSTGRES_DB: scani
     ports:
-      - "5433:5432"
+      - "${POSTGRES_HOST_PORT:-5433}:5432"
     volumes:
       - postgres-data:/var/lib/postgresql/data
     healthcheck:
@@ -37,11 +43,10 @@ services:
 
   redis:
     image: redis:7-alpine
-    container_name: redis
     restart: unless-stopped
     command: ["redis-server", "--appendonly", "yes"]
     ports:
-      - "6380:6379"
+      - "${REDIS_HOST_PORT:-6380}:6379"
     volumes:
       - redis-data:/data
     healthcheck:
@@ -52,11 +57,10 @@ services:
 
   mailpit:
     image: axllent/mailpit:latest
-    container_name: mailpit
     restart: unless-stopped
     ports:
-      - "1026:1025"   # SMTP
-      - "8026:8025"   # Web UI
+      - "${MAILPIT_SMTP_HOST_PORT:-1026}:1025"   # SMTP
+      - "${MAILPIT_UI_HOST_PORT:-8026}:8025"     # Web UI
     environment:
       MP_MAX_MESSAGES: 500
       MP_SMTP_AUTH_ACCEPT_ANY: 1
@@ -67,15 +71,14 @@ services:
   # Data persists in the named volume; reset with `docker compose down -v`.
   minio:
     image: minio/minio:latest
-    container_name: minio
     restart: unless-stopped
     command: ["server", "/data", "--console-address", ":9001"]
     environment:
       MINIO_ROOT_USER: minioadmin
       MINIO_ROOT_PASSWORD: minioadmin
     ports:
-      - "9000:9000"   # S3 API
-      - "9001:9001"   # Web console
+      - "${MINIO_API_HOST_PORT:-9000}:9000"      # S3 API
+      - "${MINIO_CONSOLE_HOST_PORT:-9001}:9001"  # Web console
     volumes:
       - minio-data:/data
     healthcheck:
@@ -87,7 +90,6 @@ services:
   # One-shot bucket creator. Exits as soon as the dev bucket exists.
   minio-init:
     image: minio/mc:latest
-    container_name: minio-init
     depends_on:
       minio:
         condition: service_healthy
@@ -108,7 +110,6 @@ services:
   # for both docker and host-side dev.
   env-sync:
     image: oven/bun:1.3.13
-    container_name: env-sync
     working_dir: /app
     volumes:
       - .:/app
@@ -121,7 +122,6 @@ services:
   # boots — the volume persists across `compose up` calls.
   deps:
     image: oven/bun:1.3.13
-    container_name: deps
     working_dir: /app
     volumes:
       - .:/app
@@ -137,7 +137,6 @@ services:
   migrate:
     profiles: ["full", "migrate"]
     image: oven/bun:1.3.13
-    container_name: migrate
     working_dir: /app
     volumes:
       - .:/app
@@ -162,7 +161,6 @@ services:
       context: .
       dockerfile: apps/backend/data-provider/Dockerfile
     image: data-provider:dev
-    container_name: data-provider
     depends_on:
       postgres:
         condition: service_healthy
@@ -173,7 +171,7 @@ services:
       env-sync:
         condition: service_completed_successfully
     ports:
-      - "8082:8082"
+      - "${DATA_PROVIDER_HOST_PORT:-8082}:8082"
     env_file:
       - path: ./.env
         required: false
@@ -195,7 +193,11 @@ services:
       DATABASE_URL: postgres://scani:scani@postgres:5432/scani?sslmode=disable
       BETTER_AUTH_SECRET: dev_cloud_better_auth_secret_change_me_not_prod_safe
       BETTER_AUTH_URL: http://localhost:8082
-      CLOUD_FRONTEND_ORIGIN: http://localhost:5176
+      # Allowed origin for the cloud-frontend (browser) when calling the
+      # data-provider's `cookieProcedure` routes. Matches the dev SPA
+      # origin so manual testing of the cloud-management surface from
+      # the running frontend container at :5173 works out of the box.
+      CLOUD_FRONTEND_ORIGIN: http://localhost:5173
       # Fastmail is intentionally disabled in dev so magic-link / OTP /
       # verification emails land in Mailpit (SMTP_URL below). A root .env
       # or shell FASTMAIL_API_TOKEN is overridden to an empty string here —
@@ -223,7 +225,6 @@ services:
       context: .
       dockerfile: apps/backend/api/Dockerfile
     image: api:dev
-    container_name: api
     depends_on:
       postgres:
         condition: service_healthy
@@ -238,7 +239,7 @@ services:
       data-provider:
         condition: service_started
     ports:
-      - "3011:8080"
+      - "${API_HOST_PORT:-3011}:3001"
     # Root .env flows through — the `environment:` block below overrides any
     # key that needs a container-network URL instead of the host-side default
     # (DATABASE_URL, REDIS_URL, SMTP_URL, S3_ENDPOINT, …). Everything else —
@@ -248,7 +249,7 @@ services:
         required: false
     environment:
       NODE_ENV: development
-      PORT: "8080"
+      PORT: "3001"
       HOST: "0.0.0.0"
       SERVICE_NAME: api
       # Service-to-service URLs (compose network hostnames).
@@ -282,7 +283,6 @@ services:
       context: .
       dockerfile: apps/backend/worker/Dockerfile
     image: worker:dev
-    container_name: worker
     depends_on:
       postgres:
         condition: service_healthy
@@ -325,7 +325,6 @@ services:
   frontend:
     profiles: ["full"]
     image: oven/bun:1.3.13
-    container_name: frontend
     working_dir: /app/apps/frontend/app
     depends_on:
       api:
@@ -335,9 +334,9 @@ services:
       deps:
         condition: service_completed_successfully
     environment:
-      VITE_API_URL: http://localhost:3011
+      VITE_API_URL: http://localhost:${API_HOST_PORT:-3011}
     ports:
-      - "5173:5173"
+      - "${FRONTEND_HOST_PORT:-5173}:5173"
     volumes:
       - .:/app
       - workspace-node-modules:/app/node_modules

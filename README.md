@@ -44,6 +44,12 @@ To stop:
 bun run dev:stack:down   # containers down, volumes preserved
 ```
 
+Need to tweak the dev stack locally (different port, mounted init
+SQL, custom volume path) without touching the committed compose
+file? Copy [`docker-compose.override.yml.example`](./docker-compose.override.yml.example)
+to `docker-compose.override.yml` — the override file is gitignored
+and is auto-merged by `docker compose` on every command.
+
 ## Screenshots
 
 **Dashboard** — portfolio overview, allocations, recent activity.
@@ -124,13 +130,26 @@ at call-time if unset):
 
 The repo ships a [`docker-compose.prod.yml`](./docker-compose.prod.yml)
 that pulls pre-built multi-arch images from Docker Hub
-(`scani/api`, `scani/worker`, `scani/data-provider`, `scani/frontend-app`)
-and wires them up with Postgres + Redis + MinIO. One-command bring-up:
+(`scani/api`, `scani/worker`, `scani/data-provider`,
+`scani/frontend-app`, plus the opt-in `scani/migrate` schema runner)
+and wires them up with Postgres + Redis + MinIO. Two-command
+bring-up — migrations are explicit, not auto-applied:
 
 ```bash
-cp .env.example .env                              # set real values
+cp .env.example .env                                                            # set real values
+
+# Apply schema migrations (do this on first install AND on every upgrade)
+docker compose -f docker-compose.prod.yml --profile migrate run --rm migrate
+
+# Bring the long-running services up
 docker compose -f docker-compose.prod.yml up -d
 ```
+
+See [self-hosting → production → Apply migrations](https://docs.scani.xyz/self-hosting/tier1/production/#apply-migrations)
+for the alternative orchestrators (Kubernetes Job, CI deploy step,
+standalone `docker run`) and what the app does if you forget the
+migrate step (api's `/readyz` returns 503, worker logs
+`Awaiting schema readiness` in a restart loop).
 
 For a real deployment, set the required env vars in `.env`
 (`BACKEND_URL`, `FRONTEND_URL`, `BETTER_AUTH_SECRET`, `ENCRYPTION_KEY`,
@@ -235,8 +254,8 @@ store for binary uploads.
 
 Out of the box, Scani knows how to talk to:
 
-**Exchanges**: Binance, Kraken, Bybit, OKX, Coinbase, KuCoin, Gate.io,
-HTX, Bitfinex, Bitstamp, Crypto.com, Gemini, MEXC, BitMart, Phemex, ProBit
+**Exchanges**: Binance, Bitget, Bitstamp, Bybit, Coinbase, Gate.io,
+Gemini, Huobi, Kraken, KuCoin, MEXC, OKX
 
 **Brokerages / banks**: Interactive Brokers (Flex Web Service), Wise
 

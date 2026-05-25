@@ -1,15 +1,37 @@
 # Copy to docker-compose.override.yml to customize locally.
 # This file is gitignored.
 #
-# Common uses:
-#   - Change exposed ports (e.g. if 5432 is taken)
-#   - Mount custom init SQL into postgres
-#   - Persist volumes outside the default Docker-managed location
-
+# Most port collisions are easiest to fix by setting the per-service
+# `*_HOST_PORT` env vars in your root `.env` (see `docker-compose.yml`
+# header). Use a compose override for everything *else* — extra services,
+# volume mounts, init SQL, etc. — that env vars can't express.
+#
+# ────────────────────────────────────────────────────────────────────────
+# Recipe: running two scani checkouts in parallel
+# ────────────────────────────────────────────────────────────────────────
+# Pick one of the two worktrees as the "secondary" and add a +1000 offset
+# to every host port. The simplest way is via the worktree's `.env`:
+#
+#   POSTGRES_HOST_PORT=6433
+#   REDIS_HOST_PORT=7380
+#   API_HOST_PORT=4011
+#   FRONTEND_HOST_PORT=6173
+#   DATA_PROVIDER_HOST_PORT=9082
+#   MAILPIT_SMTP_HOST_PORT=2026
+#   MAILPIT_UI_HOST_PORT=9026
+#   MINIO_API_HOST_PORT=10000
+#   MINIO_CONSOLE_HOST_PORT=10001
+#
+# Also set distinct compose project names so the two stacks don't share
+# named volumes / networks:
+#
+#   COMPOSE_PROJECT_NAME=scani-secondary
+#
+# That's it — no override file needed for the parallel-worktree case.
+# Use this override template only for harder customizations:
+#
 # services:
 #   postgres:
-#     ports:
-#       - "15432:5432"
 #     volumes:
 #       - ./.local/postgres-data:/var/lib/postgresql/data
 #       - ./scripts/init-db.sql:/docker-entrypoint-initdb.d/init.sql:ro

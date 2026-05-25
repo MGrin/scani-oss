@@ -1,5 +1,7 @@
-import { isProduction } from '@scani/config';
+import { getNodeEnv, isNodeEnvProduction } from '@scani/config';
 import pino from 'pino';
+
+const isProductionEnv = isNodeEnvProduction();
 
 export type LogContext = object;
 
@@ -26,10 +28,10 @@ export interface CustomLogger extends pino.Logger {
   fatal(obj: LogContext, message: string): void;
 }
 
-// `isDevelopment` is not the complement of `isProduction` — `NODE_ENV=test`
+// `isDevelopment` is not the complement of `isProductionEnv` — `NODE_ENV=test`
 // (Bun's default) makes both false. Keeping it local since `@scani/config`
 // only exports the production gate.
-const isDevelopment = process.env.NODE_ENV === 'development' || !process.env.NODE_ENV;
+const isDevelopment = getNodeEnv() === 'development' || !getNodeEnv();
 
 // Each app sets `SERVICE_NAME` in its container env so a shared log
 // stream can distinguish api / worker / data-provider rows.
@@ -47,7 +49,7 @@ const serviceVersion = process.env.SERVICE_VERSION || 'unknown';
 // guard at module load.
 const requestBodyLogRequested = process.env.LOG_REQUEST_BODIES === 'true';
 const responseBodyLogRequested = process.env.LOG_RESPONSE_BODIES === 'true';
-if (isProduction && (requestBodyLogRequested || responseBodyLogRequested)) {
+if (isProductionEnv && (requestBodyLogRequested || responseBodyLogRequested)) {
   throw new Error(
     'LOG_REQUEST_BODIES / LOG_RESPONSE_BODIES are debug-only flags and ' +
       'must not be enabled in production. Refusing to start.'
@@ -56,12 +58,12 @@ if (isProduction && (requestBodyLogRequested || responseBodyLogRequested)) {
 
 export const logConfig = {
   level: (process.env.LOG_LEVEL || (isDevelopment ? 'debug' : 'info')).toLowerCase(),
-  pretty: isProduction ? false : process.env.LOG_PRETTY === 'true' || isDevelopment,
+  pretty: isProductionEnv ? false : process.env.LOG_PRETTY === 'true' || isDevelopment,
   timestamp: process.env.LOG_TIMESTAMP !== 'false',
-  colorize: isProduction ? false : process.env.LOG_COLORIZE !== 'false' && isDevelopment,
+  colorize: isProductionEnv ? false : process.env.LOG_COLORIZE !== 'false' && isDevelopment,
   logSqlQueries: process.env.LOG_SQL_QUERIES === 'true',
-  logRequestBodies: !isProduction && requestBodyLogRequested,
-  logResponseBodies: !isProduction && responseBodyLogRequested,
+  logRequestBodies: !isProductionEnv && requestBodyLogRequested,
+  logResponseBodies: !isProductionEnv && responseBodyLogRequested,
   logWebSocketMessages: process.env.LOG_WEBSOCKET_MESSAGES !== 'false',
 };
 
@@ -139,7 +141,7 @@ const createHumanReadableLogger = () => {
     formatters: {
       log: (object: Record<string, unknown>) => ({
         ...object,
-        environment: process.env.NODE_ENV || 'development',
+        environment: getNodeEnv() || 'development',
       }),
     },
     hooks: {
@@ -277,7 +279,7 @@ export const logger = (
         formatters: {
           log: (object: Record<string, unknown>) => ({
             ...object,
-            environment: process.env.NODE_ENV || 'development',
+            environment: getNodeEnv() || 'development',
           }),
         },
       })

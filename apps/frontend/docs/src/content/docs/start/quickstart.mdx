@@ -156,6 +156,26 @@ HMR, easier debugger attach) and only run infra in Docker:
 - **Persistent data lives in named volumes.** `docker compose down`
   preserves them; `docker compose down -v` wipes them. The Postgres
   data, the MinIO bucket, and the Redis AOF all live there.
+- **Two scani checkouts running in parallel share nothing by default.**
+  Compose volumes are scoped per project name (the parent directory),
+  so each worktree gets its own Postgres / Redis / MinIO data. If you
+  want them to share, use `--project-name` explicitly. If you don't,
+  remember each `bun run dev:stack:down -v` only wipes that worktree's
+  data.
+
+## Going to production
+
+The dev stack above is the foundation for the production deployment
+flow at [Self-hosting → Production](/self-hosting/tier1/production/).
+Two notable differences:
+
+- **Migrations are an explicit step.** Prod compose ships them as a
+  profile-gated one-shot (`docker compose --profile migrate run --rm
+  migrate`) — you run it on first install and on every upgrade. The
+  dev compose runs them automatically as part of `bun run dev:stack`.
+- **`/api/readyz` validates schema.** The prod compose api healthcheck
+  fails (and frontend-app is blocked) until migrations have been
+  applied. Forgetting to migrate is a loud failure, not a silent one.
 
 ## Next steps
 

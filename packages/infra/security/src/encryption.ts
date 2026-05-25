@@ -1,5 +1,5 @@
 import crypto from 'node:crypto';
-import { isProduction } from '@scani/config';
+import { isNodeEnvProduction } from '@scani/config';
 import { loadSecurityConfig } from './config';
 
 // AES-256-GCM credential encryption with per-record salts.
@@ -23,7 +23,7 @@ import { loadSecurityConfig } from './config';
 // Production safety lives in two places: `loadSecurityConfig` refuses
 // to parse the env without ENCRYPTION_KEY in production, AND `encrypt` /
 // `decrypt` throw if they reach the plaintext-passthrough branch while
-// `isProduction === true`. The dev/test paths still tolerate plaintext
+// `isNodeEnvProduction()` is true. The dev/test paths still tolerate plaintext
 // for docker-compose stacks and unit tests.
 
 const ALGORITHM = 'aes-256-gcm';
@@ -91,7 +91,7 @@ export function encrypt(data: string | Record<string, unknown>): string {
     const plaintext = typeof data === 'string' ? data : JSON.stringify(data);
     const rawKey = getRawKey();
     if (!rawKey) {
-      if (isProduction) {
+      if (isNodeEnvProduction()) {
         throw new Error(
           'ENCRYPTION_KEY is required in production. Refusing to store sensitive data as plaintext.'
         );
@@ -137,7 +137,7 @@ function parsePlainText<T>(data: string): T {
 export function decrypt<T = string>(encryptedData: string): T {
   const rawKey = getRawKey();
   if (!rawKey) {
-    if (isProduction) {
+    if (isNodeEnvProduction()) {
       throw new Error('ENCRYPTION_KEY is required in production. Refusing to decrypt.');
     }
     return parsePlainText<T>(encryptedData);
@@ -155,7 +155,7 @@ export function decrypt<T = string>(encryptedData: string): T {
   // Minimum envelope: IV(16) + salt(64) + tag(16) + 1 byte ciphertext.
   const minEncryptedSize = IV_LENGTH + SALT_LENGTH + TAG_LENGTH + 1;
   if (combined.length < minEncryptedSize) {
-    if (isProduction) {
+    if (isNodeEnvProduction()) {
       throw new Error(
         `Decryption failed: payload (${combined.length} bytes) smaller than envelope minimum (${minEncryptedSize})`
       );
@@ -218,7 +218,7 @@ export function decryptCredentials(
   }
   const wasEncrypted = encryptedCredentials.encrypted === true;
   if (!wasEncrypted) {
-    if (isProduction) {
+    if (isNodeEnvProduction()) {
       // A row flagged as plaintext in production indicates either a
       // pre-encryption migration not applied, or a misconfigured
       // ENCRYPTION_KEY at the time of write. Either way it's an
