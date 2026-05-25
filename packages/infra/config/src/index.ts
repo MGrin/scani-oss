@@ -3,20 +3,23 @@ import { z } from 'zod';
 /**
  * Read NODE_ENV at runtime, not build time.
  *
- * `bun build --compile --minify` statically substitutes literal
- * `process.env.NODE_ENV` accesses with the build-time value (defaults
- * to `"development"` when unset). Bracket notation defeats that
- * inlining so the compiled binary reads the actual OS env at runtime.
+ * `bun build --compile --minify` aggressively substitutes the literal
+ * expression `process.env.NODE_ENV` AND `process.env['NODE_ENV']`
+ * (bracket notation) with the build-time value, then constant-folds
+ * the call chain — even when wrapped in a helper. The third-audit
+ * reproducer showed every production guard going dead in the compiled
+ * binary because of this (see OSS-READINESS-REPORT.md X-1).
+ *
+ * `Bun.env` is bun's documented runtime env API, dynamic by
+ * construction: it reads the live OS env on each access and is not
+ * pattern-matched by the bundler's `process.env.X` substitution pass.
  *
  * EVERY check that needs the runtime NODE_ENV value MUST use this
  * helper, not the literal `process.env.NODE_ENV` form. Otherwise the
  * check is silently dead in the compiled binary.
- *
- * See OSS-QA-REPORT-POST-FIX.md N-1 for the smoking-gun reproducer.
  */
 export function getNodeEnv(): string | undefined {
-  // biome-ignore lint/complexity/useLiteralKeys: bracket notation defeats bun's build-time inlining
-  return process.env['NODE_ENV'];
+  return Bun.env.NODE_ENV;
 }
 
 export function isNodeEnvProduction(): boolean {
