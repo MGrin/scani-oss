@@ -68,6 +68,30 @@ bun run deps:lint    # syncpack — version alignment
 bun run deps:unused  # knip — unused exports/files/dependencies
 ```
 
+## Pushing & Pull Requests
+
+**Every push to a branch MUST be accompanied by an open pull request.** Pushing
+without opening (or already having) a PR for the branch is not allowed — the
+only exception is a broken environment that physically prevents PR creation
+(GitHub API unreachable, repo scope blocked), in which case the failure must
+be reported back to the user, not silently skipped.
+
+Before pushing, check the branch's state on the remote:
+
+1. If the branch has **no PR**, push and immediately open one.
+2. If the branch has an **open PR**, push the new commits to it — do not
+   open a second PR for the same branch.
+3. If the branch's PR is **merged or closed**, the branch is retired. Do
+   not push more commits to it. Create a new branch off the latest base
+   (typically `main`), and open a new PR from that branch instead. Pick a
+   distinct branch name — append a suffix like `-2`, `-followup`, or a
+   short topic keyword rather than reusing the old name.
+
+This rule covers every push, including follow-up pushes triggered by PR
+review feedback, CI babysitting, or autofix loops. If a session is asked
+to "push the fix" against a branch whose PR has already merged, treat
+that as a new piece of work and create a fresh branch + PR.
+
 ## Repo Layout
 
 Bun workspaces monorepo. Apps split into two top-level categories — `backend/`
