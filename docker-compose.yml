@@ -8,13 +8,20 @@
 # object storage (MinIO) all run in containers.
 #
 # Default ports (host-side offsets to avoid clashing with other local services):
-#   Postgres        : localhost:5433
-#   Redis           : localhost:6380
-#   API             : localhost:3011
-#   Frontend        : localhost:5173   (apps/frontend/app — the user-facing SPA)
-#   Data-provider   : localhost:8082   (apps/backend/data-provider — tRPC + Better-Auth)
-#   Mailpit         : SMTP localhost:1026, UI http://localhost:8026
-#   MinIO           : S3 API localhost:9000, console http://localhost:9001 (minioadmin/minioadmin)
+#   Postgres        : localhost:5433   (override: POSTGRES_HOST_PORT)
+#   Redis           : localhost:6380   (override: REDIS_HOST_PORT)
+#   API             : localhost:3011   (override: API_HOST_PORT)
+#   Frontend        : localhost:5173   (override: FRONTEND_HOST_PORT — apps/frontend/app)
+#   Data-provider   : localhost:8082   (override: DATA_PROVIDER_HOST_PORT)
+#   Mailpit         : SMTP localhost:1026 (MAILPIT_SMTP_HOST_PORT) / UI 8026 (MAILPIT_UI_HOST_PORT)
+#   MinIO           : S3 9000 (MINIO_API_HOST_PORT) / console 9001 (MINIO_CONSOLE_HOST_PORT)
+#                     (default creds: minioadmin/minioadmin)
+#
+# To run two scani checkouts in parallel without port conflicts, set each
+# override variable in the second worktree's `.env` (or use the
+# `docker-compose.override.yml.example` template). See
+# `apps/frontend/docs/src/content/docs/self-hosting/tier1/troubleshooting.md`
+# for the "Running two scani checkouts in parallel" recipe.
 
 services:
   postgres:
@@ -25,7 +32,7 @@ services:
       POSTGRES_PASSWORD: scani
       POSTGRES_DB: scani
     ports:
-      - "5433:5432"
+      - "${POSTGRES_HOST_PORT:-5433}:5432"
     volumes:
       - postgres-data:/var/lib/postgresql/data
     healthcheck:
@@ -39,7 +46,7 @@ services:
     restart: unless-stopped
     command: ["redis-server", "--appendonly", "yes"]
     ports:
-      - "6380:6379"
+      - "${REDIS_HOST_PORT:-6380}:6379"
     volumes:
       - redis-data:/data
     healthcheck:
@@ -52,8 +59,8 @@ services:
     image: axllent/mailpit:latest
     restart: unless-stopped
     ports:
-      - "1026:1025"   # SMTP
-      - "8026:8025"   # Web UI
+      - "${MAILPIT_SMTP_HOST_PORT:-1026}:1025"   # SMTP
+      - "${MAILPIT_UI_HOST_PORT:-8026}:8025"     # Web UI
     environment:
       MP_MAX_MESSAGES: 500
       MP_SMTP_AUTH_ACCEPT_ANY: 1
@@ -70,8 +77,8 @@ services:
       MINIO_ROOT_USER: minioadmin
       MINIO_ROOT_PASSWORD: minioadmin
     ports:
-      - "9000:9000"   # S3 API
-      - "9001:9001"   # Web console
+      - "${MINIO_API_HOST_PORT:-9000}:9000"      # S3 API
+      - "${MINIO_CONSOLE_HOST_PORT:-9001}:9001"  # Web console
     volumes:
       - minio-data:/data
     healthcheck:
@@ -164,7 +171,7 @@ services:
       env-sync:
         condition: service_completed_successfully
     ports:
-      - "8082:8082"
+      - "${DATA_PROVIDER_HOST_PORT:-8082}:8082"
     env_file:
       - path: ./.env
         required: false
@@ -232,7 +239,7 @@ services:
       data-provider:
         condition: service_started
     ports:
-      - "3011:8080"
+      - "${API_HOST_PORT:-3011}:8080"
     # Root .env flows through — the `environment:` block below overrides any
     # key that needs a container-network URL instead of the host-side default
     # (DATABASE_URL, REDIS_URL, SMTP_URL, S3_ENDPOINT, …). Everything else —
@@ -327,9 +334,9 @@ services:
       deps:
         condition: service_completed_successfully
     environment:
-      VITE_API_URL: http://localhost:3011
+      VITE_API_URL: http://localhost:${API_HOST_PORT:-3011}
     ports:
-      - "5173:5173"
+      - "${FRONTEND_HOST_PORT:-5173}:5173"
     volumes:
       - .:/app
       - workspace-node-modules:/app/node_modules
