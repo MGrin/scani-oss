@@ -35,7 +35,7 @@ export async function proxyJobAction(
     return Response.json({ error: 'writes disabled' }, { status: 503 });
   }
 
-  const secret = getEnv('ADMIN_JOBS_HMAC_SECRET');
+  const secret = getEnv('JOBS_HMAC_SECRET');
   const backendUrl = getEnv('BACKEND_BASE_URL') ?? 'https://api.scani.xyz';
   if (!secret) {
     return Response.json({ error: 'server misconfigured: no admin HMAC secret' }, { status: 503 });

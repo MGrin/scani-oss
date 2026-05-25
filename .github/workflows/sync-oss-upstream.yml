@@ -95,30 +95,38 @@ jobs:
             -m "sync: pull latest from MGrin/scani-oss" \
             -m "Upstream: https://github.com/MGrin/scani-oss/commit/${{ steps.check.outputs.upstream_sha }}"
 
-      - name: Auto-resolve conflicts (keep --ours, flag for review)
+      - name: Stage conflicts for manual resolution
         if: steps.check.outputs.has_changes == 'true' && steps.merge.outcome == 'failure'
         id: resolve
         run: |
-          # `git status --porcelain` is the single source of truth here.
-          # `git diff --diff-filter=U` returns ALL unmerged paths (UU, DU,
-          # UD, AA, …) — not just both-modified — so using it as the input
-          # to `git checkout --ours` fails on the DU rows (no "ours"
-          # version to check out).
+          # Anything reaching this step is a genuine conflict the
+          # `.gitattributes` `merge=ours` driver did NOT silently pin.
+          # Three unmerged states from `git status --porcelain`:
+          #   - UU (both-modified): leave conflict markers in the working
+          #     tree, then `git add` so they land in the commit. CI will
+          #     fail on them (TS won't parse, Biome won't lint) — exactly
+          #     the gate we want. A reviewer must pull, resolve, force-push.
+          #   - DU (we deleted, they modified): re-delete. These are files
+          #     private has intentionally dropped from the OSS subset
+          #     (Docker publish, release-please, etc.).
+          #   - UD (we modified, they deleted): keep our version.
           #
-          # After --no-ff with intentionally-divergent trees there are
-          # three failure modes worth handling, all resolving to
-          # "private's tree wins":
-          #   - UU: both modified            → keep ours (`git checkout --ours`)
-          #   - DU: we deleted, they modified → re-delete (`git rm`)
-          #   - UD: we modified, they deleted → keep our version (`git add`)
+          # Past behaviour ran `git checkout --ours` on UU paths, which
+          # silently discarded OSS-side improvements (OSS removed
+          # `isProduction` from @scani/config; --ours kept private's
+          # import line; the sync PR shipped a broken tree until a human
+          # noticed). See PR #577 for the post-mortem.
           BOTH_MODIFIED=$(git status --porcelain | awk '$1=="UU" {print $2}')
           DELETED_BY_US=$(git status --porcelain | awk '$1=="DU" {print $2}')
           DELETED_BY_THEM=$(git status --porcelain | awk '$1=="UD" {print $2}')
 
           if [ -n "$BOTH_MODIFIED" ]; then
-            echo "both-modified (keeping ours):"
+            echo "both-modified (staging conflict markers for manual resolution):"
             echo "$BOTH_MODIFIED"
-            echo "$BOTH_MODIFIED" | xargs -r git checkout --ours --
+            # Working-tree files already contain `<<<<<<<` markers from
+            # the failed merge. `git add` stages the marker-bearing
+            # content; the commit will fail CI until a human resolves.
+            echo "$BOTH_MODIFIED" | xargs -r git add --
           fi
           if [ -n "$DELETED_BY_US" ]; then
             echo "deleted-by-us (re-deleting):"
@@ -131,19 +139,30 @@ jobs:
             echo "$DELETED_BY_THEM" | xargs -r git add --
           fi
 
-          # Aggregate everything for the PR body
+          # Aggregate for the PR body
           CONFLICTED=$(printf '%s\n%s\n%s\n' "$BOTH_MODIFIED" "$DELETED_BY_US" "$DELETED_BY_THEM" | sed '/^$/d')
           {
             echo "files<<CONFLICTS_EOF"
             echo "$CONFLICTED"
             echo "CONFLICTS_EOF"
           } >> "$GITHUB_OUTPUT"
+          {
+            echo "both_modified<<UU_EOF"
+            echo "$BOTH_MODIFIED"
+            echo "UU_EOF"
+          } >> "$GITHUB_OUTPUT"
 
-          git add -A
+          if [ -n "$BOTH_MODIFIED" ]; then
+            COMMIT_HEADLINE="sync: pull latest from MGrin/scani-oss (CONFLICTS — manual resolution required)"
+            COMMIT_BODY="Both-modified paths contain conflict markers and were committed as-is. CI will fail until a reviewer pulls the branch, resolves each file by hand, and force-pushes. See docs/technical/2026-05-23_oss-private-sync.md for the resolution playbook."
+          else
+            COMMIT_HEADLINE="sync: pull latest from MGrin/scani-oss (auto-resolved delete-conflicts)"
+            COMMIT_BODY="Only delete/modify conflicts were present (intentionally-dropped OSS-only files); no UU paths required manual merge."
+          fi
           git commit \
-            -m "sync: pull latest from MGrin/scani-oss (auto-resolved with --ours)" \
+            -m "$COMMIT_HEADLINE" \
             -m "Upstream: https://github.com/MGrin/scani-oss/commit/${{ steps.check.outputs.upstream_sha }}" \
-            -m "Conflicts auto-resolved by keeping private's version (incl. re-deleting files private has intentionally dropped from the OSS upstream). Reviewer must verify no OSS improvements were discarded."
+            -m "$COMMIT_BODY"
 
       - name: Setup Bun
         if: steps.check.outputs.has_changes == 'true'
@@ -174,19 +193,34 @@ jobs:
           UPSTREAM_SHA: ${{ steps.check.outputs.upstream_sha }}
           COMMIT_COUNT: ${{ steps.check.outputs.commit_count }}
           CONFLICTED_FILES: ${{ steps.resolve.outputs.files }}
+          BOTH_MODIFIED_FILES: ${{ steps.resolve.outputs.both_modified }}
         run: |
           # Build PR body
           BODY="Automated sync from \`MGrin/scani-oss/main\` at [\`${UPSTREAM_SHA:0:8}\`](https://github.com/MGrin/scani-oss/commit/${UPSTREAM_SHA})."$'\n\n'
           BODY+="Pulled **${COMMIT_COUNT}** new upstream commit(s) into this private repo."$'\n\n'
           LABELS='[]'
-          if [ -n "$CONFLICTED_FILES" ]; then
-            BODY+='## ⚠️ Needs human review'$'\n\n'
-            BODY+='The merge produced conflicts. They were auto-resolved by keeping private`s version (`git checkout --ours`), which may have discarded OSS-side improvements. Review each conflicted file and reconcile:'$'\n\n'
+          if [ -n "$BOTH_MODIFIED_FILES" ]; then
+            BODY+='## ⚠️ Manual resolution required — CI will fail'$'\n\n'
+            BODY+='The following files have conflict markers committed as-is. Pull this branch, resolve each by hand, force-push back:'$'\n\n'
+            BODY+='```'$'\n'
+            BODY+="$BOTH_MODIFIED_FILES"$'\n'
+            BODY+='```'$'\n\n'
+            BODY+='```bash'$'\n'
+            BODY+='git fetch origin '"$BRANCH"$'\n'
+            BODY+='git checkout '"$BRANCH"$'\n'
+            BODY+='# fix each file: pick lines from OSS-side improvements + private overlay'$'\n'
+            BODY+='bun run type-check && bun lint:fix && bun test --preload ./packages/business/domain/test-preload.ts packages/'$'\n'
+            BODY+='git add -A && git commit -m "sync(reconcile): manual merge"'$'\n'
+            BODY+='git push --force-with-lease origin '"$BRANCH"$'\n'
+            BODY+='```'$'\n\n'
+            BODY+='See `docs/technical/2026-05-23_oss-private-sync.md` for the resolution playbook (merge=ours allowlist + analytics-overlay file list).'$'\n'
+            LABELS='["needs-human-review"]'
+          elif [ -n "$CONFLICTED_FILES" ]; then
+            BODY+='## ℹ️ Auto-resolved delete-conflicts only'$'\n\n'
+            BODY+='These files diverged via add/delete (private intentionally dropped them from the OSS subset). Auto-resolution kept private`s state:'$'\n\n'
             BODY+='```'$'\n'
             BODY+="$CONFLICTED_FILES"$'\n'
-            BODY+='```'$'\n\n'
-            BODY+='See `docs/technical/2026-05-23_oss-private-sync.md` for the resolution playbook (merge=ours allowlist vs analytics-divergent set vs neither).'$'\n'
-            LABELS='["needs-human-review"]'
+            BODY+='```'$'\n'
           fi
           BODY+=$'\n''---'$'\n''🤖 Opened by `.github/workflows/sync-oss-upstream.yml`. See [the sync-flow doc](../blob/main/docs/technical/2026-05-23_oss-private-sync.md) for context.'
 

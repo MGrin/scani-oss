@@ -96,7 +96,7 @@ resource "random_password" "admin_jobs_hmac_secret" {
 
 resource "github_actions_secret" "admin_jobs_hmac_secret" {
   repository      = data.github_repository.scani.name
-  secret_name     = "ADMIN_JOBS_HMAC_SECRET"
+  secret_name     = "JOBS_HMAC_SECRET"
   plaintext_value = random_password.admin_jobs_hmac_secret.result
 }
 

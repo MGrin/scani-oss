@@ -66,7 +66,7 @@ describe('loadSecurityConfig', () => {
   });
 });
 
-// The production-required branch lives in @scani/config's `isProduction`
-// evaluation at module load time, so we can't toggle NODE_ENV per-test
+// The production-required branch lives in @scani/config's `isNodeEnvProduction()`
+// call evaluated at module load time, so we can't toggle NODE_ENV per-test
 // without re-importing the schema. The contract is exercised in dev mode
 // above and at app boot in production environments.

@@ -1,6 +1,6 @@
 import { captureUserSignedUp, notifyFounderOfNewUser } from '@scani/analytics';
 import { EmailFacade } from '@scani/cloud-client/facades/email-facade';
-import { isProduction } from '@scani/config';
+import { isNodeEnvProduction } from '@scani/config';
 import { db } from '@scani/db';
 import {
   tokens,
@@ -186,7 +186,7 @@ export function createBetterAuth(opts: {
       // still authenticate on machine B for up to 5 min — incompatible with
       // "sign me out everywhere now". In dev keep it on (no horizontal
       // scaling) to avoid a DB hit on every authenticated request.
-      cookieCache: isProduction ? { enabled: false } : { enabled: true, maxAge: 5 * 60 },
+      cookieCache: isNodeEnvProduction() ? { enabled: false } : { enabled: true, maxAge: 5 * 60 },
     },
     advanced: {
       useSecureCookies: opts.baseURL.startsWith('https://'),

@@ -89,8 +89,19 @@ async function runMigrations() {
   const db = drizzle(migrationClient);
 
   try {
-    // Run migrations from the migrations folder
-    const migrationsFolder = join(__dirname, 'migrations');
+    // Source-run (`bun src/migrate.ts`): SQL files sit next to this script
+    // at `__dirname/migrations`. Compiled-run (`bun build --compile`): the
+    // binary lives at `/app/migrate` and the SQL folder is COPYed to
+    // `/app/migrations` by Dockerfile.migrate. Fall back to the binary's
+    // own directory when the source-relative path is gone.
+    const candidates = [
+      join(__dirname, 'migrations'),
+      join(dirname(process.execPath), 'migrations'),
+    ];
+    const migrationsFolder = candidates.find((p) => existsSync(p));
+    if (!migrationsFolder) {
+      throw new Error(`Migrations folder not found. Checked:\n  - ${candidates.join('\n  - ')}`);
+    }
     console.log(`📂 Migrations folder: ${migrationsFolder}`);
 
     await migrate(db, { migrationsFolder });

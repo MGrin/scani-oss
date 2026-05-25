@@ -1,7 +1,8 @@
 import {
   checkEnvIsolatedUrl,
   httpsUrlInProduction,
-  isProduction,
+  isNodeEnvProduction,
+  optionalUrl,
   requiredInProd,
   urlSchema,
 } from '@scani/config';
@@ -14,10 +15,12 @@ import { z } from 'zod';
  * variables cause the process to exit with a clear error listing every
  * failing variable, instead of producing obscure runtime errors later.
  *
- * Shared helpers (`isProduction`, `urlSchema`, `httpsUrlInProduction`,
+ * Shared helpers (`isNodeEnvProduction`, `urlSchema`, `httpsUrlInProduction`,
  * `requiredInProd`) live in `@scani/config` so the worker's schema can
  * reuse them without duplication.
  */
+
+const inProd = isNodeEnvProduction();
 
 const envSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
@@ -39,11 +42,11 @@ const envSchema = z.object({
   REDIS_URL: urlSchema,
 
   // Frontend origin for CORS. Required in production, must be https://.
-  FRONTEND_URL: isProduction ? httpsUrlInProduction : urlSchema.default('http://localhost:5173'),
+  FRONTEND_URL: inProd ? httpsUrlInProduction : urlSchema.default('http://localhost:5173'),
 
   // This backend's own public URL — Better-Auth needs it to generate
   // magic-link callback URLs that resolve to /api/auth/magic-link/verify.
-  BACKEND_URL: isProduction ? httpsUrlInProduction : urlSchema.default('http://localhost:3001'),
+  BACKEND_URL: inProd ? httpsUrlInProduction : urlSchema.default('http://localhost:3001'),
 
   // Cookie domain shared by app.<domain> and api.<domain> so the session
   // cookie reaches both hosts (e.g. `.scani.xyz`). Leave unset in dev
@@ -57,7 +60,7 @@ const envSchema = z.object({
   // silently fails.
 
   // Better-Auth session signing secret. Required in production.
-  BETTER_AUTH_SECRET: isProduction
+  BETTER_AUTH_SECRET: inProd
     ? z.string().min(32, { message: 'BETTER_AUTH_SECRET must be at least 32 chars in production' })
     : z.string().optional(),
 
@@ -78,17 +81,19 @@ const envSchema = z.object({
   // api only sees it when SCANI_CLOUD_URL is unset and the storage-facade
   // in @scani/cloud-client falls through to the local StorageService.
 
-  // Sentry — hard-required in prod so a misconfigured deploy refuses
-  // to boot rather than running blind. Optional in dev (the SDK init
-  // checks for DSN presence before enabling). The Terraform provision
-  // for `SENTRY_DSN` is the source of truth on Fly.
-  SENTRY_DSN: requiredInProd(z.string().url(), 'SENTRY_DSN'),
+  // Sentry — fully optional. SDK init checks for DSN presence before
+  // enabling; absent DSN means no-op. Empty string from docker-compose
+  // env interpolation is treated as unset (see `optionalUrl`).
+  // Self-hosters who don't use Sentry leave it blank; managed
+  // deployments enforce its presence via their own pipeline checks,
+  // not the env schema.
+  SENTRY_DSN: optionalUrl,
   SENTRY_ENVIRONMENT: z.string().optional(),
   SENTRY_RELEASE: z.string().optional(),
 
-  // HMAC shared secret for admin → backend actions (BullMQ retry/remove,
+  // HMAC shared secret for job-management actions (BullMQ retry/remove,
   // DLQ replay). Required in prod.
-  ADMIN_JOBS_HMAC_SECRET: requiredInProd(z.string().min(32), 'ADMIN_JOBS_HMAC_SECRET'),
+  JOBS_HMAC_SECRET: requiredInProd(z.string().min(32), 'JOBS_HMAC_SECRET'),
 
   // Shared secret for the screenshot-bot endpoint. Lets the GH Actions
   // workflow mint a Better-Auth session for the single allow-listed

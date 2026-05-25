@@ -141,17 +141,45 @@ git diff --stat bun.lock          # if anything changed, stage it
 git commit --amend --no-edit      # fold into the merge commit
 ```
 
-## Recurring sync (Phase 4)
+## Recurring sync
 
-A scheduled workflow at `.github/workflows/sync-oss-upstream.yml`
-(coming) will:
+`.github/workflows/sync-oss-upstream.yml` runs daily at 08:00 UTC and on
+`workflow_dispatch`:
 
-1. Run daily at 08:00 UTC + on `workflow_dispatch`.
-2. `git fetch upstream && git merge --no-ff upstream/main` on a fresh
+1. `git fetch upstream && git merge --no-ff upstream/main` onto a fresh
    `automation/sync-oss-YYYYMMDD` branch.
-3. Open a PR to private `main`. If the merge produced conflicts outside
-   the merge=ours allowlist and the analytics-divergent set, the PR
-   carries a `needs human review` label.
+2. The `merge.ours.driver` resolves every file in the `merge=ours`
+   allowlist silently (private's version wins).
+3. **Conflict policy for everything else** — the workflow handles the
+   three remaining unmerged states distinctly:
+   - **UU (both modified)** → leave the conflict markers in place,
+     `git add` them, commit as-is. CI fails (markers don't parse). A
+     reviewer must pull the branch, resolve each file by hand, and
+     force-push. **Never `git checkout --ours`** — that path silently
+     dropped OSS work and shipped broken trees (see PR #577 post-mortem).
+   - **DU (we deleted, they modified)** → `git rm`. These are files
+     private intentionally dropped from the OSS subset (Docker publish
+     workflow, release-please artifacts).
+   - **UD (we modified, they deleted)** → `git add` of our version.
+4. Open the PR. If any UU paths were present, the PR body lists them
+   under "Manual resolution required", labels with `needs-human-review`,
+   and includes the verbatim commands a reviewer should run to resolve.
+
+### Reviewer playbook for a UU-conflict sync PR
+
+```bash
+git fetch origin automation/sync-oss-YYYYMMDD
+git checkout automation/sync-oss-YYYYMMDD
+# For each file with markers: pick the OSS-side bug fixes AND the
+# private overlay (analytics imports, waitlist routes, branding).
+# See the analytics-divergent set above for which lines belong to
+# which side.
+bun run type-check
+bun lint:fix
+bun test --preload ./packages/business/domain/test-preload.ts packages/
+git add -A && git commit -m "sync(reconcile): manual merge"
+git push --force-with-lease origin automation/sync-oss-YYYYMMDD
+```
 
 A second workflow `.github/workflows/oss-drift-check.yml` (also coming)
 runs on every private PR and asserts: if a PR touches an OSS-eligible

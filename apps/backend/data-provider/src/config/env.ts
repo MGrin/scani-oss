@@ -1,4 +1,4 @@
-import { checkEnvIsolatedUrl, isProduction, requiredInProd } from '@scani/config';
+import { checkEnvIsolatedUrl, isNodeEnvProduction, optionalUrl } from '@scani/config';
 import { z } from 'zod';
 
 /**
@@ -25,7 +25,7 @@ const envSchema = z.object({
   // back to a localhost URL constructed from HOST + PORT when unset
   // (fine for OSS / dev). Production should set
   // `https://api.cloud.scani.xyz` explicitly.
-  PUBLIC_BASE_URL: z.string().url().optional(),
+  PUBLIC_BASE_URL: optionalUrl,
 
   // Redis backs the per-provider rate-limiter buckets. Single-tenant in
   // OSS; colocated with backend Redis in managed deployments (different
@@ -41,7 +41,7 @@ const envSchema = z.object({
   // this for a DB lookup against `cloud_api_keys` (enabled by
   // `CLOUD_MANAGEMENT_ENABLED=true` + `DATABASE_URL`). The env token
   // remains valid as a superuser fallback in both modes.
-  DATA_PROVIDER_API_KEY: isProduction
+  DATA_PROVIDER_API_KEY: isNodeEnvProduction()
     ? z.string().min(16, { message: 'DATA_PROVIDER_API_KEY must be >=16 chars in production' })
     : z.string().optional(),
 
@@ -94,12 +94,12 @@ const envSchema = z.object({
   // Better-Auth config (only consumed when CLOUD_MANAGEMENT_ENABLED).
   // Secret signs session tokens; trusted origins scope CORS+cookies.
   BETTER_AUTH_SECRET: z.string().optional(),
-  BETTER_AUTH_URL: z.string().url().optional(),
-  CLOUD_FRONTEND_ORIGIN: z.string().url().optional(),
+  BETTER_AUTH_URL: optionalUrl,
+  CLOUD_FRONTEND_ORIGIN: optionalUrl,
 
-  // Sentry — hard-required in prod; optional in dev. SDK init gates
-  // on DSN presence regardless.
-  SENTRY_DSN: requiredInProd(z.string().url(), 'SENTRY_DSN'),
+  // Sentry — fully optional. Empty string is treated as unset (see
+  // `optionalUrl`). SDK init gates on DSN presence regardless.
+  SENTRY_DSN: optionalUrl,
   SENTRY_ENVIRONMENT: z.string().optional(),
   SENTRY_RELEASE: z.string().optional(),
 
@@ -140,7 +140,7 @@ export function loadEnv(): DataProviderEnv {
     );
     process.exit(1);
   }
-  if (cached.CLOUD_MANAGEMENT_ENABLED && isProduction && !process.env.FASTMAIL_API_TOKEN) {
+  if (cached.CLOUD_MANAGEMENT_ENABLED && isNodeEnvProduction() && !process.env.FASTMAIL_API_TOKEN) {
     console.error(
       '❌ env: CLOUD_MANAGEMENT_ENABLED=true but FASTMAIL_API_TOKEN is not set. Cloud-frontend sign-in requires an email sender.'
     );
