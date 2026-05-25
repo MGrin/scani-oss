@@ -186,7 +186,11 @@ services:
       DATABASE_URL: postgres://scani:scani@postgres:5432/scani?sslmode=disable
       BETTER_AUTH_SECRET: dev_cloud_better_auth_secret_change_me_not_prod_safe
       BETTER_AUTH_URL: http://localhost:8082
-      CLOUD_FRONTEND_ORIGIN: http://localhost:5176
+      # Allowed origin for the cloud-frontend (browser) when calling the
+      # data-provider's `cookieProcedure` routes. Matches the dev SPA
+      # origin so manual testing of the cloud-management surface from
+      # the running frontend container at :5173 works out of the box.
+      CLOUD_FRONTEND_ORIGIN: http://localhost:5173
       # Fastmail is intentionally disabled in dev so magic-link / OTP /
       # verification emails land in Mailpit (SMTP_URL below). A root .env
       # or shell FASTMAIL_API_TOKEN is overridden to an empty string here —

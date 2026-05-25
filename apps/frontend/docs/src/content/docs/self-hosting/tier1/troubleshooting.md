@@ -60,6 +60,33 @@ to root `.env` and re-run `bun scripts/sync-env.ts`.
 **Check.** In local dev, every email — including failed sends —
 shows in [Mailpit at http://localhost:8026](http://localhost:8026).
 
+## `/readyz` returns 503; worker loops on "Awaiting schema readiness"
+
+**Symptom.** After a fresh `docker compose -f docker-compose.prod.yml
+up -d`, the api is `(unhealthy)` and `frontend-app` won't start.
+`curl http://localhost:8080/api/readyz` returns 503 with a body like
+`{"checks":{"schema":{"ok":false,"error":"Schema not ready after
+500ms — missing tables: user_jobs, tokens, holdings"}}}`. Worker logs
+`⏳ Awaiting schema readiness before scheduler registration` in a
+restart loop.
+
+**Cause.** The schema hasn't been migrated. Prod compose intentionally
+does NOT auto-migrate on `up -d` — the `migrate` service is
+profile-gated so you (or your deploy pipeline) trigger it explicitly.
+
+**Fix.**
+
+```sh
+docker compose -f docker-compose.prod.yml --profile migrate run --rm migrate
+docker compose -f docker-compose.prod.yml restart api worker
+```
+
+After migrate exits with `✅ Migrations completed successfully`, the
+api becomes healthy within ~30s and frontend-app comes up.
+
+See [Apply migrations](/self-hosting/tier1/production/#apply-migrations)
+for the full migration playbook.
+
 ## Worker silently drops jobs
 
 **Symptom.** Jobs accepted by the api never run. BullMQ dashboard

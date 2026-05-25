@@ -27,7 +27,7 @@ and is enumerated in the [Environment variables reference](/reference/environmen
 | `BETTER_AUTH_SECRET` | 32+ chars. Better-Auth session signing key. Rotating it invalidates every active session. | `openssl rand -hex 32` |
 | `ENCRYPTION_KEY` | **At least 32 chars; recommended 64 hex chars.** AES-256-GCM key that encrypts integration credentials at rest. A 64-hex-char value is used directly as the AES key (no KDF); any other ≥32-char string is run through scrypt. **Must match between api and worker** — if they differ, the worker cannot decrypt what the api stored and every import silently fails. | `openssl rand -hex 32` |
 | `JOBS_HMAC_SECRET` | 32+ chars. Shared secret for HMAC-gated operator tooling (BullMQ retry/remove, DLQ replay). | `openssl rand -hex 32` |
-| `SCREENSHOT_BOT_SECRET` | 32+ chars. Bearer for the `screenshot-bot/sign-in` endpoint. Required in production; optional in dev. | `openssl rand -hex 32` |
+| `SCREENSHOT_BOT_SECRET` | 32+ chars. Bearer for the `/api/auth/screenshot-bot/sign-in` endpoint, which mints a Better-Auth session for the single allow-listed screenshot-capture user. **Optional everywhere** — when unset the endpoint refuses with 403, disabling the feature without blocking boot. Set it if you use a screenshot-capture pipeline. | `openssl rand -hex 32` |
 | `LOG_ID_PEPPER` | 16+ chars. Pepper used to one-way hash user / tenant / account IDs in structured logs. **Production boot fails without it.** | `openssl rand -hex 32` |
 
 ## Public URLs

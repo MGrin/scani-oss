@@ -44,6 +44,12 @@ To stop:
 bun run dev:stack:down   # containers down, volumes preserved
 ```
 
+Need to tweak the dev stack locally (different port, mounted init
+SQL, custom volume path) without touching the committed compose
+file? Copy [`docker-compose.override.yml.example`](./docker-compose.override.yml.example)
+to `docker-compose.override.yml` — the override file is gitignored
+and is auto-merged by `docker compose` on every command.
+
 ## Screenshots
 
 **Dashboard** — portfolio overview, allocations, recent activity.
@@ -248,8 +254,8 @@ store for binary uploads.
 
 Out of the box, Scani knows how to talk to:
 
-**Exchanges**: Binance, Kraken, Bybit, OKX, Coinbase, KuCoin, Gate.io,
-HTX, Bitfinex, Bitstamp, Crypto.com, Gemini, MEXC, BitMart, Phemex, ProBit
+**Exchanges**: Binance, Bitget, Bitstamp, Bybit, Coinbase, Gate.io,
+Gemini, Huobi, Kraken, KuCoin, MEXC, OKX
 
 **Brokerages / banks**: Interactive Brokers (Flex Web Service), Wise
 

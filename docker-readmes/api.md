@@ -29,9 +29,21 @@ in the OSS repo — it wires this image up with Postgres, Redis, MinIO,
 ```bash
 git clone https://github.com/MGrin/scani-oss.git
 cd scani-oss
-cp .env.example .env                              # set real values
+cp .env.example .env                                                            # set real values
+
+# Apply schema migrations (do this on first install AND on every upgrade)
+docker compose -f docker-compose.prod.yml --profile migrate run --rm migrate
+
+# Bring the long-running services up
 docker compose -f docker-compose.prod.yml up -d
 ```
+
+Migrations live in a separate [`scani/migrate`](https://hub.docker.com/r/scani/migrate)
+image and run as an opt-in `--profile migrate` step — see the
+[self-hosting docs](https://docs.scani.xyz/self-hosting/tier1/production/#apply-migrations)
+for the why, the alternative orchestrators (Kubernetes Job, CI deploy
+step, standalone `docker run`), and what happens if you skip them
+(api's `/readyz` returns 503).
 
 ## Required environment variables
 
