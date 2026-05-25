@@ -1,190 +1,85 @@
-# Scani Frontend V2
+# @scani/frontend-v2 (apps/frontend/app)
 
-A modern, redesigned frontend for the Scani personal finance management application.
+React + Vite SPA for **[Scani](https://github.com/MGrin/scani-oss)** — the
+self-hostable, open-source portfolio tracker for crypto and traditional
+assets. tRPC end-to-end with `@scani/backend`; Better-Auth for sessions;
+[shadcn/ui](https://ui.shadcn.com) on Tailwind, sourced from
+[`@scani/ui`](../../../packages/frontend/ui/).
 
-## Architecture
+## Local dev
 
-This is a clean-slate React + TypeScript application built with:
+```sh
+# From the repo root: full stack in compose (recommended)
+bun run dev:stack            # http://localhost:5173
 
-- **Framework**: React 18 with TypeScript
-- **Build Tool**: Vite
-- **Styling**: Tailwind CSS + shadcn/ui components
-- **State Management**: React Query (TanStack Query)
-- **API Communication**: tRPC
-- **Authentication**: Supabase Auth
-- **Routing**: React Router v6
-- **Forms**: React Hook Form + Zod validation
-- **Charts**: Recharts
-- **PWA**: Custom service worker + manifest
-
-## Project Structure
-
-```
-frontendV2/
-├── public/                      # Static assets
-│   ├── icons/                   # PWA icons (generated)
-│   ├── .well-known/            # PWA configuration
-│   ├── manifest.json           # PWA manifest
-│   └── sw.js                   # Service worker
-├── scripts/                     # Build and utility scripts
-│   └── generate-icons.js       # PWA icon generator
-├── src/
-│   ├── components/
-│   │   ├── ui/                 # shadcn/ui base components
-│   │   ├── layout/             # Layout components (nav, sidebar, etc.)
-│   │   └── features/           # Feature-specific components
-│   ├── contexts/               # React contexts (auth, theme, etc.)
-│   ├── hooks/                  # Custom React hooks
-│   ├── lib/                    # Core libraries (trpc, supabase, utils)
-│   ├── pages/                  # Page components
-│   ├── services/               # API service layer
-│   ├── styles/                 # Global styles and themes
-│   ├── types/                  # TypeScript type definitions
-│   ├── utils/                  # Helper functions
-│   ├── App.tsx                 # Root application component
-│   ├── main.tsx               # Application entry point
-│   └── index.css              # Global CSS with Tailwind
-├── index.html                  # HTML entry point
-├── package.json               # Dependencies and scripts
-├── tsconfig.json              # TypeScript configuration
-├── vite.config.ts             # Vite configuration
-├── tailwind.config.js         # Tailwind CSS configuration
-└── postcss.config.js          # PostCSS configuration
-```
-
-## Getting Started
-
-### Prerequisites
-
-- Bun (not npm/yarn)
-- Node.js 18+
-
-### Installation
-
-```bash
-# Install dependencies
+# Or just this app on the host (infra still in compose):
+docker compose up -d postgres redis mailpit minio
 bun install
-
-# Set up environment variables
-cp .env.example .env
-# Edit .env with your Supabase credentials
+bun dev                      # this app on :5173 + api on :3001 concurrently
 ```
 
-### Development
+`VITE_API_URL` (e.g. `http://localhost:3011` in dev compose, `/api` in
+prod) points the Better-Auth client + tRPC client at the backend.
 
-```bash
-# Start development server (runs on port 5174)
-bun dev
+## Build
 
-# Type checking
-bun run type-check
-
-# Build for production
-bun run build
-
-# Preview production build
-bun run preview
+```sh
+bun run build                # → dist/
+bun run preview              # serve the production build locally
 ```
 
-### Environment Variables
+The published Docker image (`scani/frontend-app`) bakes
+`VITE_API_URL=/api` so the bundled SPA always speaks to the same origin
+through nginx. The nginx reverse proxy and runtime config live in
+[`Dockerfile`](./Dockerfile) and [`nginx.conf.template`](./nginx.conf.template).
 
-Create a `.env` file with the following variables:
+## Layout
 
-```env
-VITE_SUPABASE_URL=your_supabase_url
-VITE_SUPABASE_ANON_KEY=your_supabase_anon_key
-VITE_API_URL=http://localhost:3001
-```
+- `src/v2/components/` — feature components (current generation).
+- `src/v2/hooks/` — feature hooks.
+- `src/components/` — legacy + shared components shared with v2.
+- `src/contexts/` — React contexts (`AuthContext` over Better-Auth's
+  client, `ThemeContext`, `RealtimeContext` for SSE).
+- `src/lib/auth-client.ts` — Better-Auth client (magic-link + email-OTP plugins).
+- `src/i18n/locales/` — translation JSON files. Drop a new file in here
+  to add a language (no other code changes); see
+  [`locales/CONTRIBUTORS.md`](./src/i18n/locales/CONTRIBUTORS.md).
+- `public/` + `scripts/generate-icons.js` — PWA manifest, service worker,
+  generated icons.
 
-## Development Guidelines
+## Auth
 
-### Component Organization
+Magic-link + email-OTP via [Better-Auth](https://better-auth.com),
+delivered through the api's `/api/auth/*` mount. In a PWA install
+context the client switches to OTP because clicking a link in a
+mail-app opens a new browser context that breaks the session — the
+desktop / mobile-web flows stay on magic-link. See
+[`src/contexts/AuthContext.tsx`](./src/contexts/AuthContext.tsx).
 
-- **UI Components** (`components/ui/`): Reusable, low-level components (buttons, inputs, dialogs)
-- **Layout Components** (`components/layout/`): Structural components (navigation, sidebar, header)
-- **Feature Components** (`components/features/`): Domain-specific components (portfolio cards, account forms)
+## tRPC
 
-### State Management
+The SPA imports the api router type for end-to-end inference:
 
-- Use React Query for server state
-- Use React Context for global client state (auth, theme)
-- Keep component state local when possible
-
-### Styling
-
-- Use Tailwind CSS utility classes
-- Follow shadcn/ui design system
-- CSS variables for theming (see `index.css`)
-- Use `cn()` utility from `lib/utils.ts` for conditional classes
-
-### API Communication
-
-- All backend communication via tRPC
-- Type-safe with shared types from `@scani/backend`
-- React Query hooks auto-generated via tRPC
-
-### TypeScript
-
-- Strict mode enabled
-- Prefer interfaces over types for object shapes
-- Use type inference where possible
-- Document complex types
-
-## Key Technologies
-
-### tRPC Integration
-
-```typescript
-// lib/trpc.ts - TODO: Implement
-import { createTRPCReact } from "@trpc/react-query";
-import type { AppRouter } from "@scani/backend/types";
-
+```ts
+import type { AppRouter } from '@scani/backend';
+import { createTRPCReact } from '@trpc/react-query';
 export const trpc = createTRPCReact<AppRouter>();
 ```
 
-### Authentication
+Server-state lives in React Query (TanStack Query) via the tRPC
+adapter. Wire DTOs are zod schemas in `@scani/shared`.
 
-```typescript
-// contexts/auth-context.tsx - TODO: Implement
-// Supabase auth with automatic user sync
-```
+## Styling
 
-### Forms
+Tailwind preset + `globals.css` ship from
+[`@scani/ui`](../../../packages/frontend/ui/). Primitives (button,
+card, dialog, …) are imported from `@scani/ui/ui/*`. Conditional class
+composition uses `cn()` from `@scani/ui/lib/utils`. See the
+[`@scani/ui` README](../../../packages/frontend/ui/README.md) for the
+full primitive list.
 
-```typescript
-// Use React Hook Form + Zod for validation
-import { useForm } from "react-hook-form";
-import { zodResolver } from "@hookform/resolvers/zod";
-```
+## More
 
-## Build and Deployment
-
-### Production Build
-
-```bash
-bun run build
-```
-
-Outputs to `dist/` directory.
-
-### PWA Configuration
-
-- Icons generated via `scripts/generate-icons.js`
-- Manifest configured in `public/manifest.json`
-- Service worker in `public/sw.js`
-
-## Next Steps
-
-1. Implement tRPC client setup
-2. Add Supabase authentication
-3. Create base UI components (shadcn/ui)
-4. Build layout components
-5. Implement routing structure
-6. Add feature-specific components
-
-## Notes
-
-- Port 5174 (different from frontend v1 on 5173)
-- Uses same backend as frontendV1
-- Clean architecture - no code carried over from v1
-- Focus on better UX, performance, and maintainability
+Architecture, deployment, and full env-var reference live in
+[`apps/frontend/docs/`](../docs/) and on
+[docs.scani.xyz](https://docs.scani.xyz).
