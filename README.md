@@ -42,6 +42,36 @@ To stop:
 bun run dev:stack:down   # containers down, volumes preserved
 ```
 
+## Screenshots
+
+**Dashboard** — portfolio overview, allocations, recent activity.
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="./.github/assets/screenshots/dashboard-dark-desktop.webp">
+  <img alt="Scani dashboard — portfolio overview" src="./.github/assets/screenshots/dashboard-light-desktop.webp">
+</picture>
+
+**Holdings** — every position across every connected source, with cost basis and P/L.
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="./.github/assets/screenshots/holdings-dark-desktop.webp">
+  <img alt="Scani holdings — positions across all connected sources" src="./.github/assets/screenshots/holdings-light-desktop.webp">
+</picture>
+
+**Accounts** — exchanges, wallets, and brokerages grouped by institution.
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="./.github/assets/screenshots/accounts-dark-desktop.webp">
+  <img alt="Scani accounts — exchanges, wallets, and brokerages grouped by institution" src="./.github/assets/screenshots/accounts-light-desktop.webp">
+</picture>
+
+**Integrations** — the connector catalog: exchanges, on-chain, brokerages, pricing, AI.
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="./.github/assets/screenshots/integrations-dark-desktop.webp">
+  <img alt="Scani integrations — connector catalog" src="./.github/assets/screenshots/integrations-light-desktop.webp">
+</picture>
+
 ## Self-hosting
 
 ### Tier model
