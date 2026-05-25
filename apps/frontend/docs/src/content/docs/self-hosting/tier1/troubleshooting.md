@@ -5,6 +5,41 @@ sidebar:
   order: 10
 ---
 
+## Running two scani checkouts in parallel
+
+**Symptom.** `bun run dev:stack` in a second worktree fails with
+`Bind for 0.0.0.0:5433 failed: port is already allocated` (or one of
+the other default host ports — 6380, 3011, 5173, 8082, 1026, 8026,
+9000, 9001).
+
+**Cause.** Both compose stacks bind the same host ports.
+
+**Fix.** Every host-port mapping in `docker-compose.yml` is gated
+behind a `*_HOST_PORT` env var with the default as fallback. Set the
+overrides in the secondary worktree's root `.env` (a `+1000` offset
+keeps the numbers easy to remember):
+
+```ini
+# Distinct compose project name so named volumes / networks don't collide
+COMPOSE_PROJECT_NAME=scani-secondary
+
+POSTGRES_HOST_PORT=6433
+REDIS_HOST_PORT=7380
+API_HOST_PORT=4011
+FRONTEND_HOST_PORT=6173
+DATA_PROVIDER_HOST_PORT=9082
+MAILPIT_SMTP_HOST_PORT=2026
+MAILPIT_UI_HOST_PORT=9026
+MINIO_API_HOST_PORT=10000
+MINIO_CONSOLE_HOST_PORT=10001
+```
+
+Then `bun run dev:stack` from each worktree independently. See
+[`docker-compose.override.yml.example`](https://github.com/MGrin/scani-oss/blob/main/docker-compose.override.yml.example)
+for the same recipe and an override template for harder
+customizations (extra services, volume mounts, init SQL) that env vars
+can't express.
+
 ## `docker compose up` fails with a container-name conflict
 
 ```
