@@ -3,8 +3,9 @@ import { z } from 'zod';
 import {
   assertEnvIsolatedUrl,
   checkEnvIsolatedUrl,
+  getNodeEnv,
   httpsUrlInProduction,
-  isProduction,
+  isNodeEnvProduction,
   optionalUrl,
   requiredInProd,
   urlSchema,
@@ -22,9 +23,25 @@ function withNodeEnv(value: string) {
   });
 }
 
-describe('isProduction', () => {
-  test('is false under bun test (NODE_ENV !== "production")', () => {
-    expect(isProduction).toBe(false);
+describe('NODE_ENV helpers', () => {
+  test('getNodeEnv returns the current NODE_ENV value', () => {
+    expect(getNodeEnv()).toBe(process.env.NODE_ENV);
+  });
+
+  test('isNodeEnvProduction is false under bun test (NODE_ENV !== "production")', () => {
+    expect(isNodeEnvProduction()).toBe(false);
+  });
+
+  test('isNodeEnvProduction is true when NODE_ENV is set to "production" at runtime', () => {
+    const original = process.env.NODE_ENV;
+    // biome-ignore lint/complexity/useLiteralKeys: bracket-notation form mirrors the compiled-binary path
+    process.env['NODE_ENV'] = 'production';
+    try {
+      expect(isNodeEnvProduction()).toBe(true);
+    } finally {
+      if (original === undefined) delete process.env.NODE_ENV;
+      else process.env.NODE_ENV = original;
+    }
   });
 });
 
