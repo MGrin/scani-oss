@@ -286,6 +286,20 @@ resource "cloudflare_record" "smtp_tls_reporting" {
   comment = "SMTP TLS reporting"
 }
 
+# Bluesky domain handle verification — Bluesky resolves the handle
+# `scani.xyz` by looking up `_atproto.scani.xyz` TXT and matching the
+# `did=` value against the account's DID. Rotating the handle to a
+# different DID means updating this value; deleting the record un-verifies
+# the handle.
+resource "cloudflare_record" "bluesky_atproto" {
+  zone_id = data.cloudflare_zone.primary.id
+  name    = "_atproto"
+  type    = "TXT"
+  content = "\"did=did:plc:ahc3wubpeikotadwqnrf2d2z\""
+  ttl     = 3600
+  comment = "Bluesky handle verification for @scani.xyz"
+}
+
 # ---------- Pages custom-domain attachments ----------
 # Tell each Pages project which hostnames it owns. Without this, Pages
 # returns a 404 "Domain not configured" even if the DNS resolves.
