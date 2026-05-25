@@ -15,6 +15,7 @@ import {
   handleEmailOpenRequest,
   shutdownAnalytics,
 } from '@scani/analytics';
+import { getNodeEnv, isNodeEnvProduction } from '@scani/config';
 import { createTimer, logger, sanitizeUrl } from '@scani/logging';
 import { flushSentry, initSentry, captureException as sentryCapture } from '@scani/logging/sentry';
 import { buildProviderRegistry } from '@scani/providers/core/boot';
@@ -202,7 +203,7 @@ const app = new Elysia()
           "worker-src 'self' blob:",
         ].join('; ')
       : "default-src 'none'; frame-ancestors 'none'; base-uri 'none'";
-    if (process.env.NODE_ENV === 'production') {
+    if (isNodeEnvProduction()) {
       set.headers['Strict-Transport-Security'] = 'max-age=31536000; includeSubDomains; preload';
     }
   })
@@ -356,7 +357,7 @@ const app = new Elysia()
 
 const server = app.listen({ port: PORT, hostname: HOST }, () => {
   logger.info(
-    { httpUrl: `http://${HOST}:${PORT}`, environment: process.env.NODE_ENV || 'development' },
+    { httpUrl: `http://${HOST}:${PORT}`, environment: getNodeEnv() || 'development' },
     '🎉 Scani Data-Provider listening — running deferred init'
   );
 });

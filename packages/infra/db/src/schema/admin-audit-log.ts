@@ -10,7 +10,7 @@ import { index, jsonb, pgTable, text, timestamp, uuid } from 'drizzle-orm/pg-cor
 //     deleted middle row is detectable from the chain break.
 //   * `signature` is HMAC-SHA256 over the row's logical fields
 //     (id, actor, action, resource, result, details, createdAt,
-//     prev_signature) using `ADMIN_JOBS_HMAC_SECRET` as the key.
+//     prev_signature) using `JOBS_HMAC_SECRET` as the key.
 //   * The first row of the table has `prev_signature = ''` by
 //     convention; auditors verify the chain by recomputing HMAC
 //     for each row in createdAt order and confirming it matches the

@@ -7,7 +7,7 @@
  * Redis writes from the admin app, because BullMQ uses Lua scripts to
  * transition jobs between sets and recomputing that manually is fragile.
  *
- * Auth: a shared HMAC secret (`ADMIN_JOBS_HMAC_SECRET`) is the only
+ * Auth: a shared HMAC secret (`JOBS_HMAC_SECRET`) is the only
  * trust anchor. Admin signs
  *   `${method}\n${path}\n${timestamp}\n${actor}\n${sha256Hex(rawBody)}`
  * with HMAC-SHA256 and sends the hex digest in `x-admin-hmac`. Binding
@@ -260,13 +260,10 @@ async function rawBodyHash(request: Request): Promise<string> {
 export function registerAdminJobsRoutes(app: any, redis?: Redis | null): void {
   // Read via the validated env schema instead of `process.env` directly,
   // so the var is checked at boot time (loadEnv exits the process when
-  // ADMIN_JOBS_HMAC_SECRET is missing in prod) and not silently per-call.
-  const secret = loadEnv().ADMIN_JOBS_HMAC_SECRET;
+  // JOBS_HMAC_SECRET is missing in prod) and not silently per-call.
+  const secret = loadEnv().JOBS_HMAC_SECRET;
   if (!secret) {
-    logger.warn(
-      {},
-      '⚠️ ADMIN_JOBS_HMAC_SECRET is not set — admin job endpoints will refuse all requests'
-    );
+    logger.warn({}, '⚠️ JOBS_HMAC_SECRET is not set — admin job endpoints will refuse all requests');
   }
 
   // Replay-protection nonce store. Redis-backed in prod (atomic across
