@@ -55,9 +55,20 @@ const INFLOW_OTHER_KINDS = new Set([
   'opening_balance',
 ]);
 const OUTFLOW_SELL_KINDS = new Set(['sell', 'swap_out']);
-// Outflows that don't realize PnL — money / tokens leave the cost
-// pool but no buyer is on the other side (so no proceeds to
-// compare against the cost). Removes lots FIFO at zero realized.
+// Outflows that move assets *out* of the tracked portfolio with no
+// buyer on the other side. A withdraw / transfer_out that's linked
+// to a `transfer_in` on the same `transfer_group_id` is just a hop
+// between the user's own accounts — handled by `walkComponent` which
+// re-homes the lots intact (no realized PnL).
+//
+// An *unlinked* outflow is a true exit: the asset is gone from
+// anything we can value (cold wallet, gift, P2P sale that settled
+// off-platform, …). We realize PnL at fair-market value at
+// `occurredAt`, mirroring the sell branch — proceeds minus popped
+// cost. This is what users see as "I withdrew $X out of my portfolio
+// and locked in $Y of gain". When pricing can't be resolved at
+// `occurredAt` we fall back to popping at zero realized rather than
+// fabricating a phantom loss.
 const OUTFLOW_NEUTRAL_KINDS = new Set(['withdraw', 'transfer_out']);
 // Fees are ignored for cost basis in the MVP. A more accurate
 // accounting model would deduct fees from realized PnL on the same
@@ -81,7 +92,11 @@ const OUTFLOW_NEUTRAL_KINDS = new Set(['withdraw', 'transfer_out']);
  *     fair-market value at receipt (priceNative when set, otherwise
  *     held-token spot price → base via PriceGraphService); only when
  *     no price reference exists do we fall back to a zero-cost lot
- *   - withdraw / transfer_out remove lots at zero realized PnL
+ *   - unlinked withdraw / transfer_out realize PnL at FMV (proceeds
+ *     minus popped cost), treating the exit as a sale against the
+ *     market. Linked transfer pairs (`transferGroupId` matched in
+ *     `walkComponent`) stay neutral — lots inherit to the destination
+ *     holding intact.
  *
  * The `at`-time FX conversion runs through PriceGraphService so the
  * cost basis is preserved in the user's home currency at the moment
@@ -166,7 +181,23 @@ export class CostBasisService {
       }
 
       if (OUTFLOW_NEUTRAL_KINDS.has(tx.kind)) {
-        popLotsFIFO(lots, qtyAbs);
+        // This walker is only called for *singleton* holdings (see
+        // PnLAtTimeService.singletons) — holdings outside any
+        // transfer-connected component. By definition every withdraw /
+        // transfer_out reaching this branch is unlinked, so realize at
+        // FMV like a sell. `walkComponent` handles the linked case
+        // separately.
+        const proceeds = await this.txValueInBase(
+          tx,
+          qtyAbs,
+          baseCurrencyId,
+          heldTokenId,
+          priceLookup
+        );
+        const poppedCost = popLotsFIFO(lots, qtyAbs);
+        if (proceeds !== null) {
+          realized = realized.add(proceeds.minus(poppedCost));
+        }
       }
 
       // Unknown kind (fee, unknown, future kinds): skip silently.
@@ -223,6 +254,21 @@ export class CostBasisService {
     // Lots popped by a linked transfer_out, keyed by transfer_group_id,
     // waiting for the paired transfer_in to inherit them.
     const pending = new Map<string, ComponentLot[]>();
+    // Parallel ledger of per-outflow exit metadata, keyed by the same
+    // transfer_group_id. If the paired transfer_in never arrives by
+    // end of walk, each entry is realized at FMV on its source holding.
+    // FMV is computed *lazily* at end-of-walk so paired transfers (the
+    // common case) never trigger a price-graph lookup.
+    const pendingRealization = new Map<
+      string,
+      Array<{
+        tx: HoldingTransaction;
+        holdingId: string;
+        qtyAbs: Decimal;
+        heldTokenId: string | null;
+        poppedCost: Decimal;
+      }>
+    >();
     const addRealized = (holdingId: string, amount: Decimal): void => {
       realizedByHolding.set(
         holdingId,
@@ -272,8 +318,12 @@ export class CostBasisService {
         const buffered = tgid ? pending.get(tgid) : undefined;
         if (tgid && buffered && (tx.kind === 'transfer_in' || tx.kind === 'deposit')) {
           // Paired transfer_in: inherit the buffered lots (cost +
-          // acquisition date intact), re-homed to this holding.
+          // acquisition date intact), re-homed to this holding. The
+          // matched outflow accumulators get discarded — the lots are
+          // still in the pool, so end-of-walk realization shouldn't
+          // double-book PnL on them.
           pending.delete(tgid);
+          pendingRealization.delete(tgid);
           for (const lot of buffered) {
             lots.push({ qty: lot.qty, cost: lot.cost, date: lot.date, holdingId });
           }
@@ -303,17 +353,58 @@ export class CostBasisService {
 
       if (OUTFLOW_NEUTRAL_KINDS.has(tx.kind)) {
         const popped = popHolding(holdingId, qtyAbs);
+        const poppedCost = popped.reduce((s, l) => s.add(l.cost), new Decimal(0));
         const tgid = tx.transferGroupId;
         if (tgid && (tx.kind === 'transfer_out' || tx.kind === 'withdraw')) {
           // Linked transfer_out: buffer the popped lots for the paired
-          // transfer_in. Unlinked → discard at zero realized.
+          // transfer_in. The FMV lookup is deferred — most linked
+          // outflows get paired, and we don't want to make a price
+          // call we'll throw away.
           const bucket = pending.get(tgid);
           if (bucket) bucket.push(...popped);
           else pending.set(tgid, popped);
+          const accs = pendingRealization.get(tgid) ?? [];
+          accs.push({ tx, holdingId, qtyAbs, heldTokenId, poppedCost });
+          pendingRealization.set(tgid, accs);
+        } else {
+          // Unlinked outflow → true exit from the portfolio. Realize at
+          // FMV like a sale. When proceeds is null (no priceable route
+          // at occurredAt) fall through silently at zero realized
+          // rather than fabricating a phantom loss.
+          const proceeds = await this.txValueInBase(
+            tx,
+            qtyAbs,
+            baseCurrencyId,
+            heldTokenId,
+            priceLookup
+          );
+          if (proceeds !== null) {
+            addRealized(holdingId, proceeds.minus(poppedCost));
+          }
         }
       }
       // Unknown kind — skip; balance is handled by BalanceAtTimeService.
     }
+
+    // Any transfer_out lots still buffered at end of walk were never
+    // claimed by a paired transfer_in — treat each as a true exit and
+    // realize PnL on its original source holding using FMV at
+    // occurredAt.
+    for (const accs of pendingRealization.values()) {
+      for (const acc of accs) {
+        const proceeds = await this.txValueInBase(
+          acc.tx,
+          acc.qtyAbs,
+          baseCurrencyId,
+          acc.heldTokenId,
+          priceLookup
+        );
+        if (proceeds !== null) {
+          addRealized(acc.holdingId, proceeds.minus(acc.poppedCost));
+        }
+      }
+    }
+    pendingRealization.clear();
 
     const out = new Map<string, CostBasisAtTime>();
     for (const h of holdingIds) {
