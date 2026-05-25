@@ -5,6 +5,12 @@
 # app stack up (or as an opt-in `--profile migrate` service in
 # docker-compose.prod.yml).
 #
+# Build pattern matches api / worker / data-provider: bun build --compile
+# produces a single self-contained binary in the build stage; the runtime
+# stage is debian:bookworm-slim + ca-certs + the binary + the migrations
+# SQL folder. No node_modules, no bun runtime, no `packages/` tree at
+# runtime — image lands well under 100 MB instead of the prior ~500 MB.
+#
 # Migrations live OUTSIDE the api/worker/data-provider runtime images by
 # design — the OSS distribution treats schema changes as an operator
 # concern, matching the dev-compose pattern (one-shot migrate container)
@@ -33,37 +39,45 @@ COPY --parents apps/*/*/package.json packages/*/*/package.json ./
 # through other workspaces (the bulk of the monorepo).
 RUN bun install --frozen-lockfile --filter @scani/db
 
-# ---------- runtime ----------
-# bun:slim is ~70MB vs ~250MB for the full bun image. Migrations need
-# only the bun runtime + node_modules + the migrate.ts script + the SQL
-# files — no compile step, no extra system packages.
-FROM oven/bun:${BUN_VERSION}-slim AS runtime
+# ---------- build ----------
+FROM oven/bun:${BUN_VERSION} AS build
 WORKDIR /app
 
-# Inherit the workspace node_modules from `deps`. This includes
-# drizzle-orm + postgres (the only runtime deps migrate.ts needs).
-COPY --from=deps /app/node_modules /app/node_modules
-COPY --from=deps /app/package.json /app/package.json
-COPY --from=deps /app/bun.lock /app/bun.lock
+# NODE_ENV is intentionally NOT set at build time — same reasoning as the
+# api/worker/data-provider Dockerfiles. See `@scani/config`'s getNodeEnv
+# helper for the inlining trap that motivates the runtime-only read.
 
-# Workspace package.json hierarchy — bun needs these to resolve
-# `@scani/*` workspace symlinks (drizzle-orm/postgres are real
-# dependencies, but the workspace layout must be intact for bun to
-# find them through @scani/db).
-COPY --from=deps /app/packages /app/packages
+COPY --from=deps /app/node_modules ./node_modules
+COPY package.json bun.lock tsconfig.json ./
+COPY packages ./packages
 
-# Migrations source: the runner + the SQL files. migrate.ts uses
-# `__dirname/migrations` so the SQL files MUST sit next to it.
-COPY packages/infra/db/src /app/packages/infra/db/src
-COPY packages/infra/db/drizzle.config.ts /app/packages/infra/db/drizzle.config.ts
+RUN bun build packages/infra/db/src/migrate.ts \
+    --compile \
+    --target=bun \
+    --minify \
+    --outfile=dist/migrate
 
-# Single non-root user. The runner only needs read on its own files +
+# ---------- runtime ----------
+FROM debian:bookworm-slim AS runtime
+WORKDIR /app
+
+# ca-certificates: TLS to managed-Postgres (Neon, RDS, Supabase, …).
+# No curl — the migrate container is a one-shot that exits on success.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+# Non-root user. The runner only needs read on its own files +
 # network egress to Postgres; no filesystem writes outside /tmp.
-RUN useradd --create-home --shell /usr/sbin/nologin --uid 1001 app && \
-    chown -R app:app /app
+RUN useradd --create-home --shell /usr/sbin/nologin --uid 1001 app
 USER app
 
-# `bun run` resolves the workspace's tsconfig + module map. DATABASE_URL
-# is read by migrate.ts itself; surface a friendly error if unset
-# (rather than letting the postgres client fail with a cryptic message).
-CMD ["bun", "run", "/app/packages/infra/db/src/migrate.ts"]
+# The compiled binary + the SQL migration files. `bun --compile` embeds
+# the TypeScript module graph but NOT arbitrary files; migrate.ts joins
+# `__dirname/migrations` at runtime, so the SQL folder must sit next to
+# the binary on disk. With this layout `__dirname` resolves to `/app`
+# inside the compiled binary, matching the `/app/migrations` path below.
+COPY --from=build --chown=app:app /app/dist/migrate /app/migrate
+COPY --chown=app:app packages/infra/db/src/migrations /app/migrations
+
+CMD ["/app/migrate"]
