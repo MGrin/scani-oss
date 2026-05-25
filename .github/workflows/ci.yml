@@ -267,3 +267,24 @@ jobs:
           fi
 
           echo "✅ No hardcoded secrets detected"
+
+  # Single required status check named in the `main-protection` ruleset.
+  # Always runs (so docs-only PRs don't trip "skipped == failed" gating)
+  # and fails only when an upstream job actually failed or was cancelled.
+  ci-success:
+    name: CI Success
+    needs: [detect-changes, validate-code, validate-deps, test, secret-scan]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify required jobs
+        env:
+          NEEDS: ${{ toJSON(needs) }}
+        run: |
+          set -euo pipefail
+          echo "$NEEDS"
+          if echo "$NEEDS" | grep -E '"result":[[:space:]]*"(failure|cancelled)"' > /dev/null; then
+            echo "::error::A required CI job failed or was cancelled."
+            exit 1
+          fi
+          echo "All required jobs passed or were skipped."
