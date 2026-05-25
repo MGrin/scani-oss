@@ -19,6 +19,7 @@ tRPC call returns `PRECONDITION_FAILED`.
 | DeFiLlama | _none_ | price, token-identity | Free. Coin spec is `chain:address` or `coingecko:slug`. |
 | Frankfurter | _none_ | price | Free FX rates between fiat currencies. |
 | Yahoo Finance | _none_ | price | Backup pricing source for equities. |
+| Google Sheets | `GOOGLE_SHEETS_ID` + `GOOGLE_SERVICE_ACCOUNT_KEY` (base64 JSON) | price (current only) | Per-user manual-asset prices read from a sheet. Lives in its own workspace (`packages/clients/providers-google-sheets`). Historical falls through to Frankfurter. |
 
 ## Exchanges
 
