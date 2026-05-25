@@ -13,8 +13,7 @@ the SPA can be deployed against any backend host without rebuilding.
 
 ## Tags
 
-- `latest` — head of `main`
-- `sha-<short>` — every push to `main`
+- `latest` — highest semver release tag
 - `1.2.3` / `1.2` / `1` — semver release tags
 
 The image is built with `VITE_API_URL=/api` baked in — runtime backend
