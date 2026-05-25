@@ -11,8 +11,7 @@ user credentials never cross the tenant boundary. Enqueues async work onto Redis
 
 ## Tags
 
-- `latest` — head of `main`
-- `sha-<short>` — every push to `main`
+- `latest` — highest semver release tag
 - `1.2.3` / `1.2` / `1` — semver release tags
 
 Pin `SCANI_IMAGE_TAG=1.2.3` in your `.env` for reproducible deploys.
