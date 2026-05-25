@@ -52,7 +52,13 @@ jobs:
         run: |
           set -euo pipefail
           FILE="packages/infra/logging/src/pseudonymize.ts"
-          if ! grep -q "LOG_ID_PEPPER" "$FILE" || ! grep -q "NODE_ENV === 'production'" "$FILE"; then
+          # Accept either the literal `NODE_ENV === 'production'` form or
+          # the `isNodeEnvProduction()` helper from @scani/config — OSS
+          # migrated to the helper as part of the X-1 fix (bun --compile
+          # substitutes `process.env.NODE_ENV` at build time, killing the
+          # literal guard in the compiled binary). Both forms satisfy the
+          # invariant; the helper form is strictly stronger.
+          if ! grep -q "LOG_ID_PEPPER" "$FILE" || ! grep -Eq "NODE_ENV === 'production'|isNodeEnvProduction\(\)" "$FILE"; then
             echo "::error file=$FILE::LOG_ID_PEPPER prod-guard removed. See C-03."
             exit 1
           fi
@@ -61,7 +67,10 @@ jobs:
         run: |
           set -euo pipefail
           FILE="packages/infra/security/src/encryption.ts"
-          if ! grep -q "isProduction" "$FILE"; then
-            echo "::error file=$FILE::encryption.ts lost its isProduction guard. See A-01."
+          # `isProduction` (the const) was renamed to `isNodeEnvProduction`
+          # (a function) by the OSS X-1 fix; accept either symbol so the
+          # invariant survives the migration.
+          if ! grep -Eq "isProduction|isNodeEnvProduction" "$FILE"; then
+            echo "::error file=$FILE::encryption.ts lost its production-mode guard. See A-01."
             exit 1
           fi
