@@ -46,7 +46,7 @@ ownership rule.
 | `COOKIE_DOMAIN` | app (api) | Cross-subdomain cookie scope. Leave unset for same-origin. |
 | `BETTER_AUTH_SECRET` | app (api) | 32+ chars. Better-Auth session signing key. |
 | `JOBS_HMAC_SECRET` | app (api) | 32+ chars. HMAC for operator job endpoints. |
-| `SCREENSHOT_BOT_SECRET` | app (api) | 32+ chars. Screenshot-bot sign-in bearer. |
+| `SCREENSHOT_BOT_SECRET` | app (api) | 32+ chars. Screenshot-bot sign-in bearer. **Optional everywhere** — unset endpoint refuses with 403, feature disabled. Set if you use a screenshot-capture pipeline. |
 | `ENCRYPTION_KEY` | **package** (`@scani/security`) | ≥32 chars (recommended: 64 hex chars from `openssl rand -hex 32`). AES-256-GCM. Must match api ↔ worker. |
 | `LOG_ID_PEPPER` | **package** (`@scani/logging`) | 16+ chars. ID-hashing pepper. Required in production. |
 | `WORKER_CONCURRENCY` | app (worker) | Max concurrent BullMQ jobs per worker. Default 4. |
@@ -67,10 +67,11 @@ ownership rule.
 | Variable | Owner | What it does |
 |---|---|---|
 | `S3_ENDPOINT` | **package** (`@scani/storage`) | Server-side S3 endpoint. |
-| `S3_PUBLIC_ENDPOINT` | package | URL baked into presigned URLs for the browser. |
+| `S3_PUBLIC_ENDPOINT` | package | URL baked into presigned URLs for the browser. Defaults to `S3_ENDPOINT` if unset; override when the bucket is fronted by a CDN with a different hostname. |
 | `S3_ACCESS_KEY_ID` | package | |
 | `S3_SECRET_ACCESS_KEY` | package | |
 | `S3_BUCKET` | package | Bucket name. |
+| `S3_REGION` | package | Optional. Defaults to `auto` (works for R2 + MinIO). Set explicitly for AWS S3 (e.g. `us-east-1`). |
 
 ## Email
 
@@ -86,8 +87,15 @@ ownership rule.
 |---|---|---|
 | `LOG_LEVEL` | package (`@scani/logging`) | `debug`, `info`, `warn`, `error`. Default `info`. |
 | `LOG_PRETTY` | package | Pretty-print. Default `false` in production. |
+| `LOG_COLORIZE` | package | Colourise pretty-printed logs. Default on in dev, off in prod. |
+| `LOG_TIMESTAMP` | package | Include timestamps. Default on. Set `false` to defer to the log aggregator. |
 | `LOG_SQL_QUERIES` | package | Log Drizzle queries. Default `false`. |
+| `LOG_REQUEST_BODIES` | package | Log inbound HTTP request bodies. Dev only — refuses to start with this on in production. |
+| `LOG_RESPONSE_BODIES` | package | Log outbound HTTP response bodies. Dev only. |
+| `LOG_WEBSOCKET_MESSAGES` | package | Log WebSocket frames. Default on. |
 | `SERVICE_NAME` | app | Set automatically by compose (`api`, `worker`, `data-provider`). |
+| `SERVICE_VERSION` | app | Set automatically by the build; surfaces in log records. |
+| `AI_DEFAULT_PROVIDER` | app (worker) | Optional. Which AI provider the worker picks first for screenshot parse / token-identity (`openai`, `perplexity`, `deepseek`). Defaults to `openai`. |
 
 ## Provider keys (read by the data-provider)
 
@@ -106,7 +114,9 @@ hosted data-provider.
 | `HELIUS_API_KEY` | Helius | Solana balances + transactions. |
 | `BINANCE_OAUTH_CLIENT_ID` | Binance | OAuth flow. |
 | `BINANCE_OAUTH_CLIENT_SECRET` | Binance | OAuth flow. |
-| `BINANCE_OAUTH_REDIRECT_URI` | Binance | OAuth callback URL. |
+| `BINANCE_OAUTH_REDIRECT_URI` | Binance | OAuth callback URL (e.g. `https://api.your-domain.example.com/auth/binance/callback`). |
+| `GOOGLE_SHEETS_ID` | Google Sheets | Sheet ID for manual-asset pricing fallback. Optional. |
+| `GOOGLE_SERVICE_ACCOUNT_KEY` | Google Sheets | Base64-encoded service-account JSON used to read the sheet above. Optional. |
 
 ## Observability
 
@@ -118,6 +128,43 @@ hosted data-provider.
 | `VITE_SENTRY_DSN` | app (frontend) | Browser-side Sentry. Baked at build time. |
 | `VITE_SENTRY_ENABLED` | app (frontend) | Enable client-side reporting. |
 | `VITE_API_URL` | app (frontend) | URL the SPA calls for `/api`. Bun-bundled image bakes `/api`. |
+| `API_UPSTREAM` | app (frontend-app nginx) | Inside the prod `frontend-app` image, nginx reverse-proxies `/api/*` → `${API_UPSTREAM}`. Default `http://api:3001` (compose network). Override when running `frontend-app` outside compose. |
+| `FRONTEND_PORT` | docker-compose.prod.yml | Host port for the `frontend-app` container. Default 8080. |
+
+## API port shape across deployment layers
+
+The number `3001` shows up in three places that mean different things;
+trying to "fix" any one of them in isolation tends to break the other
+two:
+
+| Layer | Port | Notes |
+|---|---|---|
+| Host-side `bun dev:api` | `3001` | Default from `.env.example` (`PORT=3001`). |
+| Dev compose `api` container | `8080` internal, `3011` host | Compose maps `3011:8080` and overrides `PORT=8080` so the dev SPA at `:5173` can reach the api at `http://localhost:3011`. |
+| Prod compose `api` container | `3001` internal, **no host port** | nginx inside `frontend-app` proxies to `http://api:3001` over the compose network. Operators only expose `frontend-app`. |
+
+`VITE_API_URL` follows the same split: `http://localhost:3001` in
+host-dev, `http://localhost:3011` in dev compose (frontend container's
+own env), `/api` baked into the prod `frontend-app` image so nginx
+handles routing.
+
+## Health-check endpoints
+
+All exposed by `apps/backend/api` (and surfaced via nginx as
+`/api/*` in prod compose):
+
+| Path | What it does | When to use |
+|---|---|---|
+| `/health` | Process liveness. 200 if the api process is up. | Cheap k8s liveness probe. |
+| `/readyz` | Readiness. 200 only if **DB + Redis + schema** are all healthy. Returns 503 (with a per-check breakdown) if migrations haven't been applied. | k8s readiness probe; load-balancer upstream check; `docker-compose.prod.yml` api healthcheck. |
+| `/health/db` | DB ping + pool stats. | Operator debugging. |
+| `/health/ws` | WebSocket stats. | Operator debugging. |
+| `/health/deep` | DB + Redis + R2 + AI. | Deploy-time smoke test. NOT for traffic routing — slow. |
+
+The `data-provider` exposes `/health` (process liveness) on its bind
+port. The prod `frontend-app` image exposes `/healthz` (nginx alive),
+not to be confused with `/api/health/*` (which goes through to the
+api).
 
 ## Validation pattern
 
