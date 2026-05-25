@@ -16,8 +16,7 @@ the app silently does on its own.
 
 ## Tags
 
-- `latest` — head of `main`
-- `sha-<short>` — every push to `main`
+- `latest` — highest semver release tag
 - `1.2.3` / `1.2` / `1` — semver release tags
 
 **Always use the same tag you're upgrading your app images to.** Mixing
