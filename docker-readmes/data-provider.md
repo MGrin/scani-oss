@@ -21,8 +21,7 @@ hosted endpoint.
 
 ## Tags
 
-- `latest` — head of `main`
-- `sha-<short>` — every push to `main`
+- `latest` — highest semver release tag
 - `1.2.3` / `1.2` / `1` — semver release tags
 
 ## Quick start
