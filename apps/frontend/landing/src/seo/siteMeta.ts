@@ -19,6 +19,10 @@ export const TWITTER_HANDLE = '@scani_xyz';
 
 export const TWITTER_URL = 'https://x.com/scani_xyz';
 
+export const BLUESKY_HANDLE = '@scani.xyz';
+
+export const BLUESKY_URL = 'https://bsky.app/profile/scani.xyz';
+
 export const PRODUCT_HUNT_URL = 'https://www.producthunt.com/products/scani';
 
 export const PRODUCT_HUNT_POST_ID = '1155034';
