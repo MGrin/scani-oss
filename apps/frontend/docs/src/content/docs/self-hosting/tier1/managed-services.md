@@ -40,20 +40,48 @@ Then comment out the `postgres` service in `docker-compose.prod.yml`:
 
 ### Migrations on a managed Postgres
 
-The app containers run migrations on first boot — no separate step.
-If you'd rather run them explicitly:
+Apply migrations explicitly before each deploy. The
+[`scani/migrate`](https://hub.docker.com/r/scani/migrate) image is a
+pre-built one-shot that wraps the Drizzle runner — no workspace
+clone, no Bun install on your side.
 
 ```sh
 docker run --rm \
   -e DATABASE_URL="$DATABASE_URL" \
-  oven/bun:1.3.13 \
-  bash -c "git clone https://github.com/MGrin/scani-oss /app && \
-           cd /app && bun install --frozen-lockfile && \
-           bun run packages/infra/db/src/migrate.ts"
+  scani/migrate:${SCANI_IMAGE_TAG:-latest}
 ```
 
-For repeated deployments, build a thin image with the migrate step
-baked in.
+For a Kubernetes deploy, wrap it in a `Job` that runs before the api
+`Deployment` rolls out:
+
+```yaml
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: scani-migrate-{{ .Values.image.tag }}
+spec:
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: migrate
+          image: scani/migrate:{{ .Values.image.tag }}
+          env:
+            - name: DATABASE_URL
+              valueFrom: { secretKeyRef: { name: scani, key: DATABASE_URL } }
+```
+
+For a CI-based deploy, run it as a step before the api/worker
+rollout. The runner is idempotent — already-applied migrations are
+skipped — so re-running on every deploy is safe and cheap.
+
+**Always pin the same tag** you're using for your other `scani/*`
+images. Mixing `scani/migrate:1.2.0` with `scani/api:1.3.0` is
+unsupported.
+
+See [Production with docker-compose → Apply migrations](/self-hosting/tier1/production/#apply-migrations)
+for the compose-based variant and the "what if you forget" failure
+modes (api's `/readyz` returns 503, worker restart-loops).
 
 ## Redis
 

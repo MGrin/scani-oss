@@ -60,6 +60,7 @@ import { Container } from 'typedi';
 // any Container.get against the framework abstracts.
 import '@scani/jobs';
 import {
+  awaitSchemaReady,
   db,
   endConnectionTracking,
   getActiveConnectionsCount,
@@ -538,11 +539,17 @@ app
       };
     }
   })
-  // Readiness probe — used by the load balancer to decide when a fresh
-  // machine should start receiving traffic. Pings DB + Redis only, no
-  // upstream calls, to keep p99 < 100ms. `/health` (above) doubles as the
-  // liveness probe (process alive). `/health/deep` is for deploy-time
-  // smoke tests, not for traffic routing.
+  // Readiness probe — used by the load balancer (and docker-compose
+  // healthchecks) to decide when a fresh machine should start receiving
+  // traffic. Pings DB + Redis and checks that the schema has been
+  // migrated. No upstream calls, p99 < 100ms in the happy path.
+  // `/health` (above) doubles as the liveness probe (process alive).
+  // `/health/deep` is for deploy-time smoke tests, not for traffic routing.
+  //
+  // The schema check is what makes this fail-loud when the operator
+  // forgets `docker compose --profile migrate run --rm migrate` on a
+  // fresh prod-compose deploy. Without it, the api binds, /health
+  // returns 200, but every authenticated route 500s on missing tables.
   .get('/readyz', async ({ set }: { set: { status: number } }) => {
     const checks: Record<string, { ok: boolean; latencyMs: number; error?: string }> = {};
     const dbStart = performance.now();
@@ -573,7 +580,22 @@ app
       };
     }
 
-    const ok = checks.db.ok && checks.redis.ok;
+    // Schema readiness — verifies the canary tables exist. Short
+    // poll/timeout so this probe stays cheap; if the schema's truly
+    // missing the next call lands within a second.
+    const schemaStart = performance.now();
+    try {
+      await awaitSchemaReady({ timeoutMs: 500, pollMs: 100 });
+      checks.schema = { ok: true, latencyMs: Math.round(performance.now() - schemaStart) };
+    } catch (err) {
+      checks.schema = {
+        ok: false,
+        latencyMs: Math.round(performance.now() - schemaStart),
+        error: err instanceof Error ? err.message : String(err),
+      };
+    }
+
+    const ok = checks.db.ok && checks.redis.ok && checks.schema.ok;
     if (!ok) set.status = 503;
     return {
       status: ok ? 'ok' : 'error',

@@ -26,15 +26,16 @@ RUN bun install --frozen-lockfile --filter @scani/backend
 FROM oven/bun:${BUN_VERSION} AS build
 WORKDIR /app
 
-# Set NODE_ENV=production BEFORE `bun build --compile --minify`. The
-# minifier folds `process.env.NODE_ENV === 'production'` to a constant
-# at build time; without this ENV the value is unset, so the comparison
-# inlines as `false` and the runtime ENV NODE_ENV=production below
-# arrives too late to affect anything baked into the binary. Concrete
-# breakage this fixed: env-isolation warnings firing at boot complaining
-# about "remote URL but NODE_ENV=development" even though the runtime
-# env is production.
-ENV NODE_ENV=production
+# NODE_ENV is intentionally NOT set at build time. If it were, the
+# minifier would fold `process.env.NODE_ENV === 'production'` to a
+# compile-time constant — convenient for prod, but it breaks the dev
+# compose stack: the binary then thinks it's production regardless of
+# the runtime override, so every "required in production" guard fires
+# in dev (LOG_ID_PEPPER, https-only URLs, FASTMAIL_API_TOKEN, …).
+# Runtime NODE_ENV is set in the runtime stage below; dev compose
+# overrides it to "development". The bundle is marginally larger
+# because dev/prod branches both ship — acceptable trade-off to keep
+# the same image runnable under both NODE_ENVs.
 
 COPY --from=deps /app/node_modules ./node_modules
 

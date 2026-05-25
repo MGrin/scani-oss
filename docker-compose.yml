@@ -19,7 +19,6 @@
 services:
   postgres:
     image: postgres:16-alpine
-    container_name: postgres
     restart: unless-stopped
     environment:
       POSTGRES_USER: scani
@@ -37,7 +36,6 @@ services:
 
   redis:
     image: redis:7-alpine
-    container_name: redis
     restart: unless-stopped
     command: ["redis-server", "--appendonly", "yes"]
     ports:
@@ -52,7 +50,6 @@ services:
 
   mailpit:
     image: axllent/mailpit:latest
-    container_name: mailpit
     restart: unless-stopped
     ports:
       - "1026:1025"   # SMTP
@@ -67,7 +64,6 @@ services:
   # Data persists in the named volume; reset with `docker compose down -v`.
   minio:
     image: minio/minio:latest
-    container_name: minio
     restart: unless-stopped
     command: ["server", "/data", "--console-address", ":9001"]
     environment:
@@ -87,7 +83,6 @@ services:
   # One-shot bucket creator. Exits as soon as the dev bucket exists.
   minio-init:
     image: minio/mc:latest
-    container_name: minio-init
     depends_on:
       minio:
         condition: service_healthy
@@ -108,7 +103,6 @@ services:
   # for both docker and host-side dev.
   env-sync:
     image: oven/bun:1.3.13
-    container_name: env-sync
     working_dir: /app
     volumes:
       - .:/app
@@ -121,7 +115,6 @@ services:
   # boots — the volume persists across `compose up` calls.
   deps:
     image: oven/bun:1.3.13
-    container_name: deps
     working_dir: /app
     volumes:
       - .:/app
@@ -137,7 +130,6 @@ services:
   migrate:
     profiles: ["full", "migrate"]
     image: oven/bun:1.3.13
-    container_name: migrate
     working_dir: /app
     volumes:
       - .:/app
@@ -162,7 +154,6 @@ services:
       context: .
       dockerfile: apps/backend/data-provider/Dockerfile
     image: data-provider:dev
-    container_name: data-provider
     depends_on:
       postgres:
         condition: service_healthy
@@ -223,7 +214,6 @@ services:
       context: .
       dockerfile: apps/backend/api/Dockerfile
     image: api:dev
-    container_name: api
     depends_on:
       postgres:
         condition: service_healthy
@@ -282,7 +272,6 @@ services:
       context: .
       dockerfile: apps/backend/worker/Dockerfile
     image: worker:dev
-    container_name: worker
     depends_on:
       postgres:
         condition: service_healthy
@@ -325,7 +314,6 @@ services:
   frontend:
     profiles: ["full"]
     image: oven/bun:1.3.13
-    container_name: frontend
     working_dir: /app/apps/frontend/app
     depends_on:
       api:

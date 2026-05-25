@@ -1,12 +1,13 @@
 name: Docker publish
 
-# Builds and publishes multi-arch (amd64 + arm64) images for the four
-# Scani services to Docker Hub under the `scani/` namespace:
+# Builds and publishes multi-arch (amd64 + arm64) images for the five
+# Scani images to Docker Hub under the `scani/` namespace:
 #
 #   scani/api               apps/backend/api/Dockerfile
 #   scani/worker            apps/backend/worker/Dockerfile
 #   scani/data-provider     apps/backend/data-provider/Dockerfile
 #   scani/frontend-app      apps/frontend/app/Dockerfile
+#   scani/migrate           packages/infra/db/Dockerfile.migrate
 #
 # Tagging:
 #   - push to main                → `:latest` + `:sha-<short>`
@@ -41,6 +42,8 @@ on:
       - 'apps/backend/data-provider/Dockerfile'
       - 'apps/frontend/app/Dockerfile'
       - 'apps/frontend/app/nginx.conf.template'
+      - 'packages/infra/db/Dockerfile.migrate'
+      - 'packages/infra/db/src/**'
       - 'package.json'
       - 'bun.lock'
       - 'apps/*/*/package.json'
@@ -73,6 +76,8 @@ jobs:
             dockerfile: apps/backend/data-provider/Dockerfile
           - image: frontend-app
             dockerfile: apps/frontend/app/Dockerfile
+          - image: migrate
+            dockerfile: packages/infra/db/Dockerfile.migrate
 
     steps:
       - uses: actions/checkout@v4
