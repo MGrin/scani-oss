@@ -15,6 +15,14 @@ export const DOCS_URL = 'https://docs.scani.xyz';
 
 export const SUPPORT_EMAIL = 'support@scani.xyz';
 
+export const TWITTER_HANDLE = '@scani_xyz';
+
+export const TWITTER_URL = 'https://x.com/scani_xyz';
+
+export const PRODUCT_HUNT_URL = 'https://www.producthunt.com/products/scani';
+
+export const PRODUCT_HUNT_POST_ID = '1155034';
+
 /** Joins a route path onto the site origin, always producing an absolute URL. */
 export function absoluteUrl(path: string): string {
   if (path === '/' || path === '') return `${SITE_URL}/`;

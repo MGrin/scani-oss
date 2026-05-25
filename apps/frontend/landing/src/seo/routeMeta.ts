@@ -13,7 +13,13 @@ import {
   softwareApplicationJsonLd,
   websiteJsonLd,
 } from './jsonLd';
-import { absoluteUrl, DEFAULT_OG_IMAGE, SITE_NAME, SUPPORT_EMAIL } from './siteMeta';
+import {
+  absoluteUrl,
+  DEFAULT_OG_IMAGE,
+  SITE_NAME,
+  SUPPORT_EMAIL,
+  TWITTER_HANDLE,
+} from './siteMeta';
 
 export interface RouteMeta {
   title: string;
@@ -113,6 +119,7 @@ export function renderHeadTags(meta: RouteMeta): string {
     `<meta property="og:image" content="${DEFAULT_OG_IMAGE}" />`,
     `<meta property="og:site_name" content="${SITE_NAME}" />`,
     '<meta name="twitter:card" content="summary_large_image" />',
+    `<meta name="twitter:site" content="${TWITTER_HANDLE}" />`,
     `<meta name="twitter:title" content="${titleAttr}" />`,
     `<meta name="twitter:description" content="${description}" />`,
     `<meta name="twitter:image" content="${DEFAULT_OG_IMAGE}" />`

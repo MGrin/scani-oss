@@ -1,5 +1,5 @@
 import { COMPARISONS } from '../../data/comparisons';
-import { DOCS_URL } from '../../seo/siteMeta';
+import { DOCS_URL, TWITTER_URL } from '../../seo/siteMeta';
 import { ScaniLogo } from '../ScaniLogo';
 
 // The Documentation entry points at docs.scani.xyz (concepts,
@@ -44,6 +44,7 @@ const COLUMNS: ReadonlyArray<{ label: string; links: { label: string; href: stri
     links: [
       { label: 'Contact us', href: '/contact' },
       { label: 'support@scani.xyz', href: 'mailto:support@scani.xyz' },
+      { label: 'Follow @scani_xyz on X', href: TWITTER_URL },
     ],
   },
 ];

@@ -2,7 +2,14 @@
 // <Head> component serialises into a <script type="application/ld+json">.
 
 import type { QA } from '../data/faq';
-import { absoluteUrl, DEFAULT_OG_IMAGE, GITHUB_URL, SITE_NAME, SITE_URL } from './siteMeta';
+import {
+  absoluteUrl,
+  DEFAULT_OG_IMAGE,
+  GITHUB_URL,
+  SITE_NAME,
+  SITE_URL,
+  TWITTER_URL,
+} from './siteMeta';
 
 export type JsonLd = Record<string, unknown>;
 
@@ -13,7 +20,7 @@ export function organizationJsonLd(): JsonLd {
     name: SITE_NAME,
     url: SITE_URL,
     logo: DEFAULT_OG_IMAGE,
-    sameAs: [GITHUB_URL],
+    sameAs: [GITHUB_URL, TWITTER_URL],
   };
 }
 
@@ -77,7 +84,7 @@ export function contactPointOrganizationJsonLd(email: string): JsonLd {
     name: SITE_NAME,
     url: SITE_URL,
     logo: DEFAULT_OG_IMAGE,
-    sameAs: [GITHUB_URL],
+    sameAs: [GITHUB_URL, TWITTER_URL],
     contactPoint: {
       '@type': 'ContactPoint',
       contactType: 'customer support',
