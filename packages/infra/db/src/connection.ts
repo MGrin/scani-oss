@@ -1,3 +1,4 @@
+import { getNodeEnv } from '@scani/config';
 import { createComponentLogger, logConfig } from '@scani/logging';
 import { drizzle as drizzlePostgres } from 'drizzle-orm/postgres-js';
 import postgres from 'postgres';
@@ -8,7 +9,7 @@ const dbLogger = createComponentLogger('database');
 
 // Environment variables
 const DATABASE_URL = process.env.DATABASE_URL;
-const NODE_ENV = process.env.NODE_ENV || 'development';
+const NODE_ENV = getNodeEnv() || 'development';
 const IS_CRON_JOB = process.env.IS_CRON_JOB === 'true'; // Set to 'true' in cron job environment
 
 // Database connection

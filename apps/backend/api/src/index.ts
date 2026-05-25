@@ -9,6 +9,7 @@ import { cors } from '@elysiajs/cors';
 import { trpc } from '@elysiajs/trpc';
 import { loadCloudClientConfig } from '@scani/cloud-client';
 import { probeDataProvider } from '@scani/cloud-client/health-probe';
+import { getNodeEnv, isNodeEnvProduction } from '@scani/config';
 import { createComponentLogger, createTimer, logger, sanitizeUrl } from '@scani/logging';
 import { flushSentry, initSentry, captureException as sentryCapture } from '@scani/logging/sentry';
 import { setSharedRedis } from '@scani/rate-limiter';
@@ -417,7 +418,7 @@ const app = new Elysia()
     set.headers['Cross-Origin-Resource-Policy'] = 'same-site';
     set.headers['Content-Security-Policy'] =
       "default-src 'none'; frame-ancestors 'none'; base-uri 'none'";
-    if (process.env.NODE_ENV === 'production') {
+    if (isNodeEnvProduction()) {
       set.headers['Strict-Transport-Security'] = 'max-age=31536000; includeSubDomains; preload';
     }
   })
@@ -802,7 +803,7 @@ const server = app.listen(PORT, () => {
     {
       httpUrl: `http://${HOST}:${PORT}`,
       wsUrl: `ws://${HOST}:${PORT}`,
-      environment: process.env.NODE_ENV || 'development',
+      environment: getNodeEnv() || 'development',
     },
     '🎉 Scani Backend Server started successfully'
   );
