@@ -8,14 +8,43 @@ sidebar:
 ## Two env vars
 
 ```ini
-SCANI_CLOUD_URL=https://data-provider.your-host.example.com
+SCANI_CLOUD_URL=https://api.cloud.scani.xyz
 SCANI_CLOUD_API_KEY=<bearer issued by the operator>
 ```
 
 `SCANI_CLOUD_URL` replaces the Tier-1 default
-`http://data-provider:8082` (the compose-network hostname).
+`http://data-provider:8082` (the compose-network hostname). The
+official Scani Cloud endpoint is `https://api.cloud.scani.xyz`;
+operators running their own hosted data-provider use their own URL.
+
 `SCANI_CLOUD_API_KEY` is the bearer the api and worker present in
 the `Authorization` header on every tRPC call to the data-provider.
+Mint one for `api.cloud.scani.xyz` at
+[cloud.scani.xyz](https://cloud.scani.xyz); on a self-operated
+endpoint the operator gives you one.
+
+## Working `.env` snippet
+
+A minimal Tier 2 `.env` adds these vars and removes everything that
+belonged to the local data-provider (provider keys, SMTP creds, the
+Fastmail token, `DATA_PROVIDER_API_KEY`):
+
+```ini
+NODE_ENV=production
+SCANI_CLOUD_URL=https://api.cloud.scani.xyz
+SCANI_CLOUD_API_KEY=sk_live_…   # from cloud.scani.xyz
+
+# Plus everything Tier 1 already required: DATABASE_URL, REDIS_URL,
+# FRONTEND_URL, BACKEND_URL, ENCRYPTION_KEY, BETTER_AUTH_SECRET,
+# JOBS_HMAC_SECRET, S3_*. See /self-hosting/tier1/required-env/.
+```
+
+Smoke-test the endpoint is reachable before bringing the stack up:
+
+```sh
+curl -fsS https://api.cloud.scani.xyz/health
+# {"status":"ok","timestamp":"…","version":"1.0.0"}
+```
 
 The hosted data-provider validates the bearer against its own
 `DATA_PROVIDER_API_KEY` (the variable the operator sets on their
@@ -90,8 +119,8 @@ docker compose -f docker-compose.prod.yml logs api worker \
 Expected (Tier 2):
 
 ```
-api:    {... "msg":"☁️  Data-provider reachable", "scaniCloudUrl":"https://data-provider.your-host.example.com" ...}
-worker: {... "scaniCloudUrl":"https://data-provider.your-host.example.com" ...}
+api:    {... "msg":"☁️  Data-provider reachable", "scaniCloudUrl":"https://api.cloud.scani.xyz" ...}
+worker: {... "scaniCloudUrl":"https://api.cloud.scani.xyz" ...}
 ```
 
 If you see `"scaniCloudUrl":"(local fallback)"`, the env vars didn't

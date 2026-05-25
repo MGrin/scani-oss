@@ -25,6 +25,29 @@ You **don't** run the data-provider, and you **don't** need any of
 the provider API keys (`COINGECKO_API_KEY`, `OPENAI_API_KEY`,
 `ETHERSCAN_API_KEY`, `HELIUS_API_KEY`, `FINNHUB_API_KEY`, …).
 
+## The hosted endpoint
+
+The official Scani Cloud data-provider is:
+
+```
+https://api.cloud.scani.xyz
+```
+
+Smoke-test it before pointing your api/worker at it:
+
+```sh
+curl -fsS https://api.cloud.scani.xyz/health
+# {"status":"ok","timestamp":"…","version":"1.0.0"}
+```
+
+A successful `200` with a JSON body means the endpoint is reachable
+from your network and the TLS chain validates. You still need an
+`SCANI_CLOUD_API_KEY` to actually call any provider route — sign in
+at [cloud.scani.xyz](https://cloud.scani.xyz) to mint one.
+
+Operators running their own hosted data-provider can swap the URL for
+their own — the contract is identical.
+
 ## When Tier 2 makes sense
 
 | Pick Tier 2 when… | Stay on Tier 1 when… |
@@ -66,10 +89,12 @@ magic-link email and the data-provider does the SMTP send.
 ## How to switch from Tier 1 to Tier 2
 
 1. Provision (or obtain) a hosted data-provider endpoint. The
-   operator gives you a URL and an API key.
+   official endpoint is `https://api.cloud.scani.xyz`; mint an API
+   key at [cloud.scani.xyz](https://cloud.scani.xyz). (Operators
+   running their own hosted data-provider use their own URL.)
 2. Update `.env`:
    ```ini
-   SCANI_CLOUD_URL=https://data-provider.your-host.example.com
+   SCANI_CLOUD_URL=https://api.cloud.scani.xyz
    SCANI_CLOUD_API_KEY=<the issued key>
    ```
 3. Comment out (or remove) the `data-provider` service block in
