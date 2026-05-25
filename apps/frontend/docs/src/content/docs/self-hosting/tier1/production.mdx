@@ -162,7 +162,7 @@ iterating on a new migration locally.
 
 ### How the app behaves if you forget
 
-- `api`'s `GET /health/ready` returns **503** with a `Schema not
+- `api`'s `GET /readyz` returns **503** with a `Schema not
   ready: missing tables <list>` payload.
 - `worker` logs `⏳ Awaiting schema readiness before scheduler
   registration`, times out after 60s, restart-loops.
