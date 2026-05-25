@@ -1,3 +1,4 @@
+import { getNodeEnv } from '@scani/config';
 import * as Sentry from '@sentry/node';
 
 let initialized = false;
@@ -29,7 +30,7 @@ export function initSentry(opts: {
   if (!dsn || initialized) return;
   Sentry.init({
     dsn,
-    environment: process.env.SENTRY_ENVIRONMENT || process.env.NODE_ENV || 'development',
+    environment: process.env.SENTRY_ENVIRONMENT || getNodeEnv() || 'development',
     release: opts.release || process.env.SENTRY_RELEASE || undefined,
     tracesSampleRate: 0.1,
     initialScope: opts.component ? { tags: { component: opts.component } } : undefined,

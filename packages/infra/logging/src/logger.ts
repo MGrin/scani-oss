@@ -1,4 +1,4 @@
-import { isProduction } from '@scani/config';
+import { getNodeEnv, isProduction } from '@scani/config';
 import pino from 'pino';
 
 export type LogContext = object;
@@ -29,7 +29,7 @@ export interface CustomLogger extends pino.Logger {
 // `isDevelopment` is not the complement of `isProduction` — `NODE_ENV=test`
 // (Bun's default) makes both false. Keeping it local since `@scani/config`
 // only exports the production gate.
-const isDevelopment = process.env.NODE_ENV === 'development' || !process.env.NODE_ENV;
+const isDevelopment = getNodeEnv() === 'development' || !getNodeEnv();
 
 // Each app sets `SERVICE_NAME` in its container env so a shared log
 // stream can distinguish api / worker / data-provider rows.
@@ -139,7 +139,7 @@ const createHumanReadableLogger = () => {
     formatters: {
       log: (object: Record<string, unknown>) => ({
         ...object,
-        environment: process.env.NODE_ENV || 'development',
+        environment: getNodeEnv() || 'development',
       }),
     },
     hooks: {
@@ -277,7 +277,7 @@ export const logger = (
         formatters: {
           log: (object: Record<string, unknown>) => ({
             ...object,
-            environment: process.env.NODE_ENV || 'development',
+            environment: getNodeEnv() || 'development',
           }),
         },
       })

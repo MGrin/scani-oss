@@ -346,6 +346,7 @@
       "name": "@scani/db",
       "version": "1.0.0",
       "dependencies": {
+        "@scani/config": "workspace:*",
         "@scani/logging": "workspace:*",
         "drizzle-orm": "^0.45.2",
         "postgres": "^3.4.9",

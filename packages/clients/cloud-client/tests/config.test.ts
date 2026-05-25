@@ -131,4 +131,24 @@ describe('loadCloudClientConfig — SCANI_CLOUD_URL schema', () => {
       expect(cfg.SCANI_CLOUD_URL).toBe('https://hosted.example.com');
     });
   });
+
+  // N-1 regression sentinel — `bun build --compile --minify` statically
+  // inlines literal `process.env.NODE_ENV` accesses with the build-time
+  // value ("development" when unset), silently making every prod guard
+  // dead. The schema MUST read NODE_ENV via bracket notation so the
+  // runtime OS env is honoured. This test sets NODE_ENV via bracket
+  // notation (mirroring the compiled-binary path) and verifies the
+  // public-hostname rejection still fires.
+  test('runtime NODE_ENV (bracket access) still rejects http://public hostname', () => {
+    // biome-ignore lint/complexity/useLiteralKeys: same bracket-notation form a compiled binary uses
+    process.env['NODE_ENV'] = 'production';
+    resetCloudClientConfig();
+    expect(() =>
+      loadCloudClientConfig({
+        NODE_ENV: 'production',
+        SCANI_CLOUD_URL: 'http://public.example.com',
+        SCANI_CLOUD_API_KEY: 'a'.repeat(16),
+      } as NodeJS.ProcessEnv)
+    ).toThrow(/must use https:\/\/ in production/);
+  });
 });

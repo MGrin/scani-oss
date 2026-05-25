@@ -1,4 +1,4 @@
-import { requiredInProd, urlSchema } from '@scani/config';
+import { isNodeEnvProduction, requiredInProd, urlSchema } from '@scani/config';
 import { z } from 'zod';
 
 // Env shape owned by this package. Apps that depend on @scani/cloud-client
@@ -31,9 +31,12 @@ export function isPrivateNetworkHost(hostname: string): boolean {
 // NODE_ENV is read at parse time (not at module load) so tests can
 // exercise both production and non-production branches against the
 // same schema instance — same pattern as `httpsUrlInProduction` in
-// @scani/config.
+// @scani/config. We MUST use `isNodeEnvProduction()` (bracket-notation
+// access) here, not the literal `process.env.NODE_ENV` form: `bun build
+// --compile --minify` statically inlines the literal at build time,
+// silently making this guard dead in the compiled binary.
 const cloudUrlSchema = urlSchema.optional().superRefine((value, ctx) => {
-  if (process.env.NODE_ENV !== 'production') return; // dev/test: anything goes (including unset)
+  if (!isNodeEnvProduction()) return; // dev/test: anything goes (including unset)
   if (value === undefined) {
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
