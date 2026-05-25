@@ -23,13 +23,6 @@ export function isNodeEnvProduction(): boolean {
   return getNodeEnv() === 'production';
 }
 
-/**
- * @deprecated Module-load-time snapshot — keeps back-compat for existing
- * imports, but new code should call `isNodeEnvProduction()` so the value
- * is read at the call site rather than at module-load.
- */
-export const isProduction = isNodeEnvProduction();
-
 export const urlSchema = z.string().url({ message: 'must be a valid URL' });
 
 // The refine reads NODE_ENV at parse time (not at module load) so a single

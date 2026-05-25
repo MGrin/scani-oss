@@ -43,7 +43,12 @@ jobs:
         run: |
           set -euo pipefail
           FILE="packages/infra/logging/src/pseudonymize.ts"
-          if ! grep -q "LOG_ID_PEPPER" "$FILE" || ! grep -q "NODE_ENV === 'production'" "$FILE"; then
+          # The prod-NODE_ENV check is read through @scani/config's
+          # isNodeEnvProduction() helper rather than a literal
+          # `NODE_ENV === 'production'` so `bun --compile --minify` can't
+          # inline it away (see N-1). Either form satisfies the guard,
+          # plus the canonical helper name.
+          if ! grep -q "LOG_ID_PEPPER" "$FILE" || ! grep -qE "(NODE_ENV === 'production'|isNodeEnvProduction)" "$FILE"; then
             echo "::error file=$FILE::LOG_ID_PEPPER prod-guard removed. See C-03."
             exit 1
           fi
@@ -52,7 +57,10 @@ jobs:
         run: |
           set -euo pipefail
           FILE="packages/infra/security/src/encryption.ts"
-          if ! grep -q "isProduction" "$FILE"; then
-            echo "::error file=$FILE::encryption.ts lost its isProduction guard. See A-01."
+          # `isProduction` was renamed to `isNodeEnvProduction` (see N-1).
+          # Accept either spelling so the guard doesn't break across the
+          # rename window — both bind to the same @scani/config helper.
+          if ! grep -qE "isNodeEnvProduction|isProduction" "$FILE"; then
+            echo "::error file=$FILE::encryption.ts lost its NODE_ENV=production guard. See A-01."
             exit 1
           fi

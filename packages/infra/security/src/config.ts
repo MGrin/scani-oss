@@ -1,4 +1,4 @@
-import { isProduction } from '@scani/config';
+import { isNodeEnvProduction } from '@scani/config';
 import { z } from 'zod';
 
 // Env shape owned by this package. Apps that depend on @scani/security don't
@@ -14,7 +14,7 @@ import { z } from 'zod';
 // docker-compose stacks and IntegrationCredentialsService.test.ts run
 // without ceremony.
 const envSchema = z.object({
-  ENCRYPTION_KEY: isProduction
+  ENCRYPTION_KEY: isNodeEnvProduction()
     ? z.string().min(32, {
         message:
           'ENCRYPTION_KEY is required in production and must be at least 32 chars. ' +
