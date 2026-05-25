@@ -45,8 +45,10 @@ function getEncryptionKey(): Buffer | null {
  * database in the clear. We refuse to start that code path in production.
  */
 function assertEncryptionKeyInProduction(): void {
-  // biome-ignore lint/complexity/useLiteralKeys: bracket notation defeats bun's build-time inlining; see @scani/config getNodeEnv()
-  const nodeEnv = process.env['NODE_ENV'];
+  // Bun.env (runtime API) defeats `bun build --compile --minify`'s
+  // static substitution of `process.env.NODE_ENV` — see @scani/config
+  // getNodeEnv() for the failure mode this avoids.
+  const nodeEnv = Bun.env.NODE_ENV;
   if (nodeEnv === 'production' && !process.env.ENCRYPTION_KEY) {
     throw new Error(
       'ENCRYPTION_KEY is required in production. Refusing to store sensitive ' +
