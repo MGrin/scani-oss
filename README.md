@@ -163,9 +163,11 @@ To use managed Postgres / Redis / S3-compatible storage, comment out
 the corresponding services in `docker-compose.prod.yml` and point
 `DATABASE_URL` / `REDIS_URL` / `S3_*` at the managed endpoints.
 
-Images are tagged `:latest` (head of `main`), `:sha-<short>` (every
-push), and `:1.2.3` / `:1.2` / `:1` (semver tags). Pin
-`SCANI_IMAGE_TAG=1.2.3` in `.env` if you want reproducible deploys.
+Images are published on each `v*` release tag (cut by release-please):
+`:1.2.3`, `:1.2`, `:1`, and `:latest` (re-pointed to the most recent
+release). `main` pushes are intentionally not a publish trigger — if
+you need bleeding-edge builds, clone the repo and build locally. Pin
+`SCANI_IMAGE_TAG=1.2.3` in `.env` for reproducible deploys.
 
 ## Privacy
 
