@@ -11,6 +11,8 @@ service. MIT licensed.
 [![Coverage](https://img.shields.io/endpoint?url=https://gist.githubusercontent.com/MGrin/0ecce2153b44eedf13ad350eacb3193d/raw/scani-oss-coverage.json)](https://github.com/MGrin/scani-oss/actions/workflows/coverage.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
 [![Bun](https://img.shields.io/badge/runtime-Bun-black.svg)](https://bun.sh)
+[![Bluesky](https://img.shields.io/badge/Bluesky-%40scani.xyz-0085ff?logo=bluesky&logoColor=white)](https://bsky.app/profile/scani.xyz)
+[![X](https://img.shields.io/badge/X-%40scani__xyz-000000?logo=x&logoColor=white)](https://x.com/scani_xyz)
 
 **📚 [Docs →](https://docs.scani.xyz/)** — quickstart, self-hosting,
 architecture, provider integrations, and the full env-var reference.

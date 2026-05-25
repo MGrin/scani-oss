@@ -22,6 +22,16 @@ export default defineConfig({
           label: 'GitHub',
           href: 'https://github.com/MGrin/scani-oss',
         },
+        {
+          icon: 'blueSky',
+          label: 'Bluesky',
+          href: 'https://bsky.app/profile/scani.xyz',
+        },
+        {
+          icon: 'x.com',
+          label: 'X',
+          href: 'https://x.com/scani_xyz',
+        },
       ],
       editLink: {
         baseUrl: 'https://github.com/MGrin/scani-oss/edit/main/apps/frontend/docs/',
