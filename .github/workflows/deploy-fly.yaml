@@ -3,7 +3,7 @@ name: Deploy
 # Triggered by the Terraform workflow's completion (which runs on every
 # main push). This sequencing guarantees that any GH Actions secrets
 # Terraform creates in that same push — e.g. the S3_* and
-# ADMIN_JOBS_HMAC_SECRET rows in github.tf — are visible to this workflow
+# JOBS_HMAC_SECRET rows in github.tf — are visible to this workflow
 # when it stages them onto Fly. When both workflows triggered directly
 # from `push`, they ran in parallel and deploy-fly's secret context was
 # snapshotted before Terraform's `apply` created the new secrets, which
@@ -446,7 +446,7 @@ jobs:
       - name: Stage core + cloud-client + Sentry secrets on scani-backend
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
-          ADMIN_JOBS_HMAC_SECRET: ${{ secrets.ADMIN_JOBS_HMAC_SECRET }}
+          JOBS_HMAC_SECRET: ${{ secrets.JOBS_HMAC_SECRET }}
           SENTRY_DSN_BACKEND: ${{ secrets.SENTRY_DSN_BACKEND }}
           # See data-provider block above for rationale; @scani/logging
           # refuses to load in production without LOG_ID_PEPPER.
@@ -469,7 +469,7 @@ jobs:
           # need to be a managed secret. Matches infra/terraform/main.tf's
           # `api_cloud_host` local + cloudflare.tf's `api_cloud` CNAME.
           SCANI_CLOUD_URL="https://api.cloud.scani.xyz"
-          for var in ADMIN_JOBS_HMAC_SECRET SENTRY_DSN_BACKEND LOG_ID_PEPPER SCANI_CLOUD_API_KEY; do
+          for var in JOBS_HMAC_SECRET SENTRY_DSN_BACKEND LOG_ID_PEPPER SCANI_CLOUD_API_KEY; do
             if [ -z "${!var:-}" ]; then
               echo "::error::Missing required secret: $var" >&2
               exit 1
@@ -480,7 +480,7 @@ jobs:
           payload=$(mktemp)
           trap 'rm -f "$payload"' EXIT
           {
-            printf 'ADMIN_JOBS_HMAC_SECRET=%s\n' "$ADMIN_JOBS_HMAC_SECRET"
+            printf 'JOBS_HMAC_SECRET=%s\n' "$JOBS_HMAC_SECRET"
             printf 'LOG_ID_PEPPER=%s\n' "$LOG_ID_PEPPER"
             printf 'NODE_ENV=%s\n' "production"
             printf 'SENTRY_DSN=%s\n' "$SENTRY_DSN_BACKEND"
@@ -495,6 +495,11 @@ jobs:
             printf 'EMAIL_TRACKING_SECRET=%s\n' "${EMAIL_TRACKING_SECRET:-}"
           } > "$payload"
           flyctl secrets import --stage --app scani-backend < "$payload"
+          # One-shot cleanup of the prior `ADMIN_JOBS_HMAC_SECRET` env var
+          # name (renamed to `JOBS_HMAC_SECRET` to align with OSS). Safe to
+          # keep permanently — `flyctl secrets unset` returns non-zero on a
+          # missing secret, suppressed via `|| true` to stay idempotent.
+          flyctl secrets unset --app scani-backend --stage ADMIN_JOBS_HMAC_SECRET || true
 
       - run: |
           flyctl deploy --remote-only \
@@ -855,7 +860,7 @@ jobs:
           FASTMAIL_API_TOKEN: ${{ secrets.FASTMAIL_API_TOKEN }}
           # BullMQ retry/remove: admin signs these → backend verifies with
           # the matching secret. Must equal the backend's Fly secret.
-          ADMIN_JOBS_HMAC_SECRET: ${{ secrets.ADMIN_JOBS_HMAC_SECRET }}
+          JOBS_HMAC_SECRET: ${{ secrets.JOBS_HMAC_SECRET }}
           # Master switch for admin write actions (DLQ replay, schedule
           # run-now, Cloudflare purge, Fly restart, key revoke, …).
           # Hardcoded to "1" — operator has authorized writes to be on
@@ -902,7 +907,7 @@ jobs:
                    TF_GITHUB_TOKEN FASTMAIL_API_TOKEN \
                    ADMIN_PASSKEY_CREDENTIAL_ID ADMIN_PASSKEY_PUBLIC_KEY \
                    ADMIN_SESSION_SECRET \
-                   ADMIN_JOBS_HMAC_SECRET ADMIN_WRITES_ENABLED BACKEND_BASE_URL \
+                   JOBS_HMAC_SECRET ADMIN_WRITES_ENABLED BACKEND_BASE_URL \
                    NEXT_PUBLIC_SENTRY_DSN SENTRY_AUTH_TOKEN SENTRY_ORG \
                    SENTRY_RELEASE SENTRY_ENVIRONMENT \
                    POSTHOG_API_KEY POSTHOG_PROJECT_ID POSTHOG_HOST; do
@@ -913,6 +918,11 @@ jobs:
           # secrets so the /services/cloudflare page can call the CF API.
           sync_secret CLOUDFLARE_API_TOKEN "$CLOUDFLARE_API_TOKEN"
           sync_secret CLOUDFLARE_ACCOUNT_ID "$CLOUDFLARE_ACCOUNT_ID"
+
+          # One-shot cleanup of the prior `ADMIN_JOBS_HMAC_SECRET` Pages
+          # secret name (renamed to `JOBS_HMAC_SECRET` to align with OSS).
+          # `delete_secret_if_present` is idempotent.
+          delete_secret_if_present ADMIN_JOBS_HMAC_SECRET
 
           if [ -n "$ADMIN_PASSKEY_CREDENTIAL_ID" ]; then
             echo "Passkey already provisioned → ensuring ADMIN_BOOTSTRAP_TOKEN is unset"
