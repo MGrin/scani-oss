@@ -174,14 +174,19 @@ iterating on a new migration locally.
 
 | Tag | Pushed on |
 |---|---|
-| `:latest` | Every push to `main`. |
-| `:sha-<short>` | Every push (any branch). |
-| `:1.2.3`, `:1.2`, `:1` | Semver tag pushes (cut by release-please). |
+| `:1.2.3`, `:1.2`, `:1` | Each `v*` release tag (cut by release-please). |
+| `:latest` | The most recent `v*` release (re-tagged on every release). |
 
-Pin `SCANI_IMAGE_TAG=1.2.3` in `.env` for reproducible deploys. The
-default `latest` follows main, which means a `docker compose pull`
-gets you the newest code — convenient for development, dangerous for
-production.
+Releases are gated on `v*` tags so that what reaches consumers is
+always a deliberate, reviewed cut. `main` pushes are intentionally
+*not* a publish trigger — bleeding-edge builds against `main` are not
+pushed to Docker Hub. If you need them, clone the repo and build the
+images locally.
+
+Pin `SCANI_IMAGE_TAG=1.2.3` in `.env` for reproducible deploys.
+`:latest` is convenient for one-command bring-up but moves under you
+whenever a new release lands; pinning a specific version protects
+production from accidental upgrades.
 
 See [Upgrades & version pinning](/self-hosting/tier1/upgrades/) for
 the safer upgrade flow.

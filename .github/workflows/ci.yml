@@ -34,6 +34,7 @@ jobs:
       code: ${{ steps.filter.outputs.code }}
       deps: ${{ steps.filter.outputs.deps }}
       docs: ${{ steps.filter.outputs.docs }}
+      prod-guards: ${{ steps.filter.outputs.prod-guards }}
     steps:
       - uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0
         with:
@@ -131,6 +132,22 @@ jobs:
             # END auto:filters
             data-provider:
               - 'apps/backend/data-provider/**'
+            # Compiled-binary production guards live in @scani/config (the
+            # getNodeEnv helper that defeats `bun build --compile --minify`
+            # NODE_ENV substitution), @scani/cloud-client (https-in-prod
+            # SCANI_CLOUD_URL check), and @scani/logging (LOG_ID_PEPPER
+            # required-in-prod). Any change to those, the api Dockerfile,
+            # or the api build script means the integration test below must
+            # re-run from a fresh image.
+            prod-guards:
+              - 'packages/infra/config/**'
+              - 'packages/clients/cloud-client/**'
+              - 'packages/infra/logging/**'
+              - 'packages/business/shared/src/utils/encryption.ts'
+              - 'apps/backend/api/Dockerfile'
+              - 'apps/backend/api/package.json'
+              - 'apps/backend/api/src/config/**'
+              - '.github/workflows/ci.yml'
 
   validate-code:
     name: Lint & Type Check
@@ -220,6 +237,114 @@ jobs:
           NODE_ENV: test
           DATABASE_URL: postgres://scani:scani@localhost:5433/scani?sslmode=disable
 
+  prod-guards-integration:
+    # Builds the api binary via the production Dockerfile and asserts
+    # that compile-time NODE_ENV substitution can't disable the
+    # `https://` requirement on SCANI_CLOUD_URL or the LOG_ID_PEPPER
+    # required-in-prod check. This is the regression test for X-1: bun
+    # build --compile --minify previously folded `process.env.NODE_ENV`
+    # to its build-time value, leaving every production guard dead in
+    # the artifact OSS users actually consume. Unit tests can't catch
+    # this — they run under the bun interpreter, not the compiled
+    # binary — so we have to bake an image and run it.
+    name: Prod-guards integration (compiled api)
+    needs: detect-changes
+    if: ${{ needs.detect-changes.outputs.prod-guards == 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0
+
+      - name: Build api image (no cache, to catch substitution regressions)
+        run: docker build --no-cache -f apps/backend/api/Dockerfile -t scani/api:ci-verify .
+
+      - name: Start isolated Postgres + Redis on a dedicated network
+        run: |
+          set -euo pipefail
+          docker network create x1-ci
+          docker run -d --name x1-pg --network x1-ci \
+            -e POSTGRES_USER=scani -e POSTGRES_PASSWORD=scani -e POSTGRES_DB=scani \
+            postgres:16-alpine
+          docker run -d --name x1-redis --network x1-ci redis:7-alpine
+          until docker exec x1-pg pg_isready -U scani 2>/dev/null | grep -q accepting; do
+            sleep 1
+          done
+
+      - name: Assert api rejects http:// public SCANI_CLOUD_URL in production
+        run: |
+          set -euo pipefail
+          set +e
+          docker run --rm --network x1-ci \
+            -e NODE_ENV=production \
+            -e DATABASE_URL='postgres://scani:scani@x1-pg:5432/scani?sslmode=disable' \
+            -e REDIS_URL=redis://x1-redis:6379 \
+            -e FRONTEND_URL=https://example.com \
+            -e BACKEND_URL=https://example.com/api \
+            -e "BETTER_AUTH_SECRET=$(openssl rand -hex 32)" \
+            -e "ENCRYPTION_KEY=$(openssl rand -hex 16)" \
+            -e "JOBS_HMAC_SECRET=$(openssl rand -hex 32)" \
+            -e "LOG_ID_PEPPER=$(openssl rand -hex 32)" \
+            -e "SCANI_CLOUD_API_KEY=$(openssl rand -hex 32)" \
+            -e 'SCANI_CLOUD_URL=http://public.example.com:8082' \
+            -e PORT=3001 -e SERVICE_NAME=api \
+            scani/api:ci-verify > out.log 2>&1
+          status=$?
+          set -e
+          echo "::group::api output"
+          cat out.log
+          echo "::endgroup::"
+          if [ "$status" -eq 0 ]; then
+            echo "::error::api booted successfully with http://public.example.com:8082 in NODE_ENV=production. The X-1 NODE_ENV-substitution regression is back."
+            exit 1
+          fi
+          if ! grep -q '@scani/cloud-client env misconfigured' out.log; then
+            echo "::error::api crashed but not with the expected cloud-client misconfigured error — investigate."
+            exit 1
+          fi
+          if ! grep -q 'must use https:// in production' out.log; then
+            echo "::error::Missing the 'must use https:// in production' phrase in the error — the schema may have drifted."
+            exit 1
+          fi
+          echo "✅ api correctly rejected http://public.example.com:8082"
+
+      - name: Assert api rejects missing LOG_ID_PEPPER in production
+        run: |
+          set -euo pipefail
+          set +e
+          docker run --rm --network x1-ci \
+            -e NODE_ENV=production \
+            -e DATABASE_URL='postgres://scani:scani@x1-pg:5432/scani?sslmode=disable' \
+            -e REDIS_URL=redis://x1-redis:6379 \
+            -e FRONTEND_URL=https://example.com \
+            -e BACKEND_URL=https://example.com/api \
+            -e "BETTER_AUTH_SECRET=$(openssl rand -hex 32)" \
+            -e "ENCRYPTION_KEY=$(openssl rand -hex 16)" \
+            -e "JOBS_HMAC_SECRET=$(openssl rand -hex 32)" \
+            -e "SCANI_CLOUD_API_KEY=$(openssl rand -hex 32)" \
+            -e 'SCANI_CLOUD_URL=https://data-provider.example.com' \
+            -e PORT=3001 -e SERVICE_NAME=api \
+            scani/api:ci-verify > out.log 2>&1
+          status=$?
+          set -e
+          echo "::group::api output"
+          cat out.log
+          echo "::endgroup::"
+          if [ "$status" -eq 0 ]; then
+            echo "::error::api booted successfully without LOG_ID_PEPPER in NODE_ENV=production."
+            exit 1
+          fi
+          if ! grep -q 'LOG_ID_PEPPER' out.log; then
+            echo "::error::api crashed but not with the expected LOG_ID_PEPPER error."
+            exit 1
+          fi
+          echo "✅ api correctly rejected missing LOG_ID_PEPPER"
+
+      - name: Tear down test infra
+        if: always()
+        run: |
+          docker rm -f x1-pg x1-redis 2>/dev/null || true
+          docker network rm x1-ci 2>/dev/null || true
+
   secret-scan:
     # Cheap + high-value: always runs so docs / workflow-only PRs can't
     # slip a leaked key through unchecked.
@@ -306,7 +431,16 @@ jobs:
   # and fails only when an upstream job actually failed or was cancelled.
   ci-success:
     name: CI Success
-    needs: [detect-changes, validate-code, validate-deps, validate-docs, test, secret-scan]
+    needs:
+      [
+        detect-changes,
+        validate-code,
+        validate-deps,
+        validate-docs,
+        test,
+        prod-guards-integration,
+        secret-scan,
+      ]
     if: always()
     runs-on: ubuntu-latest
     steps:
