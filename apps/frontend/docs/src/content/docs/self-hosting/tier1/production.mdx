@@ -34,19 +34,38 @@ endpoints (see [Managed services](/self-hosting/tier1/managed-services/)).
    `BETTER_AUTH_SECRET`, `ENCRYPTION_KEY`, `JOBS_HMAC_SECRET`,
    `DATA_PROVIDER_API_KEY`, `SCANI_CLOUD_API_KEY`, `LOG_ID_PEPPER`.
 
-3. Boot.
+3. Apply database migrations. **Do this on every fresh install AND
+   on every upgrade**, before bringing the long-running services up.
+
+   ```sh
+   docker compose -f docker-compose.prod.yml --profile migrate run --rm migrate
+   ```
+
+   The `migrate` service is profile-gated so it doesn't run on every
+   `up -d` — see [Apply migrations](#apply-migrations) below for why
+   and for the alternative orchestrators (Kubernetes Job, CI step,
+   `docker run` standalone).
+
+4. Boot the long-running services.
 
    ```sh
    docker compose -f docker-compose.prod.yml up -d
    docker compose -f docker-compose.prod.yml logs -f frontend-app api worker
    ```
 
-4. Put a TLS-terminating reverse proxy in front of `frontend-app:8080`.
+5. Put a TLS-terminating reverse proxy in front of `frontend-app:8080`.
 
    See [TLS & reverse proxy](/self-hosting/tier1/tls-reverse-proxy/)
    for Caddy and nginx examples.
 
 </Steps>
+
+<Aside type="caution" title="What if you skip the migrate step?">
+  The api's `/readyz` endpoint returns **503** with a `Schema
+  not ready: missing tables …` payload, and the worker logs
+  `⏳ Awaiting schema readiness …` in a restart loop. Run the
+  migrate command, then `docker compose restart api worker`.
+</Aside>
 
 ## What's in the compose file
 
@@ -55,6 +74,7 @@ endpoints (see [Managed services](/self-hosting/tier1/managed-services/)).
 | `postgres` | `postgres:16-alpine` | (internal) | Other compose services. |
 | `redis` | `redis:7-alpine` | (internal) | Other compose services. |
 | `minio` + `minio-init` | `minio/minio:latest`, `minio/mc:latest` | (internal) | Other compose services. |
+| `migrate` (profile-gated) | `scani/migrate:${SCANI_IMAGE_TAG:-latest}` | (none) | One-shot; exits after applying migrations. |
 | `data-provider` | `scani/data-provider:${SCANI_IMAGE_TAG:-latest}` | (internal) | `api`, `worker`. |
 | `api` | `scani/api:${SCANI_IMAGE_TAG:-latest}` | (internal) | `frontend-app` via nginx reverse proxy. |
 | `worker` | `scani/worker:${SCANI_IMAGE_TAG:-latest}` | (none) | n/a — consumes from Redis. |
@@ -81,11 +101,74 @@ minio ────┘        └─ worker ┘
   reach it on first call).
 - `frontend-app` waits for `api:healthy`.
 
-The migrate step is **not** a separate service in the production
-compose — the runtime images run migrations on first boot
-automatically. (In dev, the explicit `migrate` service runs against
-the bun image because the runtime images are slim and don't carry
-`bun run`.)
+The `migrate` service is **not** in this boot graph — it's
+profile-gated and you run it explicitly. See the next section.
+
+## Apply migrations
+
+Schema changes ship as Drizzle migration files
+(`packages/infra/db/src/migrations/*.sql`). They're packaged into a
+small standalone image (`scani/migrate`) and applied explicitly,
+**not** baked into the api/worker/data-provider runtime images.
+
+The reasoning: silently auto-migrating on app boot creates two
+failure modes operators can't see — race conditions between replicas,
+and partial-apply states when a migration crashes mid-way. Making it
+explicit means schema changes are a step you (or your deploy pipeline)
+control.
+
+Three ways to run it, pick whichever fits your infrastructure:
+
+### 1. Via docker-compose (recommended for compose-based deploys)
+
+```sh
+docker compose -f docker-compose.prod.yml --profile migrate run --rm migrate
+```
+
+The `--rm` flag removes the one-shot container as soon as it exits.
+Re-running is a safe no-op for already-applied migrations.
+
+### 2. Standalone `docker run` (Kubernetes Job / CI step / one-off)
+
+```sh
+docker run --rm \
+  -e DATABASE_URL="$DATABASE_URL" \
+  scani/migrate:${SCANI_IMAGE_TAG:-latest}
+```
+
+Use this from a Kubernetes `Job`, an external CI deploy step, or any
+orchestrator that isn't docker-compose. **Pin the same tag** you're
+using for the other `scani/*` images — mixing versions is unsupported.
+
+### 3. From a git checkout (development / debugging)
+
+```sh
+git clone https://github.com/MGrin/scani-oss.git && cd scani-oss
+bun install
+DATABASE_URL="$DATABASE_URL" bun run db:migrate
+```
+
+The same `migrate.ts` script the Docker image wraps. Useful when you
+want to inspect a migration before applying it, or when you're
+iterating on a new migration locally.
+
+### When to run it
+
+- **First install:** before the first `docker compose -f docker-compose.prod.yml up -d`.
+- **Every upgrade:** after `docker compose pull` and before
+  `docker compose up -d` / `restart`. Some upgrades ship schema
+  changes; some don't. Always running migrate first is safe and
+  cheap.
+
+### How the app behaves if you forget
+
+- `api`'s `GET /health/ready` returns **503** with a `Schema not
+  ready: missing tables <list>` payload.
+- `worker` logs `⏳ Awaiting schema readiness before scheduler
+  registration`, times out after 60s, restart-loops.
+- `frontend-app`'s `GET /healthz` still returns 200 (it's just nginx),
+  so don't trust it as a "stack is up" signal. `/api/readyz` is
+  the authoritative one.
 
 ## Image tags
 

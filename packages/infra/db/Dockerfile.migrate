@@ -1,0 +1,69 @@
+# syntax=docker/dockerfile:1.7-labs
+#
+# Tiny single-purpose image for applying Drizzle migrations against a
+# running Postgres. Self-hosters run it as a one-shot before bringing the
+# app stack up (or as an opt-in `--profile migrate` service in
+# docker-compose.prod.yml).
+#
+# Migrations live OUTSIDE the api/worker/data-provider runtime images by
+# design — the OSS distribution treats schema changes as an operator
+# concern, matching the dev-compose pattern (one-shot migrate container)
+# and the managed-deploy pattern (CI runs migrations as a separate deploy
+# step).
+#
+# Usage (standalone):
+#   docker run --rm -e DATABASE_URL=postgres://… scani/migrate:latest
+#
+# Usage (docker-compose.prod.yml):
+#   docker compose -f docker-compose.prod.yml --profile migrate run --rm migrate
+
+ARG BUN_VERSION=1.3.13
+
+# ---------- deps ----------
+FROM oven/bun:${BUN_VERSION} AS deps
+WORKDIR /app
+
+# `--parents` preserves directory structure under the glob, so the
+# workspace registration that `bun install --filter` requires stays
+# correct without enumerating every package.json by hand.
+COPY package.json bun.lock ./
+COPY --parents apps/*/*/package.json packages/*/*/package.json ./
+
+# Filter to @scani/db's dep graph only — drops everything reachable
+# through other workspaces (the bulk of the monorepo).
+RUN bun install --frozen-lockfile --filter @scani/db
+
+# ---------- runtime ----------
+# bun:slim is ~70MB vs ~250MB for the full bun image. Migrations need
+# only the bun runtime + node_modules + the migrate.ts script + the SQL
+# files — no compile step, no extra system packages.
+FROM oven/bun:${BUN_VERSION}-slim AS runtime
+WORKDIR /app
+
+# Inherit the workspace node_modules from `deps`. This includes
+# drizzle-orm + postgres (the only runtime deps migrate.ts needs).
+COPY --from=deps /app/node_modules /app/node_modules
+COPY --from=deps /app/package.json /app/package.json
+COPY --from=deps /app/bun.lock /app/bun.lock
+
+# Workspace package.json hierarchy — bun needs these to resolve
+# `@scani/*` workspace symlinks (drizzle-orm/postgres are real
+# dependencies, but the workspace layout must be intact for bun to
+# find them through @scani/db).
+COPY --from=deps /app/packages /app/packages
+
+# Migrations source: the runner + the SQL files. migrate.ts uses
+# `__dirname/migrations` so the SQL files MUST sit next to it.
+COPY packages/infra/db/src /app/packages/infra/db/src
+COPY packages/infra/db/drizzle.config.ts /app/packages/infra/db/drizzle.config.ts
+
+# Single non-root user. The runner only needs read on its own files +
+# network egress to Postgres; no filesystem writes outside /tmp.
+RUN useradd --create-home --shell /usr/sbin/nologin --uid 1001 app && \
+    chown -R app:app /app
+USER app
+
+# `bun run` resolves the workspace's tsconfig + module map. DATABASE_URL
+# is read by migrate.ts itself; surface a friendly error if unset
+# (rather than letting the postgres client fail with a cryptic message).
+CMD ["bun", "run", "/app/packages/infra/db/src/migrate.ts"]

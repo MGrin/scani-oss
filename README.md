@@ -124,13 +124,26 @@ at call-time if unset):
 
 The repo ships a [`docker-compose.prod.yml`](./docker-compose.prod.yml)
 that pulls pre-built multi-arch images from Docker Hub
-(`scani/api`, `scani/worker`, `scani/data-provider`, `scani/frontend-app`)
-and wires them up with Postgres + Redis + MinIO. One-command bring-up:
+(`scani/api`, `scani/worker`, `scani/data-provider`,
+`scani/frontend-app`, plus the opt-in `scani/migrate` schema runner)
+and wires them up with Postgres + Redis + MinIO. Two-command
+bring-up — migrations are explicit, not auto-applied:
 
 ```bash
-cp .env.example .env                              # set real values
+cp .env.example .env                                                            # set real values
+
+# Apply schema migrations (do this on first install AND on every upgrade)
+docker compose -f docker-compose.prod.yml --profile migrate run --rm migrate
+
+# Bring the long-running services up
 docker compose -f docker-compose.prod.yml up -d
 ```
+
+See [self-hosting → production → Apply migrations](https://docs.scani.xyz/self-hosting/tier1/production/#apply-migrations)
+for the alternative orchestrators (Kubernetes Job, CI deploy step,
+standalone `docker run`) and what the app does if you forget the
+migrate step (api's `/readyz` returns 503, worker logs
+`Awaiting schema readiness` in a restart loop).
 
 For a real deployment, set the required env vars in `.env`
 (`BACKEND_URL`, `FRONTEND_URL`, `BETTER_AUTH_SECRET`, `ENCRYPTION_KEY`,
