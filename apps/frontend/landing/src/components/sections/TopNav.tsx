@@ -1,6 +1,6 @@
-import { Github } from 'lucide-react';
+import { Github, Twitter } from 'lucide-react';
 import { useEffect, useState } from 'react';
-import { DOCS_URL, GITHUB_URL } from '../../seo/siteMeta';
+import { DOCS_URL, GITHUB_URL, TWITTER_URL } from '../../seo/siteMeta';
 import { ScaniLogo } from '../ScaniLogo';
 
 // Nav anchors visitors hit from the top bar.
@@ -54,6 +54,15 @@ export function TopNav() {
           ))}
         </nav>
         <div className="flex items-center gap-2">
+          <a
+            href={TWITTER_URL}
+            target="_blank"
+            rel="noreferrer noopener"
+            aria-label="Follow @scani_xyz on X"
+            className="inline-flex h-7 items-center justify-center rounded-md border border-border bg-card px-2 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+          >
+            <Twitter className="h-4 w-4" />
+          </a>
           <a
             href={GITHUB_URL}
             target="_blank"
