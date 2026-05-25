@@ -50,7 +50,7 @@ FROM debian:bookworm-slim AS runtime
 WORKDIR /app
 
 ENV NODE_ENV=production \
-    PORT=8080 \
+    PORT=3001 \
     HOST=0.0.0.0
 
 # curl: needed by the healthcheck below. ca-certificates: TLS to
@@ -66,9 +66,9 @@ USER app
 
 COPY --from=build --chown=app:app /app/apps/backend/api/dist/server /app/server
 
-EXPOSE 8080
+EXPOSE 3001
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
-  CMD curl --fail --silent --show-error http://localhost:8080/health > /dev/null || exit 1
+  CMD curl --fail --silent --show-error http://localhost:3001/readyz > /dev/null || exit 1
 
 CMD ["/app/server"]
