@@ -8,13 +8,18 @@ name: Docker publish
 #   scani/data-provider     apps/backend/data-provider/Dockerfile
 #   scani/frontend-app      apps/frontend/app/Dockerfile
 #
-# Tagging:
-#   - push to main                → `:latest` + `:sha-<short>`
-#   - push tag `v*` (e.g. v1.2.3) → `:1.2.3`, `:1.2`, `:1`, `:latest`
-#   - `workflow_dispatch`         → manual run, same tags as the
-#                                   triggering branch
+# Tagging / publish behavior:
+#   - push tag `v*` (e.g. v1.2.3) → push: `:1.2.3`, `:1.2`, `:1`, `:latest`
 #   - `pull_request`              → build only (no push), sanity check
 #                                   that Dockerfiles still build
+#   - `workflow_dispatch` from a tag ref → same as a tag push (publish)
+#   - `workflow_dispatch` from a branch → build only (no push); useful
+#                                   for ad-hoc verification without
+#                                   polluting Docker Hub
+#
+# Note: `main` pushes are intentionally not a trigger. Public Docker Hub
+# releases are gated on `v*` tags (produced by release-please) so we keep
+# tight control over what reaches consumers.
 #
 # Required repo secrets (set under Settings → Secrets and variables →
 # Actions):
@@ -27,14 +32,13 @@ name: Docker publish
 
 on:
   push:
-    branches: [main]
     tags: ['v*']
   pull_request:
     # Only build on PRs that could actually change the image — Dockerfiles,
     # the nginx template, the lockfile, any workspace's package.json, or
     # this workflow itself. Code-only and docs-only PRs skip the 4×
-    # multi-arch build entirely. main-push still rebuilds & publishes
-    # everything on merge, so the smoke-test value is preserved.
+    # build entirely. The next `v*` tag push will still rebuild and
+    # publish everything, so the PR build is purely a smoke test.
     paths:
       - 'apps/backend/api/Dockerfile'
       - 'apps/backend/worker/Dockerfile'
@@ -52,8 +56,8 @@ permissions:
   contents: read
 
 concurrency:
-  # Per-ref so a fresh push to main supersedes an in-flight build, but a
-  # tag push (release) runs alongside a main push.
+  # Per-ref so a re-run of the same tag supersedes an in-flight build,
+  # while distinct tags / branches / PRs run independently.
   group: docker-publish-${{ github.ref }}
   cancel-in-progress: true
 
@@ -91,9 +95,10 @@ jobs:
               mirrors = ["mirror.gcr.io"]
 
       - name: Log in to Docker Hub
-        # Skip the login on pull_request from forks — secrets aren't
-        # available and we're not pushing anyway.
-        if: github.event_name != 'pull_request'
+        # Login only when we're actually going to push (tag pushes and
+        # workflow_dispatch from a tag ref). PR builds and branch dispatches
+        # are build-only and never need the registry credential.
+        if: startsWith(github.ref, 'refs/tags/v')
         uses: docker/login-action@v3
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
@@ -104,15 +109,13 @@ jobs:
         uses: docker/metadata-action@v5
         with:
           images: scani/${{ matrix.image }}
+          # latest=auto (the default) attaches `:latest` to the highest
+          # semver on tag-push events, and skips it on PR / branch builds.
           tags: |
-            # latest on default branch
-            type=raw,value=latest,enable={{is_default_branch}}
-            # short SHA on every push
-            type=sha,prefix=sha-,format=short
-            # branch name on branch pushes (excluding main since latest covers it)
-            type=ref,event=branch,enable=${{ github.ref != 'refs/heads/main' }}
-            # PR tag on pull_request (build-only, never pushed but still tagged)
+            # PR tag on pull_request (build-only, never pushed)
             type=ref,event=pr
+            # Branch ref on workflow_dispatch from a branch (build-only)
+            type=ref,event=branch
             # semver on tag pushes
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
@@ -123,13 +126,15 @@ jobs:
         with:
           context: .
           file: ${{ matrix.dockerfile }}
-          # PRs only build amd64 as a smoke test — arm64 via QEMU is ~5–10×
-          # slower and almost never catches a bug amd64 didn't. main/tag
-          # publishes still produce proper multi-arch images.
-          platforms: ${{ github.event_name == 'pull_request' && 'linux/amd64' || 'linux/amd64,linux/arm64' }}
-          # Push on every event EXCEPT pull_request (PRs build to verify
-          # the Dockerfile still works; no Docker Hub login on PR runs).
-          push: ${{ github.event_name != 'pull_request' }}
+          # Non-publishing runs (PRs, branch dispatches) only build amd64 as
+          # a smoke test — arm64 via QEMU is ~5–10× slower and almost never
+          # catches a bug amd64 didn't. Tag publishes still produce proper
+          # multi-arch images.
+          platforms: ${{ startsWith(github.ref, 'refs/tags/v') && 'linux/amd64,linux/arm64' || 'linux/amd64' }}
+          # Push only on `v*` tag refs (tag pushes and workflow_dispatch
+          # targeting a tag). Branch / PR runs build as a Dockerfile
+          # smoke test and never publish.
+          push: ${{ startsWith(github.ref, 'refs/tags/v') }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           # GitHub Actions cache — keeps repeated builds fast.
