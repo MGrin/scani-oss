@@ -1,4 +1,4 @@
-import { checkEnvIsolatedUrl, isProduction, optionalUrl } from '@scani/config';
+import { checkEnvIsolatedUrl, isNodeEnvProduction, optionalUrl } from '@scani/config';
 import { z } from 'zod';
 
 /**
@@ -41,7 +41,7 @@ const envSchema = z.object({
   // this for a DB lookup against `cloud_api_keys` (enabled by
   // `CLOUD_MANAGEMENT_ENABLED=true` + `DATABASE_URL`). The env token
   // remains valid as a superuser fallback in both modes.
-  DATA_PROVIDER_API_KEY: isProduction
+  DATA_PROVIDER_API_KEY: isNodeEnvProduction()
     ? z.string().min(16, { message: 'DATA_PROVIDER_API_KEY must be >=16 chars in production' })
     : z.string().optional(),
 
@@ -140,7 +140,7 @@ export function loadEnv(): DataProviderEnv {
     );
     process.exit(1);
   }
-  if (cached.CLOUD_MANAGEMENT_ENABLED && isProduction && !process.env.FASTMAIL_API_TOKEN) {
+  if (cached.CLOUD_MANAGEMENT_ENABLED && isNodeEnvProduction() && !process.env.FASTMAIL_API_TOKEN) {
     console.error(
       '❌ env: CLOUD_MANAGEMENT_ENABLED=true but FASTMAIL_API_TOKEN is not set. Cloud-frontend sign-in requires an email sender.'
     );

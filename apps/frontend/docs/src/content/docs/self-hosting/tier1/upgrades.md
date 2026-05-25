@@ -53,22 +53,44 @@ and update `:latest`.
    SCANI_IMAGE_TAG=1.3.0 docker compose -f docker-compose.prod.yml pull
    ```
 
-5. **Recreate the containers.**
+   This pulls the new `scani/api`, `scani/worker`, `scani/data-provider`,
+   `scani/frontend-app`, AND `scani/migrate` images at the pinned tag.
+
+5. **Apply migrations.** This is an explicit step, not part of
+   `up -d`. Always run it before recreating the long-running services
+   — a new image with new code against an unmigrated schema is the
+   most common cause of post-upgrade 500s.
+
+   ```sh
+   SCANI_IMAGE_TAG=1.3.0 docker compose -f docker-compose.prod.yml \
+     --profile migrate run --rm migrate
+   ```
+
+   Expected output ends with `✅ Migrations completed successfully`
+   and exit code 0. Idempotent — already-applied migrations are
+   skipped, so re-running is safe.
+
+6. **Recreate the long-running services.**
 
    ```sh
    SCANI_IMAGE_TAG=1.3.0 docker compose -f docker-compose.prod.yml up -d
    ```
 
-   Migrations run automatically on first boot. Watch the logs:
+   Watch the boot:
 
    ```sh
    docker compose -f docker-compose.prod.yml logs -f api worker
    ```
 
-6. **Verify.** Hit the SPA. Trigger a manual sync on a connected
+   The api's `/readyz` will return 503 until both the migration step
+   has run AND the new container has come up. If it stays 503 after
+   the api logs `🐘 Connected to PostgreSQL database`, the migration
+   step was probably skipped — re-run step 5.
+
+7. **Verify.** Hit the SPA. Trigger a manual sync on a connected
    integration. Check the dashboard headline.
 
-7. **Pin the new version** in `.env` so subsequent `pull`s don't
+8. **Pin the new version** in `.env` so subsequent `pull`s don't
    surprise you.
 
 ## Rollback

@@ -56,7 +56,10 @@ cloud-management surface (gated behind `CLOUD_MANAGEMENT_ENABLED=true`).
   tokens) always live on **your** `api`. Tier-2 operators do not
   see them.
 - **The schema.** Same Postgres tables, same indexes, same
-  migrations.
+  migrations. Applied explicitly by you on every Tier 1 deploy
+  ([Apply migrations](/self-hosting/tier1/production/#apply-migrations));
+  the same Drizzle `scani/migrate` image works against a managed
+  Postgres too.
 - **The wire contract.** tRPC routes, payload shapes, return types
   are identical across tiers.
 - **The product behaviour.** No feature is gated by tier.

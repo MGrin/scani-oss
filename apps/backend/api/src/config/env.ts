@@ -1,7 +1,7 @@
 import {
   checkEnvIsolatedUrl,
   httpsUrlInProduction,
-  isProduction,
+  isNodeEnvProduction,
   optionalUrl,
   requiredInProd,
   urlSchema,
@@ -15,10 +15,12 @@ import { z } from 'zod';
  * variables cause the process to exit with a clear error listing every
  * failing variable, instead of producing obscure runtime errors later.
  *
- * Shared helpers (`isProduction`, `urlSchema`, `httpsUrlInProduction`,
+ * Shared helpers (`isNodeEnvProduction`, `urlSchema`, `httpsUrlInProduction`,
  * `requiredInProd`) live in `@scani/config` so the worker's schema can
  * reuse them without duplication.
  */
+
+const inProd = isNodeEnvProduction();
 
 const envSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
@@ -40,11 +42,11 @@ const envSchema = z.object({
   REDIS_URL: urlSchema,
 
   // Frontend origin for CORS. Required in production, must be https://.
-  FRONTEND_URL: isProduction ? httpsUrlInProduction : urlSchema.default('http://localhost:5173'),
+  FRONTEND_URL: inProd ? httpsUrlInProduction : urlSchema.default('http://localhost:5173'),
 
   // This backend's own public URL — Better-Auth needs it to generate
   // magic-link callback URLs that resolve to /api/auth/magic-link/verify.
-  BACKEND_URL: isProduction ? httpsUrlInProduction : urlSchema.default('http://localhost:3001'),
+  BACKEND_URL: inProd ? httpsUrlInProduction : urlSchema.default('http://localhost:3001'),
 
   // Cookie domain shared by app.<domain> and api.<domain> so the session
   // cookie reaches both hosts (e.g. `.example.com`). Leave unset in dev
@@ -58,7 +60,7 @@ const envSchema = z.object({
   // silently fails.
 
   // Better-Auth session signing secret. Required in production.
-  BETTER_AUTH_SECRET: isProduction
+  BETTER_AUTH_SECRET: inProd
     ? z.string().min(32, { message: 'BETTER_AUTH_SECRET must be at least 32 chars in production' })
     : z.string().optional(),
 

@@ -26,15 +26,16 @@ RUN bun install --frozen-lockfile --filter @scani/backend
 FROM oven/bun:${BUN_VERSION} AS build
 WORKDIR /app
 
-# Set NODE_ENV=production BEFORE `bun build --compile --minify`. The
-# minifier folds `process.env.NODE_ENV === 'production'` to a constant
-# at build time; without this ENV the value is unset, so the comparison
-# inlines as `false` and the runtime ENV NODE_ENV=production below
-# arrives too late to affect anything baked into the binary. Concrete
-# breakage this fixed: env-isolation warnings firing at boot complaining
-# about "remote URL but NODE_ENV=development" even though the runtime
-# env is production.
-ENV NODE_ENV=production
+# NODE_ENV is intentionally NOT set at build time. If it were, the
+# minifier would fold `process.env.NODE_ENV === 'production'` to a
+# compile-time constant — convenient for prod, but it breaks the dev
+# compose stack: the binary then thinks it's production regardless of
+# the runtime override, so every "required in production" guard fires
+# in dev (LOG_ID_PEPPER, https-only URLs, FASTMAIL_API_TOKEN, …).
+# Runtime NODE_ENV is set in the runtime stage below; dev compose
+# overrides it to "development". The bundle is marginally larger
+# because dev/prod branches both ship — acceptable trade-off to keep
+# the same image runnable under both NODE_ENVs.
 
 COPY --from=deps /app/node_modules ./node_modules
 
@@ -49,7 +50,7 @@ FROM debian:bookworm-slim AS runtime
 WORKDIR /app
 
 ENV NODE_ENV=production \
-    PORT=8080 \
+    PORT=3001 \
     HOST=0.0.0.0
 
 # curl: needed by the healthcheck below. ca-certificates: TLS to
@@ -65,9 +66,9 @@ USER app
 
 COPY --from=build --chown=app:app /app/apps/backend/api/dist/server /app/server
 
-EXPOSE 8080
+EXPOSE 3001
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
-  CMD curl --fail --silent --show-error http://localhost:8080/health > /dev/null || exit 1
+  CMD curl --fail --silent --show-error http://localhost:3001/readyz > /dev/null || exit 1
 
 CMD ["/app/server"]

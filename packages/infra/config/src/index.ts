@@ -1,6 +1,27 @@
 import { z } from 'zod';
 
-export const isProduction = process.env.NODE_ENV === 'production';
+/**
+ * Read NODE_ENV at runtime, not build time.
+ *
+ * `bun build --compile --minify` statically substitutes literal
+ * `process.env.NODE_ENV` accesses with the build-time value (defaults
+ * to `"development"` when unset). Bracket notation defeats that
+ * inlining so the compiled binary reads the actual OS env at runtime.
+ *
+ * EVERY check that needs the runtime NODE_ENV value MUST use this
+ * helper, not the literal `process.env.NODE_ENV` form. Otherwise the
+ * check is silently dead in the compiled binary.
+ *
+ * See OSS-QA-REPORT-POST-FIX.md N-1 for the smoking-gun reproducer.
+ */
+export function getNodeEnv(): string | undefined {
+  // biome-ignore lint/complexity/useLiteralKeys: bracket notation defeats bun's build-time inlining
+  return process.env['NODE_ENV'];
+}
+
+export function isNodeEnvProduction(): boolean {
+  return getNodeEnv() === 'production';
+}
 
 export const urlSchema = z.string().url({ message: 'must be a valid URL' });
 
@@ -9,7 +30,7 @@ export const urlSchema = z.string().url({ message: 'must be a valid URL' });
 // from boot, so this is behaviourally identical to a load-time gate; the
 // payoff is that tests can exercise both branches in one process.
 export const httpsUrlInProduction = urlSchema.refine(
-  (v) => process.env.NODE_ENV !== 'production' || v.startsWith('https://'),
+  (v) => !isNodeEnvProduction() || v.startsWith('https://'),
   { message: 'must use https:// in production' }
 );
 
@@ -37,7 +58,7 @@ export function requiredInProd<T extends z.ZodString>(
   schema: T,
   varName?: string
 ): T | z.ZodOptional<T> {
-  if (process.env.NODE_ENV !== 'production') return schema.optional();
+  if (!isNodeEnvProduction()) return schema.optional();
   if (!varName) return schema;
   // Re-applying min(1) lets us name the variable in the error message;
   // zod's stock "must be at least 1 chars" hides which env var failed.
@@ -84,7 +105,7 @@ export function checkEnvIsolatedUrl(opts: {
   allowCrossEnv?: boolean;
 }): EnvIsolatedUrlCheck {
   if (opts.allowCrossEnv) return { ok: true };
-  const inProd = opts.isProduction ?? process.env.NODE_ENV === 'production';
+  const inProd = opts.isProduction ?? isNodeEnvProduction();
   // Host-based detection only. The previous version included `:6379` as
   // a "looks local" signal, but real Upstash production URLs commonly
   // use port 6379 too (e.g. `rediss://...@*.upstash.io:6379`), which
@@ -103,7 +124,7 @@ export function checkEnvIsolatedUrl(opts: {
     return {
       ok: false,
       reason:
-        `${opts.varName} appears to be a remote URL (${redactUrlForLog(opts.url)}) but NODE_ENV=${process.env.NODE_ENV ?? '<unset>'}. ` +
+        `${opts.varName} appears to be a remote URL (${redactUrlForLog(opts.url)}) but NODE_ENV=${getNodeEnv() ?? '<unset>'}. ` +
         'Point at a local instance or set NODE_ENV=production.',
     };
   }

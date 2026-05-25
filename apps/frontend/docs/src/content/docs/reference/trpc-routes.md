@@ -43,20 +43,23 @@ requires an HMAC signature using `JOBS_HMAC_SECRET`.
 
 ## data-provider (apps/backend/data-provider)
 
-Located in `apps/backend/data-provider/src/presentation/`.
+Located in `apps/backend/data-provider/src/presentation/routers/`.
+Composed in `apps/backend/data-provider/src/presentation/router.ts`.
 
-| Router | Role |
-|---|---|
-| `pricing` | Current and historical prices via the routed provider stack (CoinGecko, Finnhub, DeFiLlama, Frankfurter, Yahoo Finance). |
-| `chains` | Blockchain balance + transaction reads (Etherscan V2 across EVM chains, Helius for Solana, Bitcoin RPC, Tron, TON, ENS). |
-| `ai` | Screenshot parsing (OpenAI Vision). Optionally Perplexity / DeepSeek for token-identity assistance. |
-| `email` | `email.send` — used by the api to send magic-link / OTP / verification emails. |
-| `tokens` | Identity-related calls used by `TokenIdentityService` (CoinGecko slug lookup, Etherscan contract lookup, …). |
-| `og` | Open Graph metadata fetch (used by the SPA's link previews). |
-| `cloud` | Cloud-management surface (`CLOUD_MANAGEMENT_ENABLED=true`): mint and revoke API keys, list usage. |
-| `auth` | Better-Auth surface for the cloud-management console. |
+| Router | Auth | Role |
+|---|---|---|
+| `pricing` | Bearer | Current and historical prices via the routed provider stack (CoinGecko, Finnhub, DeFiLlama, Frankfurter, Yahoo Finance). |
+| `chains` | Bearer | Blockchain balance + transaction reads (Etherscan V2 across EVM chains, Helius for Solana, Bitcoin RPC, Tron, TON, ENS). |
+| `ai` | Bearer | Screenshot parsing (OpenAI Vision). Optionally Perplexity / DeepSeek for token-identity assistance. |
+| `tokens` | Bearer | Identity-related calls used by `TokenIdentityService` (CoinGecko slug lookup, Etherscan contract lookup, …). |
+| `email` | Bearer | `email.send` — used by the api to send magic-link / OTP / verification emails. |
+| `storage` | Bearer | Presigned URL minting + the rare server-side read path. The only service that holds S3/R2 credentials; api + worker request presigned URLs from here so creds never leave the data-provider. |
+| `og` | Bearer | Open Graph metadata fetch (used by the SPA's link previews). |
+| `contact` | Public | Landing-page contact form: validates a submission, emails support, sends a receipt. Per-IP rate-limited. No bearer (called from the public marketing site). |
+| `keys` | Cookie | Cloud-management surface (`CLOUD_MANAGEMENT_ENABLED=true`): mint, list, revoke cloud API keys scoped to the authenticated cloud user. |
+| `usage` | Cookie | Cloud-management read-API: per-user / per-tier usage aggregation from `cloud_usage_events`. |
 
-Auth: every call requires the bearer matching `DATA_PROVIDER_API_KEY`.
+Auth column: **Bearer** = `DATA_PROVIDER_API_KEY` (every api / worker call). **Cookie** = Better-Auth session, only available when `CLOUD_MANAGEMENT_ENABLED=true` and the data-provider is fronted by the cloud-frontend. **Public** = no auth (rate-limited per-IP).
 
 ## Wire contracts
 
