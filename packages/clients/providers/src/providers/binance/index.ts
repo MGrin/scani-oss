@@ -48,9 +48,13 @@ const MAX_CANDIDATE_SYMBOLS = 50;
 const TRADES_PAGE_SIZE = 1000;
 const CAPITAL_PAGE_SIZE = 1000;
 const NINETY_DAYS_MS = 90 * 24 * 60 * 60 * 1000;
+// Binance C2C endpoint caps each query to a 30-day window.
+const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
 const FIVE_YEARS_MS = 5 * 365 * 24 * 60 * 60 * 1000;
 const MAX_TRADE_PAGES = 200;
 const MAX_CAPITAL_PAGES_PER_WINDOW = 50;
+const C2C_PAGE_SIZE = 100;
+const C2C_TRADE_TYPES = ['BUY', 'SELL'] as const;
 
 interface BinanceSpotResponse {
   balances?: Array<{ asset: string; free: string; locked: string }>;
@@ -92,6 +96,44 @@ interface BinanceWithdraw {
   /** Recent API returns a unix-ms number; some legacy responses still
       ship "yyyy-MM-dd HH:mm:ss" UTC strings. */
   applyTime: number | string;
+}
+
+interface BinanceFundingAsset {
+  asset: string;
+  /** Available balance in Funding wallet. */
+  free: string;
+  /** Standard "locked in open order" leg. */
+  locked: string;
+  /** Frozen by security/admin action. Still the user's funds. */
+  freeze?: string;
+  /** In-flight withdrawal. Still the user's funds until settled. */
+  withdrawing?: string;
+}
+
+interface BinanceC2COrder {
+  orderNumber: string;
+  advNo?: string;
+  tradeType: 'BUY' | 'SELL';
+  asset: string;
+  fiat: string;
+  fiatSymbol?: string;
+  /** Crypto-leg quantity. */
+  amount: string;
+  /** Fiat-leg quantity. */
+  totalPrice: string;
+  unitPrice?: string;
+  orderStatus: string;
+  createTime: number;
+  /** Crypto-leg commission Binance charges. */
+  commission?: string;
+}
+
+interface BinanceC2CResponse {
+  code?: string;
+  message?: string | null;
+  data?: BinanceC2COrder[];
+  total?: number;
+  success?: boolean;
 }
 
 export class BinanceProvider
@@ -142,15 +184,19 @@ export class BinanceProvider
     const creds = await this.resolveApiCreds(ctx);
     if (!creds) return [];
 
-    // Margin permission is opt-in per-key; tolerate failures and treat
-    // as "no margin account here" rather than failing the whole sync.
-    const [spot, margin] = await Promise.all([
+    // Margin + Funding permissions are opt-in per-key; tolerate failures
+    // and treat as "no such account here" rather than failing the whole
+    // sync. Funding is the C2C / Pay wallet — P2P sells lock the crypto
+    // leg here, Binance Pay receipts land here, and the assets are
+    // invisible to Spot/Margin balance reads.
+    const [spot, margin, funding] = await Promise.all([
       this.fetchSpot(creds).catch(() => []),
       this.fetchMargin(creds).catch(() => []),
+      this.fetchFunding(creds).catch(() => []),
     ]);
 
     const combined = new Map<string, { free: string; locked: string }>();
-    for (const b of [...spot, ...margin]) {
+    for (const b of [...spot, ...margin, ...funding]) {
       const existing = combined.get(b.asset);
       if (existing) {
         const free = new Decimal(existing.free).plus(b.free).toString();
@@ -194,12 +240,13 @@ export class BinanceProvider
     const until = ctx.until ?? new Date();
     const since = ctx.since ?? new Date(until.getTime() - FIVE_YEARS_MS);
 
-    const [spot, margin] = await Promise.all([
+    const [spot, margin, funding] = await Promise.all([
       this.fetchSpot(creds).catch(() => []),
       this.fetchMargin(creds).catch(() => []),
+      this.fetchFunding(creds).catch(() => []),
     ]);
     const heldAssets = new Set<string>();
-    for (const b of [...spot, ...margin]) {
+    for (const b of [...spot, ...margin, ...funding]) {
       const total = new Decimal(b.free).plus(b.locked);
       if (total.gt(0)) heldAssets.add(b.asset.toUpperCase());
     }
@@ -220,6 +267,16 @@ export class BinanceProvider
       for (const dep of deposits) events.push(this.depositToEvent(dep));
       const withdraws = await this.fetchAllWithdraws(creds, asset, since, until).catch(() => []);
       for (const w of withdraws) events.push(this.withdrawToEvent(w));
+    }
+
+    // C2C (P2P) orders are reported via a separate endpoint that's keyed
+    // by tradeType + time window, not by asset — wrap the whole branch
+    // in catch so a key without C2C permission still imports trades +
+    // capital deposits + withdraws.
+    const p2pOrders = await this.fetchAllP2POrders(creds, since, until).catch(() => []);
+    for (const order of p2pOrders) {
+      const event = this.p2pOrderToEvent(order);
+      if (event) events.push(event);
     }
 
     return events;
@@ -270,6 +327,28 @@ export class BinanceProvider
       creds
     );
     return data.userAssets ?? [];
+  }
+
+  // Funding wallet (C2C / Pay). `freeze` + `withdrawing` are escrowed
+  // legs of in-flight P2P orders / pending withdrawals — still owned by
+  // the user, so we roll them into `locked` for the combined balance.
+  private async fetchFunding(
+    creds: ApiKeyCreds
+  ): Promise<Array<{ asset: string; free: string; locked: string }>> {
+    const query = this.signedQueryString(creds.apiSecret);
+    const rows = await this.signedJson<BinanceFundingAsset[]>(
+      { method: 'POST', url: '/sapi/v1/asset/get-funding-asset', query },
+      creds
+    );
+    if (!Array.isArray(rows)) return [];
+    return rows.map((row) => ({
+      asset: row.asset,
+      free: row.free,
+      locked: new Decimal(row.locked ?? 0)
+        .plus(row.freeze ?? 0)
+        .plus(row.withdrawing ?? 0)
+        .toString(),
+    }));
   }
 
   private buildCandidateSymbols(heldAssets: ReadonlySet<string>): string[] {
@@ -384,13 +463,51 @@ export class BinanceProvider
   }
 
   private *iterate90DayWindows(since: Date, until: Date): Generator<{ start: Date; end: Date }> {
+    yield* this.iterateWindows(since, until, NINETY_DAYS_MS);
+  }
+
+  private *iterateWindows(
+    since: Date,
+    until: Date,
+    windowMs: number
+  ): Generator<{ start: Date; end: Date }> {
     let cursor = since.getTime();
     const endMs = until.getTime();
     while (cursor < endMs) {
-      const next = Math.min(cursor + NINETY_DAYS_MS, endMs);
+      const next = Math.min(cursor + windowMs, endMs);
       yield { start: new Date(cursor), end: new Date(next) };
       cursor = next;
     }
+  }
+
+  private async fetchAllP2POrders(
+    creds: ApiKeyCreds,
+    since: Date,
+    until: Date
+  ): Promise<BinanceC2COrder[]> {
+    const out: BinanceC2COrder[] = [];
+    for (const window of this.iterateWindows(since, until, THIRTY_DAYS_MS)) {
+      for (const tradeType of C2C_TRADE_TYPES) {
+        for (let page = 1; page <= MAX_CAPITAL_PAGES_PER_WINDOW; page++) {
+          const query = this.signedQueryString(creds.apiSecret, {
+            tradeType,
+            startTimestamp: window.start.getTime(),
+            endTimestamp: window.end.getTime(),
+            page,
+            rows: C2C_PAGE_SIZE,
+          });
+          const response = await this.signedJson<BinanceC2CResponse>(
+            { method: 'GET', url: '/sapi/v1/c2c/orderMatch/listUserOrderHistory', query },
+            creds
+          );
+          const rows = response.data ?? [];
+          if (rows.length === 0) break;
+          out.push(...rows);
+          if (rows.length < C2C_PAGE_SIZE) break;
+        }
+      }
+    }
+    return out;
   }
 
   private tradeToEvent(trade: BinanceTrade): TransactionEvent | null {
@@ -435,6 +552,41 @@ export class BinanceProvider
       },
       rawPayload: dep,
     };
+  }
+
+  // P2P (C2C) fills resemble spot trades but settle off-orderbook
+  // against a counterparty in fiat. tradeType=BUY means the user
+  // received crypto in exchange for fiat (kind='buy'), SELL is the
+  // reverse. The crypto leg's commission is debited from the user.
+  // Non-COMPLETED orders never settle — drop them so they don't
+  // fabricate a funds-flow that never happened.
+  private p2pOrderToEvent(order: BinanceC2COrder): TransactionEvent | null {
+    if (order.orderStatus !== 'COMPLETED') return null;
+    const kind = order.tradeType === 'BUY' ? 'buy' : 'sell';
+    const primaryQty = enforceSign(order.amount, kind);
+    const counterQty = inferCounterSign(primaryQty, order.totalPrice);
+
+    const event: TransactionEvent = {
+      externalId: `c2c-${order.orderNumber}`,
+      occurredAt: new Date(order.createTime),
+      kind,
+      primary: {
+        tokenIdentity: this.assetIdentity(order.asset),
+        quantity: primaryQty,
+      },
+      counter: {
+        tokenIdentity: this.assetIdentity(order.fiat),
+        quantity: counterQty,
+      },
+      rawPayload: order,
+    };
+    if (order.commission && new Decimal(order.commission).gt(0)) {
+      event.fee = {
+        tokenIdentity: this.assetIdentity(order.asset),
+        quantity: negateFee(order.commission),
+      };
+    }
+    return event;
   }
 
   private withdrawToEvent(w: BinanceWithdraw): TransactionEvent {
