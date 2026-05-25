@@ -69,13 +69,55 @@ worker:
 ## Bring it up
 
 ```sh
+# Step 1 — apply migrations (same as Tier 1)
+docker compose -f docker-compose.prod.yml --profile migrate run --rm migrate
+
+# Step 2 — bring the long-running services up
 docker compose -f docker-compose.prod.yml up -d
 docker compose -f docker-compose.prod.yml logs -f api worker
 ```
 
-The api logs `tier=tier2 cloudUrl=https://...` on boot when
-`SCANI_CLOUD_URL` is not the local sentinel. Use that to confirm
-the wiring took effect.
+## Confirm the wiring
+
+The api and worker each log a `scaniCloudUrl` field at boot. Grep for
+it to confirm they're pointed at the hosted endpoint:
+
+```sh
+docker compose -f docker-compose.prod.yml logs api worker \
+  | grep -E '"scaniCloudUrl"'
+```
+
+Expected (Tier 2):
+
+```
+api:    {... "msg":"☁️  Data-provider reachable", "scaniCloudUrl":"https://data-provider.your-host.example.com" ...}
+worker: {... "scaniCloudUrl":"https://data-provider.your-host.example.com" ...}
+```
+
+If you see `"scaniCloudUrl":"(local fallback)"`, the env vars didn't
+take effect — most often because `.env` was edited after `up -d`
+without a `down + up -d` to recreate the containers.
+
+## Smoke-test the hosted data-provider
+
+A single tRPC call from your api confirms the bearer is accepted and
+the upstream is reachable. The simplest one is a price fetch (no DB
+side-effects, no credentials):
+
+```sh
+# From a shell on the api host (or `docker compose exec api`):
+curl -sX POST "$SCANI_CLOUD_URL/trpc/pricing.fetchCurrentPrice" \
+  -H "Authorization: Bearer $SCANI_CLOUD_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"json":{"tokenSymbol":"BTC","baseCurrency":"USD"}}'
+```
+
+Expected: `{"result":{"data":{"json":{"price":"...","timestamp":"..."}}}}`.
+
+A `401 Unauthorized` means the bearer doesn't match the operator's
+`DATA_PROVIDER_API_KEY`. A `403 Forbidden` or `PRECONDITION_FAILED`
+means the operator hasn't configured the relevant provider key on
+their side (`COINGECKO_API_KEY` in this example); ask them.
 
 ## Rolling back to Tier 1
 
