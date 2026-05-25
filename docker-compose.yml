@@ -239,7 +239,7 @@ services:
       data-provider:
         condition: service_started
     ports:
-      - "${API_HOST_PORT:-3011}:8080"
+      - "${API_HOST_PORT:-3011}:3001"
     # Root .env flows through — the `environment:` block below overrides any
     # key that needs a container-network URL instead of the host-side default
     # (DATABASE_URL, REDIS_URL, SMTP_URL, S3_ENDPOINT, …). Everything else —
@@ -249,7 +249,7 @@ services:
         required: false
     environment:
       NODE_ENV: development
-      PORT: "8080"
+      PORT: "3001"
       HOST: "0.0.0.0"
       SERVICE_NAME: api
       # Service-to-service URLs (compose network hostnames).
