@@ -12,7 +12,6 @@
   },
   "devDependencies": {
     "@playwright/test": "^1.60.0",
-    "@scani/shared": "workspace:*",
     "@types/bun": "latest"
   }
 }
