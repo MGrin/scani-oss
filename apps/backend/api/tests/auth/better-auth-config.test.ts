@@ -36,6 +36,11 @@ describe('Better-Auth config — auth hardening', () => {
     );
   });
 
+  test('session has freshAge=300 so change-email requires a recent login (L5)', () => {
+    const auth = build();
+    expect(auth.options.session?.freshAge).toBe(60 * 5);
+  });
+
   test('session cookie is SameSite=Strict in deployed mode (M4)', () => {
     const auth = createBetterAuth({
       baseURL: 'https://app.scani.example',
