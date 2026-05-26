@@ -252,6 +252,8 @@ jobs:
     if: ${{ needs.detect-changes.outputs.code == 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    env:
+      COMPOSE_PROJECT_NAME: mgrin-e2e-suite
     steps:
       - uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0
       - uses: ./.github/actions/setup-bun
