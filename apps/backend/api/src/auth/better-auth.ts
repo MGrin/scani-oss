@@ -225,11 +225,12 @@ export function createBetterAuth(opts: {
           }
         : undefined,
     },
-    // M2 audit (2026-05-26): every Better-Auth endpoint reachable from
-    // an unauthenticated caller was re-reviewed for account-enumeration
-    // oracles after PR1's H1 fix closed the emailAndPassword routes.
-    // All listed endpoints return identical HTTP responses regardless
-    // of whether the supplied email is registered:
+    // Account-enumeration posture: every Better-Auth endpoint reachable
+    // from an unauthenticated caller has been verified to return
+    // identical HTTP responses regardless of whether the supplied email
+    // is registered. The `emailAndPassword` routes (which historically
+    // distinguished "exists" vs "new" by status code) are disabled
+    // above. The remaining surface:
     //   - POST /api/auth/sign-in/magic-link
     //     (node_modules/better-auth/dist/plugins/magic-link/index.mjs:54-82)
     //     Never looks up the user before sending. Always stores a
@@ -264,12 +265,13 @@ export function createBetterAuth(opts: {
     //     use" branch (L433) returns the same {status: true} as the
     //     "newEmail is fresh" branches — Better-Auth's own comment at
     //     L420-425 calls out this uniformity as the intended design.
-    //     Also rate-limited by the signup limiter per PR2's L4 fix.
+    //     Also rate-limited by the signup-limiter gate in
+    //     apps/backend/api/src/index.ts.
     //   - POST /api/auth/change-password
     //     (.../update-user.mjs:75-184) Operates only on the
     //     authenticated session's own credential account; no
-    //     attacker-supplied email lookup. Also rate-limited per L4.
-    // No code change required for M2.
+    //     attacker-supplied email lookup. Also rate-limited by the
+    //     same gate.
     plugins: [
       magicLink({
         sendMagicLink: async ({ email: to, url }) => {
