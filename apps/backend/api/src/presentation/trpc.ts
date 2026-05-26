@@ -6,6 +6,7 @@ import {
   sanitizeUrl,
 } from '@scani/logging';
 import { captureException } from '@scani/logging/sentry';
+import type { InflowRateLimiter } from '@scani/rate-limiter';
 import { initTRPC, TRPCError } from '@trpc/server';
 import type { FetchCreateContextFnOptions } from '@trpc/server/adapters/fetch';
 import type { BetterAuthInstance } from '../auth/better-auth';
@@ -19,6 +20,16 @@ const trpcLogger = createComponentLogger('trpc');
 let betterAuthRef: BetterAuthInstance | null = null;
 export function setBetterAuthForContext(instance: BetterAuthInstance) {
   betterAuthRef = instance;
+}
+
+// Per-user rate limiter for session-revocation actions. Injected at boot the
+// same way Better-Auth is — kept as a setter rather than passed via
+// createContext options because the existing pattern is module-level
+// dependency injection (createContext is handed straight to tRPC without
+// a deps object).
+let sessionRevokeLimiterRef: InflowRateLimiter | null = null;
+export function setSessionRevokeLimiterForContext(instance: InflowRateLimiter) {
+  sessionRevokeLimiterRef = instance;
 }
 
 /**
@@ -47,6 +58,11 @@ export type Context = {
   // caller's cookies straight back to `betterAuth.api.*`. Null for the
   // synthetic context used in tests / out-of-request code paths.
   headers: Headers | null;
+  // Per-user limiter for session-revoke actions. Resolved once at boot
+  // and exposed on every context so routers can call
+  // `ctx.sessionRevokeLimiter.tryConsumeKey(...)` without reaching for
+  // a module-global.
+  sessionRevokeLimiter: InflowRateLimiter;
 } & AuthContext;
 
 export const createContext = async (opts?: FetchCreateContextFnOptions): Promise<Context> => {
@@ -73,6 +89,11 @@ export const createContext = async (opts?: FetchCreateContextFnOptions): Promise
   if (!betterAuthRef) {
     throw new Error('Better-Auth not initialized — setBetterAuthForContext must be called at boot');
   }
+  if (!sessionRevokeLimiterRef) {
+    throw new Error(
+      'Session-revoke limiter not initialized — setSessionRevokeLimiterForContext must be called at boot'
+    );
+  }
   const authContext = opts?.req
     ? await createAuthContext({ req: opts.req, betterAuth: betterAuthRef })
     : {
@@ -87,6 +108,7 @@ export const createContext = async (opts?: FetchCreateContextFnOptions): Promise
     startTime,
     requestCache, // Pass the cache to all procedures
     headers: opts?.req?.headers ?? null,
+    sessionRevokeLimiter: sessionRevokeLimiterRef,
     ...authContext,
   };
 };
