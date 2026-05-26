@@ -207,7 +207,13 @@ export function createBetterAuth(opts: {
       defaultCookieAttributes: opts.cookieDomain
         ? {
             domain: opts.cookieDomain,
-            sameSite: 'lax',
+            // SameSite=Strict on the session cookie. Lax would allow top-
+            // level GET navigations to carry the cookie cross-site (so an
+            // attacker page's <a href="https://app.scani/sensitive">
+            // attaches the session). The magic-link click-from-email flow
+            // is unaffected: it establishes a NEW session via Set-Cookie
+            // in the response and doesn't rely on an existing cookie.
+            sameSite: 'strict',
             secure: opts.baseURL.startsWith('https://'),
           }
         : undefined,
