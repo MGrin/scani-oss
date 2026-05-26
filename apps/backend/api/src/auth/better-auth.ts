@@ -184,6 +184,13 @@ export function createBetterAuth(opts: {
     session: {
       expiresIn: 60 * 60 * 24 * 7, // 7 days
       updateAge: 60 * 60 * 24, // extend at most once per day
+      // Sensitive ops (Better-Auth's /change-email, /change-password,
+      // and any other endpoint that calls `requireFreshSession`) reject
+      // when the session is older than freshAge. 5 minutes forces the
+      // user to have authenticated very recently before changing
+      // recovery-grade attributes — even an attacker with a long-lived
+      // stolen cookie cannot pivot to email-change without re-auth.
+      freshAge: 60 * 5, // 5 min
       // The cookie cache is per-instance and not shared across Fly machines.
       // Keeping it on in prod meant a session revoked on machine A could
       // still authenticate on machine B for up to 5 min — incompatible with
