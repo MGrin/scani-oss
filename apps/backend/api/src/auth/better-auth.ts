@@ -228,6 +228,10 @@ export function createBetterAuth(opts: {
           }
         },
         expiresIn: 60 * 15, // 15 min
+        // Hash tokens before storing in user_verifications.value. A read-
+        // only DB leak otherwise hands the attacker valid magic-links for
+        // the next 15 minutes. Better-Auth re-hashes on verification.
+        storeToken: 'hashed',
       }),
       // The frontend picks the OTP flow for PWAs (installed standalone
       // mode), where clicking a magic link bounces the user out of the PWA
@@ -237,6 +241,10 @@ export function createBetterAuth(opts: {
         otpLength: 6,
         expiresIn: 5 * 60, // 5 min
         allowedAttempts: 5,
+        // Hash OTPs before storing in user_verifications.value (same
+        // reasoning as magicLink.storeToken above). The user-facing OTP
+        // is still emailed in plaintext; only the DB stores the hash.
+        storeOTP: 'hashed',
         sendVerificationOTP: async ({ email: to, otp, type }) => {
           try {
             await email.sendOtp({ to, code: otp, type });
