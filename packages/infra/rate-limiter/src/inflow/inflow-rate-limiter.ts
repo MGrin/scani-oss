@@ -68,12 +68,7 @@ export abstract class InflowRateLimiter {
     req: Request,
     tokens = 1
   ): Promise<{ ok: true } | { ok: false; retryAfterSec: number }> {
-    const identity = this.keyFn(req);
-    const nowSec = Math.floor(Date.now() / 1000);
-    const windowStart = Math.floor(nowSec / this.windowSec) * this.windowSec;
-    const count = await this.incrementCounter(identity, windowStart, tokens);
-    if (count <= this.max) return { ok: true };
-    return { ok: false, retryAfterSec: Math.max(1, windowStart + this.windowSec - nowSec) };
+    return this.tryConsumeKey(this.keyFn(req), tokens);
   }
 
   /**
