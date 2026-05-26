@@ -4,6 +4,7 @@ import { ProviderRegistry } from '@scani/providers/core/registry';
 import { TRPCError } from '@trpc/server';
 import { Container } from 'typedi';
 import { z } from 'zod';
+import { loadEnv } from '../../config/env';
 import type { UsageContext } from '../../usage/middleware';
 import { bearerProcedure, router } from '../trpc';
 
@@ -160,6 +161,27 @@ export const aiRouter = router({
     )
     .output(z.unknown())
     .mutation(async ({ input, ctx }) => {
+      // Test-only stub. Returns a fixed holdings payload so e2e tests don't
+      // depend on the real AI provider (cost, flakiness, network). The env
+      // var is refused in production by the schema in config/env.ts.
+      if (loadEnv().STUB_AI === '1') {
+        return {
+          portfolio: {
+            holdings: [
+              { symbol: 'BTC', name: 'Bitcoin', balance: '0.5', confidence: 0.95 },
+              { symbol: 'ETH', name: 'Ethereum', balance: '10', confidence: 0.92 },
+              { symbol: 'USD', name: 'US Dollar', balance: '5000', confidence: 1.0 },
+            ],
+            overallConfidence: 0.94,
+            context: 'stub',
+            detectedCurrency: 'USD',
+          },
+          metadata: {
+            provider: 'stub',
+            processingTime: 0,
+          },
+        };
+      }
       const opts = input.options ?? {};
       const providers = selectProviders(opts.provider);
       if (providers.length === 0) {

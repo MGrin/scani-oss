@@ -218,6 +218,7 @@ services:
       S3_ACCESS_KEY_ID: minioadmin
       S3_SECRET_ACCESS_KEY: minioadmin
       S3_BUCKET: job-uploads-dev
+      STUB_AI: "${STUB_AI:-}"
 
   api:
     profiles: ["full"]
