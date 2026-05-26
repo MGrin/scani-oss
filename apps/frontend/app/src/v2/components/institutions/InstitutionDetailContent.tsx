@@ -57,6 +57,7 @@ export function InstitutionDetailContent({
 
   const isCompact = mode === 'panel';
   const favicon = getFaviconUrl(institution.website);
+  const safeWebsite = safeExternalUrl(institution.website);
 
   return (
     <div className={cn('space-y-6', isCompact && 'space-y-4')}>
@@ -76,21 +77,17 @@ export function InstitutionDetailContent({
             {institution.name}
           </h2>
         </div>
-        {(() => {
-          const safeWebsite = safeExternalUrl(institution.website);
-          if (!safeWebsite) return null;
-          return (
-            <a
-              href={safeWebsite}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-sm text-primary hover:underline inline-flex items-center gap-1 mt-1"
-            >
-              {safeWebsite.replace(/^https?:\/\//, '')}
-              <ExternalLink className="h-3 w-3" />
-            </a>
-          );
-        })()}
+        {safeWebsite && (
+          <a
+            href={safeWebsite}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-sm text-primary hover:underline inline-flex items-center gap-1 mt-1"
+          >
+            {safeWebsite.replace(/^https?:\/\//, '')}
+            <ExternalLink className="h-3 w-3" />
+          </a>
+        )}
       </div>
 
       <div className="grid grid-cols-2 gap-4">
