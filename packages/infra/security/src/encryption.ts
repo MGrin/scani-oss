@@ -46,17 +46,6 @@ const LEGACY_KDF_SALT = 'scani-salt';
 const KDF_CACHE = new Map<string, Buffer>();
 const KDF_CACHE_MAX = 256;
 
-// Explicit scrypt cost parameters. Node's default N is 2^14 (16384),
-// the bare minimum. OWASP/NIST recommend ≥ 2^15 for new systems —
-// doubling N doubles the attacker's offline-brute-force cost, which
-// matters when (and only when) a non-hex passphrase is used. Production
-// stages a 64-char hex ENCRYPTION_KEY (the `isHexKey` path) so scrypt
-// is never invoked there; this bump is dev/test hygiene + insurance
-// for OSS self-hosters who pass a passphrase. The matching `maxmem`
-// bump is required: N=2^15 needs ~32MB of working memory, exactly the
-// Node default — without the bump scrypt would throw `ERR_CRYPTO_INVALID_SCRYPT_PARAMS`.
-const SCRYPT_PARAMS = { N: 1 << 15, r: 8, p: 1, maxmem: 64 * 1024 * 1024 } as const;
-
 function deriveScryptKey(rawKey: string, salt: Buffer | string): Buffer {
   const saltKey = typeof salt === 'string' ? salt : salt.toString('hex');
   const cacheKey = `${rawKey.length}:${rawKey}:${saltKey}`;
@@ -67,7 +56,7 @@ function deriveScryptKey(rawKey: string, salt: Buffer | string): Buffer {
     KDF_CACHE.set(cacheKey, cached);
     return cached;
   }
-  const derived = crypto.scryptSync(rawKey, salt, KEY_LENGTH, SCRYPT_PARAMS);
+  const derived = crypto.scryptSync(rawKey, salt, KEY_LENGTH);
   if (KDF_CACHE.size >= KDF_CACHE_MAX) {
     const oldest = KDF_CACHE.keys().next().value;
     if (oldest) KDF_CACHE.delete(oldest);
