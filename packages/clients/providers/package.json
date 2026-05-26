@@ -49,7 +49,8 @@
     "./core/utils/enforce-tx-sign": "./src/core/utils/enforce-tx-sign.ts",
     "./core/utils/symbol-splitter": "./src/core/utils/symbol-splitter.ts",
     "./core/utils/fiat-codes": "./src/core/utils/fiat-codes.ts",
-    "./providers/ai-openai": "./src/providers/ai-openai/index.ts"
+    "./providers/ai-openai": "./src/providers/ai-openai/index.ts",
+    "./providers/ai-stub": "./src/providers/ai-stub/index.ts"
   },
   "scripts": {
     "lint": "biome check .",

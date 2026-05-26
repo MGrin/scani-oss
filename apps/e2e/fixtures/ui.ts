@@ -135,13 +135,54 @@ interface TokenSearchHit {
   source: 'database' | 'external';
 }
 
-interface JobStatusResponse {
+interface JobStatusResponse<R = unknown> {
   state: 'queued' | 'active' | 'progress' | 'completed' | 'failed' | 'not_found';
-  returnvalue?: {
-    accountId: string;
-    holdings: Array<{ id: string; tokenId: string; symbol: string; balance: string }>;
-  } | null;
+  returnvalue?: R | null;
   failedReason?: string | null;
+}
+
+interface ManualHoldingsReturn {
+  accountId: string;
+  holdings: Array<{ id: string; tokenId: string; symbol: string; balance: string }>;
+}
+
+/**
+ * Poll `jobs.status` until the BullMQ job reaches a terminal state
+ * (completed | failed) or the timeout elapses. Returns the full job
+ * status payload so callers can inspect `returnvalue` / `failedReason`.
+ *
+ * Throws if the job is `not_found` (the api evicted the row before we
+ * saw a terminal state — almost always a worker-down or wrong-jobId bug)
+ * or if the deadline passes without a terminal state.
+ *
+ * Used by every UI/API fixture that enqueues a worker job. Specs that
+ * just need "wait until done, then assert via DB/UI" can call this
+ * directly; specs that care about the job's `returnvalue` (e.g.
+ * screenshot-parse picker payload) should pass `R` explicitly to type
+ * the return.
+ */
+export async function waitForJob<R = unknown>(
+  page: Page,
+  jobId: string,
+  opts: { timeoutMs?: number } = {}
+): Promise<JobStatusResponse<R>> {
+  const timeoutMs = opts.timeoutMs ?? 30_000;
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const statusInput = encodeURIComponent(JSON.stringify({ jobId }));
+    const res = await page.request.get(`${API_BASE_URL}/trpc/jobs.status?input=${statusInput}`);
+    if (!res.ok()) {
+      throw new Error(`trpc.jobs.status failed: ${res.status()} ${await res.text()}`);
+    }
+    const body = (await res.json()) as { result: { data: JobStatusResponse<R> } };
+    const data = body.result.data;
+    if (data.state === 'completed' || data.state === 'failed') return data;
+    if (data.state === 'not_found') {
+      throw new Error(`Job ${jobId} not found (worker down? wrong queue?)`);
+    }
+    await new Promise((r) => setTimeout(r, 250));
+  }
+  throw new Error(`Job ${jobId} did not reach terminal state within ${timeoutMs}ms`);
 }
 
 /**
@@ -205,47 +246,33 @@ export async function createHolding(
     }
   );
 
-  // 3. Poll `jobs.status` until the worker finishes. The job persists
-  //    the holding row in its first phase (DB transaction) and then
-  //    spends most of its time on pricing. We need `completed` so the
-  //    `returnvalue` is populated; pricing failures for fiat USD are
-  //    rare in the dev stack but a failed terminal state is still useful
-  //    to surface as an error.
-  const deadline = Date.now() + 30_000;
-  while (Date.now() < deadline) {
-    const statusInput = encodeURIComponent(JSON.stringify({ jobId: enqueueResult.jobId }));
-    const statusRes = await page.request.get(
-      `${API_BASE_URL}/trpc/jobs.status?input=${statusInput}`
+  // 3. Wait for the worker to finish. The job persists the holding row
+  //    in its first phase (DB transaction) and then spends most of its
+  //    time on pricing. We need `completed` so `returnvalue` is populated;
+  //    pricing failures for fiat USD are rare in the dev stack but a
+  //    failed terminal state is still useful to surface as an error.
+  const status = await waitForJob<ManualHoldingsReturn>(page, enqueueResult.jobId);
+  if (status.state === 'failed') {
+    throw new Error(
+      `manual-holdings-create job ${enqueueResult.jobId} failed: ${status.failedReason ?? '<no reason>'}`
     );
-    if (!statusRes.ok()) {
-      throw new Error(`trpc.jobs.status failed: ${statusRes.status()} ${await statusRes.text()}`);
-    }
-    const statusBody = (await statusRes.json()) as { result: { data: JobStatusResponse } };
-    const data = statusBody.result.data;
-    if (data.state === 'completed' && data.returnvalue) {
-      const created = data.returnvalue.holdings.find((h) => h.tokenId === dbHit.id);
-      if (!created) {
-        throw new Error(
-          `manual-holdings-create job ${enqueueResult.jobId} returned no holding for tokenId ${dbHit.id}`
-        );
-      }
-      return {
-        id: created.id,
-        accountId: data.returnvalue.accountId,
-        tokenId: created.tokenId,
-        symbol: created.symbol,
-        balance: created.balance,
-      };
-    }
-    if (data.state === 'failed') {
-      throw new Error(
-        `manual-holdings-create job ${enqueueResult.jobId} failed: ${data.failedReason ?? '<no reason>'}`
-      );
-    }
-    if (data.state === 'not_found') {
-      throw new Error(`manual-holdings-create job ${enqueueResult.jobId} not found`);
-    }
-    await new Promise((r) => setTimeout(r, 250));
   }
-  throw new Error(`manual-holdings-create job ${enqueueResult.jobId} did not complete within 30s`);
+  if (!status.returnvalue) {
+    throw new Error(
+      `manual-holdings-create job ${enqueueResult.jobId} completed without a returnvalue`
+    );
+  }
+  const created = status.returnvalue.holdings.find((h) => h.tokenId === dbHit.id);
+  if (!created) {
+    throw new Error(
+      `manual-holdings-create job ${enqueueResult.jobId} returned no holding for tokenId ${dbHit.id}`
+    );
+  }
+  return {
+    id: created.id,
+    accountId: status.returnvalue.accountId,
+    tokenId: created.tokenId,
+    symbol: created.symbol,
+    balance: created.balance,
+  };
 }
