@@ -95,10 +95,16 @@ export function createBetterAuth(opts: {
       },
     }),
     emailAndPassword: {
-      enabled: true,
-      requireEmailVerification: false, // Flip to true once SMTP deliverability is confirmed.
-      autoSignIn: true,
-      minPasswordLength: 10,
+      // Disabled. The SPA's only auth path is `signIn.emailOtp(...)`
+      // (apps/frontend/app/src/contexts/AuthContext.tsx). Leaving
+      // emailAndPassword enabled keeps Better-Auth's `POST
+      // /api/auth/sign-up/email` and `POST /api/auth/sign-in/email`
+      // routes mounted — those let a scripted caller bypass the OTP /
+      // magic-link flow entirely (sign up with `requireEmailVerification:
+      // false` + `autoSignIn: true` returns a session cookie without
+      // proof of email control). Closing the routes shrinks the
+      // attack surface to the intended passwordless flow.
+      enabled: false,
     },
     databaseHooks: {
       user: {

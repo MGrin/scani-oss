@@ -70,13 +70,18 @@ if (SENTRY_DSN) {
     dsn: SENTRY_DSN,
     environment: import.meta.env.VITE_SENTRY_ENVIRONMENT || import.meta.env.MODE,
     release: import.meta.env.VITE_SENTRY_RELEASE || undefined,
-    integrations: [
-      Sentry.browserTracingIntegration(),
-      Sentry.replayIntegration({ maskAllText: true, blockAllMedia: true }),
-    ],
-    tracesSampleRate: 0.1,
-    replaysSessionSampleRate: 0.01,
-    replaysOnErrorSampleRate: 1.0,
+    // No `integrations` array: the default integrations (Breadcrumbs,
+    // GlobalHandlers, LinkedErrors, HttpContext, Dedupe, etc) do not
+    // require `eval` and run cleanly under our strict CSP
+    // (`script-src 'self'`, no `'unsafe-eval'`). Both
+    // `browserTracingIntegration` and `replayIntegration` internally
+    // compile predicate functions via `new Function(...)`, which CSP
+    // blocks — and the SDK surfaces the block as an unhandled
+    // EvalError on every page load (Sentry issue SCANI-FRONTEND-9).
+    // If tracing or session replay is needed in the future, either
+    // gate behind an opt-in build flag that also relaxes CSP, or
+    // wait for upstream Sentry to ship an eval-free build of those
+    // integrations.
     ignoreErrors: IGNORED_ERROR_PATTERNS,
     // Drop events whose stack is exclusively third-party (extensions,
     // anonymous eval). `ignoreErrors` above catches known messages; this
