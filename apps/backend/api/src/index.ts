@@ -461,7 +461,13 @@ app
       pathname.startsWith('/api/auth/sign-up') ||
       pathname.startsWith('/api/auth/sign-in') ||
       pathname.startsWith('/api/auth/email-otp/send-verification-otp') ||
-      pathname.startsWith('/api/auth/forget-password');
+      pathname.startsWith('/api/auth/forget-password') ||
+      // L4: change-email floods a victim's inbox with confirmation
+      // links; change-password (dead post-H1 but reachable per
+      // Better-Auth's route table) is a brute-force surface on the
+      // current-password challenge.
+      pathname.startsWith('/api/auth/change-email') ||
+      pathname.startsWith('/api/auth/change-password');
     if (isAuthAttempt) {
       const res = await signupLimiter.tryConsume(request);
       if ('ok' in res && !res.ok) {
