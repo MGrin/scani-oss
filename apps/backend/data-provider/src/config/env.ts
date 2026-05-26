@@ -111,6 +111,13 @@ const envSchema = z.object({
   // Email config (FASTMAIL_API_TOKEN, SMTP_URL, SMTP_FROM) is owned by
   // @scani/email's own env schema. Object storage (S3_*) is owned by
   // @scani/storage's own env schema.
+
+  // Test-only: when "1", AI provider methods return a fixed payload
+  // instead of calling the real upstream. Refused in production to
+  // prevent accidentally shipping a stub to users.
+  STUB_AI: isNodeEnvProduction()
+    ? z.literal(undefined).optional()
+    : z.union([z.literal('1'), z.literal('')]).optional(),
 });
 
 export type DataProviderEnv = z.infer<typeof envSchema>;
