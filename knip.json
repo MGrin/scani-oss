@@ -31,6 +31,10 @@
       "entry": ["src/entry-server.tsx"],
       "project": ["src/**/*.{ts,tsx}"]
     },
+    "apps/e2e": {
+      "entry": ["scripts/wait-for-stack.ts", "tests/**/*.spec.ts", "fixtures/**/*.ts"],
+      "project": ["**/*.ts"]
+    },
     "packages/business/domain": {
       "project": ["src/**/*.ts"]
     },

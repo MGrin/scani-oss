@@ -1,4 +1,4 @@
-import { checkEnvIsolatedUrl, requiredInProd } from '@scani/config';
+import { checkEnvIsolatedUrl, isNodeEnvProduction, requiredInProd } from '@scani/config';
 import { z } from 'zod';
 
 const envSchema = z.object({
@@ -64,6 +64,10 @@ const envSchema = z.object({
   SENTRY_DSN: requiredInProd(z.string().url(), 'SENTRY_DSN'),
   SENTRY_ENVIRONMENT: z.string().optional(),
   SENTRY_RELEASE: z.string().optional(),
+
+  STUB_AI: isNodeEnvProduction()
+    ? z.literal(undefined).optional()
+    : z.union([z.literal('1'), z.literal('')]).optional(),
 });
 
 export type WorkerEnv = z.infer<typeof envSchema>;
