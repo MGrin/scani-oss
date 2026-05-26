@@ -59,6 +59,51 @@ A few highlights so you know what you're walking into:
 - **No `@ts-ignore` / `@ts-expect-error` / `biome-ignore` without a
   one-line justification.**
 
+## Running the test suite
+
+Scani has two test layers:
+
+- **Unit + backend integration** (`bun test`): ~30s, only Postgres
+  required. Run this on save and before pushing.
+- **End-to-end** (`bun test:e2e`): full browser-driven Playwright suite
+  against the real docker-compose stack. Slower (~5 min cold) but
+  catches regressions across api / worker / frontend / data-provider
+  that the unit suite can't see.
+
+### First-time setup for e2e
+
+```bash
+bun install
+cd apps/e2e && bunx playwright install --with-deps chromium webkit
+```
+
+### Running e2e
+
+```bash
+bun test:e2e
+```
+
+This autodetects whether the dev stack is already up:
+
+- **If `bun dev:stack` is running**: tests run against it, no teardown.
+- **Otherwise**: boots a temporary stack via docker-compose, runs the
+  suite, tears it down on exit.
+
+### Debugging
+
+```bash
+bun test:e2e:ui          # Playwright interactive UI mode (against an already-running stack)
+bun test:e2e:report      # Open the HTML report from the last run
+KEEP_STACK_ON_FAILURE=1 bun test:e2e   # Don't tear down on failure; inspect with `docker compose logs`
+```
+
+To debug a single spec:
+
+```bash
+cd apps/e2e
+bunx playwright test tests/auth/otp-sign-in.spec.ts --project=chromium --headed
+```
+
 ## Pull-request flow
 
 1. **Fork** the repo and create a topic branch:

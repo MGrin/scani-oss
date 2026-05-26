@@ -1,0 +1,28 @@
+# CodeQL configuration for scani-oss.
+#
+# Path filters here are applied on top of the `security-extended` query
+# suite selected in .github/workflows/codeql.yml.
+#
+# Rationale for exclusions:
+#
+# - `apps/e2e/**` — Playwright e2e suite. The tests live under a
+#   workspace that is never bundled into the production images
+#   (the Dockerfiles only COPY `apps/backend/*` and
+#   `apps/frontend/app`). The suite intentionally reads committed
+#   fixture files and uploads them to the local MinIO bucket
+#   through presigned URLs; CodeQL's
+#   `js/file-system/sensitive-info-in-http-request` query flags this
+#   as data exfiltration, but the fixtures are trusted test inputs,
+#   not user data.
+# - `**/*.test.ts` — unit tests across the monorepo. Same shape:
+#   tests load fixtures, construct stub HTTP requests, and assert on
+#   behaviour. Findings here are noise.
+
+name: scani-oss CodeQL config
+
+paths-ignore:
+  - 'apps/e2e/**'
+  - '**/*.test.ts'
+  - '**/*.test.tsx'
+  - '**/node_modules/**'
+  - '**/dist/**'

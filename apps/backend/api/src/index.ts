@@ -72,6 +72,7 @@ import {
 } from '@scani/db';
 import { buildProviderRegistry } from '@scani/providers/core/boot';
 import { aiOpenAIFactory } from '@scani/providers/providers/ai-openai';
+import { aiStubFactory } from '@scani/providers/providers/ai-stub';
 import { binanceFactory } from '@scani/providers/providers/binance';
 import { bitcoinFactory } from '@scani/providers/providers/bitcoin';
 import { bitgetFactory } from '@scani/providers/providers/bitget';
@@ -147,7 +148,12 @@ try {
       // Brokers + fiat.
       ibkrFactory,
       wiseFactory,
-      // AI: OpenAI is the only AI provider.
+      // AI: STUB_AI=1 registers a fixed-payload provider FIRST so the
+      // e2e suite gets deterministic AI results without an OpenAI key.
+      // The data-provider config schema refuses STUB_AI=1 in production,
+      // so a misconfigured prod deploy crashes the data-provider at boot
+      // before this branch ever fires.
+      ...(process.env.STUB_AI === '1' ? [aiStubFactory] : []),
       aiOpenAIFactory,
     ],
   });
