@@ -1,4 +1,4 @@
-import { formatCurrency } from '@scani/shared';
+import { formatCurrency, safeExternalUrl } from '@scani/shared';
 import { Separator } from '@scani/ui/ui/separator';
 import { Skeleton } from '@scani/ui/ui/skeleton';
 import { ExternalLink } from 'lucide-react';
@@ -57,6 +57,7 @@ export function InstitutionDetailContent({
 
   const isCompact = mode === 'panel';
   const favicon = getFaviconUrl(institution.website);
+  const safeWebsite = safeExternalUrl(institution.website);
 
   return (
     <div className={cn('space-y-6', isCompact && 'space-y-4')}>
@@ -76,14 +77,14 @@ export function InstitutionDetailContent({
             {institution.name}
           </h2>
         </div>
-        {institution.website && (
+        {safeWebsite && (
           <a
-            href={institution.website}
+            href={safeWebsite}
             target="_blank"
             rel="noopener noreferrer"
             className="text-sm text-primary hover:underline inline-flex items-center gap-1 mt-1"
           >
-            {institution.website.replace(/^https?:\/\//, '')}
+            {safeWebsite.replace(/^https?:\/\//, '')}
             <ExternalLink className="h-3 w-3" />
           </a>
         )}

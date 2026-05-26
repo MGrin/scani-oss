@@ -41,10 +41,17 @@ export function createCloudBetterAuth(opts: {
       },
     }),
     emailAndPassword: {
-      enabled: true,
-      requireEmailVerification: false,
-      autoSignIn: true,
-      minPasswordLength: 10,
+      // Disabled — mirror of the main api fix (PR #48, H1). The cloud
+      // frontend's only auth path is `signIn.emailOtp(...)` / magic-link.
+      // Leaving emailAndPassword enabled would mount `POST /api/auth/
+      // sign-up/email` + `POST /api/auth/sign-in/email`, which let a
+      // scripted caller bypass the OTP/magic-link flow entirely (sign up
+      // with `requireEmailVerification: false` + `autoSignIn: true`
+      // returns a session cookie without proof of email control). This
+      // surface is gated by CLOUD_MANAGEMENT_ENABLED so it's dormant in
+      // OSS Tier-1 boot; the disable is insurance for operators who
+      // turn cloud-management on.
+      enabled: false,
     },
     session: {
       expiresIn: 60 * 60 * 24 * 7, // 7 days
@@ -88,11 +95,20 @@ export function createCloudBetterAuth(opts: {
           }
         },
         expiresIn: 60 * 15, // 15 min
+        // Hash tokens before storing in cloud_verifications.value — mirror
+        // of the main api fix (PR #50, M1). A read-only DB leak otherwise
+        // hands the attacker valid magic-links for the next 15 minutes.
+        // Better-Auth re-hashes on verification.
+        storeToken: 'hashed',
       }),
       emailOTP({
         otpLength: 6,
         expiresIn: 5 * 60,
         allowedAttempts: 5,
+        // Hash OTPs before storing (same reasoning as magicLink.storeToken
+        // above). The user-facing OTP is still emailed in plaintext; only
+        // the DB stores the hash.
+        storeOTP: 'hashed',
         sendVerificationOTP: async ({ email: to, otp, type }) => {
           try {
             await email.sendOtp({ to, code: otp, type, brand: SCANI_CLOUD_BRAND });
