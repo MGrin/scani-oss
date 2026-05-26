@@ -39,10 +39,18 @@ async function redisCli(args: string[]): Promise<string> {
  * production code.
  */
 export async function resetAuthRateLimit(): Promise<void> {
-  // The namespace is `rl:signup:<ip>` (see createSignupLimiter).
-  const keys = await redisCli(['--scan', '--pattern', 'rl:signup:*']);
-  if (!keys) return;
-  const lines = keys.split('\n').filter((l) => l.length > 0);
-  if (lines.length === 0) return;
-  await redisCli(['DEL', ...lines]);
+  // Namespaces: `rl:signup:<ip>` (signup/OTP per-IP cap) +
+  // `rl:session-revoke:user:<userId>` (per-user revoke cap, 10/min).
+  // Both can pollute consecutive specs that exercise auth or sessions.
+  const patterns = ['rl:signup:*', 'rl:session-revoke:*'];
+  const all: string[] = [];
+  for (const pattern of patterns) {
+    const keys = await redisCli(['--scan', '--pattern', pattern]);
+    if (!keys) continue;
+    for (const line of keys.split('\n')) {
+      if (line.length > 0) all.push(line);
+    }
+  }
+  if (all.length === 0) return;
+  await redisCli(['DEL', ...all]);
 }
