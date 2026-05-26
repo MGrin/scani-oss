@@ -1,4 +1,4 @@
-import { formatCurrency } from '@scani/shared';
+import { formatCurrency, safeExternalUrl } from '@scani/shared';
 import { Separator } from '@scani/ui/ui/separator';
 import { Skeleton } from '@scani/ui/ui/skeleton';
 import { ExternalLink } from 'lucide-react';
@@ -76,17 +76,21 @@ export function InstitutionDetailContent({
             {institution.name}
           </h2>
         </div>
-        {institution.website && (
-          <a
-            href={institution.website}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="text-sm text-primary hover:underline inline-flex items-center gap-1 mt-1"
-          >
-            {institution.website.replace(/^https?:\/\//, '')}
-            <ExternalLink className="h-3 w-3" />
-          </a>
-        )}
+        {(() => {
+          const safeWebsite = safeExternalUrl(institution.website);
+          if (!safeWebsite) return null;
+          return (
+            <a
+              href={safeWebsite}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-sm text-primary hover:underline inline-flex items-center gap-1 mt-1"
+            >
+              {safeWebsite.replace(/^https?:\/\//, '')}
+              <ExternalLink className="h-3 w-3" />
+            </a>
+          );
+        })()}
       </div>
 
       <div className="grid grid-cols-2 gap-4">
