@@ -77,6 +77,25 @@ export abstract class InflowRateLimiter {
   }
 
   /**
+   * Same as `tryConsume` but the caller supplies the identity directly
+   * instead of having it derived from a `Request`. Use this when the
+   * route handler already knows the identity it wants to rate-limit on
+   * (e.g. `ctx.userId` inside a tRPC mutation) and constructing a
+   * fabricated `Request` just to satisfy the header-based `keyFn`
+   * would be ceremony for nothing.
+   */
+  async tryConsumeKey(
+    identity: string,
+    tokens = 1
+  ): Promise<{ ok: true } | { ok: false; retryAfterSec: number }> {
+    const nowSec = Math.floor(Date.now() / 1000);
+    const windowStart = Math.floor(nowSec / this.windowSec) * this.windowSec;
+    const count = await this.incrementCounter(identity, windowStart, tokens);
+    if (count <= this.max) return { ok: true };
+    return { ok: false, retryAfterSec: Math.max(1, windowStart + this.windowSec - nowSec) };
+  }
+
+  /**
    * Atomic increment-and-return-new-value. The fresh-bucket case (when
    * the returned count equals `tokens`) is the subclass's signal to set
    * an expiry equal to the window length so old buckets get cleaned up.
