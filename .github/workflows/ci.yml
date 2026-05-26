@@ -237,6 +237,63 @@ jobs:
           NODE_ENV: test
           DATABASE_URL: postgres://scani:scani@localhost:5433/scani?sslmode=disable
 
+  e2e:
+    # Full Playwright suite against the real docker-compose stack
+    # (api + worker + data-provider + frontend + Postgres + Redis +
+    # Mailpit + MinIO). Bypasses the `scripts/run.ts` orchestrator and
+    # invokes `bunx playwright test` directly so the cache + artifact
+    # steps can sit between stack-up and the test run — the orchestrator
+    # would otherwise try to tear down a stack CI already owns.
+    # STUB_AI=1 short-circuits OpenAI/Perplexity/DeepSeek calls in the
+    # data-provider so screenshot-parse + AI-touching specs are
+    # deterministic and don't need network keys.
+    name: E2E (Playwright)
+    needs: detect-changes
+    if: ${{ needs.detect-changes.outputs.code == 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0
+      - uses: ./.github/actions/setup-bun
+
+      - name: Cache Playwright browsers
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('apps/e2e/package.json') }}
+
+      - name: Install Playwright Chromium + WebKit
+        run: cd apps/e2e && bunx playwright install --with-deps chromium webkit
+
+      - name: Start stack
+        run: cp .env.example .env && bun dev:stack
+        env:
+          STUB_AI: "1"
+
+      - name: Wait for stack health
+        run: bun apps/e2e/scripts/wait-for-stack.ts
+
+      - name: Run Playwright suite
+        run: cd apps/e2e && bunx playwright test
+        env:
+          CI: "true"
+          PLAYWRIGHT_BASE_URL: http://localhost:5173
+          API_BASE_URL: http://localhost:3011
+          MAILPIT_URL: http://localhost:8026
+          DATABASE_URL: postgres://scani:scani@localhost:5433/scani?sslmode=disable
+
+      - name: Upload Playwright report on failure
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: playwright-report
+          path: apps/e2e/playwright-report/
+          retention-days: 7
+
+      - name: Stop stack
+        if: always()
+        run: docker compose --profile full down -v
+
   prod-guards-integration:
     # Builds the api binary via the production Dockerfile and asserts
     # that compile-time NODE_ENV substitution can't disable the
@@ -438,6 +495,7 @@ jobs:
         validate-deps,
         validate-docs,
         test,
+        e2e,
         prod-guards-integration,
         secret-scan,
       ]
