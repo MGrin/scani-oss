@@ -4,7 +4,6 @@ import { ProviderRegistry } from '@scani/providers/core/registry';
 import { TRPCError } from '@trpc/server';
 import { Container } from 'typedi';
 import { z } from 'zod';
-import { loadEnv } from '../../config/env';
 import type { UsageContext } from '../../usage/middleware';
 import { bearerProcedure, router } from '../trpc';
 
@@ -162,9 +161,12 @@ export const aiRouter = router({
     .output(z.unknown())
     .mutation(async ({ input, ctx }) => {
       // Test-only stub. Returns a fixed holdings payload so e2e tests don't
-      // depend on the real AI provider (cost, flakiness, network). The env
-      // var is refused in production by the schema in config/env.ts.
-      if (loadEnv().STUB_AI === '1') {
+      // depend on the real AI provider (cost, flakiness, network). Reads
+      // process.env directly so unauthed tRPC paths (which bail at the
+      // bearer-procedure middleware before reaching this body) don't
+      // trip the full data-provider env-schema validation. The var is
+      // still validated + refused in production by config/env.ts at boot.
+      if (process.env.STUB_AI === '1') {
         return {
           portfolio: {
             holdings: [
