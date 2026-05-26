@@ -225,6 +225,51 @@ export function createBetterAuth(opts: {
           }
         : undefined,
     },
+    // M2 audit (2026-05-26): every Better-Auth endpoint reachable from
+    // an unauthenticated caller was re-reviewed for account-enumeration
+    // oracles after PR1's H1 fix closed the emailAndPassword routes.
+    // All listed endpoints return identical HTTP responses regardless
+    // of whether the supplied email is registered:
+    //   - POST /api/auth/sign-in/magic-link
+    //     (node_modules/better-auth/dist/plugins/magic-link/index.mjs:54-82)
+    //     Never looks up the user before sending. Always stores a
+    //     verification token and emails the link; always returns
+    //     {status: true}.
+    //   - POST /api/auth/email-otp/send-verification-otp
+    //     (node_modules/better-auth/dist/plugins/email-otp/routes.mjs:86-110)
+    //     For type="sign-in" with disableSignUp=false (our config),
+    //     shouldSendOTP=true so the early-return-without-email branch
+    //     at L100 is never taken — registered and unregistered emails
+    //     both get an OTP stored, the email actually dispatched, and
+    //     {success: true} returned. This also closes the email
+    //     side-channel for the primary sign-in entry point.
+    //   - POST /api/auth/sign-in/email-otp
+    //     (.../email-otp/routes.mjs:398-433) Calls atomicVerifyOTP
+    //     before any user lookup; invalid OTP → INVALID_OTP regardless
+    //     of registration. Valid OTP + no user → user is auto-created
+    //     and signed in (same shape as existing-user path).
+    //   - POST /api/auth/email-otp/verify-email
+    //     (.../email-otp/routes.mjs:277-352) atomicVerifyOTP runs
+    //     first; USER_NOT_FOUND only surfaces after a valid OTP, which
+    //     means only the email owner sees it (Better-Auth's own
+    //     comment at L313-316 calls this out as intentional and safe).
+    //   - POST /api/auth/email-otp/request-password-reset and
+    //     POST /api/auth/email-otp/reset-password
+    //     (.../email-otp/routes.mjs:450-481 and 555-590) Request always
+    //     returns {success: true}; reset gates USER_NOT_FOUND behind a
+    //     valid OTP, same threat model as verify-email.
+    //   - POST /api/auth/change-email
+    //     (node_modules/better-auth/dist/api/routes/update-user.mjs:377-493)
+    //     Requires sensitiveSessionMiddleware. The "newEmail already in
+    //     use" branch (L433) returns the same {status: true} as the
+    //     "newEmail is fresh" branches — Better-Auth's own comment at
+    //     L420-425 calls out this uniformity as the intended design.
+    //     Also rate-limited by the signup limiter per PR2's L4 fix.
+    //   - POST /api/auth/change-password
+    //     (.../update-user.mjs:75-184) Operates only on the
+    //     authenticated session's own credential account; no
+    //     attacker-supplied email lookup. Also rate-limited per L4.
+    // No code change required for M2.
     plugins: [
       magicLink({
         sendMagicLink: async ({ email: to, url }) => {
