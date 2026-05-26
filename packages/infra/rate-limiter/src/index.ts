@@ -95,3 +95,19 @@ export const createSignupLimiter = (redis: Redis | null, perHour = 6): InflowRat
     max: perHour,
     namespace: 'rl:signup',
   });
+
+// Per-user limiter for session-revocation actions. The route correctly
+// scopes revocation by ownership (an attacker with one stolen session
+// can't revoke another user's sessions), but with no per-user budget a
+// compromised session can loop-revoke the victim's OTHER devices to
+// lock them out. 10/min is well above any legitimate revoke pattern
+// (the UI lists sessions and a user clicks one at a time).
+export const createSessionRevokeLimiter = (
+  redis: Redis | null,
+  perMinute = 10
+): InflowRateLimiter =>
+  createInflowLimiter(redis, {
+    windowMs: 60_000,
+    max: perMinute,
+    namespace: 'rl:session-revoke',
+  });

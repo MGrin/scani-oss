@@ -68,7 +68,21 @@ export abstract class InflowRateLimiter {
     req: Request,
     tokens = 1
   ): Promise<{ ok: true } | { ok: false; retryAfterSec: number }> {
-    const identity = this.keyFn(req);
+    return this.tryConsumeKey(this.keyFn(req), tokens);
+  }
+
+  /**
+   * Same as `tryConsume` but the caller supplies the identity directly
+   * instead of having it derived from a `Request`. Use this when the
+   * route handler already knows the identity it wants to rate-limit on
+   * (e.g. `ctx.userId` inside a tRPC mutation) and constructing a
+   * fabricated `Request` just to satisfy the header-based `keyFn`
+   * would be ceremony for nothing.
+   */
+  async tryConsumeKey(
+    identity: string,
+    tokens = 1
+  ): Promise<{ ok: true } | { ok: false; retryAfterSec: number }> {
     const nowSec = Math.floor(Date.now() / 1000);
     const windowStart = Math.floor(nowSec / this.windowSec) * this.windowSec;
     const count = await this.incrementCounter(identity, windowStart, tokens);
