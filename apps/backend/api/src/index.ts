@@ -462,9 +462,11 @@ app
       pathname.startsWith('/api/auth/sign-in') ||
       pathname.startsWith('/api/auth/email-otp/send-verification-otp') ||
       pathname.startsWith('/api/auth/forget-password') ||
-      // L4: change-email floods a victim's inbox with confirmation
-      // links; change-password (dead post-H1 but reachable per
-      // Better-Auth's route table) is a brute-force surface on the
+      // change-email triggers an outbound confirmation email per call;
+      // without a rate limit an attacker with any session can flood a
+      // target inbox. change-password is disabled at the
+      // emailAndPassword config but Better-Auth still mounts the route;
+      // the limiter also covers the latent brute-force surface on the
       // current-password challenge.
       pathname.startsWith('/api/auth/change-email') ||
       pathname.startsWith('/api/auth/change-password');
