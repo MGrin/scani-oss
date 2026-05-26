@@ -46,6 +46,7 @@ let dataProviderReachable = true;
 // This must happen before any module that calls Container.get()
 import { QueueClient } from '@scani/queue';
 import {
+  createSessionRevokeLimiter,
   createSignupLimiter,
   createStandardLimiter,
   createStrictLimiter,
@@ -98,7 +99,11 @@ import { googleSheetsFactory } from '@scani/providers-google-sheets';
 import { createBetterAuth } from './auth/better-auth';
 import { initializeContainer } from './config/container';
 import { registerAdminJobsRoutes } from './presentation/http/admin-jobs';
-import { createContext, setBetterAuthForContext } from './presentation/trpc';
+import {
+  createContext,
+  setBetterAuthForContext,
+  setSessionRevokeLimiterForContext,
+} from './presentation/trpc';
 
 initializeContainer();
 
@@ -238,6 +243,11 @@ const strictLimiter = createStrictLimiter(redisConnection, 60);
 // reveals "email exists" vs "new", so this limiter is the primary
 // defense against account enumeration brute force.
 const signupLimiter = createSignupLimiter(redisConnection, 6);
+// Per-user limiter for session-revoke mutations. Threaded onto the tRPC
+// context via setSessionRevokeLimiterForContext below so the sessions
+// router can read it off `ctx`.
+const sessionRevokeLimiter = createSessionRevokeLimiter(redisConnection, 10);
+setSessionRevokeLimiterForContext(sessionRevokeLimiter);
 // WebSocket connection limiter: max 30 auth attempts per minute per IP.
 // Prevents brute-forcing auth tokens over the ws endpoint, which bypasses
 // the HTTP limiters above.
@@ -451,7 +461,13 @@ app
       pathname.startsWith('/api/auth/sign-up') ||
       pathname.startsWith('/api/auth/sign-in') ||
       pathname.startsWith('/api/auth/email-otp/send-verification-otp') ||
-      pathname.startsWith('/api/auth/forget-password');
+      pathname.startsWith('/api/auth/forget-password') ||
+      // L4: change-email floods a victim's inbox with confirmation
+      // links; change-password (dead post-H1 but reachable per
+      // Better-Auth's route table) is a brute-force surface on the
+      // current-password challenge.
+      pathname.startsWith('/api/auth/change-email') ||
+      pathname.startsWith('/api/auth/change-password');
     if (isAuthAttempt) {
       const res = await signupLimiter.tryConsume(request);
       if ('ok' in res && !res.ok) {

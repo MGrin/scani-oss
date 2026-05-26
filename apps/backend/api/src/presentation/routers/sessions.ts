@@ -47,6 +47,18 @@ export const sessionsRouter = router({
       if (!ctx.userId) {
         throw new TRPCError({ code: 'UNAUTHORIZED', message: 'Authentication required' });
       }
+      // Per-user budget: an attacker with one stolen session is correctly
+      // blocked from revoking *other users'* sessions by the ownership
+      // check below, but without a per-user cap they could still loop
+      // through the victim's own session list and log every device out.
+      // 10/min is well above any legitimate UI flow.
+      const rl = await ctx.sessionRevokeLimiter.tryConsumeKey(`user:${ctx.userId}`);
+      if (!rl.ok) {
+        throw new TRPCError({
+          code: 'TOO_MANY_REQUESTS',
+          message: `Too many session-revoke attempts; retry in ${rl.retryAfterSec}s`,
+        });
+      }
       const auth = getBetterAuth();
       // Defense in depth: Better-Auth's revokeSession scopes to the
       // caller's user via the session cookie, but we don't want the
@@ -70,6 +82,19 @@ export const sessionsRouter = router({
   revokeOthers: protectedProcedure.mutation(async ({ ctx }) => {
     if (!ctx.headers) {
       throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Missing request headers' });
+    }
+    if (!ctx.userId) {
+      throw new TRPCError({ code: 'UNAUTHORIZED', message: 'Authentication required' });
+    }
+    // Same per-user budget as `revoke` — one HTTP call costs one token
+    // even though it revokes many sessions, since that's how an attacker
+    // would invoke it.
+    const rl = await ctx.sessionRevokeLimiter.tryConsumeKey(`user:${ctx.userId}`);
+    if (!rl.ok) {
+      throw new TRPCError({
+        code: 'TOO_MANY_REQUESTS',
+        message: `Too many session-revoke attempts; retry in ${rl.retryAfterSec}s`,
+      });
     }
     const auth = getBetterAuth();
     // "Sign out everywhere else" — revokes every session for the user
