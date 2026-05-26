@@ -405,6 +405,16 @@ resource "cloudflare_pages_domain" "landing_www" {
   domain       = "www.${var.domain}"
 }
 
+# mta-sts.scani.xyz serves the MTA-STS policy file from the landing project.
+# The CNAME at mta_sts_host points here, but without registering the hostname
+# on the Pages project Cloudflare's edge returns 522 for unknown Host headers
+# (observed in Mail.ru TLS-RPT 2026-05-25: sts-policy-fetch-error code 522).
+resource "cloudflare_pages_domain" "landing_mta_sts" {
+  account_id   = var.cloudflare_account_id
+  project_name = cloudflare_pages_project.landing.name
+  domain       = "mta-sts.${var.domain}"
+}
+
 # ---------------------------------------------------------------------------
 # scani-frontend + scani-landing Pages projects, imported into TF.
 # Both pre-date the TF setup. The `import` blocks bootstrap existing prod
