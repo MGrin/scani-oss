@@ -1,7 +1,7 @@
 #!/usr/bin/env bun
 
 import { spawnSync } from 'node:child_process';
-import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { copyFileSync, existsSync, constants as fsConstants } from 'node:fs';
 import { resolve } from 'node:path';
 
 const REPO_ROOT = resolve(import.meta.dir, '../../..');
@@ -31,14 +31,22 @@ function run(cmd: string, args: string[], env: Record<string, string> = {}): num
 
 function ensureEnvFile() {
   const envPath = resolve(REPO_ROOT, '.env');
-  if (existsSync(envPath)) return;
   const examplePath = resolve(REPO_ROOT, '.env.example');
-  if (!existsSync(examplePath)) {
-    throw new Error('Neither .env nor .env.example exists at repo root');
+  // COPYFILE_EXCL makes the copy atomic + idempotent: if .env already
+  // exists the syscall fails with EEXIST and we leave the existing
+  // file alone. Avoids the existsSync→read→write TOCTOU.
+  try {
+    copyFileSync(examplePath, envPath, fsConstants.COPYFILE_EXCL);
+    // intentional: inform the operator a new .env was bootstrapped
+    console.log('Created .env from .env.example');
+  } catch (err) {
+    const code = (err as NodeJS.ErrnoException).code;
+    if (code === 'EEXIST') return;
+    if (code === 'ENOENT' && !existsSync(examplePath)) {
+      throw new Error('Neither .env nor .env.example exists at repo root');
+    }
+    throw err;
   }
-  writeFileSync(envPath, readFileSync(examplePath));
-  // intentional: inform the operator a new .env was bootstrapped
-  console.log('Created .env from .env.example');
 }
 
 async function main() {
