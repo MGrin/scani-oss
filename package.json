@@ -9,6 +9,7 @@
     "apps/backend/data-provider",
     "apps/frontend/app",
     "apps/frontend/docs",
+    "apps/e2e",
     "packages/business/*",
     "packages/infra/*",
     "packages/clients/*",
