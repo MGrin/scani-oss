@@ -1,7 +1,10 @@
 import { expect, test } from '@playwright/test';
 import { signIn } from '../../fixtures/auth';
+import { resetAuthRateLimit } from '../../fixtures/redis';
 
 test.describe('auth: OTP sign-in', () => {
+  test.beforeEach(resetAuthRateLimit);
+
   test('end-to-end OTP flow lands the user on the dashboard', async ({ page }, testInfo) => {
     const { email, userId, page: signedInPage } = await signIn({ page, testInfo });
 

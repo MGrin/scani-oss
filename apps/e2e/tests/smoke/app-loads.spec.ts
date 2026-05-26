@@ -11,4 +11,18 @@ test.describe('smoke: app loads', () => {
       timeout: 10_000,
     });
   });
+
+  test('initial load has no console errors', async ({ page }) => {
+    const errors: string[] = [];
+    page.on('console', (msg) => {
+      if (msg.type() === 'error') errors.push(msg.text());
+    });
+    page.on('pageerror', (err) => {
+      errors.push(`pageerror: ${err.message}`);
+    });
+    await page.goto('/');
+    // Wait 3s for async errors (SDK init, lazy hydration).
+    await page.waitForTimeout(3_000);
+    expect(errors, `Unexpected console errors:\n${errors.join('\n')}`).toEqual([]);
+  });
 });
