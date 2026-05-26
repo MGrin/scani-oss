@@ -35,4 +35,18 @@ describe('Better-Auth config — auth hardening', () => {
       'hashed'
     );
   });
+
+  test('session cookie is SameSite=Strict in deployed mode (M4)', () => {
+    const auth = createBetterAuth({
+      baseURL: 'https://app.scani.example',
+      secret: 'test-secret-at-least-32-characters-long',
+      trustedOrigins: ['https://app.scani.example'],
+      cookieDomain: 'app.scani.example',
+      screenshotBotSecret: 'test-screenshot-bot-secret',
+    });
+    const attrs = auth.options.advanced?.defaultCookieAttributes;
+    expect(attrs?.sameSite).toBe('strict');
+    expect(attrs?.secure).toBe(true);
+    expect(attrs?.domain).toBe('app.scani.example');
+  });
 });
