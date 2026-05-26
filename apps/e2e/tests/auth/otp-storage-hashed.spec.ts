@@ -3,6 +3,8 @@ import { queryDb } from '../../fixtures/db';
 import { mailpit } from '../../fixtures/mailpit';
 import { resetAuthRateLimit } from '../../fixtures/redis';
 
+const API_BASE_URL = process.env.API_BASE_URL ?? 'http://localhost:3011';
+
 test.describe('auth: OTP storage is hashed', () => {
   test.beforeEach(resetAuthRateLimit);
 
@@ -11,7 +13,7 @@ test.describe('auth: OTP storage is hashed', () => {
   }, testInfo) => {
     const email = `e2e-hash-${testInfo.testId}-${Date.now()}@example.com`;
     const requestRes = await page.request.post(
-      'http://localhost:3011/api/auth/email-otp/send-verification-otp',
+      `${API_BASE_URL}/api/auth/email-otp/send-verification-otp`,
       {
         data: { email, type: 'sign-in' },
         headers: { 'content-type': 'application/json', origin: 'http://localhost:5173' },

@@ -2,6 +2,8 @@ import { expect, test } from '@playwright/test';
 import { signIn } from '../../fixtures/auth';
 import { resetAuthRateLimit } from '../../fixtures/redis';
 
+const API_BASE_URL = process.env.API_BASE_URL ?? 'http://localhost:3011';
+
 test.describe('auth: OTP sign-in', () => {
   test.beforeEach(resetAuthRateLimit);
 
@@ -16,7 +18,7 @@ test.describe('auth: OTP sign-in', () => {
     expect(new URL(signedInPage.url()).pathname).not.toBe('/auth');
 
     // Sanity: the API recognizes us via the same session cookie.
-    const sessionRes = await signedInPage.request.get('http://localhost:3011/api/auth/get-session');
+    const sessionRes = await signedInPage.request.get(`${API_BASE_URL}/api/auth/get-session`);
     expect(sessionRes.ok()).toBe(true);
     const sessionBody = (await sessionRes.json()) as { user?: { id?: string; email?: string } };
     expect(sessionBody.user?.id).toBe(userId);

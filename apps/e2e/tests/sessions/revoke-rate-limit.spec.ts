@@ -2,6 +2,8 @@ import { expect, test } from '@playwright/test';
 import { signIn } from '../../fixtures/auth';
 import { resetAuthRateLimit } from '../../fixtures/redis';
 
+const API_BASE_URL = process.env.API_BASE_URL ?? 'http://localhost:3011';
+
 test.describe('sessions: revoke rate limit', () => {
   test.beforeEach(async () => {
     await resetAuthRateLimit();
@@ -12,7 +14,7 @@ test.describe('sessions: revoke rate limit', () => {
 
     const statuses: number[] = [];
     for (let i = 0; i < 12; i++) {
-      const res = await page.request.post('http://localhost:3011/trpc/sessions.revoke', {
+      const res = await page.request.post(`${API_BASE_URL}/trpc/sessions.revoke`, {
         data: { token: 'bogus-token-for-rate-test' },
         headers: { 'content-type': 'application/json', origin: 'http://localhost:5173' },
       });
