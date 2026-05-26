@@ -29,7 +29,7 @@
     "lint": "biome check .",
     "lint:fix": "biome check --write .",
     "type-check": "bun run --filter='*' type-check",
-    "test": "bun test --preload ./packages/business/domain/test-preload.ts packages/ apps/ --timeout 30000",
+    "test": "bun test --preload ./packages/business/domain/test-preload.ts packages/ apps/backend/ apps/frontend/ --timeout 30000",
     "test:e2e": "cd apps/e2e && bun run test:e2e",
     "test:e2e:ui": "cd apps/e2e && bun run test:e2e:ui",
     "test:e2e:report": "cd apps/e2e && bunx playwright show-report",
