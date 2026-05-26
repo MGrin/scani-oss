@@ -160,6 +160,30 @@ export const aiRouter = router({
     )
     .output(z.unknown())
     .mutation(async ({ input, ctx }) => {
+      // Test-only stub. Returns a fixed holdings payload so e2e tests don't
+      // depend on the real AI provider (cost, flakiness, network). Reads
+      // process.env directly so unauthed tRPC paths (which bail at the
+      // bearer-procedure middleware before reaching this body) don't
+      // trip the full data-provider env-schema validation. The var is
+      // still validated + refused in production by config/env.ts at boot.
+      if (process.env.STUB_AI === '1') {
+        return {
+          portfolio: {
+            holdings: [
+              { symbol: 'BTC', name: 'Bitcoin', balance: '0.5', confidence: 0.95 },
+              { symbol: 'ETH', name: 'Ethereum', balance: '10', confidence: 0.92 },
+              { symbol: 'USD', name: 'US Dollar', balance: '5000', confidence: 1.0 },
+            ],
+            overallConfidence: 0.94,
+            context: 'stub',
+            detectedCurrency: 'USD',
+          },
+          metadata: {
+            provider: 'stub',
+            processingTime: 0,
+          },
+        };
+      }
       const opts = input.options ?? {};
       const providers = selectProviders(opts.provider);
       if (providers.length === 0) {

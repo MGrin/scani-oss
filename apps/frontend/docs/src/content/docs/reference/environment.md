@@ -166,6 +166,22 @@ port. The prod `frontend-app` image exposes `/healthz` (nginx alive),
 not to be confused with `/api/health/*` (which goes through to the
 api).
 
+## Testing-only
+
+These vars are read **only** by the e2e test runner under `apps/e2e/`
+and the related fixtures / scripts. They have no effect on a
+production deployment — operators can ignore this section.
+
+| Variable | Read by | What it does |
+|---|---|---|
+| `STUB_AI` | data-provider (`ai.parseScreenshot`) | When `1`, returns a fixed holdings payload instead of calling a real AI provider. Refused in production by the data-provider env schema. |
+| `API_BASE_URL` | e2e (Playwright fixtures) | Base URL the e2e suite hits for tRPC requests. Defaults to the dev-compose api at `http://localhost:3011`. |
+| `PLAYWRIGHT_BASE_URL` | Playwright config | Base URL Playwright treats as the SPA origin. Defaults to `http://localhost:5173`. |
+| `MAILPIT_URL` | e2e (magic-link helper) | Mailpit HTTP API used to read auth emails during sign-in. Default `http://localhost:8026`. |
+| `POSTGRES_CONTAINER` | e2e (db reset helper) | Compose service name of the Postgres container the e2e suite execs into. Default `postgres`. |
+| `REDIS_CONTAINER` | e2e (queue reset helper) | Compose service name of the Redis container the e2e suite execs into. Default `redis`. |
+| `KEEP_STACK_ON_FAILURE` | `apps/e2e/scripts/run.ts` | When `1`, leaves the docker-compose stack running after a failed e2e run so the operator can poke at it. |
+
 ## Validation pattern
 
 Every loader uses zod and the helpers from `@scani/config`:

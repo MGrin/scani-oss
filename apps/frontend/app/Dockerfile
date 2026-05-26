@@ -18,7 +18,9 @@ WORKDIR /app
 # workspaces under `apps/*/*/` or `packages/*/*/` are picked up
 # automatically.
 COPY package.json bun.lock ./
-COPY --parents apps/*/*/package.json packages/*/*/package.json ./
+# apps/*/package.json picks up single-level workspaces (e.g. apps/e2e).
+# apps/*/*/package.json picks up nested workspaces (e.g. apps/frontend/app).
+COPY --parents apps/*/package.json apps/*/*/package.json packages/*/*/package.json ./
 
 # Install only the frontend workspace's dep graph. Filters out the
 # entire backend tree + every provider adapter, which keeps the build
