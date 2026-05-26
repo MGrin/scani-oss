@@ -14,7 +14,9 @@ WORKDIR /app
 # workspaces under `apps/*/*/` or `packages/*/*/` are picked up
 # automatically.
 COPY package.json bun.lock ./
-COPY --parents apps/*/*/package.json packages/*/*/package.json ./
+# apps/*/package.json picks up single-level workspaces (e.g. apps/e2e).
+# apps/*/*/package.json picks up nested workspaces (e.g. apps/backend/worker).
+COPY --parents apps/*/package.json apps/*/*/package.json packages/*/*/package.json ./
 
 # Filter to worker's workspace dep graph only. Worker depends on
 # @scani/providers-google-sheets (the pricing cron uses Google Sheets
