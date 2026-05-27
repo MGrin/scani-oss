@@ -21,7 +21,7 @@ COPY --parents apps/*/package.json apps/*/*/package.json packages/*/*/package.js
 # Filter to worker's workspace dep graph only. Worker depends on
 # @scani/providers-google-sheets (the pricing cron uses Google Sheets
 # fallback).
-RUN bun install --frozen-lockfile --filter @scani/worker
+RUN bun install --frozen-lockfile --filter @scani/worker --linker=hoisted
 
 FROM oven/bun:${BUN_VERSION} AS build
 WORKDIR /app
