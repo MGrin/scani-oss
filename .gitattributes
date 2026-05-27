@@ -3,17 +3,25 @@
 # (public) and we never want a sync merge to replace private's content.
 #
 # Configured driver: `git config merge.ours.driver true` (set per-clone).
+#
+# Leading `/` anchors the pattern to the repo root. A bare `package.json`
+# (no slash) would match every package.json in every workspace because
+# gitattributes pattern semantics match anywhere in the tree — silently
+# dropping any dep change that comes through the OSS sync. That's how
+# the @sinclair/typebox elysia-peer fix from scani-oss#56 was lost on
+# the way down, crashing every data-provider rollout until reapplied
+# by hand.
 
-package.json                                                  merge=ours
-docker-compose.yml                                            merge=ours
-README.md                                                     merge=ours
-CONTRIBUTING.md                                               merge=ours
-CLAUDE.md                                                     merge=ours
+/package.json                                                 merge=ours
+/docker-compose.yml                                           merge=ours
+/README.md                                                    merge=ours
+/CONTRIBUTING.md                                              merge=ours
+/CLAUDE.md                                                    merge=ours
 .github/CODEOWNERS                                            merge=ours
 .github/workflows/ci.yml                                      merge=ours
 .github/workflows/security-invariants.yml                     merge=ours
 .githooks/pre-commit                                          merge=ours
-.env.example                                                  merge=ours
+/.env.example                                                 merge=ours
 apps/backend/api/.env.example                                 merge=ours
 apps/backend/data-provider/.env.example                       merge=ours
 apps/backend/worker/.env.example                              merge=ours
