@@ -96,10 +96,16 @@ export function createBetterAuth(opts: {
       },
     }),
     emailAndPassword: {
-      enabled: true,
-      requireEmailVerification: false, // Flip to true once SMTP deliverability is confirmed.
-      autoSignIn: true,
-      minPasswordLength: 10,
+      // Disabled. The SPA's only auth path is `signIn.emailOtp(...)`
+      // (apps/frontend/app/src/contexts/AuthContext.tsx). Leaving
+      // emailAndPassword enabled keeps Better-Auth's `POST
+      // /api/auth/sign-up/email` and `POST /api/auth/sign-in/email`
+      // routes mounted — those let a scripted caller bypass the OTP /
+      // magic-link flow entirely (sign up with `requireEmailVerification:
+      // false` + `autoSignIn: true` returns a session cookie without
+      // proof of email control). Closing the routes shrinks the
+      // attack surface to the intended passwordless flow.
+      enabled: false,
     },
     databaseHooks: {
       user: {
@@ -181,6 +187,13 @@ export function createBetterAuth(opts: {
     session: {
       expiresIn: 60 * 60 * 24 * 7, // 7 days
       updateAge: 60 * 60 * 24, // extend at most once per day
+      // Sensitive ops (Better-Auth's /change-email, /change-password,
+      // and any other endpoint that calls `requireFreshSession`) reject
+      // when the session is older than freshAge. 5 minutes forces the
+      // user to have authenticated very recently before changing
+      // recovery-grade attributes — even an attacker with a long-lived
+      // stolen cookie cannot pivot to email-change without re-auth.
+      freshAge: 60 * 5, // 5 min
       // The cookie cache is per-instance and not shared across Fly machines.
       // Keeping it on in prod meant a session revoked on machine A could
       // still authenticate on machine B for up to 5 min — incompatible with
@@ -204,11 +217,64 @@ export function createBetterAuth(opts: {
       defaultCookieAttributes: opts.cookieDomain
         ? {
             domain: opts.cookieDomain,
-            sameSite: 'lax',
+            // SameSite=Strict on the session cookie. Lax would allow top-
+            // level GET navigations to carry the cookie cross-site (so an
+            // attacker page's <a href="https://app.scani/sensitive">
+            // attaches the session). The magic-link click-from-email flow
+            // is unaffected: it establishes a NEW session via Set-Cookie
+            // in the response and doesn't rely on an existing cookie.
+            sameSite: 'strict',
             secure: opts.baseURL.startsWith('https://'),
           }
         : undefined,
     },
+    // Account-enumeration posture: every Better-Auth endpoint reachable
+    // from an unauthenticated caller has been verified to return
+    // identical HTTP responses regardless of whether the supplied email
+    // is registered. The `emailAndPassword` routes (which historically
+    // distinguished "exists" vs "new" by status code) are disabled
+    // above. The remaining surface:
+    //   - POST /api/auth/sign-in/magic-link
+    //     (node_modules/better-auth/dist/plugins/magic-link/index.mjs:54-82)
+    //     Never looks up the user before sending. Always stores a
+    //     verification token and emails the link; always returns
+    //     {status: true}.
+    //   - POST /api/auth/email-otp/send-verification-otp
+    //     (node_modules/better-auth/dist/plugins/email-otp/routes.mjs:86-110)
+    //     For type="sign-in" with disableSignUp=false (our config),
+    //     shouldSendOTP=true so the early-return-without-email branch
+    //     at L100 is never taken — registered and unregistered emails
+    //     both get an OTP stored, the email actually dispatched, and
+    //     {success: true} returned. This also closes the email
+    //     side-channel for the primary sign-in entry point.
+    //   - POST /api/auth/sign-in/email-otp
+    //     (.../email-otp/routes.mjs:398-433) Calls atomicVerifyOTP
+    //     before any user lookup; invalid OTP → INVALID_OTP regardless
+    //     of registration. Valid OTP + no user → user is auto-created
+    //     and signed in (same shape as existing-user path).
+    //   - POST /api/auth/email-otp/verify-email
+    //     (.../email-otp/routes.mjs:277-352) atomicVerifyOTP runs
+    //     first; USER_NOT_FOUND only surfaces after a valid OTP, which
+    //     means only the email owner sees it (Better-Auth's own
+    //     comment at L313-316 calls this out as intentional and safe).
+    //   - POST /api/auth/email-otp/request-password-reset and
+    //     POST /api/auth/email-otp/reset-password
+    //     (.../email-otp/routes.mjs:450-481 and 555-590) Request always
+    //     returns {success: true}; reset gates USER_NOT_FOUND behind a
+    //     valid OTP, same threat model as verify-email.
+    //   - POST /api/auth/change-email
+    //     (node_modules/better-auth/dist/api/routes/update-user.mjs:377-493)
+    //     Requires sensitiveSessionMiddleware. The "newEmail already in
+    //     use" branch (L433) returns the same {status: true} as the
+    //     "newEmail is fresh" branches — Better-Auth's own comment at
+    //     L420-425 calls out this uniformity as the intended design.
+    //     Also rate-limited by the signup-limiter gate in
+    //     apps/backend/api/src/index.ts.
+    //   - POST /api/auth/change-password
+    //     (.../update-user.mjs:75-184) Operates only on the
+    //     authenticated session's own credential account; no
+    //     attacker-supplied email lookup. Also rate-limited by the
+    //     same gate.
     plugins: [
       magicLink({
         sendMagicLink: async ({ email: to, url }) => {
@@ -225,6 +291,10 @@ export function createBetterAuth(opts: {
           }
         },
         expiresIn: 60 * 15, // 15 min
+        // Hash tokens before storing in user_verifications.value. A read-
+        // only DB leak otherwise hands the attacker valid magic-links for
+        // the next 15 minutes. Better-Auth re-hashes on verification.
+        storeToken: 'hashed',
       }),
       // The frontend picks the OTP flow for PWAs (installed standalone
       // mode), where clicking a magic link bounces the user out of the PWA
@@ -234,6 +304,10 @@ export function createBetterAuth(opts: {
         otpLength: 6,
         expiresIn: 5 * 60, // 5 min
         allowedAttempts: 5,
+        // Hash OTPs before storing in user_verifications.value (same
+        // reasoning as magicLink.storeToken above). The user-facing OTP
+        // is still emailed in plaintext; only the DB stores the hash.
+        storeOTP: 'hashed',
         sendVerificationOTP: async ({ email: to, otp, type }) => {
           try {
             await email.sendOtp({ to, code: otp, type });

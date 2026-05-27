@@ -47,6 +47,7 @@ let dataProviderReachable = true;
 // This must happen before any module that calls Container.get()
 import { QueueClient } from '@scani/queue';
 import {
+  createSessionRevokeLimiter,
   createSignupLimiter,
   createStandardLimiter,
   createStrictLimiter,
@@ -72,6 +73,7 @@ import {
 } from '@scani/db';
 import { buildProviderRegistry } from '@scani/providers/core/boot';
 import { aiOpenAIFactory } from '@scani/providers/providers/ai-openai';
+import { aiStubFactory } from '@scani/providers/providers/ai-stub';
 import { binanceFactory } from '@scani/providers/providers/binance';
 import { bitcoinFactory } from '@scani/providers/providers/bitcoin';
 import { bitgetFactory } from '@scani/providers/providers/bitget';
@@ -99,7 +101,11 @@ import { googleSheetsFactory } from '@scani/providers-google-sheets';
 import { createBetterAuth } from './auth/better-auth';
 import { initializeContainer } from './config/container';
 import { registerAdminJobsRoutes } from './presentation/http/admin-jobs';
-import { createContext, setBetterAuthForContext } from './presentation/trpc';
+import {
+  createContext,
+  setBetterAuthForContext,
+  setSessionRevokeLimiterForContext,
+} from './presentation/trpc';
 
 initializeContainer();
 
@@ -143,7 +149,12 @@ try {
       // Brokers + fiat.
       ibkrFactory,
       wiseFactory,
-      // AI: OpenAI is the only AI provider.
+      // AI: STUB_AI=1 registers a fixed-payload provider FIRST so the
+      // e2e suite gets deterministic AI results without an OpenAI key.
+      // The data-provider config schema refuses STUB_AI=1 in production,
+      // so a misconfigured prod deploy crashes the data-provider at boot
+      // before this branch ever fires.
+      ...(process.env.STUB_AI === '1' ? [aiStubFactory] : []),
       aiOpenAIFactory,
     ],
   });
@@ -239,6 +250,11 @@ const strictLimiter = createStrictLimiter(redisConnection, 60);
 // reveals "email exists" vs "new", so this limiter is the primary
 // defense against account enumeration brute force.
 const signupLimiter = createSignupLimiter(redisConnection, 6);
+// Per-user limiter for session-revoke mutations. Threaded onto the tRPC
+// context via setSessionRevokeLimiterForContext below so the sessions
+// router can read it off `ctx`.
+const sessionRevokeLimiter = createSessionRevokeLimiter(redisConnection, 10);
+setSessionRevokeLimiterForContext(sessionRevokeLimiter);
 // WebSocket connection limiter: max 30 auth attempts per minute per IP.
 // Prevents brute-forcing auth tokens over the ws endpoint, which bypasses
 // the HTTP limiters above.
@@ -452,7 +468,15 @@ app
       pathname.startsWith('/api/auth/sign-up') ||
       pathname.startsWith('/api/auth/sign-in') ||
       pathname.startsWith('/api/auth/email-otp/send-verification-otp') ||
-      pathname.startsWith('/api/auth/forget-password');
+      pathname.startsWith('/api/auth/forget-password') ||
+      // change-email triggers an outbound confirmation email per call;
+      // without a rate limit an attacker with any session can flood a
+      // target inbox. change-password is disabled at the
+      // emailAndPassword config but Better-Auth still mounts the route;
+      // the limiter also covers the latent brute-force surface on the
+      // current-password challenge.
+      pathname.startsWith('/api/auth/change-email') ||
+      pathname.startsWith('/api/auth/change-password');
     if (isAuthAttempt) {
       const res = await signupLimiter.tryConsume(request);
       if ('ok' in res && !res.ok) {

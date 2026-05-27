@@ -1,3 +1,4 @@
+import { safeExternalUrl } from '@scani/shared';
 import { Button } from '@scani/ui/ui/button';
 import {
   Dialog,
@@ -50,6 +51,7 @@ export function ExchangeConnectDialog({
 
   const isMobile = isMobileDevice();
   const isBusy = status === 'submitting';
+  const safeDocsUrl = safeExternalUrl(instructions.docsUrl);
 
   const resetForm = () => {
     setValues({});
@@ -127,9 +129,9 @@ export function ExchangeConnectDialog({
                 <li key={step}>{step}</li>
               ))}
             </ol>
-            {instructions.docsUrl && (
+            {safeDocsUrl && (
               <a
-                href={instructions.docsUrl}
+                href={safeDocsUrl}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="inline-flex items-center gap-1 text-xs text-primary hover:underline mt-1"

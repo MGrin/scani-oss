@@ -104,6 +104,10 @@ const envSchema = z.object({
 
   // SCANI_CLOUD_URL + SCANI_CLOUD_API_KEY are owned by @scani/cloud-client's
   // own env schema. Required in prod; optional in dev (local fallback).
+
+  STUB_AI: inProd
+    ? z.literal(undefined).optional()
+    : z.union([z.literal('1'), z.literal('')]).optional(),
 });
 
 export type Env = z.infer<typeof envSchema>;

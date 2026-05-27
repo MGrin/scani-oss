@@ -13,7 +13,9 @@ WORKDIR /app
 # `--parents` preserves directory structure under the glob, so new
 # workspaces are picked up automatically.
 COPY package.json bun.lock ./
-COPY --parents apps/*/*/package.json packages/*/*/package.json ./
+# apps/*/package.json picks up single-level workspaces (e.g. apps/e2e).
+# apps/*/*/package.json picks up nested workspaces (e.g. apps/backend/data-provider).
+COPY --parents apps/*/package.json apps/*/*/package.json packages/*/*/package.json ./
 
 # Filter to data-provider's workspace dep graph only. data-provider
 # does NOT depend on @scani/providers-google-sheets (cloud-mode skips

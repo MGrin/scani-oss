@@ -67,6 +67,7 @@ leave your api.
 | OpenAI | `OPENAI_API_KEY` | AI inference | Default vision model: `gpt-4o`; override with `OPENAI_VISION_MODEL`. |
 | Perplexity | `PERPLEXITY_API_KEY` | AI inference | Token-identity enrichment helper. Optional. |
 | DeepSeek | `DEEPSEEK_API_KEY` | AI inference | Token-identity enrichment helper. Optional. |
+| AI stub | `STUB_AI=1` | AI inference (stub) | Test-only. Returns a fixed holdings payload so e2e tests don't depend on a real AI provider. Refused in production by the data-provider env schema. |
 
 ## Picking what to enable
 
