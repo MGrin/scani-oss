@@ -37,7 +37,7 @@ COPY --parents apps/*/package.json apps/*/*/package.json packages/*/*/package.js
 
 # Filter to @scani/db's dep graph only — drops everything reachable
 # through other workspaces (the bulk of the monorepo).
-RUN bun install --frozen-lockfile --filter @scani/db
+RUN bun install --frozen-lockfile --filter @scani/db --linker=hoisted
 
 # ---------- build ----------
 FROM oven/bun:${BUN_VERSION} AS build
