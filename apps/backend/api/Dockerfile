@@ -22,7 +22,7 @@ COPY --parents apps/*/package.json apps/*/*/package.json packages/*/*/package.js
 
 # Filter to api's workspace dep graph only — skips deps reachable only
 # through @scani/worker / data-provider / frontend workspaces.
-RUN bun install --frozen-lockfile --filter @scani/backend
+RUN bun install --frozen-lockfile --filter @scani/backend --linker=hoisted
 
 # ---------- build ----------
 FROM oven/bun:${BUN_VERSION} AS build
