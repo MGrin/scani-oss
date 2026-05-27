@@ -21,7 +21,7 @@ COPY --parents apps/*/package.json apps/*/*/package.json packages/*/*/package.js
 # does NOT depend on @scani/providers-google-sheets (cloud-mode skips
 # Google Sheets — per-user sheet config is backend-side DB state), so
 # this filter drops `googleapis` (~180MB) from the image entirely.
-RUN bun install --frozen-lockfile --filter @scani/data-provider
+RUN bun install --frozen-lockfile --filter @scani/data-provider --linker=hoisted
 
 # ---------- build ----------
 FROM oven/bun:${BUN_VERSION} AS build
