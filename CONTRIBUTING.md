@@ -212,6 +212,12 @@ exists because the value of every contribution to `scani-oss` is
 strictly larger than the marginal cost of a hosted seat, and saying so
 in writing is the honest way to acknowledge that.
 
+If you use Scani but don't ship code,
+[GitHub Sponsors](https://github.com/sponsors/MGrin) is the symmetric
+path — it funds the maintainer time that keeps the OSS distribution
+moving and makes the contributor benefits above possible in the first
+place.
+
 ## License
 
 By contributing, you agree that your contributions will be licensed under

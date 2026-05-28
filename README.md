@@ -13,6 +13,7 @@ service. MIT licensed.
 [![Bun](https://img.shields.io/badge/runtime-Bun-black.svg)](https://bun.sh)
 [![Bluesky](https://img.shields.io/badge/Bluesky-%40scani.xyz-0085ff?logo=bluesky&logoColor=white)](https://bsky.app/profile/scani.xyz)
 [![X](https://img.shields.io/badge/X-%40scani__xyz-000000?logo=x&logoColor=white)](https://x.com/scani_xyz)
+[![GitHub Sponsors](https://img.shields.io/github/sponsors/MGrin?label=Sponsor&logo=GitHub-Sponsors&color=ea4aaa)](https://github.com/sponsors/MGrin)
 
 **📚 [Docs →](https://docs.scani.xyz/)** — quickstart, self-hosting,
 architecture, provider integrations, and the full env-var reference.
@@ -329,9 +330,17 @@ Questions, ideas, and show-and-tell live in
 the best place to ask "is this the right approach" before you open a PR,
 or to share what you've built on top of Scani. Security issues should go
 through the private flow in [`.github/SECURITY.md`](./.github/SECURITY.md)
-instead of Discussions or public issues. If Scani saves you time and
-you'd like to fund continued work, [GitHub Sponsors](https://github.com/sponsors/MGrin)
-is open.
+instead of Discussions or public issues.
+
+## Sponsor
+
+Scani is built and maintained by one person in the open. If it saves
+you time — whether you self-host or use the hosted service — and you'd
+like to help keep development going, [GitHub Sponsors](https://github.com/sponsors/MGrin)
+is the way to chip in. Sponsorship funds the ongoing work that keeps
+the OSS distribution feature-complete and operator-friendly: new
+provider integrations, performance work, docs, and the time it takes
+to review every contribution carefully.
 
 ## License
 
