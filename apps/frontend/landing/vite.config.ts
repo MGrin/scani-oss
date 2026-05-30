@@ -19,11 +19,19 @@ export default defineConfig({
         // independent of the app code. posthog-js is dynamically
         // imported (deferred off the critical path) — naming its chunk
         // keeps it stably cacheable.
-        manualChunks: {
-          react: ['react', 'react-dom'],
-          posthog: ['posthog-js'],
-          trpc: ['@trpc/client'],
-          icons: ['lucide-react'],
+        //
+        // Function form (not the `{ name: [pkg] }` map) so Rollup only
+        // names chunks for modules already in the graph: posthog-js is a
+        // transitive dep reached via @scani/analytics' lazy import and is
+        // not resolvable as a bare entry from this workspace, which the
+        // map form would try (and fail) to do at build time.
+        manualChunks(id) {
+          if (!id.includes('node_modules')) return undefined;
+          if (id.includes('/posthog-js/')) return 'posthog';
+          if (id.includes('/@trpc/')) return 'trpc';
+          if (id.includes('/lucide-react/')) return 'icons';
+          if (id.includes('/react-dom/') || id.includes('/react/')) return 'react';
+          return undefined;
         },
       },
     },
