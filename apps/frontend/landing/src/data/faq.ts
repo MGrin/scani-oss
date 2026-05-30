@@ -6,7 +6,7 @@ export interface QA {
 export const QAS: ReadonlyArray<QA> = [
   {
     q: 'When does billing actually start?',
-    a: "No date locked in yet — we wire it on once the cloud-management plane has been running steadily for a while and we're confident the metering numbers are right. The waitlist + the beta-preview promise exist precisely so you don't need to track that timeline.",
+    a: "No date locked in yet — we wire it on once the cloud-management plane has been running steadily for a while and we're confident the metering numbers are right. The beta-preview promise exists precisely so you don't need to track that timeline.",
   },
   {
     q: 'What counts as a "significant" OSS contribution?',

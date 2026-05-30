@@ -17,8 +17,8 @@ createRoot(document.getElementById('root') as HTMLElement).render(
 
 // PostHog is loaded + initialised after first paint so posthog-js stays
 // out of the initial bundle — it is the landing's biggest mobile-perf
-// cost and nothing render-critical depends on it (the contact/waitlist
-// forms' capture() calls no-op until init completes). The dynamic import
+// cost and nothing render-critical depends on it (the contact form's
+// capture() calls no-op until init completes). The dynamic import
 // is a deliberate, localized exception to the repo's top-level-import
 // rule: main.tsx is the app boot entry and analytics is non-critical.
 function initTelemetry(): void {
