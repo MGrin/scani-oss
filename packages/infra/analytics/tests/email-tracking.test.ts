@@ -72,6 +72,21 @@ describe('rewriteEmailHtml', () => {
     expect(verifyTrackingToken(token as string, SECRET)?.u).toBe('https://app.scani.xyz/go');
   });
 
+  test('html-decodes entity-encoded hrefs so the destination has real query separators', () => {
+    // Email templates run the URL through escapeHtml, so `&` arrives as `&amp;`
+    // in the href. The click token must carry the decoded URL, otherwise the
+    // /e/c/ redirect sends `?token=x&amp;callbackURL=y` and the server sees a
+    // param named `amp;callbackURL` instead of `callbackURL`.
+    const html =
+      '<a href="https://api.scani.xyz/api/auth/magic-link/verify?token=abc&amp;callbackURL=https%3A%2F%2Fapp.scani.xyz%2Fauth%2Fcallback">x</a>';
+    const out = rewriteEmailHtml({ ...opts, html });
+    const token = out.match(/\/e\/c\/([^"]+)/)?.[1];
+    expect(token).toBeTruthy();
+    expect(verifyTrackingToken(token as string, SECRET)?.u).toBe(
+      'https://api.scani.xyz/api/auth/magic-link/verify?token=abc&callbackURL=https%3A%2F%2Fapp.scani.xyz%2Fauth%2Fcallback'
+    );
+  });
+
   test('leaves mailto and anchor links untouched', () => {
     const html = '<a href="mailto:hi@scani.xyz">mail</a><a href="#top">top</a>';
     const out = rewriteEmailHtml({ ...opts, html });
