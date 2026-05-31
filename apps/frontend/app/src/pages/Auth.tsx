@@ -8,7 +8,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@scan
 import { Input } from '@scani/ui/ui/input';
 import { Label } from '@scani/ui/ui/label';
 import { Loader2, Mail } from 'lucide-react';
-import { useId, useState } from 'react';
+import { useEffect, useId, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { z } from 'zod';
@@ -22,7 +22,7 @@ const authSchema = z.object({
 type AuthFormData = z.infer<typeof authSchema>;
 
 export function Auth() {
-  const { authenticate, verifyCode } = useAuth();
+  const { user, loading, authenticate, verifyCode } = useAuth();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const [error, setError] = useState<string | null>(null);
@@ -34,6 +34,14 @@ export function Auth() {
   // chains: must be a same-origin path, never an absolute or
   // protocol-relative URL.
   const returnTo = safeRedirectPath(searchParams.get('returnTo'), '/');
+
+  // Leave /auth as soon as the session resolves. Covers two cases the
+  // static "check your email" screen otherwise strands the user in:
+  // refreshing this tab after signing in via the magic link in another
+  // tab, and AuthContext's window-focus re-check flipping us to signed-in.
+  useEffect(() => {
+    if (!loading && user) navigate(returnTo, { replace: true });
+  }, [loading, user, navigate, returnTo]);
 
   // Detect if running in PWA
   const runningAsPWA = isPWA();
