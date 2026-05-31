@@ -37,6 +37,14 @@ export function AuthPage() {
   const [loading, setLoading] = useState(false);
   const [resendCooldown, setResendCooldown] = useState(0);
 
+  // Already-authenticated visitors (valid session cookie, e.g. opened
+  // /auth directly or bounced here by the guard mid-login) get sent on to
+  // their destination once the session resolves.
+  const { data: sessionData } = authClient.useSession();
+  useEffect(() => {
+    if (sessionData?.user) navigate(returnTo, { replace: true });
+  }, [sessionData, navigate, returnTo]);
+
   // Tick the resend cooldown down to zero. Cleared on unmount.
   useEffect(() => {
     if (resendCooldown <= 0) return;
@@ -85,7 +93,12 @@ export function AuthPage() {
     try {
       const res = await authClient.signIn.emailOtp({ email, otp });
       if (res.error) throw new Error(res.error.message || 'Invalid code');
-      navigate(returnTo, { replace: true });
+      // Full reload, not a client-side navigate: the RequireAuth guard reads
+      // authClient.useSession(), whose cached atom hasn't picked up the
+      // just-set session cookie yet — an SPA navigate races it and bounces
+      // straight back to /auth. A hard load re-initialises the guard from the
+      // live cookie.
+      window.location.replace(returnTo);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Invalid code');
     } finally {
