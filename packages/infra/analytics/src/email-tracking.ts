@@ -58,6 +58,18 @@ interface RewriteOptions {
   secret: string;
 }
 
+// Inverse of the email templates' escapeHtml. An href value parsed out of the
+// HTML is still entity-encoded (`&` arrives as `&amp;`), so it must be decoded
+// before it becomes the redirect destination — otherwise the /e/c/ handler
+// 302s to `?a=1&amp;b=2` and downstream parsers see a param named `amp;b`.
+const decodeHtmlEntities = (value: string): string =>
+  value
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&amp;/g, '&');
+
 // Rewrites http(s) links to route through the click-tracking endpoint and
 // appends an open-tracking pixel. Returns the HTML untouched if it has no
 // recognisable links and no </body> — defensive, never throws.
@@ -73,7 +85,7 @@ export function rewriteEmailHtml(opts: RewriteOptions): string {
   let rewritten = html.replace(
     /(<a\b[^>]*?\shref=)(["'])(https?:\/\/[^"']+)\2/gi,
     (_match, prefix: string, quote: string, url: string) =>
-      `${prefix}${quote}${base}/e/c/${sign(url)}${quote}`
+      `${prefix}${quote}${base}/e/c/${sign(decodeHtmlEntities(url))}${quote}`
   );
 
   const pixel = `<img src="${base}/e/o/${sign()}" alt="" width="1" height="1" style="display:none" />`;
