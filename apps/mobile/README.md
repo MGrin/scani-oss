@@ -58,6 +58,18 @@ Models are hand-maintained against `apps/backend/api/openapi/scani-openapi.json`
 OpenAPI generator that fits the tRPC-shaped spec without a GPL / Arrow / crash
 cost; codegen can be revisited as the surface grows.
 
+## Theming
+
+Brand colors come from one source of truth — `packages/frontend/ui/src/design-tokens/tokens.ts`
+(kept equal to the web `globals.css` by a test). `scripts/generate-design-tokens.ts`
+generates the committed native themes:
+
+- Android: `android/.../ui/theme/ScaniColors.kt` (`LightScaniColors` / `DarkScaniColors`).
+- iOS: `ios/iosApp/ScaniColors.swift` (`ScaniColors.light` / `.dark`).
+
+Regenerate with `bun scripts/generate-design-tokens.ts`; CI fails if the committed
+output drifts. Screens start consuming these in the read-parity milestone.
+
 ## Notes
 
 - This is **OSS-eligible** source — author changes against `MGrin/scani-oss`
