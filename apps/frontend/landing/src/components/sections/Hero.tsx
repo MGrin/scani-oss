@@ -1,6 +1,5 @@
 import { ArrowRight, BookOpen } from 'lucide-react';
 import { DOCS_URL } from '../../seo/siteMeta';
-import { ProductHuntBadge } from '../ProductHuntBadge';
 
 export function Hero() {
   return (
@@ -52,9 +51,6 @@ export function Hero() {
             <BookOpen className="h-4 w-4" />
             Read the docs
           </a>
-        </div>
-        <div className="mt-8 flex justify-center">
-          <ProductHuntBadge />
         </div>
         <p className="mt-6 text-xs text-muted-foreground">
           Free during beta · No credit card · Self-host or use ours
