@@ -2,7 +2,19 @@ import SwiftUI
 import Shared
 
 struct ContentView: View {
+    @StateObject private var model: AuthModel
+    private let container: AppContainer
+
+    init(container: AppContainer) {
+        self.container = container
+        _model = StateObject(wrappedValue: AuthModel(repo: container.authRepository))
+    }
+
     var body: some View {
-        Text(Greeting().greet())
+        if model.step == .authenticated {
+            BiometricGate { MainShell() }
+        } else {
+            SignInView(model: model)
+        }
     }
 }
