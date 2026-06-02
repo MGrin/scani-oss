@@ -1,3 +1,4 @@
+import { mobileRouter } from '../presentation/routers/mobile';
 import { systemRouter } from '../presentation/routers/system';
 import { router } from '../presentation/trpc';
 
@@ -7,6 +8,7 @@ import { router } from '../presentation/trpc';
 // Milestone 3 — add the real sub-router/procedure here to expose it to mobile.
 export const mobileContractRouter = router({
   system: systemRouter,
+  mobile: mobileRouter,
 });
 
 export type MobileContractRouter = typeof mobileContractRouter;
