@@ -23,10 +23,6 @@ export const BLUESKY_HANDLE = '@scani.xyz';
 
 export const BLUESKY_URL = 'https://bsky.app/profile/scani.xyz';
 
-export const PRODUCT_HUNT_URL = 'https://www.producthunt.com/products/scani';
-
-export const PRODUCT_HUNT_POST_ID = '1155034';
-
 /** Joins a route path onto the site origin, always producing an absolute URL. */
 export function absoluteUrl(path: string): string {
   if (path === '/' || path === '') return `${SITE_URL}/`;
