@@ -19,10 +19,11 @@ object ServiceLocator {
 
     fun init(context: Context) {
         if (::authRepository.isInitialized) return
+        val engine = OkHttp.create()
         val storage = AndroidSecureStorage(context.applicationContext)
-        authRepository = AuthRepository(AuthApi(OkHttp.create(), BASE_URL), storage)
+        authRepository = AuthRepository(AuthApi(engine, BASE_URL), storage)
         trpcClient = TrpcClient(
-            engine = OkHttp.create(),
+            engine = engine,
             baseUrl = BASE_URL,
             tokenProvider = { authRepository.token() },
             onUnauthorized = { authRepository.signOut() },
