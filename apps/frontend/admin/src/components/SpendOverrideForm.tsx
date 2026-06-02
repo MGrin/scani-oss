@@ -6,7 +6,7 @@ import { Label } from '@scani/ui/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@scani/ui/ui/select';
 import { Loader2 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
-import { useMemo, useState, useTransition } from 'react';
+import { useMemo, useState } from 'react';
 import {
   PROVIDER_DISPLAY,
   type SpendOverride,
@@ -42,7 +42,10 @@ export function SpendOverrideForm({ existing, enabled }: Props) {
   const [amount, setAmount] = useState('');
   const [note, setNote] = useState('');
   const [status, setStatus] = useState<{ ok: boolean; message: string } | null>(null);
-  const [pending, startTransition] = useTransition();
+  // Plain boolean, not useTransition: an async callback passed to
+  // startTransition leaves `isPending` stuck true (state updates after the
+  // first await escape the transition), so the button spinner never clears.
+  const [pending, setPending] = useState(false);
 
   const match = useMemo(
     () => existing.find((o) => o.provider === provider && o.period === period),
@@ -64,40 +67,44 @@ export function SpendOverrideForm({ existing, enabled }: Props) {
     setStatus(null);
   }
 
-  function submit(clear: boolean) {
-    startTransition(async () => {
-      try {
-        const res = await fetch('/api/admin/spend/override', {
-          method: 'POST',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({
-            provider,
-            period,
-            amountUsd: clear ? null : Number(amount),
-            note: note || undefined,
-            clear,
-          }),
-          cache: 'no-store',
-        });
-        const json = (await res.json().catch(() => ({}))) as {
-          ok?: boolean;
-          error?: string;
-          message?: string;
-        };
-        if (!res.ok || json.ok === false) {
-          setStatus({ ok: false, message: json.error ?? `HTTP ${res.status}` });
-          return;
-        }
-        setStatus({ ok: true, message: json.message ?? 'Saved.' });
-        if (clear) {
-          setAmount('');
-          setNote('');
-        }
-        router.refresh();
-      } catch (err) {
-        setStatus({ ok: false, message: err instanceof Error ? err.message : String(err) });
+  async function submit(clear: boolean) {
+    setPending(true);
+    setStatus(null);
+    try {
+      const res = await fetch('/api/admin/spend/override', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          provider,
+          period,
+          amountUsd: clear ? null : Number(amount),
+          note: note || undefined,
+          clear,
+        }),
+        cache: 'no-store',
+      });
+      const json = (await res.json().catch(() => ({}))) as {
+        ok?: boolean;
+        error?: string;
+        message?: string;
+      };
+      if (!res.ok || json.ok === false) {
+        setStatus({ ok: false, message: json.error ?? `HTTP ${res.status}` });
+        return;
       }
-    });
+      setStatus({ ok: true, message: json.message ?? 'Saved.' });
+      if (clear) {
+        setAmount('');
+        setNote('');
+      }
+      // Re-fetch the server component so the new/updated row shows. The
+      // route already invalidated the spend:summary cache before responding.
+      router.refresh();
+    } catch (err) {
+      setStatus({ ok: false, message: err instanceof Error ? err.message : String(err) });
+    } finally {
+      setPending(false);
+    }
   }
 
   if (!enabled) {
