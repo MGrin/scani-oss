@@ -41,6 +41,22 @@ xcodebuild -project iosApp.xcodeproj -scheme iosApp \
   -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' build
 ```
 
+## Networking
+
+`shared/` talks to the backend's tRPC API over a small hand-written Ktor client
+(`shared/src/commonMain/kotlin/xyz/scani/mobile/shared/network/`):
+
+- `TrpcClient.query<T>(procedure, input?)` — `GET /trpc/<procedure>`, unwraps the
+  tRPC `{result:{data}}` envelope, throws `TrpcException` on the `{error}` shape.
+- Per-procedure APIs (e.g. `SystemApi.ping()`) expose typed models.
+- The HTTP engine is **injected** — the apps supply a platform engine
+  (Darwin on iOS, OkHttp/Android on Android); tests supply Ktor `MockEngine`.
+
+Models are hand-maintained against `apps/backend/api/openapi/scani-openapi.json`
+(the spec↔router contract is CI-checked on the backend). A spike found no KMP
+OpenAPI generator that fits the tRPC-shaped spec without a GPL / Arrow / crash
+cost; codegen can be revisited as the surface grows.
+
 ## Notes
 
 - This is **OSS-eligible** source — author changes against `MGrin/scani-oss`
