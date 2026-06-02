@@ -16,6 +16,7 @@ Located in `apps/backend/api/src/presentation/routers/`.
 | Router | Role |
 |---|---|
 | `users` | Profile, settings, display currency, magic-link / OTP flows. |
+| `system` | Public health / version endpoints (e.g. `ping`). The typed slice exposed to the mobile OpenAPI contract. |
 | `sessions` | Session read / revoke. |
 | `accounts` | List, create, update, hide accounts. |
 | `account-types` | Catalogue of account types. |
