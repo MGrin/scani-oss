@@ -51,6 +51,7 @@ xcodebuild -project iosApp.xcodeproj -scheme iosApp \
 - Per-procedure APIs (e.g. `SystemApi.ping()`) expose typed models.
 - The HTTP engine is **injected** — the apps supply a platform engine
   (Darwin on iOS, OkHttp/Android on Android); tests supply Ktor `MockEngine`.
+  Platform-engine wiring in the app modules is deferred to the first feature that makes a live network call.
 
 Models are hand-maintained against `apps/backend/api/openapi/scani-openapi.json`
 (the spec↔router contract is CI-checked on the backend). A spike found no KMP
