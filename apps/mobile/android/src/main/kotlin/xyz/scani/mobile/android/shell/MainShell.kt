@@ -15,7 +15,11 @@ import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import kotlinx.coroutines.launch
+import xyz.scani.mobile.android.ServiceLocator
+import xyz.scani.mobile.shared.navigation.Destination
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -38,6 +42,21 @@ private enum class Tab(val route: String, val label: String, val icon: ImageVect
 @Composable
 fun MainShell() {
     val nav = rememberNavController()
+    // Detail-destination routing (Holding/Vault/Group/Job) is deferred to a later milestone.
+    LaunchedEffect(Unit) {
+        val dest = ServiceLocator.pendingDeepLink
+        ServiceLocator.pendingDeepLink = null
+        val route = when (dest) {
+            is Destination.Holding -> Tab.Holdings.route
+            is Destination.Account, is Destination.Institution -> Tab.Accounts.route
+            else -> null
+        }
+        if (route != null) {
+            nav.navigate(route) { launchSingleTop = true }
+        }
+        launch { runCatching { ServiceLocator.syncEngine.syncAccounts() } }
+        launch { runCatching { ServiceLocator.syncEngine.syncHoldings() } }
+    }
     Scaffold(
         bottomBar = {
             val current by nav.currentBackStackEntryAsState()
