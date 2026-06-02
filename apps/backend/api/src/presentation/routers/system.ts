@@ -1,8 +1,8 @@
 import { z } from 'zod';
 import { publicProcedure, router } from '../trpc';
 
-// Typed output so the generated OpenAPI spec (and the Kotlin client) get a
-// concrete response schema. This is the foundation's typed vertical slice.
+// .output() exists for the generated OpenAPI spec's typed response, not for
+// runtime validation — this is the foundation's typed vertical slice.
 export const PingOutput = z.object({
   status: z.literal('ok'),
   service: z.string(),
