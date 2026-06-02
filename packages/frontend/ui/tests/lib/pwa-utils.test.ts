@@ -1,7 +1,15 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import { getPlatform, supportsDeepLinking } from '../../src/lib/pwa-utils';
+import { getPlatform, isPWA, isStandalone, supportsDeepLinking } from '../../src/lib/pwa-utils';
 
 const originalWindow = (globalThis as { window?: unknown }).window;
+
+function restoreWindow(): void {
+  if (originalWindow === undefined) {
+    delete (globalThis as { window?: unknown }).window;
+  } else {
+    (globalThis as { window?: unknown }).window = originalWindow;
+  }
+}
 
 function setUserAgent(userAgent: string): void {
   (globalThis as { window?: unknown }).window = {
@@ -9,18 +17,32 @@ function setUserAgent(userAgent: string): void {
   };
 }
 
+describe('SSR safety (window undefined)', () => {
+  beforeEach(() => {
+    // Simulate the server: client components are still SSR'd in Next.js,
+    // so PWA detection must not touch `window` at render time.
+    delete (globalThis as { window?: unknown }).window;
+  });
+
+  afterEach(restoreWindow);
+
+  test('isStandalone() returns false instead of throwing', () => {
+    expect(() => isStandalone()).not.toThrow();
+    expect(isStandalone()).toBe(false);
+  });
+
+  test('isPWA() returns false instead of throwing', () => {
+    expect(() => isPWA()).not.toThrow();
+    expect(isPWA()).toBe(false);
+  });
+});
+
 describe('getPlatform', () => {
   beforeEach(() => {
     setUserAgent('');
   });
 
-  afterEach(() => {
-    if (originalWindow === undefined) {
-      delete (globalThis as { window?: unknown }).window;
-    } else {
-      (globalThis as { window?: unknown }).window = originalWindow;
-    }
-  });
+  afterEach(restoreWindow);
 
   test('returns ios for iPhone user-agent', () => {
     setUserAgent(
