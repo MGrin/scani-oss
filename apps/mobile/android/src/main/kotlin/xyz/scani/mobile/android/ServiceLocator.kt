@@ -16,6 +16,7 @@ object ServiceLocator {
         private set
     lateinit var trpcClient: TrpcClient
         private set
+    var pendingDeepLink: xyz.scani.mobile.shared.navigation.Destination? = null
 
     fun init(context: Context) {
         if (::authRepository.isInitialized) return
