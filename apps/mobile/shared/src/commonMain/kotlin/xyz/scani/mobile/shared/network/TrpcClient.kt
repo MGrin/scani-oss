@@ -5,7 +5,10 @@ import io.ktor.client.call.body
 import io.ktor.client.engine.HttpClientEngine
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.client.request.get
+import io.ktor.client.request.header
 import io.ktor.client.request.parameter
+import io.ktor.http.HttpHeaders
+import io.ktor.http.HttpStatusCode
 import io.ktor.serialization.kotlinx.json.json
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
@@ -15,7 +18,12 @@ import kotlinx.serialization.json.JsonElement
  * Minimal tRPC-over-HTTP client. The HTTP engine is injected so platform apps
  * supply Darwin/OkHttp while tests supply MockEngine.
  */
-class TrpcClient(engine: HttpClientEngine, baseUrl: String) {
+class TrpcClient(
+    engine: HttpClientEngine,
+    baseUrl: String,
+    @PublishedApi internal val tokenProvider: () -> String? = { null },
+    @PublishedApi internal val onUnauthorized: () -> Unit = {},
+) {
     @PublishedApi
     internal val baseUrl: String = baseUrl.trimEnd('/')
 
@@ -32,7 +40,11 @@ class TrpcClient(engine: HttpClientEngine, baseUrl: String) {
 
     suspend inline fun <reified T> query(procedure: String, input: JsonElement? = null): T {
         val response = http.get("$baseUrl/trpc/$procedure") {
+            tokenProvider()?.let { header(HttpHeaders.Authorization, "Bearer $it") }
             if (input != null) parameter("input", json.encodeToString(input))
+        }
+        if (response.status == HttpStatusCode.Unauthorized) {
+            onUnauthorized()
         }
         val envelope = response.body<TrpcEnvelope<T>>()
         envelope.error?.let { throw TrpcException(it.message ?: "tRPC error: $procedure", it) }

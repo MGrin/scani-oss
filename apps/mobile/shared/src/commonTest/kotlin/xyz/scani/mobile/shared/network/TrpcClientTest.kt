@@ -10,6 +10,7 @@ import kotlinx.serialization.Serializable
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
+import kotlin.test.assertTrue
 
 @Serializable
 private data class Probe(val value: String)
@@ -79,5 +80,36 @@ class TrpcClientTest {
         val client = TrpcClient(engine, "https://api.test/")
         client.query<Probe>("probe.get")
         assertEquals("/trpc/probe.get", requestedPath)
+    }
+
+    @Test
+    fun query_attaches_bearer_token_when_provided() = runTest {
+        var authHeader: String? = null
+        val engine = MockEngine { request ->
+            authHeader = request.headers["Authorization"]
+            respond(
+                content = """{"result":{"data":{"value":"ok"}}}""",
+                status = HttpStatusCode.OK,
+                headers = headersOf(HttpHeaders.ContentType, "application/json"),
+            )
+        }
+        val client = TrpcClient(engine, "https://api.test", tokenProvider = { "tok123" })
+        client.query<Probe>("probe.get")
+        assertEquals("Bearer tok123", authHeader)
+    }
+
+    @Test
+    fun unauthorized_response_triggers_onUnauthorized_and_throws() = runTest {
+        var cleared = false
+        val engine = MockEngine {
+            respond(
+                content = """{"error":{"message":"unauth","code":-32001}}""",
+                status = HttpStatusCode.Unauthorized,
+                headers = headersOf(HttpHeaders.ContentType, "application/json"),
+            )
+        }
+        val client = TrpcClient(engine, "https://api.test", tokenProvider = { "tok" }, onUnauthorized = { cleared = true })
+        assertFailsWith<TrpcException> { client.query<Probe>("probe.get") }
+        assertTrue(cleared)
     }
 }
