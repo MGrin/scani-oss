@@ -12,7 +12,7 @@ import {
 import { createComponentLogger } from '@scani/logging';
 import { betterAuth } from 'better-auth';
 import { drizzleAdapter } from 'better-auth/adapters/drizzle';
-import { emailOTP, magicLink } from 'better-auth/plugins';
+import { bearer, emailOTP, magicLink } from 'better-auth/plugins';
 import { and, eq, isNull } from 'drizzle-orm';
 import { Container } from 'typedi';
 import { screenshotBotPlugin } from './screenshot-bot-plugin';
@@ -273,6 +273,7 @@ export function createBetterAuth(opts: {
     //     attacker-supplied email lookup. Also rate-limited by the
     //     same gate.
     plugins: [
+      bearer(),
       magicLink({
         sendMagicLink: async ({ email: to, url }) => {
           authLogger.info({ email: to }, '🪄 Magic-link callback fired');
