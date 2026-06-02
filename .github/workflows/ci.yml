@@ -525,7 +525,8 @@ jobs:
           xcodegen generate
           xcodebuild -project iosApp.xcodeproj -scheme iosApp \
             -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' \
-            -derivedDataPath build build
+            -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO build
 
   # Single required status check named in the `main-protection` ruleset.
   # Always runs (so docs-only PRs don't trip "skipped == failed" gating)
@@ -542,6 +543,8 @@ jobs:
         e2e,
         prod-guards-integration,
         secret-scan,
+        mobile-android,
+        mobile-ios,
       ]
     if: always()
     runs-on: ubuntu-latest

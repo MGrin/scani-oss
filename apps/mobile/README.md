@@ -5,8 +5,9 @@ business-logic module (`shared/`).
 
 ## Layout
 
-- `shared/` — KMP module (logic, networking, data, sync). The only place
-  business logic lives; both apps call the same use-cases.
+- `shared/` — KMP module holding cross-platform Kotlin: today just a
+  platform-aware `Greeting` (an `expect`/`actual` scaffold). It will grow to own
+  the business logic, networking, local data, and sync that both apps call.
 - `android/` — Jetpack Compose application.
 - `ios/` — SwiftUI application. The Xcode project is **generated** by XcodeGen
   from `ios/project.yml` (and git-ignored); it consumes `shared` as an embedded
@@ -46,6 +47,9 @@ xcodebuild -project iosApp.xcodeproj -scheme iosApp \
   first (the OSS repo is upstream; private merges down from it).
 - **Not a Bun workspace** — it's a Gradle project and is intentionally excluded
   from the root `package.json` workspaces.
+- **Test layout:** KMP fixes test source sets at `src/commonTest`, `src/androidHostTest`,
+  etc., so these tests do not follow the monorepo's TypeScript `tests/`-next-to-`src/`
+  convention — the Gradle/KMP toolchain owns the layout.
 - The `shared` module's Android side uses Google's AGP-9
   `com.android.kotlin.multiplatform.library` plugin (the modern replacement for
   `com.android.library` + `androidTarget {}`, which errors on AGP 9).
