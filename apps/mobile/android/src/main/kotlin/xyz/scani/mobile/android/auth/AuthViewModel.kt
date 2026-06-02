@@ -24,6 +24,16 @@ class AuthViewModel(private val repo: AuthRepository) : ViewModel() {
     private val _busy = MutableStateFlow(false)
     val busy: StateFlow<Boolean> = _busy.asStateFlow()
 
+    init {
+        viewModelScope.launch {
+            repo.signedIn.collect { signedIn ->
+                if (!signedIn && _state.value is AuthUiState.Authenticated) {
+                    _state.value = AuthUiState.EnterEmail
+                }
+            }
+        }
+    }
+
     fun sendCode(email: String) = run(AuthUiState.EnterEmail) {
         repo.requestSignIn(email)
         _state.value = AuthUiState.EnterCode(email)
