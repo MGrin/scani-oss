@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test';
-import { MobileAccount, MobileHolding } from '../../src/presentation/routers/mobile-dtos';
+import { MobileAccount, MobileHolding } from '../../src/presentation/mobile-dtos';
 
 describe('mobile DTOs', () => {
   it('MobileAccount parses valid object', () => {

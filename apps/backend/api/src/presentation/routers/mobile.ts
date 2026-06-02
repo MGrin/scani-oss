@@ -3,8 +3,8 @@ import { AccountService, HoldingQueryService } from '@scani/domain/services';
 import { Container } from 'typedi';
 import { z } from 'zod';
 import { requireAuth } from '../middleware/auth';
+import { MobileAccount, MobileHolding } from '../mobile-dtos';
 import { protectedProcedure, router } from '../trpc';
-import { MobileAccount, MobileHolding } from './mobile-dtos';
 
 export const mobileRouter = router({
   accounts: protectedProcedure.output(z.array(MobileAccount)).query(async ({ ctx }) => {
