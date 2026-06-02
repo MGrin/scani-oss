@@ -23,6 +23,9 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
+import xyz.scani.mobile.android.screens.AccountsScreen
+import xyz.scani.mobile.android.screens.DashboardScreen
+import xyz.scani.mobile.android.screens.HoldingsScreen
 
 private enum class Tab(val route: String, val label: String, val icon: ImageVector) {
     Dashboard("dashboard", "Dashboard", Icons.Filled.Dashboard),
@@ -57,10 +60,14 @@ fun MainShell() {
         },
     ) { padding ->
         NavHost(nav, startDestination = Tab.Dashboard.route, modifier = Modifier.padding(padding)) {
-            for (tab in Tab.entries) {
-                composable(tab.route) {
-                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Text(tab.label) }
-                }
+            composable(Tab.Dashboard.route) { DashboardScreen() }
+            composable(Tab.Holdings.route) { HoldingsScreen() }
+            composable(Tab.Accounts.route) { AccountsScreen() }
+            composable(Tab.Add.route) {
+                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Text(Tab.Add.label) }
+            }
+            composable(Tab.Settings.route) {
+                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Text(Tab.Settings.label) }
             }
         }
     }
