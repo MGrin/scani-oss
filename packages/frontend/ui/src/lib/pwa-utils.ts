@@ -13,6 +13,10 @@ export type DisplayMode = 'standalone' | 'minimal-ui' | 'fullscreen' | 'browser'
  * Returns true only if app is installed AND running in standalone mode
  */
 export function isPWA(): boolean {
+  // SSR guard: Next.js server-renders client components, so this can run
+  // with no `window`. A server is never an installed PWA.
+  if (typeof window === 'undefined') return false;
+
   // Must be in standalone mode (not in browser tab)
   const standalone = isStandalone();
 
@@ -30,6 +34,9 @@ export function isPWA(): boolean {
  * Note: Does NOT include fullscreen mode (which is just F11 in browser)
  */
 export function isStandalone(): boolean {
+  // SSR guard: no `window` on the server (see isPWA).
+  if (typeof window === 'undefined') return false;
+
   // Check display-mode: standalone (actual PWA mode)
   if (window.matchMedia('(display-mode: standalone)').matches) {
     return true;
