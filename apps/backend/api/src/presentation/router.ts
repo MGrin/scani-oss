@@ -12,6 +12,7 @@ import { institutionTypesRouter } from './routers/institution-types';
 import { institutionsRouter } from './routers/institutions';
 import { integrationsRouter } from './routers/integrations';
 import { jobsRouter } from './routers/jobs';
+import { mobileRouter } from './routers/mobile';
 import { portfolioRouter } from './routers/portfolio';
 import { screenshotsRouter } from './routers/screenshots';
 import { sessionsRouter } from './routers/sessions';
@@ -83,6 +84,9 @@ export const appRouter = router({
   // Active session management (protected) - list/revoke for the
   // signed-in user, backing the Settings → Devices section.
   sessions: sessionsRouter,
+
+  // Mobile read-only endpoints (protected) — lean typed outputs for the iOS/Android app.
+  mobile: mobileRouter,
 
   // Health check (public)
   health: router({
