@@ -58,4 +58,26 @@ class TrpcClientTest {
         val client = TrpcClient(engine, "https://api.test")
         assertFailsWith<TrpcException> { client.query<Probe>("probe.get") }
     }
+
+    @Test
+    fun query_throws_when_result_and_error_both_absent() = runTest {
+        val client = TrpcClient(jsonEngine("""{}"""), "https://api.test")
+        assertFailsWith<TrpcException> { client.query<Probe>("probe.get") }
+    }
+
+    @Test
+    fun query_trims_trailing_slash_in_base_url() = runTest {
+        var requestedPath: String? = null
+        val engine = MockEngine { request ->
+            requestedPath = request.url.encodedPath
+            respond(
+                content = """{"result":{"data":{"value":"x"}}}""",
+                status = HttpStatusCode.OK,
+                headers = headersOf(HttpHeaders.ContentType, "application/json"),
+            )
+        }
+        val client = TrpcClient(engine, "https://api.test/")
+        client.query<Probe>("probe.get")
+        assertEquals("/trpc/probe.get", requestedPath)
+    }
 }
