@@ -1,20 +1,35 @@
+import Combine
 import SwiftUI
+import Shared
 
 struct MainShell: View {
+    let container: AppContainer
+    @EnvironmentObject private var router: DeepLinkRouter
+    @State private var selection = "dashboard"
+
     var body: some View {
-        TabView {
-            tab("Dashboard", "rectangle.3.group")
-            tab("Holdings", "list.bullet")
-            tab("Accounts", "building.columns")
-            tab("Add", "plus.circle")
-            tab("Settings", "gearshape")
+        TabView(selection: $selection) {
+            NavigationStack { DashboardView(container: container) }
+                .tabItem { Label("Dashboard", systemImage: "rectangle.3.group") }.tag("dashboard")
+            NavigationStack { HoldingsView(container: container) }
+                .tabItem { Label("Holdings", systemImage: "list.bullet") }.tag("holdings")
+            NavigationStack { AccountsView(container: container) }
+                .tabItem { Label("Accounts", systemImage: "building.columns") }.tag("accounts")
+            NavigationStack { Text("Add").navigationTitle("Add") }
+                .tabItem { Label("Add", systemImage: "plus.circle") }.tag("add")
+            NavigationStack { Text("Settings").navigationTitle("Settings") }
+                .tabItem { Label("Settings", systemImage: "gearshape") }.tag("settings")
         }
+        .onReceive(router.$pending) { route($0) }
+        .onAppear { route(router.pending) }
     }
 
-    private func tab(_ title: String, _ icon: String) -> some View {
-        NavigationStack {
-            Text(title).navigationTitle(title)
-        }
-        .tabItem { Label(title, systemImage: icon) }
+    // Detail-destination routing (Holding(id)/Account(id) → detail view) is a
+    // later milestone; for now map to the owning tab and clear.
+    private func route(_ dest: (any Destination)?) {
+        guard let dest else { return }
+        if dest is DestinationHolding { selection = "holdings" }
+        else if dest is DestinationAccount || dest is DestinationInstitution { selection = "accounts" }
+        router.pending = nil
     }
 }

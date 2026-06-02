@@ -12,7 +12,7 @@ struct ContentView: View {
 
     var body: some View {
         if model.step == .authenticated {
-            BiometricGate { MainShell() }
+            BiometricGate { MainShell(container: container) }
         } else {
             SignInView(model: model)
         }
