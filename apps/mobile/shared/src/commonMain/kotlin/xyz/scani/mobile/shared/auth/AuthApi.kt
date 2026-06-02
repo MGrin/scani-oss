@@ -34,7 +34,8 @@ class AuthApi(engine: HttpClientEngine, private val baseUrl: String) {
         if (!res.status.isSuccess()) throw AuthException("send OTP failed: ${res.status}")
     }
 
-    // Returns the bearer token from the `set-auth-token` header.
+    // Better-Auth's bearer plugin returns the session token in the `set-auth-token`
+    // response header (not Set-Cookie) so mobile clients persist it without cookies.
     suspend fun verifySignInOtp(email: String, otp: String): String {
         val res: HttpResponse = http.post("$baseUrl/api/auth/sign-in/email-otp") {
             contentType(ContentType.Application.Json)

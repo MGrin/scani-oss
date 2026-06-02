@@ -10,6 +10,7 @@ import kotlinx.serialization.Serializable
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 @Serializable
@@ -96,6 +97,23 @@ class TrpcClientTest {
         val client = TrpcClient(engine, "https://api.test", tokenProvider = { "tok123" })
         client.query<Probe>("probe.get")
         assertEquals("Bearer tok123", authHeader)
+    }
+
+    @Test
+    fun query_sends_no_authorization_header_when_token_absent() = runTest {
+        var authHeader: String? = "sentinel"
+        val engine = MockEngine { request ->
+            authHeader = request.headers["Authorization"]
+            respond(
+                content = """{"result":{"data":{"value":"ok"}}}""",
+                status = HttpStatusCode.OK,
+                headers = headersOf(HttpHeaders.ContentType, "application/json"),
+            )
+        }
+        // Default tokenProvider returns null → no Authorization header attached.
+        val client = TrpcClient(engine, "https://api.test")
+        client.query<Probe>("probe.get")
+        assertNull(authHeader)
     }
 
     @Test
