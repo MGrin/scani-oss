@@ -18,8 +18,15 @@ export function PullToRefresh({ onRefresh, children, disabled = false }: PullToR
   const currentY = useRef(0);
   const startScrollTop = useRef(0);
 
-  // Only enable pull-to-refresh in PWA mode
-  const runningAsPWA = isPWA();
+  // Only enable pull-to-refresh in PWA mode. Detected after mount, never
+  // during render: this component is SSR'd in the Next.js apps where
+  // `isPWA()` would touch `window` on the server. Starting `false` also
+  // keeps the server and first client render identical (no hydration
+  // mismatch); the effect flips it on once we know we're a real PWA.
+  const [runningAsPWA, setRunningAsPWA] = useState(false);
+  useEffect(() => {
+    setRunningAsPWA(isPWA());
+  }, []);
   const isEnabled = runningAsPWA && !disabled;
 
   // Minimum pull distance to start pull-to-refresh (prevents accidental triggers)
