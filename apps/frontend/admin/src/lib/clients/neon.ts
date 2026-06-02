@@ -88,6 +88,94 @@ export async function getNeonProjects(): Promise<Result<NeonProject[]>> {
   );
 }
 
+/**
+ * Per-project usage for a billing window, aggregated from Neon's
+ * `consumption_history/v2/projects` endpoint. Neon's docs call this "the
+ * only endpoint that returns metrics matching your invoice" — the
+ * `/projects` list carries point-in-time snapshots (current storage,
+ * lifetime-ish compute) that don't reconcile against the bill. Values
+ * are raw (CU-seconds, byte-months, bytes); `spend-pricing` turns them
+ * into dollars.
+ */
+export interface NeonConsumption {
+  projectId: string;
+  plan: string;
+  computeUnitSeconds: number;
+  storageBytesMonth: number;
+  snapshotBytesMonth: number;
+  instantRestoreBytesMonth: number;
+  egressBytes: number;
+}
+
+const CONSUMPTION_METRICS = [
+  'compute_unit_seconds',
+  'root_branch_bytes_month',
+  'child_branch_bytes_month',
+  'snapshot_storage_bytes_month',
+  'instant_restore_bytes_month',
+  'public_network_transfer_bytes',
+] as const;
+
+interface ConsumptionMetric {
+  metric_name: string;
+  value: number;
+}
+interface ConsumptionPeriod {
+  period_plan?: string;
+  consumption?: Array<{ metrics?: ConsumptionMetric[] }>;
+}
+interface ConsumptionProject {
+  project_id?: string;
+  periods?: ConsumptionPeriod[];
+}
+
+/**
+ * Aggregate every project's usage between `fromIso` and `toIso`
+ * (RFC-3339, monthly granularity). Pass the start and end of the billing
+ * month for a month-to-date figure that reconciles with the invoice.
+ */
+export async function getNeonConsumption(
+  fromIso: string,
+  toIso: string
+): Promise<Result<NeonConsumption[]>> {
+  return tryCatch(() =>
+    cached(`neon:consumption:${fromIso}:${toIso}`, 300, async () => {
+      const params = new URLSearchParams({
+        org_id: orgId(),
+        from: fromIso,
+        to: toIso,
+        granularity: 'monthly',
+        metrics: CONSUMPTION_METRICS.join(','),
+      });
+      const res = await req<{ projects?: ConsumptionProject[] }>(
+        `/consumption_history/v2/projects?${params.toString()}`
+      );
+
+      return (res.projects ?? []).map((p) => {
+        const totals: Record<string, number> = {};
+        for (const period of p.periods ?? []) {
+          for (const c of period.consumption ?? []) {
+            for (const m of c.metrics ?? []) {
+              totals[m.metric_name] = (totals[m.metric_name] ?? 0) + (Number(m.value) || 0);
+            }
+          }
+        }
+        const plan = (p.periods ?? []).map((x) => x.period_plan).find(Boolean) ?? 'unknown';
+        return {
+          projectId: p.project_id ?? 'unknown',
+          plan,
+          computeUnitSeconds: totals.compute_unit_seconds ?? 0,
+          storageBytesMonth:
+            (totals.root_branch_bytes_month ?? 0) + (totals.child_branch_bytes_month ?? 0),
+          snapshotBytesMonth: totals.snapshot_storage_bytes_month ?? 0,
+          instantRestoreBytesMonth: totals.instant_restore_bytes_month ?? 0,
+          egressBytes: totals.public_network_transfer_bytes ?? 0,
+        };
+      });
+    })
+  );
+}
+
 export interface NeonOverviewSummary {
   id: string;
   name: string;

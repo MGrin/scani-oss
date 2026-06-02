@@ -4,24 +4,20 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { ErrorPanel } from '@/components/ErrorPanel';
 import { PageHeader } from '@/components/PageHeader';
 import { SectionCard } from '@/components/SectionCard';
+import { SpendOverrideForm } from '@/components/SpendOverrideForm';
 import { StatCard } from '@/components/StatCard';
 import { getSpendSummary, type SpendConfidence } from '@/lib/clients/spend';
+import { PROVIDER_DISPLAY } from '@/lib/clients/spend-pricing';
+import { writesEnabled } from '@/lib/writes';
 
 export const runtime = 'edge';
 export const dynamic = 'force-dynamic';
 
 const CONFIDENCE_VARIANT: Record<SpendConfidence, 'default' | 'outline' | 'secondary'> = {
+  actual: 'default',
   invoiced: 'default',
   estimated: 'secondary',
   unknown: 'outline',
-};
-
-const PROVIDER_LABEL: Record<string, string> = {
-  cloudflare: 'Cloudflare',
-  fly: 'Fly.io',
-  neon: 'Neon',
-  upstash: 'Upstash',
-  sentry: 'Sentry',
 };
 
 export default async function SpendPage() {
@@ -35,8 +31,11 @@ export default async function SpendPage() {
       </>
     );
   }
-  const { totalUsd, invoicedUsd, estimatedUsd, lineItems, assumptions } = result.data;
+  const { totalUsd, invoicedUsd, estimatedUsd, lineItems, assumptions, recordedActuals } =
+    result.data;
   const unknownCount = lineItems.filter((l) => l.confidence === 'unknown').length;
+  const writes = writesEnabled();
+  const allOverrides = recordedActuals.flatMap((g) => g.items);
 
   return (
     <>
@@ -46,17 +45,22 @@ export default async function SpendPage() {
           <>
             Composite month-to-date rollup. Each line carries a confidence chip:{' '}
             <Badge variant="default" className="mx-0.5">
+              actual
+            </Badge>{' '}
+            (operator-entered off the real invoice),{' '}
+            <Badge variant="default" className="mx-0.5">
               invoiced
             </Badge>{' '}
-            (real vendor billing data),{' '}
+            (real vendor billing — Cloudflare, Upstash),{' '}
             <Badge variant="secondary" className="mx-0.5">
               estimated
             </Badge>{' '}
-            (usage × public-tier pricing — see assumptions below), or{' '}
+            (usage × public-tier pricing — Neon, Fly), or{' '}
             <Badge variant="outline" className="mx-0.5">
               unknown
-            </Badge>{' '}
-            (vendor API doesn't expose enough to compute a number).
+            </Badge>
+            . Live APIs only report the current month — last month's real bill lives in “Recorded
+            actual bills” below.
           </>
         }
         fetchedAt={fetchedAt}
@@ -106,7 +110,7 @@ export default async function SpendPage() {
                   >
                     <TableCell>
                       <Badge variant="outline" className="font-mono text-[10px]">
-                        {PROVIDER_LABEL[item.provider] ?? item.provider}
+                        {PROVIDER_DISPLAY[item.provider] ?? item.provider}
                       </Badge>
                     </TableCell>
                     <TableCell className="text-sm">{item.label}</TableCell>
@@ -131,6 +135,68 @@ export default async function SpendPage() {
         ) : (
           <div className="p-4 text-xs text-muted-foreground">No line items.</div>
         )}
+      </SectionCard>
+
+      <SectionCard
+        title="Recorded actual bills"
+        description="The real invoiced totals, entered off each vendor's bill. No billing API exposes a past month's invoice — these are the source of truth for what was actually charged, and they supersede the estimate for their month above."
+        className="mt-6"
+        flushBody
+      >
+        {recordedActuals.length > 0 ? (
+          <div className="overflow-x-auto">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Month</TableHead>
+                  <TableHead>Provider</TableHead>
+                  <TableHead className="text-right">Amount</TableHead>
+                  <TableHead>Note</TableHead>
+                  <TableHead>Updated</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {recordedActuals.flatMap((group) =>
+                  group.items.map((item, idx) => (
+                    <TableRow key={`${group.period}-${item.provider}`}>
+                      <TableCell className="text-sm tabular-nums">
+                        {idx === 0 ? (
+                          <span className="font-medium">
+                            {group.period}{' '}
+                            <span className="text-muted-foreground">
+                              · {formatCurrency(group.totalUsd, 'USD')}
+                            </span>
+                          </span>
+                        ) : null}
+                      </TableCell>
+                      <TableCell>
+                        <Badge variant="outline" className="font-mono text-[10px]">
+                          {PROVIDER_DISPLAY[item.provider] ?? item.provider}
+                        </Badge>
+                      </TableCell>
+                      <TableCell className="text-right tabular-nums">
+                        {formatCurrency(item.amountUsd, 'USD')}
+                      </TableCell>
+                      <TableCell className="max-w-xs text-xs text-muted-foreground">
+                        {item.note ?? '—'}
+                      </TableCell>
+                      <TableCell className="text-xs text-muted-foreground tabular-nums">
+                        {item.updatedAt.slice(0, 10)}
+                      </TableCell>
+                    </TableRow>
+                  ))
+                )}
+              </TableBody>
+            </Table>
+          </div>
+        ) : (
+          <div className="p-4 text-xs text-muted-foreground">
+            No actuals recorded yet. Enter your latest vendor bills below.
+          </div>
+        )}
+        <div className="border-t">
+          <SpendOverrideForm existing={allOverrides} enabled={writes} />
+        </div>
       </SectionCard>
 
       <SectionCard
