@@ -1,12 +1,19 @@
 import Foundation
 import Shared
 
-// Constructs the shared auth/network stack once. Dev base URL — real per-build
-// config is a later milestone.
+extension Notification.Name {
+    static let scaniUnauthorized = Notification.Name("scaniUnauthorized")
+}
+
+// Constructs the shared auth/network/data stack once. Dev base URL — real
+// per-build config is a later milestone.
 final class AppContainer: ObservableObject {
     private let baseURL = "http://localhost:3001"
     let authRepository: AuthRepository
     let trpcClient: TrpcClient
+    let syncEngine: SyncEngine
+    let accountsRepository: AccountsRepository
+    let holdingsRepository: HoldingsRepository
 
     init() {
         let storage = KeychainSecureStorage()
@@ -17,7 +24,15 @@ final class AppContainer: ObservableObject {
             engine: engine,
             baseUrl: baseURL,
             tokenProvider: { repo.token() },
-            onUnauthorized: { repo.signOut() }
+            onUnauthorized: {
+                repo.signOut()
+                NotificationCenter.default.post(name: .scaniUnauthorized, object: nil)
+            }
         )
+        let db = ScaniDatabaseCompanion.shared.invoke(driver: NativeDriverFactory().create())
+        let api = MobileApi(client: trpcClient)
+        syncEngine = SyncEngine(api: api, db: db)
+        accountsRepository = AccountsRepository(db: db, ioContext: Dispatchers_iosKt.iosIoDispatcher())
+        holdingsRepository = HoldingsRepository(db: db, ioContext: Dispatchers_iosKt.iosIoDispatcher())
     }
 }
