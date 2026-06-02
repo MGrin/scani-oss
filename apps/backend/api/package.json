@@ -12,7 +12,9 @@
     "clean": "rm -rf dist",
     "lint": "biome check .",
     "lint:fix": "biome check --write .",
-    "type-check": "tsgo --noEmit"
+    "type-check": "tsgo --noEmit",
+    "openapi:gen": "bun scripts/generate-openapi.ts",
+    "openapi:gen:check": "bun scripts/generate-openapi.ts --check"
   },
   "dependencies": {
     "@elysiajs/cors": "^1.4.1",
