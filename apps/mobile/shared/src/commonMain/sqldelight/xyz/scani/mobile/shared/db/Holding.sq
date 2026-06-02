@@ -1,0 +1,17 @@
+CREATE TABLE holding (
+  id TEXT NOT NULL PRIMARY KEY,
+  accountId TEXT NOT NULL,
+  symbol TEXT NOT NULL,
+  name TEXT NOT NULL,
+  amount TEXT NOT NULL,
+  value TEXT
+);
+
+selectAll:
+SELECT * FROM holding;
+
+insert:
+INSERT OR REPLACE INTO holding(id, accountId, symbol, name, amount, value) VALUES (?, ?, ?, ?, ?, ?);
+
+deleteAll:
+DELETE FROM holding;
