@@ -17,7 +17,8 @@
       "*.jsx",
       "*.json",
       "!apps/frontend/docs/.astro",
-      "!apps/frontend/docs/dist"
+      "!apps/frontend/docs/dist",
+      "!apps/backend/api/openapi/scani-openapi.json"
     ]
   },
   "formatter": {
