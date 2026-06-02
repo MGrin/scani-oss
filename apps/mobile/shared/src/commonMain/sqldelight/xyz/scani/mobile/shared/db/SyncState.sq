@@ -1,0 +1,10 @@
+CREATE TABLE sync_state (
+  key TEXT NOT NULL PRIMARY KEY,
+  lastSyncedAt INTEGER NOT NULL
+);
+
+selectByKey:
+SELECT lastSyncedAt FROM sync_state WHERE key = ?;
+
+upsert:
+INSERT OR REPLACE INTO sync_state(key, lastSyncedAt) VALUES (?, ?);
