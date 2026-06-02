@@ -6,6 +6,7 @@ struct MainShell: View {
     let container: AppContainer
     @EnvironmentObject private var router: DeepLinkRouter
     @State private var selection = "dashboard"
+    @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
         TabView(selection: $selection) {
@@ -22,6 +23,14 @@ struct MainShell: View {
         }
         .onReceive(router.$pending) { route($0) }
         .onAppear { route(router.pending) }
+        .onChange(of: scenePhase) { phase in
+            if phase == .active {
+                Task {
+                    try? await container.syncEngine.syncAccounts()
+                    try? await container.syncEngine.syncHoldings()
+                }
+            }
+        }
     }
 
     // Detail-destination routing (Holding(id)/Account(id) → detail view) is a
