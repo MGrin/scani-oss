@@ -6,6 +6,16 @@ import { appRouter } from '../../src/presentation/router';
 describe('buildOpenApiDoc', () => {
   const doc = buildOpenApiDoc(mobileContractRouter);
 
+  it('documents all expected contract paths', () => {
+    expect(Object.keys(doc.paths)).toEqual(
+      expect.arrayContaining([
+        '/trpc/system.ping',
+        '/trpc/mobile.accounts',
+        '/trpc/mobile.holdings',
+      ])
+    );
+  });
+
   it('documents system.ping with a typed result.data response', () => {
     // biome-ignore lint/suspicious/noExplicitAny: traversing a loosely-typed OpenAPI doc
     const op = (doc.paths as any)['/trpc/system.ping'];
@@ -15,6 +25,18 @@ describe('buildOpenApiDoc', () => {
     const dataProps = schema.properties.result.properties.data.properties;
     expect(dataProps.status).toBeDefined();
     expect(dataProps.service).toBeDefined();
+  });
+
+  it('documents mobile.accounts 200 response as an array of objects with id and name', () => {
+    // biome-ignore lint/suspicious/noExplicitAny: traversing a loosely-typed OpenAPI doc
+    const op = (doc.paths as any)['/trpc/mobile.accounts'];
+    expect(op).toBeDefined();
+    // biome-ignore lint/suspicious/noExplicitAny: same
+    const schema = op.get.responses['200'].content['application/json'].schema as any;
+    const dataSchema = schema.properties.result.properties.data;
+    expect(dataSchema.type).toBe('array');
+    expect(dataSchema.items.properties.id).toBeDefined();
+    expect(dataSchema.items.properties.name).toBeDefined();
   });
 
   it('only documents procedures the real appRouter actually serves (drift guard)', () => {
