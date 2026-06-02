@@ -24,6 +24,7 @@ targets:
           - $(inherited)
           - -framework
           - Shared
+          - -lsqlite3
     entitlements:
       path: iosApp/iosApp.entitlements
       properties:
