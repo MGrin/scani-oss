@@ -24,6 +24,11 @@ targets:
           - $(inherited)
           - -framework
           - Shared
+    entitlements:
+      path: iosApp/iosApp.entitlements
+      properties:
+        com.apple.developer.associated-domains:
+          - applinks:app.scani.xyz
     preBuildScripts:
       - name: Build Kotlin framework
         basedOnDependencyAnalysis: false
