@@ -1,11 +1,11 @@
 package xyz.scani.mobile.android
 
 import android.content.Context
-import io.ktor.client.engine.okhttp.OkHttp
 import xyz.scani.mobile.android.auth.AndroidSecureStorage
 import xyz.scani.mobile.shared.auth.AuthApi
 import xyz.scani.mobile.shared.auth.AuthRepository
 import xyz.scani.mobile.shared.network.TrpcClient
+import xyz.scani.mobile.shared.network.defaultHttpEngine
 
 // Minimal manual DI for the foundation. Per-build-type base URL arrives with the
 // build-config milestone; for now a single dev base URL (10.0.2.2 = emulator host loopback).
@@ -19,7 +19,7 @@ object ServiceLocator {
 
     fun init(context: Context) {
         if (::authRepository.isInitialized) return
-        val engine = OkHttp.create()
+        val engine = defaultHttpEngine()
         val storage = AndroidSecureStorage(context.applicationContext)
         authRepository = AuthRepository(AuthApi(engine, BASE_URL), storage)
         trpcClient = TrpcClient(
