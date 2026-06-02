@@ -10,10 +10,20 @@ final class AuthModel: ObservableObject {
     @Published var error: String?
 
     private let repo: AuthRepository
+    private var unauthorizedObserver: NSObjectProtocol?
 
     init(repo: AuthRepository) {
         self.repo = repo
         step = repo.isSignedIn() ? .authenticated : .enterEmail
+        unauthorizedObserver = NotificationCenter.default.addObserver(
+            forName: .scaniUnauthorized, object: nil, queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in self?.step = .enterEmail }
+        }
+    }
+
+    deinit {
+        if let token = unauthorizedObserver { NotificationCenter.default.removeObserver(token) }
     }
 
     func sendCode(email: String) async {
