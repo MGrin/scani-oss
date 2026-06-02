@@ -15,8 +15,13 @@ import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import kotlinx.coroutines.launch
 import xyz.scani.mobile.android.ServiceLocator
 import xyz.scani.mobile.shared.navigation.Destination
@@ -42,6 +47,20 @@ private enum class Tab(val route: String, val label: String, val icon: ImageVect
 @Composable
 fun MainShell() {
     val nav = rememberNavController()
+    val scope = rememberCoroutineScope()
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val obs = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                scope.launch {
+                    runCatching { ServiceLocator.syncEngine.syncAccounts() }
+                    runCatching { ServiceLocator.syncEngine.syncHoldings() }
+                }
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(obs)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(obs) }
+    }
     // Detail-destination routing (Holding/Vault/Group/Job) is deferred to a later milestone.
     LaunchedEffect(Unit) {
         val dest = ServiceLocator.pendingDeepLink

@@ -9,6 +9,7 @@ import xyz.scani.mobile.shared.data.AccountsRepository
 import xyz.scani.mobile.shared.data.HoldingsRepository
 import xyz.scani.mobile.shared.data.MobileApi
 import xyz.scani.mobile.shared.data.SyncEngine
+import xyz.scani.mobile.shared.data.SyncStateRepository
 import xyz.scani.mobile.shared.db.AndroidDriverFactory
 import xyz.scani.mobile.shared.db.ScaniDatabase
 import xyz.scani.mobile.shared.network.TrpcClient
@@ -29,6 +30,8 @@ object ServiceLocator {
         private set
     lateinit var holdingsRepository: HoldingsRepository
         private set
+    lateinit var syncStateRepository: SyncStateRepository
+        private set
     var pendingDeepLink: xyz.scani.mobile.shared.navigation.Destination? = null
 
     fun init(context: Context) {
@@ -47,5 +50,6 @@ object ServiceLocator {
         syncEngine = SyncEngine(api, db)
         accountsRepository = AccountsRepository(db, Dispatchers.IO)
         holdingsRepository = HoldingsRepository(db, Dispatchers.IO)
+        syncStateRepository = SyncStateRepository(db, Dispatchers.IO)
     }
 }
