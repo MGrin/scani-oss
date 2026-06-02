@@ -93,6 +93,14 @@ export interface UpstashStats {
   readLatencyMean: number;
   /** Last-known write latency mean (ms). */
   writeLatencyMean: number;
+  /**
+   * Real month-to-date charge in USD, straight from Upstash
+   * (`total_monthly_billing`). This is the authoritative billed figure —
+   * commands + storage already summed by Upstash — so the spend page
+   * shows it as `invoiced` rather than re-deriving an estimate from the
+   * command count. Resets at the start of each billing month.
+   */
+  monthlyBillingUsd: number;
 }
 
 function num(value: unknown): number {
@@ -124,6 +132,7 @@ export async function getUpstashStats(dbId: string): Promise<Result<UpstashStats
         storageBytes: pick(stats, 'daily_storage', 'storage_per_day', 'total_storage'),
         readLatencyMean: num(stats.read_latency_mean),
         writeLatencyMean: num(stats.write_latency_mean),
+        monthlyBillingUsd: num(stats.total_monthly_billing),
       };
     })
   );
