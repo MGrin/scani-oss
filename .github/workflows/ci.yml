@@ -164,6 +164,9 @@ jobs:
         run: bun run lint
       - name: Type check
         run: bun run type-check
+      - name: OpenAPI spec in sync with tRPC router
+        working-directory: apps/backend/api
+        run: bun run openapi:gen:check
 
   validate-deps:
     name: Deps sync & knip
