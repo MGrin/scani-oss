@@ -40,3 +40,6 @@ data class MobileVault(
     val iconName: String? = null,
     val description: String? = null,
 )
+
+@Serializable
+data class MobileToken(val id: String, val symbol: String, val name: String)
