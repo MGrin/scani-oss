@@ -35,7 +35,7 @@ final class AuthModel: ObservableObject {
     }
 
     func signOut() {
-        repo.signOut()
+        Task { try? await self.repo.signOut() }
         step = .enterEmail
     }
 
