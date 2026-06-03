@@ -47,7 +47,7 @@ class OutboxProcessorTest {
         val engine = MockEngine { request ->
             val path = request.url.encodedPath.removePrefix("/trpc/")
             when {
-                path == "mobile.createGroup" -> respond(
+                path == "groups.create" -> respond(
                     content = """{"result":{"data":{"id":"server-g","name":"Tech","color":"#112233","description":null}}}""",
                     status = HttpStatusCode.OK,
                     headers = headersOf(HttpHeaders.ContentType, "application/json"),
@@ -134,7 +134,7 @@ class OutboxProcessorTest {
                     headers = headersOf(HttpHeaders.ContentType, "application/json"),
                 )
                 else -> when {
-                    path == "mobile.createGroup" -> respond(
+                    path == "groups.create" -> respond(
                         content = """{"result":{"data":{"id":"server-g2","name":"Second","color":"#222222","description":null}}}""",
                         status = HttpStatusCode.OK,
                         headers = headersOf(HttpHeaders.ContentType, "application/json"),

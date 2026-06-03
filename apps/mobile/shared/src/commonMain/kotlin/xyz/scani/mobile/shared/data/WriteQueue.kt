@@ -21,7 +21,6 @@ class WriteQueue(
             put("name", name)
             put("color", color)
             if (description != null) put("description", description)
-            put("idempotencyKey", key)
         }
         outbox.enqueue(genId(), "group", "create", payload.toString(), key, now())
         return id
@@ -38,7 +37,6 @@ class WriteQueue(
                 if (color != null) put("color", color)
                 if (description != null) put("description", description)
             }
-            put("idempotencyKey", key)
         }
         outbox.enqueue(genId(), "group", "update", payload.toString(), key, now())
     }
@@ -48,7 +46,6 @@ class WriteQueue(
         val key = genId()
         val payload = buildJsonObject {
             put("id", id)
-            put("idempotencyKey", key)
         }
         outbox.enqueue(genId(), "group", "delete", payload.toString(), key, now())
     }
@@ -71,7 +68,6 @@ class WriteQueue(
             put("color", color)
             if (iconName != null) put("iconName", iconName)
             if (description != null) put("description", description)
-            put("idempotencyKey", key)
         }
         outbox.enqueue(genId(), "vault", "create", payload.toString(), key, now())
         return id
@@ -108,7 +104,6 @@ class WriteQueue(
                 if (iconName != null) put("iconName", iconName)
                 if (description != null) put("description", description)
             }
-            put("idempotencyKey", key)
         }
         outbox.enqueue(genId(), "vault", "update", payload.toString(), key, now())
     }
@@ -118,7 +113,6 @@ class WriteQueue(
         val key = genId()
         val payload = buildJsonObject {
             put("id", id)
-            put("idempotencyKey", key)
         }
         outbox.enqueue(genId(), "vault", "delete", payload.toString(), key, now())
     }
@@ -132,7 +126,6 @@ class WriteQueue(
             putJsonObject("data") {
                 if (name != null) put("name", name)
             }
-            put("idempotencyKey", key)
         }
         outbox.enqueue(genId(), "account", "update", payload.toString(), key, now())
     }
@@ -142,7 +135,6 @@ class WriteQueue(
         val key = genId()
         val payload = buildJsonObject {
             put("id", id)
-            put("idempotencyKey", key)
         }
         outbox.enqueue(genId(), "account", "delete", payload.toString(), key, now())
     }
@@ -188,7 +180,6 @@ class WriteQueue(
         val key = genId()
         val payload = buildJsonObject {
             put("id", id)
-            put("idempotencyKey", key)
         }
         outbox.enqueue(genId(), "holding", "delete", payload.toString(), key, now())
     }

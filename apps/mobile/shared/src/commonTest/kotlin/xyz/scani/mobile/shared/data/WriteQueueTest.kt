@@ -56,7 +56,7 @@ class WriteQueueTest {
         val json = Json.parseToJsonElement(pending[0].payload).jsonObject
         assertEquals("Tech", json["name"]?.jsonPrimitive?.content)
         assertEquals("#112233", json["color"]?.jsonPrimitive?.content)
-        assertTrue(json["idempotencyKey"]?.jsonPrimitive?.content?.isNotEmpty() == true)
+        assertNull(json["idempotencyKey"])
     }
 
     @Test
@@ -79,7 +79,7 @@ class WriteQueueTest {
         assertEquals("delete", deleteOp.op)
         val json = Json.parseToJsonElement(deleteOp.payload).jsonObject
         assertEquals(id, json["id"]?.jsonPrimitive?.content)
-        assertTrue(json["idempotencyKey"]?.jsonPrimitive?.content?.isNotEmpty() == true)
+        assertNull(json["idempotencyKey"])
     }
 
     @Test
@@ -104,7 +104,7 @@ class WriteQueueTest {
         val data = json["data"]?.jsonObject
         assertNotNull(data)
         assertEquals("New", data["name"]?.jsonPrimitive?.content)
-        assertTrue(json["idempotencyKey"]?.jsonPrimitive?.content?.isNotEmpty() == true)
+        assertNull(json["idempotencyKey"])
     }
 
     @Test
@@ -167,7 +167,7 @@ class WriteQueueTest {
         assertEquals("10000", json["targetAmount"]?.jsonPrimitive?.content)
         assertEquals("USD", json["currencyId"]?.jsonPrimitive?.content)
         assertEquals("#FF0000", json["color"]?.jsonPrimitive?.content)
-        assertTrue(json["idempotencyKey"]?.jsonPrimitive?.content?.isNotEmpty() == true)
+        assertNull(json["idempotencyKey"])
     }
 
     @Test
@@ -185,6 +185,7 @@ class WriteQueueTest {
         assertEquals("delete", pending[1].op)
         val json = Json.parseToJsonElement(pending[1].payload).jsonObject
         assertEquals(id, json["id"]?.jsonPrimitive?.content)
+        assertNull(json["idempotencyKey"])
     }
 
     @Test
@@ -209,6 +210,7 @@ class WriteQueueTest {
         assertNotNull(data)
         assertEquals("NewName", data["name"]?.jsonPrimitive?.content)
         assertEquals("8000", data["targetAmount"]?.jsonPrimitive?.content)
+        assertNull(json["idempotencyKey"])
     }
 
     @Test
@@ -232,6 +234,7 @@ class WriteQueueTest {
         val data = json["data"]?.jsonObject
         assertNotNull(data)
         assertEquals("NewName", data["name"]?.jsonPrimitive?.content)
+        assertNull(json["idempotencyKey"])
     }
 
     @Test
@@ -249,6 +252,7 @@ class WriteQueueTest {
         assertEquals("delete", pending[0].op)
         val json = Json.parseToJsonElement(pending[0].payload).jsonObject
         assertEquals("acc1", json["id"]?.jsonPrimitive?.content)
+        assertNull(json["idempotencyKey"])
     }
 
     @Test
@@ -266,6 +270,7 @@ class WriteQueueTest {
         assertEquals("delete", pending[0].op)
         val json = Json.parseToJsonElement(pending[0].payload).jsonObject
         assertEquals("h1", json["id"]?.jsonPrimitive?.content)
+        assertNull(json["idempotencyKey"])
     }
 
     @Test
@@ -289,5 +294,6 @@ class WriteQueueTest {
         val data = json["data"]?.jsonObject
         assertNotNull(data)
         assertEquals("2.5", data["balance"]?.jsonPrimitive?.content)
+        assertTrue(json["idempotencyKey"]?.jsonPrimitive?.content?.isNotEmpty() == true)
     }
 }
