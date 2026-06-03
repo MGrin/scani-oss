@@ -46,8 +46,10 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.serialization.json.JsonObject
 import xyz.scani.mobile.android.ServiceLocator
 import xyz.scani.mobile.shared.data.MobileToken
+import xyz.scani.mobile.shared.data.MobileTokenResult
 
 private val PRESET_COLORS = listOf(
     "#3B82F6", "#22C55E", "#EF4444", "#F59E0B",
@@ -292,7 +294,7 @@ private fun HoldingForm(scope: kotlinx.coroutines.CoroutineScope, onStatus: (Str
     var selectedAccountName by remember { mutableStateOf("") }
     var accountExpanded by remember { mutableStateOf(false) }
     var query by remember { mutableStateOf("") }
-    var searchResults by remember { mutableStateOf<List<MobileToken>>(emptyList()) }
+    var searchResults by remember { mutableStateOf<List<MobileTokenResult>>(emptyList()) }
     var selectedTokenId by remember { mutableStateOf("") }
     var selectedSymbol by remember { mutableStateOf("") }
     var selectedName by remember { mutableStateOf("") }
@@ -358,19 +360,34 @@ private fun HoldingForm(scope: kotlinx.coroutines.CoroutineScope, onStatus: (Str
     if (searchResults.isNotEmpty() && selectedTokenId.isBlank()) {
         Spacer(Modifier.height(4.dp))
         LazyColumn(modifier = Modifier.fillMaxWidth().height(160.dp)) {
-            items(searchResults, key = { it.id }) { token ->
+            items(searchResults, key = { it.id ?: "${it.provider}:${it.symbol}" }) { sel ->
+                val label = if (sel.id == null && sel.provider != null)
+                    "${sel.symbol} — ${sel.name} (via ${sel.provider})"
+                else
+                    "${sel.symbol} — ${sel.name}"
                 Card(
                     onClick = {
-                        selectedTokenId = token.id
-                        selectedSymbol = token.symbol
-                        selectedName = token.name
-                        query = "${token.symbol} — ${token.name}"
-                        searchResults = emptyList()
+                        scope.launch {
+                            try {
+                                val tokenId = sel.id ?: ServiceLocator.mobileApi.materializeToken(
+                                    sel.symbol,
+                                    sel.provider!!,
+                                    sel.metadata!!,
+                                ).id
+                                selectedTokenId = tokenId
+                                selectedSymbol = sel.symbol
+                                selectedName = sel.name
+                                query = "${sel.symbol} — ${sel.name}"
+                                searchResults = emptyList()
+                            } catch (e: Throwable) {
+                                onStatus(e.message ?: "Failed to resolve token")
+                            }
+                        }
                     },
                     modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp),
                 ) {
                     Text(
-                        "${token.symbol} — ${token.name}",
+                        label,
                         modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
                         style = MaterialTheme.typography.bodyMedium,
                     )
