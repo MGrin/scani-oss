@@ -14,6 +14,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -42,7 +43,7 @@ import xyz.scani.mobile.shared.data.MobileGroup
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun GroupsScreen() {
+fun GroupsScreen(onOpen: (String) -> Unit = {}) {
     val groups by ServiceLocator.groupsRepository.groups().collectAsState(initial = emptyList())
     val scope = rememberCoroutineScope()
     var refreshing by remember { mutableStateOf(false) }
@@ -80,7 +81,7 @@ fun GroupsScreen() {
             }
             items(groups, key = { it.id }) { g ->
                 Card(
-                    onClick = { editing = g },
+                    onClick = { onOpen(g.id) },
                     modifier = Modifier.fillMaxWidth().padding(8.dp),
                 ) {
                     Row(
@@ -99,6 +100,9 @@ fun GroupsScreen() {
                         Column(Modifier.weight(1f).padding(start = 8.dp)) {
                             Text(g.name, style = MaterialTheme.typography.bodyLarge)
                             g.description?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
+                        }
+                        IconButton(onClick = { editing = g }) {
+                            Icon(Icons.Filled.Edit, contentDescription = "Edit group")
                         }
                         IconButton(onClick = { deleting = g }) {
                             Icon(Icons.Filled.Delete, contentDescription = "Delete group")

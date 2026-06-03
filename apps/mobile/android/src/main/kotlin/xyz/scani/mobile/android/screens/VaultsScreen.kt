@@ -11,6 +11,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -38,7 +39,7 @@ import xyz.scani.mobile.shared.data.MobileVault
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun VaultsScreen() {
+fun VaultsScreen(onOpen: (String) -> Unit = {}) {
     val vaults by ServiceLocator.vaultsRepository.vaults().collectAsState(initial = emptyList())
     val scope = rememberCoroutineScope()
     var refreshing by remember { mutableStateOf(false) }
@@ -76,7 +77,7 @@ fun VaultsScreen() {
             }
             items(vaults, key = { it.id }) { v ->
                 Card(
-                    onClick = { editing = v },
+                    onClick = { onOpen(v.id) },
                     modifier = Modifier.fillMaxWidth().padding(8.dp),
                 ) {
                     Row(
@@ -89,6 +90,9 @@ fun VaultsScreen() {
                                 "${v.currentAmount} / ${v.targetAmount}",
                                 style = MaterialTheme.typography.bodySmall,
                             )
+                        }
+                        IconButton(onClick = { editing = v }) {
+                            Icon(Icons.Filled.Edit, contentDescription = "Edit vault")
                         }
                         IconButton(onClick = { deleting = v }) {
                             Icon(Icons.Filled.Delete, contentDescription = "Delete vault")

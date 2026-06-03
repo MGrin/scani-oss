@@ -37,6 +37,10 @@ import xyz.scani.mobile.android.screens.GroupsScreen
 import xyz.scani.mobile.android.screens.HoldingsScreen
 import xyz.scani.mobile.android.screens.SettingsScreen
 import xyz.scani.mobile.android.screens.VaultsScreen
+import xyz.scani.mobile.android.screens.detail.AccountDetailScreen
+import xyz.scani.mobile.android.screens.detail.GroupDetailScreen
+import xyz.scani.mobile.android.screens.detail.HoldingDetailScreen
+import xyz.scani.mobile.android.screens.detail.VaultDetailScreen
 
 private enum class Tab(val route: String, val label: String, val icon: ImageVector) {
     Dashboard("dashboard", "Dashboard", Icons.Filled.Dashboard),
@@ -66,17 +70,18 @@ fun MainShell() {
         lifecycleOwner.lifecycle.addObserver(obs)
         onDispose { lifecycleOwner.lifecycle.removeObserver(obs) }
     }
-    // Detail-destination routing (Holding/Vault/Group/Job) is deferred to a later milestone.
     LaunchedEffect(Unit) {
         val dest = ServiceLocator.pendingDeepLink
         ServiceLocator.pendingDeepLink = null
-        val route = when (dest) {
-            is Destination.Holding -> Tab.Holdings.route
-            is Destination.Account, is Destination.Institution -> Tab.Accounts.route
+        val route = when (val d = dest) {
+            is Destination.Holding -> "holding/${d.id}"
+            is Destination.Account -> "account/${d.id}"
+            is Destination.Group -> "group/${d.id}"
+            is Destination.Vault -> "vault/${d.id}"
             else -> null
         }
         if (route != null) {
-            nav.navigate(route) { launchSingleTop = true }
+            nav.navigate(route)
         }
         launch {
             runCatching { ServiceLocator.outboxProcessor.drain() }
@@ -114,12 +119,16 @@ fun MainShell() {
                     onOpenVaults = { nav.navigate("vaults") },
                 )
             }
-            composable(Tab.Holdings.route) { HoldingsScreen() }
-            composable(Tab.Accounts.route) { AccountsScreen() }
+            composable(Tab.Holdings.route) { HoldingsScreen(onOpen = { id -> nav.navigate("holding/$id") }) }
+            composable(Tab.Accounts.route) { AccountsScreen(onOpen = { id -> nav.navigate("account/$id") }) }
             composable(Tab.Add.route) { AddScreen() }
             composable(Tab.Settings.route) { SettingsScreen() }
-            composable("groups") { GroupsScreen() }
-            composable("vaults") { VaultsScreen() }
+            composable("groups") { GroupsScreen(onOpen = { id -> nav.navigate("group/$id") }) }
+            composable("vaults") { VaultsScreen(onOpen = { id -> nav.navigate("vault/$id") }) }
+            composable("holding/{id}") { HoldingDetailScreen(it.arguments?.getString("id").orEmpty()) }
+            composable("account/{id}") { AccountDetailScreen(it.arguments?.getString("id").orEmpty()) }
+            composable("group/{id}") { GroupDetailScreen(it.arguments?.getString("id").orEmpty()) }
+            composable("vault/{id}") { VaultDetailScreen(it.arguments?.getString("id").orEmpty()) }
         }
     }
 }
