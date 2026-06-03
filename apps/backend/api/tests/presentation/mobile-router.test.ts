@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'bun:test';
-import { MobileAccount, MobileHolding } from '../../src/presentation/mobile-dtos';
+import {
+  MobileAccount,
+  MobileGroup,
+  MobileHolding,
+  MobileVault,
+} from '../../src/presentation/mobile-dtos';
 import { mobileRouter } from '../../src/presentation/routers/mobile';
 
 describe('mobile DTOs', () => {
@@ -78,6 +83,30 @@ describe('mobileRouter mutation keys', () => {
   it('exposes deleteHolding mutation', () => {
     expect(mobileRouter._def.procedures.deleteHolding).toBeDefined();
   });
+
+  it('exposes createGroup mutation', () => {
+    expect(mobileRouter._def.procedures.createGroup).toBeDefined();
+  });
+
+  it('exposes updateGroup mutation', () => {
+    expect(mobileRouter._def.procedures.updateGroup).toBeDefined();
+  });
+
+  it('exposes deleteGroup mutation', () => {
+    expect(mobileRouter._def.procedures.deleteGroup).toBeDefined();
+  });
+
+  it('exposes createVault mutation', () => {
+    expect(mobileRouter._def.procedures.createVault).toBeDefined();
+  });
+
+  it('exposes updateVault mutation', () => {
+    expect(mobileRouter._def.procedures.updateVault).toBeDefined();
+  });
+
+  it('exposes deleteVault mutation', () => {
+    expect(mobileRouter._def.procedures.deleteVault).toBeDefined();
+  });
 });
 
 describe('mobile mutation input DTOs', () => {
@@ -135,5 +164,122 @@ describe('mobile mutation input DTOs', () => {
     const schema = mobileRouter._def.procedures.deleteHolding._def.inputs[0];
     expect(schema.safeParse({ id: 'bad' }).success).toBe(false);
     expect(schema.safeParse({ id: '123e4567-e89b-12d3-a456-426614174000' }).success).toBe(true);
+  });
+
+  it('createGroup input: name + color required, description optional', () => {
+    const schema = mobileRouter._def.procedures.createGroup._def.inputs[0];
+    expect(schema.safeParse({ name: '', color: '#ff0000' }).success).toBe(false);
+    expect(schema.safeParse({ name: 'My Group', color: 'not-a-hex' }).success).toBe(false);
+    expect(schema.safeParse({ name: 'My Group', color: '#ff0000' }).success).toBe(true);
+    expect(
+      schema.safeParse({ name: 'My Group', color: '#ff0000', description: 'desc' }).success
+    ).toBe(true);
+  });
+
+  it('updateGroup input: id must be uuid', () => {
+    const schema = mobileRouter._def.procedures.updateGroup._def.inputs[0];
+    expect(schema.safeParse({ id: 'bad', data: {} }).success).toBe(false);
+    expect(
+      schema.safeParse({ id: '123e4567-e89b-12d3-a456-426614174000', data: { name: 'New' } })
+        .success
+    ).toBe(true);
+  });
+
+  it('deleteGroup input: id must be uuid', () => {
+    const schema = mobileRouter._def.procedures.deleteGroup._def.inputs[0];
+    expect(schema.safeParse({ id: 'bad' }).success).toBe(false);
+    expect(schema.safeParse({ id: '123e4567-e89b-12d3-a456-426614174000' }).success).toBe(true);
+  });
+
+  it('createVault input: required fields validated', () => {
+    const schema = mobileRouter._def.procedures.createVault._def.inputs[0];
+    expect(
+      schema.safeParse({
+        name: '',
+        targetAmount: '100',
+        currencyId: '123e4567-e89b-12d3-a456-426614174000',
+        color: '#ff0000',
+      }).success
+    ).toBe(false);
+    expect(
+      schema.safeParse({
+        name: 'Emergency Fund',
+        targetAmount: '10000',
+        currencyId: '123e4567-e89b-12d3-a456-426614174000',
+        color: '#ff0000',
+      }).success
+    ).toBe(true);
+  });
+
+  it('updateVault input: id must be uuid', () => {
+    const schema = mobileRouter._def.procedures.updateVault._def.inputs[0];
+    expect(schema.safeParse({ id: 'bad', data: {} }).success).toBe(false);
+    expect(
+      schema.safeParse({ id: '123e4567-e89b-12d3-a456-426614174000', data: { name: 'Updated' } })
+        .success
+    ).toBe(true);
+  });
+
+  it('deleteVault input: id must be uuid', () => {
+    const schema = mobileRouter._def.procedures.deleteVault._def.inputs[0];
+    expect(schema.safeParse({ id: 'bad' }).success).toBe(false);
+    expect(schema.safeParse({ id: '123e4567-e89b-12d3-a456-426614174000' }).success).toBe(true);
+  });
+});
+
+describe('mobile group/vault DTOs', () => {
+  it('MobileGroup parses valid object', () => {
+    expect(
+      MobileGroup.safeParse({
+        id: 'g1',
+        name: 'Crypto',
+        color: '#3b82f6',
+        description: null,
+      }).success
+    ).toBe(true);
+  });
+
+  it('MobileGroup accepts non-null description', () => {
+    expect(
+      MobileGroup.safeParse({
+        id: 'g1',
+        name: 'Crypto',
+        color: '#3b82f6',
+        description: 'My crypto holdings',
+      }).success
+    ).toBe(true);
+  });
+
+  it('MobileGroup rejects missing field', () => {
+    expect(MobileGroup.safeParse({ id: 'g1', name: 'Crypto' }).success).toBe(false);
+  });
+
+  it('MobileVault parses valid object', () => {
+    expect(
+      MobileVault.safeParse({
+        id: 'v1',
+        name: 'Emergency Fund',
+        targetAmount: '10000',
+        currentAmount: '0',
+        currencyId: '123e4567-e89b-12d3-a456-426614174000',
+        color: '#22c55e',
+        iconName: null,
+        description: null,
+      }).success
+    ).toBe(true);
+  });
+
+  it('MobileVault rejects missing currencyId', () => {
+    expect(
+      MobileVault.safeParse({
+        id: 'v1',
+        name: 'Emergency Fund',
+        targetAmount: '10000',
+        currentAmount: '0',
+        color: '#22c55e',
+        iconName: null,
+        description: null,
+      }).success
+    ).toBe(false);
   });
 });
