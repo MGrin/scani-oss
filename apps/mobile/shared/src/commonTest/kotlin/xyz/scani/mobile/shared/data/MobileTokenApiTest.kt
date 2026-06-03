@@ -23,7 +23,7 @@ class MobileTokenApiTest {
     @Test
     fun currencies_parses_token_list() = runTest {
         val engine = engineFor(
-            "mobile.currencies" to """{"result":{"data":[{"id":"usd","symbol":"USD","name":"US Dollar"}]}}""",
+            "users.getSupportedCurrencies" to """{"result":{"data":[{"id":"usd","symbol":"USD","name":"US Dollar"}]}}""",
         )
         val api = MobileApi(mockTrpcClient(engine))
         val result = api.currencies()
@@ -32,14 +32,14 @@ class MobileTokenApiTest {
     }
 
     @Test
-    fun searchTokens_sends_query_param_and_parses_result() = runTest {
+    fun searchTokens_sends_query_param_and_filters_out_id_less_results() = runTest {
         val engine = MockEngine { request ->
             val path = request.url.encodedPath.removePrefix("/trpc/")
             val inputParam = request.url.parameters["input"] ?: ""
-            assertEquals("mobile.searchTokens", path)
+            assertEquals("tokens.search", path)
             assert(inputParam.contains("btc")) { "Expected input param to contain 'btc', got: $inputParam" }
             respond(
-                content = """{"result":{"data":[{"id":"bitcoin","symbol":"BTC","name":"Bitcoin"}]}}""",
+                content = """{"result":{"data":[{"id":"t1","symbol":"BTC","name":"Bitcoin"},{"symbol":"X","name":"NoId"}]}}""",
                 status = HttpStatusCode.OK,
                 headers = headersOf(HttpHeaders.ContentType, "application/json"),
             )
@@ -47,6 +47,6 @@ class MobileTokenApiTest {
         val api = MobileApi(mockTrpcClient(engine))
         val result = api.searchTokens("btc")
         assertEquals(1, result.size)
-        assertEquals(MobileToken(id = "bitcoin", symbol = "BTC", name = "Bitcoin"), result[0])
+        assertEquals(MobileToken(id = "t1", symbol = "BTC", name = "Bitcoin"), result[0])
     }
 }

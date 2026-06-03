@@ -38,9 +38,9 @@ class GroupVaultSyncTest {
     fun groups_empty_before_sync_then_populated_after() = runTest {
         val testDispatcher = StandardTestDispatcher(testScheduler)
         val engine = engineFor(
-            "mobile.groups" to """{"result":{"data":[
-                {"id":"g1","name":"Savings","color":"#FF0000","description":"My savings"},
-                {"id":"g2","name":"Investments","color":"#00FF00"}
+            "groups.getAllWithCounts" to """{"result":{"data":[
+                {"id":"g1","name":"Savings","color":"#FF0000","description":"My savings","holdingsCount":0,"accountsCount":0},
+                {"id":"g2","name":"Investments","color":"#00FF00","holdingsCount":0,"accountsCount":0}
             ]}}""",
         )
         val api = MobileApi(mockTrpcClient(engine))
@@ -64,8 +64,8 @@ class GroupVaultSyncTest {
     fun syncGroups_second_call_fully_replaces_data() = runTest {
         val testDispatcher = StandardTestDispatcher(testScheduler)
         val firstEngine = engineFor(
-            "mobile.groups" to """{"result":{"data":[
-                {"id":"g1","name":"Old","color":"#FF0000"}
+            "groups.getAllWithCounts" to """{"result":{"data":[
+                {"id":"g1","name":"Old","color":"#FF0000","holdingsCount":0,"accountsCount":0}
             ]}}""",
         )
         val api = MobileApi(mockTrpcClient(firstEngine))
@@ -76,9 +76,9 @@ class GroupVaultSyncTest {
         assertEquals(1, repo.groups().first().size)
 
         val secondEngine = engineFor(
-            "mobile.groups" to """{"result":{"data":[
-                {"id":"g2","name":"New1","color":"#00FF00"},
-                {"id":"g3","name":"New2","color":"#0000FF"}
+            "groups.getAllWithCounts" to """{"result":{"data":[
+                {"id":"g2","name":"New1","color":"#00FF00","holdingsCount":0,"accountsCount":0},
+                {"id":"g3","name":"New2","color":"#0000FF","holdingsCount":0,"accountsCount":0}
             ]}}""",
         )
         val api2 = MobileApi(mockTrpcClient(secondEngine))
@@ -94,9 +94,9 @@ class GroupVaultSyncTest {
     fun groups_snapshot_empty_before_sync_then_populated_after() = runTest {
         val testDispatcher = StandardTestDispatcher(testScheduler)
         val engine = engineFor(
-            "mobile.groups" to """{"result":{"data":[
-                {"id":"g1","name":"Savings","color":"#FF0000","description":"My savings"},
-                {"id":"g2","name":"Investments","color":"#00FF00"}
+            "groups.getAllWithCounts" to """{"result":{"data":[
+                {"id":"g1","name":"Savings","color":"#FF0000","description":"My savings","holdingsCount":0,"accountsCount":0},
+                {"id":"g2","name":"Investments","color":"#00FF00","holdingsCount":0,"accountsCount":0}
             ]}}""",
         )
         val api = MobileApi(mockTrpcClient(engine))
@@ -117,9 +117,9 @@ class GroupVaultSyncTest {
     fun vaults_empty_before_sync_then_populated_after() = runTest {
         val testDispatcher = StandardTestDispatcher(testScheduler)
         val engine = engineFor(
-            "mobile.vaults" to """{"result":{"data":[
-                {"id":"v1","name":"Emergency Fund","targetAmount":"10000.00","currentAmount":"5000.00","currencyId":"USD","color":"#0000FF","iconName":"shield","description":"Rainy day fund"},
-                {"id":"v2","name":"Vacation","targetAmount":"3000.00","currentAmount":"1200.00","currencyId":"EUR","color":"#FFFF00"}
+            "vaults.getAll" to """{"result":{"data":[
+                {"id":"v1","name":"Emergency Fund","targetAmount":"10000.00","currentAmount":"5000.00","currencyId":"USD","color":"#0000FF","iconName":"shield","description":"Rainy day fund","progress":50},
+                {"id":"v2","name":"Vacation","targetAmount":"3000.00","currentAmount":"1200.00","currencyId":"EUR","color":"#FFFF00","progress":40}
             ]}}""",
         )
         val api = MobileApi(mockTrpcClient(engine))
@@ -144,8 +144,8 @@ class GroupVaultSyncTest {
     fun syncVaults_second_call_fully_replaces_data() = runTest {
         val testDispatcher = StandardTestDispatcher(testScheduler)
         val firstEngine = engineFor(
-            "mobile.vaults" to """{"result":{"data":[
-                {"id":"v1","name":"Old","targetAmount":"100.00","currentAmount":"50.00","currencyId":"USD","color":"#FF0000"}
+            "vaults.getAll" to """{"result":{"data":[
+                {"id":"v1","name":"Old","targetAmount":"100.00","currentAmount":"50.00","currencyId":"USD","color":"#FF0000","progress":50}
             ]}}""",
         )
         val api = MobileApi(mockTrpcClient(firstEngine))
@@ -156,9 +156,9 @@ class GroupVaultSyncTest {
         assertEquals(1, repo.vaults().first().size)
 
         val secondEngine = engineFor(
-            "mobile.vaults" to """{"result":{"data":[
-                {"id":"v2","name":"New1","targetAmount":"200.00","currentAmount":"100.00","currencyId":"EUR","color":"#00FF00"},
-                {"id":"v3","name":"New2","targetAmount":"300.00","currentAmount":"200.00","currencyId":"GBP","color":"#0000FF"}
+            "vaults.getAll" to """{"result":{"data":[
+                {"id":"v2","name":"New1","targetAmount":"200.00","currentAmount":"100.00","currencyId":"EUR","color":"#00FF00","progress":50},
+                {"id":"v3","name":"New2","targetAmount":"300.00","currentAmount":"200.00","currencyId":"GBP","color":"#0000FF","progress":67}
             ]}}""",
         )
         val api2 = MobileApi(mockTrpcClient(secondEngine))
@@ -174,9 +174,9 @@ class GroupVaultSyncTest {
     fun vaults_snapshot_empty_before_sync_then_populated_after() = runTest {
         val testDispatcher = StandardTestDispatcher(testScheduler)
         val engine = engineFor(
-            "mobile.vaults" to """{"result":{"data":[
-                {"id":"v1","name":"Emergency Fund","targetAmount":"10000.00","currentAmount":"5000.00","currencyId":"USD","color":"#0000FF","iconName":"shield","description":"Rainy day fund"},
-                {"id":"v2","name":"Vacation","targetAmount":"3000.00","currentAmount":"1200.00","currencyId":"EUR","color":"#FFFF00"}
+            "vaults.getAll" to """{"result":{"data":[
+                {"id":"v1","name":"Emergency Fund","targetAmount":"10000.00","currentAmount":"5000.00","currencyId":"USD","color":"#0000FF","iconName":"shield","description":"Rainy day fund","progress":50},
+                {"id":"v2","name":"Vacation","targetAmount":"3000.00","currentAmount":"1200.00","currencyId":"EUR","color":"#FFFF00","progress":40}
             ]}}""",
         )
         val api = MobileApi(mockTrpcClient(engine))
