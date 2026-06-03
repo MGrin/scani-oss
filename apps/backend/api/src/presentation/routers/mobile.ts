@@ -1,6 +1,11 @@
 import type { User } from '@scani/db';
 import { GroupRepository, TokenRepository, VaultRepository } from '@scani/domain/repositories';
-import { AccountService, HoldingQueryService, VaultService } from '@scani/domain/services';
+import {
+  AccountService,
+  HoldingQueryService,
+  TokenService,
+  VaultService,
+} from '@scani/domain/services';
 import { DeleteHoldingUseCase, UpdateHoldingUseCase } from '@scani/domain/use-cases';
 import { CreateHoldingUseCase } from '@scani/domain/use-cases/CreateHoldingUseCase';
 import { emitEntityChange } from '@scani/realtime';
@@ -16,7 +21,13 @@ import { z } from 'zod';
 import { withIdempotency } from '../../lib/idempotency';
 import { enqueuePortfolioRollup } from '../lib/portfolio-rollup';
 import { requireAuth } from '../middleware/auth';
-import { MobileAccount, MobileGroup, MobileHolding, MobileVault } from '../mobile-dtos';
+import {
+  MobileAccount,
+  MobileGroup,
+  MobileHolding,
+  MobileToken,
+  MobileVault,
+} from '../mobile-dtos';
 import { protectedProcedure, router } from '../trpc';
 
 export const mobileRouter = router({
@@ -75,6 +86,21 @@ export const mobileRouter = router({
       description: v.description ?? null,
     }));
   }),
+
+  currencies: protectedProcedure.output(z.array(MobileToken)).query(async ({ ctx }) => {
+    await requireAuth(ctx);
+    const tokens = await Container.get(TokenService).getTokensByType('fiat');
+    return tokens.map((t) => ({ id: t.id, symbol: t.symbol, name: t.name }));
+  }),
+
+  searchTokens: protectedProcedure
+    .input(z.object({ query: z.string().min(1).max(100) }))
+    .output(z.array(MobileToken))
+    .query(async ({ input, ctx }) => {
+      await requireAuth(ctx);
+      const tokens = await Container.get(TokenRepository).searchByQuery(input.query, 25);
+      return tokens.slice(0, 25).map((t) => ({ id: t.id, symbol: t.symbol, name: t.name }));
+    }),
 
   updateAccount: protectedProcedure
     .input(

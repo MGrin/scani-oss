@@ -25,6 +25,8 @@ describe('buildOpenApiDoc', () => {
         '/trpc/mobile.createVault',
         '/trpc/mobile.updateVault',
         '/trpc/mobile.deleteVault',
+        '/trpc/mobile.currencies',
+        '/trpc/mobile.searchTokens',
       ])
     );
   });
