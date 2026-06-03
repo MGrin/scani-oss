@@ -1,5 +1,6 @@
 package xyz.scani.mobile.shared.data
 
+import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import xyz.scani.trpc.TrpcClient
@@ -15,7 +16,12 @@ class MobileApi(private val client: TrpcClient) {
         client.query<List<WebVault>>("vaults.getAll").map { it.toApp() }
     suspend fun currencies(): List<MobileToken> =
         client.query("users.getSupportedCurrencies")
-    suspend fun searchTokens(query: String): List<MobileToken> =
-        client.query<List<WebTokenResult>>("tokens.search", buildJsonObject { put("query", query) })
-            .mapNotNull { r -> r.id?.let { MobileToken(it, r.symbol, r.name) } }
+    suspend fun searchTokens(query: String): List<MobileTokenResult> =
+        client.query<List<WebTokenResult>>("tokens.search", buildJsonObject { put("query", query) }).map { it.toResult() }
+    suspend fun materializeToken(symbol: String, provider: String, metadata: JsonObject): MobileToken =
+        client.mutate("tokens.createFromExternal", buildJsonObject {
+            put("symbol", symbol)
+            put("provider", provider)
+            put("metadata", metadata)
+        })
 }

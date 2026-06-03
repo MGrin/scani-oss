@@ -61,4 +61,12 @@ data class WebVault(
 }
 
 @Serializable
-data class WebTokenResult(val id: String? = null, val symbol: String, val name: String)
+data class WebTokenResult(
+    val id: String? = null,
+    val symbol: String,
+    val name: String,
+    val provider: String? = null,
+    val metadata: kotlinx.serialization.json.JsonObject? = null,
+) {
+    fun toResult() = MobileTokenResult(id, symbol, name, provider, metadata)
+}
