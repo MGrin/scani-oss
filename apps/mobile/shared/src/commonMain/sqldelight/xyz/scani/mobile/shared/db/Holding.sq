@@ -18,3 +18,9 @@ DELETE FROM holding WHERE id = ?;
 
 deleteAll:
 DELETE FROM holding;
+
+selectById:
+SELECT * FROM holding WHERE id = ?;
+
+selectByAccount:
+SELECT * FROM holding WHERE accountId = ?;

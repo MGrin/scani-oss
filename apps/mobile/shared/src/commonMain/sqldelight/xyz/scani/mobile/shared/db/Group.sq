@@ -16,3 +16,6 @@ DELETE FROM groupEntity WHERE id = ?;
 
 deleteAll:
 DELETE FROM groupEntity;
+
+selectById:
+SELECT * FROM groupEntity WHERE id = ?;
