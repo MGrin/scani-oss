@@ -56,8 +56,8 @@ class SyncStateTest {
         val syncStateRepo = SyncStateRepository(db, testDispatcher)
 
         val engine = engineFor(
-            "mobile.accounts" to """{"result":{"data":[
-                {"id":"a1","name":"Savings","typeId":"bank","totalValue":"1000.00"}
+            "accounts.getByUserIdWithSummary" to """{"result":{"data":[
+                {"id":"a1","name":"Savings","typeId":"bank","summary":{"totalValue":"1000.00"}}
             ]}}""",
         )
         val api = MobileApi(mockTrpcClient(engine))
@@ -81,8 +81,8 @@ class SyncStateTest {
         val syncStateRepo = SyncStateRepository(db, testDispatcher)
 
         val engine = engineFor(
-            "mobile.holdings" to """{"result":{"data":[
-                {"id":"h1","accountId":"a1","symbol":"BTC","name":"Bitcoin","amount":"0.5","value":"30000.00"}
+            "holdings.getWithDetails" to """{"result":{"data":[
+                {"id":"h1","token":{"symbol":"BTC","name":"Bitcoin"},"amount":0.5,"value":30000,"account":{"id":"a1"}}
             ]}}""",
         )
         val api = MobileApi(mockTrpcClient(engine))
@@ -105,7 +105,7 @@ class SyncStateTest {
         val testDispatcher = StandardTestDispatcher(testScheduler)
         val syncStateRepo = SyncStateRepository(db, testDispatcher)
 
-        val engine = engineWithStatus("mobile.accounts", HttpStatusCode.InternalServerError)
+        val engine = engineWithStatus("accounts.getByUserIdWithSummary", HttpStatusCode.InternalServerError)
         val api = MobileApi(mockTrpcClient(engine))
         val syncEngine = SyncEngine(api, db, now = { fixedNow })
 

@@ -9,6 +9,7 @@ import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
+import kotlin.test.assertTrue
 
 class MobileApiTest {
     private fun engineFor(vararg pairs: Pair<String, String>) = MockEngine { request ->
@@ -23,33 +24,40 @@ class MobileApiTest {
 
     @Test
     fun accounts_parses_list_including_null_institutionId() = runTest {
-        val engine = engineFor(
-            "mobile.accounts" to """{"result":{"data":[
-                {"id":"a1","name":"Savings","typeId":"bank","institutionId":"inst1","totalValue":"1000.00"},
-                {"id":"a2","name":"Cash","typeId":"cash","totalValue":"50.00"}
-            ]}}""",
-        )
+        var capturedPath = ""
+        val engine = MockEngine { request ->
+            capturedPath = request.url.encodedPath
+            respond(
+                content = """{"result":{"data":[
+                    {"id":"a1","name":"Bank","typeId":"t1","institutionId":"i1","summary":{"totalValue":"100.50"}},
+                    {"id":"a2","name":"Cash","typeId":"t2","summary":{"totalValue":"50.00"}}
+                ]}}""",
+                status = HttpStatusCode.OK,
+                headers = headersOf(HttpHeaders.ContentType, "application/json"),
+            )
+        }
         val api = MobileApi(mockTrpcClient(engine))
         val result = api.accounts()
+        assertTrue(capturedPath.contains("accounts.getByUserIdWithSummary"))
         assertEquals(2, result.size)
-        assertEquals(MobileAccount(id = "a1", name = "Savings", typeId = "bank", institutionId = "inst1", totalValue = "1000.00"), result[0])
-        assertEquals(MobileAccount(id = "a2", name = "Cash", typeId = "cash", institutionId = null, totalValue = "50.00"), result[1])
+        assertEquals(MobileAccount(id = "a1", name = "Bank", typeId = "t1", institutionId = "i1", totalValue = "100.50"), result[0])
+        assertEquals(MobileAccount(id = "a2", name = "Cash", typeId = "t2", institutionId = null, totalValue = "50.00"), result[1])
         assertNull(result[1].institutionId)
     }
 
     @Test
     fun holdings_parses_list_including_null_value() = runTest {
         val engine = engineFor(
-            "mobile.holdings" to """{"result":{"data":[
-                {"id":"h1","accountId":"a1","symbol":"BTC","name":"Bitcoin","amount":"0.5","value":"30000.00"},
-                {"id":"h2","accountId":"a1","symbol":"ETH","name":"Ethereum","amount":"2.0"}
+            "holdings.getWithDetails" to """{"result":{"data":[
+                {"id":"h1","token":{"symbol":"BTC","name":"Bitcoin"},"amount":1.5,"value":90000,"account":{"id":"a1"}},
+                {"id":"h2","token":{"symbol":"ETH","name":"Ether"},"amount":2,"value":null,"account":{"id":"a1"}}
             ]}}""",
         )
         val api = MobileApi(mockTrpcClient(engine))
         val result = api.holdings()
         assertEquals(2, result.size)
-        assertEquals(MobileHolding(id = "h1", accountId = "a1", symbol = "BTC", name = "Bitcoin", amount = "0.5", value = "30000.00"), result[0])
-        assertEquals(MobileHolding(id = "h2", accountId = "a1", symbol = "ETH", name = "Ethereum", amount = "2.0", value = null), result[1])
+        assertEquals(MobileHolding(id = "h1", accountId = "a1", symbol = "BTC", name = "Bitcoin", amount = "1.5", value = "90000"), result[0])
+        assertEquals(MobileHolding(id = "h2", accountId = "a1", symbol = "ETH", name = "Ether", amount = "2", value = null), result[1])
         assertNull(result[1].value)
     }
 }

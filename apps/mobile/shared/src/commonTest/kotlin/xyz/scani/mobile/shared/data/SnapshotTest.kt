@@ -44,11 +44,11 @@ class SnapshotTest {
     fun accounts_snapshot_populated_after_sync_with_null_institutionId() = runTest {
         val testDispatcher = StandardTestDispatcher(testScheduler)
         val engine = engineFor(
-            "mobile.accounts" to """{"result":{"data":[
-                {"id":"a1","name":"Savings","typeId":"bank","institutionId":"inst1","totalValue":"1000.00"},
-                {"id":"a2","name":"Cash","typeId":"cash","totalValue":"50.00"}
+            "accounts.getByUserIdWithSummary" to """{"result":{"data":[
+                {"id":"a1","name":"Savings","typeId":"bank","institutionId":"inst1","summary":{"totalValue":"1000.00"}},
+                {"id":"a2","name":"Cash","typeId":"cash","summary":{"totalValue":"50.00"}}
             ]}}""",
-            "mobile.holdings" to """{"result":{"data":[]}}""",
+            "holdings.getWithDetails" to """{"result":{"data":[]}}""",
         )
         val api = MobileApi(mockTrpcClient(engine))
         val syncEngine = SyncEngine(api, db)
@@ -67,10 +67,10 @@ class SnapshotTest {
     fun accounts_snapshot_reflects_full_refresh() = runTest {
         val testDispatcher = StandardTestDispatcher(testScheduler)
         val firstEngine = engineFor(
-            "mobile.accounts" to """{"result":{"data":[
-                {"id":"a1","name":"Old","typeId":"bank","totalValue":"100.00"}
+            "accounts.getByUserIdWithSummary" to """{"result":{"data":[
+                {"id":"a1","name":"Old","typeId":"bank","summary":{"totalValue":"100.00"}}
             ]}}""",
-            "mobile.holdings" to """{"result":{"data":[]}}""",
+            "holdings.getWithDetails" to """{"result":{"data":[]}}""",
         )
         val api = MobileApi(mockTrpcClient(firstEngine))
         SyncEngine(api, db).syncAccounts()
@@ -78,11 +78,11 @@ class SnapshotTest {
         assertEquals(1, AccountsRepository(db, testDispatcher).snapshot().size)
 
         val secondEngine = engineFor(
-            "mobile.accounts" to """{"result":{"data":[
-                {"id":"b1","name":"New1","typeId":"cash","totalValue":"200.00"},
-                {"id":"b2","name":"New2","typeId":"cash","totalValue":"300.00"}
+            "accounts.getByUserIdWithSummary" to """{"result":{"data":[
+                {"id":"b1","name":"New1","typeId":"cash","summary":{"totalValue":"200.00"}},
+                {"id":"b2","name":"New2","typeId":"cash","summary":{"totalValue":"300.00"}}
             ]}}""",
-            "mobile.holdings" to """{"result":{"data":[]}}""",
+            "holdings.getWithDetails" to """{"result":{"data":[]}}""",
         )
         val api2 = MobileApi(mockTrpcClient(secondEngine))
         SyncEngine(api2, db).syncAccounts()
@@ -105,10 +105,10 @@ class SnapshotTest {
     fun holdings_snapshot_populated_after_sync_with_null_value() = runTest {
         val testDispatcher = StandardTestDispatcher(testScheduler)
         val engine = engineFor(
-            "mobile.accounts" to """{"result":{"data":[]}}""",
-            "mobile.holdings" to """{"result":{"data":[
-                {"id":"h1","accountId":"a1","symbol":"BTC","name":"Bitcoin","amount":"0.5","value":"30000.00"},
-                {"id":"h2","accountId":"a1","symbol":"ETH","name":"Ethereum","amount":"2.0"}
+            "accounts.getByUserIdWithSummary" to """{"result":{"data":[]}}""",
+            "holdings.getWithDetails" to """{"result":{"data":[
+                {"id":"h1","token":{"symbol":"BTC","name":"Bitcoin"},"amount":0.5,"value":30000,"account":{"id":"a1"}},
+                {"id":"h2","token":{"symbol":"ETH","name":"Ethereum"},"amount":2,"value":null,"account":{"id":"a1"}}
             ]}}""",
         )
         val api = MobileApi(mockTrpcClient(engine))
@@ -119,8 +119,8 @@ class SnapshotTest {
 
         val holdings = repo.snapshot()
         assertEquals(2, holdings.size)
-        assertEquals(MobileHolding("h1", "a1", "BTC", "Bitcoin", "0.5", "30000.00"), holdings[0])
-        assertEquals(MobileHolding("h2", "a1", "ETH", "Ethereum", "2.0", null), holdings[1])
+        assertEquals(MobileHolding("h1", "a1", "BTC", "Bitcoin", "0.5", "30000"), holdings[0])
+        assertEquals(MobileHolding("h2", "a1", "ETH", "Ethereum", "2", null), holdings[1])
         assertNull(holdings[1].value)
     }
 }
