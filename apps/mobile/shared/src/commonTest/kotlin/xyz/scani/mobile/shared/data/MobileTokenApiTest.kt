@@ -6,7 +6,6 @@ import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.headersOf
 import kotlinx.coroutines.test.runTest
-import xyz.scani.mobile.shared.network.TrpcClient
 import kotlin.test.Test
 import kotlin.test.assertEquals
 
@@ -26,7 +25,7 @@ class MobileTokenApiTest {
         val engine = engineFor(
             "mobile.currencies" to """{"result":{"data":[{"id":"usd","symbol":"USD","name":"US Dollar"}]}}""",
         )
-        val api = MobileApi(TrpcClient(engine, "https://api.test"))
+        val api = MobileApi(mockTrpcClient(engine))
         val result = api.currencies()
         assertEquals(1, result.size)
         assertEquals(MobileToken(id = "usd", symbol = "USD", name = "US Dollar"), result[0])
@@ -45,7 +44,7 @@ class MobileTokenApiTest {
                 headers = headersOf(HttpHeaders.ContentType, "application/json"),
             )
         }
-        val api = MobileApi(TrpcClient(engine, "https://api.test"))
+        val api = MobileApi(mockTrpcClient(engine))
         val result = api.searchTokens("btc")
         assertEquals(1, result.size)
         assertEquals(MobileToken(id = "bitcoin", symbol = "BTC", name = "Bitcoin"), result[0])

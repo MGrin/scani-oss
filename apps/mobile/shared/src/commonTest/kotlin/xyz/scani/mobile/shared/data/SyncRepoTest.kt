@@ -10,7 +10,6 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.runTest
 import xyz.scani.mobile.shared.db.ScaniDatabase
-import xyz.scani.mobile.shared.network.TrpcClient
 import kotlin.test.AfterTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -46,7 +45,7 @@ class SyncRepoTest {
             ]}}""",
             "mobile.holdings" to """{"result":{"data":[]}}""",
         )
-        val api = MobileApi(TrpcClient(engine, "https://api.test"))
+        val api = MobileApi(mockTrpcClient(engine))
         val syncEngine = SyncEngine(api, db)
         val repo = AccountsRepository(db, testDispatcher)
 
@@ -69,7 +68,7 @@ class SyncRepoTest {
             ]}}""",
             "mobile.holdings" to """{"result":{"data":[]}}""",
         )
-        val api = MobileApi(TrpcClient(firstEngine, "https://api.test"))
+        val api = MobileApi(mockTrpcClient(firstEngine))
         val syncEngine = SyncEngine(api, db)
         val repo = AccountsRepository(db, testDispatcher)
 
@@ -83,7 +82,7 @@ class SyncRepoTest {
             ]}}""",
             "mobile.holdings" to """{"result":{"data":[]}}""",
         )
-        val api2 = MobileApi(TrpcClient(secondEngine, "https://api.test"))
+        val api2 = MobileApi(mockTrpcClient(secondEngine))
         val syncEngine2 = SyncEngine(api2, db)
 
         syncEngine2.syncAccounts()
@@ -104,7 +103,7 @@ class SyncRepoTest {
                 {"id":"h2","accountId":"a1","symbol":"ETH","name":"Ethereum","amount":"2.0"}
             ]}}""",
         )
-        val api = MobileApi(TrpcClient(engine, "https://api.test"))
+        val api = MobileApi(mockTrpcClient(engine))
         val syncEngine = SyncEngine(api, db)
         val repo = HoldingsRepository(db, testDispatcher)
 

@@ -9,7 +9,6 @@ import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestCoroutineScheduler
 import kotlinx.coroutines.test.runTest
 import xyz.scani.mobile.shared.db.ScaniDatabase
-import xyz.scani.mobile.shared.network.TrpcClient
 import kotlin.test.AfterTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -62,7 +61,7 @@ class OutboxProcessorTest {
             }
         }
 
-        val client = TrpcClient(engine, "https://api.test")
+        val client = mockTrpcClient(engine)
         val api = MobileApi(client)
         val syncEngine = SyncEngine(api, db)
         val processor = OutboxProcessor(client, outbox, syncEngine)
@@ -98,7 +97,7 @@ class OutboxProcessorTest {
             )
         }
 
-        val client = TrpcClient(engine, "https://api.test")
+        val client = mockTrpcClient(engine)
         val api = MobileApi(client)
         val syncEngine = SyncEngine(api, db)
         val processor = OutboxProcessor(client, outbox, syncEngine)
@@ -150,7 +149,7 @@ class OutboxProcessorTest {
             }
         }
 
-        val client = TrpcClient(engine, "https://api.test")
+        val client = mockTrpcClient(engine)
         val api = MobileApi(client)
         val syncEngine = SyncEngine(api, db)
         val processor = OutboxProcessor(client, outbox, syncEngine)

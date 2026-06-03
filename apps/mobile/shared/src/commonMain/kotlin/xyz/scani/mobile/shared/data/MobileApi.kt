@@ -2,7 +2,7 @@ package xyz.scani.mobile.shared.data
 
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
-import xyz.scani.mobile.shared.network.TrpcClient
+import xyz.scani.trpc.TrpcClient
 
 class MobileApi(private val client: TrpcClient) {
     suspend fun accounts(): List<MobileAccount> = client.query("mobile.accounts")
