@@ -24,4 +24,22 @@ class SyncEngine(
             db.syncStateQueries.upsert("holdings", now())
         }
     }
+
+    suspend fun syncGroups() {
+        val rows = api.groups()
+        db.groupQueries.transaction {
+            db.groupQueries.deleteAll()
+            rows.forEach { db.groupQueries.insert(it.id, it.name, it.color, it.description) }
+            db.syncStateQueries.upsert("groups", now())
+        }
+    }
+
+    suspend fun syncVaults() {
+        val rows = api.vaults()
+        db.vaultQueries.transaction {
+            db.vaultQueries.deleteAll()
+            rows.forEach { db.vaultQueries.insert(it.id, it.name, it.targetAmount, it.currentAmount, it.currencyId, it.color, it.iconName, it.description) }
+            db.syncStateQueries.upsert("vaults", now())
+        }
+    }
 }
