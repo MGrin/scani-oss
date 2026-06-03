@@ -1,0 +1,25 @@
+CREATE TABLE outbox (
+  id TEXT NOT NULL PRIMARY KEY,
+  entity TEXT NOT NULL,
+  op TEXT NOT NULL,
+  payload TEXT NOT NULL,
+  idempotencyKey TEXT NOT NULL,
+  createdAt INTEGER NOT NULL,
+  attempts INTEGER NOT NULL DEFAULT 0,
+  lastError TEXT
+);
+
+selectPending:
+SELECT * FROM outbox ORDER BY createdAt ASC, id ASC;
+
+insert:
+INSERT INTO outbox(id, entity, op, payload, idempotencyKey, createdAt, attempts, lastError) VALUES (?, ?, ?, ?, ?, ?, 0, NULL);
+
+deleteById:
+DELETE FROM outbox WHERE id = ?;
+
+recordFailure:
+UPDATE outbox SET attempts = attempts + 1, lastError = ? WHERE id = ?;
+
+countAll:
+SELECT count(*) FROM outbox;
