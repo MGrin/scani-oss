@@ -45,8 +45,10 @@ class AuthViewModel(private val repo: AuthRepository) : ViewModel() {
     }
 
     fun signOut() {
-        repo.signOut()
-        _state.value = AuthUiState.EnterEmail
+        viewModelScope.launch {
+            repo.signOut()
+            _state.value = AuthUiState.EnterEmail
+        }
     }
 
     private fun run(fallback: AuthUiState, block: suspend () -> Unit) {

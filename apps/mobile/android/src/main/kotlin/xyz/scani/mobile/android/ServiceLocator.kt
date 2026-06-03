@@ -20,8 +20,10 @@ import xyz.scani.mobile.shared.data.VaultsRepository
 import xyz.scani.mobile.shared.data.WriteQueue
 import xyz.scani.mobile.shared.db.AndroidDriverFactory
 import xyz.scani.mobile.shared.db.ScaniDatabase
-import xyz.scani.mobile.shared.network.TrpcClient
+import xyz.scani.mobile.shared.network.PersistentCookiesStorage
+import xyz.scani.mobile.shared.network.createScaniHttpClient
 import xyz.scani.mobile.shared.network.defaultHttpEngine
+import xyz.scani.trpc.TrpcClient
 
 object ServiceLocator {
     private const val BASE_URL = "http://10.0.2.2:3001"
@@ -56,15 +58,11 @@ object ServiceLocator {
 
     fun init(context: Context) {
         if (::authRepository.isInitialized) return
-        val engine = defaultHttpEngine()
         val storage = AndroidSecureStorage(context.applicationContext)
-        authRepository = AuthRepository(AuthApi(engine, BASE_URL), storage)
-        trpcClient = TrpcClient(
-            engine = engine,
-            baseUrl = BASE_URL,
-            tokenProvider = { authRepository.token() },
-            onUnauthorized = { authRepository.signOut() },
-        )
+        val cookieJar = PersistentCookiesStorage(storage)
+        val http = createScaniHttpClient(defaultHttpEngine(), cookieJar) { authRepository.onUnauthorized() }
+        authRepository = AuthRepository(AuthApi(http, BASE_URL), cookieJar)
+        trpcClient = TrpcClient(http, BASE_URL)
         val db = ScaniDatabase(AndroidDriverFactory(context.applicationContext).create())
         mobileApi = MobileApi(trpcClient)
         syncEngine = SyncEngine(mobileApi, db)
