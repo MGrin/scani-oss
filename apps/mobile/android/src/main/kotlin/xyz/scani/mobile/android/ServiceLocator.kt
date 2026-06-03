@@ -1,7 +1,10 @@
 package xyz.scani.mobile.android
 
 import android.content.Context
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
 import xyz.scani.mobile.android.auth.AndroidSecureStorage
 import xyz.scani.mobile.shared.auth.AuthApi
 import xyz.scani.mobile.shared.auth.AuthRepository
@@ -20,14 +23,16 @@ import xyz.scani.mobile.shared.db.ScaniDatabase
 import xyz.scani.mobile.shared.network.TrpcClient
 import xyz.scani.mobile.shared.network.defaultHttpEngine
 
-// Minimal manual DI for the foundation. Per-build-type base URL arrives with the
-// build-config milestone; for now a single dev base URL (10.0.2.2 = emulator host loopback).
 object ServiceLocator {
     private const val BASE_URL = "http://10.0.2.2:3001"
+
+    val appScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
     lateinit var authRepository: AuthRepository
         private set
     lateinit var trpcClient: TrpcClient
+        private set
+    lateinit var mobileApi: MobileApi
         private set
     lateinit var syncEngine: SyncEngine
         private set
@@ -61,8 +66,8 @@ object ServiceLocator {
             onUnauthorized = { authRepository.signOut() },
         )
         val db = ScaniDatabase(AndroidDriverFactory(context.applicationContext).create())
-        val api = MobileApi(trpcClient)
-        syncEngine = SyncEngine(api, db)
+        mobileApi = MobileApi(trpcClient)
+        syncEngine = SyncEngine(mobileApi, db)
         accountsRepository = AccountsRepository(db, Dispatchers.IO)
         holdingsRepository = HoldingsRepository(db, Dispatchers.IO)
         syncStateRepository = SyncStateRepository(db, Dispatchers.IO)
@@ -71,5 +76,11 @@ object ServiceLocator {
         outboxProcessor = OutboxProcessor(trpcClient, outboxRepository, syncEngine)
         groupsRepository = GroupsRepository(db, Dispatchers.IO)
         vaultsRepository = VaultsRepository(db, Dispatchers.IO)
+        val cm = context.getSystemService(android.net.ConnectivityManager::class.java)
+        cm?.registerDefaultNetworkCallback(object : android.net.ConnectivityManager.NetworkCallback() {
+            override fun onAvailable(network: android.net.Network) {
+                appScope.launch { runCatching { outboxProcessor.drain() } }
+            }
+        })
     }
 }
