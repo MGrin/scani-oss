@@ -6,7 +6,6 @@ import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.headersOf
 import kotlinx.coroutines.test.runTest
-import xyz.scani.mobile.shared.network.TrpcClient
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
@@ -30,7 +29,7 @@ class MobileApiTest {
                 {"id":"a2","name":"Cash","typeId":"cash","totalValue":"50.00"}
             ]}}""",
         )
-        val api = MobileApi(TrpcClient(engine, "https://api.test"))
+        val api = MobileApi(mockTrpcClient(engine))
         val result = api.accounts()
         assertEquals(2, result.size)
         assertEquals(MobileAccount(id = "a1", name = "Savings", typeId = "bank", institutionId = "inst1", totalValue = "1000.00"), result[0])
@@ -46,7 +45,7 @@ class MobileApiTest {
                 {"id":"h2","accountId":"a1","symbol":"ETH","name":"Ethereum","amount":"2.0"}
             ]}}""",
         )
-        val api = MobileApi(TrpcClient(engine, "https://api.test"))
+        val api = MobileApi(mockTrpcClient(engine))
         val result = api.holdings()
         assertEquals(2, result.size)
         assertEquals(MobileHolding(id = "h1", accountId = "a1", symbol = "BTC", name = "Bitcoin", amount = "0.5", value = "30000.00"), result[0])

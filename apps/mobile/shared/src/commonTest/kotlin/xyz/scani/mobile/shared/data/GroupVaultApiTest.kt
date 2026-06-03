@@ -6,7 +6,6 @@ import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.headersOf
 import kotlinx.coroutines.test.runTest
-import xyz.scani.mobile.shared.network.TrpcClient
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
@@ -30,7 +29,7 @@ class GroupVaultApiTest {
                 {"id":"g2","name":"Investments","color":"#00FF00"}
             ]}}""",
         )
-        val api = MobileApi(TrpcClient(engine, "https://api.test"))
+        val api = MobileApi(mockTrpcClient(engine))
         val result = api.groups()
         assertEquals(2, result.size)
         assertEquals(MobileGroup(id = "g1", name = "Savings", color = "#FF0000", description = "My savings"), result[0])
@@ -46,7 +45,7 @@ class GroupVaultApiTest {
                 {"id":"v2","name":"Vacation","targetAmount":"3000.00","currentAmount":"1200.00","currencyId":"EUR","color":"#FFFF00"}
             ]}}""",
         )
-        val api = MobileApi(TrpcClient(engine, "https://api.test"))
+        val api = MobileApi(mockTrpcClient(engine))
         val result = api.vaults()
         assertEquals(2, result.size)
         assertEquals(MobileVault(id = "v1", name = "Emergency Fund", targetAmount = "10000.00", currentAmount = "5000.00", currencyId = "USD", color = "#0000FF", iconName = "shield", description = "Rainy day fund"), result[0])

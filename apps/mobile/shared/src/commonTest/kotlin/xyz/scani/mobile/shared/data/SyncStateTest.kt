@@ -8,7 +8,6 @@ import io.ktor.http.headersOf
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.runTest
 import xyz.scani.mobile.shared.db.ScaniDatabase
-import xyz.scani.mobile.shared.network.TrpcClient
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
@@ -61,7 +60,7 @@ class SyncStateTest {
                 {"id":"a1","name":"Savings","typeId":"bank","totalValue":"1000.00"}
             ]}}""",
         )
-        val api = MobileApi(TrpcClient(engine, "https://api.test"))
+        val api = MobileApi(mockTrpcClient(engine))
         val syncEngine = SyncEngine(api, db, now = { fixedNow })
 
         assertNull(syncStateRepo.lastSyncedAt("accounts"))
@@ -86,7 +85,7 @@ class SyncStateTest {
                 {"id":"h1","accountId":"a1","symbol":"BTC","name":"Bitcoin","amount":"0.5","value":"30000.00"}
             ]}}""",
         )
-        val api = MobileApi(TrpcClient(engine, "https://api.test"))
+        val api = MobileApi(mockTrpcClient(engine))
         val syncEngine = SyncEngine(api, db, now = { fixedNow })
 
         assertNull(syncStateRepo.lastSyncedAt("holdings"))
@@ -107,7 +106,7 @@ class SyncStateTest {
         val syncStateRepo = SyncStateRepository(db, testDispatcher)
 
         val engine = engineWithStatus("mobile.accounts", HttpStatusCode.InternalServerError)
-        val api = MobileApi(TrpcClient(engine, "https://api.test"))
+        val api = MobileApi(mockTrpcClient(engine))
         val syncEngine = SyncEngine(api, db, now = { fixedNow })
 
         assertFailsWith<Exception> {

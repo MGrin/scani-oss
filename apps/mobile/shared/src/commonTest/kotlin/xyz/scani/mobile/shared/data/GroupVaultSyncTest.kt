@@ -9,7 +9,6 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.runTest
 import xyz.scani.mobile.shared.db.ScaniDatabase
-import xyz.scani.mobile.shared.network.TrpcClient
 import kotlin.test.AfterTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -44,7 +43,7 @@ class GroupVaultSyncTest {
                 {"id":"g2","name":"Investments","color":"#00FF00"}
             ]}}""",
         )
-        val api = MobileApi(TrpcClient(engine, "https://api.test"))
+        val api = MobileApi(mockTrpcClient(engine))
         val syncEngine = SyncEngine(api, db, now = { fixedNow })
         val repo = GroupsRepository(db, testDispatcher)
         val syncStateRepo = SyncStateRepository(db, testDispatcher)
@@ -69,7 +68,7 @@ class GroupVaultSyncTest {
                 {"id":"g1","name":"Old","color":"#FF0000"}
             ]}}""",
         )
-        val api = MobileApi(TrpcClient(firstEngine, "https://api.test"))
+        val api = MobileApi(mockTrpcClient(firstEngine))
         val syncEngine = SyncEngine(api, db, now = { fixedNow })
         val repo = GroupsRepository(db, testDispatcher)
 
@@ -82,7 +81,7 @@ class GroupVaultSyncTest {
                 {"id":"g3","name":"New2","color":"#0000FF"}
             ]}}""",
         )
-        val api2 = MobileApi(TrpcClient(secondEngine, "https://api.test"))
+        val api2 = MobileApi(mockTrpcClient(secondEngine))
         SyncEngine(api2, db, now = { fixedNow }).syncGroups()
 
         val groups = repo.groups().first()
@@ -100,7 +99,7 @@ class GroupVaultSyncTest {
                 {"id":"g2","name":"Investments","color":"#00FF00"}
             ]}}""",
         )
-        val api = MobileApi(TrpcClient(engine, "https://api.test"))
+        val api = MobileApi(mockTrpcClient(engine))
         val syncEngine = SyncEngine(api, db, now = { fixedNow })
         val repo = GroupsRepository(db, testDispatcher)
 
@@ -123,7 +122,7 @@ class GroupVaultSyncTest {
                 {"id":"v2","name":"Vacation","targetAmount":"3000.00","currentAmount":"1200.00","currencyId":"EUR","color":"#FFFF00"}
             ]}}""",
         )
-        val api = MobileApi(TrpcClient(engine, "https://api.test"))
+        val api = MobileApi(mockTrpcClient(engine))
         val syncEngine = SyncEngine(api, db, now = { fixedNow })
         val repo = VaultsRepository(db, testDispatcher)
         val syncStateRepo = SyncStateRepository(db, testDispatcher)
@@ -149,7 +148,7 @@ class GroupVaultSyncTest {
                 {"id":"v1","name":"Old","targetAmount":"100.00","currentAmount":"50.00","currencyId":"USD","color":"#FF0000"}
             ]}}""",
         )
-        val api = MobileApi(TrpcClient(firstEngine, "https://api.test"))
+        val api = MobileApi(mockTrpcClient(firstEngine))
         val syncEngine = SyncEngine(api, db, now = { fixedNow })
         val repo = VaultsRepository(db, testDispatcher)
 
@@ -162,7 +161,7 @@ class GroupVaultSyncTest {
                 {"id":"v3","name":"New2","targetAmount":"300.00","currentAmount":"200.00","currencyId":"GBP","color":"#0000FF"}
             ]}}""",
         )
-        val api2 = MobileApi(TrpcClient(secondEngine, "https://api.test"))
+        val api2 = MobileApi(mockTrpcClient(secondEngine))
         SyncEngine(api2, db, now = { fixedNow }).syncVaults()
 
         val vaults = repo.vaults().first()
@@ -180,7 +179,7 @@ class GroupVaultSyncTest {
                 {"id":"v2","name":"Vacation","targetAmount":"3000.00","currentAmount":"1200.00","currencyId":"EUR","color":"#FFFF00"}
             ]}}""",
         )
-        val api = MobileApi(TrpcClient(engine, "https://api.test"))
+        val api = MobileApi(mockTrpcClient(engine))
         val syncEngine = SyncEngine(api, db, now = { fixedNow })
         val repo = VaultsRepository(db, testDispatcher)
 
