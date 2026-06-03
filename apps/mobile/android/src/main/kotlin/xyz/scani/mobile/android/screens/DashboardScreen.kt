@@ -1,6 +1,7 @@
 package xyz.scani.mobile.android.screens
 
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -9,6 +10,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -25,7 +27,10 @@ import xyz.scani.mobile.android.ServiceLocator
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun DashboardScreen() {
+fun DashboardScreen(
+    onOpenGroups: () -> Unit = {},
+    onOpenVaults: () -> Unit = {},
+) {
     val accounts by ServiceLocator.accountsRepository.accounts().collectAsState(initial = emptyList())
     val scope = rememberCoroutineScope()
     var refreshing by remember { mutableStateOf(false) }
@@ -55,6 +60,12 @@ fun DashboardScreen() {
                 Column(Modifier.fillMaxWidth().padding(8.dp)) {
                     error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
                     Text(syncStatusLabel(lastSynced), style = MaterialTheme.typography.bodySmall)
+                }
+            }
+            item {
+                Row(Modifier.padding(horizontal = 8.dp, vertical = 4.dp)) {
+                    TextButton(onClick = onOpenGroups) { Text("Groups") }
+                    TextButton(onClick = onOpenVaults) { Text("Vaults") }
                 }
             }
             item {

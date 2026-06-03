@@ -32,20 +32,20 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
 import xyz.scani.mobile.android.ServiceLocator
-import xyz.scani.mobile.shared.data.MobileHolding
+import xyz.scani.mobile.shared.data.MobileVault
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun HoldingsScreen() {
-    val holdings by ServiceLocator.holdingsRepository.holdings().collectAsState(initial = emptyList())
+fun VaultsScreen() {
+    val vaults by ServiceLocator.vaultsRepository.vaults().collectAsState(initial = emptyList())
     val scope = rememberCoroutineScope()
     var refreshing by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     var lastSynced by remember { mutableStateOf<Long?>(null) }
-    var editing by remember { mutableStateOf<MobileHolding?>(null) }
-    var deleting by remember { mutableStateOf<MobileHolding?>(null) }
+    var editing by remember { mutableStateOf<MobileVault?>(null) }
+    var deleting by remember { mutableStateOf<MobileVault?>(null) }
 
-    LaunchedEffect(Unit) { lastSynced = ServiceLocator.syncStateRepository.lastSyncedAt("holdings") }
+    LaunchedEffect(Unit) { lastSynced = ServiceLocator.syncStateRepository.lastSyncedAt("vaults") }
 
     PullToRefreshBox(
         isRefreshing = refreshing,
@@ -53,12 +53,12 @@ fun HoldingsScreen() {
             refreshing = true
             scope.launch {
                 try {
-                    ServiceLocator.syncEngine.syncHoldings()
+                    ServiceLocator.syncEngine.syncVaults()
                     error = null
                 } catch (e: Throwable) {
                     error = "Offline — showing cached data"
                 } finally {
-                    lastSynced = ServiceLocator.syncStateRepository.lastSyncedAt("holdings")
+                    lastSynced = ServiceLocator.syncStateRepository.lastSyncedAt("vaults")
                     refreshing = false
                 }
             }
@@ -72,9 +72,9 @@ fun HoldingsScreen() {
                     Text(syncStatusLabel(lastSynced), style = MaterialTheme.typography.bodySmall)
                 }
             }
-            items(holdings, key = { it.id }) { h ->
+            items(vaults, key = { it.id }) { v ->
                 Card(
-                    onClick = { editing = h },
+                    onClick = { editing = v },
                     modifier = Modifier.fillMaxWidth().padding(8.dp),
                 ) {
                     Row(
@@ -82,13 +82,14 @@ fun HoldingsScreen() {
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Column(Modifier.weight(1f)) {
-                            Text(h.symbol)
-                            Text(h.name)
-                            Text(h.amount)
-                            Text(h.value ?: "—")
+                            Text(v.name, style = MaterialTheme.typography.bodyLarge)
+                            Text(
+                                "${v.currentAmount} / ${v.targetAmount}",
+                                style = MaterialTheme.typography.bodySmall,
+                            )
                         }
-                        IconButton(onClick = { deleting = h }) {
-                            Icon(Icons.Filled.Delete, contentDescription = "Delete holding")
+                        IconButton(onClick = { deleting = v }) {
+                            Icon(Icons.Filled.Delete, contentDescription = "Delete vault")
                         }
                     }
                 }
@@ -96,16 +97,16 @@ fun HoldingsScreen() {
         }
     }
 
-    deleting?.let { h ->
+    deleting?.let { v ->
         AlertDialog(
             onDismissRequest = { deleting = null },
-            title = { Text("Delete holding?") },
-            text = { Text("\"${h.name}\" will be removed.") },
+            title = { Text("Delete vault?") },
+            text = { Text("\"${v.name}\" will be removed.") },
             confirmButton = {
                 TextButton(onClick = {
                     deleting = null
                     scope.launch {
-                        ServiceLocator.writeQueue.deleteHolding(h.id)
+                        ServiceLocator.writeQueue.deleteVault(v.id)
                         runCatching { ServiceLocator.outboxProcessor.drain() }
                     }
                 }) { Text("Delete") }
@@ -116,26 +117,36 @@ fun HoldingsScreen() {
         )
     }
 
-    editing?.let { h ->
-        var balance by remember(h.id) { mutableStateOf(h.amount) }
+    editing?.let { v ->
+        var name by remember(v.id) { mutableStateOf(v.name) }
+        var targetAmount by remember(v.id) { mutableStateOf(v.targetAmount) }
         AlertDialog(
             onDismissRequest = { editing = null },
-            title = { Text("Edit holding") },
+            title = { Text("Edit vault") },
             text = {
-                OutlinedTextField(
-                    value = balance,
-                    onValueChange = { balance = it },
-                    label = { Text("Balance") },
-                    modifier = Modifier.fillMaxWidth(),
-                )
+                Column {
+                    OutlinedTextField(
+                        value = name,
+                        onValueChange = { name = it },
+                        label = { Text("Name") },
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    OutlinedTextField(
+                        value = targetAmount,
+                        onValueChange = { targetAmount = it },
+                        label = { Text("Target amount") },
+                        modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+                    )
+                }
             },
             confirmButton = {
                 TextButton(onClick = {
-                    val savedId = h.id
-                    val savedBalance = balance
+                    val savedId = v.id
+                    val savedName = name
+                    val savedTarget = targetAmount
                     editing = null
                     scope.launch {
-                        ServiceLocator.writeQueue.updateHolding(savedId, balance = savedBalance)
+                        ServiceLocator.writeQueue.updateVault(savedId, name = savedName, targetAmount = savedTarget)
                         runCatching { ServiceLocator.outboxProcessor.drain() }
                     }
                 }) { Text("Save") }
