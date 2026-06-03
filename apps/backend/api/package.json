@@ -12,9 +12,7 @@
     "clean": "rm -rf dist",
     "lint": "biome check .",
     "lint:fix": "biome check --write .",
-    "type-check": "tsgo --noEmit",
-    "openapi:gen": "bun scripts/generate-openapi.ts",
-    "openapi:gen:check": "bun scripts/generate-openapi.ts --check"
+    "type-check": "tsgo --noEmit"
   },
   "dependencies": {
     "@elysiajs/cors": "^1.4.1",
@@ -43,7 +41,6 @@
     "elysia": "^1.4.28",
     "ioredis": "^5.10.1",
     "open-graph-scraper": "^6.11.0",
-    "openapi-trpc": "^0.2.1",
     "postgres": "^3.4.9",
     "reflect-metadata": "^0.2.2",
     "typedi": "^0.10.0",

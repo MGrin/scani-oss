@@ -9,7 +9,6 @@ import { captureException } from '@scani/logging/sentry';
 import type { InflowRateLimiter } from '@scani/rate-limiter';
 import { initTRPC, TRPCError } from '@trpc/server';
 import type { FetchCreateContextFnOptions } from '@trpc/server/adapters/fetch';
-import type { OperationMeta } from 'openapi-trpc';
 import type { BetterAuthInstance } from '../auth/better-auth';
 import { type AuthContext, createAuthContext } from './middleware/auth';
 
@@ -115,38 +114,35 @@ export const createContext = async (opts?: FetchCreateContextFnOptions): Promise
 };
 
 // Initialize tRPC with logging
-const t = initTRPC
-  .context<Context>()
-  .meta<OperationMeta>()
-  .create({
-    errorFormatter({ shape, error, ctx }) {
-      const duration = ctx ? Date.now() - ctx.startTime : undefined;
+const t = initTRPC.context<Context>().create({
+  errorFormatter({ shape, error, ctx }) {
+    const duration = ctx ? Date.now() - ctx.startTime : undefined;
 
-      // Log the error with context
-      trpcLogger.error(
-        {
-          requestId: ctx?.requestId,
-          error: {
-            name: error.name,
-            message: error.message,
-            code: error.code,
-            cause: error.cause,
-            stack: error.stack,
-          },
-          duration: duration ? `${duration}ms` : undefined,
+    // Log the error with context
+    trpcLogger.error(
+      {
+        requestId: ctx?.requestId,
+        error: {
+          name: error.name,
+          message: error.message,
+          code: error.code,
+          cause: error.cause,
+          stack: error.stack,
         },
-        `❌ tRPC Error: ${error.message}`
-      );
+        duration: duration ? `${duration}ms` : undefined,
+      },
+      `❌ tRPC Error: ${error.message}`
+    );
 
-      return {
-        ...shape,
-        data: {
-          ...shape.data,
-          requestId: ctx?.requestId,
-        },
-      };
-    },
-  });
+    return {
+      ...shape,
+      data: {
+        ...shape.data,
+        requestId: ctx?.requestId,
+      },
+    };
+  },
+});
 
 // NOTE: Request cache is now initialized at the HTTP request level in index.ts
 // using runWithRequestCacheAsync() wrapper around the tRPC handler.
