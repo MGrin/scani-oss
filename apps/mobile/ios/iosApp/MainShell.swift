@@ -18,7 +18,7 @@ struct MainShell: View {
                 .tabItem { Label("Accounts", systemImage: "building.columns") }.tag("accounts")
             NavigationStack { AddView(container: container) }
                 .tabItem { Label("Add", systemImage: "plus.circle") }.tag("add")
-            NavigationStack { Text("Settings").navigationTitle("Settings") }
+            NavigationStack { SettingsView(container: container) }
                 .tabItem { Label("Settings", systemImage: "gearshape") }.tag("settings")
         }
         .onReceive(router.$pending) { route($0) }
