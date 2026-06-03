@@ -17,7 +17,6 @@ Located in `apps/backend/api/src/presentation/routers/`.
 |---|---|
 | `users` | Profile, settings, display currency, magic-link / OTP flows. |
 | `system` | Public health / version endpoints (e.g. `ping`). The typed slice exposed to the mobile OpenAPI contract. |
-| `mobile` | Lean, typed read **and write** endpoints for the mobile apps (accounts, holdings, groups, vaults, fiat currencies, token search) — idempotent create/update/delete mutations wrapping the domain services; exposed via the OpenAPI mobile contract. |
 | `sessions` | Session read / revoke. |
 | `accounts` | List, create, update, hide accounts. |
 | `account-types` | Catalogue of account types. |
