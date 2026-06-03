@@ -9,6 +9,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -36,7 +37,7 @@ import xyz.scani.mobile.shared.data.MobileHolding
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun HoldingsScreen() {
+fun HoldingsScreen(onOpen: (String) -> Unit = {}) {
     val holdings by ServiceLocator.holdingsRepository.holdings().collectAsState(initial = emptyList())
     val scope = rememberCoroutineScope()
     var refreshing by remember { mutableStateOf(false) }
@@ -74,7 +75,7 @@ fun HoldingsScreen() {
             }
             items(holdings, key = { it.id }) { h ->
                 Card(
-                    onClick = { editing = h },
+                    onClick = { onOpen(h.id) },
                     modifier = Modifier.fillMaxWidth().padding(8.dp),
                 ) {
                     Row(
@@ -86,6 +87,9 @@ fun HoldingsScreen() {
                             Text(h.name)
                             Text(h.amount)
                             Text(h.value ?: "—")
+                        }
+                        IconButton(onClick = { editing = h }) {
+                            Icon(Icons.Filled.Edit, contentDescription = "Edit holding")
                         }
                         IconButton(onClick = { deleting = h }) {
                             Icon(Icons.Filled.Delete, contentDescription = "Delete holding")

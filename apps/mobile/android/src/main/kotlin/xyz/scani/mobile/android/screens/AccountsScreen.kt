@@ -9,6 +9,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -36,7 +37,7 @@ import xyz.scani.mobile.shared.data.MobileAccount
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun AccountsScreen() {
+fun AccountsScreen(onOpen: (String) -> Unit = {}) {
     val accounts by ServiceLocator.accountsRepository.accounts().collectAsState(initial = emptyList())
     val scope = rememberCoroutineScope()
     var refreshing by remember { mutableStateOf(false) }
@@ -74,7 +75,7 @@ fun AccountsScreen() {
             }
             items(accounts, key = { it.id }) { a ->
                 Card(
-                    onClick = { editing = a },
+                    onClick = { onOpen(a.id) },
                     modifier = Modifier.fillMaxWidth().padding(8.dp),
                 ) {
                     Row(
@@ -84,6 +85,9 @@ fun AccountsScreen() {
                         Column(Modifier.weight(1f)) {
                             Text(a.name)
                             Text(a.totalValue)
+                        }
+                        IconButton(onClick = { editing = a }) {
+                            Icon(Icons.Filled.Edit, contentDescription = "Edit account")
                         }
                         IconButton(onClick = { deleting = a }) {
                             Icon(Icons.Filled.Delete, contentDescription = "Delete account")
