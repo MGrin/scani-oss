@@ -35,7 +35,9 @@ import androidx.navigation.compose.rememberNavController
 import xyz.scani.mobile.android.screens.AccountsScreen
 import xyz.scani.mobile.android.screens.AddScreen
 import xyz.scani.mobile.android.screens.DashboardScreen
+import xyz.scani.mobile.android.screens.GroupsScreen
 import xyz.scani.mobile.android.screens.HoldingsScreen
+import xyz.scani.mobile.android.screens.VaultsScreen
 
 private enum class Tab(val route: String, val label: String, val icon: ImageVector) {
     Dashboard("dashboard", "Dashboard", Icons.Filled.Dashboard),
@@ -107,13 +109,20 @@ fun MainShell() {
         },
     ) { padding ->
         NavHost(nav, startDestination = Tab.Dashboard.route, modifier = Modifier.padding(padding)) {
-            composable(Tab.Dashboard.route) { DashboardScreen() }
+            composable(Tab.Dashboard.route) {
+                DashboardScreen(
+                    onOpenGroups = { nav.navigate("groups") },
+                    onOpenVaults = { nav.navigate("vaults") },
+                )
+            }
             composable(Tab.Holdings.route) { HoldingsScreen() }
             composable(Tab.Accounts.route) { AccountsScreen() }
             composable(Tab.Add.route) { AddScreen() }
             composable(Tab.Settings.route) {
                 Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Text(Tab.Settings.label) }
             }
+            composable("groups") { GroupsScreen() }
+            composable("vaults") { VaultsScreen() }
         }
     }
 }

@@ -1,10 +1,13 @@
 package xyz.scani.mobile.android.screens
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
@@ -29,23 +32,24 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
 import xyz.scani.mobile.android.ServiceLocator
-import xyz.scani.mobile.shared.data.MobileHolding
+import xyz.scani.mobile.shared.data.MobileGroup
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun HoldingsScreen() {
-    val holdings by ServiceLocator.holdingsRepository.holdings().collectAsState(initial = emptyList())
+fun GroupsScreen() {
+    val groups by ServiceLocator.groupsRepository.groups().collectAsState(initial = emptyList())
     val scope = rememberCoroutineScope()
     var refreshing by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     var lastSynced by remember { mutableStateOf<Long?>(null) }
-    var editing by remember { mutableStateOf<MobileHolding?>(null) }
-    var deleting by remember { mutableStateOf<MobileHolding?>(null) }
+    var editing by remember { mutableStateOf<MobileGroup?>(null) }
+    var deleting by remember { mutableStateOf<MobileGroup?>(null) }
 
-    LaunchedEffect(Unit) { lastSynced = ServiceLocator.syncStateRepository.lastSyncedAt("holdings") }
+    LaunchedEffect(Unit) { lastSynced = ServiceLocator.syncStateRepository.lastSyncedAt("groups") }
 
     PullToRefreshBox(
         isRefreshing = refreshing,
@@ -53,12 +57,12 @@ fun HoldingsScreen() {
             refreshing = true
             scope.launch {
                 try {
-                    ServiceLocator.syncEngine.syncHoldings()
+                    ServiceLocator.syncEngine.syncGroups()
                     error = null
                 } catch (e: Throwable) {
                     error = "Offline — showing cached data"
                 } finally {
-                    lastSynced = ServiceLocator.syncStateRepository.lastSyncedAt("holdings")
+                    lastSynced = ServiceLocator.syncStateRepository.lastSyncedAt("groups")
                     refreshing = false
                 }
             }
@@ -72,23 +76,30 @@ fun HoldingsScreen() {
                     Text(syncStatusLabel(lastSynced), style = MaterialTheme.typography.bodySmall)
                 }
             }
-            items(holdings, key = { it.id }) { h ->
+            items(groups, key = { it.id }) { g ->
                 Card(
-                    onClick = { editing = h },
+                    onClick = { editing = g },
                     modifier = Modifier.fillMaxWidth().padding(8.dp),
                 ) {
                     Row(
                         Modifier.padding(16.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        Column(Modifier.weight(1f)) {
-                            Text(h.symbol)
-                            Text(h.name)
-                            Text(h.amount)
-                            Text(h.value ?: "—")
+                        val swatchColor = runCatching {
+                            Color(android.graphics.Color.parseColor(g.color))
+                        }.getOrElse { MaterialTheme.colorScheme.outline }
+                        Box(
+                            Modifier
+                                .size(16.dp)
+                                .background(swatchColor)
+                                .padding(end = 8.dp),
+                        )
+                        Column(Modifier.weight(1f).padding(start = 8.dp)) {
+                            Text(g.name, style = MaterialTheme.typography.bodyLarge)
+                            g.description?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
                         }
-                        IconButton(onClick = { deleting = h }) {
-                            Icon(Icons.Filled.Delete, contentDescription = "Delete holding")
+                        IconButton(onClick = { deleting = g }) {
+                            Icon(Icons.Filled.Delete, contentDescription = "Delete group")
                         }
                     }
                 }
@@ -96,16 +107,16 @@ fun HoldingsScreen() {
         }
     }
 
-    deleting?.let { h ->
+    deleting?.let { g ->
         AlertDialog(
             onDismissRequest = { deleting = null },
-            title = { Text("Delete holding?") },
-            text = { Text("\"${h.name}\" will be removed.") },
+            title = { Text("Delete group?") },
+            text = { Text("\"${g.name}\" will be removed.") },
             confirmButton = {
                 TextButton(onClick = {
                     deleting = null
                     scope.launch {
-                        ServiceLocator.writeQueue.deleteHolding(h.id)
+                        ServiceLocator.writeQueue.deleteGroup(g.id)
                         runCatching { ServiceLocator.outboxProcessor.drain() }
                     }
                 }) { Text("Delete") }
@@ -116,26 +127,44 @@ fun HoldingsScreen() {
         )
     }
 
-    editing?.let { h ->
-        var balance by remember(h.id) { mutableStateOf(h.amount) }
+    editing?.let { g ->
+        var name by remember(g.id) { mutableStateOf(g.name) }
+        var color by remember(g.id) { mutableStateOf(g.color) }
+        var description by remember(g.id) { mutableStateOf(g.description ?: "") }
         AlertDialog(
             onDismissRequest = { editing = null },
-            title = { Text("Edit holding") },
+            title = { Text("Edit group") },
             text = {
-                OutlinedTextField(
-                    value = balance,
-                    onValueChange = { balance = it },
-                    label = { Text("Balance") },
-                    modifier = Modifier.fillMaxWidth(),
-                )
+                Column {
+                    OutlinedTextField(
+                        value = name,
+                        onValueChange = { name = it },
+                        label = { Text("Name") },
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    OutlinedTextField(
+                        value = color,
+                        onValueChange = { color = it },
+                        label = { Text("Color") },
+                        modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+                    )
+                    OutlinedTextField(
+                        value = description,
+                        onValueChange = { description = it },
+                        label = { Text("Description") },
+                        modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+                    )
+                }
             },
             confirmButton = {
                 TextButton(onClick = {
-                    val savedId = h.id
-                    val savedBalance = balance
+                    val savedId = g.id
+                    val savedName = name
+                    val savedColor = color
+                    val savedDesc = description.ifBlank { null }
                     editing = null
                     scope.launch {
-                        ServiceLocator.writeQueue.updateHolding(savedId, balance = savedBalance)
+                        ServiceLocator.writeQueue.updateGroup(savedId, savedName, savedColor, savedDesc)
                         runCatching { ServiceLocator.outboxProcessor.drain() }
                     }
                 }) { Text("Save") }
