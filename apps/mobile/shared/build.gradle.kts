@@ -27,12 +27,13 @@ kotlin {
         iosTarget.binaries.framework {
             baseName = "Shared"
             isStatic = true
+            export(project(":trpc-kotlin"))
         }
     }
 
     sourceSets {
         commonMain.dependencies {
-            implementation(project(":trpc-kotlin"))
+            api(project(":trpc-kotlin"))
             implementation(libs.ktor.client.core)
             implementation(libs.ktor.client.content.negotiation)
             implementation(libs.ktor.serialization.kotlinx.json)
