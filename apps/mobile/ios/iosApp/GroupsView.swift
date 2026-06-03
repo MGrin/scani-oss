@@ -48,7 +48,7 @@ private struct EditGroupSheet: View {
         NavigationStack {
             Form {
                 TextField("Name", text: $editName)
-                TextField("Color", text: $editColor)
+                ColorSwatchPicker(selected: $editColor)
                 TextField("Description", text: $editDesc)
             }
             .navigationTitle("Edit Group")
@@ -100,9 +100,11 @@ struct GroupsView: View {
                         editingGroup = g
                         showingEdit = true
                     } label: {
-                        VStack(alignment: .leading) {
+                        HStack {
+                            Circle()
+                                .fill(Color(hex: g.color) ?? .gray)
+                                .frame(width: 12, height: 12)
                             Text(g.name)
-                            Text(g.color).font(.caption).foregroundStyle(.secondary)
                         }
                     }
                     .foregroundStyle(.primary)
