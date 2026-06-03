@@ -95,10 +95,7 @@ struct HoldingsView: View {
             }
             Section {
                 ForEach(model.holdings, id: \.id) { h in
-                    Button {
-                        editingHolding = h
-                        showingEdit = true
-                    } label: {
+                    NavigationLink(value: DetailRoute.holding(h.id)) {
                         VStack(alignment: .leading) {
                             HStack {
                                 Text(h.symbol).fontWeight(.medium)
@@ -107,7 +104,15 @@ struct HoldingsView: View {
                             Text("\(h.amount)  •  \(h.value ?? "—")").font(.subheadline).foregroundStyle(.secondary)
                         }
                     }
-                    .foregroundStyle(.primary)
+                    .swipeActions(edge: .leading) {
+                        Button {
+                            editingHolding = h
+                            showingEdit = true
+                        } label: {
+                            Label("Edit", systemImage: "pencil")
+                        }
+                        .tint(.blue)
+                    }
                     .swipeActions(edge: .trailing) {
                         Button(role: .destructive) {
                             Task {
