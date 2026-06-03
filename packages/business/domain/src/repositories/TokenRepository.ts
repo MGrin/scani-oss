@@ -1,9 +1,8 @@
 import { BaseRepository, type DatabaseTransaction } from '@scani/db';
 import type { NewToken, Token } from '@scani/db/schema';
 import * as schema from '@scani/db/schema';
-import { and, asc, desc, eq, gt, inArray, isNotNull, like, lt, or, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, gt, inArray, isNotNull, like, or, sql } from 'drizzle-orm';
 import { Service } from 'typedi';
-import { SCAM_PROBABILITY_THRESHOLD } from '../lib/constants';
 
 @Service()
 export class TokenRepository extends BaseRepository<Token, NewToken> {
@@ -233,32 +232,6 @@ export class TokenRepository extends BaseRepository<Token, NewToken> {
     return results[0] || null;
   }
 
-  async searchByQuery(
-    query: string,
-    limit: number,
-    transaction?: DatabaseTransaction
-  ): Promise<Token[]> {
-    const database = this.getDb(transaction);
-    const upper = query.toUpperCase();
-    const likePattern = `%${upper.replace(/[\\%_]/g, '\\$&')}%`;
-    const results = await database
-      .select()
-      .from(schema.tokens)
-      .where(
-        and(
-          eq(schema.tokens.isActive, true),
-          lt(schema.tokens.isScamProbability, SCAM_PROBABILITY_THRESHOLD),
-          sql`(UPPER(${schema.tokens.symbol}) LIKE ${likePattern} ESCAPE '\\' OR UPPER(${schema.tokens.name}) LIKE ${likePattern} ESCAPE '\\')`
-        )
-      )
-      .orderBy(schema.tokens.symbol)
-      .limit(limit);
-    return results;
-  }
-
-  /**
-   * Create multiple tokens in a batch
-   */
   async createMany(tokensData: NewToken[], transaction?: DatabaseTransaction): Promise<Token[]> {
     const database = this.getDb(transaction);
     const results = await database.insert(schema.tokens).values(tokensData).returning();
