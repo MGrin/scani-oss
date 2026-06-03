@@ -70,3 +70,10 @@ data class WebTokenResult(
 ) {
     fun toResult() = MobileTokenResult(id, symbol, name, provider, metadata)
 }
+
+@Serializable
+data class UploadUrlResponse(
+    val uploadUrl: String,
+    val key: String,
+    val headers: Map<String, String> = emptyMap(),
+)
