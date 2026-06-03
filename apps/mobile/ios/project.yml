@@ -37,6 +37,8 @@ targets:
     dependencies:
       - target: ShareExtension
         embed: true
+      - target: ScaniWidgets
+        embed: true
     preBuildScripts:
       - name: Build Kotlin framework
         basedOnDependencyAnalysis: false
@@ -81,3 +83,20 @@ targets:
         script: |
           cd "$SRCROOT/.."
           ./gradlew :shared:embedAndSignAppleFrameworkForXcode
+
+  ScaniWidgets:
+    type: app-extension
+    platform: iOS
+    deploymentTarget: "16.0"
+    sources:
+      - path: ScaniWidgets
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: xyz.scani.mobile.ScaniWidgets
+        SWIFT_VERSION: "5.0"
+        INFOPLIST_FILE: ScaniWidgets/Info.plist
+    entitlements:
+      path: ScaniWidgets/ScaniWidgets.entitlements
+      properties:
+        com.apple.security.application-groups:
+          - group.xyz.scani.mobile
