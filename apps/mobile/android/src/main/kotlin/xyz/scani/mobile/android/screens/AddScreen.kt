@@ -1,27 +1,39 @@
 package xyz.scani.mobile.android.screens
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
+import androidx.compose.material3.Card
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExposedDropdownMenuBox
+import androidx.compose.material3.ExposedDropdownMenuAnchorType
 import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ExposedDropdownMenuAnchorType
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
 import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -29,12 +41,43 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import xyz.scani.mobile.android.ServiceLocator
+import xyz.scani.mobile.shared.data.MobileToken
 
-private val COLOR_RE = Regex("^#[0-9A-Fa-f]{6}$")
+private val PRESET_COLORS = listOf(
+    "#3B82F6", "#22C55E", "#EF4444", "#F59E0B",
+    "#8B5CF6", "#EC4899", "#14B8A6", "#64748B",
+)
+
+@Composable
+fun ColorPickerRow(selected: String, onPick: (String) -> Unit) {
+    Row(modifier = Modifier.horizontalScroll(rememberScrollState())) {
+        PRESET_COLORS.forEach { hex ->
+            val color = runCatching { Color(android.graphics.Color.parseColor(hex)) }
+                .getOrElse { Color.Gray }
+            val isSelected = hex.equals(selected, ignoreCase = true)
+            Box(
+                modifier = Modifier
+                    .padding(end = 8.dp)
+                    .size(32.dp)
+                    .background(color, shape = RoundedCornerShape(percent = 50))
+                    .then(
+                        if (isSelected) Modifier.border(
+                            2.dp,
+                            MaterialTheme.colorScheme.onSurface,
+                            RoundedCornerShape(percent = 50),
+                        ) else Modifier
+                    )
+                    .clickable { onPick(hex) },
+            )
+        }
+    }
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -81,7 +124,7 @@ private fun GroupForm(scope: kotlinx.coroutines.CoroutineScope, onStatus: (Strin
     var name by remember { mutableStateOf("") }
     var color by remember { mutableStateOf("#3B82F6") }
     var description by remember { mutableStateOf("") }
-    val enabled = name.isNotBlank() && COLOR_RE.matches(color)
+    val enabled = name.isNotBlank()
 
     OutlinedTextField(
         value = name,
@@ -91,13 +134,9 @@ private fun GroupForm(scope: kotlinx.coroutines.CoroutineScope, onStatus: (Strin
         singleLine = true,
     )
     Spacer(Modifier.height(8.dp))
-    OutlinedTextField(
-        value = color,
-        onValueChange = { color = it },
-        label = { Text("Color (hex)") },
-        modifier = Modifier.fillMaxWidth(),
-        singleLine = true,
-    )
+    Text("Color", style = MaterialTheme.typography.labelMedium)
+    Spacer(Modifier.height(4.dp))
+    ColorPickerRow(selected = color, onPick = { color = it })
     Spacer(Modifier.height(8.dp))
     OutlinedTextField(
         value = description,
@@ -127,15 +166,23 @@ private fun GroupForm(scope: kotlinx.coroutines.CoroutineScope, onStatus: (Strin
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun VaultForm(scope: kotlinx.coroutines.CoroutineScope, onStatus: (String) -> Unit) {
     var name by remember { mutableStateOf("") }
     var targetAmount by remember { mutableStateOf("") }
-    var currencyId by remember { mutableStateOf("") }
+    var selectedCurrencyId by remember { mutableStateOf("") }
+    var selectedCurrencyLabel by remember { mutableStateOf("") }
+    var currencyExpanded by remember { mutableStateOf(false) }
+    var currencies by remember { mutableStateOf<List<MobileToken>>(emptyList()) }
     var color by remember { mutableStateOf("#3B82F6") }
     var iconName by remember { mutableStateOf("") }
     var description by remember { mutableStateOf("") }
-    val enabled = name.isNotBlank() && targetAmount.isNotBlank() && currencyId.isNotBlank() && COLOR_RE.matches(color)
+    val enabled = name.isNotBlank() && targetAmount.isNotBlank() && selectedCurrencyId.isNotBlank()
+
+    LaunchedEffect(Unit) {
+        currencies = runCatching { ServiceLocator.mobileApi.currencies() }.getOrDefault(emptyList())
+    }
 
     OutlinedTextField(
         value = name,
@@ -154,21 +201,41 @@ private fun VaultForm(scope: kotlinx.coroutines.CoroutineScope, onStatus: (Strin
         singleLine = true,
     )
     Spacer(Modifier.height(8.dp))
-    OutlinedTextField(
-        value = currencyId,
-        onValueChange = { currencyId = it },
-        label = { Text("Currency ID (e.g. USD)") },
+    ExposedDropdownMenuBox(
+        expanded = currencyExpanded,
+        onExpandedChange = { currencyExpanded = it },
         modifier = Modifier.fillMaxWidth(),
-        singleLine = true,
-    )
+    ) {
+        OutlinedTextField(
+            value = selectedCurrencyLabel.ifBlank { "Select currency" },
+            onValueChange = {},
+            readOnly = true,
+            label = { Text("Currency") },
+            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = currencyExpanded) },
+            modifier = Modifier
+                .menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable)
+                .fillMaxWidth(),
+        )
+        ExposedDropdownMenu(
+            expanded = currencyExpanded,
+            onDismissRequest = { currencyExpanded = false },
+        ) {
+            currencies.forEach { token ->
+                DropdownMenuItem(
+                    text = { Text("${token.symbol} — ${token.name}") },
+                    onClick = {
+                        selectedCurrencyId = token.id
+                        selectedCurrencyLabel = "${token.symbol} — ${token.name}"
+                        currencyExpanded = false
+                    },
+                )
+            }
+        }
+    }
     Spacer(Modifier.height(8.dp))
-    OutlinedTextField(
-        value = color,
-        onValueChange = { color = it },
-        label = { Text("Color (hex)") },
-        modifier = Modifier.fillMaxWidth(),
-        singleLine = true,
-    )
+    Text("Color", style = MaterialTheme.typography.labelMedium)
+    Spacer(Modifier.height(4.dp))
+    ColorPickerRow(selected = color, onPick = { color = it })
     Spacer(Modifier.height(8.dp))
     OutlinedTextField(
         value = iconName,
@@ -192,7 +259,7 @@ private fun VaultForm(scope: kotlinx.coroutines.CoroutineScope, onStatus: (Strin
                     ServiceLocator.writeQueue.createVault(
                         name.trim(),
                         targetAmount.trim(),
-                        currencyId.trim(),
+                        selectedCurrencyId.trim(),
                         color.trim(),
                         iconName.ifBlank { null },
                         description.ifBlank { null },
@@ -201,7 +268,8 @@ private fun VaultForm(scope: kotlinx.coroutines.CoroutineScope, onStatus: (Strin
                     onStatus("Saved ✓")
                     name = ""
                     targetAmount = ""
-                    currencyId = ""
+                    selectedCurrencyId = ""
+                    selectedCurrencyLabel = ""
                     iconName = ""
                     description = ""
                 } catch (e: Throwable) {
@@ -223,11 +291,22 @@ private fun HoldingForm(scope: kotlinx.coroutines.CoroutineScope, onStatus: (Str
     var selectedAccountId by remember { mutableStateOf("") }
     var selectedAccountName by remember { mutableStateOf("") }
     var accountExpanded by remember { mutableStateOf(false) }
-    var tokenId by remember { mutableStateOf("") }
-    var symbol by remember { mutableStateOf("") }
-    var holdingName by remember { mutableStateOf("") }
+    var query by remember { mutableStateOf("") }
+    var searchResults by remember { mutableStateOf<List<MobileToken>>(emptyList()) }
+    var selectedTokenId by remember { mutableStateOf("") }
+    var selectedSymbol by remember { mutableStateOf("") }
+    var selectedName by remember { mutableStateOf("") }
     var balance by remember { mutableStateOf("") }
-    val enabled = selectedAccountId.isNotBlank() && tokenId.isNotBlank() && symbol.isNotBlank() && balance.isNotBlank()
+    val enabled = selectedAccountId.isNotBlank() && selectedTokenId.isNotBlank() && balance.isNotBlank()
+
+    LaunchedEffect(query) {
+        if (query.length >= 2) {
+            delay(300)
+            searchResults = runCatching { ServiceLocator.mobileApi.searchTokens(query) }.getOrDefault(emptyList())
+        } else {
+            searchResults = emptyList()
+        }
+    }
 
     ExposedDropdownMenuBox(
         expanded = accountExpanded,
@@ -262,28 +341,43 @@ private fun HoldingForm(scope: kotlinx.coroutines.CoroutineScope, onStatus: (Str
     }
     Spacer(Modifier.height(8.dp))
     OutlinedTextField(
-        value = tokenId,
-        onValueChange = { tokenId = it },
-        label = { Text("Token ID") },
+        value = query,
+        onValueChange = { query = it; selectedTokenId = ""; selectedSymbol = ""; selectedName = "" },
+        label = { Text("Search token") },
         modifier = Modifier.fillMaxWidth(),
         singleLine = true,
     )
-    Spacer(Modifier.height(8.dp))
-    OutlinedTextField(
-        value = symbol,
-        onValueChange = { symbol = it },
-        label = { Text("Symbol") },
-        modifier = Modifier.fillMaxWidth(),
-        singleLine = true,
-    )
-    Spacer(Modifier.height(8.dp))
-    OutlinedTextField(
-        value = holdingName,
-        onValueChange = { holdingName = it },
-        label = { Text("Name") },
-        modifier = Modifier.fillMaxWidth(),
-        singleLine = true,
-    )
+    if (selectedTokenId.isNotBlank()) {
+        Spacer(Modifier.height(4.dp))
+        Text(
+            "Selected: $selectedSymbol — $selectedName",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.primary,
+        )
+    }
+    if (searchResults.isNotEmpty() && selectedTokenId.isBlank()) {
+        Spacer(Modifier.height(4.dp))
+        LazyColumn(modifier = Modifier.fillMaxWidth().height(160.dp)) {
+            items(searchResults, key = { it.id }) { token ->
+                Card(
+                    onClick = {
+                        selectedTokenId = token.id
+                        selectedSymbol = token.symbol
+                        selectedName = token.name
+                        query = "${token.symbol} — ${token.name}"
+                        searchResults = emptyList()
+                    },
+                    modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp),
+                ) {
+                    Text(
+                        "${token.symbol} — ${token.name}",
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                }
+            }
+        }
+    }
     Spacer(Modifier.height(8.dp))
     OutlinedTextField(
         value = balance,
@@ -300,18 +394,19 @@ private fun HoldingForm(scope: kotlinx.coroutines.CoroutineScope, onStatus: (Str
                 try {
                     ServiceLocator.writeQueue.createHolding(
                         selectedAccountId,
-                        tokenId.trim(),
-                        symbol.trim(),
-                        holdingName.trim(),
+                        selectedTokenId,
+                        selectedSymbol,
+                        selectedName,
                         balance.trim(),
                     )
                     runCatching { ServiceLocator.outboxProcessor.drain() }
                     onStatus("Saved ✓")
                     selectedAccountId = ""
                     selectedAccountName = ""
-                    tokenId = ""
-                    symbol = ""
-                    holdingName = ""
+                    query = ""
+                    selectedTokenId = ""
+                    selectedSymbol = ""
+                    selectedName = ""
                     balance = ""
                 } catch (e: Throwable) {
                     onStatus(e.message ?: "Failed")

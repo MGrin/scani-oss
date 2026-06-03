@@ -2,8 +2,10 @@ package xyz.scani.mobile.android.screens
 
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -120,6 +122,7 @@ fun VaultsScreen() {
     editing?.let { v ->
         var name by remember(v.id) { mutableStateOf(v.name) }
         var targetAmount by remember(v.id) { mutableStateOf(v.targetAmount) }
+        var color by remember(v.id) { mutableStateOf(v.color) }
         AlertDialog(
             onDismissRequest = { editing = null },
             title = { Text("Edit vault") },
@@ -137,6 +140,10 @@ fun VaultsScreen() {
                         label = { Text("Target amount") },
                         modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
                     )
+                    Spacer(Modifier.height(8.dp))
+                    Text("Color", style = MaterialTheme.typography.labelMedium)
+                    Spacer(Modifier.height(4.dp))
+                    ColorPickerRow(selected = color, onPick = { color = it })
                 }
             },
             confirmButton = {
@@ -144,9 +151,10 @@ fun VaultsScreen() {
                     val savedId = v.id
                     val savedName = name
                     val savedTarget = targetAmount
+                    val savedColor = color
                     editing = null
                     scope.launch {
-                        ServiceLocator.writeQueue.updateVault(savedId, name = savedName, targetAmount = savedTarget)
+                        ServiceLocator.writeQueue.updateVault(savedId, name = savedName, targetAmount = savedTarget, color = savedColor)
                         runCatching { ServiceLocator.outboxProcessor.drain() }
                     }
                 }) { Text("Save") }
