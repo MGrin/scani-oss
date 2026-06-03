@@ -4,6 +4,7 @@ import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestCoroutineScheduler
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import xyz.scani.mobile.shared.db.ScaniDatabase
@@ -132,13 +133,16 @@ class WriteQueueTest {
         assertEquals("holding", pending[0].entity)
         assertEquals("create", pending[0].op)
         val json = Json.parseToJsonElement(pending[0].payload).jsonObject
-        val data = json["data"]?.jsonObject
-        assertNotNull(data)
-        assertEquals("a1", data["accountId"]?.jsonPrimitive?.content)
-        assertEquals("t1", data["tokenId"]?.jsonPrimitive?.content)
-        assertEquals("1.5", data["balance"]?.jsonPrimitive?.content)
-        assertNull(data["symbol"])
-        assertNull(data["name"])
+        assertTrue(json["requestId"]?.jsonPrimitive?.content?.isNotEmpty() == true)
+        assertEquals("a1", json["accountId"]?.jsonPrimitive?.content)
+        assertNull(json["data"])
+        assertNull(json["tokenId"])
+        val newHoldings = json["newHoldings"]?.jsonArray
+        assertNotNull(newHoldings)
+        assertEquals(1, newHoldings.size)
+        val first = newHoldings[0].jsonObject
+        assertEquals("t1", first["tokenId"]?.jsonPrimitive?.content)
+        assertEquals("1.5", first["balance"]?.jsonPrimitive?.content)
     }
 
     @Test

@@ -2,8 +2,10 @@
 
 package xyz.scani.mobile.shared.data
 
+import kotlinx.serialization.json.addJsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
+import kotlinx.serialization.json.putJsonArray
 import kotlinx.serialization.json.putJsonObject
 import xyz.scani.mobile.shared.db.ScaniDatabase
 
@@ -150,12 +152,14 @@ class WriteQueue(
         val key = genId()
         db.holdingQueries.insert(id, accountId, symbol, name, balance, null)
         val payload = buildJsonObject {
-            putJsonObject("data") {
-                put("accountId", accountId)
-                put("tokenId", tokenId)
-                put("balance", balance)
+            put("requestId", key)
+            put("accountId", accountId)
+            putJsonArray("newHoldings") {
+                addJsonObject {
+                    put("tokenId", tokenId)
+                    put("balance", balance)
+                }
             }
-            put("idempotencyKey", key)
         }
         outbox.enqueue(genId(), "holding", "create", payload.toString(), key, now())
         return id
