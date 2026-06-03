@@ -72,3 +72,12 @@ targets:
           - group.xyz.scani.mobile
         keychain-access-groups:
           - xyz.scani.mobile.shared
+    preBuildScripts:
+      # The extension is built before the app target, so it must build the
+      # KMP `Shared` framework itself — otherwise its FRAMEWORK_SEARCH_PATHS is
+      # empty on a clean machine and `import Shared` fails.
+      - name: Build Kotlin framework
+        basedOnDependencyAnalysis: false
+        script: |
+          cd "$SRCROOT/.."
+          ./gradlew :shared:embedAndSignAppleFrameworkForXcode
