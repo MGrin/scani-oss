@@ -16,7 +16,6 @@ import { portfolioRouter } from './routers/portfolio';
 import { screenshotsRouter } from './routers/screenshots';
 import { sessionsRouter } from './routers/sessions';
 import { storageRouter } from './routers/storage';
-import { systemRouter } from './routers/system';
 import { createTokensRouter } from './routers/tokens';
 import { transactionsRouter } from './routers/transactions';
 import { usersRouter } from './routers/users';
@@ -27,9 +26,6 @@ import { publicProcedure, router } from './trpc';
 const tokensRouter = createTokensRouter(db, schema);
 
 export const appRouter = router({
-  // System (public) — health/version slice; first typed OpenAPI operation
-  system: systemRouter,
-
   // User management (protected)
   users: usersRouter,
 
