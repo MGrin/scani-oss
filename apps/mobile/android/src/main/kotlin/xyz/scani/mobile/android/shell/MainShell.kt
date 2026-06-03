@@ -1,6 +1,5 @@
 package xyz.scani.mobile.android.shell
 
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
@@ -25,7 +24,6 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import kotlinx.coroutines.launch
 import xyz.scani.mobile.android.ServiceLocator
 import xyz.scani.mobile.shared.navigation.Destination
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.navigation.compose.NavHost
@@ -37,6 +35,7 @@ import xyz.scani.mobile.android.screens.AddScreen
 import xyz.scani.mobile.android.screens.DashboardScreen
 import xyz.scani.mobile.android.screens.GroupsScreen
 import xyz.scani.mobile.android.screens.HoldingsScreen
+import xyz.scani.mobile.android.screens.SettingsScreen
 import xyz.scani.mobile.android.screens.VaultsScreen
 
 private enum class Tab(val route: String, val label: String, val icon: ImageVector) {
@@ -118,9 +117,7 @@ fun MainShell() {
             composable(Tab.Holdings.route) { HoldingsScreen() }
             composable(Tab.Accounts.route) { AccountsScreen() }
             composable(Tab.Add.route) { AddScreen() }
-            composable(Tab.Settings.route) {
-                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Text(Tab.Settings.label) }
-            }
+            composable(Tab.Settings.route) { SettingsScreen() }
             composable("groups") { GroupsScreen() }
             composable("vaults") { VaultsScreen() }
         }
