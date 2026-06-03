@@ -13,5 +13,8 @@ SELECT * FROM holding;
 insert:
 INSERT OR REPLACE INTO holding(id, accountId, symbol, name, amount, value) VALUES (?, ?, ?, ?, ?, ?);
 
+deleteById:
+DELETE FROM holding WHERE id = ?;
+
 deleteAll:
 DELETE FROM holding;
