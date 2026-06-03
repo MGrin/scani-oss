@@ -271,10 +271,6 @@ export class CreateHoldingUseCase {
           .limit(1);
 
         if (token && account) {
-          const _latestPrice = await this.tokenPriceRepository.findLatestPrice(
-            input.tokenId,
-            baseCurrencyId
-          );
           logger.debug(
             { holdingId: holding.id, tokenSymbol: token.symbol },
             'Created holding_create portfolio event'
