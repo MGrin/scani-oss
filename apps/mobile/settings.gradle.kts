@@ -17,3 +17,4 @@ rootProject.name = "scani-mobile"
 
 include(":shared")
 include(":android")
+include(":trpc-kotlin")
