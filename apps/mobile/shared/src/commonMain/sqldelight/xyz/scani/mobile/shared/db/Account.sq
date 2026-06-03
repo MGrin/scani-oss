@@ -17,3 +17,6 @@ DELETE FROM account WHERE id = ?;
 
 deleteAll:
 DELETE FROM account;
+
+selectById:
+SELECT * FROM account WHERE id = ?;
