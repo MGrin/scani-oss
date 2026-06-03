@@ -40,3 +40,25 @@ data class WebHolding(
         value = value?.content,
     )
 }
+
+@Serializable
+data class WebGroup(val id: String, val name: String, val color: String, val description: String? = null) {
+    fun toApp() = MobileGroup(id, name, color, description)
+}
+
+@Serializable
+data class WebVault(
+    val id: String,
+    val name: String,
+    val targetAmount: String,
+    val currentAmount: String,
+    val currencyId: String,
+    val color: String,
+    val iconName: String? = null,
+    val description: String? = null,
+) {
+    fun toApp() = MobileVault(id, name, targetAmount, currentAmount, currencyId, color, iconName, description)
+}
+
+@Serializable
+data class WebTokenResult(val id: String? = null, val symbol: String, val name: String)

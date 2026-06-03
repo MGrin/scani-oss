@@ -52,8 +52,8 @@ class OutboxProcessorTest {
                     status = HttpStatusCode.OK,
                     headers = headersOf(HttpHeaders.ContentType, "application/json"),
                 )
-                path == "mobile.groups" -> respond(
-                    content = """{"result":{"data":[{"id":"server-g","name":"Tech","color":"#112233","description":null}]}}""",
+                path == "groups.getAllWithCounts" -> respond(
+                    content = """{"result":{"data":[{"id":"server-g","name":"Tech","color":"#112233","description":null,"holdingsCount":0,"accountsCount":0}]}}""",
                     status = HttpStatusCode.OK,
                     headers = headersOf(HttpHeaders.ContentType, "application/json"),
                 )
@@ -139,8 +139,8 @@ class OutboxProcessorTest {
                         status = HttpStatusCode.OK,
                         headers = headersOf(HttpHeaders.ContentType, "application/json"),
                     )
-                    path == "mobile.groups" -> respond(
-                        content = """{"result":{"data":[{"id":"server-g2","name":"Second","color":"#222222","description":null}]}}""",
+                    path == "groups.getAllWithCounts" -> respond(
+                        content = """{"result":{"data":[{"id":"server-g2","name":"Second","color":"#222222","description":null,"holdingsCount":0,"accountsCount":0}]}}""",
                         status = HttpStatusCode.OK,
                         headers = headersOf(HttpHeaders.ContentType, "application/json"),
                     )

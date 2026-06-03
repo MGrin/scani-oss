@@ -24,33 +24,33 @@ class GroupVaultApiTest {
     @Test
     fun groups_parses_list_including_null_description() = runTest {
         val engine = engineFor(
-            "mobile.groups" to """{"result":{"data":[
-                {"id":"g1","name":"Savings","color":"#FF0000","description":"My savings"},
-                {"id":"g2","name":"Investments","color":"#00FF00"}
+            "groups.getAllWithCounts" to """{"result":{"data":[
+                {"id":"g1","name":"Tech","color":"#112233","description":null,"holdingsCount":0,"accountsCount":0},
+                {"id":"g2","name":"Savings","color":"#FF0000","description":"My savings","holdingsCount":3,"accountsCount":1}
             ]}}""",
         )
         val api = MobileApi(mockTrpcClient(engine))
         val result = api.groups()
         assertEquals(2, result.size)
-        assertEquals(MobileGroup(id = "g1", name = "Savings", color = "#FF0000", description = "My savings"), result[0])
-        assertEquals(MobileGroup(id = "g2", name = "Investments", color = "#00FF00", description = null), result[1])
-        assertNull(result[1].description)
+        assertEquals(MobileGroup(id = "g1", name = "Tech", color = "#112233", description = null), result[0])
+        assertEquals(MobileGroup(id = "g2", name = "Savings", color = "#FF0000", description = "My savings"), result[1])
+        assertNull(result[0].description)
     }
 
     @Test
     fun vaults_parses_list_including_null_iconName_and_description() = runTest {
         val engine = engineFor(
-            "mobile.vaults" to """{"result":{"data":[
-                {"id":"v1","name":"Emergency Fund","targetAmount":"10000.00","currentAmount":"5000.00","currencyId":"USD","color":"#0000FF","iconName":"shield","description":"Rainy day fund"},
-                {"id":"v2","name":"Vacation","targetAmount":"3000.00","currentAmount":"1200.00","currencyId":"EUR","color":"#FFFF00"}
+            "vaults.getAll" to """{"result":{"data":[
+                {"id":"v1","name":"Car","targetAmount":"1000","currentAmount":"250","currencyId":"usd","color":"#112233","iconName":null,"description":null,"progress":25},
+                {"id":"v2","name":"Vacation","targetAmount":"3000.00","currentAmount":"1200.00","currencyId":"EUR","color":"#FFFF00","iconName":"beach","description":"Summer trip"}
             ]}}""",
         )
         val api = MobileApi(mockTrpcClient(engine))
         val result = api.vaults()
         assertEquals(2, result.size)
-        assertEquals(MobileVault(id = "v1", name = "Emergency Fund", targetAmount = "10000.00", currentAmount = "5000.00", currencyId = "USD", color = "#0000FF", iconName = "shield", description = "Rainy day fund"), result[0])
-        assertEquals(MobileVault(id = "v2", name = "Vacation", targetAmount = "3000.00", currentAmount = "1200.00", currencyId = "EUR", color = "#FFFF00", iconName = null, description = null), result[1])
-        assertNull(result[1].iconName)
-        assertNull(result[1].description)
+        assertEquals(MobileVault(id = "v1", name = "Car", targetAmount = "1000", currentAmount = "250", currencyId = "usd", color = "#112233", iconName = null, description = null), result[0])
+        assertEquals(MobileVault(id = "v2", name = "Vacation", targetAmount = "3000.00", currentAmount = "1200.00", currencyId = "EUR", color = "#FFFF00", iconName = "beach", description = "Summer trip"), result[1])
+        assertNull(result[0].iconName)
+        assertNull(result[0].description)
     }
 }
