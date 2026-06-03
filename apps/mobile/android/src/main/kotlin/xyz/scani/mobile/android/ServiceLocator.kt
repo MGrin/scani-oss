@@ -6,10 +6,15 @@ import xyz.scani.mobile.android.auth.AndroidSecureStorage
 import xyz.scani.mobile.shared.auth.AuthApi
 import xyz.scani.mobile.shared.auth.AuthRepository
 import xyz.scani.mobile.shared.data.AccountsRepository
+import xyz.scani.mobile.shared.data.GroupsRepository
 import xyz.scani.mobile.shared.data.HoldingsRepository
 import xyz.scani.mobile.shared.data.MobileApi
+import xyz.scani.mobile.shared.data.OutboxProcessor
+import xyz.scani.mobile.shared.data.OutboxRepository
 import xyz.scani.mobile.shared.data.SyncEngine
 import xyz.scani.mobile.shared.data.SyncStateRepository
+import xyz.scani.mobile.shared.data.VaultsRepository
+import xyz.scani.mobile.shared.data.WriteQueue
 import xyz.scani.mobile.shared.db.AndroidDriverFactory
 import xyz.scani.mobile.shared.db.ScaniDatabase
 import xyz.scani.mobile.shared.network.TrpcClient
@@ -32,6 +37,16 @@ object ServiceLocator {
         private set
     lateinit var syncStateRepository: SyncStateRepository
         private set
+    lateinit var outboxRepository: OutboxRepository
+        private set
+    lateinit var writeQueue: WriteQueue
+        private set
+    lateinit var outboxProcessor: OutboxProcessor
+        private set
+    lateinit var groupsRepository: GroupsRepository
+        private set
+    lateinit var vaultsRepository: VaultsRepository
+        private set
     var pendingDeepLink: xyz.scani.mobile.shared.navigation.Destination? = null
 
     fun init(context: Context) {
@@ -51,5 +66,10 @@ object ServiceLocator {
         accountsRepository = AccountsRepository(db, Dispatchers.IO)
         holdingsRepository = HoldingsRepository(db, Dispatchers.IO)
         syncStateRepository = SyncStateRepository(db, Dispatchers.IO)
+        outboxRepository = OutboxRepository(db, Dispatchers.IO)
+        writeQueue = WriteQueue(db, outboxRepository)
+        outboxProcessor = OutboxProcessor(trpcClient, outboxRepository, syncEngine)
+        groupsRepository = GroupsRepository(db, Dispatchers.IO)
+        vaultsRepository = VaultsRepository(db, Dispatchers.IO)
     }
 }

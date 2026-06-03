@@ -53,8 +53,11 @@ fun MainShell() {
         val obs = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_RESUME) {
                 scope.launch {
+                    runCatching { ServiceLocator.outboxProcessor.drain() }
                     runCatching { ServiceLocator.syncEngine.syncAccounts() }
                     runCatching { ServiceLocator.syncEngine.syncHoldings() }
+                    runCatching { ServiceLocator.syncEngine.syncGroups() }
+                    runCatching { ServiceLocator.syncEngine.syncVaults() }
                 }
             }
         }
@@ -73,8 +76,13 @@ fun MainShell() {
         if (route != null) {
             nav.navigate(route) { launchSingleTop = true }
         }
-        launch { runCatching { ServiceLocator.syncEngine.syncAccounts() } }
-        launch { runCatching { ServiceLocator.syncEngine.syncHoldings() } }
+        launch {
+            runCatching { ServiceLocator.outboxProcessor.drain() }
+            runCatching { ServiceLocator.syncEngine.syncAccounts() }
+            runCatching { ServiceLocator.syncEngine.syncHoldings() }
+            runCatching { ServiceLocator.syncEngine.syncGroups() }
+            runCatching { ServiceLocator.syncEngine.syncVaults() }
+        }
     }
     Scaffold(
         bottomBar = {
