@@ -1,12 +1,11 @@
 import Foundation
+import Network
 import Shared
 
 extension Notification.Name {
     static let scaniUnauthorized = Notification.Name("scaniUnauthorized")
 }
 
-// Constructs the shared auth/network/data stack once. Dev base URL — real
-// per-build config is a later milestone.
 final class AppContainer: ObservableObject {
     private let baseURL = "http://localhost:3001"
     let authRepository: AuthRepository
@@ -20,6 +19,8 @@ final class AppContainer: ObservableObject {
     let outboxProcessor: OutboxProcessor
     let groupsRepository: GroupsRepository
     let vaultsRepository: VaultsRepository
+    let mobileApi: MobileApi
+    private let pathMonitor = NWPathMonitor()
 
     init() {
         let storage = KeychainSecureStorage()
@@ -38,6 +39,7 @@ final class AppContainer: ObservableObject {
         let db = ScaniDatabaseCompanion.shared.invoke(driver: NativeDriverFactory().create())
         let io = Dispatchers_iosKt.iosIoDispatcher()
         let api = MobileApi(client: trpcClient)
+        mobileApi = api
         syncEngine = SyncEngine(api: api, db: db, now: { KotlinLong(value: Int64(Date().timeIntervalSince1970 * 1000)) })
         accountsRepository = AccountsRepository(db: db, ioContext: io)
         holdingsRepository = HoldingsRepository(db: db, ioContext: io)
@@ -50,8 +52,15 @@ final class AppContainer: ObservableObject {
             genId: { UUID().uuidString },
             now: { KotlinLong(value: Int64(Date().timeIntervalSince1970 * 1000)) }
         )
-        outboxProcessor = OutboxProcessor(client: trpcClient, outbox: outbox, syncEngine: syncEngine)
+        let processor = OutboxProcessor(client: trpcClient, outbox: outbox, syncEngine: syncEngine)
+        outboxProcessor = processor
         groupsRepository = GroupsRepository(db: db, ioContext: io)
         vaultsRepository = VaultsRepository(db: db, ioContext: io)
+
+        pathMonitor.pathUpdateHandler = { path in
+            guard path.status == .satisfied else { return }
+            Task { try? await processor.drain() }
+        }
+        pathMonitor.start(queue: DispatchQueue(label: "connectivity"))
     }
 }

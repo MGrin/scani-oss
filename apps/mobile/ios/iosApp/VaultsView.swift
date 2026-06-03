@@ -32,6 +32,7 @@ private struct EditVaultSheet: View {
 
     @State private var editName: String
     @State private var editTargetAmount: String
+    @State private var editColor: String
 
     init(vault: MobileVault, container: AppContainer, isPresented: Binding<Bool>, onSaved: @escaping () async -> Void) {
         self.vault = vault
@@ -40,6 +41,7 @@ private struct EditVaultSheet: View {
         self.onSaved = onSaved
         _editName = State(initialValue: vault.name)
         _editTargetAmount = State(initialValue: vault.targetAmount)
+        _editColor = State(initialValue: vault.color)
     }
 
     var body: some View {
@@ -48,6 +50,7 @@ private struct EditVaultSheet: View {
                 TextField("Name", text: $editName)
                 TextField("Target Amount", text: $editTargetAmount)
                     .keyboardType(.decimalPad)
+                ColorSwatchPicker(selected: $editColor)
             }
             .navigationTitle("Edit Vault")
             .navigationBarTitleDisplayMode(.inline)
@@ -60,7 +63,7 @@ private struct EditVaultSheet: View {
                                 name: editName,
                                 targetAmount: editTargetAmount.isEmpty ? nil : editTargetAmount,
                                 currencyId: nil,
-                                color: nil,
+                                color: editColor,
                                 iconName: nil,
                                 description: nil
                             )
@@ -101,9 +104,14 @@ struct VaultsView: View {
                         editingVault = v
                         showingEdit = true
                     } label: {
-                        VStack(alignment: .leading) {
-                            Text(v.name)
-                            Text("\(v.currentAmount) / \(v.targetAmount)").font(.subheadline).foregroundStyle(.secondary)
+                        HStack {
+                            Circle()
+                                .fill(Color(hex: v.color) ?? .gray)
+                                .frame(width: 12, height: 12)
+                            VStack(alignment: .leading) {
+                                Text(v.name)
+                                Text("\(v.currentAmount) / \(v.targetAmount)").font(.subheadline).foregroundStyle(.secondary)
+                            }
                         }
                     }
                     .foregroundStyle(.primary)
