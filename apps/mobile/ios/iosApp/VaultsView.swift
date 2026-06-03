@@ -100,10 +100,7 @@ struct VaultsView: View {
             }
             Section {
                 ForEach(model.vaults, id: \.id) { v in
-                    Button {
-                        editingVault = v
-                        showingEdit = true
-                    } label: {
+                    NavigationLink(value: DetailRoute.vault(v.id)) {
                         HStack {
                             Circle()
                                 .fill(Color(hex: v.color) ?? .gray)
@@ -114,7 +111,15 @@ struct VaultsView: View {
                             }
                         }
                     }
-                    .foregroundStyle(.primary)
+                    .swipeActions(edge: .leading) {
+                        Button {
+                            editingVault = v
+                            showingEdit = true
+                        } label: {
+                            Label("Edit", systemImage: "pencil")
+                        }
+                        .tint(.blue)
+                    }
                     .swipeActions(edge: .trailing) {
                         Button(role: .destructive) {
                             Task {

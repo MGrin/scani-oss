@@ -96,10 +96,7 @@ struct GroupsView: View {
             }
             Section {
                 ForEach(model.groups, id: \.id) { g in
-                    Button {
-                        editingGroup = g
-                        showingEdit = true
-                    } label: {
+                    NavigationLink(value: DetailRoute.group(g.id)) {
                         HStack {
                             Circle()
                                 .fill(Color(hex: g.color) ?? .gray)
@@ -107,7 +104,15 @@ struct GroupsView: View {
                             Text(g.name)
                         }
                     }
-                    .foregroundStyle(.primary)
+                    .swipeActions(edge: .leading) {
+                        Button {
+                            editingGroup = g
+                            showingEdit = true
+                        } label: {
+                            Label("Edit", systemImage: "pencil")
+                        }
+                        .tint(.blue)
+                    }
                     .swipeActions(edge: .trailing) {
                         Button(role: .destructive) {
                             Task {

@@ -91,16 +91,21 @@ struct AccountsView: View {
             }
             Section {
                 ForEach(model.accounts, id: \.id) { a in
-                    Button {
-                        editingAccount = a
-                        showingEdit = true
-                    } label: {
+                    NavigationLink(value: DetailRoute.account(a.id)) {
                         VStack(alignment: .leading) {
                             Text(a.name)
                             Text(a.totalValue).font(.subheadline).foregroundStyle(.secondary)
                         }
                     }
-                    .foregroundStyle(.primary)
+                    .swipeActions(edge: .leading) {
+                        Button {
+                            editingAccount = a
+                            showingEdit = true
+                        } label: {
+                            Label("Edit", systemImage: "pencil")
+                        }
+                        .tint(.blue)
+                    }
                     .swipeActions(edge: .trailing) {
                         Button(role: .destructive) {
                             Task {
