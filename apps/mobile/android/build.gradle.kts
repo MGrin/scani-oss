@@ -42,4 +42,5 @@ dependencies {
     implementation(libs.androidx.compose.material.icons.extended)
     implementation(libs.ktor.client.okhttp)
     implementation(libs.kotlinx.serialization.json)
+    implementation(libs.glance.appwidget)
 }
