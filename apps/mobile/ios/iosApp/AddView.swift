@@ -20,15 +20,17 @@ struct AddView: View {
     @State private var accounts: [MobileAccount] = []
     @State private var selectedAccountId = ""
     @State private var tokenQuery = ""
-    @State private var tokenResults: [MobileToken] = []
-    @State private var selectedToken: MobileToken?
+    @State private var tokenResults: [MobileTokenResult] = []
+    @State private var selectedTokenId = ""
+    @State private var selectedSymbol = ""
+    @State private var selectedName = ""
     @State private var balance = ""
 
     private var isSaveDisabled: Bool {
         switch mode {
         case "group": return name.isEmpty
         case "vault": return name.isEmpty || targetAmount.isEmpty || selectedCurrencyId.isEmpty
-        default: return selectedAccountId.isEmpty || selectedToken == nil || balance.isEmpty
+        default: return selectedAccountId.isEmpty || selectedTokenId.isEmpty || balance.isEmpty
         }
     }
 
@@ -72,22 +74,44 @@ struct AddView: View {
                     }
                     TextField("Search token…", text: $tokenQuery)
                         .autocorrectionDisabled()
-                    if let t = selectedToken {
+                    if !selectedTokenId.isEmpty {
                         HStack {
-                            Text("\(t.symbol) — \(t.name)").font(.subheadline)
+                            Text("\(selectedSymbol) — \(selectedName)").font(.subheadline)
                             Spacer()
-                            Button("Clear") { selectedToken = nil; tokenQuery = "" }
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
+                            Button("Clear") {
+                                selectedTokenId = ""; selectedSymbol = ""; selectedName = ""
+                                tokenQuery = ""
+                            }
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
                         }
                     } else if !tokenResults.isEmpty {
-                        ForEach(tokenResults, id: \.id) { t in
+                        ForEach(tokenResults, id: \.symbol) { sel in
                             Button {
-                                selectedToken = t
-                                tokenQuery = ""
-                                tokenResults = []
+                                Task {
+                                    do {
+                                        let tokenId: String
+                                        if let id = sel.id {
+                                            tokenId = id
+                                        } else {
+                                            let materialized = try await container.mobileApi.materializeToken(
+                                                symbol: sel.symbol, provider: sel.provider!, metadata: sel.metadata!)
+                                            tokenId = materialized.id
+                                        }
+                                        selectedTokenId = tokenId
+                                        selectedSymbol = sel.symbol
+                                        selectedName = sel.name
+                                        tokenQuery = ""
+                                        tokenResults = []
+                                    } catch {
+                                        status = error.localizedDescription
+                                    }
+                                }
                             } label: {
-                                Text("\(t.symbol) — \(t.name)").foregroundStyle(.primary)
+                                Text(sel.id == nil
+                                    ? "\(sel.symbol) — \(sel.name) (via \(sel.provider!))"
+                                    : "\(sel.symbol) — \(sel.name)"
+                                ).foregroundStyle(.primary)
                             }
                         }
                     }
@@ -117,15 +141,13 @@ struct AddView: View {
                                     description: desc.isEmpty ? nil : desc
                                 )
                             default:
-                                if let token = selectedToken {
-                                    _ = try await container.writeQueue.createHolding(
-                                        accountId: selectedAccountId,
-                                        tokenId: token.id,
-                                        symbol: token.symbol,
-                                        name: token.name,
-                                        balance: balance
-                                    )
-                                }
+                                _ = try await container.writeQueue.createHolding(
+                                    accountId: selectedAccountId,
+                                    tokenId: selectedTokenId,
+                                    symbol: selectedSymbol,
+                                    name: selectedName,
+                                    balance: balance
+                                )
                             }
                             try? await container.outboxProcessor.drain()
                             status = "Saved ✓"
@@ -157,7 +179,7 @@ struct AddView: View {
 
     private func resetFields() {
         name = ""; desc = ""; targetAmount = ""; selectedCurrencyId = ""; iconName = ""
-        tokenQuery = ""; tokenResults = []; selectedToken = nil; balance = ""
+        tokenQuery = ""; tokenResults = []; selectedTokenId = ""; selectedSymbol = ""; selectedName = ""; balance = ""
         color = "#3B82F6"
     }
 }
