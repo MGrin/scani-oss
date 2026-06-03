@@ -16,7 +16,7 @@ struct MainShell: View {
                 .tabItem { Label("Holdings", systemImage: "list.bullet") }.tag("holdings")
             NavigationStack { AccountsView(container: container) }
                 .tabItem { Label("Accounts", systemImage: "building.columns") }.tag("accounts")
-            NavigationStack { Text("Add").navigationTitle("Add") }
+            NavigationStack { AddView(container: container) }
                 .tabItem { Label("Add", systemImage: "plus.circle") }.tag("add")
             NavigationStack { Text("Settings").navigationTitle("Settings") }
                 .tabItem { Label("Settings", systemImage: "gearshape") }.tag("settings")
