@@ -1,0 +1,18 @@
+CREATE TABLE groupEntity (
+  id TEXT NOT NULL PRIMARY KEY,
+  name TEXT NOT NULL,
+  color TEXT NOT NULL,
+  description TEXT
+);
+
+selectAll:
+SELECT * FROM groupEntity;
+
+insert:
+INSERT OR REPLACE INTO groupEntity(id, name, color, description) VALUES (?, ?, ?, ?);
+
+deleteById:
+DELETE FROM groupEntity WHERE id = ?;
+
+deleteAll:
+DELETE FROM groupEntity;

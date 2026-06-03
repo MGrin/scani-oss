@@ -20,3 +20,23 @@ data class MobileHolding(
     val amount: String,
     val value: String? = null,
 )
+
+@Serializable
+data class MobileGroup(
+    val id: String,
+    val name: String,
+    val color: String,
+    val description: String? = null,
+)
+
+@Serializable
+data class MobileVault(
+    val id: String,
+    val name: String,
+    val targetAmount: String,
+    val currentAmount: String,
+    val currencyId: String,
+    val color: String,
+    val iconName: String? = null,
+    val description: String? = null,
+)
