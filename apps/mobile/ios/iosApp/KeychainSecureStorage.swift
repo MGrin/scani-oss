@@ -2,10 +2,9 @@ import Foundation
 import Security
 import Shared
 
-// Conforms to the KMP SecureStorage protocol; stores the bearer token in the iOS
-// Keychain (kSecClassGenericPassword) under a fixed service.
 final class KeychainSecureStorage: SecureStorage {
     private let service = "xyz.scani.mobile.secure"
+    private let accessGroup = "xyz.scani.mobile.shared"
 
     func getString(key: String) -> String? {
         var query = baseQuery(key)
@@ -34,6 +33,7 @@ final class KeychainSecureStorage: SecureStorage {
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
             kSecAttrAccount as String: key,
+            kSecAttrAccessGroup as String: accessGroup,
         ]
     }
 }

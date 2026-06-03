@@ -30,9 +30,45 @@ targets:
       properties:
         com.apple.developer.associated-domains:
           - applinks:app.scani.xyz
+        com.apple.security.application-groups:
+          - group.xyz.scani.mobile
+        keychain-access-groups:
+          - xyz.scani.mobile.shared
+    dependencies:
+      - target: ShareExtension
+        embed: true
     preBuildScripts:
       - name: Build Kotlin framework
         basedOnDependencyAnalysis: false
         script: |
           cd "$SRCROOT/.."
           ./gradlew :shared:embedAndSignAppleFrameworkForXcode
+
+  ShareExtension:
+    type: app-extension
+    platform: iOS
+    deploymentTarget: "16.0"
+    sources:
+      - path: ShareExtension
+      - path: iosApp/KeychainSecureStorage.swift
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: xyz.scani.mobile.ShareExtension
+        SWIFT_VERSION: "5.0"
+        ENABLE_USER_SCRIPT_SANDBOXING: NO
+        INFOPLIST_FILE: ShareExtension/Info.plist
+        FRAMEWORK_SEARCH_PATHS:
+          - $(inherited)
+          - $(SRCROOT)/../shared/build/xcode-frameworks/$(CONFIGURATION)/$(SDK_NAME)
+        OTHER_LDFLAGS:
+          - $(inherited)
+          - -framework
+          - Shared
+          - -lsqlite3
+    entitlements:
+      path: ShareExtension/ShareExtension.entitlements
+      properties:
+        com.apple.security.application-groups:
+          - group.xyz.scani.mobile
+        keychain-access-groups:
+          - xyz.scani.mobile.shared
