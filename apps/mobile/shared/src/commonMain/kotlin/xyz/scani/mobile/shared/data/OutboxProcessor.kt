@@ -37,6 +37,18 @@ class OutboxProcessor(
         if ("vault" in entities) syncEngine.syncVaults()
     }
 
-    private fun procedureFor(entity: String, op: String): String =
-        "mobile.$op${entity.replaceFirstChar { it.uppercase() }}"
+    private fun procedureFor(entity: String, op: String): String = when ("$entity:$op") {
+        "account:update" -> "accounts.update"
+        "account:delete" -> "accounts.delete"
+        "holding:create" -> "batchOperations.createHoldingsBatch"
+        "holding:update" -> "holdings.update"
+        "holding:delete" -> "holdings.delete"
+        "group:create" -> "groups.create"
+        "group:update" -> "groups.update"
+        "group:delete" -> "groups.delete"
+        "vault:create" -> "vaults.create"
+        "vault:update" -> "vaults.update"
+        "vault:delete" -> "vaults.delete"
+        else -> error("unknown outbox op: $entity/$op")
+    }
 }
