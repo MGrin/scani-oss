@@ -28,8 +28,10 @@ final class DashboardViewModel: ObservableObject {
 
 struct DashboardView: View {
     @StateObject private var model: DashboardViewModel
+    private let container: AppContainer
 
     init(container: AppContainer) {
+        self.container = container
         _model = StateObject(wrappedValue: DashboardViewModel(
             repo: container.accountsRepository,
             sync: container.syncEngine,
@@ -47,6 +49,10 @@ struct DashboardView: View {
                 ForEach(model.accounts, id: \.id) { a in
                     Text(a.name)
                 }
+            }
+            Section("Organize") {
+                NavigationLink("Groups") { GroupsView(container: container) }
+                NavigationLink("Vaults") { VaultsView(container: container) }
             }
         }
         .navigationTitle("Dashboard")
