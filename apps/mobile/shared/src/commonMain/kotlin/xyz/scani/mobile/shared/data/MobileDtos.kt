@@ -43,3 +43,12 @@ data class MobileVault(
 
 @Serializable
 data class MobileToken(val id: String, val symbol: String, val name: String)
+
+@Serializable
+data class MobileTokenResult(
+    val id: String? = null,
+    val symbol: String,
+    val name: String,
+    val provider: String? = null,
+    val metadata: kotlinx.serialization.json.JsonObject? = null,
+)
