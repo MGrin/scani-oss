@@ -20,6 +20,7 @@ final class AppContainer: ObservableObject {
     let groupsRepository: GroupsRepository
     let vaultsRepository: VaultsRepository
     let mobileApi: MobileApi
+    let widgetSnapshotWriter: WidgetSnapshotWriter
     private let pathMonitor = NWPathMonitor()
 
     init() {
@@ -58,6 +59,14 @@ final class AppContainer: ObservableObject {
         outboxProcessor = processor
         groupsRepository = GroupsRepository(db: db, ioContext: io)
         vaultsRepository = VaultsRepository(db: db, ioContext: io)
+        widgetSnapshotWriter = WidgetSnapshotWriter(
+            accounts: accountsRepository,
+            holdings: holdingsRepository,
+            groups: groupsRepository,
+            vaults: vaultsRepository,
+            storage: IosWidgetStorage(),
+            now: { KotlinLong(value: Int64(Date().timeIntervalSince1970 * 1000)) }
+        )
 
         pathMonitor.pathUpdateHandler = { path in
             guard path.status == .satisfied else { return }

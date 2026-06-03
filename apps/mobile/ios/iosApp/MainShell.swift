@@ -1,6 +1,7 @@
 import Combine
 import SwiftUI
 import Shared
+import WidgetKit
 
 struct MainShell: View {
     let container: AppContainer
@@ -43,6 +44,8 @@ struct MainShell: View {
                     try? await container.syncEngine.syncHoldings()
                     try? await container.syncEngine.syncGroups()
                     try? await container.syncEngine.syncVaults()
+                    try? await container.widgetSnapshotWriter.refresh()
+                    WidgetCenter.shared.reloadAllTimelines()
                 }
             }
         }
