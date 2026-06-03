@@ -26,8 +26,11 @@ struct MainShell: View {
         .onChange(of: scenePhase) { phase in
             if phase == .active {
                 Task {
+                    try? await container.outboxProcessor.drain()
                     try? await container.syncEngine.syncAccounts()
                     try? await container.syncEngine.syncHoldings()
+                    try? await container.syncEngine.syncGroups()
+                    try? await container.syncEngine.syncVaults()
                 }
             }
         }
