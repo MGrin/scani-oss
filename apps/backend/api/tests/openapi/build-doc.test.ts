@@ -12,6 +12,19 @@ describe('buildOpenApiDoc', () => {
         '/trpc/system.ping',
         '/trpc/mobile.accounts',
         '/trpc/mobile.holdings',
+        '/trpc/mobile.groups',
+        '/trpc/mobile.vaults',
+        '/trpc/mobile.updateAccount',
+        '/trpc/mobile.deleteAccount',
+        '/trpc/mobile.createHolding',
+        '/trpc/mobile.updateHolding',
+        '/trpc/mobile.deleteHolding',
+        '/trpc/mobile.createGroup',
+        '/trpc/mobile.updateGroup',
+        '/trpc/mobile.deleteGroup',
+        '/trpc/mobile.createVault',
+        '/trpc/mobile.updateVault',
+        '/trpc/mobile.deleteVault',
       ])
     );
   });
@@ -37,6 +50,26 @@ describe('buildOpenApiDoc', () => {
     expect(dataSchema.type).toBe('array');
     expect(dataSchema.items.properties.id).toBeDefined();
     expect(dataSchema.items.properties.name).toBeDefined();
+  });
+
+  it('documents mobile.createGroup request body with name and color fields', () => {
+    // biome-ignore lint/suspicious/noExplicitAny: traversing a loosely-typed OpenAPI doc
+    const op = (doc.paths as any)['/trpc/mobile.createGroup'];
+    expect(op).toBeDefined();
+    // biome-ignore lint/suspicious/noExplicitAny: same
+    const bodySchema = op.post.requestBody.content['application/json'].schema as any;
+    expect(bodySchema.properties.name).toBeDefined();
+    expect(bodySchema.properties.color).toBeDefined();
+  });
+
+  it('documents mobile.updateHolding request body with id and data fields', () => {
+    // biome-ignore lint/suspicious/noExplicitAny: traversing a loosely-typed OpenAPI doc
+    const op = (doc.paths as any)['/trpc/mobile.updateHolding'];
+    expect(op).toBeDefined();
+    // biome-ignore lint/suspicious/noExplicitAny: same
+    const bodySchema = op.post.requestBody.content['application/json'].schema as any;
+    expect(bodySchema.properties.id).toBeDefined();
+    expect(bodySchema.properties.data).toBeDefined();
   });
 
   it('only documents procedures the real appRouter actually serves (drift guard)', () => {
