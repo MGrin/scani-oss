@@ -6,6 +6,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 import xyz.scani.mobile.android.auth.AndroidSecureStorage
+import xyz.scani.mobile.android.widget.AndroidWidgetStorage
 import xyz.scani.mobile.shared.auth.AuthApi
 import xyz.scani.mobile.shared.auth.AuthRepository
 import xyz.scani.mobile.shared.data.AccountsRepository
@@ -18,6 +19,7 @@ import xyz.scani.mobile.shared.data.ScreenshotUploadService
 import xyz.scani.mobile.shared.data.SyncEngine
 import xyz.scani.mobile.shared.data.SyncStateRepository
 import xyz.scani.mobile.shared.data.VaultsRepository
+import xyz.scani.mobile.shared.data.WidgetSnapshotWriter
 import xyz.scani.mobile.shared.data.WriteQueue
 import xyz.scani.mobile.shared.db.AndroidDriverFactory
 import xyz.scani.mobile.shared.db.ScaniDatabase
@@ -57,6 +59,8 @@ object ServiceLocator {
         private set
     lateinit var screenshotUploadService: ScreenshotUploadService
         private set
+    lateinit var widgetSnapshotWriter: WidgetSnapshotWriter
+        private set
     var pendingDeepLink: xyz.scani.mobile.shared.navigation.Destination? = null
 
     fun init(context: Context) {
@@ -78,6 +82,13 @@ object ServiceLocator {
         groupsRepository = GroupsRepository(db, Dispatchers.IO)
         vaultsRepository = VaultsRepository(db, Dispatchers.IO)
         screenshotUploadService = ScreenshotUploadService(http, trpcClient)
+        widgetSnapshotWriter = WidgetSnapshotWriter(
+            accountsRepository,
+            holdingsRepository,
+            groupsRepository,
+            vaultsRepository,
+            AndroidWidgetStorage(context.applicationContext),
+        )
         val cm = context.getSystemService(android.net.ConnectivityManager::class.java)
         cm?.registerDefaultNetworkCallback(object : android.net.ConnectivityManager.NetworkCallback() {
             override fun onAvailable(network: android.net.Network) {

@@ -21,8 +21,11 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.compose.ui.platform.LocalContext
+import androidx.glance.appwidget.updateAll
 import kotlinx.coroutines.launch
 import xyz.scani.mobile.android.ServiceLocator
+import xyz.scani.mobile.android.widget.PortfolioWidget
 import xyz.scani.mobile.shared.navigation.Destination
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -55,6 +58,7 @@ fun MainShell() {
     val nav = rememberNavController()
     val scope = rememberCoroutineScope()
     val lifecycleOwner = LocalLifecycleOwner.current
+    val context = LocalContext.current
     DisposableEffect(lifecycleOwner) {
         val obs = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_RESUME) {
@@ -64,6 +68,8 @@ fun MainShell() {
                     runCatching { ServiceLocator.syncEngine.syncHoldings() }
                     runCatching { ServiceLocator.syncEngine.syncGroups() }
                     runCatching { ServiceLocator.syncEngine.syncVaults() }
+                    runCatching { ServiceLocator.widgetSnapshotWriter.refresh() }
+                    runCatching { PortfolioWidget().updateAll(context) }
                 }
             }
         }
@@ -89,6 +95,8 @@ fun MainShell() {
             runCatching { ServiceLocator.syncEngine.syncHoldings() }
             runCatching { ServiceLocator.syncEngine.syncGroups() }
             runCatching { ServiceLocator.syncEngine.syncVaults() }
+            runCatching { ServiceLocator.widgetSnapshotWriter.refresh() }
+            runCatching { PortfolioWidget().updateAll(context) }
         }
     }
     Scaffold(
