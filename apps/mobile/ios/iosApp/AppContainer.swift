@@ -24,18 +24,20 @@ final class AppContainer: ObservableObject {
 
     init() {
         let storage = KeychainSecureStorage()
-        let engine = HttpEngine_iosKt.defaultHttpEngine()
-        let repo = AuthRepository(api: AuthApi(engine: engine, baseUrl: baseURL), storage: storage)
-        authRepository = repo
-        trpcClient = TrpcClient(
-            engine: engine,
-            baseUrl: baseURL,
-            tokenProvider: { repo.token() },
+        let cookieJar = PersistentCookiesStorage(storage: storage)
+        var authRepoRef: AuthRepository!
+        let http = HttpClientFactoryKt.createScaniHttpClient(
+            engine: HttpEngine_iosKt.defaultHttpEngine(),
+            cookieStorage: cookieJar,
             onUnauthorized: {
-                repo.signOut()
+                authRepoRef.onUnauthorized()
                 NotificationCenter.default.post(name: .scaniUnauthorized, object: nil)
             }
         )
+        let repo = AuthRepository(api: AuthApi(http: http, baseUrl: baseURL), cookies: cookieJar)
+        authRepoRef = repo
+        authRepository = repo
+        trpcClient = TrpcClient(http: http, baseUrl: baseURL)
         let db = ScaniDatabaseCompanion.shared.invoke(driver: NativeDriverFactory().create())
         let io = Dispatchers_iosKt.iosIoDispatcher()
         let api = MobileApi(client: trpcClient)

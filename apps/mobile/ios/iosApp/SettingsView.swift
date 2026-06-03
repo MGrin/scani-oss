@@ -77,7 +77,7 @@ struct SettingsView: View {
             }
             Section {
                 Button("Sign out", role: .destructive) {
-                    model.container.authRepository.signOut()
+                    Task { try? await model.container.authRepository.signOut() }
                 }
             }
         }
