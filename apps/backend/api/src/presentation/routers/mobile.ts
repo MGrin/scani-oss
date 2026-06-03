@@ -1,9 +1,10 @@
 import type { User } from '@scani/db';
-import { AccountService, HoldingQueryService } from '@scani/domain/services';
+import { GroupRepository } from '@scani/domain/repositories';
+import { AccountService, HoldingQueryService, VaultService } from '@scani/domain/services';
 import { Container } from 'typedi';
 import { z } from 'zod';
 import { requireAuth } from '../middleware/auth';
-import { MobileAccount, MobileHolding } from '../mobile-dtos';
+import { MobileAccount, MobileGroup, MobileHolding, MobileVault } from '../mobile-dtos';
 import { protectedProcedure, router } from '../trpc';
 
 export const mobileRouter = router({
@@ -34,6 +35,32 @@ export const mobileRouter = router({
       name: h.token.name,
       amount: String(h.amount),
       value: h.value !== null ? String(h.value) : null,
+    }));
+  }),
+
+  groups: protectedProcedure.output(z.array(MobileGroup)).query(async ({ ctx }) => {
+    const { dbUser } = await requireAuth(ctx);
+    const rows = await Container.get(GroupRepository).findByUser(dbUser.id);
+    return rows.map((g) => ({
+      id: g.id,
+      name: g.name,
+      color: g.color,
+      description: g.description ?? null,
+    }));
+  }),
+
+  vaults: protectedProcedure.output(z.array(MobileVault)).query(async ({ ctx }) => {
+    const { dbUser } = await requireAuth(ctx);
+    const rows = await Container.get(VaultService).getVaultsForUser(dbUser.id);
+    return rows.map((v) => ({
+      id: v.id,
+      name: v.name,
+      targetAmount: String(v.targetAmount),
+      currentAmount: String(v.currentAmount),
+      currencyId: v.currencyId,
+      color: v.color,
+      iconName: v.iconName ?? null,
+      description: v.description ?? null,
     }));
   }),
 });
