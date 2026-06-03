@@ -14,6 +14,7 @@ import xyz.scani.mobile.shared.data.HoldingsRepository
 import xyz.scani.mobile.shared.data.MobileApi
 import xyz.scani.mobile.shared.data.OutboxProcessor
 import xyz.scani.mobile.shared.data.OutboxRepository
+import xyz.scani.mobile.shared.data.ScreenshotUploadService
 import xyz.scani.mobile.shared.data.SyncEngine
 import xyz.scani.mobile.shared.data.SyncStateRepository
 import xyz.scani.mobile.shared.data.VaultsRepository
@@ -54,6 +55,8 @@ object ServiceLocator {
         private set
     lateinit var vaultsRepository: VaultsRepository
         private set
+    lateinit var screenshotUploadService: ScreenshotUploadService
+        private set
     var pendingDeepLink: xyz.scani.mobile.shared.navigation.Destination? = null
 
     fun init(context: Context) {
@@ -74,6 +77,7 @@ object ServiceLocator {
         outboxProcessor = OutboxProcessor(trpcClient, outboxRepository, syncEngine)
         groupsRepository = GroupsRepository(db, Dispatchers.IO)
         vaultsRepository = VaultsRepository(db, Dispatchers.IO)
+        screenshotUploadService = ScreenshotUploadService(http, trpcClient)
         val cm = context.getSystemService(android.net.ConnectivityManager::class.java)
         cm?.registerDefaultNetworkCallback(object : android.net.ConnectivityManager.NetworkCallback() {
             override fun onAvailable(network: android.net.Network) {
