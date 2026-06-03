@@ -3,31 +3,32 @@ package xyz.scani.mobile.shared.auth
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import xyz.scani.mobile.shared.network.PersistentCookiesStorage
 
 class AuthRepository(
     private val api: AuthApi,
-    private val storage: SecureStorage,
+    private val cookies: PersistentCookiesStorage,
 ) {
-    private val _signedIn = MutableStateFlow(storage.getString(TOKEN_KEY) != null)
+    private val _signedIn = MutableStateFlow(cookies.hasAnyCookie())
     val signedIn: StateFlow<Boolean> = _signedIn.asStateFlow()
 
     suspend fun requestSignIn(email: String) = api.sendSignInOtp(email)
 
     suspend fun completeSignIn(email: String, otp: String) {
-        val token = api.verifySignInOtp(email, otp)
-        storage.putString(TOKEN_KEY, token)
-        _signedIn.value = true
+        api.verifySignInOtp(email, otp)
+        _signedIn.value = cookies.hasAnyCookie()
     }
 
-    fun token(): String? = storage.getString(TOKEN_KEY)
-    fun isSignedIn(): Boolean = token() != null
+    fun isSignedIn(): Boolean = cookies.hasAnyCookie()
 
-    fun signOut() {
-        storage.remove(TOKEN_KEY)
+    suspend fun signOut() {
+        runCatching { api.signOut() }
+        cookies.clear()
         _signedIn.value = false
     }
 
-    private companion object {
-        const val TOKEN_KEY = "scani.auth.token"
+    fun onUnauthorized() {
+        cookies.clear()
+        _signedIn.value = false
     }
 }
