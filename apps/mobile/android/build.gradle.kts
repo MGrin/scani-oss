@@ -41,4 +41,5 @@ dependencies {
     implementation(libs.androidx.security.crypto)
     implementation(libs.androidx.compose.material.icons.extended)
     implementation(libs.ktor.client.okhttp)
+    implementation(libs.kotlinx.serialization.json)
 }
