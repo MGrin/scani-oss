@@ -1,0 +1,102 @@
+name: iosApp
+options:
+  bundleIdPrefix: xyz.scani
+  deploymentTarget:
+    iOS: "16.0"
+targets:
+  iosApp:
+    type: application
+    platform: iOS
+    sources:
+      - path: iosApp
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: xyz.scani.mobile
+        SWIFT_VERSION: "5.0"
+        ENABLE_USER_SCRIPT_SANDBOXING: NO
+        GENERATE_INFOPLIST_FILE: YES
+        INFOPLIST_KEY_UILaunchScreen_Generation: YES
+        INFOPLIST_KEY_NSFaceIDUsageDescription: "Scani uses Face ID to keep your financial data private."
+        FRAMEWORK_SEARCH_PATHS:
+          - $(inherited)
+          - $(SRCROOT)/../shared/build/xcode-frameworks/$(CONFIGURATION)/$(SDK_NAME)
+        OTHER_LDFLAGS:
+          - $(inherited)
+          - -framework
+          - Shared
+          - -lsqlite3
+    entitlements:
+      path: iosApp/iosApp.entitlements
+      properties:
+        com.apple.developer.associated-domains:
+          - applinks:app.scani.xyz
+        com.apple.security.application-groups:
+          - group.xyz.scani.mobile
+        keychain-access-groups:
+          - xyz.scani.mobile.shared
+    dependencies:
+      - target: ShareExtension
+        embed: true
+      - target: ScaniWidgets
+        embed: true
+    preBuildScripts:
+      - name: Build Kotlin framework
+        basedOnDependencyAnalysis: false
+        script: |
+          cd "$SRCROOT/.."
+          ./gradlew :shared:embedAndSignAppleFrameworkForXcode
+
+  ShareExtension:
+    type: app-extension
+    platform: iOS
+    deploymentTarget: "16.0"
+    sources:
+      - path: ShareExtension
+      - path: iosApp/KeychainSecureStorage.swift
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: xyz.scani.mobile.ShareExtension
+        SWIFT_VERSION: "5.0"
+        ENABLE_USER_SCRIPT_SANDBOXING: NO
+        INFOPLIST_FILE: ShareExtension/Info.plist
+        FRAMEWORK_SEARCH_PATHS:
+          - $(inherited)
+          - $(SRCROOT)/../shared/build/xcode-frameworks/$(CONFIGURATION)/$(SDK_NAME)
+        OTHER_LDFLAGS:
+          - $(inherited)
+          - -framework
+          - Shared
+          - -lsqlite3
+    entitlements:
+      path: ShareExtension/ShareExtension.entitlements
+      properties:
+        com.apple.security.application-groups:
+          - group.xyz.scani.mobile
+        keychain-access-groups:
+          - xyz.scani.mobile.shared
+    preBuildScripts:
+      # The extension is built before the app target, so it must build the
+      # KMP `Shared` framework itself — otherwise its FRAMEWORK_SEARCH_PATHS is
+      # empty on a clean machine and `import Shared` fails.
+      - name: Build Kotlin framework
+        basedOnDependencyAnalysis: false
+        script: |
+          cd "$SRCROOT/.."
+          ./gradlew :shared:embedAndSignAppleFrameworkForXcode
+
+  ScaniWidgets:
+    type: app-extension
+    platform: iOS
+    deploymentTarget: "16.0"
+    sources:
+      - path: ScaniWidgets
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: xyz.scani.mobile.ScaniWidgets
+        SWIFT_VERSION: "5.0"
+        INFOPLIST_FILE: ScaniWidgets/Info.plist
+    entitlements:
+      path: ScaniWidgets/ScaniWidgets.entitlements
+      properties:
+        com.apple.security.application-groups:
+          - group.xyz.scani.mobile
