@@ -33,6 +33,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import xyz.scani.mobile.android.screens.AccountsScreen
+import xyz.scani.mobile.android.screens.AddScreen
 import xyz.scani.mobile.android.screens.DashboardScreen
 import xyz.scani.mobile.android.screens.HoldingsScreen
 
@@ -109,9 +110,7 @@ fun MainShell() {
             composable(Tab.Dashboard.route) { DashboardScreen() }
             composable(Tab.Holdings.route) { HoldingsScreen() }
             composable(Tab.Accounts.route) { AccountsScreen() }
-            composable(Tab.Add.route) {
-                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Text(Tab.Add.label) }
-            }
+            composable(Tab.Add.route) { AddScreen() }
             composable(Tab.Settings.route) {
                 Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Text(Tab.Settings.label) }
             }
