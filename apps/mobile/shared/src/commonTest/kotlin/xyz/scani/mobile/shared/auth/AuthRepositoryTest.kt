@@ -5,69 +5,63 @@ import io.ktor.client.engine.mock.respond
 import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.headersOf
+import io.ktor.utils.io.ByteReadChannel
 import kotlinx.coroutines.test.runTest
+import xyz.scani.mobile.shared.network.PersistentCookiesStorage
+import xyz.scani.mobile.shared.network.createScaniHttpClient
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
+import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 class AuthRepositoryTest {
     @Test
-    fun complete_sign_in_persists_bearer_token() = runTest {
+    fun complete_sign_in_request_paths_and_cookie_captured() = runTest {
         var sawSendPath: String? = null
         var sawVerifyPath: String? = null
+        val store = InMemorySecureStorage()
+        val jar = PersistentCookiesStorage(store)
         val engine = MockEngine { request ->
             val p = request.url.encodedPath
             if (p.endsWith("send-verification-otp")) {
                 sawSendPath = p
-                respond("""{"success":true}""", HttpStatusCode.OK, headersOf(HttpHeaders.ContentType, "application/json"))
+                respond(ByteReadChannel("{}"), HttpStatusCode.OK, headersOf(HttpHeaders.ContentType, "application/json"))
             } else {
                 sawVerifyPath = p
                 respond(
-                    content = """{"token":"sess_abc","user":{"id":"u1"}}""",
+                    content = ByteReadChannel("{}"),
                     status = HttpStatusCode.OK,
-                    headers = headersOf(
-                        HttpHeaders.ContentType to listOf("application/json"),
-                        "set-auth-token" to listOf("sess_abc"),
-                    ),
+                    headers = headersOf(HttpHeaders.SetCookie, "scani-app.session_token=tok; Path=/"),
                 )
             }
         }
-        val store = InMemorySecureStorage()
-        val repo = AuthRepository(AuthApi(engine, "https://api.test"), store)
+        val http = createScaniHttpClient(engine, jar) {}
+        val repo = AuthRepository(AuthApi(http, "https://api.test"), jar)
 
-        assertTrue(!repo.isSignedIn())
+        assertFalse(repo.isSignedIn())
         repo.requestSignIn("a@b.com")
         repo.completeSignIn("a@b.com", "123456")
 
         assertTrue(repo.isSignedIn())
-        assertEquals("sess_abc", repo.token())
+        assertTrue(jar.hasAnyCookie())
         assertEquals("/api/auth/email-otp/send-verification-otp", sawSendPath)
         assertEquals("/api/auth/sign-in/email-otp", sawVerifyPath)
 
         repo.signOut()
-        assertTrue(!repo.isSignedIn())
+        assertFalse(repo.isSignedIn())
+        assertFalse(jar.hasAnyCookie())
     }
 
     @Test
-    fun verify_without_token_header_fails() = runTest {
+    fun verify_http_error_throws_auth_exception() = runTest {
+        val store = InMemorySecureStorage()
+        val jar = PersistentCookiesStorage(store)
         val engine = MockEngine {
-            respond("""{"error":"bad otp"}""", HttpStatusCode.Unauthorized, headersOf(HttpHeaders.ContentType, "application/json"))
+            respond(ByteReadChannel("""{"error":"bad otp"}"""), HttpStatusCode.Unauthorized, headersOf(HttpHeaders.ContentType, "application/json"))
         }
-        val repo = AuthRepository(AuthApi(engine, "https://api.test"), InMemorySecureStorage())
+        val http = createScaniHttpClient(engine, jar) {}
+        val repo = AuthRepository(AuthApi(http, "https://api.test"), jar)
         assertFailsWith<AuthException> { repo.completeSignIn("a@b.com", "000000") }
-    }
-
-    @Test
-    fun verify_missing_token_header_on_200_fails() = runTest {
-        val engine = MockEngine {
-            respond(
-                content = """{"token":null}""",
-                status = HttpStatusCode.OK,
-                headers = headersOf(HttpHeaders.ContentType, "application/json"),
-            )
-        }
-        val repo = AuthRepository(AuthApi(engine, "https://api.test"), InMemorySecureStorage())
-        assertFailsWith<AuthException> { repo.completeSignIn("a@b.com", "123456") }
     }
 }
