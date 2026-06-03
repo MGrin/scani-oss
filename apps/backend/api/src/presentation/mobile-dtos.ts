@@ -1,5 +1,8 @@
 import { z } from 'zod';
 
+export const MobileToken = z.object({ id: z.string(), symbol: z.string(), name: z.string() });
+export type MobileTokenT = z.infer<typeof MobileToken>;
+
 export const MobileAccount = z.object({
   id: z.string(),
   name: z.string(),

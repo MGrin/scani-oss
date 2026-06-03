@@ -3,6 +3,7 @@ import {
   MobileAccount,
   MobileGroup,
   MobileHolding,
+  MobileToken,
   MobileVault,
 } from '../../src/presentation/mobile-dtos';
 import { mobileRouter } from '../../src/presentation/routers/mobile';
@@ -60,6 +61,36 @@ describe('mobile DTOs', () => {
         value: null,
       }).success
     ).toBe(true);
+  });
+});
+
+describe('MobileToken DTO', () => {
+  it('parses valid token', () => {
+    expect(MobileToken.safeParse({ id: 'uuid-1', symbol: 'USD', name: 'US Dollar' }).success).toBe(
+      true
+    );
+  });
+
+  it('rejects missing name', () => {
+    expect(MobileToken.safeParse({ id: 'uuid-1', symbol: 'USD' }).success).toBe(false);
+  });
+});
+
+describe('mobileRouter read endpoints', () => {
+  it('exposes currencies query', () => {
+    expect(mobileRouter._def.procedures.currencies).toBeDefined();
+  });
+
+  it('exposes searchTokens query', () => {
+    expect(mobileRouter._def.procedures.searchTokens).toBeDefined();
+  });
+
+  it('searchTokens input: query must be 1-100 chars', () => {
+    const schema = mobileRouter._def.procedures.searchTokens._def.inputs[0];
+    expect(schema.safeParse({ query: '' }).success).toBe(false);
+    expect(schema.safeParse({ query: 'BTC' }).success).toBe(true);
+    expect(schema.safeParse({ query: 'a'.repeat(101) }).success).toBe(false);
+    expect(schema.safeParse({ query: 'a'.repeat(100) }).success).toBe(true);
   });
 });
 
