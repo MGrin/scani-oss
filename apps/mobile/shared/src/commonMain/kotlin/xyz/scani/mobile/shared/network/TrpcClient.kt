@@ -7,8 +7,12 @@ import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.client.request.get
 import io.ktor.client.request.header
 import io.ktor.client.request.parameter
+import io.ktor.client.request.post
+import io.ktor.client.request.setBody
+import io.ktor.http.ContentType
 import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
+import io.ktor.http.content.TextContent
 import io.ktor.serialization.kotlinx.json.json
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
@@ -46,6 +50,17 @@ class TrpcClient(
         if (response.status == HttpStatusCode.Unauthorized) {
             onUnauthorized()
         }
+        val envelope = response.body<TrpcEnvelope<T>>()
+        envelope.error?.let { throw TrpcException(it.message ?: "tRPC error: $procedure", it) }
+        return envelope.result?.data ?: throw TrpcException("Empty tRPC result: $procedure", null)
+    }
+
+    suspend inline fun <reified T> mutate(procedure: String, input: JsonElement): T {
+        val response = http.post("$baseUrl/trpc/$procedure") {
+            tokenProvider()?.let { header(HttpHeaders.Authorization, "Bearer $it") }
+            setBody(TextContent(json.encodeToString(input), ContentType.Application.Json))
+        }
+        if (response.status == HttpStatusCode.Unauthorized) onUnauthorized()
         val envelope = response.body<TrpcEnvelope<T>>()
         envelope.error?.let { throw TrpcException(it.message ?: "tRPC error: $procedure", it) }
         return envelope.result?.data ?: throw TrpcException("Empty tRPC result: $procedure", null)
