@@ -20,6 +20,7 @@ import { flushSentry, initSentry, captureException as sentryCapture } from '@sca
 import { buildProviderRegistry } from '@scani/providers/core/boot';
 import { aiOpenAIFactory } from '@scani/providers/providers/ai-openai';
 import { aiStubFactory } from '@scani/providers/providers/ai-stub';
+import { airwallexFactory } from '@scani/providers/providers/airwallex';
 import { binanceFactory } from '@scani/providers/providers/binance';
 import { bitcoinFactory } from '@scani/providers/providers/bitcoin';
 import { bitgetFactory } from '@scani/providers/providers/bitget';
@@ -206,6 +207,7 @@ async function main(): Promise<void> {
         // Brokers + fiat.
         ibkrFactory,
         wiseFactory,
+        airwallexFactory,
         // AI: STUB_AI=1 registers a fixed-payload provider FIRST so the
         // e2e suite gets deterministic screenshot-parse results without
         // an OpenAI key. The data-provider config schema refuses

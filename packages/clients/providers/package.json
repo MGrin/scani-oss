@@ -43,6 +43,7 @@
     "./providers/bitstamp": "./src/providers/bitstamp/index.ts",
     "./providers/ibkr": "./src/providers/ibkr/index.ts",
     "./providers/wise": "./src/providers/wise/index.ts",
+    "./providers/airwallex": "./src/providers/airwallex/index.ts",
     "./providers/yahoo-finance": "./src/providers/yahoo-finance/index.ts",
     "./core/utils/fetch": "./src/core/utils/fetch.ts",
     "./core/utils/exchange-suffix": "./src/core/utils/exchange-suffix.ts",
