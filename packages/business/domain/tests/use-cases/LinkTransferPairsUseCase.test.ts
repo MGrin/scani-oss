@@ -41,6 +41,14 @@ interface Fixture {
 
 let fixture: Fixture | null = null;
 
+// LinkTransferPairsUseCase only scans the last ~2 years of transactions
+// (its `since` window). Anchor fixtures relative to now so they never age
+// out of that window and silently report scanned=0 — a previously
+// hardcoded 2024 date started failing once the calendar passed it.
+function recentTransferTimestamp(): Date {
+  return new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+}
+
 async function setupFixture(): Promise<Fixture> {
   // Insert a user, two accounts (one CEX, one wallet), a token, and a
   // holding per account. The use case scans by user, so the institution
@@ -180,7 +188,7 @@ describe('LinkTransferPairsUseCase', () => {
 
   test('links a single matching withdraw/deposit pair within window + epsilon', async () => {
     const f = fixture!;
-    const at = new Date('2024-06-15T10:00:00Z');
+    const at = recentTransferTimestamp();
     await db.insert(schema.holdingTransactions).values([
       {
         userId: f.userId,
@@ -227,7 +235,7 @@ describe('LinkTransferPairsUseCase', () => {
 
   test('does NOT link when the deposit is outside the 30-min match window', async () => {
     const f = fixture!;
-    const at = new Date('2024-06-15T10:00:00Z');
+    const at = recentTransferTimestamp();
     await db.insert(schema.holdingTransactions).values([
       {
         userId: f.userId,
@@ -258,7 +266,7 @@ describe('LinkTransferPairsUseCase', () => {
 
   test('does NOT link when quantity drift exceeds the 1% epsilon', async () => {
     const f = fixture!;
-    const at = new Date('2024-06-15T10:00:00Z');
+    const at = recentTransferTimestamp();
     await db.insert(schema.holdingTransactions).values([
       {
         userId: f.userId,
@@ -289,7 +297,7 @@ describe('LinkTransferPairsUseCase', () => {
 
   test('flags ambiguous pairs when more than one viable deposit matches', async () => {
     const f = fixture!;
-    const at = new Date('2024-06-15T10:00:00Z');
+    const at = recentTransferTimestamp();
     await db.insert(schema.holdingTransactions).values([
       {
         userId: f.userId,
@@ -337,7 +345,7 @@ describe('LinkTransferPairsUseCase', () => {
 
   test('skips rows already carrying a transferGroupId (idempotent re-run)', async () => {
     const f = fixture!;
-    const at = new Date('2024-06-15T10:00:00Z');
+    const at = recentTransferTimestamp();
     const preLinkedGroup = randomUUID();
     await db.insert(schema.holdingTransactions).values([
       {
