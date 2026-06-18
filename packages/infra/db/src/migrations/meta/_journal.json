@@ -120,6 +120,13 @@
       "when": 1778330000000,
       "tag": "0017_purge_crosstype_price_pollution",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1778340000000,
+      "tag": "0018_seed_airwallex",
+      "breakpoints": true
     }
   ]
 }
