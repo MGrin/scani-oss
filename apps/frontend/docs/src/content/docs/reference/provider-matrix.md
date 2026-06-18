@@ -48,6 +48,7 @@ leave your api.
 |---|---|---|---|
 | Interactive Brokers | _user-supplied Flex Web Service token_ | balance, transaction | Flex token + query ID configured per user. |
 | Wise | _user-supplied API token_ | balance, transaction | |
+| Airwallex | _user-supplied Client ID + API key_ | balance, transaction | Client ID + API key exchanged for a 30-min bearer token per call. |
 
 ## Blockchains
 
@@ -93,7 +94,7 @@ work with per-user credentials only.
 | Kraken | Solid. Most-tested exchange adapter. |
 | Binance, Coinbase, Bybit, OKX | Solid for balance + recent transactions. Edge cases on multi-account / sub-account setups. |
 | KuCoin, Gate, HTX, Bitstamp, Gemini, MEXC, Bitget | Functional. Less battle-tested. |
-| IBKR (Flex), Wise | Functional. Flex query setup is the main user friction. |
+| IBKR (Flex), Wise, Airwallex | Functional. Flex query setup is the main user friction. |
 | Bitcoin, Tron, TON, ENS | Functional. Public RPCs are slow on big wallets. |
 | OpenAI Vision | Solid for screenshots; quality degrades on dark-mode or non-English UIs. |
 | Perplexity, DeepSeek | Optional supplements; not required. |

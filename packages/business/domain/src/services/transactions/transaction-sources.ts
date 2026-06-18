@@ -39,6 +39,7 @@ export const CEX_SOURCE_TO_INSTITUTION: Record<string, string> = {
   'bitstamp-api': 'bitstamp',
   'gemini-api': 'gemini',
   'ibkr-api': 'ibkr',
+  'airwallex-api': 'airwallex',
 };
 
 /** Exchange/broker transaction-import source tags. */
