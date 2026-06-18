@@ -49,6 +49,7 @@ function sourceForProvider(provider: string): string | null {
     gemini: 'gemini-api',
     ibkr: 'ibkr-api',
     'interactive brokers': 'ibkr-api',
+    airwallex: 'airwallex-api',
   };
   return map[p] ?? null;
 }
