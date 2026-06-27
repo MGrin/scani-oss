@@ -23,10 +23,11 @@ import { withTransaction } from '@scani/db/transaction';
 import { createComponentLogger } from '@scani/logging';
 import { ProviderRegistry } from '@scani/providers/core/registry';
 import type { HoldingSnapshot, ProviderContext } from '@scani/providers/core/types';
-import { and, eq, inArray } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import { Container, Service } from 'typedi';
 import { TokenTypeRepository } from '../repositories/EnumRepositories';
 import { HoldingRepository, type HoldingWithFullDetails } from '../repositories/HoldingRepository';
+import { InstitutionRepository } from '../repositories/InstitutionRepository';
 import {
   ExpiredCredentialsError,
   HoldingsSyncHelper,
@@ -70,6 +71,7 @@ export class SyncExchangeBalancesUseCase {
   private readonly holdingRepository = Container.get(HoldingRepository);
   private readonly tokenTypeRepository = Container.get(TokenTypeRepository);
   private readonly holdingsSyncHelper = Container.get(HoldingsSyncHelper);
+  private readonly institutionRepository = Container.get(InstitutionRepository);
 
   async execute(): Promise<SyncExchangeBalancesResult> {
     const startTime = Date.now();
@@ -100,39 +102,12 @@ export class SyncExchangeBalancesUseCase {
         stock: stockTokenType?.id ?? cryptoTokenType.id,
       };
 
-      // Query database for exchange institutions. Names match the
-      // `institutions.name` column populated at seed time. The list is
-      // hardcoded here — every exchange the `@scani/providers` registry
-      // can handle. New CEX providers added to the registry need a
-      // line added here too; the alternative (a runtime
-      // `ProviderRegistry.describe().providerKeys.balances` query) is
-      // less explicit because it'd silently include non-CEX
-      // institutions like 'ethereum'.
-      const exchangeNames = [
-        'Binance',
-        'Bitget',
-        'Bitstamp',
-        'Bybit',
-        'Coinbase',
-        'Gate.io',
-        'Gemini',
-        'Huobi',
-        'IBKR',
-        'Kraken',
-        'KuCoin',
-        'MEXC',
-        'OKX',
-        'Wise',
-      ];
-      logger.debug({ exchangeNames }, 'Looking for exchange institutions');
-
-      const exchangeInstitutions = await db
-        .select()
-        .from(schema.institutions)
-        .where(inArray(schema.institutions.name, exchangeNames));
+      // Self-maintaining selection: institutions a user connected that aren't
+      // blockchain wallets. See InstitutionRepository.findSyncableInstitutions.
+      const exchangeInstitutions = await this.institutionRepository.findSyncableInstitutions();
 
       if (exchangeInstitutions.length === 0) {
-        logger.warn({ exchangeNames }, 'No exchange institutions found in database');
+        logger.info('No credentialed non-wallet institutions to sync');
         return {
           accountsFound: 0,
           accountsSynced: 0,
@@ -144,11 +119,6 @@ export class SyncExchangeBalancesUseCase {
           durationMs: Date.now() - startTime,
         };
       }
-
-      logger.debug(
-        { institutionsFound: exchangeInstitutions.length },
-        'Found exchange institutions in database'
-      );
 
       // Structure to hold all fetched data
       interface AccountHoldingsData {
