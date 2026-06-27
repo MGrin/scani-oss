@@ -1,5 +1,5 @@
 import crypto from 'node:crypto';
-import { PortfolioValueCache } from '@scani/domain/services';
+import { IntegrationCredentialsService, PortfolioValueCache } from '@scani/domain/services';
 import { ImportExchangeAccountsUseCase, ImportIbkrAccountsUseCase } from '@scani/domain/use-cases';
 import {
   EXCHANGE_IMPORT,
@@ -9,6 +9,7 @@ import {
   TRANSACTION_IMPORT,
 } from '@scani/jobs';
 import { createComponentLogger } from '@scani/logging';
+import { captureException } from '@scani/logging/sentry';
 import {
   BullMqEnqueueService,
   type ProcessorContext,
@@ -82,6 +83,42 @@ function isUnrecoverableExchangeError(err: unknown): boolean {
 // Exported for unit tests.
 export const __test_isUnrecoverableExchangeError = isUnrecoverableExchangeError;
 
+// A terminal import failure must be reflected on the credential row —
+// otherwise it stays `enqueued` and looks healthy forever. Best-effort:
+// never let a bookkeeping failure mask the original import error.
+async function markCredentialFailed(
+  userId: string,
+  institutionId: string,
+  reason: string,
+  deps: { captureException: (err: unknown, tags?: Record<string, string>) => void } = {
+    captureException,
+  }
+): Promise<void> {
+  try {
+    const service = Container.get(IntegrationCredentialsService);
+    const credential = await service.getCredentials(userId, institutionId);
+    if (credential) await service.markImportFailed(credential.id, reason);
+  } catch (markError) {
+    logger.error(
+      {
+        userId,
+        institutionId,
+        error: markError instanceof Error ? markError.message : String(markError),
+      },
+      'Failed to mark credential import as failed'
+    );
+  }
+  deps.captureException(new Error(`Exchange import terminal failure: ${reason}`), {
+    component: 'worker',
+    kind: 'exchange-import-failed',
+    userId,
+    institutionId,
+  });
+}
+
+// Exported for unit tests — allows injecting a captureException stub.
+export const __test_markCredentialFailed = markCredentialFailed;
+
 @Service()
 export class ExchangeImportProcessor extends UserJobProcessor<ExchangeImportJob, unknown> {
   readonly descriptor = EXCHANGE_IMPORT;
@@ -106,6 +143,7 @@ export class ExchangeImportProcessor extends UserJobProcessor<ExchangeImportJob,
         // BullMQ UnrecoverableError short-circuits the retry policy —
         // the job goes to `failed` immediately instead of re-running.
         const msg = error instanceof Error ? error.message : String(error);
+        await markCredentialFailed(data.userId, data.institutionId, msg);
         throw new UnrecoverableError(msg);
       }
       throw error;
@@ -202,7 +240,9 @@ export class ExchangeImportProcessor extends UserJobProcessor<ExchangeImportJob,
     // (some imported, some failed) still succeeds with errors visible.
     if (result.errors.length > 0 && result.accountsCreated === 0) {
       const summary = result.errors.map((e) => e.error ?? 'unknown').join('; ');
-      throw new UnrecoverableError(`Exchange import produced no accounts; errors: ${summary}`);
+      const msg = `Exchange import produced no accounts; errors: ${summary}`;
+      await markCredentialFailed(data.userId, data.institutionId, msg);
+      throw new UnrecoverableError(msg);
     }
 
     return {
