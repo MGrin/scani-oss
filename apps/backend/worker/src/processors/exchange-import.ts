@@ -1,6 +1,14 @@
 import crypto from 'node:crypto';
+<<<<<<< HEAD
 import { captureExchangeImportCompleted } from '@scani/analytics';
 import { IntegrationCredentialsService, PortfolioValueCache } from '@scani/domain/services';
+=======
+import {
+  IntegrationCredentialsService,
+  PortfolioValueCache,
+  sourceForProvider,
+} from '@scani/domain/services';
+>>>>>>> upstream/main
 import { ImportExchangeAccountsUseCase, ImportIbkrAccountsUseCase } from '@scani/domain/use-cases';
 import {
   EXCHANGE_IMPORT,
@@ -26,34 +34,6 @@ const logger = createComponentLogger('processor:exchange-import');
 // wave easily spans more than 30s; the coarser bucket collapses the
 // session to a single backfill).
 const BACKFILL_COALESCE_WINDOW_MS = 5 * 60_000;
-
-// Pick a stable `source` tag for an exchange provider. These match the
-// `readonly source = '…'` fields on the CEX TransactionIngester classes.
-// Providers we don't have an ingester for return null — the
-// transaction-import chain is skipped; balance-only imports still work.
-function sourceForProvider(provider: string): string | null {
-  const p = provider.toLowerCase();
-  const map: Record<string, string> = {
-    kraken: 'kraken-api',
-    binance: 'binance-api',
-    bybit: 'bybit-api',
-    okx: 'okx-api',
-    coinbase: 'coinbase-api',
-    kucoin: 'kucoin-api',
-    'gate.io': 'gate-api',
-    gateio: 'gate-api',
-    gate: 'gate-api',
-    bitget: 'bitget-api',
-    huobi: 'huobi-api',
-    mexc: 'mexc-api',
-    bitstamp: 'bitstamp-api',
-    gemini: 'gemini-api',
-    ibkr: 'ibkr-api',
-    'interactive brokers': 'ibkr-api',
-    airwallex: 'airwallex-api',
-  };
-  return map[p] ?? null;
-}
 
 // Classify failures that re-running will not fix, so BullMQ skips
 // retries and the user sees the real error immediately on the job page.

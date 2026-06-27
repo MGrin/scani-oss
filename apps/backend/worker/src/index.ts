@@ -94,6 +94,7 @@ import { BackfillTokenIdentityProcessor } from './processors/backfill-token-iden
 import { DlqDepthProbeProcessor } from './processors/dlq-depth-probe';
 import { ExchangeBalancesProcessor } from './processors/exchange-balances';
 import { ExchangeImportProcessor } from './processors/exchange-import';
+import { ExchangeTransactionsProcessor } from './processors/exchange-transactions';
 import { FileImportProcessor } from './processors/file-import';
 import { ForexBackfillProcessor } from './processors/forex-backfill';
 import { HideClosedHoldingsProcessor } from './processors/hide-closed-holdings';
@@ -127,6 +128,7 @@ function resolveProcessors() {
     Container.get(PricingProcessor),
     Container.get(WalletBalancesProcessor),
     Container.get(ExchangeBalancesProcessor),
+    Container.get(ExchangeTransactionsProcessor),
     Container.get(ApyPayoutsProcessor),
     Container.get(HistoricalPriceBackfillProcessor),
     Container.get(ForexBackfillProcessor),
