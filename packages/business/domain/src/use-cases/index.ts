@@ -86,6 +86,10 @@ export {
   SyncExchangeBalancesUseCase,
 } from './SyncExchangeBalancesUseCase';
 export {
+  type SyncExchangeTransactionsResult,
+  SyncExchangeTransactionsUseCase,
+} from './SyncExchangeTransactionsUseCase';
+export {
   type SyncWalletBalancesResult,
   SyncWalletBalancesUseCase,
 } from './SyncWalletBalancesUseCase';

@@ -16,6 +16,7 @@ src/
     ├── dlq-depth-probe.ts              (scheduled, every 5 minutes)
     ├── exchange-balances.ts            (scheduled, hourly)
     ├── exchange-import.ts              (user-initiated)
+    ├── exchange-transactions.ts        (scheduled, daily 01:00 UTC)
     ├── file-import.ts                  (user-initiated)
     ├── forex-backfill.ts               (scheduled, nightly 03:30 UTC)
     ├── hide-closed-holdings.ts         (scheduled, nightly 04:30 UTC)
