@@ -59,6 +59,11 @@ const envSchema = z.object({
       message: 'DLQ_ALERT_THRESHOLD must be a positive integer',
     }),
 
+  // Integrations whose lastSync is older than this many hours trigger a
+  // Sentry alert via the stale-sync-probe processor. Default 3h keeps the
+  // signal tight: exchange-balances runs hourly, so 3h means 2 missed cycles.
+  STALE_SYNC_THRESHOLD_HOURS: z.coerce.number().int().positive().default(3),
+
   // Sentry — fully optional. Empty string is treated as unset (see
   // `optionalUrl`). SDK init gates on DSN presence regardless.
   SENTRY_DSN: optionalUrl,

@@ -40,6 +40,11 @@ export class JobScheduler {
           opts: d.defaultOpts ?? {
             removeOnComplete: 100,
             removeOnFail: { age: 24 * 60 * 60 },
+            // Repeatable jobs had no attempts (BullMQ default 1), so a single
+            // transient Neon CONNECTION_CLOSED dead-lettered immediately. Retry
+            // long enough to outlast a serverless cold start.
+            attempts: 3,
+            backoff: { type: 'exponential', delay: 5_000 },
           },
         }
       );
