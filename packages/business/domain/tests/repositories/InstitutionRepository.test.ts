@@ -2,7 +2,12 @@ import { describe, expect, test } from 'bun:test';
 import { Container } from 'typedi';
 import { InstitutionRepository } from '../../src/repositories/InstitutionRepository';
 import { withTestDb } from '../../test/helpers/db';
-import { makeInstitution, makeUser } from '../../test/helpers/factories';
+import {
+  makeCredential,
+  makeInstitution,
+  makeInstitutionType,
+  makeUser,
+} from '../../test/helpers/factories';
 import { makeAccount } from '../../test/helpers/factories-extra';
 
 // findByUserId is the one that drives the "Institutions" screen + the
@@ -73,6 +78,52 @@ describe('InstitutionRepository', () => {
       const bRows = await repo().findByUserId(userB.id, tx);
       expect(aRows.map((r) => r.id)).toContain(institution.id);
       expect(bRows.map((r) => r.id)).not.toContain(institution.id);
+    });
+  });
+});
+
+describe('findSyncableInstitutions', () => {
+  test('includes a non-crypto_wallet institution that has credentials (IBKR/Airwallex regression)', async () => {
+    await withTestDb(async (tx) => {
+      const user = await makeUser(tx);
+      const broker = await makeInstitutionType(tx, { code: 'broker' });
+      const ibkr = await makeInstitution(tx, { name: 'Interactive Brokers', typeId: broker.id });
+      await makeCredential(tx, { userId: user.id, institutionId: ibkr.id });
+      const rows = await repo().findSyncableInstitutions(tx);
+      expect(rows.map((r) => r.id)).toContain(ibkr.id);
+    });
+  });
+
+  test('excludes crypto_wallet institutions (owned by wallet-balances)', async () => {
+    await withTestDb(async (tx) => {
+      const user = await makeUser(tx);
+      const wallet = await makeInstitutionType(tx, { code: 'crypto_wallet' });
+      const eth = await makeInstitution(tx, { name: 'Ethereum', typeId: wallet.id });
+      await makeCredential(tx, { userId: user.id, institutionId: eth.id });
+      const rows = await repo().findSyncableInstitutions(tx);
+      expect(rows.map((r) => r.id)).not.toContain(eth.id);
+    });
+  });
+
+  test('excludes institutions with no credentials', async () => {
+    await withTestDb(async (tx) => {
+      const broker = await makeInstitutionType(tx, { code: 'broker' });
+      const inst = await makeInstitution(tx, { name: 'Lonely Broker', typeId: broker.id });
+      const rows = await repo().findSyncableInstitutions(tx);
+      expect(rows.map((r) => r.id)).not.toContain(inst.id);
+    });
+  });
+
+  test('returns an institution once even with multiple credentials', async () => {
+    await withTestDb(async (tx) => {
+      const u1 = await makeUser(tx);
+      const u2 = await makeUser(tx);
+      const bank = await makeInstitutionType(tx, { code: 'bank' });
+      const aw = await makeInstitution(tx, { name: 'Airwallex', typeId: bank.id });
+      await makeCredential(tx, { userId: u1.id, institutionId: aw.id });
+      await makeCredential(tx, { userId: u2.id, institutionId: aw.id });
+      const rows = await repo().findSyncableInstitutions(tx);
+      expect(rows.filter((r) => r.id === aw.id).length).toBe(1);
     });
   });
 });
