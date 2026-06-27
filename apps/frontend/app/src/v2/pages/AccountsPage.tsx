@@ -1,5 +1,5 @@
 import type { AccountWihSumaryDTO } from '@scani/shared';
-import { formatCurrency } from '@scani/shared';
+import { formatCurrency, formatRelative } from '@scani/shared';
 import { ConfirmDialog } from '@scani/ui/components/ConfirmDialog';
 import { Badge } from '@scani/ui/ui/badge';
 import { Wallet } from 'lucide-react';
@@ -15,6 +15,10 @@ import { AssignGroupsDialog } from '../components/groups/AssignGroupsDialog';
 import { useAccountActions } from '../hooks/useAccountActions';
 import { useBaseCurrency } from '../hooks/useBaseCurrency';
 import { V2_ROUTES } from '../lib/routes';
+
+// Mirrors the worker's STALE_SYNC_THRESHOLD_HOURS default (the stale-sync
+// Sentry probe). A connected account not synced in this long is overdue.
+const STALE_AFTER_HOURS = 3;
 
 export function AccountsPage() {
   const { data: accountsData, isLoading } = trpc.accounts.getByUserIdWithSummary.useQuery();
@@ -110,6 +114,21 @@ export function AccountsPage() {
             {typeMap.get(item.typeId)?.name ?? item.typeId}
           </span>
         ),
+      },
+      {
+        key: 'lastSync',
+        label: 'Last Synced',
+        render: (item) => {
+          const raw = (item.metadata as { lastSync?: string } | null | undefined)?.lastSync;
+          if (!raw) return <span className="text-sm text-muted-foreground">—</span>;
+          const isStale = Date.now() - new Date(raw).getTime() > STALE_AFTER_HOURS * 60 * 60 * 1000;
+          return (
+            <span className="inline-flex items-center gap-1.5 text-sm text-muted-foreground">
+              {formatRelative(raw)}
+              {isStale && <Badge variant="destructive">Stale</Badge>}
+            </span>
+          );
+        },
       },
       {
         key: 'holdingsCount',
