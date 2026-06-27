@@ -96,6 +96,7 @@ export {
   type TransactionImportResult,
   TransactionImportUnrecoverableError,
 } from './transactions/TransactionImportCoordinator';
+export { sourceForProvider } from './transactions/transaction-source';
 // users/
 export {
   ExpiredCredentialsError,

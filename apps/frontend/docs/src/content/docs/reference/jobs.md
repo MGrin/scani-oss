@@ -23,6 +23,7 @@ overlapping fires of the same name silently no-op rather than race.
 | `pricing` | Hourly (`0 * * * *`) | Refresh current prices for every token referenced by an active holding. |
 | `wallet-balances` | Hourly | Re-sync on-chain wallet balances + transactions across Etherscan, Helius, Bitcoin, Tron, TON. |
 | `exchange-balances` | Hourly | Re-sync exchange holdings + recent trades for every connected exchange integration. |
+| `exchange-transactions` | Daily (`0 1 * * *`) | Refresh the transaction ledger for every connected exchange/broker/bank integration — fans out a `transaction-import` per account with a 30-day rolling window. |
 | `apy-payouts` | Daily, 00:00 UTC | Apply accrued interest to holdings with an [APY config](/concepts/apy/) due for payout. |
 | `historical-price-backfill` | Nightly, 03:00 UTC | Fill `daily`-granularity price history for tokens with holdings; respects `unpriceableUntil` cooldown. |
 | `forex-backfill` | Nightly, 03:30 UTC | Fill historical FX pairs (via Frankfurter) needed by the rollup. |
