@@ -1,7 +1,7 @@
 import { BaseRepository, type DatabaseTransaction } from '@scani/db';
 import type { Institution, NewInstitution } from '@scani/db/schema';
 import * as schema from '@scani/db/schema';
-import { and, eq } from 'drizzle-orm';
+import { and, eq, ne } from 'drizzle-orm';
 import { Service } from 'typedi';
 
 @Service()
@@ -48,5 +48,26 @@ export class InstitutionRepository extends BaseRepository<Institution, NewInstit
       this.logger.error({ userId, error }, 'Failed to find institutions by user');
       throw error;
     }
+  }
+
+  async findSyncableInstitutions(transaction?: DatabaseTransaction): Promise<Institution[]> {
+    const database = this.getDb(transaction);
+    // Capability/type driven: any institution a user connected (has a
+    // credential) that isn't a blockchain wallet (those sync via the
+    // wallet-balances job). Replaces the old hardcoded display-name list
+    // that silently dropped renamed/new providers (IBKR, Airwallex).
+    const rows = await database
+      .selectDistinct({ institution: schema.institutions })
+      .from(schema.institutions)
+      .innerJoin(
+        schema.institutionTypes,
+        eq(schema.institutions.typeId, schema.institutionTypes.id)
+      )
+      .innerJoin(
+        schema.userIntegrationCredentials,
+        eq(schema.userIntegrationCredentials.institutionId, schema.institutions.id)
+      )
+      .where(ne(schema.institutionTypes.code, 'crypto_wallet'));
+    return rows.map((r) => r.institution);
   }
 }
