@@ -8,6 +8,7 @@ export const JOB_NAMES = {
   pricing: 'pricing',
   walletBalances: 'wallet-balances',
   exchangeBalances: 'exchange-balances',
+  exchangeTransactions: 'exchange-transactions',
   apyPayouts: 'apy-payouts',
   reconcilePendingCredentials: 'reconcile-pending-credentials',
   reconcileOrphanedUserJobs: 'reconcile-orphaned-user-jobs',
