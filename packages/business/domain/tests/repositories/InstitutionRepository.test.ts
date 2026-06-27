@@ -127,3 +127,48 @@ describe('findSyncableInstitutions', () => {
     });
   });
 });
+
+describe('findStaleSyncTargets', () => {
+  test('flags an active credentialed account whose lastSync is older than cutoff', async () => {
+    await withTestDb(async (tx) => {
+      const user = await makeUser(tx);
+      const broker = await makeInstitutionType(tx, { code: 'broker' });
+      const ibkr = await makeInstitution(tx, { name: 'Interactive Brokers', typeId: broker.id });
+      await makeCredential(tx, { userId: user.id, institutionId: ibkr.id });
+      await makeAccount(tx, {
+        userId: user.id,
+        institutionId: ibkr.id,
+        metadata: { lastSync: new Date('2020-01-01').toISOString() },
+      });
+      const targets = await repo().findStaleSyncTargets(new Date('2026-01-01'), tx);
+      expect(targets.find((t) => t.institutionId === ibkr.id)?.kind).toBe('stale-account');
+    });
+  });
+
+  test('flags a credentialed institution with zero active accounts (orphan / Binance class)', async () => {
+    await withTestDb(async (tx) => {
+      const user = await makeUser(tx);
+      const cex = await makeInstitutionType(tx, { code: 'crypto_exchange' });
+      const binance = await makeInstitution(tx, { name: 'Binance', typeId: cex.id });
+      await makeCredential(tx, { userId: user.id, institutionId: binance.id });
+      const targets = await repo().findStaleSyncTargets(new Date('2026-01-01'), tx);
+      expect(targets.find((t) => t.institutionId === binance.id)?.kind).toBe('no-account');
+    });
+  });
+
+  test('does NOT flag a freshly-synced account', async () => {
+    await withTestDb(async (tx) => {
+      const user = await makeUser(tx);
+      const broker = await makeInstitutionType(tx, { code: 'broker' });
+      const inst = await makeInstitution(tx, { name: 'Fresh Broker', typeId: broker.id });
+      await makeCredential(tx, { userId: user.id, institutionId: inst.id });
+      await makeAccount(tx, {
+        userId: user.id,
+        institutionId: inst.id,
+        metadata: { lastSync: new Date('2026-06-27').toISOString() },
+      });
+      const targets = await repo().findStaleSyncTargets(new Date('2026-06-01'), tx);
+      expect(targets.find((t) => t.institutionId === inst.id)).toBeUndefined();
+    });
+  });
+});

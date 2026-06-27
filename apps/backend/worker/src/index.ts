@@ -108,6 +108,7 @@ import { ReconcileOrphanedUserJobsProcessor } from './processors/reconcile-orpha
 import { ReconcilePendingCredentialsProcessor } from './processors/reconcile-pending-credentials';
 import { RefreshAccountBalanceProcessor } from './processors/refresh-account-balance';
 import { ScreenshotParseProcessor } from './processors/screenshot-parse';
+import { StaleSyncProbeProcessor } from './processors/stale-sync-probe';
 import { TransferLinkingProcessor } from './processors/transfer-linking';
 import { UserDataDeleteProcessor } from './processors/user-data-delete';
 import { WalletBalancesProcessor } from './processors/wallet-balances';
@@ -136,6 +137,7 @@ function resolveProcessors() {
     Container.get(ReconcileOrphanedUserJobsProcessor),
     Container.get(DlqDepthProbeProcessor),
     Container.get(JobHeartbeatProbeProcessor),
+    Container.get(StaleSyncProbeProcessor),
     // User-initiated (payload via UserJobDescriptor schema).
     Container.get(ScreenshotParseProcessor),
     Container.get(ExchangeImportProcessor),

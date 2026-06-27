@@ -1,8 +1,14 @@
 import { BaseRepository, type DatabaseTransaction } from '@scani/db';
 import type { Institution, NewInstitution } from '@scani/db/schema';
 import * as schema from '@scani/db/schema';
-import { and, eq, ne } from 'drizzle-orm';
+import { and, eq, ne, sql } from 'drizzle-orm';
 import { Service } from 'typedi';
+
+export type StaleSyncTarget = {
+  institutionId: string;
+  institutionName: string;
+  kind: 'stale-account' | 'no-account';
+};
 
 @Service()
 export class InstitutionRepository extends BaseRepository<Institution, NewInstitution> {
@@ -48,6 +54,31 @@ export class InstitutionRepository extends BaseRepository<Institution, NewInstit
       this.logger.error({ userId, error }, 'Failed to find institutions by user');
       throw error;
     }
+  }
+
+  async findStaleSyncTargets(
+    cutoff: Date,
+    transaction?: DatabaseTransaction
+  ): Promise<StaleSyncTarget[]> {
+    const database = this.getDb(transaction);
+    const rows = await database.execute(sql`
+      select i.id as institution_id, i.name as institution_name,
+        case when count(a.id) filter (where a.is_active) = 0 then 'no-account'
+             else 'stale-account' end as kind
+      from institutions i
+      join institution_types it on it.id = i.type_id
+      join user_integration_credentials uic on uic.institution_id = i.id
+      left join accounts a on a.institution_id = i.id and a.is_active
+      where it.code <> 'crypto_wallet'
+      group by i.id, i.name
+      having count(a.id) filter (where a.is_active) = 0
+          or bool_and(coalesce((a.metadata->>'lastSync')::timestamptz, 'epoch') < ${cutoff.toISOString()}::timestamptz)
+    `);
+    return rows.map((r: any) => ({
+      institutionId: r.institution_id,
+      institutionName: r.institution_name,
+      kind: r.kind,
+    }));
   }
 
   async findSyncableInstitutions(transaction?: DatabaseTransaction): Promise<Institution[]> {
