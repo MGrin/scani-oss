@@ -31,6 +31,7 @@ src/
     ├── reconcile-pending-credentials.ts (scheduled, every minute)
     ├── refresh-account-balance.ts      (user-initiated)
     ├── screenshot-parse.ts             (user-initiated)
+    ├── stale-sync-probe.ts             (scheduled, hourly)
     ├── transfer-linking.ts             (scheduled, nightly 03:45 UTC)
     ├── user-data-delete.ts             (user-initiated)
     ├── wallet-balances.ts              (scheduled, hourly)

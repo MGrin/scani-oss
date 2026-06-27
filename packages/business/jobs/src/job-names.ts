@@ -29,6 +29,7 @@ export const JOB_NAMES = {
   hideClosedHoldings: 'hide-closed-holdings',
   dlqDepthProbe: 'dlq-depth-probe',
   jobHeartbeatProbe: 'job-heartbeat-probe',
+  staleSyncProbe: 'stale-sync-probe',
 } as const;
 
 export type JobName = (typeof JOB_NAMES)[keyof typeof JOB_NAMES];
