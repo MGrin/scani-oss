@@ -33,6 +33,7 @@ overlapping fires of the same name silently no-op rather than race.
 | `reconcile-orphaned-user-jobs` | Every minute | Sweep stuck `running` user-job rows whose worker process died. |
 | `dlq-depth-probe` | Every 5 minutes | Read the dead-letter queue depth; emit a warn log when it crosses thresholds. |
 | `job-heartbeat-probe` | Every 10 minutes | Detect jobs whose heartbeat went silent; mark them stuck. |
+| `stale-sync-probe` | Hourly (`0 * * * *`) | Detect active, credentialed integrations that have silently stopped syncing — stale `lastSync` or zero accounts — and alert via Sentry. |
 | `hide-closed-holdings` | Nightly, 04:30 UTC | Auto-hide holdings that have been at zero balance for the configured window. |
 
 ## User-initiated jobs
