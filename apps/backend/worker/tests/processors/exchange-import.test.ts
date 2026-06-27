@@ -1,5 +1,10 @@
-import { describe, expect, it } from 'bun:test';
-import { __test_isUnrecoverableExchangeError as classify } from '../../src/processors/exchange-import';
+import { describe, expect, it, mock } from 'bun:test';
+import { IntegrationCredentialsService } from '@scani/domain/services';
+import { Container } from 'typedi';
+import {
+  __test_markCredentialFailed,
+  __test_isUnrecoverableExchangeError as classify,
+} from '../../src/processors/exchange-import';
 
 describe('isUnrecoverableExchangeError', () => {
   it('classifies IBKR Flex bad-token codes', () => {
@@ -75,5 +80,61 @@ describe('isUnrecoverableExchangeError', () => {
     expect(classify(new Error('fetch failed: ECONNRESET'))).toBe(false);
     expect(classify(new Error('Bitstamp HTTP 500: Internal Server Error'))).toBe(false);
     expect(classify(new Error('timeout'))).toBe(false);
+  });
+});
+
+describe('markCredentialFailed', () => {
+  it('marks the credential failed and fires captureException', async () => {
+    const markImportFailed = mock(async () => {});
+    const getCredentials = mock(async () => ({ id: 'cred-1' }));
+    Container.set(IntegrationCredentialsService, { getCredentials, markImportFailed });
+
+    const captured: unknown[] = [];
+    const captureException = mock((err: unknown) => {
+      captured.push(err);
+    });
+
+    await __test_markCredentialFailed('u1', 'i1', 'Bitstamp HTTP 401: Unauthorized', {
+      captureException,
+    });
+
+    expect(getCredentials).toHaveBeenCalledWith('u1', 'i1');
+    expect(markImportFailed).toHaveBeenCalledWith('cred-1', 'Bitstamp HTTP 401: Unauthorized');
+    expect(captured.length).toBe(1);
+    expect((captured[0] as Error).message).toBe(
+      'Exchange import terminal failure: Bitstamp HTTP 401: Unauthorized'
+    );
+  });
+
+  it('skips markImportFailed but still fires captureException when credential is not found', async () => {
+    const markImportFailed = mock(async () => {});
+    const getCredentials = mock(async () => null);
+    Container.set(IntegrationCredentialsService, { getCredentials, markImportFailed });
+
+    const captureException = mock((_err: unknown) => {});
+
+    await __test_markCredentialFailed('u1', 'i1', 'Bitstamp HTTP 401: Unauthorized', {
+      captureException,
+    });
+
+    expect(markImportFailed).not.toHaveBeenCalled();
+    expect(captureException).toHaveBeenCalledTimes(1);
+  });
+
+  it('swallows bookkeeping errors and still fires captureException', async () => {
+    const markImportFailed = mock(async () => {
+      throw new Error('DB error');
+    });
+    const getCredentials = mock(async () => ({ id: 'cred-2' }));
+    Container.set(IntegrationCredentialsService, { getCredentials, markImportFailed });
+
+    const captureException = mock((_err: unknown) => {});
+
+    // Must not throw even if markImportFailed throws
+    await expect(
+      __test_markCredentialFailed('u1', 'i1', 'some failure', { captureException })
+    ).resolves.toBeUndefined();
+
+    expect(captureException).toHaveBeenCalledTimes(1);
   });
 });

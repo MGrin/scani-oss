@@ -24,11 +24,21 @@ src/
     ├── pricing.ts              (scheduled, hourly)
     ├── reconcile-orphaned-user-jobs.ts (scheduled, every minute — sweep stuck rows)
     ├── reconcile-pending-credentials.ts (scheduled, every minute)
+<<<<<<< HEAD
     ├── screenshot-parse.ts     (user-initiated)
     ├── transfer-linking.ts     (scheduled, nightly 05:00)
     ├── user-data-delete.ts     (user-initiated)
     ├── wallet-balances.ts      (scheduled, hourly)
     └── wallet-import.ts        (user-initiated)
+=======
+    ├── refresh-account-balance.ts      (user-initiated)
+    ├── screenshot-parse.ts             (user-initiated)
+    ├── stale-sync-probe.ts             (scheduled, hourly)
+    ├── transfer-linking.ts             (scheduled, nightly 03:45 UTC)
+    ├── user-data-delete.ts             (user-initiated)
+    ├── wallet-balances.ts              (scheduled, hourly)
+    └── wallet-import.ts                (user-initiated)
+>>>>>>> upstream/main
 ```
 
 ## Boot flow (load-bearing)
