@@ -96,4 +96,14 @@ describe('JobScheduler — upsertAll', () => {
     await new JobScheduler().upsertAll([{ name: 'utc-default', cron: '0 0 * * *' }]);
     expect((upsertCalls[0]?.pattern as { pattern: string; tz?: string }).tz).toBe('UTC');
   });
+
+  test('repeatable jobs are enqueued with attempts and backoff so transient DB drops do not dead-letter', async () => {
+    const { queue, upsertCalls } = stubQueue();
+    Container.set(QueueClient, { get: () => queue } as never);
+    await new JobScheduler().upsertAll([{ name: 'retry-test', cron: '0 * * * *' }]);
+    const opts = (upsertCalls[0]?.opts as { opts?: { attempts?: number; backoff?: unknown } })
+      ?.opts;
+    expect(opts?.attempts).toBeGreaterThanOrEqual(3);
+    expect(opts?.backoff).toBeDefined();
+  });
 });
