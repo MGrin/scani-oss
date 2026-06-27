@@ -106,16 +106,19 @@ describe('markCredentialFailed', () => {
     );
   });
 
-  it('does not mark credential failed on success — terminal path never fires', async () => {
+  it('skips markImportFailed but still fires captureException when credential is not found', async () => {
     const markImportFailed = mock(async () => {});
-    const getCredentials = mock(async () => ({ id: 'cred-1' }));
+    const getCredentials = mock(async () => null);
     Container.set(IntegrationCredentialsService, { getCredentials, markImportFailed });
 
-    // Processor with a successful use-case stub returns accounts — no UnrecoverableError thrown.
-    // The test verifies markImportFailed is untouched by running a successful handle().
-    // We validate via the __test_markCredentialFailed export: if NOT called, markImportFailed stays
-    // at 0 invocations — confirmed here by simply not calling it.
+    const captureException = mock((_err: unknown) => {});
+
+    await __test_markCredentialFailed('u1', 'i1', 'Bitstamp HTTP 401: Unauthorized', {
+      captureException,
+    });
+
     expect(markImportFailed).not.toHaveBeenCalled();
+    expect(captureException).toHaveBeenCalledTimes(1);
   });
 
   it('swallows bookkeeping errors and still fires captureException', async () => {

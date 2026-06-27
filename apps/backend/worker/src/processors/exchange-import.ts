@@ -108,12 +108,24 @@ async function markCredentialFailed(
       'Failed to mark credential import as failed'
     );
   }
-  deps.captureException(new Error(`Exchange import terminal failure: ${reason}`), {
-    component: 'worker',
-    kind: 'exchange-import-failed',
-    userId,
-    institutionId,
-  });
+  // Independent best-effort: a throwing Sentry transport must not mask the original error.
+  try {
+    deps.captureException(new Error(`Exchange import terminal failure: ${reason}`), {
+      component: 'worker',
+      kind: 'exchange-import-failed',
+      userId,
+      institutionId,
+    });
+  } catch (sentryError) {
+    logger.error(
+      {
+        userId,
+        institutionId,
+        error: sentryError instanceof Error ? sentryError.message : String(sentryError),
+      },
+      'Failed to capture exception in Sentry'
+    );
+  }
 }
 
 // Exported for unit tests — allows injecting a captureException stub.
