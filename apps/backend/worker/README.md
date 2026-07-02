@@ -33,6 +33,7 @@ src/
     ├── refresh-account-balance.ts      (user-initiated)
     ├── screenshot-parse.ts             (user-initiated)
     ├── stale-sync-probe.ts             (scheduled, hourly)
+    ├── token-prices-downsample.ts      (scheduled, nightly 05:00 UTC)
     ├── transfer-linking.ts             (scheduled, nightly 03:45 UTC)
     ├── user-data-delete.ts             (user-initiated)
     ├── wallet-balances.ts              (scheduled, hourly)

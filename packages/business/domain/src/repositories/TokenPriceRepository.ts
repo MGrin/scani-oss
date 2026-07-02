@@ -519,6 +519,61 @@ export class TokenPriceRepository extends BaseRepository<TokenPrice, NewTokenPri
     }
   }
 
+  // Collapse intraday prices older than `retentionDays` whole UTC days into a
+  // single 'daily' row per (token, base, day): the last intraday reading of
+  // each day becomes a synthesized daily close, then the collapsed intraday
+  // rows are deleted. Existing 'daily' rows are authoritative and kept
+  // (ON CONFLICT DO NOTHING); 'tx-exact' rows are never touched. Callers wrap
+  // this in a transaction so intraday data is never dropped without its daily
+  // aggregate existing first.
+  //
+  // Reads stay correct because every historical lookup (>36h in the past)
+  // prefers 'daily' and falls through to any granularity — see
+  // PriceGraphService / CostBasisService / PortfolioValuationAtTimeService.
+  async downsampleIntradayToDaily(
+    retentionDays: number,
+    transaction?: DatabaseTransaction
+  ): Promise<{ aggregated: number; deleted: number }> {
+    const database = this.getDb(transaction);
+
+    // UTC-midnight cutoff, independent of the DB session timezone.
+    const cutoff = sql`((date_trunc('day', now() at time zone 'UTC') at time zone 'UTC') - make_interval(days => ${retentionDays}))`;
+
+    const inserted = (await database.execute(sql`
+      with collapsed as (
+        insert into token_prices (token_id, base_token_id, price, "timestamp", source, granularity)
+        select distinct on (p.token_id, p.base_token_id, d.day)
+          p.token_id, p.base_token_id, p.price, d.day, 'downsample-daily', 'daily'
+        from token_prices p
+        cross join lateral (
+          select (date_trunc('day', p."timestamp" at time zone 'UTC') at time zone 'UTC') as day
+        ) d
+        where p.granularity = 'intraday' and p."timestamp" < ${cutoff}
+        order by p.token_id, p.base_token_id, d.day, p."timestamp" desc
+        on conflict (token_id, base_token_id, "timestamp", granularity) do nothing
+        returning 1
+      )
+      select count(*)::int as n from collapsed
+    `)) as unknown as Array<{ n: number }>;
+
+    const removed = (await database.execute(sql`
+      with del as (
+        delete from token_prices
+        where granularity = 'intraday' and "timestamp" < ${cutoff}
+        returning 1
+      )
+      select count(*)::int as n from del
+    `)) as unknown as Array<{ n: number }>;
+
+    const aggregated = inserted[0]?.n ?? 0;
+    const deleted = removed[0]?.n ?? 0;
+    this.logger.info(
+      { aggregated, deleted, retentionDays },
+      'Downsampled intraday prices older than retention window to daily'
+    );
+    return { aggregated, deleted };
+  }
+
   // List distinct (token_id, base_token_id) pairs that exist in the
   // price table — used by ForexBackfillCronJob / PriceGraphService to
   // enumerate available edges in the price graph.

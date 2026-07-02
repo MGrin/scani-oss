@@ -125,6 +125,39 @@ describe('ScamTokenDetectionService', () => {
       expect(prob).toBeGreaterThan(0.5);
     });
 
+    it('should flag homoglyph symbols using non-Latin lookalike letters', () => {
+      // Real-world phishing tokens seen in prod: Cyrillic Ѕ/С/Т and Lisu ꓴꓢꓓ
+      // used to impersonate USDC/USDT/ETH. Crypto tickers are ASCII, so any
+      // non-ASCII letter in the symbol is a strong impersonation signal.
+      for (const [symbol, name] of [
+        ['UЅDС', 'USDC'], // UЅDС (Cyrillic Ѕ, С)
+        ['UЅDТ', 'USDT'], // UЅDТ (Cyrillic Ѕ, Т)
+        ['EТH', 'ETH'], // EТH (Cyrillic Т)
+        ['ꓴꓢꓓС', 'USDC'], // ꓴꓢꓓС (Lisu + Cyrillic)
+      ] as const) {
+        const prob = service.calculateScamProbability(symbol, name, recentDate, false);
+        expect(prob).toBeGreaterThan(0.35);
+      }
+    });
+
+    it('should flag homoglyph symbols even when price data is claimed', () => {
+      // The homoglyph signal is symbol-intrinsic and must not be masked by a
+      // (spoofed) price-data flag.
+      const prob = service.calculateScamProbability('UЅDС', 'USDC', oldDate, true);
+      expect(prob).toBeGreaterThan(0.35);
+    });
+
+    it('should not flag legitimate ASCII symbols as homoglyphs', () => {
+      for (const [symbol, name] of [
+        ['USDC', 'USD Coin'],
+        ['ETH', 'Ethereum'],
+        ['WETH', 'Wrapped Ether'],
+      ] as const) {
+        const prob = service.calculateScamProbability(symbol, name, oldDate, true);
+        expect(prob).toBe(0);
+      }
+    });
+
     it('should compound URL + suspicious word penalties', () => {
       const urlOnly = service.calculateScamProbability('TOKEN.COM', 'Token Com', oldDate, true);
       const urlAndSuspicious = service.calculateScamProbability(
