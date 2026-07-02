@@ -15,6 +15,10 @@ export { PRICING_SCHEDULE } from './pricing';
 export { RECONCILE_ORPHANED_USER_JOBS_SCHEDULE } from './reconcile-orphaned-user-jobs';
 export { RECONCILE_PENDING_CREDENTIALS_SCHEDULE } from './reconcile-pending-credentials';
 export { STALE_SYNC_PROBE_SCHEDULE } from './stale-sync-probe';
+export {
+  TOKEN_PRICES_DOWNSAMPLE_SCHEDULE,
+  TOKEN_PRICES_INTRADAY_RETENTION_DAYS,
+} from './token-prices-downsample';
 export { TRANSFER_LINKING_SCHEDULE } from './transfer-linking';
 export { WALLET_BALANCES_SCHEDULE } from './wallet-balances';
 
@@ -32,6 +36,7 @@ import { PRICING_SCHEDULE } from './pricing';
 import { RECONCILE_ORPHANED_USER_JOBS_SCHEDULE } from './reconcile-orphaned-user-jobs';
 import { RECONCILE_PENDING_CREDENTIALS_SCHEDULE } from './reconcile-pending-credentials';
 import { STALE_SYNC_PROBE_SCHEDULE } from './stale-sync-probe';
+import { TOKEN_PRICES_DOWNSAMPLE_SCHEDULE } from './token-prices-downsample';
 import { TRANSFER_LINKING_SCHEDULE } from './transfer-linking';
 import { WALLET_BALANCES_SCHEDULE } from './wallet-balances';
 
@@ -45,6 +50,7 @@ export const SCHEDULED_JOB_DESCRIPTORS = [
   RECONCILE_ORPHANED_USER_JOBS_SCHEDULE,
   HISTORICAL_PRICE_BACKFILL_SCHEDULE,
   FOREX_BACKFILL_SCHEDULE,
+  TOKEN_PRICES_DOWNSAMPLE_SCHEDULE,
   PORTFOLIO_VALUE_ROLLUP_SCHEDULE,
   TRANSFER_LINKING_SCHEDULE,
   BACKFILL_TOKEN_IDENTITY_SCHEDULE,

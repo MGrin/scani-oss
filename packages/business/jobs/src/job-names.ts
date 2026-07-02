@@ -14,6 +14,7 @@ export const JOB_NAMES = {
   reconcileOrphanedUserJobs: 'reconcile-orphaned-user-jobs',
   historicalPriceBackfill: 'historical-price-backfill',
   forexBackfill: 'forex-backfill',
+  tokenPricesDownsample: 'token-prices-downsample',
   portfolioValueRollup: 'portfolio-value-rollup',
   transferLinking: 'transfer-linking',
   backfillTokenIdentity: 'backfill-token-identity',
