@@ -1,4 +1,7 @@
 import { describe, expect, test } from 'bun:test';
+import type { DatabaseTransaction } from '@scani/db';
+import * as schema from '@scani/db/schema';
+import { eq } from 'drizzle-orm';
 import { Container } from 'typedi';
 import { TokenPriceRepository } from '../../src/repositories/TokenPriceRepository';
 import { withTestDb } from '../../test/helpers/db';
@@ -295,6 +298,125 @@ describe('TokenPriceRepository', () => {
         const eur = await makeToken(tx);
         const prices = await repo().findLatestPricesForTokensAnyBase([], eur.id, tx);
         expect(prices.size).toBe(0);
+      });
+    });
+  });
+
+  describe('downsampleIntradayToDaily', () => {
+    const DAY = 24 * 60 * 60 * 1000;
+    const daysAgo = (n: number) => new Date(Date.now() - n * DAY);
+
+    const seedIntraday = (
+      tx: DatabaseTransaction,
+      tokenId: string,
+      baseId: string,
+      at: Date,
+      price: string
+    ) =>
+      repo().create(
+        {
+          tokenId,
+          baseTokenId: baseId,
+          price,
+          timestamp: at,
+          source: 'test',
+          granularity: 'intraday',
+        },
+        tx
+      );
+
+    test('collapses old intraday to one daily (last-of-day) and keeps recent intraday', async () => {
+      await withTestDb(async (tx) => {
+        const token = await makeToken(tx);
+        const base = await makeToken(tx);
+        // Two intraday points on the same old UTC day — the later one wins.
+        const oldDay = daysAgo(30);
+        oldDay.setUTCHours(3, 0, 0, 0);
+        const oldDayLater = new Date(oldDay);
+        oldDayLater.setUTCHours(21, 0, 0, 0);
+        await seedIntraday(tx, token.id, base.id, oldDay, '100');
+        await seedIntraday(tx, token.id, base.id, oldDayLater, '110');
+        // A recent intraday point that must be left intact.
+        await seedIntraday(tx, token.id, base.id, daysAgo(1), '999');
+
+        const { aggregated, deleted } = await repo().downsampleIntradayToDaily(7, tx);
+        expect(aggregated).toBe(1);
+        expect(deleted).toBe(2);
+
+        const rows = await tx
+          .select()
+          .from(schema.tokenPrices)
+          .where(eq(schema.tokenPrices.tokenId, token.id));
+        const daily = rows.filter((r) => r.granularity === 'daily');
+        const intraday = rows.filter((r) => r.granularity === 'intraday');
+        expect(daily).toHaveLength(1);
+        expect(daily[0]?.price).toBe('110'); // last reading of the day
+        expect(daily[0]?.timestamp.toISOString()).toBe(
+          `${oldDay.toISOString().slice(0, 10)}T00:00:00.000Z`
+        );
+        expect(intraday).toHaveLength(1); // the recent one survives
+        expect(intraday[0]?.price).toBe('999');
+      });
+    });
+
+    test('preserves an authoritative existing daily row (no overwrite)', async () => {
+      await withTestDb(async (tx) => {
+        const token = await makeToken(tx);
+        const base = await makeToken(tx);
+        const oldDay = daysAgo(30);
+        oldDay.setUTCHours(0, 0, 0, 0);
+        await repo().create(
+          {
+            tokenId: token.id,
+            baseTokenId: base.id,
+            price: '500',
+            timestamp: oldDay,
+            source: 'provider',
+            granularity: 'daily',
+          },
+          tx
+        );
+        const intra = new Date(oldDay);
+        intra.setUTCHours(15, 0, 0, 0);
+        await seedIntraday(tx, token.id, base.id, intra, '111');
+
+        const { aggregated, deleted } = await repo().downsampleIntradayToDaily(7, tx);
+        expect(aggregated).toBe(0); // conflict -> do nothing
+        expect(deleted).toBe(1);
+
+        const daily = (
+          await tx.select().from(schema.tokenPrices).where(eq(schema.tokenPrices.tokenId, token.id))
+        ).filter((r) => r.granularity === 'daily');
+        expect(daily).toHaveLength(1);
+        expect(daily[0]?.price).toBe('500'); // provider close kept, not '111'
+      });
+    });
+
+    test('never touches tx-exact rows', async () => {
+      await withTestDb(async (tx) => {
+        const token = await makeToken(tx);
+        const base = await makeToken(tx);
+        await repo().create(
+          {
+            tokenId: token.id,
+            baseTokenId: base.id,
+            price: '77',
+            timestamp: daysAgo(30),
+            source: 'tx',
+            granularity: 'tx-exact',
+          },
+          tx
+        );
+
+        const { deleted } = await repo().downsampleIntradayToDaily(7, tx);
+        expect(deleted).toBe(0);
+
+        const rows = await tx
+          .select()
+          .from(schema.tokenPrices)
+          .where(eq(schema.tokenPrices.tokenId, token.id));
+        expect(rows).toHaveLength(1);
+        expect(rows[0]?.granularity).toBe('tx-exact');
       });
     });
   });

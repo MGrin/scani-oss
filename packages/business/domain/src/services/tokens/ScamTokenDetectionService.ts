@@ -45,6 +45,12 @@ export class ScamTokenDetectionService extends BaseService {
   private readonly EMOJI_PATTERN =
     /[\u{1F600}-\u{1F64F}\u{1F300}-\u{1F5FF}\u{1F680}-\u{1F6FF}\u{1F1E0}-\u{1F1FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}]/u;
 
+  // Homoglyph pattern: a Unicode LETTER that is not ASCII. Exchange/chain
+  // tickers are ASCII, so a non-ASCII letter in a symbol means a lookalike
+  // impersonation (Cyrillic Ѕ/С/Т, Lisu ꓴꓢꓓ, Greek, fullwidth Latin, …).
+  // Scoped to letters so it doesn't overlap the emoji check.
+  private readonly HOMOGLYPH_PATTERN = /(?!\p{ASCII})\p{L}/u;
+
   constructor() {
     super('ScamTokenDetectionService');
   }
@@ -98,6 +104,14 @@ export class ScamTokenDetectionService extends BaseService {
     if (this.hasEmoji(symbol) || this.hasEmoji(name)) {
       probability += 0.2;
       reasons.push('Contains emoji');
+    }
+
+    // Check 4.5: Homoglyph symbol (non-ASCII lookalike letters). Very strong
+    // on its own — legitimate tickers never carry these. Weighted above the
+    // threshold so a fresh impersonation is flagged without other signals.
+    if (this.hasHomoglyph(symbol)) {
+      probability += 0.7;
+      reasons.push('Symbol uses non-ASCII lookalike (homoglyph) letters');
     }
 
     // Check 5: Common symbol but created recently — DISABLED
@@ -169,6 +183,14 @@ export class ScamTokenDetectionService extends BaseService {
    */
   private hasEmoji(text: string): boolean {
     return this.EMOJI_PATTERN.test(text);
+  }
+
+  /**
+   * Check if a symbol contains non-ASCII lookalike (homoglyph) letters used
+   * to impersonate a legitimate ticker (e.g. Cyrillic Ѕ/С/Т in "UЅDС").
+   */
+  private hasHomoglyph(symbol: string): boolean {
+    return this.HOMOGLYPH_PATTERN.test(symbol);
   }
 
   /**
