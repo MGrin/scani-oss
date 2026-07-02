@@ -27,6 +27,7 @@ overlapping fires of the same name silently no-op rather than race.
 | `apy-payouts` | Daily, 00:00 UTC | Apply accrued interest to holdings with an [APY config](/concepts/apy/) due for payout. |
 | `historical-price-backfill` | Nightly, 03:00 UTC | Fill `daily`-granularity price history for tokens with holdings; respects `unpriceableUntil` cooldown. |
 | `forex-backfill` | Nightly, 03:30 UTC | Fill historical FX pairs (via Frankfurter) needed by the rollup. |
+| `token-prices-downsample` | Nightly, 05:00 UTC | Collapse `intraday` prices older than 7 days into one `daily` row per token/base/day (keeps the day's last reading); preserves existing `daily` and `tx-exact` rows. Caps `token_prices` growth. |
 | `portfolio-value-rollup` | Nightly, 04:00 UTC | Recompute `portfolio_value_daily` for every user at user / institution / account / holding scope. |
 | `transfer-linking` | Nightly, 03:45 UTC | Pair CEX withdrawals with wallet deposits via `LinkTransferPairsUseCase`. |
 | `backfill-token-identity` | Weekly, Sunday 02:00 UTC | Re-enrich tokens whose `providerMetadata` hasn't been touched lately. |

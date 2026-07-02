@@ -110,6 +110,7 @@ import { ReconcilePendingCredentialsProcessor } from './processors/reconcile-pen
 import { RefreshAccountBalanceProcessor } from './processors/refresh-account-balance';
 import { ScreenshotParseProcessor } from './processors/screenshot-parse';
 import { StaleSyncProbeProcessor } from './processors/stale-sync-probe';
+import { TokenPricesDownsampleProcessor } from './processors/token-prices-downsample';
 import { TransferLinkingProcessor } from './processors/transfer-linking';
 import { UserDataDeleteProcessor } from './processors/user-data-delete';
 import { WalletBalancesProcessor } from './processors/wallet-balances';
@@ -131,6 +132,7 @@ function resolveProcessors() {
     Container.get(ApyPayoutsProcessor),
     Container.get(HistoricalPriceBackfillProcessor),
     Container.get(ForexBackfillProcessor),
+    Container.get(TokenPricesDownsampleProcessor),
     Container.get(PortfolioValueRollupProcessor),
     Container.get(TransferLinkingProcessor),
     Container.get(BackfillTokenIdentityProcessor),
