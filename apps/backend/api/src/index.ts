@@ -100,6 +100,7 @@ import { wiseFactory } from '@scani/providers/providers/wise';
 import { googleSheetsFactory } from '@scani/providers-google-sheets';
 import { createBetterAuth } from './auth/better-auth';
 import { initializeContainer } from './config/container';
+import { registerAdminDataRoutes } from './presentation/http/admin-data';
 import { registerAdminJobsRoutes } from './presentation/http/admin-jobs';
 import {
   createContext,
@@ -448,6 +449,7 @@ const app = new Elysia()
   );
 
 registerAdminJobsRoutes(app, redisConnection);
+registerAdminDataRoutes(app, redisConnection);
 
 app
   .get('/', () => ({ status: 'ok', service: 'api' }))
