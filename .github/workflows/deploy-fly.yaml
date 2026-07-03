@@ -866,8 +866,6 @@ jobs:
           FLY_ORG: ${{ secrets.FLY_ORG }}
           NEON_API_KEY: ${{ secrets.NEON_API_KEY }}
           NEON_ORG_ID: ${{ secrets.NEON_ORG_ID }}
-          UPSTASH_EMAIL: ${{ secrets.UPSTASH_EMAIL }}
-          UPSTASH_API_KEY: ${{ secrets.UPSTASH_API_KEY }}
           TF_GITHUB_TOKEN: ${{ secrets.TF_GITHUB_TOKEN }}
           FASTMAIL_API_TOKEN: ${{ secrets.FASTMAIL_API_TOKEN }}
           # BullMQ retry/remove: admin signs these → backend verifies with
@@ -915,7 +913,7 @@ jobs:
             bunx wrangler@3 pages secret delete "$name" --project-name=scani-admin --force 2>/dev/null || true
           }
 
-          for n in FLY_API_TOKEN FLY_ORG NEON_API_KEY NEON_ORG_ID UPSTASH_EMAIL UPSTASH_API_KEY \
+          for n in FLY_API_TOKEN FLY_ORG NEON_API_KEY NEON_ORG_ID \
                    TF_GITHUB_TOKEN FASTMAIL_API_TOKEN \
                    ADMIN_PASSKEY_CREDENTIAL_ID ADMIN_PASSKEY_PUBLIC_KEY \
                    ADMIN_SESSION_SECRET \
@@ -935,6 +933,12 @@ jobs:
           # secret name (renamed to `JOBS_HMAC_SECRET` to align with OSS).
           # `delete_secret_if_present` is idempotent.
           delete_secret_if_present ADMIN_JOBS_HMAC_SECRET
+
+          # Upstash was retired in the 2026-07 cost reduction (BullMQ
+          # moved to the worker-embedded Redis; admin data moved to
+          # Postgres behind the backend's /admin/* endpoints).
+          delete_secret_if_present UPSTASH_EMAIL
+          delete_secret_if_present UPSTASH_API_KEY
 
           if [ -n "$ADMIN_PASSKEY_CREDENTIAL_ID" ]; then
             echo "Passkey already provisioned → ensuring ADMIN_BOOTSTRAP_TOKEN is unset"

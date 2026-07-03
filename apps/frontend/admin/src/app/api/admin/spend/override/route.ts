@@ -1,9 +1,9 @@
 /**
  * Record (or clear) an operator-entered actual bill for one provider in
- * one billing month. Vendor-direct write — the figure lives in our own
- * Upstash hash (`admin:spend:overrides`), so there's no backend hop; we
- * still session-gate + writes-flag + audit identically to the other
- * `/api/admin/*` mutations.
+ * one billing month. The figure lives in the backend's
+ * `admin_spend_overrides` Postgres table (reached via the HMAC-gated
+ * /admin/spend-overrides endpoints); we session-gate + writes-flag +
+ * audit identically to the other `/api/admin/*` mutations.
  *
  * POST body:
  *   { provider, period: "YYYY-MM", amountUsd?: number, note?, clear?: true }
@@ -72,7 +72,7 @@ export async function POST(request: Request): Promise<Response> {
   const clearing = body.clear === true || body.amountUsd == null || body.amountUsd === '';
 
   if (clearing) {
-    const removed = await removeSpendOverride(provider, period);
+    const removed = await removeSpendOverride(provider, period, caller.actor);
     await appendAudit({
       actor: caller.actor,
       action: 'spend.override.clear',

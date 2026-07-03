@@ -14,7 +14,6 @@ import {
   type SpendOverride,
   type SpendPeriodActuals,
 } from './spend-pricing';
-import { getUpstashDatabases, getUpstashStats } from './upstash';
 
 /**
  * Monthly-spend rollup across every infra provider Scani pays for.
@@ -26,8 +25,7 @@ import { getUpstashDatabases, getUpstashStats } from './upstash';
  *                   (manual override). Authoritative; supersedes the
  *                   estimate for that provider in the displayed month.
  *   - `invoiced`  → pulled from a billing endpoint that reports real
- *                   charges (Cloudflare billing history; Upstash's
- *                   `total_monthly_billing`).
+ *                   charges (Cloudflare billing history).
  *   - `estimated` → computed from the current period's usage counters
  *                   times public-tier pricing (Neon, Fly). Neon's
  *                   consumption API reconciles to the cent; Fly has no
@@ -92,11 +90,10 @@ export async function getSpendSummary(): Promise<Result<SpendSummary>> {
       const period = periodKey(now);
       const periodLabel = `month-to-date ${period}`;
 
-      const [cfHistory, neonUsage, neonNames, upstash, fly, overridesRes] = await Promise.all([
+      const [cfHistory, neonUsage, neonNames, fly, overridesRes] = await Promise.all([
         getBillingHistory(),
         getNeonConsumption(monthStart.toISOString(), now.toISOString()),
         getNeonOverviewSummary(),
-        getUpstashDatabases(),
         getFlyOverview(),
         getSpendOverrides(),
       ]);
@@ -155,35 +152,9 @@ export async function getSpendSummary(): Promise<Result<SpendSummary>> {
         lineItems.push(unknownLine('neon', 'Neon (consumption API)', periodLabel, neonUsage.error));
       }
 
-      // ----- Upstash: real charge from `total_monthly_billing` -----
-      // The stats endpoint already sums commands + storage into a dollar
-      // figure; we show it verbatim instead of re-deriving an estimate.
-      if (upstash.ok) {
-        const usageResults = await Promise.all(
-          upstash.data.map(async (db) => ({ db, usage: await getUpstashStats(db.id) }))
-        );
-        for (const { db, usage } of usageResults) {
-          if (!usage.ok) {
-            lineItems.push(
-              unknownLine('upstash', `Upstash · ${db.name}`, periodLabel, usage.error)
-            );
-            continue;
-          }
-          lineItems.push({
-            provider: 'upstash',
-            label: `Upstash · ${db.name}`,
-            amount: usage.data.monthlyBillingUsd,
-            currency: 'USD',
-            confidence: 'invoiced',
-            period: periodLabel,
-            basis: `Upstash billing API · ${formatCount(usage.data.monthlyRequests)} cmds, ${formatBytes(usage.data.storageBytes)} stored`,
-          });
-        }
-      } else {
-        lineItems.push(
-          unknownLine('upstash', 'Upstash (databases API)', periodLabel, upstash.error)
-        );
-      }
+      // No live Upstash line: the database was retired in the 2026-07
+      // cost reduction (BullMQ moved to the worker-embedded Redis).
+      // Historical Upstash invoices remain visible via recorded actuals.
 
       // ----- Fly: per-machine compute cost since month-start -----
       // Only `started` machines accrue compute — Fly doesn't bill CPU/RAM
@@ -271,11 +242,6 @@ export async function getSpendSummary(): Promise<Result<SpendSummary>> {
             source: 'neon.com/pricing',
           },
           {
-            label: 'Upstash',
-            rate: 'Real charge via /redis/stats total_monthly_billing',
-            source: 'Upstash developer API',
-          },
-          {
             label: 'Cloudflare',
             rate: 'Real invoiced amounts via /user/billing/history',
             source: 'Cloudflare billing API',
@@ -353,19 +319,6 @@ function sumUsd(items: SpendLineItem[]): number {
 }
 
 const round2 = (n: number): number => Math.round(n * 100) / 100;
-
-function formatCount(n: number): string {
-  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(2)}M`;
-  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`;
-  return `${n}`;
-}
-
-function formatBytes(n: number): string {
-  if (n >= 1024 ** 3) return `${(n / 1024 ** 3).toFixed(2)} GiB`;
-  if (n >= 1024 ** 2) return `${(n / 1024 ** 2).toFixed(1)} MiB`;
-  if (n >= 1024) return `${(n / 1024).toFixed(0)} KiB`;
-  return `${n} B`;
-}
 
 // Re-exported for callers that build provider chips from the same map.
 export { PROVIDER_DISPLAY };
