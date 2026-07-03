@@ -14,10 +14,6 @@ terraform {
       source  = "kislerdm/neon"
       version = "~> 0.6"
     }
-    upstash = {
-      source  = "upstash/upstash"
-      version = "~> 1.5"
-    }
     github = {
       source  = "integrations/github"
       version = "~> 6.0"

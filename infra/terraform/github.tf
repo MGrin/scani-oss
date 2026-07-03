@@ -77,8 +77,9 @@ resource "random_password" "redis_password" {
 # redis-server embedded in the scani-worker machine over Fly 6PN private
 # networking — replaced the metered Upstash database (2026-07 cost
 # reduction: idle BullMQ polling alone billed ~$40/mo on per-command
-# pricing). The Upstash database in upstash.tf stays for the admin app's
-# REST-only needs (spend overrides, audit log, page cache).
+# pricing). The admin app's durable data (spend overrides, audit log)
+# lives in Postgres behind the backend's HMAC /admin/* endpoints; the
+# Upstash database itself was destroyed on 2026-07-03.
 #
 # `?family=6` is load-bearing: *.internal names resolve to AAAA records
 # only (6PN is IPv6), and ioredis defaults to family=4, so without it

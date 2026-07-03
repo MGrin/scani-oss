@@ -78,7 +78,7 @@ bun run deps:unused  # knip — unused exports/files/dependencies
   start fresh — never push blindly.
 - **No force-push** without explicit user approval. Never force-push to `main`.
 - **Infrastructure secrets** live in `/Users/mgrin/.secrets` (single file, mode 600).
-  Covers Fly / Neon / Upstash / Cloudflare / R2 / Fastmail / GitHub tokens plus
+  Covers Fly / Neon / Cloudflare / R2 / Fastmail / GitHub tokens plus
   `ADMIN_SESSION_SECRET` and `ADMIN_JOBS_HMAC_SECRET`. `.env.example` at repo root
   documents what's needed; actual values come from `/Users/mgrin/.secrets`. Read
   individual values on demand — never commit contents, echo to logs, or paste into PRs.
@@ -92,7 +92,7 @@ bun run deps:unused  # knip — unused exports/files/dependencies
   - CI's `check-ci-status` job skips deploy-time validation when the PR CI already
     passed — don't re-push just to re-trigger.
   - Terraform at `infra/terraform/` is the source of truth for Cloudflare / Fly /
-    Neon / Upstash / GitHub. Don't click-configure in vendor dashboards.
+    Neon / GitHub. Don't click-configure in vendor dashboards.
   - Queue jobs are consumed by `apps/backend/worker`, not by backend request handlers.
     Local queue work needs the worker running (or `docker compose --profile full up`).
 
@@ -112,8 +112,9 @@ ships to a browser via Cloudflare Pages).
   wallet/exchange balance syncs, APY payouts, historical-price backfill,
   forex backfill, portfolio-value rollup, transfer linking, token-identity
   backfill, orphan reconcilers) live in
-  `packages/infra/queue/src/queue-names.ts:REPEATABLE_SCHEDULES`; the worker
-  registers them with BullMQ at boot. There is no separate cron app.
+  `packages/business/jobs/src/scheduled-jobs/` (one descriptor per job,
+  aggregated as `SCHEDULED_JOB_DESCRIPTORS`); the worker registers them
+  with BullMQ at boot. There is no separate cron app.
 - `apps/backend/data-provider` — tRPC service that owns *Scani-owned*
   third-party calls (CoinGecko, Finnhub, DeFiLlama, ExchangeRate-API, Google
   Sheets, OpenAI, Perplexity, DeepSeek). API + worker call it over tRPC;
@@ -207,7 +208,7 @@ description if you alter behaviour anywhere near them:
 - Drizzle migrations: `packages/infra/db/src/migrations/` (register custom SQL in `meta/_journal.json`)
 - Provider registry: `packages/clients/providers/src/`
 - Data-provider tRPC routers: `apps/backend/data-provider/src/presentation/`
-- Admin service routes: `apps/frontend/admin/src/app/services/{bullmq,fly,cloudflare,github,neon,upstash,fastmail}/`
+- Admin platform pages: `apps/frontend/admin/src/app/(authed)/platform/{fly,neon,cloudflare,github,sentry,posthog,fastmail}/`; queue dashboard under `(authed)/jobs/`
 - Admin auth middleware: `apps/frontend/admin/src/middleware.ts`
 - Test preload: `packages/business/domain/test-preload.ts`
 
@@ -400,12 +401,15 @@ Reference implementations: `packages/infra/email/src/config.ts`,
   Bun builds; `apps/*/fly.toml`).
 - **frontendV2, cloud-frontend, admin, landing** → Cloudflare Pages.
 - **Postgres** → Neon (serverless).
-- **Redis** → Upstash (BullMQ backing store in prod; local Redis via docker-compose).
+- **Redis** → redis-server embedded in the scani-worker Fly machine (6PN-only,
+  AOF on the `redis_data` volume; see `apps/backend/worker/docker-entrypoint.sh`).
+  Local Redis via docker-compose. The `REDIS_URL` must carry `?family=6` —
+  `*.internal` DNS is AAAA-only and ioredis defaults to IPv4.
 - **Object storage** → Cloudflare R2.
 - **Email** → Fastmail JMAP API or SMTP.
 - **Auth** → Better-Auth (replaces prior Supabase Auth).
 
-Terraform at `infra/terraform/` manages Cloudflare / Fly / Neon / Upstash / GitHub.
+Terraform at `infra/terraform/` manages Cloudflare / Fly / Neon / GitHub.
 
 ## CI / CD
 
@@ -422,23 +426,27 @@ Workflows in `.github/workflows/`:
   api / worker / data-provider to Fly and app / cloud / landing / admin to
   Cloudflare Pages. A `check-ci-status` job skips deploy-time re-validation
   when the PR CI already passed.
-- `terraform.yaml` — plan/apply for Cloudflare / Fly / Neon / Upstash / GitHub.
+- `terraform.yaml` — plan/apply for Cloudflare / Fly / Neon / GitHub.
 - `backup-db.yaml` — scheduled DB backup.
 
 ## Async Queue System (BullMQ)
 
 Single Redis-backed queue (`scani-jobs`) plus a dead-letter queue (`scani-dlq`).
 The api enqueues; `apps/backend/worker` consumes everything. Job names +
-repeatable schedules are defined in `packages/infra/queue/src/queue-names.ts` —
-the worker registers the schedules with BullMQ at boot via
-`upsertJobScheduler`, so there is no separate cron app.
+repeatable schedules live as descriptors in
+`packages/business/jobs/src/scheduled-jobs/` (queue/job name constants in
+`packages/infra/queue/src/queue-names.ts`) — the worker registers the
+schedules with BullMQ at boot via `JobScheduler.upsertAll`, so there is
+no separate cron app.
 
 **Repeatable jobs**: `pricing`, `wallet-balances`, `exchange-balances` (hourly);
 `apy-payouts` (daily midnight UTC); `historical-price-backfill` (03:00),
 `forex-backfill` (03:30), `portfolio-value-rollup` (04:00),
 `transfer-linking` (05:00) — nightly chain; `backfill-token-identity`
 (weekly Sunday 02:00 UTC); `reconcile-pending-credentials`,
-`reconcile-orphaned-user-jobs` (every minute, sweep stuck rows).
+`reconcile-orphaned-user-jobs`, `dlq-depth-probe`, `job-heartbeat-probe`
+(every 15 minutes, quarter-hour aligned so their PG advisory locks batch
+into one wake and Neon's scale-to-zero engages between runs).
 
 **User-initiated jobs**: `screenshot-parse`, `exchange-import`, `wallet-import`,
 `file-import`, `holding-price-update`, `user-data-delete`, `transaction-import`.
@@ -522,9 +530,12 @@ to the root `.env` and re-run `bun scripts/sync-env.ts`.
 
 ## Documentation Layout
 
-`docs/` is **intentionally near-empty** — only `docs/README.md` exists. The
-prior documentation tree had drifted too far from the codebase and was
-deleted; new docs are created on demand against the current code.
+`docs/` is deliberately small and rebuilt on demand — the prior tree had
+drifted too far from the codebase and was deleted. Content follows the
+structure defined in `docs/README.md` (`ARCHITECTURE.md` / `SELF_HOST.md`
+at root; `features/`, `technical/`, `postmortems/` beneath). Postmortems
+and audit reports are historical records — never rewrite them to match
+current infra.
 
 When asked to check, verify, write, or update documentation: read
 `docs/README.md` first. It defines the required workflow (read the

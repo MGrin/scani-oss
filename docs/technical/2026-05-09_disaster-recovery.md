@@ -3,7 +3,9 @@
 This is the cold-start guide for the four production-bearing surfaces:
 
 1. **Postgres (Neon)** — primary durable store.
-2. **Redis (Upstash)** — BullMQ + rate-limiter + WebSocket pub/sub.
+2. **Redis (embedded in the scani-worker Fly machine)** — BullMQ +
+   rate-limiter + WebSocket pub/sub. AOF-persisted on the `redis_data`
+   volume; 6PN-only.
 3. **Object storage (Cloudflare R2)** — file uploads + DB backups.
 4. **Secrets** — rotation when a credential is suspected leaked.
 
@@ -123,7 +125,7 @@ Always prefer it when the bad event is recent enough.
 
 ---
 
-## 2. Redis flush + rebuild (Upstash)
+## 2. Redis flush + rebuild (worker-embedded)
 
 Redis stores **only volatile state**: BullMQ job queues, rate-limiter
 counters, WebSocket pub/sub. None of it is the source of truth — every
@@ -142,12 +144,18 @@ opportunistic.
 
 ### Flush procedure
 
-1. Drain the worker first to avoid deleting jobs mid-execution:
-   `flyctl machine list -a scani-worker | awk 'NR>1 {print $1}' | xargs -I{} flyctl machine stop {} -a scani-worker`.
-2. Connect to Upstash console → Data Browser → `FLUSHALL` (only on the
-   prod Redis, never on a shared Redis).
-3. Restart the worker: `flyctl machine list -a scani-worker | xargs … start`.
-   The worker re-registers every repeatable schedule via
+Redis runs *inside* the worker machine, so don't stop the machine — that
+kills Redis too. Flush in place, then restart the machine for a clean
+re-registration:
+
+1. `flyctl ssh console -a scani-worker`, then inside the machine:
+   `redis-cli -a "$(printf '%s' "$REDIS_URL" | sed -nE 's|^rediss?://[^:/@]*:([^@]*)@.*$|\1|p')" FLUSHALL`
+   (the requirepass is embedded in `REDIS_URL`; same parse the
+   entrypoint uses).
+2. Restart the machine:
+   `flyctl machine list -a scani-worker --json | jq -r '.[0].id' | xargs -I{} flyctl machine restart {} -a scani-worker`.
+   redis-server comes back empty (the AOF now records the flush) and the
+   worker re-registers every repeatable schedule via
    `JobScheduler.upsertAll()` at boot
    (`apps/backend/worker/src/index.ts`). User-job mirror rows in
    `user_jobs` will be picked up by `reconcile-orphaned-user-jobs` and
@@ -156,8 +164,8 @@ opportunistic.
 ### What you lose
 
 - All in-flight jobs (queued or active). They become orphans in
-  `user_jobs`; the reconciler marks them `failed` within 1 minute and
-  the user retries.
+  `user_jobs`; the reconciler marks them `failed` within 15 minutes
+  (quarter-hour sweep cadence) and the user retries.
 - DLQ history. Recent failures we hadn't yet acted on are gone — keep
   this in mind before flushing during an active incident.
 

@@ -129,6 +129,31 @@ When opening a PR that touches one of these in the analytics overlay
 without an upstream link, the `oss-drift-check.yml` workflow (Phase 4)
 will fail — bypass with the `bypass-oss-drift` label.
 
+## Branding / public-audience scrub (expected diff noise)
+
+Beyond `merge=ours` and the analytics set, a `git diff upstream/main
+origin/main` over shared paths shows a third family of *intentional*
+divergence — the OSS public-audience scrub (audited 2026-07-03, ~99
+files total across all three families):
+
+- Service naming: OSS uses `api` where private uses `scani-backend`
+  (`SERVICE_NAME` checks in `packages/infra/realtime/src/websocket.ts`,
+  `packages/infra/logging/src/logger.ts`, tests).
+- Deployment references: comments mentioning `fly.toml` / Fly specifics
+  are generalized in OSS; per-app `fly.toml` + `Dockerfile` deltas.
+- Per-package `README.md`s: public-audience rewrites (root README is
+  `merge=ours`; the per-package ones diverge the same way, just without
+  the attribute).
+- Waitlist/contact feature files (`waitlist.ts` router + tests,
+  `waitlist-join.ts` / `contact-received.ts` email templates, the
+  `waitlist_signups` table in `cloud.ts`, migration
+  `0013_waitlist_signups.sql` and its `_journal.json` entry): private-
+  only marketing features living in OSS-eligible paths; OSS deleted
+  them.
+
+These merge cleanly in normal syncs (bases match). Don't "fix" them by
+copying either side over the other — the divergence is the point.
+
 ## bun.lock
 
 `bun.lock` diverges because private carries `posthog-js` / `posthog-node`
