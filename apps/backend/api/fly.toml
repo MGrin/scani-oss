@@ -25,14 +25,13 @@ primary_region = "sin"
   force_https         = true
   auto_stop_machines  = "off"
   auto_start_machines = true
-  min_machines_running = 2
+  min_machines_running = 1
 
-  # Two instances for redundancy: a single saturated/unhealthy machine
-  # used to make the Fly proxy blackhole 100% of traffic. All shared
-  # state — WS pub/sub, rate-limiter buckets, the portfolio-value cache —
-  # lives in Redis, so machines stay consistent. Deploys roll one machine
-  # at a time (see [deploy]) so an instance is always serving.
-  max_machines_running = 2
+  # Single instance: the redundant pair cost ~$16/mo and this stays a
+  # pre-revenue beta. Deploys mean a brief cutover gap; shared state
+  # (WS pub/sub, rate-limiter buckets, portfolio-value cache) lives in
+  # Redis, so scaling back to 2 later is a count change only.
+  max_machines_running = 1
 
   [http_service.concurrency]
     type       = "requests"
@@ -71,7 +70,6 @@ primary_region = "sin"
   # cgroup boundary.
 
 [deploy]
-  # Rolling: with two machines, update them one at a time so an instance
-  # is always serving. (Was "immediate" when this app ran a single
-  # machine, where rolling vs immediate made no practical difference.)
+  # Single machine: rolling vs immediate makes no practical difference;
+  # each deploy has a short serving gap, accepted for the cost savings.
   strategy = "rolling"

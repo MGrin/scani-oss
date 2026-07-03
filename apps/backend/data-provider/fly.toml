@@ -20,12 +20,13 @@ primary_region = "sin"
   force_https          = true
   auto_stop_machines   = "off"
   auto_start_machines  = true
-  # Two machines is the minimum that lets a rolling deploy swap one out
-  # while the other keeps serving — backend + worker would 5xx on every
-  # outbound call during a single-machine cutover. Per-provider rate
-  # limiter state lives in Redis so the two replicas share fairness.
-  min_machines_running = 2
-  max_machines_running = 2
+  # Single machine: the redundant pair cost ~$11/mo for a pre-revenue
+  # beta. Deploys briefly 5xx backend/worker outbound calls during the
+  # cutover — callers retry with backoff (see @scani/rate-limiter), and
+  # the enqueue sweepers recover anything dropped. Scale back to 2 when
+  # traffic justifies it.
+  min_machines_running = 1
+  max_machines_running = 1
 
   [http_service.concurrency]
     type       = "requests"
@@ -64,8 +65,7 @@ primary_region = "sin"
   # shared-CPU contention.
 
 [deploy]
-  # Rolling deploy: one machine at a time so the other keeps serving
-  # backend + worker during the cutover. Single-machine "immediate"
-  # caused short bursts of 5xx on every deploy.
+  # Single machine: short 5xx burst per deploy, accepted for the cost
+  # savings (callers retry; sweepers recover dropped enqueues).
   strategy = "rolling"
   max_unavailable = 1

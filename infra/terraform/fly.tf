@@ -11,6 +11,16 @@ resource "fly_app" "worker" {
   org  = var.fly_org
 }
 
+# The worker machine mounts a 1GB `redis_data` volume (see
+# apps/backend/worker/fly.toml [mounts]) for the embedded redis-server's
+# AOF persistence — queue state, the DLQ and pending retries in
+# particular, survives worker deploys and machine replacement. The
+# volume is deliberately NOT a Terraform resource: volumes are
+# machine-lifecycle (flyctl-owned, like machines themselves), and Fly
+# happily creates same-name duplicates, so a TF-managed copy next to
+# the flyctl-attached one would just be a second bill. Created once via
+#   flyctl volumes create redis_data --app scani-worker --region sin --size 1
+
 # Data-provider owns every outbound Scani-managed third-party API call.
 # See apps/data-provider/README.md for the scope boundary vs. backend.
 resource "fly_app" "data_provider" {
@@ -80,9 +90,10 @@ resource "terraform_data" "backend_machine_count" {
         echo "Destroying standby machine $mid on $app"
         flyctl machine destroy "$mid" --app "$app" --force --yes
       done
-      # Then scale to 2 (matches apps/backend/api/fly.toml
-      # min/max_machines_running = 2 — a redundant pair).
-      flyctl scale count 2 --app "$app" --region sin --yes
+      # Then scale to 1 (matches apps/backend/api/fly.toml
+      # min/max_machines_running = 1 — single machine; the redundant
+      # pair was dropped in the 2026-07 cost reduction).
+      flyctl scale count 1 --app "$app" --region sin --yes
     EOT
   }
 
@@ -134,11 +145,11 @@ resource "terraform_data" "data_provider_machine_count" {
         echo "Destroying standby machine $mid on $app"
         flyctl machine destroy "$mid" --app "$app" --force --yes
       done
-      # Scale to 2 — every backend + worker call hops through this
-      # service, so a single-machine cutover would 5xx every outbound
-      # request for ~30s. Mirrors apps/data-provider/fly.toml's
-      # min/max_machines_running = 2 + rolling deploy strategy.
-      flyctl scale count 2 --app "$app" --region sin --yes
+      # Scale to 1 — mirrors apps/backend/data-provider/fly.toml's
+      # min/max_machines_running = 1 (2026-07 cost reduction). Deploy
+      # cutovers briefly 5xx backend/worker outbound calls; callers
+      # retry and the enqueue sweepers recover anything dropped.
+      flyctl scale count 1 --app "$app" --region sin --yes
     EOT
   }
 

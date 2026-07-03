@@ -1,6 +1,9 @@
 import { cached } from '../cache';
 import { getEnv } from '../env';
 import { type Result, tryCatch } from '../result';
+// Queue depths come off the worker-embedded Redis (6PN-only) via the
+// backend's HMAC read proxy — Upstash REST no longer sees bull:* keys.
+import { redisPipeline } from './queue-redis';
 
 const BASE = 'https://api.upstash.com/v2';
 
@@ -195,38 +198,6 @@ export async function redisCmd(...cmd: Array<string | number>): Promise<unknown>
   const json = (await res.json()) as { result?: unknown; error?: string };
   if (json.error) throw new Error(`Upstash REST: ${json.error}`);
   return json.result;
-}
-
-/**
- * Batch N Redis commands in a single HTTP round-trip. Upstash returns
- * one response object per command in input order. Per-command errors
- * don't abort the batch — each result carries its own `error`/`result`
- * field, which we translate into the same `unknown | throw` shape as
- * `redisCmd` per-element.
- *
- * Used for the BullMQ dashboard, where the hand-rolled loop was
- * issuing 200+ sequential HTTP calls on every page load.
- */
-export async function redisPipeline(commands: Array<Array<string | number>>): Promise<unknown[]> {
-  if (commands.length === 0) return [];
-  const rest = await getRest();
-  const res = await fetch(`${rest.url}/pipeline`, {
-    method: 'POST',
-    headers: {
-      authorization: `Bearer ${rest.token}`,
-      'content-type': 'application/json',
-    },
-    body: JSON.stringify(commands),
-    cache: 'no-store',
-  });
-  if (!res.ok) throw new Error(`Upstash REST pipeline ${res.status}: ${await res.text()}`);
-  const json = (await res.json()) as Array<{ result?: unknown; error?: string }>;
-  return json.map((entry, i) => {
-    if (entry.error) {
-      throw new Error(`Upstash pipeline cmd ${i} (${commands[i]?.[0]}): ${entry.error}`);
-    }
-    return entry.result;
-  });
 }
 
 export interface QueueDepth {

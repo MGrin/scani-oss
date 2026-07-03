@@ -1,7 +1,9 @@
 import type { ScheduledJobDescriptor } from '@scani/queue';
 import { JOB_NAMES } from '../job-names';
 
-// Scheduled liveness probe over `job_heartbeats`. Every 10 minutes the
+// Scheduled liveness probe over `job_heartbeats`. Every 15 minutes
+// (quarter-hour aligned with the other frequent jobs so Neon's
+// scale-to-zero gets long idle windows between batched wakes) the
 // worker reads the heartbeat row for each known scheduled job and
 // escalates to Sentry whenever a job's `last_success_at` falls behind
 // its expected interval × tolerance. Without this, a silently stuck
@@ -13,7 +15,7 @@ import { JOB_NAMES } from '../job-names';
 // at the same minute. The probe itself is idempotent and read-only.
 export const JOB_HEARTBEAT_PROBE_SCHEDULE: ScheduledJobDescriptor = {
   name: JOB_NAMES.jobHeartbeatProbe,
-  cron: '*/10 * * * *',
+  cron: '*/15 * * * *',
   lockName: JOB_NAMES.jobHeartbeatProbe,
 };
 
@@ -41,11 +43,9 @@ export const HEARTBEAT_TOLERANCE_MS: Readonly<Record<string, number>> = {
   [JOB_NAMES.hideClosedHoldings]: 36 * 60 * 60 * 1000,
   // Weekly cadence — alert at 9 days.
   [JOB_NAMES.backfillTokenIdentity]: 9 * 24 * 60 * 60 * 1000,
-  // Every-minute reconcilers — 30min tolerance is conservative; if
-  // the worker has been stuck for half an hour something is very
-  // wrong.
-  [JOB_NAMES.reconcilePendingCredentials]: 30 * 60 * 1000,
-  [JOB_NAMES.reconcileOrphanedUserJobs]: 30 * 60 * 1000,
-  // Every 5min — alert at 30min.
-  [JOB_NAMES.dlqDepthProbe]: 30 * 60 * 1000,
+  // Quarter-hour reconcilers — alert at 45min (three missed runs).
+  [JOB_NAMES.reconcilePendingCredentials]: 45 * 60 * 1000,
+  [JOB_NAMES.reconcileOrphanedUserJobs]: 45 * 60 * 1000,
+  // Every 15min — alert at 45min.
+  [JOB_NAMES.dlqDepthProbe]: 45 * 60 * 1000,
 };
