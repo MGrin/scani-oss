@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1.7-labs
 #
-# Multi-stage Bun image for the worker service. Build stage produces a single
+# Multi-stage Bun image for scani-worker. Build stage produces a single
 # self-contained binary via `bun build --compile`; runtime is a tiny
 # Debian image carrying the binary only (no HTTP port; no healthcheck —
 # Fly observes the machine's exit status, BullMQ liveness is the signal).
@@ -45,13 +45,18 @@ WORKDIR /app
 
 ENV NODE_ENV=production
 
+# redis-server: with REDIS_EMBEDDED=1 this machine hosts the queue Redis
+# for the whole backend over Fly 6PN (see docker-entrypoint.sh).
+# util-linux provides setpriv, which the entrypoint uses to drop from
+# root (needed once at boot to chown the /data volume) to the app user.
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends ca-certificates \
+    && apt-get install -y --no-install-recommends ca-certificates redis-server util-linux \
     && rm -rf /var/lib/apt/lists/*
 
 RUN useradd --create-home --shell /usr/sbin/nologin --uid 1001 app
-USER app
 
 COPY --from=build --chown=app:app /app/apps/backend/worker/dist/server /app/server
+COPY --chown=app:app apps/backend/worker/docker-entrypoint.sh /app/docker-entrypoint.sh
+RUN chmod +x /app/docker-entrypoint.sh
 
-CMD ["/app/server"]
+CMD ["/app/docker-entrypoint.sh"]

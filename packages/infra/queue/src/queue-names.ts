@@ -65,12 +65,14 @@ export const REPEATABLE_SCHEDULES: Array<{ name: JobName; pattern: string }> = [
   { name: JOB_NAMES.walletBalances, pattern: '0 * * * *' },
   { name: JOB_NAMES.exchangeBalances, pattern: '0 * * * *' },
   { name: JOB_NAMES.apyPayouts, pattern: '0 0 * * *' },
-  // Reconcile credentials stuck in 'pending_enqueue' every minute — the
-  // backend marks rows pending_enqueue, calls BullMQ.add(), and promotes
-  // to 'enqueued'. If the backend dies in between, this sweeper re-enqueues.
-  { name: JOB_NAMES.reconcilePendingCredentials, pattern: '* * * * *' },
+  // Reconcile credentials stuck in 'pending_enqueue' every 15 minutes —
+  // the backend marks rows pending_enqueue, calls BullMQ.add(), and
+  // promotes to 'enqueued'. If the backend dies in between, this sweeper
+  // re-enqueues. Quarter-hour cadence (not every minute) so Neon's
+  // scale-to-zero gets idle windows between batched DB wakes.
+  { name: JOB_NAMES.reconcilePendingCredentials, pattern: '*/15 * * * *' },
   // Same pattern for `user_jobs`: backend inserts the mirror row before
   // `queue.add`; if it crashes between them, the row sits in `queued`
   // forever. This sweeper marks abandoned rows `failed`.
-  { name: JOB_NAMES.reconcileOrphanedUserJobs, pattern: '* * * * *' },
+  { name: JOB_NAMES.reconcileOrphanedUserJobs, pattern: '*/15 * * * *' },
 ];
