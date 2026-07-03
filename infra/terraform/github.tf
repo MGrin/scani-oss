@@ -79,10 +79,15 @@ resource "random_password" "redis_password" {
 # reduction: idle BullMQ polling alone billed ~$40/mo on per-command
 # pricing). The Upstash database in upstash.tf stays for the admin app's
 # REST-only needs (spend overrides, audit log, page cache).
+#
+# `?family=6` is load-bearing: *.internal names resolve to AAAA records
+# only (6PN is IPv6), and ioredis defaults to family=4, so without it
+# the api crash-loops on getaddrinfo ENOTFOUND (took prod down for ~10
+# minutes on 2026-07-03 before the hotfix).
 resource "github_actions_secret" "redis_url" {
   repository      = data.github_repository.scani.name
   secret_name     = "REDIS_URL"
-  plaintext_value = "redis://default:${random_password.redis_password.result}@scani-worker.internal:6379"
+  plaintext_value = "redis://default:${random_password.redis_password.result}@scani-worker.internal:6379?family=6"
 }
 
 resource "github_actions_secret" "fly_api_token" {
