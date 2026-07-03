@@ -59,10 +59,30 @@ resource "github_actions_secret" "database_url_direct" {
   plaintext_value = neon_project.scani.connection_uri
 }
 
+# Password for the self-hosted Redis that runs inside the scani-worker
+# machine (see apps/backend/worker/docker-entrypoint.sh — it parses this
+# out of REDIS_URL to set `requirepass`). Generated once by TF so the
+# value is stable across applies; rotate via the keepers convention
+# below (same as admin_jobs_hmac_secret), then redeploy all three
+# backend apps so producer + consumer agree on the password.
+resource "random_password" "redis_password" {
+  length  = 48
+  special = false
+  keepers = {
+    rotation_id = "2026-07-03"
+  }
+}
+
+# BullMQ + rate-limiter + realtime pub/sub Redis. Points at the
+# redis-server embedded in the scani-worker machine over Fly 6PN private
+# networking — replaced the metered Upstash database (2026-07 cost
+# reduction: idle BullMQ polling alone billed ~$40/mo on per-command
+# pricing). The Upstash database in upstash.tf stays for the admin app's
+# REST-only needs (spend overrides, audit log, page cache).
 resource "github_actions_secret" "redis_url" {
   repository      = data.github_repository.scani.name
   secret_name     = "REDIS_URL"
-  plaintext_value = "rediss://default:${upstash_redis_database.scani.password}@${upstash_redis_database.scani.endpoint}:${upstash_redis_database.scani.port}"
+  plaintext_value = "redis://default:${random_password.redis_password.result}@scani-worker.internal:6379"
 }
 
 resource "github_actions_secret" "fly_api_token" {

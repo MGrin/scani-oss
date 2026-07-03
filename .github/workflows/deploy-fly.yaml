@@ -438,9 +438,12 @@ jobs:
       # Stage new secrets before the deploy. `--stage` writes to Fly's
       # secret store without triggering a restart; the immediately-
       # following `flyctl deploy` picks them up on the new machine.
-      # Pre-existing secrets (DATABASE_URL, REDIS_URL, ENCRYPTION_KEY,
+      # Pre-existing secrets (DATABASE_URL, ENCRYPTION_KEY,
       # BETTER_AUTH_SECRET) are already on Fly and intentionally NOT
-      # re-staged here. Fail loud if any R2 / HMAC / Sentry is missing.
+      # re-staged here. REDIS_URL IS re-staged: Terraform owns it
+      # (random_password.redis_password → the worker-embedded Redis), so
+      # a rotation must reach every consumer on the next deploy. Fail
+      # loud if any R2 / HMAC / Sentry is missing.
       # With the data-provider split, the backend only needs Scani-internal
       # secrets: DB, Redis, Better-Auth, HMAC, Sentry, and the two cloud
       # envs it uses to reach the data-provider. R2 creds stay here for
@@ -450,6 +453,7 @@ jobs:
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
           JOBS_HMAC_SECRET: ${{ secrets.JOBS_HMAC_SECRET }}
+          REDIS_URL: ${{ secrets.REDIS_URL }}
           SENTRY_DSN_BACKEND: ${{ secrets.SENTRY_DSN_BACKEND }}
           # See data-provider block above for rationale; @scani/logging
           # refuses to load in production without LOG_ID_PEPPER.
@@ -472,7 +476,7 @@ jobs:
           # need to be a managed secret. Matches infra/terraform/main.tf's
           # `api_cloud_host` local + cloudflare.tf's `api_cloud` CNAME.
           SCANI_CLOUD_URL="https://api.cloud.scani.xyz"
-          for var in JOBS_HMAC_SECRET SENTRY_DSN_BACKEND LOG_ID_PEPPER SCANI_CLOUD_API_KEY; do
+          for var in JOBS_HMAC_SECRET REDIS_URL SENTRY_DSN_BACKEND LOG_ID_PEPPER SCANI_CLOUD_API_KEY; do
             if [ -z "${!var:-}" ]; then
               echo "::error::Missing required secret: $var" >&2
               exit 1
@@ -484,6 +488,7 @@ jobs:
           trap 'rm -f "$payload"' EXIT
           {
             printf 'JOBS_HMAC_SECRET=%s\n' "$JOBS_HMAC_SECRET"
+            printf 'REDIS_URL=%s\n' "$REDIS_URL"
             printf 'LOG_ID_PEPPER=%s\n' "$LOG_ID_PEPPER"
             printf 'NODE_ENV=%s\n' "production"
             printf 'SENTRY_DSN=%s\n' "$SENTRY_DSN_BACKEND"
@@ -556,8 +561,10 @@ jobs:
       # With the data-provider split, the worker no longer holds provider
       # API keys; all outbound calls (AI parse, chain RPC, pricing, R2,
       # email) route through the data-provider via the cloud-client.
-      # DATABASE_URL, REDIS_URL, ENCRYPTION_KEY remain pre-existing on Fly
-      # and intentionally untouched.
+      # DATABASE_URL, ENCRYPTION_KEY remain pre-existing on Fly and
+      # intentionally untouched. REDIS_URL IS re-staged (Terraform owns
+      # it; the embedded redis-server parses its requirepass out of this
+      # value at boot — see apps/backend/worker/docker-entrypoint.sh).
       - name: Stage core + cloud-client + Sentry secrets on scani-worker
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
@@ -569,13 +576,14 @@ jobs:
           # only manage one secret. SCANI_CLOUD_URL is hardcoded since
           # it's a public hostname (api.cloud.scani.xyz).
           SCANI_CLOUD_API_KEY: ${{ secrets.DATA_PROVIDER_API_KEY }}
+          REDIS_URL: ${{ secrets.REDIS_URL }}
           # Analytics — PostHog. The worker captures import_completed.
           # Empty → analytics no-ops.
           POSTHOG_KEY: ${{ secrets.POSTHOG_KEY }}
         run: |
           set -euo pipefail
           SCANI_CLOUD_URL="https://api.cloud.scani.xyz"
-          for var in SENTRY_DSN_WORKER LOG_ID_PEPPER SCANI_CLOUD_API_KEY; do
+          for var in SENTRY_DSN_WORKER REDIS_URL LOG_ID_PEPPER SCANI_CLOUD_API_KEY; do
             if [ -z "${!var:-}" ]; then
               echo "::error::Missing required secret: $var" >&2
               exit 1
@@ -586,6 +594,7 @@ jobs:
           payload=$(mktemp)
           trap 'rm -f "$payload"' EXIT
           {
+            printf 'REDIS_URL=%s\n' "$REDIS_URL"
             printf 'LOG_ID_PEPPER=%s\n' "$LOG_ID_PEPPER"
             printf 'NODE_ENV=%s\n' "production"
             printf 'SENTRY_DSN=%s\n' "$SENTRY_DSN_WORKER"

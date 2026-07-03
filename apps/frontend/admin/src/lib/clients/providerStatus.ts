@@ -1,6 +1,6 @@
 import { cached } from '../cache';
 import { type Result, tryCatch } from '../result';
-import { redisPipeline } from './upstash';
+import { redisPipeline } from './queue-redis';
 
 /**
  * 28 third-party provider integrations under

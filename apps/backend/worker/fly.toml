@@ -13,8 +13,22 @@ primary_region = "sin"
   # Identifies this process for cross-service routing (e.g. realtime
   # picks RedisRealtimeUpdatesService when SERVICE_NAME != scani-backend).
   SERVICE_NAME       = "scani-worker"
+  # Run redis-server inside this machine (see docker-entrypoint.sh).
+  # BullMQ + rate-limiter + realtime pub/sub all point here via
+  # redis://…@scani-worker.internal:6379 — replaces the metered Upstash
+  # database that billed ~$40/mo for idle BullMQ polling. The machine has
+  # no public IP, so Redis is reachable over the org's 6PN network only
+  # (plus requirepass, parsed from REDIS_URL).
+  REDIS_EMBEDDED     = "1"
 
 # No [http_service] — worker is a background process; nothing to expose.
+# Redis (port 6379) is deliberately NOT a Fly service: 6PN-only access.
+
+# Redis AOF persistence — queue state (incl. the DLQ and pending retries)
+# survives worker deploys and restarts.
+[mounts]
+  source      = "redis_data"
+  destination = "/data"
 
 [[vm]]
   size     = "shared-cpu-1x"

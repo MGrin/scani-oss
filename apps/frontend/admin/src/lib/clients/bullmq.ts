@@ -1,20 +1,24 @@
 /**
- * BullMQ queue inspection via Upstash REST.
+ * BullMQ queue inspection via the backend's HMAC-gated redis-read proxy.
  *
- * Read-only — all data fetching happens over the Upstash Redis REST API
- * using the `scani-jobs` queue's on-disk layout. Writes (retry, remove)
- * go through HMAC-gated endpoints on the backend so BullMQ's state
- * machine stays authoritative.
+ * Read-only — the queue Redis lives inside the scani-worker Fly machine
+ * (6PN private network only; the metered Upstash database it replaced
+ * billed ~$40/mo for idle BullMQ polling), so this app can't reach it
+ * directly. All data fetching POSTs a pipeline of whitelisted read-only
+ * commands to `/admin/jobs/redis-read` on the backend, signed with the
+ * same HMAC scheme as the write endpoints. Writes (retry, remove) keep
+ * their dedicated endpoints so BullMQ's state machine stays
+ * authoritative.
  *
  * Everything here uses `redisPipeline()` where possible: the admin
  * dashboard is not on the hot path but it used to issue ~215 sequential
- * REST calls per page load (sample 50 × 4 states × HGETALL), which made
- * the UI feel irresponsive. Batch-and-cache brings it to 2 round-trips.
+ * calls per page load (sample 50 × 4 states × HGETALL), which made the
+ * UI feel irresponsive. Batch-and-cache brings it to 2 round-trips.
  */
 
 import { cached } from '../cache';
 import { type Result, tryCatch } from '../result';
-import { redisPipeline } from './upstash';
+import { redisPipeline } from './queue-redis';
 
 const QUEUE = 'scani-jobs';
 const DLQ = 'scani-dlq';
