@@ -27,19 +27,6 @@ provider "neon" {
   # NEON_API_KEY via env
 }
 
-provider "upstash" {
-  email   = data.external.upstash_creds.result.email
-  api_key = data.external.upstash_creds.result.api_key
-}
-
-# Upstash's Terraform provider wants email + API key as arguments rather
-# than env vars. A small data source shells out to read them from the env
-# without baking secrets into tfvars / state outside what the provider
-# already stores.
-data "external" "upstash_creds" {
-  program = ["bash", "-c", "jq -n --arg e \"$UPSTASH_EMAIL\" --arg k \"$UPSTASH_API_KEY\" '{email:$e, api_key:$k}'"]
-}
-
 provider "github" {
   owner = var.github_owner
   # GITHUB_TOKEN via env

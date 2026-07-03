@@ -26,7 +26,7 @@ Scani is a TypeScript monorepo personal finance SaaS built with modern web techn
 - Bun (JavaScript/TypeScript runtime)
 - Elysia (HTTP server)
 - WebSocket (ws library) for real-time updates
-- BullMQ on Upstash Redis for async jobs
+- BullMQ on Redis for async jobs (prod: redis-server embedded in the worker machine)
 
 **Frontend:**
 
@@ -53,10 +53,10 @@ Scani is a TypeScript monorepo personal finance SaaS built with modern web techn
 - Fly.io — backend + worker (Docker multi-stage Bun builds)
 - Cloudflare Pages — frontendV2, admin, landing
 - Neon — Postgres
-- Upstash — Redis (BullMQ)
+- Redis — redis-server embedded in the scani-worker Fly machine (BullMQ; 6PN-only, AOF on a Fly volume)
 - Cloudflare R2 — object storage
 - Fastmail — email (JMAP / SMTP)
-- Terraform (`infra/terraform/`) — single source of truth for infra across Cloudflare / Fly / Neon / Upstash / GitHub
+- Terraform (`infra/terraform/`) — single source of truth for infra across Cloudflare / Fly / Neon / GitHub
 
 **Key Libraries:**
 
@@ -172,7 +172,7 @@ domain layer never branches on tier.
 ┌─────────────────────────────────────────────────────────┐
 │                   Async Job Pipeline                     │
 │                                                          │
-│   Backend producers ──► BullMQ (Upstash Redis) ──► Worker│
+│   Backend producers ──► BullMQ (worker Redis)  ──► Worker│
 │   apps/backend/src/queues/          apps/worker/        │
 │                                                          │
 │   Queues: screenshot-parse, exchange-import,             │
@@ -218,7 +218,7 @@ scani/
 │   ├── rate-limiter/         # Shared rate-limiter utility
 │   └── shared/               # Zod schemas, Decimal helpers
 │
-├── infra/terraform/          # Source of truth for Cloudflare / Fly / Neon / Upstash / GitHub
+├── infra/terraform/          # Source of truth for Cloudflare / Fly / Neon / GitHub
 ├── .github/workflows/        # ci.yml, deploy-fly.yaml, terraform.yaml, backup-db.yaml
 ├── docker-compose.yml        # Local Postgres (5433) + Redis (6380) + Mailpit (1026)
 └── docs/
@@ -799,11 +799,11 @@ describe('Onboarding Flow', () => {
 - **apps/backend, apps/worker** → Fly.io (Docker multi-stage Bun builds; `apps/*/fly.toml`)
 - **apps/frontendV2, apps/admin, apps/landing** → Cloudflare Pages
 - **Postgres** → Neon (serverless)
-- **Redis** → Upstash (BullMQ backing store)
+- **Redis** → embedded in the scani-worker Fly machine (BullMQ backing store; reachable as `scani-worker.internal:6379?family=6` over 6PN only)
 - **Object storage** → Cloudflare R2
 - **Email** → Fastmail (JMAP / SMTP)
 
-Terraform at `infra/terraform/` is the single source of truth for Cloudflare / Fly / Neon / Upstash / GitHub configuration. Dashboards should be read-only.
+Terraform at `infra/terraform/` is the single source of truth for Cloudflare / Fly / Neon / GitHub configuration. Dashboards should be read-only.
 
 ### CI / CD
 
@@ -816,7 +816,7 @@ Workflows in `.github/workflows/`:
 
 ### Key Environment Variables
 
-`.env.example` at the repo root documents every variable across the three deployment tiers (OSS self-hosted with a local data-provider, semi-managed with Scani's hosted data-provider, and fully-managed SaaS on Fly+Neon+Upstash). Highlights:
+`.env.example` at the repo root documents every variable across the three deployment tiers (OSS self-hosted with a local data-provider, semi-managed with Scani's hosted data-provider, and fully-managed SaaS on Fly+Neon). Highlights:
 
 ```bash
 # Database / Queue / Mail

@@ -33,8 +33,6 @@ env:
   CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
   FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
   NEON_API_KEY: ${{ secrets.NEON_API_KEY }}
-  UPSTASH_EMAIL: ${{ secrets.UPSTASH_EMAIL }}
-  UPSTASH_API_KEY: ${{ secrets.UPSTASH_API_KEY }}
   GITHUB_TOKEN: ${{ secrets.TF_GITHUB_TOKEN }}
   # Input variables without defaults must be fed via TF_VAR_<name> — otherwise
   # Terraform blocks on stdin waiting for input and the job hangs indefinitely.

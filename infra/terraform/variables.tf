@@ -45,12 +45,6 @@ variable "neon_region" {
   default     = "aws-ap-southeast-1"
 }
 
-variable "upstash_region" {
-  type        = string
-  description = "Upstash Redis region"
-  default     = "ap-southeast-1"
-}
-
 variable "fly_api_token" {
   type        = string
   description = "Fly.io deploy token (mirrored into GH Secrets). Set via TF_VAR_fly_api_token."
