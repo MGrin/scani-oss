@@ -25,7 +25,6 @@ import {
   Server,
   Users,
   Wallet,
-  Waves,
 } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
@@ -61,7 +60,6 @@ const NAV: NavGroup[] = [
     items: [
       { href: '/platform/fly', label: 'Fly', icon: Server, matchPrefix: true },
       { href: '/platform/neon', label: 'Neon', icon: Database, matchPrefix: true },
-      { href: '/platform/upstash', label: 'Upstash', icon: Waves, matchPrefix: true },
       { href: '/platform/cloudflare', label: 'Cloudflare', icon: Cloud, matchPrefix: true },
       { href: '/platform/github', label: 'GitHub', icon: GitBranch, matchPrefix: true },
       { href: '/platform/sentry', label: 'Sentry', icon: AlertTriangle, matchPrefix: true },

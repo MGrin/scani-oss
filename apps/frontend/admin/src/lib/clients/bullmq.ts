@@ -350,6 +350,38 @@ export async function getDlqOverview(): Promise<Result<DlqOverview>> {
   );
 }
 
+export interface QueueDepth {
+  queue: string;
+  waiting: number;
+  active: number;
+  delayed: number;
+  failed: number;
+  completed: number;
+}
+
+/** Cheap five-counter overview for the home page's queue card. */
+export async function getQueueDepths(): Promise<Result<QueueDepth>> {
+  return tryCatch(() =>
+    cached('bullmq:queue-depths', 10, async () => {
+      const [waiting, active, delayed, failed, completed] = await redisPipeline([
+        ['LLEN', bkey('wait')],
+        ['LLEN', bkey('active')],
+        ['ZCARD', bkey('delayed')],
+        ['ZCARD', bkey('failed')],
+        ['ZCARD', bkey('completed')],
+      ]);
+      return {
+        queue: QUEUE,
+        waiting: Number(waiting) || 0,
+        active: Number(active) || 0,
+        delayed: Number(delayed) || 0,
+        failed: Number(failed) || 0,
+        completed: Number(completed) || 0,
+      };
+    })
+  );
+}
+
 function redactSensitive(data: Record<string, unknown>): Record<string, unknown> {
   const SENSITIVE = new Set([
     'apikey',

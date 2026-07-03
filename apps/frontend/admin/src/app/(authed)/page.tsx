@@ -7,6 +7,7 @@ import { type Status, StatusBadge } from '@/components/StatusBadge';
 import { StreamingCard } from '@/components/StreamingCard';
 import { getAppDbStats } from '@/lib/clients/appDb';
 import { getBackendHealth } from '@/lib/clients/backendHealth';
+import { getQueueDepths } from '@/lib/clients/bullmq';
 import { getBillingProfile, getPagesProjects, getR2Buckets } from '@/lib/clients/cloudflare';
 import { getFastmailStatus } from '@/lib/clients/fastmail';
 import { getFlyOverview } from '@/lib/clients/fly';
@@ -14,7 +15,6 @@ import { getRecentRuns } from '@/lib/clients/github';
 import { getNeonOverviewSummary } from '@/lib/clients/neon';
 import { getSentryOverviewSummary } from '@/lib/clients/sentry';
 import { getSpendSummary } from '@/lib/clients/spend';
-import { getQueueDepths, getUpstashDatabases, getUpstashStats } from '@/lib/clients/upstash';
 
 export const runtime = 'edge';
 export const dynamic = 'force-dynamic';
@@ -45,13 +45,6 @@ export default async function OverviewPage() {
           description="App database"
         >
           <NeonCard />
-        </StreamingCard>
-
-        <StreamingCard
-          title={<CardTitleLink href="/platform/upstash">Upstash Redis</CardTitleLink>}
-          description="Queue + cache"
-        >
-          <UpstashCard />
         </StreamingCard>
 
         <StreamingCard
@@ -175,38 +168,6 @@ async function NeonCard() {
         { label: 'Project', value: `${p.name} · pg${p.pgVersion} · ${p.regionId}` },
         { label: 'Storage', value: formatBytes(p.storageBytes) },
         { label: 'CPU-hours', value: `${p.computeHours}` },
-      ]}
-    />
-  );
-}
-
-async function UpstashCard() {
-  // Pulls live counters from `/redis/stats/<id>`. The list endpoint
-  // (`getUpstashDatabases`) doesn't populate usage counters — historical
-  // versions of this card read zeros from there.
-  const dbs = await getUpstashDatabases();
-  if (!dbs.ok) return <CardError message={dbs.error} />;
-  const d = dbs.data[0];
-  if (!d) return <CardBody status="warn" statusLabel="no databases" rows={[]} />;
-  const stats = await getUpstashStats(d.id);
-  return (
-    <CardBody
-      status="ok"
-      statusLabel={d.state ?? 'ok'}
-      rows={[
-        { label: 'Name', value: `${d.name} · ${d.type} · ${d.region}` },
-        stats.ok
-          ? { label: 'Requests', value: `${formatNumber(stats.data.monthlyRequests)} / mo` }
-          : { label: 'Requests', value: stats.error, dim: true },
-        stats.ok
-          ? {
-              label: 'Bandwidth',
-              value: `${formatBytes(stats.data.monthlyBandwidthBytes)} / mo`,
-            }
-          : { label: 'Bandwidth', value: '—', dim: true },
-        stats.ok
-          ? { label: 'Keyspace', value: formatNumber(stats.data.keyspace), dim: true }
-          : { label: 'Keyspace', value: '—', dim: true },
       ]}
     />
   );
