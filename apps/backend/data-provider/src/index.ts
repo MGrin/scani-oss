@@ -195,9 +195,17 @@ const app = new Elysia()
       set.headers['Strict-Transport-Security'] = 'max-age=31536000; includeSubDomains; preload';
     }
   })
-  .onError(({ error, request, set }) => {
+  .onError(({ code, error, request, set }) => {
     const tracked = request as RequestWithTracking;
     const requestId = tracked._requestId;
+    // Unmatched-route 404s are almost entirely bot vulnerability scans
+    // (//xmlrpc.php?rsd, /index.php?…, …). They're not server errors: the
+    // old handler mislabelled them as 500 and paged Sentry on every hit,
+    // burying real errors. Answer 404, skip capture.
+    if (code === 'NOT_FOUND') {
+      set.status = 404;
+      return { error: 'Not Found', requestId };
+    }
     const message = error instanceof Error ? error.message : 'Unknown error';
     logger.error(
       { requestId, url: sanitizeUrl(request.url), error: message },
