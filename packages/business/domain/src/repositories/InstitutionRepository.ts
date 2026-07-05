@@ -71,8 +71,20 @@ export class InstitutionRepository extends BaseRepository<Institution, NewInstit
       left join accounts a on a.institution_id = i.id and a.is_active
       where it.code <> 'crypto_wallet'
       group by i.id, i.name
-      having count(a.id) = 0
-          or bool_and(coalesce((a.metadata->>'lastSync')::timestamptz, 'epoch') < ${cutoff.toISOString()}::timestamptz)
+      having
+        -- no-account: a credentialed institution with zero accounts, but
+        -- ONLY when a credential is actually in a non-healthy import state
+        -- (pending_enqueue / failed). A successfully-imported-but-empty
+        -- exchange (zero or dust-only balances dropped by skipZeroBalances)
+        -- sits at import_status='enqueued' — the healthy terminal state,
+        -- since the enum has no 'completed' value — and must NOT alert.
+        -- Without this guard an empty Binance connection paged hourly forever.
+        (count(a.id) = 0 and bool_or(uic.import_status <> 'enqueued'))
+        -- stale-account: has accounts, but every one last synced before the
+        -- cutoff. Guarded on count > 0 so the 'epoch' fallback on the single
+        -- NULL row a zero-account institution produces can't masquerade as stale.
+        or (count(a.id) > 0
+            and bool_and(coalesce((a.metadata->>'lastSync')::timestamptz, 'epoch') < ${cutoff.toISOString()}::timestamptz))
     `)) as unknown as Array<{
       institution_id: string;
       institution_name: string;
