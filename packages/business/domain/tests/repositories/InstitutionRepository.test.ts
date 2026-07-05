@@ -145,14 +145,37 @@ describe('findStaleSyncTargets', () => {
     });
   });
 
-  test('flags a credentialed institution with zero active accounts (orphan / Binance class)', async () => {
+  test('flags a zero-account institution whose credential import failed', async () => {
     await withTestDb(async (tx) => {
       const user = await makeUser(tx);
       const cex = await makeInstitutionType(tx, { code: 'crypto_exchange' });
       const binance = await makeInstitution(tx, { name: 'Binance', typeId: cex.id });
-      await makeCredential(tx, { userId: user.id, institutionId: binance.id });
+      await makeCredential(tx, {
+        userId: user.id,
+        institutionId: binance.id,
+        importStatus: 'failed',
+      });
       const targets = await repo().findStaleSyncTargets(new Date('2026-01-01'), tx);
       expect(targets.find((t) => t.institutionId === binance.id)?.kind).toBe('no-account');
+    });
+  });
+
+  test('does NOT flag a zero-account institution whose import succeeded but is empty', async () => {
+    // Regression: an exchange that imported cleanly but holds zero (or only
+    // dust) balances creates 0 accounts and sits at import_status='enqueued'
+    // — the healthy terminal state. The probe used to page on this hourly
+    // forever (Sentry SCANI-WORKER-G, 181 events on one empty Binance link).
+    await withTestDb(async (tx) => {
+      const user = await makeUser(tx);
+      const cex = await makeInstitutionType(tx, { code: 'crypto_exchange' });
+      const binance = await makeInstitution(tx, { name: 'Binance', typeId: cex.id });
+      await makeCredential(tx, {
+        userId: user.id,
+        institutionId: binance.id,
+        importStatus: 'enqueued',
+      });
+      const targets = await repo().findStaleSyncTargets(new Date('2026-01-01'), tx);
+      expect(targets.find((t) => t.institutionId === binance.id)).toBeUndefined();
     });
   });
 
