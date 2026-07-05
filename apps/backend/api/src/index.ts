@@ -364,7 +364,7 @@ const app = new Elysia()
 
     return response;
   })
-  .onError(({ error, request, set }) => {
+  .onError(({ code, error, request, set }) => {
     const trackedRequest = request as RequestWithTracking;
     const requestId = trackedRequest._requestId;
     const timer = trackedRequest._timer;
@@ -378,6 +378,16 @@ const app = new Elysia()
     // boundary (Fly machine event 2026-05-08 07:30:18, exit_code=137).
     if (requestId) {
       endConnectionTracking(requestId);
+    }
+
+    // Unmatched-route 404s are almost entirely bot vulnerability scans
+    // (/index.php?option=com_sppagebuilder, //xmlrpc.php?rsd, …). They're
+    // not server errors: the old handler mislabelled them as 500 and paged
+    // Sentry on every hit, burying real errors. Answer a plain 404 and skip
+    // the capture.
+    if (code === 'NOT_FOUND') {
+      set.status = 404;
+      return { error: 'Not Found', requestId };
     }
 
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
