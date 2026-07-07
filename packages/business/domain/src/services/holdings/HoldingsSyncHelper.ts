@@ -98,9 +98,17 @@ export class HoldingsSyncHelper extends BaseService {
 
     const projection = projectSnapshotsToHoldings(snapshots, account.id);
 
+    // Manual holdings are user-curated. An automated balance sync must never
+    // adopt one as its own row — neither to update nor to zero it. Excluding
+    // them from the reconciliation maps keeps the sync blind to manual rows,
+    // so it only ever touches the holdings it owns (and creates its own row
+    // when a token happens to be held only manually). Without this, two
+    // holdings sharing a token (a synced one plus a manual one) collide in
+    // existingByTokenId and the sync silently overwrites the manual balance.
     const existingByCompositeKey = new Map<string, Holding>();
     const existingByTokenId = new Map<string, Holding>();
     for (const h of existingHoldings) {
+      if (h.source === 'manual') continue;
       existingByTokenId.set(h.tokenId, h);
       const compositeKey = h.externalId ? `${h.tokenId}:${h.externalId}` : h.tokenId;
       existingByCompositeKey.set(compositeKey, h);
@@ -211,9 +219,6 @@ export class HoldingsSyncHelper extends BaseService {
       for (const [tokenId, existing] of existingByTokenId) {
         if (seenTokenIds.has(tokenId)) continue;
         if (existing.balance === '0') continue;
-        // Manual rows are user-curated — exchange sync must not zero them
-        // even when the upstream API stops returning the token.
-        if (existing.source === 'manual') continue;
         try {
           await this.holdingService.updateHoldingBalanceWithEvent(
             { holdingId: existing.id, balance: '0', eventContext },
