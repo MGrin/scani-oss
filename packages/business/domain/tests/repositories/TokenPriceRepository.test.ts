@@ -300,6 +300,44 @@ describe('TokenPriceRepository', () => {
         expect(prices.size).toBe(0);
       });
     });
+
+    // Regression guard for the DISTINCT ON rewrite: a naive
+    // `ORDER BY timestamp DESC LIMIT 1`-per-token read would let the newer
+    // other-base row win. The preferred base must win regardless of
+    // timestamp ordering between bases.
+    test('prefers matching base over newer other-base', async () => {
+      await withTestDb(async (tx) => {
+        const usd = await makeToken(tx);
+        const eur = await makeToken(tx);
+        const btc = await makeToken(tx);
+
+        await repo().bulkUpsert(
+          [
+            {
+              tokenId: btc.id,
+              baseTokenId: usd.id,
+              price: '100',
+              timestamp: new Date('2026-01-01'),
+              granularity: 'daily',
+              source: 'test',
+            },
+            {
+              tokenId: btc.id,
+              baseTokenId: eur.id,
+              price: '200',
+              timestamp: new Date('2026-06-01'),
+              granularity: 'daily',
+              source: 'test',
+            },
+          ],
+          tx
+        );
+
+        const map = await repo().findLatestPricesForTokensAnyBase([btc.id], usd.id, tx);
+        expect(map.get(btc.id)?.baseTokenId).toBe(usd.id);
+        expect(map.get(btc.id)?.price).toBe('100');
+      });
+    });
   });
 
   describe('downsampleIntradayToDaily', () => {
