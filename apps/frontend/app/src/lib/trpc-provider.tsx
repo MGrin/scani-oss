@@ -1,9 +1,16 @@
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { showError } from '@scani/ui/ui/use-toast';
+import { MutationCache, QueryCache, QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { httpBatchLink, splitLink, TRPCClientError } from '@trpc/client';
 import { useEffect, useState } from 'react';
 import { authClient } from './auth-client';
 import { trpc } from './trpc';
 import { getTrpcAuthHeaders } from './trpc-auth-headers';
+
+const isNetworkError = (error: unknown): boolean => {
+  if (error instanceof TRPCClientError && error.data?.code === 'UNAUTHORIZED') return false;
+  const message = error instanceof Error ? error.message : String(error);
+  return /Failed to fetch|NetworkError|Load failed/i.test(message);
+};
 
 interface TRPCProviderProps {
   children: React.ReactNode;
@@ -13,6 +20,16 @@ export function TRPCProvider({ children }: TRPCProviderProps) {
   const [queryClient] = useState(
     () =>
       new QueryClient({
+        queryCache: new QueryCache({
+          onError: (error) => {
+            if (isNetworkError(error)) showError(error, 'Connection issue — retrying');
+          },
+        }),
+        mutationCache: new MutationCache({
+          onError: (error) => {
+            if (isNetworkError(error)) showError(error, 'Connection issue');
+          },
+        }),
         defaultOptions: {
           queries: {
             staleTime: 30 * 1000, // Consider data fresh for 30 seconds
