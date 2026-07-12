@@ -261,6 +261,94 @@ describe('BybitProvider', () => {
     }
   });
 
+  test('fetchTransactions chunks deposit queries into <=30d windows over a 90-day range', async () => {
+    const p = new BybitProvider(passthroughLimiter());
+    const since = new Date('2026-01-01T00:00:00Z');
+    const until = new Date('2026-04-01T00:00:00Z'); // 90 days
+
+    const windows: Array<{ start: number; end: number }> = [];
+    const fetchHook = queueFetch((url) => {
+      if (url.includes('/v5/execution/list')) {
+        return {
+          body: { retCode: 0, retMsg: 'OK', result: { nextPageCursor: '', list: [] } },
+        };
+      }
+      if (url.includes('/v5/asset/deposit/query-record')) {
+        const u = new URL(url);
+        if (!u.searchParams.get('cursor')) {
+          windows.push({
+            start: Number(u.searchParams.get('startTime')),
+            end: Number(u.searchParams.get('endTime')),
+          });
+        }
+        return {
+          body: { retCode: 0, retMsg: 'OK', result: { nextPageCursor: '', rows: [] } },
+        };
+      }
+      if (url.includes('/v5/asset/withdraw/query-record')) {
+        return {
+          body: { retCode: 0, retMsg: 'OK', result: { nextPageCursor: '', rows: [] } },
+        };
+      }
+      throw new Error(`Unexpected URL: ${url}`);
+    });
+
+    try {
+      await p.fetchTransactions({ ...ctx, since, until } as never);
+      const thirtyDaysMs = 30 * 24 * 60 * 60 * 1000;
+      expect(windows.length).toBeGreaterThanOrEqual(3);
+      for (const w of windows) expect(w.end - w.start).toBeLessThanOrEqual(thirtyDaysMs);
+      expect(Math.min(...windows.map((w) => w.start))).toBe(since.getTime());
+      expect(Math.max(...windows.map((w) => w.end))).toBe(until.getTime());
+    } finally {
+      fetchHook.restore();
+    }
+  });
+
+  test('fetchTransactions chunks withdrawal queries into <=30d windows over a 90-day range', async () => {
+    const p = new BybitProvider(passthroughLimiter());
+    const since = new Date('2026-01-01T00:00:00Z');
+    const until = new Date('2026-04-01T00:00:00Z'); // 90 days
+
+    const windows: Array<{ start: number; end: number }> = [];
+    const fetchHook = queueFetch((url) => {
+      if (url.includes('/v5/execution/list')) {
+        return {
+          body: { retCode: 0, retMsg: 'OK', result: { nextPageCursor: '', list: [] } },
+        };
+      }
+      if (url.includes('/v5/asset/deposit/query-record')) {
+        return {
+          body: { retCode: 0, retMsg: 'OK', result: { nextPageCursor: '', rows: [] } },
+        };
+      }
+      if (url.includes('/v5/asset/withdraw/query-record')) {
+        const u = new URL(url);
+        if (!u.searchParams.get('cursor')) {
+          windows.push({
+            start: Number(u.searchParams.get('startTime')),
+            end: Number(u.searchParams.get('endTime')),
+          });
+        }
+        return {
+          body: { retCode: 0, retMsg: 'OK', result: { nextPageCursor: '', rows: [] } },
+        };
+      }
+      throw new Error(`Unexpected URL: ${url}`);
+    });
+
+    try {
+      await p.fetchTransactions({ ...ctx, since, until } as never);
+      const thirtyDaysMs = 30 * 24 * 60 * 60 * 1000;
+      expect(windows.length).toBeGreaterThanOrEqual(3);
+      for (const w of windows) expect(w.end - w.start).toBeLessThanOrEqual(thirtyDaysMs);
+      expect(Math.min(...windows.map((w) => w.start))).toBe(since.getTime());
+      expect(Math.max(...windows.map((w) => w.end))).toBe(until.getTime());
+    } finally {
+      fetchHook.restore();
+    }
+  });
+
   test('fetchTransactions maps deposits + withdrawals from their dedicated endpoints', async () => {
     const p = new BybitProvider(passthroughLimiter());
     const since = new Date('2024-01-01T00:00:00Z');
