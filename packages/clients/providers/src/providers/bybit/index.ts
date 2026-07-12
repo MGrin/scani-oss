@@ -39,6 +39,10 @@ const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000;
 const EXECUTION_PAGE_LIMIT = 100;
 const TRANSFER_PAGE_LIMIT = 50;
 
+// Bybit caps deposit/withdrawal record queries at a 30-day span; slide the
+// caller's [since, until] interval forward in 30-day chunks.
+const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
+
 interface BybitCoin {
   coin: string;
   walletBalance: string;
@@ -286,29 +290,37 @@ export class BybitProvider
     since: Date,
     until: Date
   ): AsyncGenerator<BybitDepositRow> {
-    let cursor: string | undefined;
-    while (true) {
-      const params = new URLSearchParams({
-        startTime: since.getTime().toString(),
-        endTime: until.getTime().toString(),
-        limit: TRANSFER_PAGE_LIMIT.toString(),
-      });
-      if (cursor) params.set('cursor', cursor);
-      const data = await this.signedJson<BybitDepositResponse>(
-        { method: 'GET', url: '/v5/asset/deposit/query-record', query: params.toString() },
-        creds
-      );
-      if (data.retCode !== 0) {
-        throw new ProviderError(
-          `Bybit retCode=${data.retCode}: ${data.retMsg}`,
-          'unrecoverable',
-          this.providerKey
+    const untilMs = until.getTime();
+    let windowStart = since.getTime();
+    if (windowStart >= untilMs) return;
+
+    while (windowStart < untilMs) {
+      const windowEnd = Math.min(windowStart + THIRTY_DAYS_MS, untilMs);
+      let cursor: string | undefined;
+      while (true) {
+        const params = new URLSearchParams({
+          startTime: windowStart.toString(),
+          endTime: windowEnd.toString(),
+          limit: TRANSFER_PAGE_LIMIT.toString(),
+        });
+        if (cursor) params.set('cursor', cursor);
+        const data = await this.signedJson<BybitDepositResponse>(
+          { method: 'GET', url: '/v5/asset/deposit/query-record', query: params.toString() },
+          creds
         );
+        if (data.retCode !== 0) {
+          throw new ProviderError(
+            `Bybit retCode=${data.retCode}: ${data.retMsg}`,
+            'unrecoverable',
+            this.providerKey
+          );
+        }
+        const rows = data.result?.rows ?? [];
+        for (const row of rows) yield row;
+        cursor = data.result?.nextPageCursor || undefined;
+        if (!cursor || rows.length === 0) break;
       }
-      const rows = data.result?.rows ?? [];
-      for (const row of rows) yield row;
-      cursor = data.result?.nextPageCursor || undefined;
-      if (!cursor || rows.length === 0) break;
+      windowStart = windowEnd;
     }
   }
 
@@ -317,29 +329,37 @@ export class BybitProvider
     since: Date,
     until: Date
   ): AsyncGenerator<BybitWithdrawRow> {
-    let cursor: string | undefined;
-    while (true) {
-      const params = new URLSearchParams({
-        startTime: since.getTime().toString(),
-        endTime: until.getTime().toString(),
-        limit: TRANSFER_PAGE_LIMIT.toString(),
-      });
-      if (cursor) params.set('cursor', cursor);
-      const data = await this.signedJson<BybitWithdrawResponse>(
-        { method: 'GET', url: '/v5/asset/withdraw/query-record', query: params.toString() },
-        creds
-      );
-      if (data.retCode !== 0) {
-        throw new ProviderError(
-          `Bybit retCode=${data.retCode}: ${data.retMsg}`,
-          'unrecoverable',
-          this.providerKey
+    const untilMs = until.getTime();
+    let windowStart = since.getTime();
+    if (windowStart >= untilMs) return;
+
+    while (windowStart < untilMs) {
+      const windowEnd = Math.min(windowStart + THIRTY_DAYS_MS, untilMs);
+      let cursor: string | undefined;
+      while (true) {
+        const params = new URLSearchParams({
+          startTime: windowStart.toString(),
+          endTime: windowEnd.toString(),
+          limit: TRANSFER_PAGE_LIMIT.toString(),
+        });
+        if (cursor) params.set('cursor', cursor);
+        const data = await this.signedJson<BybitWithdrawResponse>(
+          { method: 'GET', url: '/v5/asset/withdraw/query-record', query: params.toString() },
+          creds
         );
+        if (data.retCode !== 0) {
+          throw new ProviderError(
+            `Bybit retCode=${data.retCode}: ${data.retMsg}`,
+            'unrecoverable',
+            this.providerKey
+          );
+        }
+        const rows = data.result?.rows ?? [];
+        for (const row of rows) yield row;
+        cursor = data.result?.nextPageCursor || undefined;
+        if (!cursor || rows.length === 0) break;
       }
-      const rows = data.result?.rows ?? [];
-      for (const row of rows) yield row;
-      cursor = data.result?.nextPageCursor || undefined;
-      if (!cursor || rows.length === 0) break;
+      windowStart = windowEnd;
     }
   }
 

@@ -110,19 +110,32 @@ export class TokenPriceRepository extends BaseRepository<TokenPrice, NewTokenPri
 
       const database = this.getDb(transaction);
 
-      // Order: matching base wins first, then most-recent wins. The
-      // group-by-and-keep-first loop below picks the head of each
-      // tokenId's sorted partition.
-      const matchesPreferredBase = sql`CASE WHEN ${schema.tokenPrices.baseTokenId} = ${preferredBaseTokenId} THEN 0 ELSE 1 END`;
+      // Bounded read: DISTINCT ON rides idx_token_prices_lookup
+      // (token_id, base_token_id, timestamp DESC) to fetch the latest row per
+      // (token, base) group instead of scanning the whole table. The preferred-
+      // base preference is resolved in-app over the small result set.
       const results = await database
-        .select()
+        .selectDistinctOn([schema.tokenPrices.tokenId, schema.tokenPrices.baseTokenId])
         .from(schema.tokenPrices)
         .where(inArray(schema.tokenPrices.tokenId, tokenIds))
-        .orderBy(matchesPreferredBase, desc(schema.tokenPrices.timestamp));
+        .orderBy(
+          asc(schema.tokenPrices.tokenId),
+          asc(schema.tokenPrices.baseTokenId),
+          desc(schema.tokenPrices.timestamp)
+        );
 
       const priceMap = new Map<string, TokenPrice>();
       for (const price of results) {
-        if (!priceMap.has(price.tokenId)) {
+        const existing = priceMap.get(price.tokenId);
+        if (!existing) {
+          priceMap.set(price.tokenId, price);
+          continue;
+        }
+        const existingPreferred = existing.baseTokenId === preferredBaseTokenId;
+        const currentPreferred = price.baseTokenId === preferredBaseTokenId;
+        if (currentPreferred && !existingPreferred) {
+          priceMap.set(price.tokenId, price);
+        } else if (currentPreferred === existingPreferred && price.timestamp > existing.timestamp) {
           priceMap.set(price.tokenId, price);
         }
       }
@@ -153,8 +166,11 @@ export class TokenPriceRepository extends BaseRepository<TokenPrice, NewTokenPri
 
       const database = this.getDb(transaction);
 
+      // Bounded read: DISTINCT ON (token_id) rides idx_token_prices_lookup
+      // to fetch the latest manual row per token instead of scanning the
+      // whole table.
       const results = await database
-        .select()
+        .selectDistinctOn([schema.tokenPrices.tokenId])
         .from(schema.tokenPrices)
         .where(
           and(
@@ -162,7 +178,7 @@ export class TokenPriceRepository extends BaseRepository<TokenPrice, NewTokenPri
             like(schema.tokenPrices.source, 'manual%')
           )
         )
-        .orderBy(desc(schema.tokenPrices.timestamp));
+        .orderBy(asc(schema.tokenPrices.tokenId), desc(schema.tokenPrices.timestamp));
 
       const priceMap = new Map<string, TokenPrice>();
       for (const price of results) {

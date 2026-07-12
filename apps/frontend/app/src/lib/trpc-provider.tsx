@@ -1,9 +1,16 @@
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { showError } from '@scani/ui/ui/use-toast';
+import { MutationCache, QueryCache, QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { httpBatchLink, splitLink, TRPCClientError } from '@trpc/client';
 import { useEffect, useState } from 'react';
 import { authClient } from './auth-client';
 import { trpc } from './trpc';
 import { getTrpcAuthHeaders } from './trpc-auth-headers';
+
+const isNetworkError = (error: unknown): boolean => {
+  if (error instanceof TRPCClientError && error.data?.code === 'UNAUTHORIZED') return false;
+  const message = error instanceof Error ? error.message : String(error);
+  return /Failed to fetch|NetworkError|Load failed/i.test(message);
+};
 
 interface TRPCProviderProps {
   children: React.ReactNode;
@@ -13,6 +20,20 @@ export function TRPCProvider({ children }: TRPCProviderProps) {
   const [queryClient] = useState(
     () =>
       new QueryClient({
+        queryCache: new QueryCache({
+          onError: (error) => {
+            if (isNetworkError(error)) showError(error, 'Connection issue — retrying');
+          },
+        }),
+        mutationCache: new MutationCache({
+          onError: (error, _variables, _context, mutation) => {
+            // React Query v4 fires this alongside the mutation's own local `onError`
+            // (if any) for the same error — skip the generic toast there so the
+            // local handler's context-specific message isn't raced/overridden.
+            if (mutation.options.onError) return;
+            if (isNetworkError(error)) showError(error, 'Connection issue');
+          },
+        }),
         defaultOptions: {
           queries: {
             staleTime: 30 * 1000, // Consider data fresh for 30 seconds
