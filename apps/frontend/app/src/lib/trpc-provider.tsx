@@ -26,7 +26,11 @@ export function TRPCProvider({ children }: TRPCProviderProps) {
           },
         }),
         mutationCache: new MutationCache({
-          onError: (error) => {
+          onError: (error, _variables, _context, mutation) => {
+            // React Query v4 fires this alongside the mutation's own local `onError`
+            // (if any) for the same error — skip the generic toast there so the
+            // local handler's context-specific message isn't raced/overridden.
+            if (mutation.options.onError) return;
             if (isNetworkError(error)) showError(error, 'Connection issue');
           },
         }),
