@@ -1,0 +1,25 @@
+CREATE TABLE vault (
+  id TEXT NOT NULL PRIMARY KEY,
+  name TEXT NOT NULL,
+  targetAmount TEXT NOT NULL,
+  currentAmount TEXT NOT NULL,
+  currencyId TEXT NOT NULL,
+  color TEXT NOT NULL,
+  iconName TEXT,
+  description TEXT
+);
+
+selectAll:
+SELECT * FROM vault;
+
+insert:
+INSERT OR REPLACE INTO vault(id, name, targetAmount, currentAmount, currencyId, color, iconName, description) VALUES (?, ?, ?, ?, ?, ?, ?, ?);
+
+deleteById:
+DELETE FROM vault WHERE id = ?;
+
+deleteAll:
+DELETE FROM vault;
+
+selectById:
+SELECT * FROM vault WHERE id = ?;

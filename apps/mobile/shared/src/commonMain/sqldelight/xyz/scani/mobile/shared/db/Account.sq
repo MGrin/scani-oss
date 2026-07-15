@@ -1,0 +1,22 @@
+CREATE TABLE account (
+  id TEXT NOT NULL PRIMARY KEY,
+  name TEXT NOT NULL,
+  typeId TEXT NOT NULL,
+  institutionId TEXT,
+  totalValue TEXT NOT NULL
+);
+
+selectAll:
+SELECT * FROM account;
+
+insert:
+INSERT OR REPLACE INTO account(id, name, typeId, institutionId, totalValue) VALUES (?, ?, ?, ?, ?);
+
+deleteById:
+DELETE FROM account WHERE id = ?;
+
+deleteAll:
+DELETE FROM account;
+
+selectById:
+SELECT * FROM account WHERE id = ?;

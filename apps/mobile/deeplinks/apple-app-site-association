@@ -1,0 +1,20 @@
+{
+  "applinks": {
+    "apps": [],
+    "details": [
+      {
+        "appID": "TEAMID.xyz.scani.mobile",
+        "paths": [
+          "/holding/*",
+          "/account/*",
+          "/institution/*",
+          "/vault/*",
+          "/group/*",
+          "/job/*",
+          "/dashboard",
+          "/auth/callback"
+        ]
+      }
+    ]
+  }
+}

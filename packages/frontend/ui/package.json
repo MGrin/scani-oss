@@ -52,7 +52,9 @@
   "scripts": {
     "lint": "biome check .",
     "lint:fix": "biome check --write .",
-    "type-check": "tsgo --noEmit"
+    "type-check": "tsgo --noEmit",
+    "tokens:gen": "bun ../../../scripts/generate-design-tokens.ts",
+    "tokens:gen:check": "bun ../../../scripts/generate-design-tokens.ts --check"
   },
   "peerDependencies": {
     "@tanstack/react-query": "^4.44.0",

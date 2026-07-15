@@ -232,9 +232,6 @@ export class TokenRepository extends BaseRepository<Token, NewToken> {
     return results[0] || null;
   }
 
-  /**
-   * Create multiple tokens in a batch
-   */
   async createMany(tokensData: NewToken[], transaction?: DatabaseTransaction): Promise<Token[]> {
     const database = this.getDb(transaction);
     const results = await database.insert(schema.tokens).values(tokensData).returning();
