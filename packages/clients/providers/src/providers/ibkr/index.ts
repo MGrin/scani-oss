@@ -210,7 +210,10 @@ function parsePositions(xml: string): OpenPosition[] {
   for (const match of xml.matchAll(/<OpenPosition\s+([^>]*)\/?>/g)) {
     const attrs = match[1] ?? '';
     const qty = Number.parseFloat(extractAttr(attrs, 'position'));
-    if (!Number.isFinite(qty) || qty === 0) continue;
+    // Skip flat and short positions. Holdings model long balances only
+    // (holdings.balance >= 0); a short is a liability with no representable
+    // holding row, so drop it rather than trip the DB check constraint.
+    if (!Number.isFinite(qty) || qty <= 0) continue;
     out.push({
       symbol: extractAttr(attrs, 'symbol'),
       description: extractAttr(attrs, 'description'),
@@ -232,7 +235,10 @@ function parseCashBalances(xml: string): CashBalance[] {
     let endingCash = extractAttr(attrs, 'endingCash');
     if (!endingCash) endingCash = extractAttr(attrs, 'endingSettledCash');
     const cash = Number.parseFloat(endingCash);
-    if (!Number.isFinite(cash) || cash === 0) continue;
+    // Skip zero and negative (margin-debt) cash for the same reason as
+    // short positions above — a negative cash balance is a liability, not
+    // a holding, and holdings.balance is constrained to >= 0.
+    if (!Number.isFinite(cash) || cash <= 0) continue;
     out.push({ currency, endingCash });
   }
   return out;
