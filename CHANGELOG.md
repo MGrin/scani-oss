@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.9.4](https://github.com/MGrin/scani-oss/compare/v0.9.3...v0.9.4) (2026-07-20)
+
+
+### Bug Fixes
+
+* **providers:** drop IBKR short positions and margin-debt cash from balances ([3e578d5](https://github.com/MGrin/scani-oss/commit/3e578d588fbd31584fca0e3c94913c8cdb135638))
+* **providers:** drop IBKR short positions and margin-debt cash from balances ([b1a903b](https://github.com/MGrin/scani-oss/commit/b1a903b6781e5113290f4e839c16df3be77d5ae5))
+
 ## [0.9.3](https://github.com/MGrin/scani-oss/compare/v0.9.2...v0.9.3) (2026-07-12)
 
 
