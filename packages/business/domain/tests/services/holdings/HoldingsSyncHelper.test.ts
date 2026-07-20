@@ -141,3 +141,45 @@ describe('HoldingsSyncHelper — manual holdings are off-limits to exchange sync
     });
   });
 });
+
+describe('HoldingsSyncHelper — negative balances never reach the write path', () => {
+  // holdings.balance carries a `>= 0` check constraint. A negative snapshot
+  // (e.g. an IBKR short position or margin-debt cash) must be skipped here
+  // rather than attempt a write that aborts the whole shared sync
+  // transaction for every other user in the same run.
+  test('skips a negative snapshot instead of creating a holding', async () => {
+    const { helper, calls } = setup();
+
+    await helper.processSnapshotsForAccount({
+      ...BASE_INPUT,
+      snapshots: [usdSnapshot('-42.5')],
+      existingHoldings: [],
+    });
+
+    expect(calls.creates).toEqual([]);
+    expect(calls.updates).toEqual([]);
+  });
+
+  test('skips a negative snapshot instead of updating an existing holding', async () => {
+    const { helper, calls } = setup();
+
+    const auto = usdHolding({
+      id: 'auto-id',
+      source: 'import_ibkr',
+      externalId: 'USD',
+      balance: '585.44',
+    });
+
+    await helper.processSnapshotsForAccount({
+      ...BASE_INPUT,
+      snapshots: [usdSnapshot('-1200.75')],
+      existingHoldings: [auto],
+    });
+
+    // The negative snapshot is dropped, so `auto` is never written a
+    // negative value. Because its token is now unseen, the stale-zeroing
+    // pass zeroes it — a valid, constraint-respecting terminal state.
+    expect(calls.updates).toEqual([{ holdingId: 'auto-id', balance: '0' }]);
+    expect(calls.creates).toEqual([]);
+  });
+});
