@@ -38,8 +38,10 @@ describe('IbkrProvider', () => {
         <OpenPosition symbol="AAPL" description="Apple Inc." position="10" currency="USD" assetCategory="STK" listingExchange="NASDAQ" />
         <OpenPosition symbol="XEQT" description="iShares Core Equity ETF Portfolio" position="100" currency="CAD" assetCategory="STK" listingExchange="TSE" />
         <OpenPosition symbol="GOOG" description="Alphabet" position="0" currency="USD" assetCategory="STK" listingExchange="NASDAQ" />
+        <OpenPosition symbol="TSLA" description="Tesla short" position="-5" currency="USD" assetCategory="STK" listingExchange="NASDAQ" />
         <CashReportCurrency currency="USD" endingCash="500.50" />
         <CashReportCurrency currency="EUR" endingCash="0" />
+        <CashReportCurrency currency="GBP" endingCash="-1200.75" />
         <CashReportCurrency currency="BASE_SUMMARY" endingCash="9999" />
       </FlexQueryResponse>
     `;
@@ -96,9 +98,15 @@ describe('IbkrProvider', () => {
         | undefined;
       expect(aaplMeta?.finnhub?.symbol).toBe('AAPL');
       expect(aaplMeta?.exchangeInfo).toBeUndefined();
-      // Zero-quantity GOOG is skipped, BASE_SUMMARY skipped, EUR=0 skipped
+      // Zero-quantity GOOG is skipped, BASE_SUMMARY skipped, EUR=0 skipped.
+      // Short positions (TSLA, -5) and margin-debt cash (GBP, -1200.75) are
+      // liabilities, not long holdings — the schema models balance >= 0, so
+      // they must be dropped at the parse layer rather than trip the
+      // holdings_balance_nonneg_chk constraint downstream.
       expect(out.find((h) => h.tokenIdentity.symbol === 'GOOG')).toBeUndefined();
       expect(out.find((h) => h.tokenIdentity.symbol === 'EUR')).toBeUndefined();
+      expect(out.find((h) => h.tokenIdentity.symbol === 'TSLA')).toBeUndefined();
+      expect(out.find((h) => h.tokenIdentity.symbol === 'GBP')).toBeUndefined();
     } finally {
       globalThis.fetch = originalFetch;
     }

@@ -137,6 +137,19 @@ export class HoldingsSyncHelper extends BaseService {
           continue;
         }
 
+        // holdings.balance carries a `>= 0` check constraint. A negative
+        // snapshot (e.g. an IBKR short/margin-debt leg that slipped past the
+        // provider filter) would abort the entire shared sync transaction —
+        // taking down every other user's sync in the same run — so skip it
+        // here and let the stale-zeroing pass settle any existing row to 0.
+        if (new Decimal(integrationHolding.balance).isNegative()) {
+          this.logger.warn(
+            { accountId: account.id, holding: integrationHolding },
+            'Skipping integration holding with negative balance'
+          );
+          continue;
+        }
+
         const lookupExternalId = pickExternalLookupKey(integrationHolding);
         const snapshot =
           snapshotsByExternalId.get(lookupExternalId) ??
