@@ -70,15 +70,35 @@ export function useAccountActions() {
     },
   });
 
+  // Account-level "Sync now": enqueue a balance refresh for the whole
+  // account. Results arrive asynchronously via the WS pipe, so there's
+  // no optimistic patch — just fire the job and toast.
+  const refreshBalancesMutation = trpc.accounts.refreshBalances.useMutation({
+    onSuccess: () => {
+      showSuccess('Syncing account — balances will refresh shortly');
+    },
+    onError: (error) => {
+      showError(error, 'Failed to start account sync');
+    },
+    onSettled: () => {
+      void invalidatePortfolioQueries(utils);
+    },
+  });
+
   return {
     deleteAccount: (id: string, options?: { onSuccess?: () => void }) =>
       deleteMutation.mutate({ id }, { onSuccess: options?.onSuccess }),
     bulkDelete: (ids: string[], options?: { onSuccess?: () => void }) =>
       bulkDeleteMutation.mutate({ ids }, { onSuccess: options?.onSuccess }),
-    updateAccount: (id: string, data: { name?: string; description?: string | null }) =>
-      updateMutation.mutate({ id, data }),
+    updateAccount: (
+      id: string,
+      data: { name?: string; description?: string | null; typeId?: string }
+    ) => updateMutation.mutate({ id, data }),
+    refreshAccountBalances: (accountId: string) =>
+      refreshBalancesMutation.mutate({ accountId, requestId: crypto.randomUUID() }),
     isDeleting: deleteMutation.isPending,
     isBulkDeleting: bulkDeleteMutation.isPending,
     isUpdating: updateMutation.isPending,
+    isRefreshing: refreshBalancesMutation.isPending,
   };
 }

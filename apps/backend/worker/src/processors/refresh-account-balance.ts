@@ -48,13 +48,14 @@ export class RefreshAccountBalanceProcessor extends UserJobProcessor<
       await Container.get(PortfolioValueCache).bust(data.userId);
 
       // Tell the WS pipe to reload the user's holdings list — the
-      // entityId is the holdingId the user clicked from, but the
-      // payload's reason is generic so the frontend can decide
-      // whether to invalidate the entire portfolio or a single row.
+      // entityId is the holdingId the user clicked from (or the account
+      // itself for an account-level "Sync now"), but the payload's
+      // reason is generic so the frontend can decide whether to
+      // invalidate the entire portfolio or a single row.
       emitEntityChange({
         entityType: 'holding',
         operationType: 'update',
-        entityId: data.holdingId,
+        entityId: data.holdingId ?? data.accountId,
         userId: data.userId,
         data: { reason: 'refresh-account-balance', accountId: data.accountId },
       });
