@@ -17,6 +17,13 @@
 
 export type CredentialFieldType = 'text' | 'password' | 'textarea';
 
+/**
+ * Account-type codes matching the `account_types` seed rows. A provider
+ * declares which type its imported accounts belong to so the import path
+ * stops defaulting every integration to `crypto`.
+ */
+export type AccountTypeCode = 'checking' | 'savings' | 'investment' | 'crypto' | 'other';
+
 export interface CredentialField {
   /** Object key in the submitted credentials map (`apiKey`, `apiSecret`, …). */
   name: string;
@@ -68,4 +75,13 @@ export interface IntegrationManifest {
    * only call before the worker can fetch the report. Defer entirely.
    */
   skipServerValidation?: boolean;
+  /**
+   * Account type imported accounts for this provider are created as
+   * (drives `accounts.type_id`). Defaults to `'crypto'` when unset — the
+   * historical behaviour for CEX providers. Fiat/bank providers set this
+   * to a bank type (`savings`, `checking`, …) so their accounts aren't
+   * miscategorised as crypto (which, among other things, blocks APY
+   * configuration on their holdings).
+   */
+  defaultAccountTypeCode?: AccountTypeCode;
 }

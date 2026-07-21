@@ -3,8 +3,10 @@ import { ConfirmDialog } from '@scani/ui/components/ConfirmDialog';
 import { Badge } from '@scani/ui/ui/badge';
 import { Button } from '@scani/ui/ui/button';
 import { Input } from '@scani/ui/ui/input';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@scani/ui/ui/select';
 import { Separator } from '@scani/ui/ui/separator';
 import { Skeleton } from '@scani/ui/ui/skeleton';
+import { RefreshCw } from 'lucide-react';
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { trpc } from '@/lib/trpc';
@@ -23,13 +25,22 @@ interface AccountDetailContentProps {
 export function AccountDetailContent({ accountId, mode = 'panel' }: AccountDetailContentProps) {
   const { data: account, isLoading } = trpc.accounts.getById.useQuery({ id: accountId });
   const { data: holdingsData } = trpc.accounts.getHoldings.useQuery({ id: accountId });
+  const { data: accountTypes } = trpc.accountTypes.getAll.useQuery();
   const { symbol: currencySymbol } = useBaseCurrency();
-  const { deleteAccount, updateAccount, isUpdating, isDeleting } = useAccountActions();
+  const {
+    deleteAccount,
+    updateAccount,
+    refreshAccountBalances,
+    isUpdating,
+    isDeleting,
+    isRefreshing,
+  } = useAccountActions();
   const navigate = useNavigate();
 
   const [isEditing, setIsEditing] = useState(false);
   const [editName, setEditName] = useState('');
   const [editDescription, setEditDescription] = useState('');
+  const [editTypeId, setEditTypeId] = useState('');
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
   if (isLoading) {
@@ -48,9 +59,20 @@ export function AccountDetailContent({ accountId, mode = 'panel' }: AccountDetai
   const isCompact = mode === 'panel';
   const holdings = Array.isArray(holdingsData) ? holdingsData : holdingsData?.holdings || [];
 
+  const accountMeta = account.metadata as Record<string, unknown> | null | undefined;
+  // Blockchain wallet accounts are inherently crypto and the backend
+  // rejects type changes for them (AccountService.updateAccount) — so the
+  // type is only editable for manual + exchange/broker accounts.
+  const isBlockchainWallet = !!accountMeta && 'walletAddress' in accountMeta;
+  // Auto-synced = at least one holding sourced from a provider (not manual).
+  // Only these can be re-fetched from the provider on demand.
+  const isAutoSynced = holdings.some((h: { source?: string }) => h.source && h.source !== 'manual');
+  const currentTypeName = accountTypes?.find((t) => t.id === account.typeId)?.name;
+
   const startEditing = () => {
     setEditName(account.name);
     setEditDescription(account.description || '');
+    setEditTypeId(account.typeId);
     setIsEditing(true);
   };
 
@@ -58,6 +80,7 @@ export function AccountDetailContent({ accountId, mode = 'panel' }: AccountDetai
     updateAccount(accountId, {
       name: editName.trim(),
       description: editDescription.trim() || null,
+      ...(!isBlockchainWallet && editTypeId ? { typeId: editTypeId } : {}),
     });
     setIsEditing(false);
   };
@@ -85,6 +108,23 @@ export function AccountDetailContent({ accountId, mode = 'panel' }: AccountDetai
               placeholder="Description (optional)"
             />
           </div>
+          {!isBlockchainWallet && (
+            <div>
+              <p className="text-xs text-muted-foreground uppercase tracking-wider">Account type</p>
+              <Select value={editTypeId} onValueChange={setEditTypeId} disabled={isUpdating}>
+                <SelectTrigger className="mt-1">
+                  <SelectValue placeholder="Select account type" />
+                </SelectTrigger>
+                <SelectContent>
+                  {(accountTypes ?? []).map((t) => (
+                    <SelectItem key={t.id} value={t.id}>
+                      {t.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
           <div className="flex gap-2">
             <Button size="sm" onClick={saveEdit} disabled={!editName.trim() || isUpdating}>
               Save
@@ -106,6 +146,18 @@ export function AccountDetailContent({ accountId, mode = 'panel' }: AccountDetai
               </p>
             </div>
             <div className="flex gap-1 shrink-0">
+              {isAutoSynced && (
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => refreshAccountBalances(accountId)}
+                  disabled={isRefreshing}
+                  title="Re-fetch balances from the provider"
+                >
+                  <RefreshCw className={cn('h-4 w-4', isRefreshing && 'animate-spin')} />
+                  <span className="ml-1.5">Sync now</span>
+                </Button>
+              )}
               <Button size="sm" variant="ghost" onClick={startEditing}>
                 Edit
               </Button>
@@ -133,6 +185,12 @@ export function AccountDetailContent({ accountId, mode = 'panel' }: AccountDetai
             {account.isActive ? 'Active' : 'Inactive'}
           </Badge>
         </div>
+        {currentTypeName && (
+          <div>
+            <p className="text-xs text-muted-foreground uppercase tracking-wider">Type</p>
+            <p className="text-sm font-medium mt-1">{currentTypeName}</p>
+          </div>
+        )}
       </div>
 
       {/* Sync info */}

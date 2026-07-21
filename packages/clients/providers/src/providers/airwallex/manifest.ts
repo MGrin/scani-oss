@@ -3,6 +3,7 @@ import type { IntegrationManifest } from '../../core/integration-manifest';
 export const airwallexManifest: IntegrationManifest = {
   providerKey: 'airwallex',
   institutionName: 'Airwallex',
+  defaultAccountTypeCode: 'savings',
   credentialFields: [
     {
       name: 'clientId',

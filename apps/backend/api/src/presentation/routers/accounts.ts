@@ -2,6 +2,8 @@ import type { User } from '@scani/db';
 import { AccountRepository, GroupRepository } from '@scani/domain/repositories';
 import { AccountService, HoldingQueryService } from '@scani/domain/services';
 import { BulkAssignAccountGroupsUseCase } from '@scani/domain/use-cases';
+import { REFRESH_ACCOUNT_BALANCE } from '@scani/jobs';
+import { BullMqEnqueueService } from '@scani/queue';
 import { emitBulkEntityChanges, emitEntityChange } from '@scani/realtime';
 import { IdInputDto, UpdateAccountDto } from '@scani/shared';
 import { Container } from 'typedi';
@@ -73,6 +75,26 @@ export const accountsRouter = router({
       });
 
       return result;
+    }),
+
+  // Account-level "Sync now": re-fetch balances for every holding on an
+  // auto-synced account (wallet or exchange/broker) via the same
+  // REFRESH_ACCOUNT_BALANCE job the per-holding refresh uses. Dedup is
+  // per-(user, account), so this collapses with an in-flight per-holding
+  // refresh of the same account. Manual accounts have no credentials, so
+  // the use-case throws and the job surfaces the error on the job page.
+  refreshBalances: protectedProcedure
+    .input(z.object({ accountId: z.string().uuid(), requestId: z.string().uuid() }))
+    .mutation(async ({ input, ctx }) => {
+      const { dbUser } = await requireAuth(ctx);
+      // Throws on not-found / not-owned — scopes the refresh to the caller.
+      await Container.get(AccountService).getAccountById(dbUser.id, input.accountId);
+      const jobId = await Container.get(BullMqEnqueueService).add(REFRESH_ACCOUNT_BALANCE, {
+        userId: dbUser.id,
+        requestId: input.requestId,
+        accountId: input.accountId,
+      });
+      return { jobId };
     }),
 
   delete: protectedProcedure.input(IdInputDto).mutation(async ({ input, ctx }) => {

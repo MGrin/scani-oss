@@ -180,12 +180,18 @@ export class ImportExchangeAccountsUseCase {
 
     const sourceTag = `import_${institution.name.toLowerCase().replace(/[^a-z0-9]/g, '_')}`;
 
-    const [cryptoAccountType] = await db
+    // Account type is provider-declared (manifest `defaultAccountTypeCode`),
+    // falling back to 'crypto' for CEX providers that don't set it. Without
+    // this every imported account — including fiat/bank ones like Airwallex —
+    // was hardcoded to 'crypto'.
+    const accountTypeCode =
+      registry.getIntegrationManifest(institutionCode)?.defaultAccountTypeCode ?? 'crypto';
+    const [accountType] = await db
       .select()
       .from(schema.accountTypes)
-      .where(eq(schema.accountTypes.code, 'crypto'))
+      .where(eq(schema.accountTypes.code, accountTypeCode))
       .limit(1);
-    if (!cryptoAccountType) throw new Error('Crypto account type not found');
+    if (!accountType) throw new Error(`Account type not found: ${accountTypeCode}`);
 
     const cryptoTokenType = await this.tokenTypeRepository.findByCode('crypto');
     const fiatTokenType = await this.tokenTypeRepository.findByCode('fiat');
@@ -202,7 +208,7 @@ export class ImportExchangeAccountsUseCase {
       institution,
       accountInfo,
       snapshots,
-      accountTypeId: cryptoAccountType.id,
+      accountTypeId: accountType.id,
     }));
 
     await safeStatus(input.onStatus, 'Saving accounts and holdings…');
