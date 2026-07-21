@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.10.0](https://github.com/MGrin/scani-oss/compare/v0.9.4...v0.10.0) (2026-07-21)
+
+
+### Features
+
+* **accounts:** provider-driven account type, editable type, account-level "Sync now" ([#81](https://github.com/MGrin/scani-oss/issues/81)) ([92b4d22](https://github.com/MGrin/scani-oss/commit/92b4d220979369c5994d48692ee4eac8aa0a2119))
+
+
+### Bug Fixes
+
+* **logging:** correct prod log service labels; own env vars via config.ts loader ([16df0e1](https://github.com/MGrin/scani-oss/commit/16df0e161caf2a6a642dde4828e75557f380ead7))
+* **logging:** prod service labels + config.ts env loader; sync CLAUDE.md layout ([699c6de](https://github.com/MGrin/scani-oss/commit/699c6deeb2c6bb7d13194e5241c3c37eee18fbfd))
+
 ## [0.9.4](https://github.com/MGrin/scani-oss/compare/v0.9.3...v0.9.4) (2026-07-20)
 
 
