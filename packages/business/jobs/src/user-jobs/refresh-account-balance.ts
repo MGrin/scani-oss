@@ -8,8 +8,12 @@ import { JOB_NAMES } from '../job-names';
 // twice in quick succession collapses to one in-flight job rather
 // than stacking.
 export interface RefreshAccountBalanceJob extends UserJobBase {
-  /** The holding the button was clicked on (for routing back to the UI). */
-  holdingId: string;
+  /**
+   * The holding the button was clicked on (for routing back to the UI).
+   * Absent when the refresh was triggered at the account level ("Sync
+   * now" on the account page) rather than from a specific holding row.
+   */
+  holdingId?: string;
   /** The account whose balance should be re-fetched. */
   accountId: string;
 }
@@ -17,7 +21,7 @@ export interface RefreshAccountBalanceJob extends UserJobBase {
 export const refreshAccountBalanceSchema: z.ZodType<RefreshAccountBalanceJob> = z.object({
   userId: z.string().min(1),
   requestId: z.string().min(1),
-  holdingId: z.string().min(1),
+  holdingId: z.string().min(1).optional(),
   accountId: z.string().min(1),
 });
 
