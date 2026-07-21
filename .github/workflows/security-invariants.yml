@@ -42,14 +42,23 @@ jobs:
       - name: C-03 — log-id pepper guard
         run: |
           set -euo pipefail
-          FILE="packages/infra/logging/src/pseudonymize.ts"
-          # The prod-NODE_ENV check is read through @scani/config's
+          # The guard lives in the @scani/logging env loader: production
+          # boot must refuse a missing/short LOG_ID_PEPPER. The
+          # prod-NODE_ENV check is read through @scani/config's
           # isNodeEnvProduction() helper rather than a literal
           # `NODE_ENV === 'production'` so `bun --compile --minify` can't
           # inline it away (see N-1). Either form satisfies the guard,
           # plus the canonical helper name.
-          if ! grep -q "LOG_ID_PEPPER" "$FILE" || ! grep -qE "(NODE_ENV === 'production'|isNodeEnvProduction)" "$FILE"; then
-            echo "::error file=$FILE::LOG_ID_PEPPER prod-guard removed. See C-03."
+          CONFIG="packages/infra/logging/src/config.ts"
+          if ! grep -q "LOG_ID_PEPPER" "$CONFIG" || ! grep -qE "(NODE_ENV === 'production'|isNodeEnvProduction)" "$CONFIG"; then
+            echo "::error file=$CONFIG::LOG_ID_PEPPER prod-guard removed from the logging env loader. See C-03."
+            exit 1
+          fi
+          # And pseudonymize.ts must source the pepper through that
+          # validated loader, not a raw process.env read.
+          CONSUMER="packages/infra/logging/src/pseudonymize.ts"
+          if ! grep -q "loadLoggingConfig" "$CONSUMER"; then
+            echo "::error file=$CONSUMER::pseudonymize.ts no longer reads LOG_ID_PEPPER via loadLoggingConfig(). See C-03."
             exit 1
           fi
 
