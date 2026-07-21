@@ -1,3 +1,4 @@
+export { type LoggingConfig, loadLoggingConfig, resetLoggingConfig } from './config';
 export {
   type CustomLogger,
   createComponentLogger,
