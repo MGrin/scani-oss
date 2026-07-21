@@ -96,7 +96,8 @@ that as a new piece of work and create a fresh branch + PR.
 
 Bun workspaces monorepo. Apps split into two top-level categories — `backend/`
 (HTTP services + the BullMQ worker that handles all scheduled +
-user-initiated async work) and `frontend/` (the browser SPA).
+user-initiated async work) and `frontend/` (the browser SPA + docs site) —
+plus the cross-cutting `apps/e2e` Playwright suite.
 
 **Backend apps (`apps/backend/`):**
 - `apps/backend/api` — tRPC API on Elysia; BullMQ *producer*; per-user
@@ -118,6 +119,12 @@ user-initiated async work) and `frontend/` (the browser SPA).
 
 **Frontend apps (`apps/frontend/`):**
 - `apps/frontend/app` — Main React + Vite SPA (code under `src/v2/`).
+- `apps/frontend/docs` — Astro docs site (type-checked with `astro check`,
+  the one sanctioned exception to the `tsgo --noEmit` rule).
+
+**E2E (`apps/e2e`):** Playwright suite driving the full containerized stack
+(`bun test:e2e` runs `scripts/run.ts`, which boots the compose profile,
+runs the browser tests against it, and tears it down).
 
 **Packages:** organized by role into four category folders.
 
@@ -125,6 +132,8 @@ user-initiated async work) and `frontend/` (the browser SPA).
 - `packages/business/domain` — Services, repositories, use cases (the bulk of business logic).
 - `packages/business/jobs` — Async-job catalog: per-job descriptors (payload schemas, retry policies, jobId strategies, summarizers), repeatable schedules, and the `@scani/queue` mirror/lock impls. Apps import descriptors from here; processor classes live in `apps/backend/worker`.
 - `packages/business/shared` — Frontend-safe contract: zod DTOs (the tRPC wire) + the project-configured `Decimal.js` instance + UI helpers (`formatCurrency`, `formatRelative`, `emailSchema`, …). Strict rule: no Node-only APIs reachable from the barrel.
+- `packages/business/file-import` — Bank-statement parsing primitives (CSV / OFX / QIF / IB-CSV + format detection). Pure functions; the AI fallback for CSV column mapping is a caller-injected callback so the package never imports `@scani/domain`.
+- `packages/business/ingesters` — Transaction-ingester registry + statement/screenshot ingesters. Leaf package: callers inject the AI screenshot-parser callback at construction, same no-`@scani/domain` rule as `file-import`.
 
 **`packages/infra/`** — pure system concerns. No business knowledge; reusable in any TypeScript backend.
 - `packages/infra/db` — Drizzle schema, migrations, postgres.js connection, `BaseRepository`.
@@ -136,9 +145,11 @@ user-initiated async work) and `frontend/` (the browser SPA).
 - `packages/infra/realtime` — Realtime / SSE pub-sub via Redis.
 - `packages/infra/rate-limiter` — Resilience primitives for upstream calls: rate limiting (Redis-backed in prod, in-memory fallback in tests), per-provider circuit breakers, retry-with-backoff.
 - `packages/infra/config` — Env-validation primitives (`requiredInProd`, `httpsUrlInProduction`, …) consumed by every app's startup schema.
+- `packages/infra/http-fetch` — Bounded HTTP fetcher for Open Graph metadata + similar fixed-budget pulls. SSRF-guarded, size-capped, timeout-bounded. Pure functions; no DI.
 
 **`packages/clients/`** — outbound network adapters. Same dependency direction (business → clients → external world).
 - `packages/clients/providers` — **Unified 3rd-party integration package**: pricing, balances, transactions, AI inference, token-identity. Capability-based interfaces, one directory per provider (CoinGecko, DeFiLlama, Kraken, Binance, IBKR, Wise, OpenAI, Google Sheets, …). Single source of truth for every external service.
+- `packages/clients/providers-google-sheets` — `GoogleSheetsProvider` sub-workspace of `@scani/providers` carrying the heavy `googleapis` dep so the rest of the providers tree (and `@scani/domain` transitively) stays slim.
 - `packages/clients/cloud-client` — Typed tRPC client for the `data-provider` service. The api + worker call the data-provider through this rather than reaching for HTTP directly.
 
 **`packages/frontend/`** — browser-only.

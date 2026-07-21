@@ -1,7 +1,6 @@
-import { getNodeEnv, isNodeEnvProduction } from '@scani/config';
+import { getNodeEnv } from '@scani/config';
 import pino from 'pino';
-
-const isProductionEnv = isNodeEnvProduction();
+import { loadLoggingConfig } from './config';
 
 export type LogContext = object;
 
@@ -28,44 +27,10 @@ export interface CustomLogger extends pino.Logger {
   fatal(obj: LogContext, message: string): void;
 }
 
-// `isDevelopment` is not the complement of `isProductionEnv` — `NODE_ENV=test`
-// (Bun's default) makes both false. Keeping it local since `@scani/config`
-// only exports the production gate.
-const isDevelopment = getNodeEnv() === 'development' || !getNodeEnv();
-
-// Each app sets `SERVICE_NAME` in its container env so a shared log
-// stream can distinguish api / worker / data-provider rows.
-// `SERVICE_VERSION` is staged per-deploy from `${GITHUB_SHA}`.
-const serviceName = process.env.SERVICE_NAME || 'scani';
-const serviceVersion = process.env.SERVICE_VERSION || 'unknown';
-
-// Hard-refuse body logging in production. The flags are debug knobs
-// that ship raw request/response payloads (including magic-link tokens,
-// OAuth callbacks, and credential imports) to the log aggregator with
-// no scrubbing. If an operator flips one in prod for "just a quick
-// look", every authenticated request in that window leaks. The
-// schema-level requiredInProd helper isn't available here (logging
-// can't depend on @scani/config's env loader without a cycle), so
-// guard at module load.
-const requestBodyLogRequested = process.env.LOG_REQUEST_BODIES === 'true';
-const responseBodyLogRequested = process.env.LOG_RESPONSE_BODIES === 'true';
-if (isProductionEnv && (requestBodyLogRequested || responseBodyLogRequested)) {
-  throw new Error(
-    'LOG_REQUEST_BODIES / LOG_RESPONSE_BODIES are debug-only flags and ' +
-      'must not be enabled in production. Refusing to start.'
-  );
-}
-
-export const logConfig = {
-  level: (process.env.LOG_LEVEL || (isDevelopment ? 'debug' : 'info')).toLowerCase(),
-  pretty: isProductionEnv ? false : process.env.LOG_PRETTY === 'true' || isDevelopment,
-  timestamp: process.env.LOG_TIMESTAMP !== 'false',
-  colorize: isProductionEnv ? false : process.env.LOG_COLORIZE !== 'false' && isDevelopment,
-  logSqlQueries: process.env.LOG_SQL_QUERIES === 'true',
-  logRequestBodies: !isProductionEnv && requestBodyLogRequested,
-  logResponseBodies: !isProductionEnv && responseBodyLogRequested,
-  logWebSocketMessages: process.env.LOG_WEBSOCKET_MESSAGES !== 'false',
-};
+// Parsing at module load keeps the fail-fast semantics: a production boot
+// with body logging enabled or a missing LOG_ID_PEPPER dies before the
+// first request, not on first log call.
+export const logConfig = loadLoggingConfig();
 
 const SENSITIVE_PARAMS = new Set([
   'token',
@@ -133,9 +98,9 @@ const createHumanReadableLogger = () => {
     level: logConfig.level,
     base: {
       pid: process.pid,
-      hostname: process.env.HOSTNAME || 'localhost',
-      service: serviceName,
-      version: serviceVersion,
+      hostname: logConfig.hostname,
+      service: logConfig.serviceName,
+      version: logConfig.serviceVersion,
     },
     timestamp: logConfig.timestamp ? () => `,"timestamp":"${new Date().toISOString()}"` : false,
     formatters: {
@@ -271,9 +236,9 @@ export const logger = (
         level: logConfig.level,
         base: {
           pid: process.pid,
-          hostname: process.env.HOSTNAME || 'localhost',
-          service: 'api',
-          version: process.env.npm_package_version || '1.0.0',
+          hostname: logConfig.hostname,
+          service: logConfig.serviceName,
+          version: logConfig.serviceVersion,
         },
         timestamp: logConfig.timestamp ? () => `,"timestamp":"${new Date().toISOString()}"` : false,
         formatters: {
