@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { isNodeEnvProduction } from '@scani/config';
+import { loadLoggingConfig } from './config';
 
 /**
  * Deterministic pseudonymization helper for user-bearing identifiers in
@@ -20,21 +20,14 @@ import { isNodeEnvProduction } from '@scani/config';
  *  - Empty / nullish input returns the empty string — callers are
  *    expected to omit the field rather than log an empty string.
  *
- * Production requires `LOG_ID_PEPPER` to be set. Boot fails fast if it
- * is missing under `NODE_ENV=production` so we never silently leak raw
- * UUIDs to a shared aggregator. Dev / OSS / single-developer runs can
- * omit the pepper and the helper returns the raw id verbatim.
+ * Production requires `LOG_ID_PEPPER` to be set — `loadLoggingConfig()`
+ * fails boot when it is missing under `NODE_ENV=production`, so we never
+ * silently leak raw UUIDs to a shared aggregator. Dev / OSS /
+ * single-developer runs can omit the pepper and the helper returns the
+ * raw id verbatim.
  */
-const PEPPER = process.env.LOG_ID_PEPPER;
+const PEPPER = loadLoggingConfig().logIdPepper;
 const HEX_PREFIX_LEN = 16;
-
-if (isNodeEnvProduction() && (!PEPPER || PEPPER.length < 16)) {
-  throw new Error(
-    'LOG_ID_PEPPER is required in production and must be at least 16 chars. ' +
-      'Generate with `openssl rand -hex 32` and set it as an environment ' +
-      'variable on every backend service (api, worker, data-provider).'
-  );
-}
 
 export function pseudonymizeId(id: string | null | undefined): string {
   if (!id) return '';
