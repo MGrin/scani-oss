@@ -14,6 +14,11 @@ export * from './token-validatiion';
 export { safeExternalUrl } from './utils/safe-external-url';
 export { safeRedirectPath } from './utils/safe-redirect';
 export {
+  isIgnoredSentryMessage,
+  isThirdPartyOnlyStack,
+  SENTRY_IGNORED_ERROR_PATTERNS,
+} from './utils/sentry-noise';
+export {
   scrubSentryBreadcrumb,
   scrubSentryEvent,
   scrubString,
