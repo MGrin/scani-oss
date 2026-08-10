@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.10.1](https://github.com/MGrin/scani-oss/compare/v0.10.0...v0.10.1) (2026-08-10)
+
+
+### Bug Fixes
+
+* **frontend:** drop aborted-fetch noise from Sentry across all engines ([00ed9e1](https://github.com/MGrin/scani-oss/commit/00ed9e1844e21cc95fedc05dd1d1b76e174d98cc))
+* **frontend:** drop aborted-fetch noise from Sentry across all engines ([0ba7c74](https://github.com/MGrin/scani-oss/commit/0ba7c7497be65c7fd78d11dea8b9b8d816bb1ce0))
+
 ## [0.10.0](https://github.com/MGrin/scani-oss/compare/v0.9.4...v0.10.0) (2026-07-21)
 
 
