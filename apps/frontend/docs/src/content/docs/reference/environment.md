@@ -175,6 +175,7 @@ production deployment — operators can ignore this section.
 | Variable | Read by | What it does |
 |---|---|---|
 | `STUB_AI` | data-provider (`ai.parseScreenshot`) | When `1`, returns a fixed holdings payload instead of calling a real AI provider. Refused in production by the data-provider env schema. |
+| `ALLOW_REMOTE_TEST_DB` | `packages/business/domain/test-preload.ts` | Escape hatch for the guard that refuses to run the suite against a non-local `DATABASE_URL`. Repository tests truncate and roll back real tables, so pointing them at a remote branch is destructive — set to `1` only when you have deliberately provisioned a throwaway database. |
 | `API_BASE_URL` | e2e (Playwright fixtures) | Base URL the e2e suite hits for tRPC requests. Defaults to the dev-compose api at `http://localhost:3011`. |
 | `PLAYWRIGHT_BASE_URL` | Playwright config | Base URL Playwright treats as the SPA origin. Defaults to `http://localhost:5173`. |
 | `MAILPIT_URL` | e2e (magic-link helper) | Mailpit HTTP API used to read auth emails during sign-in. Default `http://localhost:8026`. |
