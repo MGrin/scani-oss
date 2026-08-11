@@ -25,6 +25,21 @@ import { createOutflowLimiter, getSharedRedis, type OutflowRateLimiter } from '@
 import type { AIInferenceProvider, AIResult, AIUsage, Capability } from '../core/capabilities';
 import { fetchWithTimeout } from '../core/utils/fetch';
 
+/** Builds the token-limit + temperature fields a given provider accepts.
+    Kept in one place so a third call site cannot forget one of them —
+    both incompatibilities were found the same way, in production. */
+function tuning(
+  config: ChatCompletionsConfig,
+  maxTokens: number,
+  temperature: number
+): Record<string, number> {
+  const out: Record<string, number> = {
+    [config.tokenLimitParam ?? 'max_tokens']: maxTokens,
+  };
+  if (config.supportsTemperature !== false) out.temperature = temperature;
+  return out;
+}
+
 export interface ChatCompletionsConfig {
   providerKey: string;
   baseUrl: string;
@@ -36,6 +51,22 @@ export interface ChatCompletionsConfig {
   apiKey: string;
   maxTokens?: number;
   temperature?: number;
+  /**
+   * OpenAI's gpt-5 family renamed this parameter and rejects the old
+   * name outright ("Unsupported parameter: 'max_tokens' is not supported
+   * with this model"). Older models and the OpenAI-compatible providers
+   * (DeepSeek, Perplexity) still expect `max_tokens`, so it is per
+   * provider rather than global. Default keeps existing behaviour.
+   */
+  tokenLimitParam?: 'max_tokens' | 'max_completion_tokens';
+  /**
+   * The same family accepts only the default temperature ("Unsupported
+   * value: 'temperature' does not support 0.1 with this model. Only the
+   * default (1) value is supported"), so the field has to be OMITTED,
+   * not set to a different number. Default true preserves the tuned
+   * low-temperature behaviour everywhere else.
+   */
+  supportsTemperature?: boolean;
   /** Per-minute upstream call budget for this provider key. Defaults
       to a conservative 20/min. Override via factory if you have a
       higher OpenAI tier. */
@@ -117,8 +148,7 @@ export class ChatCompletionsProvider implements AIInferenceProvider {
           ],
         },
       ],
-      max_tokens: this.config.maxTokens ?? 4000,
-      temperature: this.config.temperature ?? 0.1,
+      ...tuning(this.config, this.config.maxTokens ?? 4000, this.config.temperature ?? 0.1),
       response_format: { type: 'json_object' },
     };
     return this.callJson(body);
@@ -136,8 +166,7 @@ export class ChatCompletionsProvider implements AIInferenceProvider {
         { role: 'system', content: systemPrompt },
         { role: 'user', content: userPrompt },
       ],
-      max_tokens: this.config.maxTokens ?? 4000,
-      temperature: this.config.temperature ?? 0.1,
+      ...tuning(this.config, this.config.maxTokens ?? 4000, this.config.temperature ?? 0.1),
       response_format: { type: 'json_object' },
     };
     return this.callJson(body);
@@ -153,8 +182,11 @@ export class ChatCompletionsProvider implements AIInferenceProvider {
     const body = {
       model: this.config.model,
       messages: [{ role: 'user', content: prompt }],
-      max_tokens: opts?.maxTokens ?? this.config.maxTokens ?? 1000,
-      temperature: opts?.temperature ?? this.config.temperature ?? 0.7,
+      ...tuning(
+        this.config,
+        opts?.maxTokens ?? this.config.maxTokens ?? 1000,
+        opts?.temperature ?? this.config.temperature ?? 0.7
+      ),
     };
     const { data, usage } = await this.callRaw(body);
     return {
