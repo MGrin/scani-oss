@@ -22,8 +22,25 @@ export interface InvoiceExtractionSource {
   totalAmount: string | null;
   currencyCode: string | null;
   issueDate: string | null;
-  paymentStatus?: InvoicePaymentStatus | null;
-  billingPeriod?: BillingPeriod | null;
+  paymentStatus?: string | null;
+  billingPeriod?: string | null;
+}
+
+const BILLING_PERIODS: readonly string[] = ['week', 'month', 'quarter', 'year'];
+
+/**
+ * Both columns are plain `text` with no CHECK constraint, and the API
+ * returns them as the raw column type. The extractor normalises before
+ * writing, but nothing in the database stops a future writer putting
+ * something else there — so narrow at the boundary rather than asserting.
+ * An unrecognised value falls through to the same defaults as NULL.
+ */
+function asBillingPeriod(value: string | null | undefined): BillingPeriod | null {
+  return value && BILLING_PERIODS.includes(value) ? (value as BillingPeriod) : null;
+}
+
+function asPaymentStatus(value: string | null | undefined): InvoicePaymentStatus | null {
+  return value === 'paid' || value === 'unpaid' ? value : null;
 }
 
 export interface InvoicePrefill {
@@ -64,8 +81,8 @@ export function buildInvoicePrefill(
     amount: extraction.totalAmount?.trim() ?? '',
     currencyCode: extraction.currencyCode?.trim() || null,
     anchorDate: extraction.issueDate ?? fallbackAnchorDate,
-    intervalUnit: extraction.billingPeriod ?? DEFAULT_INTERVAL_UNIT,
-    markAnchorPaid: defaultMarkAnchorPaid(extraction.paymentStatus),
+    intervalUnit: asBillingPeriod(extraction.billingPeriod) ?? DEFAULT_INTERVAL_UNIT,
+    markAnchorPaid: defaultMarkAnchorPaid(asPaymentStatus(extraction.paymentStatus)),
   };
 }
 
