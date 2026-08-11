@@ -14,8 +14,10 @@
  * another user's file parsed into the caller's own documents.
  */
 
-import type { Document, DocumentExtraction } from '@scani/db/schema';
+import { randomUUID } from 'node:crypto';
+import type { Document, DocumentExtraction, DocumentSourceKind } from '@scani/db/schema';
 import { DocumentExtractionRepository, DocumentRepository } from '@scani/domain/repositories';
+import { DocumentReparseService } from '@scani/domain/services';
 import { DOCUMENT_PARSE } from '@scani/jobs';
 import { BullMqEnqueueService } from '@scani/queue';
 import { TRPCError } from '@trpc/server';
@@ -72,6 +74,48 @@ export const documentsRouter = router({
         mimeType: input.mimeType,
         originalFilename: input.originalFilename,
         sourceKind: 'upload',
+      });
+      return { jobId };
+    }),
+
+  /**
+   * Re-run the current extractor over a document already on file.
+   *
+   * `ingest` returns early on a content-hash match and never calls the AI,
+   * so a file that has been read once can otherwise never be read again —
+   * this is the escape hatch out of that dedup, not a hole in it: the
+   * document is loaded by (id, user), the extractions that no payment
+   * points at are cleared, and the job carries `reparseOf` so the worker
+   * attaches the new read to the same `documents` row.
+   *
+   * `requestId` is minted here rather than accepted from the client: the
+   * job's id folds in the r2Key and the requestId, and a re-parse reuses
+   * the document's own r2Key — a client that replayed its previous
+   * requestId would have its re-parse silently swallowed by BullMQ's
+   * jobId dedup.
+   *
+   * Returns `{ jobId }` exactly like `enqueueParse`, so the SPA tracks a
+   * re-parse on the same job page as the original upload.
+   */
+  reparse: protectedProcedure
+    .input(z.object({ documentId: z.string().uuid() }))
+    .mutation(async ({ ctx, input }) => {
+      const plan = await Container.get(DocumentReparseService).prepare(
+        input.documentId,
+        ctx.userId
+      );
+      if (!plan) {
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'Document not found' });
+      }
+
+      const jobId = await Container.get(BullMqEnqueueService).add(DOCUMENT_PARSE, {
+        userId: ctx.userId,
+        requestId: randomUUID(),
+        r2Key: plan.document.r2Key,
+        mimeType: plan.document.mimeType,
+        originalFilename: plan.document.originalFilename,
+        sourceKind: plan.document.sourceKind as DocumentSourceKind,
+        reparseOf: plan.document.id,
       });
       return { jobId };
     }),
