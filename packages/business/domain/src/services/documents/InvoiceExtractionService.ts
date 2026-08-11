@@ -100,7 +100,16 @@ export class InvoiceExtractionService {
       // `pagesNeedingOcr`'s indexing with `extractPagesMarkdown`'s.
       const markdown = extractText(bytes).trim();
       if (markdown.length >= MIN_TEXT_CHARS_FOR_LLM) {
-        const result = await provider.parseDocumentText(markdown, INVOICE_EXTRACTION_PROMPT);
+        // Passed as the SYSTEM prompt, not a hint. As a hint it sat
+        // underneath the provider's default prompt, which hardcodes the
+        // holdings schema — so every invoice came back as
+        // `{holdings: []}`: valid JSON, billed, wrong shape, and zero
+        // invoices stored without an error anywhere.
+        const result = await provider.parseDocumentText(
+          markdown,
+          undefined,
+          INVOICE_EXTRACTION_PROMPT
+        );
         return toExtractionResult([result], 'text-llm');
       }
     }

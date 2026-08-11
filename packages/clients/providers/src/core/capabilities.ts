@@ -177,7 +177,18 @@ export interface AIInferenceProvider extends ProviderBase {
   }): Promise<AIResult<unknown>>;
   /** Text: parse a CSV header / OFX free-text field for column
       detection. */
-  parseDocumentText?(text: string, hint?: string): Promise<AIResult<unknown>>;
+  /**
+   * `systemPrompt` REPLACES the provider's default extraction schema.
+   * Without it the caller's prompt is only a hint underneath a system
+   * prompt that hardcodes the holdings shape — which is why invoice
+   * extraction silently returned `{holdings: []}` for every invoice:
+   * valid JSON, billed, and of entirely the wrong schema.
+   */
+  parseDocumentText?(
+    text: string,
+    hint?: string,
+    systemPrompt?: string
+  ): Promise<AIResult<unknown>>;
   /** Generic completion. Used by smaller helpers (token-name
       cleanup, etc.). */
   completeText?(
