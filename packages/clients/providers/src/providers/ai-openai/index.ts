@@ -1,10 +1,16 @@
 /**
  * `OpenAIProvider` — OpenAI vision + chat completions.
  *
- * Vision model: `gpt-4o`. Text-only fallback: same model (good
- * enough for the JSON-shaped extraction tasks). Endpoint:
- * `/v1/chat/completions`. Auth: Bearer API key from
- * `OPENAI_API_KEY`.
+ * One model for both roles: `gpt-5.6-luna`. It is newer and cheaper than
+ * the `gpt-4o-mini` / `gpt-4o` pair it replaces — $0.20/$1.20 per 1M
+ * against gpt-4o's $2.50/$10.00 on the vision path — and a single id
+ * removes the question of which tier a given call lands on. Endpoint:
+ * `/v1/chat/completions`. Auth: Bearer from `OPENAI_API_KEY`.
+ *
+ * Model ids verified against this account's own `/v1/models` on
+ * 2026-08-11 rather than taken from docs, and image input was confirmed
+ * with a live call — the previous pair was chosen from an assumption
+ * about PDF support that turned out to be false in production.
  *
  * Pre-refactor source:
  * `packages/ai-providers/src/openai-provider.ts`. The shared
@@ -15,13 +21,12 @@
 import type { ProviderFactory } from '../../core/boot';
 import { ChatCompletionsProvider } from '../_chat-completions';
 
-// Reflects OpenAI's published per-1M-token pricing for the models used
-// here (gpt-4o-mini for text, gpt-4o for vision). The blended rate
-// straddles both; for the dashboard a single per-call cost estimate is
-// good enough — token-level refinement can come later.
+// gpt-5.6-luna's published per-1M-token rate (2026-08-11). One model
+// now serves text and vision, so this is the exact rate rather than a
+// blend straddling two tiers.
 const OPENAI_PRICING = {
-  promptUsdPerMillion: 0.15,
-  completionUsdPerMillion: 0.6,
+  promptUsdPerMillion: 0.2,
+  completionUsdPerMillion: 1.2,
 };
 
 export class OpenAIProvider extends ChatCompletionsProvider {
@@ -29,8 +34,8 @@ export class OpenAIProvider extends ChatCompletionsProvider {
     super({
       providerKey: 'ai-openai',
       baseUrl: 'https://api.openai.com/v1',
-      model: 'gpt-4o-mini',
-      visionModel: 'gpt-4o',
+      model: 'gpt-5.6-luna',
+      visionModel: 'gpt-5.6-luna',
       apiKey,
       maxTokens: 4000,
       temperature: 0.1,
