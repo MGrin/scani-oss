@@ -47,6 +47,35 @@ export class DocumentExtractionRepository extends BaseRepository<
   }
 
   /**
+   * Ownership-scoped single-row lookup. `document_extractions` has no
+   * `userId` of its own, so this can't reuse `BaseRepository.findById`
+   * — the join through `documents` IS the ownership check. Returns null
+   * for both "doesn't exist" and "belongs to another user's document",
+   * same precedent as `setReviewState`.
+   */
+  async findByIdAndUser(
+    extractionId: string,
+    userId: string,
+    transaction?: DatabaseTransaction
+  ): Promise<DocumentExtraction | null> {
+    try {
+      const database = this.getDb(transaction);
+      const [row] = await database
+        .select({ extraction: schema.documentExtractions })
+        .from(schema.documentExtractions)
+        .innerJoin(schema.documents, eq(schema.documentExtractions.documentId, schema.documents.id))
+        .where(
+          and(eq(schema.documentExtractions.id, extractionId), eq(schema.documents.userId, userId))
+        )
+        .limit(1);
+      return row?.extraction ?? null;
+    } catch (error) {
+      this.logger.error({ extractionId, userId, error }, 'Failed to find extraction by id+user');
+      throw error;
+    }
+  }
+
+  /**
    * Every extraction found in a single document (any review state),
    * scoped to the user via `documents` — backs the document detail page,
    * which needs the full history, not just the pending ones

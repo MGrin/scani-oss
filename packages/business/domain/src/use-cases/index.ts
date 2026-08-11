@@ -30,6 +30,13 @@ export {
   BulkAssignHoldingGroupsUseCase,
 } from './BulkAssignHoldingGroupsUseCase';
 export { CreateHoldingsWithDependenciesUseCase } from './CreateHoldingsWithDependenciesUseCase';
+// Payments Use Cases
+export {
+  AnchorOccurrenceMissingError,
+  type CreatePaymentFromExtractionInput,
+  CreatePaymentFromExtractionUseCase,
+  ExtractionNotFoundError,
+} from './CreatePaymentFromExtractionUseCase';
 export { DeleteAllUserDataUseCase } from './DeleteAllUserDataUseCase';
 export {
   type DeleteHoldingResult,

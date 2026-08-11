@@ -5,6 +5,7 @@ import type {
   PaymentIntervalUnit,
   PaymentKind,
   PaymentOccurrence,
+  PaymentOrigin,
 } from '@scani/db/schema';
 import { Decimal } from '@scani/shared';
 import { Container, Service } from 'typedi';
@@ -43,17 +44,23 @@ export interface CreatePaymentInput {
   endDate?: string | null;
   accountId?: string | null;
   notes?: string | null;
+  // Where this payment came from. Defaults to the column's own 'manual'
+  // when omitted; `CreatePaymentFromExtractionUseCase` passes 'document'.
+  origin?: PaymentOrigin;
 }
 
 // The user (or the reconcile job, for the automated path) resolving an
-// occurrence. `matchedTransactionId` is optional and, when omitted,
-// leaves whatever was already there untouched — see `settleOccurrence`
-// for why that matters: a manual "yes I paid this" re-confirmation must
-// not silently unlink a transaction an earlier auto-match already tied.
+// occurrence. `matchedTransactionId` / `matchedExtractionId` are both
+// optional and, when omitted, leave whatever was already there
+// untouched — see `settleOccurrence` for why that matters: a manual "yes
+// I paid this" re-confirmation must not silently unlink a transaction an
+// earlier auto-match already tied, nor the invoice the occurrence was
+// settled from in the first place.
 export interface SettleOccurrenceInput {
   status: 'matched' | 'skipped';
   actualAmount?: string | null;
   matchedTransactionId?: string | null;
+  matchedExtractionId?: string | null;
 }
 
 export interface UpdatePaymentInput {
@@ -132,6 +139,7 @@ export class PaymentService {
         endDate: input.endDate ?? null,
         accountId: input.accountId ?? null,
         notes: input.notes ?? null,
+        ...(input.origin ? { origin: input.origin } : {}),
       },
       transaction
     );
@@ -261,6 +269,9 @@ export class PaymentService {
     }
     if (input.matchedTransactionId !== undefined) {
       patch.matchedTransactionId = input.matchedTransactionId;
+    }
+    if (input.matchedExtractionId !== undefined) {
+      patch.matchedExtractionId = input.matchedExtractionId;
     }
 
     const updated = await this.occurrenceRepository.update(occurrenceId, patch, transaction);
