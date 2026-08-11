@@ -1,6 +1,7 @@
 import { Badge } from '@scani/ui/ui/badge';
 import { AlertCircle, ListChecks, Loader2 } from 'lucide-react';
 import { Link } from 'react-router-dom';
+import { useReviewFeed } from '../hooks/useReviewFeed';
 import { useUserJobs } from '../hooks/useUserJobs';
 import { V2_ROUTES } from '../lib/routes';
 
@@ -18,7 +19,8 @@ import { V2_ROUTES } from '../lib/routes';
  * which made the badge render ~2px above the buttons on some browsers).
  */
 export function JobsBadge({ className }: { className?: string } = {}) {
-  const { activeCount, actionRequiredCount } = useUserJobs();
+  const { activeCount } = useUserJobs();
+  const { count: actionRequiredCount } = useReviewFeed();
 
   // Priority: action-required (amber, attention-grabbing) >
   //   in-flight (spinner, neutral) > idle (outline, calm).
@@ -37,7 +39,7 @@ export function JobsBadge({ className }: { className?: string } = {}) {
 
   return (
     <Link
-      to={V2_ROUTES.jobs}
+      to={state === 'action' ? V2_ROUTES.review : V2_ROUTES.jobs}
       className={`inline-flex items-center ${className ?? ''}`}
       aria-label={label}
       title={label}

@@ -17,6 +17,7 @@ export const V2_ROUTES = {
   addData: '/add-data',
   tokens: '/tokens',
   settings: '/settings',
+  review: '/review',
   jobs: '/jobs',
   jobDetail: (jobId: string) => `/jobs/${jobId}`,
 } as const;
@@ -65,6 +66,9 @@ export const NAV_SECTIONS: NavSection[] = [
   },
   {
     titleKey: 'nav.sections.activity',
-    items: [{ labelKey: 'nav.jobs', icon: 'ListChecks', path: V2_ROUTES.jobs }],
+    items: [
+      { labelKey: 'nav.review', icon: 'ClipboardCheck', path: V2_ROUTES.review },
+      { labelKey: 'nav.jobs', icon: 'ListChecks', path: V2_ROUTES.jobs },
+    ],
   },
 ];

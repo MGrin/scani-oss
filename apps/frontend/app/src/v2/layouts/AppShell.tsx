@@ -3,6 +3,7 @@ import { ThemeToggle } from '@scani/ui/components/ThemeToggle';
 import { Sheet, SheetContent } from '@scani/ui/ui/sheet';
 import {
   Building2,
+  ClipboardCheck,
   Coins,
   FileUp,
   Keyboard,
@@ -24,8 +25,8 @@ import { useAuth } from '@/contexts/AuthContext';
 import { trpc } from '@/lib/trpc';
 import { cn } from '@/lib/utils';
 import { CommandPalette } from '../components/command-palette/CommandPalette';
+import { useReviewFeed } from '../hooks/useReviewFeed';
 import { useSidebarState } from '../hooks/useSidebarState';
-import { useUserJobs } from '../hooks/useUserJobs';
 import { NAV_SECTIONS, V2_ROUTES } from '../lib/routes';
 import { MobileNav } from './MobileNav';
 import { Sidebar } from './Sidebar';
@@ -43,6 +44,7 @@ const ICON_MAP: Record<string, LucideIcon> = {
   Keyboard,
   Coins,
   ListChecks,
+  ClipboardCheck,
 };
 
 export function AppShell() {
@@ -50,17 +52,17 @@ export function AppShell() {
   const [commandOpen, setCommandOpen] = useState(false);
   const utils = trpc.useUtils();
   const { signOut } = useAuth();
-  const { actionRequiredCount } = useUserJobs();
-  const jobsNavRef = useRef<HTMLAnchorElement>(null);
   const { t } = useTranslation();
+  const { count: actionRequiredCount } = useReviewFeed();
+  const reviewNavRef = useRef<HTMLAnchorElement>(null);
 
   // When the mobile sidebar opens and there are jobs needing attention,
-  // scroll the Jobs nav item into view — on short viewports it can sit
+  // scroll the Review nav item into view — on short viewports it can sit
   // below the fold.
   useEffect(() => {
     if (!mobileOpen || actionRequiredCount === 0) return;
     const id = window.setTimeout(() => {
-      jobsNavRef.current?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+      reviewNavRef.current?.scrollIntoView({ block: 'center', behavior: 'smooth' });
     }, 150);
     return () => window.clearTimeout(id);
   }, [mobileOpen, actionRequiredCount]);
@@ -102,15 +104,15 @@ export function AppShell() {
                     {section.items.map((item) => {
                       const Icon = ICON_MAP[item.icon] || PieChart;
                       const badgeCount =
-                        item.path === V2_ROUTES.jobs && actionRequiredCount > 0
+                        item.path === V2_ROUTES.review && actionRequiredCount > 0
                           ? actionRequiredCount
                           : undefined;
-                      const isJobs = item.path === V2_ROUTES.jobs;
+                      const isReview = item.path === V2_ROUTES.review;
                       return (
                         <NavLink
                           key={item.path}
                           to={item.path}
-                          ref={isJobs ? jobsNavRef : undefined}
+                          ref={isReview ? reviewNavRef : undefined}
                           end={item.path === V2_ROUTES.dashboard}
                           onClick={() => setMobileOpen(false)}
                           className={({ isActive }) =>

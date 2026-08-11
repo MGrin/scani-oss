@@ -73,7 +73,7 @@ export class ScreenshotParseProcessor extends UserJobProcessor<ScreenshotParseJo
     // zero holdings. Without this the job lands as `state=completed`
     // (BullMQ truthful: the worker returned without throwing) AND
     // `actionTakenAt=null`, which the topbar/sidebar /jobs badge counts
-    // as "1 to review" (see useUserJobs.ts ACTION_REQUIRED_JOB_NAMES).
+    // as "1 to review" (see @scani/shared REVIEWABLE_JOB_NAMES).
     // The contradiction confused users: the body card says "0 succeeded,
     // 1 failed" with a red warning, yet the badge insists there's
     // something actionable. There isn't — only re-uploading helps, and
