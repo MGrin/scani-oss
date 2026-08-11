@@ -15,6 +15,10 @@ export {
   DocumentDeletionService,
 } from './documents/DocumentDeletionService';
 export {
+  type DocumentDownloadOutcome,
+  DocumentDownloadService,
+} from './documents/DocumentDownloadService';
+export {
   type DocumentIngestionResult,
   DocumentIngestionService,
   type IngestDocumentInput,
@@ -33,6 +37,10 @@ export {
   InvoiceExtractionService,
   type InvoiceExtractionUsage,
 } from './documents/InvoiceExtractionService';
+export {
+  type RecordUploadedFileInput,
+  UploadedFileService,
+} from './documents/UploadedFileService';
 // holdings/
 export {
   type EnrichedParsedHolding,

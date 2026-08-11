@@ -75,6 +75,7 @@ export class DocumentIngestionService {
       target ??
       (await this.documents.create({
         userId: input.userId,
+        purpose: 'invoice',
         r2Key: input.r2Key,
         contentHash,
         mimeType: input.mimeType,

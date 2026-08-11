@@ -10,7 +10,12 @@ export {
   DocumentExtractionRepository,
   type ExtractionOccurrenceLink,
 } from './DocumentExtractionRepository';
-export { DocumentRepository } from './DocumentRepository';
+export {
+  type DocumentListCursor,
+  type DocumentListItem,
+  DocumentRepository,
+  type ListDocumentsOptions,
+} from './DocumentRepository';
 export {
   AccountTypeRepository,
   InstitutionTypeRepository,

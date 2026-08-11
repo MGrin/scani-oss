@@ -90,6 +90,29 @@ describe('DocumentDeletionService.delete', () => {
     expect(storageDelete).toHaveBeenCalledWith(`documents/user-1/${DOC_ID}.pdf`);
   });
 
+  test('a screenshot is deleted with its retained object, same as an invoice', async () => {
+    // Nothing in the delete path is invoice-shaped: a screenshot has no
+    // extractions, so it can never be blocked, and its retained object
+    // lives under the same prefix. The point is that this stays true as
+    // `documents` grows past invoices.
+    const { instance, deleteDocument, storageDelete } = makeService({
+      document: {
+        id: DOC_ID,
+        userId: 'user-1',
+        purpose: 'screenshot',
+        r2Key: `documents/user-1/${DOC_ID}.png`,
+      },
+    });
+
+    const result = await instance.delete(DOC_ID, 'user-1');
+
+    expect(result.outcome).toBe('deleted');
+    if (result.outcome !== 'deleted') throw new Error('unreachable');
+    expect(result.storageObjectRemoved).toBe(true);
+    expect(deleteDocument).toHaveBeenCalledWith(DOC_ID);
+    expect(storageDelete).toHaveBeenCalledWith(`documents/user-1/${DOC_ID}.png`);
+  });
+
   test('a missing stored object does not block deleting the row', async () => {
     // Every document ingested before retention shipped points at a temp key
     // that was swept long ago — and those are precisely the rows a user

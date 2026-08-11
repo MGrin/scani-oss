@@ -169,6 +169,13 @@
       "when": 1778400000000,
       "tag": "0024_extraction_payment_hints",
       "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1778410000000,
+      "tag": "0025_document_purpose",
+      "breakpoints": true
     }
   ]
 }

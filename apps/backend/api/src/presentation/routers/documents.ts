@@ -16,12 +16,20 @@
 
 import { randomUUID } from 'node:crypto';
 import type { Document, DocumentExtraction, DocumentSourceKind } from '@scani/db/schema';
+import { DOCUMENT_PURPOSES } from '@scani/db/schema';
 import {
   DocumentExtractionRepository,
+  type DocumentListCursor,
+  type DocumentListItem,
   DocumentRepository,
   type ExtractionOccurrenceLink,
 } from '@scani/domain/repositories';
-import { DocumentDeletionService, DocumentReparseService } from '@scani/domain/services';
+import {
+  DocumentDeletionService,
+  DocumentDownloadService,
+  DocumentReparseService,
+  DocumentRetentionService,
+} from '@scani/domain/services';
 import { DOCUMENT_PARSE } from '@scani/jobs';
 import { BullMqEnqueueService } from '@scani/queue';
 import { TRPCError } from '@trpc/server';
@@ -68,6 +76,46 @@ function serializeDocument(document: Document) {
   return {
     ...document,
     createdAt: document.createdAt.toISOString(),
+  };
+}
+
+const MAX_LIST_LIMIT = 100;
+
+// Keyset cursor: `(createdAt, id)`, opaque to the client so the ordering
+// key can change without breaking a bookmarked page. Base64 rather than
+// signed — it encodes only the caller's own row position, and the query
+// is scoped to `ctx.userId` regardless of what the cursor says.
+function encodeCursor(document: Document): string {
+  return Buffer.from(`${document.createdAt.toISOString()}|${document.id}`, 'utf-8').toString(
+    'base64url'
+  );
+}
+
+function decodeCursor(cursor: string): DocumentListCursor {
+  const [createdAt, id] = Buffer.from(cursor, 'base64url').toString('utf-8').split('|');
+  const parsed = createdAt ? new Date(createdAt) : null;
+  if (!parsed || Number.isNaN(parsed.getTime()) || !id) {
+    throw new TRPCError({ code: 'BAD_REQUEST', message: 'Malformed cursor' });
+  }
+  return { createdAt: parsed, id };
+}
+
+// Deliberately NOT the whole row: `r2Key` and `contentHash` are internal
+// (a key is the thing the presigner signs) and the list is a list.
+function serializeListItem(item: DocumentListItem, isRetained: (key: string) => boolean) {
+  const { document } = item;
+  return {
+    id: document.id,
+    purpose: document.purpose,
+    originalFilename: document.originalFilename,
+    mimeType: document.mimeType,
+    byteSize: document.byteSize,
+    createdAt: document.createdAt.toISOString(),
+    extractionCount: item.extractionCount,
+    // Files ingested before retention shipped (and the rare row whose
+    // retention failed) have no object left, so the UI can grey the
+    // download out instead of handing the user a URL that 404s.
+    downloadable: isRetained(document.r2Key),
   };
 }
 
@@ -181,6 +229,75 @@ export const documentsRouter = router({
       return {
         documentId: input.documentId,
         storageObjectRemoved: result.storageObjectRemoved,
+      };
+    }),
+
+  /**
+   * Every file the caller has uploaded — invoices, screenshots, bank
+   * statements — newest first.
+   *
+   * Keyset-paginated, never unbounded: `limit` caps at 100 and the reply
+   * carries `nextCursor` (null on the last page). The repository reads
+   * `limit + 1` rows to tell "there is more" from "exactly full" without
+   * a second COUNT.
+   */
+  list: protectedProcedure
+    .input(
+      z.object({
+        purpose: z.enum(DOCUMENT_PURPOSES).optional(),
+        limit: z.number().int().min(1).max(MAX_LIST_LIMIT).default(25),
+        cursor: z.string().min(1).optional(),
+      })
+    )
+    .query(async ({ ctx, input }) => {
+      const rows = await Container.get(DocumentRepository).listByUser({
+        userId: ctx.userId,
+        purpose: input.purpose,
+        limit: input.limit,
+        cursor: input.cursor ? decodeCursor(input.cursor) : undefined,
+      });
+
+      const hasMore = rows.length > input.limit;
+      const page = hasMore ? rows.slice(0, input.limit) : rows;
+      const isRetained = (key: string) => Container.get(DocumentRetentionService).isRetained(key);
+      const last = page.at(-1);
+
+      return {
+        items: page.map((item) => serializeListItem(item, isRetained)),
+        nextCursor: hasMore && last ? encodeCursor(last.document) : null,
+      };
+    }),
+
+  /**
+   * A short-lived presigned GET for a retained file, any purpose.
+   *
+   * The URL carries the bucket's own authority, so it is minted only
+   * after `DocumentDownloadService` has proven the row belongs to the
+   * caller. PRECONDITION_FAILED (not NOT_FOUND) when the object is gone:
+   * the record exists and the user can still see and delete it, there is
+   * just nothing left to serve.
+   */
+  getDownloadUrl: protectedProcedure
+    .input(z.object({ documentId: z.string().uuid() }))
+    .query(async ({ ctx, input }) => {
+      const result = await Container.get(DocumentDownloadService).presign(
+        input.documentId,
+        ctx.userId
+      );
+      if (result.outcome === 'not-found') {
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'Document not found' });
+      }
+      if (result.outcome === 'file-missing') {
+        throw new TRPCError({
+          code: 'PRECONDITION_FAILED',
+          message: 'The original file is no longer stored, so it cannot be downloaded.',
+        });
+      }
+      return {
+        url: result.url,
+        expiresAt: result.expiresAt.toISOString(),
+        originalFilename: result.document.originalFilename,
+        mimeType: result.document.mimeType,
       };
     }),
 
