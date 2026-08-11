@@ -13,7 +13,11 @@ export type DocumentPurpose = (typeof DOCUMENT_PURPOSES)[number];
 
 export interface DocumentListItem {
   id: string;
-  purpose: DocumentPurpose;
+  /** Widened deliberately: the column is plain `text` and the API
+   * returns the raw value, so a purpose added server-side must render
+   * rather than fail a type assertion. `documentPurposeLabel` already
+   * falls back for anything it doesn't know. */
+  purpose: string;
   originalFilename: string;
   mimeType: string;
   byteSize: number;
