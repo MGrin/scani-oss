@@ -38,6 +38,11 @@ export class OpenAIProvider extends ChatCompletionsProvider {
       visionModel: 'gpt-5.6-luna',
       apiKey,
       maxTokens: 4000,
+      // gpt-5.6-luna renamed the token cap and accepts only the default
+      // temperature; both were verified against the live API before this
+      // model was adopted, and both reject the request outright.
+      tokenLimitParam: 'max_completion_tokens',
+      supportsTemperature: false,
       temperature: 0.1,
       rateLimitPerMinute: 30,
       pricing: OPENAI_PRICING,
