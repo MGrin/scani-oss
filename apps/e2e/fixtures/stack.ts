@@ -1,5 +1,6 @@
 import { spawnSync } from 'node:child_process';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 /**
  * Playwright globalSetup. Runs once before any test. Confirms the stack
@@ -12,12 +13,14 @@ import { join } from 'node:path';
  * should respond.
  */
 export default async function globalSetup() {
-  // `import.meta.dir` is THIS file's directory — apps/e2e/fixtures — not
-  // the app root, so the old `cwd: import.meta.dir` made
-  // `scripts/wait-for-stack.ts` resolve to apps/e2e/fixtures/scripts/…,
-  // which has never existed. The spawn failed, status was non-zero, and
-  // globalSetup threw before a single test ran.
-  const e2eRoot = join(import.meta.dir, '..');
+  // Resolve via `import.meta.url`, which is standard ESM and defined in
+  // both runtimes. `import.meta.dir` is Bun-only: Playwright drives this
+  // file under Node, where it is `undefined`. That made the original
+  // `cwd: import.meta.dir` mean "inherit the parent's cwd", which
+  // happened to be apps/e2e, so the spawn worked by accident — and would
+  // have silently pointed at apps/e2e/fixtures/scripts/… the moment
+  // anything ran it under Bun.
+  const e2eRoot = join(dirname(fileURLToPath(import.meta.url)), '..');
   const result = spawnSync('bun', ['scripts/wait-for-stack.ts'], {
     stdio: 'inherit',
     cwd: e2eRoot,
