@@ -10,6 +10,9 @@ import {
   unique,
   uuid,
 } from 'drizzle-orm/pg-core';
+// Type-only, so this does not create a runtime cycle with payments.ts
+// (which imports `documentExtractions` from here for its FK relation).
+import type { PaymentIntervalUnit } from './payments';
 import { users } from './users';
 import { vendors } from './vendors';
 
@@ -64,6 +67,10 @@ export const documentExtractions = pgTable(
     currencyCode: text('currency_code'),
     lineItems: jsonb('line_items').notNull().default('[]'),
     confidence: text('confidence'), // Decimal string
+    // Both NULL when the model couldn't tell — see 0024's comment on why
+    // there's no CHECK and no default.
+    paymentStatus: text('payment_status'), // 'paid' | 'unpaid' | null
+    billingPeriod: text('billing_period'), // PaymentIntervalUnit | null
     promptVersion: text('prompt_version'),
     extractorKind: text('extractor_kind'),
     reviewState: text('review_state').notNull().default('pending'), // 'pending' | 'accepted' | 'rejected'
@@ -100,6 +107,11 @@ export const documentExtractionsRelations = relations(documentExtractions, ({ on
 
 export type DocumentSourceKind = 'upload' | 'email';
 export type DocumentReviewState = 'pending' | 'accepted' | 'rejected';
+export type ExtractionPaymentStatus = 'paid' | 'unpaid';
+/** Same vocabulary as `PaymentIntervalUnit` by design — an accepted
+    extraction's billing period is copied straight onto the recurring
+    payment it creates, so the two must never drift apart. */
+export type ExtractionBillingPeriod = PaymentIntervalUnit;
 
 export type Document = typeof documents.$inferSelect;
 export type NewDocument = typeof documents.$inferInsert;

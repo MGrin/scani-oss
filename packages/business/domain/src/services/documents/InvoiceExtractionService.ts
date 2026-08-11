@@ -24,6 +24,7 @@
  * from a paid API call should not fail the whole extraction job.
  */
 
+import type { ExtractionBillingPeriod, ExtractionPaymentStatus } from '@scani/db/schema';
 import type { AIInferenceProvider, AIResult, AIUsage } from '@scani/providers/core/capabilities';
 import { ProviderRegistry } from '@scani/providers/core/registry';
 import { isValidDecimalString } from '@scani/shared';
@@ -50,6 +51,11 @@ export interface ExtractedInvoice {
   /** Decimal string. Never parsed into a JS float — see CLAUDE.md money rule. */
   totalAmount: string | null;
   currencyCode: string | null;
+  /** Null whenever the document didn't say — never inferred. Downstream
+      (the paid-invoice → recurring-payment bridge) treats null as
+      "unknown", which is not the same decision as "unpaid". */
+  paymentStatus: ExtractionPaymentStatus | null;
+  billingPeriod: ExtractionBillingPeriod | null;
   lineItems: ExtractedLineItem[];
   confidence: number | null;
   promptVersion: string;
@@ -141,6 +147,55 @@ function asDecimalString(value: unknown): string | null {
   return typeof value === 'string' && isValidDecimalString(value) ? value : null;
 }
 
+/** Models paraphrase rather than echo the enum ("Paid in full",
+    "annually"), so a small synonym table sits in front of the exact
+    match. Anything outside it is null, not a nearest guess: a wrong
+    'paid' marks a live bill as settled, and a wrong period puts the next
+    charge on the wrong date. */
+const PAYMENT_STATUS_SYNONYMS: Record<string, ExtractionPaymentStatus> = {
+  paid: 'paid',
+  'paid in full': 'paid',
+  settled: 'paid',
+  'payment received': 'paid',
+  unpaid: 'unpaid',
+  outstanding: 'unpaid',
+  due: 'unpaid',
+  'balance due': 'unpaid',
+};
+
+const BILLING_PERIOD_SYNONYMS: Record<string, ExtractionBillingPeriod> = {
+  week: 'week',
+  weekly: 'week',
+  'per week': 'week',
+  month: 'month',
+  monthly: 'month',
+  'per month': 'month',
+  quarter: 'quarter',
+  quarterly: 'quarter',
+  'per quarter': 'quarter',
+  year: 'year',
+  yearly: 'year',
+  annual: 'year',
+  annually: 'year',
+  'per year': 'year',
+};
+
+function canonicalise(value: unknown): string | null {
+  if (typeof value !== 'string') return null;
+  const trimmed = value.trim().toLowerCase().replace(/\s+/g, ' ');
+  return trimmed.length > 0 ? trimmed : null;
+}
+
+function asPaymentStatus(value: unknown): ExtractionPaymentStatus | null {
+  const key = canonicalise(value);
+  return key ? (PAYMENT_STATUS_SYNONYMS[key] ?? null) : null;
+}
+
+function asBillingPeriod(value: unknown): ExtractionBillingPeriod | null {
+  const key = canonicalise(value);
+  return key ? (BILLING_PERIOD_SYNONYMS[key] ?? null) : null;
+}
+
 function asConfidence(value: unknown): number | null {
   return typeof value === 'number' && Number.isFinite(value) ? value : null;
 }
@@ -184,6 +239,8 @@ function normalizeInvoice(
     dueDate: asString(rec.dueDate),
     totalAmount: asDecimalString(rec.totalAmount),
     currencyCode: asString(rec.currencyCode),
+    paymentStatus: asPaymentStatus(rec.paymentStatus),
+    billingPeriod: asBillingPeriod(rec.billingPeriod),
     lineItems,
     confidence: asConfidence(rec.confidence),
     promptVersion: PROMPT_VERSION,
