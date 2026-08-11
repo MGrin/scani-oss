@@ -5,8 +5,8 @@ import { Card, CardContent, CardHeader, CardTitle } from '@scani/ui/ui/card';
 import { PageLoader } from '@scani/ui/ui/loading';
 import { Separator } from '@scani/ui/ui/separator';
 import { showError, showSuccess } from '@scani/ui/ui/use-toast';
-import { ArrowLeft, Check, FileText, X } from 'lucide-react';
-import { Link, useParams } from 'react-router-dom';
+import { ArrowLeft, ArrowRight, FileText, X } from 'lucide-react';
+import { Link, useNavigate, useParams } from 'react-router-dom';
 import { type RouterOutputs, trpc } from '@/lib/trpc';
 import { V2_ROUTES } from '../lib/routes';
 
@@ -26,28 +26,17 @@ type Extraction = RouterOutputs['documents']['get']['extractions'][number];
  */
 export function DocumentDetailPage() {
   const { id = '' } = useParams<{ id: string }>();
+  const navigate = useNavigate();
   const utils = trpc.useUtils();
 
   const documentQuery = trpc.documents.get.useQuery({ documentId: id }, { enabled: Boolean(id) });
 
-  const invalidateAfterReview = () => {
-    void utils.documents.get.invalidate({ documentId: id });
-    void utils.documents.listExtractions.invalidate();
-    void utils.review.listPending.invalidate();
-  };
-
-  const acceptMutation = trpc.documents.acceptExtraction.useMutation({
-    onSuccess: () => {
-      showSuccess('Extraction accepted');
-      invalidateAfterReview();
-    },
-    onError: (error) => showError(error, 'Accepting extraction'),
-  });
-
   const rejectMutation = trpc.documents.rejectExtraction.useMutation({
     onSuccess: () => {
       showSuccess('Extraction rejected');
-      invalidateAfterReview();
+      void utils.documents.get.invalidate({ documentId: id });
+      void utils.documents.listExtractions.invalidate();
+      void utils.review.listPending.invalidate();
     },
     onError: (error) => showError(error, 'Rejecting extraction'),
   });
@@ -108,9 +97,9 @@ export function DocumentDetailPage() {
               <ExtractionCard
                 key={extraction.id}
                 extraction={extraction}
-                onAccept={() => acceptMutation.mutate({ extractionId: extraction.id })}
+                onApprove={() => navigate(V2_ROUTES.paymentCreateFromExtraction(extraction.id))}
                 onReject={() => rejectMutation.mutate({ extractionId: extraction.id })}
-                isPending={acceptMutation.isPending || rejectMutation.isPending}
+                isPending={rejectMutation.isPending}
               />
             ))
           )}
@@ -122,12 +111,12 @@ export function DocumentDetailPage() {
 
 function ExtractionCard({
   extraction,
-  onAccept,
+  onApprove,
   onReject,
   isPending,
 }: {
   extraction: Extraction;
-  onAccept: () => void;
+  onApprove: () => void;
   onReject: () => void;
   isPending: boolean;
 }) {
@@ -168,15 +157,23 @@ function ExtractionCard({
       </dl>
 
       {extraction.reviewState === 'pending' && (
-        <div className="flex items-center gap-2 pt-1">
-          <Button size="sm" disabled={isPending} onClick={onAccept}>
-            <Check className="h-3.5 w-3.5 mr-1" />
-            Accept
-          </Button>
-          <Button size="sm" variant="outline" disabled={isPending} onClick={onReject}>
-            <X className="h-3.5 w-3.5 mr-1" />
-            Reject
-          </Button>
+        <div className="space-y-1.5 pt-1">
+          <div className="flex items-center gap-2">
+            <Button size="sm" disabled={isPending} onClick={onApprove}>
+              Approve
+              <ArrowRight className="h-3.5 w-3.5 ml-1" />
+            </Button>
+            <Button size="sm" variant="outline" disabled={isPending} onClick={onReject}>
+              <X className="h-3.5 w-3.5 mr-1" />
+              Reject
+            </Button>
+          </div>
+          {/* One invoice can't prove a cadence, so approving opens the form
+              rather than writing a payment the user never confirmed. */}
+          <p className="text-[11px] text-muted-foreground">
+            Opens a recurring payment prefilled from this invoice. Nothing is saved until you
+            confirm it.
+          </p>
         </div>
       )}
     </div>

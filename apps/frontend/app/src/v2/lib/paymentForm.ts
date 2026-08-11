@@ -11,6 +11,13 @@
  */
 export interface PaymentFormDraft {
   vendorId: string;
+  /**
+   * A vendor name carried over from an invoice, for which no `vendors`
+   * row exists yet. It satisfies the vendor requirement because
+   * `payments.createFromExtraction` find-or-creates the vendor by name —
+   * demanding an id here would block a form the user has fully answered.
+   */
+  pendingVendorName?: string;
   /** A real `tokens.id`, not the text shown in the currency field. */
   currencyTokenId: string | null;
   anchorDate: string;
@@ -20,7 +27,7 @@ export interface PaymentFormDraft {
 
 export function describePaymentFormBlockers(draft: PaymentFormDraft): string[] {
   const blockers: string[] = [];
-  if (!draft.vendorId) blockers.push('choose a vendor');
+  if (!draft.vendorId && !draft.pendingVendorName?.trim()) blockers.push('choose a vendor');
   if (!draft.currencyTokenId) blockers.push('pick a currency from the list');
   if (!draft.anchorDate) blockers.push('set an anchor date');
 
