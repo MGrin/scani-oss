@@ -1,5 +1,5 @@
 import type { LucideIcon } from 'lucide-react';
-import { LayoutDashboard, Menu, PieChart, PlusCircle, Wallet } from 'lucide-react';
+import { CalendarClock, LayoutDashboard, Menu, PlusCircle, Wallet } from 'lucide-react';
 import { useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { NavLink } from 'react-router-dom';
@@ -15,7 +15,11 @@ interface MobileNavItem {
 
 const items: MobileNavItem[] = [
   { labelKey: 'nav.dashboard', icon: LayoutDashboard, path: V2_ROUTES.dashboard, end: true },
-  { labelKey: 'nav.holdings', icon: PieChart, path: V2_ROUTES.holdings },
+  // Deliberately NOT `end`: a bottom tab represents a SECTION, so it stays
+  // lit on /payments/recurring and a payment's own page. That is the
+  // opposite of the sidebar, where /payments and /payments/recurring are
+  // two separate entries and only the most specific one may light.
+  { labelKey: 'nav.payments', icon: CalendarClock, path: V2_ROUTES.payments },
   { labelKey: 'nav.add', icon: PlusCircle, path: V2_ROUTES.addData },
   { labelKey: 'nav.accounts', icon: Wallet, path: V2_ROUTES.accounts },
 ];

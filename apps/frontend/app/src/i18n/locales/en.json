@@ -31,7 +31,8 @@
     "paymentsOverview": "Overview",
     "recurringPayments": "Recurring Payments",
     "vendors": "Vendors",
-    "review": "Review"
+    "review": "Review",
+    "payments": "Payments"
   },
   "dashboard": {
     "title": "Dashboard",
