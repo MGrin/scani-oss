@@ -50,15 +50,15 @@ export function PaymentCreatePage() {
   const { data: tokens, isLoading: tokensLoading } = trpc.tokens.getAll.useQuery(undefined, {
     enabled: isEdit || fromExtraction,
   });
-  // `listExtractions` is the pending-review queue, which is exactly the
-  // population this page is reachable from — the Approve button only
-  // exists while an extraction is pending.
-  const extractionsQuery = trpc.documents.listExtractions.useQuery(undefined, {
-    enabled: fromExtraction,
-  });
-  const extraction = extractionId
-    ? (extractionsQuery.data?.find((row) => row.id === extractionId) ?? null)
-    : null;
+  // Fetch the one row by id rather than filtering the pending-review
+  // queue for it. The queue only contains extractions still awaiting a
+  // decision, so a revisited or already-reviewed link would find nothing
+  // there and silently lose the prefill.
+  const extractionQuery = trpc.documents.getExtraction.useQuery(
+    { extractionId: extractionId ?? '' },
+    { enabled: fromExtraction }
+  );
+  const extraction = extractionQuery.data ?? null;
   const {
     token: baseCurrencyToken,
     isLoading: baseCurrencyLoading,
@@ -222,7 +222,7 @@ export function PaymentCreatePage() {
   if (isEdit && (paymentQuery.isLoading || accountsLoading || tokensLoading)) return <PageLoader />;
   // Rendering the empty form first and rewriting every field a beat later
   // reads as the app undoing the user's work.
-  if (fromExtraction && (extractionsQuery.isLoading || tokensLoading)) return <PageLoader />;
+  if (fromExtraction && (extractionQuery.isLoading || tokensLoading)) return <PageLoader />;
   if (isEdit && (paymentQuery.error || !paymentQuery.data)) {
     return (
       <div className="max-w-2xl space-y-6">
