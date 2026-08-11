@@ -10,7 +10,16 @@ interface VendorPickerProps {
   value: string;
   /** Display label for `value` — carried separately so a prefilled edit doesn't need `vendors.list` to have loaded first. */
   valueLabel?: string;
+  /**
+   * A vendor name read off an invoice, for which no `vendors` row exists
+   * yet. Shown as if it were selected — the caller's mutation
+   * find-or-creates it on submit, so creating the row here just to have an
+   * id would leave an orphan vendor behind every abandoned form.
+   */
+  pendingName?: string;
   onSelect: (vendorId: string, displayName: string) => void;
+  /** Fires when the user rejects `pendingName` and wants to pick instead. */
+  onClearPending?: () => void;
   disabled?: boolean;
 }
 
@@ -20,7 +29,14 @@ interface VendorPickerProps {
  * requires a `vendorId` and nothing else in the app can produce one (see
  * Task 15's plan entry).
  */
-export function VendorPicker({ value, valueLabel, onSelect, disabled }: VendorPickerProps) {
+export function VendorPicker({
+  value,
+  valueLabel,
+  pendingName,
+  onSelect,
+  onClearPending,
+  disabled,
+}: VendorPickerProps) {
   const [search, setSearch] = useState('');
   const [open, setOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -53,28 +69,40 @@ export function VendorPicker({ value, valueLabel, onSelect, disabled }: VendorPi
     ? items.filter((v) => v.displayName.toLowerCase().includes(search.trim().toLowerCase()))
     : items;
 
-  if (value) {
-    const selectedLabel = items.find((v) => v.id === value)?.displayName ?? valueLabel ?? value;
+  const stagedName = value ? '' : (pendingName?.trim() ?? '');
+
+  if (value || stagedName) {
+    const selectedLabel = value
+      ? (items.find((v) => v.id === value)?.displayName ?? valueLabel ?? value)
+      : stagedName;
     return (
-      <div className="flex items-center gap-2">
-        <div className="flex items-center gap-2 flex-1 px-3 py-2 border rounded-md bg-muted text-sm">
-          <Store className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-          <span className="font-medium truncate">{selectedLabel}</span>
+      <div className="space-y-1.5">
+        <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-1 px-3 py-2 border rounded-md bg-muted text-sm">
+            <Store className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+            <span className="font-medium truncate">{selectedLabel}</span>
+          </div>
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="h-8 text-xs shrink-0"
+            disabled={disabled}
+            onClick={() => {
+              onSelect('', '');
+              onClearPending?.();
+              setOpen(true);
+              setSearch('');
+            }}
+          >
+            Change
+          </Button>
         </div>
-        <Button
-          type="button"
-          variant="ghost"
-          size="sm"
-          className="h-8 text-xs shrink-0"
-          disabled={disabled}
-          onClick={() => {
-            onSelect('', '');
-            setOpen(true);
-            setSearch('');
-          }}
-        >
-          Change
-        </Button>
+        {stagedName && (
+          <p className="text-[11px] text-muted-foreground">
+            Read from the invoice. We'll create this vendor when you save if it doesn't exist yet.
+          </p>
+        )}
       </div>
     );
   }

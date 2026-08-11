@@ -1,20 +1,23 @@
 import { Button } from '@scani/ui/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@scani/ui/ui/card';
+import { Checkbox } from '@scani/ui/ui/checkbox';
 import { Input } from '@scani/ui/ui/input';
 import { Label } from '@scani/ui/ui/label';
 import { PageLoader } from '@scani/ui/ui/loading';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@scani/ui/ui/select';
 import { Textarea } from '@scani/ui/ui/textarea';
 import { showError, showSuccess } from '@scani/ui/ui/use-toast';
-import { ArrowLeft, Loader2 } from 'lucide-react';
+import { ArrowLeft, FileText, Loader2 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { NumericFormat } from 'react-number-format';
-import { Link, useNavigate, useParams } from 'react-router-dom';
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { trpc } from '@/lib/trpc';
 import { VendorPicker } from '../components/payments/VendorPicker';
 import { TokenSearchInput, type TokenSelectionValue } from '../components/tokens/TokenSearchInput';
 import { useBaseCurrency } from '../hooks/useBaseCurrency';
+import { buildInvoicePrefill, matchCurrencyToken } from '../lib/extractionPrefill';
 import { describePaymentFormBlockers } from '../lib/paymentForm';
+import { todayDateString } from '../lib/paymentTotals';
 import { V2_ROUTES } from '../lib/routes';
 
 type Direction = 'outflow' | 'inflow';
@@ -22,10 +25,6 @@ type Kind = 'fixed' | 'variable';
 type IntervalUnit = 'week' | 'month' | 'quarter' | 'year';
 
 const NO_ACCOUNT = '__none__';
-
-function todayDateString(): string {
-  return new Date().toISOString().slice(0, 10);
-}
 
 /**
  * Create (and, via `/payments/:id/edit`, update) a recurring payment.
@@ -36,6 +35,12 @@ function todayDateString(): string {
 export function PaymentCreatePage() {
   const { id } = useParams<{ id: string }>();
   const isEdit = Boolean(id);
+  const [searchParams] = useSearchParams();
+  // Only meaningful on create: an edit already has its own vendor, amount
+  // and cadence, and re-applying an invoice over them would be a silent
+  // overwrite of what the user previously confirmed.
+  const extractionId = isEdit ? null : searchParams.get('fromExtraction');
+  const fromExtraction = Boolean(extractionId);
   const navigate = useNavigate();
   const utils = trpc.useUtils();
 
@@ -43,8 +48,17 @@ export function PaymentCreatePage() {
   const { data: accounts, isLoading: accountsLoading } =
     trpc.accounts.getByUserIdWithSummary.useQuery();
   const { data: tokens, isLoading: tokensLoading } = trpc.tokens.getAll.useQuery(undefined, {
-    enabled: isEdit,
+    enabled: isEdit || fromExtraction,
   });
+  // `listExtractions` is the pending-review queue, which is exactly the
+  // population this page is reachable from — the Approve button only
+  // exists while an extraction is pending.
+  const extractionsQuery = trpc.documents.listExtractions.useQuery(undefined, {
+    enabled: fromExtraction,
+  });
+  const extraction = extractionId
+    ? (extractionsQuery.data?.find((row) => row.id === extractionId) ?? null)
+    : null;
   const {
     token: baseCurrencyToken,
     isLoading: baseCurrencyLoading,
@@ -53,6 +67,9 @@ export function PaymentCreatePage() {
 
   const [vendorId, setVendorId] = useState('');
   const [vendorName, setVendorName] = useState('');
+  /** Invoice vendor with no `vendors` row yet — created server-side on submit. */
+  const [pendingVendorName, setPendingVendorName] = useState('');
+  const [markAnchorPaid, setMarkAnchorPaid] = useState(true);
   const [direction, setDirection] = useState<Direction>('outflow');
   const [kind, setKind] = useState<Kind>('fixed');
   const [amount, setAmount] = useState('');
@@ -64,6 +81,7 @@ export function PaymentCreatePage() {
   const [accountId, setAccountId] = useState(NO_ACCOUNT);
   const [notes, setNotes] = useState('');
   const [prefilled, setPrefilled] = useState(false);
+  const [invoicePrefilled, setInvoicePrefilled] = useState(false);
 
   // Prefill once the existing payment loads — a plain `useState` initial
   // value can't work here since the query is still loading on first render.
@@ -88,6 +106,23 @@ export function PaymentCreatePage() {
     setPrefilled(true);
   }, [isEdit, prefilled, paymentQuery.data, tokens]);
 
+  // Prefill from a parsed invoice. Only the fields the invoice actually
+  // evidences are touched — direction, kind and repeat count keep the
+  // form's own defaults (a bill, fixed, every 1 unit), which is what an
+  // invoice implies anyway.
+  useEffect(() => {
+    if (!extraction || invoicePrefilled || !tokens) return;
+    const prefill = buildInvoicePrefill(extraction, todayDateString());
+    setPendingVendorName(prefill.vendorName);
+    setAmount(prefill.amount);
+    setAnchorDate(prefill.anchorDate);
+    setIntervalUnit(prefill.intervalUnit);
+    setMarkAnchorPaid(prefill.markAnchorPaid);
+    const token = matchCurrencyToken(tokens, prefill.currencyCode);
+    if (token) setCurrency({ id: token.id, label: `${token.symbol} — ${token.name}` });
+    setInvoicePrefilled(true);
+  }, [extraction, invoicePrefilled, tokens]);
+
   // Default the currency to the user's base currency on mount. Without
   // this, `TokenSearchInput` starts empty and `currency` stays `null`
   // until the user picks a result from the dropdown — typing "USD" and
@@ -109,6 +144,20 @@ export function PaymentCreatePage() {
     onError: (error) => showError(error, 'Creating payment'),
   });
 
+  const createFromExtractionMutation = trpc.payments.createFromExtraction.useMutation({
+    onSuccess: (payment) => {
+      showSuccess('Payment created from invoice');
+      void utils.payments.invalidate();
+      void utils.vendors.invalidate();
+      // The extraction is accepted as part of the same mutation, so the
+      // review feed and the document page are both stale now.
+      void utils.documents.invalidate();
+      void utils.review.listPending.invalidate();
+      navigate(V2_ROUTES.paymentDetail(payment.id));
+    },
+    onError: (error) => showError(error, 'Creating payment'),
+  });
+
   const updateMutation = trpc.payments.update.useMutation({
     onSuccess: (payment) => {
       showSuccess('Payment updated');
@@ -118,12 +167,19 @@ export function PaymentCreatePage() {
     onError: (error) => showError(error, 'Updating payment'),
   });
 
-  const isSaving = createMutation.isPending || updateMutation.isPending;
+  const isSaving =
+    createMutation.isPending || updateMutation.isPending || createFromExtractionMutation.isPending;
+  // Only route through `createFromExtraction` when the extraction is
+  // actually in hand: a stale link (already reviewed, or another user's)
+  // must degrade to the plain form rather than submit an id the server
+  // will reject.
+  const createsFromInvoice = Boolean(extractionId && extraction);
   // A disabled button with no explanation is itself the defect the field
   // validation was hiding, so the gate reports reasons rather than a
   // boolean and the form prints them under the button.
   const blockers = describePaymentFormBlockers({
     vendorId,
+    pendingVendorName: createsFromInvoice ? pendingVendorName : '',
     currencyTokenId: currency?.id ?? null,
     anchorDate,
     intervalCount,
@@ -133,7 +189,6 @@ export function PaymentCreatePage() {
   const handleSubmit = () => {
     if (!canSubmit || !currency) return;
     const payload = {
-      vendorId,
       direction,
       kind,
       expectedAmount: amount.trim() ? amount.trim() : null,
@@ -149,13 +204,25 @@ export function PaymentCreatePage() {
       notes: notes.trim() ? notes.trim() : null,
     };
     if (isEdit && id) {
-      updateMutation.mutate({ paymentId: id, ...payload });
+      updateMutation.mutate({ paymentId: id, vendorId, ...payload });
+    } else if (createsFromInvoice && extractionId) {
+      createFromExtractionMutation.mutate({
+        ...payload,
+        // Null hands the vendor decision to the server, which
+        // find-or-creates by the invoice's own name.
+        vendorId: vendorId || null,
+        extractionId,
+        markAnchorPaid,
+      });
     } else {
-      createMutation.mutate(payload);
+      createMutation.mutate({ vendorId, ...payload });
     }
   };
 
   if (isEdit && (paymentQuery.isLoading || accountsLoading || tokensLoading)) return <PageLoader />;
+  // Rendering the empty form first and rewriting every field a beat later
+  // reads as the app undoing the user's work.
+  if (fromExtraction && (extractionsQuery.isLoading || tokensLoading)) return <PageLoader />;
   if (isEdit && (paymentQuery.error || !paymentQuery.data)) {
     return (
       <div className="max-w-2xl space-y-6">
@@ -179,6 +246,20 @@ export function PaymentCreatePage() {
         <p className="text-sm text-muted-foreground mt-1">
           A bill or recurring income, matched against transactions as they arrive.
         </p>
+        {createsFromInvoice && (
+          <p className="text-xs text-muted-foreground mt-2 flex items-center gap-1.5">
+            <FileText className="h-3.5 w-3.5 shrink-0" />
+            Suggested from {extraction?.vendorNameRaw}
+            {extraction?.invoiceNumber ? ` invoice #${extraction.invoiceNumber}` : ' invoice'}. One
+            invoice can't prove how often it repeats — check the schedule before saving.
+          </p>
+        )}
+        {fromExtraction && !extraction && (
+          <p className="text-xs text-destructive mt-2">
+            That invoice is no longer awaiting review, so nothing could be prefilled. Fill the form
+            in yourself, or reopen the document from Review.
+          </p>
+        )}
       </div>
 
       <Card>
@@ -189,10 +270,12 @@ export function PaymentCreatePage() {
           <VendorPicker
             value={vendorId}
             valueLabel={vendorName}
+            pendingName={createsFromInvoice ? pendingVendorName : undefined}
             onSelect={(newVendorId, displayName) => {
               setVendorId(newVendorId);
               setVendorName(displayName);
             }}
+            onClearPending={() => setPendingVendorName('')}
             disabled={isSaving}
           />
         </CardContent>
@@ -322,6 +405,27 @@ export function PaymentCreatePage() {
           <p className="text-[11px] text-muted-foreground">
             e.g. fortnightly = every 2 weeks, anchored on the day it's due
           </p>
+
+          {createsFromInvoice && (
+            <div className="flex items-start gap-2.5 rounded-md border border-border p-3">
+              <Checkbox
+                id="mark-anchor-paid"
+                checked={markAnchorPaid}
+                onCheckedChange={(checked) => setMarkAnchorPaid(checked === true)}
+                disabled={isSaving}
+                className="mt-0.5"
+              />
+              <div className="space-y-0.5">
+                <Label htmlFor="mark-anchor-paid" className="text-xs">
+                  This invoice is already paid
+                </Label>
+                <p className="text-[11px] text-muted-foreground">
+                  Marks the period this invoice covers as settled, so the one you'll see coming up
+                  is the next payment, not this one.
+                </p>
+              </div>
+            </div>
+          )}
 
           <div className="space-y-1.5">
             <Label className="text-xs">End date (optional)</Label>

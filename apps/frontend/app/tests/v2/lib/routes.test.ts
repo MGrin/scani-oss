@@ -25,6 +25,14 @@ describe('resolveActiveNavPath', () => {
     expect(resolveActiveNavPath(V2_ROUTES.vendorDetail('abc'))).toBe(V2_ROUTES.vendors);
   });
 
+  // The invoice-prefilled form is the same page with a query string, so it
+  // has to keep lighting Recurring Payments.
+  test('the invoice-prefilled create page is still the create page', () => {
+    const href = V2_ROUTES.paymentCreateFromExtraction('a b/c');
+    expect(href).toBe(`${V2_ROUTES.paymentCreate}?fromExtraction=a%20b%2Fc`);
+    expect(resolveActiveNavPath(V2_ROUTES.paymentCreate)).toBe(V2_ROUTES.paymentsList);
+  });
+
   test('matching is on whole path segments, not raw string prefixes', () => {
     expect(resolveActiveNavPath('/payments-archive')).toBeNull();
     expect(resolveActiveNavPath('/holdingsomething')).toBeNull();

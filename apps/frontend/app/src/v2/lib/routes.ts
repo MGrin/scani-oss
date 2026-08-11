@@ -28,6 +28,9 @@ export const V2_ROUTES = {
   paymentsList: '/payments/recurring',
   paymentDetail: (id: string) => `/payments/recurring/${id}`,
   paymentCreate: '/payments/recurring/new',
+  /** The same create form, prefilled from a parsed invoice. */
+  paymentCreateFromExtraction: (extractionId: string) =>
+    `/payments/recurring/new?fromExtraction=${encodeURIComponent(extractionId)}`,
   paymentEdit: (id: string) => `/payments/recurring/${id}/edit`,
   vendors: '/vendors',
   vendorDetail: (id: string) => `/vendors/${id}`,
