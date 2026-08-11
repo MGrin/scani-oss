@@ -154,16 +154,26 @@ export class ChatCompletionsProvider implements AIInferenceProvider {
     return this.callJson(body);
   }
 
-  async parseDocumentText(text: string, hint?: string): Promise<AIResult<unknown>> {
+  async parseDocumentText(
+    text: string,
+    hint?: string,
+    systemPrompt?: string
+  ): Promise<AIResult<unknown>> {
     if (!this.isConfigured()) {
       throw new Error(`${this.config.providerKey}: apiKey not configured`);
     }
-    const systemPrompt = buildSystemPrompt();
-    const userPrompt = buildUserPrompt(hint, text);
+    // A caller-supplied system prompt REPLACES the holdings schema rather
+    // than sitting under it. `buildUserPrompt`'s "Extract every visible
+    // token holding" opener would otherwise still contradict it.
+    const useCustom = Boolean(systemPrompt);
+    const resolvedSystem = systemPrompt ?? buildSystemPrompt();
+    const userPrompt = useCustom
+      ? [hint, text ? `Document text:\n${text.slice(0, 32000)}` : ''].filter(Boolean).join('\n\n')
+      : buildUserPrompt(hint, text);
     const body = {
       model: this.config.model,
       messages: [
-        { role: 'system', content: systemPrompt },
+        { role: 'system', content: resolvedSystem },
         { role: 'user', content: userPrompt },
       ],
       ...tuning(this.config, this.config.maxTokens ?? 4000, this.config.temperature ?? 0.1),
