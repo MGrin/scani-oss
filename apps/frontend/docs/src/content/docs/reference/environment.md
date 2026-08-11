@@ -107,7 +107,7 @@ hosted data-provider.
 | `COINGECKO_API_KEY` | CoinGecko | Paid-tier crypto prices. |
 | `FINNHUB_API_KEY` | Finnhub | Public-equity prices. |
 | `OPENAI_API_KEY` | OpenAI | Screenshot parsing. |
-| `OPENAI_VISION_MODEL` | OpenAI | Model selection. Default `gpt-4o`. |
+| `OPENAI_VISION_MODEL` | OpenAI | Model selection. Default `gpt-5.6-luna`. |
 | `PERPLEXITY_API_KEY` | Perplexity | Token-identity enrichment. Optional. |
 | `DEEPSEEK_API_KEY` | DeepSeek | Token-identity enrichment. Optional. |
 | `ETHERSCAN_API_KEY` | Etherscan V2 | All EVM wallet balances + transactions. |
