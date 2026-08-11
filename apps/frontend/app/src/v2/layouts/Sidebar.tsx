@@ -2,8 +2,11 @@ import { ThemeToggle } from '@scani/ui/components/ThemeToggle';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@scani/ui/ui/tooltip';
 import {
   Building2,
+  CalendarClock,
   ChevronLeft,
+  ClipboardCheck,
   Coins,
+  FileText,
   FileUp,
   Keyboard,
   LayoutDashboard,
@@ -13,18 +16,21 @@ import {
   Menu,
   PieChart,
   Plug,
+  Repeat,
   Settings,
+  Store,
   Tags,
   Vault,
   Wallet,
 } from 'lucide-react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Link, NavLink, useLocation } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { cn } from '@/lib/utils';
-import { useUserJobs } from '../hooks/useUserJobs';
+import { useReviewFeed } from '../hooks/useReviewFeed';
 import { SIDEBAR_COLLAPSED_WIDTH, SIDEBAR_WIDTH } from '../lib/constants';
-import { NAV_SECTIONS, V2_ROUTES } from '../lib/routes';
+import { NAV_SECTIONS, resolveActiveNavPath, V2_ROUTES } from '../lib/routes';
 
 const ICON_MAP: Record<string, LucideIcon> = {
   LayoutDashboard,
@@ -35,9 +41,14 @@ const ICON_MAP: Record<string, LucideIcon> = {
   Vault,
   Plug,
   FileUp,
+  FileText,
   Keyboard,
   Coins,
   ListChecks,
+  ClipboardCheck,
+  CalendarClock,
+  Repeat,
+  Store,
 };
 
 const navItemBase =
@@ -53,14 +64,20 @@ function SidebarNavLink({
   icon: Icon,
   label,
   collapsed,
-  end,
+  active,
   badgeCount,
+  anchorRef,
 }: {
   to: string;
   icon: LucideIcon;
   label: string;
   collapsed: boolean;
-  end?: boolean;
+  /** Resolved by the caller via `resolveActiveNavPath`. Omitted for
+   * entries outside `NAV_SECTIONS` (Settings), which fall back to
+   * `NavLink`'s own exact matching. */
+  active?: boolean;
+  /** Lets the sidebar scroll this entry into view when it matters. */
+  anchorRef?: React.Ref<HTMLAnchorElement>;
   /** Optional numeric badge (e.g. action-required jobs count). Renders
    * in amber to draw attention; hidden when 0 or undefined. */
   badgeCount?: number;
@@ -69,7 +86,7 @@ function SidebarNavLink({
   const hasBadge = typeof badgeCount === 'number' && badgeCount > 0;
 
   if (collapsed) {
-    const isActive = end ? pathname === to : pathname.startsWith(to);
+    const isActive = active ?? pathname === to;
     return (
       <Tooltip>
         <TooltipTrigger asChild>
@@ -100,9 +117,12 @@ function SidebarNavLink({
 
   return (
     <NavLink
+      ref={anchorRef}
       to={to}
-      end={end}
-      className={({ isActive }) => cn(navItemBase, isActive ? activeClass : inactiveClass)}
+      end
+      className={({ isActive }) =>
+        cn(navItemBase, (active ?? isActive) ? activeClass : inactiveClass)
+      }
     >
       <Icon className="h-4 w-4 shrink-0" aria-hidden="true" />
       <span className="truncate">{label}</span>
@@ -173,8 +193,42 @@ interface SidebarProps {
 
 export function Sidebar({ collapsed, onToggle }: SidebarProps) {
   const { signOut } = useAuth();
-  const { actionRequiredCount } = useUserJobs();
   const { t } = useTranslation();
+  const { pathname } = useLocation();
+  const activeNavPath = resolveActiveNavPath(pathname);
+  const { count: actionRequiredCount } = useReviewFeed();
+  const scrollerRef = useRef<HTMLDivElement>(null);
+  const navRef = useRef<HTMLElement>(null);
+  const reviewNavRef = useRef<HTMLAnchorElement>(null);
+  const [hasHiddenBelow, setHasHiddenBelow] = useState(false);
+
+  const updateOverflowHint = useCallback(() => {
+    const el = scrollerRef.current;
+    if (!el) return;
+    setHasHiddenBelow(el.scrollHeight - el.scrollTop - el.clientHeight > 4);
+  }, []);
+
+  // Observe the nav CONTENT, not the scroll container. The container is
+  // `flex-1` inside a fixed-height aside, so its box never changes when
+  // the nav grows — a badge arriving once useReviewFeed resolves would
+  // otherwise never re-fire the hint, leaving it stale.
+  useEffect(() => {
+    updateOverflowHint();
+    const content = navRef.current;
+    if (!content || typeof ResizeObserver === 'undefined') return;
+    const observer = new ResizeObserver(updateOverflowHint);
+    observer.observe(content);
+    return () => observer.disconnect();
+  }, [updateOverflowHint]);
+
+  // Pull the Review entry into view when something is waiting. It sits in
+  // the last nav section, so on a short viewport it is exactly the item
+  // that falls below the fold — the same treatment AppShell already gives
+  // its mobile drawer.
+  useEffect(() => {
+    if (actionRequiredCount === 0) return;
+    reviewNavRef.current?.scrollIntoView({ block: 'nearest' });
+  }, [actionRequiredCount]);
 
   const handleSignOut = () => {
     // Fire and forget. ProtectedRoute will redirect to /auth when the
@@ -213,9 +267,18 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
         </button>
       </div>
 
-      {/* Navigation */}
-      <div className="flex-1 overflow-y-auto py-2">
-        <nav className={cn('space-y-3', collapsed ? 'px-1' : 'px-2')}>
+      {/*
+        Navigation. `relative` anchors the overflow hint below; without a
+        scroll cue the hidden sections read as "not there" rather than
+        "scroll down" — measured on a 577px viewport, 701px of nav in a
+        378px scroller left ADD DATA and ACTIVITY entirely invisible.
+      */}
+      <div
+        ref={scrollerRef}
+        onScroll={updateOverflowHint}
+        className="relative flex-1 overflow-y-auto py-2"
+      >
+        <nav ref={navRef} className={cn('space-y-3', collapsed ? 'px-1' : 'px-2')}>
           {NAV_SECTIONS.map((section, idx) => (
             <div key={section.titleKey}>
               {collapsed && idx > 0 && <div className="border-t border-border mb-2" />}
@@ -234,8 +297,9 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
                       icon={Icon}
                       label={t(item.labelKey)}
                       collapsed={collapsed}
-                      end={item.path === V2_ROUTES.dashboard}
-                      badgeCount={item.path === V2_ROUTES.jobs ? actionRequiredCount : undefined}
+                      active={item.path === activeNavPath}
+                      badgeCount={item.path === V2_ROUTES.review ? actionRequiredCount : undefined}
+                      anchorRef={item.path === V2_ROUTES.review ? reviewNavRef : undefined}
                     />
                   );
                 })}
@@ -244,6 +308,12 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
           ))}
         </nav>
       </div>
+      {hasHiddenBelow && (
+        <div
+          aria-hidden="true"
+          className="pointer-events-none -mt-6 h-6 shrink-0 bg-gradient-to-t from-card to-transparent"
+        />
+      )}
 
       {/* Footer */}
       <div className={cn('border-t border-border', collapsed ? 'p-1 space-y-1' : 'p-2 space-y-px')}>

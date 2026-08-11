@@ -40,6 +40,7 @@ export function JobHeader({ job }: { job: JobHeaderJob }) {
       showSuccess('Job re-queued');
       utils.jobs.getMine.invalidate({ jobId: job.jobId });
       utils.jobs.listMine.invalidate();
+      utils.review.listPending.invalidate();
     },
     onError: (err) => showError(err, 'Retrying job'),
   });
@@ -48,6 +49,7 @@ export function JobHeader({ job }: { job: JobHeaderJob }) {
       showSuccess('Job cancelled');
       utils.jobs.getMine.invalidate({ jobId: job.jobId });
       utils.jobs.listMine.invalidate();
+      utils.review.listPending.invalidate();
     },
     onError: (err) => showError(err, 'Cancelling job'),
   });
@@ -55,6 +57,7 @@ export function JobHeader({ job }: { job: JobHeaderJob }) {
     onSuccess: () => {
       showSuccess('Job removed');
       utils.jobs.listMine.invalidate();
+      utils.review.listPending.invalidate();
       navigate(V2_ROUTES.jobs);
     },
     onError: (err) => showError(err, 'Removing job'),

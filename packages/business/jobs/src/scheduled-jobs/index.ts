@@ -1,4 +1,5 @@
 export { APY_PAYOUTS_SCHEDULE } from './apy-payouts';
+export { BACKFILL_COUNTERPARTY_SCHEDULE } from './backfill-counterparty';
 export { BACKFILL_TOKEN_IDENTITY_SCHEDULE } from './backfill-token-identity';
 export { DLQ_DEPTH_PROBE_SCHEDULE } from './dlq-depth-probe';
 export { EXCHANGE_BALANCES_SCHEDULE } from './exchange-balances';
@@ -23,6 +24,7 @@ export { TRANSFER_LINKING_SCHEDULE } from './transfer-linking';
 export { WALLET_BALANCES_SCHEDULE } from './wallet-balances';
 
 import { APY_PAYOUTS_SCHEDULE } from './apy-payouts';
+import { BACKFILL_COUNTERPARTY_SCHEDULE } from './backfill-counterparty';
 import { BACKFILL_TOKEN_IDENTITY_SCHEDULE } from './backfill-token-identity';
 import { DLQ_DEPTH_PROBE_SCHEDULE } from './dlq-depth-probe';
 import { EXCHANGE_BALANCES_SCHEDULE } from './exchange-balances';
@@ -54,6 +56,7 @@ export const SCHEDULED_JOB_DESCRIPTORS = [
   PORTFOLIO_VALUE_ROLLUP_SCHEDULE,
   TRANSFER_LINKING_SCHEDULE,
   BACKFILL_TOKEN_IDENTITY_SCHEDULE,
+  BACKFILL_COUNTERPARTY_SCHEDULE,
   HIDE_CLOSED_HOLDINGS_SCHEDULE,
   DLQ_DEPTH_PROBE_SCHEDULE,
   JOB_HEARTBEAT_PROBE_SCHEDULE,

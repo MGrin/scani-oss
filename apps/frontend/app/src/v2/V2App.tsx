@@ -8,6 +8,8 @@ import { AccountDetailPage } from './pages/AccountDetailPage';
 import { AccountsPage } from './pages/AccountsPage';
 import { AddDataPage } from './pages/AddDataPage';
 import { DashboardPage } from './pages/DashboardPage';
+import { DocumentDetailPage } from './pages/DocumentDetailPage';
+import { DocumentUploadPage } from './pages/DocumentUploadPage';
 import { FileImportPage } from './pages/FileImportPage';
 import { GroupsPage } from './pages/GroupsPage';
 import { HoldingDetailPage } from './pages/HoldingDetailPage';
@@ -18,10 +20,17 @@ import { IntegrationsPage } from './pages/IntegrationsPage';
 import { JobDetailPage } from './pages/JobDetailPage';
 import { JobsPage } from './pages/JobsPage';
 import { ManualEntryPage } from './pages/ManualEntryPage';
+import { PaymentCreatePage } from './pages/PaymentCreatePage';
+import { PaymentDetailPage } from './pages/PaymentDetailPage';
+import { PaymentsOverviewPage } from './pages/PaymentsOverviewPage';
+import { PaymentsPage } from './pages/PaymentsPage';
+import { ReviewPage } from './pages/ReviewPage';
 import { SettingsPage } from './pages/SettingsPage';
 import { TokensPage } from './pages/TokensPage';
 import { VaultDetailPage } from './pages/VaultDetailPage';
 import { VaultsPage } from './pages/VaultsPage';
+import { VendorDetailPage } from './pages/VendorDetailPage';
+import { VendorsPage } from './pages/VendorsPage';
 import { WalletImportPage } from './pages/WalletImportPage';
 
 export function V2App() {
@@ -49,6 +58,16 @@ export function V2App() {
                 <Route path="add-data" element={<AddDataPage />} />
                 <Route path="jobs" element={<JobsPage />} />
                 <Route path="jobs/:jobId" element={<JobDetailPage />} />
+                <Route path="review" element={<ReviewPage />} />
+                <Route path="payments" element={<PaymentsOverviewPage />} />
+                <Route path="payments/recurring" element={<PaymentsPage />} />
+                <Route path="payments/recurring/new" element={<PaymentCreatePage />} />
+                <Route path="payments/recurring/:id" element={<PaymentDetailPage />} />
+                <Route path="payments/recurring/:id/edit" element={<PaymentCreatePage />} />
+                <Route path="vendors" element={<VendorsPage />} />
+                <Route path="vendors/:id" element={<VendorDetailPage />} />
+                <Route path="documents/upload" element={<DocumentUploadPage />} />
+                <Route path="documents/:id" element={<DocumentDetailPage />} />
                 <Route path="tokens" element={<TokensPage />} />
                 <Route path="settings" element={<SettingsPage />} />
               </Route>

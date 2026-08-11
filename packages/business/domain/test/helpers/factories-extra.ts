@@ -7,6 +7,8 @@
 import { randomUUID } from 'node:crypto';
 import type { DatabaseTransaction } from '@scani/db';
 import * as schema from '@scani/db/schema';
+import { eq } from 'drizzle-orm';
+import { makeInstitution, makeVendor } from './factories';
 
 async function getOrCreateCryptoTokenType(
   tx: DatabaseTransaction
@@ -104,5 +106,104 @@ export async function makeHolding(
     })
     .returning();
   if (!row) throw new Error('holdings insert failed');
+  return row;
+}
+
+export async function makeHoldingTransaction(
+  tx: DatabaseTransaction,
+  overrides: Partial<typeof schema.holdingTransactions.$inferInsert> & {
+    userId: string;
+    holdingId?: string;
+    tokenId?: string;
+    accountId?: string;
+  }
+): Promise<typeof schema.holdingTransactions.$inferSelect> {
+  let holdingId = overrides.holdingId;
+  let tokenId = overrides.tokenId;
+
+  if (!holdingId) {
+    tokenId = tokenId ?? (await makeToken(tx)).id;
+    const accountId =
+      overrides.accountId ??
+      (
+        await makeAccount(tx, {
+          userId: overrides.userId,
+          institutionId: (await makeInstitution(tx)).id,
+        })
+      ).id;
+    holdingId = (await makeHolding(tx, { userId: overrides.userId, accountId, tokenId })).id;
+  } else if (!tokenId) {
+    const [holding] = await tx
+      .select()
+      .from(schema.holdings)
+      .where(eq(schema.holdings.id, holdingId))
+      .limit(1);
+    if (!holding) throw new Error(`makeHoldingTransaction: holding ${holdingId} not found`);
+    tokenId = holding.tokenId;
+  }
+
+  const [row] = await tx
+    .insert(schema.holdingTransactions)
+    .values({
+      kind: overrides.kind ?? 'withdraw',
+      quantity: overrides.quantity ?? '-1',
+      occurredAt: overrides.occurredAt ?? new Date(),
+      source: overrides.source ?? 'test-fixture',
+      externalId: overrides.externalId ?? randomUUID(),
+      ...overrides,
+      userId: overrides.userId,
+      holdingId,
+      tokenId,
+    })
+    .returning();
+  if (!row) throw new Error('holding_transactions insert failed');
+  return row;
+}
+
+export async function makePayment(
+  tx: DatabaseTransaction,
+  overrides: Partial<typeof schema.payments.$inferInsert> & {
+    userId: string;
+    vendorId?: string;
+    currencyTokenId?: string;
+  }
+): Promise<typeof schema.payments.$inferSelect> {
+  const vendorId = overrides.vendorId ?? (await makeVendor(tx, { userId: overrides.userId })).id;
+  const currencyTokenId = overrides.currencyTokenId ?? (await makeToken(tx)).id;
+  const [row] = await tx
+    .insert(schema.payments)
+    .values({
+      direction: overrides.direction ?? 'outflow',
+      kind: overrides.kind ?? 'fixed',
+      expectedAmount: overrides.expectedAmount ?? '12.99',
+      intervalUnit: overrides.intervalUnit ?? 'month',
+      intervalCount: overrides.intervalCount ?? 1,
+      anchorDate: overrides.anchorDate ?? '2026-01-01',
+      ...overrides,
+      userId: overrides.userId,
+      vendorId,
+      currencyTokenId,
+    })
+    .returning();
+  if (!row) throw new Error('payments insert failed');
+  return row;
+}
+
+export async function makePaymentOccurrence(
+  tx: DatabaseTransaction,
+  overrides: Partial<typeof schema.paymentOccurrences.$inferInsert> & {
+    paymentId: string;
+    dueDate: string;
+  }
+): Promise<typeof schema.paymentOccurrences.$inferSelect> {
+  const [row] = await tx
+    .insert(schema.paymentOccurrences)
+    .values({
+      status: overrides.status ?? 'scheduled',
+      expectedAmount: overrides.expectedAmount ?? null,
+      ...overrides,
+    })
+    .returning();
+  if (!row) throw new Error('payment_occurrences insert failed');
   return row;
 }

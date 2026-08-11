@@ -30,6 +30,12 @@ export const JOB_NAMES = {
   reconcileOrphanedUserJobs: 'reconcile-orphaned-user-jobs',
   /** User-initiated: parse N screenshots via AI providers. */
   screenshotParse: 'screenshot-parse',
+  /**
+   * User-initiated: parse an uploaded/forwarded invoice document. Content-
+   * hash deduped against `documents` before any AI spend — see
+   * `DocumentIngestionService`.
+   */
+  documentParse: 'document-parse',
   /** User-initiated: import accounts and holdings from an exchange. */
   exchangeImport: 'exchange-import',
   /** User-initiated: import a wallet address (multi-chain detection + balance sync). */

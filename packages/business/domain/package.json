@@ -21,6 +21,7 @@
     "type-check": "tsgo --noEmit"
   },
   "dependencies": {
+    "@firecrawl/pdf-inspector": "^1.13.0",
     "@scani/cloud-client": "workspace:*",
     "@scani/db": "workspace:*",
     "@scani/file-import": "workspace:*",

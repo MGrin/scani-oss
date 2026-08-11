@@ -9,6 +9,20 @@ export { AIRouter } from './ai/AIRouter';
 export { CsvColumnDetectionService } from './ai/CsvColumnDetectionService';
 export { ScreenshotParsingService } from './ai/ScreenshotParsingService';
 export { BaseService } from './BaseService';
+// documents/
+export {
+  type DocumentIngestionResult,
+  DocumentIngestionService,
+  type IngestDocumentInput,
+} from './documents/DocumentIngestionService';
+export {
+  type ExtractedInvoice,
+  type ExtractedLineItem,
+  type ExtractorKind,
+  type InvoiceExtractionResult,
+  InvoiceExtractionService,
+  type InvoiceExtractionUsage,
+} from './documents/InvoiceExtractionService';
 // holdings/
 export {
   type EnrichedParsedHolding,
@@ -42,6 +56,29 @@ export {
   OpeningBalanceReconciliationService,
   type ReconciliationResult,
 } from './holdings/OpeningBalanceReconciliationService';
+// payments/
+export {
+  type MatchCandidate,
+  type MatchOccurrenceOptions,
+  type MatchResult,
+  matchOccurrence,
+  type OccurrenceMatchStatus,
+  type OccurrenceToMatch,
+  type PaymentMatchDirection,
+} from './payments/matchOccurrences';
+export {
+  type CreatePaymentInput,
+  PaymentService,
+  type SettleOccurrenceInput,
+  type UpdatePaymentInput,
+} from './payments/PaymentService';
+export {
+  generateOccurrences,
+  type PaymentOccurrenceCandidate,
+  type RecurrenceIntervalUnit,
+  type RecurrenceSchedule,
+  type RecurrenceStatus,
+} from './payments/recurrence';
 // portfolio/
 export { AssetAllocationService } from './portfolio/AssetAllocationService';
 export { DashboardService } from './portfolio/DashboardService';
@@ -83,6 +120,8 @@ export { PriceWarmupService, type WarmTokenPricesInput } from './pricing/PriceWa
 export { PricingFailureCacher } from './pricing/PricingFailureCacher';
 export { PricingProviderRouter } from './pricing/PricingProviderRouter';
 export { PricingService } from './pricing/PricingService';
+// review/
+export { ReviewFeedService } from './ReviewFeedService';
 // tokens/
 export { ScamTokenDetectionService } from './tokens/ScamTokenDetectionService';
 export { TokenIdentityService } from './tokens/TokenIdentityService';

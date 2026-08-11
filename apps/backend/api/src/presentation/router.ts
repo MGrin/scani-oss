@@ -5,6 +5,7 @@ import { accountsRouter } from './routers/accounts';
 import { batchOperationsRouter } from './routers/batch-operations';
 import { clientErrorsRouter } from './routers/client-errors';
 import { dashboardRouter } from './routers/dashboard';
+import { documentsRouter } from './routers/documents';
 import { fileImportRouter } from './routers/file-import';
 import { groupsRouter } from './routers/groups';
 import { holdingsRouter } from './routers/holdings';
@@ -12,7 +13,9 @@ import { institutionTypesRouter } from './routers/institution-types';
 import { institutionsRouter } from './routers/institutions';
 import { integrationsRouter } from './routers/integrations';
 import { jobsRouter } from './routers/jobs';
+import { paymentsRouter } from './routers/payments';
 import { portfolioRouter } from './routers/portfolio';
+import { reviewRouter } from './routers/review';
 import { screenshotsRouter } from './routers/screenshots';
 import { sessionsRouter } from './routers/sessions';
 import { storageRouter } from './routers/storage';
@@ -20,6 +23,7 @@ import { createTokensRouter } from './routers/tokens';
 import { transactionsRouter } from './routers/transactions';
 import { usersRouter } from './routers/users';
 import { vaultsRouter } from './routers/vaults';
+import { vendorsRouter } from './routers/vendors';
 import { walletRouter } from './routers/wallet';
 import { publicProcedure, router } from './trpc';
 
@@ -69,11 +73,24 @@ export const appRouter = router({
   // File import (protected) - Bank statement parsing (CSV, OFX)
   fileImport: fileImportRouter,
 
+  // Payments (protected) - Recurring bills/income, occurrences, manual settlement
+  payments: paymentsRouter,
+
+  // Vendors (protected) - Who a user pays or is paid by; alias merge
+  vendors: vendorsRouter,
+
+  // Documents (protected) - Invoice/receipt upload → AI extraction review queue
+  documents: documentsRouter,
+
   // Client error reporting (public) - V2 ErrorBoundary posts here
   clientErrors: clientErrorsRouter,
 
   // Background job status + uploads
   jobs: jobsRouter,
+
+  // Review feed (read-model of pending items)
+  review: reviewRouter,
+
   storage: storageRouter,
 
   // Active session management (protected) - list/revoke for the

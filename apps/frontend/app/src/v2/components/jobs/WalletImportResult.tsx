@@ -200,6 +200,7 @@ function HoldingsReviewTable({
         await Promise.all([
           utils.jobs.getMine.invalidate({ jobId }),
           utils.jobs.listMine.invalidate(),
+          utils.review.listPending.invalidate(),
         ]);
       } catch {
         // UX guard only — stamp failures shouldn't block navigation.
@@ -420,6 +421,7 @@ function WalletImportReviewCard({
       await Promise.all([
         utils.jobs.getMine.invalidate({ jobId }),
         utils.jobs.listMine.invalidate(),
+        utils.review.listPending.invalidate(),
         invalidatePortfolioQueries(utils, { refetchType: 'all' }),
       ]);
       navigate(V2_ROUTES.holdings);

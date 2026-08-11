@@ -2,7 +2,8 @@ import type { DatabaseTransaction } from '@scani/db';
 import { getDb as getDbConnection } from '@scani/db/connection';
 import type { UserJob, UserJobState } from '@scani/db/schema';
 import * as schema from '@scani/db/schema';
-import { and, desc, eq, inArray, sql } from 'drizzle-orm';
+import { REVIEWABLE_JOB_NAMES } from '@scani/shared';
+import { and, desc, eq, inArray, isNull, sql } from 'drizzle-orm';
 import { Service } from 'typedi';
 
 /**
@@ -213,6 +214,32 @@ export class UserJobRepository {
       .where(and(eq(schema.userJobs.jobId, jobId), eq(schema.userJobs.userId, userId)))
       .limit(1);
     return (row as UserJob | undefined) ?? null;
+  }
+
+  /**
+   * Completed jobs of a reviewable kind that the user has not yet acted
+   * on. Ordering matches the rest of the job surfaces: newest first.
+   */
+  async findPendingReview(
+    userId: string,
+    limit = 50,
+    transaction?: DatabaseTransaction
+  ): Promise<UserJob[]> {
+    const db = this.getDb(transaction);
+    const rows = await db
+      .select()
+      .from(schema.userJobs)
+      .where(
+        and(
+          eq(schema.userJobs.userId, userId),
+          eq(schema.userJobs.state, 'completed'),
+          isNull(schema.userJobs.actionTakenAt),
+          inArray(schema.userJobs.jobName, [...REVIEWABLE_JOB_NAMES])
+        )
+      )
+      .orderBy(desc(schema.userJobs.createdAt))
+      .limit(limit);
+    return rows as UserJob[];
   }
 
   /**

@@ -6,6 +6,7 @@
 export * from './boot';
 export * from './capabilities';
 export * from './config';
+export * from './counterparty';
 export * from './credential-pool';
 export * from './errors';
 export * from './integration-manifest';

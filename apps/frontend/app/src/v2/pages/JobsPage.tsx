@@ -1,4 +1,4 @@
-import { formatRelative } from '@scani/shared';
+import { formatRelative, isReviewableJobName } from '@scani/shared';
 import { Badge } from '@scani/ui/ui/badge';
 import { Button } from '@scani/ui/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@scani/ui/ui/card';
@@ -15,15 +15,11 @@ import { V2_ROUTES } from '../lib/routes';
 
 const ACTIVE = new Set(['queued', 'active', 'progress']);
 
-// Keep this aligned with ACTION_REQUIRED_JOB_NAMES in useUserJobs —
-// these are the job types whose result requires a follow-up user
+// These are the job types whose result requires a follow-up user
 // confirmation before the holdings count toward the portfolio.
-const ACTION_REQUIRED_JOB_NAMES = new Set(['screenshot-parse', 'file-import', 'wallet-import']);
-
+// Defined in @scani/shared REVIEWABLE_JOB_NAMES.
 function needsAction(job: { state: string; jobName: string; actionTakenAt: unknown }): boolean {
-  return (
-    job.state === 'completed' && ACTION_REQUIRED_JOB_NAMES.has(job.jobName) && !job.actionTakenAt
-  );
+  return job.state === 'completed' && isReviewableJobName(job.jobName) && !job.actionTakenAt;
 }
 
 export function JobsPage() {
