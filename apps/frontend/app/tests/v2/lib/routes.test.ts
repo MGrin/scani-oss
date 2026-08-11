@@ -25,6 +25,14 @@ describe('resolveActiveNavPath', () => {
     expect(resolveActiveNavPath(V2_ROUTES.vendorDetail('abc'))).toBe(V2_ROUTES.vendors);
   });
 
+  // A document's own page and the upload form both live under the Files
+  // list, which is what keeps Files lit while you look at one file.
+  test('a document and the upload form inherit the Files list', () => {
+    expect(resolveActiveNavPath(V2_ROUTES.files)).toBe(V2_ROUTES.files);
+    expect(resolveActiveNavPath(V2_ROUTES.documentDetail('abc'))).toBe(V2_ROUTES.files);
+    expect(resolveActiveNavPath(V2_ROUTES.documentUpload)).toBe(V2_ROUTES.files);
+  });
+
   // The invoice-prefilled form is the same page with a query string, so it
   // has to keep lighting Recurring Payments.
   test('the invoice-prefilled create page is still the create page', () => {
@@ -39,7 +47,7 @@ describe('resolveActiveNavPath', () => {
   });
 
   test('pages outside the nav leave every entry unlit', () => {
-    expect(resolveActiveNavPath(V2_ROUTES.documentUpload)).toBeNull();
+    expect(resolveActiveNavPath(V2_ROUTES.settings)).toBeNull();
     expect(resolveActiveNavPath(V2_ROUTES.integrations)).toBeNull();
   });
 });

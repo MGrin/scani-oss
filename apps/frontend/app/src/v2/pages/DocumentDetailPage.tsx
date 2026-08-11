@@ -1,4 +1,4 @@
-import { formatCurrency, formatDate, formatDateTime } from '@scani/shared';
+import { formatBytes, formatCurrency, formatDate, formatDateTime } from '@scani/shared';
 import { ConfirmDialog } from '@scani/ui/components/ConfirmDialog';
 import { Badge } from '@scani/ui/ui/badge';
 import { Button } from '@scani/ui/ui/button';
@@ -6,10 +6,20 @@ import { Card, CardContent, CardHeader, CardTitle } from '@scani/ui/ui/card';
 import { PageLoader } from '@scani/ui/ui/loading';
 import { Separator } from '@scani/ui/ui/separator';
 import { showError, showSuccess } from '@scani/ui/ui/use-toast';
-import { ArrowLeft, ArrowRight, FileText, RefreshCw, Trash2, X } from 'lucide-react';
+import {
+  ArrowLeft,
+  ArrowRight,
+  Download,
+  FileText,
+  Loader2,
+  RefreshCw,
+  Trash2,
+  X,
+} from 'lucide-react';
 import { useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { type RouterOutputs, trpc } from '@/lib/trpc';
+import { useDocumentDownload } from '../hooks/useDocuments';
 import { V2_ROUTES } from '../lib/routes';
 
 const REVIEW_STATE_VARIANT: Record<string, 'default' | 'secondary' | 'outline'> = {
@@ -32,6 +42,7 @@ export function DocumentDetailPage() {
   const utils = trpc.useUtils();
   const [confirmReparse, setConfirmReparse] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const { download, pendingId } = useDocumentDownload();
 
   const documentQuery = trpc.documents.get.useQuery({ documentId: id }, { enabled: Boolean(id) });
 
@@ -61,8 +72,9 @@ export function DocumentDetailPage() {
       setConfirmDelete(false);
       showSuccess('Document deleted — you can upload that file again');
       // Navigate first: this page's own `documents.get` is the one query
-      // the invalidation would refetch into a 404.
-      navigate(V2_ROUTES.review);
+      // the invalidation would refetch into a 404. The router-wide
+      // invalidate is what drops the row from the Files list behind us.
+      navigate(V2_ROUTES.files);
       void utils.documents.invalidate();
       void utils.review.listPending.invalidate();
     },
@@ -86,13 +98,27 @@ export function DocumentDetailPage() {
     <div className="max-w-2xl space-y-6">
       <BackLink />
 
-      <div>
-        <div className="flex items-center gap-2 flex-wrap">
+      <div className="flex items-start justify-between gap-3">
+        <div className="flex items-center gap-2 flex-wrap min-w-0">
           <h2 className="text-2xl font-bold tracking-tight truncate">
             {document.originalFilename}
           </h2>
           {document.classification && <Badge variant="outline">{document.classification}</Badge>}
         </div>
+        <Button
+          size="sm"
+          variant="outline"
+          className="shrink-0"
+          disabled={pendingId === document.id}
+          onClick={() => void download(document.id)}
+        >
+          {pendingId === document.id ? (
+            <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" />
+          ) : (
+            <Download className="h-3.5 w-3.5 mr-1" />
+          )}
+          Download
+        </Button>
       </div>
 
       <Card>
@@ -102,6 +128,8 @@ export function DocumentDetailPage() {
             <dd className="text-right">{formatDateTime(document.createdAt)}</dd>
             <dt className="text-muted-foreground">Type</dt>
             <dd className="text-right">{document.mimeType}</dd>
+            <dt className="text-muted-foreground">Size</dt>
+            <dd className="text-right">{formatBytes(document.byteSize)}</dd>
             <dt className="text-muted-foreground">Source</dt>
             <dd className="text-right">{document.sourceKind}</dd>
           </dl>
@@ -257,9 +285,9 @@ function ExtractionCard({
 function BackLink() {
   return (
     <Button variant="ghost" size="sm" asChild className="h-7 gap-1 -ml-2">
-      <Link to={V2_ROUTES.review}>
+      <Link to={V2_ROUTES.files}>
         <ArrowLeft className="h-3.5 w-3.5" />
-        Review
+        Files
       </Link>
     </Button>
   );
