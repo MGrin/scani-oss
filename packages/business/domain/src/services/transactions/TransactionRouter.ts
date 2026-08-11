@@ -311,6 +311,8 @@ export class TransactionRouter {
         source: request.source,
         sourceMetadata: {},
         rawPayload: (event.rawPayload as Record<string, unknown> | null) ?? null,
+        counterparty: event.counterparty ?? null,
+        description: event.description ?? null,
       });
     }
 

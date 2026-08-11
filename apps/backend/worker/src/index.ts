@@ -89,8 +89,10 @@ import { Container } from 'typedi';
 // the class registers with the typedi Container before WorkerClient
 // pulls them out and registers them.
 import { ApyPayoutsProcessor } from './processors/apy-payouts';
+import { BackfillCounterpartyProcessor } from './processors/backfill-counterparty';
 import { BackfillTokenIdentityProcessor } from './processors/backfill-token-identity';
 import { DlqDepthProbeProcessor } from './processors/dlq-depth-probe';
+import { DocumentParseProcessor } from './processors/document-parse';
 import { ExchangeBalancesProcessor } from './processors/exchange-balances';
 import { ExchangeImportProcessor } from './processors/exchange-import';
 import { ExchangeTransactionsProcessor } from './processors/exchange-transactions';
@@ -136,6 +138,7 @@ function resolveProcessors() {
     Container.get(PortfolioValueRollupProcessor),
     Container.get(TransferLinkingProcessor),
     Container.get(BackfillTokenIdentityProcessor),
+    Container.get(BackfillCounterpartyProcessor),
     Container.get(HideClosedHoldingsProcessor),
     Container.get(ReconcilePendingCredentialsProcessor),
     Container.get(ReconcileOrphanedUserJobsProcessor),
@@ -144,6 +147,7 @@ function resolveProcessors() {
     Container.get(StaleSyncProbeProcessor),
     // User-initiated (payload via UserJobDescriptor schema).
     Container.get(ScreenshotParseProcessor),
+    Container.get(DocumentParseProcessor),
     Container.get(ExchangeImportProcessor),
     Container.get(WalletImportProcessor),
     Container.get(FileImportProcessor),

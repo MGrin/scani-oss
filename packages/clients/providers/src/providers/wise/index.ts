@@ -35,6 +35,7 @@ import type {
   CredentialValidator,
   TransactionsProvider,
 } from '../../core/capabilities';
+import { extractCounterparty } from '../../core/counterparty';
 import type {
   DecryptedCredentials,
   HoldingSnapshot,
@@ -364,11 +365,14 @@ export function mapTransaction(
   });
   if (!primary) return [];
 
-  const out: TransactionEvent[] = [primary];
+  const out: TransactionEvent[] = [
+    { ...primary, ...extractCounterparty(WISE_INSTITUTION_CODE, tx) },
+  ];
 
   const fee = tx.totalFees;
   if (fee && new Decimal(fee.value).gt(0)) {
     const feeAbs = new Decimal(fee.value).abs();
+    const feeRawPayload = { referenceNumber: tx.referenceNumber, totalFees: fee };
     out.push({
       externalId: `${tx.referenceNumber}-fee`,
       occurredAt,
@@ -377,7 +381,8 @@ export function mapTransaction(
         tokenIdentity: tokenIdentity(fee.currency),
         quantity: feeAbs.neg().toString(),
       },
-      rawPayload: { referenceNumber: tx.referenceNumber, totalFees: fee },
+      rawPayload: feeRawPayload,
+      ...extractCounterparty(WISE_INSTITUTION_CODE, feeRawPayload),
     });
   }
 

@@ -3,7 +3,10 @@ import { ThemeToggle } from '@scani/ui/components/ThemeToggle';
 import { Sheet, SheetContent } from '@scani/ui/ui/sheet';
 import {
   Building2,
+  CalendarClock,
+  ClipboardCheck,
   Coins,
+  FileText,
   FileUp,
   Keyboard,
   LayoutDashboard,
@@ -12,21 +15,23 @@ import {
   type LucideIcon,
   PieChart,
   Plug,
+  Repeat,
   Settings,
+  Store,
   Tags,
   Vault,
   Wallet,
 } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { NavLink, Outlet } from 'react-router-dom';
+import { NavLink, Outlet, useLocation } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { trpc } from '@/lib/trpc';
 import { cn } from '@/lib/utils';
 import { CommandPalette } from '../components/command-palette/CommandPalette';
+import { useReviewFeed } from '../hooks/useReviewFeed';
 import { useSidebarState } from '../hooks/useSidebarState';
-import { useUserJobs } from '../hooks/useUserJobs';
-import { NAV_SECTIONS, V2_ROUTES } from '../lib/routes';
+import { NAV_SECTIONS, resolveActiveNavPath, V2_ROUTES } from '../lib/routes';
 import { MobileNav } from './MobileNav';
 import { Sidebar } from './Sidebar';
 import { TopBar } from './TopBar';
@@ -40,9 +45,14 @@ const ICON_MAP: Record<string, LucideIcon> = {
   Vault,
   Plug,
   FileUp,
+  FileText,
   Keyboard,
   Coins,
   ListChecks,
+  ClipboardCheck,
+  CalendarClock,
+  Repeat,
+  Store,
 };
 
 export function AppShell() {
@@ -50,17 +60,19 @@ export function AppShell() {
   const [commandOpen, setCommandOpen] = useState(false);
   const utils = trpc.useUtils();
   const { signOut } = useAuth();
-  const { actionRequiredCount } = useUserJobs();
-  const jobsNavRef = useRef<HTMLAnchorElement>(null);
+  const { count: actionRequiredCount } = useReviewFeed();
+  const reviewNavRef = useRef<HTMLAnchorElement>(null);
+  const { pathname } = useLocation();
+  const activeNavPath = resolveActiveNavPath(pathname);
   const { t } = useTranslation();
 
   // When the mobile sidebar opens and there are jobs needing attention,
-  // scroll the Jobs nav item into view — on short viewports it can sit
+  // scroll the Review nav item into view — on short viewports it can sit
   // below the fold.
   useEffect(() => {
     if (!mobileOpen || actionRequiredCount === 0) return;
     const id = window.setTimeout(() => {
-      jobsNavRef.current?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+      reviewNavRef.current?.scrollIntoView({ block: 'center', behavior: 'smooth' });
     }, 150);
     return () => window.clearTimeout(id);
   }, [mobileOpen, actionRequiredCount]);
@@ -102,25 +114,23 @@ export function AppShell() {
                     {section.items.map((item) => {
                       const Icon = ICON_MAP[item.icon] || PieChart;
                       const badgeCount =
-                        item.path === V2_ROUTES.jobs && actionRequiredCount > 0
+                        item.path === V2_ROUTES.review && actionRequiredCount > 0
                           ? actionRequiredCount
                           : undefined;
-                      const isJobs = item.path === V2_ROUTES.jobs;
+                      const isReview = item.path === V2_ROUTES.review;
                       return (
                         <NavLink
                           key={item.path}
                           to={item.path}
-                          ref={isJobs ? jobsNavRef : undefined}
-                          end={item.path === V2_ROUTES.dashboard}
+                          ref={isReview ? reviewNavRef : undefined}
+                          end
                           onClick={() => setMobileOpen(false)}
-                          className={({ isActive }) =>
-                            cn(
-                              'flex items-center gap-2 rounded-md px-2 py-2 text-sm transition-colors',
-                              isActive
-                                ? 'bg-accent text-accent-foreground font-medium'
-                                : 'text-muted-foreground hover:bg-accent/50 hover:text-foreground'
-                            )
-                          }
+                          className={cn(
+                            'flex items-center gap-2 rounded-md px-2 py-2 text-sm transition-colors',
+                            item.path === activeNavPath
+                              ? 'bg-accent text-accent-foreground font-medium'
+                              : 'text-muted-foreground hover:bg-accent/50 hover:text-foreground'
+                          )}
                         >
                           <Icon className="h-4 w-4 shrink-0" />
                           <span>{t(item.labelKey)}</span>

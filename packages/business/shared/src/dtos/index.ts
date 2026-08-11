@@ -6,6 +6,7 @@ export * from './group';
 export * from './holding';
 export * from './holdingApy';
 export * from './institution';
+export * from './review';
 export * from './token';
 export * from './user';
 export * from './vault';

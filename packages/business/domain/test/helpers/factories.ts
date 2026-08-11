@@ -11,6 +11,7 @@
 import { randomUUID } from 'node:crypto';
 import type { DatabaseTransaction } from '@scani/db';
 import * as schema from '@scani/db/schema';
+import { normalizeVendorName } from '../../src/lib/normalize-vendor-name';
 
 export async function makeUser(
   tx: DatabaseTransaction,
@@ -91,5 +92,58 @@ export async function makeCredential(
     })
     .returning();
   if (!row) throw new Error('makeCredential failed to insert');
+  return row;
+}
+
+export async function makeDocument(
+  tx: DatabaseTransaction,
+  overrides: Partial<typeof schema.documents.$inferInsert> & { userId: string }
+): Promise<typeof schema.documents.$inferSelect> {
+  const [row] = await tx
+    .insert(schema.documents)
+    .values({
+      r2Key: overrides.r2Key ?? `documents/${randomUUID()}.pdf`,
+      contentHash: overrides.contentHash ?? randomUUID(),
+      mimeType: overrides.mimeType ?? 'application/pdf',
+      byteSize: overrides.byteSize ?? 1024,
+      originalFilename: overrides.originalFilename ?? 'invoice.pdf',
+      sourceKind: overrides.sourceKind ?? 'upload',
+      ...overrides,
+    })
+    .returning();
+  if (!row) throw new Error('makeDocument failed to insert');
+  return row;
+}
+
+export async function makeDocumentExtraction(
+  tx: DatabaseTransaction,
+  overrides: Partial<typeof schema.documentExtractions.$inferInsert> & { documentId: string }
+): Promise<typeof schema.documentExtractions.$inferSelect> {
+  const [row] = await tx
+    .insert(schema.documentExtractions)
+    .values({
+      ordinal: overrides.ordinal ?? 0,
+      vendorNameRaw: overrides.vendorNameRaw ?? 'Test Vendor Inc',
+      ...overrides,
+    })
+    .returning();
+  if (!row) throw new Error('makeDocumentExtraction failed to insert');
+  return row;
+}
+
+export async function makeVendor(
+  tx: DatabaseTransaction,
+  overrides: Partial<typeof schema.vendors.$inferInsert> & { userId: string }
+): Promise<typeof schema.vendors.$inferSelect> {
+  const displayName = overrides.displayName ?? `Test Vendor ${randomUUID().slice(0, 6)}`;
+  const [row] = await tx
+    .insert(schema.vendors)
+    .values({
+      displayName,
+      normalizedName: overrides.normalizedName ?? normalizeVendorName(displayName),
+      ...overrides,
+    })
+    .returning();
+  if (!row) throw new Error('makeVendor failed to insert');
   return row;
 }

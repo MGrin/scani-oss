@@ -178,6 +178,10 @@ export interface TransactionEvent {
   counter?: { tokenIdentity: Partial<NewToken>; quantity: string; tokenType?: string };
   /** Fee leg, in its own native token (often distinct from primary). */
   fee?: { tokenIdentity: Partial<NewToken>; quantity: string; tokenType?: string };
+  /** Normalised payee/payer, when the source knows one. */
+  counterparty?: string;
+  /** Free-text statement line, when the source provides one. */
+  description?: string;
   /** Per-unit price at the time the tx happened, denominated in its
       native quote currency (a Kraken BTC/EUR trade has
       `quoteIdentity` = EUR). Stored as-is so cost basis stays

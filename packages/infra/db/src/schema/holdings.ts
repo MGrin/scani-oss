@@ -144,6 +144,11 @@ export const holdingTransactions = pgTable(
     sourceMetadata: jsonb('source_metadata').notNull().default('{}'),
     // Original payload for forensics / re-parse after normalizer improvements.
     rawPayload: jsonb('raw_payload'),
+    // Who the money moved to/from, normalised by the provider adapter.
+    // Asset-centric sources (chain swaps, exchange trades) leave it null;
+    // that is expected, not a gap to backfill.
+    counterparty: text('counterparty'),
+    description: text('description'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },

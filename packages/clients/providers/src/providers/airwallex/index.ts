@@ -33,6 +33,7 @@ import type {
   CredentialValidator,
   TransactionsProvider,
 } from '../../core/capabilities';
+import { extractCounterparty } from '../../core/counterparty';
 import type {
   DecryptedCredentials,
   HoldingSnapshot,
@@ -319,6 +320,7 @@ export function mapTransaction(tx: AirwallexFinancialTransaction): readonly Tran
       kind: classifyKind(sourceType, amount),
       primary: { tokenIdentity: tokenIdentity(currency), quantity: amount.toString() },
       rawPayload: tx,
+      ...extractCounterparty(AIRWALLEX_INSTITUTION_CODE, tx),
     },
   ];
 }
