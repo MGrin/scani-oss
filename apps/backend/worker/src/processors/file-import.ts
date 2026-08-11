@@ -7,7 +7,11 @@ import {
   TokenRepository,
   UserJobRepository,
 } from '@scani/domain/repositories';
-import { CsvColumnDetectionService, HoldingService } from '@scani/domain/services';
+import {
+  CsvColumnDetectionService,
+  HoldingService,
+  UploadedFileService,
+} from '@scani/domain/services';
 import { parseStatement } from '@scani/file-import';
 import { StatementTransactionIngester } from '@scani/ingesters';
 import {
@@ -74,14 +78,24 @@ export class FileImportProcessor extends UserJobProcessor<FileImportJob, FileImp
 
     await ctx.reportStatus('Reading uploaded file…');
     const buf = await storage.read(data.r2Key);
+    // Recorded and retained before parsing: a statement that failed to
+    // import is precisely the file the user wants back, and recording
+    // ahead of the currency gate means the `needsCurrency` early return
+    // below doesn't lose it.
+    //
+    // The currency-picker retry consumes this same key a second time and
+    // hits `UploadedFileService`'s content-hash lookup, so it reuses the
+    // row rather than listing the upload twice.
+    await this.record(data, buf, ctx.job.id);
     // R2 keys are uploaded under `temp/file-import/{userId}/` which the
-    // bucket lifecycle rule (24h) cleans up. We never delete the file
+    // bucket lifecycle rule (24h) cleans up. We never delete the temp file
     // ourselves — that would race the currency-picker retry path, where
     // the same key is consumed twice (once for the picker pass that
     // returns `needsCurrency`, then again on the Apply mutation). If
     // the user clicks Apply twice (e.g. via browser back), each call
     // is idempotent at the DB layer (txns/observations dedup) and the
-    // file stays alive until R2 sweeps it.
+    // file stays alive until R2 sweeps it — by which point the retained
+    // copy under `documents/` is the one that survives.
     await ctx.reportStatus(`Parsing ${data.fileType.toUpperCase()} statement…`);
     const parsed = await parseStatement(buf.toString('utf-8'), `import.${data.fileType}`, {
       aiColumnDetector: (headers, sampleRows) =>
@@ -306,4 +320,39 @@ export class FileImportProcessor extends UserJobProcessor<FileImportJob, FileImp
       warnings: ingestResult.warnings,
     };
   }
+
+  /**
+   * Never throws — the user's goal is the import, and a failed bookkeeping
+   * write must not fail a statement that parsed cleanly.
+   */
+  private async record(
+    data: FileImportJob,
+    bytes: Buffer,
+    jobId: string | undefined
+  ): Promise<void> {
+    try {
+      await Container.get(UploadedFileService).record({
+        userId: data.userId,
+        purpose: 'file-import',
+        bytes: new Uint8Array(bytes),
+        mimeType: STATEMENT_MIME_TYPES[data.fileType] ?? 'application/octet-stream',
+        r2Key: data.r2Key,
+        // `fileImport.parseAndEnrich` carries the r2Key and a fileType, not
+        // the name the user picked, so the presigned key's own filename is
+        // the honest answer.
+        originalFilename: data.r2Key.split('/').pop() || data.r2Key,
+      });
+    } catch (err) {
+      logger.warn(
+        { jobId, r2Key: data.r2Key, error: err instanceof Error ? err.message : err },
+        'Statement upload could not be recorded (non-fatal)'
+      );
+    }
+  }
 }
+
+const STATEMENT_MIME_TYPES: Record<string, string> = {
+  csv: 'text/csv',
+  ofx: 'application/x-ofx',
+  qif: 'application/x-qif',
+};
