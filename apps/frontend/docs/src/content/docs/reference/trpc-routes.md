@@ -33,6 +33,10 @@ Located in `apps/backend/api/src/presentation/routers/`.
 | `screenshots` | Upload screenshot to S3, enqueue `screenshot-parse` job. |
 | `file-import` | Upload CSV / file, enqueue `file-import` job. |
 | `storage` | Presigned URL minting for direct S3 reads. |
+| `payments` | Recurring bills and income: CRUD, pause / end, the occurrence feed (`upcoming` returns overdue rows too), and manual settlement. |
+| `vendors` | Who a payment is with. List, create, rename, and merge two vendors into one. |
+| `documents` | Upload an invoice, read its parse status, confirm or reject the extraction. |
+| `review` | Read-model over everything awaiting the user — pending job results plus pending document extractions. |
 | `jobs` | HMAC-gated operator endpoints: retry, remove, DLQ replay. |
 | `batch-operations` | Batched mutations the SPA uses for bulk edits. |
 | `client-errors` | Endpoint the SPA posts unhandled-error reports to. |
