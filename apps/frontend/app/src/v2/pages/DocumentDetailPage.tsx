@@ -1,0 +1,195 @@
+import { formatCurrency, formatDate, formatDateTime } from '@scani/shared';
+import { Badge } from '@scani/ui/ui/badge';
+import { Button } from '@scani/ui/ui/button';
+import { Card, CardContent, CardHeader, CardTitle } from '@scani/ui/ui/card';
+import { PageLoader } from '@scani/ui/ui/loading';
+import { Separator } from '@scani/ui/ui/separator';
+import { showError, showSuccess } from '@scani/ui/ui/use-toast';
+import { ArrowLeft, Check, FileText, X } from 'lucide-react';
+import { Link, useParams } from 'react-router-dom';
+import { type RouterOutputs, trpc } from '@/lib/trpc';
+import { V2_ROUTES } from '../lib/routes';
+
+const REVIEW_STATE_VARIANT: Record<string, 'default' | 'secondary' | 'outline'> = {
+  pending: 'outline',
+  accepted: 'default',
+  rejected: 'secondary',
+};
+
+type Extraction = RouterOutputs['documents']['get']['extractions'][number];
+
+/**
+ * Every extracted invoice found inside one uploaded document, with the
+ * accept/reject actions `document_extractions.review_state` needs — the
+ * surface `ReviewFeedService` has linked every extraction row to
+ * (`/documents/:id`) since the review feed shipped.
+ */
+export function DocumentDetailPage() {
+  const { id = '' } = useParams<{ id: string }>();
+  const utils = trpc.useUtils();
+
+  const documentQuery = trpc.documents.get.useQuery({ documentId: id }, { enabled: Boolean(id) });
+
+  const invalidateAfterReview = () => {
+    void utils.documents.get.invalidate({ documentId: id });
+    void utils.documents.listExtractions.invalidate();
+    void utils.review.listPending.invalidate();
+  };
+
+  const acceptMutation = trpc.documents.acceptExtraction.useMutation({
+    onSuccess: () => {
+      showSuccess('Extraction accepted');
+      invalidateAfterReview();
+    },
+    onError: (error) => showError(error, 'Accepting extraction'),
+  });
+
+  const rejectMutation = trpc.documents.rejectExtraction.useMutation({
+    onSuccess: () => {
+      showSuccess('Extraction rejected');
+      invalidateAfterReview();
+    },
+    onError: (error) => showError(error, 'Rejecting extraction'),
+  });
+
+  if (!id) return null;
+  if (documentQuery.isLoading) return <PageLoader />;
+  if (documentQuery.error || !documentQuery.data) {
+    return (
+      <div className="max-w-2xl space-y-6">
+        <BackLink />
+        <p className="text-sm text-destructive">Document not found.</p>
+      </div>
+    );
+  }
+
+  const { document, extractions } = documentQuery.data;
+
+  return (
+    <div className="max-w-2xl space-y-6">
+      <BackLink />
+
+      <div>
+        <div className="flex items-center gap-2 flex-wrap">
+          <h2 className="text-2xl font-bold tracking-tight truncate">
+            {document.originalFilename}
+          </h2>
+          {document.classification && <Badge variant="outline">{document.classification}</Badge>}
+        </div>
+      </div>
+
+      <Card>
+        <CardContent className="p-4 space-y-3">
+          <dl className="grid grid-cols-2 gap-y-1.5 text-xs">
+            <dt className="text-muted-foreground">Uploaded</dt>
+            <dd className="text-right">{formatDateTime(document.createdAt)}</dd>
+            <dt className="text-muted-foreground">Type</dt>
+            <dd className="text-right">{document.mimeType}</dd>
+            <dt className="text-muted-foreground">Source</dt>
+            <dd className="text-right">{document.sourceKind}</dd>
+          </dl>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-sm flex items-center gap-1.5">
+            <FileText className="h-3.5 w-3.5" />
+            Extracted invoices ({extractions.length})
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          {extractions.length === 0 ? (
+            <p className="text-xs text-muted-foreground">
+              No invoices were found in this document.
+            </p>
+          ) : (
+            extractions.map((extraction) => (
+              <ExtractionCard
+                key={extraction.id}
+                extraction={extraction}
+                onAccept={() => acceptMutation.mutate({ extractionId: extraction.id })}
+                onReject={() => rejectMutation.mutate({ extractionId: extraction.id })}
+                isPending={acceptMutation.isPending || rejectMutation.isPending}
+              />
+            ))
+          )}
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+function ExtractionCard({
+  extraction,
+  onAccept,
+  onReject,
+  isPending,
+}: {
+  extraction: Extraction;
+  onAccept: () => void;
+  onReject: () => void;
+  isPending: boolean;
+}) {
+  return (
+    <div className="rounded-md border border-border p-3 space-y-2">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="text-sm font-medium truncate">{extraction.vendorNameRaw}</p>
+          {extraction.invoiceNumber && (
+            <p className="text-xs text-muted-foreground">Invoice #{extraction.invoiceNumber}</p>
+          )}
+        </div>
+        <div className="flex items-center gap-2 shrink-0">
+          <span className="text-sm font-semibold tabular-nums">
+            {extraction.totalAmount
+              ? formatCurrency(extraction.totalAmount, extraction.currencyCode ?? 'USD')
+              : '—'}
+          </span>
+          <Badge variant={REVIEW_STATE_VARIANT[extraction.reviewState] ?? 'outline'}>
+            {extraction.reviewState}
+          </Badge>
+        </div>
+      </div>
+
+      <Separator />
+
+      <dl className="grid grid-cols-2 gap-y-1 text-xs">
+        <dt className="text-muted-foreground">Issue date</dt>
+        <dd className="text-right">{formatDate(extraction.issueDate)}</dd>
+        <dt className="text-muted-foreground">Due date</dt>
+        <dd className="text-right">{formatDate(extraction.dueDate)}</dd>
+        <dt className="text-muted-foreground">Confidence</dt>
+        <dd className="text-right">
+          {extraction.confidence
+            ? `${Math.round(Number(extraction.confidence) * 100)}%`
+            : 'Unknown'}
+        </dd>
+      </dl>
+
+      {extraction.reviewState === 'pending' && (
+        <div className="flex items-center gap-2 pt-1">
+          <Button size="sm" disabled={isPending} onClick={onAccept}>
+            <Check className="h-3.5 w-3.5 mr-1" />
+            Accept
+          </Button>
+          <Button size="sm" variant="outline" disabled={isPending} onClick={onReject}>
+            <X className="h-3.5 w-3.5 mr-1" />
+            Reject
+          </Button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function BackLink() {
+  return (
+    <Button variant="ghost" size="sm" asChild className="h-7 gap-1 -ml-2">
+      <Link to={V2_ROUTES.review}>
+        <ArrowLeft className="h-3.5 w-3.5" />
+        Review
+      </Link>
+    </Button>
+  );
+}

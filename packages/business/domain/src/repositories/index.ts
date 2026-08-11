@@ -6,6 +6,8 @@
 
 export { BaseRepository } from '@scani/db';
 export { AccountRepository } from './AccountRepository';
+export { DocumentExtractionRepository } from './DocumentExtractionRepository';
+export { DocumentRepository } from './DocumentRepository';
 export {
   AccountTypeRepository,
   InstitutionTypeRepository,
@@ -23,6 +25,8 @@ export {
 } from './HoldingTransactionRepository';
 export { InstitutionBlockchainMappingRepository } from './InstitutionBlockchainMappingRepository';
 export { InstitutionRepository } from './InstitutionRepository';
+export { PaymentOccurrenceRepository } from './PaymentOccurrenceRepository';
+export { PaymentRepository } from './PaymentRepository';
 export {
   type IncludedHoldingScopeRow,
   PortfolioValueDailyRepository,
@@ -37,3 +41,4 @@ export { UserJobRepository } from './UserJobRepository';
 export { UserRepository } from './UserRepository';
 export { UserWalletRepository } from './UserWalletRepository';
 export { VaultRepository } from './VaultRepository';
+export { VendorRepository } from './VendorRepository';

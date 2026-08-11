@@ -1,3 +1,4 @@
+export { DOCUMENT_PARSE, type DocumentParseJob, documentParseSchema } from './document-parse';
 export { EXCHANGE_IMPORT, type ExchangeImportJob, exchangeImportSchema } from './exchange-import';
 export { FILE_IMPORT, type FileImportJob, fileImportSchema } from './file-import';
 export {
@@ -34,6 +35,7 @@ export {
 export { USER_DATA_DELETE, type UserDataDeleteJob, userDataDeleteSchema } from './user-data-delete';
 export { WALLET_IMPORT, type WalletImportJob, walletImportSchema } from './wallet-import';
 
+import { DOCUMENT_PARSE } from './document-parse';
 import { EXCHANGE_IMPORT } from './exchange-import';
 import { FILE_IMPORT } from './file-import';
 import { HOLDING_PRICE_UPDATE } from './holding-price-update';
@@ -49,6 +51,7 @@ export const USER_JOB_DESCRIPTORS = [
   WALLET_IMPORT,
   EXCHANGE_IMPORT,
   SCREENSHOT_PARSE,
+  DOCUMENT_PARSE,
   FILE_IMPORT,
   MANUAL_HOLDINGS_CREATE,
   PORTFOLIO_HISTORY_BACKFILL,

@@ -9,6 +9,7 @@ import {
   Coins,
   DollarSign,
   FileSpreadsheet,
+  FileText,
   History,
   Image as ImageIcon,
   Keyboard,
@@ -29,6 +30,7 @@ const BY_NAME: Record<string, JobLabel> = {
   // Covers both images and PDFs — the label in the result body
   // differentiates further based on the file extension.
   'screenshot-parse': { label: 'Document parse', icon: ImageIcon },
+  'document-parse': { label: 'Invoice parse', icon: FileText },
   'file-import': { label: 'File import', icon: FileSpreadsheet },
   'manual-holdings-create': { label: 'Manual holdings', icon: Keyboard },
   'portfolio-history-backfill': { label: 'History backfill', icon: History },

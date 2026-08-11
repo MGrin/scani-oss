@@ -72,6 +72,10 @@ export {
   ParseScreenshotUseCase,
 } from './ParseScreenshotUseCase';
 export {
+  type ReconcilePaymentsSummary,
+  ReconcilePaymentsUseCase,
+} from './ReconcilePaymentsUseCase';
+export {
   type RefreshAccountBalanceInput,
   type RefreshAccountBalanceResult,
   RefreshAccountBalanceUseCase,

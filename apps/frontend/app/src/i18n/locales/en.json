@@ -7,8 +7,8 @@
     "sections": {
       "portfolio": "Portfolio",
       "organization": "Organization",
-      "addData": "Add Data",
-      "activity": "Activity"
+      "activity": "Activity",
+      "payments": "Payments"
     },
     "dashboard": "Dashboard",
     "holdings": "Holdings",
@@ -17,10 +17,6 @@
     "groups": "Groups",
     "vaults": "Vaults",
     "tokens": "Tokens",
-    "manualEntry": "Manual Entry",
-    "uploadFile": "Upload File",
-    "cryptoWallet": "Crypto Wallet",
-    "integration": "Integration",
     "jobs": "Jobs",
     "settings": "Settings",
     "signOut": "Sign out",
@@ -31,7 +27,11 @@
     "search": "Search",
     "openMenu": "Open menu",
     "expandSidebar": "Expand sidebar",
-    "collapseSidebar": "Collapse sidebar"
+    "collapseSidebar": "Collapse sidebar",
+    "paymentsOverview": "Overview",
+    "recurringPayments": "Recurring Payments",
+    "vendors": "Vendors",
+    "review": "Review"
   },
   "dashboard": {
     "title": "Dashboard",

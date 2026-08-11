@@ -9,8 +9,11 @@ import { PortfolioCharts } from '../components/dashboard/PortfolioCharts';
 import { PortfolioSummary } from '../components/dashboard/PortfolioSummary';
 import { StatCard } from '../components/dashboard/StatCard';
 import { TopHoldingsList } from '../components/dashboard/TopHoldingsList';
+import { UpcomingPaymentsList } from '../components/dashboard/UpcomingPaymentsList';
 import { VaultProgressList } from '../components/dashboard/VaultProgressList';
 import { V2_ROUTES } from '../lib/routes';
+
+const PAYMENTS_HORIZON_DAYS = 30;
 
 function StatSkeleton() {
   return (
@@ -30,9 +33,16 @@ export function DashboardPage() {
   const { data: overview, isLoading: overviewLoading } = trpc.dashboard.getOverview.useQuery();
   const { data: vaults } = trpc.vaults.getAll.useQuery();
   const { data: baseCurrency } = trpc.users.getBaseCurrency.useQuery();
+  const { data: upcomingPayments } = trpc.payments.upcoming.useQuery({
+    days: PAYMENTS_HORIZON_DAYS,
+  });
+  const { data: vendors } = trpc.vendors.list.useQuery();
+  const { data: tokens } = trpc.tokens.getAll.useQuery();
 
   const currency = baseCurrency?.symbol || 'USD';
   const totalValue = Number.parseFloat(overview?.portfolioValue.totalValue || '0');
+  const vendorNameById = new Map((vendors ?? []).map((v) => [v.id, v.displayName]));
+  const tokenSymbolById = new Map((tokens ?? []).map((t) => [t.id, t.symbol]));
 
   return (
     <div className="space-y-6">
@@ -88,6 +98,15 @@ export function DashboardPage() {
           {vaults && <VaultProgressList vaults={vaults} />}
         </div>
         <div className="space-y-4">
+          {/* Ahead of top holdings: what's due is time-sensitive in a way
+              a holdings ranking isn't, and at the bottom of the column it
+              sat well below the fold. */}
+          <UpcomingPaymentsList
+            occurrences={upcomingPayments ?? []}
+            vendorNameById={vendorNameById}
+            tokenSymbolById={tokenSymbolById}
+            horizonDays={PAYMENTS_HORIZON_DAYS}
+          />
           <TopHoldingsList
             holdings={overview?.topHoldings ?? []}
             totalValue={totalValue}

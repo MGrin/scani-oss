@@ -111,10 +111,17 @@ export function DataViewTable<T>({
               const id = getId(item);
               const isSelected = selectedIds.has(id);
               return (
+                // A height on a `td` is a MINIMUM under table layout, so
+                // `[&>td]:h-14` floors every single-line row at the same
+                // 56px while cells with two-line content still grow.
+                // Without it row height tracks whatever the tallest cell
+                // happens to render — a badge here, plain text there — and
+                // the same list component looks like two different ones as
+                // you move between pages.
                 <TableRow
                   key={id}
                   data-state={isSelected ? 'selected' : undefined}
-                  className={cn(onRowClick && 'cursor-pointer')}
+                  className={cn('[&>td]:h-14', onRowClick && 'cursor-pointer')}
                   onClick={() => onRowClick?.(item)}
                 >
                   {/* The whole cell is a hit target for selection, not

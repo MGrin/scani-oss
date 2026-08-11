@@ -88,6 +88,8 @@ export class HoldingTransactionRepository extends BaseRepository<
             occurredAt: sql`EXCLUDED.occurred_at`,
             sourceMetadata: sql`EXCLUDED.source_metadata`,
             rawPayload: sql`EXCLUDED.raw_payload`,
+            counterparty: sql`EXCLUDED.counterparty`,
+            description: sql`EXCLUDED.description`,
             updatedAt: sql`now()`,
           },
         })

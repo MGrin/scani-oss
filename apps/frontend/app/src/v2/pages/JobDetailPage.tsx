@@ -3,14 +3,9 @@ import { PageLoader } from '@scani/ui/ui/loading';
 import { ArrowLeft } from 'lucide-react';
 import { Link, useParams } from 'react-router-dom';
 import { trpc } from '@/lib/trpc';
-import { ExchangeImportResult } from '../components/jobs/ExchangeImportResult';
-import { FileImportResult } from '../components/jobs/FileImportResult';
-import { GenericJobResult } from '../components/jobs/GenericJobResult';
 import { JobHeader } from '../components/jobs/JobHeader';
-import { ManualHoldingsCreateResult } from '../components/jobs/ManualHoldingsCreateResult';
-import { ScreenshotParseResult } from '../components/jobs/ScreenshotParseResult';
-import { WalletImportResult } from '../components/jobs/WalletImportResult';
 import { useJobStatus } from '../hooks/useJobStatus';
+import { resolveReviewRenderer } from '../lib/review-registry';
 import { V2_ROUTES } from '../lib/routes';
 
 export function JobDetailPage() {
@@ -136,20 +131,5 @@ function JobBody({
   if (state !== 'completed') {
     return null;
   }
-  switch (jobName) {
-    case 'wallet-import':
-      return <WalletImportResult result={result} jobId={jobId} actionTakenAt={actionTakenAt} />;
-    case 'exchange-import':
-      return <ExchangeImportResult result={result} />;
-    case 'screenshot-parse':
-      return <ScreenshotParseResult result={result} jobId={jobId} actionTakenAt={actionTakenAt} />;
-    case 'file-import':
-      return <FileImportResult result={result} jobId={jobId} />;
-    case 'manual-holdings-create':
-      return <ManualHoldingsCreateResult result={result} />;
-    default:
-      // Fallback covers `holding-price-update`, `user-data-delete` and
-      // any future job type — structured summary, not raw JSON.
-      return <GenericJobResult result={result} />;
-  }
+  return resolveReviewRenderer(jobName).render({ result, jobId, actionTakenAt });
 }
