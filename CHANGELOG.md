@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.11.0](https://github.com/MGrin/scani-oss/compare/v0.10.1...v0.11.0) (2026-08-11)
+
+
+### Features
+
+* **payments:** recurring bills and income, with invoice ingestion ([210b5b0](https://github.com/MGrin/scani-oss/commit/210b5b0a91790c7ac4ffa8e34eb9d63d790a931f))
+* **payments:** recurring bills and income, with invoice ingestion ([7e6f888](https://github.com/MGrin/scani-oss/commit/7e6f888b1d92da6958fe265e211e13e99c517c96))
+
 ## [0.10.1](https://github.com/MGrin/scani-oss/compare/v0.10.0...v0.10.1) (2026-08-10)
 
 
