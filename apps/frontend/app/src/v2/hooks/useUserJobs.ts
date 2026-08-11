@@ -13,14 +13,6 @@ const INVALIDATE_DEBOUNCE_MS = 250;
 
 const ACTIVE_STATES = new Set(['queued', 'active', 'progress']);
 
-// Action-required = job finished successfully, it's a type that
-// produces holdings the user still has to confirm/prune, and the
-// user hasn't stamped `action_taken_at` yet. `wallet-import` belongs
-// here too: the worker writes holdings directly, but chain-sweep can
-// pull in dust / scam tokens the user wants to drop before they start
-// counting toward portfolio totals.
-const ACTION_REQUIRED_JOB_NAMES = new Set(['screenshot-parse', 'file-import', 'wallet-import']);
-
 // Jobs whose outcome can change the shape of the net-worth chart.
 // While any of these are in flight the chart shows a loading
 // overlay; if any of these recently failed the chart shows a
@@ -50,7 +42,6 @@ export type UserJobRow = RouterOutputs['jobs']['listMine'][number];
 export interface UseUserJobsResult {
   jobs: UserJobRow[];
   activeCount: number;
-  actionRequiredCount: number;
   // True when a job that can change the chart shape is queued/active/progress.
   chartAffectingActive: boolean;
   // Most recent failed chart-affecting job within RECENT_FAILURE_MS, if any.
@@ -82,25 +73,17 @@ export function useUserJobs(): UseUserJobsResult {
       debounceRef.current = setTimeout(() => {
         debounceRef.current = null;
         void utils.jobs.listMine.invalidate();
+        void utils.review.listPending.invalidate();
       }, INVALIDATE_DEBOUNCE_MS);
     });
     return () => {
       if (debounceRef.current) clearTimeout(debounceRef.current);
       unsubscribe();
     };
-  }, [subscribeToAllJobsForUser, utils.jobs.listMine]);
+  }, [subscribeToAllJobsForUser, utils.jobs.listMine, utils.review.listPending]);
 
   const jobs = query.data ?? [];
   const activeCount = jobs.reduce((acc, job) => acc + (ACTIVE_STATES.has(job.state) ? 1 : 0), 0);
-  const actionRequiredCount = jobs.reduce(
-    (acc, job) =>
-      acc +
-      (job.state === 'completed' && ACTION_REQUIRED_JOB_NAMES.has(job.jobName) && !job.actionTakenAt
-        ? 1
-        : 0),
-    0
-  );
-
   const chartAffectingActive = jobs.some(
     (job) => CHART_AFFECTING_JOB_NAMES.has(job.jobName) && ACTIVE_STATES.has(job.state)
   );
@@ -120,7 +103,6 @@ export function useUserJobs(): UseUserJobsResult {
   return {
     jobs,
     activeCount,
-    actionRequiredCount,
     chartAffectingActive,
     chartAffectingFailure,
     isLoading: query.isLoading,

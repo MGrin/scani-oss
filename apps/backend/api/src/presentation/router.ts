@@ -13,6 +13,7 @@ import { institutionsRouter } from './routers/institutions';
 import { integrationsRouter } from './routers/integrations';
 import { jobsRouter } from './routers/jobs';
 import { portfolioRouter } from './routers/portfolio';
+import { reviewRouter } from './routers/review';
 import { screenshotsRouter } from './routers/screenshots';
 import { sessionsRouter } from './routers/sessions';
 import { storageRouter } from './routers/storage';
@@ -74,6 +75,10 @@ export const appRouter = router({
 
   // Background job status + uploads
   jobs: jobsRouter,
+
+  // Review feed (read-model of pending items)
+  review: reviewRouter,
+
   storage: storageRouter,
 
   // Active session management (protected) - list/revoke for the

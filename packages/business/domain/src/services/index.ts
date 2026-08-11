@@ -83,6 +83,8 @@ export { PriceWarmupService, type WarmTokenPricesInput } from './pricing/PriceWa
 export { PricingFailureCacher } from './pricing/PricingFailureCacher';
 export { PricingProviderRouter } from './pricing/PricingProviderRouter';
 export { PricingService } from './pricing/PricingService';
+// review/
+export { ReviewFeedService } from './ReviewFeedService';
 // tokens/
 export { ScamTokenDetectionService } from './tokens/ScamTokenDetectionService';
 export { TokenIdentityService } from './tokens/TokenIdentityService';
