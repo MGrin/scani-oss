@@ -50,7 +50,22 @@ function buildTextlessPdf(): Uint8Array {
   ]);
 }
 
-const TEXT_PDF = buildTextPdf('Acme Corp Invoice INV-1001 Total 19.99');
+// Long enough to clear `MIN_TEXT_CHARS_FOR_LLM`. Routing is now decided
+// by how much text the PDF actually yields, not by a per-page OCR verdict,
+// so a fixture with one short line would legitimately route to vision.
+// Mirrors the shape of a real invoice: header, parties, line items, total.
+const TEXT_PDF = buildTextPdf(
+  [
+    'INVOICE  Acme Corp  123 Example Street, Springfield',
+    'Invoice number INV-1001   Invoice date Aug 1, 2026   Due date Aug 15, 2026',
+    'Bill to: Jane Customer, 9 Sample Road, London, United Kingdom',
+    'Description               Quantity   Rate     Amount',
+    'Managed hosting, monthly       1     14.99     14.99',
+    'Additional storage, GB        50      0.10      5.00',
+    'Subtotal 19.99   Tax 0.00   Total due 19.99 USD',
+    'Payment received - thank you. Billed annually.',
+  ].join('\n')
+);
 const SCANNED_PDF = buildTextlessPdf();
 
 interface Calls {
