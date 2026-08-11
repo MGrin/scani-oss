@@ -29,6 +29,12 @@ export class StorageFacade {
     return this.local().read(key);
   }
 
+  copy(fromKey: string, toKey: string, contentType?: string): Promise<void> {
+    const cloud = this.cloud();
+    if (cloud) return cloud.copy(fromKey, toKey, contentType);
+    return this.local().copy(fromKey, toKey, contentType);
+  }
+
   delete(key: string): Promise<void> {
     const cloud = this.cloud();
     if (cloud) return cloud.delete(key);

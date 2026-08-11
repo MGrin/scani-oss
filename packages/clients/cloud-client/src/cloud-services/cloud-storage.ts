@@ -31,6 +31,14 @@ export class CloudStorage {
     }
   }
 
+  async copy(fromKey: string, toKey: string, contentType?: string): Promise<void> {
+    try {
+      await this.client.storage.copyObject.mutate({ fromKey, toKey, contentType });
+    } catch (err) {
+      throw CloudError.wrap(err);
+    }
+  }
+
   async delete(key: string): Promise<void> {
     try {
       await this.client.storage.deleteTempBlob.mutate({ key });

@@ -16,8 +16,12 @@
 
 import { randomUUID } from 'node:crypto';
 import type { Document, DocumentExtraction, DocumentSourceKind } from '@scani/db/schema';
-import { DocumentExtractionRepository, DocumentRepository } from '@scani/domain/repositories';
-import { DocumentReparseService } from '@scani/domain/services';
+import {
+  DocumentExtractionRepository,
+  DocumentRepository,
+  type ExtractionOccurrenceLink,
+} from '@scani/domain/repositories';
+import { DocumentDeletionService, DocumentReparseService } from '@scani/domain/services';
 import { DOCUMENT_PARSE } from '@scani/jobs';
 import { BullMqEnqueueService } from '@scani/queue';
 import { TRPCError } from '@trpc/server';
@@ -33,6 +37,24 @@ function assertOwnedDocumentKey(key: string, userId: string): void {
       message: 'Upload key does not belong to the current user',
     });
   }
+}
+
+// Names what depends on the document rather than just refusing: "detach or
+// delete the payment first" is only actionable if the user can tell which
+// payment it is.
+function describeBlockers(blockers: ExtractionOccurrenceLink[]): string {
+  const named = blockers
+    .slice(0, 3)
+    .map((link) => `${link.vendorName} due ${link.dueDate}`)
+    .join(', ');
+  const rest = blockers.length > 3 ? ` and ${blockers.length - 3} more` : '';
+  const subject =
+    blockers.length === 1 ? 'An invoice in this document is' : 'Invoices in this document are';
+  return (
+    `${subject} attached to ${blockers.length} scheduled payment${blockers.length === 1 ? '' : 's'} ` +
+    `(${named}${rest}). Deleting the document would leave ${blockers.length === 1 ? 'that payment' : 'those payments'} ` +
+    'with no invoice behind it. Detach or delete the payment first, then delete this document.'
+  );
 }
 
 function serializeExtraction(extraction: DocumentExtraction) {
@@ -100,14 +122,23 @@ export const documentsRouter = router({
   reparse: protectedProcedure
     .input(z.object({ documentId: z.string().uuid() }))
     .mutation(async ({ ctx, input }) => {
-      const plan = await Container.get(DocumentReparseService).prepare(
+      const outcome = await Container.get(DocumentReparseService).prepare(
         input.documentId,
         ctx.userId
       );
-      if (!plan) {
+      if (outcome.outcome === 'not-found') {
         throw new TRPCError({ code: 'NOT_FOUND', message: 'Document not found' });
       }
+      if (outcome.outcome === 'file-missing') {
+        throw new TRPCError({
+          code: 'PRECONDITION_FAILED',
+          message:
+            'The original file is no longer stored, so it cannot be read again. ' +
+            'Delete this document and upload the file again.',
+        });
+      }
 
+      const { plan } = outcome;
       const jobId = await Container.get(BullMqEnqueueService).add(DOCUMENT_PARSE, {
         userId: ctx.userId,
         requestId: randomUUID(),
@@ -118,6 +149,39 @@ export const documentsRouter = router({
         reparseOf: plan.document.id,
       });
       return { jobId };
+    }),
+
+  /**
+   * Delete a document, its extractions (FK cascade), and its stored object.
+   *
+   * Refuses with CONFLICT when a `payment_occurrences.matched_extraction_id`
+   * points at one of the extractions. That FK is ON DELETE SET NULL, so the
+   * database would accept the delete and silently strip a settled occurrence
+   * of its evidence — the refusal, and the names in its message, are the only
+   * thing that stops it.
+   *
+   * A missing stored object never blocks the row: documents ingested before
+   * file retention shipped have no object left, and deleting the row is what
+   * frees `(user_id, content_hash)` so the same file can be uploaded and
+   * parsed fresh instead of hitting dedup.
+   */
+  delete: protectedProcedure
+    .input(z.object({ documentId: z.string().uuid() }))
+    .mutation(async ({ ctx, input }) => {
+      const result = await Container.get(DocumentDeletionService).delete(
+        input.documentId,
+        ctx.userId
+      );
+      if (result.outcome === 'not-found') {
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'Document not found' });
+      }
+      if (result.outcome === 'blocked') {
+        throw new TRPCError({ code: 'CONFLICT', message: describeBlockers(result.blockers) });
+      }
+      return {
+        documentId: input.documentId,
+        storageObjectRemoved: result.storageObjectRemoved,
+      };
     }),
 
   /** Extractions still awaiting an accept/reject decision, scoped to the caller. */

@@ -179,6 +179,70 @@ describe('DocumentExtractionRepository', () => {
     });
   });
 
+  // Backs `documents.delete`: the same ON DELETE SET NULL hazard read from
+  // the other side. Deleting the document would succeed and quietly null
+  // every link, so the router has to know what depends on it first.
+  describe('findOccurrenceLinksByDocumentId', () => {
+    test("names the payment behind each of the document's linked extractions", async () => {
+      await withTestDb(async (tx) => {
+        const user = await makeUser(tx);
+        const document = await makeDocument(tx, { userId: user.id });
+        const linked = await makeDocumentExtraction(tx, { documentId: document.id, ordinal: 0 });
+        await makeDocumentExtraction(tx, { documentId: document.id, ordinal: 1 });
+        const vendor = await makeVendor(tx, { userId: user.id, displayName: 'Hetzner' });
+        const payment = await makePayment(tx, { userId: user.id, vendorId: vendor.id });
+        const occurrence = await makePaymentOccurrence(tx, {
+          paymentId: payment.id,
+          dueDate: '2026-08-01',
+          matchedExtractionId: linked.id,
+        });
+
+        const links = await repo().findOccurrenceLinksByDocumentId(document.id, user.id, tx);
+
+        expect(links).toEqual([
+          {
+            extractionId: linked.id,
+            occurrenceId: occurrence.id,
+            paymentId: payment.id,
+            vendorName: 'Hetzner',
+            dueDate: '2026-08-01',
+          },
+        ]);
+      });
+    });
+
+    test('a document nothing points at reports no blockers', async () => {
+      await withTestDb(async (tx) => {
+        const user = await makeUser(tx);
+        const document = await makeDocument(tx, { userId: user.id });
+        await makeDocumentExtraction(tx, { documentId: document.id, ordinal: 0 });
+
+        expect(await repo().findOccurrenceLinksByDocumentId(document.id, user.id, tx)).toEqual([]);
+      });
+    });
+
+    test("another user's document reports no blockers", async () => {
+      // Same shape as every other method here: an id from tRPC must not
+      // reveal whether it exists on someone else's account.
+      await withTestDb(async (tx) => {
+        const owner = await makeUser(tx);
+        const intruder = await makeUser(tx);
+        const document = await makeDocument(tx, { userId: owner.id });
+        const linked = await makeDocumentExtraction(tx, { documentId: document.id, ordinal: 0 });
+        const payment = await makePayment(tx, { userId: owner.id });
+        await makePaymentOccurrence(tx, {
+          paymentId: payment.id,
+          dueDate: '2026-08-01',
+          matchedExtractionId: linked.id,
+        });
+
+        expect(await repo().findOccurrenceLinksByDocumentId(document.id, intruder.id, tx)).toEqual(
+          []
+        );
+      });
+    });
+  });
+
   // Backs `documents.reparse`: a re-parse clears the stale reads but must
   // not strip a payment occurrence of the invoice that evidences it. The
   // FK is ON DELETE SET NULL, so a blanket delete would have succeeded and
