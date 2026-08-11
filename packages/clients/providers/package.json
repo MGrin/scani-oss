@@ -12,6 +12,7 @@
     "./core/registry": "./src/core/registry.ts",
     "./core/rate-limiter-registry": "./src/core/rate-limiter-registry.ts",
     "./core/config": "./src/core/config.ts",
+    "./core/counterparty": "./src/core/counterparty.ts",
     "./core/credential-pool": "./src/core/credential-pool.ts",
     "./core/errors": "./src/core/errors.ts",
     "./core/boot": "./src/core/boot.ts",

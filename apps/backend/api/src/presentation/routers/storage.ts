@@ -27,35 +27,48 @@ const MAX_SIZE_BYTES = UPLOAD_LIMITS.PRESIGN_UPLOAD_BYTES;
 // or expand the bucket's effective attack surface (e.g. serving the
 // stored object back through a permissive CDN). Keep this list tight
 // and explicit — broaden only with a security review.
-const ALLOWED_CONTENT_TYPES: Record<'screenshot' | 'file-import', readonly string[]> = {
-  screenshot: ['image/png', 'image/jpeg', 'image/webp', 'image/gif', 'image/heic', 'image/heif'],
-  'file-import': [
-    'text/csv',
-    'text/plain',
-    'application/csv',
-    'application/vnd.ms-excel',
-    'application/x-ofx',
-    'application/x-qfx',
-    'application/x-qif',
-    'application/octet-stream',
-  ],
-};
+const ALLOWED_CONTENT_TYPES: Record<'screenshot' | 'file-import' | 'document', readonly string[]> =
+  {
+    screenshot: ['image/png', 'image/jpeg', 'image/webp', 'image/gif', 'image/heic', 'image/heif'],
+    'file-import': [
+      'text/csv',
+      'text/plain',
+      'application/csv',
+      'application/vnd.ms-excel',
+      'application/x-ofx',
+      'application/x-qfx',
+      'application/x-qif',
+      'application/octet-stream',
+    ],
+    // Mirrors `InvoiceExtractionService`'s two extraction paths: PDF
+    // (text or scanned) plus the same image set `screenshot` accepts,
+    // for a photographed receipt/invoice.
+    document: [
+      'application/pdf',
+      'image/png',
+      'image/jpeg',
+      'image/webp',
+      'image/heic',
+      'image/heif',
+    ],
+  };
 
 // Per-purpose filename extension allowlist. Belt-and-braces with the
 // content-type check: an attacker who controls both can still craft a
 // matched pair, but constraining the extension prevents `evil.exe`
 // from ever landing on R2 even if the bucket's object metadata is
 // later mishandled.
-const ALLOWED_EXTENSIONS: Record<'screenshot' | 'file-import', readonly string[]> = {
+const ALLOWED_EXTENSIONS: Record<'screenshot' | 'file-import' | 'document', readonly string[]> = {
   screenshot: ['png', 'jpg', 'jpeg', 'webp', 'gif', 'heic', 'heif'],
   'file-import': ['csv', 'txt', 'ofx', 'qfx', 'qif', 'xls'],
+  document: ['pdf', 'png', 'jpg', 'jpeg', 'webp', 'heic', 'heif'],
 };
 
 export const storageRouter = router({
   getUploadUrl: protectedProcedure
     .input(
       z.object({
-        purpose: z.enum(['screenshot', 'file-import']),
+        purpose: z.enum(['screenshot', 'file-import', 'document']),
         contentType: z.string().min(1).max(200),
         filename: z.string().min(1).max(200),
         sizeBytes: z.number().int().positive().max(MAX_SIZE_BYTES),

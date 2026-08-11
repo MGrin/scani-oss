@@ -127,7 +127,11 @@ export function TokenSearchInput({
   if (value) {
     return (
       <div className="flex items-center gap-2">
-        <span className="text-sm font-medium px-3 py-2 border rounded-md flex-1 bg-muted truncate">
+        {/* Matches `Input`'s 44px touch target — this box replaces the
+            search input in place, and anywhere it sits beside a real
+            Input (the payment form's Amount/Currency pair) a shorter box
+            reads as two misaligned fields. */}
+        <span className="flex h-11 min-h-[44px] items-center text-sm font-medium px-3 border rounded-md flex-1 bg-muted truncate">
           {value.label}
         </span>
         <Button

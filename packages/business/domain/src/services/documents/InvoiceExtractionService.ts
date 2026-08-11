@@ -1,0 +1,208 @@
+/**
+ * Text-first invoice extraction through the AI provider abstraction.
+ *
+ * Routing mirrors `pdfExtraction.ts`'s classification: a text-based PDF
+ * goes through `parseDocumentText` on the extracted markdown (cheap,
+ * no vision pricing); a scanned PDF — or any non-PDF mime type, or a
+ * provider that doesn't implement the optional `parseDocumentText`
+ * capability at all — falls back to `parseScreenshot` on the raw bytes.
+ * That fallback is the single most likely production failure mode,
+ * because `parseDocumentText` is optional on `AIInferenceProvider`; every
+ * text-classified document must survive a provider that lacks it.
+ *
+ * There is no PDF-page-to-image renderer in this codebase (Task 9 only
+ * ships classification + text extraction), so the vision path sends the
+ * whole original file as one `imageBase64` payload rather than one call
+ * per page — vision-capable models accept a PDF's raw bytes directly.
+ * `usage` is accumulated across every provider call this method makes so
+ * a future multi-call path (e.g. one call per scanned page) keeps
+ * reporting an accurate total instead of silently under-counting.
+ *
+ * Total by design, same discipline as `reviewSummary.ts`: an AI response
+ * that is `null`, a bare string, or an object with none of the expected
+ * fields degrades to zero invoices rather than throwing — a bad response
+ * from a paid API call should not fail the whole extraction job.
+ */
+
+import type { AIInferenceProvider, AIResult, AIUsage } from '@scani/providers/core/capabilities';
+import { ProviderRegistry } from '@scani/providers/core/registry';
+import { isValidDecimalString } from '@scani/shared';
+import { Container, Service } from 'typedi';
+import { INVOICE_EXTRACTION_PROMPT, PROMPT_VERSION } from './invoicePrompt';
+import { classifyDocument, extractText } from './pdfExtraction';
+
+export type ExtractorKind = 'text-llm' | 'vision-llm';
+
+export interface ExtractedLineItem {
+  description: string;
+  /** Decimal string, or null when the model didn't report it. Never a JS float. */
+  quantity: string | null;
+  unitPrice: string | null;
+  amount: string | null;
+}
+
+export interface ExtractedInvoice {
+  ordinal: number;
+  vendorNameRaw: string;
+  invoiceNumber: string | null;
+  issueDate: string | null;
+  dueDate: string | null;
+  /** Decimal string. Never parsed into a JS float — see CLAUDE.md money rule. */
+  totalAmount: string | null;
+  currencyCode: string | null;
+  lineItems: ExtractedLineItem[];
+  confidence: number | null;
+  promptVersion: string;
+  extractorKind: ExtractorKind;
+}
+
+export interface InvoiceExtractionUsage {
+  upstreamCostUsd: number;
+}
+
+export interface InvoiceExtractionResult {
+  invoices: ExtractedInvoice[];
+  usage: InvoiceExtractionUsage;
+}
+
+const PDF_MIME_TYPE = 'application/pdf';
+const EMPTY_RESULT: InvoiceExtractionResult = { invoices: [], usage: { upstreamCostUsd: 0 } };
+
+@Service()
+export class InvoiceExtractionService {
+  async extract(bytes: Uint8Array, mimeType: string): Promise<InvoiceExtractionResult> {
+    const provider = this.getProvider();
+    if (!provider) return EMPTY_RESULT;
+
+    if (mimeType === PDF_MIME_TYPE) {
+      const classification = classifyDocument(bytes);
+      if (classification.kind === 'text' && provider.parseDocumentText) {
+        const markdown = extractText(bytes);
+        const result = await provider.parseDocumentText(markdown, INVOICE_EXTRACTION_PROMPT);
+        return toExtractionResult([result], 'text-llm');
+      }
+    }
+
+    const imageBase64 = Buffer.from(bytes).toString('base64');
+    const result = await provider.parseScreenshot({
+      imageBase64,
+      mimeType,
+      hint: INVOICE_EXTRACTION_PROMPT,
+    });
+    return toExtractionResult([result], 'vision-llm');
+  }
+
+  /**
+   * First registered AI provider, same "no available provider is a
+   * degraded result, not a crash" posture as `AIRouter.getProviders()` —
+   * this service doesn't chain across multiple providers because a
+   * partial invoice extraction from provider B after provider A
+   * half-parsed the document would be worse than a clean empty result
+   * the caller can retry.
+   */
+  private getProvider(): AIInferenceProvider | null {
+    try {
+      const providers = Container.get(ProviderRegistry).getAIProviders();
+      return providers[0] ?? null;
+    } catch {
+      return null;
+    }
+  }
+}
+
+function toExtractionResult(
+  results: Array<AIResult<unknown>>,
+  extractorKind: ExtractorKind
+): InvoiceExtractionResult {
+  const invoices = results.flatMap((result) => normalizeInvoices(result.data, extractorKind));
+  const upstreamCostUsd = results.reduce((sum, result) => sum + costOf(result.usage), 0);
+  return { invoices, usage: { upstreamCostUsd } };
+}
+
+function costOf(usage: AIUsage | undefined): number {
+  return typeof usage?.upstreamCostUsd === 'number' ? usage.upstreamCostUsd : 0;
+}
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : null;
+}
+
+function asString(value: unknown): string | null {
+  return typeof value === 'string' && value.length > 0 ? value : null;
+}
+
+/** Only a string that Decimal.js can parse passes through — a JS number
+    from a model that ignored the prompt's "as a string" instruction is
+    rejected rather than silently re-stringified, since that number may
+    have already lost precision by the time it reached this process. */
+function asDecimalString(value: unknown): string | null {
+  return typeof value === 'string' && isValidDecimalString(value) ? value : null;
+}
+
+function asConfidence(value: unknown): number | null {
+  return typeof value === 'number' && Number.isFinite(value) ? value : null;
+}
+
+function normalizeLineItem(raw: unknown): ExtractedLineItem | null {
+  const rec = asRecord(raw);
+  const description = asString(rec?.description);
+  if (!description) return null;
+  return {
+    description,
+    quantity: asDecimalString(rec?.quantity),
+    unitPrice: asDecimalString(rec?.unitPrice),
+    amount: asDecimalString(rec?.amount),
+  };
+}
+
+/** `raw` may itself be missing every field — that still yields a single
+    entry with nulls, not a dropped invoice, so the caller sees "the model
+    tried and gave us nothing useful" rather than "the model returned
+    fewer invoices than it saw" (those two failures need different fixes). */
+function normalizeInvoice(
+  raw: unknown,
+  ordinal: number,
+  extractorKind: ExtractorKind
+): ExtractedInvoice | null {
+  const rec = asRecord(raw);
+  if (!rec) return null;
+
+  const lineItemsRaw = Array.isArray(rec.lineItems) ? rec.lineItems : [];
+  const lineItems: ExtractedLineItem[] = [];
+  for (const item of lineItemsRaw) {
+    const lineItem = normalizeLineItem(item);
+    if (lineItem) lineItems.push(lineItem);
+  }
+
+  return {
+    ordinal,
+    vendorNameRaw: asString(rec.vendorNameRaw) ?? '',
+    invoiceNumber: asString(rec.invoiceNumber),
+    issueDate: asString(rec.issueDate),
+    dueDate: asString(rec.dueDate),
+    totalAmount: asDecimalString(rec.totalAmount),
+    currencyCode: asString(rec.currencyCode),
+    lineItems,
+    confidence: asConfidence(rec.confidence),
+    promptVersion: PROMPT_VERSION,
+    extractorKind,
+  };
+}
+
+/** Accepts either `{ invoices: [...] }` (the documented contract) or a
+    bare top-level array, in case a provider's JSON mode strips the
+    wrapper key. Anything else — `null`, a string, `{}` with no
+    `invoices` key — has no invoice list to walk and yields `[]`. */
+function normalizeInvoices(raw: unknown, extractorKind: ExtractorKind): ExtractedInvoice[] {
+  const record = asRecord(raw);
+  const list = Array.isArray(raw) ? raw : Array.isArray(record?.invoices) ? record.invoices : [];
+
+  const invoices: ExtractedInvoice[] = [];
+  list.forEach((item: unknown, ordinal: number) => {
+    const invoice = normalizeInvoice(item, ordinal, extractorKind);
+    if (invoice) invoices.push(invoice);
+  });
+  return invoices;
+}

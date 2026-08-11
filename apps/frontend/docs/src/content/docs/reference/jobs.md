@@ -31,6 +31,7 @@ overlapping fires of the same name silently no-op rather than race.
 | `portfolio-value-rollup` | Nightly, 04:00 UTC | Recompute `portfolio_value_daily` for every user at user / institution / account / holding scope. |
 | `transfer-linking` | Nightly, 03:45 UTC | Pair CEX withdrawals with wallet deposits via `LinkTransferPairsUseCase`. |
 | `backfill-token-identity` | Weekly, Sunday 02:00 UTC | Re-enrich tokens whose `providerMetadata` hasn't been touched lately. |
+| `backfill-counterparty` | Nightly, 05:30 UTC | Extract a counterparty + description onto `holding_transactions` rows that predate the per-provider extractors. |
 | `reconcile-pending-credentials` | Every minute | Sweep stuck `pending` integration-credential rows (UI flow interruptions). |
 | `reconcile-orphaned-user-jobs` | Every minute | Sweep stuck `running` user-job rows whose worker process died. |
 | `dlq-depth-probe` | Every 5 minutes | Read the dead-letter queue depth; emit a warn log when it crosses thresholds. |
@@ -46,6 +47,7 @@ per-user job ID so the user can see "in flight" status in the SPA.
 | Name | Triggered by | Purpose |
 |---|---|---|
 | `screenshot-parse` | Upload a screenshot | Send to OpenAI Vision; materialise the extracted holdings under a manual institution. |
+| `document-parse` | Upload an invoice | Classify the PDF, extract text (OCR only for pages that need it), then read vendor / amount / dates via the AI provider. Lands in the review feed for confirmation. |
 | `exchange-import` | Connect an exchange | First-time backfill: sync balances + transactions; create accounts/holdings. |
 | `wallet-import` | Add a wallet | First-time backfill: scan the address across the chain; create holdings. |
 | `file-import` | Upload a CSV / file | Parse and ingest. |

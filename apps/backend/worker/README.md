@@ -12,8 +12,10 @@ src/
 │   └── container.ts        typedi bootstrap — imports @scani/domain barrels for side-effect @Service() registration
 └── processors/             one file per BullMQ job (extends UserJobProcessor or ScheduledJobProcessor)
     ├── apy-payouts.ts                  (scheduled, daily 00:00 UTC)
+    ├── backfill-counterparty.ts        (scheduled, nightly 05:30 UTC)
     ├── backfill-token-identity.ts      (scheduled, weekly Sun 02:00 UTC)
     ├── dlq-depth-probe.ts              (scheduled, every 5 minutes)
+    ├── document-parse.ts               (user-initiated)
     ├── exchange-balances.ts            (scheduled, hourly)
     ├── exchange-import.ts              (user-initiated)
     ├── exchange-transactions.ts        (scheduled, daily 01:00 UTC)

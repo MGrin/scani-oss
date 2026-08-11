@@ -1,5 +1,5 @@
 import { Card, CardContent } from '@scani/ui/ui/card';
-import { FileUp, Keyboard, Plug, Wallet } from 'lucide-react';
+import { FileText, FileUp, Keyboard, Plug, Repeat, Wallet } from 'lucide-react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { V2_ROUTES } from '../lib/routes';
 
@@ -9,6 +9,30 @@ interface MethodOption {
   title: string;
   description: string;
   action: () => void;
+}
+
+function MethodGrid({ methods }: { methods: MethodOption[] }) {
+  return (
+    <div className="grid gap-3">
+      {methods.map((method) => (
+        <Card
+          key={method.id}
+          className="cursor-pointer hover:border-primary/50 transition-colors"
+          onClick={method.action}
+        >
+          <CardContent className="flex items-center gap-4 p-4">
+            <div className="h-10 w-10 rounded-lg bg-muted flex items-center justify-center shrink-0">
+              <method.icon className="h-5 w-5 text-muted-foreground" />
+            </div>
+            <div>
+              <p className="font-medium text-sm">{method.title}</p>
+              <p className="text-xs text-muted-foreground mt-0.5">{method.description}</p>
+            </div>
+          </CardContent>
+        </Card>
+      ))}
+    </div>
+  );
 }
 
 export function AddDataPage() {
@@ -23,7 +47,7 @@ export function AddDataPage() {
   if (institutionId) contextParams.set('institutionId', institutionId);
   const qs = contextParams.toString() ? `?${contextParams.toString()}` : '';
 
-  const methods: MethodOption[] = [
+  const portfolioMethods: MethodOption[] = [
     {
       id: 'manual',
       icon: Keyboard,
@@ -54,6 +78,23 @@ export function AddDataPage() {
     },
   ];
 
+  const paymentsMethods: MethodOption[] = [
+    {
+      id: 'invoice',
+      icon: FileText,
+      title: 'Upload Invoice',
+      description: 'Upload a PDF invoice or a photo of one for vendor + amount extraction',
+      action: () => navigate(`${V2_ROUTES.documentUpload}${qs}`),
+    },
+    {
+      id: 'payment',
+      icon: Repeat,
+      title: 'Add Recurring Payment',
+      description: 'Track a bill or recurring income and match it against transactions',
+      action: () => navigate(V2_ROUTES.paymentCreate),
+    },
+  ];
+
   return (
     <div className="max-w-2xl space-y-6">
       <div>
@@ -63,24 +104,14 @@ export function AddDataPage() {
         </p>
       </div>
 
-      <div className="grid gap-3">
-        {methods.map((method) => (
-          <Card
-            key={method.id}
-            className="cursor-pointer hover:border-primary/50 transition-colors"
-            onClick={method.action}
-          >
-            <CardContent className="flex items-center gap-4 p-4">
-              <div className="h-10 w-10 rounded-lg bg-muted flex items-center justify-center shrink-0">
-                <method.icon className="h-5 w-5 text-muted-foreground" />
-              </div>
-              <div>
-                <p className="font-medium text-sm">{method.title}</p>
-                <p className="text-xs text-muted-foreground mt-0.5">{method.description}</p>
-              </div>
-            </CardContent>
-          </Card>
-        ))}
+      <div className="space-y-3">
+        <h3 className="text-sm font-semibold text-muted-foreground">Portfolio</h3>
+        <MethodGrid methods={portfolioMethods} />
+      </div>
+
+      <div className="space-y-3">
+        <h3 className="text-sm font-semibold text-muted-foreground">Payments</h3>
+        <MethodGrid methods={paymentsMethods} />
       </div>
     </div>
   );
