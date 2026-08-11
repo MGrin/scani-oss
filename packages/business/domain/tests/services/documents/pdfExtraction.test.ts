@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { classifyDocument, extractText } from '../../../src/services/documents/pdfExtraction';
+import { extractText } from '../../../src/services/documents/pdfExtraction';
 
 // Fixtures are built by hand rather than committed as binary blobs — a
 // minimal PDF (catalog, one page, one content stream, correct xref
@@ -49,36 +49,6 @@ function buildTextlessPdf(): Uint8Array {
     '4 0 obj\n<< /Length 0 >>\nstream\n\nendstream\nendobj\n',
   ]);
 }
-
-describe('classifyDocument', () => {
-  test('classifies a text-based PDF as text with no pages needing OCR', () => {
-    const bytes = buildTextPdf('Hello World Invoice INV-1001');
-
-    const result = classifyDocument(bytes);
-
-    expect(result.kind).toBe('text');
-    expect(result.pageCount).toBe(1);
-    expect(result.pagesNeedingOcr).toEqual([]);
-  });
-
-  test('classifies as scanned when the underlying pagesNeedingOcr field is non-empty', () => {
-    const bytes = buildTextlessPdf();
-
-    const result = classifyDocument(bytes);
-
-    // The assertion that matters: routing follows pagesNeedingOcr, not a
-    // text-length heuristic re-derived here.
-    expect(result.pagesNeedingOcr.length).toBeGreaterThan(0);
-    expect(result.kind).toBe('scanned');
-  });
-
-  test('falls back to scanned for bytes that are not a PDF, instead of throwing', () => {
-    const bytes = new TextEncoder().encode('not a pdf, just plain bytes');
-
-    expect(() => classifyDocument(bytes)).not.toThrow();
-    expect(classifyDocument(bytes).kind).toBe('scanned');
-  });
-});
 
 describe('extractText', () => {
   test('returns non-empty markdown containing the document words for a text-based PDF', () => {

@@ -1,5 +1,4 @@
 import { describe, expect, test } from 'bun:test';
-import { Container } from 'typedi';
 import { DocumentRepository } from '../../src/repositories/DocumentRepository';
 import { withTestDb } from '../../test/helpers/db';
 import { makeDocument, makeUser } from '../../test/helpers/factories';
@@ -10,7 +9,12 @@ import { makeDocument, makeUser } from '../../test/helpers/factories';
 // below prove it actually rejects, and that it's scoped per-user rather
 // than global.
 
-const repo = () => Container.get(DocumentRepository);
+// Constructed directly, NOT via the Container: five service tests
+// `Container.set(DocumentRepository, ...)` a partial stub, and typedi's
+// container is process-global, so whichever ran first left this file
+// resolving a stub with no `findByContentHash`. A real-DB repository
+// test needs no DI anyway.
+const repo = () => new DocumentRepository();
 
 describe('DocumentRepository', () => {
   test("findByUser returns only that user's documents", async () => {

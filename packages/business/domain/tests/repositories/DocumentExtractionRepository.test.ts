@@ -1,7 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import * as schema from '@scani/db/schema';
 import { eq } from 'drizzle-orm';
-import { Container } from 'typedi';
 import { DocumentExtractionRepository } from '../../src/repositories/DocumentExtractionRepository';
 import { withTestDb } from '../../test/helpers/db';
 import {
@@ -20,7 +19,12 @@ import { makePayment, makePaymentOccurrence } from '../../test/helpers/factories
 // extractions away, but deleting a vendor must NOT — it should only
 // null out the link.
 
-const repo = () => Container.get(DocumentExtractionRepository);
+// Constructed directly, NOT via the Container: five service tests
+// `Container.set(DocumentRepository, ...)` a partial stub, and typedi's
+// container is process-global, so whichever ran first left this file
+// resolving a stub with no `findByContentHash`. A real-DB repository
+// test needs no DI anyway.
+const repo = () => new DocumentExtractionRepository();
 
 describe('DocumentExtractionRepository', () => {
   test('findPendingByUser returns only pending extractions scoped to the user', async () => {
