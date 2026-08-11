@@ -16,6 +16,10 @@ export {
   type IngestDocumentInput,
 } from './documents/DocumentIngestionService';
 export {
+  type DocumentReparsePlan,
+  DocumentReparseService,
+} from './documents/DocumentReparseService';
+export {
   type ExtractedInvoice,
   type ExtractedLineItem,
   type ExtractorKind,

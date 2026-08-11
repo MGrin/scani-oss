@@ -14,20 +14,28 @@ function makeService(opts: {
   extractResult?: { invoices: unknown[]; usage: { upstreamCostUsd: number } };
   createdDocument?: unknown;
   createdExtractions?: unknown[];
+  /** What `findByIdAndUser` resolves to — the re-parse target lookup. */
+  reparseTarget?: unknown;
+  /** Extractions surviving on the re-parse target (linked to a payment). */
+  survivingExtractions?: Array<{ id: string; ordinal: number }>;
 }) {
   const findByContentHash = mock(async () => opts.existingDocument);
   const documentsCreate = mock(async () => opts.createdDocument ?? { id: DOC_ID });
+  const findByIdAndUser = mock(async () => opts.reparseTarget ?? null);
   Container.set(DocumentRepository, {
     findByContentHash,
     create: documentsCreate,
+    findByIdAndUser,
   } as unknown as DocumentRepository);
 
   const extractionsCreate = mock(async (data: Record<string, unknown>) => ({
     id: `ext-${data.ordinal}`,
     ...data,
   }));
+  const findByDocumentId = mock(async () => opts.survivingExtractions ?? []);
   Container.set(DocumentExtractionRepository, {
     create: extractionsCreate,
+    findByDocumentId,
   } as unknown as DocumentExtractionRepository);
 
   const extract = mock(
@@ -37,8 +45,31 @@ function makeService(opts: {
 
   const instance = new DocumentIngestionService();
   Container.set(DocumentIngestionService, instance);
-  return { instance, findByContentHash, documentsCreate, extractionsCreate, extract };
+  return {
+    instance,
+    findByContentHash,
+    documentsCreate,
+    extractionsCreate,
+    extract,
+    findByIdAndUser,
+  };
 }
+
+const ONE_INVOICE = {
+  ordinal: 0,
+  vendorNameRaw: '1Password',
+  invoiceNumber: null,
+  issueDate: '2026-07-26',
+  dueDate: null,
+  totalAmount: '95.88',
+  currencyCode: 'USD',
+  paymentStatus: 'paid',
+  billingPeriod: 'year',
+  lineItems: [],
+  confidence: 0.9,
+  promptVersion: 'invoice-extraction-v2',
+  extractorKind: 'text-llm',
+};
 
 const bytes = new TextEncoder().encode('%PDF-1.4 fake invoice bytes');
 
@@ -232,5 +263,86 @@ describe('DocumentIngestionService.ingest', () => {
       paymentStatus: null,
       billingPeriod: null,
     });
+  });
+});
+
+// The escape hatch out of the dedup above: without `reparseOf` a file, once
+// ingested, could never be read again — not even after the extractor learns
+// to read a field it used to miss.
+describe('DocumentIngestionService.ingest — reparseOf', () => {
+  const reparseInput = {
+    userId: 'user-1',
+    bytes,
+    mimeType: 'application/pdf',
+    r2Key: 'temp/document/user-1/a.pdf',
+    originalFilename: 'invoice.pdf',
+    sourceKind: 'upload' as const,
+    reparseOf: DOC_ID,
+  };
+
+  test('skips the content-hash lookup and re-extracts into the existing document', async () => {
+    const target = { id: DOC_ID, userId: 'user-1', contentHash: 'same-bytes-same-hash' };
+    const { instance, findByContentHash, findByIdAndUser, extract, documentsCreate } = makeService({
+      // A hash match exists — a normal upload of these bytes would dedupe.
+      existingDocument: target,
+      reparseTarget: target,
+      extractResult: { invoices: [ONE_INVOICE], usage: { upstreamCostUsd: 0.002 } },
+    });
+
+    const result = await instance.ingest(reparseInput);
+
+    expect(findByContentHash).not.toHaveBeenCalled();
+    expect(findByIdAndUser).toHaveBeenCalledWith(DOC_ID, 'user-1');
+    expect(extract).toHaveBeenCalledTimes(1);
+    // Attached to THAT document — no second `documents` row for the same file.
+    expect(documentsCreate).not.toHaveBeenCalled();
+    expect(result.document).toBe(target);
+    expect(result.deduped).toBe(false);
+    expect(result.extractions).toHaveLength(1);
+    expect(result.upstreamCostUsd).toBe(0.002);
+  });
+
+  test("another user's document id is refused before any AI spend", async () => {
+    const { instance, extract, extractionsCreate } = makeService({
+      // findByIdAndUser returns null for both "gone" and "someone else's".
+      reparseTarget: null,
+      extractResult: { invoices: [ONE_INVOICE], usage: { upstreamCostUsd: 0.002 } },
+    });
+
+    await expect(instance.ingest(reparseInput)).rejects.toThrow(/not found for re-parse/);
+
+    // Ownership is resolved BEFORE the extractor runs — a probe costs nothing.
+    expect(extract).not.toHaveBeenCalled();
+    expect(extractionsCreate).not.toHaveBeenCalled();
+  });
+
+  test('fresh invoices are appended past a surviving extraction, not written over it', async () => {
+    const target = { id: DOC_ID, userId: 'user-1' };
+    const { instance, extractionsCreate } = makeService({
+      reparseTarget: target,
+      // Ordinal 0 survived the pre-parse cleanup: a payment points at it.
+      survivingExtractions: [{ id: 'kept-0', ordinal: 0 }],
+      extractResult: {
+        invoices: [ONE_INVOICE, { ...ONE_INVOICE, ordinal: 1 }],
+        usage: { upstreamCostUsd: 0 },
+      },
+    });
+
+    await instance.ingest(reparseInput);
+
+    // `(document_id, ordinal)` is unique — restarting at 0 would collide.
+    expect(extractionsCreate.mock.calls.map((c) => c[0]?.ordinal)).toEqual([1, 2]);
+  });
+
+  test('with nothing left on the document the fresh read starts at ordinal 0', async () => {
+    const { instance, extractionsCreate } = makeService({
+      reparseTarget: { id: DOC_ID, userId: 'user-1' },
+      survivingExtractions: [],
+      extractResult: { invoices: [ONE_INVOICE], usage: { upstreamCostUsd: 0 } },
+    });
+
+    await instance.ingest(reparseInput);
+
+    expect(extractionsCreate.mock.calls[0]?.[0]?.ordinal).toBe(0);
   });
 });

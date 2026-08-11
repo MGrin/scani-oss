@@ -39,7 +39,9 @@ export class DocumentParseProcessor extends UserJobProcessor<
     const buf = await storage.read(data.r2Key);
 
     try {
-      await ctx.reportStatus('Checking for a duplicate…');
+      await ctx.reportStatus(
+        data.reparseOf ? 'Re-reading with the current extractor…' : 'Checking for a duplicate…'
+      );
       const result = await ingestion.ingest({
         userId: data.userId,
         bytes: new Uint8Array(buf),
@@ -47,6 +49,7 @@ export class DocumentParseProcessor extends UserJobProcessor<
         r2Key: data.r2Key,
         originalFilename: data.originalFilename,
         sourceKind: data.sourceKind,
+        reparseOf: data.reparseOf,
       });
 
       if (!result.deduped) {
@@ -78,8 +81,12 @@ export class DocumentParseProcessor extends UserJobProcessor<
       };
     } finally {
       // R2 lifecycle rule cleans up if this fails; mirrors screenshot-parse's
-      // best-effort delete of the temp upload.
-      void storage.delete(data.r2Key).catch(() => undefined);
+      // best-effort delete of the temp upload. A re-parse read a key it did
+      // not upload — deleting it would make the NEXT re-parse of the same
+      // document impossible, so only the ingesting job cleans up.
+      if (!data.reparseOf) {
+        void storage.delete(data.r2Key).catch(() => undefined);
+      }
     }
   }
 }

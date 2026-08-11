@@ -1,11 +1,13 @@
 import { formatCurrency, formatDate, formatDateTime } from '@scani/shared';
+import { ConfirmDialog } from '@scani/ui/components/ConfirmDialog';
 import { Badge } from '@scani/ui/ui/badge';
 import { Button } from '@scani/ui/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@scani/ui/ui/card';
 import { PageLoader } from '@scani/ui/ui/loading';
 import { Separator } from '@scani/ui/ui/separator';
 import { showError, showSuccess } from '@scani/ui/ui/use-toast';
-import { ArrowLeft, ArrowRight, FileText, X } from 'lucide-react';
+import { ArrowLeft, ArrowRight, FileText, RefreshCw, X } from 'lucide-react';
+import { useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { type RouterOutputs, trpc } from '@/lib/trpc';
 import { V2_ROUTES } from '../lib/routes';
@@ -28,6 +30,7 @@ export function DocumentDetailPage() {
   const { id = '' } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const utils = trpc.useUtils();
+  const [confirmReparse, setConfirmReparse] = useState(false);
 
   const documentQuery = trpc.documents.get.useQuery({ documentId: id }, { enabled: Boolean(id) });
 
@@ -39,6 +42,17 @@ export function DocumentDetailPage() {
       void utils.review.listPending.invalidate();
     },
     onError: (error) => showError(error, 'Rejecting extraction'),
+  });
+
+  const reparseMutation = trpc.documents.reparse.useMutation({
+    onSuccess: ({ jobId }) => {
+      setConfirmReparse(false);
+      void utils.documents.get.invalidate({ documentId: id });
+      void utils.documents.listExtractions.invalidate();
+      void utils.review.listPending.invalidate();
+      navigate(V2_ROUTES.jobDetail(jobId));
+    },
+    onError: (error) => showError(error, 'Re-parsing document'),
   });
 
   if (!id) return null;
@@ -81,11 +95,20 @@ export function DocumentDetailPage() {
       </Card>
 
       <Card>
-        <CardHeader>
+        <CardHeader className="flex flex-row items-center justify-between gap-3 space-y-0">
           <CardTitle className="text-sm flex items-center gap-1.5">
             <FileText className="h-3.5 w-3.5" />
             Extracted invoices ({extractions.length})
           </CardTitle>
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={reparseMutation.isPending}
+            onClick={() => setConfirmReparse(true)}
+          >
+            <RefreshCw className="h-3.5 w-3.5 mr-1" />
+            Re-parse
+          </Button>
         </CardHeader>
         <CardContent className="space-y-3">
           {extractions.length === 0 ? (
@@ -105,6 +128,16 @@ export function DocumentDetailPage() {
           )}
         </CardContent>
       </Card>
+
+      <ConfirmDialog
+        open={confirmReparse}
+        onOpenChange={setConfirmReparse}
+        title="Re-parse this document"
+        description="Reads the file again with the current extractor and replaces every extraction that hasn't already been turned into a payment — those are kept. This costs an AI call."
+        confirmLabel="Re-parse"
+        isPending={reparseMutation.isPending}
+        onConfirm={() => reparseMutation.mutate({ documentId: id })}
+      />
     </div>
   );
 }
