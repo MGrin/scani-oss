@@ -16,6 +16,7 @@ import type { Document } from '@scani/db/schema';
 import { Container, Service } from 'typedi';
 import { DocumentExtractionRepository } from '../../repositories/DocumentExtractionRepository';
 import { DocumentRepository } from '../../repositories/DocumentRepository';
+import { DocumentRetentionService } from './DocumentRetentionService';
 
 export interface DocumentReparsePlan {
   document: Document;
@@ -25,28 +26,43 @@ export interface DocumentReparsePlan {
   keptExtractionIds: string[];
 }
 
+export type DocumentReparseOutcome =
+  /** Doesn't exist, or belongs to another user — indistinguishable by design. */
+  | { outcome: 'not-found' }
+  /** Ingested before retention shipped: the uploaded bytes are gone for good. */
+  | { outcome: 'file-missing'; document: Document }
+  | { outcome: 'ready'; plan: DocumentReparsePlan };
+
 @Service()
 export class DocumentReparseService {
   private readonly documents = Container.get(DocumentRepository);
   private readonly extractions = Container.get(DocumentExtractionRepository);
+  private readonly retention = Container.get(DocumentRetentionService);
 
   /**
-   * Returns null when the document doesn't exist OR belongs to another
-   * user — the caller surfaces one NOT_FOUND for both, so a `documentId`
-   * arriving from tRPC can't be used to probe for another user's ids.
+   * `file-missing` is checked BEFORE anything is cleared. A document whose
+   * `r2Key` still points into `temp/` has no object behind it — the parse
+   * job deleted it and R2's lifecycle rule swept the prefix — so the
+   * worker's `storage.read` would fail. Clearing first and discovering
+   * that afterwards would cost the user their extractions for a re-parse
+   * that was never going to run.
    */
-  async prepare(documentId: string, userId: string): Promise<DocumentReparsePlan | null> {
+  async prepare(documentId: string, userId: string): Promise<DocumentReparseOutcome> {
     const document = await this.documents.findByIdAndUser(documentId, userId);
-    if (!document) return null;
+    if (!document) return { outcome: 'not-found' };
+    if (!this.retention.isRetained(document.r2Key)) return { outcome: 'file-missing', document };
 
     const before = await this.extractions.findByDocumentId(documentId, userId);
     const cleared = await this.extractions.deleteUnlinkedByDocumentId(documentId, userId);
     const clearedIds = new Set(cleared.map((row) => row.id));
 
     return {
-      document,
-      clearedExtractionIds: cleared.map((row) => row.id),
-      keptExtractionIds: before.filter((row) => !clearedIds.has(row.id)).map((row) => row.id),
+      outcome: 'ready',
+      plan: {
+        document,
+        clearedExtractionIds: cleared.map((row) => row.id),
+        keptExtractionIds: before.filter((row) => !clearedIds.has(row.id)).map((row) => row.id),
+      },
     };
   }
 }

@@ -6,7 +6,10 @@
 
 export { BaseRepository } from '@scani/db';
 export { AccountRepository } from './AccountRepository';
-export { DocumentExtractionRepository } from './DocumentExtractionRepository';
+export {
+  DocumentExtractionRepository,
+  type ExtractionOccurrenceLink,
+} from './DocumentExtractionRepository';
 export { DocumentRepository } from './DocumentRepository';
 export {
   AccountTypeRepository,

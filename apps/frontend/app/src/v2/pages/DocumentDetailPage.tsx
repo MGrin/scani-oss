@@ -6,7 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@scani/ui/ui/card';
 import { PageLoader } from '@scani/ui/ui/loading';
 import { Separator } from '@scani/ui/ui/separator';
 import { showError, showSuccess } from '@scani/ui/ui/use-toast';
-import { ArrowLeft, ArrowRight, FileText, RefreshCw, X } from 'lucide-react';
+import { ArrowLeft, ArrowRight, FileText, RefreshCw, Trash2, X } from 'lucide-react';
 import { useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { type RouterOutputs, trpc } from '@/lib/trpc';
@@ -31,6 +31,7 @@ export function DocumentDetailPage() {
   const navigate = useNavigate();
   const utils = trpc.useUtils();
   const [confirmReparse, setConfirmReparse] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
 
   const documentQuery = trpc.documents.get.useQuery({ documentId: id }, { enabled: Boolean(id) });
 
@@ -53,6 +54,19 @@ export function DocumentDetailPage() {
       navigate(V2_ROUTES.jobDetail(jobId));
     },
     onError: (error) => showError(error, 'Re-parsing document'),
+  });
+
+  const deleteMutation = trpc.documents.delete.useMutation({
+    onSuccess: () => {
+      setConfirmDelete(false);
+      showSuccess('Document deleted — you can upload that file again');
+      // Navigate first: this page's own `documents.get` is the one query
+      // the invalidation would refetch into a 404.
+      navigate(V2_ROUTES.review);
+      void utils.documents.invalidate();
+      void utils.review.listPending.invalidate();
+    },
+    onError: (error) => showError(error, 'Deleting document'),
   });
 
   if (!id) return null;
@@ -100,15 +114,26 @@ export function DocumentDetailPage() {
             <FileText className="h-3.5 w-3.5" />
             Extracted invoices ({extractions.length})
           </CardTitle>
-          <Button
-            size="sm"
-            variant="outline"
-            disabled={reparseMutation.isPending}
-            onClick={() => setConfirmReparse(true)}
-          >
-            <RefreshCw className="h-3.5 w-3.5 mr-1" />
-            Re-parse
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={reparseMutation.isPending || deleteMutation.isPending}
+              onClick={() => setConfirmReparse(true)}
+            >
+              <RefreshCw className="h-3.5 w-3.5 mr-1" />
+              Re-parse
+            </Button>
+            <Button
+              size="sm"
+              variant="destructive"
+              disabled={reparseMutation.isPending || deleteMutation.isPending}
+              onClick={() => setConfirmDelete(true)}
+            >
+              <Trash2 className="h-3.5 w-3.5 mr-1" />
+              Delete
+            </Button>
+          </div>
         </CardHeader>
         <CardContent className="space-y-3">
           {extractions.length === 0 ? (
@@ -137,6 +162,22 @@ export function DocumentDetailPage() {
         confirmLabel="Re-parse"
         isPending={reparseMutation.isPending}
         onConfirm={() => reparseMutation.mutate({ documentId: id })}
+      />
+
+      <ConfirmDialog
+        open={confirmDelete}
+        onOpenChange={setConfirmDelete}
+        title="Delete this document"
+        description={
+          'Removes the file, every invoice extracted from it, and the stored copy. ' +
+          'Uploading the same file again will then parse it fresh instead of being ' +
+          'skipped as a duplicate. Invoices already turned into a payment block the ' +
+          'delete — detach those payments first. This cannot be undone.'
+        }
+        confirmLabel="Delete"
+        variant="destructive"
+        isPending={deleteMutation.isPending}
+        onConfirm={() => deleteMutation.mutate({ documentId: id })}
       />
     </div>
   );

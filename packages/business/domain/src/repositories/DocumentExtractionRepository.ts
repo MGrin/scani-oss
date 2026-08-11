@@ -4,6 +4,15 @@ import * as schema from '@scani/db/schema';
 import { and, asc, eq, notExists, sql } from 'drizzle-orm';
 import { Service } from 'typedi';
 
+/** One `payment_occurrences` → `document_extractions` link, named for the user. */
+export interface ExtractionOccurrenceLink {
+  extractionId: string;
+  occurrenceId: string;
+  paymentId: string;
+  vendorName: string;
+  dueDate: string;
+}
+
 // One row per invoice FOUND IN a document — a single PDF can hold
 // several (see `ordinal`). This table has no `userId` of its own —
 // ownership is join-derived through `documents`, same precedent as
@@ -102,6 +111,57 @@ export class DocumentExtractionRepository extends BaseRepository<
       return rows.map((row) => row.extraction);
     } catch (error) {
       this.logger.error({ documentId, userId, error }, 'Failed to find extractions by document id');
+      throw error;
+    }
+  }
+
+  /**
+   * Every `payment_occurrences` row that points at one of this document's
+   * extractions, with enough of the payment to name it to the user.
+   *
+   * `matched_extraction_id` is `ON DELETE SET NULL`, so deleting the
+   * document would NOT error — it would silently strip a settled
+   * occurrence of the invoice that evidences it. This is the pre-check
+   * that turns that silent loss into a refusal, so it is the read half of
+   * the same invariant `deleteUnlinkedByDocumentId` enforces on the
+   * re-parse path.
+   *
+   * Ownership is join-derived through `documents`; returns [] for a
+   * document that doesn't exist OR belongs to another user, so the caller
+   * can't tell the two apart.
+   */
+  async findOccurrenceLinksByDocumentId(
+    documentId: string,
+    userId: string,
+    transaction?: DatabaseTransaction
+  ): Promise<ExtractionOccurrenceLink[]> {
+    try {
+      const database = this.getDb(transaction);
+      return await database
+        .select({
+          extractionId: schema.documentExtractions.id,
+          occurrenceId: schema.paymentOccurrences.id,
+          paymentId: schema.payments.id,
+          vendorName: schema.vendors.displayName,
+          dueDate: schema.paymentOccurrences.dueDate,
+        })
+        .from(schema.paymentOccurrences)
+        .innerJoin(
+          schema.documentExtractions,
+          eq(schema.paymentOccurrences.matchedExtractionId, schema.documentExtractions.id)
+        )
+        .innerJoin(schema.documents, eq(schema.documentExtractions.documentId, schema.documents.id))
+        .innerJoin(schema.payments, eq(schema.paymentOccurrences.paymentId, schema.payments.id))
+        .innerJoin(schema.vendors, eq(schema.payments.vendorId, schema.vendors.id))
+        .where(
+          and(
+            eq(schema.documentExtractions.documentId, documentId),
+            eq(schema.documents.userId, userId)
+          )
+        )
+        .orderBy(asc(schema.paymentOccurrences.dueDate));
+    } catch (error) {
+      this.logger.error({ documentId, userId, error }, 'Failed to find occurrence links');
       throw error;
     }
   }
