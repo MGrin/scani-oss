@@ -3,44 +3,7 @@ import { useCallback, useMemo, useState } from 'react';
 import { trpc } from '@/lib/trpc';
 import type { DocumentListItem } from '../lib/documents';
 
-/**
- * `documents.list` and `documents.downloadUrl` are declared here rather than
- * read off `RouterOutputs`, because the API side of the Files page ships on
- * its own branch — until it merges, the generated `AppRouter` stops at
- * `documents.get` and neither procedure exists at the type level.
- *
- * When it lands, delete `PendingDocumentsApi` / `PendingDocumentsClient` and
- * the two casts below; every call site here already matches the agreed
- * contract, so nothing else moves.
- */
-interface DocumentListPage {
-  items: DocumentListItem[];
-  nextCursor?: string | null;
-}
-
-interface PendingDocumentsApi {
-  list: {
-    useInfiniteQuery(
-      input: { limit: number },
-      opts: { getNextPageParam: (page: DocumentListPage) => string | undefined }
-    ): {
-      data?: { pages: DocumentListPage[] };
-      isLoading: boolean;
-      error: { message: string } | null;
-      hasNextPage?: boolean;
-      isFetchingNextPage: boolean;
-      fetchNextPage: () => void;
-    };
-  };
-}
-
-interface PendingDocumentsClient {
-  downloadUrl: {
-    query(input: { documentId: string }): Promise<{ url: string }>;
-  };
-}
-
-const documentsApi = trpc.documents as unknown as PendingDocumentsApi;
+const documentsApi = trpc.documents;
 
 const PAGE_SIZE = 100;
 
@@ -92,8 +55,8 @@ export function useDocumentDownload() {
     async (documentId: string) => {
       setPendingId(documentId);
       try {
-        const client = utils.client.documents as unknown as PendingDocumentsClient;
-        const { url } = await client.downloadUrl.query({ documentId });
+        const client = utils.client.documents;
+        const { url } = await client.getDownloadUrl.query({ documentId });
         const anchor = window.document.createElement('a');
         anchor.href = url;
         anchor.target = '_blank';
