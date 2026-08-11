@@ -108,6 +108,31 @@ export const documentsRouter = router({
     }),
 
   /**
+   * A single extraction by its own id, scoped to the caller — what the
+   * review feed's "turn this into a recurring payment" form pre-fills
+   * from before calling `payments.createFromExtraction`. Separate from
+   * `get` because a review-feed row carries an extraction id, not the
+   * document id `get` needs; `document.id` comes back on the row for
+   * callers that then want the file itself.
+   *
+   * Returns the full extraction row (every column, `createdAt` as an ISO
+   * string), so columns added to `document_extractions` later surface
+   * here without touching this endpoint.
+   */
+  getExtraction: protectedProcedure
+    .input(z.object({ extractionId: z.string().uuid() }))
+    .query(async ({ ctx, input }) => {
+      const extraction = await Container.get(DocumentExtractionRepository).findByIdAndUser(
+        input.extractionId,
+        ctx.userId
+      );
+      if (!extraction) {
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'Extraction not found' });
+      }
+      return serializeExtraction(extraction);
+    }),
+
+  /**
    * `setReviewState` returns null for both "doesn't exist" and "belongs
    * to another user's document" (ownership is join-derived through
    * `documents` — see the repository's own doc comment), so both cases

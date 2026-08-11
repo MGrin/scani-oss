@@ -45,6 +45,36 @@ describe('DocumentExtractionRepository', () => {
     });
   });
 
+  describe('findByIdAndUser', () => {
+    test("returns the extraction when it hangs off the caller's own document", async () => {
+      await withTestDb(async (tx) => {
+        const user = await makeUser(tx);
+        const document = await makeDocument(tx, { userId: user.id });
+        const extraction = await makeDocumentExtraction(tx, {
+          documentId: document.id,
+          ordinal: 0,
+        });
+
+        const found = await repo().findByIdAndUser(extraction.id, user.id, tx);
+        expect(found?.id).toBe(extraction.id);
+      });
+    });
+
+    test('returns null for an extraction on another user’s document', async () => {
+      await withTestDb(async (tx) => {
+        const owner = await makeUser(tx);
+        const intruder = await makeUser(tx);
+        const document = await makeDocument(tx, { userId: owner.id });
+        const extraction = await makeDocumentExtraction(tx, {
+          documentId: document.id,
+          ordinal: 0,
+        });
+
+        expect(await repo().findByIdAndUser(extraction.id, intruder.id, tx)).toBeNull();
+      });
+    });
+  });
+
   describe('setReviewState', () => {
     test("updates an extraction that belongs to the caller's document", async () => {
       await withTestDb(async (tx) => {
