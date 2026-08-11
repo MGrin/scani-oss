@@ -72,6 +72,8 @@ export class DocumentIngestionService {
         dueDate: invoice.dueDate,
         totalAmount: invoice.totalAmount,
         currencyCode: invoice.currencyCode,
+        paymentStatus: invoice.paymentStatus,
+        billingPeriod: invoice.billingPeriod,
         lineItems: invoice.lineItems,
         confidence: invoice.confidence === null ? null : String(invoice.confidence),
         promptVersion: invoice.promptVersion,

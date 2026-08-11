@@ -170,4 +170,67 @@ describe('DocumentIngestionService.ingest', () => {
     expect(extractionsCreate).not.toHaveBeenCalled();
     expect(result.extractions).toEqual([]);
   });
+
+  test('the payment hints reach the extraction row, nulls included', async () => {
+    const { instance, extractionsCreate } = makeService({
+      existingDocument: undefined,
+      extractResult: {
+        invoices: [
+          {
+            ordinal: 0,
+            vendorNameRaw: '1Password',
+            invoiceNumber: null,
+            issueDate: '2026-07-26',
+            dueDate: null,
+            totalAmount: '95.88',
+            currencyCode: 'USD',
+            paymentStatus: 'paid',
+            billingPeriod: 'year',
+            lineItems: [],
+            confidence: 0.9,
+            promptVersion: 'invoice-extraction-v2',
+            extractorKind: 'text-llm',
+          },
+          {
+            ordinal: 1,
+            vendorNameRaw: 'Unreadable Ltd',
+            invoiceNumber: null,
+            issueDate: null,
+            dueDate: null,
+            totalAmount: null,
+            currencyCode: null,
+            paymentStatus: null,
+            billingPeriod: null,
+            lineItems: [],
+            confidence: null,
+            promptVersion: 'invoice-extraction-v2',
+            extractorKind: 'text-llm',
+          },
+        ],
+        usage: { upstreamCostUsd: 0 },
+      },
+      createdDocument: { id: DOC_ID, userId: 'user-1' },
+    });
+
+    await instance.ingest({
+      userId: 'user-1',
+      bytes,
+      mimeType: 'application/pdf',
+      r2Key: 'documents/user-1/a.pdf',
+      originalFilename: 'invoice.pdf',
+      sourceKind: 'upload',
+    });
+
+    expect(extractionsCreate.mock.calls[0]?.[0]).toMatchObject({
+      paymentStatus: 'paid',
+      billingPeriod: 'year',
+    });
+    // An unknown hint must persist as NULL, not be dropped from the insert
+    // — a missing key and an explicit null read the same downstream only
+    // if the column defaults to null, which is a coincidence, not a contract.
+    expect(extractionsCreate.mock.calls[1]?.[0]).toMatchObject({
+      paymentStatus: null,
+      billingPeriod: null,
+    });
+  });
 });
