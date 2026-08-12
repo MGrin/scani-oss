@@ -78,6 +78,20 @@ export class DocumentParseProcessor extends UserJobProcessor<
         result.deduped ? 'Document deduped — no extraction performed' : 'Document parsed'
       );
 
+      // SUCCESS ONLY. Exactly one delete, and only ever of the temp
+      // upload. `retain` COPIES to the permanent key rather than moving,
+      // so the object this job was handed is still the temp one and
+      // cleaning it up here is what completes the promotion.
+      //
+      // The guard is the retained-prefix test rather than `!data.reparseOf`
+      // on purpose: a re-parse is handed a permanent key, and so is any
+      // future caller that re-reads a stored file. Keying the decision off
+      // where the object lives makes "a retained file is never deleted by
+      // the parse path" structural instead of a flag someone can forget.
+      if (!retention.isRetained(data.r2Key)) {
+        void storage.delete(data.r2Key).catch(() => undefined);
+      }
+
       return {
         documentId: document.id,
         deduped: result.deduped,
@@ -91,20 +105,16 @@ export class DocumentParseProcessor extends UserJobProcessor<
           currencyCode: e.currencyCode,
         })),
       };
-    } finally {
-      // Exactly one delete, and only ever of the temp upload. `retain`
-      // COPIES to the permanent key rather than moving, so the object this
-      // job was handed is still the temp one and cleaning it up here is
-      // what completes the promotion.
-      //
-      // The guard is the retained-prefix test rather than `!data.reparseOf`
-      // on purpose: a re-parse is handed a permanent key, and so is any
-      // future caller that re-reads a stored file. Keying the decision off
-      // where the object lives makes "a retained file is never deleted by
-      // the parse path" structural instead of a flag someone can forget.
-      if (!retention.isRetained(data.r2Key)) {
-        void storage.delete(data.r2Key).catch(() => undefined);
-      }
+    } catch (error) {
+      // Deliberately NOT deleting the upload on failure. This used to be
+      // a `finally`, so a failed parse destroyed the file it was handed —
+      // and then BullMQ's own retry (attempts: 2) and the UI's Retry
+      // button both died on "The specified key does not exist" and the
+      // job went to the DLQ. Observed in production 2026-08-11: every
+      // document-parse failure was unretryable by construction.
+      // R2's 24h lifecycle on `temp/*` reclaims whatever a retry never
+      // consumes, so leaving it costs a day of storage at most.
+      throw error;
     }
   }
 

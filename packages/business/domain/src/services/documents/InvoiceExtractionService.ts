@@ -7,13 +7,14 @@
  * a provider that doesn't implement the optional `parseDocumentText`
  * capability — falls back to `parseScreenshot`.
  *
- * KNOWN LIMITATION, do not mistake this for a working path: there is no
- * PDF-page-to-image renderer here, so the fallback sends the original
- * file as one `imageBase64` payload. OpenAI REJECTS that for a PDF with
- * `invalid_image_format` — "Only image types are supported" — observed in
- * production 2026-08-11. So the fallback works for image uploads and
- * fails for scanned PDFs; fixing it means sending a file part rather than
- * an image part.
+ * The fallback hands the provider the ORIGINAL file, not a rendered page
+ * image — there is no PDF-page-to-image renderer here. That is fine
+ * because a provider that declares PDF support uploads it as a document
+ * part (see `supportsPdfFileInput` in `_chat-completions.ts`); one that
+ * doesn't throws, and this service surfaces that rather than storing an
+ * empty extraction. Sending a PDF as an image part is what produced
+ * `invalid_image_format` in production on 2026-08-11.
+ *
  * `usage` is accumulated across every provider call this method makes so
  * a future multi-call path (e.g. one call per scanned page) keeps
  * reporting an accurate total instead of silently under-counting.
@@ -115,10 +116,13 @@ export class InvoiceExtractionService {
     }
 
     const imageBase64 = Buffer.from(bytes).toString('base64');
+    // systemPrompt, not hint — for the same reason as the text path above.
+    // A hint sits under the provider's default holdings schema, so the
+    // vision path returned `{holdings: []}` even once the transport worked.
     const result = await provider.parseScreenshot({
       imageBase64,
       mimeType,
-      hint: INVOICE_EXTRACTION_PROMPT,
+      systemPrompt: INVOICE_EXTRACTION_PROMPT,
     });
     return toExtractionResult([result], 'vision-llm');
   }

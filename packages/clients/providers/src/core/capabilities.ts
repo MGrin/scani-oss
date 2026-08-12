@@ -168,12 +168,22 @@ export interface AIResult<T> {
 }
 
 export interface AIInferenceProvider extends ProviderBase {
-  /** Vision: extract structured data from a portfolio screenshot or
-      PDF page. */
+  /**
+   * Vision: extract structured data from a screenshot or a whole PDF.
+   *
+   * `systemPrompt` REPLACES the provider's default extraction schema, same
+   * contract as `parseDocumentText` below.
+   *
+   * A provider that cannot read `mimeType` — `application/pdf` is the one
+   * that matters, since not every vision endpoint accepts a PDF part —
+   * MUST throw rather than send it upstream anyway, so the AIRouter can
+   * fall through to a provider that can.
+   */
   parseScreenshot(input: {
     imageBase64: string;
     mimeType: string;
     hint?: string;
+    systemPrompt?: string;
   }): Promise<AIResult<unknown>>;
   /** Text: parse a CSV header / OFX free-text field for column
       detection. */

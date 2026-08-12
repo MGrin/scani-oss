@@ -38,7 +38,15 @@ export class ScreenshotParseProcessor extends UserJobProcessor<ScreenshotParseJo
         // file whether or not the extractor can read it, and a screenshot
         // that failed to parse is exactly the one they want to look at
         // again.
-        await this.record(uploadedFiles, data.userId, key, mimeType, buf, ctx.job.id);
+        await this.record(
+          uploadedFiles,
+          data.userId,
+          key,
+          mimeType,
+          buf,
+          ctx.job.id,
+          data.originalFilenames?.[i]
+        );
         await ctx.reportStatus(`Extracting holdings with AI${fileLabel}…`);
         const parsed = await useCase.execute({
           imageBase64: buf.toString('base64'),
@@ -134,7 +142,8 @@ export class ScreenshotParseProcessor extends UserJobProcessor<ScreenshotParseJo
     r2Key: string,
     mimeType: string | undefined,
     bytes: Buffer,
-    jobId: string | undefined
+    jobId: string | undefined,
+    originalFilename: string | undefined
   ): Promise<void> {
     try {
       await uploadedFiles.record({
@@ -143,7 +152,10 @@ export class ScreenshotParseProcessor extends UserJobProcessor<ScreenshotParseJo
         bytes: new Uint8Array(bytes),
         mimeType: mimeType ?? 'application/octet-stream',
         r2Key,
-        originalFilename: filenameFromKey(r2Key),
+        // Caller passes `originalFilenames[i]`, index-parallel to
+        // `r2Keys`; fall back to the key-derived name when the enqueuer
+        // didn't send one.
+        originalFilename: originalFilename ?? filenameFromKey(r2Key),
       });
     } catch (err) {
       logger.warn(

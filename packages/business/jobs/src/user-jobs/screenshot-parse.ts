@@ -5,6 +5,10 @@ import { JOB_NAMES } from '../job-names';
 
 export interface ScreenshotParseJob extends UserJobBase {
   r2Keys: string[];
+  /** Parallel to `r2Keys`. Optional so already-queued jobs still validate;
+   *  without it the `documents` row falls back to the presigner's
+   *  generated key name, which is meaningless to the person who uploaded. */
+  originalFilenames?: string[];
   provider: string;
   accountType: string;
   expectedCurrency: string;
@@ -17,6 +21,7 @@ export const screenshotParseSchema: z.ZodType<ScreenshotParseJob> = z.object({
   userId: z.string().min(1),
   requestId: z.string().min(1),
   r2Keys: z.array(z.string().min(1)).min(1).max(10),
+  originalFilenames: z.array(z.string().min(1)).max(10).optional(),
   provider: z.string().min(1),
   accountType: z.string().min(1),
   expectedCurrency: z.string().min(1),

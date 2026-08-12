@@ -178,6 +178,9 @@ export const fileImportRouter = router({
     .input(
       z.object({
         r2Key: z.string().min(1),
+        // The presigned key is a uuid; without the real name the Files
+        // list can only show `a1b2c3.csv`.
+        originalFilename: z.string().min(1).max(512).optional(),
         fileType: z.enum(['csv', 'ofx', 'qif']).default('csv'),
         accountId: z.string().min(1, 'accountId is required'),
         requestId: z.string().uuid(),
@@ -229,6 +232,7 @@ export const fileImportRouter = router({
         userId: ctx.userId,
         requestId: input.requestId,
         r2Key: input.r2Key,
+        originalFilename: input.originalFilename,
         fileType: input.fileType,
         accountId: input.accountId,
         enrich: true,
