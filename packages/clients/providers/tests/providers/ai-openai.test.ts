@@ -38,6 +38,67 @@ describe('OpenAIProvider', () => {
     }
   });
 
+  test('parseScreenshot sends a PDF as a file part, never as an image part', async () => {
+    const p = new OpenAIProvider('test-key');
+    const originalFetch = globalThis.fetch;
+    let capturedBody: { messages: Array<{ role: string; content: unknown }> } | null = null;
+    globalThis.fetch = (async (_url: string, init: RequestInit) => {
+      capturedBody = JSON.parse(init.body as string);
+      return new Response(
+        JSON.stringify({ choices: [{ message: { content: '{"invoices":[]}' } }] }),
+        { status: 200 }
+      );
+    }) as typeof fetch;
+    try {
+      await p.parseScreenshot({
+        imageBase64: 'JVBERi0=',
+        mimeType: 'application/pdf',
+        systemPrompt: 'extract invoices',
+      });
+      const parts = capturedBody?.messages[1]?.content as Array<Record<string, unknown>>;
+      const attachment = parts[1] as {
+        type: string;
+        file?: { filename: string; file_data: string };
+      };
+      expect(attachment.type).toBe('file');
+      expect(attachment.file?.filename).toEndWith('.pdf');
+      expect(attachment.file?.file_data).toBe('data:application/pdf;base64,JVBERi0=');
+      expect(parts.some((part) => part.type === 'image_url')).toBe(false);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  test('parseScreenshot systemPrompt replaces the default holdings prompt', async () => {
+    const p = new OpenAIProvider('test-key');
+    const originalFetch = globalThis.fetch;
+    let capturedBody: { messages: Array<{ role: string; content: unknown }> } | null = null;
+    globalThis.fetch = (async (_url: string, init: RequestInit) => {
+      capturedBody = JSON.parse(init.body as string);
+      return new Response(
+        JSON.stringify({ choices: [{ message: { content: '{"invoices":[]}' } }] }),
+        { status: 200 }
+      );
+    }) as typeof fetch;
+    try {
+      await p.parseScreenshot({
+        imageBase64: 'JVBERi0=',
+        mimeType: 'application/pdf',
+        systemPrompt: 'You are extracting structured invoice data.',
+      });
+      const system = capturedBody?.messages[0];
+      expect(system?.role).toBe('system');
+      expect(system?.content).toBe('You are extracting structured invoice data.');
+      expect(system?.content).not.toContain('holdings');
+      // The default user prompt ("Extract every visible token holding")
+      // would contradict the replacement prompt, so it must be gone too.
+      const parts = capturedBody?.messages[1]?.content as Array<{ type: string; text?: string }>;
+      expect(parts[0]?.text).not.toContain('token holding');
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
   test('parseDocumentText posts to /chat/completions with text-only model', async () => {
     const p = new OpenAIProvider('test-key');
     const originalFetch = globalThis.fetch;
