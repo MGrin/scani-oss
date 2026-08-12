@@ -29,6 +29,21 @@
 import type { NewToken, Token, TokenMetadata } from '@scani/db/schema';
 import type { HoldingSnapshot, PriceQuote, TransactionEvent } from '../types';
 
+/**
+ * Remote AI capabilities, as declared by the data-provider's `ai.status`
+ * route. Nothing here is inferred from a successful call — a capability
+ * the remote does not declare is treated as unsupported and refused
+ * locally, because the failure mode of guessing is a paid call that
+ * returns valid JSON of the wrong schema.
+ */
+export interface CloudAICapabilities {
+  /** Remote honours `systemPrompt` and returns the model's own shape
+      under `raw` instead of normalizing it into a portfolio. */
+  systemPrompt: boolean;
+  /** Remote provider accepts `application/pdf` as a document part. */
+  pdfFileInput: boolean;
+}
+
 export interface CloudProviderClient {
   // ============================================================
   // Pricing
@@ -93,14 +108,28 @@ export interface CloudProviderClient {
   // ============================================================
   // AI
   // ============================================================
+  /**
+   * What the remote data-provider can actually do for this provider key.
+   * Every flag is fail-closed: a deployment that predates the field says
+   * nothing, and `false` is the only safe reading of silence — the
+   * alternative is a billed call that comes back in the wrong schema.
+   */
+  fetchAICapabilities(args: { providerKey: string }): Promise<CloudAICapabilities>;
+
   parseScreenshot(args: {
     providerKey: string;
     imageBase64: string;
     mimeType: string;
     hint?: string;
+    systemPrompt?: string;
   }): Promise<unknown>;
 
-  parseDocumentText(args: { providerKey: string; text: string; hint?: string }): Promise<unknown>;
+  parseDocumentText(args: {
+    providerKey: string;
+    text: string;
+    hint?: string;
+    systemPrompt?: string;
+  }): Promise<unknown>;
 
   completeText(args: {
     providerKey: string;

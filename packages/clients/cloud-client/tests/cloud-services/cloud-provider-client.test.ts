@@ -10,10 +10,20 @@ interface BridgeCall {
 
 interface StubOpts {
   aiResult?: unknown;
+  aiStatus?: unknown;
   pricingResult?: unknown;
   tokensResult?: unknown;
   throws?: Error;
 }
+
+const AI_STATUS_WITH_PDF = {
+  availableProviders: [
+    { providerKey: 'openai', supportsPdfFileInput: true },
+    { providerKey: 'deepseek', supportsPdfFileInput: false },
+  ],
+  hasAvailableProvider: true,
+  routeCapabilities: { systemPrompt: true },
+};
 
 function stubClient(opts: StubOpts = {}): { client: CloudClient; calls: BridgeCall[] } {
   const calls: BridgeCall[] = [];
@@ -32,6 +42,7 @@ function stubClient(opts: StubOpts = {}): { client: CloudClient; calls: BridgeCa
         mutate: make('ai.parseDocumentText', opts.aiResult ?? { ok: true }),
       },
       completeText: { mutate: make('ai.completeText', opts.aiResult ?? 'completion-result') },
+      status: { query: make('ai.status', opts.aiStatus ?? AI_STATUS_WITH_PDF) },
     },
     pricing: {
       fetchCurrentPrice: { mutate: make('pricing.fetchCurrentPrice', opts.pricingResult ?? null) },
@@ -103,6 +114,55 @@ describe('CloudProviderClientBridge — AI methods (live)', () => {
     expect(calls[0]?.args).toEqual({
       text: 'csv header line',
       options: { provider: 'openai', context: 'detect' },
+    });
+  });
+
+  test('forwards systemPrompt on both parse routes so the caller schema survives the wire', async () => {
+    const { client, calls } = stubClient();
+    const bridge = new CloudProviderClientBridge(client);
+    await bridge.parseScreenshot({
+      providerKey: 'openai',
+      imageBase64: 'AAA',
+      mimeType: 'application/pdf',
+      systemPrompt: 'INVOICE SCHEMA',
+    });
+    await bridge.parseDocumentText({
+      providerKey: 'openai',
+      text: 'invoice markdown',
+      systemPrompt: 'INVOICE SCHEMA',
+    });
+    expect((calls[0]?.args as { options: { systemPrompt?: string } }).options.systemPrompt).toBe(
+      'INVOICE SCHEMA'
+    );
+    expect((calls[1]?.args as { options: { systemPrompt?: string } }).options.systemPrompt).toBe(
+      'INVOICE SCHEMA'
+    );
+  });
+
+  test('fetchAICapabilities reads the declarations off ai.status, per provider key', async () => {
+    const { client } = stubClient();
+    const bridge = new CloudProviderClientBridge(client);
+    expect(await bridge.fetchAICapabilities({ providerKey: 'openai' })).toEqual({
+      systemPrompt: true,
+      pdfFileInput: true,
+    });
+    expect(await bridge.fetchAICapabilities({ providerKey: 'deepseek' })).toEqual({
+      systemPrompt: true,
+      pdfFileInput: false,
+    });
+  });
+
+  test('fetchAICapabilities reports nothing supported when the remote declares nothing', async () => {
+    // A data-provider deployed before these fields existed. Silence has to
+    // read as "cannot" — the alternative is a billed call whose response
+    // arrives in a schema the caller never asked for.
+    const { client } = stubClient({
+      aiStatus: { availableProviders: [{ providerKey: 'openai' }], hasAvailableProvider: true },
+    });
+    const bridge = new CloudProviderClientBridge(client);
+    expect(await bridge.fetchAICapabilities({ providerKey: 'openai' })).toEqual({
+      systemPrompt: false,
+      pdfFileInput: false,
     });
   });
 

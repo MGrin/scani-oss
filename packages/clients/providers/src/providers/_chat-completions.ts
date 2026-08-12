@@ -136,12 +136,14 @@ function imagePart(base64: string, mimeType: string) {
 export class ChatCompletionsProvider implements AIInferenceProvider {
   readonly providerKey: string;
   readonly capabilities: readonly Capability[] = ['ai-inference'];
+  readonly supportsPdfFileInput: boolean;
 
   protected readonly logger: CustomLogger;
   private readonly limiter: OutflowRateLimiter;
 
   constructor(protected readonly config: ChatCompletionsConfig) {
     this.providerKey = config.providerKey;
+    this.supportsPdfFileInput = config.supportsPdfFileInput === true;
     this.logger = createComponentLogger(`provider:${config.providerKey}`);
     // Redis-backed when the host app initialised the shared client
     // (api / worker / data-provider), in-memory in tests / OSS without
@@ -172,7 +174,7 @@ export class ChatCompletionsProvider implements AIInferenceProvider {
       throw new Error(`${this.config.providerKey}: vision not supported by configured model`);
     }
     const isPdf = input.mimeType === PDF_MIME_TYPE;
-    if (isPdf && !this.config.supportsPdfFileInput) {
+    if (isPdf && !this.supportsPdfFileInput) {
       throw new Error(
         `${this.config.providerKey}: PDF input not supported by this provider (only image types)`
       );

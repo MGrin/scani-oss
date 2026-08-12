@@ -134,6 +134,92 @@ describe('aiRouter.parseDocumentText', () => {
   });
 });
 
+describe('aiRouter — systemPrompt replaces the holdings schema', () => {
+  const invoiceShape = { invoices: [{ vendorNameRaw: 'Neon, LLC', totalAmount: '12.96' }] };
+
+  test('parseScreenshot with a systemPrompt returns the model shape, un-normalized', async () => {
+    const seen: Array<Record<string, unknown>> = [];
+    registry.register(
+      makeAi({
+        parseScreenshot: async (input: Record<string, unknown>) => {
+          seen.push(input);
+          return { data: invoiceShape };
+        },
+      })
+    );
+    const caller = aiRouter.createCaller(buildAuthedContext());
+    const out = await caller.parseScreenshot({
+      imageBase64: 'JVBERi0=',
+      options: { mimeType: 'application/pdf', systemPrompt: 'INVOICE SCHEMA' },
+    });
+    expect(seen[0]?.systemPrompt).toBe('INVOICE SCHEMA');
+    expect(out.raw).toEqual(invoiceShape);
+    // `portfolio` absent, not empty: normalizing an invoice into the
+    // holdings shape is what billed a call and stored zero invoices.
+    expect(out).not.toHaveProperty('portfolio');
+  });
+
+  test('parseDocumentText passes the systemPrompt in the third argument slot', async () => {
+    const seen: unknown[][] = [];
+    registry.register(
+      makeAi({
+        parseDocumentText: async (...args: unknown[]) => {
+          seen.push(args);
+          return { data: invoiceShape };
+        },
+      })
+    );
+    const caller = aiRouter.createCaller(buildAuthedContext());
+    const out = await caller.parseDocumentText({
+      text: 'invoice markdown',
+      options: { systemPrompt: 'INVOICE SCHEMA' },
+    });
+    // Position, not just presence: as the second argument it is a hint
+    // sitting under the holdings prompt, which is the silent failure.
+    expect(seen[0]).toEqual(['invoice markdown', undefined, 'INVOICE SCHEMA']);
+    expect(out.raw).toEqual(invoiceShape);
+    expect(out).not.toHaveProperty('portfolio');
+  });
+
+  test('without a systemPrompt both routes behave exactly as before', async () => {
+    const seen: Array<Record<string, unknown>> = [];
+    registry.register(
+      makeAi({
+        parseScreenshot: async (input: Record<string, unknown>) => {
+          seen.push(input);
+          return { data: okPortfolio };
+        },
+      })
+    );
+    const caller = aiRouter.createCaller(buildAuthedContext());
+    const shot = await caller.parseScreenshot({
+      imageBase64: 'aW1n',
+      options: { mimeType: 'image/png' },
+    });
+    expect(seen[0]?.systemPrompt).toBeUndefined();
+    expect(shot.portfolio.holdings).toHaveLength(2);
+    expect(shot).not.toHaveProperty('raw');
+
+    const doc = await caller.parseDocumentText({ text: 'statement text' });
+    expect(doc.portfolio.holdings).toHaveLength(2);
+    expect(doc).not.toHaveProperty('raw');
+  });
+});
+
+describe('aiRouter.status', () => {
+  test('declares systemPrompt support and each provider PDF support', async () => {
+    registry.register(makeAi({ providerKey: 'openai', supportsPdfFileInput: true }));
+    registry.register(makeAi({ providerKey: 'deepseek' }));
+    const caller = aiRouter.createCaller(buildAuthedContext());
+    const out = await caller.status();
+    expect(out.routeCapabilities).toEqual({ systemPrompt: true });
+    expect(out.availableProviders).toEqual([
+      { providerKey: 'openai', supportsPdfFileInput: true },
+      { providerKey: 'deepseek', supportsPdfFileInput: false },
+    ]);
+  });
+});
+
 describe('aiRouter.completeText', () => {
   test('returns content + provider on success', async () => {
     registry.register(makeAi());
