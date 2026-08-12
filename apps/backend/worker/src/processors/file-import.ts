@@ -340,7 +340,9 @@ export class FileImportProcessor extends UserJobProcessor<FileImportJob, FileImp
         // `fileImport.parseAndEnrich` carries the r2Key and a fileType, not
         // the name the user picked, so the presigned key's own filename is
         // the honest answer.
-        originalFilename: data.r2Key.split('/').pop() || data.r2Key,
+        // The presigned key is a uuid, so fall back to it only when the
+        // enqueuer didn't carry the user's own filename through.
+        originalFilename: data.originalFilename ?? data.r2Key.split('/').pop() ?? data.r2Key,
       });
     } catch (err) {
       logger.warn(
