@@ -672,4 +672,42 @@ describe('PaymentService', () => {
       });
     });
   });
+
+  describe('schedule change clears derived past rows', () => {
+    // Regression: the delete used to be bounded at `today`, so the OLD
+    // rule's past `scheduled` rows survived while `materialiseSchedule` —
+    // which starts at the payment's anchor, not today — inserted the NEW
+    // rule's past dates beside them. A monthly bill moved a couple of days
+    // then showed two overdue rows for every past period.
+    test('moving the anchor leaves one unpaid row per past period, not two', async () => {
+      await withTestDb(async (tx) => {
+        const user = await makeUser(tx);
+        const oldAnchor = monthsFromNowOnDay(-3, 10);
+        const payment = await makePayment(tx, {
+          userId: user.id,
+          intervalUnit: 'month',
+          intervalCount: 1,
+          anchorDate: oldAnchor,
+        });
+        await service().materialise(user.id, payment.id, tx);
+
+        const beforeEdit = await occurrences().findByPaymentId(payment.id, tx);
+        const pastBefore = beforeEdit.filter((o) => o.dueDate < todayUtcString());
+        expect(pastBefore.length).toBeGreaterThan(0);
+
+        await service().update(user.id, payment.id, { anchorDate: monthsFromNowOnDay(-3, 12) }, tx);
+
+        const after = await occurrences().findByPaymentId(payment.id, tx);
+        const pastDates = after.filter((o) => o.dueDate < todayUtcString()).map((o) => o.dueDate);
+        // Every surviving past row belongs to the NEW rule — none on the
+        // 10th — and there is exactly one per period. The count is NOT
+        // asserted equal to before: shifting the anchor from the 10th to
+        // the 12th moves one date across "today" on some days of the
+        // month, which is correct and not what this regression is about.
+        expect(pastDates.length).toBeGreaterThan(0);
+        expect(pastDates.every((d) => d.endsWith('-12'))).toBe(true);
+        expect(new Set(pastDates).size).toBe(pastDates.length);
+      });
+    });
+  });
 });

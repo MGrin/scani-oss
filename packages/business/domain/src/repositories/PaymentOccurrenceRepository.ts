@@ -165,6 +165,42 @@ export class PaymentOccurrenceRepository extends BaseRepository<
    * adds rows, so this is the only thing that can retire a wrong one.
    * Matched/missed/skipped rows are never touched.
    */
+  /**
+   * Every `scheduled` row for a payment, regardless of date.
+   *
+   * A `scheduled` occurrence carries NO user decision — no settlement, no
+   * skip, no invoice link, no amount the user typed. It is derived
+   * entirely from the recurrence rule, so a shape change can regenerate
+   * it losslessly. Rows that DO carry a decision (`matched`, `skipped`,
+   * `missed`) are untouched here and remapped separately.
+   *
+   * Bounding this by date is what left duplicated PAST unpaid rows: the
+   * delete spared them while `materialiseSchedule` — which starts at the
+   * payment's own anchor, not today — inserted the new rule's past dates
+   * alongside. A monthly bill moved from the 1st to the 3rd then showed
+   * two overdue rows per month.
+   */
+  async deleteAllScheduled(
+    paymentId: string,
+    transaction?: DatabaseTransaction
+  ): Promise<PaymentOccurrence[]> {
+    try {
+      const database = this.getDb(transaction);
+      return await database
+        .delete(schema.paymentOccurrences)
+        .where(
+          and(
+            eq(schema.paymentOccurrences.paymentId, paymentId),
+            eq(schema.paymentOccurrences.status, 'scheduled')
+          )
+        )
+        .returning();
+    } catch (error) {
+      this.logger.error({ paymentId, error }, 'Failed to delete scheduled payment occurrences');
+      throw error;
+    }
+  }
+
   async deleteScheduledOnOrAfter(
     paymentId: string,
     fromDate: string,
