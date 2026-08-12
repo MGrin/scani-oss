@@ -6,7 +6,7 @@
 
 export { CloudAIProvider } from './cloud-ai';
 export { CloudBalanceFetcher } from './cloud-balance-fetcher';
-export type { CloudProviderClient } from './cloud-client';
+export type { CloudAICapabilities, CloudProviderClient } from './cloud-client';
 export { CloudCurrentPricer } from './cloud-current-pricer';
 export { CloudHistoricalPricer } from './cloud-historical-pricer';
 export { CloudTokenEnricher } from './cloud-token-enricher';

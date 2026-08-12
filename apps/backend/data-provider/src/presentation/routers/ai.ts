@@ -132,6 +132,30 @@ function normalizePortfolio(raw: unknown): ParsedPortfolio {
 
 const providerSchema = z.string().optional();
 
+/**
+ * A caller-supplied `systemPrompt` REPLACES the provider's default
+ * extraction schema, so its own schema — not the holdings one — governs
+ * the response. Normalizing that through `normalizePortfolio` would
+ * return `{holdings: []}` for a perfectly good invoice: valid JSON,
+ * billed, zero rows, no error. So the two cases return DIFFERENT keys:
+ *
+ *   no systemPrompt → `{ portfolio, metadata }`  (unchanged, real callers)
+ *   systemPrompt    → `{ raw, metadata }`        (the model's own shape)
+ *
+ * Distinct keys rather than a reused one so a client that asked for raw
+ * and got `portfolio` back can tell it is talking to a data-provider too
+ * old to honour the field, instead of silently reading zero results.
+ */
+const systemPromptSchema = z.string().optional();
+
+function aiResponse(
+  raw: unknown,
+  systemPrompt: string | undefined,
+  metadata: { provider: string; processingTime: number }
+): { portfolio?: ParsedPortfolio; raw?: unknown; metadata: typeof metadata } {
+  return systemPrompt ? { raw, metadata } : { portfolio: normalizePortfolio(raw), metadata };
+}
+
 export const aiRouter = router({
   parseScreenshot: bearerProcedure
     .meta({
@@ -154,6 +178,7 @@ export const aiRouter = router({
             context: z.string().optional(),
             mimeType: z.string().optional(),
             fallbackProviders: z.boolean().optional(),
+            systemPrompt: systemPromptSchema,
           })
           .optional(),
       })
@@ -166,7 +191,13 @@ export const aiRouter = router({
       // bearer-procedure middleware before reaching this body) don't
       // trip the full data-provider env-schema validation. The var is
       // still validated + refused in production by config/env.ts at boot.
-      if (process.env.STUB_AI === '1') {
+      //
+      // Skipped when the caller replaced the system prompt: the stub only
+      // knows the holdings shape, and answering an invoice prompt with
+      // holdings is the exact silent-wrong-schema failure this route now
+      // exists to prevent. Without a real provider registered the call
+      // then fails loudly instead.
+      if (process.env.STUB_AI === '1' && !input.options?.systemPrompt) {
         return {
           portfolio: {
             holdings: [
@@ -202,15 +233,13 @@ export const aiRouter = router({
             imageBase64: input.imageBase64,
             mimeType,
             hint,
+            systemPrompt: opts.systemPrompt,
           });
           annotateUsage(ctx, provider.providerKey, result.usage);
-          return {
-            portfolio: normalizePortfolio(result.data),
-            metadata: {
-              provider: provider.providerKey,
-              processingTime: Date.now() - start,
-            },
-          };
+          return aiResponse(result.data, opts.systemPrompt, {
+            provider: provider.providerKey,
+            processingTime: Date.now() - start,
+          });
         } catch (err) {
           lastError = err instanceof Error ? err : new Error(String(err));
           log.warn(
@@ -244,6 +273,7 @@ export const aiRouter = router({
             accountType: z.string().optional(),
             expectedCurrency: z.string().optional(),
             context: z.string().optional(),
+            systemPrompt: systemPromptSchema,
           })
           .optional(),
       })
@@ -264,15 +294,12 @@ export const aiRouter = router({
         if (!provider.parseDocumentText) continue;
         const start = Date.now();
         try {
-          const result = await provider.parseDocumentText(input.text, hint);
+          const result = await provider.parseDocumentText(input.text, hint, opts.systemPrompt);
           annotateUsage(ctx, provider.providerKey, result.usage);
-          return {
-            portfolio: normalizePortfolio(result.data),
-            metadata: {
-              provider: provider.providerKey,
-              processingTime: Date.now() - start,
-            },
-          };
+          return aiResponse(result.data, opts.systemPrompt, {
+            provider: provider.providerKey,
+            processingTime: Date.now() - start,
+          });
         } catch (err) {
           lastError = err instanceof Error ? err : new Error(String(err));
           log.warn(
@@ -360,8 +387,20 @@ export const aiRouter = router({
     .query(() => {
       const providers = getProviders();
       return {
-        availableProviders: providers.map((p) => ({ providerKey: p.providerKey })),
+        availableProviders: providers.map((p) => ({
+          providerKey: p.providerKey,
+          // Relayed from the provider's own declaration so a cloud-mode
+          // client can refuse a PDF locally instead of paying for a
+          // request the upstream endpoint answers with
+          // `invalid_image_format`.
+          supportsPdfFileInput: p.supportsPdfFileInput === true,
+        })),
         hasAvailableProvider: providers.length > 0,
+        // Route-level capabilities, so a cloud client can tell a
+        // data-provider that honours `systemPrompt` from one that would
+        // silently normalize its response into the holdings shape. An
+        // older deployment omits the whole block; absent means "no".
+        routeCapabilities: { systemPrompt: true },
       };
     }),
 });
