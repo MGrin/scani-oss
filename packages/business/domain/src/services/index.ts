@@ -11,10 +11,24 @@ export { ScreenshotParsingService } from './ai/ScreenshotParsingService';
 export { BaseService } from './BaseService';
 // documents/
 export {
+  type DocumentDeletionOutcome,
+  DocumentDeletionService,
+} from './documents/DocumentDeletionService';
+export {
+  type DocumentDownloadOutcome,
+  DocumentDownloadService,
+} from './documents/DocumentDownloadService';
+export {
   type DocumentIngestionResult,
   DocumentIngestionService,
   type IngestDocumentInput,
 } from './documents/DocumentIngestionService';
+export {
+  type DocumentReparseOutcome,
+  type DocumentReparsePlan,
+  DocumentReparseService,
+} from './documents/DocumentReparseService';
+export { DocumentRetentionService } from './documents/DocumentRetentionService';
 export {
   type ExtractedInvoice,
   type ExtractedLineItem,
@@ -23,6 +37,10 @@ export {
   InvoiceExtractionService,
   type InvoiceExtractionUsage,
 } from './documents/InvoiceExtractionService';
+export {
+  type RecordUploadedFileInput,
+  UploadedFileService,
+} from './documents/UploadedFileService';
 // holdings/
 export {
   type EnrichedParsedHolding,

@@ -1,19 +1,19 @@
 /**
  * Text-first invoice extraction through the AI provider abstraction.
  *
- * Routing mirrors `pdfExtraction.ts`'s classification: a text-based PDF
- * goes through `parseDocumentText` on the extracted markdown (cheap,
- * no vision pricing); a scanned PDF — or any non-PDF mime type, or a
- * provider that doesn't implement the optional `parseDocumentText`
- * capability at all — falls back to `parseScreenshot` on the raw bytes.
- * That fallback is the single most likely production failure mode,
- * because `parseDocumentText` is optional on `AIInferenceProvider`; every
- * text-classified document must survive a provider that lacks it.
+ * A PDF whose text layer actually carries the invoice goes through
+ * `parseDocumentText` on the extracted markdown (cheap, no vision
+ * pricing). Anything else — an image upload, a genuinely scanned PDF, or
+ * a provider that doesn't implement the optional `parseDocumentText`
+ * capability — falls back to `parseScreenshot`.
  *
- * There is no PDF-page-to-image renderer in this codebase (Task 9 only
- * ships classification + text extraction), so the vision path sends the
- * whole original file as one `imageBase64` payload rather than one call
- * per page — vision-capable models accept a PDF's raw bytes directly.
+ * KNOWN LIMITATION, do not mistake this for a working path: there is no
+ * PDF-page-to-image renderer here, so the fallback sends the original
+ * file as one `imageBase64` payload. OpenAI REJECTS that for a PDF with
+ * `invalid_image_format` — "Only image types are supported" — observed in
+ * production 2026-08-11. So the fallback works for image uploads and
+ * fails for scanned PDFs; fixing it means sending a file part rather than
+ * an image part.
  * `usage` is accumulated across every provider call this method makes so
  * a future multi-call path (e.g. one call per scanned page) keeps
  * reporting an accurate total instead of silently under-counting.
@@ -24,12 +24,13 @@
  * from a paid API call should not fail the whole extraction job.
  */
 
+import type { ExtractionBillingPeriod, ExtractionPaymentStatus } from '@scani/db/schema';
 import type { AIInferenceProvider, AIResult, AIUsage } from '@scani/providers/core/capabilities';
 import { ProviderRegistry } from '@scani/providers/core/registry';
 import { isValidDecimalString } from '@scani/shared';
 import { Container, Service } from 'typedi';
 import { INVOICE_EXTRACTION_PROMPT, PROMPT_VERSION } from './invoicePrompt';
-import { classifyDocument, extractText } from './pdfExtraction';
+import { extractText } from './pdfExtraction';
 
 export type ExtractorKind = 'text-llm' | 'vision-llm';
 
@@ -50,6 +51,11 @@ export interface ExtractedInvoice {
   /** Decimal string. Never parsed into a JS float — see CLAUDE.md money rule. */
   totalAmount: string | null;
   currencyCode: string | null;
+  /** Null whenever the document didn't say — never inferred. Downstream
+      (the paid-invoice → recurring-payment bridge) treats null as
+      "unknown", which is not the same decision as "unpaid". */
+  paymentStatus: ExtractionPaymentStatus | null;
+  billingPeriod: ExtractionBillingPeriod | null;
   lineItems: ExtractedLineItem[];
   confidence: number | null;
   promptVersion: string;
@@ -66,6 +72,14 @@ export interface InvoiceExtractionResult {
 }
 
 const PDF_MIME_TYPE = 'application/pdf';
+/**
+ * Below this, the text layer is a page title rather than a document, and
+ * vision is worth paying for. Calibrated against a real two-page invoice:
+ * its content page yielded 880 characters, its trailer page 14. Anything
+ * carrying a vendor, an amount and a date clears this comfortably.
+ */
+const MIN_TEXT_CHARS_FOR_LLM = 200;
+
 const EMPTY_RESULT: InvoiceExtractionResult = { invoices: [], usage: { upstreamCostUsd: 0 } };
 
 @Service()
@@ -74,11 +88,28 @@ export class InvoiceExtractionService {
     const provider = this.getProvider();
     if (!provider) return EMPTY_RESULT;
 
-    if (mimeType === PDF_MIME_TYPE) {
-      const classification = classifyDocument(bytes);
-      if (classification.kind === 'text' && provider.parseDocumentText) {
-        const markdown = extractText(bytes);
-        const result = await provider.parseDocumentText(markdown, INVOICE_EXTRACTION_PROMPT);
+    if (mimeType === PDF_MIME_TYPE && provider.parseDocumentText) {
+      // Route on the text we can ACTUALLY read, not on whether every page
+      // has a trustworthy text layer. `classifyDocument` collapses
+      // `pagesNeedingOcr` into a document-level boolean, so a two-page
+      // invoice whose second page is a 14-character "Launch Plan" trailer
+      // was classified `scanned` — throwing away 880 characters of
+      // perfectly readable invoice on page one and sending the raw PDF to
+      // a vision endpoint that rejects PDFs outright. Judging the
+      // extracted markdown directly also sidesteps having to align
+      // `pagesNeedingOcr`'s indexing with `extractPagesMarkdown`'s.
+      const markdown = extractText(bytes).trim();
+      if (markdown.length >= MIN_TEXT_CHARS_FOR_LLM) {
+        // Passed as the SYSTEM prompt, not a hint. As a hint it sat
+        // underneath the provider's default prompt, which hardcodes the
+        // holdings schema — so every invoice came back as
+        // `{holdings: []}`: valid JSON, billed, wrong shape, and zero
+        // invoices stored without an error anywhere.
+        const result = await provider.parseDocumentText(
+          markdown,
+          undefined,
+          INVOICE_EXTRACTION_PROMPT
+        );
         return toExtractionResult([result], 'text-llm');
       }
     }
@@ -141,6 +172,55 @@ function asDecimalString(value: unknown): string | null {
   return typeof value === 'string' && isValidDecimalString(value) ? value : null;
 }
 
+/** Models paraphrase rather than echo the enum ("Paid in full",
+    "annually"), so a small synonym table sits in front of the exact
+    match. Anything outside it is null, not a nearest guess: a wrong
+    'paid' marks a live bill as settled, and a wrong period puts the next
+    charge on the wrong date. */
+const PAYMENT_STATUS_SYNONYMS: Record<string, ExtractionPaymentStatus> = {
+  paid: 'paid',
+  'paid in full': 'paid',
+  settled: 'paid',
+  'payment received': 'paid',
+  unpaid: 'unpaid',
+  outstanding: 'unpaid',
+  due: 'unpaid',
+  'balance due': 'unpaid',
+};
+
+const BILLING_PERIOD_SYNONYMS: Record<string, ExtractionBillingPeriod> = {
+  week: 'week',
+  weekly: 'week',
+  'per week': 'week',
+  month: 'month',
+  monthly: 'month',
+  'per month': 'month',
+  quarter: 'quarter',
+  quarterly: 'quarter',
+  'per quarter': 'quarter',
+  year: 'year',
+  yearly: 'year',
+  annual: 'year',
+  annually: 'year',
+  'per year': 'year',
+};
+
+function canonicalise(value: unknown): string | null {
+  if (typeof value !== 'string') return null;
+  const trimmed = value.trim().toLowerCase().replace(/\s+/g, ' ');
+  return trimmed.length > 0 ? trimmed : null;
+}
+
+function asPaymentStatus(value: unknown): ExtractionPaymentStatus | null {
+  const key = canonicalise(value);
+  return key ? (PAYMENT_STATUS_SYNONYMS[key] ?? null) : null;
+}
+
+function asBillingPeriod(value: unknown): ExtractionBillingPeriod | null {
+  const key = canonicalise(value);
+  return key ? (BILLING_PERIOD_SYNONYMS[key] ?? null) : null;
+}
+
 function asConfidence(value: unknown): number | null {
   return typeof value === 'number' && Number.isFinite(value) ? value : null;
 }
@@ -184,6 +264,8 @@ function normalizeInvoice(
     dueDate: asString(rec.dueDate),
     totalAmount: asDecimalString(rec.totalAmount),
     currencyCode: asString(rec.currencyCode),
+    paymentStatus: asPaymentStatus(rec.paymentStatus),
+    billingPeriod: asBillingPeriod(rec.billingPeriod),
     lineItems,
     confidence: asConfidence(rec.confidence),
     promptVersion: PROMPT_VERSION,

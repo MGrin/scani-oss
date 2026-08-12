@@ -74,6 +74,36 @@ export class PaymentOccurrenceRepository extends BaseRepository<
     }
   }
 
+  /**
+   * The single occurrence sitting on one exact due date. Not
+   * ownership-scoped on its own — `(payment_id, due_date)` is unique, so
+   * callers must have already proved they own `paymentId` (the way
+   * `findByPaymentId` requires, for the same reason).
+   */
+  async findByPaymentIdAndDueDate(
+    paymentId: string,
+    dueDate: string,
+    transaction?: DatabaseTransaction
+  ): Promise<PaymentOccurrence | null> {
+    try {
+      const database = this.getDb(transaction);
+      const [row] = await database
+        .select()
+        .from(schema.paymentOccurrences)
+        .where(
+          and(
+            eq(schema.paymentOccurrences.paymentId, paymentId),
+            eq(schema.paymentOccurrences.dueDate, dueDate)
+          )
+        )
+        .limit(1);
+      return row ?? null;
+    } catch (error) {
+      this.logger.error({ paymentId, dueDate, error }, 'Failed to find occurrence by payment+date');
+      throw error;
+    }
+  }
+
   async findByPaymentId(
     paymentId: string,
     transaction?: DatabaseTransaction

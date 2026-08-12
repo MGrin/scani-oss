@@ -32,7 +32,7 @@ describe('OpenAIProvider', () => {
         mimeType: 'image/png',
       });
       expect((result.data as { holdings: unknown[] }).holdings).toEqual([]);
-      expect(capturedBody?.model).toBe('gpt-4o');
+      expect(capturedBody?.model).toBe('gpt-5.6-luna');
     } finally {
       globalThis.fetch = originalFetch;
     }
@@ -55,7 +55,7 @@ describe('OpenAIProvider', () => {
       const result = await p.parseDocumentText('some text', 'broker statement');
       const data = result.data as { holdings: Array<{ symbol: string }> };
       expect(data.holdings[0]?.symbol).toBe('AAPL');
-      expect(capturedBody?.model).toBe('gpt-4o-mini');
+      expect(capturedBody?.model).toBe('gpt-5.6-luna');
     } finally {
       globalThis.fetch = originalFetch;
     }

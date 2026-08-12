@@ -1,13 +1,25 @@
-import { formatCurrency, formatDate, formatDateTime } from '@scani/shared';
+import { formatBytes, formatCurrency, formatDate, formatDateTime } from '@scani/shared';
+import { ConfirmDialog } from '@scani/ui/components/ConfirmDialog';
 import { Badge } from '@scani/ui/ui/badge';
 import { Button } from '@scani/ui/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@scani/ui/ui/card';
 import { PageLoader } from '@scani/ui/ui/loading';
 import { Separator } from '@scani/ui/ui/separator';
 import { showError, showSuccess } from '@scani/ui/ui/use-toast';
-import { ArrowLeft, Check, FileText, X } from 'lucide-react';
-import { Link, useParams } from 'react-router-dom';
+import {
+  ArrowLeft,
+  ArrowRight,
+  Download,
+  FileText,
+  Loader2,
+  RefreshCw,
+  Trash2,
+  X,
+} from 'lucide-react';
+import { useState } from 'react';
+import { Link, useNavigate, useParams } from 'react-router-dom';
 import { type RouterOutputs, trpc } from '@/lib/trpc';
+import { useDocumentDownload } from '../hooks/useDocuments';
 import { V2_ROUTES } from '../lib/routes';
 
 const REVIEW_STATE_VARIANT: Record<string, 'default' | 'secondary' | 'outline'> = {
@@ -26,30 +38,47 @@ type Extraction = RouterOutputs['documents']['get']['extractions'][number];
  */
 export function DocumentDetailPage() {
   const { id = '' } = useParams<{ id: string }>();
+  const navigate = useNavigate();
   const utils = trpc.useUtils();
+  const [confirmReparse, setConfirmReparse] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const { download, pendingId } = useDocumentDownload();
 
   const documentQuery = trpc.documents.get.useQuery({ documentId: id }, { enabled: Boolean(id) });
-
-  const invalidateAfterReview = () => {
-    void utils.documents.get.invalidate({ documentId: id });
-    void utils.documents.listExtractions.invalidate();
-    void utils.review.listPending.invalidate();
-  };
-
-  const acceptMutation = trpc.documents.acceptExtraction.useMutation({
-    onSuccess: () => {
-      showSuccess('Extraction accepted');
-      invalidateAfterReview();
-    },
-    onError: (error) => showError(error, 'Accepting extraction'),
-  });
 
   const rejectMutation = trpc.documents.rejectExtraction.useMutation({
     onSuccess: () => {
       showSuccess('Extraction rejected');
-      invalidateAfterReview();
+      void utils.documents.get.invalidate({ documentId: id });
+      void utils.documents.listExtractions.invalidate();
+      void utils.review.listPending.invalidate();
     },
     onError: (error) => showError(error, 'Rejecting extraction'),
+  });
+
+  const reparseMutation = trpc.documents.reparse.useMutation({
+    onSuccess: ({ jobId }) => {
+      setConfirmReparse(false);
+      void utils.documents.get.invalidate({ documentId: id });
+      void utils.documents.listExtractions.invalidate();
+      void utils.review.listPending.invalidate();
+      navigate(V2_ROUTES.jobDetail(jobId));
+    },
+    onError: (error) => showError(error, 'Re-parsing document'),
+  });
+
+  const deleteMutation = trpc.documents.delete.useMutation({
+    onSuccess: () => {
+      setConfirmDelete(false);
+      showSuccess('Document deleted — you can upload that file again');
+      // Navigate first: this page's own `documents.get` is the one query
+      // the invalidation would refetch into a 404. The router-wide
+      // invalidate is what drops the row from the Files list behind us.
+      navigate(V2_ROUTES.files);
+      void utils.documents.invalidate();
+      void utils.review.listPending.invalidate();
+    },
+    onError: (error) => showError(error, 'Deleting document'),
   });
 
   if (!id) return null;
@@ -69,13 +98,27 @@ export function DocumentDetailPage() {
     <div className="max-w-2xl space-y-6">
       <BackLink />
 
-      <div>
-        <div className="flex items-center gap-2 flex-wrap">
+      <div className="flex items-start justify-between gap-3">
+        <div className="flex items-center gap-2 flex-wrap min-w-0">
           <h2 className="text-2xl font-bold tracking-tight truncate">
             {document.originalFilename}
           </h2>
           {document.classification && <Badge variant="outline">{document.classification}</Badge>}
         </div>
+        <Button
+          size="sm"
+          variant="outline"
+          className="shrink-0"
+          disabled={pendingId === document.id}
+          onClick={() => void download(document.id)}
+        >
+          {pendingId === document.id ? (
+            <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" />
+          ) : (
+            <Download className="h-3.5 w-3.5 mr-1" />
+          )}
+          Download
+        </Button>
       </div>
 
       <Card>
@@ -85,6 +128,8 @@ export function DocumentDetailPage() {
             <dd className="text-right">{formatDateTime(document.createdAt)}</dd>
             <dt className="text-muted-foreground">Type</dt>
             <dd className="text-right">{document.mimeType}</dd>
+            <dt className="text-muted-foreground">Size</dt>
+            <dd className="text-right">{formatBytes(document.byteSize)}</dd>
             <dt className="text-muted-foreground">Source</dt>
             <dd className="text-right">{document.sourceKind}</dd>
           </dl>
@@ -92,11 +137,31 @@ export function DocumentDetailPage() {
       </Card>
 
       <Card>
-        <CardHeader>
+        <CardHeader className="flex flex-row items-center justify-between gap-3 space-y-0">
           <CardTitle className="text-sm flex items-center gap-1.5">
             <FileText className="h-3.5 w-3.5" />
             Extracted invoices ({extractions.length})
           </CardTitle>
+          <div className="flex items-center gap-2">
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={reparseMutation.isPending || deleteMutation.isPending}
+              onClick={() => setConfirmReparse(true)}
+            >
+              <RefreshCw className="h-3.5 w-3.5 mr-1" />
+              Re-parse
+            </Button>
+            <Button
+              size="sm"
+              variant="destructive"
+              disabled={reparseMutation.isPending || deleteMutation.isPending}
+              onClick={() => setConfirmDelete(true)}
+            >
+              <Trash2 className="h-3.5 w-3.5 mr-1" />
+              Delete
+            </Button>
+          </div>
         </CardHeader>
         <CardContent className="space-y-3">
           {extractions.length === 0 ? (
@@ -108,26 +173,52 @@ export function DocumentDetailPage() {
               <ExtractionCard
                 key={extraction.id}
                 extraction={extraction}
-                onAccept={() => acceptMutation.mutate({ extractionId: extraction.id })}
+                onApprove={() => navigate(V2_ROUTES.paymentCreateFromExtraction(extraction.id))}
                 onReject={() => rejectMutation.mutate({ extractionId: extraction.id })}
-                isPending={acceptMutation.isPending || rejectMutation.isPending}
+                isPending={rejectMutation.isPending}
               />
             ))
           )}
         </CardContent>
       </Card>
+
+      <ConfirmDialog
+        open={confirmReparse}
+        onOpenChange={setConfirmReparse}
+        title="Re-parse this document"
+        description="Reads the file again with the current extractor and replaces every extraction that hasn't already been turned into a payment — those are kept. This costs an AI call."
+        confirmLabel="Re-parse"
+        isPending={reparseMutation.isPending}
+        onConfirm={() => reparseMutation.mutate({ documentId: id })}
+      />
+
+      <ConfirmDialog
+        open={confirmDelete}
+        onOpenChange={setConfirmDelete}
+        title="Delete this document"
+        description={
+          'Removes the file, every invoice extracted from it, and the stored copy. ' +
+          'Uploading the same file again will then parse it fresh instead of being ' +
+          'skipped as a duplicate. Invoices already turned into a payment block the ' +
+          'delete — detach those payments first. This cannot be undone.'
+        }
+        confirmLabel="Delete"
+        variant="destructive"
+        isPending={deleteMutation.isPending}
+        onConfirm={() => deleteMutation.mutate({ documentId: id })}
+      />
     </div>
   );
 }
 
 function ExtractionCard({
   extraction,
-  onAccept,
+  onApprove,
   onReject,
   isPending,
 }: {
   extraction: Extraction;
-  onAccept: () => void;
+  onApprove: () => void;
   onReject: () => void;
   isPending: boolean;
 }) {
@@ -168,15 +259,23 @@ function ExtractionCard({
       </dl>
 
       {extraction.reviewState === 'pending' && (
-        <div className="flex items-center gap-2 pt-1">
-          <Button size="sm" disabled={isPending} onClick={onAccept}>
-            <Check className="h-3.5 w-3.5 mr-1" />
-            Accept
-          </Button>
-          <Button size="sm" variant="outline" disabled={isPending} onClick={onReject}>
-            <X className="h-3.5 w-3.5 mr-1" />
-            Reject
-          </Button>
+        <div className="space-y-1.5 pt-1">
+          <div className="flex items-center gap-2">
+            <Button size="sm" disabled={isPending} onClick={onApprove}>
+              Approve
+              <ArrowRight className="h-3.5 w-3.5 ml-1" />
+            </Button>
+            <Button size="sm" variant="outline" disabled={isPending} onClick={onReject}>
+              <X className="h-3.5 w-3.5 mr-1" />
+              Reject
+            </Button>
+          </div>
+          {/* One invoice can't prove a cadence, so approving opens the form
+              rather than writing a payment the user never confirmed. */}
+          <p className="text-[11px] text-muted-foreground">
+            Opens a recurring payment prefilled from this invoice. Nothing is saved until you
+            confirm it.
+          </p>
         </div>
       )}
     </div>
@@ -186,9 +285,9 @@ function ExtractionCard({
 function BackLink() {
   return (
     <Button variant="ghost" size="sm" asChild className="h-7 gap-1 -ml-2">
-      <Link to={V2_ROUTES.review}>
+      <Link to={V2_ROUTES.files}>
         <ArrowLeft className="h-3.5 w-3.5" />
-        Review
+        Files
       </Link>
     </Button>
   );
