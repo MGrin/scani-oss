@@ -178,11 +178,15 @@ export class PaymentService {
     const today = toDateString(startOfUtcToday());
     if (scheduleShapeChanged) {
       const before = await this.occurrenceRepository.findByPaymentId(paymentId, transaction);
-      const removed = await this.occurrenceRepository.deleteScheduledOnOrAfter(
-        paymentId,
-        today,
-        transaction
-      );
+      // ALL scheduled rows, not just future ones. A `scheduled` row is
+      // derived purely from the rule and carries no decision, so it is
+      // lossless to regenerate; bounding the delete at `today` left the
+      // old rule's PAST rows in place while `materialiseSchedule` — which
+      // starts at the payment's anchor, not today — inserted the new
+      // rule's past dates beside them, showing two overdue rows per
+      // period. Rows carrying a decision are spared here and remapped
+      // below.
+      const removed = await this.occurrenceRepository.deleteAllScheduled(paymentId, transaction);
       const removedIds = new Set(removed.map((row) => row.id));
       await this.remapSettledOccurrences(
         existing,
