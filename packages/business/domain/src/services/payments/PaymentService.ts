@@ -19,6 +19,7 @@ import {
   type RecurrenceSchedule,
   type RecurrenceStatus,
 } from './recurrence';
+import { planSettledRemap } from './remapSettledOccurrences';
 
 // How far past "now" `materialise` fills the FORWARD edge of the window
 // on every call. Only the forward edge is rolling — see
@@ -176,7 +177,19 @@ export class PaymentService {
 
     const today = toDateString(startOfUtcToday());
     if (scheduleShapeChanged) {
-      await this.occurrenceRepository.deleteScheduledOnOrAfter(paymentId, today, transaction);
+      const before = await this.occurrenceRepository.findByPaymentId(paymentId, transaction);
+      const removed = await this.occurrenceRepository.deleteScheduledOnOrAfter(
+        paymentId,
+        today,
+        transaction
+      );
+      const removedIds = new Set(removed.map((row) => row.id));
+      await this.remapSettledOccurrences(
+        existing,
+        updated,
+        before.filter((row) => !removedIds.has(row.id)),
+        transaction
+      );
       await this.materialiseSchedule(updated, transaction);
     } else if (amountChanged) {
       await this.occurrenceRepository.updateFutureScheduledAmount(
@@ -332,11 +345,64 @@ export class PaymentService {
     }
   }
 
-  private async materialiseSchedule(
-    payment: Payment,
+  /**
+   * Keep settlements attached to the schedule across a shape change.
+   *
+   * The nth occurrence of the OLD rule and the nth occurrence of the
+   * NEW one are the same real-world period, so a settled row is moved
+   * to its ordinal twin's date rather than left on a date the rule no
+   * longer generates (which is what stranded it AND let
+   * `materialiseSchedule` insert an unpaid duplicate beside it).
+   *
+   * Runs after the future `scheduled` rows are deleted and before
+   * re-materialisation, so the moves land in slots the upsert would
+   * otherwise fill, and `onConflictDoNothing` then skips them.
+   */
+  private async remapSettledOccurrences(
+    previous: Payment,
+    updated: Payment,
+    survivors: PaymentOccurrence[],
     transaction?: DatabaseTransaction
-  ): Promise<PaymentOccurrence[]> {
-    const schedule: RecurrenceSchedule = {
+  ): Promise<void> {
+    if (!survivors.some((row) => row.status !== 'scheduled')) return;
+
+    const to = this.materialisationHorizonEnd();
+    const plan = planSettledRemap(
+      survivors,
+      this.dueDateSequence(previous, to),
+      this.dueDateSequence(updated, to)
+    );
+
+    // Displaced rows are all untouched `scheduled` ones and never
+    // movers themselves, so clearing them up front cannot break a
+    // later move.
+    for (const occurrenceId of plan.displacedOccurrenceIds) {
+      await this.occurrenceRepository.delete(occurrenceId, transaction);
+    }
+    for (const move of plan.moves) {
+      await this.occurrenceRepository.update(
+        move.occurrenceId,
+        { dueDate: move.toDueDate, updatedAt: new Date() },
+        transaction
+      );
+    }
+  }
+
+  // Index i is the i-th occurrence the rule produces, counted from its
+  // own anchor — which is what makes two sequences pairable by index.
+  private dueDateSequence(payment: Payment, to: Date): string[] {
+    const schedule = this.buildSchedule(payment);
+    return generateOccurrences(schedule, schedule.anchorDate, to).map((candidate) =>
+      toDateString(candidate.dueDate)
+    );
+  }
+
+  private materialisationHorizonEnd(): Date {
+    return addUtcMonths(startOfUtcToday(), MATERIALISATION_HORIZON_MONTHS);
+  }
+
+  private buildSchedule(payment: Payment): RecurrenceSchedule {
+    return {
       intervalUnit: payment.intervalUnit as RecurrenceIntervalUnit,
       intervalCount: payment.intervalCount,
       anchorDate: parseUtcDateString(payment.anchorDate),
@@ -344,6 +410,13 @@ export class PaymentService {
       endDate: payment.endDate ? parseUtcDateString(payment.endDate) : null,
       expectedAmount: payment.expectedAmount,
     };
+  }
+
+  private async materialiseSchedule(
+    payment: Payment,
+    transaction?: DatabaseTransaction
+  ): Promise<PaymentOccurrence[]> {
+    const schedule = this.buildSchedule(payment);
 
     // `from` is the payment's own anchor, not "today" — that's the
     // whole reason occurrences are materialised instead of computed on
@@ -354,7 +427,7 @@ export class PaymentService {
     // this on a schedule keep extending the horizon instead of forever
     // regenerating the same 12 months from whenever the payment was
     // created.
-    const to = addUtcMonths(startOfUtcToday(), MATERIALISATION_HORIZON_MONTHS);
+    const to = this.materialisationHorizonEnd();
     const candidates = generateOccurrences(schedule, schedule.anchorDate, to);
     if (candidates.length === 0) return [];
 
