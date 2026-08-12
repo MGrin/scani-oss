@@ -25,6 +25,11 @@ export function PaymentsOverviewPage() {
   const { data: occurrences, isLoading: occurrencesLoading } = trpc.payments.upcoming.useQuery({
     days: HORIZON_DAYS,
   });
+  // Needed only for the count. This page is a 30-day occurrence feed, so
+  // without it a user whose payments are all settled or further out reads
+  // a near-empty page as "my payments were not created" — which is
+  // exactly what happened with four real invoices on 2026-08-12.
+  const { data: allPayments } = trpc.payments.list.useQuery();
   const { data: vendors, isLoading: vendorsLoading } = trpc.vendors.list.useQuery();
   const { data: tokens, isLoading: tokensLoading } = trpc.tokens.getAll.useQuery();
 
@@ -33,13 +38,24 @@ export function PaymentsOverviewPage() {
   const vendorNameById = new Map((vendors ?? []).map((v) => [v.id, v.displayName]));
   const tokenSymbolById = new Map((tokens ?? []).map((t) => [t.id, t.symbol]));
   const items = occurrences ?? [];
+  const paymentCount = (allPayments ?? []).length;
+  const paymentsLabel = `${paymentCount} recurring payment${paymentCount === 1 ? '' : 's'}`;
 
   if (items.length === 0) {
     return (
       <div className="space-y-6">
         <EmptyState
           icon={CalendarClock}
-          title={`No upcoming payments in the next ${HORIZON_DAYS} days`}
+          title={
+            paymentCount > 0
+              ? `Nothing due in the next ${HORIZON_DAYS} days`
+              : 'No recurring payments yet'
+          }
+          description={
+            paymentCount > 0
+              ? `You have ${paymentsLabel}. Their next dates fall outside this window.`
+              : undefined
+          }
           action={
             <Button asChild variant="outline" size="sm">
               <Link to={V2_ROUTES.paymentsList}>View all recurring payments</Link>
@@ -78,7 +94,7 @@ export function PaymentsOverviewPage() {
       <div>
         <h2 className="text-2xl font-bold tracking-tight">Payments</h2>
         <p className="text-muted-foreground mt-1">
-          Committed outflow, next {HORIZON_DAYS} days:{' '}
+          {paymentsLabel} · committed outflow, next {HORIZON_DAYS} days:{' '}
           {outflowTotals.size === 0
             ? formatCurrency(0, 'USD')
             : Array.from(outflowTotals.entries())
