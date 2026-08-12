@@ -1,10 +1,11 @@
 import { describe, expect, test } from 'bun:test';
+import type { DatabaseTransaction } from '@scani/db';
 import { Container } from 'typedi';
 import { PaymentOccurrenceRepository } from '../../../src/repositories/PaymentOccurrenceRepository';
 import { PaymentRepository } from '../../../src/repositories/PaymentRepository';
 import { PaymentService } from '../../../src/services/payments/PaymentService';
 import { withTestDb } from '../../../test/helpers/db';
-import { makeUser } from '../../../test/helpers/factories';
+import { makeDocument, makeDocumentExtraction, makeUser } from '../../../test/helpers/factories';
 import {
   makeHoldingTransaction,
   makePayment,
@@ -40,6 +41,18 @@ function pastDateString(daysAgo: number): string {
 function monthsFromNowUtcString(monthOffset: number): string {
   const now = new Date();
   return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + monthOffset, 1))
+    .toISOString()
+    .slice(0, 10);
+}
+
+// Same idea, but on an explicit day-of-month. The settlement-remap
+// tests below pin their anchors to a mid-month day so that shifting one
+// by a couple of days can never involve `recurrence.ts`'s end-of-month
+// clamping — the expected dates stay literal and the assertions stay
+// independent of the generator they're checking.
+function monthsFromNowOnDay(monthOffset: number, dayOfMonth: number): string {
+  const now = new Date();
+  return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + monthOffset, dayOfMonth))
     .toISOString()
     .slice(0, 10);
 }
@@ -249,6 +262,185 @@ describe('PaymentService', () => {
 
         const after = await occurrences().findByPaymentId(payment.id, tx);
         expect(after).toEqual(before);
+      });
+    });
+  });
+
+  // Regression suite for the settlement-stranding bug: moving a
+  // recurring payment's anchor used to leave the already-paid
+  // occurrence on a date the new rule no longer generates, while
+  // re-materialisation inserted a fresh unpaid row for the same period
+  // — one ghost plus one duplicate ask-to-pay.
+  describe('update — settled occurrences follow a schedule-shape change', () => {
+    // A monthly payment anchored three months back on the 10th, with
+    // the occurrence from two months ago already paid off an invoice.
+    async function makeSettledMonthlyPayment(tx: DatabaseTransaction, anchorDay = 10) {
+      const user = await makeUser(tx);
+      const payment = await makePayment(tx, {
+        userId: user.id,
+        anchorDate: monthsFromNowOnDay(-3, anchorDay),
+        intervalUnit: 'month',
+        intervalCount: 1,
+        expectedAmount: '12.99',
+      });
+      await service().materialise(user.id, payment.id, tx);
+
+      const document = await makeDocument(tx, { userId: user.id });
+      const extraction = await makeDocumentExtraction(tx, { documentId: document.id });
+
+      const settledDueDate = monthsFromNowOnDay(-2, anchorDay);
+      const target = await occurrences().findByPaymentIdAndDueDate(payment.id, settledDueDate, tx);
+      if (!target) throw new Error(`expected a materialised occurrence on ${settledDueDate}`);
+
+      const settled = await service().settleOccurrence(
+        user.id,
+        target.id,
+        { status: 'matched', actualAmount: '13.50', matchedExtractionId: extraction.id },
+        tx
+      );
+
+      return { user, payment, extraction, settled };
+    }
+
+    test('moving the anchor back two days moves the settled occurrence with it, leaving one settled row', async () => {
+      await withTestDb(async (tx) => {
+        const { user, payment, extraction, settled } = await makeSettledMonthlyPayment(tx);
+
+        await service().update(user.id, payment.id, { anchorDate: monthsFromNowOnDay(-3, 8) }, tx);
+
+        const rows = await occurrences().findByPaymentId(payment.id, tx);
+        const settledRows = rows.filter((r) => r.status !== 'scheduled');
+
+        expect(settledRows.length).toBe(1);
+        expect(settledRows[0]?.id).toBe(settled.id);
+        expect(settledRows[0]?.dueDate).toBe(monthsFromNowOnDay(-2, 8));
+        expect(settledRows[0]?.matchedExtractionId).toBe(extraction.id);
+        expect(settledRows[0]?.actualAmount).toBe('13.50');
+
+        // The ghost is gone: nothing is left on the date the old rule
+        // produced, and the period it covers has no unpaid twin.
+        expect(rows.filter((r) => r.dueDate === settled.dueDate)).toEqual([]);
+        expect(rows.filter((r) => r.dueDate === monthsFromNowOnDay(-2, 8)).length).toBe(1);
+      });
+    });
+
+    test('moving the anchor forward two days moves the settled occurrence with it, leaving one settled row', async () => {
+      await withTestDb(async (tx) => {
+        const { user, payment, extraction, settled } = await makeSettledMonthlyPayment(tx);
+
+        await service().update(user.id, payment.id, { anchorDate: monthsFromNowOnDay(-3, 12) }, tx);
+
+        const rows = await occurrences().findByPaymentId(payment.id, tx);
+        const settledRows = rows.filter((r) => r.status !== 'scheduled');
+
+        expect(settledRows.length).toBe(1);
+        expect(settledRows[0]?.id).toBe(settled.id);
+        expect(settledRows[0]?.dueDate).toBe(monthsFromNowOnDay(-2, 12));
+        expect(settledRows[0]?.matchedExtractionId).toBe(extraction.id);
+        expect(settledRows[0]?.actualAmount).toBe('13.50');
+
+        expect(rows.filter((r) => r.dueDate === settled.dueDate)).toEqual([]);
+        expect(rows.filter((r) => r.dueDate === monthsFromNowOnDay(-2, 12)).length).toBe(1);
+      });
+    });
+
+    test('an unpaid row already sitting on the settled occurrence’s new date is displaced, not duplicated', async () => {
+      await withTestDb(async (tx) => {
+        const { user, payment, settled } = await makeSettledMonthlyPayment(tx);
+
+        // A stale unpaid row from an earlier shape, squatting exactly
+        // where the settled occurrence is about to land.
+        const twin = await makePaymentOccurrence(tx, {
+          paymentId: payment.id,
+          dueDate: monthsFromNowOnDay(-2, 8),
+          expectedAmount: '12.99',
+        });
+
+        await service().update(user.id, payment.id, { anchorDate: monthsFromNowOnDay(-3, 8) }, tx);
+
+        const rows = await occurrences().findByPaymentId(payment.id, tx);
+        const landed = rows.filter((r) => r.dueDate === monthsFromNowOnDay(-2, 8));
+
+        expect(landed.length).toBe(1);
+        expect(landed[0]?.id).toBe(settled.id);
+        expect(landed[0]?.status).toBe('matched');
+        expect(rows.some((r) => r.id === twin.id)).toBe(false);
+      });
+    });
+
+    test('changing only the amount leaves settled occurrences exactly where they are', async () => {
+      await withTestDb(async (tx) => {
+        const { user, payment, settled } = await makeSettledMonthlyPayment(tx);
+
+        await service().update(user.id, payment.id, { expectedAmount: '19.99' }, tx);
+
+        const rows = await occurrences().findByPaymentId(payment.id, tx);
+        const settledRow = rows.find((r) => r.id === settled.id);
+
+        expect(settledRow).toEqual(settled);
+        // …and the amount edit still took its own path.
+        expect(
+          rows
+            .filter((r) => r.status === 'scheduled' && r.dueDate >= todayUtcString())
+            .every((r) => r.expectedAmount === '19.99')
+        ).toBe(true);
+      });
+    });
+
+    test('a settled occurrence the shortened schedule has no slot for survives where it is', async () => {
+      await withTestDb(async (tx) => {
+        const { user, payment, extraction, settled } = await makeSettledMonthlyPayment(tx);
+
+        // Ends the payment before the settled occurrence's own period,
+        // so the new sequence is too short to have an ordinal twin for it.
+        await service().update(user.id, payment.id, { endDate: monthsFromNowOnDay(-3, 20) }, tx);
+
+        const rows = await occurrences().findByPaymentId(payment.id, tx);
+        const survivor = rows.find((r) => r.id === settled.id);
+
+        expect(survivor?.dueDate).toBe(settled.dueDate);
+        expect(survivor?.status).toBe('matched');
+        expect(survivor?.matchedExtractionId).toBe(extraction.id);
+        expect(survivor?.actualAmount).toBe('13.50');
+      });
+    });
+
+    test('a quarterly payment pairs by ordinal, not by day offset, when the anchor moves', async () => {
+      await withTestDb(async (tx) => {
+        const user = await makeUser(tx);
+        const payment = await makePayment(tx, {
+          userId: user.id,
+          anchorDate: monthsFromNowOnDay(-6, 10),
+          intervalUnit: 'quarter',
+          intervalCount: 1,
+          expectedAmount: '99.00',
+        });
+        await service().materialise(user.id, payment.id, tx);
+
+        const target = await occurrences().findByPaymentIdAndDueDate(
+          payment.id,
+          monthsFromNowOnDay(-3, 10),
+          tx
+        );
+        if (!target) throw new Error('expected the second quarterly occurrence');
+        const settled = await service().settleOccurrence(
+          user.id,
+          target.id,
+          { status: 'matched', actualAmount: '99.00' },
+          tx
+        );
+
+        await service().update(user.id, payment.id, { anchorDate: monthsFromNowOnDay(-6, 8) }, tx);
+
+        const rows = await occurrences().findByPaymentId(payment.id, tx);
+        const settledRows = rows.filter((r) => r.status !== 'scheduled');
+
+        expect(settledRows.length).toBe(1);
+        expect(settledRows[0]?.id).toBe(settled.id);
+        // One quarter after the new anchor — not "the old date minus
+        // two days" by coincidence of arithmetic, but the second slot
+        // the new rule generates.
+        expect(settledRows[0]?.dueDate).toBe(monthsFromNowOnDay(-3, 8));
       });
     });
   });

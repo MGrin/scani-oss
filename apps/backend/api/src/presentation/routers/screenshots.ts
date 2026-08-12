@@ -45,6 +45,9 @@ export const screenshotsRouter = router({
     .input(
       z.object({
         r2Keys: z.array(z.string().min(1)).min(1, 'At least one file is required').max(10),
+        // Parallel to r2Keys. The presigned key is a uuid, so without
+        // this the Files list can only show `a1b2c3.png`.
+        originalFilenames: z.array(z.string().min(1).max(512)).max(10).optional(),
         provider: z.literal('openai').optional(),
         accountType: z.string().optional(),
         expectedCurrency: z.string().optional(),
@@ -83,6 +86,7 @@ export const screenshotsRouter = router({
         userId: ctx.userId,
         requestId: input.requestId,
         r2Keys: input.r2Keys,
+        originalFilenames: input.originalFilenames,
         provider: input.provider ?? 'openai',
         accountType: input.accountType ?? 'unknown',
         expectedCurrency: input.expectedCurrency ?? 'USD',

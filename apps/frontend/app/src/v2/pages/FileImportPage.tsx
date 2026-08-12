@@ -142,6 +142,9 @@ export function FileImportPage() {
         if (isImage || isPdf) {
           const res = await screenshotMutation.mutateAsync({
             r2Keys: [upload.key],
+            // Index-parallel to r2Keys. Without it the Files list shows
+            // the presigner's uuid instead of what the user picked.
+            originalFilenames: [file.name],
             accountId,
             requestId: crypto.randomUUID(),
             minConfidence: 0.5,
@@ -153,6 +156,7 @@ export function FileImportPage() {
             ext === 'ofx' ? 'ofx' : ext === 'qif' ? 'qif' : 'csv';
           const res = await fileEnrichMutation.mutateAsync({
             r2Key: upload.key,
+            originalFilename: file.name,
             fileType,
             accountId,
             requestId: crypto.randomUUID(),

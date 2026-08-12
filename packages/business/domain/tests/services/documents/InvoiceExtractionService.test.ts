@@ -73,7 +73,12 @@ const SCANNED_PDF = buildTextlessPdf();
 
 interface Calls {
   parseDocumentText: Array<{ text: string; hint?: string }>;
-  parseScreenshot: Array<{ imageBase64: string; mimeType: string; hint?: string }>;
+  parseScreenshot: Array<{
+    imageBase64: string;
+    mimeType: string;
+    hint?: string;
+    systemPrompt?: string;
+  }>;
 }
 
 function makeFullProvider(
@@ -191,6 +196,35 @@ describe('InvoiceExtractionService — scanned path', () => {
     expect(calls.parseScreenshot).toHaveLength(1);
     expect(calls.parseDocumentText).toHaveLength(0);
     expect(result.invoices[0]?.extractorKind).toBe('vision-llm');
+  });
+
+  // The invoice prompt has to REPLACE the provider's default holdings
+  // schema on the vision path too. As a `hint` it sat underneath it and
+  // every scanned invoice came back as `{holdings: []}` — the transport
+  // fix alone would still have stored zero invoices.
+  test('passes the invoice prompt as systemPrompt, not as a hint', async () => {
+    const { provider, calls } = makeFullProvider(ONE_INVOICE);
+    stubRegistry(provider);
+
+    await service().extract(SCANNED_PDF, 'application/pdf');
+
+    expect(calls.parseScreenshot[0]?.systemPrompt).toBe(INVOICE_EXTRACTION_PROMPT);
+    expect(calls.parseScreenshot[0]?.hint).toBeUndefined();
+  });
+
+  test('a provider that cannot read the mime type surfaces its error', async () => {
+    const provider: AIInferenceProvider = {
+      providerKey: 'ai-no-pdf',
+      capabilities: ['ai-inference'],
+      parseScreenshot: async () => {
+        throw new Error('ai-no-pdf: PDF input not supported by this provider (only image types)');
+      },
+    };
+    stubRegistry(provider);
+
+    expect(service().extract(SCANNED_PDF, 'application/pdf')).rejects.toThrow(
+      'PDF input not supported'
+    );
   });
 });
 
