@@ -5,6 +5,10 @@ import { RETRY_HEAVY } from '../retry-policies';
 
 export interface FileImportJob extends UserJobBase {
   r2Key: string;
+  /** What the user called the file. Optional so already-queued jobs still
+   *  validate; without it the `documents` row falls back to the
+   *  presigner's generated key name. */
+  originalFilename?: string;
   fileType: 'csv' | 'ofx' | 'qif';
   accountId: string;
   enrich?: boolean;
@@ -18,6 +22,7 @@ export const fileImportSchema: z.ZodType<FileImportJob> = z.object({
   userId: z.string().min(1),
   requestId: z.string().min(1),
   r2Key: z.string().min(1),
+  originalFilename: z.string().min(1).max(512).optional(),
   fileType: z.enum(['csv', 'ofx', 'qif']),
   accountId: z.string().min(1),
   enrich: z.boolean().optional(),

@@ -51,6 +51,7 @@ function makeProcessor(opts: {
   deduped?: boolean;
   read?: () => Promise<Buffer>;
   copy?: () => Promise<void>;
+  ingestFails?: boolean;
 }) {
   const read = mock(opts.read ?? (async () => Buffer.from('pdf-bytes')));
   const copy = mock(opts.copy ?? (async () => undefined));
@@ -63,12 +64,15 @@ function makeProcessor(opts: {
   }));
   Container.set(DocumentRepository, { update } as unknown as DocumentRepository);
 
-  const ingest = mock(async () => ({
-    document: opts.document,
-    extractions: [],
-    deduped: opts.deduped ?? false,
-    upstreamCostUsd: 0,
-  }));
+  const ingest = mock(async () => {
+    if (opts.ingestFails) throw new Error('AI provider exploded');
+    return {
+      document: opts.document,
+      extractions: [],
+      deduped: opts.deduped ?? false,
+      upstreamCostUsd: 0,
+    };
+  });
   Container.set(DocumentIngestionService, { ingest } as unknown as DocumentIngestionService);
 
   // The real retention service, wired to the stubs above — `isRetained` is
@@ -169,5 +173,23 @@ describe('DocumentParseProcessor retention', () => {
     await expect(
       processor.run(job({ r2Key: RETAINED_KEY, reparseOf: DOC_ID }), makeCtx())
     ).rejects.toThrow(/Delete this document and upload it again/);
+  });
+});
+
+describe('DocumentParseProcessor failure cleanup', () => {
+  // This was a `finally`, so a failed parse destroyed the file it was
+  // handed. BullMQ's own retry (attempts: 2) and the UI's Retry button
+  // then both died on "The specified key does not exist" and the job went
+  // to the DLQ — every document-parse failure was unretryable by
+  // construction. Observed in production 2026-08-11.
+  test('a failed parse leaves the upload in place so a retry can read it', async () => {
+    const { processor, del } = makeProcessor({
+      document: makeDocument(TEMP_KEY),
+      ingestFails: true,
+    });
+
+    await expect(processor.run(job(), makeCtx())).rejects.toThrow('AI provider exploded');
+
+    expect(del).not.toHaveBeenCalled();
   });
 });
