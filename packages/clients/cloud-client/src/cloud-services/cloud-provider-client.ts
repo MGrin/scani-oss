@@ -1,5 +1,5 @@
 import type { NewToken, Token, TokenMetadata } from '@scani/db/schema';
-import type { CloudProviderClient } from '@scani/providers/core/cloud';
+import type { CloudAICapabilities, CloudProviderClient } from '@scani/providers/core/cloud';
 import { ProviderError } from '@scani/providers/core/errors';
 import type { HoldingSnapshot, PriceQuote, TransactionEvent } from '@scani/providers/core/types';
 import type { CloudClient } from '../client';
@@ -165,11 +165,34 @@ export class CloudProviderClientBridge implements CloudProviderClient {
   // ============================================================
   // AI — live (data-provider has matching ai.* routes today).
   // ============================================================
+  /**
+   * Reads `ai.status`. Every flag defaults to false, so a data-provider
+   * deployed before these fields existed reports "cannot", and
+   * `CloudAIProvider` refuses locally instead of sending a request whose
+   * answer it would misread.
+   */
+  async fetchAICapabilities(args: { providerKey: string }): Promise<CloudAICapabilities> {
+    try {
+      const status = (await this.client.ai.status.query()) as {
+        availableProviders?: Array<{ providerKey?: string; supportsPdfFileInput?: boolean }>;
+        routeCapabilities?: { systemPrompt?: boolean };
+      };
+      const provider = status.availableProviders?.find((p) => p.providerKey === args.providerKey);
+      return {
+        systemPrompt: status.routeCapabilities?.systemPrompt === true,
+        pdfFileInput: provider?.supportsPdfFileInput === true,
+      };
+    } catch (err) {
+      throw CloudError.wrap(err);
+    }
+  }
+
   async parseScreenshot(args: {
     providerKey: string;
     imageBase64: string;
     mimeType: string;
     hint?: string;
+    systemPrompt?: string;
   }): Promise<unknown> {
     try {
       return await this.client.ai.parseScreenshot.mutate({
@@ -178,6 +201,7 @@ export class CloudProviderClientBridge implements CloudProviderClient {
           provider: args.providerKey,
           mimeType: args.mimeType,
           context: args.hint,
+          systemPrompt: args.systemPrompt,
         },
       });
     } catch (err) {
@@ -189,6 +213,7 @@ export class CloudProviderClientBridge implements CloudProviderClient {
     providerKey: string;
     text: string;
     hint?: string;
+    systemPrompt?: string;
   }): Promise<unknown> {
     try {
       return await this.client.ai.parseDocumentText.mutate({
@@ -196,6 +221,7 @@ export class CloudProviderClientBridge implements CloudProviderClient {
         options: {
           provider: args.providerKey,
           context: args.hint,
+          systemPrompt: args.systemPrompt,
         },
       });
     } catch (err) {

@@ -169,6 +169,19 @@ export interface AIResult<T> {
 
 export interface AIInferenceProvider extends ProviderBase {
   /**
+   * Whether `parseScreenshot` accepts `application/pdf`. Declared rather
+   * than discovered so a caller — or the data-provider's `ai.status`
+   * route, which relays it to cloud-mode clients — can route around a
+   * provider that can't read a PDF instead of paying for a request the
+   * endpoint refuses.
+   *
+   * Absent means "no": a provider that supports PDFs has to say so.
+   * A proxy that can only learn the answer over the wire (see
+   * `CloudAIProvider`) leaves this undefined and enforces the check when
+   * the call is made.
+   */
+  readonly supportsPdfFileInput?: boolean;
+  /**
    * Vision: extract structured data from a screenshot or a whole PDF.
    *
    * `systemPrompt` REPLACES the provider's default extraction schema, same
