@@ -1,5 +1,40 @@
 # Changelog
 
+## [0.12.0](https://github.com/MGrin/scani-oss/compare/v0.11.0...v0.12.0) (2026-08-12)
+
+
+### Features
+
+* **ai:** carry the invoice schema through the cloud AI path ([0a5265f](https://github.com/MGrin/scani-oss/commit/0a5265fabbed65bdfd7cc35162cf583c474b37d6))
+* **app:** a Files page listing every uploaded file ([b199e34](https://github.com/MGrin/scani-oss/commit/b199e348bf37d7b9861a77a52f17cf6fecbbecc9))
+* **app:** pre-fill a recurring payment from an approved invoice ([1f3ab22](https://github.com/MGrin/scani-oss/commit/1f3ab228e1867673a3ae6d2382449476c1640277))
+* **app:** put Payments in the mobile tab bar, in place of Holdings ([a538809](https://github.com/MGrin/scani-oss/commit/a538809ab53972900af44a427ff60bccb349e374))
+* backport the invoice→payment bridge, document lifecycle and Files page ([b7913a8](https://github.com/MGrin/scani-oss/commit/b7913a8fe58104c4257e15d764164fd09d628636))
+* **documents:** extract paid status + billing period from invoices ([85ddb61](https://github.com/MGrin/scani-oss/commit/85ddb6149fdbecab4435eb6ab7b47ee77b7aeca8))
+* **documents:** one row per uploaded file, for every purpose ([7db3a2e](https://github.com/MGrin/scani-oss/commit/7db3a2e2e3cae7957e7170165aa6d3a9c4541565))
+* **documents:** re-parse a document with the current extractor ([cd0a017](https://github.com/MGrin/scani-oss/commit/cd0a017da1421ab9a55552f410864c0d07a7050e))
+* **documents:** retain the uploaded file, and delete a document ([d8e57e7](https://github.com/MGrin/scani-oss/commit/d8e57e778aa6722f692647318a6ef15fcfa0b7ac))
+* **payments:** bridge an approved invoice into a recurring payment ([0afc5a1](https://github.com/MGrin/scani-oss/commit/0afc5a166aff0fc50581587f679b10b943c6fea0))
+* **providers:** move OpenAI to gpt-5.6-luna for both text and vision ([a9bf085](https://github.com/MGrin/scani-oss/commit/a9bf0854fe7e107a5e2981830d985d92d5de4865))
+
+
+### Bug Fixes
+
+* **documents:** keep a failed upload, and carry the user's filename ([12eaae6](https://github.com/MGrin/scani-oss/commit/12eaae6b8d863f04a7c2475e58abf1f99e1e0979))
+* **documents:** let the invoice prompt replace the holdings schema ([b5517b7](https://github.com/MGrin/scani-oss/commit/b5517b7949c87d02e9ab3762606221eea16c6079))
+* **documents:** route on the text a PDF yields, not a per-page OCR verdict ([56ca728](https://github.com/MGrin/scani-oss/commit/56ca7282ffe929adb047dfcd3d2d4291d66635cc))
+* **documents:** wire the Files page to the API the backend actually built ([182bef2](https://github.com/MGrin/scani-oss/commit/182bef24eba1cc50cc4a51a97ab900f7ed57ec42))
+* **e2e:** point globalSetup at the wait-for-stack script that exists ([e1467d0](https://github.com/MGrin/scani-oss/commit/e1467d0935944882c74a3555b58a4b2fae9e03d0))
+* **e2e:** point globalSetup at the wait-for-stack script that exists ([30c8a55](https://github.com/MGrin/scani-oss/commit/30c8a5557bcb649719e3e909310ea7c65e400ea1))
+* **e2e:** resolve the e2e root via import.meta.url, not import.meta.dir ([116148e](https://github.com/MGrin/scani-oss/commit/116148ed9db18869d97a8777990aaf7b8fd2c01e))
+* **jobs:** let a parsed invoice be opened from its job page ([a7495ec](https://github.com/MGrin/scani-oss/commit/a7495ec123acf98f91441a2e833cf6449c231bb2))
+* **payments:** keep settled occurrences on the schedule when it moves ([eda76f3](https://github.com/MGrin/scani-oss/commit/eda76f377ea04cb7f78ea301ce0f96db49a13d60))
+* **payments:** read the extraction by id, and narrow its text columns ([820330d](https://github.com/MGrin/scani-oss/commit/820330dc73220d8ca178aa44323988b46434046a))
+* **payments:** rewrite every derived row on a schedule change ([bba94cb](https://github.com/MGrin/scani-oss/commit/bba94cbdf6d97ab31061a646787885b4386fe114))
+* **payments:** say how many payments exist, not just what's due ([e84dc6a](https://github.com/MGrin/scani-oss/commit/e84dc6aafbf16ccdada339e7ac5ce0e38de29f6f))
+* **providers:** send a scanned PDF as a file part, not an image part ([90ec17d](https://github.com/MGrin/scani-oss/commit/90ec17dfbad9738254460ae77b63073a8eff0daa))
+* **providers:** send the request shape gpt-5.6-luna actually accepts ([84f0218](https://github.com/MGrin/scani-oss/commit/84f02185e38d1d8b17cf6aa5975e58d285f5afd7))
+
 ## [0.11.0](https://github.com/MGrin/scani-oss/compare/v0.10.1...v0.11.0) (2026-08-11)
 
 
