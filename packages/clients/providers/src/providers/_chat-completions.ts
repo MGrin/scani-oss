@@ -5,8 +5,10 @@
  * change rather than a re-implementation.
  *
  * Methods exposed via the `AIInferenceProvider` capability:
- *  - `parseScreenshot({ imageBase64, mimeType, hint })` →
- *    multimodal request with the image and a JSON-shaped prompt.
+ *  - `parseScreenshot({ imageBase64, mimeType, hint, systemPrompt })` →
+ *    multimodal request with the document and a JSON-shaped prompt. A PDF
+ *    travels as a `file` content part, an image as `image_url`; see
+ *    `supportsPdfFileInput`.
  *  - `parseDocumentText(text, hint)` → text-only completion with the
  *    same JSON-output contract.
  *  - `completeText(prompt, opts)` → generic completion, returns the
@@ -67,6 +69,19 @@ export interface ChatCompletionsConfig {
    * low-temperature behaviour everywhere else.
    */
   supportsTemperature?: boolean;
+  /**
+   * Whether this provider accepts a PDF as an OpenAI-style `file` content
+   * part (`{ type: 'file', file: { filename, file_data } }`). A PDF sent
+   * as an `image_url` part is rejected outright — "Invalid MIME type. Only
+   * image types are supported" (`invalid_image_format`), observed in
+   * production 2026-08-11 — and the file part was confirmed working
+   * against the live API with the same invoice that failed. DeepSeek and
+   * Perplexity expose no equivalent part, so this is opt-in: default off
+   * makes `parseScreenshot` reject a PDF locally rather than pay for a
+   * request the endpoint will refuse, letting the AIRouter fall through to
+   * a provider that can read it.
+   */
+  supportsPdfFileInput?: boolean;
   /** Per-minute upstream call budget for this provider key. Defaults
       to a conservative 20/min. Override via factory if you have a
       higher OpenAI tier. */
@@ -90,6 +105,33 @@ interface ChatCompletionsResponse {
 }
 
 const DEFAULT_RATE_LIMIT_PER_MINUTE = 20;
+const PDF_MIME_TYPE = 'application/pdf';
+/** Stands in for the user turn when the caller replaced the system prompt
+    and passed no hint — the document still needs an instruction next to it. */
+const ATTACHED_DOCUMENT_PROMPT = 'Extract the requested data from the attached document.';
+
+/** OpenAI keys the part off the filename's extension, not the data URL's
+    MIME type, so the extension is load-bearing even though the name is
+    synthetic. */
+function pdfFilePart(base64: string) {
+  return {
+    type: 'file',
+    file: {
+      filename: 'document.pdf',
+      file_data: `data:${PDF_MIME_TYPE};base64,${base64}`,
+    },
+  };
+}
+
+function imagePart(base64: string, mimeType: string) {
+  return {
+    type: 'image_url',
+    image_url: {
+      url: `data:${mimeType || 'image/jpeg'};base64,${base64}`,
+      detail: 'high',
+    },
+  };
+}
 
 export class ChatCompletionsProvider implements AIInferenceProvider {
   readonly providerKey: string;
@@ -121,6 +163,7 @@ export class ChatCompletionsProvider implements AIInferenceProvider {
     imageBase64: string;
     mimeType: string;
     hint?: string;
+    systemPrompt?: string;
   }): Promise<AIResult<unknown>> {
     if (!this.isConfigured()) {
       throw new Error(`${this.config.providerKey}: apiKey not configured`);
@@ -128,23 +171,28 @@ export class ChatCompletionsProvider implements AIInferenceProvider {
     if (!this.config.visionModel) {
       throw new Error(`${this.config.providerKey}: vision not supported by configured model`);
     }
-    const systemPrompt = buildSystemPrompt();
-    const userPrompt = buildUserPrompt(input.hint);
+    const isPdf = input.mimeType === PDF_MIME_TYPE;
+    if (isPdf && !this.config.supportsPdfFileInput) {
+      throw new Error(
+        `${this.config.providerKey}: PDF input not supported by this provider (only image types)`
+      );
+    }
+    // Same contract as `parseDocumentText`: a caller-supplied system prompt
+    // REPLACES the holdings schema rather than sitting under it, so the
+    // default's "extract every visible token holding" can't contradict it.
+    const useCustom = Boolean(input.systemPrompt);
+    const userPrompt = useCustom
+      ? (input.hint ?? ATTACHED_DOCUMENT_PROMPT)
+      : buildUserPrompt(input.hint);
     const body = {
       model: this.config.visionModel,
       messages: [
-        { role: 'system', content: systemPrompt },
+        { role: 'system', content: input.systemPrompt ?? buildSystemPrompt() },
         {
           role: 'user',
           content: [
             { type: 'text', text: userPrompt },
-            {
-              type: 'image_url',
-              image_url: {
-                url: `data:${input.mimeType || 'image/jpeg'};base64,${input.imageBase64}`,
-                detail: 'high',
-              },
-            },
+            isPdf ? pdfFilePart(input.imageBase64) : imagePart(input.imageBase64, input.mimeType),
           ],
         },
       ],

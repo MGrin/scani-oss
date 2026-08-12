@@ -43,6 +43,10 @@ export class OpenAIProvider extends ChatCompletionsProvider {
       // model was adopted, and both reject the request outright.
       tokenLimitParam: 'max_completion_tokens',
       supportsTemperature: false,
+      // Verified against the live API 2026-08-11 with the scanned invoice
+      // that `invalid_image_format` had been rejecting: as a `file` part
+      // gpt-5.6-luna reads the PDF and returns the right total.
+      supportsPdfFileInput: true,
       temperature: 0.1,
       rateLimitPerMinute: 30,
       pricing: OPENAI_PRICING,
