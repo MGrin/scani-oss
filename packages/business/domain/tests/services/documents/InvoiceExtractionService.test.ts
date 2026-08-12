@@ -5,7 +5,10 @@ import type { AIInferenceProvider, AIResult } from '@scani/providers/core/capabi
 import { ProviderRegistry } from '@scani/providers/core/registry';
 import { Container } from 'typedi';
 import { InvoiceExtractionService } from '../../../src/services/documents/InvoiceExtractionService';
-import { PROMPT_VERSION } from '../../../src/services/documents/invoicePrompt';
+import {
+  INVOICE_EXTRACTION_PROMPT,
+  PROMPT_VERSION,
+} from '../../../src/services/documents/invoicePrompt';
 
 // Fixtures reuse the hand-built minimal-PDF pattern from
 // `pdfExtraction.test.ts` — small, portable, no binary blobs in git.
@@ -50,7 +53,22 @@ function buildTextlessPdf(): Uint8Array {
   ]);
 }
 
-const TEXT_PDF = buildTextPdf('Acme Corp Invoice INV-1001 Total 19.99');
+// Long enough to clear `MIN_TEXT_CHARS_FOR_LLM`. Routing is now decided
+// by how much text the PDF actually yields, not by a per-page OCR verdict,
+// so a fixture with one short line would legitimately route to vision.
+// Mirrors the shape of a real invoice: header, parties, line items, total.
+const TEXT_PDF = buildTextPdf(
+  [
+    'INVOICE  Acme Corp  123 Example Street, Springfield',
+    'Invoice number INV-1001   Invoice date Aug 1, 2026   Due date Aug 15, 2026',
+    'Bill to: Jane Customer, 9 Sample Road, London, United Kingdom',
+    'Description               Quantity   Rate     Amount',
+    'Managed hosting, monthly       1     14.99     14.99',
+    'Additional storage, GB        50      0.10      5.00',
+    'Subtotal 19.99   Tax 0.00   Total due 19.99 USD',
+    'Payment received - thank you. Billed annually.',
+  ].join('\n')
+);
 const SCANNED_PDF = buildTextlessPdf();
 
 interface Calls {
@@ -297,5 +315,33 @@ describe('InvoiceExtractionService — malformed responses', () => {
     const result = await service().extract(TEXT_PDF, 'application/pdf');
 
     expect(result.invoices[0]?.totalAmount).toBeNull();
+  });
+});
+
+describe('InvoiceExtractionService — prompt authority', () => {
+  // The invoice prompt has to REPLACE the provider's default system
+  // prompt, not ride under it as a hint. Passed as a hint it lost to a
+  // system prompt hardcoding the holdings schema, so production billed
+  // for a valid `{holdings: []}` response and stored zero invoices with
+  // no error anywhere. Asserting the argument position is the only way
+  // to keep that from silently regressing.
+  test('the invoice prompt is sent as the system prompt, not as a hint', async () => {
+    const seen: Array<{ text: string; hint?: string; systemPrompt?: string }> = [];
+    const provider = {
+      parseScreenshot: async () => ({ data: {} }),
+      parseDocumentText: async (text: string, hint?: string, systemPrompt?: string) => {
+        seen.push({ text, hint, systemPrompt });
+        return { data: { invoices: [] } };
+      },
+    };
+    Container.set(ProviderRegistry, {
+      getAIProviders: () => [provider],
+    } as unknown as ProviderRegistry);
+
+    await new InvoiceExtractionService().extract(TEXT_PDF, 'application/pdf');
+
+    expect(seen).toHaveLength(1);
+    expect(seen[0].systemPrompt).toBe(INVOICE_EXTRACTION_PROMPT);
+    expect(seen[0].hint).toBeUndefined();
   });
 });

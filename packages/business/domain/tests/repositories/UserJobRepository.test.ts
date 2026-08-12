@@ -1,5 +1,4 @@
 import { describe, expect, test } from 'bun:test';
-import { Container } from 'typedi';
 import { UserJobRepository } from '../../src/repositories/UserJobRepository';
 import { withTestDb } from '../../test/helpers/db';
 import { makeUser } from '../../test/helpers/factories';
@@ -10,7 +9,12 @@ import { makeUser } from '../../test/helpers/factories';
 // trap (enum-column `eq()` bindings) and state-machine transitions are
 // the two most regression-prone behaviours; explicit tests for both.
 
-const repo = () => Container.get(UserJobRepository);
+// Constructed directly, NOT via the Container, for the reason spelled out
+// in `DocumentRepository.test.ts`: processor tests `Container.set` a
+// partial stub of this repository, typedi's container is process-global,
+// and whichever ran first left this file resolving a stub with no
+// `insertEnqueued`. A real-DB repository test needs no DI anyway.
+const repo = () => new UserJobRepository();
 
 describe('UserJobRepository', () => {
   test('insertEnqueued persists a new row with state=queued', async () => {

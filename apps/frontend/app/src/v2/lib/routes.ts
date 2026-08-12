@@ -28,9 +28,17 @@ export const V2_ROUTES = {
   paymentsList: '/payments/recurring',
   paymentDetail: (id: string) => `/payments/recurring/${id}`,
   paymentCreate: '/payments/recurring/new',
+  /** The same create form, prefilled from a parsed invoice. */
+  paymentCreateFromExtraction: (extractionId: string) =>
+    `/payments/recurring/new?fromExtraction=${encodeURIComponent(extractionId)}`,
   paymentEdit: (id: string) => `/payments/recurring/${id}/edit`,
   vendors: '/vendors',
   vendorDetail: (id: string) => `/vendors/${id}`,
+  // Upload and detail sit UNDER the Files list for the same reason payments
+  // do: `resolveActiveNavPath` then lights Files on `/documents/:id` without
+  // a special case.
+  files: '/documents',
+  documentDetail: (id: string) => `/documents/${id}`,
   documentUpload: '/documents/upload',
 } as const;
 
@@ -82,6 +90,7 @@ export const NAV_SECTIONS: NavSection[] = [
     titleKey: 'nav.sections.activity',
     items: [
       { labelKey: 'nav.review', icon: 'ClipboardCheck', path: V2_ROUTES.review },
+      { labelKey: 'nav.files', icon: 'Files', path: V2_ROUTES.files },
       { labelKey: 'nav.jobs', icon: 'ListChecks', path: V2_ROUTES.jobs },
     ],
   },
@@ -107,8 +116,8 @@ function covers(navPath: string, pathname: string): boolean {
  * all. Longest-match gives both — the most specific entry wins, and
  * detail pages inherit their parent list because they live under it.
  *
- * Returns null for pages outside the nav (Settings, document upload),
- * which correctly leaves every entry unlit.
+ * Returns null for pages outside the nav (Settings, integrations), which
+ * correctly leaves every entry unlit.
  */
 export function resolveActiveNavPath(pathname: string): string | null {
   let best: string | null = null;

@@ -6,7 +6,7 @@ OpenAI chat completions (text + vision).
 - **Capabilities**: `ai-inference`.
 - **Auth**: `Authorization: Bearer ${OPENAI_API_KEY}`.
 - **Env**: `OPENAI_API_KEY` (required), `OPENAI_VISION_MODEL` (optional
-  override; defaults to gpt-4o-mini for screenshot parsing).
+  override; defaults to gpt-5.6-luna for both text and screenshot parsing).
 - **Rate limit**: namespace `ai-openai`.
 - **Notes**: thin wrapper over the shared `_chat-completions.ts` client
   at `providers/_chat-completions.ts`. Used by AIRouter as the default

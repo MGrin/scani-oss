@@ -1,5 +1,6 @@
 import { StorageFacade } from '@scani/cloud-client/facades/storage-facade';
 import { UserJobRepository } from '@scani/domain/repositories';
+import { DocumentRetentionService, UploadedFileService } from '@scani/domain/services';
 import { ParseScreenshotUseCase } from '@scani/domain/use-cases/ParseScreenshotUseCase';
 import { SCREENSHOT_PARSE, type ScreenshotParseJob } from '@scani/jobs';
 import { createComponentLogger } from '@scani/logging';
@@ -15,6 +16,8 @@ export class ScreenshotParseProcessor extends UserJobProcessor<ScreenshotParseJo
   protected async handle(data: ScreenshotParseJob, ctx: ProcessorContext): Promise<unknown> {
     const useCase = Container.get(ParseScreenshotUseCase);
     const storage = Container.get(StorageFacade);
+    const uploadedFiles = Container.get(UploadedFileService);
+    const retention = Container.get(DocumentRetentionService);
     const results: Array<{
       r2Key: string;
       success: boolean;
@@ -31,6 +34,11 @@ export class ScreenshotParseProcessor extends UserJobProcessor<ScreenshotParseJo
         await ctx.reportStatus(`Reading file${fileLabel}…`);
         const buf = await storage.read(key);
         const mimeType = inferMime(key);
+        // Recorded and retained BEFORE the AI call: the user uploaded this
+        // file whether or not the extractor can read it, and a screenshot
+        // that failed to parse is exactly the one they want to look at
+        // again.
+        await this.record(uploadedFiles, data.userId, key, mimeType, buf, ctx.job.id);
         await ctx.reportStatus(`Extracting holdings with AI${fileLabel}…`);
         const parsed = await useCase.execute({
           imageBase64: buf.toString('base64'),
@@ -56,8 +64,16 @@ export class ScreenshotParseProcessor extends UserJobProcessor<ScreenshotParseJo
           'Screenshot parse failed for one file'
         );
       } finally {
+        // Only ever the temp upload. `UploadedFileService` COPIES the file
+        // to its permanent key, so deleting the key this job was handed is
+        // what completes the promotion — but the guard is the retained-
+        // prefix test rather than "temp keys only", exactly as in
+        // `document-parse`: a future caller handed a stored key must not be
+        // able to destroy the file we promised to keep.
         // R2 lifecycle rule will clean up if this fails.
-        void storage.delete(key).catch(() => undefined);
+        if (!retention.isRetained(key)) {
+          void storage.delete(key).catch(() => undefined);
+        }
       }
       await ctx.reportProgress((i + 1) / data.r2Keys.length);
     }
@@ -106,6 +122,43 @@ export class ScreenshotParseProcessor extends UserJobProcessor<ScreenshotParseJo
       },
     };
   }
+
+  /**
+   * Never throws. The user's goal is the parse; a failed bookkeeping write
+   * must not turn a readable screenshot into a failed file. Mirrors
+   * `DocumentParseProcessor.retain`, which swallows for the same reason.
+   */
+  private async record(
+    uploadedFiles: UploadedFileService,
+    userId: string,
+    r2Key: string,
+    mimeType: string | undefined,
+    bytes: Buffer,
+    jobId: string | undefined
+  ): Promise<void> {
+    try {
+      await uploadedFiles.record({
+        userId,
+        purpose: 'screenshot',
+        bytes: new Uint8Array(bytes),
+        mimeType: mimeType ?? 'application/octet-stream',
+        r2Key,
+        originalFilename: filenameFromKey(r2Key),
+      });
+    } catch (err) {
+      logger.warn(
+        { jobId, r2Key, error: err instanceof Error ? err.message : err },
+        'Screenshot upload could not be recorded (non-fatal)'
+      );
+    }
+  }
+}
+
+// `screenshots.parseScreenshots` carries r2Keys and nothing else — the
+// client never sends the picked filename — so the uploaded name is the
+// generated one the presigner minted. Honest rather than invented.
+function filenameFromKey(key: string): string {
+  return key.split('/').pop() || key;
 }
 
 function inferMime(key: string): string | undefined {

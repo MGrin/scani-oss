@@ -101,6 +101,48 @@ export const storageRouter = router({
       }
     }),
 
+  // Server-side duplicate. The alternative — readTempBlob then a write
+  // endpoint — would drag the whole file through the caller's process and
+  // back as base64 for no gain; the bytes never need to leave this
+  // container.
+  copyObject: bearerProcedure
+    .meta({
+      openapi: {
+        method: 'POST',
+        path: '/trpc/storage.copyObject',
+        tags: ['storage'],
+        summary: 'Copy an object to a second key, leaving the source in place',
+        protect: true,
+      },
+    })
+    .input(
+      z.object({
+        fromKey: z.string(),
+        toKey: z.string(),
+        contentType: z.string().optional(),
+      })
+    )
+    .output(z.unknown())
+    .mutation(async ({ input }) => {
+      try {
+        await storage().copy(input.fromKey, input.toKey, input.contentType);
+        return { ok: true };
+      } catch (err) {
+        log.warn(
+          {
+            fromKey: input.fromKey,
+            toKey: input.toKey,
+            error: err instanceof Error ? err.message : String(err),
+          },
+          'copyObject failed'
+        );
+        throw new TRPCError({
+          code: 'INTERNAL_SERVER_ERROR',
+          message: err instanceof Error ? err.message : String(err),
+        });
+      }
+    }),
+
   deleteTempBlob: bearerProcedure
     .meta({
       openapi: {

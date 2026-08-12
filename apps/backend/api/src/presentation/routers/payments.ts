@@ -21,9 +21,15 @@
  */
 
 import type { Payment, PaymentOccurrence } from '@scani/db/schema';
+import { withTransaction } from '@scani/db/transaction';
 import { PaymentOccurrenceRepository, PaymentRepository } from '@scani/domain/repositories';
 import { PaymentService } from '@scani/domain/services';
-import { ReconcilePaymentsUseCase } from '@scani/domain/use-cases';
+import {
+  AnchorOccurrenceMissingError,
+  CreatePaymentFromExtractionUseCase,
+  ExtractionNotFoundError,
+  ReconcilePaymentsUseCase,
+} from '@scani/domain/use-cases';
 import { TRPCError } from '@trpc/server';
 import { Container } from 'typedi';
 import { z } from 'zod';
@@ -47,6 +53,18 @@ const CreatePaymentInputSchema = z.object({
   endDate: DATE_STRING.nullable().optional(),
   accountId: z.string().uuid().nullable().optional(),
   notes: z.string().max(2000).nullable().optional(),
+});
+
+// Same shape as `CreatePaymentInputSchema` minus `vendorId`, which
+// becomes nullable here: null means "derive the vendor from the
+// extraction's own `vendorNameRaw`" rather than "no vendor" (a payment
+// always has one).
+const CreatePaymentFromExtractionInputSchema = CreatePaymentInputSchema.omit({
+  vendorId: true,
+}).extend({
+  extractionId: z.string().uuid(),
+  vendorId: z.string().uuid().nullable().optional(),
+  markAnchorPaid: z.boolean().default(false),
 });
 
 const UpdatePaymentInputSchema = z.object({
@@ -126,6 +144,42 @@ export const paymentsRouter = router({
     const payment = await Container.get(PaymentService).create(ctx.userId, input);
     return serializePayment(payment);
   }),
+
+  /**
+   * Approve a parsed invoice INTO a recurring payment — the write side of
+   * the review feed's "this is a subscription" decision. Replaces a bare
+   * `documents.acceptExtraction` when the user fills the payment form:
+   * vendor find-or-create, payment + occurrence materialisation, optional
+   * settlement of the anchor occurrence (a PAID invoice), and flipping the
+   * extraction to 'accepted' all commit together or not at all — see
+   * `CreatePaymentFromExtractionUseCase`'s own doc for why a partial
+   * apply here would let a second approval create a duplicate payment.
+   *
+   * `extractionId` is a client-supplied id and is never trusted: the use
+   * case loads it through `DocumentExtractionRepository.findByIdAndUser`,
+   * whose join through `documents` IS the ownership check, and both
+   * "doesn't exist" and "belongs to someone else" surface as the same
+   * NOT_FOUND here.
+   */
+  createFromExtraction: protectedProcedure
+    .input(CreatePaymentFromExtractionInputSchema)
+    .mutation(async ({ ctx, input }) => {
+      try {
+        const payment = await withTransaction(
+          (tx) => Container.get(CreatePaymentFromExtractionUseCase).execute(ctx.userId, input, tx),
+          { name: 'payments.createFromExtraction', timeout: 15000 }
+        );
+        return serializePayment(payment);
+      } catch (error) {
+        if (error instanceof ExtractionNotFoundError) {
+          throw new TRPCError({ code: 'NOT_FOUND', message: 'Extraction not found' });
+        }
+        if (error instanceof AnchorOccurrenceMissingError) {
+          throw new TRPCError({ code: 'BAD_REQUEST', message: error.message });
+        }
+        throw error;
+      }
+    }),
 
   update: protectedProcedure.input(UpdatePaymentInputSchema).mutation(async ({ ctx, input }) => {
     const { paymentId, ...patch } = input;

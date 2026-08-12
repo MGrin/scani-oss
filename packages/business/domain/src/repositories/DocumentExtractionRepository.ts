@@ -1,8 +1,17 @@
 import { BaseRepository, type DatabaseTransaction } from '@scani/db';
 import type { DocumentExtraction, NewDocumentExtraction } from '@scani/db/schema';
 import * as schema from '@scani/db/schema';
-import { and, asc, eq } from 'drizzle-orm';
+import { and, asc, eq, notExists, sql } from 'drizzle-orm';
 import { Service } from 'typedi';
+
+/** One `payment_occurrences` → `document_extractions` link, named for the user. */
+export interface ExtractionOccurrenceLink {
+  extractionId: string;
+  occurrenceId: string;
+  paymentId: string;
+  vendorName: string;
+  dueDate: string;
+}
 
 // One row per invoice FOUND IN a document — a single PDF can hold
 // several (see `ordinal`). This table has no `userId` of its own —
@@ -47,6 +56,35 @@ export class DocumentExtractionRepository extends BaseRepository<
   }
 
   /**
+   * Ownership-scoped single-row lookup. `document_extractions` has no
+   * `userId` of its own, so this can't reuse `BaseRepository.findById`
+   * — the join through `documents` IS the ownership check. Returns null
+   * for both "doesn't exist" and "belongs to another user's document",
+   * same precedent as `setReviewState`.
+   */
+  async findByIdAndUser(
+    extractionId: string,
+    userId: string,
+    transaction?: DatabaseTransaction
+  ): Promise<DocumentExtraction | null> {
+    try {
+      const database = this.getDb(transaction);
+      const [row] = await database
+        .select({ extraction: schema.documentExtractions })
+        .from(schema.documentExtractions)
+        .innerJoin(schema.documents, eq(schema.documentExtractions.documentId, schema.documents.id))
+        .where(
+          and(eq(schema.documentExtractions.id, extractionId), eq(schema.documents.userId, userId))
+        )
+        .limit(1);
+      return row?.extraction ?? null;
+    } catch (error) {
+      this.logger.error({ extractionId, userId, error }, 'Failed to find extraction by id+user');
+      throw error;
+    }
+  }
+
+  /**
    * Every extraction found in a single document (any review state),
    * scoped to the user via `documents` — backs the document detail page,
    * which needs the full history, not just the pending ones
@@ -73,6 +111,108 @@ export class DocumentExtractionRepository extends BaseRepository<
       return rows.map((row) => row.extraction);
     } catch (error) {
       this.logger.error({ documentId, userId, error }, 'Failed to find extractions by document id');
+      throw error;
+    }
+  }
+
+  /**
+   * Every `payment_occurrences` row that points at one of this document's
+   * extractions, with enough of the payment to name it to the user.
+   *
+   * `matched_extraction_id` is `ON DELETE SET NULL`, so deleting the
+   * document would NOT error — it would silently strip a settled
+   * occurrence of the invoice that evidences it. This is the pre-check
+   * that turns that silent loss into a refusal, so it is the read half of
+   * the same invariant `deleteUnlinkedByDocumentId` enforces on the
+   * re-parse path.
+   *
+   * Ownership is join-derived through `documents`; returns [] for a
+   * document that doesn't exist OR belongs to another user, so the caller
+   * can't tell the two apart.
+   */
+  async findOccurrenceLinksByDocumentId(
+    documentId: string,
+    userId: string,
+    transaction?: DatabaseTransaction
+  ): Promise<ExtractionOccurrenceLink[]> {
+    try {
+      const database = this.getDb(transaction);
+      return await database
+        .select({
+          extractionId: schema.documentExtractions.id,
+          occurrenceId: schema.paymentOccurrences.id,
+          paymentId: schema.payments.id,
+          vendorName: schema.vendors.displayName,
+          dueDate: schema.paymentOccurrences.dueDate,
+        })
+        .from(schema.paymentOccurrences)
+        .innerJoin(
+          schema.documentExtractions,
+          eq(schema.paymentOccurrences.matchedExtractionId, schema.documentExtractions.id)
+        )
+        .innerJoin(schema.documents, eq(schema.documentExtractions.documentId, schema.documents.id))
+        .innerJoin(schema.payments, eq(schema.paymentOccurrences.paymentId, schema.payments.id))
+        .innerJoin(schema.vendors, eq(schema.payments.vendorId, schema.vendors.id))
+        .where(
+          and(
+            eq(schema.documentExtractions.documentId, documentId),
+            eq(schema.documents.userId, userId)
+          )
+        )
+        .orderBy(asc(schema.paymentOccurrences.dueDate));
+    } catch (error) {
+      this.logger.error({ documentId, userId, error }, 'Failed to find occurrence links');
+      throw error;
+    }
+  }
+
+  /**
+   * Clear a document's extractions ahead of a re-parse, keeping any that a
+   * `payment_occurrences.matched_extraction_id` points at.
+   *
+   * That FK is `ON DELETE SET NULL`, so a blanket delete would NOT error —
+   * it would quietly null the link and strip the occurrence of the invoice
+   * that evidences it. The `NOT EXISTS` is therefore the actual protection,
+   * not a nicety the constraint would have caught anyway.
+   *
+   * Ownership is join-derived through `documents` (this table has no
+   * `userId`), and a DELETE can't join, so the guard is a pre-check —
+   * same shape as `setReviewState`. Returns [] when the document doesn't
+   * exist OR belongs to another user, so neither case is distinguishable
+   * to a caller probing ids.
+   */
+  async deleteUnlinkedByDocumentId(
+    documentId: string,
+    userId: string,
+    transaction?: DatabaseTransaction
+  ): Promise<DocumentExtraction[]> {
+    try {
+      const database = this.getDb(transaction);
+      const [owned] = await database
+        .select({ id: schema.documents.id })
+        .from(schema.documents)
+        .where(and(eq(schema.documents.id, documentId), eq(schema.documents.userId, userId)))
+        .limit(1);
+      if (!owned) return [];
+
+      return await database
+        .delete(schema.documentExtractions)
+        .where(
+          and(
+            eq(schema.documentExtractions.documentId, documentId),
+            notExists(
+              database
+                .select({ one: sql`1` })
+                .from(schema.paymentOccurrences)
+                .where(
+                  eq(schema.paymentOccurrences.matchedExtractionId, schema.documentExtractions.id)
+                )
+            )
+          )
+        )
+        .returning();
+    } catch (error) {
+      this.logger.error({ documentId, userId, error }, 'Failed to delete unlinked extractions');
       throw error;
     }
   }

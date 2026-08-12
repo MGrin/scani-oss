@@ -1,7 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import * as schema from '@scani/db/schema';
 import { eq } from 'drizzle-orm';
-import { Container } from 'typedi';
 import { DocumentExtractionRepository } from '../../src/repositories/DocumentExtractionRepository';
 import { withTestDb } from '../../test/helpers/db';
 import {
@@ -10,6 +9,7 @@ import {
   makeUser,
   makeVendor,
 } from '../../test/helpers/factories';
+import { makePayment, makePaymentOccurrence } from '../../test/helpers/factories-extra';
 
 // DocumentExtractionRepository backs the "one row per invoice FOUND IN a
 // file" side of the documents layer — a single PDF can hold several,
@@ -19,7 +19,12 @@ import {
 // extractions away, but deleting a vendor must NOT — it should only
 // null out the link.
 
-const repo = () => Container.get(DocumentExtractionRepository);
+// Constructed directly, NOT via the Container: five service tests
+// `Container.set(DocumentRepository, ...)` a partial stub, and typedi's
+// container is process-global, so whichever ran first left this file
+// resolving a stub with no `findByContentHash`. A real-DB repository
+// test needs no DI anyway.
+const repo = () => new DocumentExtractionRepository();
 
 describe('DocumentExtractionRepository', () => {
   test('findPendingByUser returns only pending extractions scoped to the user', async () => {
@@ -42,6 +47,36 @@ describe('DocumentExtractionRepository', () => {
 
       const rows = await repo().findPendingByUser(userA.id, tx);
       expect(rows.map((r) => r.id)).toEqual([pending.id]);
+    });
+  });
+
+  describe('findByIdAndUser', () => {
+    test("returns the extraction when it hangs off the caller's own document", async () => {
+      await withTestDb(async (tx) => {
+        const user = await makeUser(tx);
+        const document = await makeDocument(tx, { userId: user.id });
+        const extraction = await makeDocumentExtraction(tx, {
+          documentId: document.id,
+          ordinal: 0,
+        });
+
+        const found = await repo().findByIdAndUser(extraction.id, user.id, tx);
+        expect(found?.id).toBe(extraction.id);
+      });
+    });
+
+    test('returns null for an extraction on another user’s document', async () => {
+      await withTestDb(async (tx) => {
+        const owner = await makeUser(tx);
+        const intruder = await makeUser(tx);
+        const document = await makeDocument(tx, { userId: owner.id });
+        const extraction = await makeDocumentExtraction(tx, {
+          documentId: document.id,
+          ordinal: 0,
+        });
+
+        expect(await repo().findByIdAndUser(extraction.id, intruder.id, tx)).toBeNull();
+      });
     });
   });
 
@@ -145,6 +180,148 @@ describe('DocumentExtractionRepository', () => {
         .where(eq(schema.documentExtractions.id, extraction.id));
       expect(row).toBeDefined();
       expect(row?.vendorId).toBeNull();
+    });
+  });
+
+  // Backs `documents.delete`: the same ON DELETE SET NULL hazard read from
+  // the other side. Deleting the document would succeed and quietly null
+  // every link, so the router has to know what depends on it first.
+  describe('findOccurrenceLinksByDocumentId', () => {
+    test("names the payment behind each of the document's linked extractions", async () => {
+      await withTestDb(async (tx) => {
+        const user = await makeUser(tx);
+        const document = await makeDocument(tx, { userId: user.id });
+        const linked = await makeDocumentExtraction(tx, { documentId: document.id, ordinal: 0 });
+        await makeDocumentExtraction(tx, { documentId: document.id, ordinal: 1 });
+        const vendor = await makeVendor(tx, { userId: user.id, displayName: 'Hetzner' });
+        const payment = await makePayment(tx, { userId: user.id, vendorId: vendor.id });
+        const occurrence = await makePaymentOccurrence(tx, {
+          paymentId: payment.id,
+          dueDate: '2026-08-01',
+          matchedExtractionId: linked.id,
+        });
+
+        const links = await repo().findOccurrenceLinksByDocumentId(document.id, user.id, tx);
+
+        expect(links).toEqual([
+          {
+            extractionId: linked.id,
+            occurrenceId: occurrence.id,
+            paymentId: payment.id,
+            vendorName: 'Hetzner',
+            dueDate: '2026-08-01',
+          },
+        ]);
+      });
+    });
+
+    test('a document nothing points at reports no blockers', async () => {
+      await withTestDb(async (tx) => {
+        const user = await makeUser(tx);
+        const document = await makeDocument(tx, { userId: user.id });
+        await makeDocumentExtraction(tx, { documentId: document.id, ordinal: 0 });
+
+        expect(await repo().findOccurrenceLinksByDocumentId(document.id, user.id, tx)).toEqual([]);
+      });
+    });
+
+    test("another user's document reports no blockers", async () => {
+      // Same shape as every other method here: an id from tRPC must not
+      // reveal whether it exists on someone else's account.
+      await withTestDb(async (tx) => {
+        const owner = await makeUser(tx);
+        const intruder = await makeUser(tx);
+        const document = await makeDocument(tx, { userId: owner.id });
+        const linked = await makeDocumentExtraction(tx, { documentId: document.id, ordinal: 0 });
+        const payment = await makePayment(tx, { userId: owner.id });
+        await makePaymentOccurrence(tx, {
+          paymentId: payment.id,
+          dueDate: '2026-08-01',
+          matchedExtractionId: linked.id,
+        });
+
+        expect(await repo().findOccurrenceLinksByDocumentId(document.id, intruder.id, tx)).toEqual(
+          []
+        );
+      });
+    });
+  });
+
+  // Backs `documents.reparse`: a re-parse clears the stale reads but must
+  // not strip a payment occurrence of the invoice that evidences it. The
+  // FK is ON DELETE SET NULL, so a blanket delete would have succeeded and
+  // silently orphaned the link — these tests pin that it doesn't.
+  describe('deleteUnlinkedByDocumentId', () => {
+    test('an extraction a payment occurrence points at survives; the rest go', async () => {
+      await withTestDb(async (tx) => {
+        const user = await makeUser(tx);
+        const document = await makeDocument(tx, { userId: user.id });
+        const linked = await makeDocumentExtraction(tx, { documentId: document.id, ordinal: 0 });
+        const pending = await makeDocumentExtraction(tx, {
+          documentId: document.id,
+          ordinal: 1,
+          reviewState: 'pending',
+        });
+        const acceptedButUnlinked = await makeDocumentExtraction(tx, {
+          documentId: document.id,
+          ordinal: 2,
+          reviewState: 'accepted',
+        });
+        const payment = await makePayment(tx, { userId: user.id });
+        await makePaymentOccurrence(tx, {
+          paymentId: payment.id,
+          dueDate: '2026-08-01',
+          matchedExtractionId: linked.id,
+        });
+
+        const deleted = await repo().deleteUnlinkedByDocumentId(document.id, user.id, tx);
+
+        expect(deleted.map((r) => r.id).sort()).toEqual(
+          [pending.id, acceptedButUnlinked.id].sort()
+        );
+        const left = await repo().findByDocumentId(document.id, user.id, tx);
+        expect(left.map((r) => r.id)).toEqual([linked.id]);
+        // And the link itself is intact — not nulled by a cascade.
+        const [occurrence] = await tx
+          .select()
+          .from(schema.paymentOccurrences)
+          .where(eq(schema.paymentOccurrences.matchedExtractionId, linked.id));
+        expect(occurrence).toBeDefined();
+      });
+    });
+
+    test("another user's document is a no-op, not a delete", async () => {
+      await withTestDb(async (tx) => {
+        const owner = await makeUser(tx);
+        const intruder = await makeUser(tx);
+        const document = await makeDocument(tx, { userId: owner.id });
+        const extraction = await makeDocumentExtraction(tx, {
+          documentId: document.id,
+          ordinal: 0,
+        });
+
+        expect(await repo().deleteUnlinkedByDocumentId(document.id, intruder.id, tx)).toEqual([]);
+
+        const left = await repo().findByDocumentId(document.id, owner.id, tx);
+        expect(left.map((r) => r.id)).toEqual([extraction.id]);
+      });
+    });
+
+    test('only the named document is touched', async () => {
+      await withTestDb(async (tx) => {
+        const user = await makeUser(tx);
+        const target = await makeDocument(tx, { userId: user.id });
+        const other = await makeDocument(tx, { userId: user.id });
+        await makeDocumentExtraction(tx, { documentId: target.id, ordinal: 0 });
+        const untouched = await makeDocumentExtraction(tx, { documentId: other.id, ordinal: 0 });
+
+        await repo().deleteUnlinkedByDocumentId(target.id, user.id, tx);
+
+        expect(await repo().findByDocumentId(target.id, user.id, tx)).toEqual([]);
+        expect((await repo().findByDocumentId(other.id, user.id, tx)).map((r) => r.id)).toEqual([
+          untouched.id,
+        ]);
+      });
     });
   });
 });

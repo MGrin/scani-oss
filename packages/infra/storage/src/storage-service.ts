@@ -61,6 +61,17 @@ const envSchema = z.object({
   S3_REGION: z.string().optional(),
 });
 
+// `copy` takes whole keys rather than the (prefix, extension) pair
+// `presignUpload` assembles, so it can't reuse KEY_PREFIX_PATTERN. The
+// keys it receives are built server-side from UUIDs, but they cross a
+// tRPC boundary on the cloud path — reject the traversal shapes rather
+// than trust the caller.
+function assertSafeKey(key: string, label: string): void {
+  if (key.length === 0 || key.length > 1024 || key.includes('..') || key.startsWith('/')) {
+    throw new Error(`StorageService.copy: invalid ${label} (${key.slice(0, 64)})`);
+  }
+}
+
 interface ResolvedConfig {
   accessKeyId: string;
   secretAccessKey: string;
@@ -121,6 +132,22 @@ export class StorageService {
   async read(key: string): Promise<Buffer> {
     const bytes = await this.serverClient().file(key).arrayBuffer();
     return Buffer.from(bytes);
+  }
+
+  /**
+   * Duplicate an object under a second key, leaving the source in place.
+   *
+   * Bun's `S3Client` exposes no server-side CopyObject, so this streams the
+   * bytes through the process. Callers that want a move delete the source
+   * themselves — keeping the two halves separate means a failed copy can
+   * never destroy the only surviving copy of a file.
+   */
+  async copy(fromKey: string, toKey: string, contentType?: string): Promise<void> {
+    assertSafeKey(fromKey, 'copy source');
+    assertSafeKey(toKey, 'copy destination');
+    const client = this.serverClient();
+    const bytes = await client.file(fromKey).arrayBuffer();
+    await client.file(toKey).write(bytes, contentType ? { type: contentType } : undefined);
   }
 
   async delete(key: string): Promise<void> {

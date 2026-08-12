@@ -11,6 +11,7 @@ import { DashboardPage } from './pages/DashboardPage';
 import { DocumentDetailPage } from './pages/DocumentDetailPage';
 import { DocumentUploadPage } from './pages/DocumentUploadPage';
 import { FileImportPage } from './pages/FileImportPage';
+import { FilesPage } from './pages/FilesPage';
 import { GroupsPage } from './pages/GroupsPage';
 import { HoldingDetailPage } from './pages/HoldingDetailPage';
 import { HoldingsPage } from './pages/HoldingsPage';
@@ -66,6 +67,7 @@ export function V2App() {
                 <Route path="payments/recurring/:id/edit" element={<PaymentCreatePage />} />
                 <Route path="vendors" element={<VendorsPage />} />
                 <Route path="vendors/:id" element={<VendorDetailPage />} />
+                <Route path="documents" element={<FilesPage />} />
                 <Route path="documents/upload" element={<DocumentUploadPage />} />
                 <Route path="documents/:id" element={<DocumentDetailPage />} />
                 <Route path="tokens" element={<TokensPage />} />

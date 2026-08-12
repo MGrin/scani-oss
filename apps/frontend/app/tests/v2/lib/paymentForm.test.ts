@@ -25,6 +25,21 @@ describe('describePaymentFormBlockers', () => {
     expect(describePaymentFormBlockers({ ...complete, vendorId: '' })).toEqual(['choose a vendor']);
   });
 
+  // Arriving from an invoice there is a vendor NAME but no vendor row —
+  // `payments.createFromExtraction` creates it — so demanding an id would
+  // disable submit on a form the user has fully answered.
+  test('a vendor name staged from an invoice satisfies the vendor requirement', () => {
+    expect(
+      describePaymentFormBlockers({ ...complete, vendorId: '', pendingVendorName: '1Password' })
+    ).toEqual([]);
+  });
+
+  test('a blank staged vendor name does not satisfy it', () => {
+    expect(
+      describePaymentFormBlockers({ ...complete, vendorId: '', pendingVendorName: '   ' })
+    ).toEqual(['choose a vendor']);
+  });
+
   test('a missing anchor date blocks', () => {
     expect(describePaymentFormBlockers({ ...complete, anchorDate: '' })).toEqual([
       'set an anchor date',

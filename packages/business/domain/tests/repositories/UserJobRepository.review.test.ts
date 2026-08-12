@@ -1,10 +1,12 @@
 import { describe, expect, test } from 'bun:test';
-import { Container } from 'typedi';
 import { UserJobRepository } from '../../src/repositories/UserJobRepository';
 import { withTestDb } from '../../test/helpers/db';
 import { makeUser } from '../../test/helpers/factories';
 
-const repo = () => Container.get(UserJobRepository);
+// Constructed directly, NOT via the Container — see the note in
+// `UserJobRepository.test.ts`: a processor test's partial stub is
+// process-global and would otherwise be what this file resolves.
+const repo = () => new UserJobRepository();
 
 describe('UserJobRepository.findPendingReview', () => {
   test('returns only reviewable kinds that have not been acted on', async () => {
