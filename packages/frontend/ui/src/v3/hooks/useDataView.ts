@@ -7,7 +7,7 @@ import { useBulkSelection } from './useBulkSelection';
  *
  * It was written for `apps/frontend/app`'s v2 `DataView` and is imported
  * unchanged by v3's `V3DataView`, which replaced the presentation and kept the
- * model. V3-28 promoted it here because a second Scani SPA needs the same
+ * model. V3-28 promoted it here because `apps/frontend/cloud` needs the same
  * surface for its key list, and a second copy of a stateful hook is a second
  * place for the persistence format to drift.
  *

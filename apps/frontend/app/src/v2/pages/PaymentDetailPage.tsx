@@ -7,7 +7,7 @@ import { PageLoader } from '@scani/ui/ui/loading';
 import { Separator } from '@scani/ui/ui/separator';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@scani/ui/ui/table';
 import { showError, showSuccess } from '@scani/ui/ui/use-toast';
-import { ArrowLeft, FileText, Pause, Pencil, Receipt, StopCircle } from 'lucide-react';
+import { ArrowLeft, FileText, Pause, Pencil, Play, Receipt, StopCircle } from 'lucide-react';
 import { useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { type RouterOutputs, trpc } from '@/lib/trpc';
@@ -116,6 +116,7 @@ export function PaymentDetailPage() {
   const { id = '' } = useParams<{ id: string }>();
   const utils = trpc.useUtils();
   const [confirmEnd, setConfirmEnd] = useState(false);
+  const [confirmResume, setConfirmResume] = useState(false);
   const [showAllUpcoming, setShowAllUpcoming] = useState(false);
 
   const paymentQuery = trpc.payments.get.useQuery({ paymentId: id }, { enabled: Boolean(id) });
@@ -130,6 +131,15 @@ export function PaymentDetailPage() {
       void utils.payments.invalidate();
     },
     onError: (error) => showError(error, 'Pausing payment'),
+  });
+
+  const resumeMutation = trpc.payments.resume.useMutation({
+    onSuccess: () => {
+      setConfirmResume(false);
+      showSuccess('Payment resumed');
+      void utils.payments.invalidate();
+    },
+    onError: (error) => showError(error, 'Resuming payment'),
   });
 
   const endMutation = trpc.payments.end.useMutation({
@@ -199,6 +209,12 @@ export function PaymentDetailPage() {
             >
               <Pause className="h-4 w-4 mr-1" />
               Pause
+            </Button>
+          )}
+          {payment.status === 'paused' && (
+            <Button variant="ghost" size="sm" onClick={() => setConfirmResume(true)}>
+              <Play className="h-4 w-4 mr-1" />
+              Resume
             </Button>
           )}
           {payment.status !== 'ended' && (
@@ -385,6 +401,23 @@ export function PaymentDetailPage() {
           )}
         </CardContent>
       </Card>
+
+      {/* Resuming is not destructive, but it is not neutral either: it
+          settles every date the pause covered. Saying so before the click
+          is the point — the pause was the one-way door this undoes. */}
+      <ConfirmDialog
+        open={confirmResume}
+        onOpenChange={setConfirmResume}
+        title="Resume this payment"
+        description={
+          payment.pausedAt
+            ? `"${vendorName}" picks up its original schedule — the same dates as before, not restarted from today. Anything due since ${formatDate(payment.pausedAt.slice(0, 10))} is recorded as skipped, not overdue.`
+            : `"${vendorName}" picks up its original schedule — the same dates as before, not restarted from today. Past due dates are left exactly as they are.`
+        }
+        confirmLabel="Resume payment"
+        isPending={resumeMutation.isPending}
+        onConfirm={() => resumeMutation.mutate({ paymentId: payment.id })}
+      />
 
       <ConfirmDialog
         open={confirmEnd}

@@ -1,6 +1,7 @@
 import type { ErrorInfo, ReactNode } from 'react';
 import { Component } from 'react';
 import { reportClientError } from '../../../lib/report-client-error';
+import { V2_ROUTES } from '../../lib/routes';
 
 interface Props {
   children: ReactNode;
@@ -49,7 +50,10 @@ export class V2ErrorBoundary extends Component<Props, State> {
                 type="button"
                 onClick={() => {
                   this.setState({ hasError: false, error: null });
-                  window.location.href = '/';
+                  // v2's own home, not the app root — the root is v3 since
+                  // V3-19, and a classic-UI error should recover into the
+                  // classic UI.
+                  window.location.href = V2_ROUTES.dashboard;
                 }}
                 className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90"
               >

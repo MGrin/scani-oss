@@ -61,6 +61,28 @@ ownership rule.
 | `CLOUD_MANAGEMENT_ENABLED` | app (data-provider) | Tier 2/3 only. Enables cloud-management surface. |
 | `BETTER_AUTH_URL` | app (data-provider) | Public URL of the data-provider for cloud-management cookies. |
 | `CLOUD_FRONTEND_ORIGIN` | app (data-provider) | CORS origin for cloud-management console. |
+| `VITE_DATA_PROVIDER_URL` | cloud + landing (frontend) | Where those SPAs send tRPC calls. Baked at build time. Empty is legal and means same-origin, which is how dev works through the Vite proxy. |
+| `DATA_PROVIDER_PROXY_TARGET` | cloud (vite dev server) | What that dev proxy forwards to. Default `http://localhost:8082`. Dev only — the production build never reads it. |
+
+## Admin dashboard
+
+The passkey-gated infra console (`apps/frontend/admin`, Next.js). None
+of these are needed to run Scani — the admin app is an operator tool and
+a self-host deployment can skip it entirely.
+
+| Variable | Owner | What it does |
+|---|---|---|
+| `ADMIN_ORIGIN` | admin | Public origin of the console. WebAuthn checks it, so a mismatch means every passkey assertion is rejected. |
+| `ADMIN_RP_ID` | admin | WebAuthn Relying Party ID — the registrable domain of `ADMIN_ORIGIN`. |
+| `ADMIN_PASSKEY_CREDENTIAL_ID` | admin | Base64 credential ID of the one enrolled passkey. |
+| `ADMIN_PASSKEY_PUBLIC_KEY` | admin | Its public key. Together with the ID above, this *is* the user directory: there is no admin table. |
+| `ADMIN_SESSION_SECRET` | admin | Signs the admin session cookie. |
+| `ADMIN_BOOTSTRAP_TOKEN` | admin | One-time token that lets the first passkey enrol. Unset once a passkey exists — a live bootstrap token is a second way in. |
+| `NEXT_PUBLIC_SENTRY_DSN` | admin | Browser + server Sentry for the console. Unset → no-op. |
+| `NEXT_PUBLIC_SENTRY_ENVIRONMENT` | admin | Tag (`production`, `preview`). |
+| `NEXT_PUBLIC_SENTRY_RELEASE` | admin | Release identifier. |
+| `SENTRY_AUTH_TOKEN` | admin (build + API routes) | Uploads source maps at build time, and backs the console's "resolve issue" action. A write-scoped token, unlike the DSNs above. |
+| `SENTRY_ORG` | admin (build) | Sentry organisation slug for that upload. |
 
 ## Storage
 
@@ -182,6 +204,11 @@ production deployment — operators can ignore this section.
 | `POSTGRES_CONTAINER` | e2e (db reset helper) | Compose service name of the Postgres container the e2e suite execs into. Default `postgres`. |
 | `REDIS_CONTAINER` | e2e (queue reset helper) | Compose service name of the Redis container the e2e suite execs into. Default `redis`. |
 | `KEEP_STACK_ON_FAILURE` | `apps/e2e/scripts/run.ts` | When `1`, leaves the docker-compose stack running after a failed e2e run so the operator can poke at it. |
+| `DATA_PROVIDER_URL` | `apps/e2e/scripts/wait-for-stack.ts` | Health endpoint the e2e runner polls before starting. Default `http://localhost:8082`. |
+| `SHOT_FRESH` | `apps/e2e/fixtures/shots-setup.ts` | When `1`, ignores the stored browser session and signs in again before capturing screenshots. |
+| `COLD_BOOT_API` | `apps/e2e/scripts/measure-cold-boot.ts` | Upstream the cold-boot harness proxies `/api` and `/trpc` to. Default `http://127.0.0.1:3099`. |
+| `COLD_BOOT_API_LOG` | `apps/e2e/scripts/measure-cold-boot.ts` | Where that api writes its stdout. The harness reads the sign-in OTP out of it — an api started without an email transport prints the code rather than sending it. |
+| `COLD_BOOT_DIST` | `apps/e2e/scripts/measure-cold-boot.ts` | A built `dist/` to serve instead of `apps/frontend/app/dist`. How a before/after sweep serves a baseline build from a second worktree. |
 
 ## Validation pattern
 

@@ -1,4 +1,4 @@
-import { formatCurrency } from '@scani/shared';
+import { formatCurrency, formatDate } from '@scani/shared';
 import { Badge } from '@scani/ui/ui/badge';
 import { Button } from '@scani/ui/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@scani/ui/ui/card';
@@ -6,10 +6,23 @@ import { PageLoader } from '@scani/ui/ui/loading';
 import { ArrowLeft, GitMerge } from 'lucide-react';
 import { useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
+import { useBaseCurrencyRates } from '@/hooks/useBaseCurrencyRates';
 import { trpc } from '@/lib/trpc';
+import {
+  formatConvertedFigure,
+  noSettledSpend,
+  PAID_ALL_TIME_LABEL,
+  paidWindowLabel,
+  settledByVendor,
+  settlementsByVendor,
+  unpricedNote,
+} from '@/lib/vendorSpend';
 import { VendorMergeDialog } from '../components/payments/VendorMergeDialog';
 import {
   asPaymentIntervalUnit,
+  convertAmountToBase,
+  convertTotalsToBase,
+  describeConversion,
   formatPaymentInterval,
   sumMonthlyEquivalentByCurrency,
 } from '../lib/paymentTotals';
@@ -23,9 +36,17 @@ export function VendorDetailPage() {
   const { data: vendors, isLoading: vendorsLoading } = trpc.vendors.list.useQuery();
   const { data: payments, isLoading: paymentsLoading } = trpc.payments.list.useQuery();
   const { data: tokens, isLoading: tokensLoading } = trpc.tokens.getAll.useQuery();
+  const { data: spend, isLoading: spendLoading } = trpc.vendors.spend.useQuery();
+  // Before the early returns — a hook cannot sit behind a loading branch.
+  const rates = useBaseCurrencyRates([
+    ...(payments ?? []).map((p) => p.currencyTokenId),
+    // An ended subscription still has to convert in the paid totals, even
+    // though no active payment names its currency any more.
+    ...(spend?.totals ?? []).map((total) => total.currencyTokenId),
+  ]);
 
   if (!id) return null;
-  if (vendorQuery.isLoading || vendorsLoading || paymentsLoading || tokensLoading) {
+  if (vendorQuery.isLoading || vendorsLoading || paymentsLoading || tokensLoading || spendLoading) {
     return <PageLoader />;
   }
   if (vendorQuery.error || !vendorQuery.data) {
@@ -51,6 +72,23 @@ export function VendorDetailPage() {
       currencyTokenId: p.currencyTokenId,
     }))
   );
+  const monthlySpend = convertTotalsToBase(monthlySpendByCurrency, rates);
+  const symbolFor = (tokenId: string) => tokenSymbolById.get(tokenId) ?? rates.baseSymbol;
+  const conversionNote = describeConversion(monthlySpend, symbolFor);
+
+  // What has actually settled, kept apart from what is committed: one is
+  // money that has moved and the other is money that is going to, and a
+  // single "spend" figure covering both would be a claim about neither.
+  const settled = settledByVendor(spend?.totals ?? []).get(vendor.id) ?? noSettledSpend();
+  const recent = settlementsByVendor(spend?.recent ?? []).get(vendor.id) ?? [];
+  const windowMonths = spend?.windowMonths ?? 12;
+  const unpriced = unpricedNote(settled.unpricedCount);
+  // A settlement keeps its own currency — £120 paid *is* £120 — with our
+  // arithmetic beside it rather than in place of it.
+  const baseEquivalent = (amount: string | null, currencyTokenId: string) => {
+    const converted = convertAmountToBase(amount, currencyTokenId, rates);
+    return converted ? formatCurrency(converted.amount.toString(), rates.baseSymbol) : null;
+  };
 
   return (
     <div className="max-w-2xl space-y-6">
@@ -67,23 +105,75 @@ export function VendorDetailPage() {
         {vendor.category && <p className="text-sm text-muted-foreground mt-1">{vendor.category}</p>}
       </div>
 
-      {monthlySpendByCurrency.size > 0 && (
-        <Card>
-          <CardContent className="p-4">
+      {/* Always rendered, including at zero. A vendor you have not paid yet
+          costs nothing, which is a fact — a card that disappears instead
+          reads as a figure that failed to load. */}
+      <Card>
+        <CardContent className="p-4 grid gap-4 sm:grid-cols-3">
+          <div>
             <p className="text-xs text-muted-foreground mb-1">
-              Approx. monthly spend across {activeOutflowPayments.length} active payment
-              {activeOutflowPayments.length === 1 ? '' : 's'}
+              {activeOutflowPayments.length === 0
+                ? 'Committed per month — nothing running'
+                : `Committed per month, across ${activeOutflowPayments.length} active payment${
+                    activeOutflowPayments.length === 1 ? '' : 's'
+                  }`}
             </p>
             <p className="text-2xl font-bold tabular-nums">
-              {Array.from(monthlySpendByCurrency.entries())
-                .map(([tokenId, total]) =>
-                  formatCurrency(total.toString(), tokenSymbolById.get(tokenId) ?? 'USD')
-                )
-                .join(' + ')}
+              {formatCurrency(monthlySpend.amount.toString(), rates.baseSymbol)}
             </p>
-          </CardContent>
-        </Card>
-      )}
+            {conversionNote && (
+              <p className="text-xs text-muted-foreground mt-1">{conversionNote}</p>
+            )}
+          </div>
+          <div>
+            <p className="text-xs text-muted-foreground mb-1">{paidWindowLabel(windowMonths)}</p>
+            <p className="text-xl font-semibold tabular-nums">
+              {formatConvertedFigure(settled.inWindow, rates, rates.baseSymbol, symbolFor)}
+            </p>
+          </div>
+          <div>
+            <p className="text-xs text-muted-foreground mb-1">{PAID_ALL_TIME_LABEL}</p>
+            <p className="text-xl font-semibold tabular-nums">
+              {formatConvertedFigure(settled.allTime, rates, rates.baseSymbol, symbolFor)}
+            </p>
+            {unpriced && <p className="text-xs text-muted-foreground mt-1">{unpriced}</p>}
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-sm">Recent payments</CardTitle>
+        </CardHeader>
+        <CardContent>
+          {recent.length === 0 ? (
+            <p className="text-xs text-muted-foreground">
+              Nothing has been marked paid for this vendor yet.
+            </p>
+          ) : (
+            <div className="divide-y">
+              {recent.map((settlement) => (
+                <div
+                  key={settlement.id}
+                  className="flex items-center justify-between gap-3 py-2.5 text-sm"
+                >
+                  <span>{formatDate(settlement.dueDate)}</span>
+                  <span className="font-semibold tabular-nums">
+                    {settlement.amount
+                      ? formatCurrency(settlement.amount, symbolFor(settlement.currencyTokenId))
+                      : 'No amount recorded'}
+                    {baseEquivalent(settlement.amount, settlement.currencyTokenId) && (
+                      <span className="ml-2 font-normal text-muted-foreground">
+                        ≈ {baseEquivalent(settlement.amount, settlement.currencyTokenId)}
+                      </span>
+                    )}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
 
       <Card>
         <CardHeader>

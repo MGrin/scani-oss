@@ -3,25 +3,62 @@
   <head>
     <meta charset="UTF-8">
 
-    <!-- Favicon -->
+    <!--
+      Favicon. The SVG is the canonical mark (SC-80) and every raster below it
+      is generated from that same file by
+      the marketing site's icon generator — the .ico and PNGs are
+      fallbacks for browsers that will not take `image/svg+xml`, not separate
+      artwork. Do not hand-edit them.
+    -->
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg">
     <link rel="icon" type="image/x-icon" href="/favicon.ico">
     <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png">
     <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png">
 
-    <!-- Enhanced viewport meta tag for better mobile experience -->
-    <meta
-      name="viewport"
-      content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover"
-    >
+    <!--
+      `viewport-fit=cover` is what lets `env(safe-area-inset-*)` report real
+      numbers, which the whole v3 chrome is laid out against.
+
+      `maximum-scale=1.0, user-scalable=no` are GONE (SC-71 7.4). Every browser
+      ignores them — an installed PWA does not, so on the home-screen app
+      pinch-zoom was genuinely unavailable, which is WCAG 1.4.4 with no
+      workaround and no way for the reader to notice why. They were there to
+      stop iOS zooming the page when a sub-16px input takes focus; the fix for
+      that is the input, and v3's token layer already floors every field at
+      `--text-body-size` (16px) for exactly this reason. v2's fields are 14px,
+      so a focused v2 form in the installed PWA can now zoom — that is the
+      cheaper of the two costs, and it is one v2 never paid in a browser tab
+      anyway.
+    -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 
     <!-- PWA Meta Tags -->
-    <meta name="theme-color" content="#1a1f2e">
+    <meta name="theme-color" content="#0d0e11">
     <meta
       name="description"
       content="Personal finance management made simple. Track your portfolio, crypto wallets, and investments in one place."
     >
     <meta name="apple-mobile-web-app-capable" content="yes">
-    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <!--
+      `default`, NOT `black-translucent` (SC-64). Under `black-translucent` an
+      installed iOS PWA is handed the whole 844pt screen at launch, and then —
+      the first time the software keyboard opens and closes — WebKit re-lays
+      the page out at `screen.height - env(safe-area-inset-top)` (measured
+      844 → 797 on iPhone 17e / iOS 26.5) while leaving it anchored at y=0.
+      The bottom 47pt of the display is then outside the viewport entirely, so
+      a `position: fixed; bottom: 0` tab bar stops 47pt short of the physical
+      bottom and nothing the page paints can reach the gap. It never recovers:
+      it survives navigation and backgrounding, and only a full app kill
+      resets it. The same 47pt is what slides the page under the status bar
+      while the keyboard is up, drawing the clock inside an input.
+      `default` makes iOS own the status-bar strip and hand the page a stable
+      viewport below it, which is correct in both states.
+
+      Already-installed home-screen icons keep the old style: iOS freezes this
+      value into the webclip's Info.plist at "Add to Home Screen" time and
+      never re-reads it. Fixing an existing install needs a re-add.
+    -->
+    <meta name="apple-mobile-web-app-status-bar-style" content="default">
     <meta name="apple-mobile-web-app-title" content="Scani">
 
     <!-- Manifest -->
@@ -33,7 +70,7 @@
     <link rel="apple-touch-icon" sizes="180x180" href="/icons/icon-180x180.png">
     <link rel="apple-touch-icon" sizes="192x192" href="/icons/icon-192x192.png">
 
-    <title>Scani V2 - Personal Finance Management</title>
+    <title>Scani - Personal Finance Management</title>
   </head>
 
   <body>

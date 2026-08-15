@@ -1,45 +1,56 @@
-/** Application route path constants. */
+import { V2_BASE } from '@/v3/lib/ui-version';
+
+/**
+ * Application route path constants.
+ *
+ * Every one carries the `/v2` prefix since V3-19, when v3 took the root. This
+ * table is the *only* place the prefix appears: `V2App`'s own routes are
+ * relative to the splat it is mounted under, and nothing in `src/v2/` writes an
+ * absolute path by hand, so the classic UI moved namespace without a single
+ * screen changing. Old root URLs still resolve — v3's catch-all hands anything
+ * it does not route across to the same path here.
+ */
 export const V2_ROUTES = {
-  dashboard: '/',
-  holdings: '/holdings',
-  holdingDetail: (id: string) => `/holdings/${id}`,
-  accounts: '/accounts',
-  accountDetail: (id: string) => `/accounts/${id}`,
-  institutions: '/institutions',
-  institutionDetail: (id: string) => `/institutions/${id}`,
-  groups: '/groups',
-  vaults: '/vaults',
-  vaultDetail: (id: string) => `/vaults/${id}`,
-  integrations: '/integrations',
-  fileImport: '/import',
-  walletImport: '/wallet-import',
-  manualEntry: '/manual-entry',
-  addData: '/add-data',
-  tokens: '/tokens',
-  settings: '/settings',
-  jobs: '/jobs',
-  jobDetail: (jobId: string) => `/jobs/${jobId}`,
-  review: '/review',
-  payments: '/payments',
+  dashboard: V2_BASE,
+  holdings: `${V2_BASE}/holdings`,
+  holdingDetail: (id: string) => `${V2_BASE}/holdings/${id}`,
+  accounts: `${V2_BASE}/accounts`,
+  accountDetail: (id: string) => `${V2_BASE}/accounts/${id}`,
+  institutions: `${V2_BASE}/institutions`,
+  institutionDetail: (id: string) => `${V2_BASE}/institutions/${id}`,
+  groups: `${V2_BASE}/groups`,
+  vaults: `${V2_BASE}/vaults`,
+  vaultDetail: (id: string) => `${V2_BASE}/vaults/${id}`,
+  integrations: `${V2_BASE}/integrations`,
+  fileImport: `${V2_BASE}/import`,
+  walletImport: `${V2_BASE}/wallet-import`,
+  manualEntry: `${V2_BASE}/manual-entry`,
+  addData: `${V2_BASE}/add-data`,
+  tokens: `${V2_BASE}/tokens`,
+  settings: `${V2_BASE}/settings`,
+  jobs: `${V2_BASE}/jobs`,
+  jobDetail: (jobId: string) => `${V2_BASE}/jobs/${jobId}`,
+  review: `${V2_BASE}/review`,
+  payments: `${V2_BASE}/payments`,
   // Detail/create/edit sit UNDER the list rather than beside it so the URL
   // hierarchy matches the sidebar hierarchy — that is what lets
   // `resolveActiveNavPath` light "Recurring Payments" on a payment's own
   // page without any per-route special-casing.
-  paymentsList: '/payments/recurring',
-  paymentDetail: (id: string) => `/payments/recurring/${id}`,
-  paymentCreate: '/payments/recurring/new',
+  paymentsList: `${V2_BASE}/payments/recurring`,
+  paymentDetail: (id: string) => `${V2_BASE}/payments/recurring/${id}`,
+  paymentCreate: `${V2_BASE}/payments/recurring/new`,
   /** The same create form, prefilled from a parsed invoice. */
   paymentCreateFromExtraction: (extractionId: string) =>
-    `/payments/recurring/new?fromExtraction=${encodeURIComponent(extractionId)}`,
-  paymentEdit: (id: string) => `/payments/recurring/${id}/edit`,
-  vendors: '/vendors',
-  vendorDetail: (id: string) => `/vendors/${id}`,
+    `${V2_BASE}/payments/recurring/new?fromExtraction=${encodeURIComponent(extractionId)}`,
+  paymentEdit: (id: string) => `${V2_BASE}/payments/recurring/${id}/edit`,
+  vendors: `${V2_BASE}/vendors`,
+  vendorDetail: (id: string) => `${V2_BASE}/vendors/${id}`,
   // Upload and detail sit UNDER the Files list for the same reason payments
   // do: `resolveActiveNavPath` then lights Files on `/documents/:id` without
   // a special case.
-  files: '/documents',
-  documentDetail: (id: string) => `/documents/${id}`,
-  documentUpload: '/documents/upload',
+  files: `${V2_BASE}/documents`,
+  documentDetail: (id: string) => `${V2_BASE}/documents/${id}`,
+  documentUpload: `${V2_BASE}/documents/upload`,
 } as const;
 
 /** Sidebar navigation structure. `labelKey` / `titleKey` are i18n keys
@@ -98,13 +109,13 @@ export const NAV_SECTIONS: NavSection[] = [
 
 const ALL_NAV_PATHS = NAV_SECTIONS.flatMap((section) => section.items.map((item) => item.path));
 
-/** Exact match, or a true path-segment descendant. `/payments` covers
- * `/payments/recurring` but never `/payments-archive`; `/` covers only
+/** Exact match, or a true path-segment descendant. `/v2/payments` covers
+ * `/v2/payments/recurring` but never `/v2/payments-archive`; `/v2` covers only
  * itself, since prefix-matching the root would light Dashboard on every
  * page in the app. */
 function covers(navPath: string, pathname: string): boolean {
   if (navPath === pathname) return true;
-  return navPath !== '/' && pathname.startsWith(`${navPath}/`);
+  return navPath !== V2_BASE && pathname.startsWith(`${navPath}/`);
 }
 
 /**

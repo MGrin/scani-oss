@@ -1,0 +1,70 @@
+import { Button } from '@scani/ui/ui/button';
+import { showError, showSuccess } from '@scani/ui/ui/use-toast';
+import { Block } from '@scani/ui/v3/components/Block';
+import { Loader2, RefreshCw } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { trpc } from '@/lib/trpc';
+import { useJobStatus } from '@/v2/hooks/useJobStatus';
+
+/**
+ * Rebuild the cached daily values behind the Net worth and PnL charts.
+ *
+ * The same 365-day backfill the 04:00 UTC schedule runs, on demand — useful
+ * after an import, or any time the curve looks wrong. It is a *job*, so the
+ * button stays busy until the job reports back rather than until the enqueue
+ * returns: an enqueue that resolves in 40ms and then leaves the chart unchanged
+ * for two minutes is a button that reads as broken.
+ */
+export function MaintenanceSettings() {
+  const utils = trpc.useUtils();
+  const [jobId, setJobId] = useState<string | null>(null);
+
+  const recompute = trpc.portfolio.recomputeHistory.useMutation({
+    onSuccess: ({ jobId: enqueued }) => setJobId(enqueued),
+    onError: (error) => showError(error, 'Rebuilding your portfolio history'),
+  });
+
+  const status = useJobStatus(jobId);
+
+  useEffect(() => {
+    if (!jobId) return;
+    if (status.state === 'completed') {
+      showSuccess('Portfolio history rebuilt');
+      setJobId(null);
+      void utils.portfolio.invalidate();
+    } else if (status.state === 'failed') {
+      showError(
+        new Error(status.error ?? 'The rebuild failed'),
+        'Rebuilding your portfolio history'
+      );
+      setJobId(null);
+    }
+  }, [jobId, status.state, status.error, utils]);
+
+  const running = recompute.isPending || jobId !== null;
+
+  return (
+    <Block className="flex flex-col gap-3 p-4">
+      <div className="flex flex-col gap-1">
+        <h2 className="text-label text-muted-foreground">Portfolio history</h2>
+        <p className="text-body text-muted-foreground">
+          Rebuilds the cached daily values the Net worth and PnL charts are drawn from — the same
+          365-day backfill that runs nightly.
+        </p>
+      </div>
+      <Button
+        variant="outline"
+        className="self-start"
+        disabled={running}
+        onClick={() => recompute.mutate()}
+      >
+        {running ? (
+          <Loader2 className="mr-2 size-4 animate-spin" aria-hidden="true" />
+        ) : (
+          <RefreshCw className="mr-2 size-4" aria-hidden="true" />
+        )}
+        {running ? 'Rebuilding…' : 'Rebuild portfolio history'}
+      </Button>
+    </Block>
+  );
+}

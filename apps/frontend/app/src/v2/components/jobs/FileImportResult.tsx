@@ -1,14 +1,15 @@
-import { formatCurrency } from '@scani/shared';
+import { formatCurrency, formatNumber } from '@scani/shared';
 import { Badge } from '@scani/ui/ui/badge';
 import { Button } from '@scani/ui/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@scani/ui/ui/card';
 import { showError } from '@scani/ui/ui/use-toast';
 import { AlertTriangle, ArrowRight, CheckCircle2, HelpCircle, Loader2 } from 'lucide-react';
 import { useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link } from 'react-router-dom';
+import { useBaseCurrency } from '@/contexts/BaseCurrencyContext';
 import { trpc } from '@/lib/trpc';
 import { FiatCurrencySelect } from '@/v2/components/shared/FiatCurrencySelect';
-import { useBaseCurrency } from '@/v2/hooks/useBaseCurrency';
+import { useGenerationNavigate, useGenerationPath } from '@/v2/hooks/useGenerationRoute';
 import { V2_ROUTES } from '@/v2/lib/routes';
 
 /**
@@ -62,6 +63,8 @@ function asSummary(v: unknown): FileImportSummary | null {
 export function FileImportResult({ result, jobId }: { result: unknown; jobId: string }) {
   const summary = asSummary(result);
   const { symbol: currency } = useBaseCurrency();
+  // Generation-aware — this body renders in the v3 shell too (SC-134).
+  const toGeneration = useGenerationPath();
 
   if (!summary) {
     return (
@@ -180,13 +183,17 @@ export function FileImportResult({ result, jobId }: { result: unknown; jobId: st
 
         <div className="flex flex-col sm:flex-row gap-2 pt-1">
           <Button asChild className="flex-1">
-            <Link to={`${V2_ROUTES.holdings}?account=${encodeURIComponent(summary.accountId)}`}>
+            <Link
+              to={toGeneration(
+                `${V2_ROUTES.holdings}?account=${encodeURIComponent(summary.accountId)}`
+              )}
+            >
               View holdings
               <ArrowRight className="h-3.5 w-3.5 ml-1" />
             </Link>
           </Button>
           <Button asChild variant="outline" className="flex-1">
-            <Link to={V2_ROUTES.fileImport}>Import another file</Link>
+            <Link to={toGeneration(V2_ROUTES.fileImport)}>Import another file</Link>
           </Button>
         </div>
         {/* Suppress an unused-variable warning when the dashboard's base
@@ -212,7 +219,8 @@ function CurrencyPickerCard({
   warnings: string[];
   pickerJobId: string;
 }) {
-  const navigate = useNavigate();
+  // Generation-aware — this body renders in the v3 shell too (SC-134).
+  const navigateInGeneration = useGenerationNavigate();
   const { symbol: baseSymbol } = useBaseCurrency();
   const [selectedSymbol, setSelectedSymbol] = useState(baseSymbol);
 
@@ -225,7 +233,7 @@ function CurrencyPickerCard({
     onError: (err) => showError(err, 'Retrying with selected currency'),
     onSuccess: ({ jobId: newJobId }) => {
       markActionTaken.mutate({ jobId: pickerJobId });
-      navigate(V2_ROUTES.jobDetail(newJobId));
+      navigateInGeneration(V2_ROUTES.jobDetail(newJobId));
     },
   });
 
@@ -279,10 +287,7 @@ function CurrencyPickerCard({
                   }`}
                 >
                   {tx.amount > 0 ? '+' : ''}
-                  {tx.amount.toLocaleString(undefined, {
-                    minimumFractionDigits: 2,
-                    maximumFractionDigits: 2,
-                  })}
+                  {formatNumber(tx.amount, { decimals: 2 })}
                 </span>
               </div>
             ))}

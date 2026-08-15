@@ -1,4 +1,5 @@
 import { defineConfig, devices } from '@playwright/test';
+import { VIEWPORTS } from './fixtures/devices';
 
 const isCI = !!process.env.CI;
 
@@ -18,8 +19,11 @@ export default defineConfig({
     video: 'retain-on-failure',
   },
   globalSetup: './fixtures/stack',
-  projects: [
-    { name: 'chromium', use: { ...devices['Desktop Chrome'] } },
-    { name: 'webkit', use: { ...devices['Desktop Safari'] } },
-  ],
+  // Mobile projects are defined but not run by default — `scripts/run.ts`
+  // restricts the suite to DEFAULT_SPEC_PROJECTS. Target them explicitly with
+  // `bunx playwright test --project=iphone <spec>`.
+  projects: VIEWPORTS.map((viewport) => ({
+    name: viewport.name,
+    use: { ...devices[viewport.device] },
+  })),
 });

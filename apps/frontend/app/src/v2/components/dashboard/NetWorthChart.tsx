@@ -1,4 +1,4 @@
-import { formatCompact, formatCurrency } from '@scani/shared';
+import { formatCompact, formatCurrency, formatNumber } from '@scani/shared';
 import { Card, CardContent, CardHeader, CardTitle } from '@scani/ui/ui/card';
 import { Skeleton } from '@scani/ui/ui/skeleton';
 import { AlertTriangle, Loader2 } from 'lucide-react';
@@ -13,8 +13,8 @@ import {
   XAxis,
   YAxis,
 } from 'recharts';
+import { useBaseCurrency } from '@/contexts/BaseCurrencyContext';
 import { trpc } from '@/lib/trpc';
-import { useBaseCurrency } from '../../hooks/useBaseCurrency';
 import type { useUserJobs } from '../../hooks/useUserJobs';
 import { V2_ROUTES } from '../../lib/routes';
 
@@ -41,6 +41,7 @@ interface SeriesPoint {
   coverageQuality: string;
   holdingsWithKnownValue: number;
   holdingsTotal: number;
+  holdingsUnpriceable: number;
 }
 
 const MONTH_SHORT = [
@@ -126,33 +127,50 @@ export function NetWorthChart({
       coverageQuality: r.coverageQuality,
       holdingsTotal: r.holdingsTotal,
       holdingsKnown: r.holdingsWithKnownValue,
+      holdingsUnpriceable: r.holdingsUnpriceable ?? 0,
     }));
   }, [data]);
 
-  // Coverage chip — averages the per-day "holdings priced / holdings
-  // total" ratio across the visible window. The previous version
+  // Coverage chip — averages the per-day "holdings priced / holdings we
+  // could price" ratio across the visible window. The previous version
   // counted only days that crossed the rollup's 95% "full" threshold,
   // which produced a punishing "0% of days at full coverage" red chip
   // when the user had even a handful of always-unpriced dust tokens.
   // The average tells the user what they actually want to know:
   // "what fraction of my positions are being priced on a typical day."
+  //
+  // Unpriceable holding-days are out of the denominator entirely
+  // (SC-146): an unsolicited airdrop token with no market is not a
+  // pricing failure, and counting it as one reported a fully-priced
+  // portfolio as 80% covered. The chip says how many were set aside
+  // rather than dropping them silently — a number that quietly stops
+  // counting things is its own defect.
   const coverage = useMemo(() => {
     if (chartData.length === 0) return null;
     let totalKnown = 0;
     let totalSeen = 0;
+    let totalUnpriceable = 0;
     for (const p of chartData) {
       if (p.holdingsTotal && p.holdingsKnown != null) {
         totalKnown += p.holdingsKnown;
         totalSeen += p.holdingsTotal;
+        totalUnpriceable += p.holdingsUnpriceable;
       }
     }
-    if (totalSeen === 0) return null;
-    const ratio = totalKnown / totalSeen;
+    const priceable = totalSeen - totalUnpriceable;
+    if (priceable <= 0) return null;
+    const ratio = totalKnown / priceable;
     const pct = Math.round(ratio * 100);
+    // "Unpriceable" rather than "unpriced": nobody quotes these, so we
+    // did not fail to fetch a price — there is no price to fetch.
+    const excluded =
+      totalUnpriceable > 0
+        ? ` ${formatNumber(totalUnpriceable)} unpriceable holding-days (tokens with no market — airdropped or delisted) are excluded.`
+        : '';
     return {
       ratio,
       label: ratio >= 0.99 ? 'Full coverage' : `${pct}% of holdings priced`,
-      tooltip: `Average ${pct}% of holdings have a historical price across the window (${totalKnown.toLocaleString()} of ${totalSeen.toLocaleString()} holding-days).`,
+      tooltip: `Average ${pct}% of holdings have a historical price across the window (${formatNumber(totalKnown)} of ${formatNumber(priceable)} priceable holding-days).${excluded}`,
     };
   }, [chartData]);
 
@@ -267,13 +285,16 @@ export function NetWorthChart({
                           coverageQuality: string;
                           holdingsKnown: number;
                           holdingsTotal: number;
+                          holdingsUnpriceable: number;
                         }
                       | undefined;
                     if (!p) return String(label ?? '');
+                    // Same denominator as the chip: what we could price.
+                    const priceable = p.holdingsTotal - p.holdingsUnpriceable;
                     const coverageNote =
                       p.coverageQuality === 'full'
                         ? '· full coverage'
-                        : `· ${p.holdingsKnown}/${p.holdingsTotal} priced`;
+                        : `· ${p.holdingsKnown}/${priceable} priced`;
                     return `${p.date}  ${coverageNote}`;
                   }}
                   contentStyle={{

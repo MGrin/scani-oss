@@ -7,6 +7,26 @@
  * showing the page through it). */
 @import "@scani/ui/styles/globals.css";
 
+/* v3 type faces (V3-20). Only @font-face rules — declaring a face applies
+ * nothing, and only the v3 token block names these families, so v2 renders
+ * identically and never fetches the files. */
+@import "@scani/ui/styles/v3-fonts.css";
+
+/* v3 tokens. Everything inside is scoped to [data-ui="v3"], so loading it
+ * changes nothing until the v3 shell mounts. Must come after globals.css:
+ * the v3 block overrides the same custom properties within its subtree. */
+@import "@scani/ui/styles/v3-tokens.css";
+
+/* The v3 hero's digit roll (V3-09). Two keyframe pairs and a reduced-motion
+ * rule; nothing outside `src/v3/components/home/NetWorthTape.tsx` uses them. */
+@import "./styles/v3-tape.css";
+
+/* v3 route transitions and the loading ramp's motion (V3-16). Every rule
+ * inside is either reduced-motion-guarded or reads a `--motion-*` token, and
+ * the pseudo-elements it targets exist only while a v3 view transition runs —
+ * so v2 is untouched. */
+@import "./styles/v3-motion.css";
+
 /* App-specific extras — also @imports, also above @tailwind. */
 @import "./styles/accessibility.css";
 @import "./styles/animations.css";

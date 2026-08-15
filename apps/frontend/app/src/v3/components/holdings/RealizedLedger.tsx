@@ -1,0 +1,184 @@
+import { formatDate, quantityDecimals } from '@scani/shared';
+import { Badge } from '@scani/ui/ui/badge';
+import { Numeric } from '@scani/ui/v3/components/Numeric';
+import { Link } from 'react-router-dom';
+import { trpc } from '@/lib/trpc';
+import {
+  basisQualityLabel,
+  basisQualityNote,
+  disposalVerb,
+  groupDisposals,
+  holdingPeriodLabel,
+  outcomeNote,
+  portionLabel,
+} from '../../lib/realized-ledger';
+import { TRANSFER_REVIEW_PATH } from '../../lib/routes';
+
+/**
+ * The lots behind a holding's realized figure (SC-152).
+ *
+ * Realized PnL is a scalar everywhere it appears, so "why did my realized gain
+ * change?" has been unanswerable: there is a number and nothing behind it. This
+ * is the smallest surface that answers it — the disposals, and under each one
+ * the acquisition lots it consumed, with what was paid and when.
+ *
+ * **It is not a tax surface and must not become one.** No "tax" in a heading,
+ * a filename or a route; see `docs/technical/2026-08-14_why-no-tax-statement.md`
+ * for why the word alone would lend an authority this data cannot support.
+ *
+ * Three things it deliberately does:
+ *
+ * - **Reports what did NOT happen.** Since SC-150 only a person's
+ *   `left_control` answer books a gain, so an outflow can take its lots and
+ *   move the figure by nothing. That is the harder half of the question, and a
+ *   ledger of realizations alone would leave the lots visibly gone and the
+ *   change unexplained.
+ * - **Carries `basisQuality` to the lot** (SC-149). A gain derived from an
+ *   import that reported itself truncated must say so *here*, next to the
+ *   working — an explanation that looks more confident than the figure it
+ *   explains is worse than the bare figure was.
+ * - **Renders nothing when there is nothing.** Most holdings have never
+ *   disposed of anything, and a titled empty block on every one of them is a
+ *   surface that costs more than it pays.
+ * - **Asks each quantity how precise it is** (SC-177). It shipped with a
+ *   hardcoded `decimals={8}`, which is right for `0.05000000 BTC` and absurd
+ *   for `500,000,000.00000000` of a memecoin — twenty characters, eight of
+ *   them trailing zeros carrying no information, wrapping to three lines at
+ *   390px. Eight is a ceiling, never a floor: `quantityDecimals` gives back
+ *   the digits the figure actually has, which is what the holdings list two
+ *   inches above and the transfer queue already render.
+ *
+ * Mounted only while the sheet is open — `peek.render` runs for the open record
+ * alone — so a list of two hundred holdings issues no requests. The query is
+ * computed on the read, with no table behind it.
+ */
+
+interface RealizedLedgerProps {
+  holdingId: string;
+  /** The user's base currency, as a symbol or ISO code. */
+  currency: string;
+  /** Ticker, used in the unit counts. */
+  symbol: string;
+}
+
+export function RealizedLedger({ holdingId, currency, symbol }: RealizedLedgerProps) {
+  const ledger = trpc.holdings.realizedLedger.useQuery({ holdingId });
+
+  const rows = ledger.data?.rows ?? [];
+  // Silent on every failure mode, including the error one. This block explains
+  // a figure that is rendered above it either way, so a red box here would
+  // report the explanation's absence as a fault in the number.
+  if (rows.length === 0) return null;
+
+  const groups = groupDisposals(rows);
+  const hasUnreviewed = groups.some((g) => g.outcome === 'unreviewed');
+
+  return (
+    <section className="flex flex-col gap-3">
+      <div className="flex items-baseline justify-between gap-3">
+        <h3 className="text-label font-medium">Realized</h3>
+        <Numeric
+          value={ledger.data?.realizedTotal ?? null}
+          currency={currency}
+          delta
+          indicator="sign"
+        />
+      </div>
+
+      <ol className="flex flex-col gap-3">
+        {groups.map((group) => {
+          const note = outcomeNote(group.outcome);
+          const part = portionLabel(group);
+          return (
+            <li
+              key={`${group.transactionId}#${group.portionIndex}`}
+              className="flex flex-col gap-1.5 rounded-lg border border-border p-3"
+            >
+              <div className="flex items-baseline justify-between gap-3">
+                <span className="text-body">
+                  {disposalVerb(group.kind)}{' '}
+                  <Numeric
+                    value={group.quantity}
+                    format="plain"
+                    decimals={quantityDecimals(group.quantity)}
+                  />{' '}
+                  {symbol}
+                </span>
+                {group.gain === null ? (
+                  <span className="text-caption text-muted-foreground">No gain booked</span>
+                ) : (
+                  <Numeric value={group.gain} currency={currency} delta indicator="sign" />
+                )}
+              </div>
+              <span className="text-caption text-muted-foreground">
+                {formatDate(group.disposedAt)}
+                {/* The division, on the row (SC-181). Two shares of one
+                    withdrawal render adjacently and would otherwise read as
+                    two withdrawals on the same day for different amounts —
+                    which is a more confusing thing to see than the blended
+                    row this replaced. */}
+                {part ? ` · ${part}` : ''}
+              </span>
+              {note ? <p className="text-caption text-muted-foreground">{note}</p> : null}
+
+              <ul className="mt-1 flex flex-col gap-1.5 border-t border-border pt-2">
+                {group.lots.map((lot, index) => {
+                  const qualityLabel = basisQualityLabel(lot.basisQuality);
+                  const held = holdingPeriodLabel(lot.holdingDays);
+                  // A lot slice has no id of its own — it is a portion of a lot
+                  // the FIFO walk consumed, not a record — so position is the
+                  // only identity it has. Neither hazard the rule guards
+                  // against applies: the list never reorders (the walk emits
+                  // slices in consumption order) and these rows hold no state.
+                  return (
+                    <li
+                      // biome-ignore lint/suspicious/noArrayIndexKey: see above — a lot slice has no id
+                      key={`${lot.transactionId}-${index}`}
+                      className="flex flex-col gap-0.5"
+                    >
+                      <div className="flex items-baseline justify-between gap-3">
+                        <span className="text-caption text-muted-foreground">
+                          <Numeric
+                            value={lot.quantity}
+                            format="plain"
+                            decimals={quantityDecimals(lot.quantity)}
+                          />
+                          {lot.acquiredAt
+                            ? ` acquired ${formatDate(lot.acquiredAt)}${held ? ` · held ${held}` : ''}`
+                            : ' with no acquisition on record'}
+                        </span>
+                        <span className="text-caption text-muted-foreground">
+                          cost <Numeric value={lot.costBasis} currency={currency} />
+                        </span>
+                      </div>
+                      {qualityLabel ? (
+                        <span className="flex flex-wrap items-center gap-2">
+                          <Badge variant="secondary">{qualityLabel}</Badge>
+                          <span className="text-caption text-muted-foreground">
+                            {basisQualityNote(lot.basisQuality)}
+                          </span>
+                        </span>
+                      ) : null}
+                    </li>
+                  );
+                })}
+              </ul>
+            </li>
+          );
+        })}
+      </ol>
+
+      {hasUnreviewed ? (
+        // The one outcome a person can clear, so it gets the only link out.
+        // Answering is what turns "no gain was booked" into a figure, and a
+        // caveat with no route to its own resolution is just an apology.
+        <Link
+          to={TRANSFER_REVIEW_PATH}
+          className="text-caption text-primary underline-offset-4 hover:underline"
+        >
+          Answer the waiting transfers
+        </Link>
+      ) : null}
+    </section>
+  );
+}

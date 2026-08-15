@@ -5,20 +5,39 @@ import { showError, showSuccess } from '@scani/ui/ui/use-toast';
 import { Loader2, Plus, Store } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useBaseCurrencyRates } from '@/hooks/useBaseCurrencyRates';
 import { type RouterOutputs, trpc } from '@/lib/trpc';
+import {
+  COMMITMENT_LABEL,
+  comparableBaseAmount,
+  formatConvertedFigure,
+  monthlyCommitmentByVendor,
+} from '@/lib/vendorSpend';
 import { DataView as DataViewComponent } from '../components/data-view/DataView';
 import type { ColumnDef } from '../components/data-view/DataViewTable';
 import { V2_ROUTES } from '../lib/routes';
 
 type VendorRow = RouterOutputs['vendors']['list'][number];
 
-function VendorCard({ item, paymentCount }: { item: VendorRow; paymentCount: number }) {
+function VendorCard({
+  item,
+  paymentCount,
+  monthly,
+}: {
+  item: VendorRow;
+  paymentCount: number;
+  monthly: string;
+}) {
   return (
     <Card className="hover:border-primary/50 transition-colors">
       <CardContent className="p-4">
-        <p className="font-medium text-sm truncate">{item.displayName}</p>
+        <div className="flex items-baseline justify-between gap-2">
+          <p className="font-medium text-sm truncate">{item.displayName}</p>
+          <span className="text-sm font-semibold tabular-nums shrink-0">{monthly}</span>
+        </div>
         <p className="text-xs text-muted-foreground mt-0.5">
-          {item.category ?? 'Uncategorized'} · {paymentCount} payment{paymentCount === 1 ? '' : 's'}
+          {item.category ?? 'Uncategorized'} · {paymentCount} payment{paymentCount === 1 ? '' : 's'}{' '}
+          · per month
         </p>
       </CardContent>
     </Card>
@@ -31,6 +50,8 @@ export function VendorsPage() {
   const utils = trpc.useUtils();
   const { data: vendors, isLoading: vendorsLoading } = trpc.vendors.list.useQuery();
   const { data: payments, isLoading: paymentsLoading } = trpc.payments.list.useQuery();
+  const { data: tokens, isLoading: tokensLoading } = trpc.tokens.getAll.useQuery();
+  const rates = useBaseCurrencyRates((payments ?? []).map((payment) => payment.currencyTokenId));
   const [creating, setCreating] = useState(false);
   const [newName, setNewName] = useState('');
 
@@ -45,7 +66,7 @@ export function VendorsPage() {
     onError: (error) => showError(error, 'Creating vendor'),
   });
 
-  const isLoading = vendorsLoading || paymentsLoading;
+  const isLoading = vendorsLoading || paymentsLoading || tokensLoading;
   const items = vendors ?? [];
 
   const paymentCountByVendorId = useMemo(() => {
@@ -55,6 +76,23 @@ export function VendorsPage() {
     }
     return counts;
   }, [payments]);
+
+  // What each vendor's still-running payments commit to per month — the
+  // figure this page was missing entirely, and the one that is comparable
+  // between vendors however long ago each was set up (V3-53). Converted into
+  // the base currency so a GBP vendor sorts against a EUR one.
+  const commitmentByVendorId = useMemo(() => monthlyCommitmentByVendor(payments ?? []), [payments]);
+  const tokenSymbolById = useMemo(
+    () => new Map((tokens ?? []).map((token) => [token.id, token.symbol])),
+    [tokens]
+  );
+  const monthlyFor = (vendorId: string) =>
+    formatConvertedFigure(
+      commitmentByVendorId.get(vendorId) ?? new Map(),
+      rates,
+      rates.baseSymbol,
+      (tokenId) => tokenSymbolById.get(tokenId) ?? rates.baseSymbol
+    );
 
   const columns: ColumnDef<VendorRow>[] = [
     {
@@ -69,6 +107,13 @@ export function VendorsPage() {
       render: (item) => (
         <span className="text-sm text-muted-foreground">{item.category ?? '—'}</span>
       ),
+    },
+    {
+      key: 'spend',
+      label: 'Per month',
+      align: 'right',
+      sortable: true,
+      render: (item) => <span className="tabular-nums">{monthlyFor(item.id)}</span>,
     },
     {
       key: 'payments',
@@ -142,6 +187,7 @@ export function VendorsPage() {
             item.displayName.toLowerCase().includes(query.toLowerCase()),
           sortDefs: [
             { key: 'name', label: 'Name' },
+            { key: 'spend', label: COMMITMENT_LABEL },
             { key: 'payments', label: 'Payments' },
           ],
           sortFn: (a: VendorRow, b: VendorRow, field: string, dir: string) => {
@@ -149,6 +195,12 @@ export function VendorsPage() {
             switch (field) {
               case 'name':
                 return a.displayName.localeCompare(b.displayName) * mult;
+              case 'spend':
+                return (
+                  (comparableBaseAmount(commitmentByVendorId.get(a.id), rates) -
+                    comparableBaseAmount(commitmentByVendorId.get(b.id), rates)) *
+                  mult
+                );
               case 'payments':
                 return (
                   ((paymentCountByVendorId.get(a.id) ?? 0) -
@@ -164,7 +216,11 @@ export function VendorsPage() {
         }}
         columns={columns}
         renderCard={(item: VendorRow) => (
-          <VendorCard item={item} paymentCount={paymentCountByVendorId.get(item.id) ?? 0} />
+          <VendorCard
+            item={item}
+            paymentCount={paymentCountByVendorId.get(item.id) ?? 0}
+            monthly={monthlyFor(item.id)}
+          />
         )}
         onRowClick={(item: VendorRow) => navigate(V2_ROUTES.vendorDetail(item.id))}
         getId={(item: VendorRow) => item.id}

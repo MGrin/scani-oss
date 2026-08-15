@@ -2,6 +2,7 @@ import { Button } from '@scani/ui/ui/button';
 import { Menu, Plus, Search } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { Link, useLocation } from 'react-router-dom';
+import { V2_BASE } from '@/v3/lib/ui-version';
 import { JobsBadge } from '../components/JobsBadge';
 import { V2_ROUTES } from '../lib/routes';
 
@@ -33,11 +34,18 @@ const TITLE_KEY_BY_SEGMENT: Record<string, string> = {
 };
 
 function getPageTitle(pathname: string, t: (k: string) => string): string {
-  const segment = pathname.split('/').filter(Boolean)[0];
+  // Past v2's own prefix (V3-19): the first segment of `/v2/holdings` is `v2`,
+  // which is not a screen and has no title.
+  const segment = pathname.slice(V2_BASE.length).split('/').filter(Boolean)[0];
   if (!segment) return t('nav.dashboard');
   const key = TITLE_KEY_BY_SEGMENT[segment];
   if (key) return t(key);
   return segment.charAt(0).toUpperCase() + segment.slice(1).replace(/-/g, ' ');
+}
+
+/** `/v2/accounts` → a pattern matching `/v2/accounts/<id>` and nothing deeper. */
+function detailPattern(listPath: string): RegExp {
+  return new RegExp(`^${listPath.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}/([^/]+)$`);
 }
 
 /** Context-aware "Add" link. Returns null only on the Add Data page
@@ -52,11 +60,13 @@ function getAddLink(
   // that navigates to where the user already is.
   if (pathname.startsWith(V2_ROUTES.addData)) return null;
 
-  const accountMatch = pathname.match(/^\/accounts\/([^/]+)$/);
+  // Built from `V2_ROUTES` rather than written out, so the `/v2` prefix v2
+  // moved under (V3-19) cannot drift out of these two.
+  const accountMatch = pathname.match(detailPattern(V2_ROUTES.accounts));
   if (accountMatch) {
     return { href: `${V2_ROUTES.addData}?accountId=${accountMatch[1]}`, label: t('nav.add') };
   }
-  const instMatch = pathname.match(/^\/institutions\/([^/]+)$/);
+  const instMatch = pathname.match(detailPattern(V2_ROUTES.institutions));
   if (instMatch) {
     return { href: `${V2_ROUTES.addData}?institutionId=${instMatch[1]}`, label: t('nav.add') };
   }

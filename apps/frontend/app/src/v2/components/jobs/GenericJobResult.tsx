@@ -1,3 +1,4 @@
+import { formatNumber } from '@scani/shared';
 import { Card, CardContent, CardHeader, CardTitle } from '@scani/ui/ui/card';
 import { AlertTriangle, CheckCircle2 } from 'lucide-react';
 
@@ -64,7 +65,7 @@ export function GenericJobResult({ result }: { result: unknown }) {
                 <div className="text-[10px] uppercase tracking-wide text-muted-foreground">
                   {humanize(key)}
                 </div>
-                <div className="text-sm font-medium tabular-nums">{value.toLocaleString()}</div>
+                <div className="text-sm font-medium tabular-nums">{formatNumber(value)}</div>
               </div>
             ))}
           </div>

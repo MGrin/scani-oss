@@ -1,10 +1,10 @@
-import { formatRelative, isReviewableJobName } from '@scani/shared';
+import { describeJobFailure, formatRelative, isReviewableJobName } from '@scani/shared';
 import { Badge } from '@scani/ui/ui/badge';
 import { Button } from '@scani/ui/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@scani/ui/ui/card';
 import { PageLoader } from '@scani/ui/ui/loading';
 import { showError, showSuccess } from '@scani/ui/ui/use-toast';
-import { AlertCircle, RotateCcw, Trash2 } from 'lucide-react';
+import { AlertCircle, Trash2 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { trpc } from '@/lib/trpc';
 import { JobStateChip } from '../components/jobs/JobStateChip';
@@ -31,9 +31,13 @@ export function JobsPage() {
   // user can't miss them. They still appear in the regular Completed
   // section below, tagged with a "Needs review" chip.
   const pendingAction = jobs.filter(needsAction);
-  const active = jobs.filter((j) => ACTIVE.has(j.state));
+  // A job whose last attempt failed but whose next one is already queued
+  // belongs with the running work, not under Failed — that section has to be
+  // able to mean "these are dead" (SC-153).
+  const retrying = (job: Job) => describeJobFailure(job)?.willRetry === true;
+  const active = jobs.filter((j) => ACTIVE.has(j.state) || retrying(j));
   const completed = jobs.filter((j) => j.state === 'completed');
-  const failed = jobs.filter((j) => j.state === 'failed');
+  const failed = jobs.filter((j) => j.state === 'failed' && !retrying(j));
 
   return (
     <div className="max-w-4xl mx-auto w-full px-0 sm:px-4 py-2 sm:py-4 space-y-4">
@@ -42,7 +46,7 @@ export function JobsPage() {
       )}
       <JobSection title="Active" jobs={active} emptyText="Nothing running right now." />
       <JobSection title="Completed" jobs={completed} emptyText="No completed jobs yet." />
-      <JobSection title="Failed" jobs={failed} emptyText="No failed jobs." />
+      <JobSection title="Failed — won't retry" jobs={failed} emptyText="No failed jobs." />
     </div>
   );
 }
@@ -89,6 +93,11 @@ function JobSection({
 function JobRow({ job }: { job: Job }) {
   const { label, icon: Icon } = jobLabelFor(job.jobName);
   const pending = needsAction(job);
+  // Remove, but not Retry. Whether a run can be re-queued depends on whether
+  // Redis still holds its payload, which the list would need one lookup per
+  // row to know — so the answer lives on the detail page, where it is asked
+  // properly. A Retry that silently fails is the same defect as a dead job
+  // that looks alive (SC-153).
   const isFailed = job.state === 'failed';
   return (
     <Link
@@ -114,56 +123,17 @@ function JobRow({ job }: { job: Job }) {
             gets clipped when both a state chip and timestamp are present.
             Retry button appears here too on mobile. */}
         <div className="flex items-center gap-2 pt-0.5 sm:hidden">
-          <JobStateChip state={job.state} />
+          <JobStateChip state={job.state} failure={job} />
           <span className="text-[10px] text-muted-foreground">{formatRelative(job.createdAt)}</span>
-          {isFailed && <RetryButton jobId={job.jobId} />}
           {isFailed && <RemoveButton jobId={job.jobId} />}
         </div>
       </div>
       <div className="shrink-0 hidden sm:flex items-center gap-2">
-        {isFailed && <RetryButton jobId={job.jobId} />}
         {isFailed && <RemoveButton jobId={job.jobId} />}
         <span className="text-[10px] text-muted-foreground">{formatRelative(job.createdAt)}</span>
-        <JobStateChip state={job.state} />
+        <JobStateChip state={job.state} failure={job} />
       </div>
     </Link>
-  );
-}
-
-/**
- * Retry button for failed jobs. Swallows the outer <Link>'s click so the
- * user stays on the list while the mutation runs, then toasts the
- * outcome and invalidates `jobs.listMine` — the row flips out of Failed
- * and back into Active on the next tick.
- */
-function RetryButton({ jobId }: { jobId: string }) {
-  const utils = trpc.useUtils();
-  const retryMutation = trpc.jobs.retry.useMutation({
-    onSuccess: () => {
-      showSuccess('Job re-queued');
-      utils.jobs.listMine.invalidate();
-    },
-    onError: (err) => showError(err, 'Retrying job'),
-  });
-  return (
-    <Button
-      type="button"
-      variant="outline"
-      size="sm"
-      className="h-6 gap-1 text-[11px] px-2"
-      disabled={retryMutation.isPending}
-      onClick={(e) => {
-        // The row is a <Link>, so without stopping propagation the
-        // click would navigate to the detail page while also firing
-        // the mutation.
-        e.preventDefault();
-        e.stopPropagation();
-        retryMutation.mutate({ jobId });
-      }}
-    >
-      <RotateCcw className="h-3 w-3" />
-      Retry
-    </Button>
   );
 }
 

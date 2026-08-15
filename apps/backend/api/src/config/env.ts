@@ -49,7 +49,7 @@ const envSchema = z.object({
   BACKEND_URL: inProd ? httpsUrlInProduction : urlSchema.default('http://localhost:3001'),
 
   // Cookie domain shared by app.<domain> and api.<domain> so the session
-  // cookie reaches both hosts (e.g. `.example.com`). Leave unset in dev
+  // cookie reaches both hosts (e.g. `.scani.xyz`). Leave unset in dev
   // where same-port cookies just work.
   COOKIE_DOMAIN: z.string().optional(),
 
@@ -104,6 +104,10 @@ const envSchema = z.object({
 
   // SCANI_CLOUD_URL + SCANI_CLOUD_API_KEY are owned by @scani/cloud-client's
   // own env schema. Required in prod; optional in dev (local fallback).
+
+  STUB_AI: inProd
+    ? z.literal(undefined).optional()
+    : z.union([z.literal('1'), z.literal('')]).optional(),
 });
 
 export type Env = z.infer<typeof envSchema>;

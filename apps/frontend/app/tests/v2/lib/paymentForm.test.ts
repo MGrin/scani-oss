@@ -6,6 +6,7 @@ const complete = {
   currencyTokenId: 'token-1',
   anchorDate: '2026-08-11',
   intervalCount: '1',
+  intervalUnit: 'month',
 };
 
 describe('describePaymentFormBlockers', () => {
@@ -62,6 +63,16 @@ describe('describePaymentFormBlockers', () => {
     expect(describePaymentFormBlockers({ ...complete, intervalCount: '2' })).toEqual([]);
   });
 
+  // SC-147: the invoice path clears the unit when the document evidenced no
+  // cadence, so the empty control is a question rather than a wrong answer.
+  // Nothing else can produce it — manual create starts monthly, edit loads
+  // the stored unit.
+  test('an unanswered cadence blocks', () => {
+    expect(describePaymentFormBlockers({ ...complete, intervalUnit: '' })).toEqual([
+      'choose how often this repeats',
+    ]);
+  });
+
   test('every blocker is reported at once, not just the first', () => {
     expect(
       describePaymentFormBlockers({
@@ -69,7 +80,8 @@ describe('describePaymentFormBlockers', () => {
         currencyTokenId: null,
         anchorDate: '',
         intervalCount: '0',
+        intervalUnit: '',
       })
-    ).toHaveLength(4);
+    ).toHaveLength(5);
   });
 });

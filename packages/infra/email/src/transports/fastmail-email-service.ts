@@ -204,8 +204,8 @@ function parseAddress(raw: string): { name?: string; email: string } {
   return { email: trimmed };
 }
 
-// Fastmail accepts both exact-match identities (`you@example.com`) and
-// wildcard ones (`*@example.com`). Falls back to the first identity.
+// Fastmail accepts both exact-match identities (`nikita@scani.xyz`) and
+// wildcard ones (`*@scani.xyz`). Falls back to the first identity.
 function pickIdentity(
   identities: Array<{ id: string; email: string }>,
   fromEmail: string

@@ -59,11 +59,17 @@ export interface SignedInContext {
 export async function signIn({
   page,
   testInfo,
+  label,
 }: {
   page: Page;
-  testInfo: TestInfo;
+  /** Supplied by specs; its `testId` keeps concurrent sign-ins distinct. */
+  testInfo?: TestInfo;
+  /** Discriminator for callers outside the test runner (e.g. `scripts/shots.ts`). */
+  label?: string;
 }): Promise<SignedInContext> {
-  const email = `e2e-${testInfo.testId}-${Date.now()}@example.com`;
+  const discriminator = testInfo?.testId ?? label;
+  if (!discriminator) throw new Error('signIn requires either `testInfo` or `label`');
+  const email = `e2e-${discriminator}-${Date.now()}@example.com`;
 
   await postAuthWithRetry(
     page,

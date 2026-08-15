@@ -1,12 +1,13 @@
 import type { HoldingWithDetails } from '@scani/shared';
-import { formatCurrency } from '@scani/shared';
+import { formatCurrency, formatRelative } from '@scani/shared';
 import { FaviconImg } from '@scani/ui/components/FaviconImg';
 import { Badge } from '@scani/ui/ui/badge';
 import { CardInteractive } from '@scani/ui/ui/card';
 import { Checkbox } from '@scani/ui/ui/checkbox';
+import { useBaseCurrency } from '@/contexts/BaseCurrencyContext';
 import { getFaviconUrl } from '@/lib/icons';
 import { cn } from '@/lib/utils';
-import { useBaseCurrency } from '../../hooks/useBaseCurrency';
+import { formatMoney, formatQuantity } from '../../lib/format';
 
 interface HoldingCardProps {
   item: HoldingWithDetails;
@@ -21,18 +22,6 @@ const TOKEN_TYPE_COLORS: Record<string, string> = {
   bond: 'bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200',
   commodity: 'bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-200',
 };
-
-function formatRelativeTime(dateStr: string): string {
-  const diffMs = Date.now() - new Date(dateStr).getTime();
-  const diffMin = Math.floor(diffMs / 60000);
-  if (diffMin < 1) return 'now';
-  if (diffMin < 60) return `${diffMin}m`;
-  const diffHr = Math.floor(diffMin / 60);
-  if (diffHr < 24) return `${diffHr}h`;
-  const diffDays = Math.floor(diffHr / 24);
-  if (diffDays < 30) return `${diffDays}d`;
-  return new Date(dateStr).toLocaleDateString();
-}
 
 export function HoldingCard({ item, isSelected, onSelect }: HoldingCardProps) {
   const { symbol: currencySymbol } = useBaseCurrency();
@@ -85,19 +74,15 @@ export function HoldingCard({ item, isSelected, onSelect }: HoldingCardProps) {
         </label>
       </div>
       <p className="text-xs text-muted-foreground truncate mb-3">{item.token.name}</p>
-      <p className="text-xl font-bold tabular-nums">{formatCurrency(item.value, currencySymbol)}</p>
+      <p className="text-xl font-bold tabular-nums">{formatMoney(item.value, currencySymbol)}</p>
       <div className="flex items-center gap-3 mt-1 text-xs text-muted-foreground">
-        <span>{item.amount.toLocaleString()} units</span>
+        <span>{formatQuantity(item.amount)} units</span>
         {item.price && (
           <span>
-            @{' '}
-            {formatCurrency(
-              item.price.value === null ? null : Number.parseFloat(item.price.value),
-              currencySymbol
-            )}
+            @ {formatMoney(item.price.value, currencySymbol)}
             {item.price.timestamp && (
               <span className="text-muted-foreground/50 ml-1">
-                ({formatRelativeTime(item.price.timestamp)})
+                ({formatRelative(item.price.timestamp)})
               </span>
             )}
           </span>

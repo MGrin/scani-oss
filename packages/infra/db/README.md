@@ -153,8 +153,9 @@ for a canonical example.
   indexes, RLS, triggers, or jsonb path expressions Drizzle can't
   express. Drop the file in `src/migrations/` and register it in
   `meta/_journal.json` (Drizzle reads the journal in order).
-- **Production migrate**: `bun run db:migrate` (run from a deploy
-  pipeline before the api/worker boot).
+- **Production migrate**: `bun run db:migrate` (used by the deploy
+  workflow before the api/worker boot — see
+  `.github/workflows/deploy-fly.yaml`).
 - **Drizzle Studio**: `bun run db:studio` opens a GUI against the
   configured DATABASE_URL.
 

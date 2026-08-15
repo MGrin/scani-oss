@@ -9,10 +9,32 @@
 // callers want "always shows something reasonable" without sanitizing
 // upstream.
 
+/**
+ * One locale for every number the app renders: `en-US`.
+ *
+ * The counterpart to `APP_LOCALE` in `./date`, and it exists for the same
+ * reason (SC-184). These helpers took a `locale` that defaulted to `'en-US'`
+ * while anything reaching for a bare `toLocaleString()` used the runtime's, so
+ * a de-DE reader saw an amount of `4.200.000` beside a value of `€324.03` —
+ * `.` grouping digits on the same row where `.` separates them. Naming the
+ * default makes it a decision instead of a literal repeated in four
+ * signatures, and gives the call sites something to omit.
+ *
+ * `en-US` rather than `APP_LOCALE`'s `en-GB`, and the difference is deliberate
+ * rather than an oversight: the two agree exactly on grouping and decimal
+ * separators, so there is nothing to unify there, and they disagree on the
+ * dollar — en-GB renders `US$1,234.50`. Dates chose en-GB for its named month,
+ * which numbers have no equivalent of.
+ *
+ * When real localisation arrives this is the single place that changes, and
+ * the call sites — which all omit the argument — need no edit.
+ */
+export const APP_NUMBER_LOCALE = 'en-US';
+
 export interface FormatCurrencyOptions {
   /** Decimal places (defaults to 2). Use 0 for compact summary displays. */
   decimals?: number;
-  /** Override locale (defaults to 'en-US'). */
+  /** Override locale (defaults to `APP_NUMBER_LOCALE`). */
   locale?: string;
 }
 
@@ -41,7 +63,7 @@ export function formatCurrency(
   if (value === null || value === undefined) {
     return UNPRICEABLE_PLACEHOLDER;
   }
-  const { decimals = 2, locale = 'en-US' } = options;
+  const { decimals = 2, locale = APP_NUMBER_LOCALE } = options;
   const numeric = typeof value === 'number' ? value : Number(value);
   const safe = Number.isFinite(numeric) ? numeric : 0;
 
@@ -70,7 +92,7 @@ export function formatCompact(
   currency: string,
   options: FormatCurrencyOptions = {}
 ): string {
-  const { locale = 'en-US' } = options;
+  const { locale = APP_NUMBER_LOCALE } = options;
   const numeric = typeof value === 'number' ? value : Number(value);
   const safe = Number.isFinite(numeric) ? numeric : 0;
 
@@ -95,7 +117,7 @@ export function formatCompact(
  * where the currency is shown elsewhere on the row.
  */
 export function formatNumber(value: number | string, options: FormatCurrencyOptions = {}): string {
-  const { decimals, locale = 'en-US' } = options;
+  const { decimals, locale = APP_NUMBER_LOCALE } = options;
   const numeric = typeof value === 'number' ? value : Number(value);
   const safe = Number.isFinite(numeric) ? numeric : 0;
   return safe.toLocaleString(locale, {
@@ -110,7 +132,7 @@ export function formatNumber(value: number | string, options: FormatCurrencyOpti
  * the common ones. Used when the UI wants to render the symbol next to
  * an input box (e.g. "$ ___" prefix on the buy/sell form).
  */
-export function getCurrencySymbol(currencyCode: string, locale = 'en-US'): string {
+export function getCurrencySymbol(currencyCode: string, locale = APP_NUMBER_LOCALE): string {
   try {
     const formatter = new Intl.NumberFormat(locale, {
       style: 'currency',

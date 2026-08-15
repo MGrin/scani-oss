@@ -127,6 +127,14 @@ interface CreateHoldingOptions {
   symbol: string;
   /** Decimal-string balance, e.g. "1000". */
   quantity: string;
+  /**
+   * How long to wait for the worker. The 30s default is comfortable for a
+   * spec that seeds one holding into an idle queue; a fixture that seeds a
+   * whole portfolio behind the nightly rollup chain needs longer, and a
+   * timeout there means the surface under test renders its empty state and
+   * the assertion passes for the wrong reason.
+   */
+  jobTimeoutMs?: number;
 }
 
 interface TokenSearchHit {
@@ -251,7 +259,9 @@ export async function createHolding(
   //    time on pricing. We need `completed` so `returnvalue` is populated;
   //    pricing failures for fiat USD are rare in the dev stack but a
   //    failed terminal state is still useful to surface as an error.
-  const status = await waitForJob<ManualHoldingsReturn>(page, enqueueResult.jobId);
+  const status = await waitForJob<ManualHoldingsReturn>(page, enqueueResult.jobId, {
+    timeoutMs: opts.jobTimeoutMs,
+  });
   if (status.state === 'failed') {
     throw new Error(
       `manual-holdings-create job ${enqueueResult.jobId} failed: ${status.failedReason ?? '<no reason>'}`

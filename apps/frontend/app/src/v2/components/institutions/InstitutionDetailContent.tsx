@@ -4,10 +4,10 @@ import { Skeleton } from '@scani/ui/ui/skeleton';
 import { ExternalLink } from 'lucide-react';
 import { useMemo } from 'react';
 import { Link } from 'react-router-dom';
+import { useBaseCurrency } from '@/contexts/BaseCurrencyContext';
 import { getFaviconUrl } from '@/lib/icons';
 import { trpc } from '@/lib/trpc';
 import { cn } from '@/lib/utils';
-import { useBaseCurrency } from '../../hooks/useBaseCurrency';
 import { V2_ROUTES } from '../../lib/routes';
 import { PortfolioCharts } from '../dashboard/PortfolioCharts';
 

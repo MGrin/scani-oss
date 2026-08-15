@@ -3,8 +3,15 @@ import { Button } from '@scani/ui/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@scani/ui/ui/card';
 import { CalendarClock } from 'lucide-react';
 import { Link } from 'react-router-dom';
+import { useBaseCurrencyRates } from '@/hooks/useBaseCurrencyRates';
 import type { RouterOutputs } from '@/lib/trpc';
-import { sumAmountsByCurrency, todayDateString } from '../../lib/paymentTotals';
+import {
+  convertAmountToBase,
+  convertTotalsToBase,
+  describeConversion,
+  sumAmountsByCurrency,
+  todayDateString,
+} from '../../lib/paymentTotals';
 import { V2_ROUTES } from '../../lib/routes';
 
 type UpcomingOccurrence = RouterOutputs['payments']['upcoming'][number];
@@ -20,9 +27,17 @@ interface UpcomingPaymentsListProps {
 
 /**
  * Dashboard-facing slice of the payments layer — the committed 30-day
- * outflow figure plus the next few occurrences due, both linking back to
- * `/payments`. Shares `sumAmountsByCurrency` with `PaymentsOverviewPage`
- * so the two "committed outflow" figures can never drift.
+ * outflow figure plus the next few bills due, both linking back to
+ * `/payments`. Shares `sumAmountsByCurrency` + `convertTotalsToBase` with
+ * `PaymentsOverviewPage` so the two "committed outflow" figures can never
+ * drift, in the base currency or in the rates behind it.
+ *
+ * V3-47: the figure had always been filtered to outflow and the list
+ * beneath it had not, so an income invoice appeared as a row under a
+ * heading that described bills and was absent from the total the reader
+ * checked it against. The list is now outflow too, and income gets a
+ * figure of its own — converted the same way, and never subtracted from
+ * the outflow one.
  */
 export function UpcomingPaymentsList({
   occurrences,
@@ -36,18 +51,34 @@ export function UpcomingPaymentsList({
   // heading.
   const today = todayDateString();
   const dueAhead = occurrences.filter((o) => o.dueDate >= today);
-  const overdueCount = occurrences.length - dueAhead.length;
+  // Bills only, like the list: an income invoice that has not landed yet is
+  // not something the reader is late on.
+  const overdueCount = occurrences.filter(
+    (o) => o.dueDate < today && o.payment.direction === 'outflow'
+  ).length;
 
-  const outflowTotals = sumAmountsByCurrency(
-    dueAhead
-      .filter((o) => o.payment.direction === 'outflow')
-      .map((o) => ({
-        amount: o.actualAmount ?? o.expectedAmount ?? '0',
-        currencyTokenId: o.payment.currencyTokenId,
-      }))
-  );
+  const billsAhead = dueAhead.filter((o) => o.payment.direction === 'outflow');
+  const incomeAhead = dueAhead.filter((o) => o.payment.direction === 'inflow');
 
-  const nextOccurrences = [...dueAhead]
+  const toAmounts = (occurrences: UpcomingOccurrence[]) =>
+    occurrences.map((o) => ({
+      amount: o.actualAmount ?? o.expectedAmount ?? '0',
+      currencyTokenId: o.payment.currencyTokenId,
+    }));
+
+  const symbolFor = (tokenId: string) => tokenSymbolById.get(tokenId) ?? rates.baseSymbol;
+
+  // One rate set, both figures. Income has to convert for the same reason the
+  // outflow figure did — "180 GBP and in small plus 300 USD" is not a forecast
+  // anyone can plan against — so it goes through `convertTotalsToBase` too
+  // rather than being printed as the per-currency list this replaced.
+  const rates = useBaseCurrencyRates(dueAhead.map((o) => o.payment.currencyTokenId));
+  const committed = convertTotalsToBase(sumAmountsByCurrency(toAmounts(billsAhead)), rates);
+  const expectedIncome = convertTotalsToBase(sumAmountsByCurrency(toAmounts(incomeAhead)), rates);
+  const conversionNote = describeConversion(committed, symbolFor);
+  const incomeNote = describeConversion(expectedIncome, symbolFor);
+
+  const nextOccurrences = [...billsAhead]
     .sort((a, b) => a.dueDate.localeCompare(b.dueDate))
     .slice(0, MAX_ROWS);
 
@@ -68,14 +99,21 @@ export function UpcomingPaymentsList({
         </div>
         <p className="text-xs text-muted-foreground">
           Committed outflow, next {horizonDays} days:{' '}
-          {outflowTotals.size === 0
-            ? formatCurrency(0, 'USD')
-            : Array.from(outflowTotals.entries())
-                .map(([tokenId, total]) =>
-                  formatCurrency(total.toString(), tokenSymbolById.get(tokenId) ?? 'USD')
-                )
-                .join(' + ')}
+          {formatCurrency(committed.amount.toString(), rates.baseSymbol)}
         </p>
+        {conversionNote && <p className="text-xs text-muted-foreground">{conversionNote}</p>}
+        {/* A separate claim, never subtracted from the one above: a bill is an
+            obligation and income is a forecast, and one net figure would
+            average the two as if they were equally certain. */}
+        {incomeAhead.length > 0 && (
+          <>
+            <p className="text-xs text-muted-foreground">
+              Expected income, next {horizonDays} days:{' '}
+              {formatCurrency(expectedIncome.amount.toString(), rates.baseSymbol)}
+            </p>
+            {incomeNote && <p className="text-xs text-muted-foreground">{incomeNote}</p>}
+          </>
+        )}
         {overdueCount > 0 && (
           <Link
             to={V2_ROUTES.payments}
@@ -88,7 +126,7 @@ export function UpcomingPaymentsList({
       <CardContent>
         {nextOccurrences.length === 0 ? (
           <div className="text-center py-4">
-            <p className="text-sm text-muted-foreground">No upcoming payments</p>
+            <p className="text-sm text-muted-foreground">No bills due</p>
             <Button asChild variant="outline" size="sm" className="mt-3">
               <Link to={V2_ROUTES.paymentCreate}>Add a payment</Link>
             </Button>
@@ -97,6 +135,11 @@ export function UpcomingPaymentsList({
           <div className="space-y-1">
             {nextOccurrences.map((occurrence) => {
               const symbol = tokenSymbolById.get(occurrence.payment.currencyTokenId) ?? 'USD';
+              const equivalent = convertAmountToBase(
+                occurrence.expectedAmount,
+                occurrence.payment.currencyTokenId,
+                rates
+              );
               return (
                 <Link
                   key={occurrence.id}
@@ -107,16 +150,24 @@ export function UpcomingPaymentsList({
                     <p className="text-sm font-medium truncate">
                       {vendorNameById.get(occurrence.payment.vendorId) ?? 'Unknown vendor'}
                     </p>
+                    {/* No direction suffix any more: every row here is a bill,
+                        and the figure above the list says so. */}
                     <p className="text-xs text-muted-foreground">
                       {formatDate(occurrence.dueDate)}
-                      {occurrence.payment.direction === 'inflow' ? ' · Incoming' : ' · Outgoing'}
                     </p>
                   </div>
-                  <p className="text-sm font-medium tabular-nums ml-4 shrink-0">
-                    {occurrence.expectedAmount
-                      ? formatCurrency(occurrence.expectedAmount, symbol)
-                      : '—'}
-                  </p>
+                  <div className="ml-4 shrink-0 text-right">
+                    <p className="text-sm font-medium tabular-nums">
+                      {occurrence.expectedAmount
+                        ? formatCurrency(occurrence.expectedAmount, symbol)
+                        : '—'}
+                    </p>
+                    {equivalent && (
+                      <p className="text-xs text-muted-foreground tabular-nums">
+                        ≈ {formatCurrency(equivalent.amount.toString(), rates.baseSymbol)}
+                      </p>
+                    )}
+                  </div>
                 </Link>
               );
             })}

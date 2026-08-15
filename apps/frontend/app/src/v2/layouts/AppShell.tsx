@@ -29,6 +29,7 @@ import { NavLink, Outlet, useLocation } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { trpc } from '@/lib/trpc';
 import { cn } from '@/lib/utils';
+import { UiVersionSwitch } from '@/v3/components/UiVersionSwitch';
 import { CommandPalette } from '../components/command-palette/CommandPalette';
 import { useReviewFeed } from '../hooks/useReviewFeed';
 import { useSidebarState } from '../hooks/useSidebarState';
@@ -168,6 +169,7 @@ export function AppShell() {
                 <span>{t('nav.settings')}</span>
               </NavLink>
               <ThemeToggle variant="row" side="top" align="start" className="px-2 py-2 text-sm" />
+              <UiVersionSwitch variant="row" className="px-2 py-2 text-sm" />
               <button
                 type="button"
                 onClick={handleSignOut}

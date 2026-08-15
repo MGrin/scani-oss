@@ -1,8 +1,8 @@
 /**
  * `@scani/ui`
  *
- * Design system + shared client plumbing for the Scani SPAs. Apps should
- * import from the explicit sub-paths
+ * Design system + shared client plumbing for the Scani SPAs (frontend/app
+ * and frontend/cloud). Apps should import from the explicit sub-paths
  * (`@scani/ui/ui/button`, `@scani/ui/contexts/ThemeContext`, …) so
  * individual modules can be tree-shaken — the barrel below is offered as
  * a convenience for dense import sites only.

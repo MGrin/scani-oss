@@ -3,11 +3,11 @@ import { FaviconImg } from '@scani/ui/components/FaviconImg';
 import { CardInteractive } from '@scani/ui/ui/card';
 import { Building2 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
+import { useBaseCurrency } from '@/contexts/BaseCurrencyContext';
 import { getFaviconUrl } from '@/lib/icons';
 import { trpc } from '@/lib/trpc';
 import { DataView as DataViewComponent } from '../components/data-view/DataView';
 import type { ColumnDef } from '../components/data-view/DataViewTable';
-import { useBaseCurrency } from '../hooks/useBaseCurrency';
 import { V2_ROUTES } from '../lib/routes';
 
 // Institution type from the query result

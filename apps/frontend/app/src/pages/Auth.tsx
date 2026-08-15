@@ -1,19 +1,20 @@
 import { zodResolver } from '@hookform/resolvers/zod';
 import { emailSchema, safeRedirectPath } from '@scani/shared';
 import { MagicCodeInput } from '@scani/ui/components/MagicCodeInput';
+import { ScaniLogo } from '@scani/ui/components/ScaniLogo';
 import { isPWA } from '@scani/ui/lib/pwa-utils';
 import { Alert, AlertDescription } from '@scani/ui/ui/alert';
 import { Button } from '@scani/ui/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@scani/ui/ui/card';
 import { Input } from '@scani/ui/ui/input';
 import { Label } from '@scani/ui/ui/label';
-import { Loader2, Mail } from 'lucide-react';
-import { useEffect, useId, useState } from 'react';
+import { CloudOff, Loader2, Mail } from 'lucide-react';
+import { useCallback, useEffect, useId, useRef, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { z } from 'zod';
-import { SvgIcon } from '@/components/ui/SvgIcon';
 import { useAuth } from '@/contexts/AuthContext';
+import { useOnlineStatus } from '@/hooks/useOnlineStatus';
 
 const authSchema = z.object({
   email: emailSchema,
@@ -21,6 +22,16 @@ const authSchema = z.object({
 
 type AuthFormData = z.infer<typeof authSchema>;
 
+/**
+ * Sign-in, and the app's most exposed screen (SC-78 §1).
+ *
+ * In `display-mode: standalone` there is no reload button and no URL bar, so a
+ * request with no deadline is not a slow screen — it is a dead end whose only
+ * exit is the app switcher, on the first thing a person sees. Every call from
+ * here now settles (`lib/auth-network.ts` bounds them), the error says which
+ * half is broken and what to tap, and a send that failed because the device was
+ * offline is retried on its own the moment the network returns.
+ */
 export function Auth() {
   const { user, loading, authenticate, verifyCode } = useAuth();
   const navigate = useNavigate();
@@ -29,6 +40,11 @@ export function Auth() {
   const [isLoading, setIsLoading] = useState(false);
   const [isEmailSent, setIsEmailSent] = useState(false);
   const [userEmail, setUserEmail] = useState<string>('');
+  const online = useOnlineStatus();
+  /** An address whose send died for want of a network, waiting for one. Held
+   *  in a ref so re-arming it cannot re-trigger the retry effect — the effect
+   *  fires on connectivity *changing*, and nothing else. */
+  const pendingRetryEmail = useRef<string | null>(null);
 
   // Get return URL from query params, validated against open-redirect
   // chains: must be a same-origin path, never an absolute or
@@ -59,21 +75,38 @@ export function Auth() {
     resolver: zodResolver(authSchema),
   });
 
-  const onSubmit = async (data: AuthFormData) => {
-    setIsLoading(true);
-    setError(null);
-    setUserEmail(data.email);
+  const sendTo = useCallback(
+    async (email: string) => {
+      setIsLoading(true);
+      setError(null);
+      setUserEmail(email);
 
-    const result = await authenticate(data.email);
+      const result = await authenticate(email);
 
-    if (result.error) {
-      setError(result.error);
-    } else {
-      setIsEmailSent(true);
-    }
+      // Only a failure the network itself caused is worth waiting on: a
+      // rejected address will still be rejected when the wifi is back.
+      pendingRetryEmail.current = result.kind === 'offline' ? email : null;
 
-    setIsLoading(false);
-  };
+      if (result.error) setError(result.error);
+      else setIsEmailSent(true);
+
+      setIsLoading(false);
+    },
+    [authenticate]
+  );
+
+  // Recovery, not just an error message. The reader may have put the phone
+  // down; when the network returns the send they already asked for goes out
+  // without them having to find this screen again.
+  useEffect(() => {
+    if (!online) return;
+    const email = pendingRetryEmail.current;
+    if (!email) return;
+    pendingRetryEmail.current = null;
+    void sendTo(email);
+  }, [online, sendTo]);
+
+  const onSubmit = (data: AuthFormData) => sendTo(data.email);
 
   const handleCodeSubmit = async (code: string) => {
     setError(null);
@@ -111,7 +144,10 @@ export function Auth() {
           }}
         >
           <div className="w-full max-w-md space-y-8 flex flex-col items-center">
-            <SvgIcon name="scani-logo" className="h-12 w-auto" aria-label="Scani" />
+            <div className="flex items-center gap-3">
+              <ScaniLogo className="h-10 w-10" />
+              <span className="text-3xl font-semibold tracking-tight">Scani</span>
+            </div>
             <Card className="w-full">
               <CardHeader className="space-y-1">
                 <CardTitle className="text-2xl text-center">Enter verification code</CardTitle>
@@ -156,7 +192,10 @@ export function Auth() {
         }}
       >
         <div className="w-full max-w-md space-y-8 flex flex-col items-center">
-          <SvgIcon name="scani-logo" className="h-12 w-auto" aria-label="Scani" />
+          <div className="flex items-center gap-3">
+            <ScaniLogo className="h-10 w-10" />
+            <span className="text-3xl font-semibold tracking-tight">Scani</span>
+          </div>
           <Card className="w-full">
             <CardHeader className="space-y-1">
               <CardTitle className="text-2xl text-center">Check your email</CardTitle>
@@ -199,7 +238,10 @@ export function Auth() {
       }}
     >
       <div className="w-full max-w-md space-y-8 flex flex-col items-center">
-        <SvgIcon name="scani-logo" className="h-12 w-32" aria-label="Scani" />
+        <div className="flex items-center gap-3">
+          <ScaniLogo className="h-10 w-10" />
+          <span className="text-3xl font-semibold tracking-tight">Scani</span>
+        </div>
         <Card className="w-full">
           <CardHeader className="space-y-1">
             <CardTitle className="text-2xl text-center">Welcome</CardTitle>
@@ -209,6 +251,20 @@ export function Auth() {
           </CardHeader>
           <CardContent>
             <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
+              {/* Said before the tap, not after it. The failure it predicts is
+                  certain, and this is the one screen where an avoidable
+                  round-trip used to cost two minutes of a spinner. */}
+              {!online && (
+                <Alert>
+                  <AlertDescription className="flex items-start gap-2">
+                    <CloudOff className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
+                    <span>
+                      You’re offline. We’ll send your code as soon as the connection is back.
+                    </span>
+                  </AlertDescription>
+                </Alert>
+              )}
+
               {error && (
                 <Alert variant="destructive">
                   <AlertDescription>{error}</AlertDescription>

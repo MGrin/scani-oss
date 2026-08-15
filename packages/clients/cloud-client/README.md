@@ -76,7 +76,7 @@ loads them lazily.
 
 | Env var | Required | Purpose |
 |---|---|---|
-| `SCANI_CLOUD_URL` | yes in production (https) | Data-provider endpoint. Tier 1 OSS: `http://data-provider:8082`; Tier 2/3: a hosted data-provider URL. Unset in dev = local-fallback mode. |
+| `SCANI_CLOUD_URL` | yes in production (https) | Data-provider endpoint. Tier 1 OSS: `http://data-provider:8082`; Tier 2/3: `https://api.cloud.scani.xyz`. Unset in dev = local-fallback mode. |
 | `SCANI_CLOUD_API_KEY` | yes in production (≥ 16 chars) | Bearer token sent on every outbound request. The data-provider validates it against its own `DATA_PROVIDER_API_KEY` (env) or the `cloud_api_keys` table. |
 
 In production the schema fails to load without these vars. Outside

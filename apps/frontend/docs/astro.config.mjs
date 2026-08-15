@@ -2,10 +2,20 @@
 
 import starlight from '@astrojs/starlight';
 import { defineConfig } from 'astro/config';
+import remarkGfm from 'remark-gfm';
 
 // https://astro.build/config
 export default defineConfig({
   site: 'https://docs.scani.xyz',
+  // Astro applies GFM to `.md` through an internal flag that `@astrojs/mdx`
+  // does not inherit, so every pipe table in an `.mdx` page rendered as a
+  // paragraph of raw `|` characters — 15 pages of schema and env-var tables,
+  // live in production. Listing the plugin explicitly puts both pipelines on
+  // the same parser; `.md` already had it, and applying it twice there is a
+  // no-op. `scripts/check-tables.ts` fails the build if this ever regresses.
+  markdown: {
+    remarkPlugins: [remarkGfm],
+  },
   integrations: [
     starlight({
       title: 'Scani docs',
