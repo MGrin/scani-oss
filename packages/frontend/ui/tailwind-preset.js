@@ -1,5 +1,5 @@
 /**
- * Shared Tailwind preset consumed by apps/frontend/app.
+ * Shared Tailwind preset consumed by every Scani SPA.
  *
  * Design-token philosophy: every color is HSL driven by a CSS variable in
  * `src/styles/globals.css`, so ThemeContext can swap light/dark simply by
@@ -57,18 +57,127 @@ export default {
           DEFAULT: 'hsl(var(--card))',
           foreground: 'hsl(var(--card-foreground))',
         },
+        // 1-5 exist in v2's globals.css; 6-8 and `other` are v3-only and
+        // resolve to nothing outside [data-ui="v3"], like the surface ramp
+        // below. v3 re-solves 1-5 in place — same slots, theme-stable hues.
         chart: {
           1: 'hsl(var(--chart-1))',
           2: 'hsl(var(--chart-2))',
           3: 'hsl(var(--chart-3))',
           4: 'hsl(var(--chart-4))',
           5: 'hsl(var(--chart-5))',
+          6: 'hsl(var(--chart-6))',
+          7: 'hsl(var(--chart-7))',
+          8: 'hsl(var(--chart-8))',
+          other: 'hsl(var(--chart-other))',
         },
+        // v3 tokens (src/styles/v3-tokens.css). Defined only under
+        // [data-ui="v3"], so these utilities resolve to nothing outside the v3
+        // tree and cannot regress v2. `neutral` shadows Tailwind's default
+        // gray scale — verified unused across every app and package.
+        'surface-0': 'hsl(var(--surface-0))',
+        'surface-1': 'hsl(var(--surface-1))',
+        'surface-2': 'hsl(var(--surface-2))',
+        'surface-hover': 'hsl(var(--surface-hover))',
+        // `border-strong` is the WCAG 1.4.11 border (control edges). Plain
+        // `border-border` is the decorative hairline and is deliberately
+        // below 3:1 — see the note in v3-tokens.css.
+        'border-strong': 'hsl(var(--border-strong))',
+        gain: 'hsl(var(--gain))',
+        loss: 'hsl(var(--loss))',
+        neutral: 'hsl(var(--neutral))',
+        interactive: {
+          DEFAULT: 'hsl(var(--interactive))',
+          foreground: 'hsl(var(--interactive-foreground))',
+        },
+      },
+      // v3 type faces (src/styles/v3-fonts.css, named in src/styles/v3-tokens.css).
+      // Each var's fallback is verbatim Tailwind's own default stack, and the
+      // vars exist only under [data-ui="v3"] — so `font-sans` and preflight's
+      // `html { font-family }` resolve to exactly what they resolved to before
+      // in v2, cloud, landing and admin. `display` is the numeral face: the
+      // brief's position is that a finance app's display type is a figure, so
+      // the hero is set in mono, and `text-display` must be paired with
+      // `font-display` for the size role and the face to agree.
+      fontFamily: {
+        sans: 'var(--font-sans, ui-sans-serif, system-ui, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji")',
+        mono: 'var(--font-mono, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace)',
+        display:
+          'var(--font-display, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace)',
+      },
+      // The six type roles from the v3 brief. Each carries its own weight and
+      // tracking so `text-display` is the whole treatment, not just a size.
+      fontSize: {
+        display: [
+          'var(--text-display-size)',
+          {
+            lineHeight: 'var(--text-display-line)',
+            letterSpacing: 'var(--text-display-tracking)',
+            fontWeight: 'var(--text-display-weight)',
+          },
+        ],
+        title: [
+          'var(--text-title-size)',
+          {
+            lineHeight: 'var(--text-title-line)',
+            letterSpacing: 'var(--text-title-tracking)',
+            fontWeight: 'var(--text-title-weight)',
+          },
+        ],
+        body: [
+          'var(--text-body-size)',
+          {
+            lineHeight: 'var(--text-body-line)',
+            letterSpacing: 'var(--text-body-tracking)',
+            fontWeight: 'var(--text-body-weight)',
+          },
+        ],
+        label: [
+          'var(--text-label-size)',
+          {
+            lineHeight: 'var(--text-label-line)',
+            letterSpacing: 'var(--text-label-tracking)',
+            fontWeight: 'var(--text-label-weight)',
+          },
+        ],
+        caption: [
+          'var(--text-caption-size)',
+          {
+            lineHeight: 'var(--text-caption-line)',
+            letterSpacing: 'var(--text-caption-tracking)',
+            fontWeight: 'var(--text-caption-weight)',
+          },
+        ],
+      },
+      // The seventh role, `numeric`, is a treatment rather than a size — it
+      // inherits whatever the surrounding role set. `tracking-numeric` is the
+      // part of it that needs a utility; the face and figure widths are
+      // `font-mono tabular-nums`. Applied by `<Numeric>` (V3-07), not by hand.
+      letterSpacing: {
+        numeric: 'var(--text-numeric-tracking)',
+      },
+      // `min-h-tap` / `min-w-tap` — the 44×44 hit area. Exposed as minimums
+      // rather than in `spacing` so it cannot be used as a padding or gap.
+      minHeight: {
+        tap: 'var(--tap-target)',
+      },
+      minWidth: {
+        tap: 'var(--tap-target)',
       },
       borderRadius: {
         lg: 'var(--radius)',
         md: 'calc(var(--radius) - 2px)',
         sm: 'calc(var(--radius) - 4px)',
+      },
+      // v3 elevation, same var-with-verbatim-default trick as fontFamily
+      // above: `--elevation-*` exists only under [data-ui="v3"], so
+      // `shadow-sm` / `shadow-md` resolve to exactly Tailwind's own defaults
+      // in v2, cloud, landing and admin. Inside v3 they become the tuned
+      // pair, which is what gives a white card on a white page an edge —
+      // there is no lightness left to spend on it.
+      boxShadow: {
+        sm: 'var(--elevation-1, 0 1px 2px 0 rgb(0 0 0 / 0.05))',
+        md: 'var(--elevation-2, 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1))',
       },
       keyframes: {
         'accordion-down': {
@@ -118,9 +227,15 @@ export default {
       transitionDuration: {
         250: '250ms',
         350: '350ms',
+        // v3 motion tokens — collapse to 0ms under prefers-reduced-motion.
+        fast: 'var(--motion-fast)',
+        base: 'var(--motion-base)',
+        slow: 'var(--motion-slow)',
       },
       transitionTimingFunction: {
         'bounce-in': 'cubic-bezier(0.68, -0.55, 0.265, 1.55)',
+        emphasized: 'var(--motion-ease)',
+        spring: 'var(--motion-ease-spring)',
       },
     },
   },

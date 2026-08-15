@@ -1,4 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import {
+  interpretServiceWorkerMessage,
+  requestServiceWorkerUpdate,
+  serviceWorkerReady,
+  wasDocumentControlledAtLoad,
+} from '../lib/service-worker';
 
 interface AppUpdateState {
   /** A new version is available and waiting to be activated */
@@ -53,11 +59,13 @@ export function useAppUpdate(): AppUpdateState {
     if (!('serviceWorker' in navigator)) return;
 
     const handleMessage = (event: MessageEvent) => {
-      if (event.data?.type === 'SW_UPDATE_WAITING') {
+      const action = interpretServiceWorkerMessage(event.data, wasDocumentControlledAtLoad());
+      if (action.offerUpdate) {
         offerUpdate(offeredVersion.current);
       }
-      if (event.data?.type === 'SW_ACTIVATED') {
-        // New SW activated — reload to get fresh content
+      if (action.reload) {
+        // A newer SW took over from the one this page was running under —
+        // reload to get the content it now serves.
         window.location.reload();
       }
     };
@@ -77,7 +85,15 @@ export function useAppUpdate(): AppUpdateState {
       }
     };
 
-    navigator.serviceWorker.ready.then((registration) => {
+    let cancelled = false;
+
+    // Best-effort: when registration failed there is no worker to observe,
+    // and `serviceWorkerReady` resolves `null` rather than hanging. The
+    // version.json poll below is the update route that still works then.
+    const observe = async () => {
+      const registration = await serviceWorkerReady();
+      if (!registration || cancelled) return;
+
       // Check if there's already a waiting worker
       checkWaiting(registration);
 
@@ -94,7 +110,13 @@ export function useAppUpdate(): AppUpdateState {
           }
         });
       });
-    });
+    };
+
+    void observe();
+
+    return () => {
+      cancelled = true;
+    };
   }, [offerUpdate]);
 
   // Poll version.json for changes
@@ -129,12 +151,17 @@ export function useAppUpdate(): AppUpdateState {
           // Version changed — new deployment detected
           localStorage.setItem(VERSION_STORAGE_KEY, version);
           if (active) {
+            // Offer the banner first: it is the user's route off a stale
+            // bundle and must not depend on the service worker succeeding.
             offerUpdate(version);
 
-            // Also trigger SW update check
-            if ('serviceWorker' in navigator) {
-              const registration = await navigator.serviceWorker.ready;
-              registration.update();
+            // Then try to pull the new worker down. `requestServiceWorkerUpdate`
+            // owns the failure — an un-awaited `update()` here escaped this
+            // try/catch and reached Sentry as an unhandled rejection whenever
+            // a deploy landed mid-session (SCANI-FRONTEND-C).
+            const registration = await serviceWorkerReady();
+            if (registration) {
+              await requestServiceWorkerUpdate(registration);
             }
           }
         }
@@ -159,13 +186,15 @@ export function useAppUpdate(): AppUpdateState {
   useEffect(() => {
     if (!('serviceWorker' in navigator)) return;
 
-    const interval = setInterval(async () => {
-      try {
-        const registration = await navigator.serviceWorker.ready;
-        await registration.update();
-      } catch {
-        // Ignore errors
+    const poll = async () => {
+      const registration = await serviceWorkerReady();
+      if (registration) {
+        await requestServiceWorkerUpdate(registration);
       }
+    };
+
+    const interval = setInterval(() => {
+      void poll();
     }, VERSION_CHECK_INTERVAL);
 
     return () => clearInterval(interval);
@@ -182,12 +211,17 @@ export function useAppUpdate(): AppUpdateState {
       if (waitingWorker.current) {
         // Tell the waiting SW to take over
         waitingWorker.current.postMessage({ type: 'SKIP_WAITING' });
-      } else if ('serviceWorker' in navigator) {
-        // No waiting worker — also tell current SW to clear its caches
-        const registration = await navigator.serviceWorker.ready;
-        registration.active?.postMessage({ type: 'CLEAR_CACHE' });
-        // Trigger a SW update check
-        await registration.update();
+      } else {
+        // No waiting worker — also tell current SW to clear its caches.
+        // `serviceWorkerReady` is bounded: when registration failed there is
+        // no worker and a bare await would strand the banner on "Updating…"
+        // forever, trapping the user on the stale bundle.
+        const registration = await serviceWorkerReady();
+        if (registration) {
+          registration.active?.postMessage({ type: 'CLEAR_CACHE' });
+          // Trigger a SW update check
+          await requestServiceWorkerUpdate(registration);
+        }
       }
     } catch {
       // Best effort — proceed with reload regardless

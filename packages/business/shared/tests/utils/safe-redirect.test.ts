@@ -15,7 +15,7 @@ describe('safeRedirectPath', () => {
   test('rejects absolute URLs', () => {
     expect(safeRedirectPath('https://attacker.com', FALLBACK)).toBe(FALLBACK);
     expect(safeRedirectPath('http://attacker.com/foo', FALLBACK)).toBe(FALLBACK);
-    expect(safeRedirectPath('https://app.example.com/dashboard', FALLBACK)).toBe(FALLBACK);
+    expect(safeRedirectPath('https://app.scani.xyz/dashboard', FALLBACK)).toBe(FALLBACK);
   });
 
   test('rejects protocol-relative URLs', () => {

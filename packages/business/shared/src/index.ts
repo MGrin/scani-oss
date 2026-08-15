@@ -6,11 +6,14 @@
 // `node:fs`) anywhere reachable from this barrel. Encryption lives in
 // `@scani/security`; resilience primitives live in `@scani/rate-limiter`;
 // request-scope caching lives in `@scani/domain/lib/request-cache`.
+export * from './brand/scani-mark';
 export * from './decimal';
 export * from './dtos';
 export * from './format/currency';
 export * from './format/date';
+export * from './format/precision';
 export * from './token-validatiion';
+export * from './usage/outcomes';
 export { safeExternalUrl } from './utils/safe-external-url';
 export { safeRedirectPath } from './utils/safe-redirect';
 export {

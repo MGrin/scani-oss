@@ -1,0 +1,61 @@
+/**
+ * v3 type faces — IBM Plex Sans + IBM Plex Mono, self-hosted (V3-20).
+ *
+ * Both faces are OFL-1.1 and ship as npm packages, so nothing here reaches a
+ * Google Fonts CDN: no third-party connection on the critical path, no
+ * third-party record of who loaded the app, and the files are versioned in the
+ * lockfile instead of being whatever the CDN serves today.
+ *
+ * `@font-face` cannot be scoped to a selector, so this file is nothing but
+ * `@import`s while the rest of v3 carries a scope. That is safe, and it is also
+ * what makes the file the one piece of v3 both scoping modes share verbatim:
+ * declaring a face applies nothing, and only `--font-sans` / `--font-mono` name
+ * these families. Under `v3-tokens.css` those names exist only inside
+ * `[data-ui="v3"]`, so v2 renders identically and — because browsers fetch a
+ * face lazily, on first use — a v2-only session downloads none of these files.
+ * Under `v3-tokens-root.css` they exist at `:root`, and the document is set in
+ * Plex. Import this file either way; the token file decides what happens.
+ *
+ * ── which files ──────────────────────────────────────────────────────────────
+ * Sans is the variable cut: one `wght` axis file per unicode subset, each
+ * unicode-range gated, so Latin copy fetches exactly one file and every weight
+ * between 100 and 700 comes out of it. The whole 400/500/600 range the type
+ * scale asks for costs one request.
+ *
+ * Mono has no variable cut on Fontsource, so it is three static files, one per
+ * weight the token scale actually names: 400 (body, caption, and every figure),
+ * 500 (label), 600 (title, display). Adding a fourth weight to v3 markup means
+ * adding its import here — otherwise the browser synthesises it by smearing the
+ * outline, which on a monospaced face is visible at display size.
+ *
+ * No italics: nothing in v3 sets `font-style: italic`, and an unused face is
+ * still a file someone has to justify.
+ *
+ * ── font-display ─────────────────────────────────────────────────────────────
+ * Fontsource emits `swap`, and that is the right value here, not an accident we
+ * inherited:
+ *
+ *   - `block` hides the hero for up to 3s. A net-worth screen that renders
+ *     blank is worse than one that renders in the wrong face.
+ *   - `optional` gives a 100ms block period and then commits to the fallback
+ *     for the rest of the session. On a cold first load that leaves the V3-09
+ *     digit roll — the signature element — rendering in the system monospace
+ *     for the entire visit, and it is precisely the first visit that decides
+ *     whether the app looks considered.
+ *   - `swap` shows the fallback and upgrades whenever the file lands.
+ *
+ * What keeps `swap` from flashing is the fallback stacks in v3-tokens.css
+ * rather than the descriptor: `--font-mono` falls back to `ui-monospace` /
+ * SF Mono / Menlo / Liberation Mono, all of which are monospaced at a ~0.6em
+ * advance against Plex Mono's exactly-0.6em cell. The pre-swap hero is the
+ * same shape at the same width; the digit roll never jitters, because the
+ * fallback is never proportional. Metric overrides (`size-adjust`,
+ * `ascent-override`) on a synthetic fallback face would close the remaining
+ * vertical gap, but the numbers differ per platform and would be guesses.
+ */
+
+@import '@fontsource-variable/ibm-plex-sans/wght.css';
+
+@import '@fontsource/ibm-plex-mono/latin-400.css';
+@import '@fontsource/ibm-plex-mono/latin-500.css';
+@import '@fontsource/ibm-plex-mono/latin-600.css';

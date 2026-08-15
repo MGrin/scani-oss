@@ -1,6 +1,5 @@
 import * as React from 'react';
-import { Button } from './button';
-import type { ToastActionElement, ToastProps } from './toast';
+import { ToastAction, type ToastActionElement, type ToastProps } from './toast';
 
 const TOAST_LIMIT = 1;
 // Default time a toast stays visible before auto-dismiss (ms).
@@ -242,10 +241,20 @@ function showError(error: unknown, context?: string, options?: ToastOptions) {
     description: `${context ? `${context}: ` : ''}${message}`,
     variant: 'destructive',
     duration: options?.duration ?? DEFAULT_ERROR_DURATION,
+    // `ToastAction`, not `<Button variant="outline">`. The outline button
+    // paints `bg-background` and takes its text colour from the toast, which
+    // is `text-destructive-foreground` — white on white in the light theme and
+    // near-black on near-black in v3's dark theme, i.e. a blank rectangle with
+    // an accessible name and no visible label (SC-64). `ToastAction` is
+    // transparent and carries the `group-[.destructive]` rules that solve its
+    // border and hover against the destructive surface.
     action: (
-      <Button variant="outline" size="sm" onClick={() => console.error('Error details:', error)}>
+      <ToastAction
+        altText="View error details in the console"
+        onClick={() => console.error('Error details:', error)}
+      >
         View Details
-      </Button>
+      </ToastAction>
     ),
   });
 }

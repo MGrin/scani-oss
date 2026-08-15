@@ -4,8 +4,8 @@ import { createAuthClient as createBetterAuthClient } from 'better-auth/react';
 /**
  * Factory for the Better-Auth React client.
  *
- * frontendV2 points `baseURL` at the backend (`api.example.com`);
- * cloud-frontend points it at the data-provider (`api.cloud.example.com`). Both
+ * frontendV2 points `baseURL` at the backend (`api.scani.xyz`);
+ * cloud-frontend points it at the data-provider (`api.cloud.scani.xyz`). Both
  * include credentials so the signed session cookie rides along with every
  * request, and both ship the magic-link + email-OTP client plugins so the
  * auth UI works identically.

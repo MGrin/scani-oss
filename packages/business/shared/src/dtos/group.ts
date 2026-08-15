@@ -102,7 +102,24 @@ export const AccountWithGroupsDto = z.object({
 
 export type AccountWithGroups = z.infer<typeof AccountWithGroupsDto>;
 
-// Group with counts for display
+/**
+ * A row of `groups.getAllWithCounts`, and the reason the counts are coerced.
+ *
+ * `COUNT(*)` is a Postgres bigint, and a JS number cannot hold that range, so
+ * postgres.js delivers it as a decimal string — `"1"`, not `1`. The queries
+ * now cast to `::int`, but the cast is one token in one file and the next
+ * aggregate written without it would put the string back on the wire. This
+ * schema is where the contract is enforced instead: every reader of this
+ * endpoint gets a number, so no consumer has to coerce, and none can repeat
+ * the `"1" === 1` comparison that rendered "1 holdings" (SC-88).
+ */
+const wireCount = z.coerce.number().int().nonnegative();
+
+/** Timestamps leave the resolver as `Date` and reach the browser as an ISO
+ *  string — there is no transformer between them. Accepting both keeps this
+ *  schema honest about a field nothing on this endpoint reads. */
+const wireTimestamp = z.union([z.string(), z.date()]);
+
 export const GroupWithCountsDto = z.object({
   id: z.string(),
   userId: z.string(),
@@ -111,12 +128,10 @@ export const GroupWithCountsDto = z.object({
   description: z.string().nullable(),
   displayOrder: z.number(),
   isActive: z.boolean(),
-  createdAt: z.string(),
-  updatedAt: z.string(),
-  counts: z.object({
-    holdings: z.number(),
-    accounts: z.number(),
-  }),
+  createdAt: wireTimestamp,
+  updatedAt: wireTimestamp,
+  holdingsCount: wireCount,
+  accountsCount: wireCount,
 });
 
 export type GroupWithCounts = z.infer<typeof GroupWithCountsDto>;

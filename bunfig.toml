@@ -1,6 +1,20 @@
 # Bun runtime config — applies to `bun`, `bun test`, and `bun build` invocations
 # from anywhere inside this monorepo.
 
+[install]
+# Match the linker every Dockerfile already uses (`bun install --linker=hoisted`),
+# so local trees resolve exactly like the deployed ones.
+#
+# The default isolated linker builds `node_modules/.bun/<pkg>/node_modules/`
+# symlink sets, and it only ever verifies the package *store* — never those
+# links. Lose one (an interrupted install, a partial `rm -rf`) and every later
+# `bun install` reports "no changes" while the tree stays broken; only
+# `rm -rf node_modules` or `--force` rebuilds it. That is how `http-errors@2.0.1`
+# lost its `statuses@2.0.2` link and crashed the data-provider at boot (SC-96).
+# Hoisted nests real directories instead of symlinks, and a plain `bun install`
+# repairs a partial tree.
+linker = "hoisted"
+
 [test]
 # Every typedi-decorated `@Service()` class needs reflect-metadata loaded
 # before its first reference; the domain preload also sets a default

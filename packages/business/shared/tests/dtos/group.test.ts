@@ -145,36 +145,52 @@ describe('HoldingWithGroupsDto / AccountWithGroupsDto', () => {
 });
 
 describe('GroupWithCountsDto', () => {
+  const row = (overrides: Record<string, unknown> = {}) => ({
+    id: 'g-1',
+    userId: 'u-1',
+    name: 'Crypto',
+    color: '#3b82f6',
+    description: null,
+    displayOrder: 0,
+    isActive: true,
+    createdAt: '2026-01-01T00:00:00Z',
+    updatedAt: '2026-01-01T00:00:00Z',
+    holdingsCount: 12,
+    accountsCount: 3,
+    ...overrides,
+  });
+
   test('accepts a complete group-with-counts row', () => {
-    expect(
-      GroupWithCountsDto.safeParse({
-        id: 'g-1',
-        userId: 'u-1',
-        name: 'Crypto',
-        color: '#3b82f6',
-        description: null,
-        displayOrder: 0,
-        isActive: true,
-        createdAt: '2026-01-01T00:00:00Z',
-        updatedAt: '2026-01-01T00:00:00Z',
-        counts: { holdings: 12, accounts: 3 },
-      }).success
-    ).toBe(true);
+    expect(GroupWithCountsDto.safeParse(row()).success).toBe(true);
+  });
+
+  /**
+   * The SC-88 regression. `COUNT(*)` is a bigint and postgres.js delivers it
+   * as `"1"`; the groups list compared that against the number 1, lost, and
+   * printed "1 holdings". Coercing here is what makes the count a number for
+   * every reader of the endpoint rather than for whichever component last
+   * remembered to call `Number()`.
+   */
+  test('coerces counts delivered as bigint strings into numbers', () => {
+    const parsed = GroupWithCountsDto.parse(row({ holdingsCount: '1', accountsCount: '0' }));
+    expect(parsed.holdingsCount).toBe(1);
+    expect(parsed.accountsCount).toBe(0);
   });
 
   test('rejects missing counts', () => {
-    expect(
-      GroupWithCountsDto.safeParse({
-        id: 'g-1',
-        userId: 'u-1',
-        name: 'Crypto',
-        color: '#3b82f6',
-        description: null,
-        displayOrder: 0,
-        isActive: true,
-        createdAt: '2026-01-01T00:00:00Z',
-        updatedAt: '2026-01-01T00:00:00Z',
-      }).success
-    ).toBe(false);
+    const { holdingsCount, ...withoutHoldings } = row();
+    expect(GroupWithCountsDto.safeParse(withoutHoldings).success).toBe(false);
+  });
+
+  test('rejects a count that is neither a number nor a numeric string', () => {
+    expect(GroupWithCountsDto.safeParse(row({ holdingsCount: 'lots' })).success).toBe(false);
+    expect(GroupWithCountsDto.safeParse(row({ holdingsCount: 1.5 })).success).toBe(false);
+    expect(GroupWithCountsDto.safeParse(row({ holdingsCount: -1 })).success).toBe(false);
+  });
+
+  /** Timestamps leave the resolver as `Date` and reach the browser as a
+   *  string; the schema sits between the two and has to accept both. */
+  test('accepts timestamps as Date or string', () => {
+    expect(GroupWithCountsDto.safeParse(row({ createdAt: new Date() })).success).toBe(true);
   });
 });

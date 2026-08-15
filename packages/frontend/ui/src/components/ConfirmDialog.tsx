@@ -1,4 +1,5 @@
 import { Loader2 } from 'lucide-react';
+import { useDismissOnHide } from '../hooks/useDismissOnHide';
 import { Button } from '../ui/button';
 import {
   Dialog,
@@ -32,6 +33,14 @@ export function ConfirmDialog({
   onConfirm,
   isPending,
 }: ConfirmDialogProps) {
+  // The other half of SC-124: v3's inline confirms are `ConfirmAction`, but
+  // this dialog is still the shape for a confirmation raised from a page
+  // header rather than from a row, and a question left standing over a
+  // backgrounded app is answerable out of context whichever shape it wears.
+  // Every variant, not only `destructive` — the default ones gate an AI call
+  // or a re-parse, which is a commitment too.
+  useDismissOnHide(open && !isPending, () => onOpenChange(false));
+
   return (
     <Dialog
       open={open}
