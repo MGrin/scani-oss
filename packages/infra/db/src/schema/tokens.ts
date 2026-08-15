@@ -101,6 +101,22 @@ export const tokens = pgTable(
       .notNull()
       .default({}),
     isScamProbability: real('is_scam_probability').notNull().default(0),
+    /**
+     * Set when this token's SYMBOL is drawn from lookalike characters —
+     * the value is the ASCII symbol it presents as, so `UЅDС` (Cyrillic
+     * Ѕ and С) carries `USDC`. Null means the symbol is plain ASCII and
+     * reads as itself.
+     *
+     * Its own column rather than a band of `is_scam_probability`, and
+     * that separation is the point. A homoglyph scores 1.00 when we hold
+     * no price for it and 0.70 once we do — the 0.30 difference is
+     * "no pricing data available", a fact about OUR coverage that the
+     * token has no part in. `WarmTokenPricesForImportUseCase` then
+     * re-scores priced tokens downward, so a row quarantined at 1.00
+     * later reads as ordinary. This column is written once from the
+     * characters themselves and nothing re-scores it (SC-197).
+     */
+    lookalikeOf: text('lookalike_of'),
     isActive: boolean('is_active').notNull().default(true),
     // Cooldown gate consulted by the historical-price backfill: when set
     // and in the future, the backfill skips the token instead of asking
