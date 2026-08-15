@@ -10,6 +10,11 @@
       "range": ""
     },
     {
+      "label": "tsgo is pinned exactly — a caret over a nightly floats the compiler (SC-247)",
+      "dependencies": ["@typescript/native-preview"],
+      "range": ""
+    },
+    {
       "label": "All external deps use a caret range",
       "dependencies": ["**"],
       "range": "^"
