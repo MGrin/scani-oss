@@ -31,10 +31,26 @@ import type {
   HistoricalPriceProvider,
   TokenIdentityProvider,
 } from '../../core/capabilities';
+import { ProviderError } from '../../core/errors';
 import type { PriceQuote, ProviderContext } from '../../core/types';
 import { fetchWithTimeout } from '../../core/utils/fetch';
 import type { CurrencyConverter } from '../coingecko';
 import { CHAIN_ID_TO_DEFILLAMA, DEFILLAMA_MIN_CONFIDENCE } from './chains';
+
+/**
+ * Hard ceiling on `/chart` — the endpoint answers HTTP 400
+ * `{"message":"Requested 501 data points exceeds the maximum of 500."}`
+ * for anything larger.
+ *
+ * This used to be `Math.min(days, 1825)`, whose comment explained the
+ * 1825 as "the longest backfill window we use elsewhere" — our number,
+ * not DeFiLlama's. Every range over 500 days therefore 400'd, and since
+ * the 400 came back as `[]` the backfill read it as "no history" and put
+ * the token in an unpriceable cooldown. Prices older than 500 days could
+ ***REMOVED***
+ ***REMOVED***
+ */
+const DEFILLAMA_MAX_POINTS_PER_REQUEST = 500;
 
 interface DeFiLlamaCurrentResponse {
   coins: Record<
@@ -142,13 +158,15 @@ export class DeFiLlamaProvider implements HistoricalPriceProvider, TokenIdentity
   }
 
   /**
-   * Range fetch via DeFiLlama's `/chart/{key}` endpoint. Returns up to
-   * `span` daily candles in a single HTTP call — the difference
-   * between this and looping `fetchHistoricalPrice` per day is the
-   * difference between 1 call and 365 calls per token. Without this
-   * method the backfill orchestrator fans out per-day calls throttled
-   * at 5/sec, which makes a 365-day backfill for 8 tokens take ~10 min;
-   * with the range method it finishes in seconds.
+   * Range fetch via DeFiLlama's `/chart/{key}` endpoint. Returns daily
+   * candles for the whole period — the difference between this and
+   * looping `fetchHistoricalPrice` per day is the difference between a
+   * handful of calls and 365 calls per token.
+   *
+   * Requests are chunked to {@link DEFILLAMA_MAX_POINTS_PER_REQUEST}
+   * because the endpoint refuses anything larger, and a failed chunk is
+   * kept distinct from an empty one — see SC-171 in the two constants'
+   * comments for what each of those cost.
    */
   async fetchHistoricalRange(
     t: Token,
@@ -160,15 +178,68 @@ export class DeFiLlamaProvider implements HistoricalPriceProvider, TokenIdentity
     if (!key) return [];
     if (to.getTime() < from.getTime()) return [];
 
-    // Span is days between from and to (inclusive); cap at 1825 to
-    // match the longest backfill window we use elsewhere. `period=1d`
-    // gives daily candles, `searchWidth=24h` widens the per-bar
-    // tolerance so DeFiLlama returns a quote for any day within 24h
-    // of a real datapoint.
-    const days =
-      Math.max(1, Math.ceil((to.getTime() - from.getTime()) / (24 * 60 * 60 * 1000))) + 1;
-    const span = Math.min(days, 1825);
-    const startSec = Math.floor(from.getTime() / 1000);
+    const dayMs = 24 * 60 * 60 * 1000;
+    const totalDays = Math.max(1, Math.ceil((to.getTime() - from.getTime()) / dayMs)) + 1;
+    const fromSec = Math.floor(from.getTime() / 1000);
+
+    const out: PriceQuote[] = [];
+    // First failure across all windows, kept so a range that yields
+    // nothing can say WHY it yielded nothing.
+    let failure: unknown = null;
+    let windows = 0;
+
+    for (let offset = 0; offset < totalDays; offset += DEFILLAMA_MAX_POINTS_PER_REQUEST) {
+      const span = Math.min(DEFILLAMA_MAX_POINTS_PER_REQUEST, totalDays - offset);
+      windows++;
+      try {
+        const bars = await this.fetchChartWindow(key, fromSec + offset * 86_400, span);
+        for (const bar of bars) {
+          if (typeof bar.price !== 'number' || bar.price <= 0) continue;
+          if (typeof bar.timestamp !== 'number') continue;
+          const at = new Date(bar.timestamp * 1000);
+          // USD path is direct; non-USD bases re-use the same converter
+          // pattern as the per-day method via toQuote.
+          const quote = await this.toQuote(t, ctx, String(bar.price), at, 'defillama_historical');
+          if (quote) out.push(quote);
+        }
+      } catch (err) {
+        failure ??= err;
+        this.logger.warn(
+          { err, key, offset, span, totalDays },
+          'DeFiLlama range window failed; continuing with the remaining windows'
+        );
+      }
+    }
+
+    this.logger.debug(
+      { key, totalDays, windows, returned: out.length, base: ctx.baseCurrency.symbol },
+      'DeFiLlama range fetched'
+    );
+
+    // A clean 200 carrying no bars and a request we got wrong are
+    // different facts about the world, and only the first one means
+    // "this token has no history". Returning [] for both is what let a
+    // 400 reach `markUnpriceable` and take ETH, BTC, AAPL and 117 other
+    // tokens out of the backfill for a week at a time (SC-171). If we
+    // salvaged bars from some window the range still did its job, so
+    // only a wholly empty result raises.
+    if (out.length === 0 && failure) throw failure;
+    return out;
+  }
+
+  /**
+   * One `/chart` window, at most {@link DEFILLAMA_MAX_POINTS_PER_REQUEST}
+   * points. Returns the bars — possibly empty, which is a real answer —
+   * and throws a {@link ProviderError} when the request itself failed.
+   */
+  private async fetchChartWindow(
+    key: string,
+    startSec: number,
+    span: number
+  ): Promise<Array<{ timestamp: number; price: number }>> {
+    // `period=1d` gives daily candles; `searchWidth=24h` widens the
+    // per-bar tolerance so DeFiLlama returns a quote for any day within
+    // 24h of a real datapoint.
     const url = `https://coins.llama.fi/chart/${encodeURIComponent(key)}?start=${startSec}&period=1d&span=${span}&searchWidth=24h`;
 
     interface ChartResponse {
@@ -183,36 +254,22 @@ export class DeFiLlamaProvider implements HistoricalPriceProvider, TokenIdentity
       >;
     }
 
-    try {
-      const response = await this.limiter.execute(async () =>
-        fetchWithTimeout(url, { headers: { 'Content-Type': 'application/json' } })
+    const response = await this.limiter.execute(async () =>
+      fetchWithTimeout(url, { headers: { 'Content-Type': 'application/json' } })
+    );
+    if (!response.ok) {
+      const body = await response.text().catch(() => '');
+      this.logger.warn(
+        { key, startSec, span, status: response.status, body: body.slice(0, 200) },
+        'DeFiLlama chart request rejected'
       );
-      if (!response.ok) return [];
-      const data = (await response.json()) as ChartResponse;
-      const coin = data.coins?.[key];
-      if (!coin || !Array.isArray(coin.prices)) return [];
-      if ((coin.confidence ?? 0) < DEFILLAMA_MIN_CONFIDENCE) return [];
-
-      const baseUpper = ctx.baseCurrency.symbol.toUpperCase();
-      const out: PriceQuote[] = [];
-      for (const bar of coin.prices) {
-        if (typeof bar.price !== 'number' || bar.price <= 0) continue;
-        if (typeof bar.timestamp !== 'number') continue;
-        const at = new Date(bar.timestamp * 1000);
-        // USD path is direct; non-USD bases re-use the same converter
-        // pattern as the per-day method via toQuote.
-        const quote = await this.toQuote(t, ctx, String(bar.price), at, 'defillama_historical');
-        if (quote) out.push(quote);
-      }
-      this.logger.debug(
-        { key, span, returned: out.length, base: baseUpper },
-        'DeFiLlama range fetched'
-      );
-      return out;
-    } catch (err) {
-      this.logger.debug({ err, key, from, to }, 'DeFiLlama range request failed');
-      return [];
+      throw ProviderError.fromHttp('defillama', response, body);
     }
+    const data = (await response.json()) as ChartResponse;
+    const coin = data.coins?.[key];
+    if (!coin || !Array.isArray(coin.prices)) return [];
+    if ((coin.confidence ?? 0) < DEFILLAMA_MIN_CONFIDENCE) return [];
+    return coin.prices;
   }
 
   // ============================================================
