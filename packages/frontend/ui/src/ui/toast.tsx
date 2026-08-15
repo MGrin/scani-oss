@@ -89,7 +89,11 @@ const ToastClose = React.forwardRef<
     toast-close=""
     {...props}
   >
-    <X className="h-4 w-4" />
+    <X className="h-4 w-4" aria-hidden="true" />
+    {/* The glyph is the whole button, so without this the control reaches a
+        screen reader with no accessible name at all (SC-64). `sr-only` rather
+        than `aria-label` so a caller can still override it with one. */}
+    <span className="sr-only">Dismiss</span>
   </ToastPrimitives.Close>
 ));
 ToastClose.displayName = ToastPrimitives.Close.displayName;

@@ -30,6 +30,33 @@ describe('formatRelative', () => {
     expect(out.length).toBeGreaterThan(0);
   });
 
+  /**
+   * SC-175 — the fallback is the ambiguous one, and it is invisible until
+   * history ages past 30 days.
+   *
+   * `toLocaleDateString()` with no options is numeric: `7/5/2026` is 5 July to
+   * half the world and 7 May to the other half, and this list's whole job is
+   * judging whether two rows are the same movement of money. A month NAME
+   * cannot be read backwards.
+   */
+  test('the >30d fallback names the month rather than numbering it', () => {
+    const old = new Date('2020-01-15T00:00:00Z');
+    // English only — `dateStyle: 'medium'` is not a month name everywhere
+    // (de-DE renders `15.01.2020`), and the UI ships in English, so these are
+    // the locales in which the ambiguity SC-175 is about actually bites: `7/5`
+    // is 5 July in en-GB and 7 May in en-US, and both readers see this string.
+    for (const locale of ['en-US', 'en-GB', 'en-AU', 'en-CA']) {
+      expect(formatRelative(old, locale)).toMatch(/\p{L}{3}/u);
+    }
+  });
+
+  test('the >30d fallback IS formatDate, so a row and the sheet it opens agree', () => {
+    const old = new Date('2020-01-15T00:00:00Z');
+    for (const locale of [undefined, 'en-US', 'en-GB']) {
+      expect(formatRelative(old, locale)).toBe(formatDate(old, locale));
+    }
+  });
+
   test('returns "—" for null/undefined/invalid input', () => {
     expect(formatRelative(null)).toBe('—');
     expect(formatRelative(undefined)).toBe('—');
@@ -38,6 +65,37 @@ describe('formatRelative', () => {
 
   test('accepts string ISO input', () => {
     expect(formatRelative(new Date(Date.now() - 5 * MIN).toISOString())).toBe('5m ago');
+  });
+});
+
+/**
+ * SC-175 — these helpers hard-defaulted to `en-US` and every call site in the
+ * app omitted the argument, so a European reader was shown month-first dates
+ * while anything reaching for a bare `toLocaleDateString()` on the same screen
+ * printed day-first. Nothing asserted the default, so nothing caught it.
+ */
+describe('locale handling', () => {
+  const when = '2026-07-16T01:06:00Z';
+
+  test('no locale argument means the reader\'s, not "en-US"', () => {
+    expect(formatDate(when)).toBe(
+      new Date(when).toLocaleDateString(undefined, { dateStyle: 'medium' })
+    );
+    expect(formatDateTime(when)).toBe(
+      new Date(when).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })
+    );
+  });
+
+  test('an explicit locale is still honoured, and the orders really do differ', () => {
+    expect(formatDate(when, 'en-GB')).not.toBe(formatDate(when, 'en-US'));
+  });
+
+  test('formatDateTime opens with exactly what formatDate prints', () => {
+    // The invariant behind the fix: a peek that shows the moment to the minute
+    // and a row that shows only the day must not disagree about the day.
+    for (const locale of ['en-US', 'en-GB', 'de-DE']) {
+      expect(formatDateTime(when, locale).startsWith(formatDate(when, locale))).toBe(true);
+    }
   });
 });
 
