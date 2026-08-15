@@ -27,4 +27,32 @@ describe('cn', () => {
     const isActive = true;
     expect(cn('px-4 py-2', isActive && 'bg-primary')).toBe('px-4 py-2 bg-primary');
   });
+
+  describe('v3 type roles', () => {
+    // Without the `font-size` extension in cn.ts, tailwind-merge files these
+    // under text *colour* and deletes them when a colour is merged in after.
+    test.each([
+      'display',
+      'title',
+      'body',
+      'label',
+      'caption',
+    ])('text-%s survives a text colour merged in after it', (role) => {
+      expect(cn(`text-${role}`, 'text-muted-foreground')).toBe(
+        `text-${role} text-muted-foreground`
+      );
+    });
+
+    test('the roles still conflict with each other and with Tailwind sizes', () => {
+      expect(cn('text-caption', 'text-title')).toBe('text-title');
+      expect(cn('text-xs', 'text-label')).toBe('text-label');
+      expect(cn('text-label', 'text-xs')).toBe('text-xs');
+    });
+
+    test('a real colour conflict is still resolved', () => {
+      expect(cn('text-caption text-gain', 'text-muted-foreground')).toBe(
+        'text-caption text-muted-foreground'
+      );
+    });
+  });
 });

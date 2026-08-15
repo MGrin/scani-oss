@@ -31,6 +31,24 @@ export function isReviewableJobName(name: string): boolean {
  */
 export const DOCUMENT_EXTRACTION_REVIEW_KIND = 'document-extraction';
 
+/**
+ * How a review ended. Both outcomes clear the item from the queue; only
+ * one of them wrote anything.
+ *
+ * Before SC-138 there was no `discarded` and therefore no way out of the
+ * review queue that did not import — the only writer of `action_taken_at`
+ * was a successful `createHoldingsBatch`, so a junk upload sat in the feed
+ * forever and the badge stopped meaning anything. The document-extraction
+ * surface already had Approve/Reject; this is the same idea on the job
+ * side, recorded rather than inferred so the job page cannot later claim
+ * a discarded parse was imported.
+ */
+export const REVIEW_OUTCOMES = ['imported', 'discarded'] as const;
+
+export const reviewOutcomeSchema = z.enum(REVIEW_OUTCOMES);
+
+export type ReviewOutcome = (typeof REVIEW_OUTCOMES)[number];
+
 export const reviewItemSchema = z.object({
   /** Source-prefixed so ids stay unique once non-job sources join. */
   id: z.string().min(1),

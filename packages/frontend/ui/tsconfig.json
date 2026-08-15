@@ -17,6 +17,6 @@
     "noUnusedParameters": true,
     "noFallthroughCasesInSwitch": true
   },
-  "include": ["src", "tailwind-preset.js"],
+  "include": ["src", "scripts", "tailwind-preset.js"],
   "exclude": ["**/*.test.ts"]
 }

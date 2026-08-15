@@ -1,0 +1,602 @@
+/**
+ * v3 design tokens — scoped to `[data-ui="v3"]`.
+ *
+ * Every declaration here is inside a `[data-ui="v3"]` selector, so v2 renders
+ * byte-identically whether or not this file is loaded. When v3 becomes the
+ * default (ticket V3-19) the attribute moves to <html> and the v2 block in
+ * globals.css is deleted; the selectors below already match that case.
+ *
+ * Authoring rule: dark is the design surface and light is the port. The dark
+ * ramp was solved first and light was re-derived from it — hue is invariant
+ * across themes so a series keeps its identity when the user flips the theme,
+ * while saturation and lightness are re-solved per theme against that theme's
+ * own surface ramp. Deriving light by mirroring lightness alone is what
+ * produces the washed-out light mode that reads as an afterthought.
+ *
+ * Light occupies the unqualified block below purely because `.dark` is the
+ * opt-in class ThemeContext toggles; read the `.dark` block as the original
+ * and this one as the port. Keying light off `:not(.dark)` instead would look
+ * tidier and would silently fail inside a nested dark scope.
+ *
+ * Every contrast claim in the comments is asserted numerically in
+ * `tests/styles/v3-tokens.test.ts`. Edit a value, run the tests.
+ */
+
+@layer base {
+  /* The two `[data-theme]` selectors pin a subtree to one theme regardless of
+   * the document theme, which is what lets `/v3/kitchen-sink` (V3-06) show
+   * both themes in a single screenshot. `data-theme` is the attribute
+   * ThemeContext already writes on <html>, so a pinned subtree and the
+   * document use one vocabulary; `system` matches neither pin and leaves the
+   * normal `.dark` cascade in charge. */
+  [data-ui='v3'],
+  .dark [data-ui='v3'][data-theme='light'],
+  .dark[data-ui='v3'][data-theme='light'] {
+    /* ── light: derived ──────────────────────────────────────────────── */
+
+    /* Surface ramp. The page is white — literally, not nearly.
+     *
+     * The first two ports of this ramp were built the dark way round: three
+     * separable *lightness* steps with surface-2 pinned at pure white, which
+     * pushes the page down to 92% and produces exactly the grey the user
+     * rejected. A lightness ramp is a dark-mode technique. It works there
+     * because there is 94% of headroom above the page; above a white page
+     * there is none, so light mode has to spend a different currency.
+     *
+     * That currency is shadow and border. The page and every floating surface
+     * are white; a card sits a whisper *below* them (98.5%, with the only
+     * cool cast left in the system) and is separated by a hairline, and a
+     * sheet or popover is white again, lifted by `--elevation-2`. Reading the
+     * ramp as sunken-card-on-white rather than lifted-card-on-grey is what
+     * GitHub, Stripe and Linear all do in light mode.
+     *
+     * `--surface-hover` is the fourth role the white page forces into
+     * existence: on a grey page a hover fill could just be `--surface-2`, but
+     * white-on-white is nothing at all, so the light hover goes down instead
+     * of up. In dark it is `--surface-2` and nothing changes. */
+    --surface-0: 0 0% 100%; /* page */
+    --surface-1: 225 20% 98.5%; /* card, tab bar */
+    --surface-2: 0 0% 100%; /* sheet, popover, raised thumb */
+    --surface-hover: 225 16% 95.5%; /* hover fill, secondary fill, skeleton */
+
+    /* The ink follows the surfaces down in saturation. Chroma that was
+     * invisible against a blue-tinted page reads as a tint against a neutral
+     * one, so what survives here is only what carries meaning: the brand hue
+     * in `--interactive`, and gain/loss. Grey is grey. */
+    --foreground: 225 28% 11%;
+    --muted-foreground: 225 7% 39%; /* 6.9:1 on surface-0, the worst case */
+
+    /* Two borders, because a border does two unrelated jobs.
+     *
+     * `--border` is decoration: the hairline under a table row, around a
+     * card, between accordion items. It carries no information — the surface
+     * ramp and the shadow already say where the card ends — so it is barely
+     * there, and it is deliberately NOT held to WCAG 1.4.11's 3:1.
+     *
+     * `--border-strong` is the WCAG case: the edge of an input, a select, an
+     * outline button — boundaries that are the only thing telling you a
+     * control is there, and which therefore owe 3:1 against every surface.
+     * It reaches those controls through `--input` below, which is what the
+     * shadcn primitives actually name.
+     *
+     * V3-03 applied the 3:1 rule to `--border` globally. That is what put a
+     * 50%-lightness rule around every card in the app and is most of what
+     * "borders are too black" was. The rule was right; its scope was not. */
+    --border: 225 14% 90%; /* decorative hairline — no contrast floor */
+    --border-strong: 225 9% 50%; /* 3.95:1 on surface-0 */
+
+    --interactive: 255 68% 52%;
+    --interactive-foreground: 0 0% 100%;
+
+    --gain: 154 82% 20%;
+    --loss: 5 72% 42%;
+    /* The no-change end of the triad, and the one member whose job is to read
+     * colourless — so it tracks `--muted-foreground` rather than sitting a
+     * step bluer than the caption text it renders beside. */
+    --neutral: 225 7% 39%;
+
+    --destructive-foreground: 0 0% 100%;
+
+    /* ── chart ramp ──────────────────────────────────────────────────── */
+    /* Eight categorical slots, assigned in order and never cycled. The hue of
+     * each slot is one number shared by both themes and only S/L are re-solved
+     * per theme, which is the whole of ticket V3-08: v2's ramp
+     * (globals.css:41-45 vs 76-80) gives the same slot *unrelated* hues per
+     * theme, so flipping the theme silently reassigns which colour means
+     * "crypto".
+     *
+     * Hues, steps and slot order come from the `dataviz` skill's documented
+     * palette. The order was re-derived rather than copied: of every
+     * permutation of the eight hues, exactly one clears the skill's gates in
+     * both themes *and* satisfies three Scani constraints — blue leads (the
+     * one hue with no semantic load in a finance UI); violet sits no earlier
+     * than slot 7, because it is `--interactive`'s hue and a chart segment
+     * must not read as a tappable affordance; gain-green and loss-red stay out
+     * of slots 1-3. It came out identical to the skill's own default order,
+     * which is the reassuring answer.
+     *
+     * Eight hues cannot all stay clear of a violet accent and a red loss
+     * token, so the collisions are *placed* rather than pretended away:
+     * `--interactive`'s nearest slot is 7 (ΔE 8.3 light / 4.6 dark, OKLab
+     * ×100) and `--loss`'s is 8 (11.1 / 5.5). `<AllocationBar>` folds to
+     * `--chart-other` after six, so neither is reached in practice. What is
+     * left over is `--loss` sitting 10.8 from slot 2 in dark; a delta is text
+     * carrying a sign and an arrow while a slot is a fill, so the two never
+     * form a pair the reader has to tell apart by hue.
+     *
+     * Three light steps sit below 3:1 on a white page (aqua 2.78, yellow 2.20,
+     * magenta 2.65). That is the skill's documented relief case rather than a
+     * defect: it obligates visible labels or a table view, which is why
+     * `<AllocationBar>` ships an item list instead of a colour-key legend.
+     *
+     * Validator output for both themes is committed at
+     * `docs/implementation/2026-08-12_v3-chart-palette.md`. Editing any value
+     * here means re-running it — `tests/styles/v3-tokens.test.ts` pins these
+     * triplets to the exact hexes that report was produced from, so a drifted
+     * value fails loudly instead of leaving a stale report behind. */
+    --chart-1: 213 68% 50%; /* blue */
+    --chart-2: 17 82% 56%; /* orange */
+    --chart-3: 159 73% 40%; /* aqua */
+    --chart-4: 41 100% 46%; /* yellow */
+    --chart-5: 337 70% 70%; /* magenta */
+    --chart-6: 120 100% 26%; /* green */
+    --chart-7: 249 48% 44%; /* violet */
+    --chart-8: 0 73% 59%; /* red */
+
+    /* The fold bucket. Hue 225 is the surface family, so "Other" reads as the
+     * absence of a category rather than as a ninth one. Not part of the
+     * categorical set and never assigned by slot index. */
+    --chart-other: 225 10% 45%;
+
+    /* ── theme-independent ───────────────────────────────────────────── */
+
+    /* Every shadcn control that owes 1.4.11 names `border-input`: Input,
+     * Textarea, SelectTrigger and the outline Button. Pointing `--input` at
+     * the strong border is therefore the whole of "3:1 where WCAG asks for
+     * it" — nothing else has to opt in. */
+    --input: var(--border-strong);
+    --ring: var(--interactive);
+
+    /* Elevation. On the dark ramp a shadow is close to invisible and the
+     * lift does the work; on a white page it is the only thing that can, so
+     * both themes carry the token and dark simply spends less on it. Tuned
+     * against the surface hue rather than pure black — a neutral-black shadow
+     * on a cool-white card reads as dirt. */
+    --elevation-1: 0 1px 2px 0 hsl(225 24% 12% / 0.06), 0 1px 3px -1px hsl(225 24% 12% / 0.08);
+    --elevation-2: 0 8px 24px -8px hsl(225 24% 12% / 0.16), 0 2px 6px -2px hsl(225 24% 12% / 0.08);
+
+    /* shadcn primitives dropped into the v3 tree inherit the ramp above
+     * without being forked. `--accent` stays a subtle hover surface — the
+     * brand hue lives in `--interactive` / `--primary`, or every ghost
+     * button turns violet. */
+    --background: var(--surface-0);
+    --card: var(--surface-1);
+    --card-foreground: var(--foreground);
+    --popover: var(--surface-2);
+    --popover-foreground: var(--foreground);
+    /* One token used to serve every non-page fill because on the dark ramp
+     * every one of them is the same lift. On a white page they split in two:
+     * a hover, a secondary button and a skeleton have to go *down* to be
+     * visible at all, while a selected tab thumb has to come *up*. These
+     * three are the downward ones; the thumb is handled below, where it can
+     * be named. */
+    --muted: var(--surface-hover);
+    --accent: var(--surface-hover);
+    --accent-foreground: var(--foreground);
+    --secondary: var(--surface-hover);
+    --secondary-foreground: var(--foreground);
+    --primary: var(--interactive);
+    --primary-foreground: var(--interactive-foreground);
+    --destructive: var(--loss);
+
+    /* 8px. At 12 a 40px-tall button is a third of the way to a pill and
+     * every card corner reads as a bubble, which is a large part of what
+     * "everything feels too large, like being zoomed in" was made of —
+     * corner radius scales the *apparent* size of a box far faster than its
+     * measured one. The preset derives `md` (6px) and `sm` (4px) from this. */
+    --radius: 0.5rem;
+
+    /* Type faces — §2.3 of the research brief, loaded by v3-fonts.css.
+     *
+     * The brief's type decision is that in a finance app the display type is a
+     * numeral, so Plex Mono is promoted from utility face to display face and
+     * carries every figure while Plex Sans carries language. `--font-display`
+     * is therefore an alias of `--font-mono`, not a third stack: if the two
+     * ever disagree the hero stops being the same face as the figures under it.
+     *
+     * Each stack is the Tailwind default with the Plex family prepended, so a
+     * fallback render is the platform's own face rather than something worse,
+     * and the mono fallbacks are all monospaced — which is what keeps the
+     * V3-09 digit roll from jittering before the file lands (see v3-fonts.css).
+     *
+     * These names are only defined here, inside the v3 scope. The preset reads
+     * them as `var(--font-sans, <the Tailwind default>)`, so outside v3 the
+     * fallback is the whole original stack and v2 is byte-identical. */
+    --font-sans:
+      'IBM Plex Sans Variable', ui-sans-serif, system-ui, sans-serif, 'Apple Color Emoji',
+      'Segoe UI Emoji', 'Segoe UI Symbol', 'Noto Color Emoji';
+    --font-mono:
+      'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono',
+      'Courier New', monospace;
+    --font-display: var(--font-mono);
+
+    /* Everything in the v3 subtree defaults to Plex Sans. This has to sit on
+     * the scope element: Tailwind's preflight puts `font-family` on <html>,
+     * which resolves `--font-sans` where it is undefined, and descendants then
+     * inherit that already-computed stack rather than the variable. */
+    font-family: var(--font-sans);
+
+    /* Type scale — six roles, §2.3 of the research brief. Body is 16px
+     * because iOS zooms any focused input below it, and caption at 13px is
+     * the floor: nothing in v3 is smaller. */
+    --text-display-size: 2.75rem; /* 44px */
+    --text-display-line: 1.05;
+    --text-display-weight: 600;
+    /* Zero, not the -0.02em a proportional display face would want. `display`
+     * is always set in `--font-display`, i.e. Plex Mono, where every glyph
+     * already sits in a fixed 0.6em cell — negative tracking narrows that cell
+     * and closes the gap the face deliberately leaves between figures. It also
+     * desynchronises V3-09: a digit roll sizes its columns from the advance
+     * (`1ch`), and letter-spacing is added on top of the advance, so any
+     * non-zero value here makes the measured column disagree with the rendered
+     * one. Retuned rather than split into a second token so V3-09 has nothing
+     * left to override. */
+    --text-display-tracking: 0em;
+
+    --text-title-size: 1.25rem; /* 20px */
+    --text-title-line: 1.4;
+    --text-title-weight: 600;
+    --text-title-tracking: -0.01em;
+
+    --text-body-size: 1rem; /* 16px */
+    --text-body-line: 1.5;
+    --text-body-weight: 400;
+    --text-body-tracking: 0em;
+
+    --text-label-size: 0.875rem; /* 14px */
+    --text-label-line: 1.4;
+    --text-label-weight: 500;
+    --text-label-tracking: 0em;
+
+    --text-caption-size: 0.8125rem; /* 13px — the floor */
+    --text-caption-line: 1.35;
+    --text-caption-weight: 400;
+    --text-caption-tracking: 0em;
+
+    --text-numeric-tracking: -0.01em; /* `numeric` is a treatment, not a size */
+
+    /* Spacing — six steps, nothing between them. These are exactly Tailwind's
+     * `1 / 2 / 3 / 4 / 5 / 6`, so v3 markup uses the ordinary utilities and
+     * these vars serve inline styles and hand-written CSS. The point is the
+     * constraint: Tailwind's 30-step default is what produced the
+     * `p-3 sm:p-4` / `mt-1 sm:mt-2` drift in v2.
+     *
+     * The top two steps were 24/32. A 32px gutter is a marketing-page figure;
+     * in a data app it is the difference between six rows on a phone screen
+     * and four. Section rhythm is now 24 and the largest gutter is 20. */
+    --space-1: 0.25rem; /* 4px  → p-1 */
+    --space-2: 0.5rem; /* 8px  → p-2 */
+    --space-3: 0.75rem; /* 12px → p-3 */
+    --space-4: 1rem; /* 16px → p-4 */
+    --space-5: 1.25rem; /* 20px → p-5 */
+    --space-6: 1.5rem; /* 24px → p-6 */
+
+    /* Minimum hit area for a finger. WCAG 2.2 SC 2.5.8 AA sets the floor at
+     * 24px; 44px is the iOS HIG figure and the house rule, because 24 is the
+     * size at which a target stops being a violation, not the size at which
+     * it stops being annoying.
+     *
+     * It is a *minimum on a control*, never a row height, and it is spent
+     * only where a finger is what is pointing — see the pointer block below
+     * the theme definitions. */
+    --tap-target: 2.75rem; /* 44px */
+
+    /* Motion. 120–260ms: fast enough to feel physical, short of the ~400ms
+     * where an interface starts feeling slow. */
+    --motion-fast: 120ms;
+    --motion-base: 180ms;
+    --motion-slow: 260ms;
+    --motion-ease: cubic-bezier(0.2, 0, 0, 1);
+    --motion-ease-spring: cubic-bezier(0.34, 1.4, 0.64, 1);
+  }
+
+  /* ── dark: authored ──────────────────────────────────────────────────── */
+  /* Two selectors so the block holds whether `data-ui` sits on the v3 shell
+   * root (today) or on <html> next to `.dark` (after V3-19). */
+  .dark [data-ui='v3'],
+  .dark[data-ui='v3'],
+  [data-ui='v3'][data-theme='dark'] {
+    --surface-0: 225 14% 6%; /* page — not #000; pure black kills the ramp */
+    --surface-1: 225 13% 11%;
+    --surface-2: 225 12% 16%;
+    /* Dark has headroom above the page, so a hover fill is a lift and this
+     * is exactly `--surface-2`. Named rather than aliased so the two roles
+     * can drift apart later without a second edit here. */
+    --surface-hover: 225 12% 16%;
+
+    --foreground: 225 20% 96%; /* 17.49:1 on surface-0 */
+    --muted-foreground: 225 12% 68%; /* 6.37:1 on surface-2, the worst case */
+
+    /* Same split as light, for the same reason: 48% was carrying both jobs,
+     * and a 48% rule around a card on a 6% page is a bright line drawn where
+     * the ramp had already said everything. The ramp keeps giving cards their
+     * edge; this is just the hairline on top of it. */
+    --border: 225 12% 20%;
+
+    /* 3.19:1 against surface-2, 4.08:1 against surface-0 — clears the WCAG
+     * 1.4.11 non-text floor on every surface, not just the page. The v2
+     * border managed 1.31:1. */
+    --border-strong: 225 12% 48%;
+
+    /* Dark elevation is nearly free — the lift already did the work — but a
+     * floating surface still wants an edge of shadow, so it is deepened and
+     * kept tight rather than dropped. */
+    --elevation-1: 0 1px 2px 0 hsl(225 40% 2% / 0.4);
+    --elevation-2: 0 12px 32px -12px hsl(225 40% 2% / 0.7), 0 2px 8px -2px hsl(225 40% 2% / 0.5);
+
+    /* One accent hue, spent only on interactive affordance and focus. Data
+     * colour belongs to the chart ramp, never to this. */
+    --interactive: 255 90% 76%;
+    --interactive-foreground: 255 55% 12%;
+
+    /* v2's `text-green-600` is too dark to read on a 6%-lightness page, which
+     * is why these are solved against the dark ramp first. Zero is neutral,
+     * not green. Colour is never the only signal — pairing every figure with
+     * a sign and arrow is the <Numeric> component's job (V3-07). */
+    --gain: 154 62% 55%;
+    --loss: 5 88% 70%;
+    --neutral: 225 12% 68%;
+
+    --destructive-foreground: 5 55% 12%;
+
+    /* Same eight hues, re-stepped for the dark surface. Only S and L move —
+     * compare the leading number of each pair against the light block and it
+     * is identical, which is the invariant `v3-tokens.test.ts` asserts. Every
+     * step clears 3:1 on all three dark surfaces, so dark needs no relief
+     * channel; light does. */
+    --chart-1: 213 77% 56%;
+    --chart-2: 17 70% 50%;
+    --chart-3: 159 73% 36%;
+    --chart-4: 41 100% 38%;
+    --chart-5: 337 61% 58%;
+    --chart-6: 120 100% 26%;
+    --chart-7: 249 69% 71%;
+    --chart-8: 0 72% 65%;
+
+    --chart-other: 225 10% 55%;
+  }
+
+  /* ── hit area ────────────────────────────────────────────────────────── */
+  /* `apps/frontend/app/src/styles/accessibility.css` ships an unscoped
+   * `button, [role=button], a, input[…] { min-height: 44px; min-width: 44px }`
+   * that predates v3 and therefore lands on every v3 element too. Applied
+   * that broadly it stops being a hit area and becomes a row height: a 40px
+   * button, a sidebar link and a tab strip all inflate to 44 regardless of
+   * what is pointing at them, and the sum of that is most of "everything
+   * feels too large, like being zoomed in".
+   *
+   * So: neutralise it inside v3, then spend `--tap-target` where a finger is
+   * actually what is pointing. A mouse resolves a 32px target comfortably;
+   * a fingertip does not, and `pointer: coarse` is the only thing that knows
+   * which one is in front of the screen. Desktop gets its density back and
+   * touch keeps the 44px house rule — including on the tab bar, which is the
+   * one place a v3 row genuinely *is* a control.
+   *
+   * Not `min-height: revert`: the v2 rule and this one are in the same
+   * cascade origin, so there is nothing to revert to. */
+  [data-ui='v3']
+    :is(
+      button,
+      [role='button'],
+      [role='tab'],
+      [role='tablist'],
+      [role='radio'],
+      [role='radiogroup'],
+      a,
+      input[type='button'],
+      input[type='submit'],
+      input[type='checkbox'],
+      input[type='radio']
+    ) {
+    min-height: 0;
+    min-width: 0;
+  }
+
+  /* `:not()` on the roles that grow their hit area *around* themselves — a
+   * checkbox, a radio and a switch all keep a small box and reach 44px with a
+   * pseudo-element or the label beside them (see the note in switch.tsx).
+   * Without the exclusion Radix's `button[role="checkbox"]` matches `button`
+   * below and inflates into a 44px slab, which is the same mistake as the
+   * global rule this block exists to undo. */
+  @media (pointer: coarse) {
+    [data-ui='v3']
+      :is(
+        button,
+        [role='button'],
+        [role='tab'],
+        [role='tablist'],
+        [role='radiogroup'],
+        a[href],
+        input[type='button'],
+        input[type='submit']
+      ):not([role='checkbox'], [role='radio'], [role='switch']) {
+      min-height: var(--tap-target);
+    }
+
+    [data-ui='v3']
+      :is(button, [role='button'], a[href]):not(
+        [role='checkbox'],
+        [role='radio'],
+        [role='switch']
+      ) {
+      min-width: var(--tap-target);
+    }
+
+    /* ── segmented controls ────────────────────────────────────────────── */
+    /* The `[role='radio']` exclusion above is right for a lone radio, which
+     * keeps a small box and reaches 44px through the label beside it. A
+     * SEGMENT is not that: it has no label outside itself, it sits flush
+     * against its neighbours, and it *is* the target. Excluded along with the
+     * lone radios it left every segmented control in v3 at 32px on touch —
+     * the period selector on the home chart measured 60×32 and was mis-tapped
+     * (SC-69 1.2).
+     *
+     * So the item gets the real 44px rather than a pseudo-element reaching
+     * outside the track. An invisible hit area that overhangs the control is
+     * the same class of defect as the stray taps this block is fixing: a tap
+     * 6px above a 32px pill would activate it with nothing on screen saying
+     * it would.
+     *
+     * The track's padding drops to 2px in the same breath, so the control
+     * grows 42px → 50px instead of 54px and the thumb still reads as raised
+     * inside a recessed track.
+     *
+     * `pointer: coarse` only, which is the whole point: §8.1's desktop
+     * finding is the opposite complaint (a 9-character toggle 544px wide and
+     * 32px tall for a mouse), and nothing here touches a fine pointer. */
+    [data-ui='v3'] [data-segmented] {
+      padding: 0.125rem;
+    }
+
+    [data-ui='v3'] [data-segmented] > [role='radio'] {
+      min-height: var(--tap-target);
+    }
+  }
+
+  /* ── a dialog may not outgrow the screen ─────────────────────────────── */
+  /* `DialogContent` is `grid w-full max-w-lg`, and its single implicit column
+   * is an `auto` track. An `auto` track's automatic minimum is the largest of
+   * its items' min-content contributions, so ONE child wider than the viewport
+   * sizes the whole track past the container — and every sibling grid item
+   * stretches to it. That is how a v2 dialog reached from v3 put its step
+   * progress bar off the right edge and its `Save` half off the screen, with
+   * the v3 root's `overflow: hidden` leaving nothing to scroll to reach it
+   * (SC-70, measured at 390px: scrollWidth 496 against a 390px box).
+   *
+   * `minmax(0, 1fr)` caps the track at the container and lets the children
+   * shrink, which is all that was ever wanted. It is deliberately on
+   * `[role='dialog']` rather than a class: it is inert on the flex-based
+   * overlays (sheet, bottom drawer) and so protects every dialog v3 can reach
+   * — including v2's, which v3 must not edit — without naming any of them.
+   *
+   * `max-width` is NOT the fix and must not be added here: the box is already
+   * the right size, the track is not, and at (0,2,0) this selector would
+   * outrank `sm:max-w-sm` and blow the side sheets to full width. */
+  [data-ui='v3'] [role='dialog'] {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  /* ── a figure may not outgrow its line ───────────────────────────────── */
+  /* SC-72: a hero figure long enough to exceed the phone viewport pushed the
+   * whole page sideways. The document never grew — v3's scroller is `<main>`,
+   * so `<main>` gained the horizontal scroll, which is why the tab bar stayed
+   * put while everything above it slid. Measured at 390px with a twelve-digit
+   * total: `main.scrollWidth` 526 against a 390px box, the figure alone 493px
+   * wide.
+   *
+   * `min-w-0` was already on the grid items and could not have helped: it caps
+   * a *box*, and an over-long figure is *content* spilling out of a box that is
+   * already the right size. Spilled content is scrollable overflow on the
+   * nearest scroller however the box measures. The only fix is a narrower
+   * figure — and `overflow-x: hidden` on the shell is not one, because it hides
+   * the number instead of showing it.
+   *
+   * The arithmetic works because the figure is monospaced: in Plex Mono every
+   * glyph — digit, comma, decimal point, currency symbol — is the same 0.6em
+   * cell, so a run is exactly `cells x advance` wide and the size that fits is
+   * one division. `<Numeric>` publishes the cell count; this does the division.
+   * See `v3/lib/figure.ts` for the measurement and the budget.
+   *
+   * `100cqi` is the line, which is why the elements that own a figure's line
+   * carry `data-figure-line`. The outermost of them is the page column itself,
+   * so a figure on a surface that has declared nothing nearer still cannot
+   * reach past the page gutter — without that backstop `cqi` falls back to the
+   * viewport, which is the right width measured from the wrong origin and
+   * leaves a figure hanging off the edge by exactly the gutters.
+   *
+   * `max()` floors the result at `--text-caption-size`, since a figure has no
+   * licence to go under v3's smallest type, and `overflow-wrap` is what a run
+   * that has bottomed out there does instead of leaving the box. It breaks a
+   * figure only when the figure cannot fit a line of its own, so a figure
+   * inline in a sentence still moves to the next line whole. Nothing
+   * truncates: an ellipsis on money is a different number. */
+  [data-ui='v3'] [data-figure-line] {
+    container-type: inline-size;
+  }
+
+  [data-ui='v3'] [data-figure-fit] {
+    font-size: min(
+      1em,
+      max(
+        var(--text-caption-size),
+        calc((100cqi - var(--figure-inset, 0px)) / (var(--figure-cells, 1) * 0.6))
+      )
+    );
+    overflow-wrap: anywhere;
+  }
+
+  /* ── text-entry size ─────────────────────────────────────────────────── */
+  /* §2.6's last row. iOS Safari zooms the viewport whenever a control takes
+   * focus at under 16px, and it does not zoom back — so one 14px field turns
+   * every subsequent screen into a scrolled, oversized version of itself.
+   *
+   * The shared shadcn `Input` and `Textarea` are `text-sm` (14px) and are used
+   * by v2 as well, so the correction lands here rather than in the primitive,
+   * the same way the hit-area block above corrects a global it does not own.
+   * 16px is `--text-body-size` and not a special case: what a person typed is
+   * body text, and the 14px `label` role belongs to the thing above the field.
+   *
+   * Specificity, not layer order, is again what makes this win — Tailwind's
+   * `@layer` directive flattens to unlayered output, so `[data-ui='v3']
+   * :is(input, textarea)` (0,2,1) beats `.text-sm` (0,1,0). A field that
+   * genuinely needs another size sets it inline. */
+  [data-ui='v3'] :is(input, textarea) {
+    font-size: var(--text-body-size);
+  }
+
+  /* ── controls whose edge carries state ───────────────────────────────── */
+  /* Switch is the one primitive that says "off" with a border and a fill
+   * rather than with a label, so its unchecked track owes 1.4.11 and takes
+   * the strong border. It reaches for `border-border` / `bg-muted` in
+   * `switch.tsx`, and both of those are now the decorative choices — correct
+   * for a divider, wrong for the only thing distinguishing an off switch
+   * from the page behind it. Fixed here rather than in the primitive because
+   * `switch.tsx` is shared with v2. */
+  [data-ui='v3'] [role='switch'][data-state='unchecked'] {
+    border-color: hsl(var(--border-strong));
+  }
+
+  /* The one fill that goes up rather than down. Tabs and Segmented are a
+   * recessed track with a raised thumb; `bg-muted` is the recessed value
+   * everywhere else, so the thumb — which already carries `shadow-sm` — takes
+   * the floating surface instead. In dark this is what `bg-muted` already
+   * resolved to, so the pair is unchanged there. */
+  [data-ui='v3'] :is([role='tab'][data-state='active'], [role='radio'][data-state='checked']) {
+    background-color: hsl(var(--surface-2));
+  }
+
+  /* ── reduced motion ──────────────────────────────────────────────────── */
+  @media (prefers-reduced-motion: reduce) {
+    [data-ui='v3'] {
+      --motion-fast: 0ms;
+      --motion-base: 0ms;
+      --motion-slow: 0ms;
+      --motion-ease: linear;
+      --motion-ease-spring: linear;
+    }
+
+    /* The tokens only cover code that opts into them. This catch-all also
+     * defuses the eight keyframes in tailwind-preset.js, which carry
+     * hard-coded durations. 0.01ms rather than 0 so `transitionend` and
+     * `animationend` still fire and nothing waits forever on a listener. */
+    [data-ui='v3'],
+    [data-ui='v3'] *,
+    [data-ui='v3'] *::before,
+    [data-ui='v3'] *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
+}

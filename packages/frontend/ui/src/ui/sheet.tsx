@@ -4,6 +4,7 @@ import { X } from 'lucide-react';
 import * as React from 'react';
 
 import { cn } from '../lib/cn';
+import { type PortalContainer, usePortalContainer } from '../lib/portal-container';
 
 const Sheet = SheetPrimitive.Root;
 
@@ -12,6 +13,12 @@ const SheetTrigger = SheetPrimitive.Trigger;
 const SheetClose = SheetPrimitive.Close;
 
 const SheetPortal = SheetPrimitive.Portal;
+
+/** Radix's dismissal events are all cancellable; a non-dismissible sheet
+ *  cancels them rather than re-implementing the dialog. */
+function preventDismissal(event: { preventDefault: () => void }): void {
+  event.preventDefault();
+}
 
 const SheetOverlay = React.forwardRef<
   React.ElementRef<typeof SheetPrimitive.Overlay>,
@@ -58,38 +65,71 @@ const sheetVariants = cva(
 
 interface SheetContentProps
   extends React.ComponentPropsWithoutRef<typeof SheetPrimitive.Content>,
-    VariantProps<typeof sheetVariants> {}
+    VariantProps<typeof sheetVariants> {
+  /** Where the portal mounts. See `lib/portal-container.tsx`. */
+  container?: PortalContainer;
+  /**
+   * `false` removes every way out the sheet owns — the × in the corner,
+   * Escape and a click on the overlay — leaving only whatever the caller puts
+   * in the body.
+   *
+   * Reserved for content the reader cannot get back once the sheet is gone.
+   * Escape closes every other sheet in the app, so it is a trained reflex, and
+   * a reflex is exactly the wrong thing to let destroy an unrecoverable value
+   * (SC-76). `BottomDrawerContent` takes the same prop, so a surface that is
+   * a drawer on a phone and a sheet on a desktop says it once per shell and
+   * means the same thing in both.
+   */
+  dismissible?: boolean;
+}
 
 const SheetContent = React.forwardRef<
   React.ElementRef<typeof SheetPrimitive.Content>,
   SheetContentProps
->(({ side = 'right', className, children, style, ...props }, ref) => (
-  <SheetPortal>
-    <SheetOverlay />
-    <SheetPrimitive.Content
-      ref={ref}
-      className={cn(sheetVariants({ side }), 'flex flex-col', className)}
-      // Inline-style fallback for the drawer background. `bg-background`
-      // depends on `--background` cascading through Radix's portal; if
-      // the variable is unset for any reason (theme not yet hydrated,
-      // some upstream stacking quirk) the class evaluates to `hsl()`,
-      // which is invalid → transparent. The fallback in the var()
-      // expression resolves to the dark-theme background literal so
-      // the drawer is never see-through. Caller `style` still wins.
-      style={{ backgroundColor: 'hsl(var(--background, 0 0% 3.9%))', ...style }}
-      {...props}
-    >
-      {children}
-      <SheetPrimitive.Close
-        className="absolute right-3 rounded-sm opacity-70 ring-offset-background transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:pointer-events-none data-[state=open]:bg-secondary"
-        style={{ top: 'calc(0.875rem + env(safe-area-inset-top, 0px))' }}
-      >
-        <X className="h-4 w-4" />
-        <span className="sr-only">Close</span>
-      </SheetPrimitive.Close>
-    </SheetPrimitive.Content>
-  </SheetPortal>
-));
+>(
+  (
+    { side = 'right', className, children, style, container, dismissible = true, ...props },
+    ref
+  ) => {
+    const portalContainer = usePortalContainer(container);
+    return (
+      <SheetPortal container={portalContainer}>
+        <SheetOverlay />
+        <SheetPrimitive.Content
+          ref={ref}
+          className={cn(sheetVariants({ side }), 'flex flex-col', className)}
+          // Inline-style fallback for the drawer background. `bg-background`
+          // depends on `--background` cascading through Radix's portal; if
+          // the variable is unset for any reason (theme not yet hydrated,
+          // some upstream stacking quirk) the class evaluates to `hsl()`,
+          // which is invalid → transparent. The fallback in the var()
+          // expression resolves to the dark-theme background literal so
+          // the drawer is never see-through. Caller `style` still wins.
+          style={{ backgroundColor: 'hsl(var(--background, 0 0% 3.9%))', ...style }}
+          // Radix closes on Escape and on a press outside the content. A
+          // non-dismissible sheet cancels both rather than re-implementing the
+          // dialog — see `dismissible`.
+          onEscapeKeyDown={dismissible ? undefined : preventDismissal}
+          onInteractOutside={dismissible ? undefined : preventDismissal}
+          {...props}
+        >
+          {children}
+          {/* Absent rather than disabled when the sheet is not dismissible: a ×
+            that is rendered and does nothing reads as a broken app. */}
+          {dismissible ? (
+            <SheetPrimitive.Close
+              className="absolute right-3 rounded-sm opacity-70 ring-offset-background transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:pointer-events-none data-[state=open]:bg-secondary"
+              style={{ top: 'calc(0.875rem + env(safe-area-inset-top, 0px))' }}
+            >
+              <X className="h-4 w-4" />
+              <span className="sr-only">Close</span>
+            </SheetPrimitive.Close>
+          ) : null}
+        </SheetPrimitive.Content>
+      </SheetPortal>
+    );
+  }
+);
 SheetContent.displayName = SheetPrimitive.Content.displayName;
 
 const SheetHeader = ({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) => (

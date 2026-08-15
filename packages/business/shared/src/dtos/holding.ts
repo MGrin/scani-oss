@@ -144,6 +144,25 @@ export type HoldingWithDetails = {
     missingQuantity?: string;
     note?: string;
   };
+  /**
+   * True when this holding's token is unpriceable **in fact**: it has never
+   * had a single `token_prices` row and is currently inside an unpriceable
+   * cooldown — `TokenRepository.findNeverPricedInCooldownTokenIds`, the same
+   * predicate the net-worth chart uses to leave it out of the coverage
+   * denominator (SC-146).
+   *
+   * It exists because `value === null` is two different facts wearing one
+   * face. "We failed to fetch a price for this today" and "no provider has
+   * ever quoted this token and we have stopped asking" both render as a dash,
+   * and only the second is permanent. The chart can say how many holdings it
+   * set aside but not which, so the list is where the reader finds out
+   * (SC-154).
+   *
+   * Absent rather than `false` on a priceable holding: the flag is an
+   * exception, and 14 rows out of 200 carrying it is the shape of the wire
+   * payload too.
+   */
+  unpriceable?: boolean;
 };
 
 export type HoldingsWithSummary = {
