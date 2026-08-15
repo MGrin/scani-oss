@@ -108,6 +108,71 @@ export class TokenRepository extends BaseRepository<Token, NewToken> {
     return results[0] || null;
   }
 
+  /**
+   * Other token rows that are THE SAME ASSET as the given ones, for the
+   * purpose of borrowing a price (SC-198).
+   *
+   * Keyed on `providerMetadata.coingecko.id` and NEVER on the symbol. Two
+   * independent reasons, either of which is sufficient:
+   *
+   *  1. Nine production rows exist whose entire purpose is to carry a
+   *     symbol matching another token's (SC-197). Symbol-keyed price
+   *     inheritance would hand a homoglyph `UЅDС` holding the real USDC
+   *     price — a credible dollar value on a user's net worth, derived
+   *     from a token they do not hold.
+   *
+   *  2. Honest ticker collisions do the same damage without any attacker.
+   *     Production holds two rows symbol `TRUMP`:
+   *
+   *       OFFICIAL TRUMP  (generic)             369 prices
+   *       DogTrump        evm:8453:0x62f8…        0 prices, HELD
+   *
+   *     Different coins. A symbol-keyed fallback would price a DogTrump
+   *     holding as Official Trump. Neither row carries a `coingecko.id`,
+   *     so keyed this way they correctly borrow nothing.
+   *
+   * Rows carrying `lookalike_of` are excluded as DONORS as well: a
+   * quarantined row must never become the source of a number that a real
+   * holding displays.
+   */
+  async findPricingSiblings(
+    tokenIds: string[],
+    transaction?: DatabaseTransaction
+  ): Promise<Map<string, string[]>> {
+    const byToken = new Map<string, string[]>();
+    if (tokenIds.length === 0) return byToken;
+
+    const database = this.getDb(transaction);
+    const rows = await database
+      .select({
+        id: schema.tokens.id,
+        coingeckoId: sql<string>`${schema.tokens.providerMetadata}->'coingecko'->>'id'`,
+      })
+      .from(schema.tokens)
+      .where(
+        sql`${schema.tokens.providerMetadata}->'coingecko'->>'id' IS NOT NULL
+            AND ${schema.tokens.lookalikeOf} IS NULL`
+      );
+
+    const idsByCoingecko = new Map<string, string[]>();
+    const coingeckoByToken = new Map<string, string>();
+    for (const row of rows) {
+      if (!row.coingeckoId) continue;
+      coingeckoByToken.set(row.id, row.coingeckoId);
+      const bucket = idsByCoingecko.get(row.coingeckoId);
+      if (bucket) bucket.push(row.id);
+      else idsByCoingecko.set(row.coingeckoId, [row.id]);
+    }
+
+    for (const tokenId of tokenIds) {
+      const coingeckoId = coingeckoByToken.get(tokenId);
+      if (!coingeckoId) continue;
+      const siblings = (idsByCoingecko.get(coingeckoId) ?? []).filter((id) => id !== tokenId);
+      if (siblings.length > 0) byToken.set(tokenId, siblings);
+    }
+    return byToken;
+  }
+
   async findByType(typeCode: string, transaction?: DatabaseTransaction): Promise<Token[]> {
     const database = this.getDb(transaction);
     const results = await database
