@@ -1,11 +1,19 @@
 // Fails the build when a page whose source contains a Markdown pipe table
-// produces HTML with no <table> in it.
+// produces HTML with no <table> in it, or a <table> that is not inside a
+// scroll region.
 //
 // This exists because that is exactly what shipped: Astro applies GFM to `.md`
 // through an internal flag `@astrojs/mdx` does not inherit, so 15 `.mdx` pages
 // rendered every schema and env-var table as a paragraph of `|` characters —
 // in production, for as long as the pages existed, with a green build. The
 // pipeline is one line of config and nothing else asserted its effect.
+//
+// It also asserts every built table sits inside a `.table-scroll-viewport`.
+// That wrapper is what carries the edge fade, the `tabindex` and the
+// accessible name — without it a four-column reference table on a 390px screen
+// shows two columns and gives the reader no indication the others exist
+// (SC-102). Same reasoning as above: the affordance is one rehype plugin in
+// `astro.config.mjs` and nothing else would notice it going missing.
 //
 // Runs after `astro build` via the docs package.json `build` script, against
 // `dist/` rather than the dev server: the dev server and the production build
@@ -80,10 +88,15 @@ function outputPath(file: string): string {
   return join(DIST_ROOT, slug, 'index.html');
 }
 
+function countOccurrences(haystack: string, needle: string): number {
+  return haystack.split(needle).length - 1;
+}
+
 async function main(): Promise<void> {
   const files = (await walk(DOCS_ROOT)).sort();
   const failures: string[] = [];
   let checked = 0;
+  let wrapped = 0;
 
   for (const file of files) {
     if (!hasPipeTable(await readFile(file, 'utf8'))) continue;
@@ -95,23 +108,38 @@ async function main(): Promise<void> {
 
     if (html === null) {
       failures.push(`${source} — no built page at ${relative(ROOT, output)}`);
-    } else if (!html.includes('<table')) {
-      failures.push(`${source} — authors a pipe table, built page has no <table>`);
+      continue;
     }
+
+    const tables = countOccurrences(html, '<table');
+    if (tables === 0) {
+      failures.push(`${source} — authors a pipe table, built page has no <table>`);
+      continue;
+    }
+
+    const viewports = countOccurrences(html, 'table-scroll-viewport');
+    if (viewports < tables) {
+      failures.push(
+        `${source} — ${tables} <table>(s) but ${viewports} scroll region(s); an unwrapped table gives a phone reader no sign its off-screen columns exist`
+      );
+      continue;
+    }
+    wrapped += tables;
   }
 
   if (failures.length > 0) {
-    console.error(
-      `\nMarkdown tables are not rendering on ${failures.length} of ${checked} pages that author one:\n`
-    );
+    console.error(`\nTable rendering is broken on ${failures.length} of ${checked} pages:\n`);
     for (const failure of failures) console.error(`  ✗ ${failure}`);
     console.error(
-      '\nThe table plugin is configured in astro.config.mjs (markdown.remarkPlugins).\n'
+      '\nGFM is configured in astro.config.mjs (markdown.remarkPlugins); the scroll\n' +
+        'region comes from markdown.rehypePlugins (rehype-scrollable-tables.mjs).\n'
     );
     process.exit(1);
   }
 
-  console.log(`✓ ${checked} pages author a pipe table; all ${checked} render a <table>.`);
+  console.log(
+    `✓ ${checked} pages author a pipe table; all render a <table>, and all ${wrapped} are inside a scroll region.`
+  );
 }
 
 await main();
