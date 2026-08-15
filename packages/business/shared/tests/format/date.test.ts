@@ -88,7 +88,16 @@ describe('locale handling', () => {
     // default was, and only *looked* like it pinned anything because the
     // machine running it happened to be en-US.
     expect(formatDate(when)).toBe('16 Jul 2026');
-    expect(formatDateTime(when)).toBe('16 Jul 2026 at 01:06');
+
+    // `formatDateTime` is pinned by naming the locale, not by its rendering.
+    // The connector between date and time in `en-GB` medium/short is
+    // ICU-version dependent — `at` on some builds, `,` on others — so a
+    // literal here pins whichever ICU the machine happens to ship and fails
+    // on a runner with a different one. Naming `en-GB` explicitly is the
+    // opposite of the `undefined` the previous version passed: if the default
+    // drifts back to `en-US`, or to the runtime's, both lines below fail.
+    expect(formatDateTime(when)).toBe(formatDateTime(when, 'en-GB'));
+    expect(formatDateTime(when)).not.toBe(formatDateTime(when, 'en-US'));
   });
 
   test('is stable when the runtime locale is not English', () => {
